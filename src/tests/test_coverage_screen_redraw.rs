@@ -440,7 +440,7 @@ fn a_fill_character_takes_over_outside_cells_untouched() {
     unsafe {
         (*p.w()).fill_character = Some(fill);
         let mut gc = undressed(GRID_ATTR_CHARSET as u_short);
-        screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SINGLE, CELL_OUTSIDE, &raw mut gc);
+        screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SINGLE, CELL_OUTSIDE, &mut gc);
         expect_dressed_as(&gc, glyph(b"#"));
         assert_eq!(gc.attr as c_int & GRID_ATTR_CHARSET, GRID_ATTR_CHARSET);
     }
@@ -470,14 +470,14 @@ fn plain_and_simple_lines_dress_cells_from_their_own_tables() {
     ];
     for t in kinds {
         let mut plain = undressed(GRID_ATTR_REVERSE as u_short);
-        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SINGLE, t, &raw mut plain) };
+        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SINGLE, t, &mut plain) };
         assert_eq!(plain.attr as c_int & GRID_ATTR_CHARSET, GRID_ATTR_CHARSET);
         assert_eq!(plain.attr as c_int & GRID_ATTR_REVERSE, GRID_ATTR_REVERSE);
         assert_eq!(plain.data.data[0], CELL_BORDERS[t as usize]);
         assert_eq!((plain.data.size, plain.data.width), (1, 1));
 
         let mut simple = undressed(GRID_ATTR_CHARSET as u_short);
-        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SIMPLE, t, &raw mut simple) };
+        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SIMPLE, t, &mut simple) };
         assert_eq!(simple.attr as c_int & GRID_ATTR_CHARSET, 0);
         assert_eq!(simple.data.data[0], SIMPLE_BORDERS[t as usize]);
     }
@@ -507,19 +507,19 @@ fn double_heavy_and_space_lines_take_their_characters_whole() {
     ];
     for t in kinds {
         let mut doubled = undressed(GRID_ATTR_CHARSET as u_short);
-        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_DOUBLE, t, &raw mut doubled) };
+        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_DOUBLE, t, &mut doubled) };
         assert_eq!(doubled.attr as c_int & GRID_ATTR_CHARSET, 0);
         let want = *tty_acs_double_borders(t);
         expect_dressed_as(&doubled, want);
 
         let mut heavy = undressed(GRID_ATTR_CHARSET as u_short);
-        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_HEAVY, t, &raw mut heavy) };
+        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_HEAVY, t, &mut heavy) };
         assert_eq!(heavy.attr as c_int & GRID_ATTR_CHARSET, 0);
         let want = *tty_acs_heavy_borders(t);
         expect_dressed_as(&heavy, want);
 
         let mut spaced = undressed(GRID_ATTR_CHARSET as u_short);
-        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SPACES, t, &raw mut spaced) };
+        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SPACES, t, &mut spaced) };
         assert_eq!(spaced.attr as c_int & GRID_ATTR_CHARSET, 0);
         assert_eq!(spaced.data.data[0], b' ');
         assert_eq!((spaced.data.size, spaced.data.width), (1, 1));
@@ -536,13 +536,7 @@ fn numbered_lines_show_the_pane_index_or_a_star() {
     p.add(8, 0, 8, 4);
     unsafe {
         let mut second = undressed(GRID_ATTR_CHARSET as u_short);
-        screen_redraw_border_set(
-            p.w(),
-            p.wp(1),
-            PANE_LINES_NUMBER,
-            CELL_TOPLEFT,
-            &raw mut second,
-        );
+        screen_redraw_border_set(p.w(), p.wp(1), PANE_LINES_NUMBER, CELL_TOPLEFT, &mut second);
         assert_eq!(second.data.data[0], b'1');
         assert_eq!(second.attr as c_int & GRID_ATTR_CHARSET, 0);
 
@@ -552,7 +546,7 @@ fn numbered_lines_show_the_pane_index_or_a_star() {
             null_mut(),
             PANE_LINES_NUMBER,
             CELL_TOPLEFT,
-            &raw mut star,
+            &mut star,
         );
         assert_eq!(star.data.data[0], b'*');
 
@@ -563,7 +557,7 @@ fn numbered_lines_show_the_pane_index_or_a_star() {
             p.wp(0),
             PANE_LINES_NUMBER,
             CELL_TOPLEFT,
-            &raw mut rebased,
+            &mut rebased,
         );
         assert_eq!(rebased.data.data[0], b'9');
     }
@@ -580,8 +574,7 @@ fn two_panes_answers_only_for_exactly_two_sharing_a_parent() {
     bare.add(0, 0, 6, 6);
     bare.add(6, 0, 6, 6);
     unsafe {
-        let mut kind: layout_type = LAYOUT_TOPBOTTOM;
-        assert_eq!(screen_redraw_two_panes(bare.w(), &raw mut kind), 0);
+        assert_eq!(screen_redraw_two_panes(bare.w()), None);
     }
 
     let mut split = Pair::new(12, 6);
@@ -597,13 +590,10 @@ fn two_panes_answers_only_for_exactly_two_sharing_a_parent() {
         (*split.wp(1)).layout_cell = &raw mut *right;
 
         parent.type_0 = LAYOUT_LEFTRIGHT;
-        let mut kind: layout_type = LAYOUT_TOPBOTTOM;
-        assert_eq!(screen_redraw_two_panes(split.w(), &raw mut kind), 1);
-        assert_eq!(kind, LAYOUT_LEFTRIGHT);
+        assert_eq!(screen_redraw_two_panes(split.w()), Some(LAYOUT_LEFTRIGHT));
 
         parent.type_0 = LAYOUT_TOPBOTTOM;
-        assert_eq!(screen_redraw_two_panes(split.w(), &raw mut kind), 1);
-        assert_eq!(kind, LAYOUT_TOPBOTTOM);
+        assert_eq!(screen_redraw_two_panes(split.w()), Some(LAYOUT_TOPBOTTOM));
     }
 
     let mut triple = Pair::new(18, 6);
@@ -621,8 +611,7 @@ fn two_panes_answers_only_for_exactly_two_sharing_a_parent() {
             cell.parent = &raw mut *parent3;
             (*triple.wp(i)).layout_cell = &raw mut **cell;
         }
-        let mut kind: layout_type = LAYOUT_TOPBOTTOM;
-        assert_eq!(screen_redraw_two_panes(triple.w(), &raw mut kind), 0);
+        assert_eq!(screen_redraw_two_panes(triple.w()), None);
     }
 
     let mut floaty = Pair::new(12, 6);
@@ -637,9 +626,7 @@ fn two_panes_answers_only_for_exactly_two_sharing_a_parent() {
         hover4.flags |= LAYOUT_CELL_FLOATING;
         (*floaty.wp(0)).layout_cell = &raw mut *cell4;
         (*floaty.wp(1)).layout_cell = &raw mut *hover4;
-        let mut kind: layout_type = LAYOUT_LEFTRIGHT;
-        assert_eq!(screen_redraw_two_panes(floaty.w(), &raw mut kind), 0);
-        assert_eq!(kind, LAYOUT_LEFTRIGHT);
+        assert_eq!(screen_redraw_two_panes(floaty.w()), None);
     }
 
     let mut orphan = Pair::new(12, 6);
@@ -650,8 +637,7 @@ fn two_panes_answers_only_for_exactly_two_sharing_a_parent() {
     unsafe {
         (*orphan.wp(0)).layout_cell = &raw mut *left5;
         (*orphan.wp(1)).layout_cell = &raw mut *right5;
-        let mut kind: layout_type = LAYOUT_LEFTRIGHT;
-        assert_eq!(screen_redraw_two_panes(orphan.w(), &raw mut kind), 0);
+        assert_eq!(screen_redraw_two_panes(orphan.w()), None);
     }
 
     let mut lone = Pair::new(6, 6);
@@ -661,8 +647,7 @@ fn two_panes_answers_only_for_exactly_two_sharing_a_parent() {
     unsafe {
         cell6.parent = &raw mut *parent6;
         (*lone.wp(0)).layout_cell = &raw mut *cell6;
-        let mut kind: layout_type = LAYOUT_LEFTRIGHT;
-        assert_eq!(screen_redraw_two_panes(lone.w(), &raw mut kind), 0);
+        assert_eq!(screen_redraw_two_panes(lone.w()), None);
     }
 }
 

@@ -2307,27 +2307,27 @@ unsafe fn window_client_draw(
             at = 0 as u_int;
         }
         screen_write_cursormove(
-            &mut *ctx,
+            ctx,
             cx as ::core::ffi::c_int,
             cy.wrapping_add(at) as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
         screen_write_preview(
-            &mut *ctx,
-            &raw mut (*wp).base,
+            ctx,
+            &(*wp).base,
             sx,
             sy.wrapping_sub(2 as u_int).wrapping_sub(lines),
         );
         if at != 0 as u_int {
             screen_write_cursormove(
-                &mut *ctx,
+                ctx,
                 cx as ::core::ffi::c_int,
                 cy.wrapping_add(2 as u_int) as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
         } else {
             screen_write_cursormove(
-                &mut *ctx,
+                ctx,
                 cx as ::core::ffi::c_int,
                 cy.wrapping_add(sy)
                     .wrapping_sub(1 as u_int)
@@ -2336,7 +2336,7 @@ unsafe fn window_client_draw(
             );
         }
         screen_write_hline(
-            &mut *ctx,
+            ctx,
             sx,
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
@@ -2345,22 +2345,22 @@ unsafe fn window_client_draw(
         );
         if at != 0 as u_int {
             screen_write_cursormove(
-                &mut *ctx,
+                ctx,
                 cx as ::core::ffi::c_int,
                 cy as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
         } else {
             screen_write_cursormove(
-                &mut *ctx,
+                ctx,
                 cx as ::core::ffi::c_int,
                 cy.wrapping_add(sy).wrapping_sub(lines) as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
         }
         screen_write_fast_copy(
-            &mut *ctx,
-            &raw mut (*c).status.screen,
+            ctx,
+            &(*c).status.screen,
             0 as u_int,
             0 as u_int,
             sx,
@@ -2444,40 +2444,35 @@ fn window_client_help() -> (
 pub(crate) unsafe fn window_client_init(
     wme: &mut window_mode_entry,
     _fs: *mut cmd_find_state,
-    mut args: *mut args,
+    args: Option<&args>,
 ) -> *mut screen {
     unsafe {
         let mut wp: *mut window_pane = wme.wp;
+        let format = if let Some(args) = args.filter(|args| args_has(args, b'F') != 0) {
+            CStr::from_ptr(args_get(args, b'F')).to_owned()
+        } else {
+            WINDOW_CLIENT_DEFAULT_FORMAT.to_owned()
+        };
+        let key_format = if let Some(args) = args.filter(|args| args_has(args, b'K') != 0) {
+            CStr::from_ptr(args_get(args, b'K')).to_owned()
+        } else {
+            CStr::from_ptr(WINDOW_CLIENT_DEFAULT_KEY_FORMAT.as_ptr()).to_owned()
+        };
+        let command = if let Some(args) = args.filter(|args| args_count(args) != 0) {
+            CStr::from_ptr(args_string(args, 0)).to_owned()
+        } else {
+            CStr::from_ptr(WINDOW_CLIENT_DEFAULT_COMMAND.as_ptr()).to_owned()
+        };
         let data_ref = WindowClientModeDataRef::new(window_client_modedata {
             wp_id: (*wp).id,
             data: None,
-            format: None,
-            key_format: None,
-            command: None,
+            format: Some(format),
+            key_format: Some(key_format),
+            command: Some(command),
             item_list: Vec::new(),
             owner: None,
         });
-        let data = data_ref.as_ptr();
-        wme.state = WindowModeState::Client(data_ref);
-        if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
-            (*data).format = Some(WINDOW_CLIENT_DEFAULT_FORMAT.to_owned());
-        } else {
-            (*data).format =
-                Some(CStr::from_ptr(args_get(&*args, 'F' as i32 as u_char)).to_owned());
-        }
-        if args.is_null() || args_has(&*args, 'K' as i32 as u_char) == 0 {
-            (*data).key_format =
-                Some(CStr::from_ptr(WINDOW_CLIENT_DEFAULT_KEY_FORMAT.as_ptr()).to_owned());
-        } else {
-            (*data).key_format =
-                Some(CStr::from_ptr(args_get(&*args, 'K' as i32 as u_char)).to_owned());
-        }
-        if args.is_null() || args_count(&*args) == 0 as u_int {
-            (*data).command =
-                Some(CStr::from_ptr(WINDOW_CLIENT_DEFAULT_COMMAND.as_ptr()).to_owned());
-        } else {
-            (*data).command = Some(CStr::from_ptr(args_string(&*args, 0 as u_int)).to_owned());
-        }
+        wme.state = WindowModeState::Client(data_ref.clone());
         let (mtd, s) = mode_tree_start(
             wp,
             args,
@@ -2490,14 +2485,14 @@ pub(crate) unsafe fn window_client_init(
             None,
             Some(window_client_sort),
             Some(window_client_help),
-            WindowModeData::Client((*data).owner.clone().expect("the mode holds itself")),
+            WindowModeData::Client(data_ref.downgrade()),
             &window_client_menu_items,
         );
-        (*data).data = Some(mtd.downgrade());
+        (*data_ref.as_ptr()).data = Some(mtd.downgrade());
+        mode_tree_zoom(&mtd, args);
+        mode_tree_build(&mtd);
+        mode_tree_draw(&mtd);
         wme.mode_tree_ref = Some(mtd);
-        mode_tree_zoom(&(*data).tree_ref(), args);
-        mode_tree_build(&(*data).tree_ref());
-        mode_tree_draw(&(*data).tree_ref());
         s
     }
 }
@@ -2564,7 +2559,7 @@ pub(crate) unsafe fn window_client_key(
         let mut item: *mut window_client_itemdata =
             ::core::ptr::null_mut::<window_client_itemdata>();
         let mut finished: ::core::ffi::c_int = 0;
-        (finished, _, _) = mode_tree_key(&super::widget::held_tree(mtd), c, &raw mut key, m);
+        (finished, _, _) = mode_tree_key(&super::widget::held_tree(mtd), c, &mut key, m);
         match key {
             100 | 120 | 122 => {
                 item = mode_tree_get_current(&super::widget::held_tree(mtd)).client();

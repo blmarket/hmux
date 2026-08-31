@@ -181,10 +181,10 @@ fn winlink_and_window_find_via_target() {
         let wl = target.winlink(0);
         // winlink_count for session's window list
         let s = target.session();
-        assert_eq!(winlink_count(&raw mut (*s).windows), 1);
-        let found = winlink_find_by_index(&raw mut (*s).windows, 0);
+        assert_eq!(winlink_count(&(*s).windows), 1);
+        let found = winlink_find_by_index(&mut (*s).windows, 0);
         assert_eq!(found, wl);
-        assert!(winlink_find_by_index(&raw mut (*s).windows, 99).is_null());
+        assert!(winlink_find_by_index(&mut (*s).windows, 99).is_null());
 
         // window_find_by_id uses global window tree (Registry)
         assert_eq!(window_find_by_id((*w).id), w);

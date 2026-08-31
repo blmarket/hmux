@@ -139,6 +139,13 @@ pub struct menu_data {
     pub cb: menu_choice_cb,
     pub data: MenuCallbackData,
 }
+impl menu_data {
+    /// The style the menu is drawn with, or null for one drawn with the
+    /// default.
+    pub(crate) fn style_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.style)
+    }
+}
 pub const BOX_LINES_NONE: box_lines = 6;
 pub const BOX_LINES_PADDED: box_lines = 5;
 pub const BOX_LINES_ROUNDED: box_lines = 4;
@@ -2323,7 +2330,7 @@ unsafe fn menu_reapply_styles(mut md: *mut menu_data, mut c: *mut client) {
         );
         (*md).style_gc = grid_default_cell;
         style_apply(
-            &raw mut (*md).style_gc,
+            &mut (*md).style_gc,
             o,
             c"menu-style".as_ptr(),
             Some(&mut ft),
@@ -2338,7 +2345,7 @@ unsafe fn menu_reapply_styles(mut md: *mut menu_data, mut c: *mut client) {
         }
         (*md).selected_style_gc = grid_default_cell;
         style_apply(
-            &raw mut (*md).selected_style_gc,
+            &mut (*md).selected_style_gc,
             o,
             c"menu-selected-style".as_ptr(),
             Some(&mut ft),
@@ -2354,7 +2361,7 @@ unsafe fn menu_reapply_styles(mut md: *mut menu_data, mut c: *mut client) {
         }
         (*md).border_style_gc = grid_default_cell;
         style_apply(
-            &raw mut (*md).border_style_gc,
+            &mut (*md).border_style_gc,
             o,
             c"menu-border-style".as_ptr(),
             Some(&mut ft),
@@ -2377,7 +2384,7 @@ pub unsafe fn menu_draw_cb(
 ) {
     unsafe {
         let mut md: *mut menu_data = data;
-        let mut tty: *mut tty = &raw mut (*c).tty;
+        let tty: &mut tty = &mut (*c).tty;
         let mut s: *mut screen = &raw mut (*md).s;
         let mut menu: *mut menu = &raw mut *(*md).menu;
         let mut ctx = screen_write_ctx::default();
@@ -2385,7 +2392,7 @@ pub unsafe fn menu_draw_cb(
         let mut px: u_int = (*md).px;
         let mut py: u_int = (*md).py;
         menu_reapply_styles(md, c);
-        screen_write_start(&mut ctx, s);
+        screen_write_start(&mut ctx, &mut *s);
         screen_write_clearscreen(&mut ctx, 8 as u_int);
         if (*md).border_lines as ::core::ffi::c_int != BOX_LINES_NONE as ::core::ffi::c_int {
             screen_write_box(
@@ -2408,7 +2415,7 @@ pub unsafe fn menu_draw_cb(
         );
         screen_write_stop(&mut ctx);
         i = 0 as u_int;
-        while i < (*screen_grid_ptr(&raw mut (*md).s)).sy {
+        while i < (*screen_grid_ptr(&mut (*md).s)).sy {
             tty_draw_line(
                 tty,
                 s,
@@ -2417,7 +2424,7 @@ pub unsafe fn menu_draw_cb(
                 (*menu).width.wrapping_add(4 as u_int),
                 px,
                 py.wrapping_add(i),
-                &raw const grid_default_cell,
+                &grid_default_cell,
                 ::core::ptr::null_mut::<colour_palette>(),
             );
             i = i.wrapping_add(1);
@@ -2427,7 +2434,7 @@ pub unsafe fn menu_draw_cb(
 pub(crate) unsafe fn menu_free_box(_c: *mut client, mut md: Box<menu_data>) {
     unsafe {
         if let Some(item) = md.item.as_ref().and_then(CmdqItemWeak::upgrade) {
-            cmdq_continue(item.as_ptr());
+            cmdq_continue(&item);
         }
         if let Some(cb) = md.cb.take() {
             let data = ::core::mem::take(&mut md.data);
@@ -2438,7 +2445,7 @@ pub(crate) unsafe fn menu_free_box(_c: *mut client, mut md: Box<menu_data>) {
                 data,
             );
         }
-        screen_free(&raw mut md.s);
+        screen_free(&mut md.s);
     }
 }
 
@@ -3978,7 +3985,7 @@ pub unsafe fn menu_key_cb(
             return 1 as ::core::ffi::c_int;
         }
         item = &raw const (&(*menu).items)[(*md).choice as usize];
-        let item_name = cstr_ptr(&(*item).name);
+        let item_name = (*item).name_ptr();
         if item_name.is_null() || *item_name as ::core::ffi::c_int == '-' as i32 {
             if (*md).flags & MENU_STAYOPEN != 0 {
                 return 0 as ::core::ffi::c_int;
@@ -4001,7 +4008,7 @@ pub unsafe fn menu_key_cb(
         };
         let state = cmdq_new_state(&raw mut (*md).fs, event, 0 as ::core::ffi::c_int);
         cmd_parse_and_append(
-            cstr_ptr(&(*item).command),
+            (*item).command_ptr(),
             ::core::ptr::null_mut::<cmd_parse_input>(),
             c,
             &state,
@@ -4129,7 +4136,7 @@ pub unsafe fn menu_prepare(
             cmd_find_copy_state(&mut (*md).fs, &*fs);
         }
         screen_init(
-            &raw mut (*md).s,
+            &mut (*md).s,
             (*menu_ptr).width.wrapping_add(4 as u_int),
             ((*menu_ptr).items.len() as u_int).wrapping_add(2 as u_int),
             0 as u_int,

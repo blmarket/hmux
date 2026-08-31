@@ -86,10 +86,9 @@ fn sessions_in_order() -> impl Iterator<Item = *mut session> {
 
 /// Every window linked into `s`, in index order.
 unsafe fn winlinks_of(s: *mut session) -> impl Iterator<Item = *mut winlink> {
-    successors(
-        walked(unsafe { winlinks_first(&raw mut (*s).windows) }),
-        |wl| walked(unsafe { winlinks_after(*wl) }),
-    )
+    successors(walked(unsafe { winlinks_first(&mut (*s).windows) }), |wl| {
+        walked(unsafe { winlinks_after(*wl) })
+    })
 }
 
 /// Every pane of `w`, in the order the window carries them.

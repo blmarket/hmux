@@ -19,8 +19,11 @@ pub const NAME_INTERVAL: ::core::ffi::c_int = 500000 as ::core::ffi::c_int;
 pub const PANE_CHANGED: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
 pub const FORMAT_WINDOW: ::core::ffi::c_uint = 0x40000000 as ::core::ffi::c_uint;
 
-fn name_time_callback(w: &window) {
-    unsafe { log_debug(c"@%u name timer expired".as_ptr(), fmt_args![w.id]) };
+fn name_time_callback(w_ref: &WindowRef) {
+    unsafe {
+        let w = w_ref.as_ptr();
+        log_debug(c"@%u name timer expired".as_ptr(), fmt_args![(*w).id]);
+    }
 }
 
 /// Microseconds still owed to the automatic-rename interval that started at
@@ -69,7 +72,7 @@ pub unsafe fn check_window_name(w: *mut window) {
                     let Some(w_ref) = w_weak.as_ref().and_then(WindowWeak::upgrade) else {
                         return;
                     };
-                    name_time_callback(&*w_ref.as_ptr());
+                    name_time_callback(&w_ref);
                 });
             }
             if !(*w).name_event.is_armed() {

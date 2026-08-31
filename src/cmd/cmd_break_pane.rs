@@ -163,9 +163,9 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval 
                 options_set_number((*w).options_ptr(), c"automatic-rename".as_ptr(), 0);
             }
             server_unlink_window(src_s, wl);
-            wl = winlink_find_by_window(&raw mut (*dst_s).windows, w);
+            wl = winlink_find_by_window(&mut (*dst_s).windows, w);
         } else {
-            if idx != -1 && !winlink_find_by_index(&raw mut (*dst_s).windows, idx).is_null() {
+            if idx != -1 && !winlink_find_by_index(&mut (*dst_s).windows, idx).is_null() {
                 cmdq_error(item, c"index in use: %d".as_ptr(), fmt_args![idx]);
                 return CMD_RETURN_ERROR;
             }
@@ -196,7 +196,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval 
 
             layout_init(w, wp);
             (*wp).flags |= PANE_CHANGED;
-            options_load_pane_colours((*wp).options_ptr(), &raw mut (*wp).palette);
+            options_load_pane_colours((*wp).options_ptr(), Some(&mut (*wp).palette));
 
             if idx == -1 {
                 idx = (-1 - options_get_number(session_options(dst_s), c"base-index".as_ptr()))

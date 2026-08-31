@@ -29,7 +29,7 @@
 
 use crate::arguments::{args_get_str, args_has};
 use crate::cmd::queue::{cmdq_error, cmdq_get_target};
-use crate::cmd::{cmd_get_args, cmd_get_args_ptr, cmd_get_entry};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
 use crate::paste::paste_is_empty;
 use crate::server::server_client_how_many;
@@ -316,7 +316,7 @@ unsafe fn cmd_choose_tree_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval
                 null_mut::<window_pane>(),
                 mode,
                 target,
-                cmd_get_args_ptr(self_0),
+                Some(args),
             );
         }
         CMD_RETURN_NORMAL

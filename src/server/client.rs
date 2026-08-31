@@ -16,14 +16,14 @@ use crate::cmd::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::cmd::{cmd_list_all_have, cmd_unpack_argv};
 use crate::cmd::{
     cmdq_append, cmdq_error, cmdq_get_callback1, cmdq_get_client, cmdq_get_command, cmdq_get_error,
-    cmdq_insert_after, cmdq_new,
+    cmdq_insert_after, cmdq_item_ref_of, cmdq_new,
 };
 use crate::compat::imsg_get_fd;
 use crate::control::{
     control_all_done, control_discard, control_pane_offset, control_ready, control_reset_offsets,
     control_start, control_stop, control_write,
 };
-use crate::environ::{environ_entry_value, environ_find, environ_ptr, environ_put, environ_t};
+use crate::environ::{environ_entry_value, environ_find, environ_put, environ_t};
 use crate::ffi::{access, close, gettimeofday, isatty, sscanf, strchr, strcmp, strlen, ttyname};
 use crate::file::{file_fire_done, file_print, file_read_data, file_read_done, file_write_ready};
 use crate::fmt_args;
@@ -48,7 +48,7 @@ use crate::overlay::{
 use crate::overlay::{
     popup_check_cb, popup_draw_cb, popup_free_box, popup_key_cb, popup_mode_cb, popup_resize_cb,
 };
-use crate::proc::{peer_ptr, proc_add_peer, proc_kill_peer, proc_remove_peer, proc_send};
+use crate::proc::{proc_add_peer, proc_kill_peer, proc_remove_peer, proc_send};
 use crate::reactor;
 use crate::reactor::{Interest, IoWatch, Reactor, Timer};
 use crate::resize::recalculate_sizes;
@@ -2858,7 +2858,7 @@ pub unsafe fn server_client_overlay_range(
 }
 pub unsafe fn server_client_check_nested(mut c: *mut client) -> ::core::ffi::c_int {
     unsafe {
-        let envent = environ_find(&*environ_ptr(&(*c).environ), c"TMUX".as_ptr());
+        let envent = environ_find(&*(*c).environ_ptr(), c"TMUX".as_ptr());
         if !envent
             .and_then(environ_entry_value)
             .is_some_and(|value| !value.is_empty())
@@ -2868,7 +2868,7 @@ pub unsafe fn server_client_check_nested(mut c: *mut client) -> ::core::ffi::c_i
         for wp in pane_walk() {
             if strcmp(
                 &raw mut (*wp).tty as *mut ::core::ffi::c_char,
-                cstr_ptr(&(*c).ttyname),
+                (*c).ttyname_ptr(),
             ) == 0 as ::core::ffi::c_int
             {
                 return 1 as ::core::ffi::c_int;
@@ -3026,7 +3026,7 @@ impl Drop for ClientStorage {
             status_free(c);
             c.status.screen = screen::default();
             if c.tty.flags & TTY_OPENED != 0 {
-                tty_free(&raw mut c.tty);
+                tty_free(&mut c.tty);
             }
             format_lost_client(c);
             c.queue = None;
@@ -3107,25 +3107,25 @@ pub unsafe fn server_client_open(
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             return 0 as ::core::ffi::c_int;
         }
-        if strcmp(cstr_ptr(&(*c).ttyname), ttynam) == 0 as ::core::ffi::c_int
+        if strcmp((*c).ttyname_ptr(), ttynam) == 0 as ::core::ffi::c_int
             || (isatty(STDIN_FILENO) != 0
                 && {
                     ttynam = ttyname(STDIN_FILENO);
                     !ttynam.is_null()
                 }
-                && strcmp(cstr_ptr(&(*c).ttyname), ttynam) == 0 as ::core::ffi::c_int
+                && strcmp((*c).ttyname_ptr(), ttynam) == 0 as ::core::ffi::c_int
                 || isatty(STDOUT_FILENO) != 0
                     && {
                         ttynam = ttyname(STDOUT_FILENO);
                         !ttynam.is_null()
                     }
-                    && strcmp(cstr_ptr(&(*c).ttyname), ttynam) == 0 as ::core::ffi::c_int
+                    && strcmp((*c).ttyname_ptr(), ttynam) == 0 as ::core::ffi::c_int
                 || isatty(STDERR_FILENO) != 0
                     && {
                         ttynam = ttyname(STDERR_FILENO);
                         !ttynam.is_null()
                     }
-                    && strcmp(cstr_ptr(&(*c).ttyname), ttynam) == 0 as ::core::ffi::c_int)
+                    && strcmp((*c).ttyname_ptr(), ttynam) == 0 as ::core::ffi::c_int)
         {
             *cause = Some(xasprintf(
                 c"can't use %s".as_ptr(),
@@ -3137,7 +3137,7 @@ pub unsafe fn server_client_open(
             *cause = Some(c"not a terminal".to_owned());
             return -(1 as ::core::ffi::c_int);
         }
-        if tty_open(&raw mut (*c).tty, cause) != 0 as ::core::ffi::c_int {
+        if tty_open(&mut (*c).tty, cause) != 0 as ::core::ffi::c_int {
             return -(1 as ::core::ffi::c_int);
         }
         0 as ::core::ffi::c_int
@@ -3230,7 +3230,7 @@ pub unsafe fn server_client_lost(mut c: *mut client) {
             control_stop(c);
         }
         if (*c).flags & CLIENT_TERMINAL as uint64_t != 0 {
-            tty_free(&raw mut (*c).tty);
+            tty_free(&mut (*c).tty);
         }
         (*c).ttyname = None;
         (*c).term_name = None;
@@ -3280,10 +3280,10 @@ pub unsafe fn server_client_suspend(mut c: *mut client) {
         if s.is_null() || (*c).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
             return;
         }
-        tty_stop_tty(&raw mut (*c).tty);
+        tty_stop_tty(&mut (*c).tty);
         (*c).flags |= CLIENT_SUSPENDED as uint64_t;
         proc_send(
-            peer_ptr(&(*c).peer),
+            (*c).peer_ptr(),
             MSG_SUSPEND,
             -(1 as ::core::ffi::c_int),
             ::core::ptr::null::<u8>(),
@@ -3332,7 +3332,7 @@ pub unsafe fn server_client_exec(mut c: *mut client, mut cmd: *const ::core::ffi
             shellsize as usize,
         ));
         proc_send(
-            peer_ptr(&(*c).peer),
+            (*c).peer_ptr(),
             MSG_EXEC,
             -(1 as ::core::ffi::c_int),
             msg.as_ptr(),
@@ -3660,7 +3660,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
                     }
                     STYLE_RANGE_WINDOW => {
                         fwl = winlink_find_by_index(
-                            &raw mut (*s).windows,
+                            &mut (*s).windows,
                             (*sr).argument as ::core::ffi::c_int,
                         );
                         if fwl.is_null() {
@@ -3714,7 +3714,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
                 }
                 {
                     let (window_bigger, off_x, off_y, off_sx, off_sy) =
-                        tty_window_offset(&raw mut (*c).tty);
+                        tty_window_offset(&(*c).tty);
                     ((*m).ox, (*m).oy, sx, sy) = (off_x, off_y, off_sx, off_sy);
                     window_bigger
                 };
@@ -3832,7 +3832,7 @@ unsafe fn server_client_check_mouse(mut c: *mut client, mut event: *mut key_even
             if (*c).tty.mouse_drag_release.is_some() {
                 (*c).tty
                     .mouse_drag_release
-                    .expect("non-null function pointer")(c, m);
+                    .expect("non-null function pointer")(c, &*m);
             }
             (*c).tty.mouse_drag_update = None;
             (*c).tty.mouse_drag_release = None;
@@ -4013,11 +4013,14 @@ unsafe fn server_client_is_assume_paste(mut c: *mut client) -> ::core::ffi::c_in
 }
 unsafe fn server_client_update_latest(mut c: *mut client) {
     unsafe {
-        let mut w: *mut window = ::core::ptr::null_mut::<window>();
         if (*c).session.is_null() {
             return;
         }
-        w = (*session_get_curw((*c).session)).window();
+        let wl: *mut winlink = session_get_curw((*c).session);
+        let Some(w_ref) = (*wl).window_handle() else {
+            return;
+        };
+        let w: *mut window = w_ref.as_ptr();
         if window_get_latest(w) == c {
             return;
         }
@@ -4025,7 +4028,7 @@ unsafe fn server_client_update_latest(mut c: *mut client) {
         if options_get_number((*w).options_ptr(), c"window-size".as_ptr())
             == WINDOW_SIZE_LATEST as ::core::ffi::c_longlong
         {
-            recalculate_size(w, 0 as ::core::ffi::c_int);
+            recalculate_size(w_ref, 0 as ::core::ffi::c_int);
         }
         notify_client(c"client-active".as_ptr(), c);
     }
@@ -4110,7 +4113,7 @@ unsafe fn server_client_key_callback(
                             (*c).tty
                                 .mouse_drag_update
                                 .expect("non-null function pointer")(
-                                c, m
+                                c, &*m
                             );
                             current_block = 16906968430444679536;
                         } else {
@@ -4545,7 +4548,7 @@ pub fn server_client_loop() {
         let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
         for w_ref in window_refs() {
-            server_client_check_window_resize(w_ref.as_ptr());
+            server_client_check_window_resize(&w_ref);
         }
         for w_ref in window_refs() {
             let w = w_ref.as_ptr();
@@ -4591,8 +4594,9 @@ pub fn server_client_loop() {
         }
     }
 }
-unsafe fn server_client_check_window_resize(mut w: *mut window) {
+unsafe fn server_client_check_window_resize(w_ref: &WindowRef) {
     unsafe {
+        let w = w_ref.as_ptr();
         let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
         if !(*w).flags & WINDOW_RESIZE != 0 {
             return;
@@ -4701,7 +4705,7 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
                         if flag == 0 {
                             off = 0 as ::core::ffi::c_int;
                         }
-                        new_size = window_pane_get_new_data(wp, wpo).1;
+                        new_size = window_pane_get_new_data(wp, &*wpo).1;
                         log_debug(
                             c"%s: %s has %zu bytes used and %zu left for %%%u".as_ptr(),
                             fmt_args![
@@ -4777,7 +4781,7 @@ unsafe fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
 }
 unsafe fn server_client_reset_state(mut c: *mut client) {
     unsafe {
-        let mut tty: *mut tty = &raw mut (*c).tty;
+        let tty: &mut tty = &mut (*c).tty;
         let mut w: *mut window = (*session_get_curw((*c).session)).window();
         let mut wp: *mut window_pane = server_client_get_pane(c);
         let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -4931,7 +4935,7 @@ unsafe fn server_client_click_timer(c: *mut client) {
 }
 unsafe fn server_client_check_exit(mut c: *mut client) {
     unsafe {
-        let mut name: *const ::core::ffi::c_char = cstr_ptr(&(*c).exit_session);
+        let mut name: *const ::core::ffi::c_char = (*c).exit_session_ptr();
         if (*c).flags & (CLIENT_DEAD | CLIENT_EXITED) as uint64_t != 0 {
             return;
         }
@@ -4957,7 +4961,7 @@ unsafe fn server_client_check_exit(mut c: *mut client) {
                     data.extend_from_slice(message.to_bytes_with_nul());
                 }
                 proc_send(
-                    peer_ptr(&(*c).peer),
+                    (*c).peer_ptr(),
                     MSG_EXIT,
                     -(1 as ::core::ffi::c_int),
                     data.as_ptr(),
@@ -4966,7 +4970,7 @@ unsafe fn server_client_check_exit(mut c: *mut client) {
             }
             CLIENT_EXIT_SHUTDOWN => {
                 proc_send(
-                    peer_ptr(&(*c).peer),
+                    (*c).peer_ptr(),
                     MSG_SHUTDOWN,
                     -(1 as ::core::ffi::c_int),
                     ::core::ptr::null::<u8>(),
@@ -4975,7 +4979,7 @@ unsafe fn server_client_check_exit(mut c: *mut client) {
             }
             CLIENT_EXIT_DETACH => {
                 proc_send(
-                    peer_ptr(&(*c).peer),
+                    (*c).peer_ptr(),
                     (*c).exit_msgtype,
                     -(1 as ::core::ffi::c_int),
                     name as *const u8,
@@ -5017,7 +5021,7 @@ unsafe fn server_client_check_modes(mut c: *mut client) {
 unsafe fn server_client_check_redraw(mut c: *mut client) {
     unsafe {
         let mut s: *mut session = (*c).session;
-        let mut tty: *mut tty = &raw mut (*c).tty;
+        let tty: &mut tty = &mut (*c).tty;
         let mut w: *mut window = (*session_get_curw((*c).session)).window();
         let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut needed: ::core::ffi::c_int = 0;
@@ -5238,7 +5242,7 @@ unsafe fn server_client_set_title(mut c: *mut client) {
         let title = format_expand_time(&mut ft, CStr::from_ptr(template));
         if (*c).title.as_deref() != Some(title.as_c_str()) {
             (*c).title = Some(title.clone());
-            tty_set_title(&raw mut (*c).tty, cstr_ptr(&(*c).title));
+            tty_set_title(&mut (*c).tty, (*c).title_ptr());
         }
     }
 }
@@ -5258,15 +5262,13 @@ unsafe fn server_client_set_path(mut c: *mut client) {
         {
             path = c"".as_ptr();
         } else {
-            path = cstr_ptr(
-                &(*window_get_active((*session_get_curw(s)).window()))
-                    .base
-                    .path,
-            );
+            path = (*window_get_active((*session_get_curw(s)).window()))
+                .base
+                .path_ptr();
         }
         if (*c).path.as_deref() != Some(CStr::from_ptr(path)) {
             (*c).path = Some(CStr::from_ptr(path).to_owned());
-            tty_set_path(&raw mut (*c).tty, cstr_ptr(&(*c).path));
+            tty_set_path(&mut (*c).tty, (*c).path_ptr());
         }
     }
 }
@@ -5288,7 +5290,7 @@ unsafe fn server_client_set_progress_bar(mut c: *mut client) {
             return;
         }
         (*c).progress_bar = *pane_pb;
-        tty_set_progress_bar(&raw mut (*c).tty, &raw mut (*c).progress_bar);
+        tty_set_progress_bar(&mut (*c).tty, &raw mut (*c).progress_bar);
     }
 }
 unsafe fn server_client_dispatch(mut imsg: *mut imsg, mut arg: *mut client) {
@@ -5338,8 +5340,8 @@ unsafe fn server_client_dispatch(mut imsg: *mut imsg, mut arg: *mut client) {
                     current_block = 6174974146017752131;
                 } else {
                     server_client_update_latest(c);
-                    tty_resize(&raw mut (*c).tty);
-                    tty_repeat_requests(&raw mut (*c).tty, 0 as ::core::ffi::c_int);
+                    tty_resize(&mut (*c).tty);
+                    tty_repeat_requests(&mut (*c).tty, 0 as ::core::ffi::c_int);
                     recalculate_sizes();
                     if !(*c).overlay().has_resize() {
                         server_client_clear_overlay(c);
@@ -5359,9 +5361,9 @@ unsafe fn server_client_dispatch(mut imsg: *mut imsg, mut arg: *mut client) {
                 } else {
                     server_client_set_session(c, ::core::ptr::null_mut::<session>());
                     recalculate_sizes();
-                    tty_close(&raw mut (*c).tty);
+                    tty_close(&mut (*c).tty);
                     proc_send(
-                        peer_ptr(&(*c).peer),
+                        (*c).peer_ptr(),
                         MSG_EXITED,
                         -(1 as ::core::ffi::c_int),
                         ::core::ptr::null::<u8>(),
@@ -5386,7 +5388,7 @@ unsafe fn server_client_dispatch(mut imsg: *mut imsg, mut arg: *mut client) {
                         {
                             fatal(c"gettimeofday failed".as_ptr(), fmt_args![]);
                         }
-                        tty_start_tty(&raw mut (*c).tty);
+                        tty_start_tty(&mut (*c).tty);
                         server_redraw_client(c);
                         recalculate_sizes();
                         if !s.is_null() {
@@ -5435,7 +5437,7 @@ unsafe fn server_client_dispatch(mut imsg: *mut imsg, mut arg: *mut client) {
                     c"client %p invalid message type %d".as_ptr(),
                     fmt_args![c, (*imsg).hdr.type_0],
                 );
-                proc_kill_peer(peer_ptr(&(*c).peer));
+                proc_kill_peer((*c).peer_ptr());
             }
         }
     }
@@ -5455,7 +5457,7 @@ unsafe fn server_client_default_command(
         let cmdlist =
             options_get_command(global_options, c"default-client-command".as_ptr()).unwrap();
         let queued = if (*c).flags & CLIENT_READONLY as uint64_t != 0
-            && cmd_list_all_have(cmdlist.as_ptr(), CMD_READONLY) == 0
+            && cmd_list_all_have(&cmdlist, CMD_READONLY) == 0
         {
             cmdq_get_callback1(
                 c"server_client_read_only".as_ptr(),
@@ -5465,7 +5467,7 @@ unsafe fn server_client_default_command(
         } else {
             cmdq_get_command(&cmdlist, None)
         };
-        cmdq_insert_after(item, queued);
+        cmdq_insert_after(&cmdq_item_ref_of(item), queued);
         CMD_RETURN_NORMAL
     }
 }
@@ -5481,7 +5483,7 @@ unsafe fn server_client_command_done(
             if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
                 control_ready(c);
             }
-            tty_send_requests(&raw mut (*c).tty);
+            tty_send_requests(&mut (*c).tty);
         }
         CMD_RETURN_NORMAL
     }
@@ -5543,7 +5545,7 @@ unsafe fn server_client_dispatch_command(
                         _ => {
                             let cmdlist = pr.cmdlist.take().unwrap();
                             if (*c).flags & CLIENT_READONLY as uint64_t != 0
-                                && cmd_list_all_have(cmdlist.as_ptr(), CMD_READONLY) == 0
+                                && cmd_list_all_have(&cmdlist, CMD_READONLY) == 0
                             {
                                 queued = cmdq_get_callback1(
                                     c"server_client_read_only".as_ptr(),
@@ -5714,7 +5716,7 @@ unsafe fn server_client_dispatch_identify(
                     return -(1 as ::core::ffi::c_int);
                 }
                 if !strchr(data, '=' as i32).is_null() {
-                    environ_put(environ_ptr(&(*c).environ), data, 0 as ::core::ffi::c_int);
+                    environ_put((*c).environ_ptr(), data, 0 as ::core::ffi::c_int);
                 }
                 log_debug(
                     c"client %p IDENTIFY_ENVIRON %s".as_ptr(),
@@ -5763,11 +5765,11 @@ unsafe fn server_client_dispatch_identify(
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             control_start(c);
         } else if (*c).fd != -(1 as ::core::ffi::c_int) {
-            if tty_init(&raw mut (*c).tty, c) != 0 as ::core::ffi::c_int {
+            if tty_init(&mut (*c).tty, c) != 0 as ::core::ffi::c_int {
                 close((*c).fd);
                 (*c).fd = -(1 as ::core::ffi::c_int);
             } else {
-                tty_resize(&raw mut (*c).tty);
+                tty_resize(&mut (*c).tty);
                 (*c).flags |= CLIENT_TERMINAL as uint64_t;
             }
             if (*c).out_fd != -(1 as ::core::ffi::c_int) {
@@ -5804,13 +5806,13 @@ unsafe fn server_client_dispatch_shell(mut c: *mut client) -> ::core::ffi::c_int
             shell = _PATH_BSHELL.as_ptr();
         }
         proc_send(
-            peer_ptr(&(*c).peer),
+            (*c).peer_ptr(),
             MSG_SHELL,
             -(1 as ::core::ffi::c_int),
             shell as *const u8,
             strlen(shell).wrapping_add(1 as size_t),
         );
-        proc_kill_peer(peer_ptr(&(*c).peer));
+        proc_kill_peer((*c).peer_ptr());
         0 as ::core::ffi::c_int
     }
 }
@@ -5822,10 +5824,10 @@ pub unsafe fn server_client_get_cwd(
         let mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let loading = cfg_client();
         if cfg_finished == 0 && !loading.is_null() {
-            return cstr_ptr(&(*loading).cwd);
+            return (*loading).cwd_ptr();
         }
         if !c.is_null() && (*c).session.is_null() && (*c).cwd.is_some() {
-            return cstr_ptr(&(*c).cwd);
+            return (*c).cwd_ptr();
         }
         if !s.is_null()
             && let Some(cwd) = session_cwd(s)
@@ -5915,7 +5917,7 @@ pub unsafe fn server_client_set_flags(c: *mut client, flags: *const ::core::ffi:
             }
         }
         proc_send(
-            peer_ptr(&(*c).peer),
+            (*c).peer_ptr(),
             MSG_FLAGS,
             -(1 as ::core::ffi::c_int),
             &raw mut (*c).flags as *const u8,
@@ -6101,7 +6103,7 @@ pub unsafe fn server_client_print(
                         ::core::ptr::null_mut::<window_pane>(),
                         WindowMode::View,
                         ::core::ptr::null_mut::<cmd_find_state>(),
-                        ::core::ptr::null_mut::<args>(),
+                        None,
                     );
                 }
                 if parse != 0 {
@@ -6151,7 +6153,7 @@ unsafe fn server_client_report_theme(mut c: *mut client, mut theme: client_theme
             (*c).theme = THEME_DARK;
             notify_client(c"client-dark-theme".as_ptr(), c);
         }
-        tty_repeat_requests(&raw mut (*c).tty, 1 as ::core::ffi::c_int);
+        tty_repeat_requests(&mut (*c).tty, 1 as ::core::ffi::c_int);
     }
 }
 

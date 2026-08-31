@@ -35,7 +35,7 @@ const NAMES: [&CStr; 21] = [
 /// The feature bits `s` adds to `start`, read with `separators`.
 fn add(start: c_int, s: &CStr, separators: &CStr) -> c_int {
     let mut feat = start;
-    unsafe { tty_add_features(&raw mut feat, s.as_ptr(), separators.as_ptr()) };
+    unsafe { tty_add_features(&mut feat, s.as_ptr(), separators.as_ptr()) };
     feat
 }
 
@@ -193,7 +193,7 @@ fn a_feature_the_terminal_already_has_is_not_applied_again() {
 fn a_terminal_the_table_names_gets_the_features_listed_for_it() {
     let _guard = globals();
     let mut got = 0;
-    unsafe { tty_default_features(&raw mut got, c"tmux".as_ptr(), 0) };
+    unsafe { tty_default_features(&mut got, c"tmux".as_ptr(), 0) };
     assert_eq!(
         names(got),
         "256,bpaste,ccolour,clipboard,hyperlinks,cstyle,extkeys,focus,mouse,overline,progressbar,RGB,strikethrough,title,usstyle"
@@ -212,7 +212,7 @@ fn every_terminal_in_the_table_names_features_that_exist() {
         c"XTerm",
     ] {
         let mut got = 0;
-        unsafe { tty_default_features(&raw mut got, name.as_ptr(), 1) };
+        unsafe { tty_default_features(&mut got, name.as_ptr(), 1) };
         assert_ne!(got, 0, "{name:?}");
         assert_eq!(got & !((1 << NAMES.len()) - 1), 0, "{name:?}");
     }
@@ -221,8 +221,8 @@ fn every_terminal_in_the_table_names_features_that_exist() {
 #[test]
 fn a_terminal_the_table_does_not_name_gets_nothing() {
     let mut got = 0;
-    unsafe { tty_default_features(&raw mut got, c"dumb".as_ptr(), 0) };
+    unsafe { tty_default_features(&mut got, c"dumb".as_ptr(), 0) };
     assert_eq!(got, 0);
-    unsafe { tty_default_features(&raw mut got, c"TMUX".as_ptr(), 0) };
+    unsafe { tty_default_features(&mut got, c"TMUX".as_ptr(), 0) };
     assert_eq!(got, 0);
 }

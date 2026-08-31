@@ -2260,7 +2260,7 @@ unsafe fn window_buffer_build(
         i = 0 as u_int;
         while (i as usize) < (*data).item_list.len() {
             item = &mut *(&mut (*data).item_list)[i as usize] as *mut window_buffer_itemdata;
-            pb = paste_get_name(cstr_ptr(&(*item).name));
+            pb = paste_get_name((*item).name_ptr());
             if !pb.is_null() {
                 let mut ft = format_create(
                     ::core::ptr::null_mut::<client>(),
@@ -2318,7 +2318,7 @@ unsafe fn window_buffer_draw(
         let mut i: u_int = 0;
         let mut cx: u_int = (*ctx.s).cx;
         let mut cy: u_int = (*ctx.s).cy;
-        pb = paste_get_name(cstr_ptr(&(*item).name));
+        pb = paste_get_name((*item).name_ptr());
         if pb.is_null() {
             return;
         }
@@ -2341,15 +2341,15 @@ unsafe fn window_buffer_draw(
             );
             if buf[0] as ::core::ffi::c_int != '\0' as i32 {
                 screen_write_cursormove(
-                    &mut *ctx,
+                    ctx,
                     cx as ::core::ffi::c_int,
                     cy.wrapping_add(i) as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
                 screen_write_nputs(
-                    &mut *ctx,
+                    ctx,
                     sx as ssize_t,
-                    &raw const grid_default_cell,
+                    &grid_default_cell,
                     c"%s".as_ptr(),
                     fmt_args![buf.as_ptr() as *const ::core::ffi::c_char],
                 );
@@ -2413,7 +2413,7 @@ unsafe fn window_buffer_search(
         let mut item: *mut window_buffer_itemdata = itemdata.buffer();
         let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
         let bufdata: &[u8];
-        let name = cstr_ptr(&(*item).name);
+        let name = (*item).name_ptr();
         pb = paste_get_name(name);
         if pb.is_null() {
             return 0 as ::core::ffi::c_int;
@@ -2485,7 +2485,7 @@ unsafe fn window_buffer_get_key(
             wl = (*data).fs.winlink();
             wp = (*data).fs.pane();
         }
-        pb = paste_get_name(cstr_ptr(&(*item).name));
+        pb = paste_get_name((*item).name_ptr());
         if pb.is_null() {
             return KEYC_NONE as ::core::ffi::c_ulong as key_code;
         }
@@ -2535,42 +2535,38 @@ fn window_buffer_help() -> (
 pub(crate) unsafe fn window_buffer_init(
     wme: &mut window_mode_entry,
     mut fs: *mut cmd_find_state,
-    mut args: *mut args,
+    args: Option<&args>,
 ) -> *mut screen {
     unsafe {
         let mut wp: *mut window_pane = wme.wp;
+        let mut state = cmd_find_state::default();
+        cmd_find_copy_state(&mut state, &*fs);
+        let format = if let Some(args) = args.filter(|args| args_has(args, b'F') != 0) {
+            CStr::from_ptr(args_get(args, b'F')).to_owned()
+        } else {
+            WINDOW_BUFFER_DEFAULT_FORMAT.to_owned()
+        };
+        let key_format = if let Some(args) = args.filter(|args| args_has(args, b'K') != 0) {
+            CStr::from_ptr(args_get(args, b'K')).to_owned()
+        } else {
+            CStr::from_ptr(WINDOW_BUFFER_DEFAULT_KEY_FORMAT.as_ptr()).to_owned()
+        };
+        let command = if let Some(args) = args.filter(|args| args_count(args) != 0) {
+            CStr::from_ptr(args_string(args, 0)).to_owned()
+        } else {
+            CStr::from_ptr(WINDOW_BUFFER_DEFAULT_COMMAND.as_ptr()).to_owned()
+        };
         let data_ref = WindowBufferModeDataRef::new(window_buffer_modedata {
             wp_id: (*wp).id,
-            fs: cmd_find_state::default(),
+            fs: state,
             data: None,
-            command: None,
-            format: None,
-            key_format: None,
+            command: Some(command),
+            format: Some(format),
+            key_format: Some(key_format),
             item_list: Vec::new(),
             owner: None,
         });
-        let data = data_ref.as_ptr();
-        cmd_find_copy_state(&mut (*data).fs, &*fs);
-        wme.state = WindowModeState::Buffer(data_ref);
-        if args.is_null() || args_has(&*args, 'F' as i32 as u_char) == 0 {
-            (*data).format = Some(WINDOW_BUFFER_DEFAULT_FORMAT.to_owned());
-        } else {
-            (*data).format =
-                Some(CStr::from_ptr(args_get(&*args, 'F' as i32 as u_char)).to_owned());
-        }
-        if args.is_null() || args_has(&*args, 'K' as i32 as u_char) == 0 {
-            (*data).key_format =
-                Some(CStr::from_ptr(WINDOW_BUFFER_DEFAULT_KEY_FORMAT.as_ptr()).to_owned());
-        } else {
-            (*data).key_format =
-                Some(CStr::from_ptr(args_get(&*args, 'K' as i32 as u_char)).to_owned());
-        }
-        if args.is_null() || args_count(&*args) == 0 as u_int {
-            (*data).command =
-                Some(CStr::from_ptr(WINDOW_BUFFER_DEFAULT_COMMAND.as_ptr()).to_owned());
-        } else {
-            (*data).command = Some(CStr::from_ptr(args_string(&*args, 0 as u_int)).to_owned());
-        }
+        wme.state = WindowModeState::Buffer(data_ref.clone());
         let (mtd, s) = mode_tree_start(
             wp,
             args,
@@ -2583,14 +2579,14 @@ pub(crate) unsafe fn window_buffer_init(
             None,
             Some(window_buffer_sort),
             Some(window_buffer_help),
-            WindowModeData::Buffer((*data).owner.clone().expect("the mode holds itself")),
+            WindowModeData::Buffer(data_ref.downgrade()),
             &window_buffer_menu_items,
         );
-        (*data).data = Some(mtd.downgrade());
+        (*data_ref.as_ptr()).data = Some(mtd.downgrade());
+        mode_tree_zoom(&mtd, args);
+        mode_tree_build(&mtd);
+        mode_tree_draw(&mtd);
         wme.mode_tree_ref = Some(mtd);
-        mode_tree_zoom(&(*data).tree_ref(), args);
-        mode_tree_build(&(*data).tree_ref());
-        mode_tree_draw(&(*data).tree_ref());
         s
     }
 }
@@ -2636,7 +2632,7 @@ unsafe fn window_buffer_do_delete(
         {
             mode_tree_up(&(*data).tree_ref(), 0 as ::core::ffi::c_int);
         }
-        pb = paste_get_name(cstr_ptr(&(*item).name));
+        pb = paste_get_name((*item).name_ptr());
         if !pb.is_null() {
             paste_free(pb);
         }
@@ -2651,7 +2647,7 @@ unsafe fn window_buffer_do_paste(
     unsafe {
         let mut data: *mut window_buffer_modedata = modedata.buffer();
         let mut item: *mut window_buffer_itemdata = itemdata.buffer();
-        let name = cstr_ptr(&(*item).name);
+        let name = (*item).name_ptr();
         if !paste_get_name(name).is_null() {
             mode_tree_run_command(
                 c,
@@ -2710,7 +2706,7 @@ unsafe fn window_buffer_start_edit(
         let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
         let mut buf: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut len: size_t = 0;
-        pb = paste_get_name(cstr_ptr(&(*item).name));
+        pb = paste_get_name((*item).name_ptr());
         if pb.is_null() {
             return;
         }
@@ -2743,7 +2739,7 @@ pub(crate) unsafe fn window_buffer_key(
         if paste_is_empty() != 0 {
             finished = 1 as ::core::ffi::c_int;
         } else {
-            (finished, _, _) = mode_tree_key(&super::widget::held_tree(mtd), c, &raw mut key, m);
+            (finished, _, _) = mode_tree_key(&super::widget::held_tree(mtd), c, &mut key, m);
             match key {
                 101 => {
                     item = mode_tree_get_current(&super::widget::held_tree(mtd)).buffer();

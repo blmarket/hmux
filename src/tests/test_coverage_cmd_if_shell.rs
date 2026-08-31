@@ -143,7 +143,7 @@ impl Queue {
         unsafe {
             self.behind()
                 .into_iter()
-                .map(|it| seen(cstr_ptr(&(*it).name)))
+                .map(|it| seen((*it).name_ptr()))
                 .collect()
         }
     }
@@ -517,7 +517,7 @@ fn exec_with_F_runs_the_then_commands_when_true() {
         assert_eq!(queued.len(), 1, "{queued:?}");
         let qi = r.queue.start();
         assert!(
-            seen(cstr_ptr(&(*qi).name)).starts_with("[display-panes/"),
+            seen((*qi).name_ptr()).starts_with("[display-panes/"),
             "{queued:?}"
         );
         assert!(matches!((*qi).type_0, CmdqType::Command { .. }));
@@ -536,7 +536,7 @@ fn exec_with_F_runs_the_else_commands_when_false() {
         let queued = r.queue.names();
         assert_eq!(queued.len(), 1, "{queued:?}");
         assert!(
-            seen(cstr_ptr(&(*(r.queue.start())).name)).starts_with("[run-shell/"),
+            seen((*(r.queue.start())).name_ptr()).starts_with("[run-shell/"),
             "{queued:?}"
         );
         assert_eq!(r.queue.discard(), 1);
@@ -553,7 +553,7 @@ fn exec_with_F_treats_a_leading_zero_as_false() {
         let queued = r.queue.names();
         assert_eq!(queued.len(), 1, "{queued:?}");
         assert!(
-            seen(cstr_ptr(&(*(r.queue.start())).name)).starts_with("[run-shell/"),
+            seen((*(r.queue.start())).name_ptr()).starts_with("[run-shell/"),
             "{queued:?}"
         );
         assert_eq!(r.queue.discard(), 1);
@@ -580,7 +580,7 @@ fn exec_with_F_expands_a_true_condition_from_the_target() {
         let queued = r.queue.names();
         assert_eq!(queued.len(), 1, "{queued:?}");
         assert!(
-            seen(cstr_ptr(&(*(r.queue.start())).name)).starts_with("[display-panes/"),
+            seen((*(r.queue.start())).name_ptr()).starts_with("[display-panes/"),
             "{queued:?}"
         );
         assert_eq!(r.queue.discard(), 1);
@@ -597,7 +597,7 @@ fn exec_with_F_expands_a_false_condition_from_the_target() {
         let queued = r.queue.names();
         assert_eq!(queued.len(), 1, "{queued:?}");
         assert!(
-            seen(cstr_ptr(&(*(r.queue.start())).name)).starts_with("[run-shell/"),
+            seen((*(r.queue.start())).name_ptr()).starts_with("[run-shell/"),
             "{queued:?}"
         );
         assert_eq!(r.queue.discard(), 1);
@@ -614,7 +614,7 @@ fn exec_with_F_queues_commands_given_in_braces() {
         let queued = r.queue.names();
         assert_eq!(queued.len(), 1, "{queued:?}");
         assert!(
-            seen(cstr_ptr(&(*(r.queue.start())).name)).starts_with("[display-panes/"),
+            seen((*(r.queue.start())).name_ptr()).starts_with("[display-panes/"),
             "{queued:?}"
         );
         assert_eq!(r.queue.discard(), 1);
@@ -668,7 +668,7 @@ fn the_callback_runs_the_if_commands_on_a_clean_exit() {
         assert_eq!(queued.len(), 1, "{queued:?}");
         let qi = h.queue.start();
         assert!(
-            seen(cstr_ptr(&(*qi).name)).starts_with("[display-panes/"),
+            seen((*qi).name_ptr()).starts_with("[display-panes/"),
             "{queued:?}"
         );
         assert!(matches!((*qi).type_0, CmdqType::Command { .. }));
@@ -701,7 +701,7 @@ fn the_callback_runs_the_else_commands_after_a_nonzero_exit() {
         let queued = h.queue.names();
         assert_eq!(queued.len(), 1, "{queued:?}");
         assert!(
-            seen(cstr_ptr(&(*(h.queue.start())).name)).starts_with("[run-shell/"),
+            seen((*(h.queue.start())).name_ptr()).starts_with("[run-shell/"),
             "{queued:?}"
         );
 
@@ -720,7 +720,7 @@ fn the_callback_runs_the_else_commands_after_a_signal() {
         let queued = h.queue.names();
         assert_eq!(queued.len(), 1, "{queued:?}");
         assert!(
-            seen(cstr_ptr(&(*(h.queue.start())).name)).starts_with("[run-shell/"),
+            seen((*(h.queue.start())).name_ptr()).starts_with("[run-shell/"),
             "{queued:?}"
         );
 
@@ -754,7 +754,7 @@ fn the_callback_appends_to_the_clients_queue_when_headless() {
         assert_eq!(queued.len(), 1, "{queued:?}");
         let qi = h.queue.start();
         assert!(
-            seen(cstr_ptr(&(*qi).name)).starts_with("[display-panes/"),
+            seen((*qi).name_ptr()).starts_with("[display-panes/"),
             "{queued:?}"
         );
         assert!(matches!((*qi).type_0, CmdqType::Command { .. }));
@@ -821,7 +821,7 @@ fn the_callback_shows_the_error_on_the_message_line_of_a_session_client() {
         h.fire();
 
         assert!((*h.c).message_string.is_some());
-        let shown = seen(cstr_ptr(&(*h.c).message_string));
+        let shown = seen((*h.c).message_string_ptr());
         assert_eq!(
             shown, "Unknown command: definitely-not-a-command",
             "{shown}"

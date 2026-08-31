@@ -75,7 +75,7 @@ fn argument_bounds_accept_zero_or_one_command() {
 
         let mut one = cmd_parse_from_string(c"list-commands list-keys".as_ptr(), null_mut());
         assert_eq!(one.status, CMD_PARSE_SUCCESS);
-        let first = cmd_list_first(one.cmdlist.as_ref().unwrap().as_ptr());
+        let first = cmd_list_first(one.cmdlist.as_ref().unwrap());
         assert_eq!(seen(args_string(cmd_get_args(&*first), 0)), "list-keys");
         let _ = one.cmdlist.take();
 

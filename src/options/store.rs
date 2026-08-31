@@ -192,7 +192,9 @@ unsafe fn options_value_to_string(
 ) -> CString {
     unsafe {
         if is_command(&*o) {
-            return cmd_list_print((*ov).cmdlist(), 0);
+            return (*ov)
+                .cmdlist()
+                .map_or_else(CString::default, |cmdlist| cmd_list_print(cmdlist, 0));
         }
         if is_number(&*o) {
             return match table_of(o).type_0 {
@@ -710,7 +712,7 @@ pub unsafe fn options_pane_colours(oo: *mut options) -> Option<[c_int; 256]> {
 
 /// Points the palette's default table at what the `pane-colours` option of
 /// `oo` holds.
-pub unsafe fn options_load_pane_colours(oo: *mut options, p: *mut colour_palette) {
+pub unsafe fn options_load_pane_colours(oo: *mut options, p: Option<&mut colour_palette>) {
     unsafe { colour_palette_from_defaults(p, options_pane_colours(oo).as_ref()) }
 }
 
@@ -1466,7 +1468,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         if name == c"user-keys" {
             for c in client_walk() {
                 if (*c).tty.flags & TTY_OPENED != 0 {
-                    tty_keys_build(&raw mut (*c).tty);
+                    tty_keys_build(&mut (*c).tty);
                 }
             }
         }
@@ -1488,7 +1490,7 @@ pub unsafe fn options_push_changes(name: &CStr) {
         }
         if name == c"pane-colours" {
             for wp in pane_walk() {
-                options_load_pane_colours((*wp).options_ptr(), &raw mut (*wp).palette);
+                options_load_pane_colours((*wp).options_ptr(), Some(&mut (*wp).palette));
             }
         }
         if name == c"pane-border-status"
@@ -1524,13 +1526,13 @@ pub unsafe fn options_push_changes(name: &CStr) {
             input_set_buffer_size(options_get_number(global_options, name.as_ptr()) as size_t);
         }
         if name == c"history-limit" {
-            for s in each_session() {
-                session_update_history(s.as_ptr());
+            for s_ref in each_session() {
+                session_update_history(&s_ref);
             }
         }
 
-        for s in each_session() {
-            status_update_cache(s.as_ptr());
+        for s_ref in each_session() {
+            status_update_cache(&s_ref);
         }
         recalculate_sizes();
         for c in client_walk() {

@@ -73,13 +73,11 @@ unsafe fn value_at(values: *mut args_value_t, count: u_int, i: u_int) -> Option<
 }
 
 /// The entries of a flag tree, in flag order.
-fn entries(tree: *mut args_tree) -> impl Iterator<Item = *mut args_entry> {
-    let all: Vec<*mut args_entry> = unsafe {
-        (*tree)
-            .values()
-            .map(|entry| entry.as_ref() as *const args_entry as *mut args_entry)
-            .collect()
-    };
+fn entries(tree: &args_tree) -> impl Iterator<Item = *mut args_entry> {
+    let all: Vec<*mut args_entry> = tree
+        .values()
+        .map(|entry| entry.as_ref() as *const args_entry as *mut args_entry)
+        .collect();
     all.into_iter()
 }
 
@@ -147,12 +145,9 @@ unsafe fn args_value_as_string(value: &mut args_value_t) -> &CStr {
             ArgsValue::None => c"",
             ArgsValue::Commands { cmdlist, cached } => {
                 if cached.is_none() {
-                    let printed = cmd_list_print(
-                        cmdlist
-                            .as_ref()
-                            .map_or(::core::ptr::null(), |list| list.as_ptr()),
-                        0,
-                    );
+                    let printed = cmdlist
+                        .as_ref()
+                        .map_or_else(CString::default, |list| cmd_list_print(list, 0));
                     *cached = Some(printed);
                 }
                 cached.as_ref().unwrap().as_c_str()
@@ -451,9 +446,7 @@ unsafe fn args_copy_copy_value(to: *mut args_value_t, from: *const args_value_t,
                 ArgsValue::String(expanded)
             }
             ArgsValue::Commands { cmdlist, .. } => ArgsValue::Commands {
-                cmdlist: cmdlist
-                    .as_ref()
-                    .map(|list| cmd_list_copy(list.as_ptr(), argv)),
+                cmdlist: cmdlist.as_ref().map(|list| cmd_list_copy(list, argv)),
                 cached: None,
             },
             ArgsValue::None => ArgsValue::None,
@@ -466,7 +459,7 @@ pub unsafe fn args_copy(args: *mut args, argv: &[CString]) -> Box<args> {
         cmd_log_argv(argv, c"%s".as_ptr(), fmt_args![c"args_copy".as_ptr()]);
         let mut new_args = args_create();
         let new_args_ptr = &raw mut *new_args;
-        for entry in entries(&raw mut (*args).tree) {
+        for entry in entries(&(*args).tree) {
             if (*entry).values.is_empty() {
                 for _ in 0..(*entry).count {
                     args_set(new_args_ptr, (*entry).flag, None, 0);
@@ -522,12 +515,9 @@ pub unsafe fn args_to_vector(args: &args) -> Vec<CString> {
             match &value.value {
                 ArgsValue::String(string) => argv.push(string.clone()),
                 ArgsValue::Commands { cmdlist, .. } => {
-                    let s = cmd_list_print(
-                        cmdlist
-                            .as_ref()
-                            .map_or(::core::ptr::null(), |list| list.as_ptr()),
-                        0,
-                    );
+                    let s = cmdlist
+                        .as_ref()
+                        .map_or_else(CString::default, |list| cmd_list_print(list, 0));
                     argv.push(s);
                 }
                 ArgsValue::None => {}
@@ -560,12 +550,9 @@ unsafe fn args_print_add_value(out: &mut Vec<u8>, value: *mut args_value_t) {
         }
         match &(*value).value {
             ArgsValue::Commands { cmdlist, .. } => {
-                let expanded = cmd_list_print(
-                    cmdlist
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |list| list.as_ptr()),
-                    0,
-                );
+                let expanded = cmdlist
+                    .as_ref()
+                    .map_or_else(CString::default, |list| cmd_list_print(list, 0));
                 out.extend_from_slice(b"{ ");
                 out.extend_from_slice(expanded.as_bytes());
                 out.extend_from_slice(b" }");
@@ -582,7 +569,7 @@ unsafe fn args_print_add_value(out: &mut Vec<u8>, value: *mut args_value_t) {
 pub unsafe fn args_print(args: *mut args) -> CString {
     unsafe {
         let mut out: Vec<u8> = Vec::new();
-        for entry in entries(&raw mut (*args).tree) {
+        for entry in entries(&(*args).tree) {
             if (*entry).flags & ARGS_ENTRY_OPTIONAL_VALUE != 0 || !(*entry).values.is_empty() {
                 continue;
             }
@@ -594,7 +581,7 @@ pub unsafe fn args_print(args: *mut args) -> CString {
             }
         }
         let mut last: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-        for entry in entries(&raw mut (*args).tree) {
+        for entry in entries(&(*args).tree) {
             let flag = |out: &mut Vec<u8>| {
                 if !out.is_empty() {
                     out.push(b' ');
@@ -878,7 +865,7 @@ pub(crate) unsafe fn args_make_commands(
             if argv.is_empty() {
                 return Some(cmdlist.clone());
             }
-            return Some(cmd_list_copy(cmdlist.as_ptr(), argv));
+            return Some(cmd_list_copy(cmdlist, argv));
         }
         let mut cmd = match state.cmd.as_deref() {
             Some(c) => c.to_owned(),
@@ -922,7 +909,7 @@ pub(crate) unsafe fn args_make_commands(
 pub unsafe fn args_make_commands_get_command(state: &args_command_state) -> CString {
     unsafe {
         if let Some(cmdlist) = state.cmdlist.as_ref() {
-            return match non_null(cmd_list_first(cmdlist.as_ptr())) {
+            return match non_null(cmd_list_first(cmdlist)) {
                 Some(first) => cmd_get_entry(&*first).name.to_owned(),
                 None => CString::default(),
             };

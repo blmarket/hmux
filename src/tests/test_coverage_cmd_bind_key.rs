@@ -23,7 +23,7 @@ use crate::cmd::cmd_bind_key::{
     ARGS_PARSE_COMMANDS_OR_STRING, CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR,
     CMD_RETURN_NORMAL, KEYC_F5, KEYC_UNKNOWN, cmd_bind_key_entry,
 };
-use crate::cmd::{cmd_get_args_ptr, cmd_list_all};
+use crate::cmd::cmd_list_all;
 use crate::input::KEYC_CTRL;
 use crate::key_bindings::{
     KEY_BINDING_REPEAT, key_binding_cmdlist_ref, key_binding_flags, key_binding_key,
@@ -100,7 +100,7 @@ fn bind_item(line: &'static CStr, number: u_int) -> Item {
 unsafe fn command_names(list: &Option<CmdListRef>) -> Vec<String> {
     unsafe {
         let list = list.as_ref().expect("a binding has a command list");
-        cmd_list_all(list.as_ptr())
+        cmd_list_all(&list)
             .into_iter()
             .map(|cmd| (*cmd).entry.name.to_string_lossy().into_owned())
             .collect()
@@ -354,7 +354,7 @@ fn braced_commands_are_attached_directly_and_take_an_extra_reference() {
         let mut item = bind_item(c"bind-key e { display-panes }", 1);
         assert_eq!(exec_bind_key(&mut item), CMD_RETURN_NORMAL);
 
-        let args = cmd_get_args_ptr(&*item.cmd());
+        let args = item.args_ptr();
         assert_eq!(args_count(&*args), 2);
         let value = args_value(args, 1);
         let ArgsValue::Commands { cmdlist: list, .. } = &(*value).value else {

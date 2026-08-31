@@ -82,7 +82,7 @@ impl Ctx {
         window.add_pane(&mut pane);
         let wp = pane.ptr();
         let ictx = unsafe {
-            colour_palette_init(&raw mut (*wp).palette);
+            colour_palette_init(&mut (*wp).palette);
             let ctx = input_init(crate::input::InputOwner::Pane((*wp).id), Stream::NONE);
             (*wp).ictx = Some(ctx);
             crate::input::ictx_opt(&(*wp).ictx).unwrap_or(::core::ptr::null_mut())
@@ -107,7 +107,7 @@ impl Drop for Ctx {
             if let Some(ictx) = (*wp).ictx.take() {
                 input_free_box(ictx);
             }
-            colour_palette_free(&raw mut (*wp).palette);
+            colour_palette_free(Some(&mut (*wp).palette));
         }
     }
 }

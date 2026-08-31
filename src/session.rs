@@ -91,6 +91,12 @@ pub struct session_group {
     name: Option<CString>,
     sessions: session_group_sessions,
 }
+impl session_group {
+    /// The name the group is filed under.
+    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.name)
+    }
+}
 
 /// Every session group the server holds, by name.
 pub type session_groups_t = ::std::collections::BTreeMap<CString, Box<session_group>>;
@@ -128,13 +134,13 @@ pub(crate) fn session_ref_from_ptr(s: *mut session) -> Option<SessionRef> {
 /// makes it discoverable and what holds it alive.
 pub(crate) fn session_registry_insert(reference: &SessionRef) {
     unsafe {
-        let name = name_of(cstr_ptr(&(*reference.as_ptr()).name)).to_owned();
+        let name = name_of((*reference.as_ptr()).name_ptr()).to_owned();
         sessions.map().insert(name, reference.clone());
     }
 }
 
 pub(crate) fn session_registry_remove(s: *mut session) -> Option<SessionRef> {
-    unsafe { sessions.map().remove(name_of(cstr_ptr(&(*s).name))) }
+    unsafe { sessions.map().remove(name_of((*s).name_ptr())) }
 }
 
 pub(crate) fn session_registry_clear() {
@@ -229,11 +235,28 @@ impl session {
     pub(crate) fn options_ptr(&self) -> *mut options {
         options_ptr(&self.options)
     }
+
+    /// The name the session is filed under.
+    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.name)
+    }
+
+    /// The directory a pane started in the session begins in, or null when the
+    /// session has none.
+    pub(crate) fn cwd_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.cwd)
+    }
+
+    /// The environment a pane started in the session is given, or null for a
+    /// session that carries none.
+    pub(crate) fn environ_ptr(&self) -> *mut environ_t {
+        environ_ptr(&self.environ)
+    }
 }
 
 /// The name the session is filed under.
 pub unsafe fn session_name(s: *const session) -> *const c_char {
-    unsafe { cstr_ptr(&(*s).name) }
+    unsafe { (*s).name_ptr() }
 }
 
 /// The name the session is filed under, as a copy of its own, for a caller
@@ -282,7 +305,7 @@ pub unsafe fn session_options(s: *const session) -> *mut options {
 
 /// The environment a pane started in the session is given.
 pub unsafe fn session_environ(s: *const session) -> *mut environ_t {
-    unsafe { environ_ptr(&(*s).environ) }
+    unsafe { (*s).environ_ptr() }
 }
 
 /// The terminal settings the first client attached with, if it had any.
@@ -326,8 +349,8 @@ pub unsafe fn session_set_alerted(s: *mut session, alerted: bool) {
 
 /// Starts the count of attached clients again, which is where
 /// `recalculate_sizes` begins its recount.
-pub unsafe fn session_clear_attached(s: *mut session) {
-    unsafe { (*s).attached = 0 };
+pub(crate) fn session_clear_attached(s_ref: &SessionRef) {
+    unsafe { (*s_ref.as_ptr()).attached = 0 };
 }
 
 /// Counts one more attached client against the session.
@@ -455,13 +478,8 @@ pub(crate) unsafe fn group_walk(sg: *mut session_group) -> impl Iterator<Item = 
 }
 
 /// The windows linked into a session, in index order.
-unsafe fn winlinks_of(ww: *mut winlinks) -> impl Iterator<Item = *mut winlink> {
-    let all: Vec<*mut winlink> = unsafe {
-        (*ww)
-            .values()
-            .map(|wl| wl.as_ref() as *const winlink as *mut winlink)
-            .collect()
-    };
+unsafe fn winlinks_of(ww: &mut winlinks) -> impl Iterator<Item = *mut winlink> {
+    let all: Vec<*mut winlink> = ww.values_mut().map(|wl| &raw mut **wl).collect();
     all.into_iter()
 }
 
@@ -540,7 +558,7 @@ pub unsafe fn session_create(
             ..session::default()
         });
         let s = reference.as_ptr();
-        status_update_cache(s);
+        status_update_cache(&reference);
         if !name.is_null() {
             (*s).name = Some(CStr::from_ptr(name).to_owned());
             (*s).id = next_session_id;
@@ -554,7 +572,7 @@ pub unsafe fn session_create(
                 } else {
                     xasprintf(c"%s-%u".as_ptr(), fmt_args![prefix, (*s).id])
                 });
-                if session_of_name(sessions.map(), name_of(cstr_ptr(&(*s).name))).is_null() {
+                if session_of_name(sessions.map(), name_of((*s).name_ptr())).is_null() {
                     break;
                 }
             }
@@ -606,16 +624,16 @@ pub unsafe fn session_destroy(s: *mut session, notify: c_int, from: *const c_cha
                 (*s).lastw.remove(0);
                 continue;
             }
-            winlink_stack_remove(&raw mut (*s).lastw, wl);
+            winlink_stack_remove(&mut (*s).lastw, wl);
         }
         while let Some(wl) = (*s)
             .windows
-            .values()
+            .values_mut()
             .next()
-            .map(|wl| wl.as_ref() as *const winlink as *mut winlink)
+            .map(|wl| &raw mut **wl)
         {
             notify_session_window(c"window-unlinked".as_ptr(), s, (*wl).window());
-            winlink_remove(&raw mut (*s).windows, wl);
+            winlink_remove(&mut (*s).windows, wl);
         }
         (*s).cwd = None;
         if let Some(session_ref) = session_ref {
@@ -729,7 +747,7 @@ pub unsafe fn session_attach(
     cause: &mut Option<CString>,
 ) -> *mut winlink {
     unsafe {
-        let wl = winlink_add(&raw mut (*s).windows, idx);
+        let wl = winlink_add(&mut (*s).windows, idx);
         if wl.is_null() {
             *cause = Some(xasprintf(c"index in use: %d".as_ptr(), fmt_args![idx]));
             return null_mut::<winlink>();
@@ -751,8 +769,8 @@ pub unsafe fn session_detach(s: *mut session, wl: *mut winlink) -> c_int {
         }
         (*wl).flags &= !WINLINK_ALERTFLAGS;
         notify_session_window(c"window-unlinked".as_ptr(), s, (*wl).window());
-        winlink_stack_remove(&raw mut (*s).lastw, wl);
-        winlink_remove(&raw mut (*s).windows, wl);
+        winlink_stack_remove(&mut (*s).lastw, wl);
+        winlink_remove(&mut (*s).windows, wl);
         session_group_synchronize_from(s);
         (*s).windows.is_empty() as c_int
     }
@@ -797,8 +815,8 @@ impl Walk {
     unsafe fn wrap(self, s: *mut session) -> *mut winlink {
         unsafe {
             match self {
-                Walk::Next => winlinks_first(&raw mut (*s).windows),
-                Walk::Previous => winlinks_last(&raw mut (*s).windows),
+                Walk::Next => winlinks_first(&mut (*s).windows),
+                Walk::Previous => winlinks_last(&mut (*s).windows),
             }
         }
     }
@@ -847,7 +865,7 @@ pub unsafe fn session_previous(s: *mut session, alert: c_int) -> c_int {
 }
 
 pub unsafe fn session_select(s: *mut session, idx: c_int) -> c_int {
-    unsafe { session_set_current(s, winlink_find_by_index(&raw mut (*s).windows, idx)) }
+    unsafe { session_set_current(s, winlink_find_by_index(&mut (*s).windows, idx)) }
 }
 
 /// Moves `s` back to the window on top of the stack of the ones it has been
@@ -875,8 +893,8 @@ pub unsafe fn session_set_current(s: *mut session, wl: *mut winlink) -> c_int {
         if wl == old {
             return 1;
         }
-        winlink_stack_remove(&raw mut (*s).lastw, wl);
-        winlink_stack_push(&raw mut (*s).lastw, old);
+        winlink_stack_remove(&mut (*s).lastw, wl);
+        winlink_stack_push(&mut (*s).lastw, old);
         session_set_curw(s, wl);
         if options_get_number(global_options, c"focus-events".as_ptr()) != 0 {
             if !old.is_null() {
@@ -907,7 +925,7 @@ pub unsafe fn session_group_find(name: *const c_char) -> *mut session_group {
 /// The name the group was made under, which is what `#{session_group}` shows
 /// and what a session joining by name is matched against.
 pub unsafe fn session_group_name(sg: *mut session_group) -> &'static CStr {
-    unsafe { name_of(cstr_ptr(&(*sg).name)) }
+    unsafe { name_of((*sg).name_ptr()) }
 }
 
 pub unsafe fn session_group_new(name: *const c_char) -> *mut session_group {
@@ -1020,7 +1038,7 @@ pub unsafe fn session_group_synchronize_from(target: *mut session) {
 /// in the ordinary way of things, so that is a shape only a test builds.
 unsafe fn session_group_synchronize1(target: *mut session, s: *mut session) {
     unsafe {
-        let ww = &raw mut (*target).windows;
+        let ww = &mut (*target).windows;
         if (*ww).is_empty() {
             return;
         }
@@ -1033,7 +1051,7 @@ unsafe fn session_group_synchronize1(target: *mut session, s: *mut session) {
         }
         let mut old_windows = ::core::mem::take(&mut (*s).windows);
         for wl in winlinks_of(ww) {
-            let wl2 = winlink_add(&raw mut (*s).windows, (*wl).idx);
+            let wl2 = winlink_add(&mut (*s).windows, (*wl).idx);
             (*wl2).set_session(s);
             winlink_set_window(wl2, (*wl).window());
             notify_session_window(c"window-linked".as_ptr(), s, (*wl2).window());
@@ -1043,23 +1061,23 @@ unsafe fn session_group_synchronize1(target: *mut session, s: *mut session) {
             Some(idx) => idx,
             None => (*session_get_curw(target)).idx,
         };
-        session_set_curw(s, winlink_find_by_index(&raw mut (*s).windows, idx));
+        session_set_curw(s, winlink_find_by_index(&mut (*s).windows, idx));
         for idx in ::core::mem::take(&mut (*s).lastw) {
-            let wl2 = winlink_find_by_index(&raw mut (*s).windows, idx);
+            let wl2 = winlink_find_by_index(&mut (*s).windows, idx);
             if !wl2.is_null() {
                 lastw_insert_tail(s, wl2);
                 (*wl2).flags |= WINLINK_VISITED;
             }
         }
         while let Some(wl) = old_windows
-            .values()
+            .values_mut()
             .next()
-            .map(|wl| wl.as_ref() as *const winlink as *mut winlink)
+            .map(|wl| &raw mut **wl)
         {
-            if winlink_find_by_window_id(&raw mut (*s).windows, (*(*wl).window()).id).is_null() {
+            if winlink_find_by_window_id(&mut (*s).windows, (*(*wl).window()).id).is_null() {
                 notify_session_window(c"window-unlinked".as_ptr(), s, (*wl).window());
             }
-            winlink_remove(&raw mut old_windows, wl);
+            winlink_remove(&mut old_windows, wl);
         }
     }
 }
@@ -1085,8 +1103,8 @@ pub unsafe fn session_renumber_windows(s: *mut session) {
         let mut new_idx = options_get_number((*s).options_ptr(), c"base-index".as_ptr()) as c_int;
         let mut new_curw_idx = 0 as c_int;
         let mut marked_idx = -1;
-        for wl in winlinks_of(&raw mut old_wins) {
-            let wl_new = winlink_add(&raw mut (*s).windows, new_idx);
+        for wl in winlinks_of(&mut old_wins) {
+            let wl_new = winlink_add(&mut (*s).windows, new_idx);
             (*wl_new).set_session(s);
             winlink_set_window(wl_new, (*wl).window());
             (*wl_new).flags |= (*wl).flags & WINLINK_ALERTFLAGS;
@@ -1099,33 +1117,30 @@ pub unsafe fn session_renumber_windows(s: *mut session) {
             new_idx = new_idx.wrapping_add(1);
         }
         for idx in ::core::mem::take(&mut (*s).lastw) {
-            let wl = winlink_find_by_index(&raw mut old_wins, idx);
+            let wl = winlink_find_by_index(&mut old_wins, idx);
             if wl.is_null() {
                 continue;
             }
             (*wl).flags &= !WINLINK_VISITED;
-            let wl_new = winlink_find_by_window(&raw mut (*s).windows, (*wl).window());
+            let wl_new = winlink_find_by_window(&mut (*s).windows, (*wl).window());
             if !wl_new.is_null() {
                 lastw_insert_tail(s, wl_new);
                 (*wl_new).flags |= WINLINK_VISITED;
             }
         }
         if marked_idx != -1 {
-            marked_pane.set_winlink(winlink_find_by_index(&raw mut (*s).windows, marked_idx));
+            marked_pane.set_winlink(winlink_find_by_index(&mut (*s).windows, marked_idx));
             if marked_pane.winlink().is_null() {
                 server_clear_marked();
             }
         }
-        session_set_curw(
-            s,
-            winlink_find_by_index(&raw mut (*s).windows, new_curw_idx),
-        );
+        session_set_curw(s, winlink_find_by_index(&mut (*s).windows, new_curw_idx));
         while let Some(wl) = old_wins
-            .values()
+            .values_mut()
             .next()
-            .map(|wl| wl.as_ref() as *const winlink as *mut winlink)
+            .map(|wl| &raw mut **wl)
         {
-            winlink_remove(&raw mut old_wins, wl);
+            winlink_remove(&mut old_wins, wl);
         }
     }
 }
@@ -1136,7 +1151,7 @@ pub unsafe fn session_theme_changed(s: *mut session) {
         if s.is_null() {
             return;
         }
-        for wl in winlinks_of(&raw mut (*s).windows) {
+        for wl in winlinks_of(&mut (*s).windows) {
             for wp in panes_of((*wl).window()) {
                 (*wp).flags |= PANE_THEMECHANGED;
             }
@@ -1146,12 +1161,13 @@ pub unsafe fn session_theme_changed(s: *mut session) {
 
 /// Gives the session's `history-limit` to every pane in it, collecting what a
 /// pane holds beyond it there and then.
-pub unsafe fn session_update_history(s: *mut session) {
+pub(crate) unsafe fn session_update_history(s_ref: &SessionRef) {
     unsafe {
+        let s = s_ref.as_ptr();
         let limit = options_get_number((*s).options_ptr(), c"history-limit".as_ptr()) as u_int;
-        for wl in winlinks_of(&raw mut (*s).windows) {
+        for wl in winlinks_of(&mut (*s).windows) {
             for wp in panes_of((*wl).window()) {
-                let gd = screen_grid_ptr(&raw mut (*wp).base);
+                let gd = screen_grid_ptr(&mut (*wp).base);
                 let osize = (*gd).hsize;
                 (*gd).hlimit = limit;
                 grid_collect_history(&mut *gd, 1);

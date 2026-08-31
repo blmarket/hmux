@@ -402,7 +402,7 @@ fn joining_a_pane_to_itself_is_refused_and_touches_nothing() {
         );
         assert_eq!((*caller).retval, 1);
 
-        assert_eq!(winlink_count(&raw mut (*chain.sptr(0)).windows), 1);
+        assert_eq!(winlink_count(&(*chain.sptr(0)).windows), 1);
         assert_eq!(window_count_panes(w0, 1), 2);
         assert_eq!(pane_at(w0, 0), panes[0]);
         assert_eq!(pane_at(w0, 1), panes[1]);
@@ -450,7 +450,7 @@ fn an_invalid_l_size_refuses_the_command_before_anything_moves() {
         assert_eq!((*src_panes[0]).window, w_src);
         assert_eq!((*dst_panes[0]).window, w_dst);
         assert_eq!(window_get_active(w_dst), dst_panes[0]);
-        assert_eq!(winlink_count(&raw mut (*chain.sptr(0)).windows), 2);
+        assert_eq!(winlink_count(&(*chain.sptr(0)).windows), 2);
     }
 }
 
@@ -601,7 +601,7 @@ fn joining_below_the_target_moves_activates_and_selects_it() {
         );
 
         let s = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 2);
+        assert_eq!(winlink_count(&(*s).windows), 2);
         assert_eq!(
             session_get_curw(s),
             wl_dst,
@@ -675,7 +675,7 @@ fn with_d_the_destination_keeps_its_active_pane_and_current_alone() {
         let s = chain.sptr(0);
         assert_eq!(session_get_curw(s), wl_src, "no selection happened either");
         assert!((*s).lastw.is_empty());
-        assert_eq!(winlink_count(&raw mut (*s).windows), 2);
+        assert_eq!(winlink_count(&(*s).windows), 2);
     }
 }
 
@@ -765,12 +765,12 @@ fn emptying_the_source_window_unlinks_it_from_its_session() {
 
         let s = chain.sptr(0);
         assert_eq!(
-            winlink_count(&raw mut (*s).windows),
+            winlink_count(&(*s).windows),
             1,
             "the emptied window was unlinked"
         );
-        assert!(winlink_find_by_index(&raw mut (*s).windows, 0).is_null());
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 1), wl_dst);
+        assert!(winlink_find_by_index(&mut (*s).windows, 0).is_null());
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 1), wl_dst);
         assert_eq!(
             session_get_curw(s),
             wl_dst,
@@ -805,7 +805,7 @@ fn moving_across_sessions_follows_the_destination_session() {
 
         let s_home = chain.sptr(0);
         let s_away = chain.sptr(away);
-        assert_eq!(winlink_count(&raw mut (*s_home).windows), 1);
+        assert_eq!(winlink_count(&(*s_home).windows), 1);
         assert_eq!(window_count_panes(w_src, 1), 1, "one pane stayed home");
         assert_eq!(
             session_get_curw(s_home),
@@ -813,8 +813,8 @@ fn moving_across_sessions_follows_the_destination_session() {
             "the home session was not touched"
         );
 
-        assert_eq!(winlink_count(&raw mut (*s_away).windows), 1);
-        assert_eq!(winlink_find_by_index(&raw mut (*s_away).windows, 0), wl_dst);
+        assert_eq!(winlink_count(&(*s_away).windows), 1);
+        assert_eq!(winlink_find_by_index(&mut (*s_away).windows, 0), wl_dst);
         let w_dst = (*wl_dst).window();
         assert_eq!(pane_at(w_dst, 0), kept);
         assert_eq!(pane_at(w_dst, 1), moved);

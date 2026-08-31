@@ -157,7 +157,7 @@ fn window_pane_search_finds_written_text() {
     unsafe {
         let wp = p.ptr();
         // write "hello world" on first line via grid
-        let grid = screen_grid_ptr(&raw mut (*wp).base);
+        let grid = screen_grid_ptr(&mut (*wp).base);
         assert!(!grid.is_null());
         let hello = b"hello world";
         for (i, &ch) in hello.iter().enumerate() {

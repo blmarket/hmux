@@ -96,7 +96,7 @@ impl Writer {
             ctx: Box::new(screen_write_ctx::default()),
         };
         let s = w.screen.ptr();
-        unsafe { screen_write_start(&mut w.ctx, s) };
+        unsafe { screen_write_start(&mut w.ctx, &mut *s) };
         w
     }
 
@@ -135,14 +135,14 @@ impl Writer {
     fn puts(&mut self, text: &str) {
         for byte in text.bytes() {
             let gc = ascii(byte);
-            unsafe { screen_write_cell(&mut *self.ptr(), &raw const gc) };
+            unsafe { screen_write_cell(&mut *self.ptr(), &gc) };
         }
     }
 
     fn collect(&mut self, text: &str) {
         for byte in text.bytes() {
             let gc = ascii(byte);
-            unsafe { screen_write_collect_add(&mut *self.ptr(), &raw const gc) };
+            unsafe { screen_write_collect_add(&mut *self.ptr(), &gc) };
         }
     }
 
@@ -190,7 +190,7 @@ impl PaneWriter {
         };
         w.window.add_pane(&mut w.pane);
         let (wp, screen) = (w.pane.ptr(), w.pane.screen());
-        unsafe { screen_write_start_pane(&mut w.ctx, wp, screen) };
+        unsafe { screen_write_start_pane(&mut w.ctx, wp, Some(&mut *screen)) };
         w
     }
 
@@ -211,7 +211,7 @@ impl PaneWriter {
     }
 
     fn grid(&mut self) -> *mut grid {
-        unsafe { screen_grid_ptr(self.pane.screen()) }
+        unsafe { screen_grid_ptr(&mut *self.pane.screen()) }
     }
 
     fn move_to(&mut self, px: u_int, py: u_int) {
@@ -221,14 +221,14 @@ impl PaneWriter {
     fn puts(&mut self, text: &str) {
         for byte in text.bytes() {
             let gc = ascii(byte);
-            unsafe { screen_write_cell(&mut *self.ptr(), &raw const gc) };
+            unsafe { screen_write_cell(&mut *self.ptr(), &gc) };
         }
     }
 
     fn collect(&mut self, text: &str) {
         for byte in text.bytes() {
             let gc = ascii(byte);
-            unsafe { screen_write_collect_add(&mut *self.ptr(), &raw const gc) };
+            unsafe { screen_write_collect_add(&mut *self.ptr(), &gc) };
         }
     }
 
@@ -390,7 +390,7 @@ fn the_client_callback_turns_a_client_down_before_working_out_offsets() {
         assert_eq!(cb(&mut ttyctx, c), 0);
         session_set_curw(
             a.session.ptr(),
-            crate::window::winlink_find_by_index(&raw mut (*a.session.ptr()).windows, 0),
+            crate::window::winlink_find_by_index(&mut (*a.session.ptr()).windows, 0),
         );
         unlink(&mut a.session, wl);
     }
@@ -574,7 +574,7 @@ fn wrapped_text_that_breaks_on_a_space_drops_it() {
             2,
             2,
             0,
-            &raw const gc,
+            &gc,
             c"%s".as_ptr(),
             fmt_args![c"ab cd".as_ptr()],
         )
@@ -595,7 +595,7 @@ fn writing_a_string_steps_over_bytes_that_spell_nothing() {
     unsafe {
         screen_write_puts(
             &mut *w.ptr(),
-            &raw const gc,
+            &gc,
             c"%s".as_ptr(),
             fmt_args![broken.as_ptr() as *const c_char],
         )
@@ -606,7 +606,7 @@ fn writing_a_string_steps_over_bytes_that_spell_nothing() {
     unsafe {
         screen_write_puts(
             &mut *w.ptr(),
-            &raw const gc,
+            &gc,
             c"%s".as_ptr(),
             fmt_args![good.as_ptr() as *const c_char],
         )
@@ -623,7 +623,7 @@ fn a_fast_copy_stops_at_a_character_that_would_not_fit() {
     let mut src = Writer::new(4, 1);
     src.move_to(2, 0);
     let wide = cell(WIDE, 2);
-    unsafe { screen_write_cell(&mut *src.ptr(), &raw const wide) };
+    unsafe { screen_write_cell(&mut *src.ptr(), &wide) };
     src.flush();
 
     let mut dst = Writer::new(4, 1);
@@ -631,9 +631,9 @@ fn a_fast_copy_stops_at_a_character_that_would_not_fit() {
         let from = src.s();
         screen_write_fast_copy(
             &mut *dst.ptr(),
-            from,
+            &*from,
             0,
-            (*screen_grid_ptr(from)).hsize,
+            (*screen_grid_ptr(&mut *from)).hsize,
             3,
             1,
         );
@@ -656,14 +656,14 @@ fn a_preview_slides_up_to_fit_a_cursor_near_the_bottom() {
     unsafe {
         (*src.s()).cx = 0;
         (*src.s()).cy = 5;
-        screen_write_preview(&mut *dst.ptr(), src.s(), 4, 3);
+        screen_write_preview(&mut *dst.ptr(), &*src.s(), 4, 3);
     }
     assert_eq!(dst.lines(), ["", "", "zz"]);
 
     let mut top = Writer::new(4, 3);
     unsafe {
         (*src.s()).cy = 0;
-        screen_write_preview(&mut *top.ptr(), src.s(), 4, 3);
+        screen_write_preview(&mut *top.ptr(), &*src.s(), 4, 3);
     }
     assert_eq!(top.lines(), ["", "", ""]);
 }
@@ -707,9 +707,9 @@ fn a_single_visible_column_is_redrawn_by_what_the_cell_holds() {
         chosen.flags |= GRID_FLAG_SELECTED as u_char;
         grid_view_set_cell(&mut *w.grid(), 0, 0, &chosen);
         let mut sel = grid_default_cell;
-        screen_set_selection(w.pane.screen(), 0, 0, 0, 0, 0, 0, 0, &raw mut sel);
+        screen_set_selection(w.pane.screen(), 0, 0, 0, 0, 0, 0, 0, &mut sel);
         screen_write_clearcharacter(&mut *w.ptr(), 1, 8);
-        screen_clear_selection(w.pane.screen());
+        screen_clear_selection(&mut *w.pane.screen());
         gc = grid_view_get_cell(&*w.grid(), 0, 0);
         assert_eq!(gc.flags as c_int & GRID_FLAG_SELECTED, GRID_FLAG_SELECTED);
 
@@ -965,7 +965,7 @@ fn a_padding_cell_is_not_written_at_all() {
     let mut w = Writer::new(4, 2);
     let mut gc = ascii(b'a');
     gc.flags |= GRID_FLAG_PADDING as u_char;
-    unsafe { screen_write_cell(&mut *w.ptr(), &raw const gc) };
+    unsafe { screen_write_cell(&mut *w.ptr(), &gc) };
     assert_eq!(w.cursor(), (0, 0));
     assert_eq!(w.lines(), ["", ""]);
 }
@@ -980,7 +980,7 @@ fn with_wrapping_off_a_character_that_does_not_fit_is_dropped() {
     unsafe { screen_write_mode_clear(&mut *w.ptr(), MODE_WRAP) };
     w.move_to(3, 0);
     let wide = cell(WIDE, 2);
-    unsafe { screen_write_cell(&mut *w.ptr(), &raw const wide) };
+    unsafe { screen_write_cell(&mut *w.ptr(), &wide) };
     assert_eq!(w.cursor(), (3, 0));
     assert_eq!(w.lines(), ["", ""]);
 
@@ -1002,7 +1002,7 @@ fn a_cell_is_only_skipped_when_every_part_of_it_matches() {
     let _guard = globals();
     let mut w = Writer::new(6, 2);
     let accented = cell(&[b'a', 0xcc, 0x81], 1);
-    unsafe { screen_write_cell(&mut *w.ptr(), &raw const accented) };
+    unsafe { screen_write_cell(&mut *w.ptr(), &accented) };
     w.move_to(0, 0);
     w.puts("a");
     assert_eq!(w.cell_at(0, 0).data.size, 1);
@@ -1013,18 +1013,18 @@ fn a_cell_is_only_skipped_when_every_part_of_it_matches() {
         plain.move_to(0, 0);
         let mut fg = ascii(b'a');
         fg.fg = 1;
-        screen_write_cell(&mut *plain.ptr(), &raw const fg);
+        screen_write_cell(&mut *plain.ptr(), &fg);
         assert_eq!(plain.cell_at(0, 0).fg, 1);
 
         plain.move_to(1, 0);
         let mut bg = ascii(b'a');
         bg.bg = 2;
-        screen_write_cell(&mut *plain.ptr(), &raw const bg);
+        screen_write_cell(&mut *plain.ptr(), &bg);
         assert_eq!(plain.cell_at(1, 0).bg, 2);
 
         plain.move_to(2, 0);
         let two_bytes = cell(&[0xc3, 0xa9], 1);
-        screen_write_cell(&mut *plain.ptr(), &raw const two_bytes);
+        screen_write_cell(&mut *plain.ptr(), &two_bytes);
         assert_eq!(plain.cell_at(2, 0).data.size, 2);
     }
 }
@@ -1037,7 +1037,7 @@ fn a_selected_character_written_outside_a_selection_loses_the_flag() {
     let mut w = Writer::new(4, 2);
     let mut gc = ascii(b'a');
     gc.flags |= GRID_FLAG_SELECTED as u_char;
-    unsafe { screen_write_cell(&mut *w.ptr(), &raw const gc) };
+    unsafe { screen_write_cell(&mut *w.ptr(), &gc) };
     assert_eq!(w.cell_at(0, 0).flags as c_int & GRID_FLAG_SELECTED, 0);
     assert_eq!(w.lines(), ["a", ""]);
 }
@@ -1050,7 +1050,7 @@ fn writing_over_a_wide_character_in_a_pane_redraws_the_line() {
     let mut w = PaneWriter::new(6, 2);
     let wide = cell(WIDE, 2);
     unsafe {
-        screen_write_cell(&mut *w.ptr(), &raw const wide);
+        screen_write_cell(&mut *w.ptr(), &wide);
         w.move_to(0, 0);
         w.puts("x");
     }
@@ -1067,9 +1067,9 @@ fn a_combining_character_does_not_join_a_character_of_another_width() {
     let wide = cell(WIDE, 2);
     let acute = cell(ACUTE, 0);
     unsafe {
-        screen_write_cell(&mut *w.ptr(), &raw const wide);
+        screen_write_cell(&mut *w.ptr(), &wide);
         w.move_to(1, 0);
-        screen_write_cell(&mut *w.ptr(), &raw const acute);
+        screen_write_cell(&mut *w.ptr(), &acute);
     }
     assert_eq!(w.cell_at(0, 0).data.size, 3);
     assert_eq!(w.cursor(), (1, 0));
@@ -1084,12 +1084,12 @@ fn a_hangul_jamo_is_written_or_dropped_by_what_stands_in_front_of_it() {
     let mut w = Writer::new(4, 2);
     w.puts("a");
     let vowel = cell(JUNGSEONG, 1);
-    unsafe { screen_write_cell(&mut *w.ptr(), &raw const vowel) };
+    unsafe { screen_write_cell(&mut *w.ptr(), &vowel) };
     assert_eq!(w.cursor(), (1, 0));
     assert_eq!(w.cell_at(1, 0).data.size, 1);
 
     let lead = cell(CHOSEONG, 1);
-    unsafe { screen_write_cell(&mut *w.ptr(), &raw const lead) };
+    unsafe { screen_write_cell(&mut *w.ptr(), &lead) };
     assert_eq!(w.cursor(), (2, 0));
     assert_eq!(w.cell_at(1, 0).data.size, 3);
 }
@@ -1105,8 +1105,8 @@ fn characters_that_make_one_wider_character_are_joined() {
     unsafe {
         let first = cell(RI_U, 1);
         let second = cell(RI_S, 1);
-        screen_write_cell(&mut *flag.ptr(), &raw const first);
-        screen_write_cell(&mut *flag.ptr(), &raw const second);
+        screen_write_cell(&mut *flag.ptr(), &first);
+        screen_write_cell(&mut *flag.ptr(), &second);
     }
     assert_eq!(flag.cell_at(0, 0).data.size, 8);
     assert_eq!(flag.cell_at(0, 0).data.width, 2);
@@ -1116,8 +1116,8 @@ fn characters_that_make_one_wider_character_are_joined() {
     unsafe {
         let hand = cell(HAND, 1);
         let tone = cell(TONE, 1);
-        screen_write_cell(&mut *toned.ptr(), &raw const hand);
-        screen_write_cell(&mut *toned.ptr(), &raw const tone);
+        screen_write_cell(&mut *toned.ptr(), &hand);
+        screen_write_cell(&mut *toned.ptr(), &tone);
     }
     assert_eq!(toned.cell_at(0, 0).data.size, 8);
     assert_eq!(toned.cell_at(0, 0).data.width, 2);
@@ -1133,11 +1133,11 @@ fn a_character_that_will_not_fit_beside_the_last_is_written_on_its_own() {
     let mut w = Writer::new(6, 2);
     let long = cell(&[b'x'; 31], 1);
     unsafe {
-        screen_write_cell(&mut *w.ptr(), &raw const long);
+        screen_write_cell(&mut *w.ptr(), &long);
         w.puts("b");
         w.move_to(1, 0);
         let acute = cell(ACUTE, 0);
-        screen_write_cell(&mut *w.ptr(), &raw const acute);
+        screen_write_cell(&mut *w.ptr(), &acute);
     }
     assert_eq!(w.cell_at(0, 0).data.size, 31);
     assert_eq!(w.cell_at(1, 0).data.size, 2);
@@ -1154,7 +1154,7 @@ fn a_join_in_a_row_nobody_can_see_is_made_but_not_written() {
     w.move_to(0, 3);
     w.puts("a");
     let acute = cell(ACUTE, 0);
-    unsafe { screen_write_cell(&mut *w.ptr(), &raw const acute) };
+    unsafe { screen_write_cell(&mut *w.ptr(), &acute) };
     unsafe {
         let mut gc = grid_default_cell;
         gc = grid_view_get_cell(&*w.grid(), 0, 3);
@@ -1171,7 +1171,7 @@ fn erasing_padding_that_runs_to_the_edge_stops_at_the_edge() {
     w.move_to(2, 0);
     let wide = cell(WIDE, 2);
     unsafe {
-        screen_write_cell(&mut *w.ptr(), &raw const wide);
+        screen_write_cell(&mut *w.ptr(), &wide);
         w.move_to(3, 0);
         w.puts("x");
     }

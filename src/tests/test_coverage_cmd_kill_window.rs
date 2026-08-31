@@ -343,11 +343,8 @@ fn unlinking_a_solely_linked_window_without_k_is_refused() {
         );
         assert_eq!((*caller).retval, 1);
 
-        assert_eq!(winlink_count(&raw mut (*chain.sptr(0)).windows), 1);
-        assert_eq!(
-            winlink_find_by_index(&raw mut (*chain.sptr(0)).windows, 0),
-            wl
-        );
+        assert_eq!(winlink_count(&(*chain.sptr(0)).windows), 1);
+        assert_eq!(winlink_find_by_index(&mut (*chain.sptr(0)).windows, 0), wl);
         assert_eq!(session_get_curw(chain.sptr(0)), wl, "nothing was detached");
     }
 }
@@ -371,9 +368,9 @@ fn with_k_the_session_gives_up_a_window_it_wants_gone() {
         chain.forget(wl_t);
 
         let s = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 1);
-        assert!(winlink_find_by_index(&raw mut (*s).windows, 0).is_null());
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 1), wl_keep);
+        assert_eq!(winlink_count(&(*s).windows), 1);
+        assert!(winlink_find_by_index(&mut (*s).windows, 0).is_null());
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 1), wl_keep);
         assert_eq!(session_get_curw(s), wl_keep, "the selection was left alone");
 
         assert!((*w_t).winlinks.is_empty(), "no session lists it any more");
@@ -403,16 +400,13 @@ fn a_window_another_session_still_holds_unlinks_without_k() {
         chain.forget(wl_shared);
 
         let home = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*home).windows), 1);
-        assert_eq!(winlink_find_by_index(&raw mut (*home).windows, 1), wl_keep);
+        assert_eq!(winlink_count(&(*home).windows), 1);
+        assert_eq!(winlink_find_by_index(&mut (*home).windows, 1), wl_keep);
         assert_eq!(session_get_curw(home), wl_keep);
 
         let away_s = chain.sptr(away);
-        assert_eq!(winlink_count(&raw mut (*away_s).windows), 1);
-        assert_eq!(
-            winlink_find_by_index(&raw mut (*away_s).windows, 0),
-            wl_away
-        );
+        assert_eq!(winlink_count(&(*away_s).windows), 1);
+        assert_eq!(winlink_find_by_index(&mut (*away_s).windows, 0), wl_away);
         assert_eq!(
             session_get_curw(away_s),
             wl_away,
@@ -438,8 +432,8 @@ fn with_a_on_the_only_window_nothing_is_asked_to_go() {
         assert_eq!(run_kill(&mut item), CMD_RETURN_NORMAL);
 
         let s = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 1);
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 0), wl);
+        assert_eq!(winlink_count(&(*s).windows), 1);
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 0), wl);
         assert_eq!(session_get_curw(s), wl);
         assert!(!(*w).winlinks.is_empty());
     }
@@ -464,9 +458,9 @@ fn with_a_the_session_lets_go_of_every_other_window() {
         chain.forget(wl_other);
 
         let s = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 1);
-        assert!(winlink_find_by_index(&raw mut (*s).windows, 1).is_null());
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 0), wl_target);
+        assert_eq!(winlink_count(&(*s).windows), 1);
+        assert!(winlink_find_by_index(&mut (*s).windows, 1).is_null());
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 0), wl_target);
         assert_eq!(session_get_curw(s), wl_target, "the target kept its place");
 
         assert!(!(*w_target).winlinks.is_empty());
@@ -496,9 +490,9 @@ fn without_flags_the_target_window_leaves_every_session() {
         chain.forget(wl_target);
 
         let s = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 1);
-        assert!(winlink_find_by_index(&raw mut (*s).windows, 0).is_null());
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 1), wl_keep);
+        assert_eq!(winlink_count(&(*s).windows), 1);
+        assert!(winlink_find_by_index(&mut (*s).windows, 0).is_null());
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 1), wl_keep);
         assert_eq!(session_get_curw(s), wl_keep, "where the selection was left");
 
         assert!((*w_target).winlinks.is_empty());

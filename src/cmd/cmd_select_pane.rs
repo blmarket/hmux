@@ -196,7 +196,7 @@ unsafe fn cmd_select_pane_redraw(mut w: *mut window) {
         for c in client_walk() {
             if !((*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0) {
                 if (*session_get_curw((*c).session)).window() == w
-                    && tty_window_bigger(&raw mut (*c).tty) != 0
+                    && tty_window_bigger(&(*c).tty) != 0
                 {
                     server_redraw_client(c);
                 } else {
@@ -366,7 +366,7 @@ unsafe fn cmd_select_pane_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
                 item,
                 ::core::ffi::CStr::from_ptr(args_get(args, 'T' as i32 as u_char)),
             );
-            if screen_set_title(&raw mut (*wp).base, title.as_ptr(), 0 as ::core::ffi::c_int) != 0 {
+            if screen_set_title(&mut (*wp).base, title.as_ptr(), 0 as ::core::ffi::c_int) != 0 {
                 notify_pane(c"pane-title-changed".as_ptr(), wp);
                 server_redraw_window_borders((*wp).window);
                 server_status_window((*wp).window);

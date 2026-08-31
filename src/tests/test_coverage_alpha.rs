@@ -182,7 +182,7 @@ unsafe fn unlink_for_test(s: &mut Session, wl: *mut winlink) {
         if session_get_curw(s.ptr()) == wl {
             session_set_curw(s.ptr(), null_mut::<winlink>());
         }
-        crate::window::winlink_remove(&raw mut (*s.ptr()).windows, wl);
+        crate::window::winlink_remove(&mut (*s.ptr()).windows, wl);
     }
 }
 
@@ -340,7 +340,7 @@ fn sort_get_winlinks_lists_every_winlink_of_every_session() {
         let l = sort_get_winlinks(&c);
         assert_eq!(
             l.iter()
-                .map(|wl| seen(cstr_ptr(&(*(**wl).window()).name)))
+                .map(|wl| seen((*(**wl).window()).name_ptr()))
                 .collect::<Vec<_>>(),
             vec!["one", "three", "two"]
         );
@@ -413,8 +413,8 @@ fn session_renumber_windows_reindexes_from_base_index() {
 
         session_renumber_windows(s.ptr());
 
-        let n0 = winlink_find_by_index(&raw mut (*s.ptr()).windows, 0);
-        let n1 = winlink_find_by_index(&raw mut (*s.ptr()).windows, 1);
+        let n0 = winlink_find_by_index(&mut (*s.ptr()).windows, 0);
+        let n1 = winlink_find_by_index(&mut (*s.ptr()).windows, 1);
         assert!(!n0.is_null() && !n1.is_null());
         assert_eq!((*n0).window(), first.ptr());
         assert_eq!((*n1).window(), second.ptr());
@@ -422,9 +422,9 @@ fn session_renumber_windows_reindexes_from_base_index() {
         assert_eq!(session_get_curw(s.ptr()), n0);
         assert_eq!(winlink_of(s.ptr(), (*s.ptr()).lastw.first().copied()), n1);
         assert_eq!((*n1).flags & WINLINK_VISITED, WINLINK_VISITED);
-        assert!(winlink_find_by_index(&raw mut (*s.ptr()).windows, 5).is_null());
+        assert!(winlink_find_by_index(&mut (*s.ptr()).windows, 5).is_null());
         assert_eq!(
-            winlink_find_by_window(&raw mut (*s.ptr()).windows, first.ptr()),
+            winlink_find_by_window(&mut (*s.ptr()).windows, first.ptr()),
             n0
         );
     }
@@ -440,14 +440,14 @@ fn session_renumber_windows_reindexes_from_base_index() {
         options_set_number(s.options(), c"base-index".as_ptr(), 1);
         session_renumber_windows(s.ptr());
         assert_eq!(
-            (*winlink_find_by_index(&raw mut (*s.ptr()).windows, 1)).window(),
+            (*winlink_find_by_index(&mut (*s.ptr()).windows, 1)).window(),
             first.ptr()
         );
         assert_eq!(
-            (*winlink_find_by_index(&raw mut (*s.ptr()).windows, 2)).window(),
+            (*winlink_find_by_index(&mut (*s.ptr()).windows, 2)).window(),
             second.ptr()
         );
-        assert!(winlink_find_by_index(&raw mut (*s.ptr()).windows, 0).is_null());
+        assert!(winlink_find_by_index(&mut (*s.ptr()).windows, 0).is_null());
     }
     unlink_all(&mut s);
 }

@@ -236,7 +236,7 @@ fn a_jobless_popup_wires_the_overlay_and_answers_present() {
 
         assert_eq!((*pd).flags, POPUP_NOJOB);
         assert_eq!((*pd).border_lines, BOX_LINES_SINGLE);
-        assert_eq!(seen(cstr_ptr(&(*pd).title)), "fixture");
+        assert_eq!(seen((*pd).title_ptr()), "fixture");
         assert_eq!((*pd).status, 128 + SIGHUP);
         assert_eq!((*pd).px, 2);
         assert_eq!((*pd).py, 1);
@@ -255,8 +255,8 @@ fn a_jobless_popup_wires_the_overlay_and_answers_present() {
         assert_eq!((*pd).palette.fg, 8);
         assert_eq!((*pd).palette.bg, 8);
 
-        assert_eq!((*screen_grid_ptr(&raw mut (*pd).s)).sx, 8);
-        assert_eq!((*screen_grid_ptr(&raw mut (*pd).s)).sy, 4);
+        assert_eq!((*screen_grid_ptr(&mut (*pd).s)).sx, 8);
+        assert_eq!((*screen_grid_ptr(&mut (*pd).s)).sy, 4);
 
         assert_eq!((*p.c).overlay_check(), OverlayCheck::Popup);
         assert_eq!((*p.c).overlay(), Overlay::Popup);
@@ -316,7 +316,7 @@ fn popup_modify_updates_the_title_styles_and_flags_of_the_live_popup() {
             ),
             0
         );
-        assert_eq!(seen(cstr_ptr(&(*pd).title)), "renamed");
+        assert_eq!(seen((*pd).title_ptr()), "renamed");
         assert_eq!(
             popup_modify(
                 p.c,
@@ -328,7 +328,7 @@ fn popup_modify_updates_the_title_styles_and_flags_of_the_live_popup() {
             ),
             0
         );
-        assert_eq!(seen(cstr_ptr(&(*pd).title)), "again");
+        assert_eq!(seen((*pd).title_ptr()), "again");
 
         assert_eq!(
             popup_modify(

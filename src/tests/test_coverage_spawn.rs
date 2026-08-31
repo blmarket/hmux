@@ -342,13 +342,13 @@ fn respawning_a_window_with_an_attached_pane_refuses_without_touching_it() {
         assert!(out.is_null(), "the respawn was refused");
         assert_eq!(cause.unwrap().to_str().unwrap(), "window 0:0 still active");
 
-        assert_eq!(winlink_count(&raw mut (*rig.s).windows), 1);
-        assert_eq!(winlink_find_by_index(&raw mut (*rig.s).windows, 0), rig.wl);
+        assert_eq!(winlink_count(&(*rig.s).windows), 1);
+        assert_eq!(winlink_find_by_index(&mut (*rig.s).windows, 0), rig.wl);
         assert_eq!((*rig.wl).window(), rig.w);
         assert_eq!((*rig.wl).flags, 0, "the alert flags were left alone");
         assert_eq!(window_panes_first(rig.w), rig.p);
         assert_eq!((*rig.p).fd, FAKE_FD, "the pane was never closed");
-        assert_eq!(seen(cstr_ptr(&(*rig.w).name)), "keep", "no rename happened");
+        assert_eq!(seen((*rig.w).name_ptr()), "keep", "no rename happened");
         assert_eq!(
             session_get_curw(rig.s),
             rig.wl,
@@ -369,8 +369,8 @@ fn an_explicit_index_already_in_use_refuses_the_window_spawn() {
         assert!(out.is_null(), "the spawn was refused");
         assert_eq!(cause.unwrap().to_str().unwrap(), "index 0 in use");
 
-        assert_eq!(winlink_count(&raw mut (*rig.s).windows), 1);
-        assert_eq!(winlink_find_by_index(&raw mut (*rig.s).windows, 0), rig.wl);
+        assert_eq!(winlink_count(&(*rig.s).windows), 1);
+        assert_eq!(winlink_find_by_index(&mut (*rig.s).windows, 0), rig.wl);
         assert_eq!((*rig.wl).window(), rig.w);
         assert_eq!((*rig.wl).flags, 0, "the alert flags were not cleared");
         assert_eq!(window_panes_first(rig.w), rig.p);
@@ -397,12 +397,12 @@ fn respawning_a_pane_that_is_still_attached_refuses_before_any_descriptor_work()
 
         assert_eq!((*rig.p).fd, FAKE_FD, "the pane's descriptor stayed open");
         assert_eq!(window_panes_first(rig.w), rig.p, "the pane was kept");
-        assert_eq!(winlink_count(&raw mut (*rig.s).windows), 1);
+        assert_eq!(winlink_count(&(*rig.s).windows), 1);
         assert_eq!(
             session_get_curw(rig.s),
             rig.wl,
             "the selection was left alone"
         );
-        assert_eq!(seen(cstr_ptr(&(*rig.w).name)), "keep");
+        assert_eq!(seen((*rig.w).name_ptr()), "keep");
     }
 }

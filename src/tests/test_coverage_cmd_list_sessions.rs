@@ -85,7 +85,7 @@ fn argument_bounds_enforce_zero_positional_arguments_and_accept_flags() {
             null_mut(),
         );
         assert_eq!(flags.status, CMD_PARSE_SUCCESS);
-        let first = cmd_list_first(flags.cmdlist.as_ref().unwrap().as_ptr());
+        let first = cmd_list_first(flags.cmdlist.as_ref().unwrap());
         let args = cmd_get_args(&*first);
         assert_eq!(seen(args_get(args, b'F')), "#{session_name}");
         assert_eq!(seen(args_get(args, b'f')), "1");

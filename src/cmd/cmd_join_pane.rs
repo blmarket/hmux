@@ -153,7 +153,7 @@ unsafe fn cmd_join_pane_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
         window_panes_insert_after(dst_w, dst_wp, pane);
         window_pane_zindex_insert_after(dst_w, dst_wp, src_wp);
         layout_assign_pane(lc, src_wp, 0);
-        options_load_pane_colours((*src_wp).options_ptr(), &raw mut (*src_wp).palette);
+        options_load_pane_colours((*src_wp).options_ptr(), Some(&mut (*src_wp).palette));
 
         recalculate_sizes();
 

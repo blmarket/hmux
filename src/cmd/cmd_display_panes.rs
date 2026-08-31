@@ -287,7 +287,7 @@ unsafe fn cmd_display_panes_put(
 ) {
     unsafe {
         let c = ctx.c;
-        let tty = &raw mut (*c).tty;
+        let tty = &mut (*c).tty;
         let mut ranges = visible_ranges::default();
         screen_redraw_get_visible_ranges(
             wp,
@@ -319,7 +319,7 @@ unsafe fn cmd_display_panes_put(
 unsafe fn cmd_display_panes_draw_pane(ctx: &mut screen_redraw_ctx, wp: *mut window_pane) {
     unsafe {
         let c = ctx.c;
-        let tty = &raw mut (*c).tty;
+        let tty = &mut (*c).tty;
         let oo = session_options((*c).session);
         let w = (*wp).window;
 
@@ -375,8 +375,8 @@ unsafe fn cmd_display_panes_draw_pane(ctx: &mut screen_redraw_ctx, wp: *mut wind
         if (sx as size_t) < len.wrapping_mul(6) || sy < 5 {
             tty_attributes(
                 tty,
-                &raw mut fgc,
-                &raw const grid_default_cell,
+                &mut fgc,
+                &grid_default_cell,
                 null_mut::<colour_palette>(),
                 null_mut::<hyperlinks>(),
             );
@@ -385,16 +385,16 @@ unsafe fn cmd_display_panes_draw_pane(ctx: &mut screen_redraw_ctx, wp: *mut wind
                 let mut cx =
                     (xoff.wrapping_add(px) as size_t).wrapping_sub(len.wrapping_div(2)) as u_int;
                 let cy = yoff.wrapping_add(py);
-                cmd_display_panes_put(&mut *ctx, wp, cx, cy, &buf[..len as usize]);
+                cmd_display_panes_put(ctx, wp, cx, cy, &buf[..len as usize]);
                 cx = (cx as size_t).wrapping_add(len) as u_int;
-                cmd_display_panes_put(&mut *ctx, wp, cx, cy, b" ");
+                cmd_display_panes_put(ctx, wp, cx, cy, b" ");
                 cx = cx.wrapping_add(1);
-                cmd_display_panes_put(&mut *ctx, wp, cx, cy, &lbuf[..llen as usize]);
+                cmd_display_panes_put(ctx, wp, cx, cy, &lbuf[..llen as usize]);
             } else {
                 let cx =
                     (xoff.wrapping_add(px) as size_t).wrapping_sub(len.wrapping_div(2)) as u_int;
                 let cy = yoff.wrapping_add(py);
-                cmd_display_panes_put(&mut *ctx, wp, cx, cy, &buf[..len as usize]);
+                cmd_display_panes_put(ctx, wp, cx, cy, &buf[..len as usize]);
             }
             tty_cursor(tty, 0, 0);
             return;
@@ -404,8 +404,8 @@ unsafe fn cmd_display_panes_draw_pane(ctx: &mut screen_redraw_ctx, wp: *mut wind
         py = py.wrapping_sub(2);
         tty_attributes(
             tty,
-            &raw mut bgc,
-            &raw const grid_default_cell,
+            &mut bgc,
+            &grid_default_cell,
             null_mut::<colour_palette>(),
             null_mut::<hyperlinks>(),
         );
@@ -416,7 +416,7 @@ unsafe fn cmd_display_panes_draw_pane(ctx: &mut screen_redraw_ctx, wp: *mut wind
                 while i < px.wrapping_add(5) {
                     if window_clock_table[idx][j as usize][i.wrapping_sub(px) as usize] {
                         cmd_display_panes_put(
-                            &mut *ctx,
+                            ctx,
                             wp,
                             xoff.wrapping_add(i),
                             yoff.wrapping_add(py).wrapping_add(j),
@@ -432,14 +432,14 @@ unsafe fn cmd_display_panes_draw_pane(ctx: &mut screen_redraw_ctx, wp: *mut wind
         if sy > 6 {
             tty_attributes(
                 tty,
-                &raw mut fgc,
-                &raw const grid_default_cell,
+                &mut fgc,
+                &grid_default_cell,
                 null_mut::<colour_palette>(),
                 null_mut::<hyperlinks>(),
             );
             if rlen != 0 && sx as size_t >= rlen {
                 let cx = (xoff.wrapping_add(sx) as size_t).wrapping_sub(rlen) as u_int;
-                cmd_display_panes_put(&mut *ctx, wp, cx, yoff, &rbuf[..rlen as usize]);
+                cmd_display_panes_put(ctx, wp, cx, yoff, &rbuf[..rlen as usize]);
             }
             if llen != 0 {
                 let cx = (xoff.wrapping_add(sx.wrapping_div(2)) as size_t)
@@ -447,7 +447,7 @@ unsafe fn cmd_display_panes_draw_pane(ctx: &mut screen_redraw_ctx, wp: *mut wind
                     .wrapping_sub(llen)
                     .wrapping_sub(1) as u_int;
                 let cy = yoff.wrapping_add(py).wrapping_add(5);
-                cmd_display_panes_put(&mut *ctx, wp, cx, cy, &lbuf[..llen as usize]);
+                cmd_display_panes_put(ctx, wp, cx, cy, &lbuf[..llen as usize]);
             }
         }
         tty_cursor(tty, 0, 0);
@@ -486,7 +486,7 @@ pub(crate) unsafe fn cmd_display_panes_draw(
         );
         for wp in cmd_display_panes_panes(w) {
             if window_pane_visible(wp) != 0 {
-                cmd_display_panes_draw_pane(&mut *ctx, wp);
+                cmd_display_panes_draw_pane(ctx, wp);
             }
         }
     }
@@ -498,12 +498,10 @@ pub(crate) unsafe fn cmd_display_panes_free_box(
     _c: *mut client,
     mut data: Box<cmd_display_panes_data>,
 ) {
-    unsafe {
-        if let Some(item) = data.item.as_ref().and_then(CmdqItemWeak::upgrade) {
-            cmdq_continue(item.as_ptr());
-        }
-        drop(data.state.take());
+    if let Some(item) = data.item.as_ref().and_then(CmdqItemWeak::upgrade) {
+        cmdq_continue(&item);
     }
+    drop(data.state.take());
 }
 
 /// The pane index a key press names, if it names one: a digit is that index,
@@ -560,11 +558,8 @@ pub(crate) unsafe fn cmd_display_panes_key(
             cmdq_append(c, cmdq_get_error(error.as_ptr()));
         } else if let Some(item) = &item {
             cmdq_insert_after(
-                item.as_ptr(),
-                cmdq_get_command(
-                    cmdlist.as_ref().unwrap(),
-                    Some(cmdq_get_state_ref(item.as_ptr())),
-                ),
+                item,
+                cmdq_get_command(cmdlist.as_ref().unwrap(), Some(cmdq_get_state_ref(item))),
             );
         } else {
             cmdq_append(c, cmdq_get_command(cmdlist.as_ref().unwrap(), None));

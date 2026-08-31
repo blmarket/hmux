@@ -9,7 +9,7 @@ use crate::grid::grid_default_cell;
 use crate::layout::layout_close_pane;
 use crate::notify::{notify_pane, notify_session_window};
 use crate::options::{options_get_number, options_get_string};
-use crate::proc::{peer_ptr, proc_send};
+use crate::proc::proc_send;
 use crate::resize::recalculate_sizes;
 use crate::screen::screen_grid_ptr;
 use crate::screen::{
@@ -524,22 +524,14 @@ pub unsafe fn server_lock_client(mut c: *mut client) {
         {
             return;
         }
-        tty_stop_tty(&raw mut (*c).tty);
-        tty_raw(
-            &raw mut (*c).tty,
-            tty_term_string(tty_term_of(&(*c).tty), TTYC_SMCUP),
-        );
-        tty_raw(
-            &raw mut (*c).tty,
-            tty_term_string(tty_term_of(&(*c).tty), TTYC_CLEAR),
-        );
-        tty_raw(
-            &raw mut (*c).tty,
-            tty_term_string(tty_term_of(&(*c).tty), TTYC_E3),
-        );
+        let tty = &mut (*c).tty;
+        tty_stop_tty(tty);
+        tty_raw(tty, tty_term_string(tty_term_of(tty), TTYC_SMCUP));
+        tty_raw(tty, tty_term_string(tty_term_of(tty), TTYC_CLEAR));
+        tty_raw(tty, tty_term_string(tty_term_of(tty), TTYC_E3));
         (*c).flags |= CLIENT_SUSPENDED as uint64_t;
         proc_send(
-            peer_ptr(&(*c).peer),
+            (*c).peer_ptr(),
             MSG_LOCK,
             -(1 as ::core::ffi::c_int),
             cmd as *const u8,
@@ -570,7 +562,7 @@ pub unsafe fn server_kill_window(mut w: *mut window, mut renumber: ::core::ffi::
             if !(session_has(s, w) == 0) {
                 server_unzoom_window(w);
                 loop {
-                    wl = winlink_find_by_window(&raw mut (*s).windows, w);
+                    wl = winlink_find_by_window(&mut (*s).windows, w);
                     if wl.is_null() {
                         break;
                     }
@@ -582,15 +574,16 @@ pub unsafe fn server_kill_window(mut w: *mut window, mut renumber: ::core::ffi::
                     }
                 }
                 if renumber != 0 {
-                    server_renumber_session(s);
+                    server_renumber_session(&s_ref);
                 }
             }
         }
         recalculate_sizes();
     }
 }
-pub unsafe fn server_renumber_session(mut s: *mut session) {
+pub(crate) unsafe fn server_renumber_session(s_ref: &SessionRef) {
     unsafe {
+        let s = s_ref.as_ptr();
         let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
         if options_get_number(session_options(s), c"renumber-windows".as_ptr()) != 0 {
             sg = session_group_contains(s);
@@ -606,8 +599,8 @@ pub unsafe fn server_renumber_session(mut s: *mut session) {
 }
 pub fn server_renumber_all() {
     unsafe {
-        for s in session_owners() {
-            server_renumber_session(s.as_ptr());
+        for s_ref in session_owners() {
+            server_renumber_session(&s_ref);
         }
     }
 }
@@ -632,7 +625,7 @@ pub unsafe fn server_link_window(
         }
         dstwl = ::core::ptr::null_mut::<winlink>();
         if dstidx != -(1 as ::core::ffi::c_int) {
-            dstwl = winlink_find_by_index(&raw mut (*dst).windows, dstidx);
+            dstwl = winlink_find_by_index(&mut (*dst).windows, dstidx);
         }
         if !dstwl.is_null() {
             if (*dstwl).window() == (*srcwl).window() {
@@ -642,8 +635,8 @@ pub unsafe fn server_link_window(
             if killflag != 0 {
                 notify_session_window(c"window-unlinked".as_ptr(), dst, (*dstwl).window());
                 (*dstwl).flags &= !WINLINK_ALERTFLAGS;
-                winlink_stack_remove(&raw mut (*dst).lastw, dstwl);
-                winlink_remove(&raw mut (*dst).windows, dstwl);
+                winlink_stack_remove(&mut (*dst).lastw, dstwl);
+                winlink_remove(&mut (*dst).windows, dstwl);
                 if dstwl == session_get_curw(dst) {
                     selectflag = 1 as ::core::ffi::c_int;
                     session_set_curw(dst, ::core::ptr::null_mut::<winlink>());
@@ -685,8 +678,8 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
         let mut gc = grid_default_cell;
         let mut remain_on_exit: ::core::ffi::c_int = 0;
         let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut sx: u_int = (*screen_grid_ptr(&raw mut (*wp).base)).sx;
-        let mut sy: u_int = (*screen_grid_ptr(&raw mut (*wp).base)).sy;
+        let mut sx: u_int = (*screen_grid_ptr(&mut (*wp).base)).sx;
+        let mut sy: u_int = (*screen_grid_ptr(&mut (*wp).base)).sy;
         if (*wp).fd != -(1 as ::core::ffi::c_int) {
             utempter_remove_record((*wp).fd);
             kill(getpid(), SIGCHLD);
@@ -732,7 +725,7 @@ pub unsafe fn server_destroy_pane(mut wp: *mut window_pane, mut notify: ::core::
                 }
                 s = options_get_string((*wp).options_ptr(), c"remain-on-exit-format".as_ptr());
                 if *s as ::core::ffi::c_int != '\0' as i32 {
-                    screen_write_start_pane(&mut ctx, wp, &raw mut (*wp).base);
+                    screen_write_start_pane(&mut ctx, wp, Some(&mut (*wp).base));
                     screen_write_scrollregion(&mut ctx, 0 as u_int, sy.wrapping_sub(1 as u_int));
                     screen_write_cursormove(
                         &mut ctx,

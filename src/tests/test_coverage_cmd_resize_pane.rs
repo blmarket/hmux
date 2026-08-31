@@ -137,7 +137,7 @@ fn trimming_scrollback_takes_the_history_below_the_cursor() {
     let wp = t.pane(0);
     let mut item = Item::new().targeting(&mut t).with_args(c"resize-pane -T");
     unsafe {
-        let gd = screen_grid_ptr(&raw mut (*wp).base);
+        let gd = screen_grid_ptr(&mut (*wp).base);
         for _ in 0..3 {
             grid_scroll_history(&mut *gd, 0);
         }

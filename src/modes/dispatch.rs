@@ -280,11 +280,11 @@ impl WindowMode {
     /// Builds the mode's private state and returns the screen it draws on.
     pub unsafe fn init(
         self,
-        wme: *mut window_mode_entry,
+        wme: &mut window_mode_entry,
         fs: *mut cmd_find_state,
-        args: *mut args,
+        args: Option<&args>,
     ) -> *mut screen {
-        unsafe { self.table().init.expect("every mode opens")(&mut *wme, fs, args) }
+        unsafe { self.table().init.expect("every mode opens")(wme, fs, args) }
     }
 
     /// Releases the private state built by [`WindowMode::init`].
@@ -355,16 +355,16 @@ impl WindowMode {
 
     pub unsafe fn command(
         self,
-        wme: *mut window_mode_entry,
+        wme: &mut window_mode_entry,
         c: *mut client,
         s: *mut session,
         wl: *mut winlink,
-        args: *mut args,
-        m: *mut mouse_event,
+        args: &args,
+        m: Option<&mut mouse_event>,
     ) {
         unsafe {
             if let Some(f) = self.table().command {
-                f(&mut *wme, c, s, wl, args, m);
+                f(wme, c, s, wl, args, m);
             }
         }
     }

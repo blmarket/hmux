@@ -266,7 +266,11 @@ fn is_mouse_key(key: key_code) -> bool {
 
 /// Tells the pane about a key: a mouse key becomes a mouse report if it landed
 /// in this pane, and anything else is written to it as bytes.
-pub unsafe fn input_key_pane(wp: *mut window_pane, key: key_code, m: *mut mouse_event) -> c_int {
+pub unsafe fn input_key_pane(
+    wp: *mut window_pane,
+    key: key_code,
+    m: Option<&mouse_event>,
+) -> c_int {
     unsafe {
         if log_get_level() != 0 {
             log_debug(
@@ -275,7 +279,10 @@ pub unsafe fn input_key_pane(wp: *mut window_pane, key: key_code, m: *mut mouse_
             );
         }
         if is_mouse_key(key) {
-            if !m.is_null() && (*m).wp != -1 && (*m).wp as u_int == (*wp).id {
+            if let Some(m) = m
+                && m.wp != -1
+                && m.wp as u_int == (*wp).id
+            {
                 input_key_mouse(wp, m);
             }
             return 0;
@@ -577,13 +584,13 @@ fn input_key_split2(c: u_int, out: &mut Vec<u8>) {
 /// report the terminal did not ask for or that the form cannot carry.
 pub unsafe fn input_key_get_mouse(
     s: *mut screen,
-    m: *mut mouse_event,
+    m: &mouse_event,
     x: u_int,
     y: u_int,
 ) -> Option<Vec<u8>> {
     unsafe {
         /* A drag needs the terminal to be following them. */
-        if (*m).b & MOUSE_MASK_DRAG as u_int != 0 && (*s).mode & MOTION_MOUSE_MODES == 0 {
+        if m.b & MOUSE_MASK_DRAG as u_int != 0 && (*s).mode & MOTION_MOUSE_MODES == 0 {
             return None;
         }
         if (*s).mode & ALL_MOUSE_MODES == 0 {
@@ -591,50 +598,45 @@ pub unsafe fn input_key_get_mouse(
         }
 
         /* A drag with no button down is only for a terminal wanting them all. */
-        if (*m).sgr_type != b' ' as u_int {
-            if (*m).sgr_b & MOUSE_MASK_DRAG as u_int != 0
-                && (*m).sgr_b & MOUSE_MASK_BUTTONS as u_int == 3
+        if m.sgr_type != b' ' as u_int {
+            if m.sgr_b & MOUSE_MASK_DRAG as u_int != 0
+                && m.sgr_b & MOUSE_MASK_BUTTONS as u_int == 3
                 && (*s).mode & MODE_MOUSE_ALL == 0
             {
                 return None;
             }
-        } else if (*m).b & MOUSE_MASK_DRAG as u_int != 0
-            && (*m).b & MOUSE_MASK_BUTTONS as u_int == 3
-            && (*m).lb & MOUSE_MASK_BUTTONS as u_int == 3
+        } else if m.b & MOUSE_MASK_DRAG as u_int != 0
+            && m.b & MOUSE_MASK_BUTTONS as u_int == 3
+            && m.lb & MOUSE_MASK_BUTTONS as u_int == 3
             && (*s).mode & MODE_MOUSE_ALL == 0
         {
             return None;
         }
 
         let mut out = Vec::<u8>::new();
-        if (*m).sgr_type != b' ' as u_int && (*s).mode & MODE_MOUSE_SGR != 0 {
+        if m.sgr_type != b' ' as u_int && (*s).mode & MODE_MOUSE_SGR != 0 {
             let tmp = xasprintf(
                 c"\x1b[<%u;%u;%u%c".as_ptr(),
-                fmt_args![
-                    (*m).sgr_b,
-                    x.wrapping_add(1),
-                    y.wrapping_add(1),
-                    (*m).sgr_type
-                ],
+                fmt_args![m.sgr_b, x.wrapping_add(1), y.wrapping_add(1), m.sgr_type],
             );
             out.extend_from_slice(tmp.as_bytes());
         } else if (*s).mode & MODE_MOUSE_UTF8 != 0 {
-            if (*m).b > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_BTN_OFF) as u_int
+            if m.b > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_BTN_OFF) as u_int
                 || x > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_POS_OFF) as u_int
                 || y > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_POS_OFF) as u_int
             {
                 return None;
             }
             out.extend_from_slice(b"\x1b[M");
-            input_key_split2((*m).b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int), &mut out);
+            input_key_split2(m.b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int), &mut out);
             input_key_split2(x.wrapping_add(MOUSE_PARAM_POS_OFF as u_int), &mut out);
             input_key_split2(y.wrapping_add(MOUSE_PARAM_POS_OFF as u_int), &mut out);
         } else {
-            if (*m).b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int) > MOUSE_PARAM_MAX as u_int {
+            if m.b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int) > MOUSE_PARAM_MAX as u_int {
                 return None;
             }
             out.extend_from_slice(b"\x1b[M");
-            out.push((*m).b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int) as u8);
+            out.push(m.b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int) as u8);
             for place in [x, y] {
                 let param = place.wrapping_add(MOUSE_PARAM_POS_OFF as u_int);
                 if param > MOUSE_PARAM_MAX as u_int {
@@ -651,10 +653,10 @@ pub unsafe fn input_key_get_mouse(
 
 /// Tells the pane's terminal where the mouse is, if it asked and the mouse is
 /// over a part of it that can be seen.
-unsafe fn input_key_mouse(wp: *mut window_pane, m: *mut mouse_event) {
+unsafe fn input_key_mouse(wp: *mut window_pane, m: &mouse_event) {
     unsafe {
         let s = (*wp).screen();
-        if (*m).ignore != 0 || (*s).mode & ALL_MOUSE_MODES == 0 {
+        if m.ignore != 0 || (*s).mode & ALL_MOUSE_MODES == 0 {
             return;
         }
 

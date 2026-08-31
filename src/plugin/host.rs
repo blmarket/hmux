@@ -307,7 +307,7 @@ mod tests {
             let mut screen = Box::new(crate::types::screen::new(sx, sy, 100));
             unsafe {
                 let mut ctx = Box::new(screen_write_ctx::default());
-                screen_write_start(&mut ctx, &raw mut *screen);
+                screen_write_start(&mut ctx, &mut *screen);
                 let gc = grid_cell::default();
                 for (at, row) in rows.iter().enumerate() {
                     if at > 0 {
@@ -316,7 +316,7 @@ mod tests {
                     }
                     screen_write_puts(
                         &mut ctx,
-                        &raw const gc,
+                        &gc,
                         c"%s".as_ptr(),
                         fmt_args![::std::ffi::CString::new(*row).expect("row").as_ptr()],
                     );
@@ -337,7 +337,7 @@ mod tests {
 
     impl Drop for Written {
         fn drop(&mut self) {
-            unsafe { screen_free(&raw mut *self.screen) };
+            unsafe { screen_free(&mut *self.screen) };
         }
     }
 

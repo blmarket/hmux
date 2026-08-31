@@ -249,7 +249,7 @@ unsafe fn cmd_display_menu_get_pos(
     mut h: u_int,
 ) -> Option<(u_int, u_int)> {
     unsafe {
-        let mut tty: *mut tty = &raw mut (*tc).tty;
+        let tty: &mut tty = &mut (*tc).tty;
         let mut target: *mut cmd_find_state = cmdq_get_target(item);
         let mut event: *mut key_event = cmdq_get_event(item);
         let mut s: *mut session = (*tc).session;
@@ -441,7 +441,7 @@ unsafe fn cmd_display_menu_get_pos(
             }
         }
         {
-            let (_bigger, off_x, off_y, _off_sx, _off_sy) = tty_window_offset(&raw mut (*tc).tty);
+            let (_bigger, off_x, off_y, _off_sx, _off_sy) = tty_window_offset(&(*tc).tty);
             (ox, oy) = (off_x, off_y);
         }
         n = ((top + (*wp).yoff) as u_int)
@@ -740,7 +740,7 @@ unsafe fn cmd_display_popup_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> 
         let mut target: *mut cmd_find_state = cmdq_get_target(item);
         let mut s: *mut session = (*target).session();
         let mut tc: *mut client = cmdq_get_target_client(&*item);
-        let mut tty: *mut tty = &raw mut (*tc).tty;
+        let tty: &mut tty = &mut (*tc).tty;
         let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut shell: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut shellcmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

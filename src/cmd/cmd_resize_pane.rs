@@ -167,7 +167,7 @@ unsafe fn cmd_resize_pane_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
         let mut x: ::core::ffi::c_int = 0;
         let mut y: ::core::ffi::c_int = 0;
         let mut status: ::core::ffi::c_int = 0;
-        let mut gd: *mut grid = screen_grid_ptr(&raw mut (*wp).base);
+        let mut gd: *mut grid = screen_grid_ptr(&mut (*wp).base);
         if args_has(args, 'T' as i32 as u_char) != 0 {
             if !(*wp).modes.is_empty() {
                 return CMD_RETURN_NORMAL;
@@ -304,7 +304,7 @@ unsafe fn cmd_resize_pane_mouse_update(_self_0: &cmd, mut item: *mut cmdq_item) 
         if (*event).m.valid == 0 {
             return CMD_RETURN_NORMAL;
         }
-        let Some((mouse_s, _, mouse_wp)) = cmd_mouse_pane(&raw mut (*event).m) else {
+        let Some((mouse_s, _, mouse_wp)) = cmd_mouse_pane(&(*event).m) else {
             return CMD_RETURN_NORMAL;
         };
         s = mouse_s;
@@ -314,17 +314,17 @@ unsafe fn cmd_resize_pane_mouse_update(_self_0: &cmd, mut item: *mut cmdq_item) 
         }
         if window_pane_is_floating(wp) == 0 {
             (*c).tty.mouse_drag_update = Some(cmd_resize_pane_mouse_update_tiled);
-            cmd_resize_pane_mouse_update_tiled(c, &raw mut (*event).m);
+            cmd_resize_pane_mouse_update_tiled(c, &(*event).m);
             return CMD_RETURN_NORMAL;
         }
         window_redraw_active_switch(w, wp);
         window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
         (*c).tty.mouse_drag_update = Some(cmd_resize_pane_mouse_update_floating);
-        cmd_resize_pane_mouse_update_floating(c, &raw mut (*event).m);
+        cmd_resize_pane_mouse_update_floating(c, &(*event).m);
         CMD_RETURN_NORMAL
     }
 }
-unsafe fn cmd_resize_pane_mouse_update_floating(mut c: *mut client, mut m: *mut mouse_event) {
+unsafe fn cmd_resize_pane_mouse_update_floating(mut c: *mut client, m: &mouse_event) {
     unsafe {
         let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
         let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -360,22 +360,21 @@ unsafe fn cmd_resize_pane_mouse_update_floating(mut c: *mut client, mut m: *mut 
         } else if window_pane_show_scrollbar(wp) != 0 && (*w).sb_pos == PANE_SCROLLBARS_RIGHT {
             right += (*wp).scrollbar_style.width + (*wp).scrollbar_style.pad;
         }
-        y = (*m).y.wrapping_add((*m).oy) as ::core::ffi::c_int;
-        x = (*m).x.wrapping_add((*m).ox) as ::core::ffi::c_int;
-        if (*m).statusat == 0 as ::core::ffi::c_int && y >= (*m).statuslines as ::core::ffi::c_int {
-            y = (y as u_int).wrapping_sub((*m).statuslines) as ::core::ffi::c_int
+        y = m.y.wrapping_add(m.oy) as ::core::ffi::c_int;
+        x = m.x.wrapping_add(m.ox) as ::core::ffi::c_int;
+        if m.statusat == 0 as ::core::ffi::c_int && y >= m.statuslines as ::core::ffi::c_int {
+            y = (y as u_int).wrapping_sub(m.statuslines) as ::core::ffi::c_int
                 as ::core::ffi::c_int;
-        } else if (*m).statusat > 0 as ::core::ffi::c_int && y >= (*m).statusat {
-            y = (*m).statusat - 1 as ::core::ffi::c_int;
+        } else if m.statusat > 0 as ::core::ffi::c_int && y >= m.statusat {
+            y = m.statusat - 1 as ::core::ffi::c_int;
         }
-        ly = (*m).ly.wrapping_add((*m).oy) as ::core::ffi::c_int;
-        lx = (*m).lx.wrapping_add((*m).ox) as ::core::ffi::c_int;
-        if (*m).statusat == 0 as ::core::ffi::c_int && ly >= (*m).statuslines as ::core::ffi::c_int
-        {
-            ly = (ly as u_int).wrapping_sub((*m).statuslines) as ::core::ffi::c_int
+        ly = m.ly.wrapping_add(m.oy) as ::core::ffi::c_int;
+        lx = m.lx.wrapping_add(m.ox) as ::core::ffi::c_int;
+        if m.statusat == 0 as ::core::ffi::c_int && ly >= m.statuslines as ::core::ffi::c_int {
+            ly = (ly as u_int).wrapping_sub(m.statuslines) as ::core::ffi::c_int
                 as ::core::ffi::c_int;
-        } else if (*m).statusat > 0 as ::core::ffi::c_int && ly >= (*m).statusat {
-            ly = (*m).statusat - 1 as ::core::ffi::c_int;
+        } else if m.statusat > 0 as ::core::ffi::c_int && ly >= m.statusat {
+            ly = m.statusat - 1 as ::core::ffi::c_int;
         }
         if (lx == left || lx == left + 1 as ::core::ffi::c_int)
             && ly == (*wp).yoff - 1 as ::core::ffi::c_int
@@ -464,7 +463,7 @@ unsafe fn cmd_resize_pane_mouse_update_floating(mut c: *mut client, mut m: *mut 
         }
     }
 }
-unsafe fn cmd_resize_pane_mouse_update_tiled(mut c: *mut client, mut m: *mut mouse_event) {
+unsafe fn cmd_resize_pane_mouse_update_tiled(mut c: *mut client, m: &mouse_event) {
     unsafe {
         let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
         let mut w: *mut window = ::core::ptr::null_mut::<window>();
@@ -492,19 +491,19 @@ unsafe fn cmd_resize_pane_mouse_update_tiled(mut c: *mut client, mut m: *mut mou
             return;
         }
         w = (*wl).window();
-        y = (*m).y.wrapping_add((*m).oy);
-        x = (*m).x.wrapping_add((*m).ox);
-        if (*m).statusat == 0 as ::core::ffi::c_int && y >= (*m).statuslines {
-            y = y.wrapping_sub((*m).statuslines);
-        } else if (*m).statusat > 0 as ::core::ffi::c_int && y >= (*m).statusat as u_int {
-            y = ((*m).statusat - 1 as ::core::ffi::c_int) as u_int;
+        y = m.y.wrapping_add(m.oy);
+        x = m.x.wrapping_add(m.ox);
+        if m.statusat == 0 as ::core::ffi::c_int && y >= m.statuslines {
+            y = y.wrapping_sub(m.statuslines);
+        } else if m.statusat > 0 as ::core::ffi::c_int && y >= m.statusat as u_int {
+            y = (m.statusat - 1 as ::core::ffi::c_int) as u_int;
         }
-        ly = (*m).ly.wrapping_add((*m).oy);
-        lx = (*m).lx.wrapping_add((*m).ox);
-        if (*m).statusat == 0 as ::core::ffi::c_int && ly >= (*m).statuslines {
-            ly = ly.wrapping_sub((*m).statuslines);
-        } else if (*m).statusat > 0 as ::core::ffi::c_int && ly >= (*m).statusat as u_int {
-            ly = ((*m).statusat - 1 as ::core::ffi::c_int) as u_int;
+        ly = m.ly.wrapping_add(m.oy);
+        lx = m.lx.wrapping_add(m.ox);
+        if m.statusat == 0 as ::core::ffi::c_int && ly >= m.statuslines {
+            ly = ly.wrapping_sub(m.statuslines);
+        } else if m.statusat > 0 as ::core::ffi::c_int && ly >= m.statusat as u_int {
+            ly = (m.statusat - 1 as ::core::ffi::c_int) as u_int;
         }
         i = 0 as u_int;
         while (i as usize)

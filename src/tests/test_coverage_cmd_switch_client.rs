@@ -66,7 +66,6 @@ use crate::cmd::{CMD_RETURN_ERROR, CMD_RETURN_NORMAL, cmdq_get_state};
 use crate::ffi::getuid;
 use crate::key_bindings::{key_bindings_get_table, key_bindings_remove_table, key_table_name};
 use crate::proc::PEER_BAD;
-use crate::proc::peer_ptr;
 use crate::server::message_log;
 use crate::session::session_get_curw;
 use crate::sort::CLIENT_ATTACHED;
@@ -527,7 +526,7 @@ fn switch_client_read_only_checks() {
     let _wired = unsafe { wire(&raw mut *c) };
     unsafe {
         // Runs as this user, which the read-only check allows.
-        (*peer_ptr(&c.peer)).uid = getuid();
+        (*c.peer_ptr()).uid = getuid();
         c.session = f.one();
 
         let mut item_ro = item_as(&raw mut *c, c"switch-client -r");
@@ -541,7 +540,7 @@ fn switch_client_read_only_checks() {
         // Make read-only again, then pretend peer is somebody else
         c.flags |= CLIENT_READONLY as u64;
         // Runs as somebody else, which the read-only check refuses.
-        (*peer_ptr(&c.peer)).uid = getuid().wrapping_add(1);
+        (*c.peer_ptr()).uid = getuid().wrapping_add(1);
         let mut item_denied = item_as(&raw mut *c, c"switch-client -r");
         assert_eq!(run(&mut item_denied), CMD_RETURN_ERROR);
     }

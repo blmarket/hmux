@@ -42,6 +42,18 @@ pub struct mode_tree_item {
     pub align: ::core::ffi::c_int,
     pub children: mode_tree_list,
 }
+impl mode_tree_item {
+    /// The name the row is filed under, which is what a lookup in the tree
+    /// matches.
+    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.name)
+    }
+
+    /// The key drawn against the row, or null for a row that has none.
+    pub(crate) fn keystr_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.keystr)
+    }
+}
 use crate::cmd::cmd_template_replace;
 use crate::fmt_args;
 use crate::log::log_debug;
@@ -182,6 +194,19 @@ pub struct mode_tree_data {
     pub search_dir: mode_tree_search_dir,
     pub search_icase: ::core::ffi::c_int,
     pub(crate) owner: Option<ModeTreeDataWeak>,
+}
+impl mode_tree_data {
+    /// The string the last search in the tree looked for, or null when nothing
+    /// has been searched for.
+    pub(crate) fn search_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.search)
+    }
+
+    /// The filter the tree shows its rows through, or null when it is showing
+    /// all of them.
+    pub(crate) fn filter_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.filter)
+    }
 }
 pub type mode_tree_search_dir = ::core::ffi::c_uint;
 pub const MODE_TREE_SEARCH_BACKWARD: mode_tree_search_dir = 1;
@@ -2308,21 +2333,22 @@ pub(crate) unsafe fn held_tree(mtd: *mut mode_tree_data) -> ModeTreeDataRef {
 /// one it saved, or null when neither holds it any more.
 pub(crate) unsafe fn mode_tree_item_of(mtd: *mut mode_tree_data, id: u_int) -> *mut mode_tree_item {
     unsafe {
-        let found = item_of_id(&raw mut (*mtd).children, id);
+        let found = item_of_id(&mut (*mtd).children, id);
         match found.is_null() {
-            true => item_of_id(&raw mut (*mtd).saved, id),
+            true => item_of_id(&mut (*mtd).saved, id),
             false => found,
         }
     }
 }
 
-unsafe fn item_of_id(mtl: *mut mode_tree_list, id: u_int) -> *mut mode_tree_item {
+unsafe fn item_of_id(mtl: &mut mode_tree_list, id: u_int) -> *mut mode_tree_item {
     unsafe {
-        for mti in foreach_owned(mtl) {
+        for at in 0..mtl.len() {
+            let mti = &raw mut *mtl[at];
             if (*mti).id == id {
                 return mti;
             }
-            let child = item_of_id(&raw mut (*mti).children, id);
+            let child = item_of_id(&mut (*mti).children, id);
             if !child.is_null() {
                 return child;
             }
@@ -2421,13 +2447,10 @@ unsafe fn mode_tree_prev_sibling(
 }
 
 /// The last item of `mtl`, or null when it holds none.
-unsafe fn mode_tree_last(mtl: *mut mode_tree_list) -> *mut mode_tree_item {
-    unsafe {
-        (*mtl)
-            .last()
-            .map(|item| &raw const **item as *mut mode_tree_item)
-            .unwrap_or(::core::ptr::null_mut::<mode_tree_item>())
-    }
+fn mode_tree_last(mtl: &mut mode_tree_list) -> *mut mode_tree_item {
+    mtl.last_mut()
+        .map(|item| &raw mut **item)
+        .unwrap_or(::core::ptr::null_mut::<mode_tree_item>())
 }
 
 impl Drop for mode_tree_data {
@@ -2437,7 +2460,7 @@ impl Drop for mode_tree_data {
             (*mtd).children.clear();
             (*mtd).saved.clear();
             mode_tree_clear_lines(mtd);
-            screen_free(&raw mut (*mtd).screen);
+            screen_free(&mut (*mtd).screen);
             (*mtd).search = None;
             (*mtd).filter = None;
         }
@@ -2480,7 +2503,7 @@ unsafe fn mode_tree_build_lines(
         if depth > (*mtd).maxdepth {
             (*mtd).maxdepth = depth;
         }
-        let last_of_list = mode_tree_last(mtl);
+        let last_of_list = mode_tree_last(&mut *mtl);
         for mti in foreach_owned(mtl) {
             (*mtd).line_list.push(mode_tree_line {
                 item: (*mti).id,
@@ -2524,7 +2547,7 @@ unsafe fn mode_tree_build_lines(
                     CStr::from_ptr(key_string_lookup_key((*mti).key, 0 as ::core::ffi::c_int))
                         .to_owned(),
                 );
-                (*mti).keylen = strlen(cstr_ptr(&(*mti).keystr));
+                (*mti).keylen = strlen((*mti).keystr_ptr());
             } else {
                 (*mti).keystr = None;
                 (*mti).keylen = 0 as size_t;
@@ -2799,7 +2822,7 @@ pub unsafe fn mode_tree_each_tagged(
 }
 pub(crate) unsafe fn mode_tree_start(
     mut wp: *mut window_pane,
-    mut args: *mut args,
+    args: Option<&args>,
     mut buildcb: mode_tree_build_cb,
     mut drawcb: mode_tree_draw_cb,
     mut searchcb: mode_tree_search_cb,
@@ -2813,12 +2836,31 @@ pub(crate) unsafe fn mode_tree_start(
     menu: &'static [menu_item<'static>],
 ) -> (ModeTreeDataRef, *mut screen) {
     unsafe {
-        let mut mtd_ref = ModeTreeDataRef::new(mode_tree_data {
+        let preview = if args.is_some_and(|args| args_has(args, b'N') > 1) {
+            MODE_TREE_PREVIEW_BIG as ::core::ffi::c_int
+        } else if args.is_some_and(|args| args_has(args, b'N') != 0) {
+            MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int
+        } else {
+            MODE_TREE_PREVIEW_NORMAL as ::core::ffi::c_int
+        };
+        let sort_crit = sort_criteria_t {
+            order: args.map_or(SORT_NAME, |args| {
+                sort_order_from_string(args_get_str(args, b'O'))
+            }),
+            reversed: args.map_or(0, |args| args_has(args, b'r')),
+            ..sort_criteria_t::default()
+        };
+        let filter = if let Some(args) = args.filter(|args| args_has(args, b'f') != 0) {
+            Some(CStr::from_ptr(args_get(args, b'f')).to_owned())
+        } else {
+            None
+        };
+        let mtd_ref = ModeTreeDataRef::new(mode_tree_data {
             zoomed: 0,
             wp,
             modedata,
             menu,
-            sort_crit: sort_criteria_t::default(),
+            sort_crit,
             buildcb,
             drawcb,
             searchcb,
@@ -2839,57 +2881,27 @@ pub(crate) unsafe fn mode_tree_start(
             offset: 0,
             current: 0,
             screen: screen::default(),
-            preview: 0,
+            preview,
             search: None,
-            filter: None,
+            filter,
             no_matches: 0,
             search_dir: MODE_TREE_SEARCH_FORWARD,
             search_icase: 0,
             owner: None,
         });
-        let mtd = mtd_ref.as_ptr();
-        (*mtd).wp = wp;
-        (*mtd).menu = menu;
-        if !args.is_null() && args_has(&*args, 'N' as i32 as u_char) > 1 as ::core::ffi::c_int {
-            (*mtd).preview = MODE_TREE_PREVIEW_BIG as ::core::ffi::c_int;
-        } else if !args.is_null() && args_has(&*args, 'N' as i32 as u_char) != 0 {
-            (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
-        } else {
-            (*mtd).preview = MODE_TREE_PREVIEW_NORMAL as ::core::ffi::c_int;
-        }
-        (*mtd).sort_crit.order = if !args.is_null() {
-            sort_order_from_string(args_get_str(&*args, 'O' as i32 as u_char))
-        } else {
-            SORT_NAME
-        };
-        (*mtd).sort_crit.reversed = if !args.is_null() {
-            args_has(&*args, 'r' as i32 as u_char)
-        } else {
-            0
-        };
-        if !args.is_null() && args_has(&*args, 'f' as i32 as u_char) != 0 {
-            (*mtd).filter = Some(CStr::from_ptr(args_get(&*args, 'f' as i32 as u_char)).to_owned());
-        } else {
-            (*mtd).filter = None;
-        }
-        screen_init(
-            &raw mut (*mtd).screen,
-            (*wp).sx,
-            (*wp).sy,
-            0 as ::core::ffi::c_int as u_int,
-        );
-        let s = &raw mut (*mtd).screen;
+        let s = &raw mut (*mtd_ref.as_ptr()).screen;
+        screen_init(&mut *s, (*wp).sx, (*wp).sy, 0 as ::core::ffi::c_int as u_int);
         (mtd_ref, s)
     }
 }
-pub unsafe fn mode_tree_zoom(mtd: &ModeTreeDataRef, mut args: *mut args) {
+pub unsafe fn mode_tree_zoom(mtd: &ModeTreeDataRef, args: Option<&args>) {
     unsafe {
         let mtd = mtd.as_ptr();
         // The callbacks below can reach back into the tree, so it is held
         // for as long as they run.
         let _pinned = (*mtd).owner.as_ref().and_then(ModeTreeDataWeak::upgrade);
         let mut wp: *mut window_pane = (*mtd).wp;
-        if !args.is_null() && args_has(&*args, 'Z' as i32 as u_char) != 0 {
+        if args.is_some_and(|args| args_has(args, b'Z') != 0) {
             (*mtd).zoomed = (*(*wp).window).flags & WINDOW_ZOOMED;
             if (*mtd).zoomed == 0 && window_zoom(wp) == 0 as ::core::ffi::c_int {
                 server_redraw_window((*wp).window);
@@ -2906,24 +2918,24 @@ unsafe fn mode_tree_set_height(mut mtd: *mut mode_tree_data) {
         if (*mtd).heightcb.is_some() {
             height = (*mtd).heightcb.expect("non-null function pointer")(
                 &mut *mtd,
-                (*screen_grid_ptr(s)).sy,
+                (*screen_grid_ptr(&mut *s)).sy,
             );
-            if height < (*screen_grid_ptr(s)).sy {
-                (*mtd).height = (*screen_grid_ptr(s)).sy.wrapping_sub(height);
+            if height < (*screen_grid_ptr(&mut *s)).sy {
+                (*mtd).height = (*screen_grid_ptr(&mut *s)).sy.wrapping_sub(height);
             }
         } else if (*mtd).preview == MODE_TREE_PREVIEW_NORMAL as ::core::ffi::c_int {
-            (*mtd).height = (*screen_grid_ptr(s))
+            (*mtd).height = (*screen_grid_ptr(&mut *s))
                 .sy
                 .wrapping_div(3 as u_int)
                 .wrapping_mul(2 as u_int);
             if (*mtd).height > line_count(mtd) {
-                (*mtd).height = (*screen_grid_ptr(s)).sy.wrapping_div(2 as u_int);
+                (*mtd).height = (*screen_grid_ptr(&mut *s)).sy.wrapping_div(2 as u_int);
             }
             if (*mtd).height < 10 as u_int {
-                (*mtd).height = (*screen_grid_ptr(s)).sy;
+                (*mtd).height = (*screen_grid_ptr(&mut *s)).sy;
             }
         } else if (*mtd).preview == MODE_TREE_PREVIEW_BIG as ::core::ffi::c_int {
-            (*mtd).height = (*screen_grid_ptr(s)).sy.wrapping_div(4 as u_int);
+            (*mtd).height = (*screen_grid_ptr(&mut *s)).sy.wrapping_div(4 as u_int);
             if (*mtd).height > line_count(mtd) {
                 (*mtd).height = line_count(mtd);
             }
@@ -2931,10 +2943,10 @@ unsafe fn mode_tree_set_height(mut mtd: *mut mode_tree_data) {
                 (*mtd).height = 2 as u_int;
             }
         } else {
-            (*mtd).height = (*screen_grid_ptr(s)).sy;
+            (*mtd).height = (*screen_grid_ptr(&mut *s)).sy;
         }
-        if (*screen_grid_ptr(s)).sy.wrapping_sub((*mtd).height) < 2 as u_int {
-            (*mtd).height = (*screen_grid_ptr(s)).sy;
+        if (*screen_grid_ptr(&mut *s)).sy.wrapping_sub((*mtd).height) < 2 as u_int {
+            (*mtd).height = (*screen_grid_ptr(&mut *s)).sy;
         }
     }
 }
@@ -2959,7 +2971,7 @@ pub unsafe fn mode_tree_build(mtd: &ModeTreeDataRef) {
             (*mtd).modedata.clone(),
             &(*mtd).sort_crit,
             &mut tag,
-            cstr_ptr(&(*mtd).filter),
+            (*mtd).filter_ptr(),
         );
         (*mtd).no_matches = (*mtd).children.is_empty() as ::core::ffi::c_int;
         if (*mtd).no_matches != 0 {
@@ -2980,11 +2992,11 @@ pub unsafe fn mode_tree_build(mtd: &ModeTreeDataRef) {
             tag = (*mode_tree_item_of(mtd, line.item)).tag;
         }
         mode_tree_set_current(&held(mtd), tag);
-        (*mtd).width = (*screen_grid_ptr(s)).sx;
+        (*mtd).width = (*screen_grid_ptr(&mut *s)).sx;
         if (*mtd).preview != MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int {
             mode_tree_set_height(mtd);
         } else {
-            (*mtd).height = (*screen_grid_ptr(s)).sy;
+            (*mtd).height = (*screen_grid_ptr(&mut *s)).sy;
         }
         mode_tree_check_selected(mtd);
     }
@@ -3005,7 +3017,7 @@ pub unsafe fn mode_tree_resize(mtd: &ModeTreeDataRef, mut sx: u_int, mut sy: u_i
     unsafe {
         let mtd = mtd.as_ptr();
         let mut s: *mut screen = &raw mut (*mtd).screen;
-        screen_resize(s, sx, sy, 0 as ::core::ffi::c_int);
+        screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
         mode_tree_build(&held(mtd));
         mode_tree_draw(&held(mtd));
         (*(*mtd).wp).flags |= PANE_REDRAW;
@@ -3129,10 +3141,10 @@ pub unsafe fn mode_tree_draw(mtd: &ModeTreeDataRef) {
         }
         gc0 = grid_default_cell;
         gc = grid_default_cell;
-        style_apply(&raw mut gc, oo, c"mode-style".as_ptr(), None);
+        style_apply(&mut gc, oo, c"mode-style".as_ptr(), None);
         w = (*mtd).width;
         h = (*mtd).height;
-        screen_write_start(&mut ctx, s);
+        screen_write_start(&mut ctx, &mut *s);
         screen_write_clearscreen(&mut ctx, 8 as u_int);
         keylen = 0 as ::core::ffi::c_int;
         i = 0 as u_int;
@@ -3155,11 +3167,11 @@ pub unsafe fn mode_tree_draw(mtd: &ModeTreeDataRef) {
             line = line_at(mtd, i);
             mti = mode_tree_item_of(mtd, (*line).item);
             if (*mti).align != 0
-                && strlen(cstr_ptr(&(*mti).name)) as ::core::ffi::c_int
+                && strlen((*mti).name_ptr()) as ::core::ffi::c_int
                     > *alignlen.as_mut_ptr().offset((*line).depth as isize)
             {
                 *alignlen.as_mut_ptr().offset((*line).depth as isize) =
-                    strlen(cstr_ptr(&(*mti).name)) as ::core::ffi::c_int;
+                    strlen((*mti).name_ptr()) as ::core::ffi::c_int;
             }
             i = i.wrapping_add(1);
         }
@@ -3255,7 +3267,7 @@ pub unsafe fn mode_tree_draw(mtd: &ModeTreeDataRef) {
                     screen_write_nputs(
                         &mut ctx,
                         w as ssize_t,
-                        &raw mut gc0,
+                        &mut gc0,
                         c"%s".as_ptr(),
                         fmt_args![text.as_ptr()],
                     );
@@ -3274,7 +3286,7 @@ pub unsafe fn mode_tree_draw(mtd: &ModeTreeDataRef) {
                     screen_write_nputs(
                         &mut ctx,
                         w as ssize_t,
-                        &raw mut gc,
+                        &mut gc,
                         c"%s".as_ptr(),
                         fmt_args![text.as_ptr()],
                     );
@@ -3297,7 +3309,7 @@ pub unsafe fn mode_tree_draw(mtd: &ModeTreeDataRef) {
             i = i.wrapping_add(1);
         }
         if !((*mtd).preview == MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int) {
-            sy = (*screen_grid_ptr(s)).sy;
+            sy = (*screen_grid_ptr(&mut *s)).sy;
             if !(sy <= 4 as u_int
                 || h < 2 as u_int
                 || sy.wrapping_sub(h) <= 4 as u_int
@@ -3346,12 +3358,7 @@ pub unsafe fn mode_tree_draw(mtd: &ModeTreeDataRef) {
                         h as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                     );
-                    screen_write_puts(
-                        &mut ctx,
-                        &raw mut gc0,
-                        c"%s".as_ptr(),
-                        fmt_args![text.as_ptr()],
-                    );
+                    screen_write_puts(&mut ctx, &mut gc0, c"%s".as_ptr(), fmt_args![text.as_ptr()]);
                     if (*mtd).no_matches != 0 {
                         n = (::core::mem::size_of::<[::core::ffi::c_char; 11]>() as usize)
                             .wrapping_sub(1_usize) as size_t;
@@ -3366,30 +3373,20 @@ pub unsafe fn mode_tree_draw(mtd: &ModeTreeDataRef) {
                                 .wrapping_add(n)
                                 .wrapping_add(2 as size_t)
                     {
-                        screen_write_puts(
-                            &mut ctx,
-                            &raw mut gc0,
-                            c" (filter: ".as_ptr(),
-                            fmt_args![],
-                        );
+                        screen_write_puts(&mut ctx, &mut gc0, c" (filter: ".as_ptr(), fmt_args![]);
                         if (*mtd).no_matches != 0 {
                             screen_write_puts(
                                 &mut ctx,
-                                &raw mut gc,
+                                &mut gc,
                                 c"no matches".as_ptr(),
                                 fmt_args![],
                             );
                         } else {
-                            screen_write_puts(
-                                &mut ctx,
-                                &raw mut gc0,
-                                c"active".as_ptr(),
-                                fmt_args![],
-                            );
+                            screen_write_puts(&mut ctx, &mut gc0, c"active".as_ptr(), fmt_args![]);
                         }
-                        screen_write_puts(&mut ctx, &raw mut gc0, c") ".as_ptr(), fmt_args![]);
+                        screen_write_puts(&mut ctx, &mut gc0, c") ".as_ptr(), fmt_args![]);
                     } else {
-                        screen_write_puts(&mut ctx, &raw mut gc0, c" ".as_ptr(), fmt_args![]);
+                        screen_write_puts(&mut ctx, &mut gc0, c" ".as_ptr(), fmt_args![]);
                     }
                 }
                 box_x = w.wrapping_sub(4 as u_int);
@@ -3435,16 +3432,16 @@ unsafe fn mode_tree_search_backward(mut mtd: *mut mode_tree_data) -> *mut mode_t
             prev = mode_tree_prev_sibling(mtd, mti);
             if !prev.is_null() {
                 while !(*prev).children.is_empty() {
-                    prev = mode_tree_last(&raw mut (*prev).children);
+                    prev = mode_tree_last(&mut (*prev).children);
                 }
                 mti = prev;
             } else {
                 mti = mode_tree_parent(mtd, mti);
             }
             if mti.is_null() {
-                prev = mode_tree_last(&raw mut (*mtd).children);
+                prev = mode_tree_last(&mut (*mtd).children);
                 while !(*prev).children.is_empty() {
-                    prev = mode_tree_last(&raw mut (*prev).children);
+                    prev = mode_tree_last(&mut (*prev).children);
                 }
                 mti = prev;
             }
@@ -3452,19 +3449,16 @@ unsafe fn mode_tree_search_backward(mut mtd: *mut mode_tree_data) -> *mut mode_t
                 break;
             }
             if (*mtd).searchcb.is_none() {
-                if icase == 0 && !strstr(cstr_ptr(&(*mti).name), cstr_ptr(&(*mtd).search)).is_null()
-                {
+                if icase == 0 && !strstr((*mti).name_ptr(), (*mtd).search_ptr()).is_null() {
                     return mti;
                 }
-                if icase != 0
-                    && !strcasestr(cstr_ptr(&(*mti).name), cstr_ptr(&(*mtd).search)).is_null()
-                {
+                if icase != 0 && !strcasestr((*mti).name_ptr(), (*mtd).search_ptr()).is_null() {
                     return mti;
                 }
             } else if (*mtd).searchcb.expect("non-null function pointer")(
                 (*mtd).modedata.clone(),
                 (*mti).itemdata,
-                cstr_ptr(&(*mtd).search),
+                (*mtd).search_ptr(),
                 icase,
             ) != 0
             {
@@ -3518,19 +3512,16 @@ unsafe fn mode_tree_search_forward(mut mtd: *mut mode_tree_data) -> *mut mode_tr
                 break;
             }
             if (*mtd).searchcb.is_none() {
-                if icase == 0 && !strstr(cstr_ptr(&(*mti).name), cstr_ptr(&(*mtd).search)).is_null()
-                {
+                if icase == 0 && !strstr((*mti).name_ptr(), (*mtd).search_ptr()).is_null() {
                     return mti;
                 }
-                if icase != 0
-                    && !strcasestr(cstr_ptr(&(*mti).name), cstr_ptr(&(*mtd).search)).is_null()
-                {
+                if icase != 0 && !strcasestr((*mti).name_ptr(), (*mtd).search_ptr()).is_null() {
                     return mti;
                 }
             } else if (*mtd).searchcb.expect("non-null function pointer")(
                 (*mtd).modedata.clone(),
                 (*mti).itemdata,
-                cstr_ptr(&(*mtd).search),
+                (*mtd).search_ptr(),
                 icase,
             ) != 0
             {
@@ -3759,7 +3750,7 @@ unsafe fn mode_tree_display_help(mut mtd: *mut mode_tree_data, mut c: *mut clien
 pub unsafe fn mode_tree_key(
     mtd: &ModeTreeDataRef,
     mut c: *mut client,
-    mut key: *mut key_code,
+    key: &mut key_code,
     mut m: *mut mouse_event,
 ) -> (::core::ffi::c_int, u_int, u_int) {
     unsafe {
@@ -3788,7 +3779,7 @@ pub unsafe fn mode_tree_key(
                         << 32 as ::core::ffi::c_int)
             && !m.is_null()
         {
-            if match cmd_mouse_at((*mtd).wp, m, 0 as ::core::ffi::c_int) {
+            if match cmd_mouse_at((*mtd).wp, &*m, 0 as ::core::ffi::c_int) {
                 Some((at_x, at_y)) => {
                     (x, y) = (at_x, at_y);
                     false

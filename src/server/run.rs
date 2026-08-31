@@ -1,6 +1,7 @@
 use super::acl::server_acl_init;
 use super::acl::server_acl_join;
 use super::client::server_client_loop;
+use super::defaults::server_default_options;
 use super::client::{server_client_create, server_client_lost};
 use super::message::server_destroy_pane;
 use crate::cmd::cmd_wait_for_flush;
@@ -452,6 +453,7 @@ pub unsafe fn server_start(
         });
         server_ev_tidy.arm(tv);
         crate::plugin::init();
+        server_default_options();
         server_acl_init();
         server_add_accept(0 as ::core::ffi::c_int);
         proc_loop(server_proc, Some(server_loop));

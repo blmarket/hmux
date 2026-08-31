@@ -4,11 +4,11 @@ use crate::cmd::find::{cmd_find_from_session, cmd_find_target};
 use crate::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags, cmdq_get_target_client,
 };
-use crate::environ::{environ_ptr, environ_update};
+use crate::environ::environ_update;
 use crate::ffi::{getuid, strcmp, strcspn};
 use crate::fmt_args;
 use crate::key_bindings::key_bindings_get_table;
-use crate::proc::{peer_ptr, proc_get_peer_uid};
+use crate::proc::proc_get_peer_uid;
 use crate::server::client_get_last_session;
 use crate::server::server_redraw_window;
 use crate::server::{server_client_set_key_table, server_client_set_session};
@@ -204,7 +204,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> 
         wp = target.pane();
         if args_has(args, 'r' as i32 as u_char) != 0 {
             if (*tc).flags & CLIENT_READONLY as uint64_t != 0 {
-                uid = proc_get_peer_uid(peer_ptr(&(*c).peer));
+                uid = proc_get_peer_uid((*c).peer_ptr());
                 if uid != getuid() {
                     cmdq_error(item, c"client is read-only".as_ptr(), fmt_args![]);
                     return CMD_RETURN_ERROR;
@@ -288,11 +288,7 @@ unsafe fn cmd_switch_client_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> 
             }
         }
         if args_has(args, 'E' as i32 as u_char) == 0 {
-            environ_update(
-                session_options(s),
-                environ_ptr(&(*tc).environ),
-                session_environ(s),
-            );
+            environ_update(session_options(s), (*tc).environ_ptr(), session_environ(s));
         }
         server_client_set_session(tc, s);
         if !cmdq_get_flags(&*item) & CMDQ_STATE_REPEAT != 0 {

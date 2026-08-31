@@ -2,7 +2,7 @@ use crate::cmd::cmd_parse_from_string;
 use crate::cmd::{cmd_list_all_have, cmd_list_print};
 use crate::cmd::{
     cmdq_append, cmdq_error, cmdq_get_callback1, cmdq_get_command, cmdq_insert_after,
-    cmdq_new_state,
+    cmdq_item_ref_from_ptr, cmdq_new_state,
 };
 use crate::fmt_args;
 use crate::log::{fatalx, log_debug};
@@ -117,14 +117,9 @@ pub unsafe fn key_binding_tablename(bd: *const key_binding) -> Option<&'static C
 }
 
 /// The commands the key runs, as a borrowed view for running or printing
-/// them, or null before the binding has been given any.
-pub unsafe fn key_binding_cmdlist(bd: *const key_binding) -> *mut cmd_list {
-    unsafe {
-        (*bd)
-            .cmdlist
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), CmdListRef::as_ptr)
-    }
+/// them, or nothing before the binding has been given any.
+pub unsafe fn key_binding_cmdlist<'a>(bd: *const key_binding) -> Option<&'a CmdListRef> {
+    unsafe { (*bd).cmdlist.as_ref() }
 }
 
 /// The commands the key runs, as a handle that keeps them alive past the
@@ -394,10 +389,7 @@ pub(crate) unsafe fn key_bindings_add(
             (*bd).flags |= KEY_BINDING_REPEAT;
         }
         (*bd).cmdlist = cmdlist;
-        let s = cmd_list_print(
-            (*bd).cmdlist.as_ref().unwrap().as_ptr(),
-            0 as ::core::ffi::c_int,
-        );
+        let s = cmd_list_print((*bd).cmdlist.as_ref().unwrap(), 0 as ::core::ffi::c_int);
         log_debug(
             c"%s: %#llx %s = %s".as_ptr(),
             fmt_args![
@@ -854,7 +846,7 @@ pub unsafe fn key_bindings_dispatch(
         if c.is_null() || !(*c).flags & CLIENT_READONLY as uint64_t != 0 {
             readonly = 1 as ::core::ffi::c_int;
         } else {
-            readonly = cmd_list_all_have((*bd).cmdlist.as_ref().unwrap().as_ptr(), CMD_READONLY);
+            readonly = cmd_list_all_have((*bd).cmdlist.as_ref().unwrap(), CMD_READONLY);
         }
         let queued = if readonly == 0 {
             cmdq_get_callback1(
@@ -869,10 +861,9 @@ pub unsafe fn key_bindings_dispatch(
             let new_state = cmdq_new_state(fs, event, flags);
             cmdq_get_command((*bd).cmdlist.as_ref().unwrap(), Some(&new_state))
         };
-        if !item.is_null() {
-            cmdq_insert_after(item, queued)
-        } else {
-            cmdq_append(c, queued)
+        match cmdq_item_ref_from_ptr(item) {
+            Some(after) => cmdq_insert_after(&after, queued),
+            None => cmdq_append(c, queued),
         }
     }
 }

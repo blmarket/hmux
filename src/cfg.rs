@@ -1,7 +1,7 @@
 use crate::cmd::{
     CmdqItemWeak, cmdq_add_format, cmdq_append, cmdq_continue, cmdq_copy_state, cmdq_get_callback1,
     cmdq_get_client, cmdq_get_command, cmdq_get_state_ref, cmdq_insert_after,
-    cmdq_item_weak_from_ptr, cmdq_new_state, cmdq_print,
+    cmdq_item_ref_from_ptr, cmdq_item_weak_from_ptr, cmdq_new_state, cmdq_print,
 };
 use crate::cmd::{cmd_parse_from_buffer, cmd_parse_from_file};
 use crate::control::control_write;
@@ -165,7 +165,7 @@ fn cfg_done(_item: *mut cmdq_item, _data: CmdqCallbackData) -> cmd_retval {
         cfg_finished = 1 as ::core::ffi::c_int;
         cfg_show_causes(::core::ptr::null_mut::<session>());
         if let Some(item) = cfg_item.as_ref().and_then(CmdqItemWeak::upgrade) {
-            cmdq_continue(item.as_ptr());
+            cmdq_continue(&item);
         }
         status_prompt_load_history();
         CMD_RETURN_NORMAL
@@ -250,27 +250,26 @@ pub unsafe fn load_cfg(
             let _ = pr.cmdlist.take();
             return 0 as ::core::ffi::c_int;
         }
-        let state = if !item.is_null() {
-            cmdq_copy_state(cmdq_get_state_ref(item), current)
-        } else {
-            cmdq_new_state(
+        let anchor = cmdq_item_ref_from_ptr(item);
+        let state = match anchor.as_ref() {
+            Some(anchor) => cmdq_copy_state(cmdq_get_state_ref(anchor), current),
+            None => cmdq_new_state(
                 ::core::ptr::null_mut::<cmd_find_state>(),
                 ::core::ptr::null_mut::<key_event>(),
                 0 as ::core::ffi::c_int,
-            )
+            ),
         };
         cmdq_add_format(
-            state.as_ptr(),
+            &state,
             c"current_file".as_ptr(),
             c"%s".as_ptr(),
             fmt_args![pi.file()],
         );
         let cmdlist = pr.cmdlist.take().unwrap();
         let queued = cmdq_get_command(&cmdlist, Some(&state));
-        let last = if !item.is_null() {
-            cmdq_insert_after(item, queued)
-        } else {
-            cmdq_append(::core::ptr::null_mut::<client>(), queued)
+        let last = match anchor.as_ref() {
+            Some(anchor) => cmdq_insert_after(anchor, queued),
+            None => cmdq_append(::core::ptr::null_mut::<client>(), queued),
         };
         if let Some(new_item) = new_item {
             *new_item = last;
@@ -311,27 +310,26 @@ pub unsafe fn load_cfg_from_buffer(
             let _ = pr.cmdlist.take();
             return 0 as ::core::ffi::c_int;
         }
-        let state = if !item.is_null() {
-            cmdq_copy_state(cmdq_get_state_ref(item), current)
-        } else {
-            cmdq_new_state(
+        let anchor = cmdq_item_ref_from_ptr(item);
+        let state = match anchor.as_ref() {
+            Some(anchor) => cmdq_copy_state(cmdq_get_state_ref(anchor), current),
+            None => cmdq_new_state(
                 ::core::ptr::null_mut::<cmd_find_state>(),
                 ::core::ptr::null_mut::<key_event>(),
                 0 as ::core::ffi::c_int,
-            )
+            ),
         };
         cmdq_add_format(
-            state.as_ptr(),
+            &state,
             c"current_file".as_ptr(),
             c"%s".as_ptr(),
             fmt_args![pi.file()],
         );
         let cmdlist = pr.cmdlist.take().unwrap();
         let queued = cmdq_get_command(&cmdlist, Some(&state));
-        let last = if !item.is_null() {
-            cmdq_insert_after(item, queued)
-        } else {
-            cmdq_append(::core::ptr::null_mut::<client>(), queued)
+        let last = match anchor.as_ref() {
+            Some(anchor) => cmdq_insert_after(anchor, queued),
+            None => cmdq_append(::core::ptr::null_mut::<client>(), queued),
         };
         if let Some(new_item) = new_item {
             *new_item = last;
@@ -388,7 +386,7 @@ pub unsafe fn cfg_show_causes(mut s: *mut session) {
                     ::core::ptr::null_mut::<window_pane>(),
                     WindowMode::View,
                     ::core::ptr::null_mut::<cmd_find_state>(),
-                    ::core::ptr::null_mut::<args>(),
+                    None,
                 );
             }
             for msg in ::core::mem::take(&mut cfg_causes) {

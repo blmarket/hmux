@@ -39,6 +39,10 @@ impl Win {
         self.window.ptr()
     }
 
+    fn handle(&self) -> &WindowRef {
+        self.window.handle()
+    }
+
     fn pane(&mut self, i: usize) -> *mut window_pane {
         self.panes[i].ptr()
     }
@@ -544,7 +548,7 @@ fn a_window_with_no_active_pane_is_not_resized() {
     let mut w = Win::new(80, 24);
     unsafe {
         window_set_active(w.ptr(), null_mut::<window_pane>());
-        recalculate_size(w.ptr(), 1);
+        recalculate_size(w.handle(), 1);
     }
     assert_eq!(w.size(), (80, 24, 80, 24));
     unsafe { window_set_active(w.ptr(), w.pane(0)) };
@@ -555,7 +559,7 @@ fn a_window_no_client_can_size_is_left_where_it_is() {
     let _guard = globals();
     let mut w = Win::new(80, 24);
     let list = Clients::new();
-    unsafe { recalculate_size(w.ptr(), 0) };
+    unsafe { recalculate_size(w.handle(), 0) };
     assert_eq!(w.size(), (80, 24, 80, 24));
     drop(list);
 }
@@ -570,15 +574,15 @@ fn a_recalculated_size_is_held_until_the_next_redraw_unless_it_is_wanted_now() {
     let c = list.add("c", 40, 12);
     unsafe {
         (*c).session = s.ptr();
-        recalculate_size(w.ptr(), 0);
+        recalculate_size(w.handle(), 0);
         assert_eq!(w.size(), (80, 24, 80, 24));
         assert_ne!((*w.ptr()).flags & WINDOW_RESIZE, 0);
         assert_eq!(((*w.ptr()).new_sx, (*w.ptr()).new_sy), (40, 12));
-        recalculate_size(w.ptr(), 0);
+        recalculate_size(w.handle(), 0);
         assert_eq!(w.size(), (80, 24, 80, 24));
-        recalculate_size(w.ptr(), 1);
+        recalculate_size(w.handle(), 1);
         assert_eq!(w.size(), (40, 12, 40, 12));
-        recalculate_size(w.ptr(), 0);
+        recalculate_size(w.handle(), 0);
         assert_eq!(w.size(), (40, 12, 40, 12));
     }
     unlink(&mut s, wl);
@@ -599,7 +603,7 @@ fn a_manual_window_is_resized_at_once() {
         );
         (*w.ptr()).manual_sx = 50;
         (*w.ptr()).manual_sy = 15;
-        recalculate_size(w.ptr(), 0);
+        recalculate_size(w.handle(), 0);
         assert_eq!(w.size(), (50, 15, 50, 15));
     }
     drop(list);
@@ -620,9 +624,9 @@ fn an_aggressive_resize_only_counts_the_clients_showing_the_window() {
     unsafe {
         (*c).session = s.ptr();
         options_set_number(hidden.window.options(), c"aggressive-resize".as_ptr(), 1);
-        recalculate_size(hidden.ptr(), 1);
+        recalculate_size(hidden.handle(), 1);
         assert_eq!(hidden.size(), (80, 24, 80, 24));
-        recalculate_size(shown.ptr(), 1);
+        recalculate_size(shown.handle(), 1);
         assert_eq!(shown.size(), (40, 12, 40, 12));
     }
     unlink(&mut s, second);
@@ -640,10 +644,10 @@ fn a_client_whose_session_shows_no_window_at_all_is_skipped() {
     unsafe {
         (*c).session = s.ptr();
         session_set_curw(s.ptr(), null_mut::<winlink>());
-        recalculate_size(w.ptr(), 1);
+        recalculate_size(w.handle(), 1);
         assert_eq!(w.size(), (80, 24, 80, 24));
         session_set_curw(s.ptr(), wl);
-        recalculate_size(w.ptr(), 1);
+        recalculate_size(w.handle(), 1);
         assert_eq!(w.size(), (40, 12, 40, 12));
     }
     unlink(&mut s, wl);

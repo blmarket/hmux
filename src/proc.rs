@@ -96,6 +96,12 @@ pub struct tmuxproc {
     pub ev_sigusr2: SignalHandle,
     pub ev_sigwinch: SignalHandle,
 }
+impl tmuxproc {
+    /// The name the process logs under.
+    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.name)
+    }
+}
 pub const PF_UNSPEC: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const PF_LOCAL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const PF_UNIX: ::core::ffi::c_int = PF_LOCAL;
@@ -567,7 +573,7 @@ pub unsafe fn proc_flush_peer(mut peer: *mut tmuxpeer) {
 }
 pub unsafe fn proc_toggle_log(mut tp: *mut tmuxproc) {
     unsafe {
-        log_toggle(cstr_ptr(&(*tp).name));
+        log_toggle((*tp).name_ptr());
     }
 }
 /// Forks a daemon, answering the child's process id and this end of the

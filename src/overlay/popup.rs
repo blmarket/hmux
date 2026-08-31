@@ -2180,6 +2180,12 @@ impl popup_data {
             .as_ref()
             .map_or(::core::ptr::null_mut(), ClientRef::as_ptr)
     }
+
+    /// The title drawn on the popup's border, or null for a popup that carries
+    /// none.
+    pub(crate) fn title_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.title)
+    }
 }
 pub type popup_data_dragging = ::core::ffi::c_uint;
 pub const SIZE: popup_data_dragging = 2;
@@ -2293,8 +2299,8 @@ unsafe fn popup_free_resources(reference: PopupDataRef) {
         if let Some(ictx) = pd.ictx.take() {
             input_free_box(ictx);
         }
-        screen_free(&raw mut pd.s);
-        colour_palette_free(&raw mut pd.palette);
+        screen_free(&mut pd.s);
+        colour_palette_free(Some(&mut pd.palette));
         drop(reference);
     }
 }
@@ -2365,7 +2371,7 @@ pub(crate) unsafe fn popup_free_box(mut c: *mut client, reference: PopupDataRef)
             if !asked.is_null() && (*asked).session.is_null() {
                 (*asked).retval = pd.status;
             }
-            cmdq_continue(item.as_ptr());
+            cmdq_continue(item);
         }
         popup_free_resources(reference);
     }
@@ -2389,7 +2395,7 @@ unsafe fn popup_reapply_styles(mut pd: *mut popup_data) {
         );
         (*pd).defaults = grid_default_cell;
         style_apply(
-            &raw mut (*pd).defaults,
+            &mut (*pd).defaults,
             o,
             c"popup-style".as_ptr(),
             Some(&mut ft),
@@ -2405,7 +2411,7 @@ unsafe fn popup_reapply_styles(mut pd: *mut popup_data) {
         (*pd).defaults.attr = 0 as u_short;
         (*pd).border_cell = grid_default_cell;
         style_apply(
-            &raw mut (*pd).border_cell,
+            &mut (*pd).border_cell,
             o,
             c"popup-border-style".as_ptr(),
             Some(&mut ft),
@@ -2564,7 +2570,7 @@ pub(crate) unsafe fn popup_draw_cb(
 ) {
     unsafe {
         let mut pd: *mut popup_data = data;
-        let mut tty: *mut tty = &raw mut (*c).tty;
+        let tty: &mut tty = &mut (*c).tty;
         let mut ctx = screen_write_ctx::default();
         let mut i: u_int = 0;
         let mut px: u_int = (*pd).px;
@@ -2575,7 +2581,7 @@ pub(crate) unsafe fn popup_draw_cb(
         if (*pd).s.hyperlinks.is_some() {
             s.hyperlinks = (*pd).s.hyperlinks.clone();
         }
-        screen_write_start(&mut ctx, &raw mut s);
+        screen_write_start(&mut ctx, &mut s);
         screen_write_clearscreen(&mut ctx, 8 as u_int);
         if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
             screen_write_cursormove(
@@ -2586,7 +2592,7 @@ pub(crate) unsafe fn popup_draw_cb(
             );
             screen_write_fast_copy(
                 &mut ctx,
-                &raw mut (*pd).s,
+                &(*pd).s,
                 0 as u_int,
                 0 as u_int,
                 (*pd).sx,
@@ -2609,7 +2615,7 @@ pub(crate) unsafe fn popup_draw_cb(
             );
             screen_write_fast_copy(
                 &mut ctx,
-                &raw mut (*pd).s,
+                &(*pd).s,
                 0 as u_int,
                 0 as u_int,
                 (*pd).sx.wrapping_sub(2 as u_int),
@@ -2640,12 +2646,12 @@ pub(crate) unsafe fn popup_draw_cb(
                 (*pd).sx,
                 px,
                 py.wrapping_add(i),
-                &raw mut defaults,
+                &defaults,
                 palette,
             );
             i = i.wrapping_add(1);
         }
-        screen_free(&raw mut s);
+        screen_free(&mut s);
         if !md.is_null() {
             (*c).set_overlay_view(OverlayView::Nothing);
             menu_draw_cb(c, md, rctx);
@@ -2656,7 +2662,7 @@ pub(crate) unsafe fn popup_draw_cb(
 pub(crate) unsafe fn popup_resize_cb(mut c: *mut client, mut data: *mut popup_data) {
     unsafe {
         let mut pd: *mut popup_data = data;
-        let mut tty: *mut tty = &raw mut (*c).tty;
+        let tty: &mut tty = &mut (*c).tty;
         if pd.is_null() {
             return;
         }
@@ -2686,7 +2692,7 @@ pub(crate) unsafe fn popup_resize_cb(mut c: *mut client, mut data: *mut popup_da
         }
         if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
             screen_resize(
-                &raw mut (*pd).s,
+                &mut (*pd).s,
                 (*pd).sx,
                 (*pd).sy,
                 0 as ::core::ffi::c_int,
@@ -2696,7 +2702,7 @@ pub(crate) unsafe fn popup_resize_cb(mut c: *mut client, mut data: *mut popup_da
             }
         } else if (*pd).sx > 2 as u_int && (*pd).sy > 2 as u_int {
             screen_resize(
-                &raw mut (*pd).s,
+                &mut (*pd).s,
                 (*pd).sx.wrapping_sub(2 as u_int),
                 (*pd).sy.wrapping_sub(2 as u_int),
                 0 as ::core::ffi::c_int,
@@ -2740,26 +2746,25 @@ unsafe fn popup_make_pane(mut pd: *mut popup_data, mut type_0: layout_type) {
         );
         layout_assign_pane(lc, new_wp, 0 as ::core::ffi::c_int);
         if !(*pd).job().is_null() {
-            (*new_wp).fd = job_transfer(
+            ((*new_wp).fd, (*new_wp).pid) = job_transfer(
                 (*pd).job(),
-                &raw mut (*new_wp).pid,
                 &raw mut (*new_wp).tty as *mut ::core::ffi::c_char,
                 ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
             );
             (*pd).job_id = None;
         }
         screen_set_title(
-            &raw mut (*pd).s,
-            cstr_ptr(&(*new_wp).base.title),
+            &mut (*pd).s,
+            (*new_wp).base.title_ptr(),
             0 as ::core::ffi::c_int,
         );
-        screen_free(&raw mut (*new_wp).base);
+        screen_free(&mut (*new_wp).base);
         (*new_wp).base = ::core::mem::replace(
             &mut (*pd).s,
             screen::new(1 as u_int, 1 as u_int, 0 as u_int),
         );
         screen_resize(
-            &raw mut (*new_wp).base,
+            &mut (*new_wp).base,
             (*new_wp).sx,
             (*new_wp).sy,
             1 as ::core::ffi::c_int,
@@ -2891,7 +2896,7 @@ unsafe fn popup_handle_drag(mut c: *mut client, mut pd: *mut popup_data, mut m: 
             (*pd).psy = (*pd).sy;
             if (*pd).border_lines as ::core::ffi::c_int == BOX_LINES_NONE as ::core::ffi::c_int {
                 screen_resize(
-                    &raw mut (*pd).s,
+                    &mut (*pd).s,
                     (*pd).sx,
                     (*pd).sy,
                     0 as ::core::ffi::c_int,
@@ -2901,7 +2906,7 @@ unsafe fn popup_handle_drag(mut c: *mut client, mut pd: *mut popup_data, mut m: 
                 }
             } else {
                 screen_resize(
-                    &raw mut (*pd).s,
+                    &mut (*pd).s,
                     (*pd).sx.wrapping_sub(2 as u_int),
                     (*pd).sy.wrapping_sub(2 as u_int),
                     0 as ::core::ffi::c_int,
@@ -3127,7 +3132,7 @@ pub(crate) unsafe fn popup_key_cb(
                     px = (*m).x.wrapping_sub((*pd).px).wrapping_sub(1 as u_int);
                     py = (*m).y.wrapping_sub((*pd).py).wrapping_sub(1 as u_int);
                 }
-                let Some(report) = input_key_get_mouse(&raw mut (*pd).s, m, px, py) else {
+                let Some(report) = input_key_get_mouse(&raw mut (*pd).s, &*m, px, py) else {
                     return 0 as ::core::ffi::c_int;
                 };
                 job_get_event((*pd).job()).write(report.as_ptr(), report.len());
@@ -3252,7 +3257,7 @@ pub unsafe fn popup_modify(
                 && (*pd).border_lines as ::core::ffi::c_int != lines as ::core::ffi::c_int
             {
                 screen_resize(
-                    &raw mut (*pd).s,
+                    &mut (*pd).s,
                     (*pd).sx,
                     (*pd).sy,
                     1 as ::core::ffi::c_int,
@@ -3263,7 +3268,7 @@ pub unsafe fn popup_modify(
                 && (*pd).border_lines as ::core::ffi::c_int != lines as ::core::ffi::c_int
             {
                 screen_resize(
-                    &raw mut (*pd).s,
+                    &mut (*pd).s,
                     (*pd).sx.wrapping_sub(2 as u_int),
                     (*pd).sy.wrapping_sub(2 as u_int),
                     1 as ::core::ffi::c_int,
@@ -3275,7 +3280,7 @@ pub unsafe fn popup_modify(
                 );
             }
             (*pd).border_lines = lines;
-            tty_resize(&raw mut (*c).tty);
+            tty_resize(&mut (*c).tty);
         }
         if flags != -(1 as ::core::ffi::c_int) {
             (*pd).flags = flags;
@@ -3361,7 +3366,7 @@ pub unsafe fn popup_display(
         (*pd).border_lines = lines;
         (*pd).border_cell = grid_default_cell;
         style_apply(
-            &raw mut (*pd).border_cell,
+            &mut (*pd).border_cell,
             o,
             c"popup-border-style".as_ptr(),
             None,
@@ -3379,12 +3384,12 @@ pub unsafe fn popup_display(
             }
         }
         (*pd).border_cell.attr = 0 as u_short;
-        screen_init(&raw mut (*pd).s, jx, jy, 0 as u_int);
+        screen_init(&mut (*pd).s, jx, jy, 0 as u_int);
         screen_set_default_cursor(&raw mut (*pd).s, global_w_options);
-        colour_palette_init(&raw mut (*pd).palette);
-        options_load_pane_colours(global_w_options, &raw mut (*pd).palette);
+        colour_palette_init(&mut (*pd).palette);
+        options_load_pane_colours(global_w_options, Some(&mut (*pd).palette));
         (*pd).defaults = grid_default_cell;
-        style_apply(&raw mut (*pd).defaults, o, c"popup-style".as_ptr(), None);
+        style_apply(&mut (*pd).defaults, o, c"popup-style".as_ptr(), None);
         if !style.is_null() {
             style_set(&mut sytmp, &grid_default_cell);
             if style_parse(

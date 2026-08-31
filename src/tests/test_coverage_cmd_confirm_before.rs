@@ -115,7 +115,7 @@ impl Queue {
         unsafe {
             self.behind()
                 .into_iter()
-                .map(|it| seen(cstr_ptr(&(*it).name)))
+                .map(|it| seen((*it).name_ptr()))
                 .collect()
         }
     }
@@ -283,7 +283,7 @@ fn exec_prompts_and_waits_for_a_confirmation() {
     unsafe {
         assert_eq!(rv, CMD_RETURN_WAIT);
 
-        assert_eq!(seen(cstr_ptr(&(*p.c).prompt_string)), "really? ");
+        assert_eq!(seen((*p.c).prompt_string_ptr()), "really? ");
         assert_eq!((*p.c).prompt_flags & PROMPT_SINGLE, PROMPT_SINGLE);
         assert_eq!((*p.c).prompt_type, PROMPT_TYPE_COMMAND);
         assert_eq!((*p.c).prompt_mode, PROMPT_ENTRY);
@@ -338,7 +338,7 @@ fn exec_builds_the_prompt_from_the_confirmed_command() {
     unsafe {
         assert_eq!(rv, CMD_RETURN_WAIT);
         assert_eq!(
-            seen(cstr_ptr(&(*p.c).prompt_string)),
+            seen((*p.c).prompt_string_ptr()),
             "Confirm 'kill-session'? (y/n) "
         );
         status_prompt_clear(p.c);
@@ -388,7 +388,7 @@ fn exec_honours_a_custom_confirm_key() {
         assert_eq!(rv, CMD_RETURN_NORMAL);
         assert_eq!((*data_of(p.c)).confirm_key, b'z');
         assert_eq!(
-            seen(cstr_ptr(&(*p.c).prompt_string)),
+            seen((*p.c).prompt_string_ptr()),
             "Confirm 'kill-session'? (z/n) "
         );
 

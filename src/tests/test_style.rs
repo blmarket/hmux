@@ -365,13 +365,13 @@ fn a_style_option_adds_its_colours_and_attributes_to_a_cell() {
         );
         let mut gc = grid_default_cell;
         gc.fg = 9;
-        style_add(&raw mut gc, oo.ptr(), c"@c2rs-style".as_ptr(), None);
+        style_add(&mut gc, oo.ptr(), c"@c2rs-style".as_ptr(), None);
         assert_eq!((gc.fg, gc.bg, gc.us), (1, 4, 2));
         assert_eq!(gc.attr, 0x1);
 
         let mut gc = grid_default_cell;
         gc.attr = 0x8;
-        style_apply(&raw mut gc, oo.ptr(), c"@c2rs-style".as_ptr(), None);
+        style_apply(&mut gc, oo.ptr(), c"@c2rs-style".as_ptr(), None);
         assert_eq!((gc.fg, gc.bg), (1, 4));
         assert_eq!(gc.attr, 0x1);
     }
@@ -384,7 +384,7 @@ fn a_style_option_that_is_missing_leaves_the_cell_alone() {
     unsafe {
         let mut gc = grid_default_cell;
         gc.fg = 9;
-        style_add(&raw mut gc, oo.ptr(), c"@c2rs-missing".as_ptr(), None);
+        style_add(&mut gc, oo.ptr(), c"@c2rs-missing".as_ptr(), None);
         assert_eq!((gc.fg, gc.bg, gc.us), (9, 8, 0));
         assert_eq!(gc.attr, 0);
     }
@@ -403,7 +403,7 @@ fn a_style_option_holding_a_format_is_expanded_before_it_is_parsed() {
             fmt_args![c"fg=#{?1,red,blue}".as_ptr()],
         );
         let mut gc = grid_default_cell;
-        style_add(&raw mut gc, oo.ptr(), c"@c2rs-format".as_ptr(), None);
+        style_add(&mut gc, oo.ptr(), c"@c2rs-format".as_ptr(), None);
         assert_eq!(gc.fg, 4);
     }
 }
@@ -465,8 +465,7 @@ fn a_range_list_is_walked_by_column_and_freed_whole() {
         style_ranges_init(srs.as_mut_ptr());
         let srs = srs.assume_init_mut();
         assert!(srs.is_empty());
-        assert!(style_ranges_get_range(&raw mut *srs, 0).is_null());
-        assert!(style_ranges_get_range(null_mut::<style_ranges>(), 0).is_null());
+        assert!(style_ranges_get_range(srs, 0).is_null());
 
         for (start, end) in [(0, 4), (4, 10)] {
             srs.push(style_range {
@@ -479,13 +478,13 @@ fn a_range_list_is_walked_by_column_and_freed_whole() {
         }
         let added = [&raw mut srs[0], &raw mut srs[1]];
 
-        assert_eq!(style_ranges_get_range(&raw mut *srs, 0), added[0]);
-        assert_eq!(style_ranges_get_range(&raw mut *srs, 3), added[0]);
-        assert_eq!(style_ranges_get_range(&raw mut *srs, 4), added[1]);
-        assert_eq!(style_ranges_get_range(&raw mut *srs, 9), added[1]);
-        assert!(style_ranges_get_range(&raw mut *srs, 10).is_null());
+        assert_eq!(style_ranges_get_range(srs, 0), added[0]);
+        assert_eq!(style_ranges_get_range(srs, 3), added[0]);
+        assert_eq!(style_ranges_get_range(srs, 4), added[1]);
+        assert_eq!(style_ranges_get_range(srs, 9), added[1]);
+        assert!(style_ranges_get_range(srs, 10).is_null());
 
-        style_ranges_free(&raw mut *srs);
+        style_ranges_free(srs);
         assert!(srs.is_empty());
     }
 }

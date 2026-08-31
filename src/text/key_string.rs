@@ -6666,11 +6666,9 @@ fn key_string_get_modifiers(string: &[u8]) -> Option<(key_code, &[u8])> {
 /// Pack a decoded character into a key, if it fits in one.
 unsafe fn key_from_data(ud: *const utf8_data) -> Option<utf8_char> {
     unsafe {
-        let mut uc: utf8_char = 0;
-        if utf8_from_data(&*ud, &raw mut uc) == UTF8_DONE {
-            Some(uc)
-        } else {
-            None
+        match utf8_from_data(&*ud) {
+            (UTF8_DONE, uc) => Some(uc),
+            _ => None,
         }
     }
 }

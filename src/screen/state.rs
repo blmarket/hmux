@@ -105,22 +105,18 @@ pub(crate) fn screen_grid_mut(s: &mut screen) -> &mut grid {
     s.grid.as_deref_mut().expect("a screen holds a grid")
 }
 
-pub(crate) unsafe fn screen_grid_ptr(s: *mut screen) -> *mut grid {
-    unsafe {
-        (*s).grid
-            .as_deref_mut()
-            .map(|grid| &raw mut *grid)
-            .unwrap_or(null_mut::<grid>())
-    }
+pub(crate) fn screen_grid_ptr(s: &mut screen) -> *mut grid {
+    s.grid
+        .as_deref_mut()
+        .map(|grid| &raw mut *grid)
+        .unwrap_or(null_mut::<grid>())
 }
 
-pub(crate) unsafe fn screen_saved_grid_ptr(s: *mut screen) -> *mut grid {
-    unsafe {
-        (*s).saved_grid
-            .as_deref_mut()
-            .map(|grid| &raw mut *grid)
-            .unwrap_or(null_mut::<grid>())
-    }
+pub(crate) fn screen_saved_grid_ptr(s: &mut screen) -> *mut grid {
+    s.saved_grid
+        .as_deref_mut()
+        .map(|grid| &raw mut *grid)
+        .unwrap_or(null_mut::<grid>())
 }
 
 /// Throw the title stack away. The count of titles is deliberately left as
@@ -188,7 +184,7 @@ impl screen {
                 default_ccolour: -1,
                 ..screen::default()
             };
-            screen_reinit(&raw mut s);
+            screen_reinit(&mut s);
             s
         }
     }
@@ -208,17 +204,16 @@ impl screen {
     }
 }
 
-/// Puts a new screen where `s` points. The memory it points at must be
-/// uninitialised, or have been freed or moved out of already: whatever was
-/// there is written over without being given up first.
-pub unsafe fn screen_init(s: *mut screen, sx: u_int, sy: u_int, hlimit: u_int) {
+/// Replaces a screen without giving up anything it owned first. The old
+/// screen must have been freed or moved out of already.
+pub unsafe fn screen_init(s: &mut screen, sx: u_int, sy: u_int, hlimit: u_int) {
     unsafe { ::core::ptr::write(s, screen::new(sx, sy, hlimit)) }
 }
 
 /// Reset a screen to what a new one is, keeping its size and its history.
-pub unsafe fn screen_reinit(s: *mut screen) {
+pub unsafe fn screen_reinit(s: &mut screen) {
     unsafe {
-        let gd = screen_grid_ptr(s);
+        let gd = screen_grid_ptr(&mut *s);
         (*s).cx = 0;
         (*s).cy = 0;
         (*s).rupper = 0;
@@ -257,7 +252,7 @@ pub unsafe fn screen_reset_hyperlinks(s: *mut screen) {
     }
 }
 
-pub unsafe fn screen_free(s: *mut screen) {
+pub unsafe fn screen_free(s: &mut screen) {
     unsafe {
         (*s).sel = None;
         drop(::core::mem::take(&mut (*s).tabs));
@@ -279,7 +274,7 @@ pub unsafe fn screen_free(s: *mut screen) {
 /// Put a tab stop every eight columns.
 pub unsafe fn screen_reset_tabs(s: *mut screen) {
     unsafe {
-        let sx = (*screen_grid_ptr(s)).sx;
+        let sx = (*screen_grid_ptr(&mut *s)).sx;
         (*s).tabs = vec![0; ((sx + 7) >> 3) as usize];
         let mut i = 8;
         while i < sx {
@@ -296,20 +291,12 @@ pub unsafe fn screen_set_default_cursor(s: *mut screen, oo: *mut options) {
 
         let style = options_get_number(oo, c"cursor-style".as_ptr()) as u_int;
         (*s).default_mode = 0;
-        screen_set_cursor_style(
-            style,
-            &mut (*s).default_cstyle,
-            &mut (*s).default_mode,
-        );
+        screen_set_cursor_style(style, &mut (*s).default_cstyle, &mut (*s).default_mode);
     }
 }
 
 /// Turn a cursor style number into a shape and whether it blinks.
-pub fn screen_set_cursor_style(
-    style: u_int,
-    cstyle: &mut screen_cursor_style,
-    mode: &mut c_int,
-) {
+pub fn screen_set_cursor_style(style: u_int, cstyle: &mut screen_cursor_style, mode: &mut c_int) {
     let (shape, blinking) = match style {
         0 => (SCREEN_CURSOR_DEFAULT, None),
         1 => (SCREEN_CURSOR_BLOCK, Some(true)),
@@ -333,7 +320,7 @@ pub unsafe fn screen_set_cursor_colour(s: *mut screen, colour: c_int) {
 }
 
 /// Set the title, unless the name it is given cannot be cleaned up.
-pub unsafe fn screen_set_title(s: *mut screen, title: *const c_char, untrusted: c_int) -> c_int {
+pub unsafe fn screen_set_title(s: &mut screen, title: *const c_char, untrusted: c_int) -> c_int {
     unsafe {
         let Some(new_title) = clean_name(title, untrusted) else {
             return 0;
@@ -419,7 +406,7 @@ pub unsafe fn screen_resize_cursor(
     cursor: c_int,
 ) {
     unsafe {
-        let gd = screen_grid_ptr(s);
+        let gd = screen_grid_ptr(&mut *s);
         let mut cx = (*s).cx;
         let mut cy = (*gd).hsize + (*s).cy;
 
@@ -480,7 +467,7 @@ pub unsafe fn screen_resize_cursor(
     }
 }
 
-pub unsafe fn screen_resize(s: *mut screen, sx: u_int, sy: u_int, reflow: c_int) {
+pub unsafe fn screen_resize(s: &mut screen, sx: u_int, sy: u_int, reflow: c_int) {
     unsafe { screen_resize_cursor(s, sx, sy, reflow, 1, 1) }
 }
 
@@ -488,7 +475,7 @@ pub unsafe fn screen_resize(s: *mut screen, sx: u_int, sy: u_int, reflow: c_int)
 /// the new size needs.
 unsafe fn screen_resize_y(s: *mut screen, sy: u_int, eat_empty: c_int, cy: &mut u_int) {
     unsafe {
-        let gd = screen_grid_ptr(s);
+        let gd = screen_grid_ptr(&mut *s);
         if sy == 0 {
             fatalx(c"zero size".as_ptr(), fmt_args![]);
         }
@@ -563,7 +550,7 @@ pub unsafe fn screen_set_selection(
     rectangle: u_int,
     clipx: u_int,
     modekeys: c_int,
-    gc: *mut grid_cell,
+    gc: &mut grid_cell,
 ) {
     unsafe {
         (*s).sel = Some(Box::new(screen_sel {
@@ -580,10 +567,8 @@ pub unsafe fn screen_set_selection(
     }
 }
 
-pub unsafe fn screen_clear_selection(s: *mut screen) {
-    unsafe {
-        (*s).sel = None;
-    }
+pub unsafe fn screen_clear_selection(s: &mut screen) {
+    s.sel = None;
 }
 
 pub unsafe fn screen_hide_selection(s: *mut screen) {
@@ -697,11 +682,7 @@ pub unsafe fn screen_check_selection(s: *mut screen, px: u_int, py: u_int) -> c_
 
 /// Draw a cell the way the selection asks for, keeping what the selection
 /// leaves to the cell itself.
-pub unsafe fn screen_select_cell(
-    s: *mut screen,
-    dst: *mut grid_cell,
-    src: *const grid_cell,
-) -> c_int {
+pub unsafe fn screen_select_cell(s: *mut screen, dst: &mut grid_cell, src: &grid_cell) -> c_int {
     unsafe {
         let sel = match (*s).sel.as_ref() {
             None => return 0,
@@ -743,7 +724,7 @@ unsafe fn screen_reflow(
     cursor: c_int,
 ) {
     unsafe {
-        let gd = screen_grid_ptr(s);
+        let gd = screen_grid_ptr(&mut *s);
         let (mut wx, mut wy) = (0, 0);
         if cursor != 0 {
             (wx, wy) = grid_wrap_position(&*gd, *cx, *cy);
@@ -774,12 +755,12 @@ pub unsafe fn screen_alternate_on(s: *mut screen, gc: &grid_cell, cursor: c_int)
         if (*s).saved_grid.is_some() {
             return;
         }
-        let gd = screen_grid_ptr(s);
+        let gd = screen_grid_ptr(&mut *s);
         let sx = (*gd).sx;
         let sy = (*gd).sy;
 
         (*s).saved_grid = Some(grid_create(sx, sy, 0));
-        let saved_gd = screen_saved_grid_ptr(s);
+        let saved_gd = screen_saved_grid_ptr(&mut *s);
         grid_duplicate_lines(&mut *saved_gd, 0, &*gd, (*gd).hsize, sy);
         if cursor != 0 {
             (*s).saved_cx = (*s).cx;
@@ -797,7 +778,7 @@ pub unsafe fn screen_alternate_on(s: *mut screen, gc: &grid_cell, cursor: c_int)
 /// Take the screen that was put aside back.
 pub unsafe fn screen_alternate_off(s: *mut screen, gc: Option<&mut grid_cell>, cursor: c_int) {
     unsafe {
-        let gd = screen_grid_ptr(s);
+        let gd = screen_grid_ptr(&mut *s);
         let sx = (*gd).sx;
         let sy = (*gd).sy;
 
@@ -806,7 +787,7 @@ pub unsafe fn screen_alternate_off(s: *mut screen, gc: Option<&mut grid_cell>, c
          * size before copying back.
          */
         if let Some(saved_grid) = (*s).saved_grid.as_ref() {
-            screen_resize(s, saved_grid.sx, saved_grid.sy, 0);
+            screen_resize(&mut *s, saved_grid.sx, saved_grid.sy, 0);
         }
 
         /*
@@ -828,7 +809,7 @@ pub unsafe fn screen_alternate_off(s: *mut screen, gc: Option<&mut grid_cell>, c
         }
 
         /* Restore the saved grid. */
-        let saved_gd = screen_saved_grid_ptr(s);
+        let saved_gd = screen_saved_grid_ptr(&mut *s);
         grid_duplicate_lines(&mut *gd, (*gd).hsize, &*saved_gd, 0, (*saved_gd).sy);
 
         /*
@@ -838,7 +819,7 @@ pub unsafe fn screen_alternate_off(s: *mut screen, gc: Option<&mut grid_cell>, c
         if (*s).saved_flags & GRID_HISTORY != 0 {
             (*gd).flags |= GRID_HISTORY;
         }
-        screen_resize(s, sx, sy, 1);
+        screen_resize(&mut *s, sx, sy, 1);
 
         (*s).saved_grid.take();
 
@@ -849,7 +830,7 @@ pub unsafe fn screen_alternate_off(s: *mut screen, gc: Option<&mut grid_cell>, c
 /// Keep the cursor inside the screen.
 unsafe fn screen_clamp_cursor(s: *mut screen) {
     unsafe {
-        let gd = screen_grid_ptr(s);
+        let gd = screen_grid_ptr(&mut *s);
         if (*s).cx > (*gd).sx - 1 {
             (*s).cx = (*gd).sx - 1;
         }
@@ -914,7 +895,7 @@ pub unsafe fn screen_print(s: *mut screen, line: c_int) -> ::std::ffi::CString {
         let buf = &mut buffer;
 
         let mut last = 0;
-        let gd = screen_grid_ptr(s);
+        let gd = screen_grid_ptr(&mut *s);
         'out: for y in 0..(*gd).hsize + (*gd).sy {
             if line >= 0 && y != line as u_int {
                 continue;

@@ -140,8 +140,8 @@ reach a destroyed pane through a pointer it kept.
 ### Enabling them
 
 `TMUX_C2RS_PLUGINS` is a comma-separated list of plugin names, or `all`, or
-`none`. Unset runs the default set, which is the agent plugin: a server nobody
-has configured is the one worth running.
+`none`. Unset runs the default set, which is the agent and git plugins: a
+server nobody has configured is the one worth running.
 
 `TMUX_C2RS_PLUGINS=none` — or an empty value, which is what a shell leaves
 behind for a variable someone wanted cleared — turns every plugin off, and a
@@ -175,11 +175,9 @@ These differences from the oracle are deliberate and expected, and are what
   so five of them read the same either way, but `#{pane_agent_state}` says
   `none` where tmux says nothing at all, and `#{pane_state_emoji}` is never
   empty.
-- `window-status-format` and `window-status-current-format` default to a format
-  built around `#{pane_state_emoji}` and the pane's working directory, so
-  `show-options -g` and the rendered status line both differ. Only options
-  still holding their built-in default are replaced, and the plugin's defaults
-  go in before any configuration file is read, so `.tmux.conf` still wins.
+- `window-status-format` and `window-status-current-format` differ, because the
+  status line this server draws is built around `#{pane_state_emoji}`. That
+  default is the server's rather than this plugin's — see below.
 - Each pane's output bumps a revision counter, and each pane is probed through
   `/proc` (or `libproc`) once per sweep. Nothing observable follows from
   either, but the server is doing work tmux is not.
@@ -187,6 +185,74 @@ These differences from the oracle are deliberate and expected, and are what
 `exit-empty` is *not* changed. The hmux daemon defaults it to `after-session`
 and creates session 0 on a first untargeted attach; that is a lifetime change
 rather than a presentation one, and this server keeps tmux's behaviour.
+
+### The git plugin
+
+The git plugin — also on unless `TMUX_C2RS_PLUGINS` says otherwise — answers
+where a pane sits in a git worktree, and what the repository holding it is in
+the middle of. It exists because `#{b:pane_current_path}` is the wrong label
+in a repository with worktrees: every worktree of this one has a `tmux-c2rs`
+directory, so the window labels collide and the component that tells them
+apart is the one the basename drops.
+
+| Variable | Values | Meaning |
+|----------|--------|---------|
+| `#{git_worktree}` | `h1`, or empty outside a repository | The worktree root's own directory name. A linked worktree is named by itself, not by the repository. |
+| `#{git_worktree_path}` | absolute path | The worktree root. |
+| `#{git_subdir}` | `tmux-c2rs/src`, empty at the root | Where the pane sits below the root. |
+| `#{git_repo}` | `hmux` | The repository every worktree of it shares, from the directory holding the common git directory. |
+| `#{git_branch}` | `h1`, empty on a detached HEAD | The branch `HEAD` names; during a rebase, the branch being rebuilt. |
+| `#{git_head}` | `h1` or `38b63b0` | The branch when there is one, the short commit when there is not. Never empty in a repository. |
+| `#{git_action}` | empty, `rebase`, `am`, `merge`, `bisect`, `cherry-pick`, `revert` | The operation the repository is in the middle of. |
+| `#{git_action_step}` / `#{git_action_total}` | `2` / `7`, or empty | How far a rebase has got, when it counts. |
+
+Every value is read out of files — the upward walk for `.git`, the `HEAD` it
+names, and the marker files an interrupted operation leaves behind. Nothing
+here runs git or reads the index, so there is no dirty-state tier: `git
+status` in a status line is the reason `gitstatusd` exists, and none of the
+variables above need it. A sweep costs one `readlink` per pane and two `stat`s
+per repository, at 500 ms, and the repositories are shared — a dozen panes in
+one worktree are one entry. Values are computed on the tick, so expanding a
+status format never touches the filesystem; a pane created between two ticks
+reads as empty until the next one.
+
+Three things it deliberately does not do:
+
+- The two rebase backends are one `rebase`. The marker that looks like it
+  separates an interactive rebase from a plain one is written for every rebase
+  the merge backend runs, so reporting it would be wrong for the common case
+  rather than right for the rare one.
+- A repository whose refs live in a reftable reports no branch and no commit.
+  There is no ref file to read there, and the placeholder git leaves in `HEAD`
+  for older readers is not a branch name. Everything else — the worktree, the
+  repository, the operation — still answers.
+- The pane's working directory comes from the server's own pane tree rather
+  than through `plugin::Host`, which carries no working directory. A plugin
+  wanting to run on the hmux daemon as well would need one; adding it is a
+  change to a versioned public trait, so it waits for a reason.
+
+### The default status line
+
+The window label these variables are for is `window-status-format`, and it is
+the server's, not a plugin's: the plugins publish variables, and what the
+status line does with them is decided in one place — `server::defaults` —
+rather than in whichever plugin happens to name them. Two plugins declaring one
+format would also make registration order decide it, since an option default
+only replaces a value still holding tmux's.
+
+It is the pane's state glyph, then where the pane is: the worktree name at the
+root, the worktree name and a trailing `/` anywhere below it, the directory's
+own basename outside a repository, and the operation in brackets when there is
+one.
+
+    h1        h1/        proj        h1 [rebase 2/7]
+
+Nothing is replaced when no plugin is running. Every variable the format draws
+on comes from one, and a server with none of them is meant to be tmux. With
+some of them running, a variable whose own plugin is off expands to nothing,
+and every branch of the format is written to survive that. Only options still
+holding their built-in default are replaced, and this runs before any
+configuration file is read, so `.tmux.conf` still wins.
 
 ## Testing
 

@@ -19,7 +19,7 @@ use crate::notify::notify_session;
 use crate::options::{
     options_create_boxed, options_get_number, options_get_string, options_ptr, options_set_string,
 };
-use crate::proc::{peer_ptr, proc_send};
+use crate::proc::proc_send;
 use crate::server::client_set_last_session;
 use crate::server::client_weak_from_ptr;
 use crate::server::{
@@ -595,7 +595,7 @@ unsafe fn cmd_new_session_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
                                                         {
                                                             environ_update(
                                                                 global_s_options,
-                                                                environ_ptr(&(*c).environ),
+                                                                (*c).environ_ptr(),
                                                                 environ_ptr(&env),
                                                             );
                                                         }
@@ -678,7 +678,7 @@ unsafe fn cmd_new_session_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
                                                                 session_select(
                                                                     s,
                                                                     (*winlinks_first(
-                                                                        &raw mut (*s).windows,
+                                                                        &mut (*s).windows,
                                                                     ))
                                                                     .idx,
                                                                 );
@@ -707,7 +707,7 @@ unsafe fn cmd_new_session_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
                                                                         != 0
                                                                     {
                                                                         proc_send(
-                                                                        peer_ptr(&(*c).peer),
+                                                                        (*c).peer_ptr(),
                                                                         MSG_READY,
                                                                         -(1 as ::core::ffi::c_int),
                                                                         ::core::ptr::null::<u8>(),

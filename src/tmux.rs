@@ -889,7 +889,7 @@ pub unsafe fn main_0(argv: &mut [*mut ::core::ffi::c_char]) -> ::core::ffi::c_in
             }
             match opt {
                 50 => {
-                    tty_add_features(&raw mut feat, c"256".as_ptr(), c":,".as_ptr());
+                    tty_add_features(&mut feat, c"256".as_ptr(), c":,".as_ptr());
                 }
                 99 => {
                     shell_command = Some(CStr::from_ptr(BSDoptarg).to_owned());
@@ -933,7 +933,7 @@ pub unsafe fn main_0(argv: &mut [*mut ::core::ffi::c_char]) -> ::core::ffi::c_in
                     path = Some(CStr::from_ptr(BSDoptarg).to_owned());
                 }
                 84 => {
-                    tty_add_features(&raw mut feat, BSDoptarg, c":,".as_ptr());
+                    tty_add_features(&mut feat, BSDoptarg, c":,".as_ptr());
                 }
                 117 => {
                     flags |= CLIENT_UTF8 as uint64_t;

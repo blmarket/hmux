@@ -1,7 +1,7 @@
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_event};
 use crate::cmd::{cmd_mouse_pane, cmd_mouse_window};
 use crate::compat::strtonum;
-use crate::environ::{environ_entry_value, environ_find, environ_ptr};
+use crate::environ::{environ_entry_value, environ_find};
 use crate::ffi::{fnmatch, strchr, strcmp, strlen, strncmp};
 use crate::fmt_args;
 use crate::log::{fatalx, log_debug};
@@ -185,12 +185,12 @@ unsafe fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pane {
                 (*wp).fd != -(1 as ::core::ffi::c_int)
                     && strcmp(
                         &raw mut (*wp).tty as *mut ::core::ffi::c_char,
-                        cstr_ptr(&(*c).ttyname),
+                        (*c).ttyname_ptr(),
                     ) == 0 as ::core::ffi::c_int
             })
             .unwrap_or(::core::ptr::null_mut::<window_pane>());
         if wp.is_null()
-            && let Some(value) = environ_find(&*environ_ptr(&(*c).environ), c"TMUX_PANE".as_ptr())
+            && let Some(value) = environ_find(&*(*c).environ_ptr(), c"TMUX_PANE".as_ptr())
                 .and_then(environ_entry_value)
         {
             wp = window_pane_find_by_id_str(value.as_ptr());
@@ -340,7 +340,7 @@ unsafe fn cmd_find_best_winlink_with_window(fs: &mut cmd_find_state) -> ::core::
         {
             wl = session_get_curw((*fs).session());
         } else {
-            wl_loop = winlinks_first(&raw mut (*(*fs).session()).windows);
+            wl_loop = winlinks_first(&mut (*(*fs).session()).windows);
             while !wl_loop.is_null() {
                 if (*wl_loop).window() == (*fs).window() {
                     wl = wl_loop;
@@ -564,7 +564,7 @@ unsafe fn cmd_find_get_window_with_session(
                 (*fs).set_window((*(*fs).winlink()).window());
                 return 0 as ::core::ffi::c_int;
             } else if strcmp(window, c"^".as_ptr()) == 0 as ::core::ffi::c_int {
-                (*fs).set_winlink(winlinks_first(&raw mut (*(*fs).session()).windows));
+                (*fs).set_winlink(winlinks_first(&mut (*(*fs).session()).windows));
                 if (*fs).winlink().is_null() {
                     return -(1 as ::core::ffi::c_int);
                 }
@@ -572,7 +572,7 @@ unsafe fn cmd_find_get_window_with_session(
                 (*fs).set_window((*(*fs).winlink()).window());
                 return 0 as ::core::ffi::c_int;
             } else if strcmp(window, c"$".as_ptr()) == 0 as ::core::ffi::c_int {
-                (*fs).set_winlink(winlinks_last(&raw mut (*(*fs).session()).windows));
+                (*fs).set_winlink(winlinks_last(&mut (*(*fs).session()).windows));
                 if (*fs).winlink().is_null() {
                     return -(1 as ::core::ffi::c_int);
                 }
@@ -591,10 +591,7 @@ unsafe fn cmd_find_get_window_with_session(
             );
             idx = parsed.unwrap_or(0) as ::core::ffi::c_int;
             if parsed.is_ok() {
-                (*fs).set_winlink(winlink_find_by_index(
-                    &raw mut (*(*fs).session()).windows,
-                    idx,
-                ));
+                (*fs).set_winlink(winlink_find_by_index(&mut (*(*fs).session()).windows, idx));
                 if !(*fs).winlink().is_null() {
                     fs.idx = (*(*fs).winlink()).idx;
                     (*fs).set_window((*(*fs).winlink()).window());
@@ -607,9 +604,9 @@ unsafe fn cmd_find_get_window_with_session(
             }
         }
         (*fs).set_winlink(::core::ptr::null_mut::<winlink>());
-        wl = winlinks_first(&raw mut (*(*fs).session()).windows);
+        wl = winlinks_first(&mut (*(*fs).session()).windows);
         while !wl.is_null() {
-            if strcmp(window, cstr_ptr(&(*(*wl).window()).name)) == 0 as ::core::ffi::c_int {
+            if strcmp(window, (*(*wl).window()).name_ptr()) == 0 as ::core::ffi::c_int {
                 if !(*fs).winlink().is_null() {
                     return -(1 as ::core::ffi::c_int);
                 }
@@ -626,9 +623,9 @@ unsafe fn cmd_find_get_window_with_session(
             return -(1 as ::core::ffi::c_int);
         }
         (*fs).set_winlink(::core::ptr::null_mut::<winlink>());
-        wl = winlinks_first(&raw mut (*(*fs).session()).windows);
+        wl = winlinks_first(&mut (*(*fs).session()).windows);
         while !wl.is_null() {
-            if strncmp(window, cstr_ptr(&(*(*wl).window()).name), strlen(window))
+            if strncmp(window, (*(*wl).window()).name_ptr(), strlen(window))
                 == 0 as ::core::ffi::c_int
             {
                 if !(*fs).winlink().is_null() {
@@ -644,11 +641,11 @@ unsafe fn cmd_find_get_window_with_session(
             return 0 as ::core::ffi::c_int;
         }
         (*fs).set_winlink(::core::ptr::null_mut::<winlink>());
-        wl = winlinks_first(&raw mut (*(*fs).session()).windows);
+        wl = winlinks_first(&mut (*(*fs).session()).windows);
         while !wl.is_null() {
             if fnmatch(
                 window,
-                cstr_ptr(&(*(*wl).window()).name),
+                (*(*wl).window()).name_ptr(),
                 0 as ::core::ffi::c_int,
             ) == 0 as ::core::ffi::c_int
             {
@@ -849,7 +846,7 @@ pub unsafe fn cmd_find_valid_state(fs: &cmd_find_state) -> ::core::ffi::c_int {
         if session_alive((*fs).session()) == 0 {
             return 0 as ::core::ffi::c_int;
         }
-        wl = winlinks_first(&raw mut (*(*fs).session()).windows);
+        wl = winlinks_first(&mut (*(*fs).session()).windows);
         while !wl.is_null() {
             if (*wl).window() == (*fs).window() && wl == (*fs).winlink() {
                 break;
@@ -1044,7 +1041,7 @@ pub unsafe fn cmd_find_from_mouse(
         if (*m).valid == 0 {
             return -(1 as ::core::ffi::c_int);
         }
-        if let Some((found, link, pane)) = cmd_mouse_pane(m) {
+        if let Some((found, link, pane)) = cmd_mouse_pane(&*m) {
             (*fs).set_session(found);
             (*fs).set_winlink(link);
             (*fs).set_pane(pane);
@@ -1236,7 +1233,7 @@ pub unsafe fn cmd_find_target(
                 let mut current_block_56: u64;
                 match type_0 {
                     CMD_FIND_PANE => {
-                        if let Some((found, link, pane)) = cmd_mouse_pane(m) {
+                        if let Some((found, link, pane)) = cmd_mouse_pane(&*m) {
                             (*fs).set_session(found);
                             (*fs).set_winlink(link);
                             (*fs).set_pane(pane);
@@ -1258,7 +1255,7 @@ pub unsafe fn cmd_find_target(
                     }
                 }
                 if current_block_56 == 1142519184231123645 {
-                    if let Some((found, link)) = cmd_mouse_window(m) {
+                    if let Some((found, link)) = cmd_mouse_window(&*m) {
                         (*fs).set_session(found);
                         (*fs).set_winlink(link);
                     } else {
@@ -1605,26 +1602,27 @@ pub unsafe fn cmd_find_client(
             if (*candidate).session.is_null() {
                 continue;
             }
-            if strcmp(copy.as_ptr(), cstr_ptr(&(*candidate).name)) == 0 as ::core::ffi::c_int {
+            if strcmp(copy.as_ptr(), (*candidate).name_ptr()) == 0 as ::core::ffi::c_int {
                 c = candidate;
                 break;
             }
             if (*candidate).ttyname.as_ref().unwrap().as_bytes().is_empty() {
                 continue;
             }
-            if strcmp(copy.as_ptr(), cstr_ptr(&(*candidate).ttyname)) == 0 as ::core::ffi::c_int {
+            if strcmp(copy.as_ptr(), (*candidate).ttyname_ptr()) == 0 as ::core::ffi::c_int {
                 c = candidate;
                 break;
             }
             if !(strncmp(
-                cstr_ptr(&(*candidate).ttyname),
+                (*candidate).ttyname_ptr(),
                 _PATH_DEV.as_ptr(),
                 (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as size_t)
                     .wrapping_sub(1 as size_t),
             ) != 0 as ::core::ffi::c_int)
                 && strcmp(
                     copy.as_ptr(),
-                    cstr_ptr(&(*candidate).ttyname)
+                    (*candidate)
+                        .ttyname_ptr()
                         .add(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize)
                         .offset(-(1 as ::core::ffi::c_int as isize)),
                 ) == 0 as ::core::ffi::c_int

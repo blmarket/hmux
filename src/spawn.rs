@@ -223,7 +223,7 @@ pub unsafe fn spawn_window(sc: &mut spawn_context, cause: &mut Option<CString>) 
         let mut sy: u_int = 0;
         let mut xpixel: u_int = 0;
         let mut ypixel: u_int = 0;
-        spawn_log(c"spawn_window".as_ptr(), &mut *sc);
+        spawn_log(c"spawn_window".as_ptr(), sc);
         if sc.flags & SPAWN_RESPAWN != 0 {
             w = (*sc.wl).window();
             w_ref = (*sc.wl).window_ref.clone();
@@ -254,7 +254,7 @@ pub unsafe fn spawn_window(sc: &mut spawn_context, cause: &mut Option<CString>) 
             window_set_active_pane(w, sc.wp0, 0 as ::core::ffi::c_int);
         }
         if !sc.flags & SPAWN_RESPAWN != 0 && idx != -(1 as ::core::ffi::c_int) {
-            wl = winlink_find_by_index(&raw mut (*s).windows, idx);
+            wl = winlink_find_by_index(&mut (*s).windows, idx);
             if !wl.is_null() && !sc.flags & SPAWN_KILL != 0 {
                 *cause = Some(xasprintf(c"index %d in use".as_ptr(), fmt_args![idx]));
                 return ::core::ptr::null_mut::<winlink>();
@@ -262,8 +262,8 @@ pub unsafe fn spawn_window(sc: &mut spawn_context, cause: &mut Option<CString>) 
             if !wl.is_null() {
                 (*wl).flags &= !WINLINK_ALERTFLAGS;
                 notify_session_window(c"window-unlinked".as_ptr(), s, (*wl).window());
-                winlink_stack_remove(&raw mut (*s).lastw, wl);
-                winlink_remove(&raw mut (*s).windows, wl);
+                winlink_stack_remove(&mut (*s).lastw, wl);
+                winlink_remove(&mut (*s).windows, wl);
                 if session_get_curw(s) == wl {
                     session_set_curw(s, ::core::ptr::null_mut::<winlink>());
                     sc.flags &= !SPAWN_DETACHED;
@@ -276,7 +276,7 @@ pub unsafe fn spawn_window(sc: &mut spawn_context, cause: &mut Option<CString>) 
                     - options_get_number(session_options(s), c"base-index".as_ptr()))
                     as ::core::ffi::c_int;
             }
-            sc.wl = winlink_add(&raw mut (*s).windows, idx);
+            sc.wl = winlink_add(&mut (*s).windows, idx);
             if sc.wl.is_null() {
                 *cause = Some(xasprintf(
                     c"couldn't add window %d".as_ptr(),
@@ -302,13 +302,13 @@ pub unsafe fn spawn_window(sc: &mut spawn_context, cause: &mut Option<CString>) 
             w = ::core::ptr::null_mut::<window>();
         }
         sc.flags |= SPAWN_NONOTIFY;
-        wp = spawn_pane(&mut *sc, cause);
+        wp = spawn_pane(sc, cause);
         if wp.is_null() {
             if !sc.flags & SPAWN_RESPAWN != 0 {
                 if session_get_curw(s) == sc.wl {
                     session_set_curw(s, ::core::ptr::null_mut::<winlink>());
                 }
-                winlink_remove(&raw mut (*s).windows, sc.wl);
+                winlink_remove(&mut (*s).windows, sc.wl);
             }
             return ::core::ptr::null_mut::<winlink>();
         }
@@ -357,7 +357,7 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
         let mut set: sigset_t = __sigset_t { __val: [0; 16] };
         let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
         let mut key: key_code = 0;
-        spawn_log(c"spawn_pane".as_ptr(), &mut *sc);
+        spawn_log(c"spawn_pane".as_ptr(), sc);
         if let Some(sc_cwd) = sc.cwd {
             let expanded = format_single(
                 item,
@@ -404,7 +404,7 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
                 close((*sc.wp0).fd);
             }
             window_pane_reset_mode_all(sc.wp0);
-            screen_reinit(&raw mut (*sc.wp0).base);
+            screen_reinit(&mut (*sc.wp0).base);
             if let Some(ictx) = (*sc.wp0).ictx.take() {
                 input_free_box(ictx);
             }
@@ -458,8 +458,8 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
             fmt_args![(*new_wp).id],
         );
         if !c.is_null() && (*c).session.is_null() {
-            let path = environ_find(&*environ_ptr(&(*c).environ), c"PATH".as_ptr())
-                .and_then(environ_entry_value);
+            let path =
+                environ_find(&*(*c).environ_ptr(), c"PATH".as_ptr()).and_then(environ_entry_value);
             if let Some(path) = path {
                 environ_set(
                     &mut *child,
@@ -519,8 +519,8 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
             fmt_args![c"spawn_pane".as_ptr()],
         );
         ws = ::core::mem::zeroed();
-        ws.ws_col = (*screen_grid_ptr(&raw mut (*new_wp).base)).sx as ::core::ffi::c_ushort;
-        ws.ws_row = (*screen_grid_ptr(&raw mut (*new_wp).base)).sy as ::core::ffi::c_ushort;
+        ws.ws_col = (*screen_grid_ptr(&mut (*new_wp).base)).sx as ::core::ffi::c_ushort;
+        ws.ws_row = (*screen_grid_ptr(&mut (*new_wp).base)).sy as ::core::ffi::c_ushort;
         ws.ws_xpixel = (*w).xpixel.wrapping_mul(ws.ws_col as u_int) as ::core::ffi::c_ushort;
         ws.ws_ypixel = (*w).ypixel.wrapping_mul(ws.ws_row as u_int) as ::core::ffi::c_ushort;
         sigfillset(&raw mut set);
@@ -536,8 +536,8 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
             )
             .is_null()
             {
-                if chdir(cstr_ptr(&(*new_wp).cwd)) == 0 as ::core::ffi::c_int {
-                    actual_cwd = cstr_ptr(&(*new_wp).cwd);
+                if chdir((*new_wp).cwd_ptr()) == 0 as ::core::ffi::c_int {
+                    actual_cwd = (*new_wp).cwd_ptr();
                 } else if !home.is_null() && chdir(home) == 0 as ::core::ffi::c_int {
                     actual_cwd = home;
                 } else if chdir(c"/".as_ptr()) == 0 as ::core::ffi::c_int {
@@ -630,7 +630,7 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
                     execvp(argvp[0], argvp.as_ptr());
                     _exit(1 as ::core::ffi::c_int);
                 }
-                cp = strrchr(cstr_ptr(&(*new_wp).shell), '/' as i32);
+                cp = strrchr((*new_wp).shell_ptr(), '/' as i32);
                 if (*new_wp).argv.len() == 1 {
                     tmp = (&(*new_wp).argv)[0].as_ptr();
                     let argv0 = if !cp.is_null()
@@ -645,7 +645,7 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
                         xasprintf(c"%s".as_ptr(), fmt_args![(*new_wp).shell.as_deref()])
                     };
                     execl(
-                        cstr_ptr(&(*new_wp).shell),
+                        (*new_wp).shell_ptr(),
                         argv0.as_ptr() as *mut ::core::ffi::c_char,
                         c"-c".as_ptr(),
                         tmp,
@@ -665,7 +665,7 @@ pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) ->
                     xasprintf(c"-%s".as_ptr(), fmt_args![(*new_wp).shell.as_deref()])
                 };
                 execl(
-                    cstr_ptr(&(*new_wp).shell),
+                    (*new_wp).shell_ptr(),
                     argv0.as_ptr() as *mut ::core::ffi::c_char,
                     ::core::ptr::null_mut::<::core::ffi::c_char>(),
                 );

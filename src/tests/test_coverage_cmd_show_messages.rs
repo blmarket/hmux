@@ -168,7 +168,7 @@ impl Term {
             let mut feat: c_int = 0;
             t.term = Some(
                 tty_term_create(
-                    &raw mut *t.tty,
+                    &mut t.tty,
                     t.name.as_ptr() as *mut c_char,
                     &t.caps,
                     &mut feat,

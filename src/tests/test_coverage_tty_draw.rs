@@ -117,14 +117,14 @@ impl Drawer {
 fn draw(d: &mut Drawer, s: &mut Screen, py: u_int, nx: u_int, atx: u_int, aty: u_int) {
     unsafe {
         tty_draw_line(
-            d.ptr(),
+            &mut *d.ptr(),
             s.ptr(),
             0,
             py,
             nx,
             atx,
             aty,
-            &raw const grid_default_cell,
+            &grid_default_cell,
             null_mut::<colour_palette>(),
         );
     }
@@ -178,28 +178,28 @@ fn drawing_outside_the_terminal_returns_before_anything_is_written() {
     let mut s = Screen::new(80, 24, 100);
     unsafe {
         tty_draw_line(
-            d.ptr(),
+            &mut *d.ptr(),
             s.ptr(),
             0,
             0,
             10,
             80,
             0,
-            &raw const grid_default_cell,
+            &grid_default_cell,
             null_mut::<colour_palette>(),
         );
         assert!(d.written().is_empty(), "an off-edge draw wrote bytes");
         assert_eq!((*d.ptr()).cx, 0);
 
         tty_draw_line(
-            d.ptr(),
+            &mut *d.ptr(),
             s.ptr(),
             0,
             0,
             0,
             0,
             0,
-            &raw const grid_default_cell,
+            &grid_default_cell,
             null_mut::<colour_palette>(),
         );
         assert!(d.written().is_empty(), "a zero-width draw wrote bytes");

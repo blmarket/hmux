@@ -242,10 +242,10 @@ unsafe fn cmd_capture_pane_history(
     wp: *mut window_pane,
 ) -> Option<Vec<u8>> {
     unsafe {
-        let base_grid = screen_grid_ptr(&raw mut (*wp).base);
+        let base_grid = screen_grid_ptr(&mut (*wp).base);
         let sx = (*base_grid).sx;
         let (s, gd) = if args_has(args, b'a') != 0 {
-            let gd = screen_saved_grid_ptr(&raw mut (*wp).base);
+            let gd = screen_saved_grid_ptr(&mut (*wp).base);
             if (*wp).base.saved_grid.is_none() {
                 if args_has(args, b'q') == 0 {
                     cmdq_error(item, c"no alternate screen".as_ptr(), fmt_args![]);
@@ -259,7 +259,7 @@ unsafe fn cmd_capture_pane_history(
             if !wme.is_null()
                 && let Some(s) = (*wme).mode().get_screen(wme)
             {
-                (s, screen_grid_ptr(s))
+                (s, screen_grid_ptr(&mut *s))
             } else {
                 (&raw mut (*wp).base, base_grid)
             }

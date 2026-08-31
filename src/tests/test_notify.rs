@@ -419,7 +419,7 @@ fn a_command_that_asked_for_no_hooks_notifies_nothing() {
     let mut running = Item::new();
     let before = world.inserted();
     let queue = unsafe {
-        let queue = global_queue(running.state_ref());
+        let queue = global_queue(&running.state_ref());
         unsafe {
             (*(*running.ptr()).state()).flags = STATE_NOHOOKS;
         }

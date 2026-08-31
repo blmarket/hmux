@@ -33,15 +33,6 @@ const VARIABLES: &[&str] = &[
     "pane_state_emoji",
 ];
 
-/// The window status formats that make the agent variables visible without
-/// anybody having to write a format: the pane's state glyph, the model on the
-/// glyph's background, and the working directory in place of the window name.
-///
-/// Only a matching model branch emits a directive — `bg=default` would punch a
-/// terminal-background hole in the status bar rather than leaving it whatever
-/// `status-style` painted.
-const WINDOW_STATUS_FORMAT: &str = "#I:#{?#{m:*fable*,#{pane_agent_model}},#[bg=red],#{?#{m:*luna*,#{pane_agent_model}},#[bg=brightblue],}}#{pane_state_emoji}#[default] #{?pane_current_path,#{b:pane_current_path},#{b:session_path}}#{?window_flags,#{window_flags}, }";
-
 /// The agent observer, its published status, and the copy of that status the
 /// last redraw was issued for.
 pub struct AgentPlugin {
@@ -89,13 +80,6 @@ impl Plugin for AgentPlugin {
 
     fn interval(&self) -> Option<Duration> {
         Some(AgentObserver::INTERVAL)
-    }
-
-    fn option_defaults(&self) -> &'static [(&'static str, &'static str)] {
-        &[
-            ("window-status-format", WINDOW_STATUS_FORMAT),
-            ("window-status-current-format", WINDOW_STATUS_FORMAT),
-        ]
     }
 
     fn tick(&mut self, host: &dyn Host) {

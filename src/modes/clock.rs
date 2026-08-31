@@ -270,7 +270,7 @@ unsafe fn window_clock_timer_callback(wme: *mut window_mode_entry) {
 pub(crate) unsafe fn window_clock_init(
     wme: &mut window_mode_entry,
     _fs: *mut cmd_find_state,
-    _args: *mut args,
+    _args: Option<&args>,
 ) -> *mut screen {
     unsafe {
         let mut wp: *mut window_pane = wme.wp;
@@ -291,9 +291,9 @@ pub(crate) unsafe fn window_clock_init(
         window_clock_start_timer(wme);
         s = &raw mut (*data).screen;
         screen_init(
-            s,
-            (*screen_grid_ptr(&raw mut (*wp).base)).sx,
-            (*screen_grid_ptr(&raw mut (*wp).base)).sy,
+            &mut *s,
+            (*screen_grid_ptr(&mut (*wp).base)).sx,
+            (*screen_grid_ptr(&mut (*wp).base)).sy,
             0 as u_int,
         );
         (*s).mode &= !MODE_CURSOR;
@@ -305,7 +305,7 @@ pub(crate) unsafe fn window_clock_free(wme: &mut window_mode_entry) {
     unsafe {
         let mut data: *mut window_clock_mode_data = wme.state.clock();
         (*data).timer.disarm();
-        screen_free(&raw mut (*data).screen);
+        screen_free(&mut (*data).screen);
     }
 }
 pub(crate) unsafe fn window_clock_resize(
@@ -316,7 +316,7 @@ pub(crate) unsafe fn window_clock_resize(
     unsafe {
         let mut data: *mut window_clock_mode_data = wme.state.clock();
         let mut s: *mut screen = &raw mut (*data).screen;
-        screen_resize(s, sx, sy, 0 as ::core::ffi::c_int);
+        screen_resize(&mut *s, sx, sy, 0 as ::core::ffi::c_int);
         window_clock_draw_screen(wme);
     }
 }
@@ -364,7 +364,7 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
             as ::core::ffi::c_int;
         style = options_get_number((*(*wp).window).options_ptr(), c"clock-mode-style".as_ptr())
             as ::core::ffi::c_int;
-        screen_write_start(&mut ctx, s);
+        screen_write_start(&mut ctx, &mut *s);
         t = time(::core::ptr::null_mut::<time_t>());
         tm = localtime(&raw mut t);
         if style == 0 as ::core::ffi::c_int || style == 2 as ::core::ffi::c_int {
@@ -413,16 +413,16 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
         }
         let digits = CStr::from_ptr(&raw const tim as *const ::core::ffi::c_char).to_bytes();
         screen_write_clearscreen(&mut ctx, 8 as u_int);
-        if ((*screen_grid_ptr(s)).sx as size_t) < (6 as size_t).wrapping_mul(digits.len())
-            || (*screen_grid_ptr(s)).sy < 6 as u_int
+        if ((*screen_grid_ptr(&mut *s)).sx as size_t) < (6 as size_t).wrapping_mul(digits.len())
+            || (*screen_grid_ptr(&mut *s)).sy < 6 as u_int
         {
-            if (*screen_grid_ptr(s)).sx as size_t >= digits.len()
-                && (*screen_grid_ptr(s)).sy != 0 as u_int
+            if (*screen_grid_ptr(&mut *s)).sx as size_t >= digits.len()
+                && (*screen_grid_ptr(&mut *s)).sy != 0 as u_int
             {
-                x = ((*screen_grid_ptr(s)).sx.wrapping_div(2 as u_int) as size_t)
+                x = ((*screen_grid_ptr(&mut *s)).sx.wrapping_div(2 as u_int) as size_t)
                     .wrapping_sub(digits.len().wrapping_div(2 as size_t))
                     as u_int;
-                y = (*screen_grid_ptr(s)).sy.wrapping_div(2 as u_int);
+                y = (*screen_grid_ptr(&mut *s)).sy.wrapping_div(2 as u_int);
                 screen_write_cursormove(
                     &mut ctx,
                     x as ::core::ffi::c_int,
@@ -434,7 +434,7 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
                 gc.fg = colour;
                 screen_write_puts(
                     &mut ctx,
-                    &raw mut gc,
+                    &mut gc,
                     c"%s".as_ptr(),
                     fmt_args![digits.as_ptr() as *const ::core::ffi::c_char],
                 );
@@ -442,9 +442,9 @@ unsafe fn window_clock_draw_screen(mut wme: *mut window_mode_entry) {
             screen_write_stop(&mut ctx);
             return;
         }
-        x = ((*screen_grid_ptr(s)).sx.wrapping_div(2 as u_int) as size_t)
+        x = ((*screen_grid_ptr(&mut *s)).sx.wrapping_div(2 as u_int) as size_t)
             .wrapping_sub((3 as size_t).wrapping_mul(digits.len())) as u_int;
-        y = (*screen_grid_ptr(s))
+        y = (*screen_grid_ptr(&mut *s))
             .sy
             .wrapping_div(2 as u_int)
             .wrapping_sub(3 as u_int);

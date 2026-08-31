@@ -171,9 +171,7 @@ fn grid_extended_cell(gl: &mut grid_line, px: u_int, gc: &grid_cell) -> u_int {
         let data = if gc.flags as c_int & GRID_FLAG_TAB != 0 {
             gc.data.width as utf8_char
         } else {
-            let mut uc: utf8_char = 0;
-            utf8_from_data(&gc.data, &raw mut uc);
-            uc
+            utf8_from_data(&gc.data).1
         };
         let at = gl.celldata()[px as usize].c2rust_unnamed.offset;
         gl.extddata_mut()[at as usize] = grid_extd_entry {
@@ -289,18 +287,15 @@ fn cell_bytes(gc: &grid_cell) -> &[u_char] {
     &gc.data.data[..gc.data.size as usize]
 }
 
-pub unsafe fn grid_cells_look_equal(gc1: *const grid_cell, gc2: *const grid_cell) -> c_int {
-    unsafe { look_equal(&*gc1, &*gc2) as c_int }
+pub unsafe fn grid_cells_look_equal(gc1: &grid_cell, gc2: &grid_cell) -> c_int {
+    look_equal(gc1, gc2) as c_int
 }
 
-pub unsafe fn grid_cells_equal(gc1: *const grid_cell, gc2: *const grid_cell) -> c_int {
-    unsafe {
-        let (gc1, gc2) = (&*gc1, &*gc2);
-        (look_equal(gc1, gc2)
-            && gc1.data.width == gc2.data.width
-            && gc1.data.size == gc2.data.size
-            && cell_bytes(gc1) == cell_bytes(gc2)) as c_int
-    }
+pub unsafe fn grid_cells_equal(gc1: &grid_cell, gc2: &grid_cell) -> c_int {
+    (look_equal(gc1, gc2)
+        && gc1.data.width == gc2.data.width
+        && gc1.data.size == gc2.data.size
+        && cell_bytes(gc1) == cell_bytes(gc2)) as c_int
 }
 
 /// Turn a cell into a tab of `width` columns. The input parser is the only
@@ -316,8 +311,8 @@ fn set_tab(gc: &mut grid_cell, width: u_int) {
     gc.data.data[..gc.data.size as usize].fill(b' ');
 }
 
-pub unsafe fn grid_set_tab(gc: *mut grid_cell, width: u_int) {
-    unsafe { set_tab(&mut *gc, width) }
+pub unsafe fn grid_set_tab(gc: &mut grid_cell, width: u_int) {
+    set_tab(gc, width)
 }
 
 /// Free one line's cells and leave it empty.
@@ -365,7 +360,7 @@ pub fn grid_compare(ga: &grid, gb: &grid) -> c_int {
         for xx in 0..cellsize {
             gca = grid_get_cell(ga, xx, yy);
             gcb = grid_get_cell(gb, xx, yy);
-            if unsafe { grid_cells_equal(&raw const gca, &raw const gcb) } == 0 {
+            if unsafe { grid_cells_equal(&gca, &gcb) } == 0 {
                 return 1;
             }
         }

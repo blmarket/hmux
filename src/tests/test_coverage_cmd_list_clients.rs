@@ -10,7 +10,6 @@ use crate::cmd::{CMD_PARSE_ERROR, CMD_PARSE_SUCCESS, cmd_parse_from_string};
 use crate::cmd::{cmd_find, cmd_get_args, cmd_list_first, cmd_table};
 use crate::ffi::getuid;
 use crate::proc::PEER_BAD;
-use crate::proc::peer_ptr;
 use crate::server::{CLIENT_ATTACHED, CLIENT_DEAD, CLIENT_EXIT, CLIENT_READONLY, CLIENT_SUSPENDED};
 use crate::tests::test_fixtures::{Clients, Format, Item, Session, globals, seen, zeroed};
 use ::core::ffi::{CStr, c_char};
@@ -91,7 +90,7 @@ fn argument_bounds_and_flags_parsing() {
         let mut with_format =
             cmd_parse_from_string(c"list-clients -F '#{client_name}'".as_ptr(), null_mut());
         assert_eq!(with_format.status, CMD_PARSE_SUCCESS);
-        let first = cmd_list_first(with_format.cmdlist.as_ref().unwrap().as_ptr());
+        let first = cmd_list_first(with_format.cmdlist.as_ref().unwrap());
         assert_eq!(
             seen(args_get(cmd_get_args(&*first), b'F')),
             "#{client_name}"
@@ -103,7 +102,7 @@ fn argument_bounds_and_flags_parsing() {
             null_mut(),
         );
         assert_eq!(with_filter.status, CMD_PARSE_SUCCESS);
-        let first = cmd_list_first(with_filter.cmdlist.as_ref().unwrap().as_ptr());
+        let first = cmd_list_first(with_filter.cmdlist.as_ref().unwrap());
         assert_eq!(
             seen(args_get(cmd_get_args(&*first), b'f')),
             "#{!=:#{client_name},c1}"
@@ -112,19 +111,19 @@ fn argument_bounds_and_flags_parsing() {
 
         let mut with_order = cmd_parse_from_string(c"list-clients -O name".as_ptr(), null_mut());
         assert_eq!(with_order.status, CMD_PARSE_SUCCESS);
-        let first = cmd_list_first(with_order.cmdlist.as_ref().unwrap().as_ptr());
+        let first = cmd_list_first(with_order.cmdlist.as_ref().unwrap());
         assert_eq!(seen(args_get(cmd_get_args(&*first), b'O')), "name");
         let _ = with_order.cmdlist.take();
 
         let mut with_reverse = cmd_parse_from_string(c"list-clients -r".as_ptr(), null_mut());
         assert_eq!(with_reverse.status, CMD_PARSE_SUCCESS);
-        let first = cmd_list_first(with_reverse.cmdlist.as_ref().unwrap().as_ptr());
+        let first = cmd_list_first(with_reverse.cmdlist.as_ref().unwrap());
         assert_eq!(args_has(cmd_get_args(&*first), b'r'), 1);
         let _ = with_reverse.cmdlist.take();
 
         let mut with_target = cmd_parse_from_string(c"list-clients -t mysess".as_ptr(), null_mut());
         assert_eq!(with_target.status, CMD_PARSE_SUCCESS);
-        let first = cmd_list_first(with_target.cmdlist.as_ref().unwrap().as_ptr());
+        let first = cmd_list_first(with_target.cmdlist.as_ref().unwrap());
         assert_eq!(seen(args_get(cmd_get_args(&*first), b't')), "mysess");
         let _ = with_target.cmdlist.take();
 
@@ -180,7 +179,7 @@ fn template_expansion_with_format_engine() {
         );
 
         (*c).peer = Some(bad_peer());
-        (*peer_ptr(&(*c).peer)).uid = getuid().wrapping_add(1);
+        (*(*c).peer_ptr()).uid = getuid().wrapping_add(1);
         (*c).user = Some(c"alice".to_owned());
         let ft2 = Format::defaults(c, session.ptr(), null_mut(), null_mut());
         let expanded2 = ft2.expand(CStr::from_ptr(LIST_CLIENTS_TEMPLATE.as_ptr()));

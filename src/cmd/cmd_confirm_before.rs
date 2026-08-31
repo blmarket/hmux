@@ -135,10 +135,7 @@ unsafe fn cmd_confirm_before_prompt(args: &args, cdata: *mut cmd_confirm_before_
         let mut prompt = Vec::new();
         let given = args_get(args, b'p');
         if given.is_null() {
-            let name = cmd_get_entry(&*cmd_list_first(
-                (*cdata).cmdlist.as_ref().unwrap().as_ptr(),
-            ))
-            .name;
+            let name = cmd_get_entry(&*cmd_list_first((*cdata).cmdlist.as_ref().unwrap())).name;
             prompt.extend_from_slice(b"Confirm '");
             prompt.extend_from_slice(name.to_bytes());
             prompt.extend_from_slice(b"'? (");
@@ -241,10 +238,10 @@ pub(crate) unsafe fn cmd_confirm_before_callback(
                         cmdq_get_command((*cdata).cmdlist.as_ref().unwrap(), None),
                     ),
                     Some(item) => cmdq_insert_after(
-                        item.as_ptr(),
+                        item,
                         cmdq_get_command(
                             (*cdata).cmdlist.as_ref().unwrap(),
-                            Some(cmdq_get_state_ref(item.as_ptr())),
+                            Some(cmdq_get_state_ref(item)),
                         ),
                     ),
                 };
@@ -256,7 +253,7 @@ pub(crate) unsafe fn cmd_confirm_before_callback(
             if !asked.is_null() && (*asked).session.is_null() {
                 (*asked).retval = retcode;
             }
-            cmdq_continue(item.as_ptr());
+            cmdq_continue(item);
         }
         0
     }

@@ -322,39 +322,38 @@ unsafe fn cmd_list_keys_format_add_key_binding(
 ) {
     unsafe {
         if key_binding_flags(bd) & KEY_BINDING_REPEAT != 0 {
-            format_add(&mut *ft, c"key_repeat", c"1".as_ptr(), fmt_args![]);
+            format_add(ft, c"key_repeat", c"1".as_ptr(), fmt_args![]);
         } else {
-            format_add(&mut *ft, c"key_repeat", c"0".as_ptr(), fmt_args![]);
+            format_add(ft, c"key_repeat", c"0".as_ptr(), fmt_args![]);
         }
 
         let note = key_binding_note(bd).unwrap_or(c"");
         format_add(
-            &mut *ft,
+            ft,
             c"key_note",
             c"%s".as_ptr(),
             fmt_args![note.as_ptr()],
         );
 
-        format_add(&mut *ft, c"key_prefix", c"%s".as_ptr(), fmt_args![prefix]);
+        format_add(ft, c"key_prefix", c"%s".as_ptr(), fmt_args![prefix]);
         format_add(
-            &mut *ft,
+            ft,
             c"key_table",
             c"%s".as_ptr(),
             fmt_args![key_binding_tablename(bd)],
         );
         format_add(
-            &mut *ft,
+            ft,
             c"key_string",
             c"%s".as_ptr(),
             fmt_args![key_string_lookup_key(key_binding_key(bd), 0)],
         );
 
-        let s = cmd_list_print(
-            key_binding_cmdlist(bd),
-            CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS,
-        );
+        let s = key_binding_cmdlist(bd).map_or_else(CString::default, |cmdlist| {
+            cmd_list_print(cmdlist, CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS)
+        });
         format_add(
-            &mut *ft,
+            ft,
             c"key_command",
             c"%s".as_ptr(),
             fmt_args![s.as_ptr()],

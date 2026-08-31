@@ -3,8 +3,8 @@ use crate::tests::test_fixtures::{Tty, globals, seen};
 use ::core::ffi::CStr;
 
 /// What `tty_acs_get` answers for `ch`, or `None` if it has no translation.
-unsafe fn get(tty: *mut tty, ch: u8) -> Option<String> {
-    unsafe { tty_acs_get(tty, ch).map(|s| seen(s.as_ptr())) }
+unsafe fn get(tty: &tty, ch: u8) -> Option<String> {
+    unsafe { tty_acs_get(Some(tty), ch).map(|s| seen(s.as_ptr())) }
 }
 
 /// What `tty_acs_reverse_get` answers for the whole of `s`.
@@ -14,16 +14,16 @@ fn reverse(s: &CStr) -> ::core::ffi::c_int {
 
 #[test]
 fn no_terminal_at_all_needs_no_acs() {
-    assert_eq!(unsafe { tty_acs_needed(::core::ptr::null_mut::<tty>()) }, 0);
+    assert_eq!(unsafe { tty_acs_needed(None) }, 0);
 }
 
 #[test]
 fn a_terminal_without_the_u8_capability_follows_the_client_flag() {
     let _guard = globals();
     let mut t = Tty::new();
-    assert_eq!(unsafe { tty_acs_needed(t.ptr()) }, 1);
+    assert_eq!(unsafe { tty_acs_needed(Some(&*t.ptr())) }, 1);
     t.set_client_flags(CLIENT_UTF8 as u64);
-    assert_eq!(unsafe { tty_acs_needed(t.ptr()) }, 0);
+    assert_eq!(unsafe { tty_acs_needed(Some(&*t.ptr())) }, 0);
 }
 
 #[test]
@@ -32,7 +32,7 @@ fn a_u8_capability_of_zero_forces_acs_whatever_the_client_says() {
     let mut t = Tty::new();
     t.set_number(TTYC_U8, 0);
     t.set_client_flags(CLIENT_UTF8 as u64);
-    assert_eq!(unsafe { tty_acs_needed(t.ptr()) }, 1);
+    assert_eq!(unsafe { tty_acs_needed(Some(&*t.ptr())) }, 1);
 }
 
 #[test]
@@ -40,9 +40,9 @@ fn a_nonzero_u8_capability_leaves_the_client_flag_in_charge() {
     let _guard = globals();
     let mut t = Tty::new();
     t.set_number(TTYC_U8, 1);
-    assert_eq!(unsafe { tty_acs_needed(t.ptr()) }, 1);
+    assert_eq!(unsafe { tty_acs_needed(Some(&*t.ptr())) }, 1);
     t.set_client_flags(CLIENT_UTF8 as u64);
-    assert_eq!(unsafe { tty_acs_needed(t.ptr()) }, 0);
+    assert_eq!(unsafe { tty_acs_needed(Some(&*t.ptr())) }, 0);
 }
 
 #[test]
@@ -51,15 +51,15 @@ fn a_utf8_client_reads_the_table_and_unknown_keys_have_nothing() {
     let mut t = Tty::new();
     t.set_client_flags(CLIENT_UTF8 as u64);
     unsafe {
-        assert_eq!(get(t.ptr(), b'q'), Some("\u{2500}".to_string()));
-        assert_eq!(get(t.ptr(), b'x'), Some("\u{2502}".to_string()));
-        assert_eq!(get(t.ptr(), b'+'), Some("\u{2192}".to_string()));
-        assert_eq!(get(t.ptr(), b'~'), Some("\u{00b7}".to_string()));
-        assert_eq!(get(t.ptr(), b'f'), Some("\u{00b0}".to_string()));
-        assert_eq!(get(t.ptr(), b'*'), None);
-        assert_eq!(get(t.ptr(), b'/'), None);
-        assert_eq!(get(t.ptr(), 0), None);
-        assert_eq!(get(t.ptr(), 255), None);
+        assert_eq!(get(&*t.ptr(), b'q'), Some("\u{2500}".to_string()));
+        assert_eq!(get(&*t.ptr(), b'x'), Some("\u{2502}".to_string()));
+        assert_eq!(get(&*t.ptr(), b'+'), Some("\u{2192}".to_string()));
+        assert_eq!(get(&*t.ptr(), b'~'), Some("\u{00b7}".to_string()));
+        assert_eq!(get(&*t.ptr(), b'f'), Some("\u{00b0}".to_string()));
+        assert_eq!(get(&*t.ptr(), b'*'), None);
+        assert_eq!(get(&*t.ptr(), b'/'), None);
+        assert_eq!(get(&*t.ptr(), 0), None);
+        assert_eq!(get(&*t.ptr(), 255), None);
     }
 }
 
@@ -73,7 +73,7 @@ fn every_key_in_the_table_is_found_and_the_table_is_sorted() {
         for entry in &tty_acs_table {
             assert!(entry.key > last, "the table is not sorted");
             last = entry.key;
-            assert_eq!(get(t.ptr(), entry.key), Some(seen(entry.string.as_ptr())));
+            assert_eq!(get(&*t.ptr(), entry.key), Some(seen(entry.string.as_ptr())));
         }
     }
 }
@@ -84,10 +84,10 @@ fn a_terminal_that_needs_acs_reads_its_own_translations() {
     let mut t = Tty::new();
     t.set_acs(b'q', "-");
     unsafe {
-        assert_eq!(get(t.ptr(), b'q'), Some("-".to_string()));
-        assert_eq!(get(t.ptr(), b'x'), None);
+        assert_eq!(get(&*t.ptr(), b'q'), Some("-".to_string()));
+        assert_eq!(get(&*t.ptr(), b'x'), None);
         assert_eq!(
-            tty_acs_get(t.ptr(), b'q').map(CStr::as_ptr),
+            tty_acs_get(Some(&*t.ptr()), b'q').map(CStr::as_ptr),
             Some(&raw const t.term().acs[b'q' as usize][0])
         );
     }

@@ -133,6 +133,11 @@ impl cmd_load_buffer_data {
             .as_ref()
             .map_or(::core::ptr::null_mut(), ClientRef::as_ptr)
     }
+
+    /// The name the loaded buffer is given, or null for the next numbered one.
+    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.name)
+    }
 }
 pub const CMD_AFTERHOOK: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const CMD_CLIENT_TFLAG: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
@@ -187,7 +192,8 @@ pub(crate) unsafe fn cmd_load_buffer_done(
             .as_ref()
             .and_then(CmdqItemWeak::upgrade)
             .expect("the item that asked for the buffer is waiting on it");
-        let item = item.as_ptr();
+        let item_ref = item;
+        let item = item_ref.as_ptr();
         if closed == 0 {
             return;
         }
@@ -202,14 +208,14 @@ pub(crate) unsafe fn cmd_load_buffer_done(
             cmdq_error(item, c"%s: %s".as_ptr(), fmt_args![strerror(error), path]);
         } else if bsize != 0 as size_t {
             let copy = bytes.clone();
-            if let Err(cause) = paste_set(copy, cstr_ptr(&(*cdata).name)) {
+            if let Err(cause) = paste_set(copy, (*cdata).name_ptr()) {
                 cmdq_error(item, c"%s".as_ptr(), fmt_args![cause.as_ptr()]);
             } else if !tc.is_null()
                 && !(*tc).session.is_null()
                 && !(*tc).flags & CLIENT_DEAD as uint64_t != 0
             {
                 tty_set_selection(
-                    &raw mut (*tc).tty,
+                    &mut (*tc).tty,
                     c"".as_ptr(),
                     bdata as *const ::core::ffi::c_char,
                     bsize,
@@ -217,7 +223,7 @@ pub(crate) unsafe fn cmd_load_buffer_done(
             }
         }
         let _ = (*cdata).client_ref.take();
-        cmdq_continue(item);
+        cmdq_continue(&item_ref);
     }
 }
 unsafe fn cmd_load_buffer_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd_retval {

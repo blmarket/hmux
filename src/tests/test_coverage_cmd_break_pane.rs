@@ -338,15 +338,12 @@ fn an_invalid_n_refuses_the_command_and_touches_nothing() {
         );
         assert_eq!((*caller).retval, 1);
 
-        assert_eq!(
-            winlink_find_by_index(&raw mut (*chain.sptr(0)).windows, 0),
-            wl0
-        );
+        assert_eq!(winlink_find_by_index(&mut (*chain.sptr(0)).windows, 0), wl0);
         assert_eq!((*wl0).window(), w0);
-        assert_eq!(winlink_count(&raw mut (*chain.sptr(0)).windows), 1);
+        assert_eq!(winlink_count(&(*chain.sptr(0)).windows), 1);
         assert_eq!(window_count_panes(w0, 1), 1);
         assert_eq!(pane_at(w0, 0), panes[0]);
-        assert_eq!(seen(cstr_ptr(&(*w0).name)), "chain");
+        assert_eq!(seen((*w0).name_ptr()), "chain");
         assert!(marked_pane.pane().is_null());
     }
 }
@@ -374,12 +371,9 @@ fn relinking_a_single_pane_window_over_its_own_index_reports_same_index() {
         assert!(msgs[before].contains("same index: 0"), "{}", msgs[before]);
         assert_eq!((*caller).retval, 1);
 
-        assert_eq!(
-            winlink_find_by_index(&raw mut (*chain.sptr(0)).windows, 0),
-            wl0
-        );
+        assert_eq!(winlink_find_by_index(&mut (*chain.sptr(0)).windows, 0), wl0);
         assert_eq!(session_get_curw(chain.sptr(0)), wl0);
-        assert_eq!(winlink_count(&raw mut (*chain.sptr(0)).windows), 1);
+        assert_eq!(winlink_count(&(*chain.sptr(0)).windows), 1);
         assert_eq!(window_count_panes(w0, 1), 1);
         assert_eq!(pane_at(w0, 0), panes[0]);
     }
@@ -408,7 +402,7 @@ fn breaking_a_multi_pane_window_onto_a_taken_explicit_index_refuses_first() {
         assert!(msgs[before].contains("index in use: 0"), "{}", msgs[before]);
         assert_eq!((*caller).retval, 1);
 
-        assert_eq!(winlink_count(&raw mut (*chain.sptr(0)).windows), 1);
+        assert_eq!(winlink_count(&(*chain.sptr(0)).windows), 1);
         assert_eq!(window_count_panes(w0, 1), 2);
         assert_eq!(pane_at(w0, 0), panes[0]);
         assert_eq!(pane_at(w0, 1), panes[1]);
@@ -464,7 +458,7 @@ fn breaking_the_active_pane_builds_it_a_window_and_selects_it() {
         );
         assert_eq!((*moved).layout_cell, (*nw).layout_root_ptr());
         assert_eq!(
-            seen(cstr_ptr(&(*nw).name)),
+            seen((*nw).name_ptr()),
             "sh",
             "the name comes from the pane's shell"
         );
@@ -480,14 +474,14 @@ fn breaking_the_active_pane_builds_it_a_window_and_selects_it() {
         assert!(window_get_latest(nw).is_null());
 
         let s = chain.sptr(0);
-        let wl_new = winlink_find_by_index(&raw mut (*s).windows, 1);
+        let wl_new = winlink_find_by_index(&mut (*s).windows, 1);
         assert!(!wl_new.is_null());
         assert_eq!((*wl_new).idx, 1, "the next free index was chosen");
         assert_eq!((*wl_new).window(), nw);
-        assert_eq!(winlink_find_by_window(&raw mut (*s).windows, nw), wl_new);
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 0), wl0);
+        assert_eq!(winlink_find_by_window(&mut (*s).windows, nw), wl_new);
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 0), wl0);
         assert_eq!((*wl0).window(), w0);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 2);
+        assert_eq!(winlink_count(&(*s).windows), 2);
         assert_eq!(
             session_get_curw(s),
             wl_new,
@@ -526,9 +520,9 @@ fn with_d_the_new_window_is_not_selected_and_n_names_it() {
         let nw = (*moved).window;
         created.keep(nw);
         assert_ne!(nw, w0);
-        let wl_new = winlink_find_by_index(&raw mut (*s).windows, 1);
+        let wl_new = winlink_find_by_index(&mut (*s).windows, 1);
         assert_eq!((*wl_new).window(), nw);
-        assert_eq!(seen(cstr_ptr(&(*nw).name)), "mined");
+        assert_eq!(seen((*nw).name_ptr()), "mined");
         assert_eq!(
             options_get_number((*nw).options_ptr(), c"automatic-rename".as_ptr()),
             0,
@@ -540,7 +534,7 @@ fn with_d_the_new_window_is_not_selected_and_n_names_it() {
             "-d keeps the current window selected"
         );
         assert!((*s).lastw.is_empty(), "nothing was pushed onto the stack");
-        assert_eq!(winlink_count(&raw mut (*s).windows), 2);
+        assert_eq!(winlink_count(&(*s).windows), 2);
     }
 }
 
@@ -561,7 +555,7 @@ fn before_shuffles_every_winlink_from_the_target_up() {
         assert_eq!(run(&mut item), CMD_RETURN_NORMAL);
 
         let s = chain.sptr(0);
-        let wl_before = winlink_find_by_index(&raw mut (*s).windows, 0);
+        let wl_before = winlink_find_by_index(&mut (*s).windows, 0);
         assert_eq!(
             wl_before, wl_source,
             "the source below the target stayed put"
@@ -569,7 +563,7 @@ fn before_shuffles_every_winlink_from_the_target_up() {
         assert_eq!((*wl_before).window(), w_source);
         assert_eq!(window_count_panes((*wl_before).window(), 1), 1);
 
-        let wl_new = winlink_find_by_index(&raw mut (*s).windows, 1);
+        let wl_new = winlink_find_by_index(&mut (*s).windows, 1);
         let nw = (*wl_new).window();
         created.keep(nw);
         assert_ne!(nw, w_source);
@@ -579,10 +573,10 @@ fn before_shuffles_every_winlink_from_the_target_up() {
             "the new window took the target's old place"
         );
 
-        let wl_after = winlink_find_by_index(&raw mut (*s).windows, 2);
+        let wl_after = winlink_find_by_index(&mut (*s).windows, 2);
         assert_eq!(wl_after, wl_target, "the target shuffled up above it");
         assert_eq!((*wl_target).idx, 2);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 3);
+        assert_eq!(winlink_count(&(*s).windows), 3);
         assert_eq!(
             session_get_curw(s),
             wl_new,
@@ -607,15 +601,15 @@ fn after_inserts_above_the_target_without_disturbing_it() {
         assert_eq!(run(&mut item), CMD_RETURN_NORMAL);
 
         let s = chain.sptr(0);
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 0), wl_source);
-        let wl_kept = winlink_find_by_index(&raw mut (*s).windows, 1);
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 0), wl_source);
+        let wl_kept = winlink_find_by_index(&mut (*s).windows, 1);
         assert_eq!(wl_kept, wl_target, "the target stayed where it was");
         assert_eq!((*wl_target).idx, 1);
 
-        let wl_new = winlink_find_by_index(&raw mut (*s).windows, 2);
+        let wl_new = winlink_find_by_index(&mut (*s).windows, 2);
         created.keep((*wl_new).window());
         assert_eq!((*wl_new).idx, 2, "the new window went just past the target");
-        assert_eq!(winlink_count(&raw mut (*s).windows), 3);
+        assert_eq!(winlink_count(&(*s).windows), 3);
         assert_eq!(session_get_curw(s), wl_new);
     }
 }
@@ -639,7 +633,7 @@ fn p_prints_through_the_default_template_without_a_client() {
         let nw = (*panes[0]).window;
         created.keep(nw);
         let s = chain.sptr(0);
-        let wl_new = winlink_find_by_index(&raw mut (*s).windows, 1);
+        let wl_new = winlink_find_by_index(&mut (*s).windows, 1);
         assert_eq!((*wl_new).window(), nw);
         assert_eq!(session_get_curw(s), wl_new);
     }
@@ -665,19 +659,19 @@ fn breaking_across_sessions_selects_in_the_destination_session() {
         assert_eq!(window_count_panes(w_source, 1), 1, "one pane stayed home");
 
         let s_away = chain.sptr(away);
-        let wl_new = winlink_find_by_index(&raw mut (*s_away).windows, 1);
+        let wl_new = winlink_find_by_index(&mut (*s_away).windows, 1);
         let nw = (*wl_new).window();
         created.keep(nw);
         assert_eq!((*wl_new).idx, 1, "the destination chose its own free index");
         assert_eq!((*wl_new).window(), nw);
-        assert_eq!(winlink_count(&raw mut (*s_away).windows), 2);
+        assert_eq!(winlink_count(&(*s_away).windows), 2);
         assert_eq!(
             session_get_curw(s_away),
             wl_new,
             "the destination session follows the new window"
         );
         assert_eq!(
-            winlink_count(&raw mut (*chain.sptr(0)).windows),
+            winlink_count(&(*chain.sptr(0)).windows),
             1,
             "the home session kept exactly its own window"
         );

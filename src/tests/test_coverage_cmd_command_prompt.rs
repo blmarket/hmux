@@ -317,7 +317,7 @@ fn exec_when_the_client_is_already_prompting_answers_normal_at_once() {
         let (_item, rv) = run_exec(&mut t, c, c"command-prompt");
         assert_eq!(rv, CMD_RETURN_NORMAL);
 
-        assert_eq!(seen(cstr_ptr(&(*c).prompt_string)), "existing");
+        assert_eq!(seen((*c).prompt_string_ptr()), "existing");
         assert!((*c).prompt.is_none());
         assert_eq!((*c).prompt_data, PromptData::None);
 
@@ -337,7 +337,7 @@ fn exec_without_arguments_prompts_for_a_command_and_waits() {
         let (mut item, rv) = run_exec(&mut t, c, c"command-prompt");
         assert_eq!(rv, CMD_RETURN_WAIT);
 
-        assert_eq!(seen(cstr_ptr(&(*c).prompt_string)), ":");
+        assert_eq!(seen((*c).prompt_string_ptr()), ":");
         assert_eq!((*c).prompt_index, 0);
         assert_eq!(utf8_vec_strlen(&(*c).prompt_buffer), 0);
         assert_eq!((*c).prompt, Prompt::CommandPrompt);
@@ -453,7 +453,7 @@ fn an_argument_becomes_the_prompt_hint() {
         let (_item, rv) = run_exec(&mut t, c, c"command-prompt refresh-client");
         assert_eq!(rv, CMD_RETURN_WAIT);
 
-        assert_eq!(seen(cstr_ptr(&(*c).prompt_string)), "(refresh-client) ");
+        assert_eq!(seen((*c).prompt_string_ptr()), "(refresh-client) ");
         let cd = cdata_of(c);
         assert_eq!(cd.prompts.len(), 1);
         assert_eq!(seen(cstr_ptr(&cd.prompts[0].prompt)), "(refresh-client) ");
@@ -488,7 +488,7 @@ fn prompts_are_taken_one_at_a_time_until_all_are_answered() {
         assert_eq!(cd.prompts.len(), 2);
         assert_eq!(seen(cstr_ptr(&cd.prompts[0].prompt)), "first ");
         assert_eq!(seen(cstr_ptr(&cd.prompts[1].prompt)), "second ");
-        assert_eq!(seen(cstr_ptr(&(*c).prompt_string)), "first ");
+        assert_eq!(seen((*c).prompt_string_ptr()), "first ");
 
         let prompt = (*c).prompt;
         let rc = prompt.input(c, &mut (*c).prompt_data, Some(c"one"), 1);
@@ -497,7 +497,7 @@ fn prompts_are_taken_one_at_a_time_until_all_are_answered() {
         assert_eq!(cd.current, 1);
         assert_eq!(cd.argv.len(), 1);
         assert_eq!(seen(cd.argv[0].as_ptr()), "one");
-        assert_eq!(seen(cstr_ptr(&(*c).prompt_string)), "second ");
+        assert_eq!(seen((*c).prompt_string_ptr()), "second ");
         assert_eq!((*item.ptr()).flags & CMDQ_WAITING, CMDQ_WAITING);
 
         let rc = prompt.input(c, &mut (*c).prompt_data, Some(c"two"), 1);
@@ -530,7 +530,7 @@ fn l_keeps_whole_prompts_and_inputs() {
         let (_item, rv) = run_exec(&mut t, c, c"command-prompt -l -p 'name: ' -I prefix");
         assert_eq!(rv, CMD_RETURN_WAIT);
 
-        assert_eq!(seen(cstr_ptr(&(*c).prompt_string)), "name: ");
+        assert_eq!(seen((*c).prompt_string_ptr()), "name: ");
         let cd = cdata_of(c);
         assert_eq!(cd.prompts.len(), 1);
         assert_eq!(seen(cstr_ptr(&cd.prompts[0].prompt)), "name: ");
@@ -651,7 +651,7 @@ fn I_hands_each_prompt_its_own_input_and_runs_out_quietly() {
             "",
             "the third prompt had no input of its own"
         );
-        assert_eq!(seen(cstr_ptr(&(*c).prompt_string)), "a ");
+        assert_eq!(seen((*c).prompt_string_ptr()), "a ");
 
         status_prompt_clear(c);
     }

@@ -2,7 +2,7 @@ use super::run::client_walk;
 use crate::cmd::cmdq_print;
 use crate::ffi::{getpwuid, getuid};
 use crate::fmt_args;
-use crate::proc::{peer_ptr, proc_get_peer_uid};
+use crate::proc::proc_get_peer_uid;
 use crate::tree::GlobalTree;
 pub use crate::types::*;
 pub const MSG_READ_CANCEL: msgtype = 307;
@@ -172,7 +172,7 @@ fn server_acl_set_readonly(uid: uid_t, readonly: bool) {
     }
     for c in client_walk() {
         unsafe {
-            let peer = proc_get_peer_uid(peer_ptr(&(*c).peer));
+            let peer = proc_get_peer_uid((*c).peer_ptr());
             if peer == -(1 as ::core::ffi::c_int) as uid_t || peer != uid {
                 continue;
             }
@@ -191,7 +191,7 @@ pub fn server_acl_user_deny_write(uid: uid_t) {
     server_acl_set_readonly(uid, true);
 }
 pub unsafe fn server_acl_join(c: *mut client) -> ::core::ffi::c_int {
-    let uid = unsafe { proc_get_peer_uid(peer_ptr(&(*c).peer)) };
+    let uid = unsafe { proc_get_peer_uid((*c).peer_ptr()) };
     if uid == -(1 as ::core::ffi::c_int) as uid_t {
         return 0 as ::core::ffi::c_int;
     }

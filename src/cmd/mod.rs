@@ -118,8 +118,8 @@ pub(crate) use queue::{
     cmdq_get_current, cmdq_get_state, cmdq_item_new, cmdq_set_target_client,
 };
 pub(crate) use queue::{
-    CmdqStateRef, cmdq_copy_state, cmdq_get_command, cmdq_get_state_ref, cmdq_item_weak_from_ptr,
-    cmdq_new_state,
+    CmdqStateRef, cmdq_copy_state, cmdq_get_command, cmdq_get_state_ref, cmdq_item_ref_from_ptr,
+    cmdq_item_ref_of, cmdq_item_weak_from_ptr, cmdq_new_state,
 };
 
 pub use cmd_command_prompt::cmd_command_prompt_cdata;
@@ -338,6 +338,19 @@ pub struct cmd {
     pub line: u_int,
     pub parse_flags: ::core::ffi::c_int,
 }
+impl cmd {
+    /// The file the command was parsed from, or null for one that came from a
+    /// client.
+    pub(crate) fn file_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.file)
+    }
+
+    /// The arguments the command carries, as the pointer the argument
+    /// helpers take.
+    pub(crate) fn args_ptr(&self) -> *mut args {
+        args_ptr(&self.args)
+    }
+}
 pub const CMD_RETURN_STOP: cmd_retval = 2;
 pub const CMD_RETURN_WAIT: cmd_retval = 1;
 pub const CMD_RETURN_NORMAL: cmd_retval = 0;
@@ -479,14 +492,12 @@ unsafe fn list_concat(list: *mut cmds, from: *mut cmds) {
     }
 }
 
-unsafe fn cmd_list_raw(cmdlist: *const cmd_list) -> *mut cmds {
-    unsafe {
-        (*cmdlist)
-            .list
-            .as_ref()
-            .map(|list| list.as_ref() as *const cmds as *mut cmds)
-            .expect("command list has been dropped")
-    }
+fn cmd_list_raw(cmdlist: &cmd_list) -> *mut cmds {
+    cmdlist
+        .list
+        .as_ref()
+        .map(|list| list.as_ref() as *const cmds as *mut cmds)
+        .expect("command list has been dropped")
 }
 
 /// The commands in `list`, in the order they run, walked the way the C's
@@ -601,11 +612,11 @@ pub fn cmd_get_entry(cmd: &cmd) -> &'static cmd_entry {
 }
 
 pub fn cmd_get_args(cmd: &cmd) -> &args {
-    unsafe { &*args_ptr(&cmd.args) }
+    unsafe { &*cmd.args_ptr() }
 }
 
 pub fn cmd_get_args_ptr(cmd: &cmd) -> *mut args {
-    args_ptr(&cmd.args)
+    cmd.args_ptr()
 }
 
 pub fn cmd_get_group(cmd: &cmd) -> u_int {
@@ -754,7 +765,7 @@ pub unsafe fn cmd_copy(from: &cmd, argv: &[CString]) -> Box<cmd> {
     unsafe {
         Box::new(cmd {
             entry: from.entry,
-            args: Some(args_copy(args_ptr(&from.args), argv)),
+            args: Some(args_copy(from.args_ptr(), argv)),
             group: 0,
             file: from.file.clone(),
             line: from.line,
@@ -763,14 +774,14 @@ pub unsafe fn cmd_copy(from: &cmd, argv: &[CString]) -> Box<cmd> {
     }
 }
 
-pub unsafe fn cmd_print(cmd: *mut cmd) -> CString {
+pub unsafe fn cmd_print(cmd: &cmd) -> CString {
     unsafe {
-        let s = args_print(args_ptr(&(*cmd).args));
+        let s = args_print(cmd.args_ptr());
 
         if !s.as_bytes().is_empty() {
-            xasprintf(c"%s %s".as_ptr(), fmt_args![(*cmd).entry.name, s.as_ptr()])
+            xasprintf(c"%s %s".as_ptr(), fmt_args![cmd.entry.name, s.as_ptr()])
         } else {
-            (*cmd).entry.name.to_owned()
+            cmd.entry.name.to_owned()
         }
     }
 }
@@ -796,47 +807,49 @@ impl Drop for cmd_list {
     }
 }
 
-pub unsafe fn cmd_list_append(cmdlist: *mut cmd_list, cmd: Box<cmd>) {
+pub unsafe fn cmd_list_append(cmdlist: &CmdListRef, cmd: Box<cmd>) {
     unsafe {
+        let list = cmdlist.list();
         let mut cmd = cmd;
-        cmd.group = (*cmdlist).group;
-        (*cmd_list_raw(cmdlist)).push(cmd);
+        cmd.group = list.group;
+        (*cmd_list_raw(list)).push(cmd);
     }
 }
 
-pub unsafe fn cmd_list_append_all(cmdlist: *mut cmd_list, from: *mut cmd_list) {
+pub unsafe fn cmd_list_append_all(cmdlist: &CmdListRef, from: &CmdListRef) {
     unsafe {
-        for cmd in list_commands(cmd_list_raw(from)) {
-            (*cmd).group = (*cmdlist).group;
+        let group = cmdlist.list().group;
+        for cmd in list_commands(cmd_list_raw(from.list())) {
+            (*cmd).group = group;
         }
-        list_concat(cmd_list_raw(cmdlist), cmd_list_raw(from));
+        list_concat(cmd_list_raw(cmdlist.list()), cmd_list_raw(from.list()));
     }
 }
 
-pub unsafe fn cmd_list_move(cmdlist: *mut cmd_list, from: *mut cmd_list) {
+pub unsafe fn cmd_list_move(cmdlist: &CmdListRef, from: &CmdListRef) {
     unsafe {
-        list_concat(cmd_list_raw(cmdlist), cmd_list_raw(from));
-        (*cmdlist).group = next_group();
+        list_concat(cmd_list_raw(cmdlist.list()), cmd_list_raw(from.list()));
+        cmdlist.list().group = next_group();
     }
 }
 
-pub(crate) unsafe fn cmd_list_copy(cmdlist: *const cmd_list, argv: &[CString]) -> CmdListRef {
+pub(crate) unsafe fn cmd_list_copy(cmdlist: &CmdListRef, argv: &[CString]) -> CmdListRef {
     unsafe {
-        let mut group = (*cmdlist).group;
+        let mut group = cmdlist.list().group;
         let s = cmd_list_print(cmdlist, 0);
         log_debug(
             c"%s: %s".as_ptr(),
             fmt_args![c"cmd_list_copy".as_ptr(), s.as_ptr()],
         );
         let new_cmdlist = cmd_list_new();
-        for cmd in list_commands(cmd_list_raw(cmdlist)) {
+        for cmd in list_commands(cmd_list_raw(cmdlist.list())) {
             if (*cmd).group != group {
-                (*new_cmdlist.as_ptr()).group = next_group();
+                new_cmdlist.list().group = next_group();
                 group = (*cmd).group;
             }
-            cmd_list_append(new_cmdlist.as_ptr(), cmd_copy(&*cmd, argv));
+            cmd_list_append(&new_cmdlist, cmd_copy(&*cmd, argv));
         }
-        let s = cmd_list_print(new_cmdlist.as_ptr(), 0);
+        let s = cmd_list_print(&new_cmdlist, 0);
         log_debug(
             c"%s: %s".as_ptr(),
             fmt_args![c"cmd_list_copy".as_ptr(), s.as_ptr()],
@@ -845,16 +858,16 @@ pub(crate) unsafe fn cmd_list_copy(cmdlist: *const cmd_list, argv: &[CString]) -
     }
 }
 
-pub unsafe fn cmd_list_print(cmdlist: *const cmd_list, flags: c_int) -> CString {
+pub unsafe fn cmd_list_print(cmdlist: &CmdListRef, flags: c_int) -> CString {
     unsafe {
         let escaped = flags & CMD_LIST_PRINT_ESCAPED != 0;
         let no_groups = flags & CMD_LIST_PRINT_NO_GROUPS != 0;
         let single_separator: &[u8] = if escaped { b" \\; " } else { b" ; " };
         let double_separator: &[u8] = if escaped { b" \\;\\; " } else { b" ;; " };
         let mut buf = Vec::<u8>::new();
-        let mut commands = list_commands(cmd_list_raw(cmdlist)).peekable();
+        let mut commands = list_commands(cmd_list_raw(cmdlist.list())).peekable();
         while let Some(cmd) = commands.next() {
-            let this = cmd_print(cmd);
+            let this = cmd_print(&*cmd);
             buf.extend_from_slice(this.as_bytes());
             if let Some(&next) = commands.peek() {
                 if !no_groups && (*cmd).group != (*next).group {
@@ -868,9 +881,9 @@ pub unsafe fn cmd_list_print(cmdlist: *const cmd_list, flags: c_int) -> CString 
     }
 }
 
-pub unsafe fn cmd_list_first(cmdlist: *mut cmd_list) -> *mut cmd {
+pub unsafe fn cmd_list_first(cmdlist: &CmdListRef) -> *mut cmd {
     unsafe {
-        (*cmd_list_raw(cmdlist))
+        (*cmd_list_raw(cmdlist.list()))
             .first()
             .map(|cmd| &raw const **cmd as *mut cmd)
             .unwrap_or(null_mut::<cmd>())
@@ -879,22 +892,22 @@ pub unsafe fn cmd_list_first(cmdlist: *mut cmd_list) -> *mut cmd {
 
 /// Every command of `cmdlist`, in the order they run.
 /// The `at`th command of `cmdlist`, or null when it holds no such command.
-pub unsafe fn cmd_list_at(cmdlist: *mut cmd_list, at: usize) -> *mut cmd {
+pub unsafe fn cmd_list_at(cmdlist: &CmdListRef, at: usize) -> *mut cmd {
     unsafe {
-        (*cmd_list_raw(cmdlist))
+        (*cmd_list_raw(cmdlist.list()))
             .get(at)
             .map(|cmd| &raw const **cmd as *mut cmd)
             .unwrap_or(::core::ptr::null_mut())
     }
 }
 
-pub unsafe fn cmd_list_all(cmdlist: *mut cmd_list) -> Vec<*mut cmd> {
-    unsafe { list_commands(cmd_list_raw(cmdlist)).collect() }
+pub unsafe fn cmd_list_all(cmdlist: &CmdListRef) -> Vec<*mut cmd> {
+    unsafe { list_commands(cmd_list_raw(cmdlist.list())).collect() }
 }
 
-pub unsafe fn cmd_list_all_have(cmdlist: *mut cmd_list, flag: c_int) -> c_int {
+pub unsafe fn cmd_list_all_have(cmdlist: &CmdListRef, flag: c_int) -> c_int {
     unsafe {
-        for cmd in list_commands(cmd_list_raw(cmdlist)) {
+        for cmd in list_commands(cmd_list_raw(cmdlist.list())) {
             if !(*cmd).entry.flags & flag != 0 {
                 return 0;
             }
@@ -903,9 +916,9 @@ pub unsafe fn cmd_list_all_have(cmdlist: *mut cmd_list, flag: c_int) -> c_int {
     }
 }
 
-pub unsafe fn cmd_list_any_have(cmdlist: *mut cmd_list, flag: c_int) -> c_int {
+pub unsafe fn cmd_list_any_have(cmdlist: &CmdListRef, flag: c_int) -> c_int {
     unsafe {
-        for cmd in list_commands(cmd_list_raw(cmdlist)) {
+        for cmd in list_commands(cmd_list_raw(cmdlist.list())) {
             if (*cmd).entry.flags & flag != 0 {
                 return 1;
             }
@@ -918,11 +931,10 @@ pub unsafe fn cmd_list_any_have(cmdlist: *mut cmd_list, flag: c_int) -> c_int {
 /// the pane.
 pub unsafe fn cmd_mouse_at(
     wp: *mut window_pane,
-    m: *mut mouse_event,
+    m: &mouse_event,
     last: c_int,
 ) -> Option<(u_int, u_int)> {
     unsafe {
-        let m = &*m;
         let wp = &*wp;
         let (mut x, mut y) = if last != 0 {
             (m.lx.wrapping_add(m.ox), m.ly.wrapping_add(m.oy))
@@ -960,9 +972,8 @@ pub unsafe fn cmd_mouse_at(
 
 /// The session a mouse event names, paired with the window link it points at.
 /// The link is null when the session has no such window.
-pub unsafe fn cmd_mouse_window(m: *mut mouse_event) -> Option<(*mut session, *mut winlink)> {
+pub unsafe fn cmd_mouse_window(m: &mouse_event) -> Option<(*mut session, *mut winlink)> {
     unsafe {
-        let m = &*m;
         if m.valid == 0 || m.s == -1 {
             return None;
         }
@@ -977,7 +988,7 @@ pub unsafe fn cmd_mouse_window(m: *mut mouse_event) -> Option<(*mut session, *mu
             if w.is_null() {
                 return None;
             }
-            winlink_find_by_window(&raw mut (*s).windows, w)
+            winlink_find_by_window(&mut (*s).windows, w)
         };
         Some((s, wl))
     }
@@ -985,17 +996,17 @@ pub unsafe fn cmd_mouse_window(m: *mut mouse_event) -> Option<(*mut session, *mu
 
 /// The pane a mouse event names, with the session and window link it sits in.
 pub unsafe fn cmd_mouse_pane(
-    m: *mut mouse_event,
+    m: &mouse_event,
 ) -> Option<(*mut session, *mut winlink, *mut window_pane)> {
     unsafe {
         let (s, wl) = cmd_mouse_window(m)?;
         if wl.is_null() {
             return None;
         }
-        let wp = if (*m).wp == -1 {
+        let wp = if m.wp == -1 {
             window_get_active((*wl).window())
         } else {
-            let wp = window_pane_find_by_id((*m).wp as u_int);
+            let wp = window_pane_find_by_id(m.wp as u_int);
             if wp.is_null() || window_has_pane((*wl).window(), wp) == 0 {
                 return None;
             }

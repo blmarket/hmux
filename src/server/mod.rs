@@ -6,6 +6,7 @@
 
 mod acl;
 mod client;
+mod defaults;
 mod message;
 mod run;
 
@@ -47,6 +48,7 @@ pub(crate) use client::{
     CLIENT_UTF8, TTY_FREEZE, TTY_NOCURSOR,
 };
 pub(crate) use client::{client_ref_from_ptr, client_weak_from_ptr, register_client_handle};
+pub(crate) use defaults::server_apply_option_defaults;
 #[cfg(test)]
 pub(crate) use message::{CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWWINDOW};
 pub(crate) use run::client_walk;

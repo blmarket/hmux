@@ -105,12 +105,12 @@ fn drive(line: &'static CStr, idx: c_int) -> (cmd_retval, Vec<String>) {
         assert_eq!((*caller).retval, 1, "the caller was told it failed");
         let s = one.session.ptr();
         assert_eq!(
-            winlink_find_by_index(&raw mut (*s).windows, 0),
+            winlink_find_by_index(&mut (*s).windows, 0),
             one.wl,
             "the window stayed where it was linked"
         );
         assert!(
-            winlink_find_by_index(&raw mut (*s).windows, 1).is_null(),
+            winlink_find_by_index(&mut (*s).windows, 1).is_null(),
             "nothing was shuffled up out of the way"
         );
         (retval, messages)

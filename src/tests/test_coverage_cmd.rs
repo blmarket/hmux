@@ -102,7 +102,7 @@ unsafe fn commands(s: &CStr) -> CmdListRef {
     }
 }
 
-unsafe fn printed(cmdlist: *mut cmd_list, flags: c_int) -> String {
+unsafe fn printed(cmdlist: &CmdListRef, flags: c_int) -> String {
     unsafe {
         cmd_list_print(cmdlist, flags)
             .to_string_lossy()
@@ -264,7 +264,7 @@ fn parsing_keeps_the_parse_flags_and_where_the_command_came_from() {
         assert_ne!(copied_file, file, "the copy has a file name of its own");
         assert_eq!(copied_line, 17);
         assert_eq!(cmd_get_parse_flags(&*copy_ptr), 0);
-        assert_eq!(cmd_print(copy_ptr).to_string_lossy(), "list-buffers");
+        assert_eq!(cmd_print(&*copy_ptr).to_string_lossy(), "list-buffers");
 
         cmd_free(copy);
         cmd_free(cmd);
@@ -388,32 +388,29 @@ fn a_command_list_prints_its_groups_with_double_separators() {
     unsafe {
         let first = commands(c"list-buffers ; list-clients");
         let second = commands(c"list-panes");
-        cmd_list_move(first.as_ptr(), second.as_ptr());
+        cmd_list_move(&first, &second);
 
         // Commands of one group are joined by a single separator and the step
         // between groups by a double one.
         assert_eq!(
-            printed(first.as_ptr(), 0),
+            printed(&first, 0),
             "list-buffers ; list-clients ;; list-panes"
         );
 
         // Escaped, the separators come back the way a shell would have to
         // spell them.
         assert_eq!(
-            printed(first.as_ptr(), CMD_LIST_PRINT_ESCAPED),
+            printed(&first, CMD_LIST_PRINT_ESCAPED),
             "list-buffers \\; list-clients \\;\\; list-panes"
         );
 
         // Asked to forget the groups, every step is a single separator.
         assert_eq!(
-            printed(first.as_ptr(), CMD_LIST_PRINT_NO_GROUPS),
+            printed(&first, CMD_LIST_PRINT_NO_GROUPS),
             "list-buffers ; list-clients ; list-panes"
         );
         assert_eq!(
-            printed(
-                first.as_ptr(),
-                CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS
-            ),
+            printed(&first, CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS),
             "list-buffers \\; list-clients \\; list-panes"
         );
     }
@@ -426,17 +423,17 @@ fn moving_an_empty_list_onto_another_leaves_it_as_it_was() {
         let first = commands(c"list-buffers");
         let empty = cmd_list_new();
 
-        cmd_list_move(first.as_ptr(), empty.as_ptr());
-        assert_eq!(printed(first.as_ptr(), 0), "list-buffers");
+        cmd_list_move(&first, &empty);
+        assert_eq!(printed(&first, 0), "list-buffers");
 
         // The same the other way about: what a move takes over keeps its
         // order, and the list it came from is left empty rather than freed.
         let second = commands(c"list-panes");
-        cmd_list_append_all(empty.as_ptr(), second.as_ptr());
-        assert_eq!(printed(empty.as_ptr(), 0), "list-panes");
-        assert_eq!(printed(second.as_ptr(), 0), "");
-        cmd_list_append_all(empty.as_ptr(), second.as_ptr());
-        assert_eq!(printed(empty.as_ptr(), 0), "list-panes");
+        cmd_list_append_all(&empty, &second);
+        assert_eq!(printed(&empty, 0), "list-panes");
+        assert_eq!(printed(&second, 0), "");
+        cmd_list_append_all(&empty, &second);
+        assert_eq!(printed(&empty, 0), "list-panes");
     }
 }
 
@@ -446,16 +443,16 @@ fn copying_a_command_list_keeps_its_groups_apart() {
     unsafe {
         // Every command of one group stays in one group in the copy.
         let one = commands(c"list-buffers ; list-clients");
-        let copy = cmd_list_copy(one.as_ptr(), &[]);
-        assert_eq!(printed(copy.as_ptr(), 0), "list-buffers ; list-clients");
+        let copy = cmd_list_copy(&one, &[]);
+        assert_eq!(printed(&copy, 0), "list-buffers ; list-clients");
 
         // A copy of a list holding two groups takes a fresh group number at
         // each step, so the step is still there afterwards.
         let two = commands(c"list-panes");
-        cmd_list_move(one.as_ptr(), two.as_ptr());
-        let copy = cmd_list_copy(one.as_ptr(), &[]);
+        cmd_list_move(&one, &two);
+        let copy = cmd_list_copy(&one, &[]);
         assert_eq!(
-            printed(copy.as_ptr(), 0),
+            printed(&copy, 0),
             "list-buffers ; list-clients ;; list-panes"
         );
     }
@@ -471,24 +468,24 @@ fn a_command_lists_flags_are_read_across_every_command_in_it() {
     unsafe {
         // Every command in this one runs its after hook.
         let all = commands(c"list-windows ; rename-window name");
-        assert_eq!(cmd_list_all_have(all.as_ptr(), CMD_AFTERHOOK), 1);
-        assert_eq!(cmd_list_any_have(all.as_ptr(), CMD_AFTERHOOK), 1);
+        assert_eq!(cmd_list_all_have(&all, CMD_AFTERHOOK), 1);
+        assert_eq!(cmd_list_any_have(&all, CMD_AFTERHOOK), 1);
 
         // One of these does and one does not.
         let some = commands(c"list-windows ; kill-window");
-        assert_eq!(cmd_list_all_have(some.as_ptr(), CMD_AFTERHOOK), 0);
-        assert_eq!(cmd_list_any_have(some.as_ptr(), CMD_AFTERHOOK), 1);
+        assert_eq!(cmd_list_all_have(&some, CMD_AFTERHOOK), 0);
+        assert_eq!(cmd_list_any_have(&some, CMD_AFTERHOOK), 1);
 
         // Neither of these does.
         let none = commands(c"kill-window ; kill-session");
-        assert_eq!(cmd_list_all_have(none.as_ptr(), CMD_AFTERHOOK), 0);
-        assert_eq!(cmd_list_any_have(none.as_ptr(), CMD_AFTERHOOK), 0);
-        assert_eq!(cmd_list_any_have(none.as_ptr(), CMD_STARTSERVER), 0);
+        assert_eq!(cmd_list_all_have(&none, CMD_AFTERHOOK), 0);
+        assert_eq!(cmd_list_any_have(&none, CMD_AFTERHOOK), 0);
+        assert_eq!(cmd_list_any_have(&none, CMD_STARTSERVER), 0);
 
         // An empty list has every flag and none of them.
         let empty = cmd_list_new();
-        assert_eq!(cmd_list_all_have(empty.as_ptr(), CMD_AFTERHOOK), 1);
-        assert_eq!(cmd_list_any_have(empty.as_ptr(), CMD_AFTERHOOK), 0);
+        assert_eq!(cmd_list_all_have(&empty, CMD_AFTERHOOK), 1);
+        assert_eq!(cmd_list_any_have(&empty, CMD_AFTERHOOK), 0);
     }
 }
 
@@ -509,17 +506,17 @@ fn a_mouse_event_lands_at_a_pane_offset_or_outside_the_pane_altogether() {
         let mut m = *Box::new(mouse_event::default());
         m.x = 12;
         m.y = 6;
-        assert_eq!(cmd_mouse_at(wp, &raw mut m, 0), Some((2, 1)));
+        assert_eq!(cmd_mouse_at(wp, &m, 0), Some((2, 1)));
 
         // The offsets a scrolled window carries are added on first.
         m.ox = 3;
         m.oy = 2;
-        assert_eq!(cmd_mouse_at(wp, &raw mut m, 0), Some((5, 3)));
+        assert_eq!(cmd_mouse_at(wp, &m, 0), Some((5, 3)));
 
         // With `last` set it is the previous position that is read.
         m.lx = 11;
         m.ly = 5;
-        assert_eq!(cmd_mouse_at(wp, &raw mut m, 1), Some((4, 2)));
+        assert_eq!(cmd_mouse_at(wp, &m, 1), Some((4, 2)));
 
         // A status line at the top pushes the rows down by its height.
         m.ox = 0;
@@ -527,32 +524,32 @@ fn a_mouse_event_lands_at_a_pane_offset_or_outside_the_pane_altogether() {
         m.statusat = 0;
         m.statuslines = 2;
         m.y = 8;
-        assert_eq!(cmd_mouse_at(wp, &raw mut m, 0), Some((2, 1)));
+        assert_eq!(cmd_mouse_at(wp, &m, 0), Some((2, 1)));
 
         // A status line anywhere else does not, and neither does one the event
         // landed above.
         m.statusat = 1;
         m.y = 6;
-        assert_eq!(cmd_mouse_at(wp, &raw mut m, 0), Some((2, 1)));
+        assert_eq!(cmd_mouse_at(wp, &m, 0), Some((2, 1)));
         m.statusat = 0;
         m.statuslines = 8;
-        assert_eq!(cmd_mouse_at(wp, &raw mut m, 0), Some((2, 1)));
+        assert_eq!(cmd_mouse_at(wp, &m, 0), Some((2, 1)));
 
         m.statuslines = 0;
-        assert_eq!(cmd_mouse_at(wp, &raw mut m, 0), Some((2, 1)));
+        assert_eq!(cmd_mouse_at(wp, &m, 0), Some((2, 1)));
 
         // Outside the pane, in either direction on either axis.
         m.statuslines = 0;
         m.x = 9;
         m.y = 6;
-        assert_eq!(cmd_mouse_at(wp, &raw mut m, 0), None);
+        assert_eq!(cmd_mouse_at(wp, &m, 0), None);
         m.x = 30;
-        assert_eq!(cmd_mouse_at(wp, &raw mut m, 0), None);
+        assert_eq!(cmd_mouse_at(wp, &m, 0), None);
         m.x = 12;
         m.y = 4;
-        assert_eq!(cmd_mouse_at(wp, &raw mut m, 0), None);
+        assert_eq!(cmd_mouse_at(wp, &m, 0), None);
         m.y = 13;
-        assert_eq!(cmd_mouse_at(wp, &raw mut m, 0), None);
+        assert_eq!(cmd_mouse_at(wp, &m, 0), None);
     }
 }
 
@@ -570,23 +567,23 @@ fn a_mouse_event_resolves_to_the_window_its_ids_name() {
         let mut m = *Box::new(mouse_event::default());
 
         // An event nothing filled in points nowhere.
-        assert!(cmd_mouse_window(&raw mut m).is_none());
+        assert!(cmd_mouse_window(&m).is_none());
 
         // Nor does a valid one carrying no session.
         m.valid = 1;
         m.s = -1;
         m.w = -1;
-        assert!(cmd_mouse_window(&raw mut m).is_none());
+        assert!(cmd_mouse_window(&m).is_none());
 
         // Nor one naming a session that has gone.
         m.s = 99;
-        assert!(cmd_mouse_window(&raw mut m).is_none());
+        assert!(cmd_mouse_window(&m).is_none());
 
         // No window means the session's current one, and the session comes
         // back alongside it.
         m.s = 0;
         assert_eq!(
-            cmd_mouse_window(&raw mut m),
+            cmd_mouse_window(&m),
             Some((target.session(), session_get_curw(target.session())))
         );
 
@@ -594,13 +591,13 @@ fn a_mouse_event_resolves_to_the_window_its_ids_name() {
         // the session's links.
         m.w = 1;
         assert_eq!(
-            cmd_mouse_window(&raw mut m),
+            cmd_mouse_window(&m),
             Some((target.session(), target.winlink(1)))
         );
 
         // A window that has gone points nowhere.
         m.w = 99;
-        assert!(cmd_mouse_window(&raw mut m).is_none());
+        assert!(cmd_mouse_window(&m).is_none());
     }
 }
 
@@ -614,7 +611,7 @@ fn a_mouse_event_resolves_to_a_pane_inside_the_window_it_names() {
         let mut m = *Box::new(mouse_event::default());
 
         // Nothing to resolve the window to is nothing to resolve the pane to.
-        assert!(cmd_mouse_pane(&raw mut m).is_none());
+        assert!(cmd_mouse_pane(&m).is_none());
 
         // No pane id means the window's active pane, and the session and
         // window link come back with it.
@@ -623,7 +620,7 @@ fn a_mouse_event_resolves_to_a_pane_inside_the_window_it_names() {
         m.w = -1;
         m.wp = -1;
         assert_eq!(
-            cmd_mouse_pane(&raw mut m),
+            cmd_mouse_pane(&m),
             Some((
                 target.session(),
                 session_get_curw(target.session()),
@@ -635,17 +632,17 @@ fn a_mouse_event_resolves_to_a_pane_inside_the_window_it_names() {
         // window the event named.
         m.wp = 0;
         assert_eq!(
-            cmd_mouse_pane(&raw mut m).map(|(_, _, wp)| wp),
+            cmd_mouse_pane(&m).map(|(_, _, wp)| wp),
             Some(target.pane(0))
         );
 
         // The second window's pane is a real pane, but not this window's.
         m.wp = 1;
-        assert!(cmd_mouse_pane(&raw mut m).is_none());
+        assert!(cmd_mouse_pane(&m).is_none());
 
         // A pane that has gone points nowhere.
         m.wp = 99;
-        assert!(cmd_mouse_pane(&raw mut m).is_none());
+        assert!(cmd_mouse_pane(&m).is_none());
     }
 }
 

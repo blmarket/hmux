@@ -442,10 +442,11 @@ unsafe fn recalculate_size_skip_client(
     }
 }
 
-/// Works out what size `w` should be and gives it that size, or notes it for
-/// the next redraw. `now` resizes at once rather than waiting.
-pub unsafe fn recalculate_size(w: *mut window, now: c_int) {
+/// Works out what size the window should be and gives it that size, or notes
+/// it for the next redraw. `now` resizes at once rather than waiting.
+pub(crate) unsafe fn recalculate_size(w_ref: &WindowRef, now: c_int) {
     unsafe {
+        let w = w_ref.as_ptr();
         if window_get_active(w).is_null() {
             return;
         }
@@ -517,9 +518,8 @@ pub fn recalculate_sizes() {
 pub fn recalculate_sizes_now(now: c_int) {
     unsafe {
         for s_ref in each_session() {
-            let s = s_ref.as_ptr();
-            session_clear_attached(s);
-            status_update_cache(s);
+            session_clear_attached(&s_ref);
+            status_update_cache(&s_ref);
         }
         for c in client_walk() {
             let s = (*c).session;
@@ -535,7 +535,7 @@ pub fn recalculate_sizes_now(now: c_int) {
             }
         }
         for w_ref in each_window() {
-            recalculate_size(w_ref.as_ptr(), now);
+            recalculate_size(&w_ref, now);
         }
     }
 }

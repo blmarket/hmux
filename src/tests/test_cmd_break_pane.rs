@@ -234,7 +234,7 @@ fn an_index_only_target_shuffles_up_from_the_sessions_current_window() {
             2,
             "the window above the current one shuffled up"
         );
-        let wl_new = winlink_find_by_index(&raw mut (*s).windows, 1);
+        let wl_new = winlink_find_by_index(&mut (*s).windows, 1);
         assert!(!wl_new.is_null(), "the freed index took the new window");
         let nw = (*wl_new).window();
         created.keep(nw);
@@ -242,11 +242,11 @@ fn an_index_only_target_shuffles_up_from_the_sessions_current_window() {
         assert_eq!((*moved).window, nw, "the pane moved into the new window");
         assert_ne!(nw, w_cur);
         assert_eq!(
-            winlink_find_by_index(&raw mut (*s).windows, 0),
+            winlink_find_by_index(&mut (*s).windows, 0),
             wl_cur,
             "the current window kept its own index"
         );
-        assert_eq!(winlink_count(&raw mut (*s).windows), 3);
+        assert_eq!(winlink_count(&(*s).windows), 3);
         assert_eq!(
             session_get_curw(s),
             wl_new,
@@ -277,12 +277,12 @@ fn a_target_at_the_last_index_refuses_to_shuffle_up() {
 
         let s = world.sptr(0);
         assert_eq!(
-            winlink_count(&raw mut (*s).windows),
+            winlink_count(&(*s).windows),
             2,
             "nothing was linked"
         );
         assert_eq!(
-            winlink_find_by_index(&raw mut (*s).windows, c_int::MAX),
+            winlink_find_by_index(&mut (*s).windows, c_int::MAX),
             wl_last,
             "the target stayed at the last index"
         );
@@ -312,7 +312,7 @@ fn a_single_pane_window_relinked_without_n_keeps_the_name_it_had() {
         world.forget(wl_src);
 
         let s_dst = world.sptr(dst);
-        let wl_new = winlink_find_by_index(&raw mut (*s_dst).windows, 4);
+        let wl_new = winlink_find_by_index(&mut (*s_dst).windows, 4);
         assert!(!wl_new.is_null());
         world.owns(dst, wl_new);
         assert_eq!((*wl_new).window(), w_src);
@@ -322,7 +322,7 @@ fn a_single_pane_window_relinked_without_n_keeps_the_name_it_had() {
             "-d keeps the destination's current window"
         );
         assert_eq!(
-            seen(cstr_ptr(&(*w_src).name)),
+            seen((*w_src).name_ptr()),
             "world",
             "the relinked window keeps the name it came with"
         );
@@ -357,11 +357,11 @@ fn p_takes_the_format_from_f_instead_of_the_default_template() {
         let nw = (*moved).window;
         created.keep(nw);
         let s = world.sptr(0);
-        let wl_new = winlink_find_by_window(&raw mut (*s).windows, nw);
+        let wl_new = winlink_find_by_window(&mut (*s).windows, nw);
         assert!(!wl_new.is_null());
         world.owns(0, wl_new);
         assert_ne!(nw, w0);
-        assert_eq!(seen(cstr_ptr(&(*nw).name)), "sh");
+        assert_eq!(seen((*nw).name_ptr()), "sh");
     }
 }
 
@@ -386,12 +386,12 @@ fn a_single_pane_window_is_relinked_into_the_destination_session_and_n_renames_i
         let s_src = world.sptr(0);
         let s_dst = world.sptr(dst);
         assert_eq!(
-            winlink_count(&raw mut (*s_src).windows),
+            winlink_count(&(*s_src).windows),
             1,
             "the source session gave the window up"
         );
         assert_eq!(
-            winlink_find_by_index(&raw mut (*s_src).windows, 0),
+            winlink_find_by_index(&mut (*s_src).windows, 0),
             null_mut()
         );
         assert_eq!(
@@ -400,15 +400,15 @@ fn a_single_pane_window_is_relinked_into_the_destination_session_and_n_renames_i
             "the source moved on to what is left"
         );
 
-        let wl_new = winlink_find_by_index(&raw mut (*s_dst).windows, 5);
+        let wl_new = winlink_find_by_index(&mut (*s_dst).windows, 5);
         assert!(!wl_new.is_null(), "the window landed on the given index");
         world.owns(dst, wl_new);
         assert_eq!((*wl_new).window(), w_src, "it is the very same window");
         assert_eq!(
-            winlink_find_by_window(&raw mut (*s_dst).windows, w_src),
+            winlink_find_by_window(&mut (*s_dst).windows, w_src),
             wl_new
         );
-        assert_eq!(winlink_count(&raw mut (*s_dst).windows), 2);
+        assert_eq!(winlink_count(&(*s_dst).windows), 2);
         assert_eq!(
             session_get_curw(s_dst),
             wl_new,
@@ -419,7 +419,7 @@ fn a_single_pane_window_is_relinked_into_the_destination_session_and_n_renames_i
         assert_eq!(window_count_panes(w_src, 1), 1, "the window kept its pane");
         assert_eq!(pane_at(w_src, 0), panes[0]);
         assert_eq!((*panes[0]).window, w_src, "no new window was built");
-        assert_eq!(seen(cstr_ptr(&(*w_src).name)), "moved");
+        assert_eq!(seen((*w_src).name_ptr()), "moved");
         assert_eq!(
             options_get_number((*w_src).options_ptr(), c"automatic-rename".as_ptr()),
             0,
@@ -470,7 +470,7 @@ fn breaking_the_last_pane_hands_both_list_tails_to_the_one_in_front() {
         assert_eq!(window_count_panes(nw, 1), 1);
 
         let s = world.sptr(0);
-        let wl_new = winlink_find_by_index(&raw mut (*s).windows, 1);
+        let wl_new = winlink_find_by_index(&mut (*s).windows, 1);
         assert!(!wl_new.is_null());
         world.owns(0, wl_new);
         assert_eq!((*wl_new).window(), nw);

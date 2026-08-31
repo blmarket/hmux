@@ -3,7 +3,6 @@ use crate::cfg::cfg_print_causes;
 use crate::cmd::cmd_server_access::CLIENT_EXIT;
 use crate::cmd::cmdq_get_current;
 use crate::key_bindings::{key_bindings_get_table_ref, key_bindings_remove_table};
-use crate::proc::peer_ptr;
 use crate::server::client_get_last_session;
 use crate::server::message_log;
 use crate::session::{session_attached, session_get_curw};
@@ -86,7 +85,7 @@ unsafe fn wire_up(c: *mut client) -> Wired {
 impl Wired {
     /// The peer the client owns.
     fn peer(&self) -> *mut tmuxpeer {
-        unsafe { peer_ptr(&(*self.c).peer) }
+        unsafe { (*self.c).peer_ptr() }
     }
 }
 
@@ -148,7 +147,7 @@ fn switching_with_d_detaches_the_other_clients_of_the_target() {
         assert_eq!(client_get_last_session(c), old.ptr());
         assert_eq!((*other).exit_type, CLIENT_EXIT_DETACH);
         assert_eq!((*other).exit_msgtype, MSG_DETACH);
-        assert_eq!(seen(cstr_ptr(&(*other).exit_session)), "0");
+        assert_eq!(seen((*other).exit_session_ptr()), "0");
         assert_ne!((*other).flags & CLIENT_EXIT as u64, 0);
         assert_eq!((*c).flags & CLIENT_EXIT as u64, 0, "the attacher stays");
         assert_eq!(

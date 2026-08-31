@@ -204,7 +204,7 @@ unsafe fn layout_set_even(w: *mut window, type_0: layout_type) {
         layout_set_size(lc, sx, sy, 0, 0);
         layout_make_node(w, lc, type_0);
         for wp in tiled(w) {
-            let lcnew = insert_new_tail(&raw mut (*lc).cells, lc);
+            let lcnew = insert_new_tail(&mut (*lc).cells, lc);
             layout_make_leaf(lcnew, wp);
             (*lcnew).sx = (*w).sx;
             (*lcnew).sy = (*w).sy;
@@ -312,7 +312,7 @@ unsafe fn main_size(w: *mut window, axis: &Axis, along: u_int) -> (u_int, u_int)
 /// Hangs the main pane's cell at the end of `lc`.
 unsafe fn main_cell(w: *mut window, lc: *mut layout_cell, axis: &Axis, main: u_int, across: u_int) {
     unsafe {
-        let lcmain = insert_new_tail(&raw mut (*lc).cells, lc);
+        let lcmain = insert_new_tail(&mut (*lc).cells, lc);
         let (sx, sy) = axis.size(main, across);
         layout_set_size(lcmain, sx, sy, 0, 0);
         layout_make_leaf(lcmain, layout_first_tiled(w));
@@ -330,7 +330,7 @@ unsafe fn other_cells(
     across: u_int,
 ) {
     unsafe {
-        let lcother = insert_new_tail(&raw mut (*lc).cells, lc);
+        let lcother = insert_new_tail(&mut (*lc).cells, lc);
         let (sx, sy) = axis.size(other, across);
         layout_set_size(lcother, sx, sy, 0, 0);
         let first = layout_first_tiled(w);
@@ -343,7 +343,7 @@ unsafe fn other_cells(
             if wp == first {
                 continue;
             }
-            let lcchild = insert_new_tail(&raw mut (*lcother).cells, lcother);
+            let lcchild = insert_new_tail(&mut (*lcother).cells, lcother);
             let (sx, sy) = axis.size(other, MINIMUM);
             layout_set_size(lcchild, sx, sy, 0, 0);
             layout_make_leaf(lcchild, wp);
@@ -460,7 +460,7 @@ unsafe fn layout_set_tiled(w: *mut window) {
             if wp.is_null() {
                 break;
             }
-            let lcrow = insert_new_tail(&raw mut (*lc).cells, lc);
+            let lcrow = insert_new_tail(&mut (*lc).cells, lc);
             layout_set_size(lcrow, (*w).sx, height, 0, 0);
             if n.wrapping_sub(j.wrapping_mul(columns)) == 1 || columns == 1 {
                 layout_make_leaf(lcrow, wp);
@@ -470,7 +470,7 @@ unsafe fn layout_set_tiled(w: *mut window) {
             layout_make_node(w, lcrow, LAYOUT_LEFTRIGHT);
             let mut i = 0;
             while i < columns {
-                let lcchild = insert_new_tail(&raw mut (*lcrow).cells, lcrow);
+                let lcchild = insert_new_tail(&mut (*lcrow).cells, lcrow);
                 layout_set_size(lcchild, width, height, 0, 0);
                 layout_make_leaf(lcchild, wp);
                 wp = next_tiled(wp);

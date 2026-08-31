@@ -24,7 +24,7 @@ use crate::cmd::cmd_new_session::{
     CMD_RETURN_WAIT, CMD_STARTSERVER, CMD_TARGET_SESSION_USAGE, CMDQ_STATE_REPEAT, MSG_READY,
     NEW_SESSION_TEMPLATE, RB_NEGINF, USHRT_MAX, cmd_has_session_entry, cmd_new_session_entry,
 };
-use crate::environ::{environ_ptr, environ_set};
+use crate::environ::environ_set;
 use crate::fmt_args;
 use crate::server::message_log;
 use crate::session::next_session_id;
@@ -98,7 +98,7 @@ unsafe fn logged_item(clients: &mut Clients, name: &str) -> Item {
 /// assertion and never reaches the spawning tail.
 unsafe fn item_with_raw_flag_value(mut item: Item, flag: u_char, raw: &'static CStr) -> Item {
     unsafe {
-        let args = crate::cmd::cmd_get_args_ptr(&*item.cmd());
+        let args = item.args_ptr();
         let mut value = Box::new(args_value_t::default());
         value.value = ArgsValue::String(raw.to_owned());
         args_set(args, flag, Some(value), 0);
@@ -408,7 +408,7 @@ fn a_client_already_inside_tmux_is_refused_before_the_terminal_is_touched() {
         (*c).ttyname = Some(ttyname);
         (*c).environ = Some(Environ::new().owned());
         environ_set(
-            environ_ptr(&(*c).environ),
+            (*c).environ_ptr(),
             c"TMUX".as_ptr(),
             0,
             c"%s".as_ptr(),

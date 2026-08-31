@@ -3,7 +3,7 @@ use super::features::tty_apply_features;
 use crate::compat::strnvis;
 use crate::compat::strtonum;
 use crate::compat::strunvis;
-use crate::environ::{environ_entry_value, environ_find, environ_ptr};
+use crate::environ::{environ_entry_value, environ_find};
 use crate::ffi::{
     cur_term, del_curterm, fnmatch, setupterm, strcasecmp, strchr, strcmp, strcspn, strlen,
     strncmp, strstr, tigetflag, tigetnum, tigetstr, tiparm_s,
@@ -1446,7 +1446,7 @@ pub unsafe fn tty_term_apply(
             while i < tty_term_ncodes() {
                 ent = tty_term_codes.as_ptr().offset(i as isize);
                 if !(strcmp(s, (*ent).name.as_ptr()) != 0 as ::core::ffi::c_int) {
-                    let code = tty_term_code_mut(&mut *term, i as tty_code_code);
+                    let code = tty_term_code_mut(term, i as tty_code_code);
                     if remove != 0 {
                         *code = TtyCode::None;
                     } else {
@@ -1502,7 +1502,7 @@ pub unsafe fn tty_term_apply_overrides(term: &mut tty_term) {
             c"SIXEL flag is %d".as_ptr(),
             fmt_args![(term.flags & TERM_SIXEL != 0) as ::core::ffi::c_int],
         );
-        if tty_term_has(&*term, TTYC_SETRGBF) != 0 && tty_term_has(&*term, TTYC_SETRGBB) != 0 {
+        if tty_term_has(term, TTYC_SETRGBF) != 0 && tty_term_has(term, TTYC_SETRGBB) != 0 {
             term.flags |= TERM_RGBCOLOURS;
         } else {
             term.flags &= !TERM_RGBCOLOURS;
@@ -1511,7 +1511,7 @@ pub unsafe fn tty_term_apply_overrides(term: &mut tty_term) {
             c"RGBCOLOURS flag is %d".as_ptr(),
             fmt_args![(term.flags & TERM_RGBCOLOURS != 0) as ::core::ffi::c_int],
         );
-        if tty_term_has(&*term, TTYC_CMG) != 0 && tty_term_has(&*term, TTYC_CLMG) != 0 {
+        if tty_term_has(term, TTYC_CMG) != 0 && tty_term_has(term, TTYC_CLMG) != 0 {
             term.flags |= TERM_DECSLRM;
         } else {
             term.flags &= !TERM_DECSLRM;
@@ -1520,7 +1520,7 @@ pub unsafe fn tty_term_apply_overrides(term: &mut tty_term) {
             c"DECSLRM flag is %d".as_ptr(),
             fmt_args![(term.flags & TERM_DECSLRM != 0) as ::core::ffi::c_int],
         );
-        if tty_term_has(&*term, TTYC_RECT) != 0 {
+        if tty_term_has(term, TTYC_RECT) != 0 {
             term.flags |= TERM_DECFRA;
         } else {
             term.flags &= !TERM_DECFRA;
@@ -1529,7 +1529,7 @@ pub unsafe fn tty_term_apply_overrides(term: &mut tty_term) {
             c"DECFRA flag is %d".as_ptr(),
             fmt_args![(term.flags & TERM_DECFRA != 0) as ::core::ffi::c_int],
         );
-        if tty_term_flag(&*term, TTYC_AM) == 0 {
+        if tty_term_flag(term, TTYC_AM) == 0 {
             term.flags |= TERM_NOAM;
         } else {
             term.flags &= !TERM_NOAM;
@@ -1539,8 +1539,8 @@ pub unsafe fn tty_term_apply_overrides(term: &mut tty_term) {
             fmt_args![(term.flags & TERM_NOAM != 0) as ::core::ffi::c_int],
         );
         term.acs = [[0; 2]; 256];
-        if tty_term_has(&*term, TTYC_ACSC) != 0 {
-            acs = tty_term_string(&*term, TTYC_ACSC);
+        if tty_term_has(term, TTYC_ACSC) != 0 {
+            acs = tty_term_string(term, TTYC_ACSC);
         } else {
             acs = c"a#j+k+l+m+n+o-p-q-r-s-t+u+v+w+x|y<z>~.".as_ptr();
         }
@@ -1554,7 +1554,7 @@ pub unsafe fn tty_term_apply_overrides(term: &mut tty_term) {
     }
 }
 pub unsafe fn tty_term_create(
-    mut tty: *mut tty,
+    tty: &mut tty,
     mut name: *mut ::core::ffi::c_char,
     caps: &[::std::ffi::CString],
     feat: &mut ::core::ffi::c_int,
@@ -1641,18 +1641,15 @@ pub unsafe fn tty_term_create(
             let first = tty_term_override_next(CStr::from_ptr(s), &mut offset);
             if first
                 .as_ref()
-                .is_some_and(|first| fnmatch(first.as_ptr(), cstr_ptr(&(*term).name), 0) == 0)
+                .is_some_and(|first| fnmatch(first.as_ptr(), (*term).name_ptr(), 0) == 0)
             {
                 tty_add_features(feat, s.add(offset), c":".as_ptr());
             }
             a = options_array_next(o, a);
         }
         del_curterm(cur_term);
-        let colorterm = environ_find(
-            &*environ_ptr(&(*tty_client(tty)).environ),
-            c"COLORTERM".as_ptr(),
-        )
-        .and_then(environ_entry_value);
+        let colorterm = environ_find(&*(*tty_client(tty)).environ_ptr(), c"COLORTERM".as_ptr())
+            .and_then(environ_entry_value);
         if let Some(colorterm) = colorterm {
             log_debug(
                 c"%s COLORTERM=%s".as_ptr(),

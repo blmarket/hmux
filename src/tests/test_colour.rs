@@ -303,9 +303,7 @@ fn blank_palette() -> colour_palette {
 #[test]
 fn a_palette_starts_out_default_and_empty() {
     let mut p = blank_palette();
-    unsafe {
-        colour_palette_init(&raw mut p);
-    }
+    colour_palette_init(&mut p);
     assert_eq!(p.fg, 8);
     assert_eq!(p.bg, 8);
     assert!(p.palette.is_none());
@@ -315,130 +313,114 @@ fn a_palette_starts_out_default_and_empty() {
 #[test]
 fn clearing_a_palette_drops_its_entries_but_keeps_the_defaults() {
     let mut p = blank_palette();
-    unsafe {
-        colour_palette_init(&raw mut p);
-        p.fg = 1;
-        p.bg = 2;
-        assert_eq!(colour_palette_set(&raw mut p, 3, 0x123456 | RGB), 1);
-        colour_palette_clear(&raw mut p);
-        assert_eq!(p.fg, 8);
-        assert_eq!(p.bg, 8);
-        assert!(p.palette.is_none());
-        colour_palette_clear(::core::ptr::null_mut::<colour_palette>());
-    }
+    colour_palette_init(&mut p);
+    p.fg = 1;
+    p.bg = 2;
+    assert_eq!(colour_palette_set(Some(&mut p), 3, 0x123456 | RGB), 1);
+    colour_palette_clear(Some(&mut p));
+    assert_eq!(p.fg, 8);
+    assert_eq!(p.bg, 8);
+    assert!(p.palette.is_none());
+    colour_palette_clear(None);
 }
 
 #[test]
 fn freeing_a_palette_drops_both_tables() {
     let mut p = blank_palette();
-    unsafe {
-        colour_palette_init(&raw mut p);
-        colour_palette_set(&raw mut p, 3, 1);
-        p.default_palette = Some(Box::new([-1; 256]));
-        colour_palette_free(&raw mut p);
-        assert!(p.palette.is_none());
-        assert!(p.default_palette.is_none());
-        colour_palette_free(::core::ptr::null_mut::<colour_palette>());
-    }
+    colour_palette_init(&mut p);
+    colour_palette_set(Some(&mut p), 3, 1);
+    p.default_palette = Some(Box::new([-1; 256]));
+    colour_palette_free(Some(&mut p));
+    assert!(p.palette.is_none());
+    assert!(p.default_palette.is_none());
+    colour_palette_free(None);
 }
 
 #[test]
 fn setting_a_palette_entry_rejects_what_it_cannot_hold() {
     let mut p = blank_palette();
-    unsafe {
-        colour_palette_init(&raw mut p);
-        assert_eq!(colour_palette_set(::core::ptr::null_mut(), 0, 1), 0);
-        assert_eq!(colour_palette_set(&raw mut p, -1, 1), 0);
-        assert_eq!(colour_palette_set(&raw mut p, 256, 1), 0);
-        assert_eq!(colour_palette_set(&raw mut p, 0, -1), 0);
-        assert!(p.palette.is_none());
-        assert_eq!(colour_palette_set(&raw mut p, 0, 1), 1);
-        assert!(p.palette.is_some());
-        assert_eq!(colour_palette_set(&raw mut p, 1, -1), 1);
-        colour_palette_free(&raw mut p);
-    }
+    colour_palette_init(&mut p);
+    assert_eq!(colour_palette_set(None, 0, 1), 0);
+    assert_eq!(colour_palette_set(Some(&mut p), -1, 1), 0);
+    assert_eq!(colour_palette_set(Some(&mut p), 256, 1), 0);
+    assert_eq!(colour_palette_set(Some(&mut p), 0, -1), 0);
+    assert!(p.palette.is_none());
+    assert_eq!(colour_palette_set(Some(&mut p), 0, 1), 1);
+    assert!(p.palette.is_some());
+    assert_eq!(colour_palette_set(Some(&mut p), 1, -1), 1);
+    colour_palette_free(Some(&mut p));
 }
 
 #[test]
 fn getting_a_palette_entry_maps_the_index_forms() {
     let mut p = blank_palette();
-    unsafe {
-        colour_palette_init(&raw mut p);
-        assert_eq!(colour_palette_get(::core::ptr::null_mut(), 0), -1);
-        assert_eq!(colour_palette_get(&raw mut p, 0), -1);
-        colour_palette_set(&raw mut p, 0, 0x111111 | RGB);
-        colour_palette_set(&raw mut p, 9, 0x222222 | RGB);
-        colour_palette_set(&raw mut p, 20, 0x333333 | RGB);
-        assert_eq!(colour_palette_get(&raw mut p, 0), 0x111111 | RGB);
-        assert_eq!(colour_palette_get(&raw mut p, 91), 0x222222 | RGB);
-        assert_eq!(colour_palette_get(&raw mut p, 20 | C256), 0x333333 | RGB);
-        assert_eq!(colour_palette_get(&raw mut p, 8), -1);
-        assert_eq!(colour_palette_get(&raw mut p, 1), -1);
-        colour_palette_free(&raw mut p);
-    }
+    colour_palette_init(&mut p);
+    assert_eq!(colour_palette_get(None, 0), -1);
+    assert_eq!(colour_palette_get(Some(&p), 0), -1);
+    colour_palette_set(Some(&mut p), 0, 0x111111 | RGB);
+    colour_palette_set(Some(&mut p), 9, 0x222222 | RGB);
+    colour_palette_set(Some(&mut p), 20, 0x333333 | RGB);
+    assert_eq!(colour_palette_get(Some(&p), 0), 0x111111 | RGB);
+    assert_eq!(colour_palette_get(Some(&p), 91), 0x222222 | RGB);
+    assert_eq!(colour_palette_get(Some(&p), 20 | C256), 0x333333 | RGB);
+    assert_eq!(colour_palette_get(Some(&p), 8), -1);
+    assert_eq!(colour_palette_get(Some(&p), 1), -1);
+    colour_palette_free(Some(&mut p));
 }
 
 #[test]
 fn a_palette_entry_falls_back_to_the_default_table() {
     let mut p = blank_palette();
-    unsafe {
-        colour_palette_init(&raw mut p);
-        let mut def = Box::new([-1; 256]);
-        def[2] = 0x444444 | RGB;
-        p.default_palette = Some(def);
-        assert_eq!(colour_palette_get(&raw mut p, 2), 0x444444 | RGB);
-        assert_eq!(colour_palette_get(&raw mut p, 3), -1);
-        colour_palette_set(&raw mut p, 2, 0x555555 | RGB);
-        assert_eq!(colour_palette_get(&raw mut p, 2), 0x555555 | RGB);
-        colour_palette_free(&raw mut p);
-    }
+    colour_palette_init(&mut p);
+    let mut def = Box::new([-1; 256]);
+    def[2] = 0x444444 | RGB;
+    p.default_palette = Some(def);
+    assert_eq!(colour_palette_get(Some(&p), 2), 0x444444 | RGB);
+    assert_eq!(colour_palette_get(Some(&p), 3), -1);
+    colour_palette_set(Some(&mut p), 2, 0x555555 | RGB);
+    assert_eq!(colour_palette_get(Some(&p), 2), 0x555555 | RGB);
+    colour_palette_free(Some(&mut p));
 }
 
 #[test]
 fn no_defaults_leaves_no_default_table() {
     let mut p = blank_palette();
-    unsafe {
-        colour_palette_init(&raw mut p);
-        colour_palette_from_defaults(&raw mut p, None);
-        assert!(p.default_palette.is_none());
-        p.default_palette = Some(Box::new([-1; 256]));
-        colour_palette_from_defaults(&raw mut p, None);
-        assert!(p.default_palette.is_none());
-        colour_palette_from_defaults(::core::ptr::null_mut::<colour_palette>(), None);
-    }
+    colour_palette_init(&mut p);
+    colour_palette_from_defaults(Some(&mut p), None);
+    assert!(p.default_palette.is_none());
+    p.default_palette = Some(Box::new([-1; 256]));
+    colour_palette_from_defaults(Some(&mut p), None);
+    assert!(p.default_palette.is_none());
+    colour_palette_from_defaults(None, None);
 }
 
 #[test]
 fn defaults_fill_the_default_table_by_index() {
     let mut p = blank_palette();
-    unsafe {
-        colour_palette_init(&raw mut p);
-        let mut def = [-1; 256];
-        def[0] = 1;
-        def[1] = 0x00ff00 | RGB;
-        colour_palette_from_defaults(&raw mut p, Some(&def));
-        assert!(p.default_palette.is_some());
-        assert_eq!(colour_palette_get(&raw mut p, 0), 1);
-        assert_eq!(colour_palette_get(&raw mut p, 1), 0x00ff00 | RGB);
-        assert_eq!(colour_palette_get(&raw mut p, 2), -1);
-        def[0] = 2;
-        colour_palette_from_defaults(&raw mut p, Some(&def));
-        assert_eq!(colour_palette_get(&raw mut p, 0), 2);
-        colour_palette_free(&raw mut p);
-    }
+    colour_palette_init(&mut p);
+    let mut def = [-1; 256];
+    def[0] = 1;
+    def[1] = 0x00ff00 | RGB;
+    colour_palette_from_defaults(Some(&mut p), Some(&def));
+    assert!(p.default_palette.is_some());
+    assert_eq!(colour_palette_get(Some(&p), 0), 1);
+    assert_eq!(colour_palette_get(Some(&p), 1), 0x00ff00 | RGB);
+    assert_eq!(colour_palette_get(Some(&p), 2), -1);
+    def[0] = 2;
+    colour_palette_from_defaults(Some(&mut p), Some(&def));
+    assert_eq!(colour_palette_get(Some(&p), 0), 2);
+    colour_palette_free(Some(&mut p));
 }
 
 #[test]
 fn a_second_fill_replaces_the_whole_default_table() {
     let mut p = blank_palette();
-    unsafe {
-        colour_palette_init(&raw mut p);
-        let mut def = [-1; 256];
-        def[5] = 4;
-        colour_palette_from_defaults(&raw mut p, Some(&def));
-        assert_eq!(colour_palette_get(&raw mut p, 5), 4);
-        colour_palette_from_defaults(&raw mut p, Some(&[-1; 256]));
-        assert_eq!(colour_palette_get(&raw mut p, 5), -1);
-        colour_palette_free(&raw mut p);
-    }
+    colour_palette_init(&mut p);
+    let mut def = [-1; 256];
+    def[5] = 4;
+    colour_palette_from_defaults(Some(&mut p), Some(&def));
+    assert_eq!(colour_palette_get(Some(&p), 5), 4);
+    colour_palette_from_defaults(Some(&mut p), Some(&[-1; 256]));
+    assert_eq!(colour_palette_get(Some(&p), 5), -1);
+    colour_palette_free(Some(&mut p));
 }

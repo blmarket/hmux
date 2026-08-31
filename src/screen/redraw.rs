@@ -429,7 +429,7 @@ pub(crate) unsafe fn screen_redraw_border_set(
     mut wp: *mut window_pane,
     mut pane_lines: pane_lines,
     mut cell_type: ::core::ffi::c_int,
-    mut gc: *mut grid_cell,
+    gc: &mut grid_cell,
 ) {
     unsafe {
         let mut idx: u_int = 0;
@@ -484,28 +484,28 @@ pub(crate) unsafe fn screen_redraw_border_set(
         };
     }
 }
-pub(crate) unsafe fn screen_redraw_two_panes(
-    mut w: *mut window,
-    mut type_0: *mut layout_type,
-) -> ::core::ffi::c_int {
+/// The way the window is split when it holds exactly two laid-out panes under
+/// one parent, or `None` when it does not.
+pub(crate) unsafe fn screen_redraw_two_panes(mut w: *mut window) -> Option<layout_type> {
     unsafe {
         let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut count: u_int = 0 as u_int;
+        let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
         wp = window_panes_first(w);
         while !wp.is_null() {
             if !(window_pane_is_floating(wp) != 0 || (*wp).layout_cell.is_null()) {
                 count = count.wrapping_add(1);
                 if count > 2 as u_int || (*(*wp).layout_cell).parent.is_null() {
-                    return 0 as ::core::ffi::c_int;
+                    return None;
                 }
-                *type_0 = (*(*(*wp).layout_cell).parent).type_0;
+                type_0 = (*(*(*wp).layout_cell).parent).type_0;
             }
             wp = window_panes_next(w, wp);
         }
         if count <= 1 as u_int {
-            return 0 as ::core::ffi::c_int;
+            return None;
         }
-        1 as ::core::ffi::c_int
+        Some(type_0)
     }
 }
 pub(crate) unsafe fn screen_redraw_pane_border(
@@ -529,7 +529,6 @@ pub(crate) unsafe fn screen_redraw_pane_border(
         let mut sy: ::core::ffi::c_int = (*wp).sy as ::core::ffi::c_int;
         let mut left: ::core::ffi::c_int = 0;
         let mut right: ::core::ffi::c_int = 0;
-        let mut split_type: layout_type = LAYOUT_LEFTRIGHT;
         if px >= (*wp).xoff && px < ex && py >= (*wp).yoff && py < ey {
             return SCREEN_REDRAW_INSIDE;
         }
@@ -563,13 +562,15 @@ pub(crate) unsafe fn screen_redraw_pane_border(
             return SCREEN_REDRAW_OUTSIDE;
         }
         match options_get_number(oo, c"pane-border-indicators".as_ptr()) {
-            1 | 3 if screen_redraw_two_panes((*wp).window, &raw mut split_type) != 0 => {
-                hsplit = (split_type as ::core::ffi::c_uint
-                    == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint)
-                    as ::core::ffi::c_int;
-                vsplit = (split_type as ::core::ffi::c_uint
-                    == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint)
-                    as ::core::ffi::c_int;
+            1 | 3 => {
+                if let Some(split_type) = screen_redraw_two_panes((*wp).window) {
+                    hsplit = (split_type as ::core::ffi::c_uint
+                        == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint)
+                        as ::core::ffi::c_int;
+                    vsplit = (split_type as ::core::ffi::c_uint
+                        == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint)
+                        as ::core::ffi::c_int;
+                }
             }
             _ => {}
         }
@@ -703,7 +704,7 @@ pub(crate) unsafe fn screen_redraw_cell_border(
         sb_w = (*wp).scrollbar_style.width + (*wp).scrollbar_style.pad;
         if window_pane_is_floating(wp) != 0 {
             n = screen_redraw_cell_border1(
-                &mut *ctx,
+                ctx,
                 if (*w).sb != PANE_SCROLLBARS_OFF {
                     (*w).sb_pos
                 } else {
@@ -732,7 +733,7 @@ pub(crate) unsafe fn screen_redraw_cell_border(
         while !wp2.is_null() {
             if !(window_pane_visible(wp2) == 0 || window_pane_is_floating(wp2) != 0) {
                 n = screen_redraw_cell_border1(
-                    &mut *ctx,
+                    ctx,
                     if (*w).sb != PANE_SCROLLBARS_OFF {
                         (*w).sb_pos
                     } else {
@@ -1064,12 +1065,7 @@ unsafe fn screen_redraw_make_pane_status(
         } else {
             border_option = c"pane-border-style".as_ptr();
         }
-        style_apply(
-            &raw mut gc,
-            (*wp).options_ptr(),
-            border_option,
-            Some(&mut ft),
-        );
+        style_apply(&mut gc, (*wp).options_ptr(), border_option, Some(&mut ft));
         fmt = options_get_string((*wp).options_ptr(), c"pane-border-format".as_ptr());
         let expanded = format_expand_time(&mut ft, ::core::ffi::CStr::from_ptr(fmt));
         if (*wp).sx < 4 as u_int {
@@ -1093,7 +1089,7 @@ unsafe fn screen_redraw_make_pane_status(
             screen::new(width, 1 as u_int, 0 as u_int),
         );
         (*wp).status_screen.mode = 0 as ::core::ffi::c_int;
-        screen_write_start(&mut ctx, &raw mut (*wp).status_screen);
+        screen_write_start(&mut ctx, &mut (*wp).status_screen);
         i = 0 as u_int;
         while i < width {
             px = (((*wp).xoff + 2 as ::core::ffi::c_int) as u_int).wrapping_add(i);
@@ -1108,14 +1104,8 @@ unsafe fn screen_redraw_make_pane_status(
                 px as ::core::ffi::c_int,
                 py as ::core::ffi::c_int,
             ) as u_int;
-            screen_redraw_border_set(
-                w,
-                wp,
-                pane_lines,
-                cell_type as ::core::ffi::c_int,
-                &raw mut gc,
-            );
-            screen_write_cell(&mut ctx, &raw mut gc);
+            screen_redraw_border_set(w, wp, pane_lines, cell_type as ::core::ffi::c_int, &mut gc);
+            screen_write_cell(&mut ctx, &mut gc);
             i = i.wrapping_add(1);
         }
         gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
@@ -1125,7 +1115,7 @@ unsafe fn screen_redraw_make_pane_status(
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
         );
-        style_ranges_free(&raw mut (*sle).ranges);
+        style_ranges_free(&mut (*sle).ranges);
         format_draw(
             &mut ctx,
             &gc,
@@ -1139,10 +1129,10 @@ unsafe fn screen_redraw_make_pane_status(
         if grid_compare(screen_grid(&(*wp).status_screen), screen_grid(&old))
             == 0 as ::core::ffi::c_int
         {
-            screen_free(&raw mut old);
+            screen_free(&mut old);
             return 0 as ::core::ffi::c_int;
         }
-        screen_free(&raw mut old);
+        screen_free(&mut old);
         1 as ::core::ffi::c_int
     }
 }
@@ -1150,7 +1140,7 @@ unsafe fn screen_redraw_draw_pane_status(ctx: &mut screen_redraw_ctx) {
     unsafe {
         let mut c: *mut client = ctx.c;
         let mut w: *mut window = (*session_get_curw((*c).session)).window();
-        let mut tty: *mut tty = &raw mut (*c).tty;
+        let tty: &mut tty = &mut (*c).tty;
         let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
         let mut r: *mut visible_ranges = ::core::ptr::null_mut::<visible_ranges>();
@@ -1233,7 +1223,7 @@ unsafe fn screen_redraw_draw_pane_status(ctx: &mut screen_redraw_ctx) {
                                 (*ri).nx,
                                 (*ri).px,
                                 (yoff - ctx.oy) as u_int,
-                                &raw const grid_default_cell,
+                                &grid_default_cell,
                                 ::core::ptr::null_mut::<colour_palette>(),
                             );
                         }
@@ -1310,7 +1300,7 @@ unsafe fn screen_redraw_set_context(mut c: *mut client, ctx: &mut screen_redraw_
             options_get_number(wo, c"pane-border-status".as_ptr()) as ::core::ffi::c_int;
         ctx.pane_lines = options_get_number(wo, c"pane-border-lines".as_ptr()) as pane_lines;
         {
-            let (_bigger, off_x, off_y, off_sx, off_sy) = tty_window_offset(&raw mut (*c).tty);
+            let (_bigger, off_x, off_y, off_sx, off_sy) = tty_window_offset(&(*c).tty);
             (ctx.ox, ctx.oy) = (off_x as ::core::ffi::c_int, off_y as ::core::ffi::c_int);
             (ctx.sx, ctx.sy) = (off_sx, off_sy);
         }
@@ -1344,9 +1334,9 @@ pub unsafe fn screen_redraw_screen(mut c: *mut client) {
         {
             return;
         }
-        tty_sync_start(&raw mut (*c).tty);
+        tty_sync_start(&mut (*c).tty);
         tty_update_mode(
-            &raw mut (*c).tty,
+            &mut (*c).tty,
             (*c).tty.mode,
             ::core::ptr::null_mut::<screen>(),
         );
@@ -1386,7 +1376,7 @@ pub unsafe fn screen_redraw_screen(mut c: *mut client) {
             (*c).overlay()
                 .draw(c, (*c).current_overlay_data(), &mut ctx);
         }
-        tty_reset(&raw mut (*c).tty);
+        tty_reset(&mut (*c).tty);
     }
 }
 pub unsafe fn screen_redraw_pane(
@@ -1400,9 +1390,9 @@ pub unsafe fn screen_redraw_pane(
             return;
         }
         screen_redraw_set_context(c, &mut ctx);
-        tty_sync_start(&raw mut (*c).tty);
+        tty_sync_start(&mut (*c).tty);
         tty_update_mode(
-            &raw mut (*c).tty,
+            &mut (*c).tty,
             (*c).tty.mode,
             ::core::ptr::null_mut::<screen>(),
         );
@@ -1412,7 +1402,7 @@ pub unsafe fn screen_redraw_pane(
         if window_pane_show_scrollbar(wp) != 0 {
             screen_redraw_draw_pane_scrollbar(&mut ctx, wp);
         }
-        tty_reset(&raw mut (*c).tty);
+        tty_reset(&mut (*c).tty);
     }
 }
 unsafe fn screen_redraw_draw_borders_style(
@@ -1420,7 +1410,7 @@ unsafe fn screen_redraw_draw_borders_style(
     mut x: u_int,
     mut y: u_int,
     mut wp: *mut window_pane,
-    mut ngc: *mut grid_cell,
+    ngc: &mut grid_cell,
 ) {
     unsafe {
         let mut c: *mut client = ctx.c;
@@ -1439,12 +1429,12 @@ unsafe fn screen_redraw_draw_borders_style(
                     active,
                 ) != 0
         {
-            flag = &raw mut (*wp).active_border_gc_set;
-            gc = &raw mut (*wp).active_border_gc;
+            flag = &mut (*wp).active_border_gc_set;
+            gc = &mut (*wp).active_border_gc;
             border_option = c"pane-active-border-style".as_ptr();
         } else {
-            flag = &raw mut (*wp).border_gc_set;
-            gc = &raw mut (*wp).border_gc;
+            flag = &mut (*wp).border_gc_set;
+            gc = &mut (*wp).border_gc;
             border_option = c"pane-border-style".as_ptr();
         }
         if *flag == 0 {
@@ -1455,7 +1445,7 @@ unsafe fn screen_redraw_draw_borders_style(
                 session_get_curw(s),
                 wp,
             );
-            style_apply(gc, (*wp).options_ptr(), border_option, Some(&mut ft));
+            style_apply(&mut *gc, (*wp).options_ptr(), border_option, Some(&mut ft));
             *flag = 1 as ::core::ffi::c_int;
         }
         *ngc = *gc;
@@ -1468,7 +1458,7 @@ unsafe fn screen_redraw_draw_border_arrows(
     mut cell_type: u_int,
     mut wp: *mut window_pane,
     mut active: *mut window_pane,
-    mut gc: *mut grid_cell,
+    gc: &mut grid_cell,
 ) {
     unsafe {
         let mut c: *mut client = ctx.c;
@@ -1480,7 +1470,6 @@ unsafe fn screen_redraw_draw_border_arrows(
         let mut value: ::core::ffi::c_int = 0;
         let mut arrows: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut border: ::core::ffi::c_int = 0;
-        let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
         if wp.is_null() {
             return;
         }
@@ -1510,7 +1499,7 @@ unsafe fn screen_redraw_draw_border_arrows(
         }
         if i == (*wp).xoff + 1 as ::core::ffi::c_int {
             if border == SCREEN_REDRAW_OUTSIDE as ::core::ffi::c_int {
-                if screen_redraw_two_panes((*wp).window, &raw mut type_0) != 0 {
+                if screen_redraw_two_panes((*wp).window).is_some() {
                     if active == window_panes_first(w) {
                         border = SCREEN_REDRAW_BORDER_BOTTOM as ::core::ffi::c_int;
                     } else {
@@ -1532,7 +1521,7 @@ unsafe fn screen_redraw_draw_border_arrows(
         }
         if j == (*wp).yoff + 1 as ::core::ffi::c_int {
             if border == SCREEN_REDRAW_OUTSIDE as ::core::ffi::c_int {
-                if screen_redraw_two_panes((*wp).window, &raw mut type_0) != 0 {
+                if screen_redraw_two_panes((*wp).window).is_some() {
                     if active == window_panes_first(w) {
                         border = SCREEN_REDRAW_BORDER_RIGHT as ::core::ffi::c_int;
                     } else {
@@ -1564,7 +1553,7 @@ unsafe fn screen_redraw_draw_borders_cell(ctx: &mut screen_redraw_ctx, mut i: u_
         let mut s: *mut session = (*c).session;
         let mut w: *mut window = (*session_get_curw(s)).window();
         let mut oo: *mut options = (*w).options_ptr();
-        let mut tty: *mut tty = &raw mut (*c).tty;
+        let tty: &mut tty = &mut (*c).tty;
         let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut active: *mut window_pane = server_client_get_pane(c);
         let mut gc = grid_default_cell;
@@ -1582,7 +1571,7 @@ unsafe fn screen_redraw_draw_borders_cell(ctx: &mut screen_redraw_ctx, mut i: u_
             }
         }
         cell_type = screen_redraw_check_cell(
-            &mut *ctx,
+            ctx,
             x as ::core::ffi::c_int,
             y as ::core::ffi::c_int,
             &mut wp,
@@ -1601,7 +1590,7 @@ unsafe fn screen_redraw_draw_borders_cell(ctx: &mut screen_redraw_ctx, mut i: u_
                 );
                 ctx.no_pane_gc = grid_default_cell;
                 style_add(
-                    &raw mut ctx.no_pane_gc,
+                    &mut ctx.no_pane_gc,
                     oo,
                     c"pane-border-style".as_ptr(),
                     Some(&mut ft),
@@ -1610,7 +1599,7 @@ unsafe fn screen_redraw_draw_borders_cell(ctx: &mut screen_redraw_ctx, mut i: u_
             }
             gc = ctx.no_pane_gc;
         } else {
-            screen_redraw_draw_borders_style(&mut *ctx, x, y, wp, &raw mut gc);
+            screen_redraw_draw_borders_style(ctx, x, y, wp, &mut gc);
             if server_is_marked(s, session_get_curw(s), marked_pane.pane()) != 0
                 && screen_redraw_check_is(
                     ctx,
@@ -1627,7 +1616,7 @@ unsafe fn screen_redraw_draw_borders_cell(ctx: &mut screen_redraw_ctx, mut i: u_
             wp,
             ctx.pane_lines,
             cell_type as ::core::ffi::c_int,
-            &raw mut gc,
+            &mut gc,
         );
         if cell_type == CELL_TOPBOTTOM as u_int
             && (*c).flags & CLIENT_UTF8 as uint64_t != 0
@@ -1646,18 +1635,18 @@ unsafe fn screen_redraw_draw_borders_cell(ctx: &mut screen_redraw_ctx, mut i: u_
             tty_puts(tty, END_ISOLATE.as_ptr());
         }
         screen_redraw_draw_border_arrows(
-            &mut *ctx,
+            ctx,
             i as ::core::ffi::c_int,
             j as ::core::ffi::c_int,
             cell_type,
             wp,
             active,
-            &raw mut gc,
+            &mut gc,
         );
         tty_cell(
             tty,
-            &raw mut gc,
-            &raw const grid_default_cell,
+            &mut gc,
+            &grid_default_cell,
             ::core::ptr::null_mut::<colour_palette>(),
             ::core::ptr::null_mut::<hyperlinks>(),
         );
@@ -1692,7 +1681,7 @@ unsafe fn screen_redraw_draw_borders(ctx: &mut screen_redraw_ctx) {
         while j < (*c).tty.sy.wrapping_sub(ctx.statuslines) {
             i = 0 as u_int;
             while i < (*c).tty.sx {
-                screen_redraw_draw_borders_cell(&mut *ctx, i, j);
+                screen_redraw_draw_borders_cell(ctx, i, j);
                 i = i.wrapping_add(1);
             }
             j = j.wrapping_add(1);
@@ -1715,7 +1704,7 @@ unsafe fn screen_redraw_draw_panes(ctx: &mut screen_redraw_ctx) {
         wp = window_panes_first(w);
         while !wp.is_null() {
             if window_pane_visible(wp) != 0 {
-                screen_redraw_draw_pane(&mut *ctx, wp);
+                screen_redraw_draw_pane(ctx, wp);
             }
             wp = window_panes_next(w, wp);
         }
@@ -1725,7 +1714,7 @@ unsafe fn screen_redraw_draw_status(ctx: &mut screen_redraw_ctx) {
     unsafe {
         let mut c: *mut client = ctx.c;
         let mut w: *mut window = (*session_get_curw((*c).session)).window();
-        let mut tty: *mut tty = &raw mut (*c).tty;
+        let tty: &mut tty = &mut (*c).tty;
         let mut s: *mut screen = (*c).status.active();
         let mut i: u_int = 0;
         let mut y: u_int = 0;
@@ -1752,7 +1741,7 @@ unsafe fn screen_redraw_draw_status(ctx: &mut screen_redraw_ctx) {
                 UINT_MAX,
                 0 as u_int,
                 y.wrapping_add(i),
-                &raw const grid_default_cell,
+                &grid_default_cell,
                 ::core::ptr::null_mut::<colour_palette>(),
             );
             i = i.wrapping_add(1);
@@ -1948,7 +1937,7 @@ unsafe fn screen_redraw_draw_pane(ctx: &mut screen_redraw_ctx, mut wp: *mut wind
     unsafe {
         let mut c: *mut client = ctx.c;
         let mut w: *mut window = (*session_get_curw((*c).session)).window();
-        let mut tty: *mut tty = &raw mut (*c).tty;
+        let tty: &mut tty = &mut (*c).tty;
         let mut s: *mut screen = (*wp).screen();
         let mut palette: *mut colour_palette = &raw mut (*wp).palette;
         let mut defaults = grid_default_cell;
@@ -2018,7 +2007,7 @@ unsafe fn screen_redraw_draw_pane(ctx: &mut screen_redraw_ctx, mut wp: *mut wind
                         width,
                         &mut *r,
                     );
-                    tty_default_colours(&raw mut defaults, wp);
+                    tty_default_colours(&mut defaults, wp);
                     k = 0 as u_int;
                     while k < (*r).used {
                         ri = (*r).ranges.as_mut_ptr().offset(k as isize);
@@ -2053,7 +2042,7 @@ unsafe fn screen_redraw_draw_pane(ctx: &mut screen_redraw_ctx, mut wp: *mut wind
                                 (*ri).nx,
                                 (*ri).px,
                                 py,
-                                &raw mut defaults,
+                                &defaults,
                                 palette,
                             );
                         }
@@ -2081,7 +2070,7 @@ unsafe fn screen_redraw_draw_pane_scrollbars(ctx: &mut screen_redraw_ctx) {
         wp = window_panes_first(w);
         while !wp.is_null() {
             if window_pane_show_scrollbar(wp) != 0 && window_pane_visible(wp) != 0 {
-                screen_redraw_draw_pane_scrollbar(&mut *ctx, wp);
+                screen_redraw_draw_pane_scrollbar(ctx, wp);
             }
             wp = window_panes_next(w, wp);
         }
@@ -2108,9 +2097,9 @@ unsafe fn screen_redraw_draw_pane_scrollbar(ctx: &mut screen_redraw_ctx, mut wp:
             if sb == PANE_SCROLLBARS_MODAL as u_int {
                 return;
             }
-            total_height = (*screen_grid_ptr(s))
+            total_height = (*screen_grid_ptr(&mut *s))
                 .sy
-                .wrapping_add((*screen_grid_ptr(s)).hsize);
+                .wrapping_add((*screen_grid_ptr(&mut *s)).hsize);
             percent_view = sb_h as ::core::ffi::c_double / total_height as ::core::ffi::c_double;
             slider_h = (sb_h as ::core::ffi::c_double * percent_view) as u_int;
             slider_y = sb_h.wrapping_sub(slider_h);
@@ -2142,7 +2131,7 @@ unsafe fn screen_redraw_draw_pane_scrollbar(ctx: &mut screen_redraw_ctx, mut wp:
             slider_y = sb_h.wrapping_sub(1 as u_int);
         }
         screen_redraw_draw_scrollbar(
-            &mut *ctx,
+            ctx,
             wp,
             sb_pos as ::core::ffi::c_int,
             sb_x,
@@ -2167,7 +2156,7 @@ unsafe fn screen_redraw_draw_scrollbar(
 ) {
     unsafe {
         let mut c: *mut client = ctx.c;
-        let mut tty: *mut tty = &raw mut (*c).tty;
+        let tty: &mut tty = &mut (*c).tty;
         let mut gc = grid_default_cell;
         let mut slgc = grid_default_cell;
         let mut gcp: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
@@ -2266,21 +2255,21 @@ unsafe fn screen_redraw_draw_scrollbar(
                     {
                         tty_cell(
                             tty,
-                            &raw const grid_default_cell,
-                            &raw const grid_default_cell,
+                            &grid_default_cell,
+                            &grid_default_cell,
                             ::core::ptr::null_mut::<colour_palette>(),
                             ::core::ptr::null_mut::<hyperlinks>(),
                         );
                     } else {
                         if j >= slider_y && j < slider_y.wrapping_add(slider_h) {
-                            gcp = &raw mut slgc;
+                            gcp = &mut slgc;
                         } else {
-                            gcp = &raw mut gc;
+                            gcp = &mut gc;
                         }
                         tty_cell(
                             tty,
-                            gcp,
-                            &raw const grid_default_cell,
+                            &*gcp,
+                            &grid_default_cell,
                             ::core::ptr::null_mut::<colour_palette>(),
                             ::core::ptr::null_mut::<hyperlinks>(),
                         );

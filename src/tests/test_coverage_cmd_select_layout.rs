@@ -144,7 +144,7 @@ unsafe fn tree(w: *mut window) -> String {
 unsafe fn stored(w: *mut window) -> String {
     unsafe {
         assert!((*w).old_layout.is_some(), "no layout is stored");
-        seen(cstr_ptr(&(*w).old_layout))
+        seen((*w).old_layout_ptr())
     }
 }
 

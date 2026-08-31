@@ -304,7 +304,7 @@ fn clients_named(order: sort_order, reversed: c_int) -> Vec<String> {
     unsafe {
         let mut c = crit(order, reversed);
         let l = sort_get_clients(&c);
-        l.iter().map(|&c| seen(cstr_ptr(&(*c).name))).collect()
+        l.iter().map(|&c| seen((*c).name_ptr())).collect()
     }
 }
 
@@ -474,7 +474,7 @@ fn titled(id: u_int, title: &str, sx: u_int, sy: u_int) -> Pane {
     let mut pane = Pane::new(id, sx, sy, 100);
     unsafe {
         let title = CString::new(title).expect("no NUL");
-        assert_eq!(screen_set_title(pane.screen(), title.as_ptr(), 0), 1);
+        assert_eq!(screen_set_title(&mut *pane.screen(), title.as_ptr(), 0), 1);
     }
     pane
 }
@@ -483,7 +483,7 @@ fn titled(id: u_int, title: &str, sx: u_int, sy: u_int) -> Pane {
 unsafe fn titles(l: &[*mut window_pane]) -> Vec<String> {
     unsafe {
         l.iter()
-            .map(|&wp| seen(cstr_ptr(&(*(*wp).screen()).title)))
+            .map(|&wp| seen((*(*wp).screen()).title_ptr()))
             .collect()
     }
 }

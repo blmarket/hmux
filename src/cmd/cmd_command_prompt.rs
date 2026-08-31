@@ -374,11 +374,8 @@ pub(crate) unsafe fn cmd_command_prompt_callback(
                 cmdq_append(c, cmdq_get_error(error.as_ptr()));
             } else if let Some(item) = &item {
                 cmdq_insert_after(
-                    item.as_ptr(),
-                    cmdq_get_command(
-                        cmdlist.as_ref().unwrap(),
-                        Some(cmdq_get_state_ref(item.as_ptr())),
-                    ),
+                    item,
+                    cmdq_get_command(cmdlist.as_ref().unwrap(), Some(cmdq_get_state_ref(item))),
                 );
             } else {
                 cmdq_append(c, cmdq_get_command(cmdlist.as_ref().unwrap(), None));
@@ -389,7 +386,7 @@ pub(crate) unsafe fn cmd_command_prompt_callback(
         }
 
         if let Some(item) = &item {
-            cmdq_continue(item.as_ptr());
+            cmdq_continue(item);
         }
         0
     }

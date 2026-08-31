@@ -107,12 +107,12 @@ fn screen_init_then_manual_free_roundtrip() {
     let _g = globals();
     let mut s: Box<crate::types::screen> = zeroed_screen();
     unsafe {
-        screen_init(&raw mut *s, 40, 10, 100);
+        screen_init(&mut *s, 40, 10, 100);
         assert!(s.grid.is_some());
         assert!(s.hyperlinks.is_some());
         assert!(!s.tabs.is_empty());
         assert!(s.title.is_some());
-        screen_free(&raw mut *s);
+        screen_free(&mut *s);
         // Prevent use-after-free: mark fields null so Box drop does not double-free
         // screen_free already freed grid/hyperlinks/title etc, but the struct
         // memory itself is still owned by Box which will be deallocated normally.
@@ -127,11 +127,11 @@ fn screen_init_free_multiple_cycles_no_leak() {
     for (sx, sy, hlimit) in [(10, 5, 0), (80, 24, 100), (1, 1, 10), (100, 50, 500)] {
         let mut s: Box<crate::types::screen> = zeroed_screen();
         unsafe {
-            screen_init(&raw mut *s, sx, sy, hlimit);
-            assert_eq!((*screen_grid_ptr(&raw mut *s)).sx, sx);
-            assert_eq!((*screen_grid_ptr(&raw mut *s)).sy, sy);
-            assert_eq!((*screen_grid_ptr(&raw mut *s)).hlimit, hlimit);
-            screen_free(&raw mut *s);
+            screen_init(&mut *s, sx, sy, hlimit);
+            assert_eq!((*screen_grid_ptr(&mut *s)).sx, sx);
+            assert_eq!((*screen_grid_ptr(&mut *s)).sy, sy);
+            assert_eq!((*screen_grid_ptr(&mut *s)).hlimit, hlimit);
+            screen_free(&mut *s);
         }
     }
 }
@@ -158,11 +158,11 @@ fn screen_free_via_fixture_handles_titles_and_selection() {
     let mut s = Screen::new(10, 5, 100);
     unsafe {
         // push a title so titles stack is allocated, and set a selection
-        crate::screen::screen_set_title(s.ptr(), c"hello".as_ptr(), 0);
+        crate::screen::screen_set_title(&mut *s.ptr(), c"hello".as_ptr(), 0);
         crate::screen::screen_push_title(s.ptr());
         assert!(s.titles.is_some());
         let mut gc = crate::grid::grid_default_cell;
-        crate::screen::screen_set_selection(s.ptr(), 0, 0, 2, 0, 0, 0, 0, &raw mut gc);
+        crate::screen::screen_set_selection(s.ptr(), 0, 0, 2, 0, 0, 0, 0, &mut gc);
         assert!(s.sel.is_some());
         // Dropping `s` will call screen_free which must handle titles and sel
     }

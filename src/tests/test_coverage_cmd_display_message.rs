@@ -427,7 +427,7 @@ fn a_formatted_argument_reaches_the_status_line() {
             rv = exec(&mut item);
         }
         assert_eq!(rv, CMD_RETURN_NORMAL);
-        assert_eq!(seen(cstr_ptr(&(*c).message_string)), "0");
+        assert_eq!(seen((*c).message_string_ptr()), "0");
         assert_eq!(
             (*c).tty.flags & (TTY_FREEZE | TTY_NOCURSOR),
             TTY_FREEZE | TTY_NOCURSOR
@@ -460,7 +460,7 @@ fn the_literal_flag_bypasses_expansion() {
             rv = exec(&mut item);
         }
         assert_eq!(rv, CMD_RETURN_NORMAL);
-        assert_eq!(seen(cstr_ptr(&(*c).message_string)), "#{session_name}");
+        assert_eq!(seen((*c).message_string_ptr()), "#{session_name}");
 
         clear_status(c);
     }
@@ -485,7 +485,7 @@ fn the_default_template_is_used_when_nothing_is_given() {
             rv = exec(&mut item);
         }
         assert_eq!(rv, CMD_RETURN_NORMAL);
-        let msg = seen(cstr_ptr(&(*c).message_string));
+        let msg = seen((*c).message_string_ptr());
         assert!(
             msg.starts_with("[0] 0:target, current pane 0 - ("),
             "{msg:?}"
@@ -514,7 +514,7 @@ fn F_supplies_the_template_when_no_argument_is_given() {
             rv = exec(&mut item);
         }
         assert_eq!(rv, CMD_RETURN_NORMAL);
-        assert_eq!(seen(cstr_ptr(&(*c).message_string)), "x0");
+        assert_eq!(seen((*c).message_string_ptr()), "x0");
 
         clear_status(c);
     }
@@ -540,7 +540,7 @@ fn C_leaves_the_terminal_unfrozen_and_d_zero_never_arms_the_timer() {
             rv = exec(&mut item);
         }
         assert_eq!(rv, CMD_RETURN_NORMAL);
-        assert_eq!(seen(cstr_ptr(&(*c).message_string)), "stuck");
+        assert_eq!(seen((*c).message_string_ptr()), "stuck");
         assert_eq!((*c).tty.flags & TTY_FREEZE, 0);
         assert_eq!((*c).tty.flags & TTY_NOCURSOR, TTY_NOCURSOR);
         assert!(!(*c).message_timer.is_set());
@@ -569,7 +569,7 @@ fn N_marks_the_message_as_ignoring_keys_when_a_delay_runs() {
             rv = exec(&mut item);
         }
         assert_eq!(rv, CMD_RETURN_NORMAL);
-        assert_eq!(seen(cstr_ptr(&(*c).message_string)), "wait");
+        assert_eq!(seen((*c).message_string_ptr()), "wait");
         assert_eq!((*c).message_ignore_keys, 1);
         assert!((*c).message_timer.is_set());
 
@@ -703,7 +703,7 @@ fn with_no_target_session_the_formats_run_against_no_client() {
             rv = exec(&mut item);
         }
         assert_eq!(rv, CMD_RETURN_NORMAL);
-        assert_eq!(seen(cstr_ptr(&(*c).message_string)), "[]");
+        assert_eq!(seen((*c).message_string_ptr()), "[]");
 
         clear_status(c);
     }
@@ -749,7 +749,7 @@ fn the_verbose_flag_still_delivers_the_message() {
             rv = exec(&mut item);
         }
         assert_eq!(rv, CMD_RETURN_NORMAL);
-        assert_eq!(seen(cstr_ptr(&(*c).message_string)), "0");
+        assert_eq!(seen((*c).message_string_ptr()), "0");
 
         clear_status(c);
     }

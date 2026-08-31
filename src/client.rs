@@ -450,7 +450,7 @@ pub unsafe fn client_main(
             if pr.status as ::core::ffi::c_uint
                 == CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
             {
-                if cmd_list_any_have(pr.cmdlist.as_ref().unwrap().as_ptr(), CMD_STARTSERVER) != 0 {
+                if cmd_list_any_have(pr.cmdlist.as_ref().unwrap(), CMD_STARTSERVER) != 0 {
                     flags |= CLIENT_STARTSERVER as uint64_t;
                 }
                 let _ = pr.cmdlist.take();

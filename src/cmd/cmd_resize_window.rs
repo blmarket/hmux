@@ -229,7 +229,9 @@ unsafe fn cmd_resize_window_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> 
         );
         (*w).manual_sx = sx;
         (*w).manual_sy = sy;
-        recalculate_size(w, 1 as ::core::ffi::c_int);
+        if let Some(w_ref) = (*wl).window_handle() {
+            recalculate_size(w_ref, 1 as ::core::ffi::c_int);
+        }
         CMD_RETURN_NORMAL
     }
 }

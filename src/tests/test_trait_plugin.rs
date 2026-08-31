@@ -17,7 +17,9 @@ use hmux_agent::observability::v1::{
 };
 
 use crate::plugin::agent::AgentPlugin;
+use crate::plugin::git::GitPlugin;
 use crate::plugin::{Event, Host, PaneId, Plugin};
+use crate::tests::test_fixtures::globals;
 
 /// What a [`Host`] double was asked for, so a test can assert the plugin
 /// reached the contract rather than around it.
@@ -148,15 +150,41 @@ fn a_ticking_plugin_names_its_interval() {
     assert!(interval > Duration::ZERO);
 }
 
-/// Option defaults are `(name, value)` pairs, and a plugin that wants none
-/// says so with an empty slice rather than by not being asked.
+/// Option defaults are `(name, value)` pairs, and a plugin that wants none —
+/// which both built-in ones do, since the status line this server draws is the
+/// server's rather than any plugin's — says so with an empty slice rather than
+/// by not being asked.
 #[test]
 fn option_defaults_are_named_pairs() {
     fn defaults(plugin: &impl Plugin) -> &'static [(&'static str, &'static str)] {
         plugin.option_defaults()
     }
 
-    for (name, value) in defaults(&AgentPlugin::new()) {
+    /// A plugin that wants an option set, which is the arm the built-in ones
+    /// no longer exercise.
+    struct Opinionated;
+
+    impl Plugin for Opinionated {
+        fn name(&self) -> &'static str {
+            "opinionated"
+        }
+
+        fn variables(&self) -> &'static [&'static str] {
+            &["opinionated_value"]
+        }
+
+        fn option_defaults(&self) -> &'static [(&'static str, &'static str)] {
+            &[("status-interval", "1")]
+        }
+
+        fn resolve(&self, _pane: PaneId, _key: &str) -> Option<String> {
+            None
+        }
+    }
+
+    assert!(defaults(&AgentPlugin::new()).is_empty());
+    assert!(defaults(&GitPlugin::new()).is_empty());
+    for (name, value) in defaults(&Opinionated) {
         assert!(!name.is_empty(), "an unnamed option");
         assert!(!value.is_empty(), "{name} has an empty default");
     }
@@ -312,4 +340,23 @@ fn starting_a_plugin_leaves_it_ready_to_resolve() {
         plugin.resolve(UNKNOWN, "pane_agent_state").as_deref(),
         Some("none")
     );
+}
+
+/// The git plugin is the one that reaches past [`Host`] — the contract has no
+/// working directory in it, so the pane's own is read from the server's pane
+/// tree. A host naming panes the server does not have therefore leaves it with
+/// nothing to publish and nothing to redraw, rather than publishing a
+/// directory belonging to some other pane.
+#[test]
+fn a_pane_the_server_does_not_have_has_no_working_directory() {
+    let _guard = globals();
+    let host = FakeHost::with_panes(&[1, 2]);
+    let mut plugin = GitPlugin::new();
+
+    plugin.tick(&host);
+
+    assert!(host.asked().invalidated.is_empty(), "nothing to redraw");
+    for key in plugin.variables() {
+        assert_eq!(plugin.resolve(PaneId(1), key).as_deref(), Some(""), "{key}");
+    }
 }

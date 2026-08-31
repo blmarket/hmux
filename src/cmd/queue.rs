@@ -22,7 +22,7 @@ use crate::list::foreach_safe_after_by;
 use crate::log::{fatalx, log_debug, log_get_level};
 use crate::options::options_get_ptr;
 use crate::options::{options_array_first, options_array_item_command, options_array_next};
-use crate::proc::{peer_ptr, proc_get_peer_uid};
+use crate::proc::proc_get_peer_uid;
 use crate::server::server_add_message;
 use crate::server::{client_ref_from_ptr, server_client_print};
 use crate::session::session_options;
@@ -220,6 +220,12 @@ pub(crate) fn cmdq_item_ref_from_ptr(item: *mut cmdq_item) -> Option<CmdqItemRef
     None
 }
 
+/// The item `item` points at, as a handle, for a caller running on that item
+/// and so holding it on its queue for the length of the call.
+pub(crate) fn cmdq_item_ref_of(item: *mut cmdq_item) -> CmdqItemRef {
+    cmdq_item_ref_from_ptr(item).expect("the running item is on its queue")
+}
+
 /// The same as an observation, which is what a command stores while it waits.
 pub(crate) fn cmdq_item_weak_from_ptr(item: *mut cmdq_item) -> Option<CmdqItemWeak> {
     cmdq_item_ref_from_ptr(item).map(|reference| reference.downgrade())
@@ -298,11 +304,16 @@ impl cmdq_item {
     pub(crate) fn cmd(&self) -> *mut cmd {
         match &self.type_0 {
             CmdqType::Command { cmdlist, at } => match cmdlist {
-                Some(cmdlist) => unsafe { cmd_list_at(cmdlist.as_ptr(), *at) },
+                Some(cmdlist) => unsafe { cmd_list_at(cmdlist, *at) },
                 None => ::core::ptr::null_mut(),
             },
             CmdqType::Callback { .. } => ::core::ptr::null_mut(),
         }
+    }
+
+    /// The name the item is logged under.
+    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.name)
     }
 }
 pub const CMD_RETURN_STOP: cmd_retval = 2;
@@ -327,6 +338,13 @@ impl CmdqStateRef {
 
     pub(crate) fn as_ptr(&self) -> *mut cmdq_state {
         self.0.get()
+    }
+
+    /// The state this holds. Reaching it this way does not stop anything else
+    /// reaching the same state through its raw view.
+    #[allow(clippy::mut_from_ref)]
+    pub(crate) fn state(&self) -> &mut cmdq_state {
+        unsafe { &mut *self.0.get() }
     }
 }
 
@@ -2393,13 +2411,11 @@ pub fn cmdq_get_state(item: &cmdq_item) -> *mut cmdq_state {
 
 /// The item's share of its queue's state, as a handle a new item can be given
 /// so that the two run under the same one.
-pub(crate) unsafe fn cmdq_get_state_ref(item: *mut cmdq_item) -> &'static CmdqStateRef {
-    unsafe {
-        (*item)
-            .state_ref
-            .as_ref()
-            .expect("a queue item without a state")
-    }
+pub(crate) fn cmdq_get_state_ref(item: &CmdqItemRef) -> &CmdqStateRef {
+    item.item()
+        .state_ref
+        .as_ref()
+        .expect("a queue item without a state")
 }
 pub unsafe fn cmdq_get_target(mut item: *mut cmdq_item) -> *mut cmd_find_state {
     unsafe { &raw mut (*item).target }
@@ -2466,42 +2482,39 @@ unsafe fn cmdq_state_formats(state: *mut cmdq_state) -> *mut format_tree {
             .map_or(::core::ptr::null_mut::<format_tree>(), |ft| &raw mut *ft)
     }
 }
+
+/// The formats `state` carries, made when it has none yet.
+#[allow(clippy::mut_from_ref)]
+unsafe fn cmdq_state_formats_mut(state: &CmdqStateRef) -> &mut format_tree {
+    unsafe {
+        state.state().formats.get_or_insert_with(|| {
+            format_create(
+                ::core::ptr::null_mut::<client>(),
+                ::core::ptr::null_mut::<cmdq_item>(),
+                FORMAT_NONE,
+                0 as ::core::ffi::c_int,
+            )
+        })
+    }
+}
 pub unsafe fn cmdq_add_format(
-    mut state: *mut cmdq_state,
+    state: &CmdqStateRef,
     mut key: *const ::core::ffi::c_char,
     mut fmt: *const ::core::ffi::c_char,
     args: &[FmtArg],
 ) {
     unsafe {
         let value = format_alloc(fmt, args);
-        if (*state).formats.is_none() {
-            (*state).formats = Some(format_create(
-                ::core::ptr::null_mut::<client>(),
-                ::core::ptr::null_mut::<cmdq_item>(),
-                FORMAT_NONE,
-                0 as ::core::ffi::c_int,
-            ));
-        }
         format_add(
-            &mut *cmdq_state_formats(state),
+            cmdq_state_formats_mut(state),
             CStr::from_ptr(key),
             c"%s".as_ptr(),
             fmt_args![value.as_ptr()],
         );
     }
 }
-pub unsafe fn cmdq_add_formats(mut state: *mut cmdq_state, ft: &mut format_tree) {
-    unsafe {
-        if (*state).formats.is_none() {
-            (*state).formats = Some(format_create(
-                ::core::ptr::null_mut::<client>(),
-                ::core::ptr::null_mut::<cmdq_item>(),
-                FORMAT_NONE,
-                0 as ::core::ffi::c_int,
-            ));
-        }
-        format_merge(&mut *cmdq_state_formats(state), ft);
-    }
+pub unsafe fn cmdq_add_formats(state: &CmdqStateRef, ft: &mut format_tree) {
+    unsafe { format_merge(cmdq_state_formats_mut(state), ft) };
 }
 pub unsafe fn cmdq_merge_formats(mut item: *mut cmdq_item, ft: &mut format_tree) {
     unsafe {
@@ -2509,15 +2522,10 @@ pub unsafe fn cmdq_merge_formats(mut item: *mut cmdq_item, ft: &mut format_tree)
         let cmd = (*item).cmd();
         if !cmd.is_null() {
             entry = cmd_get_entry(&*cmd);
-            format_add(
-                &mut *ft,
-                c"command",
-                c"%s".as_ptr(),
-                fmt_args![(*entry).name],
-            );
+            format_add(ft, c"command", c"%s".as_ptr(), fmt_args![(*entry).name]);
         }
         if (*(*item).state()).formats.is_some() {
-            format_merge(&mut *ft, &*cmdq_state_formats((*item).state()));
+            format_merge(ft, &*cmdq_state_formats((*item).state()));
         }
     }
 }
@@ -2544,10 +2552,11 @@ pub unsafe fn cmdq_append(mut c: *mut client, items: cmdq_items) -> *mut cmdq_it
             .unwrap_or(::core::ptr::null_mut::<cmdq_item>())
     }
 }
-pub unsafe fn cmdq_insert_after(mut after: *mut cmdq_item, items: cmdq_items) -> *mut cmdq_item {
+pub unsafe fn cmdq_insert_after(anchor: &CmdqItemRef, items: cmdq_items) -> *mut cmdq_item {
     unsafe {
-        let mut c: *mut client = cmdq_get_client(&*after);
-        let mut queue: *mut cmdq_list = (*after).queue;
+        let mut after = anchor.as_ptr();
+        let mut c: *mut client = cmdq_get_client(anchor.item());
+        let mut queue: *mut cmdq_list = anchor.item().queue;
         for item in items {
             item.item().client = client_ref_from_ptr(c);
             item.item().queue = queue;
@@ -2576,9 +2585,9 @@ pub unsafe fn cmdq_insert_hook(
 ) {
     unsafe {
         let state = (*item).state();
-        let mut cmd: *mut cmd = (*item).cmd();
-        let args_0: &args = cmd_get_args(&*cmd);
-        let args_ptr = cmd_get_args_ptr(&*cmd);
+        let cmd: &cmd = &*(*item).cmd();
+        let args_0: &args = cmd_get_args(cmd);
+        let args_ptr = cmd_get_args_ptr(cmd);
         let mut oo: *mut options = ::core::ptr::null_mut::<options>();
         let mut i: u_int = 0;
         let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -2603,14 +2612,14 @@ pub unsafe fn cmdq_insert_hook(
             fmt_args![name.as_ptr(), item],
         );
         cmdq_add_format(
-            new_state.as_ptr(),
+            &new_state,
             c"hook".as_ptr(),
             c"%s".as_ptr(),
             fmt_args![name.as_ptr()],
         );
         let arguments = args_print(args_ptr);
         cmdq_add_format(
-            new_state.as_ptr(),
+            &new_state,
             c"hook_arguments".as_ptr(),
             c"%s".as_ptr(),
             fmt_args![arguments.as_ptr()],
@@ -2619,7 +2628,7 @@ pub unsafe fn cmdq_insert_hook(
         while i < args_count(args_0) {
             let tmp = xasprintf(c"hook_argument_%d".as_ptr(), fmt_args![i]);
             cmdq_add_format(
-                new_state.as_ptr(),
+                &new_state,
                 tmp.as_ptr(),
                 c"%s".as_ptr(),
                 fmt_args![args_string(args_0, i)],
@@ -2633,14 +2642,14 @@ pub unsafe fn cmdq_insert_hook(
                     c"hook_flag_%c".as_ptr(),
                     fmt_args![flag as ::core::ffi::c_int],
                 );
-                cmdq_add_format(new_state.as_ptr(), tmp.as_ptr(), c"1".as_ptr(), fmt_args![]);
+                cmdq_add_format(&new_state, tmp.as_ptr(), c"1".as_ptr(), fmt_args![]);
             } else {
                 let tmp = xasprintf(
                     c"hook_flag_%c".as_ptr(),
                     fmt_args![flag as ::core::ffi::c_int],
                 );
                 cmdq_add_format(
-                    new_state.as_ptr(),
+                    &new_state,
                     tmp.as_ptr(),
                     c"%s".as_ptr(),
                     fmt_args![value],
@@ -2653,7 +2662,7 @@ pub unsafe fn cmdq_insert_hook(
                     fmt_args![flag as ::core::ffi::c_int, i],
                 );
                 cmdq_add_format(
-                    new_state.as_ptr(),
+                    &new_state,
                     tmp.as_ptr(),
                     c"%s".as_ptr(),
                     fmt_args![(*av).value.string()],
@@ -2665,20 +2674,20 @@ pub unsafe fn cmdq_insert_hook(
         while !a.is_null() {
             if let Some(cmdlist) = options_array_item_command(a) {
                 let queued = cmdq_get_command(&cmdlist, Some(&new_state));
-                if !item.is_null() {
-                    item = cmdq_insert_after(item, queued);
-                } else {
-                    item = cmdq_append(::core::ptr::null_mut::<client>(), queued);
-                }
+                item = match cmdq_item_ref_from_ptr(item) {
+                    Some(after) => cmdq_insert_after(&after, queued),
+                    None => cmdq_append(::core::ptr::null_mut::<client>(), queued),
+                };
             }
             a = options_array_next(o, a);
         }
     }
 }
-pub unsafe fn cmdq_continue(mut item: *mut cmdq_item) {
-    unsafe {
-        (*item).flags &= !CMDQ_WAITING;
-    }
+/// Lets a parked item run again. Taking the strong handle makes a dead
+/// waiter unrepresentable here: whoever answers later holds a
+/// [`CmdqItemWeak`] and reaches this only through a successful upgrade.
+pub fn cmdq_continue(item: &CmdqItemRef) {
+    item.item().flags &= !CMDQ_WAITING;
 }
 /// Where `item` sits on `queue`, which is wherever it was put.
 unsafe fn cmdq_position(queue: *mut cmdq_list, item: *mut cmdq_item) -> Option<usize> {
@@ -2728,7 +2737,7 @@ pub(crate) unsafe fn cmdq_get_command(
         let state = state
             .cloned()
             .unwrap_or_else(|| cmdq_new_state(::core::ptr::null_mut(), ::core::ptr::null_mut(), 0));
-        let commands = cmd_list_all(cmdlist.as_ptr());
+        let commands = cmd_list_all(cmdlist);
         if commands.is_empty() {
             return cmdq_get_callback1(
                 c"cmdq_empty_command".as_ptr(),
@@ -2797,9 +2806,9 @@ unsafe fn cmdq_add_message(mut item: *mut cmdq_item) {
         let mut uid: uid_t = 0;
         let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
         let mut user: Option<CString> = None;
-        let tmp = cmd_print((*item).cmd());
+        let tmp = cmd_print(&*(*item).cmd());
         if !c.is_null() {
-            uid = proc_get_peer_uid(peer_ptr(&(*c).peer));
+            uid = proc_get_peer_uid((*c).peer_ptr());
             if uid != -(1 as ::core::ffi::c_int) as uid_t && uid != getuid() {
                 pw = getpwuid(uid as __uid_t);
                 if !pw.is_null() {
@@ -2829,8 +2838,13 @@ unsafe fn cmdq_add_message(mut item: *mut cmdq_item) {
         }
     }
 }
-unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
+/// Fires `fired`'s command. Taking the strong handle by borrow is what keeps
+/// the item alive for the whole fire, however the command reaches it again;
+/// the raw view below is the compatibility form the rest of the pipeline
+/// still speaks.
+unsafe fn cmdq_fire_command(fired: &CmdqItemRef) -> cmd_retval {
     unsafe {
+        let item: *mut cmdq_item = fired.as_ptr();
         let mut current_block: u64;
         let name = cmdq_name(cmdq_get_client(&*item));
         let name = name.as_c_str();
@@ -2849,7 +2863,7 @@ unsafe fn cmdq_fire_command(mut item: *mut cmdq_item) -> cmd_retval {
             cmdq_add_message(item);
         }
         if log_get_level() > 1 as ::core::ffi::c_int {
-            let tmp = cmd_print(cmd);
+            let tmp = cmd_print(&*cmd);
             log_debug(
                 c"%s %s: (%u) %s".as_ptr(),
                 fmt_args![
@@ -3017,8 +3031,11 @@ pub unsafe fn cmdq_get_error(mut error: *const ::core::ffi::c_char) -> cmdq_item
         )
     }
 }
-unsafe fn cmdq_fire_callback(mut item: *mut cmdq_item) -> cmd_retval {
+/// Fires `fired`'s callback, holding the item alive through the borrowed
+/// strong handle the same way [`cmdq_fire_command`] does.
+unsafe fn cmdq_fire_callback(fired: &CmdqItemRef) -> cmd_retval {
     unsafe {
+        let item = fired.as_ptr();
         let (cb, data) = match &mut (*item).type_0 {
             CmdqType::Callback { cb, data } => (*cb, std::mem::take(data)),
             CmdqType::Command { .. } => return CMD_RETURN_ERROR,
@@ -3055,16 +3072,13 @@ pub unsafe fn cmdq_next(mut c: *mut client) -> u_int {
             fmt_args![c"cmdq_next".as_ptr(), name],
         );
         loop {
-            item = (*queue)
-                .list
-                .front()
-                .map(CmdqItemRef::as_ptr)
-                .unwrap_or(::core::ptr::null_mut::<cmdq_item>());
-            (*queue).running = !item.is_null();
-            if item.is_null() {
+            let Some(fired) = (*queue).list.front().cloned() else {
+                (*queue).running = false;
                 current_block = 7056779235015430508;
                 break;
-            }
+            };
+            (*queue).running = true;
+            item = fired.as_ptr();
             let is_command = matches!((*item).type_0, CmdqType::Command { .. });
             log_debug(
                 c"%s %s: %s (%d), flags %x".as_ptr(),
@@ -3085,12 +3099,12 @@ pub unsafe fn cmdq_next(mut c: *mut client) -> u_int {
                 number = number.wrapping_add(1);
                 (*item).number = number;
                 if is_command {
-                    retval = cmdq_fire_command(item);
+                    retval = cmdq_fire_command(&fired);
                     if retval as ::core::ffi::c_int == CMD_RETURN_ERROR as ::core::ffi::c_int {
                         cmdq_remove_group(item);
                     }
                 } else {
-                    retval = cmdq_fire_callback(item);
+                    retval = cmdq_fire_callback(&fired);
                 }
                 (*item).flags |= CMDQ_FIRED;
                 if retval as ::core::ffi::c_int == CMD_RETURN_WAIT as ::core::ffi::c_int {

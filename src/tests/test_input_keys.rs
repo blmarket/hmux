@@ -332,7 +332,7 @@ fn a_mouse_report_needs_the_terminal_to_have_asked_for_one() {
 
 /// What `input_key_get_mouse` answers, or `None` if it wrote nothing.
 fn mouse(s: &mut Screen, m: &mut mouse_event, x: u_int, y: u_int) -> Option<String> {
-    unsafe { input_key_get_mouse(s.ptr(), &raw mut *m, x, y).map(|report| shown(&report)) }
+    unsafe { input_key_get_mouse(s.ptr(), m, x, y).map(|report| shown(&report)) }
 }
 
 #[test]
@@ -417,7 +417,7 @@ fn a_pane_is_given_the_bytes_of_a_key() {
     let bev = StreamBuffer::new();
     unsafe {
         (*pane.ptr()).event = bev.ptr();
-        assert_eq!(input_key_pane(pane.ptr(), b'a' as key_code, null_mut()), 0);
+        assert_eq!(input_key_pane(pane.ptr(), b'a' as key_code, None), 0);
     }
     assert_eq!(shown(&bev.written()), "a");
 }
@@ -437,27 +437,27 @@ fn a_pane_is_given_a_mouse_report_only_for_a_click_inside_it() {
         (*pane.screen()).mode = MODE_MOUSE_STANDARD;
 
         let key = KEYC_MOUSE as key_code;
-        assert_eq!(input_key_pane(pane.ptr(), key, &raw mut *m), 0);
+        assert_eq!(input_key_pane(pane.ptr(), key, Some(&m)), 0);
         assert_eq!(shown(&bev.written()), "<esc>[M !!");
 
         m.ignore = 1;
-        assert_eq!(input_key_pane(pane.ptr(), key, &raw mut *m), 0);
+        assert_eq!(input_key_pane(pane.ptr(), key, Some(&m)), 0);
         assert_eq!(shown(&bev.written()), "");
 
         m.ignore = 0;
         m.x = 20;
-        assert_eq!(input_key_pane(pane.ptr(), key, &raw mut *m), 0);
+        assert_eq!(input_key_pane(pane.ptr(), key, Some(&m)), 0);
         assert_eq!(shown(&bev.written()), "");
 
         m.x = 0;
         m.wp = 2;
-        assert_eq!(input_key_pane(pane.ptr(), key, &raw mut *m), 0);
+        assert_eq!(input_key_pane(pane.ptr(), key, Some(&m)), 0);
         assert_eq!(shown(&bev.written()), "");
 
         m.wp = 1;
         (*window.ptr()).flags |= WINDOW_ZOOMED;
         window_set_active(window.ptr(), null_mut::<window_pane>());
-        assert_eq!(input_key_pane(pane.ptr(), key, &raw mut *m), 0);
+        assert_eq!(input_key_pane(pane.ptr(), key, Some(&m)), 0);
         assert_eq!(shown(&bev.written()), "");
     }
 }
@@ -473,14 +473,10 @@ fn a_pane_names_the_key_in_the_log_and_takes_a_mouse_type_key_too() {
         log_add_level();
         assert_ne!(log_get_level(), 0);
         (*pane.ptr()).event = bev.ptr();
-        assert_eq!(input_key_pane(pane.ptr(), b'a' as key_code, null_mut()), 0);
+        assert_eq!(input_key_pane(pane.ptr(), b'a' as key_code, None), 0);
         assert_eq!(shown(&bev.written()), "a");
         assert_eq!(
-            input_key_pane(
-                pane.ptr(),
-                (KEYC_TYPE_MOUSEMOVE as key_code) << 32,
-                null_mut()
-            ),
+            input_key_pane(pane.ptr(), (KEYC_TYPE_MOUSEMOVE as key_code) << 32, None),
             0
         );
         assert_eq!(shown(&bev.written()), "");
@@ -504,7 +500,7 @@ fn a_pane_writes_nothing_for_a_report_its_terminal_turned_down() {
         (*pane.ptr()).event = bev.ptr();
         (*pane.screen()).mode = MODE_MOUSE_STANDARD;
         assert_eq!(
-            input_key_pane(pane.ptr(), KEYC_MOUSE as key_code, &raw mut *m),
+            input_key_pane(pane.ptr(), KEYC_MOUSE as key_code, Some(&m)),
             0
         );
     }
@@ -563,10 +559,7 @@ fn a_pane_told_about_a_mouse_key_with_no_report_behind_it_writes_nothing() {
     let bev = StreamBuffer::new();
     unsafe {
         (*pane.ptr()).event = bev.ptr();
-        assert_eq!(
-            input_key_pane(pane.ptr(), KEYC_MOUSE as key_code, null_mut()),
-            0
-        );
+        assert_eq!(input_key_pane(pane.ptr(), KEYC_MOUSE as key_code, None), 0);
     }
     assert_eq!(shown(&bev.written()), "");
 }

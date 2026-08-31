@@ -224,7 +224,9 @@ fn the_name_timer_callback_only_logs() {
     let _guard = globals();
     let mut w = blank_window();
     w.id = 7;
-    name_time_callback(&w);
+    let w_ref = WindowRef::new(*w);
+    w_ref.mark_unmanaged();
+    name_time_callback(&w_ref);
 }
 
 #[test]

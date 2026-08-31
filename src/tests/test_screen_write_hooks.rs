@@ -6,7 +6,7 @@ pub(crate) unsafe fn initctx(
     is_sync: c_int,
     check_obscured: c_int,
 ) {
-    unsafe { screen_write_initctx(&mut *ctx, ttyctx, is_sync, check_obscured) }
+    unsafe { screen_write_initctx(ctx, ttyctx, is_sync, check_obscured) }
 }
 
 pub(crate) unsafe fn collect_flush(
@@ -14,7 +14,7 @@ pub(crate) unsafe fn collect_flush(
     scroll_only: c_int,
     from: *const c_char,
 ) {
-    unsafe { screen_write_collect_flush(&mut *ctx, scroll_only, from) }
+    unsafe { screen_write_collect_flush(ctx, scroll_only, from) }
 }
 
 pub(crate) fn set_client_cb() -> unsafe fn(&mut tty_ctx, *mut client) -> c_int {

@@ -4,7 +4,6 @@ use crate::grid::{
     grid_set_tab, grid_string_cells,
 };
 use crate::options::options_set_number;
-use crate::screen::screen_grid_ptr;
 use crate::tests::test_fixtures::globals;
 use crate::tmux::global_w_options;
 use ::core::ffi::{CStr, c_int};
@@ -23,7 +22,7 @@ impl Screen {
     }
 
     fn grid(&self) -> *mut grid {
-        unsafe { screen_grid_ptr(&raw const *self.0 as *mut screen) }
+        screen_grid(&self.0) as *const grid as *mut grid
     }
 
     fn title(&self) -> String {
@@ -72,7 +71,7 @@ impl Screen {
 
 impl Drop for Screen {
     fn drop(&mut self) {
-        unsafe { screen_free(&raw mut *self.0) };
+        unsafe { screen_free(&mut *self.0) };
     }
 }
 
@@ -119,20 +118,10 @@ fn a_screen_is_reset_to_what_it_started_as() {
     s.0.mode = MODE_CRLF | MODE_INSERT;
     unsafe {
         screen_push_title(s.ptr());
-        let gc = grid_default_cell;
-        screen_set_selection(
-            s.ptr(),
-            0,
-            0,
-            1,
-            1,
-            0,
-            0,
-            0,
-            &raw const gc as *mut grid_cell,
-        );
+        let mut gc = grid_default_cell;
+        screen_set_selection(s.ptr(), 0, 0, 1, 1, 0, 0, 0, &mut gc);
         screen_set_progress_bar(s.ptr(), PROGRESS_BAR_NORMAL, 50);
-        screen_reinit(s.ptr());
+        screen_reinit(&mut *s.ptr());
     }
     assert_eq!((s.cx, s.cy), (0, 0));
     assert_eq!(
@@ -166,7 +155,7 @@ fn a_reset_comes_out_of_the_alternate_screen() {
     let mut gc = unsafe { grid_default_cell };
     unsafe {
         screen_alternate_on(s.ptr(), &gc, 1);
-        screen_reinit(s.ptr());
+        screen_reinit(&mut *s.ptr());
     }
     assert!(s.saved_grid.is_none());
     assert_eq!(s.text(0), "", "the reset cleared the restored screen");
@@ -240,14 +229,14 @@ fn a_title_and_a_path_are_cleaned_before_they_are_kept() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     assert_eq!(
-        unsafe { screen_set_title(s.ptr(), c"hello".as_ptr(), 0) },
+        unsafe { screen_set_title(&mut *s.ptr(), c"hello".as_ptr(), 0) },
         1
     );
     assert_eq!(s.title(), "hello");
-    assert_eq!(unsafe { screen_set_title(s.ptr(), c"a#(b".as_ptr(), 1) }, 1);
+    assert_eq!(unsafe { screen_set_title(&mut *s.ptr(), c"a#(b".as_ptr(), 1) }, 1);
     assert_eq!(s.title(), "a_(b", "an untrusted format is defused");
     assert_eq!(
-        unsafe { screen_set_title(s.ptr(), c"\xc3\x28".as_ptr(), 0) },
+        unsafe { screen_set_title(&mut *s.ptr(), c"\xc3\x28".as_ptr(), 0) },
         0,
         "invalid UTF-8 is turned down"
     );
@@ -269,11 +258,11 @@ fn titles_are_pushed_and_popped_as_a_stack() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     unsafe {
-        screen_set_title(s.ptr(), c"one".as_ptr(), 0);
+        screen_set_title(&mut *s.ptr(), c"one".as_ptr(), 0);
         screen_push_title(s.ptr());
-        screen_set_title(s.ptr(), c"two".as_ptr(), 0);
+        screen_set_title(&mut *s.ptr(), c"two".as_ptr(), 0);
         screen_push_title(s.ptr());
-        screen_set_title(s.ptr(), c"three".as_ptr(), 0);
+        screen_set_title(&mut *s.ptr(), c"three".as_ptr(), 0);
     }
     assert_eq!(s.ntitles, 2);
 
@@ -292,7 +281,7 @@ fn popping_a_title_that_was_never_pushed_does_nothing() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     unsafe {
-        screen_set_title(s.ptr(), c"one".as_ptr(), 0);
+        screen_set_title(&mut *s.ptr(), c"one".as_ptr(), 0);
         screen_pop_title(s.ptr());
     }
     assert_eq!(s.title(), "one");
@@ -306,7 +295,7 @@ fn the_title_stack_holds_ten() {
     for i in 0..12 {
         let title = ::std::ffi::CString::new(format!("t{i}")).unwrap();
         unsafe {
-            screen_set_title(s.ptr(), title.as_ptr(), 0);
+            screen_set_title(&mut *s.ptr(), title.as_ptr(), 0);
             screen_push_title(s.ptr());
         }
     }
@@ -343,12 +332,12 @@ fn a_screen_can_be_made_wider_and_narrower() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     s.write(0, 0, "abcdefghij");
-    unsafe { screen_resize(s.ptr(), 20, 5, 0) };
+    unsafe { screen_resize(&mut *s.ptr(), 20, 5, 0) };
     assert_eq!(unsafe { (*s.grid()).sx }, 20);
     assert_eq!(s.tabs().len(), 20);
     assert_eq!(s.text(0), "abcdefghij");
 
-    unsafe { screen_resize(s.ptr(), 20, 5, 0) };
+    unsafe { screen_resize(&mut *s.ptr(), 20, 5, 0) };
     assert_eq!(unsafe { (*s.grid()).sx }, 20, "the same width is no change");
 }
 
@@ -356,7 +345,7 @@ fn a_screen_can_be_made_wider_and_narrower() {
 fn a_screen_is_never_smaller_than_one_cell() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
-    unsafe { screen_resize(s.ptr(), 0, 0, 0) };
+    unsafe { screen_resize(&mut *s.ptr(), 0, 0, 0) };
     assert_eq!(unsafe { ((*s.grid()).sx, (*s.grid()).sy) }, (1, 1));
 }
 
@@ -366,7 +355,7 @@ fn a_taller_screen_gets_empty_lines_at_the_bottom() {
     let mut s = Screen::new(10, 2, 0);
     s.write(0, 0, "one");
     s.write(0, 1, "two");
-    unsafe { screen_resize(s.ptr(), 10, 4, 0) };
+    unsafe { screen_resize(&mut *s.ptr(), 10, 4, 0) };
     assert_eq!(unsafe { (*s.grid()).sy }, 4);
     assert_eq!(s.rlower, 3);
     assert_eq!([s.text(0), s.text(2)], ["one", ""]);
@@ -382,7 +371,7 @@ fn a_taller_screen_takes_back_the_history_it_scrolled() {
         unsafe { ((*s.grid()).hsize, (*s.grid()).hscrolled) },
         (1, 1)
     );
-    unsafe { screen_resize(s.ptr(), 10, 3, 0) };
+    unsafe { screen_resize(&mut *s.ptr(), 10, 3, 0) };
     assert_eq!(
         unsafe { ((*s.grid()).hsize, (*s.grid()).hscrolled) },
         (0, 0),
@@ -398,7 +387,7 @@ fn a_shorter_screen_eats_the_empty_lines_below_the_cursor_first() {
     s.write(0, 0, "one");
     s.write(0, 1, "two");
     s.0.cy = 1;
-    unsafe { screen_resize(s.ptr(), 10, 2, 0) };
+    unsafe { screen_resize(&mut *s.ptr(), 10, 2, 0) };
     assert_eq!(unsafe { (*s.grid()).sy }, 2);
     assert_eq!([s.text(0), s.text(1)], ["one", "two"]);
     assert_eq!(s.cy, 1);
@@ -413,7 +402,7 @@ fn a_shorter_screen_without_history_drops_the_lines_above_the_cursor() {
     s.write(0, 2, "three");
     s.write(0, 3, "four");
     s.0.cy = 3;
-    unsafe { screen_resize(s.ptr(), 10, 2, 0) };
+    unsafe { screen_resize(&mut *s.ptr(), 10, 2, 0) };
     assert_eq!([s.text(0), s.text(1)], ["three", "four"]);
     assert_eq!(s.cy, 1);
 }
@@ -427,7 +416,7 @@ fn a_shorter_screen_with_history_pushes_the_lines_into_it() {
     s.write(0, 2, "three");
     s.write(0, 3, "four");
     s.0.cy = 3;
-    unsafe { screen_resize(s.ptr(), 10, 2, 0) };
+    unsafe { screen_resize(&mut *s.ptr(), 10, 2, 0) };
     assert_eq!(unsafe { (*s.grid()).hsize }, 2);
     assert_eq!([s.text(0), s.text(2)], ["one", "three"]);
     assert_eq!(s.cy, 1);
@@ -439,7 +428,7 @@ fn a_narrower_screen_reflows_its_lines_and_carries_the_cursor() {
     let mut s = Screen::new(10, 3, 100);
     s.write(0, 0, "abcdefgh");
     s.0.cx = 7;
-    unsafe { screen_resize(s.ptr(), 5, 3, 1) };
+    unsafe { screen_resize(&mut *s.ptr(), 5, 3, 1) };
     assert_eq!(unsafe { (*s.grid()).hsize }, 1);
     assert_eq!([s.text(0), s.text(1)], ["abcde", "fgh"]);
     assert_eq!(
@@ -464,7 +453,7 @@ fn a_selection_covers_the_cells_between_its_ends() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_set_selection(s.ptr(), 2, 1, 4, 1, 0, 0, 0, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 2, 1, 4, 1, 0, 0, 0, &mut gc) };
     assert!(s.sel.is_some());
     let mut check = |px, py| unsafe { screen_check_selection(&raw mut *s.0, px, py) };
     assert_eq!(check(1, 1), 0);
@@ -482,11 +471,11 @@ fn a_hidden_or_missing_selection_covers_nothing() {
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 0, 0) }, 0);
     let mut gc = unsafe { grid_default_cell };
     unsafe {
-        screen_set_selection(s.ptr(), 0, 0, 9, 0, 0, 0, 0, &raw mut gc);
+        screen_set_selection(s.ptr(), 0, 0, 9, 0, 0, 0, 0, &mut gc);
         screen_hide_selection(s.ptr());
     }
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 1, 0) }, 0);
-    unsafe { screen_clear_selection(s.ptr()) };
+    unsafe { screen_clear_selection(&mut *s.ptr()) };
     assert!(s.sel.is_none());
     unsafe { screen_hide_selection(s.ptr()) };
 }
@@ -496,7 +485,7 @@ fn a_selection_can_be_clipped_on_the_left() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_set_selection(s.ptr(), 0, 0, 9, 0, 0, 3, 0, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 0, 0, 9, 0, 0, 3, 0, &mut gc) };
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 2, 0) }, 0);
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 3, 0) }, 1);
 }
@@ -506,7 +495,7 @@ fn a_rectangular_selection_is_a_box() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_set_selection(s.ptr(), 2, 1, 5, 3, 1, 0, 0, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 2, 1, 5, 3, 1, 0, 0, &mut gc) };
     let mut check = |px, py| unsafe { screen_check_selection(&raw mut *s.0, px, py) };
     assert_eq!(check(3, 2), 1);
     assert_eq!(check(2, 1), 1);
@@ -522,7 +511,7 @@ fn a_rectangular_selection_can_be_drawn_in_any_direction() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_set_selection(s.ptr(), 5, 3, 2, 1, 1, 0, 0, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 5, 3, 2, 1, 1, 0, 0, &mut gc) };
     let mut check = |px, py| unsafe { screen_check_selection(&raw mut *s.0, px, py) };
     assert_eq!(check(3, 2), 1);
     assert_eq!(check(1, 2), 0);
@@ -530,7 +519,7 @@ fn a_rectangular_selection_can_be_drawn_in_any_direction() {
     assert_eq!(check(3, 0), 0);
     assert_eq!(check(3, 4), 0);
 
-    unsafe { screen_set_selection(s.ptr(), 2, 2, 5, 2, 1, 0, 0, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 2, 2, 5, 2, 1, 0, 0, &mut gc) };
     let mut flat = |px, py| unsafe { screen_check_selection(&raw mut *s.0, px, py) };
     assert_eq!(flat(3, 2), 1);
     assert_eq!(flat(3, 1), 0, "a rectangle of one line is that line");
@@ -541,7 +530,7 @@ fn a_selection_drawn_upwards_covers_the_same_cells() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_set_selection(s.ptr(), 4, 3, 2, 1, 0, 0, 0, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 4, 3, 2, 1, 0, 0, 0, &mut gc) };
     let mut check = |px, py| unsafe { screen_check_selection(&raw mut *s.0, px, py) };
     assert_eq!(check(1, 1), 0);
     assert_eq!(check(2, 1), 1);
@@ -557,7 +546,7 @@ fn a_selection_on_one_line_can_be_drawn_either_way() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_set_selection(s.ptr(), 5, 1, 2, 1, 0, 0, 0, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 5, 1, 2, 1, 0, 0, 0, &mut gc) };
     let mut back = |px, py| unsafe { screen_check_selection(&raw mut *s.0, px, py) };
     assert_eq!(back(1, 1), 0);
     assert_eq!(back(2, 1), 1);
@@ -571,16 +560,16 @@ fn vi_keys_take_in_the_last_cell_of_a_selection() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_set_selection(s.ptr(), 2, 1, 4, 1, 0, 0, 1, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 2, 1, 4, 1, 0, 0, 1, &mut gc) };
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 4, 1) }, 1);
 
-    unsafe { screen_set_selection(s.ptr(), 2, 1, 4, 3, 0, 0, 1, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 2, 1, 4, 3, 0, 0, 1, &mut gc) };
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 4, 3) }, 1);
 
-    unsafe { screen_set_selection(s.ptr(), 4, 3, 2, 1, 0, 0, 1, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 4, 3, 2, 1, 0, 0, 1, &mut gc) };
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 4, 3) }, 1);
 
-    unsafe { screen_set_selection(s.ptr(), 5, 1, 2, 1, 0, 0, 1, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 5, 1, 2, 1, 0, 0, 1, &mut gc) };
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 5, 1) }, 1);
 }
 
@@ -589,7 +578,7 @@ fn a_selection_that_ends_where_it_starts_covers_one_cell_or_none() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_set_selection(s.ptr(), 0, 1, 0, 1, 0, 0, 0, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 0, 1, 0, 1, 0, 0, 0, &mut gc) };
     assert_eq!(
         unsafe { screen_check_selection(s.ptr(), 0, 1) },
         1,
@@ -597,7 +586,7 @@ fn a_selection_that_ends_where_it_starts_covers_one_cell_or_none() {
     );
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 1, 1) }, 0);
 
-    unsafe { screen_set_selection(s.ptr(), 3, 1, 0, 1, 0, 0, 0, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 3, 1, 0, 1, 0, 0, 0, &mut gc) };
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 0, 1) }, 1);
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 2, 1) }, 1);
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 3, 1) }, 0);
@@ -608,7 +597,7 @@ fn a_selection_drawn_upwards_to_the_first_cell_covers_nothing_there() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_set_selection(s.ptr(), 0, 3, 2, 1, 0, 0, 0, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 0, 3, 2, 1, 0, 0, 0, &mut gc) };
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 0, 3) }, 0);
     assert_eq!(unsafe { screen_check_selection(s.ptr(), 2, 1) }, 1);
 }
@@ -628,16 +617,13 @@ fn a_selected_cell_takes_the_style_of_the_selection() {
     let mut dst = unsafe { grid_default_cell };
 
     assert_eq!(
-        unsafe { screen_select_cell(s.ptr(), &raw mut dst, &raw const src) },
+        unsafe { screen_select_cell(s.ptr(), &mut dst, &src) },
         0,
         "there is no selection"
     );
 
-    unsafe { screen_set_selection(s.ptr(), 0, 0, 9, 0, 0, 0, 0, &raw mut sel) };
-    assert_eq!(
-        unsafe { screen_select_cell(s.ptr(), &raw mut dst, &raw const src) },
-        1
-    );
+    unsafe { screen_set_selection(s.ptr(), 0, 0, 9, 0, 0, 0, 0, &mut sel) };
+    assert_eq!(unsafe { screen_select_cell(s.ptr(), &mut dst, &src) }, 1);
     assert_eq!(dst.fg, 3, "the default colours come from the cell");
     assert_eq!(dst.bg, 4);
     assert_eq!(dst.data.data[0], b'x');
@@ -652,18 +638,15 @@ fn a_selected_cell_takes_the_style_of_the_selection() {
     sel.fg = 1;
     sel.bg = 2;
     unsafe {
-        screen_set_selection(s.ptr(), 0, 0, 9, 0, 0, 0, 0, &raw mut sel);
-        screen_select_cell(s.ptr(), &raw mut dst, &raw const src);
+        screen_set_selection(s.ptr(), 0, 0, 9, 0, 0, 0, 0, &mut sel);
+        screen_select_cell(s.ptr(), &mut dst, &src);
     }
     assert_eq!(dst.fg, 1, "the selection has its own colours");
     assert_eq!(dst.bg, 2);
     assert_eq!(dst.attr as c_int, 2 | GRID_ATTR_CHARSET | 1);
 
     unsafe { screen_hide_selection(s.ptr()) };
-    assert_eq!(
-        unsafe { screen_select_cell(s.ptr(), &raw mut dst, &raw const src) },
-        0
-    );
+    assert_eq!(unsafe { screen_select_cell(s.ptr(), &mut dst, &src) }, 0);
 }
 
 #[test]
@@ -725,7 +708,7 @@ fn a_screen_with_a_write_list_keeps_it_across_a_resize() {
     let mut s = Screen::new(10, 3, 0);
     unsafe { screen_write_make_list(s.ptr()) };
     assert!(!s.write_list.is_empty());
-    unsafe { screen_resize(s.ptr(), 10, 5, 0) };
+    unsafe { screen_resize(&mut *s.ptr(), 10, 5, 0) };
     assert!(
         !s.write_list.is_empty(),
         "it was made again for the new size"
@@ -740,7 +723,7 @@ fn freeing_a_screen_frees_what_it_put_aside() {
     unsafe {
         screen_write_make_list(s.ptr());
         screen_alternate_on(s.ptr(), &gc, 1);
-        screen_set_title(s.ptr(), c"one".as_ptr(), 0);
+        screen_set_title(&mut *s.ptr(), c"one".as_ptr(), 0);
         screen_push_title(s.ptr());
         screen_push_title(s.ptr());
         screen_push_title(s.ptr());
@@ -757,7 +740,7 @@ fn a_reset_frees_a_whole_stack_of_titles() {
         screen_push_title(s.ptr());
         screen_push_title(s.ptr());
         screen_push_title(s.ptr());
-        screen_reinit(s.ptr());
+        screen_reinit(&mut *s.ptr());
     }
     assert!(s.titles.is_none());
 }
@@ -785,7 +768,7 @@ fn a_shorter_screen_only_eats_as_many_lines_as_it_needs() {
     s.write(0, 0, "one");
     s.write(0, 5, "six");
     s.0.cy = 0;
-    unsafe { screen_resize(s.ptr(), 10, 4, 0) };
+    unsafe { screen_resize(&mut *s.ptr(), 10, 4, 0) };
     assert_eq!(unsafe { (*s.grid()).sy }, 4);
     assert_eq!(s.text(0), "one");
     assert_eq!(s.text(3), "", "the two lines below the cursor went");
@@ -803,7 +786,7 @@ fn a_taller_screen_only_takes_back_as_much_history_as_it_needs() {
         unsafe { ((*s.grid()).hsize, (*s.grid()).hscrolled) },
         (3, 3)
     );
-    unsafe { screen_resize(s.ptr(), 10, 3, 0) };
+    unsafe { screen_resize(&mut *s.ptr(), 10, 3, 0) };
     assert_eq!(
         unsafe { ((*s.grid()).hsize, (*s.grid()).hscrolled) },
         (2, 2),
@@ -816,7 +799,7 @@ fn a_selection_over_several_lines_takes_in_the_lines_between() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_set_selection(s.ptr(), 2, 1, 4, 3, 0, 0, 0, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 2, 1, 4, 3, 0, 0, 0, &mut gc) };
     let mut check = |px, py| unsafe { screen_check_selection(&raw mut *s.0, px, py) };
     assert_eq!(check(2, 0), 0, "above the selection");
     assert_eq!(check(2, 4), 0, "below it");
@@ -832,7 +815,7 @@ fn a_selection_that_ends_on_the_first_cell_of_a_line_still_takes_it() {
     let _guard = globals();
     let mut s = Screen::new(10, 5, 0);
     let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_set_selection(s.ptr(), 2, 1, 0, 3, 0, 0, 0, &raw mut gc) };
+    unsafe { screen_set_selection(s.ptr(), 2, 1, 0, 3, 0, 0, 0, &mut gc) };
     assert_eq!(
         unsafe { screen_check_selection(s.ptr(), 0, 3) },
         1,
@@ -900,7 +883,7 @@ fn printing_stops_when_a_tab_or_a_wide_character_no_longer_fits() {
     let mut tab = long_line(16376);
     let mut gc = unsafe { grid_default_cell };
     unsafe {
-        grid_set_tab(&raw mut gc, 2);
+        grid_set_tab(&mut gc, 2);
         grid_set_cell(&mut *tab.grid(), 16376, 0, &gc);
     }
     assert_eq!(printed(&mut tab).len(), 16382);
@@ -985,7 +968,7 @@ fn printing_leaves_out_padding_and_writes_tabs_and_wide_characters() {
     let mut s = Screen::new(10, 1, 0);
     let mut gc = unsafe { grid_default_cell };
     unsafe {
-        grid_set_tab(&raw mut gc, 2);
+        grid_set_tab(&mut gc, 2);
         grid_set_cell(&mut *s.grid(), 0, 0, &gc);
         grid_set_padding(&mut *s.grid(), 1, 0);
     }

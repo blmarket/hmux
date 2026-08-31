@@ -92,7 +92,7 @@ impl Overlay {
     /// code calls it.
     fn draw(&mut self, ctx: &mut screen_redraw_ctx) {
         let c = &raw mut *self.c;
-        unsafe { cmd_display_panes_draw(c, null_mut::<cmd_display_panes_data>(), &mut *ctx) };
+        unsafe { cmd_display_panes_draw(c, null_mut::<cmd_display_panes_data>(), ctx) };
     }
 
     /// Everything the terminal has been handed so far: the cursor moves

@@ -28,7 +28,7 @@ fn draw_over(
     let mut ctx = Box::new(screen_write_ctx::default());
     let mut srs = style_ranges::new();
     unsafe {
-        screen_write_start(&mut ctx, s.ptr());
+        screen_write_start(&mut ctx, &mut *s.ptr());
         let base = grid_default_cell;
         format_draw(
             &mut ctx,

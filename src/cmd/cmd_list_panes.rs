@@ -226,7 +226,7 @@ unsafe fn passes(ft: &mut format_tree, filter: Option<&CStr>) -> bool {
         match filter {
             None => true,
             Some(filter) => {
-                let expanded = format_expand(&mut *ft, filter);
+                let expanded = format_expand(ft, filter);
                 format_true(Some(&expanded)) != 0
             }
         }

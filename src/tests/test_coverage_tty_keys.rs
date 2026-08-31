@@ -82,7 +82,7 @@ unsafe fn bind_capability(t: &mut Tty, code: usize, s: &CString) {
 unsafe fn parse_osc(t: &mut Tty, seq: &[u8], fg: &mut c_int, bg: &mut c_int) -> (c_int, usize) {
     unsafe {
         let mut size: size_t = 0;
-        let rc = tty_keys_colours(t.ptr(), seq, &mut size, fg, bg);
+        let rc = tty_keys_colours(&mut *t.ptr(), seq, &mut size, fg, bg);
         (rc, size as usize)
     }
 }
@@ -173,7 +173,7 @@ fn building_binds_the_builtin_sequences_and_a_rebuild_leaves_the_same_tree() {
     let mut t = Tty::new();
     unsafe {
         assert!((*t.ptr()).key_tree.is_none());
-        tty_keys_build(t.ptr());
+        tty_keys_build(&mut *t.ptr());
         let tree = (*t.ptr()).key_tree.as_deref();
         assert!(tree.is_some());
 
@@ -200,14 +200,14 @@ fn building_binds_the_builtin_sequences_and_a_rebuild_leaves_the_same_tree() {
         let nodes = count_nodes(tree);
         assert!(nodes > 300, "only {nodes} nodes built");
 
-        tty_keys_build(t.ptr());
+        tty_keys_build(&mut *t.ptr());
         let rebuilt = (*t.ptr()).key_tree.as_deref();
         assert!(rebuilt.is_some());
         assert_eq!(count_nodes(rebuilt), nodes);
         assert_eq!(lookup(rebuilt, b"\x1bOA"), (KEYC_UP | KEYC_CURSOR));
         assert_eq!(lookup(rebuilt, b"\x1b[15~"), KEYC_F5);
 
-        tty_keys_free(t.ptr());
+        tty_keys_free(&mut *t.ptr());
     }
 }
 
@@ -217,18 +217,18 @@ fn a_capability_the_term_reports_is_bound_and_nothing_without_one() {
     let mut t = Tty::new();
     let kf1 = CString::new(b"\x1b[?u".as_slice()).expect("no NUL");
     unsafe {
-        tty_keys_build(t.ptr());
+        tty_keys_build(&mut *t.ptr());
         let bare = (*t.ptr()).key_tree.as_deref();
         assert_eq!(lookup(bare, kf1.as_bytes()), KEYC_UNKNOWN);
         assert_eq!(lookup(bare, b"\x1bOA"), (KEYC_UP | KEYC_CURSOR));
 
         bind_capability(&mut t, TTYC_KF1 as usize, &kf1);
-        tty_keys_build(t.ptr());
+        tty_keys_build(&mut *t.ptr());
         let bound = (*t.ptr()).key_tree.as_deref();
         assert_eq!(lookup(bound, kf1.as_bytes()), KEYC_F1);
         assert_eq!(lookup(bound, b"\x1bOA"), (KEYC_UP | KEYC_CURSOR));
 
-        tty_keys_free(t.ptr());
+        tty_keys_free(&mut *t.ptr());
     }
 }
 
@@ -244,12 +244,12 @@ fn the_user_keys_option_extends_the_default_tree_by_index() {
             "user-keys is not defaulted into global options"
         );
 
-        tty_keys_build(t.ptr());
+        tty_keys_build(&mut *t.ptr());
         let bare = (*t.ptr()).key_tree.as_deref();
         assert_eq!(lookup(bare, custom.as_bytes()), KEYC_UNKNOWN);
 
         assert_eq!(options_array_set(o, 0, custom.as_ptr(), 0, &mut None), 0);
-        tty_keys_build(t.ptr());
+        tty_keys_build(&mut *t.ptr());
         let extended = (*t.ptr()).key_tree.as_deref();
         assert_eq!(lookup(extended, custom.as_bytes()), KEYC_USER);
         assert_eq!(lookup(extended, b"\x1bOA"), (KEYC_UP | KEYC_CURSOR));
@@ -258,7 +258,7 @@ fn the_user_keys_option_extends_the_default_tree_by_index() {
             options_array_set(o, 0, ::core::ptr::null(), 0, &mut None),
             0
         );
-        tty_keys_free(t.ptr());
+        tty_keys_free(&mut *t.ptr());
     }
 }
 

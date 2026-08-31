@@ -98,7 +98,7 @@ unsafe fn write_row(wp: *mut window_pane, py: u_int, s: &str) {
 /// Marks row `py` of the pane's base grid with extra line flags.
 unsafe fn mark_row(wp: *mut window_pane, py: u_int, flags: c_int) {
     unsafe {
-        (*screen_grid_ptr(&raw mut (*wp).base)).linedata[py as usize].flags |= flags;
+        (*screen_grid_ptr(&mut (*wp).base)).linedata[py as usize].flags |= flags;
     }
 }
 
@@ -909,7 +909,7 @@ fn clear_history_empties_the_scrollback_and_H_resets_its_links() {
     let wp = t.pane(0);
     unsafe {
         scroll(wp, 2);
-        assert_eq!((*screen_grid_ptr(&raw mut (*wp).base)).hsize, 2);
+        assert_eq!((*screen_grid_ptr(&mut (*wp).base)).hsize, 2);
 
         let hl = (*wp).base.hyperlinks_ref().expect("a hyperlink store");
         let inner = hyperlinks_put(hl, c"https://example.com/", Some(c"id"));
@@ -921,7 +921,7 @@ fn clear_history_empties_the_scrollback_and_H_resets_its_links() {
             .targeting(&mut t);
         assert_eq!(exec(&mut clear), CMD_RETURN_NORMAL);
         assert_eq!(
-            (*screen_grid_ptr(&raw mut (*wp).base)).hsize,
+            (*screen_grid_ptr(&mut (*wp).base)).hsize,
             0,
             "the history is gone"
         );
@@ -1066,7 +1066,7 @@ impl Mode {
                     ::core::ptr::null_mut::<window_pane>(),
                     WindowMode::View,
                     ::core::ptr::null_mut::<cmd_find_state>(),
-                    ::core::ptr::null_mut::<args>(),
+                    None,
                 ),
                 0,
                 "view mode did not open"

@@ -841,7 +841,7 @@ impl Runner {
             cmd.file = Some(c"args.conf".to_owned());
             cmd.line = 7;
             let cmdlist = crate::cmd::cmd_list_new();
-            crate::cmd::cmd_list_append(cmdlist.as_ptr(), cmd);
+            crate::cmd::cmd_list_append(&cmdlist, cmd);
             let client = zeroed_client();
             let item = crate::tests::test_fixtures::zeroed_cmdq_item(state.clone());
             item.item().type_0 = CmdqType::Command {
@@ -862,7 +862,7 @@ impl Runner {
     }
 
     fn cmd(&mut self) -> *mut cmd {
-        unsafe { crate::cmd::cmd_list_at(self.cmdlist.as_ptr(), 0) }
+        unsafe { crate::cmd::cmd_list_at(&self.cmdlist, 0) }
     }
 
     /// Run the command with the arguments a command line parses to.
@@ -871,7 +871,7 @@ impl Runner {
             let args = parse_values(&spec_cb(Some(parse_as_either)), values).unwrap();
             unsafe {
                 (*self.cmd()).args = Some(Box::from_raw(args));
-                cmd_get_args_ptr(&*self.cmd())
+                (*self.cmd()).args_ptr()
             }
         }
     }
@@ -902,7 +902,7 @@ fn a_command_list_argument_is_prepared_as_it_is() {
         let mut error = None;
         let same = args_make_commands(&mut state, &[], &mut error);
         assert_eq!(
-            cmd_list_print(same.as_ref().unwrap().as_ptr(), 0).to_string_lossy(),
+            cmd_list_print(same.as_ref().unwrap(), 0).to_string_lossy(),
             "display-message hello"
         );
 
@@ -910,7 +910,7 @@ fn a_command_list_argument_is_prepared_as_it_is() {
         let copy = args_make_commands(&mut state, &argv, &mut error);
         assert_ne!(copy, same);
         assert_eq!(
-            cmd_list_print(copy.as_ref().unwrap().as_ptr(), 0).to_string_lossy(),
+            cmd_list_print(copy.as_ref().unwrap(), 0).to_string_lossy(),
             "display-message hello"
         );
         drop(copy);
@@ -959,7 +959,7 @@ fn a_string_argument_is_parsed_when_the_commands_are_made() {
         let argv = vec![CString::new("hello").unwrap()];
         let cmdlist = args_make_commands(&mut state, &argv, &mut error);
         assert_eq!(
-            cmd_list_print(cmdlist.as_ref().unwrap().as_ptr(), 0).to_string_lossy(),
+            cmd_list_print(cmdlist.as_ref().unwrap(), 0).to_string_lossy(),
             "display-message hello"
         );
         drop(cmdlist);
@@ -1046,7 +1046,7 @@ fn making_the_commands_at_once_reports_a_parse_error_to_the_queue() {
         let cmdlist = args_make_commands_now(&*runner.cmd(), runner.item(), 0, 0);
         assert!(cmdlist.is_some());
         assert_eq!(
-            cmd_list_print(cmdlist.as_ref().unwrap().as_ptr(), 0).to_string_lossy(),
+            cmd_list_print(cmdlist.as_ref().unwrap(), 0).to_string_lossy(),
             "display-message hello"
         );
         drop(cmdlist);

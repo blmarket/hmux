@@ -310,7 +310,7 @@ unsafe fn send_keys_x(t: &mut Target, line: &CStr, values: u_int) {
         let wp = t.pane(0);
         let mut fs = t.state();
         let open = Args::parse(c"copy-mode");
-        window_pane_set_mode(wp, wp, WindowMode::Copy, &raw mut fs, open.ptr());
+        window_pane_set_mode(wp, wp, WindowMode::Copy, &raw mut fs, Some(&*open.ptr()));
         let wme = window_pane_current_mode(wp);
         assert!(!wme.is_null(), "the pane did not open copy mode");
 
@@ -325,12 +325,12 @@ unsafe fn send_keys_x(t: &mut Target, line: &CStr, values: u_int) {
             "copy mode carries a command hook"
         );
         WindowMode::Copy.command(
-            wme,
+            &mut *wme,
             null_mut::<crate::types::client>(),
             t.session(),
             t.winlink(0),
-            args.ptr(),
-            null_mut::<crate::types::mouse_event>(),
+            &*args.ptr(),
+            None,
         );
     }
 }

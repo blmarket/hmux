@@ -122,7 +122,7 @@ fn argument_bounds_and_flags_parsing() {
             null_mut(),
         );
         assert_eq!(flags.status, CMD_PARSE_SUCCESS);
-        let first = cmd_list_first(flags.cmdlist.as_ref().unwrap().as_ptr());
+        let first = cmd_list_first(flags.cmdlist.as_ref().unwrap());
         let args = cmd_get_args(&*first);
         assert_ne!(args_has(args, b'a'), 0);
         assert_ne!(args_has(args, b's'), 0);

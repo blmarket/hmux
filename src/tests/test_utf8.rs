@@ -308,10 +308,9 @@ fn the_width_cache_is_rebuilt_from_the_defaults_and_the_option() {
 fn a_short_character_is_carried_in_the_utf8_char_itself() {
     let _guard = exclusive();
     unsafe {
-        let mut uc: utf8_char = 0;
         let ud = filled(b"\xc3\xa9", 1);
-        assert_eq!(utf8_from_data(&ud, &raw mut uc), UTF8_DONE);
-        assert_eq!(uc, 0x4200a9c3);
+        let (state, uc) = utf8_from_data(&ud);
+        assert_eq!((state, uc), (UTF8_DONE, 0x4200a9c3));
         assert!(utf8_data_tree.map().is_empty());
 
         let mut back = utf8_data::default();
@@ -325,18 +324,14 @@ fn a_short_character_is_carried_in_the_utf8_char_itself() {
 fn a_long_character_is_kept_in_the_trees_under_an_index() {
     let _guard = exclusive();
     unsafe {
-        let mut uc: utf8_char = 0;
         let ud = filled("😀".as_bytes(), 2);
-        assert_eq!(utf8_from_data(&ud, &raw mut uc), UTF8_DONE);
-        assert_eq!(uc, 0x64000000);
+        let (state, uc) = utf8_from_data(&ud);
+        assert_eq!((state, uc), (UTF8_DONE, 0x64000000));
 
-        let mut again: utf8_char = 0;
-        assert_eq!(utf8_from_data(&ud, &raw mut again), UTF8_DONE);
-        assert_eq!(again, uc);
+        assert_eq!(utf8_from_data(&ud), (UTF8_DONE, uc));
 
         let other = filled("😁".as_bytes(), 2);
-        assert_eq!(utf8_from_data(&other, &raw mut again), UTF8_DONE);
-        assert_eq!(again, 0x64000001);
+        assert_eq!(utf8_from_data(&other), (UTF8_DONE, 0x64000001));
 
         let mut back = utf8_data::default();
         utf8_to_data(uc, &mut back);
@@ -361,8 +356,8 @@ fn characters_are_kept_in_order_of_length_and_then_of_bytes() {
         let mut chars = Vec::new();
         for bytes in words {
             let ud = filled(bytes, 1);
-            let mut uc: utf8_char = 0;
-            assert_eq!(utf8_from_data(&ud, &raw mut uc), UTF8_DONE);
+            let (state, uc) = utf8_from_data(&ud);
+            assert_eq!(state, UTF8_DONE);
             chars.push(uc);
         }
         assert_eq!(
@@ -371,9 +366,7 @@ fn characters_are_kept_in_order_of_length_and_then_of_bytes() {
         );
         for (uc, bytes) in chars.iter().zip(words) {
             let ud = filled(bytes, 1);
-            let mut again: utf8_char = 0;
-            assert_eq!(utf8_from_data(&ud, &raw mut again), UTF8_DONE);
-            assert_eq!(again, *uc);
+            assert_eq!(utf8_from_data(&ud), (UTF8_DONE, *uc));
 
             let mut back = utf8_data::default();
             utf8_to_data(*uc, &mut back);
@@ -386,19 +379,15 @@ fn characters_are_kept_in_order_of_length_and_then_of_bytes() {
 fn a_character_that_will_not_fit_comes_back_as_spaces() {
     let _guard = exclusive();
     unsafe {
-        let mut uc: utf8_char = 0;
         let mut ud = filled(b"x", 0);
         ud.size = 33;
-        assert_eq!(utf8_from_data(&ud, &raw mut uc), UTF8_ERROR);
-        assert_eq!(uc, 0x20000000);
+        assert_eq!(utf8_from_data(&ud), (UTF8_ERROR, 0x20000000));
 
         ud.width = 1;
-        assert_eq!(utf8_from_data(&ud, &raw mut uc), UTF8_ERROR);
-        assert_eq!(uc, 0x41000020);
+        assert_eq!(utf8_from_data(&ud), (UTF8_ERROR, 0x41000020));
 
         ud.width = 2;
-        assert_eq!(utf8_from_data(&ud, &raw mut uc), UTF8_ERROR);
-        assert_eq!(uc, 0x41002020);
+        assert_eq!(utf8_from_data(&ud), (UTF8_ERROR, 0x41002020));
     }
 }
 
@@ -407,10 +396,8 @@ fn the_last_index_is_where_the_trees_stop_taking_characters() {
     let _guard = exclusive();
     unsafe {
         utf8_next_index = 0xffffff + 1;
-        let mut uc: utf8_char = 0;
         let ud = filled("😀".as_bytes(), 2);
-        assert_eq!(utf8_from_data(&ud, &raw mut uc), UTF8_ERROR);
-        assert_eq!(uc, 0x41002020);
+        assert_eq!(utf8_from_data(&ud), (UTF8_ERROR, 0x41002020));
     }
 }
 

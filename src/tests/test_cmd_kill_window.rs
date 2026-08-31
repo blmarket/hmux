@@ -59,7 +59,7 @@ fn with_a_a_window_the_session_holds_twice_is_killed_as_well() {
         crate::reactor::current().run_once();
 
         assert_eq!(
-            winlink_count(&raw mut (*s.ptr()).windows),
+            winlink_count(&(*s.ptr()).windows),
             0,
             "both of the window's winlinks went with it"
         );

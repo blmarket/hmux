@@ -2362,8 +2362,11 @@ pub fn status_timer_start_all() {
         }
     }
 }
-pub unsafe fn status_update_cache(mut s: *mut session) {
+/// Records where the session's status line sits and how many lines it takes,
+/// which the client sizing then reads back out of the session.
+pub(crate) unsafe fn status_update_cache(s_ref: &SessionRef) {
     unsafe {
+        let s = s_ref.as_ptr();
         (*s).statuslines = options_get_number(session_options(s), c"status".as_ptr()) as u_int;
         if (*s).statuslines == 0 as u_int {
             (*s).statusat = -(1 as ::core::ffi::c_int);
@@ -2425,7 +2428,7 @@ pub unsafe fn status_get_range(mut c: *mut client, mut x: u_int, mut y: u_int) -
         {
             return ::core::ptr::null_mut::<style_range>();
         }
-        style_ranges_get_range(&raw mut (*sl).entries[y as usize].ranges, x)
+        style_ranges_get_range(&mut (*sl).entries[y as usize].ranges, x)
     }
 }
 unsafe fn status_push_screen(mut c: *mut client) -> StatusScreenRef {
@@ -2438,7 +2441,7 @@ unsafe fn status_push_screen(mut c: *mut client) -> StatusScreenRef {
         }
         let reference = StatusScreenRef::new(screen::default());
         screen_init(
-            reference.as_ptr(),
+            &mut *reference.as_ptr(),
             (*c).tty.sx,
             status_line_size(c),
             0 as u_int,
@@ -2466,7 +2469,7 @@ pub unsafe fn status_init(mut c: *mut client) {
             style_ranges_init(&raw mut (*sl).entries[i as usize].ranges);
             i = i.wrapping_add(1);
         }
-        screen_init(&raw mut (*sl).screen, (*c).tty.sx, 1 as u_int, 0 as u_int);
+        screen_init(&mut (*sl).screen, (*c).tty.sx, 1 as u_int, 0 as u_int);
         (*sl).active = StatusActive::Own;
     }
 }
@@ -2487,11 +2490,11 @@ pub unsafe fn status_free(mut c: *mut client) {
             < (::core::mem::size_of::<[style_line_entry; 5]>() as usize)
                 .wrapping_div(::core::mem::size_of::<style_line_entry>() as usize)
         {
-            style_ranges_free(&raw mut (*sl).entries[i as usize].ranges);
+            style_ranges_free(&mut (*sl).entries[i as usize].ranges);
             (*sl).entries[i as usize].expanded = None;
             i = i.wrapping_add(1);
         }
-        screen_free(&raw mut (*sl).screen);
+        screen_free(&mut (*sl).screen);
     }
 }
 pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
@@ -2533,7 +2536,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
             ::core::ptr::null_mut::<window_pane>(),
         );
         style_apply(
-            &raw mut gc,
+            &mut gc,
             session_options(s),
             c"status-style".as_ptr(),
             Some(&mut ft),
@@ -2546,22 +2549,22 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         if !(bg == 8 as ::core::ffi::c_int || bg == 9 as ::core::ffi::c_int) {
             gc.bg = bg;
         }
-        if grid_cells_equal(&raw mut gc, &raw mut (*sl).style) == 0 {
+        if grid_cells_equal(&mut gc, &mut (*sl).style) == 0 {
             force = 1 as ::core::ffi::c_int;
             (*sl).style = gc;
         }
-        let current_grid = screen_grid_ptr(&raw mut (*sl).screen);
+        let current_grid = screen_grid_ptr(&mut (*sl).screen);
         if (*current_grid).sx != width || (*current_grid).sy != lines {
-            screen_resize(&raw mut (*sl).screen, width, lines, 0 as ::core::ffi::c_int);
+            screen_resize(&mut (*sl).screen, width, lines, 0 as ::core::ffi::c_int);
             force = 1 as ::core::ffi::c_int;
             changed = force;
         }
-        screen_write_start(&mut ctx, &raw mut (*sl).screen);
+        screen_write_start(&mut ctx, &mut (*sl).screen);
         o = options_get_ptr(session_options(s), c"status-format".as_ptr());
         if o.is_null() {
             n = 0 as u_int;
             while n < width.wrapping_mul(lines) {
-                screen_write_putc(&mut ctx, &raw mut gc, ' ' as i32 as u_char);
+                screen_write_putc(&mut ctx, &mut gc, ' ' as i32 as u_char);
                 n = n.wrapping_add(1);
             }
         } else {
@@ -2577,7 +2580,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
                 if ov.is_null() {
                     n = 0 as u_int;
                     while n < width {
-                        screen_write_putc(&mut ctx, &raw mut gc, ' ' as i32 as u_char);
+                        screen_write_putc(&mut ctx, &mut gc, ' ' as i32 as u_char);
                         n = n.wrapping_add(1);
                     }
                 } else {
@@ -2588,7 +2591,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
                         changed = 1 as ::core::ffi::c_int;
                         n = 0 as u_int;
                         while n < width {
-                            screen_write_putc(&mut ctx, &raw mut gc, ' ' as i32 as u_char);
+                            screen_write_putc(&mut ctx, &mut gc, ' ' as i32 as u_char);
                             n = n.wrapping_add(1);
                         }
                         screen_write_cursormove(
@@ -2597,7 +2600,7 @@ pub unsafe fn status_redraw(mut c: *mut client) -> ::core::ffi::c_int {
                             i as ::core::ffi::c_int,
                             0 as ::core::ffi::c_int,
                         );
-                        style_ranges_free(&raw mut (*sle).ranges);
+                        style_ranges_free(&mut (*sle).ranges);
                         format_draw(
                             &mut ctx,
                             &gc,
@@ -2791,10 +2794,10 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         );
         msgfmt = options_get_string(session_options(s), c"message-format".as_ptr());
         let expanded = format_expand_time(&mut ft, CStr::from_ptr(msgfmt));
-        screen_write_start(&mut ctx, (*sl).active());
+        screen_write_start(&mut ctx, &mut *(*sl).active());
         screen_write_fast_copy(
             &mut ctx,
-            &raw mut (*sl).screen,
+            &(*sl).screen,
             0 as u_int,
             0 as u_int,
             (*c).tty.sx,
@@ -2818,10 +2821,10 @@ pub unsafe fn status_message_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         if grid_compare(screen_grid(&*(*sl).active()), screen_grid(&old_screen))
             == 0 as ::core::ffi::c_int
         {
-            screen_free(&raw mut old_screen);
+            screen_free(&mut old_screen);
             return 0 as ::core::ffi::c_int;
         }
-        screen_free(&raw mut old_screen);
+        screen_free(&mut old_screen);
         1 as ::core::ffi::c_int
     }
 }
@@ -3077,7 +3080,7 @@ unsafe fn status_prompt_redraw_character(
     mut offset: u_int,
     mut pwidth: u_int,
     width: &mut u_int,
-    mut gc: *mut grid_cell,
+    gc: &mut grid_cell,
     mut ud: *const utf8_data,
 ) -> ::core::ffi::c_int {
     unsafe {
@@ -3111,7 +3114,7 @@ unsafe fn status_prompt_redraw_character(
         } else {
             utf8_copy(&mut (*gc).data, &*ud);
         }
-        screen_write_cell(&mut *ctx, gc);
+        screen_write_cell(ctx, gc);
         1 as ::core::ffi::c_int
     }
 }
@@ -3122,7 +3125,7 @@ unsafe fn status_prompt_redraw_quote(
     mut offset: u_int,
     mut pwidth: u_int,
     width: &mut u_int,
-    mut gc: *mut grid_cell,
+    gc: &mut grid_cell,
 ) -> ::core::ffi::c_int {
     unsafe {
         let mut ud = utf8_data::default();
@@ -3130,14 +3133,7 @@ unsafe fn status_prompt_redraw_quote(
             && (*ctx.s).cx == pcursor.wrapping_add(1 as u_int)
         {
             utf8_set(&mut ud, '^' as i32 as u_char);
-            return status_prompt_redraw_character(
-                &mut *ctx,
-                offset,
-                pwidth,
-                width,
-                gc,
-                &raw mut ud,
-            );
+            return status_prompt_redraw_character(ctx, offset, pwidth, width, gc, &raw mut ud);
         }
         1 as ::core::ffi::c_int
     }
@@ -3209,9 +3205,9 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         if (*c).prompt_mode as ::core::ffi::c_uint
             == PROMPT_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
         {
-            style_apply(&raw mut gc, oo, c"message-command-style".as_ptr(), None);
+            style_apply(&mut gc, oo, c"message-command-style".as_ptr(), None);
         } else {
-            style_apply(&raw mut gc, oo, c"message-style".as_ptr(), None);
+            style_apply(&mut gc, oo, c"message-style".as_ptr(), None);
         }
         (ax, aw) = status_prompt_area(c);
         let tmp = utf8_vec_tocstr(&(*c).prompt_buffer);
@@ -3244,10 +3240,10 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
         if start > aw {
             start = aw;
         }
-        screen_write_start(&mut ctx, (*sl).active());
+        screen_write_start(&mut ctx, &mut *(*sl).active());
         screen_write_fast_copy(
             &mut ctx,
-            &raw mut (*sl).screen,
+            &(*sl).screen,
             0 as u_int,
             0 as u_int,
             (*c).tty.sx,
@@ -3297,13 +3293,7 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
             i = 0 as u_int;
             while (i as size_t) < utf8_vec_strlen(&(*c).prompt_buffer) {
                 if status_prompt_redraw_quote(
-                    c,
-                    pcursor,
-                    &mut ctx,
-                    offset,
-                    pwidth,
-                    &mut width,
-                    &raw mut gc,
+                    c, pcursor, &mut ctx, offset, pwidth, &mut width, &mut gc,
                 ) == 0
                 {
                     break;
@@ -3313,7 +3303,7 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
                     offset,
                     pwidth,
                     &mut width,
-                    &raw mut gc,
+                    &mut gc,
                     &(*c).prompt_buffer[i as usize],
                 ) == 0
                 {
@@ -3321,24 +3311,16 @@ pub unsafe fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi::c_int {
                 }
                 i = i.wrapping_add(1);
             }
-            status_prompt_redraw_quote(
-                c,
-                pcursor,
-                &mut ctx,
-                offset,
-                pwidth,
-                &mut width,
-                &raw mut gc,
-            );
+            status_prompt_redraw_quote(c, pcursor, &mut ctx, offset, pwidth, &mut width, &mut gc);
         }
         screen_write_stop(&mut ctx);
         if grid_compare(screen_grid(&*(*sl).active()), screen_grid(&old_screen))
             == 0 as ::core::ffi::c_int
         {
-            screen_free(&raw mut old_screen);
+            screen_free(&mut old_screen);
             return 0 as ::core::ffi::c_int;
         }
-        screen_free(&raw mut old_screen);
+        screen_free(&mut old_screen);
         1 as ::core::ffi::c_int
     }
 }
@@ -4123,7 +4105,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -4138,7 +4120,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -4419,7 +4401,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -4434,7 +4416,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -4715,7 +4697,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -4730,7 +4712,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -5011,7 +4993,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -5026,7 +5008,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -5307,7 +5289,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -5322,7 +5304,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -5603,7 +5585,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -5618,7 +5600,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -5899,7 +5881,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -5914,7 +5896,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -6195,7 +6177,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -6210,7 +6192,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -6491,7 +6473,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -6506,7 +6488,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -6787,7 +6769,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -6802,7 +6784,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -7083,7 +7065,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -7098,7 +7080,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -7379,7 +7361,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -7394,7 +7376,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -7675,7 +7657,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -7690,7 +7672,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -7971,7 +7953,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -7986,7 +7968,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -8267,7 +8249,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -8282,7 +8264,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -8563,7 +8545,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -8578,7 +8560,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -8859,7 +8841,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -8874,7 +8856,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -9155,7 +9137,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -9170,7 +9152,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -9451,7 +9433,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -9466,7 +9448,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -9747,7 +9729,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -9762,7 +9744,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -10043,7 +10025,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -10058,7 +10040,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -10339,7 +10321,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -10354,7 +10336,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -10635,7 +10617,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -10650,7 +10632,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -10931,7 +10913,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -10946,7 +10928,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -11227,7 +11209,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -11242,7 +11224,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -11523,7 +11505,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -11538,7 +11520,7 @@ pub unsafe fn status_prompt_key(mut c: *mut client, mut key: key_code) -> ::core
                                     if (*c).prompt_buffer.is_empty() {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
                                         (*c).prompt_buffer =
-                                            utf8_vec_fromcstr(cstr_ptr(&(*c).prompt_last));
+                                            utf8_vec_fromcstr((*c).prompt_last_ptr());
                                         (*c).prompt_index = utf8_vec_strlen(&(*c).prompt_buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -11935,7 +11917,7 @@ unsafe fn status_prompt_complete_list_menu(
         } else {
             py = (*c).tty.sy.wrapping_sub(3 as u_int).wrapping_sub(height);
         }
-        offset = offset.wrapping_add(utf8_cstrwidth(cstr_ptr(&(*c).prompt_string)));
+        offset = offset.wrapping_add(utf8_cstrwidth((*c).prompt_string_ptr()));
         offset = offset.wrapping_add(ax);
         if offset > 2 as u_int {
             offset = offset.wrapping_sub(2 as u_int);
@@ -11988,7 +11970,7 @@ unsafe fn status_prompt_complete_window_menu(
         }
         let mut menu = menu_create(c"".as_ptr());
         let mut current_block_26: u64;
-        wl = winlinks_first(&raw mut (*s).windows);
+        wl = winlinks_first(&mut (*s).windows);
         while !wl.is_null() {
             if !word.is_empty() {
                 let tmp = xasprintf(c"%d".as_ptr(), fmt_args![(*wl).idx]);
@@ -12080,7 +12062,7 @@ unsafe fn status_prompt_complete_window_menu(
         } else {
             py = (*c).tty.sy.wrapping_sub(3 as u_int).wrapping_sub(height);
         }
-        offset = offset.wrapping_add(utf8_cstrwidth(cstr_ptr(&(*c).prompt_string)));
+        offset = offset.wrapping_add(utf8_cstrwidth((*c).prompt_string_ptr()));
         offset = offset.wrapping_add(ax);
         if offset > 2 as u_int {
             offset = offset.wrapping_sub(2 as u_int);

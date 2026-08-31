@@ -24,7 +24,6 @@
 //! to the absent peer.
 
 use crate::arguments::{args_count, args_get, args_has, args_string, args_value};
-use crate::cmd::cmd_get_args_ptr;
 use crate::cmd::cmd_set_environment::{
     CMD_AFTERHOOK, CMD_FIND_CANFAIL, CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_NORMAL,
     ENVIRON_HIDDEN, cmd_set_environment_entry,
@@ -97,7 +96,7 @@ unsafe fn latest_message() -> String {
 /// empty name or one holding an equals sign intact.
 unsafe fn hand_raw_name(item: &mut Item, raw: &'static CStr) {
     unsafe {
-        let v = args_value(cmd_get_args_ptr(&*item.cmd()), 0);
+        let v = args_value(item.args_ptr(), 0);
         assert!(!v.is_null(), "the command carries a positional argument");
         (*v).value = ArgsValue::String(raw.to_owned());
     }

@@ -281,6 +281,13 @@ impl CmdListRef {
     pub(crate) fn as_ptr(&self) -> *mut cmd_list {
         self.0.get()
     }
+
+    /// The command list this holds. Reaching it this way does not stop
+    /// anything else reaching the same list through its raw view.
+    #[allow(clippy::mut_from_ref)]
+    pub(crate) fn list(&self) -> &mut cmd_list {
+        unsafe { &mut *self.0.get() }
+    }
 }
 
 /// The state a `source-file` run carries between the reads it starts. Several
@@ -394,7 +401,7 @@ impl StatusScreenWeak {
 
 impl Drop for StatusScreenStorage {
     fn drop(&mut self) {
-        unsafe { screen_free(&raw mut self.value) };
+        unsafe { screen_free(&mut self.value) };
     }
 }
 
@@ -958,6 +965,18 @@ pub struct menu_entry {
     pub key: key_code,
     pub command: Option<::std::ffi::CString>,
 }
+impl menu_entry {
+    /// The text the menu draws for the entry, or null for a separator.
+    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.name)
+    }
+
+    /// The command the entry runs when it is chosen, or null for one that runs
+    /// none.
+    pub(crate) fn command_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.command)
+    }
+}
 impl Default for menu_entry {
     /// The separator line: no name, no key and no command.
     fn default() -> menu_entry {
@@ -973,6 +992,12 @@ pub struct menu {
     pub title: Option<::std::ffi::CString>,
     pub items: Vec<menu_entry>,
     pub width: u_int,
+}
+impl menu {
+    /// The title drawn on the menu's border.
+    pub(crate) fn title_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.title)
+    }
 }
 #[derive(Default)]
 #[repr(C)]
@@ -1115,12 +1140,12 @@ impl options_value {
         }
     }
 
-    /// The command list the value holds, or null when it holds something
+    /// The command list the value holds, or nothing when it holds something
     /// else.
-    pub fn cmdlist(&self) -> *mut cmd_list {
+    pub fn cmdlist(&self) -> Option<&CmdListRef> {
         match self {
-            options_value::Commands(cmdlist) => cmdlist.as_ptr(),
-            _ => ::core::ptr::null_mut(),
+            options_value::Commands(cmdlist) => Some(cmdlist),
+            _ => None,
         }
     }
 
@@ -1406,6 +1431,12 @@ pub struct window_buffer_itemdata {
     pub order: u_int,
     pub size: size_t,
 }
+impl window_buffer_itemdata {
+    /// The name of the paste buffer the row stands for.
+    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.name)
+    }
+}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union __SOCKADDR_ARG {
@@ -1537,6 +1568,19 @@ pub struct screen {
     pub(crate) hyperlinks: Option<HyperlinksRef>,
     pub progress_bar: progress_bar,
 }
+impl screen {
+    /// The title the screen was given, which the terminal showing it is set
+    /// to.
+    pub(crate) fn title_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.title)
+    }
+
+    /// The working directory the screen last reported, or null when it has
+    /// reported none.
+    pub(crate) fn path_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.path)
+    }
+}
 pub type client_exit_type = ::core::ffi::c_uint;
 pub type client_prompt_mode = ::core::ffi::c_uint;
 #[repr(C)]
@@ -1638,6 +1682,18 @@ impl window {
     pub(crate) fn saved_layout_root_ptr(&self) -> *mut layout_cell {
         crate::layout::layout_root_ptr(&self.saved_layout_root)
     }
+
+    /// The name the window is filed under.
+    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.name)
+    }
+
+    /// The layout the window had before the current one was set, which
+    /// `select-layout -o` goes back to, or null when it has none to go back
+    /// to.
+    pub(crate) fn old_layout_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.old_layout)
+    }
 }
 #[derive(Default)]
 #[repr(C)]
@@ -1728,6 +1784,16 @@ impl window_pane {
             },
         }
     }
+
+    /// The shell the pane's command was run under.
+    pub(crate) fn shell_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.shell)
+    }
+
+    /// The directory the pane's command started in.
+    pub(crate) fn cwd_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.cwd)
+    }
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -1737,8 +1803,9 @@ pub struct window_mode {
     /// The format the mode draws its lines with, or nothing for a mode that
     /// has none of its own.
     pub default_format: Option<&'static ::core::ffi::CStr>,
-    pub init:
-        Option<unsafe fn(&mut window_mode_entry, *mut cmd_find_state, *mut args) -> *mut screen>,
+    pub init: Option<
+        unsafe fn(&mut window_mode_entry, *mut cmd_find_state, Option<&args>) -> *mut screen,
+    >,
     pub free: Option<unsafe fn(&mut window_mode_entry) -> ()>,
     pub resize: Option<unsafe fn(&mut window_mode_entry, u_int, u_int) -> ()>,
     pub update: Option<unsafe fn(&mut window_mode_entry) -> ()>,
@@ -1760,8 +1827,8 @@ pub struct window_mode {
             *mut client,
             *mut session,
             *mut winlink,
-            *mut args,
-            *mut mouse_event,
+            &args,
+            Option<&mut mouse_event>,
         ) -> (),
     >,
     pub formats: Option<unsafe fn(&mut window_mode_entry, &mut format_tree) -> ()>,
@@ -2001,6 +2068,11 @@ impl client_file {
             .as_ref()
             .map_or(::core::ptr::null_mut(), ClientRef::as_ptr)
     }
+
+    /// The path the file was opened on.
+    pub(crate) fn path_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.path)
+    }
 }
 #[derive(Default)]
 #[repr(C)]
@@ -2009,7 +2081,7 @@ pub enum ClientFileData {
     None,
     LoadBuffer(Box<cmd_load_buffer_data>),
     LoadBufferView(*mut cmd_load_buffer_data),
-    SaveBuffer(*mut cmdq_item),
+    SaveBuffer(crate::cmd::CmdqItemWeak),
     SourceFile(SourceFileRef),
     PaneInput(PaneInputRef),
 }
@@ -2022,7 +2094,7 @@ impl ClientFileData {
                 as *const cmd_load_buffer_data
                 as *mut cmd_load_buffer_data),
             ClientFileData::LoadBufferView(data) => ClientFileData::LoadBufferView(*data),
-            ClientFileData::SaveBuffer(data) => ClientFileData::SaveBuffer(*data),
+            ClientFileData::SaveBuffer(data) => ClientFileData::SaveBuffer(data.clone()),
             ClientFileData::SourceFile(data) => ClientFileData::SourceFile(data.clone()),
             ClientFileData::PaneInput(data) => ClientFileData::PaneInput(data.clone()),
         }
@@ -2224,8 +2296,8 @@ pub struct tty {
     pub mouse_scrolling_flag: ::core::ffi::c_int,
     pub mouse_slider_mpos: ::core::ffi::c_int,
     pub mouse_last_pane: ::core::ffi::c_int,
-    pub mouse_drag_update: Option<unsafe fn(*mut client, *mut mouse_event) -> ()>,
-    pub mouse_drag_release: Option<unsafe fn(*mut client, *mut mouse_event) -> ()>,
+    pub mouse_drag_update: Option<unsafe fn(*mut client, &mouse_event) -> ()>,
+    pub mouse_drag_release: Option<unsafe fn(*mut client, &mouse_event) -> ()>,
     pub key_timer: TimerHandle,
     pub key_tree: Option<Box<tty_key>>,
 }
@@ -2290,6 +2362,12 @@ pub struct tty_term {
     pub acs: [[::core::ffi::c_char; 2]; 256],
     pub codes: Box<[TtyCode]>,
     pub flags: ::core::ffi::c_int,
+}
+impl tty_term {
+    /// The terminal type the entry describes.
+    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.name)
+    }
 }
 pub type winlinks = ::std::collections::BTreeMap<::core::ffi::c_int, ::std::boxed::Box<winlink>>;
 /// The modes a pane has open, the one it is showing first. A mode belongs to
@@ -2413,6 +2491,18 @@ impl OverlayState {
 }
 
 impl client {
+    /// The peer the client's messages travel over, or null for a client that
+    /// has none.
+    pub(crate) fn peer_ptr(&self) -> *mut tmuxpeer {
+        crate::proc::peer_ptr(&self.peer)
+    }
+
+    /// The environment the client was started with, or null for a client that
+    /// carries none.
+    pub(crate) fn environ_ptr(&self) -> *mut environ_t {
+        crate::environ::environ_ptr(&self.environ)
+    }
+
     /// The key table the client's next key is looked up in, or null before
     /// one has been given to it.
     pub(crate) fn keytable(&self) -> *mut key_table {
@@ -2485,6 +2575,61 @@ impl client {
     /// popup does once the menu it was carrying is gone.
     pub(crate) fn clear_overlay_view(&mut self) {
         self.overlay_data_view = None;
+    }
+
+    /// The name the client is filed under, which is the name of the terminal
+    /// it attached on unless it was given one of its own.
+    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.name)
+    }
+
+    /// The name of the terminal device the client attached on.
+    pub(crate) fn ttyname_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.ttyname)
+    }
+
+    /// The terminal type the client reported when it attached.
+    pub(crate) fn term_name_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.term_name)
+    }
+
+    /// The title the client's terminal was last set to.
+    pub(crate) fn title_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.title)
+    }
+
+    /// The working directory the client's terminal was last told about, which
+    /// follows the active pane's.
+    pub(crate) fn path_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.path)
+    }
+
+    /// The directory the client started in.
+    pub(crate) fn cwd_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.cwd)
+    }
+
+    /// The session the client's exit message names, for a client leaving one
+    /// it was attached to.
+    pub(crate) fn exit_session_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.exit_session)
+    }
+
+    /// The message the client is showing on its status line, or null when it
+    /// is showing none.
+    pub(crate) fn message_string_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.message_string)
+    }
+
+    /// The text drawn ahead of the input the client's prompt is taking.
+    pub(crate) fn prompt_string_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.prompt_string)
+    }
+
+    /// The input the client's prompt last took, which an incremental prompt
+    /// puts back when its buffer empties.
+    pub(crate) fn prompt_last_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.prompt_last)
     }
 }
 

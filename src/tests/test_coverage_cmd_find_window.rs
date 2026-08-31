@@ -178,7 +178,7 @@ unsafe fn tree_mtd(wp: *mut window_pane) -> *mut mode_tree_data {
 /// The filter the tree mode opened on `wp` was given, read out of the mode's
 /// own copy.
 unsafe fn open_filter(wp: *mut window_pane) -> String {
-    unsafe { seen(cstr_ptr(&(*tree_mtd(wp)).filter)) }
+    unsafe { seen((*tree_mtd(wp)).filter_ptr()) }
 }
 
 /// How many top-level items the opened tree holds.

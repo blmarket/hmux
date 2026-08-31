@@ -258,7 +258,7 @@ fn a_tab_cell_stores_its_width_and_comes_back_as_spaces() {
     let _guard = globals();
     let g = Grid::new(10, 1, 0);
     let mut gc = ascii(b'\t');
-    unsafe { grid_set_tab(&raw mut gc, 4) };
+    unsafe { grid_set_tab(&mut gc, 4) };
     assert_eq!(gc.flags as c_int, GRID_FLAG_TAB);
     assert_eq!(gc.data.width, 4);
     assert_eq!(gc.data.size, 4);
@@ -277,7 +277,7 @@ fn setting_a_tab_clears_the_padding_flag() {
     let mut gc = ascii(b' ');
     gc.flags = GRID_FLAG_PADDING as u_char;
     gc.data.data[5] = b'z';
-    unsafe { grid_set_tab(&raw mut gc, 2) };
+    unsafe { grid_set_tab(&mut gc, 2) };
     assert_eq!(gc.flags as c_int, GRID_FLAG_TAB);
     assert_eq!(gc.data.data[5], 0, "the old data is wiped");
 }
@@ -321,7 +321,7 @@ fn cells_look_equal_when_their_style_matches() {
     let look = |change: &dyn Fn(&mut grid_cell)| {
         let mut two = ascii(b'a');
         change(&mut two);
-        unsafe { grid_cells_look_equal(&raw const one, &raw const two) }
+        unsafe { grid_cells_look_equal(&one, &two) }
     };
     assert_eq!(look(&|_| {}), 1);
     assert_eq!(look(&|gc| gc.data.data[0] = b'b'), 1, "text is not style");
@@ -343,7 +343,7 @@ fn cells_are_equal_when_their_style_and_text_match() {
     let equal = |change: &dyn Fn(&mut grid_cell)| {
         let mut two = ascii(b'a');
         change(&mut two);
-        unsafe { grid_cells_equal(&raw const one, &raw const two) }
+        unsafe { grid_cells_equal(&one, &two) }
     };
     assert_eq!(equal(&|_| {}), 1);
     assert_eq!(equal(&|gc| gc.fg = 1), 0);
@@ -1038,7 +1038,7 @@ impl Screen {
 
 impl Drop for Screen {
     fn drop(&mut self) {
-        unsafe { screen_free(&raw mut *self.0) };
+        unsafe { screen_free(&mut *self.0) };
     }
 }
 
@@ -1080,7 +1080,7 @@ fn a_tab_cell_renders_as_one_tab() {
     let _guard = globals();
     let g = Grid::new(10, 1, 0);
     let mut gc = ascii(b' ');
-    unsafe { grid_set_tab(&raw mut gc, 4) };
+    unsafe { grid_set_tab(&mut gc, 4) };
     unsafe { grid_set_cell(&mut *g.ptr(), 0, 0, &gc) };
     g.write(1, 0, "x");
     assert_eq!(g.text(0), "\tx");
@@ -1497,7 +1497,7 @@ fn a_tab_in_the_set_matches_the_rest_of_a_tab_cell() {
     let _guard = globals();
     let g = Grid::new(10, 1, 0);
     let mut gc = ascii(b' ');
-    unsafe { grid_set_tab(&raw mut gc, 4) };
+    unsafe { grid_set_tab(&mut gc, 4) };
     unsafe { grid_set_cell(&mut *g.ptr(), 0, 0, &gc) };
     for px in 1..4 {
         unsafe { grid_set_padding(&mut *g.ptr(), px, 0) };

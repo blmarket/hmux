@@ -455,7 +455,7 @@ pub unsafe fn style_tostring(sy: &style) -> ::std::ffi::CString {
 }
 
 pub unsafe fn style_add(
-    gc: *mut grid_cell,
+    gc: &mut grid_cell,
     oo: *mut options,
     name: *const c_char,
     ft: Option<&mut format_tree>,
@@ -471,7 +471,7 @@ pub unsafe fn style_add(
                 FORMAT_NOJOBS,
             )),
         };
-        let sy = options_string_to_style(oo, name, Some(&mut *ft));
+        let sy = options_string_to_style(oo, name, Some(ft));
         let sy: &style = if sy.is_null() { &style_default } else { &*sy };
         if sy.gc.fg != COLOUR_DEFAULT {
             (*gc).fg = sy.gc.fg;
@@ -487,7 +487,7 @@ pub unsafe fn style_add(
 }
 
 pub unsafe fn style_apply(
-    gc: *mut grid_cell,
+    gc: &mut grid_cell,
     oo: *mut options,
     name: *const c_char,
     ft: Option<&mut format_tree>,
@@ -539,24 +539,17 @@ pub unsafe fn style_ranges_init(srs: *mut style_ranges) {
 /// Lets go of every range on a list that is already live, leaving it empty and
 /// ready to be drawn into again. The list keeps no allocation afterwards, so a
 /// caller tearing its owner down can stop here.
-pub unsafe fn style_ranges_free(srs: *mut style_ranges) {
-    unsafe {
-        *srs = style_ranges::new();
-    }
+pub fn style_ranges_free(srs: &mut style_ranges) {
+    *srs = style_ranges::new();
 }
 
-pub unsafe fn style_ranges_get_range(srs: *mut style_ranges, x: u_int) -> *mut style_range {
-    unsafe {
-        if srs.is_null() {
-            return null_mut::<style_range>();
+pub fn style_ranges_get_range(srs: &mut style_ranges, x: u_int) -> *mut style_range {
+    for sr in srs.iter_mut() {
+        if x >= sr.start && x < sr.end {
+            return sr as *mut style_range;
         }
-        for sr in (*srs).iter_mut() {
-            if x >= sr.start && x < sr.end {
-                return sr as *mut style_range;
-            }
-        }
-        null_mut::<style_range>()
     }
+    null_mut::<style_range>()
 }
 
 #[cfg(test)]

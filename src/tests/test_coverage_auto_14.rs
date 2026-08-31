@@ -128,22 +128,22 @@ fn grid_cells_equal_and_look_equal_distinguish_style_vs_content() {
     let mut gc1 = ascii(b'A');
     let mut gc2 = ascii(b'A');
     unsafe {
-        assert_ne!(grid_cells_equal(&raw const gc1, &raw const gc2), 0);
-        assert_ne!(grid_cells_look_equal(&raw const gc1, &raw const gc2), 0);
+        assert_ne!(grid_cells_equal(&gc1, &gc2), 0);
+        assert_ne!(grid_cells_look_equal(&gc1, &gc2), 0);
     }
     gc2.data.data[0] = b'B';
     unsafe {
-        assert_eq!(grid_cells_equal(&raw const gc1, &raw const gc2), 0);
+        assert_eq!(grid_cells_equal(&gc1, &gc2), 0);
         // look-equal still true when fg/bg/attr equal despite byte change?
         // look_equal ignores size/width/content width but does compare bytes? No,
         // look_equal only compares fg/bg/attr/flags/link — so it stays 1.
-        assert_ne!(grid_cells_look_equal(&raw const gc1, &raw const gc2), 0);
+        assert_ne!(grid_cells_look_equal(&gc1, &gc2), 0);
     }
     gc2 = ascii(b'A');
     gc2.fg = 1;
     unsafe {
-        assert_eq!(grid_cells_look_equal(&raw const gc1, &raw const gc2), 0);
-        assert_eq!(grid_cells_equal(&raw const gc1, &raw const gc2), 0);
+        assert_eq!(grid_cells_look_equal(&gc1, &gc2), 0);
+        assert_eq!(grid_cells_equal(&gc1, &gc2), 0);
     }
 }
 

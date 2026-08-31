@@ -2,7 +2,7 @@ use crate::ffi::{__errno_location, close, dup, open, strcmp, strncmp};
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_buf};
 use crate::log::{fatalx, log_debug};
-use crate::proc::{peer_ptr, proc_send};
+use crate::proc::proc_send;
 use crate::reactor;
 use crate::reactor::{Interest, Reactor};
 use crate::server::{client_ref_from_ptr, server_client_get_cwd};
@@ -238,7 +238,7 @@ pub(crate) unsafe fn file_create_with_client(
         let peer = if c.is_null() {
             ::core::ptr::null_mut()
         } else {
-            peer_ptr(&(*c).peer)
+            (*c).peer_ptr()
         };
         let client_ref = client_ref_from_ptr(c);
         let tree = match client_ref.as_ref() {
@@ -289,7 +289,7 @@ pub(crate) unsafe fn file_fire_done(cf: ClientFileRef) {
             if call_callback {
                 (*cf_ptr).cb.expect("non-null function pointer")(
                     c,
-                    cstr_ptr(&(*cf_ptr).path),
+                    (*cf_ptr).path_ptr(),
                     (*cf_ptr).error,
                     1 as ::core::ffi::c_int,
                     &raw mut *(*cf_ptr).buffer,
@@ -321,7 +321,7 @@ pub(crate) unsafe fn file_fire_read(cf: &ClientFileRef) {
         if (*cf).cb.is_some() {
             (*cf).cb.expect("non-null function pointer")(
                 (*cf).client(),
-                cstr_ptr(&(*cf).path),
+                (*cf).path_ptr(),
                 (*cf).error,
                 0 as ::core::ffi::c_int,
                 &raw mut *(*cf).buffer,
@@ -374,7 +374,7 @@ pub(crate) unsafe fn file_vprint(
             msg.fd = STDOUT_FILENO;
             msg.flags = 0 as ::core::ffi::c_int;
             proc_send(
-                peer_ptr(&(*c).peer),
+                (*c).peer_ptr(),
                 MSG_WRITE_OPEN,
                 -(1 as ::core::ffi::c_int),
                 &raw mut msg as *const u8,
@@ -403,7 +403,7 @@ pub(crate) unsafe fn file_print_buffer(mut c: *mut client, data: &[u8]) {
             msg.fd = STDOUT_FILENO;
             msg.flags = 0 as ::core::ffi::c_int;
             proc_send(
-                peer_ptr(&(*c).peer),
+                (*c).peer_ptr(),
                 MSG_WRITE_OPEN,
                 -(1 as ::core::ffi::c_int),
                 &raw mut msg as *const u8,
@@ -436,7 +436,7 @@ pub(crate) unsafe fn file_error(
             msg.fd = STDERR_FILENO;
             msg.flags = 0 as ::core::ffi::c_int;
             proc_send(
-                peer_ptr(&(*c).peer),
+                (*c).peer_ptr(),
                 MSG_WRITE_OPEN,
                 -(1 as ::core::ffi::c_int),
                 &raw mut msg as *const u8,

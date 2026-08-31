@@ -6,7 +6,7 @@ use crate::cmd::cmd_get_args;
 use crate::cmd::queue::{
     CmdqItemWeak, cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command,
     cmdq_get_state_ref, cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
-    cmdq_item_weak_from_ptr,
+    cmdq_item_ref_of, cmdq_item_weak_from_ptr,
 };
 use crate::environ::environ_t;
 use crate::ffi::__ctype_toupper_loc;
@@ -220,9 +220,10 @@ unsafe fn cmd_if_shell_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd_r
             let Some(cmdlist) = cmdlist.as_ref() else {
                 return CMD_RETURN_ERROR;
             };
+            let item = cmdq_item_ref_of(item);
             cmdq_insert_after(
-                item,
-                cmdq_get_command(cmdlist, Some(cmdq_get_state_ref(item))),
+                &item,
+                cmdq_get_command(cmdlist, Some(cmdq_get_state_ref(&item))),
             );
             return CMD_RETURN_NORMAL;
         }
@@ -327,18 +328,15 @@ pub unsafe fn cmd_if_shell_callback(mut job: *mut job) {
                 }
             } else if let Some(item) = &item {
                 cmdq_insert_after(
-                    item.as_ptr(),
-                    cmdq_get_command(
-                        cmdlist.as_ref().unwrap(),
-                        Some(cmdq_get_state_ref(item.as_ptr())),
-                    ),
+                    item,
+                    cmdq_get_command(cmdlist.as_ref().unwrap(), Some(cmdq_get_state_ref(item))),
                 );
             } else {
                 cmdq_append(c, cmdq_get_command(cmdlist.as_ref().unwrap(), None));
             }
         }
         if let Some(item) = &item {
-            cmdq_continue(item.as_ptr());
+            cmdq_continue(item);
         }
     }
 }

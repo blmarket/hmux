@@ -86,7 +86,7 @@ impl Parser {
         window.add_pane(&mut pane);
         let wp = pane.ptr();
         let ictx = unsafe {
-            colour_palette_init(&raw mut (*wp).palette);
+            colour_palette_init(&mut (*wp).palette);
             (*wp).ictx = Some(input_init(
                 crate::input::InputOwner::Pane((*wp).id),
                 bev.as_ref().map_or(Stream::NONE, |b| b.ptr()),
@@ -128,14 +128,14 @@ impl Parser {
 
     fn title(&mut self) -> String {
         unsafe {
-            CStr::from_ptr(cstr_ptr(&(*self.s()).title))
+            CStr::from_ptr((*self.s()).title_ptr())
                 .to_string_lossy()
                 .into_owned()
         }
     }
 
     fn lines(&mut self) -> Vec<String> {
-        let gd = unsafe { screen_grid_ptr(self.s()) };
+        let gd = unsafe { screen_grid_ptr(&mut *self.s()) };
         unsafe {
             (0..(*gd).sy)
                 .map(|y| {
@@ -148,7 +148,7 @@ impl Parser {
     }
 
     fn cell(&mut self, px: u_int, py: u_int) -> grid_cell {
-        let gd = unsafe { screen_grid_ptr(self.s()) };
+        let gd = unsafe { screen_grid_ptr(&mut *self.s()) };
         let mut gc = unsafe { grid_default_cell };
         unsafe { gc = grid_get_cell(&*gd, px, py) };
         gc
@@ -173,7 +173,7 @@ impl Drop for Parser {
             if let Some(ictx) = (*self.wp()).ictx.take() {
                 crate::input::input_free_box(ictx);
             }
-            colour_palette_free(&raw mut (*self.wp()).palette);
+            colour_palette_free(Some(&mut (*self.wp()).palette));
         }
     }
 }
@@ -238,9 +238,9 @@ fn linefeeds_eventually_scroll_lines_into_history() {
     for i in 0..23 {
         p.feed_str(&format!("{i}\r\n"));
     }
-    assert_eq!(unsafe { (*screen_grid_ptr(p.s())).hsize }, 0);
+    assert_eq!(unsafe { (*screen_grid_ptr(&mut *p.s())).hsize }, 0);
     p.feed_str("23\n");
-    assert_eq!(unsafe { (*screen_grid_ptr(p.s())).hsize }, 1);
+    assert_eq!(unsafe { (*screen_grid_ptr(&mut *p.s())).hsize }, 1);
     assert_eq!(p.lines()[0], "1");
     assert_eq!(p.lines()[21], "22");
     assert_eq!(p.lines()[22], "23");
@@ -384,7 +384,7 @@ fn erase_display_and_erase_line_cover_every_variant() {
     p.feed_str("\x1b[J");
     assert_eq!(p.lines()[0], "zzzz");
     p.feed_str("\x1b[3J");
-    assert_eq!(unsafe { (*screen_grid_ptr(p.s())).hsize }, 0);
+    assert_eq!(unsafe { (*screen_grid_ptr(&mut *p.s())).hsize }, 0);
 }
 
 #[test]
@@ -613,7 +613,7 @@ fn osc_palette_entries_are_settable_queryable_and_resettable() {
     let red = unsafe { colour_parseX11(c"red".as_ptr()) };
     p.feed_str("\x1b]4;1;red\x07");
     assert_eq!(
-        unsafe { colour_palette_get(&raw mut (*p.wp()).palette, COLOUR_FLAG_256 | 1) },
+        unsafe { colour_palette_get(Some(&(*p.wp()).palette), COLOUR_FLAG_256 | 1) },
         red
     );
     p.feed_str("\x1b]4;1;?\x1b\\");
@@ -622,7 +622,7 @@ fn osc_palette_entries_are_settable_queryable_and_resettable() {
     assert_eq!(p.replies(), b"");
     p.feed_str("\x1b]104;1\x07");
     assert_eq!(
-        unsafe { colour_palette_get(&raw mut (*p.wp()).palette, COLOUR_FLAG_256 | 1) },
+        unsafe { colour_palette_get(Some(&(*p.wp()).palette), COLOUR_FLAG_256 | 1) },
         -1
     );
 }

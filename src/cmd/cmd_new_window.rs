@@ -106,7 +106,7 @@ fn empty_spawn_context<'a>() -> spawn_context<'a> {
 
 /// The winlinks of `s`, in index order.
 unsafe fn winlinks_of(s: *mut session) -> impl Iterator<Item = *mut winlink> {
-    let mut wl = unsafe { winlinks_first(&raw mut (*s).windows) };
+    let mut wl = unsafe { winlinks_first(&mut (*s).windows) };
     ::core::iter::from_fn(move || {
         let this = wl;
         if this.is_null() {

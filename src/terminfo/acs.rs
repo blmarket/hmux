@@ -390,13 +390,13 @@ pub fn tty_acs_rounded_borders(cell_type: c_int) -> &'static utf8_data {
 /// A `U8` capability of zero marks a terminal that cannot do UTF-8 and ACS
 /// together, which is how a user turns UTF-8 line drawing off; otherwise the
 /// client's own UTF-8 flag decides.
-pub unsafe fn tty_acs_needed(tty: *mut tty) -> c_int {
+pub unsafe fn tty_acs_needed(tty: Option<&tty>) -> c_int {
     unsafe {
-        if tty.is_null() {
+        let Some(tty) = tty else {
             return 0;
-        }
-        if tty_term_has(tty_term_of(&*tty), TTYC_U8) != 0
-            && tty_term_number(tty_term_of(&*tty), TTYC_U8) == 0
+        };
+        if tty_term_has(tty_term_of(tty), TTYC_U8) != 0
+            && tty_term_number(tty_term_of(tty), TTYC_U8) == 0
         {
             return 1;
         }
@@ -414,10 +414,12 @@ pub unsafe fn tty_acs_needed(tty: *mut tty) -> c_int {
 /// The terminal's own translation borrows from `tty`, so the answer lives only
 /// as long as the caller keeps that terminal; the module's own table is
 /// `'static`.
-pub unsafe fn tty_acs_get<'a>(tty: *mut tty, ch: u_char) -> Option<&'a CStr> {
+pub unsafe fn tty_acs_get<'a>(tty: Option<&tty>, ch: u_char) -> Option<&'a CStr> {
     unsafe {
-        if tty_acs_needed(tty) != 0 {
-            let acs = &tty_term_of(&*tty).acs[ch as usize];
+        if let Some(tty) = tty
+            && tty_acs_needed(Some(tty)) != 0
+        {
+            let acs = &tty_term_of(tty).acs[ch as usize];
             if acs[0] == 0 {
                 return None;
             }

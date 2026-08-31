@@ -1031,103 +1031,89 @@ pub unsafe fn colour_parseX11(p: *const ::core::ffi::c_char) -> ::core::ffi::c_i
     }
 }
 
-pub unsafe fn colour_palette_init(p: *mut colour_palette) {
-    unsafe {
-        (*p).fg = 8;
-        (*p).bg = 8;
-        (*p).palette = None;
-        (*p).default_palette = None;
+pub fn colour_palette_init(p: &mut colour_palette) {
+    p.fg = 8;
+    p.bg = 8;
+    p.palette = None;
+    p.default_palette = None;
+}
+
+pub fn colour_palette_clear(p: Option<&mut colour_palette>) {
+    if let Some(p) = p {
+        p.fg = 8;
+        p.bg = 8;
+        p.palette = None;
     }
 }
 
-pub unsafe fn colour_palette_clear(p: *mut colour_palette) {
-    unsafe {
-        if !p.is_null() {
-            (*p).fg = 8;
-            (*p).bg = 8;
-            (*p).palette = None;
-        }
+pub fn colour_palette_free(p: Option<&mut colour_palette>) {
+    if let Some(p) = p {
+        p.palette = None;
+        p.default_palette = None;
     }
 }
 
-pub unsafe fn colour_palette_free(p: *mut colour_palette) {
-    unsafe {
-        if !p.is_null() {
-            (*p).palette = None;
-            (*p).default_palette = None;
-        }
+pub fn colour_palette_get(p: Option<&colour_palette>, n: ::core::ffi::c_int) -> ::core::ffi::c_int {
+    let Some(p) = p else {
+        return -1;
+    };
+    let n = if (90..=97).contains(&n) {
+        8 + n - 90
+    } else if n & COLOUR_FLAG_256 != 0 {
+        n & !COLOUR_FLAG_256
+    } else if n >= 8 {
+        return -1;
+    } else {
+        n
+    } as usize;
+    if n >= 256 {
+        return -1;
     }
+    if let Some(ref pal) = p.palette
+        && pal[n] != -1
+    {
+        return pal[n];
+    }
+    if let Some(ref def) = p.default_palette
+        && def[n] != -1
+    {
+        return def[n];
+    }
+    -1
 }
 
-pub unsafe fn colour_palette_get(
-    p: *mut colour_palette,
-    n: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    unsafe {
-        if p.is_null() {
-            return -1;
-        }
-        let n = if (90..=97).contains(&n) {
-            8 + n - 90
-        } else if n & COLOUR_FLAG_256 != 0 {
-            n & !COLOUR_FLAG_256
-        } else if n >= 8 {
-            return -1;
-        } else {
-            n
-        } as usize;
-        if n >= 256 {
-            return -1;
-        }
-        if let Some(ref pal) = (*p).palette
-            && pal[n] != -1
-        {
-            return pal[n];
-        }
-        if let Some(ref def) = (*p).default_palette
-            && def[n] != -1
-        {
-            return def[n];
-        }
-        -1
-    }
-}
-
-pub unsafe fn colour_palette_set(
-    p: *mut colour_palette,
+pub fn colour_palette_set(
+    p: Option<&mut colour_palette>,
     n: ::core::ffi::c_int,
     c: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    unsafe {
-        if p.is_null() || !(0..=255).contains(&n) {
-            return 0;
-        }
-        if c == -1 && (*p).palette.is_none() {
-            return 0;
-        }
-        let pal = (*p).palette.get_or_insert_with(|| Box::new([-1; 256]));
-        pal[n as usize] = c;
-        1
+    let Some(p) = p else {
+        return 0;
+    };
+    if !(0..=255).contains(&n) {
+        return 0;
     }
+    if c == -1 && p.palette.is_none() {
+        return 0;
+    }
+    let pal = p.palette.get_or_insert_with(|| Box::new([-1; 256]));
+    pal[n as usize] = c;
+    1
 }
 
 /// Points the palette's default table at `defaults`, or drops the table when
 /// the caller has none to give.
-pub unsafe fn colour_palette_from_defaults(
-    p: *mut colour_palette,
+pub fn colour_palette_from_defaults(
+    p: Option<&mut colour_palette>,
     defaults: Option<&[::core::ffi::c_int; 256]>,
 ) {
-    unsafe {
-        if p.is_null() {
-            return;
-        }
-        match defaults {
-            None => (*p).default_palette = None,
-            Some(defaults) => {
-                **(*p)
-                    .default_palette
-                    .get_or_insert_with(|| Box::new([-1; 256])) = *defaults;
-            }
+    let Some(p) = p else {
+        return;
+    };
+    match defaults {
+        None => p.default_palette = None,
+        Some(defaults) => {
+            **p.default_palette.get_or_insert_with(|| Box::new([-1; 256])) = *defaults;
         }
     }
 }

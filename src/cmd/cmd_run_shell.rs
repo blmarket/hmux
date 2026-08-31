@@ -161,6 +161,11 @@ impl cmd_run_shell_data {
             .as_ref()
             .map_or(::core::ptr::null_mut(), SessionRef::as_ptr)
     }
+
+    /// The shell command the run is waiting on.
+    pub(crate) fn cmd_ptr(&self) -> *mut ::core::ffi::c_char {
+        cstr_ptr(&self.cmd)
+    }
 }
 
 impl Drop for cmd_run_shell_data {
@@ -260,7 +265,7 @@ unsafe fn cmd_run_shell_print(mut job: *mut job, mut msg: *const ::core::ffi::c_
                 ::core::ptr::null_mut::<window_pane>(),
                 WindowMode::View,
                 ::core::ptr::null_mut::<cmd_find_state>(),
-                ::core::ptr::null_mut::<args>(),
+                None,
             );
         }
         window_copy_add(wp, 1 as ::core::ffi::c_int, c"%s".as_ptr(), fmt_args![msg]);
@@ -384,7 +389,7 @@ unsafe fn cmd_run_shell_timer(data: *mut cmd_run_shell_data) {
         if cdata.state.is_none() {
             if cmd.is_null() {
                 if let Some(item) = &item {
-                    cmdq_continue(item.as_ptr());
+                    cmdq_continue(item);
                 }
                 return;
             }
@@ -413,7 +418,7 @@ unsafe fn cmd_run_shell_timer(data: *mut cmd_run_shell_data) {
                         c"failed to run command: %s".as_ptr(),
                         fmt_args![cmd_for_error.as_deref()],
                     );
-                    cmdq_continue(item.as_ptr());
+                    cmdq_continue(item);
                 } else {
                     status_message_set(
                         c,
@@ -450,17 +455,14 @@ unsafe fn cmd_run_shell_timer(data: *mut cmd_run_shell_data) {
             }
         } else if let Some(item) = &item {
             cmdq_insert_after(
-                item.as_ptr(),
-                cmdq_get_command(
-                    cmdlist.as_ref().unwrap(),
-                    Some(cmdq_get_state_ref(item.as_ptr())),
-                ),
+                item,
+                cmdq_get_command(cmdlist.as_ref().unwrap(), Some(cmdq_get_state_ref(item))),
             );
         } else {
             cmdq_append(c, cmdq_get_command(cmdlist.as_ref().unwrap(), None));
         }
         if let Some(item) = &item {
-            cmdq_continue(item.as_ptr());
+            cmdq_continue(item);
         }
     }
 }
@@ -482,7 +484,7 @@ unsafe fn cmd_run_shell_callback(mut job: *mut job) {
         };
         let mut event: Stream = job_get_event(job);
         let item = (*cdata).item.as_ref().and_then(CmdqItemWeak::upgrade);
-        let mut cmd: *mut ::core::ffi::c_char = cstr_ptr(&(*cdata).cmd);
+        let mut cmd: *mut ::core::ffi::c_char = (*cdata).cmd_ptr();
         let mut msg: Option<::std::ffi::CString> = None;
         let mut retcode: ::core::ffi::c_int = 0;
         let mut status: ::core::ffi::c_int = 0;
@@ -533,7 +535,7 @@ unsafe fn cmd_run_shell_callback(mut job: *mut job) {
             if !asked.is_null() && (*asked).session.is_null() {
                 (*asked).retval = retcode;
             }
-            cmdq_continue(item.as_ptr());
+            cmdq_continue(item);
         }
     }
 }

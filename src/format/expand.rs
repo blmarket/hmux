@@ -36,7 +36,7 @@ use crate::osdep_linux::{osdep_get_cwd, osdep_get_name};
 use crate::paste::{
     paste_buffer_created, paste_buffer_data, paste_buffer_name, paste_get_top, paste_make_sample,
 };
-use crate::proc::{peer_ptr, proc_get_peer_uid};
+use crate::proc::proc_get_peer_uid;
 use crate::regsub::regsub;
 use crate::screen::screen_grid;
 use crate::screen::screen_grid_ptr;
@@ -923,7 +923,7 @@ unsafe fn format_cb_session_alert(ft: &format_tree) -> Option<CString> {
         if s.is_null() {
             return None;
         }
-        wl = winlinks_first(&raw mut (*s).windows);
+        wl = winlinks_first(&mut (*s).windows);
         while !wl.is_null() {
             if !((*wl).flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
                 if !alerted & (*wl).flags & WINLINK_ACTIVITY != 0 {
@@ -952,7 +952,7 @@ unsafe fn format_cb_session_alerts(ft: &format_tree) -> Option<CString> {
         if s.is_null() {
             return None;
         }
-        wl = winlinks_first(&raw mut (*s).windows);
+        wl = winlinks_first(&mut (*s).windows);
         while !wl.is_null() {
             if !((*wl).flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
                 if !alerts.is_empty() {
@@ -1207,7 +1207,7 @@ unsafe fn format_cb_history_bytes(ft: &format_tree) -> Option<CString> {
         if wp.is_null() {
             return None;
         }
-        gd = screen_grid_ptr(&raw mut (*wp).base);
+        gd = screen_grid_ptr(&mut (*wp).base);
         i = 0 as u_int;
         while i < (*gd).hsize.wrapping_add((*gd).sy) {
             gl = grid_get_line(&mut *gd, i);
@@ -1242,7 +1242,7 @@ unsafe fn format_cb_history_all_bytes(ft: &format_tree) -> Option<CString> {
         if wp.is_null() {
             return None;
         }
-        gd = screen_grid_ptr(&raw mut (*wp).base);
+        gd = screen_grid_ptr(&mut (*wp).base);
         lines = (*gd).hsize.wrapping_add((*gd).sy);
         i = 0 as u_int;
         while i < lines {
@@ -1275,7 +1275,7 @@ unsafe fn format_cb_pane_tabs(ft: &format_tree) -> Option<CString> {
         }
         i = 0 as u_int;
         let tabs = &(*wp).base.tabs;
-        while i < (*screen_grid_ptr(&raw mut (*wp).base)).sx {
+        while i < (*screen_grid_ptr(&mut (*wp).base)).sx {
             if !(tabs[(i >> 3 as ::core::ffi::c_int) as usize] as ::core::ffi::c_int
                 & (1 as ::core::ffi::c_int) << (i & 0x7 as u_int)
                 == 0)
@@ -1297,7 +1297,7 @@ unsafe fn format_cb_pane_fg(ft: &format_tree) -> Option<CString> {
         if wp.is_null() {
             return None;
         }
-        tty_default_colours(&raw mut gc, wp);
+        tty_default_colours(&mut gc, wp);
         Some(colour_tostring(gc.fg))
     }
 }
@@ -1328,7 +1328,7 @@ unsafe fn format_cb_pane_bg(ft: &format_tree) -> Option<CString> {
         if wp.is_null() {
             return None;
         }
-        tty_default_colours(&raw mut gc, wp);
+        tty_default_colours(&mut gc, wp);
         Some(colour_tostring(gc.bg))
     }
 }
@@ -1483,11 +1483,10 @@ unsafe fn format_cb_mouse_word(ft: &format_tree) -> Option<CString> {
         if ft.m.valid == 0 {
             return None;
         }
-        let mut m = ft.m;
-        let Some((_, _, wp)) = cmd_mouse_pane(&raw mut m) else {
+        let Some((_, _, wp)) = cmd_mouse_pane(&ft.m) else {
             return None;
         };
-        if match cmd_mouse_at(wp, &raw mut m, 0 as ::core::ffi::c_int) {
+        if match cmd_mouse_at(wp, &ft.m, 0 as ::core::ffi::c_int) {
             Some((at_x, at_y)) => {
                 (x, y) = (at_x, at_y);
                 false
@@ -1502,7 +1501,7 @@ unsafe fn format_cb_mouse_word(ft: &format_tree) -> Option<CString> {
             }
             return None;
         }
-        gd = screen_grid_ptr(&raw mut (*wp).base);
+        gd = screen_grid_ptr(&mut (*wp).base);
         format_grid_word(gd, x, (*gd).hsize.wrapping_add(y))
     }
 }
@@ -1514,11 +1513,10 @@ unsafe fn format_cb_mouse_hyperlink(ft: &format_tree) -> Option<CString> {
         if ft.m.valid == 0 {
             return None;
         }
-        let mut m = ft.m;
-        let Some((_, _, wp)) = cmd_mouse_pane(&raw mut m) else {
+        let Some((_, _, wp)) = cmd_mouse_pane(&ft.m) else {
             return None;
         };
-        if match cmd_mouse_at(wp, &raw mut m, 0 as ::core::ffi::c_int) {
+        if match cmd_mouse_at(wp, &ft.m, 0 as ::core::ffi::c_int) {
             Some((at_x, at_y)) => {
                 (x, y) = (at_x, at_y);
                 false
@@ -1533,7 +1531,7 @@ unsafe fn format_cb_mouse_hyperlink(ft: &format_tree) -> Option<CString> {
             }
             return None;
         }
-        gd = screen_grid_ptr(&raw mut (*wp).base);
+        gd = screen_grid_ptr(&mut (*wp).base);
         format_grid_hyperlink(gd, x, (*gd).hsize.wrapping_add(y), (*wp).screen())
     }
 }
@@ -1544,11 +1542,10 @@ unsafe fn format_cb_mouse_line(ft: &format_tree) -> Option<CString> {
         if ft.m.valid == 0 {
             return None;
         }
-        let mut m = ft.m;
-        let Some((_, _, wp)) = cmd_mouse_pane(&raw mut m) else {
+        let Some((_, _, wp)) = cmd_mouse_pane(&ft.m) else {
             return None;
         };
-        if match cmd_mouse_at(wp, &raw mut m, 0 as ::core::ffi::c_int) {
+        if match cmd_mouse_at(wp, &ft.m, 0 as ::core::ffi::c_int) {
             Some((at_x, at_y)) => {
                 (_, y) = (at_x, at_y);
                 false
@@ -1563,7 +1560,7 @@ unsafe fn format_cb_mouse_line(ft: &format_tree) -> Option<CString> {
             }
             return None;
         }
-        gd = screen_grid_ptr(&raw mut (*wp).base);
+        gd = screen_grid_ptr(&mut (*wp).base);
         Some(format_grid_line(gd, (*gd).hsize.wrapping_add(y)))
     }
 }
@@ -1907,7 +1904,7 @@ unsafe fn format_cb_client_uid(ft: &format_tree) -> Option<CString> {
     unsafe {
         let mut uid: uid_t = 0;
         if !(*ft).drawn_client().is_null() {
-            uid = proc_get_peer_uid(peer_ptr(&(*(*ft).drawn_client()).peer));
+            uid = proc_get_peer_uid((*(*ft).drawn_client()).peer_ptr());
             if uid != -(1 as ::core::ffi::c_int) as uid_t {
                 return Some(format_printf(
                     c"%ld".as_ptr(),
@@ -1928,7 +1925,7 @@ unsafe fn format_cb_client_user(ft: &format_tree) -> Option<CString> {
                     (*(*ft).drawn_client()).user.as_deref().unwrap_or(c""),
                 ));
             }
-            uid = proc_get_peer_uid(peer_ptr(&(*(*ft).drawn_client()).peer));
+            uid = proc_get_peer_uid((*(*ft).drawn_client()).peer_ptr());
             if uid != -(1 as ::core::ffi::c_int) as uid_t && {
                 pw = getpwuid(uid as __uid_t);
                 !pw.is_null()
@@ -2084,7 +2081,7 @@ unsafe fn format_cb_history_limit(ft: &format_tree) -> Option<CString> {
         if !(*ft).pane().is_null() {
             return Some(format_printf(
                 c"%u".as_ptr(),
-                fmt_args![(*screen_grid_ptr(&raw mut (*(*ft).pane()).base)).hlimit],
+                fmt_args![(*screen_grid_ptr(&mut (*(*ft).pane()).base)).hlimit],
             ));
         }
         None
@@ -2095,7 +2092,7 @@ unsafe fn format_cb_history_size(ft: &format_tree) -> Option<CString> {
         if !(*ft).pane().is_null() {
             return Some(format_printf(
                 c"%u".as_ptr(),
-                fmt_args![(*screen_grid_ptr(&raw mut (*(*ft).pane()).base)).hsize],
+                fmt_args![(*screen_grid_ptr(&mut (*(*ft).pane()).base)).hsize],
             ));
         }
         None
@@ -2177,8 +2174,7 @@ unsafe fn format_cb_mouse_pane(ft: &format_tree) -> Option<CString> {
     unsafe {
         let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         if ft.m.valid != 0 {
-            let mut m = ft.m;
-            wp = cmd_mouse_pane(&raw mut m)
+            wp = cmd_mouse_pane(&ft.m)
                 .map_or(::core::ptr::null_mut::<window_pane>(), |(_, _, wp)| wp);
             if !wp.is_null() {
                 return Some(format_printf(c"%%%u".as_ptr(), fmt_args![(*wp).id]));
@@ -2228,11 +2224,9 @@ unsafe fn format_cb_mouse_x(ft: &format_tree) -> Option<CString> {
         if ft.m.valid == 0 {
             return None;
         }
-        let mut m = ft.m;
-        wp = cmd_mouse_pane(&raw mut m)
-            .map_or(::core::ptr::null_mut::<window_pane>(), |(_, _, wp)| wp);
+        wp = cmd_mouse_pane(&ft.m).map_or(::core::ptr::null_mut::<window_pane>(), |(_, _, wp)| wp);
         if !wp.is_null()
-            && match cmd_mouse_at(wp, &raw mut m, 0 as ::core::ffi::c_int) {
+            && match cmd_mouse_at(wp, &ft.m, 0 as ::core::ffi::c_int) {
                 Some((at_x, at_y)) => {
                     (x, _) = (at_x, at_y);
                     true
@@ -2260,11 +2254,9 @@ unsafe fn format_cb_mouse_y(ft: &format_tree) -> Option<CString> {
         if ft.m.valid == 0 {
             return None;
         }
-        let mut m = ft.m;
-        wp = cmd_mouse_pane(&raw mut m)
-            .map_or(::core::ptr::null_mut::<window_pane>(), |(_, _, wp)| wp);
+        wp = cmd_mouse_pane(&ft.m).map_or(::core::ptr::null_mut::<window_pane>(), |(_, _, wp)| wp);
         if !wp.is_null()
-            && match cmd_mouse_at(wp, &raw mut m, 0 as ::core::ffi::c_int) {
+            && match cmd_mouse_at(wp, &ft.m, 0 as ::core::ffi::c_int) {
                 Some((at_x, at_y)) => {
                     (_, y) = (at_x, at_y);
                     true
@@ -2798,7 +2790,7 @@ unsafe fn format_cb_session_activity_flag(ft: &format_tree) -> Option<CString> {
     unsafe {
         let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
         if !(*ft).session().is_null() {
-            wl = winlinks_first(&raw mut (*(*ft).session()).windows);
+            wl = winlinks_first(&mut (*(*ft).session()).windows);
             if !wl.is_null() {
                 if (*(*ft).winlink()).flags & WINLINK_ACTIVITY != 0 {
                     return Some(format_callback_copy(c"1"));
@@ -2813,7 +2805,7 @@ unsafe fn format_cb_session_bell_flag(ft: &format_tree) -> Option<CString> {
     unsafe {
         let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
         if !(*ft).session().is_null() {
-            wl = winlinks_first(&raw mut (*(*ft).session()).windows);
+            wl = winlinks_first(&mut (*(*ft).session()).windows);
             if !wl.is_null() {
                 if (*wl).flags & WINLINK_BELL != 0 {
                     return Some(format_callback_copy(c"1"));
@@ -2828,7 +2820,7 @@ unsafe fn format_cb_session_silence_flag(ft: &format_tree) -> Option<CString> {
     unsafe {
         let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
         if !(*ft).session().is_null() {
-            wl = winlinks_first(&raw mut (*(*ft).session()).windows);
+            wl = winlinks_first(&mut (*(*ft).session()).windows);
             if !wl.is_null() {
                 if (*(*ft).winlink()).flags & WINLINK_SILENCE != 0 {
                     return Some(format_callback_copy(c"1"));
@@ -2982,7 +2974,7 @@ unsafe fn format_cb_session_windows(ft: &format_tree) -> Option<CString> {
         if !(*ft).session().is_null() {
             return Some(format_printf(
                 c"%u".as_ptr(),
-                fmt_args![winlink_count(&raw mut (*(*ft).session()).windows)],
+                fmt_args![winlink_count(&(*(*ft).session()).windows)],
             ));
         }
         None
@@ -3012,7 +3004,7 @@ unsafe fn format_cb_last_window_index(ft: &format_tree) -> Option<CString> {
     unsafe {
         let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
         if !(*ft).session().is_null() {
-            wl = winlinks_last(&raw mut (*(*ft).session()).windows);
+            wl = winlinks_last(&mut (*(*ft).session()).windows);
             return Some(format_printf(c"%u".as_ptr(), fmt_args![(*wl).idx]));
         }
         None
@@ -3054,7 +3046,7 @@ unsafe fn format_cb_window_bell_flag(ft: &format_tree) -> Option<CString> {
 unsafe fn format_cb_window_bigger(ft: &format_tree) -> Option<CString> {
     unsafe {
         if !(*ft).drawn_client().is_null() {
-            let (window_bigger, ..) = tty_window_offset(&raw mut (*(*ft).drawn_client()).tty);
+            let (window_bigger, ..) = tty_window_offset(&(*(*ft).drawn_client()).tty);
             if window_bigger != 0 {
                 return Some(format_callback_copy(c"1"));
             }
@@ -3088,7 +3080,7 @@ unsafe fn format_cb_window_cell_width(ft: &format_tree) -> Option<CString> {
 unsafe fn format_cb_window_end_flag(ft: &format_tree) -> Option<CString> {
     unsafe {
         if !(*ft).winlink().is_null() {
-            if (*ft).winlink() == winlinks_last(&raw mut (*(*(*ft).winlink()).session()).windows) {
+            if (*ft).winlink() == winlinks_last(&mut (*(*(*ft).winlink()).session()).windows) {
                 return Some(format_callback_copy(c"1"));
             }
             return Some(format_callback_copy(c"0"));
@@ -3166,7 +3158,7 @@ unsafe fn format_cb_window_linked(ft: &format_tree) -> Option<CString> {
         if !(*ft).winlink().is_null() {
             for s_ref in session_owners() {
                 let s = s_ref.as_ptr();
-                wl = winlinks_first(&raw mut (*s).windows);
+                wl = winlinks_first(&mut (*s).windows);
                 while !wl.is_null() {
                     if (*wl).window() == (*(*ft).winlink()).window() {
                         if found != 0 {
@@ -3197,7 +3189,7 @@ unsafe fn format_cb_window_linked_sessions(ft: &format_tree) -> Option<CString> 
             s = group_walk(sg)
                 .next()
                 .unwrap_or(::core::ptr::null_mut::<session>());
-            if !s.is_null() && !winlink_find_by_window(&raw mut (*s).windows, w).is_null() {
+            if !s.is_null() && !winlink_find_by_window(&mut (*s).windows, w).is_null() {
                 n = n.wrapping_add(1);
             }
             sg = session_groups_after(sg);
@@ -3205,7 +3197,7 @@ unsafe fn format_cb_window_linked_sessions(ft: &format_tree) -> Option<CString> 
         for s_ref in session_owners() {
             let s = s_ref.as_ptr();
             if session_group_contains(s).is_null()
-                && !winlink_find_by_window(&raw mut (*s).windows, w).is_null()
+                && !winlink_find_by_window(&mut (*s).windows, w).is_null()
             {
                 n = n.wrapping_add(1);
             }
@@ -3238,7 +3230,7 @@ unsafe fn format_cb_window_name(ft: &format_tree) -> Option<CString> {
 unsafe fn format_cb_window_offset_x(ft: &format_tree) -> Option<CString> {
     unsafe {
         if !(*ft).drawn_client().is_null() {
-            let (window_bigger, ox, ..) = tty_window_offset(&raw mut (*(*ft).drawn_client()).tty);
+            let (window_bigger, ox, ..) = tty_window_offset(&(*(*ft).drawn_client()).tty);
             if window_bigger != 0 {
                 return Some(format_printf(c"%u".as_ptr(), fmt_args![ox]));
             }
@@ -3250,8 +3242,7 @@ unsafe fn format_cb_window_offset_x(ft: &format_tree) -> Option<CString> {
 unsafe fn format_cb_window_offset_y(ft: &format_tree) -> Option<CString> {
     unsafe {
         if !(*ft).drawn_client().is_null() {
-            let (window_bigger, _ox, oy, ..) =
-                tty_window_offset(&raw mut (*(*ft).drawn_client()).tty);
+            let (window_bigger, _ox, oy, ..) = tty_window_offset(&(*(*ft).drawn_client()).tty);
             if window_bigger != 0 {
                 return Some(format_printf(c"%u".as_ptr(), fmt_args![oy]));
             }
@@ -3296,7 +3287,7 @@ unsafe fn format_cb_window_silence_flag(ft: &format_tree) -> Option<CString> {
 unsafe fn format_cb_window_start_flag(ft: &format_tree) -> Option<CString> {
     unsafe {
         if !(*ft).winlink().is_null() {
-            if (*ft).winlink() == winlinks_first(&raw mut (*(*(*ft).winlink()).session()).windows) {
+            if (*ft).winlink() == winlinks_first(&mut (*(*(*ft).winlink()).session()).windows) {
                 return Some(format_callback_copy(c"1"));
             }
             return Some(format_callback_copy(c"0"));
@@ -4234,7 +4225,7 @@ pub unsafe fn format_merge(ft: &mut format_tree, from: &format_tree) {
             .filter_map(|(key, fe)| fe.value.clone().map(|value| (key.clone(), value)))
             .collect();
         for (key, value) in entries {
-            format_add(&mut *ft, &key, c"%s".as_ptr(), fmt_args![value.as_ptr()]);
+            format_add(ft, &key, c"%s".as_ptr(), fmt_args![value.as_ptr()]);
         }
     }
 }
@@ -4244,9 +4235,8 @@ pub unsafe fn format_get_pane(ft: &format_tree) -> *mut window_pane {
 unsafe fn format_create_add_item(ft: &mut format_tree, mut item: *mut cmdq_item) {
     unsafe {
         let mut event: *mut key_event = cmdq_get_event(item);
-        let mut m: *mut mouse_event = &raw mut (*event).m;
-        cmdq_merge_formats(item, &mut *ft);
-        ft.m = *m;
+        cmdq_merge_formats(item, ft);
+        ft.m = (*event).m;
     }
 }
 pub unsafe fn format_create(
@@ -4367,7 +4357,7 @@ pub unsafe fn format_add(
     args: &[FmtArg],
 ) {
     unsafe {
-        let fe = format_entry_for(&mut *ft, key);
+        let fe = format_entry_for(ft, key);
         (*fe).cb = None;
         (*fe).time = 0 as time_t;
         (*fe).value = Some(format_alloc(fmt, args));
@@ -4375,7 +4365,7 @@ pub unsafe fn format_add(
 }
 pub unsafe fn format_add_tv(ft: &mut format_tree, key: &CStr, mut tv: *mut timeval) {
     unsafe {
-        let fe = format_entry_for(&mut *ft, key);
+        let fe = format_entry_for(ft, key);
         (*fe).cb = None;
         (*fe).time = (*tv).tv_sec as time_t;
         (*fe).value = None;
@@ -4383,7 +4373,7 @@ pub unsafe fn format_add_tv(ft: &mut format_tree, key: &CStr, mut tv: *mut timev
 }
 pub unsafe fn format_add_cb(ft: &mut format_tree, key: &CStr, mut cb: format_entry_cb) {
     unsafe {
-        let fe = format_entry_for(&mut *ft, key);
+        let fe = format_entry_for(ft, key);
         (*fe).cb = cb;
         (*fe).time = 0 as time_t;
         (*fe).value = None;
@@ -4652,7 +4642,7 @@ unsafe fn format_check_time(es: &mut format_expand_state) -> ::core::ffi::c_int 
         }
         t = t.wrapping_sub(es.start_time);
         format_log1(
-            &mut *es,
+            es,
             c"format_check_time".as_ptr(),
             c"reached time limit (%llu)".as_ptr(),
             fmt_args![t as ::core::ffi::c_ulonglong],
@@ -4667,7 +4657,7 @@ unsafe fn format_unescape(es: &mut format_expand_state, s: &CStr) -> CString {
         let mut out = Vec::with_capacity(bytes.len());
         let mut i = 0;
         while i < bytes.len() {
-            if format_check_time(&mut *es) == 0 {
+            if format_check_time(es) == 0 {
                 return CString::default();
             }
             let next = bytes.get(i + 1).copied().unwrap_or(0);
@@ -4699,7 +4689,7 @@ unsafe fn format_strip(es: &mut format_expand_state, s: &CStr) -> CString {
         let mut out = Vec::with_capacity(bytes.len());
         let mut i = 0;
         while i < bytes.len() {
-            if format_check_time(&mut *es) == 0 {
+            if format_check_time(es) == 0 {
                 return CString::default();
             }
             let next = bytes.get(i + 1).copied().unwrap_or(0);
@@ -4781,7 +4771,7 @@ unsafe fn format_choose(
 ) -> Option<(CString, CString)> {
     unsafe {
         let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        cp = format_skip1(Some(&mut *es), s, c",");
+        cp = format_skip1(Some(es), s, c",");
         if cp.is_null() {
             return None;
         }
@@ -4792,8 +4782,8 @@ unsafe fn format_choose(
             ))
             .expect("format left operand has no NUL");
             let right0 = CStr::from_ptr(cp.offset(1)).to_owned();
-            let left = format_expand1(&mut *es, &left0);
-            let right = format_expand1(&mut *es, &right0);
+            let left = format_expand1(es, &left0);
+            let right = format_expand1(es, &right0);
             Some((left, right))
         } else {
             let left = CString::new(::core::slice::from_raw_parts(
@@ -4905,7 +4895,7 @@ unsafe fn format_build_modifiers(
                             == '-' as i32
                     {
                         end = format_skip1(
-                            Some(&mut *es),
+                            Some(es),
                             cp.offset(1 as ::core::ffi::c_int as isize),
                             c":;",
                         );
@@ -4917,7 +4907,7 @@ unsafe fn format_build_modifiers(
                             end.offset_from(cp.offset(1 as ::core::ffi::c_int as isize)) as usize,
                         ))
                         .expect("format modifier argument has no NUL");
-                        let expanded = format_expand1(&mut *es, &value);
+                        let expanded = format_expand1(es, &value);
                         argv.push(expanded);
                         format_add_modifier(&mut list, &raw mut c, 1 as size_t, argv);
                         cp = end;
@@ -4934,7 +4924,7 @@ unsafe fn format_build_modifiers(
                                 break;
                             } else {
                                 end = format_skip1(
-                                    Some(&mut *es),
+                                    Some(es),
                                     cp.offset(1 as ::core::ffi::c_int as isize),
                                     CStr::from_ptr(&raw const last as *const ::core::ffi::c_char),
                                 );
@@ -4947,7 +4937,7 @@ unsafe fn format_build_modifiers(
                                     end.offset_from(cp) as usize,
                                 ))
                                 .expect("format modifier argument has no NUL");
-                                let expanded = format_expand1(&mut *es, &value);
+                                let expanded = format_expand1(es, &value);
                                 argv.push(expanded);
                                 cp = end;
                                 if !(format_is_end(*cp.offset(0 as ::core::ffi::c_int as isize))
@@ -5045,7 +5035,7 @@ unsafe fn format_bool_op_1(
 ) -> CString {
     unsafe {
         let mut result: ::core::ffi::c_int = 0;
-        let expanded = format_expand1(&mut *es, fmt);
+        let expanded = format_expand1(es, fmt);
         result = format_true(Some(&expanded));
         if not != 0 {
             result = (result == 0) as ::core::ffi::c_int;
@@ -5078,7 +5068,7 @@ unsafe fn format_bool_op_n(
             (result == 0) as ::core::ffi::c_int
         } != 0
         {
-            cp2 = format_skip1(Some(&mut *es), cp1, c",");
+            cp2 = format_skip1(Some(es), cp1, c",");
             let raw = if cp2.is_null() {
                 CStr::from_ptr(cp1).to_owned()
             } else {
@@ -5086,9 +5076,9 @@ unsafe fn format_bool_op_n(
                 CString::new(::core::slice::from_raw_parts(cp1 as *const u8, len))
                     .expect("format operand has no NUL")
             };
-            let expanded = format_expand1(&mut *es, &raw);
+            let expanded = format_expand1(es, &raw);
             format_log1(
-                &mut *es,
+                es,
                 c"format_bool_op_n".as_ptr(),
                 c"operator %s has operand: %s".as_ptr(),
                 fmt_args![
@@ -5119,7 +5109,7 @@ unsafe fn format_bool_op_n(
 }
 unsafe fn format_session_name(es: &mut format_expand_state, fmt: &CStr) -> Option<CString> {
     unsafe {
-        let name = format_expand1(&mut *es, fmt);
+        let name = format_expand1(es, fmt);
         for s in session_owners() {
             if strcmp(session_name(s.as_ptr()), name.as_ptr()) == 0 as ::core::ffi::c_int {
                 return Some(c"1".to_owned());
@@ -5138,7 +5128,7 @@ unsafe fn format_loop_sessions(
         let mut c: *mut client = (*ft).client();
         let mut item: *mut cmdq_item = (*ft).item();
         let mut next = format_expand_state::default();
-        let (all, active) = format_choose(&mut *es, fmt.as_ptr(), 0 as ::core::ffi::c_int)
+        let (all, active) = format_choose(es, fmt.as_ptr(), 0 as ::core::ffi::c_int)
             .map(|(all, active)| (all, Some(active)))
             .unwrap_or_else(|| (fmt.to_owned(), None));
         let mut value = Vec::new();
@@ -5146,7 +5136,7 @@ unsafe fn format_loop_sessions(
         let n = l.len();
         for (i, &s) in l.iter().enumerate() {
             format_log1(
-                &mut *es,
+                es,
                 c"format_loop_sessions".as_ptr(),
                 c"session loop: $%u".as_ptr(),
                 fmt_args![session_id(s)],
@@ -5187,15 +5177,15 @@ unsafe fn format_window_name(es: &mut format_expand_state, fmt: &CStr) -> Option
         let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
         if (*ft).session().is_null() {
             format_log1(
-                &mut *es,
+                es,
                 c"format_window_name".as_ptr(),
                 c"window name but no session".as_ptr(),
                 fmt_args![],
             );
             return None;
         }
-        let name = format_expand1(&mut *es, fmt);
-        wl = winlinks_first(&raw mut (*(*ft).session()).windows);
+        let name = format_expand1(es, fmt);
+        wl = winlinks_first(&mut (*(*ft).session()).windows);
         while !wl.is_null() {
             if (*(*wl).window()).name.as_deref() == Some(name.as_c_str()) {
                 return Some(c"1".to_owned());
@@ -5216,10 +5206,10 @@ unsafe fn format_add_window_neighbor(
         let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
         let mut oname: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let key = xasprintf(c"%s_window_index".as_ptr(), fmt_args![prefix]);
-        format_add(&mut *nft, &key, c"%u".as_ptr(), fmt_args![(*wl).idx]);
+        format_add(nft, &key, c"%u".as_ptr(), fmt_args![(*wl).idx]);
         let key = xasprintf(c"%s_window_active".as_ptr(), fmt_args![prefix]);
         format_add(
-            &mut *nft,
+            nft,
             &key,
             c"%d".as_ptr(),
             fmt_args![(wl == session_get_curw(s)) as ::core::ffi::c_int],
@@ -5231,12 +5221,7 @@ unsafe fn format_add_window_neighbor(
                 let prefixed = xasprintf(c"%s_%s".as_ptr(), fmt_args![prefix, oname]);
                 let oval =
                     options_to_string(o, -(1 as ::core::ffi::c_int), 1 as ::core::ffi::c_int);
-                format_add(
-                    &mut *nft,
-                    &prefixed,
-                    c"%s".as_ptr(),
-                    fmt_args![oval.as_ptr()],
-                );
+                format_add(nft, &prefixed, c"%s".as_ptr(), fmt_args![oval.as_ptr()]);
             }
             o = options_next(o);
         }
@@ -5254,14 +5239,14 @@ unsafe fn format_loop_windows(
         let mut next = format_expand_state::default();
         if (*ft).session().is_null() {
             format_log1(
-                &mut *es,
+                es,
                 c"format_loop_windows".as_ptr(),
                 c"window loop but no session".as_ptr(),
                 fmt_args![],
             );
             return None;
         }
-        let (all, active) = format_choose(&mut *es, fmt.as_ptr(), 0 as ::core::ffi::c_int)
+        let (all, active) = format_choose(es, fmt.as_ptr(), 0 as ::core::ffi::c_int)
             .map(|(all, active)| (all, Some(active)))
             .unwrap_or_else(|| (fmt.to_owned(), None));
         let mut value = Vec::new();
@@ -5270,7 +5255,7 @@ unsafe fn format_loop_windows(
         for (i, &wl) in l.iter().enumerate() {
             let w = (*wl).window();
             format_log1(
-                &mut *es,
+                es,
                 c"format_loop_windows".as_ptr(),
                 c"window loop: %u @%u".as_ptr(),
                 fmt_args![(*wl).idx, (*w).id],
@@ -5342,14 +5327,14 @@ unsafe fn format_loop_panes(
         let mut next = format_expand_state::default();
         if (*ft).window().is_null() {
             format_log1(
-                &mut *es,
+                es,
                 c"format_loop_panes".as_ptr(),
                 c"pane loop but no window".as_ptr(),
                 fmt_args![],
             );
             return None;
         }
-        let (all, active) = format_choose(&mut *es, fmt.as_ptr(), 0 as ::core::ffi::c_int)
+        let (all, active) = format_choose(es, fmt.as_ptr(), 0 as ::core::ffi::c_int)
             .map(|(all, active)| (all, Some(active)))
             .unwrap_or_else(|| (fmt.to_owned(), None));
         let mut value = Vec::new();
@@ -5357,7 +5342,7 @@ unsafe fn format_loop_panes(
         let n = l.len();
         for (i, &wp) in l.iter().enumerate() {
             format_log1(
-                &mut *es,
+                es,
                 c"format_loop_panes".as_ptr(),
                 c"pane loop: %%%u".as_ptr(),
                 fmt_args![(*wp).id],
@@ -5408,7 +5393,7 @@ unsafe fn format_loop_clients(
         let n = l.len();
         for (i, &c) in l.iter().enumerate() {
             format_log1(
-                &mut *es,
+                es,
                 c"format_loop_clients".as_ptr(),
                 c"client loop: %s".as_ptr(),
                 fmt_args![(*c).name.as_deref()],
@@ -5491,7 +5476,7 @@ unsafe fn format_replace_expression(
             current_block = 4495394744059808450;
         } else {
             format_log1(
-                &mut *es,
+                es,
                 c"format_replace_expression".as_ptr(),
                 c"expression has no valid operator: '%s'".as_ptr(),
                 fmt_args![mexp.argv[0].as_ptr()],
@@ -5517,7 +5502,7 @@ unsafe fn format_replace_expression(
                     }
                     Err(errstr) => {
                         format_log1(
-                            &mut *es,
+                            es,
                             c"format_replace_expression".as_ptr(),
                             c"expression precision %s: %s".as_ptr(),
                             fmt_args![errstr.as_ptr(), mexp.argv[2].as_ptr()],
@@ -5531,10 +5516,10 @@ unsafe fn format_replace_expression(
             match current_block {
                 17888409041102335484 => {}
                 _ => {
-                    let operands = format_choose(&mut *es, copy, 1 as ::core::ffi::c_int);
+                    let operands = format_choose(es, copy, 1 as ::core::ffi::c_int);
                     if operands.is_none() {
                         format_log1(
-                            &mut *es,
+                            es,
                             c"format_replace_expression".as_ptr(),
                             c"expression syntax error".as_ptr(),
                             fmt_args![],
@@ -5546,7 +5531,7 @@ unsafe fn format_replace_expression(
                         mleft = strtod(left, &raw mut endch);
                         if *endch as ::core::ffi::c_int != '\0' as i32 {
                             format_log1(
-                                &mut *es,
+                                es,
                                 c"format_replace_expression".as_ptr(),
                                 c"expression left side is invalid: %s".as_ptr(),
                                 fmt_args![left],
@@ -5555,7 +5540,7 @@ unsafe fn format_replace_expression(
                             mright = strtod(right, &raw mut endch);
                             if *endch as ::core::ffi::c_int != '\0' as i32 {
                                 format_log1(
-                                    &mut *es,
+                                    es,
                                     c"format_replace_expression".as_ptr(),
                                     c"expression right side is invalid: %s".as_ptr(),
                                     fmt_args![right],
@@ -5568,13 +5553,13 @@ unsafe fn format_replace_expression(
                                         mright as ::core::ffi::c_longlong as ::core::ffi::c_double;
                                 }
                                 format_log1(
-                                    &mut *es,
+                                    es,
                                     c"format_replace_expression".as_ptr(),
                                     c"expression left side is: %.*f".as_ptr(),
                                     fmt_args![prec, mleft],
                                 );
                                 format_log1(
-                                    &mut *es,
+                                    es,
                                     c"format_replace_expression".as_ptr(),
                                     c"expression right side is: %.*f".as_ptr(),
                                     fmt_args![prec, mright],
@@ -5637,7 +5622,7 @@ unsafe fn format_replace_expression(
                                     ));
                                 }
                                 format_log1(
-                                    &mut *es,
+                                    es,
                                     c"format_replace_expression".as_ptr(),
                                     c"expression result is %s".as_ptr(),
                                     fmt_args![value.as_ref().unwrap().as_ptr()],
@@ -5689,14 +5674,14 @@ unsafe fn format_replace(
         let copy0 = CString::new(::core::slice::from_raw_parts(key as *const u8, keylen))
             .expect("format replacement key has no NUL");
         copy = copy0.as_ptr();
-        let list = format_build_modifiers(&mut *es, &mut copy).unwrap_or_default();
+        let list = format_build_modifiers(es, &mut copy).unwrap_or_default();
         count = list.len() as u_int;
         i = 0 as u_int;
         while i < count {
             let fm = &list[i as usize];
             if format_logging(&mut *ft) != 0 {
                 format_log1(
-                    &mut *es,
+                    es,
                     c"format_replace".as_ptr(),
                     c"modifier %u is %s".as_ptr(),
                     fmt_args![i, fm.modifier.as_ptr()],
@@ -5704,7 +5689,7 @@ unsafe fn format_replace(
                 j = 0 as ::core::ffi::c_int;
                 while j < (fm.argv.len() as ::core::ffi::c_int) {
                     format_log1(
-                        &mut *es,
+                        es,
                         c"format_replace".as_ptr(),
                         c"modifier %u argument %d: %s".as_ptr(),
                         fmt_args![i, j, fm.argv[j as usize].as_ptr()],
@@ -5789,10 +5774,8 @@ unsafe fn format_replace(
                                 >= 2 as ::core::ffi::c_int
                                 && !strchr(fm.argv[0].as_ptr(), 'f' as i32).is_null()
                             {
-                                time_format = Some(format_strip(
-                                    &mut *es,
-                                    CStr::from_ptr(fm.argv[1].as_ptr()),
-                                ));
+                                time_format =
+                                    Some(format_strip(es, CStr::from_ptr(fm.argv[1].as_ptr())));
                             }
                         }
                     }
@@ -5928,14 +5911,14 @@ unsafe fn format_replace(
         let sub: Vec<&format_modifier> = sub.into_iter().map(|i| &list[i]).collect();
         if modifiers & FORMAT_LITERAL != 0 {
             format_log1(
-                &mut *es,
+                es,
                 c"format_replace".as_ptr(),
                 c"literal string is '%s'".as_ptr(),
                 fmt_args![copy],
             );
-            value = Some(format_unescape(&mut *es, CStr::from_ptr(copy)));
+            value = Some(format_unescape(es, CStr::from_ptr(copy)));
         } else if modifiers & FORMAT_CHARACTER != 0 {
-            let new = format_expand1(&mut *es, CStr::from_ptr(copy));
+            let new = format_expand1(es, CStr::from_ptr(copy));
             value = match strtonum(
                 new.as_ptr(),
                 32 as ::core::ffi::c_longlong,
@@ -5948,7 +5931,7 @@ unsafe fn format_replace(
                 Err(_) => Some(CString::default()),
             };
         } else if modifiers & FORMAT_COLOUR != 0 {
-            let new = format_expand1(&mut *es, CStr::from_ptr(copy));
+            let new = format_expand1(es, CStr::from_ptr(copy));
             c = colour_fromstring(new.as_ptr());
             if c == -(1 as ::core::ffi::c_int) || {
                 c = colour_force_rgb(c);
@@ -5963,52 +5946,52 @@ unsafe fn format_replace(
             }
         } else {
             if modifiers & FORMAT_SESSIONS != 0 {
-                value = format_loop_sessions(&mut *es, CStr::from_ptr(copy), &sort_crit);
+                value = format_loop_sessions(es, CStr::from_ptr(copy), &sort_crit);
                 current_block = if value.is_some() {
                     4781510679662115254
                 } else {
                     75153483021275631
                 };
             } else if modifiers & FORMAT_WINDOWS != 0 {
-                value = format_loop_windows(&mut *es, CStr::from_ptr(copy), &sort_crit);
+                value = format_loop_windows(es, CStr::from_ptr(copy), &sort_crit);
                 current_block = if value.is_some() {
                     4781510679662115254
                 } else {
                     75153483021275631
                 };
             } else if modifiers & FORMAT_PANES != 0 {
-                value = format_loop_panes(&mut *es, CStr::from_ptr(copy), &sort_crit);
+                value = format_loop_panes(es, CStr::from_ptr(copy), &sort_crit);
                 current_block = if value.is_some() {
                     4781510679662115254
                 } else {
                     75153483021275631
                 };
             } else if modifiers & FORMAT_CLIENTS != 0 {
-                value = format_loop_clients(&mut *es, CStr::from_ptr(copy), &sort_crit);
+                value = format_loop_clients(es, CStr::from_ptr(copy), &sort_crit);
                 current_block = if value.is_some() {
                     4781510679662115254
                 } else {
                     75153483021275631
                 };
             } else if modifiers & FORMAT_WINDOW_NAME != 0 {
-                value = format_window_name(&mut *es, CStr::from_ptr(copy));
+                value = format_window_name(es, CStr::from_ptr(copy));
                 current_block = if value.is_some() {
                     4781510679662115254
                 } else {
                     75153483021275631
                 };
             } else if modifiers & FORMAT_SESSION_NAME != 0 {
-                value = format_session_name(&mut *es, CStr::from_ptr(copy));
+                value = format_session_name(es, CStr::from_ptr(copy));
                 current_block = if value.is_some() {
                     4781510679662115254
                 } else {
                     75153483021275631
                 };
             } else if let Some(search) = search {
-                let new = format_expand1(&mut *es, CStr::from_ptr(copy));
+                let new = format_expand1(es, CStr::from_ptr(copy));
                 if wp.is_null() {
                     format_log1(
-                        &mut *es,
+                        es,
                         c"format_replace".as_ptr(),
                         c"search '%s' but no pane".as_ptr(),
                         fmt_args![new.as_ptr()],
@@ -6016,7 +5999,7 @@ unsafe fn format_replace(
                     value = Some(c"0".to_owned());
                 } else {
                     format_log1(
-                        &mut *es,
+                        es,
                         c"format_replace".as_ptr(),
                         c"search '%s' pane %%%u".as_ptr(),
                         fmt_args![new.as_ptr(), (*wp).id],
@@ -6025,8 +6008,7 @@ unsafe fn format_replace(
                 }
                 current_block = 4781510679662115254;
             } else if modifiers & FORMAT_REPEAT != 0 {
-                if let Some((left, right)) = format_choose(&mut *es, copy, 1 as ::core::ffi::c_int)
-                {
+                if let Some((left, right)) = format_choose(es, copy, 1 as ::core::ffi::c_int) {
                     let parsed = strtonum(
                         right.as_ptr(),
                         1 as ::core::ffi::c_longlong,
@@ -6043,7 +6025,7 @@ unsafe fn format_replace(
                         let mut failed = false;
                         i = 0 as u_int;
                         while i < nrep {
-                            if format_check_time(&mut *es) == 0 {
+                            if format_check_time(es) == 0 {
                                 failed = true;
                                 break;
                             }
@@ -6061,7 +6043,7 @@ unsafe fn format_replace(
                     }
                 } else {
                     format_log1(
-                        &mut *es,
+                        es,
                         c"format_replace".as_ptr(),
                         c"repeat syntax error: %s".as_ptr(),
                         fmt_args![copy],
@@ -6070,14 +6052,14 @@ unsafe fn format_replace(
                 }
             } else if modifiers & FORMAT_NOT != 0 {
                 value = Some(format_bool_op_1(
-                    &mut *es,
+                    es,
                     CStr::from_ptr(copy),
                     1 as ::core::ffi::c_int,
                 ));
                 current_block = 4781510679662115254;
             } else if modifiers & FORMAT_NOT_NOT != 0 {
                 value = Some(format_bool_op_1(
-                    &mut *es,
+                    es,
                     CStr::from_ptr(copy),
                     0 as ::core::ffi::c_int,
                 ));
@@ -6085,7 +6067,7 @@ unsafe fn format_replace(
             } else if let Some(bool_op_n) = bool_op_n {
                 if strcmp(bool_op_n.modifier.as_ptr(), c"||".as_ptr()) == 0 as ::core::ffi::c_int {
                     value = Some(format_bool_op_n(
-                        &mut *es,
+                        es,
                         CStr::from_ptr(copy),
                         0 as ::core::ffi::c_int,
                     ));
@@ -6093,23 +6075,22 @@ unsafe fn format_replace(
                     == 0 as ::core::ffi::c_int
                 {
                     value = Some(format_bool_op_n(
-                        &mut *es,
+                        es,
                         CStr::from_ptr(copy),
                         1 as ::core::ffi::c_int,
                     ));
                 }
                 current_block = 4781510679662115254;
             } else if let Some(cmp) = cmp {
-                if let Some((left, right)) = format_choose(&mut *es, copy, 1 as ::core::ffi::c_int)
-                {
+                if let Some((left, right)) = format_choose(es, copy, 1 as ::core::ffi::c_int) {
                     format_log1(
-                        &mut *es,
+                        es,
                         c"format_replace".as_ptr(),
                         c"compare %s left is: %s".as_ptr(),
                         fmt_args![cmp.modifier.as_ptr(), left.as_ptr()],
                     );
                     format_log1(
-                        &mut *es,
+                        es,
                         c"format_replace".as_ptr(),
                         c"compare %s right is: %s".as_ptr(),
                         fmt_args![cmp.modifier.as_ptr(), right.as_ptr()],
@@ -6153,7 +6134,7 @@ unsafe fn format_replace(
                     current_block = 4781510679662115254;
                 } else {
                     format_log1(
-                        &mut *es,
+                        es,
                         c"format_replace".as_ptr(),
                         c"compare %s syntax error: %s".as_ptr(),
                         fmt_args![cmp.modifier.as_ptr(), copy],
@@ -6164,15 +6145,15 @@ unsafe fn format_replace(
                 if *copy as ::core::ffi::c_int == '?' as i32 {
                     cp = copy.offset(1 as ::core::ffi::c_int as isize);
                     loop {
-                        cp2 = format_skip1(Some(&mut *es), cp, c",");
+                        cp2 = format_skip1(Some(es), cp, c",");
                         if cp2.is_null() {
                             format_log1(
-                                &mut *es,
+                                es,
                                 c"format_replace".as_ptr(),
                                 c"no condition matched in '%s'; using last arg".as_ptr(),
                                 fmt_args![copy.offset(1 as ::core::ffi::c_int as isize)],
                             );
-                            value = Some(format_expand1(&mut *es, CStr::from_ptr(cp)));
+                            value = Some(format_expand1(es, CStr::from_ptr(cp)));
                             break;
                         } else {
                             let condition = CString::new(::core::slice::from_raw_parts(
@@ -6181,7 +6162,7 @@ unsafe fn format_replace(
                             ))
                             .expect("format condition has no NUL");
                             format_log1(
-                                &mut *es,
+                                es,
                                 c"format_replace".as_ptr(),
                                 c"condition is: %s".as_ptr(),
                                 fmt_args![condition.as_ptr()],
@@ -6190,11 +6171,11 @@ unsafe fn format_replace(
                             let mut found =
                                 format_find(&mut *ft, &condition, modifiers, time_format_ptr);
                             if found.is_none() {
-                                let expanded = format_expand1(&mut *es, &condition);
+                                let expanded = format_expand1(es, &condition);
                                 if strcmp(expanded.as_ptr(), condition.as_ptr()) == 0 {
                                     found = Some(CString::default());
                                     format_log1(
-                                        &mut *es,
+                                        es,
                                         c"format_replace".as_ptr(),
                                         c"condition '%s' not found; assuming false".as_ptr(),
                                         fmt_args![condition.as_ptr()],
@@ -6204,42 +6185,42 @@ unsafe fn format_replace(
                                 }
                             } else {
                                 format_log1(
-                                    &mut *es,
+                                    es,
                                     c"format_replace".as_ptr(),
                                     c"condition '%s' found: %s".as_ptr(),
                                     fmt_args![condition.as_ptr(), found.as_ref().unwrap().as_ptr()],
                                 );
                             }
                             cp = cp2.offset(1 as ::core::ffi::c_int as isize);
-                            cp2 = format_skip1(Some(&mut *es), cp, c",");
+                            cp2 = format_skip1(Some(es), cp, c",");
                             if format_true(found.as_deref()) != 0 {
                                 format_log1(
-                                    &mut *es,
+                                    es,
                                     c"format_replace".as_ptr(),
                                     c"condition '%s' is true".as_ptr(),
                                     fmt_args![condition.as_ptr()],
                                 );
                                 if cp2.is_null() {
-                                    value = Some(format_expand1(&mut *es, CStr::from_ptr(cp)));
+                                    value = Some(format_expand1(es, CStr::from_ptr(cp)));
                                 } else {
                                     let right = CString::new(::core::slice::from_raw_parts(
                                         cp as *const u8,
                                         cp2.offset_from(cp) as usize,
                                     ))
                                     .expect("format conditional result has no NUL");
-                                    value = Some(format_expand1(&mut *es, &right));
+                                    value = Some(format_expand1(es, &right));
                                 }
                                 break;
                             } else {
                                 format_log1(
-                                    &mut *es,
+                                    es,
                                     c"format_replace".as_ptr(),
                                     c"condition '%s' is false".as_ptr(),
                                     fmt_args![condition.as_ptr()],
                                 );
                                 if cp2.is_null() {
                                     format_log1(
-                                        &mut *es,
+                                        es,
                                         c"format_replace".as_ptr(),
                                         c"no condition matched in '%s'; using empty string"
                                             .as_ptr(),
@@ -6254,25 +6235,25 @@ unsafe fn format_replace(
                         }
                     }
                 } else if let Some(mexp) = mexp {
-                    value = format_replace_expression(mexp, &mut *es, CStr::from_ptr(copy));
+                    value = format_replace_expression(mexp, es, CStr::from_ptr(copy));
                     if value.is_none() {
                         value = Some(CString::default());
                     }
                 } else if !strstr(copy, c"#{".as_ptr()).is_null() {
                     format_log1(
-                        &mut *es,
+                        es,
                         c"format_replace".as_ptr(),
                         c"expanding inner format '%s'".as_ptr(),
                         fmt_args![copy],
                     );
-                    value = Some(format_expand1(&mut *es, CStr::from_ptr(copy)));
+                    value = Some(format_expand1(es, CStr::from_ptr(copy)));
                 } else {
                     let time_format_ptr = time_format.as_deref();
                     if let Some(result) =
                         format_find(&mut *ft, CStr::from_ptr(copy), modifiers, time_format_ptr)
                     {
                         format_log1(
-                            &mut *es,
+                            es,
                             c"format_replace".as_ptr(),
                             c"format '%s' found: %s".as_ptr(),
                             fmt_args![copy, result.as_ptr()],
@@ -6280,7 +6261,7 @@ unsafe fn format_replace(
                         value = Some(result);
                     } else {
                         format_log1(
-                            &mut *es,
+                            es,
                             c"format_replace".as_ptr(),
                             c"format '%s' not found".as_ptr(),
                             fmt_args![copy],
@@ -6294,7 +6275,7 @@ unsafe fn format_replace(
                 4781510679662115254 => {}
                 _ => {
                     format_log1(
-                        &mut *es,
+                        es,
                         c"format_replace".as_ptr(),
                         c"failed %s".as_ptr(),
                         fmt_args![copy0.as_ptr()],
@@ -6305,7 +6286,7 @@ unsafe fn format_replace(
         }
         let mut value = value.expect("format replacement has no result");
         if modifiers & FORMAT_EXPAND != 0 {
-            value = format_expand1(&mut *es, &value);
+            value = format_expand1(es, &value);
         } else if modifiers & FORMAT_EXPANDTIME != 0 {
             next = *es;
             next.flags |= FORMAT_EXPAND_TIME;
@@ -6313,11 +6294,11 @@ unsafe fn format_replace(
         }
         i = 0 as u_int;
         while i < nsub {
-            let left = format_expand1(&mut *es, CStr::from_ptr(sub[i as usize].argv[0].as_ptr()));
-            let right = format_expand1(&mut *es, CStr::from_ptr(sub[i as usize].argv[1].as_ptr()));
+            let left = format_expand1(es, CStr::from_ptr(sub[i as usize].argv[0].as_ptr()));
+            let right = format_expand1(es, CStr::from_ptr(sub[i as usize].argv[1].as_ptr()));
             let result = format_sub(sub[i as usize], &value, &left, &right);
             format_log1(
-                &mut *es,
+                es,
                 c"format_replace".as_ptr(),
                 c"substitute '%s' to '%s': %s".as_ptr(),
                 fmt_args![left.as_ptr(), right.as_ptr(), result.as_ptr()],
@@ -6333,7 +6314,7 @@ unsafe fn format_replace(
                 value = trimmed;
             }
             format_log1(
-                &mut *es,
+                es,
                 c"format_replace".as_ptr(),
                 c"applied length limit %d: %s".as_ptr(),
                 fmt_args![limit, value.as_ptr()],
@@ -6346,7 +6327,7 @@ unsafe fn format_replace(
                 value = trimmed;
             }
             format_log1(
-                &mut *es,
+                es,
                 c"format_replace".as_ptr(),
                 c"applied length limit %d: %s".as_ptr(),
                 fmt_args![limit, value.as_ptr()],
@@ -6355,7 +6336,7 @@ unsafe fn format_replace(
         if width > 0 as ::core::ffi::c_int {
             value = utf8_padcstr(&value, width as u_int);
             format_log1(
-                &mut *es,
+                es,
                 c"format_replace".as_ptr(),
                 c"applied padding width %d: %s".as_ptr(),
                 fmt_args![width, value.as_ptr()],
@@ -6363,7 +6344,7 @@ unsafe fn format_replace(
         } else if width < 0 as ::core::ffi::c_int {
             value = utf8_rpadcstr(&value, -width as u_int);
             format_log1(
-                &mut *es,
+                es,
                 c"format_replace".as_ptr(),
                 c"applied padding width %d: %s".as_ptr(),
                 fmt_args![width, value.as_ptr()],
@@ -6372,7 +6353,7 @@ unsafe fn format_replace(
         if modifiers & FORMAT_LENGTH != 0 {
             value = xasprintf(c"%zu".as_ptr(), fmt_args![value.as_bytes().len()]);
             format_log1(
-                &mut *es,
+                es,
                 c"format_replace".as_ptr(),
                 c"replacing with length: %s".as_ptr(),
                 fmt_args![value.as_ptr()],
@@ -6381,7 +6362,7 @@ unsafe fn format_replace(
         if modifiers & FORMAT_WIDTH != 0 {
             value = xasprintf(c"%u".as_ptr(), fmt_args![format_width(value.as_bytes())]);
             format_log1(
-                &mut *es,
+                es,
                 c"format_replace".as_ptr(),
                 c"replacing with width: %s".as_ptr(),
                 fmt_args![value.as_ptr()],
@@ -6389,7 +6370,7 @@ unsafe fn format_replace(
         }
         out.extend_from_slice(value.as_bytes());
         format_log1(
-            &mut *es,
+            es,
             c"format_replace".as_ptr(),
             c"replaced '%s' with '%s'".as_ptr(),
             fmt_args![copy0.as_ptr(), value.as_ptr()],
@@ -6409,15 +6390,13 @@ unsafe fn format_expand1(es: &mut format_expand_state, fmt: &CStr) -> CString {
         let mut ch: ::core::ffi::c_int = 0;
         let mut brackets: ::core::ffi::c_int = 0;
         let mut expanded: Option<CString> = None;
-        if fmt.is_null()
-            || *fmt as ::core::ffi::c_int == '\0' as i32
-            || format_check_time(&mut *es) == 0
+        if fmt.is_null() || *fmt as ::core::ffi::c_int == '\0' as i32 || format_check_time(es) == 0
         {
             return CString::default();
         }
         if es.loop_0 == FORMAT_LOOP_LIMIT as u_int {
             format_log1(
-                &mut *es,
+                es,
                 c"format_expand1".as_ptr(),
                 c"reached loop limit (%u)".as_ptr(),
                 fmt_args![FORMAT_LOOP_LIMIT],
@@ -6426,7 +6405,7 @@ unsafe fn format_expand1(es: &mut format_expand_state, fmt: &CStr) -> CString {
         }
         es.loop_0 = es.loop_0.wrapping_add(1);
         format_log1(
-            &mut *es,
+            es,
             c"format_expand1".as_ptr(),
             c"expanding format: %s".as_ptr(),
             fmt_args![fmt],
@@ -6438,7 +6417,7 @@ unsafe fn format_expand1(es: &mut format_expand_state, fmt: &CStr) -> CString {
             }
             let Some(text) = format_strftime(8192 as size_t, fmt, &raw mut es.tm) else {
                 format_log1(
-                    &mut *es,
+                    es,
                     c"format_expand1".as_ptr(),
                     c"format is too long".as_ptr(),
                     fmt_args![],
@@ -6447,7 +6426,7 @@ unsafe fn format_expand1(es: &mut format_expand_state, fmt: &CStr) -> CString {
             };
             if format_logging(&mut *ft) != 0 && text.as_c_str() != CStr::from_ptr(fmt) {
                 format_log1(
-                    &mut *es,
+                    es,
                     c"format_expand1".as_ptr(),
                     c"after time expanded: %s".as_ptr(),
                     fmt_args![text.as_ptr()],
@@ -6495,7 +6474,7 @@ unsafe fn format_expand1(es: &mut format_expand_state, fmt: &CStr) -> CString {
                         ))
                         .expect("format job name has no NUL");
                         format_log1(
-                            &mut *es,
+                            es,
                             c"format_expand1".as_ptr(),
                             c"found #(): %s".as_ptr(),
                             fmt_args![name.as_ptr()],
@@ -6504,16 +6483,16 @@ unsafe fn format_expand1(es: &mut format_expand_state, fmt: &CStr) -> CString {
                             || es.flags & FORMAT_EXPAND_NOJOBS != 0
                         {
                             format_log1(
-                                &mut *es,
+                                es,
                                 c"format_expand1".as_ptr(),
                                 c"#() is disabled".as_ptr(),
                                 fmt_args![],
                             );
                             CString::default()
                         } else {
-                            let out = format_job_get(&mut *es, &name);
+                            let out = format_job_get(es, &name);
                             format_log1(
-                                &mut *es,
+                                es,
                                 c"format_expand1".as_ptr(),
                                 c"#() result: %s".as_ptr(),
                                 fmt_args![out.as_ptr()],
@@ -6526,7 +6505,7 @@ unsafe fn format_expand1(es: &mut format_expand_state, fmt: &CStr) -> CString {
                     }
                     123 => {
                         ptr = format_skip1(
-                            Some(&mut *es),
+                            Some(es),
                             (fmt as *mut ::core::ffi::c_char)
                                 .offset(-(2 as ::core::ffi::c_int as isize)),
                             c"}",
@@ -6536,12 +6515,12 @@ unsafe fn format_expand1(es: &mut format_expand_state, fmt: &CStr) -> CString {
                         }
                         n = ptr.offset_from(fmt) as ::core::ffi::c_long as size_t;
                         format_log1(
-                            &mut *es,
+                            es,
                             c"format_expand1".as_ptr(),
                             c"found #{}: %.*s".as_ptr(),
                             fmt_args![n as ::core::ffi::c_int, fmt],
                         );
-                        if format_replace(&mut *es, fmt, n, &mut buf) != 0 as ::core::ffi::c_int {
+                        if format_replace(es, fmt, n, &mut buf) != 0 as ::core::ffi::c_int {
                             break;
                         }
                         fmt = fmt.add(n.wrapping_add(1 as size_t));
@@ -6557,12 +6536,12 @@ unsafe fn format_expand1(es: &mut format_expand_state, fmt: &CStr) -> CString {
                         }
                         if *ptr as ::core::ffi::c_int == '[' as i32 {
                             style_end = format_skip1(
-                                Some(&mut *es),
+                                Some(es),
                                 fmt.offset(-(2 as ::core::ffi::c_int as isize)),
                                 c"]",
                             );
                             format_log1(
-                                &mut *es,
+                                es,
                                 c"format_expand1".as_ptr(),
                                 c"found #*%zu[".as_ptr(),
                                 fmt_args![n],
@@ -6593,12 +6572,12 @@ unsafe fn format_expand1(es: &mut format_expand_state, fmt: &CStr) -> CString {
                         } else {
                             n = strlen(s);
                             format_log1(
-                                &mut *es,
+                                es,
                                 c"format_expand1".as_ptr(),
                                 c"found #%c: %s".as_ptr(),
                                 fmt_args![ch, s],
                             );
-                            if format_replace(&mut *es, s, n, &mut buf) != 0 as ::core::ffi::c_int {
+                            if format_replace(es, s, n, &mut buf) != 0 as ::core::ffi::c_int {
                                 break;
                             } else {
                                 continue;
@@ -6607,7 +6586,7 @@ unsafe fn format_expand1(es: &mut format_expand_state, fmt: &CStr) -> CString {
                     }
                 }
                 format_log1(
-                    &mut *es,
+                    es,
                     c"format_expand1".as_ptr(),
                     c"found #%c".as_ptr(),
                     fmt_args![ch],
@@ -6617,7 +6596,7 @@ unsafe fn format_expand1(es: &mut format_expand_state, fmt: &CStr) -> CString {
         }
         let result = CString::new(buf).expect("expanded format has no NUL");
         format_log1(
-            &mut *es,
+            es,
             c"format_expand1".as_ptr(),
             c"result is: %s".as_ptr(),
             fmt_args![result.as_ptr()],
@@ -6795,20 +6774,20 @@ pub unsafe fn format_defaults(
             wp = window_get_active((*wl).window());
         }
         if !c.is_null() {
-            format_defaults_client(&mut *ft, c);
+            format_defaults_client(ft, c);
         }
         if !s.is_null() {
-            format_defaults_session(&mut *ft, s);
+            format_defaults_session(ft, s);
         }
         if !wl.is_null() {
-            format_defaults_winlink(&mut *ft, wl);
+            format_defaults_winlink(ft, wl);
         }
         if !wp.is_null() {
-            format_defaults_pane(&mut *ft, wp);
+            format_defaults_pane(ft, wp);
         }
         pb = paste_get_top(None);
         if !pb.is_null() {
-            format_defaults_paste_buffer(&mut *ft, pb);
+            format_defaults_paste_buffer(ft, pb);
         }
     }
 }
@@ -6829,7 +6808,7 @@ pub unsafe fn format_defaults_window(ft: &mut format_tree, mut w: *mut window) {
 unsafe fn format_defaults_winlink(ft: &mut format_tree, mut wl: *mut winlink) {
     unsafe {
         if (*ft).window().is_null() {
-            format_defaults_window(&mut *ft, (*wl).window());
+            format_defaults_window(ft, (*wl).window());
         }
         (*ft).set_winlink(wl);
     }
@@ -6838,7 +6817,7 @@ pub unsafe fn format_defaults_pane(ft: &mut format_tree, mut wp: *mut window_pan
     unsafe {
         let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
         if (*ft).window().is_null() {
-            format_defaults_window(&mut *ft, (*wp).window);
+            format_defaults_window(ft, (*wp).window);
         }
         (*ft).set_pane(wp);
         wme = window_pane_current_mode(wp);
@@ -6850,7 +6829,7 @@ pub unsafe fn format_defaults_pane(ft: &mut format_tree, mut wp: *mut window_pan
 pub unsafe fn format_defaults_paste_buffer(ft: &mut format_tree, mut pb: *mut paste_buffer) {
     (*ft).set_buffer(pb);
 }
-unsafe fn format_is_word_separator(ws: &CStr, mut gc: *const grid_cell) -> ::core::ffi::c_int {
+unsafe fn format_is_word_separator(ws: &CStr, gc: &grid_cell) -> ::core::ffi::c_int {
     unsafe {
         if utf8_cstrhas(ws.as_ptr(), &(*gc).data) != 0 {
             return 1 as ::core::ffi::c_int;
@@ -6876,7 +6855,7 @@ pub unsafe fn format_grid_word(mut gd: *mut grid, mut x: u_int, mut y: u_int) ->
         loop {
             gc = grid_get_cell(&*gd, x, y);
             if !(gc.flags as ::core::ffi::c_int) & GRID_FLAG_PADDING != 0
-                && format_is_word_separator(CStr::from_ptr(ws), &raw mut gc) != 0
+                && format_is_word_separator(CStr::from_ptr(ws), &mut gc) != 0
             {
                 found = 1 as ::core::ffi::c_int;
                 break;
@@ -6920,7 +6899,7 @@ pub unsafe fn format_grid_word(mut gd: *mut grid, mut x: u_int, mut y: u_int) ->
             if gc.flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0 {
                 continue;
             }
-            if format_is_word_separator(CStr::from_ptr(ws), &raw mut gc) != 0 {
+            if format_is_word_separator(CStr::from_ptr(ws), &mut gc) != 0 {
                 break;
             }
             ud.push(gc.data);

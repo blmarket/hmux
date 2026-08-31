@@ -265,7 +265,7 @@ unsafe fn cmd_set_buffer_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd
                 cmdq_error(item, c"%s".as_ptr(), fmt_args![error.as_ptr()]);
             } else {
                 if args_has(args, 'w' as i32 as u_char) != 0 && !tc.is_null() {
-                    tty_set_selection(&raw mut (*tc).tty, c"".as_ptr(), selection, bufsize);
+                    tty_set_selection(&mut (*tc).tty, c"".as_ptr(), selection, bufsize);
                 }
                 return CMD_RETURN_NORMAL;
             }

@@ -1,6 +1,6 @@
 use crate::arguments::{args_count, args_has, args_string, args_strtonum_and_expand};
 use crate::cmd::queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
-use crate::cmd::{cmd_get_args, cmd_get_args_ptr, cmd_get_entry, cmd_mouse_pane};
+use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::ffi::strtol;
 use crate::fmt_args;
 use crate::input::{ictx_mut, input_reset};
@@ -2200,7 +2200,6 @@ unsafe fn cmd_send_keys_inject_string(
 ) -> *mut cmdq_item {
     unsafe {
         let mut s: *const ::core::ffi::c_char = args_string(args, i as u_int);
-        let mut uc: utf8_char = 0;
         let mut key: key_code = 0;
         let mut endptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
         let mut n: ::core::ffi::c_long = 0;
@@ -2235,7 +2234,7 @@ unsafe fn cmd_send_keys_inject_string(
                 if item_ud.size == 1 && item_ud.data[0] <= 0x7f {
                     key = item_ud.data[0] as key_code;
                     after = cmd_send_keys_inject_key(item, after, args, key);
-                } else if utf8_from_data(item_ud, &raw mut uc) == UTF8_DONE {
+                } else if let (UTF8_DONE, uc) = utf8_from_data(item_ud) {
                     key = uc as key_code;
                     after = cmd_send_keys_inject_key(item, after, args, key);
                 }
@@ -2295,16 +2294,12 @@ unsafe fn cmd_send_keys_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd_
                 cmdq_error(item, c"not in a mode".as_ptr(), fmt_args![]);
                 return CMD_RETURN_ERROR;
             }
-            if (*m).valid == 0 {
-                m = ::core::ptr::null_mut::<mouse_event>();
-            }
-            (*wme)
-                .mode()
-                .command(wme, tc, s, wl, cmd_get_args_ptr(self_0), m);
+            let m = if (*m).valid == 0 { None } else { m.as_mut() };
+            (*wme).mode().command(&mut *wme, tc, s, wl, args, m);
             return CMD_RETURN_NORMAL;
         }
         if args_has(args, 'M' as i32 as u_char) != 0 {
-            let Some((mouse_s, _, mouse_wp)) = cmd_mouse_pane(m) else {
+            let Some((mouse_s, _, mouse_wp)) = cmd_mouse_pane(&*m) else {
                 cmdq_error(item, c"no mouse target".as_ptr(), fmt_args![]);
                 return CMD_RETURN_ERROR;
             };
@@ -2323,7 +2318,7 @@ unsafe fn cmd_send_keys_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd_
             return CMD_RETURN_NORMAL;
         }
         if args_has(args, 'R' as i32 as u_char) != 0 {
-            colour_palette_clear(&raw mut (*wp).palette);
+            colour_palette_clear(Some(&mut (*wp).palette));
             input_reset(ictx_mut(&mut (*wp).ictx), 1 as ::core::ffi::c_int);
             (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW;
         }

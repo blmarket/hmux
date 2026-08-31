@@ -203,14 +203,14 @@ fn parsing_accepts_the_T_flag_and_rejects_strays() {
     unsafe {
         let mut t = cmd_parse_from_string(c"show-prompt-history -T search".as_ptr(), null_mut());
         assert_eq!(t.status, CMD_PARSE_SUCCESS);
-        let first = cmd_list_first(t.cmdlist.as_ref().unwrap().as_ptr());
+        let first = cmd_list_first(t.cmdlist.as_ref().unwrap());
         assert!(::core::ptr::eq((*first).entry, show_entry()));
         assert_eq!(seen(args_get(cmd_get_args(&*first), b'T')), "search");
         let _ = t.cmdlist.take();
 
         let mut bare = cmd_parse_from_string(c"clear-prompt-history".as_ptr(), null_mut());
         assert_eq!(bare.status, CMD_PARSE_SUCCESS);
-        let first_bare = cmd_list_first(bare.cmdlist.as_ref().unwrap().as_ptr());
+        let first_bare = cmd_list_first(bare.cmdlist.as_ref().unwrap());
         assert!(::core::ptr::eq((*first_bare).entry, clear_entry()));
         assert!(args_get(cmd_get_args(&*first_bare), b'T').is_null());
         let _ = bare.cmdlist.take();

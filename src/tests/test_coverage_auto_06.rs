@@ -176,25 +176,25 @@ fn status_update_cache_sets_statusat_from_options() {
         let s = target.session();
         // default from Target is whatever session defaults set; force status off then on
         options_set_number(session_options(s), c"status".as_ptr(), 0);
-        status_update_cache(s);
+        status_update_cache(target.session_handle());
         assert_eq!((*s).statuslines, 0);
         assert_eq!((*s).statusat, -1);
 
         options_set_number(session_options(s), c"status".as_ptr(), 2);
         options_set_number(session_options(s), c"status-position".as_ptr(), 0);
-        status_update_cache(s);
+        status_update_cache(target.session_handle());
         assert_eq!((*s).statuslines, 2);
         assert_eq!((*s).statusat, 0);
 
         options_set_number(session_options(s), c"status-position".as_ptr(), 1);
-        status_update_cache(s);
+        status_update_cache(target.session_handle());
         assert_eq!((*s).statuslines, 2);
         assert_eq!((*s).statusat, 1);
 
         // restore
         options_set_number(session_options(s), c"status".as_ptr(), 1);
         options_set_number(session_options(s), c"status-position".as_ptr(), 0);
-        status_update_cache(s);
+        status_update_cache(target.session_handle());
     }
 }
 
@@ -208,7 +208,7 @@ fn status_line_size_and_at_line_with_flags() {
         // ensure cache is consistent: 1 line at top
         options_set_number(session_options(s), c"status".as_ptr(), 1);
         options_set_number(session_options(s), c"status-position".as_ptr(), 0);
-        status_update_cache(s);
+        status_update_cache(target.session_handle());
 
         let c = clients.add("auto06-status", 80, 24);
         (*c).session = s;
@@ -220,7 +220,7 @@ fn status_line_size_and_at_line_with_flags() {
 
         // status at bottom -> line is sy - lines
         options_set_number(session_options(s), c"status-position".as_ptr(), 1);
-        status_update_cache(s);
+        status_update_cache(target.session_handle());
         (*c).tty.sy = 24;
         assert_eq!(status_at_line(c), 23); // 24 - 1
 
@@ -243,7 +243,7 @@ fn status_line_size_and_at_line_with_flags() {
         // restore
         (*c).session = s;
         options_set_number(session_options(s), c"status-position".as_ptr(), 0);
-        status_update_cache(s);
+        status_update_cache(target.session_handle());
     }
 }
 
@@ -256,7 +256,7 @@ fn status_prompt_line_at_clamps_to_lines() {
         let s = target.session();
         options_set_number(session_options(s), c"status".as_ptr(), 3);
         options_set_number(session_options(s), c"message-line".as_ptr(), 1);
-        status_update_cache(s);
+        status_update_cache(target.session_handle());
 
         let c = clients.add("auto06-prompt-line", 80, 24);
         (*c).session = s;
@@ -271,13 +271,13 @@ fn status_prompt_line_at_clamps_to_lines() {
 
         // zero lines -> 0
         options_set_number(session_options(s), c"status".as_ptr(), 0);
-        status_update_cache(s);
+        status_update_cache(target.session_handle());
         assert_eq!(status_prompt_line_at(c), 0);
 
         // restore
         options_set_number(session_options(s), c"status".as_ptr(), 1);
         options_set_number(session_options(s), c"message-line".as_ptr(), 0);
-        status_update_cache(s);
+        status_update_cache(target.session_handle());
     }
 }
 

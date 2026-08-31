@@ -2284,57 +2284,49 @@ impl Drop for WindowStorage {
     }
 }
 /// The first window linked into `wwl`, in index order.
-pub unsafe fn winlinks_first(wwl: *mut winlinks) -> *mut winlink {
-    unsafe {
-        (*wwl)
-            .values()
-            .next()
-            .map(|wl| wl.as_ref() as *const winlink as *mut winlink)
-            .unwrap_or(::core::ptr::null_mut::<winlink>())
-    }
+pub unsafe fn winlinks_first(wwl: &mut winlinks) -> *mut winlink {
+    wwl.values_mut()
+        .next()
+        .map(|wl| &raw mut **wl)
+        .unwrap_or(::core::ptr::null_mut::<winlink>())
 }
 
 /// The last window linked into `wwl`.
-pub unsafe fn winlinks_last(wwl: *mut winlinks) -> *mut winlink {
-    unsafe {
-        (*wwl)
-            .values()
-            .next_back()
-            .map(|wl| wl.as_ref() as *const winlink as *mut winlink)
-            .unwrap_or(::core::ptr::null_mut::<winlink>())
-    }
+pub unsafe fn winlinks_last(wwl: &mut winlinks) -> *mut winlink {
+    wwl.values_mut()
+        .next_back()
+        .map(|wl| &raw mut **wl)
+        .unwrap_or(::core::ptr::null_mut::<winlink>())
 }
 
 /// The window after `wl` in `wwl`, or null when it is the last.
-pub unsafe fn winlinks_next(wwl: *mut winlinks, wl: *mut winlink) -> *mut winlink {
+pub unsafe fn winlinks_next(wwl: &mut winlinks, wl: *mut winlink) -> *mut winlink {
     unsafe {
-        (*wwl)
-            .range((Bound::Excluded((*wl).idx), Bound::Unbounded))
+        wwl.range_mut((Bound::Excluded((*wl).idx), Bound::Unbounded))
             .next()
-            .map(|(_, wl)| wl.as_ref() as *const winlink as *mut winlink)
+            .map(|(_, wl)| &raw mut **wl)
             .unwrap_or(::core::ptr::null_mut::<winlink>())
     }
 }
 
 /// The window before `wl` in `wwl`, or null when it is the first.
-pub unsafe fn winlinks_prev(wwl: *mut winlinks, wl: *mut winlink) -> *mut winlink {
+pub unsafe fn winlinks_prev(wwl: &mut winlinks, wl: *mut winlink) -> *mut winlink {
     unsafe {
-        (*wwl)
-            .range((Bound::Unbounded, Bound::Excluded((*wl).idx)))
+        wwl.range_mut((Bound::Unbounded, Bound::Excluded((*wl).idx)))
             .next_back()
-            .map(|(_, wl)| wl.as_ref() as *const winlink as *mut winlink)
+            .map(|(_, wl)| &raw mut **wl)
             .unwrap_or(::core::ptr::null_mut::<winlink>())
     }
 }
 
 /// The window after `wl` in the session it is linked into.
 pub unsafe fn winlinks_after(wl: *mut winlink) -> *mut winlink {
-    unsafe { winlinks_next(&raw mut (*(*wl).session()).windows, wl) }
+    unsafe { winlinks_next(&mut (*(*wl).session()).windows, wl) }
 }
 
 /// The window before `wl` in the session it is linked into.
 pub unsafe fn winlinks_before(wl: *mut winlink) -> *mut winlink {
-    unsafe { winlinks_prev(&raw mut (*(*wl).session()).windows, wl) }
+    unsafe { winlinks_prev(&mut (*(*wl).session()).windows, wl) }
 }
 
 /// The winlinks of `s`, in index order, each one read from the tree only when
@@ -2347,45 +2339,37 @@ pub(crate) unsafe fn winlinks_in(s: *mut session) -> impl Iterator<Item = *mut w
             winlinks_after(current)
         } else {
             started = true;
-            winlinks_first(&raw mut (*s).windows)
+            winlinks_first(&mut (*s).windows)
         };
         (!current.is_null()).then_some(current)
     })
 }
 
-pub unsafe fn winlink_find_by_window(wwl: *mut winlinks, w: *mut window) -> *mut winlink {
-    unsafe {
-        (*wwl)
-            .values()
-            .map(|wl| wl.as_ref() as *const winlink as *mut winlink)
-            .find(|&wl| (*wl).window() == w)
-            .unwrap_or(::core::ptr::null_mut::<winlink>())
-    }
+pub unsafe fn winlink_find_by_window(wwl: &mut winlinks, w: *mut window) -> *mut winlink {
+    wwl.values_mut()
+        .find(|wl| wl.window() == w)
+        .map(|wl| &raw mut **wl)
+        .unwrap_or(::core::ptr::null_mut::<winlink>())
 }
-pub unsafe fn winlink_find_by_index(wwl: *mut winlinks, idx: ::core::ffi::c_int) -> *mut winlink {
+pub unsafe fn winlink_find_by_index(wwl: &mut winlinks, idx: ::core::ffi::c_int) -> *mut winlink {
     unsafe {
         if idx < 0 as ::core::ffi::c_int {
             fatalx(c"bad index".as_ptr(), fmt_args![]);
         }
-        (*wwl)
-            .get(&idx)
-            .map(|wl| wl.as_ref() as *const winlink as *mut winlink)
+        wwl.get_mut(&idx)
+            .map(|wl| &raw mut **wl)
             .unwrap_or(::core::ptr::null_mut::<winlink>())
     }
 }
-pub unsafe fn winlink_find_by_window_id(wwl: *mut winlinks, id: u_int) -> *mut winlink {
+pub unsafe fn winlink_find_by_window_id(wwl: &mut winlinks, id: u_int) -> *mut winlink {
     unsafe {
-        (*wwl)
-            .values()
-            .map(|wl| wl.as_ref() as *const winlink as *mut winlink)
-            .find(|&wl| (*(*wl).window()).id == id)
+        wwl.values_mut()
+            .find(|wl| (*wl.window()).id == id)
+            .map(|wl| &raw mut **wl)
             .unwrap_or(::core::ptr::null_mut::<winlink>())
     }
 }
-unsafe fn winlink_next_index(
-    mut wwl: *mut winlinks,
-    mut idx: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+unsafe fn winlink_next_index(wwl: &mut winlinks, idx: ::core::ffi::c_int) -> ::core::ffi::c_int {
     unsafe {
         let mut i: ::core::ffi::c_int = 0;
         i = idx;
@@ -2405,10 +2389,10 @@ unsafe fn winlink_next_index(
         -(1 as ::core::ffi::c_int)
     }
 }
-pub unsafe fn winlink_count(wwl: *mut winlinks) -> u_int {
-    unsafe { (*wwl).len() as u_int }
+pub unsafe fn winlink_count(wwl: &winlinks) -> u_int {
+    wwl.len() as u_int
 }
-pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -> *mut winlink {
+pub unsafe fn winlink_add(wwl: &mut winlinks, mut idx: ::core::ffi::c_int) -> *mut winlink {
     unsafe {
         let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
         if idx < 0 as ::core::ffi::c_int {
@@ -2426,7 +2410,7 @@ pub unsafe fn winlink_add(mut wwl: *mut winlinks, mut idx: ::core::ffi::c_int) -
             flags: 0,
         });
         wl = &raw mut *wl_box;
-        (*wwl).insert(idx, wl_box);
+        wwl.insert(idx, wl_box);
         wl
     }
 }
@@ -2504,10 +2488,10 @@ pub unsafe fn winlink_set_window(mut wl: *mut winlink, mut w: *mut window) {
         }
     }
 }
-pub unsafe fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut winlink) {
+pub unsafe fn winlink_remove(wwl: &mut winlinks, wl: *mut winlink) {
     unsafe {
         let old = winlink_detach_window(wl);
-        let _ = (*wwl).remove(&(*wl).idx);
+        let _ = wwl.remove(&(*wl).idx);
         drop(old);
     }
 }
@@ -2518,9 +2502,9 @@ pub unsafe fn winlink_next_by_number(
 ) -> *mut winlink {
     unsafe {
         while n > 0 as ::core::ffi::c_int {
-            wl = winlinks_next(&raw mut (*s).windows, wl);
+            wl = winlinks_next(&mut (*s).windows, wl);
             if wl.is_null() {
-                wl = winlinks_first(&raw mut (*s).windows);
+                wl = winlinks_first(&mut (*s).windows);
             }
             n -= 1;
         }
@@ -2534,30 +2518,30 @@ pub unsafe fn winlink_previous_by_number(
 ) -> *mut winlink {
     unsafe {
         while n > 0 as ::core::ffi::c_int {
-            wl = winlinks_prev(&raw mut (*s).windows, wl);
+            wl = winlinks_prev(&mut (*s).windows, wl);
             if wl.is_null() {
-                wl = winlinks_last(&raw mut (*s).windows);
+                wl = winlinks_last(&mut (*s).windows);
             }
             n -= 1;
         }
         wl
     }
 }
-pub unsafe fn winlink_stack_push(mut stack: *mut winlink_stack, mut wl: *mut winlink) {
+pub unsafe fn winlink_stack_push(stack: &mut winlink_stack, wl: *mut winlink) {
     unsafe {
         if wl.is_null() {
             return;
         }
         winlink_stack_remove(stack, wl);
-        (*stack).insert(0, (*wl).idx);
+        stack.insert(0, (*wl).idx);
         (*wl).flags |= WINLINK_VISITED;
     }
 }
-pub unsafe fn winlink_stack_remove(mut stack: *mut winlink_stack, mut wl: *mut winlink) {
+pub unsafe fn winlink_stack_remove(stack: &mut winlink_stack, wl: *mut winlink) {
     unsafe {
         if !wl.is_null() && (*wl).flags & WINLINK_VISITED != 0 {
             let idx = (*wl).idx;
-            (*stack).retain(|&visited| visited != idx);
+            stack.retain(|&visited| visited != idx);
             (*wl).flags &= !WINLINK_VISITED;
         }
     }
@@ -2931,21 +2915,19 @@ unsafe fn window_pane_get_palette(
         if wp.is_null() {
             return -(1 as ::core::ffi::c_int);
         }
-        colour_palette_get(&raw mut (*wp).palette, c)
+        colour_palette_get(Some(&(*wp).palette), c)
     }
 }
 pub unsafe fn window_redraw_active_switch(mut w: *mut window, mut wp: *mut window_pane) {
     unsafe {
-        let mut gc1: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
-        let mut gc2: *mut grid_cell = ::core::ptr::null_mut::<grid_cell>();
         let mut c1: ::core::ffi::c_int = 0;
         let mut c2: ::core::ffi::c_int = 0;
         if wp == window_get_active(w) {
             return;
         }
         loop {
-            gc1 = &raw mut (*wp).cached_gc;
-            gc2 = &raw mut (*wp).cached_active_gc;
+            let gc1 = &mut (*wp).cached_gc;
+            let gc2 = &mut (*wp).cached_active_gc;
             if grid_cells_look_equal(gc1, gc2) == 0 {
                 (*wp).flags |= PANE_REDRAW;
             } else {
@@ -3613,13 +3595,13 @@ unsafe fn window_pane_create(
         (*wp).control_bg = -(1 as ::core::ffi::c_int);
         (*wp).control_fg = -(1 as ::core::ffi::c_int);
         style_set_scrollbar_style_from_option(&mut (*wp).scrollbar_style, (*wp).options_ptr());
-        colour_palette_init(&raw mut (*wp).palette);
-        options_load_pane_colours((*wp).options_ptr(), &raw mut (*wp).palette);
-        screen_init(&raw mut (*wp).base, sx, sy, hlimit);
+        colour_palette_init(&mut (*wp).palette);
+        options_load_pane_colours((*wp).options_ptr(), Some(&mut (*wp).palette));
+        screen_init(&mut (*wp).base, sx, sy, hlimit);
         (*wp).shown = PaneScreen::Base;
         window_pane_default_cursor(wp);
         screen_init(
-            &raw mut (*wp).status_screen,
+            &mut (*wp).status_screen,
             1 as u_int,
             1 as u_int,
             0 as u_int,
@@ -3631,7 +3613,7 @@ unsafe fn window_pane_create(
         ) == 0 as ::core::ffi::c_int
         {
             screen_set_title(
-                &raw mut (*wp).base,
+                &mut (*wp).base,
                 &raw mut host as *mut ::core::ffi::c_char,
                 0 as ::core::ffi::c_int,
             );
@@ -3654,8 +3636,8 @@ unsafe fn window_pane_destroy(mut pane: Box<window_pane>) {
         if let Some(ictx) = (*wp).ictx.take() {
             input_free_box(ictx);
         }
-        screen_free(&raw mut (*wp).status_screen);
-        screen_free(&raw mut (*wp).base);
+        screen_free(&mut (*wp).status_screen);
+        screen_free(&mut (*wp).base);
         (*wp).r.ranges.clear();
         if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
             (*wp).pipe_event.free();
@@ -3670,25 +3652,24 @@ unsafe fn window_pane_destroy(mut pane: Box<window_pane>) {
         }
         (*wp).cwd = None;
         (*wp).shell = None;
-        colour_palette_free(&raw mut (*wp).palette);
-        style_ranges_free(&raw mut (*wp).border_status_line.ranges);
+        colour_palette_free(Some(&mut (*wp).palette));
+        style_ranges_free(&mut (*wp).border_status_line.ranges);
         (*wp).border_status_line.expanded = None;
         drop(pane);
     }
 }
 unsafe fn window_pane_read_callback(mut wp: *mut window_pane) {
     unsafe {
-        let mut wpo: *mut window_pane_offset = &raw mut (*wp).pipe_offset;
         let size = (*wp).event.input_len();
         let mut new_data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
         let mut new_size: size_t = 0;
         if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-            let taken = window_pane_get_new_data(wp, wpo);
+            let taken = window_pane_get_new_data(wp, &(*wp).pipe_offset);
             new_data = taken.0 as *mut ::core::ffi::c_char;
             new_size = taken.1;
             if new_size > 0 as size_t {
                 (*wp).pipe_event.write(new_data as *const u8, new_size);
-                window_pane_update_used_data(wp, wpo, new_size);
+                window_pane_update_used_data(wp, &mut (*wp).pipe_offset, new_size);
             }
         }
         log_debug(c"%%%u has %zu bytes".as_ptr(), fmt_args![(*wp).id, size]);
@@ -3774,7 +3755,7 @@ pub unsafe fn window_pane_resize(mut wp: *mut window_pane, mut sx: u_int, mut sy
             fmt_args![c"window_pane_resize".as_ptr(), (*wp).id, sx, sy],
         );
         screen_resize(
-            &raw mut (*wp).base,
+            &mut (*wp).base,
             sx,
             sy,
             ((*wp).base.saved_grid.is_none()) as ::core::ffi::c_int,
@@ -3790,7 +3771,7 @@ pub unsafe fn window_pane_set_mode(
     mut swp: *mut window_pane,
     mut mode: WindowMode,
     mut fs: *mut cmd_find_state,
-    mut args: *mut args,
+    args: Option<&args>,
 ) -> ::core::ffi::c_int {
     unsafe {
         let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
@@ -3816,7 +3797,7 @@ pub unsafe fn window_pane_set_mode(
                 }),
             );
             wme = window_pane_current_mode(wp);
-            (*wme).screen = mode.init(wme, fs, args);
+            (*wme).screen = mode.init(&mut *wme, fs, args);
         }
         (*wp).shown = PaneScreen::Mode;
         (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
@@ -3913,7 +3894,7 @@ unsafe fn window_pane_copy_key(mut wp: *mut window_pane, mut key: key_code) {
                 && window_pane_visible(loop_0) != 0
                 && options_get_number((*loop_0).options_ptr(), c"synchronize-panes".as_ptr()) != 0
             {
-                input_key_pane(loop_0, key, ::core::ptr::null_mut::<mouse_event>());
+                input_key_pane(loop_0, key, None);
             }
             loop_0 = window_panes_next(w, loop_0);
         }
@@ -3990,7 +3971,7 @@ pub unsafe fn window_pane_key(
         if (*wp).fd == -(1 as ::core::ffi::c_int) || (*wp).flags & PANE_INPUTOFF != 0 {
             return 0 as ::core::ffi::c_int;
         }
-        if input_key_pane(wp, key, m) != 0 as ::core::ffi::c_int {
+        if input_key_pane(wp, key, m.as_ref()) != 0 as ::core::ffi::c_int {
             return -(1 as ::core::ffi::c_int);
         }
         if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
@@ -4052,9 +4033,9 @@ pub unsafe fn window_pane_search(
             }
         }
         i = 0 as u_int;
-        while i < (*screen_grid_ptr(s)).sy {
+        while i < (*screen_grid_ptr(&mut *s)).sy {
             let mut bytes =
-                grid_view_string_cells(screen_grid(&*s), 0 as u_int, i, (*screen_grid_ptr(s)).sx)
+                grid_view_string_cells(screen_grid(&*s), 0 as u_int, i, (*screen_grid_ptr(&mut *s)).sx)
                     .into_bytes();
             while let Some(&last) = bytes.last() {
                 if *(*__ctype_b_loc()).offset(last as ::core::ffi::c_int as isize)
@@ -4091,7 +4072,7 @@ pub unsafe fn window_pane_search(
         if regex != 0 {
             regfree(&raw mut r);
         }
-        if i == (*screen_grid_ptr(s)).sy {
+        if i == (*screen_grid_ptr(&mut *s)).sy {
             return 0 as u_int;
         }
         i.wrapping_add(1 as u_int)
@@ -4690,7 +4671,7 @@ pub unsafe fn winlink_shuffle_up(
         }
         last = idx;
         while last < INT_MAX {
-            if winlink_find_by_index(&raw mut (*s).windows, last).is_null() {
+            if winlink_find_by_index(&mut (*s).windows, last).is_null() {
                 break;
             }
             last += 1;
@@ -4753,7 +4734,7 @@ unsafe fn window_pane_input_callback(
             file_cancel((*cdata).file.take().unwrap());
         } else if (*cdata).file.is_none() || closed != 0 || error != 0 as ::core::ffi::c_int {
             if let Some(item) = (*cdata).item.as_ref().and_then(CmdqItemWeak::upgrade) {
-                cmdq_continue(item.as_ptr());
+                cmdq_continue(&item);
             }
             drop((*cdata).file.take());
         } else {
@@ -4795,10 +4776,10 @@ pub unsafe fn window_pane_start_input(
 /// The bytes a reader at `wpo` has not taken yet, and how many there are.
 pub unsafe fn window_pane_get_new_data(
     mut wp: *mut window_pane,
-    mut wpo: *mut window_pane_offset,
+    wpo: &window_pane_offset,
 ) -> (*const u_char, size_t) {
     unsafe {
-        let mut used: size_t = (*wpo).used.wrapping_sub((*wp).base_offset);
+        let mut used: size_t = wpo.used.wrapping_sub((*wp).base_offset);
         let size = (*wp).event.input_len().wrapping_sub(used);
         let data = (*wp)
             .event
@@ -4809,15 +4790,15 @@ pub unsafe fn window_pane_get_new_data(
 }
 pub unsafe fn window_pane_update_used_data(
     mut wp: *mut window_pane,
-    mut wpo: *mut window_pane_offset,
+    wpo: &mut window_pane_offset,
     mut size: size_t,
 ) {
     unsafe {
-        let mut used: size_t = (*wpo).used.wrapping_sub((*wp).base_offset);
+        let mut used: size_t = wpo.used.wrapping_sub((*wp).base_offset);
         if size > (*wp).event.input_len().wrapping_sub(used) {
             size = (*wp).event.input_len().wrapping_sub(used);
         }
-        (*wpo).used = (*wpo).used.wrapping_add(size);
+        wpo.used = wpo.used.wrapping_add(size);
     }
 }
 pub unsafe fn window_set_fill_character(mut w: *mut window) {
@@ -4883,7 +4864,7 @@ pub unsafe fn window_pane_get_bg(mut wp: *mut window_pane) -> ::core::ffi::c_int
         let mut defaults = grid_default_cell;
         c = window_pane_get_bg_control_client(wp);
         if c == -(1 as ::core::ffi::c_int) {
-            tty_default_colours(&raw mut defaults, wp);
+            tty_default_colours(&mut defaults, wp);
             if defaults.bg == 8 as ::core::ffi::c_int || defaults.bg == 9 as ::core::ffi::c_int {
                 c = window_get_bg_client(wp);
             } else {
@@ -5057,7 +5038,7 @@ pub unsafe fn window_pane_border_status_get_range(
             return ::core::ptr::null_mut::<style_range>();
         }
         style_ranges_get_range(
-            srs,
+            &mut *srs,
             x.wrapping_sub((*wp).xoff as u_int).wrapping_sub(2 as u_int),
         )
     }

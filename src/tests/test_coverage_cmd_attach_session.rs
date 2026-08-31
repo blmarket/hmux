@@ -29,12 +29,11 @@ use crate::cmd::cmd_attach_session::{
 use crate::cmd::cmd_find_from_winlink;
 use crate::cmd::cmd_server_access::CLIENT_EXIT;
 use crate::cmd::{cmdq_get_current, cmdq_get_state};
-use crate::environ::{environ_entry_value, environ_find, environ_ptr, environ_set, environ_t};
+use crate::environ::{environ_entry_value, environ_find, environ_set, environ_t};
 use crate::ffi::getuid;
 use crate::fmt_args;
 use crate::key_bindings::{key_bindings_get_table, key_bindings_remove_table};
 use crate::options::options_set_string;
-use crate::proc::peer_ptr;
 use crate::server::client_get_last_session;
 use crate::server::message_log;
 use crate::session::{session_attached, session_cwd, session_get_curw};
@@ -111,12 +110,12 @@ unsafe fn wire_up(c: *mut client) -> Wired {
 impl Wired {
     /// The peer the client owns.
     fn peer(&self) -> *mut tmuxpeer {
-        unsafe { peer_ptr(&(*self.c).peer) }
+        unsafe { (*self.c).peer_ptr() }
     }
 
     /// The environment the client carries.
     fn environ(&self) -> *mut environ_t {
-        unsafe { environ_ptr(&(*self.c).environ) }
+        unsafe { (*self.c).environ_ptr() }
     }
 }
 
@@ -364,7 +363,7 @@ fn attaching_with_d_detaches_the_other_clients_of_the_target() {
 
         assert_eq!((*other).exit_type, CLIENT_EXIT_DETACH);
         assert_eq!((*other).exit_msgtype, MSG_DETACH);
-        assert_eq!(seen(cstr_ptr(&(*other).exit_session)), "0");
+        assert_eq!(seen((*other).exit_session_ptr()), "0");
         assert_ne!((*other).flags & CLIENT_EXIT as u64, 0);
         assert_eq!((*c).session, t.session());
         assert_eq!((*c).flags & CLIENT_EXIT as u64, 0, "the attacher stays");
@@ -396,7 +395,7 @@ fn attaching_with_x_kills_the_other_clients_instead() {
 
         assert_eq!((*other).exit_type, CLIENT_EXIT_DETACH);
         assert_eq!((*other).exit_msgtype, MSG_DETACHKILL);
-        assert_eq!(seen(cstr_ptr(&(*other).exit_session)), "0");
+        assert_eq!(seen((*other).exit_session_ptr()), "0");
     }
 }
 

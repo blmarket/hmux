@@ -9,17 +9,17 @@
 //! terminal, spawning a child or hitting `fatal`.
 
 use crate::grid::grid_default_cell;
+use crate::terminfo::{
+    TTYC_AM, TTYC_AX, TTYC_COLORS, TTYC_CSR, TTYCODE_FLAG, TTYCODE_NONE, TTYCODE_NUMBER,
+    TTYCODE_STRING, TtyCode, tty_term_describe, tty_term_flag, tty_term_has, tty_term_ncodes,
+    tty_term_number, tty_term_string, tty_term_string_i, tty_term_string_ii,
+};
 use crate::tests::test_fixtures::{Tty, globals, seen};
 use crate::tty::{
     CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW, CLIENT_TERMINAL, MODE_CURSOR, MODE_MOUSE_ALL,
     MODE_MOUSE_BUTTON, MODE_MOUSE_STANDARD, TERM_DECFRA, TERM_DECSLRM, TERM_NOAM, TERM_RGBCOLOURS,
     TERM_VT100LIKE, TTY_BLOCK, TTY_NOCURSOR, TTY_STARTED, TTYC_ACSC, TTYC_BCE, TTYC_CLEAR,
     TTYC_CUP, TTYC_KMOUS, TTYC_XT, tty_fake_bce, tty_set_size,
-};
-use crate::terminfo::{
-    TTYC_AM, TTYC_AX, TTYC_COLORS, TTYC_CSR, TTYCODE_FLAG, TTYCODE_NONE, TTYCODE_NUMBER,
-    TTYCODE_STRING, TtyCode, tty_term_describe, tty_term_flag, tty_term_has, tty_term_ncodes,
-    tty_term_number, tty_term_string, tty_term_string_i, tty_term_string_ii,
 };
 use crate::types::{tty, u_int};
 
@@ -82,13 +82,13 @@ fn tty_set_size_stores_dimensions() {
     let _guard = globals();
     let mut t = Tty::new();
     unsafe {
-        tty_set_size(t.ptr(), 80, 24, 10, 20);
+        tty_set_size(&mut *t.ptr(), 80, 24, 10, 20);
         assert_eq!((*t.ptr()).sx, 80);
         assert_eq!((*t.ptr()).sy, 24);
         assert_eq!((*t.ptr()).xpixel, 10);
         assert_eq!((*t.ptr()).ypixel, 20);
 
-        tty_set_size(t.ptr(), 132, 50, 0, 0);
+        tty_set_size(&mut *t.ptr(), 132, 50, 0, 0);
         assert_eq!((*t.ptr()).sx, 132);
         assert_eq!((*t.ptr()).sy, 50);
         assert_eq!((*t.ptr()).xpixel, 0);
@@ -206,27 +206,27 @@ fn tty_fake_bce_with_and_without_bce_capability() {
         gc.fg = 0;
         let bg: u_int = 0;
         // no BCE advertised -> must fake
-        assert_eq!(tty_fake_bce(t.ptr() as *const tty, &raw const gc, bg), 1);
+        assert_eq!(tty_fake_bce(&*t.ptr(), &gc, bg), 1);
 
         // advertise BCE
         t.set_flag(TTYC_BCE, 1);
-        assert_eq!(tty_fake_bce(t.ptr() as *const tty, &raw const gc, bg), 0);
+        assert_eq!(tty_fake_bce(&*t.ptr(), &gc, bg), 0);
 
         // even without BCE, default colours (bg 8/9) do not need faking
         // reset to no-BCE
         t.clear_code(TTYC_BCE);
         gc.bg = 8;
         let bg2: u_int = 8;
-        assert_eq!(tty_fake_bce(t.ptr() as *const tty, &raw const gc, bg2), 0);
+        assert_eq!(tty_fake_bce(&*t.ptr(), &gc, bg2), 0);
 
         gc.bg = 9;
         let bg3: u_int = 9;
-        assert_eq!(tty_fake_bce(t.ptr() as *const tty, &raw const gc, bg3), 0);
+        assert_eq!(tty_fake_bce(&*t.ptr(), &gc, bg3), 0);
 
         // mismatched: gc default but bg not default -> still fake
         gc.bg = 8;
         let bg4: u_int = 0;
-        assert_eq!(tty_fake_bce(t.ptr() as *const tty, &raw const gc, bg4), 1);
+        assert_eq!(tty_fake_bce(&*t.ptr(), &gc, bg4), 1);
     }
 }
 

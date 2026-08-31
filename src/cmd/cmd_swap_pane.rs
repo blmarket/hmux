@@ -274,14 +274,8 @@ unsafe fn cmd_swap_pane_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd_
             if src_w != dst_w {
                 window_pane_stack_remove(src_w, PaneStack::LastUsed, src_wp);
                 window_pane_stack_remove(dst_w, PaneStack::LastUsed, dst_wp);
-                options_load_pane_colours(
-                    (*src_wp).options_ptr(),
-                    &raw mut (*src_wp).palette,
-                );
-                options_load_pane_colours(
-                    (*dst_wp).options_ptr(),
-                    &raw mut (*dst_wp).palette,
-                );
+                options_load_pane_colours((*src_wp).options_ptr(), Some(&mut (*src_wp).palette));
+                options_load_pane_colours((*dst_wp).options_ptr(), Some(&mut (*dst_wp).palette));
                 layout_fix_panes(src_w, ::core::ptr::null_mut::<window_pane>());
                 server_redraw_window(src_w);
             }

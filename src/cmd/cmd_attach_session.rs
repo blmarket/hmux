@@ -33,12 +33,12 @@ use crate::cfg::{cfg_finished, cfg_show_causes};
 use crate::cmd::cmd_get_args;
 use crate::cmd::find::{cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_target};
 use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags};
-use crate::environ::{environ_ptr, environ_update};
+use crate::environ::environ_update;
 use crate::ffi::getuid;
 use crate::fmt_args;
 use crate::format::format_single;
 use crate::notify::notify_client;
-use crate::proc::{peer_ptr, proc_get_peer_uid, proc_send};
+use crate::proc::{proc_get_peer_uid, proc_send};
 use crate::server::client_set_last_session;
 use crate::server::client_walk;
 use crate::server::{
@@ -184,7 +184,7 @@ pub unsafe fn cmd_attach_session(
         }
         if rflag != 0 {
             if (*c).flags & CLIENT_READONLY as uint64_t != 0
-                && proc_get_peer_uid(peer_ptr(&(*c).peer)) != getuid()
+                && proc_get_peer_uid((*c).peer_ptr()) != getuid()
             {
                 cmdq_error(item, c"client is read-only".as_ptr(), fmt_args![]);
                 return CMD_RETURN_ERROR;
@@ -215,11 +215,7 @@ pub unsafe fn cmd_attach_session(
             detach_others(c, s, msgtype);
         }
         if Eflag == 0 {
-            environ_update(
-                session_options(s),
-                environ_ptr(&(*c).environ),
-                session_environ(s),
-            );
+            environ_update(session_options(s), (*c).environ_ptr(), session_environ(s));
         }
         server_client_set_session(c, s);
         if fresh || cmdq_get_flags(&*item) & CMDQ_STATE_REPEAT == 0 {
@@ -227,7 +223,7 @@ pub unsafe fn cmd_attach_session(
         }
         if fresh {
             if (*c).flags & CLIENT_CONTROL as uint64_t == 0 {
-                proc_send(peer_ptr(&(*c).peer), MSG_READY, -1, null(), 0);
+                proc_send((*c).peer_ptr(), MSG_READY, -1, null(), 0);
             }
             notify_client(c"client-attached".as_ptr(), c);
             (*c).flags |= CLIENT_ATTACHED as uint64_t;

@@ -159,7 +159,7 @@ fn parsing_enforces_exactly_one_path_and_rejects_unknown_flags() {
 
         let mut bare_flagless = cmd_parse_from_string(c"loadb -w /tmp/x".as_ptr(), null_mut());
         assert_eq!(bare_flagless.status, CMD_PARSE_SUCCESS);
-        let first = cmd_list_first(bare_flagless.cmdlist.as_ref().unwrap().as_ptr());
+        let first = cmd_list_first(bare_flagless.cmdlist.as_ref().unwrap());
         assert!(!first.is_null());
         let _ = bare_flagless.cmdlist.take();
     }

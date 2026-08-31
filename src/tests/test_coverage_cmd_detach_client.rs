@@ -93,7 +93,7 @@ unsafe fn assert_untouched(c: *mut client) {
             (*c).flags & ((CLIENT_EXIT | CLIENT_SUSPENDED) as uint64_t),
             0,
             "{} was touched",
-            seen(cstr_ptr(&(*c).name))
+            seen((*c).name_ptr())
         );
         assert_eq!((*c).exit_type, CLIENT_EXIT_RETURN);
         assert_eq!((*c).exit_msgtype, 0);
@@ -109,11 +109,11 @@ unsafe fn assert_detached(c: *mut client, want: msgtype, session: &str) {
             (*c).flags & (CLIENT_EXIT as uint64_t),
             0,
             "{} was not detached",
-            seen(cstr_ptr(&(*c).name))
+            seen((*c).name_ptr())
         );
         assert_eq!((*c).exit_type, CLIENT_EXIT_DETACH);
         assert_eq!((*c).exit_msgtype, want);
-        assert_eq!(seen(cstr_ptr(&(*c).exit_session)), session);
+        assert_eq!(seen((*c).exit_session_ptr()), session);
     }
 }
 
@@ -124,7 +124,7 @@ unsafe fn assert_suspended(c: *mut client) {
             (*c).flags & (CLIENT_SUSPENDED as uint64_t),
             CLIENT_SUSPENDED as uint64_t,
             "{} was not suspended",
-            seen(cstr_ptr(&(*c).name))
+            seen((*c).name_ptr())
         );
     }
 }

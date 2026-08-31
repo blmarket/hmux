@@ -247,10 +247,9 @@ fn test_job_transfer_and_check_died() {
         );
         assert!(!j.is_null());
 
-        let mut pid: crate::types::pid_t = 0;
         let mut tty = [0 as ::core::ffi::c_char; 32];
         let pid_val = (*j).pid;
-        let fd = job_transfer(j, &raw mut pid, tty.as_mut_ptr(), 32);
+        let (fd, pid) = job_transfer(j, tty.as_mut_ptr(), 32);
         assert_eq!(pid, pid_val);
         if fd >= 0 {
             ::libc::close(fd);

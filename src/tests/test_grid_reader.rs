@@ -64,7 +64,7 @@ impl Grid {
     fn tab(&self, px: u_int, py: u_int, width: u_int) {
         let mut gc = grid_default_cell;
         unsafe {
-            grid_set_tab(&raw mut gc, width);
+            grid_set_tab(&mut gc, width);
             grid_set_cell(&mut *self.ptr(), px, py, &gc);
             for i in 1..width {
                 grid_set_padding(&mut *self.ptr(), px + i, py);
@@ -79,22 +79,22 @@ fn cursor(gr: &grid_reader<'_>) -> (u_int, u_int) {
 }
 
 fn right(gr: &mut grid_reader<'_>, wrap: c_int, all: c_int, onemore: c_int) -> (u_int, u_int) {
-    grid_reader_cursor_right(&mut *gr, wrap, all, onemore);
+    grid_reader_cursor_right(gr, wrap, all, onemore);
     cursor(gr)
 }
 
 fn left(gr: &mut grid_reader<'_>, wrap: c_int) -> (u_int, u_int) {
-    grid_reader_cursor_left(&mut *gr, wrap);
+    grid_reader_cursor_left(gr, wrap);
     cursor(gr)
 }
 
 fn next_word(gr: &mut grid_reader<'_>, separators: &CStr) -> (u_int, u_int) {
-    grid_reader_cursor_next_word(&mut *gr, separators);
+    grid_reader_cursor_next_word(gr, separators);
     cursor(gr)
 }
 
 fn next_word_end(gr: &mut grid_reader<'_>, separators: &CStr) -> (u_int, u_int) {
-    grid_reader_cursor_next_word_end(&mut *gr, separators);
+    grid_reader_cursor_next_word_end(gr, separators);
     cursor(gr)
 }
 
@@ -104,7 +104,7 @@ fn previous_word(
     already: c_int,
     stop_at_eol: c_int,
 ) -> (u_int, u_int) {
-    grid_reader_cursor_previous_word(&mut *gr, separators, already, stop_at_eol);
+    grid_reader_cursor_previous_word(gr, separators, already, stop_at_eol);
     cursor(gr)
 }
 
@@ -120,13 +120,13 @@ fn one(s: &str) -> utf8_data {
 
 fn jump(gr: &mut grid_reader<'_>, s: &str) -> (c_int, (u_int, u_int)) {
     let jc = one(s);
-    let found = grid_reader_cursor_jump(&mut *gr, &jc);
+    let found = grid_reader_cursor_jump(gr, &jc);
     (found, cursor(gr))
 }
 
 fn jump_back(gr: &mut grid_reader<'_>, s: &str) -> (c_int, (u_int, u_int)) {
     let jc = one(s);
-    let found = grid_reader_cursor_jump_back(&mut *gr, &jc);
+    let found = grid_reader_cursor_jump_back(gr, &jc);
     (found, cursor(gr))
 }
 

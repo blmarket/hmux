@@ -6,7 +6,7 @@ use crate::tests::test_fixtures::zeroed_term;
 use crate::tests::test_fixtures::{
     Args, Clients, Options, Pane, Registry, Session, Window, globals, link, unlink,
 };
-use ::core::ffi::{CStr, c_int};
+use ::core::ffi::{CStr, c_int, c_longlong};
 use ::core::ptr::{null, null_mut};
 use ::std::ffi::CString;
 
@@ -23,13 +23,16 @@ fn entry_for(name: &CStr) -> &'static options_table_entry_t {
 /// A table entry of this module's own, so that the shapes the real option
 /// table has none of can be reached. An option set holds a borrowed pointer
 /// to the entry behind each of its options and reads it again while being
-/// freed, so an entry built here has to outlive every set it is put in.
-fn made_up(
+/// freed, so an entry built here belongs in a static of its own rather than
+/// in anything the test owns.
+const fn made_up(
     name: &'static CStr,
     type_0: options_table_type,
     flags: c_int,
-) -> &'static mut options_table_entry_t {
-    Box::leak(Box::new(options_table_entry_t {
+    default_str: Option<&'static CStr>,
+    default_num: c_longlong,
+) -> options_table_entry_t {
+    options_table_entry_t {
         name,
         alternative_name: None,
         type_0,
@@ -38,29 +41,40 @@ fn made_up(
         minimum: 0,
         maximum: 0,
         choices: None,
-        default_str: None,
-        default_num: 0,
+        default_str,
+        default_num,
         default_arr: None,
         separator: None,
         pattern: None,
         text: None,
         unit: None,
-    }))
+    }
 }
 
 /// The shapes no option in the real table has: an array of numbers, a
 /// command whose default is not a command line, and a flag that is on.
 #[test]
 fn the_shapes_the_option_table_has_none_of() {
+    static NUMBERS: options_table_entry_t = made_up(
+        c"@numbers",
+        OPTIONS_TABLE_NUMBER,
+        OPTIONS_TABLE_IS_ARRAY,
+        None,
+        0,
+    );
+    static COMMAND: options_table_entry_t = made_up(
+        c"@command",
+        OPTIONS_TABLE_COMMAND,
+        0,
+        Some(c"no-such-command"),
+        0,
+    );
+    static FLAG: options_table_entry_t = made_up(c"@flag", OPTIONS_TABLE_FLAG, 0, None, 1);
+
     let _guard = globals();
-    let numbers = made_up(c"@numbers", OPTIONS_TABLE_NUMBER, OPTIONS_TABLE_IS_ARRAY);
-    let command = made_up(c"@command", OPTIONS_TABLE_COMMAND, 0);
-    command.default_str = Some(c"no-such-command");
-    let flag = made_up(c"@flag", OPTIONS_TABLE_FLAG, 0);
-    flag.default_num = 1;
     let oo = Options::empty(null_mut());
     unsafe {
-        let o = options_empty(oo.ptr(), numbers);
+        let o = options_empty(oo.ptr(), &NUMBERS);
         let mut cause: Option<CString> = None;
         assert_eq!(options_array_set(o, 0, c"1".as_ptr(), 0, &mut cause), -1);
         assert_eq!(
@@ -69,14 +83,11 @@ fn the_shapes_the_option_table_has_none_of() {
         );
         assert_eq!(options_array_set(o, 0, c"1".as_ptr(), 0, &mut None), -1);
 
-        let o = options_default(oo.ptr(), command);
-        assert!((*o).value.cmdlist().is_null());
+        let o = options_default(oo.ptr(), &COMMAND);
+        assert!((*o).value.cmdlist().is_none());
 
-        assert_eq!(
-            options_default_to_string(flag).to_string_lossy(),
-            "on"
-        );
-        let o = options_default(oo.ptr(), flag);
+        assert_eq!(options_default_to_string(&FLAG).to_string_lossy(), "on");
+        let o = options_default(oo.ptr(), &FLAG);
         assert_eq!(options_to_string(o, -1, 0).to_string_lossy(), "on");
         assert_eq!(options_to_string(o, -1, 1).to_string_lossy(), "1");
     }
@@ -1473,7 +1484,7 @@ fn an_empty_pane_colours_option_reads_back_as_no_defaults() {
             palette: None,
             default_palette: Some(Box::new([-1; 256])),
         };
-        options_load_pane_colours(oo.ptr(), &raw mut p);
+        options_load_pane_colours(oo.ptr(), Some(&mut p));
         assert!(p.default_palette.is_none());
     }
 }
@@ -1494,14 +1505,11 @@ fn pane_colours_read_back_by_index_and_load_into_a_palette() {
             palette: None,
             default_palette: None,
         };
-        options_load_pane_colours(oo.ptr(), &raw mut p);
-        assert_eq!(colour_palette_get(&raw mut p, 0), 1);
-        assert_eq!(
-            colour_palette_get(&raw mut p, 1),
-            0x00ff00 | COLOUR_FLAG_RGB
-        );
-        assert_eq!(colour_palette_get(&raw mut p, 2), -1);
-        colour_palette_free(&raw mut p);
+        options_load_pane_colours(oo.ptr(), Some(&mut p));
+        assert_eq!(colour_palette_get(Some(&p), 0), 1);
+        assert_eq!(colour_palette_get(Some(&p), 1), 0x00ff00 | COLOUR_FLAG_RGB);
+        assert_eq!(colour_palette_get(Some(&p), 2), -1);
+        colour_palette_free(Some(&mut p));
     }
 }
 

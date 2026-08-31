@@ -217,7 +217,7 @@ unsafe fn cmd_source_file_complete_cb(
         CMD_RETURN_NORMAL
     }
 }
-unsafe fn cmd_source_file_complete(mut c: *mut client, cdata: SourceFileRef) {
+unsafe fn cmd_source_file_complete(mut c: *mut client, cdata: &SourceFileRef) {
     unsafe {
         let cdata = &*cdata.as_ptr();
         if cfg_finished != 0 {
@@ -227,14 +227,16 @@ unsafe fn cmd_source_file_complete(mut c: *mut client, cdata: SourceFileRef) {
             {
                 (*c).retval = 1 as ::core::ffi::c_int;
             }
-            cmdq_insert_after(
-                held_item(&cdata.after),
-                cmdq_get_callback1(
-                    c"cmd_source_file_complete_cb".as_ptr(),
-                    Some(cmd_source_file_complete_cb),
-                    CmdqCallbackData::None,
-                ),
-            );
+            if let Some(after) = cdata.after.as_ref().and_then(CmdqItemWeak::upgrade) {
+                cmdq_insert_after(
+                    &after,
+                    cmdq_get_callback1(
+                        c"cmd_source_file_complete_cb".as_ptr(),
+                        Some(cmd_source_file_complete_cb),
+                        CmdqCallbackData::None,
+                    ),
+                );
+            }
         }
     }
 }
@@ -252,12 +254,12 @@ unsafe fn cmd_source_file_done(
             _ => panic!("source-file callback data is not source-file data"),
         };
         let cdata = &mut *cdata_ref.as_ptr();
-        let item = cdata
+        let item_ref = cdata
             .item
             .as_ref()
             .and_then(CmdqItemWeak::upgrade)
             .expect("the item that asked for the file is waiting on it");
-        let item = item.as_ptr();
+        let item = item_ref.as_ptr();
         let mut n: u_int = 0;
         let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
         let mut target: *mut cmd_find_state = cmdq_get_target(item);
@@ -300,21 +302,18 @@ unsafe fn cmd_source_file_done(
                 ClientFileData::SourceFile(cdata_ref.clone()),
             );
         } else {
-            cmd_source_file_complete(c, cdata_ref);
-            cmdq_continue(item);
+            cmd_source_file_complete(c, &cdata_ref);
+            cmdq_continue(&item_ref);
         };
     }
 }
-unsafe fn cmd_source_file_add(
-    mut cdata: *mut cmd_source_file_data,
-    mut path: *const ::core::ffi::c_char,
-) {
+unsafe fn cmd_source_file_add(cdata: &SourceFileRef, mut path: *const ::core::ffi::c_char) {
     unsafe {
         log_debug(
             c"%s: %s".as_ptr(),
             fmt_args![c"cmd_source_file_add".as_ptr(), path],
         );
-        (*cdata).files.push(CStr::from_ptr(path).to_owned());
+        (*cdata.as_ptr()).files.push(CStr::from_ptr(path).to_owned());
     }
 }
 /// `path` with every byte a glob would take specially backslash-escaped, so
@@ -373,27 +372,27 @@ unsafe fn cmd_source_file_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
                 fmt_args![c"cmd_source_file_exec".as_ptr(), (*c).source_file_depth],
             );
         }
+        let mut flags: ::core::ffi::c_int = 0;
+        if args_has(args, 'q' as i32 as u_char) != 0 {
+            flags |= CMD_PARSE_QUIET;
+        }
+        if args_has(args, 'n' as i32 as u_char) != 0 {
+            flags |= CMD_PARSE_PARSEONLY;
+        }
+        if c.is_null() || !(*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+            parse_flags = cmd_get_parse_flags(self_0);
+            if args_has(args, 'v' as i32 as u_char) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
+                flags |= CMD_PARSE_VERBOSE;
+            }
+        }
         let cdata = SourceFileRef::new(cmd_source_file_data {
             item: cmdq_item_weak_from_ptr(item),
-            flags: 0,
+            flags,
             after: cmdq_item_weak_from_ptr(item),
             retval,
             current: 0,
             files: Vec::new(),
         });
-        let cdata_ptr = cdata.as_ptr();
-        if args_has(args, 'q' as i32 as u_char) != 0 {
-            (*cdata_ptr).flags |= CMD_PARSE_QUIET;
-        }
-        if args_has(args, 'n' as i32 as u_char) != 0 {
-            (*cdata_ptr).flags |= CMD_PARSE_PARSEONLY;
-        }
-        if c.is_null() || !(*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            parse_flags = cmd_get_parse_flags(self_0);
-            if args_has(args, 'v' as i32 as u_char) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
-                (*cdata_ptr).flags |= CMD_PARSE_VERBOSE;
-            }
-        }
         let cwd = cmd_source_file_quote_for_glob(CStr::from_ptr(server_client_get_cwd(
             c,
             ::core::ptr::null_mut::<session>(),
@@ -406,7 +405,7 @@ unsafe fn cmd_source_file_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
                 path = expanded.as_ref().expect("just expanded").as_ptr();
             }
             if strcmp(path, c"-".as_ptr()) == 0 as ::core::ffi::c_int {
-                cmd_source_file_add(cdata_ptr, c"-".as_ptr());
+                cmd_source_file_add(&cdata, c"-".as_ptr());
             } else {
                 if *path as ::core::ffi::c_int == '/' as i32 {
                     pattern = CStr::from_ptr(path).to_owned();
@@ -419,7 +418,7 @@ unsafe fn cmd_source_file_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
                 );
                 result = glob(pattern.as_ptr(), 0 as ::core::ffi::c_int, None, &raw mut g);
                 if result != 0 as ::core::ffi::c_int {
-                    if result != GLOB_NOMATCH || !(*cdata_ptr).flags & CMD_PARSE_QUIET != 0 {
+                    if result != GLOB_NOMATCH || !flags & CMD_PARSE_QUIET != 0 {
                         if result == GLOB_NOMATCH {
                             error = strerror(ENOENT);
                         } else if result == GLOB_NOSPACE {
@@ -434,7 +433,7 @@ unsafe fn cmd_source_file_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
                 } else {
                     j = 0 as u_int;
                     while (j as __size_t) < g.gl_pathc {
-                        cmd_source_file_add(cdata_ptr, *g.gl_pathv.offset(j as isize));
+                        cmd_source_file_add(&cdata, *g.gl_pathv.offset(j as isize));
                         j = j.wrapping_add(1);
                     }
                     globfree(&raw mut g);
@@ -442,18 +441,19 @@ unsafe fn cmd_source_file_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
             }
             i = i.wrapping_add(1);
         }
-        (*cdata_ptr).after = cmdq_item_weak_from_ptr(item);
-        (*cdata_ptr).retval = retval;
-        if !(*cdata_ptr).files.is_empty() {
+        (*cdata.as_ptr()).after = cmdq_item_weak_from_ptr(item);
+        (*cdata.as_ptr()).retval = retval;
+        let first = (*cdata.as_ptr()).files.first().map(|path| path.as_ptr());
+        if let Some(first) = first {
             file_read(
                 c,
-                (*cdata_ptr).files[0].as_ptr(),
+                first,
                 Some(cmd_source_file_done),
-                ClientFileData::SourceFile(cdata),
+                ClientFileData::SourceFile(cdata.clone()),
             );
             retval = CMD_RETURN_WAIT;
         } else {
-            cmd_source_file_complete(c, cdata);
+            cmd_source_file_complete(c, &cdata);
         }
         retval
     }

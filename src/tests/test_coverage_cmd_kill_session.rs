@@ -291,7 +291,7 @@ fn clearing_alerts_sweeps_every_window_of_the_target_and_redraws_its_clients() {
         );
         assert_eq!((*drifter).flags, 0);
 
-        let walked = winlinks_first(&raw mut (*s.ptr()).windows);
+        let walked = winlinks_first(&mut (*s.ptr()).windows);
         assert_eq!(walked, wl0);
         assert_eq!(winlinks_after(walked), wl1);
         assert_eq!(

@@ -27,7 +27,7 @@
 
 use crate::arguments::args_has;
 use crate::cmd::queue::{cmdq_get_client, cmdq_get_event, cmdq_get_source, cmdq_get_target};
-use crate::cmd::{cmd_get_args, cmd_get_args_ptr, cmd_get_entry, cmd_mouse_pane};
+use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::modes::{
     window_copy_pagedown, window_copy_pageup, window_copy_scroll, window_copy_set_line_numbers,
     window_copy_start_drag,
@@ -227,7 +227,7 @@ unsafe fn cmd_copy_mode_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
         }
 
         if args_has(args, b'M') != 0 {
-            let Some((s, _, mouse_wp)) = cmd_mouse_pane(&raw mut (*event).m) else {
+            let Some((s, _, mouse_wp)) = cmd_mouse_pane(&(*event).m) else {
                 return CMD_RETURN_NORMAL;
             };
             wp = mouse_wp;
@@ -237,7 +237,7 @@ unsafe fn cmd_copy_mode_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
         }
 
         if ::core::ptr::eq(cmd_get_entry(self_0), &cmd_clock_mode_entry) {
-            window_pane_set_mode(wp, null_mut(), WindowMode::Clock, null_mut(), null_mut());
+            window_pane_set_mode(wp, null_mut(), WindowMode::Clock, null_mut(), None);
             return CMD_RETURN_NORMAL;
         }
 
@@ -257,11 +257,11 @@ unsafe fn cmd_copy_mode_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
             swp,
             WindowMode::Copy,
             null_mut(),
-            cmd_get_args_ptr(self_0),
+            Some(args),
         ) == 0;
         window_copy_set_line_numbers(wp, line_numbers);
         if opened && args_has(args, b'M') != 0 {
-            window_copy_start_drag(c, &raw mut (*event).m);
+            window_copy_start_drag(c, &(*event).m);
         }
 
         if args_has(args, b'u') != 0 {
@@ -271,7 +271,7 @@ unsafe fn cmd_copy_mode_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
             window_copy_pagedown(wp, 0, args_has(args, b'e'));
         }
         if args_has(args, b'S') != 0 {
-            let (_bigger, _tty_ox, tty_oy, _tty_sx, _tty_sy) = tty_window_offset(&raw mut (*c).tty);
+            let (_bigger, _tty_ox, tty_oy, _tty_sx, _tty_sy) = tty_window_offset(&(*c).tty);
             window_copy_scroll(
                 wp,
                 (*c).tty.mouse_slider_mpos,

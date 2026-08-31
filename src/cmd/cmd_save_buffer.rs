@@ -1,5 +1,7 @@
 use crate::arguments::{args_get, args_has, args_string};
-use crate::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_print_data};
+use crate::cmd::queue::{
+    cmdq_continue, cmdq_error, cmdq_get_client, cmdq_item_weak_from_ptr, cmdq_print_data,
+};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::ffi::strerror;
 use crate::file::file_write;
@@ -177,17 +179,24 @@ unsafe fn cmd_save_buffer_done(
     mut data: ClientFileData,
 ) {
     unsafe {
-        let mut item: *mut cmdq_item = match data {
+        let observed = match data {
             ClientFileData::SaveBuffer(item) => item,
             _ => panic!("save-buffer callback data is not save-buffer data"),
         };
         if closed == 0 {
             return;
         }
+        let Some(item) = observed.upgrade() else {
+            return;
+        };
         if error != 0 as ::core::ffi::c_int {
-            cmdq_error(item, c"%s: %s".as_ptr(), fmt_args![strerror(error), path]);
+            cmdq_error(
+                item.as_ptr(),
+                c"%s: %s".as_ptr(),
+                fmt_args![strerror(error), path],
+            );
         }
-        cmdq_continue(item);
+        cmdq_continue(&item);
     }
 }
 unsafe fn cmd_save_buffer_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cmd_retval {
@@ -236,7 +245,9 @@ unsafe fn cmd_save_buffer_exec(mut self_0: &cmd, mut item: *mut cmdq_item) -> cm
             flags,
             bufdata,
             Some(cmd_save_buffer_done),
-            ClientFileData::SaveBuffer(item),
+            ClientFileData::SaveBuffer(
+                cmdq_item_weak_from_ptr(item).expect("the saving item is live"),
+            ),
         );
         CMD_RETURN_WAIT
     }

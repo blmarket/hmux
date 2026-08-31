@@ -126,13 +126,13 @@ fn an_index_only_target_shuffles_up_from_the_sessions_current_window() {
         assert_eq!(run(&mut item), CMD_RETURN_NORMAL);
 
         let s = chain.sptr();
-        let at_one = winlink_find_by_index(&raw mut (*s).windows, 1);
-        let at_two = winlink_find_by_index(&raw mut (*s).windows, 2);
+        let at_one = winlink_find_by_index(&mut (*s).windows, 1);
+        let at_two = winlink_find_by_index(&mut (*s).windows, 2);
         chain.tracking(&[at_one, at_two]);
 
-        assert_eq!(winlink_count(&raw mut (*s).windows), 2);
+        assert_eq!(winlink_count(&(*s).windows), 2);
         assert!(
-            winlink_find_by_index(&raw mut (*s).windows, 0).is_null(),
+            winlink_find_by_index(&mut (*s).windows, 0).is_null(),
             "the source slot was given up"
         );
         assert!(!at_one.is_null() && !at_two.is_null());
@@ -147,7 +147,7 @@ fn an_index_only_target_shuffles_up_from_the_sessions_current_window() {
             "which the window standing there shuffled up for"
         );
         assert!(
-            winlink_find_by_index(&raw mut (*s).windows, 9).is_null(),
+            winlink_find_by_index(&mut (*s).windows, 9).is_null(),
             "the -t index itself was never used"
         );
     }
@@ -175,11 +175,11 @@ fn a_target_at_the_last_index_refuses_to_shuffle_up() {
         );
 
         let s = chain.sptr();
-        assert_eq!(winlink_count(&raw mut (*s).windows), 2);
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 0), wl0);
+        assert_eq!(winlink_count(&(*s).windows), 2);
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 0), wl0);
         assert_eq!((*wl0).window(), w0);
         assert_eq!(
-            winlink_find_by_index(&raw mut (*s).windows, c_int::MAX),
+            winlink_find_by_index(&mut (*s).windows, c_int::MAX),
             wl_last
         );
         assert_eq!((*wl_last).window(), w_last);

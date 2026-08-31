@@ -76,7 +76,7 @@ unsafe fn walk(head: *mut sessions_t) -> Vec<String> {
     unsafe {
         (*head)
             .values()
-            .map(|s| seen(cstr_ptr(&(*s.as_ptr()).name)))
+            .map(|s| seen((*s.as_ptr()).name_ptr()))
             .collect()
     }
 }
@@ -134,10 +134,10 @@ fn a_session_is_created_with_the_name_it_is_given() {
     unsafe {
         let was = next_session_id;
         let s = created.session(None, Some(c"named"));
-        assert_eq!(seen(cstr_ptr(&(*s).name)), "named");
+        assert_eq!(seen((*s).name_ptr()), "named");
         assert_eq!((*s).id, was);
         assert_eq!(::core::ptr::read(&raw const next_session_id), was + 1);
-        assert_eq!(seen(cstr_ptr(&(*s).cwd)), "/tmp");
+        assert_eq!(seen((*s).cwd_ptr()), "/tmp");
         assert!(session_ref_from_ptr(s).is_some());
         assert_eq!((*s).flags, 0);
         assert!((*s).tio.is_none());
@@ -158,11 +158,8 @@ fn a_session_with_no_name_is_named_after_its_id() {
     unsafe {
         let first = created.session(Some(c"pre"), None);
         let second = created.session(None, None);
-        assert_eq!(
-            seen(cstr_ptr(&(*first).name)),
-            format!("pre-{}", (*first).id)
-        );
-        assert_eq!(seen(cstr_ptr(&(*second).name)), format!("{}", (*second).id));
+        assert_eq!(seen((*first).name_ptr()), format!("pre-{}", (*first).id));
+        assert_eq!(seen((*second).name_ptr()), format!("{}", (*second).id));
         assert_eq!((*second).id, (*first).id + 1);
     }
 }
@@ -178,14 +175,8 @@ fn a_name_that_is_taken_costs_the_next_session_its_id() {
         let taken_name = CString::new(format!("pre-{}", next_id + 1)).expect("no NUL");
         let held = created.session(None, Some(taken_name.as_c_str()));
         let next = created.session(Some(c"pre"), None);
-        assert_eq!(
-            seen(cstr_ptr(&(*held).name)),
-            format!("pre-{}", (*held).id + 1)
-        );
-        assert_eq!(
-            seen(cstr_ptr(&(*next).name)),
-            format!("pre-{}", (*held).id + 2)
-        );
+        assert_eq!(seen((*held).name_ptr()), format!("pre-{}", (*held).id + 1));
+        assert_eq!(seen((*next).name_ptr()), format!("pre-{}", (*held).id + 2));
         assert_eq!((*next).id, (*held).id + 2);
     }
 }
@@ -224,7 +215,7 @@ fn a_session_is_alive_while_the_server_holds_it() {
         let s = created.session(None, Some(c"held"));
         assert_eq!(session_alive(s), 1);
         assert_eq!(session_alive(apart.ptr()), 0);
-        let name = name_of(cstr_ptr(&(*s).name)).to_owned();
+        let name = name_of((*s).name_ptr()).to_owned();
         let reference = session_registry_remove(s).expect("session owner");
         assert_eq!(session_alive(s), 0);
         sessions.map().insert(name, reference);
@@ -276,9 +267,9 @@ fn a_session_is_kept_while_anything_holds_a_handle_to_it() {
         let s = created.session(None, Some(c"counted"));
         let reference = session_ref_from_ptr(s).expect("session owner");
         let weak = reference.downgrade();
-        let name = name_of(cstr_ptr(&(*s).name)).to_owned();
+        let name = name_of((*s).name_ptr()).to_owned();
         session_registry_remove(s);
-        assert_eq!(seen(cstr_ptr(&(*s).name)), "counted");
+        assert_eq!(seen((*s).name_ptr()), "counted");
         assert!(weak.upgrade().is_some());
         sessions.map().insert(name, reference);
         session_registry_remove(s);
@@ -337,6 +328,10 @@ impl Linked {
         self.session.ptr()
     }
 
+    fn handle(&self) -> &SessionRef {
+        self.session.handle()
+    }
+
     fn window(&mut self, i: usize) -> *mut window {
         self.windows[i].ptr()
     }
@@ -349,7 +344,7 @@ impl Linked {
     fn current(&mut self) -> Option<String> {
         unsafe {
             let curw = session_get_curw(self.ptr());
-            (!curw.is_null()).then(|| seen(cstr_ptr(&(*(*curw).window()).name)))
+            (!curw.is_null()).then(|| seen((*(*curw).window()).name_ptr()))
         }
     }
 
@@ -374,7 +369,7 @@ impl Linked {
     fn indexes(&mut self) -> Vec<c_int> {
         unsafe {
             let mut out = Vec::new();
-            let mut wl = winlinks_first(&raw mut (*self.ptr()).windows);
+            let mut wl = winlinks_first(&mut (*self.ptr()).windows);
             while !wl.is_null() {
                 out.push((*wl).idx);
                 wl = winlinks_after(wl);
@@ -390,18 +385,15 @@ impl Drop for Linked {
             let s = self.session.ptr();
             session_set_curw(s, null_mut::<winlink>());
             while !(*s).lastw.is_empty() {
-                winlink_stack_remove(
-                    &raw mut (*s).lastw,
-                    winlink_of(s, (*s).lastw.first().copied()),
-                );
+                winlink_stack_remove(&mut (*s).lastw, winlink_of(s, (*s).lastw.first().copied()));
             }
             while let Some(wl) = (*s)
                 .windows
-                .values()
+                .values_mut()
                 .next()
-                .map(|wl| wl.as_ref() as *const winlink as *mut winlink)
+                .map(|wl| &raw mut **wl)
             {
-                winlink_remove(&raw mut (*s).windows, wl);
+                winlink_remove(&mut (*s).windows, wl);
             }
         }
     }
@@ -564,7 +556,7 @@ fn a_session_goes_back_to_the_window_it_came_from() {
         session_set_current(s, linked.wl(1));
         assert_eq!(session_last(s), 0);
         assert_eq!(linked.current().as_deref(), Some("w0"));
-        winlink_stack_push(&raw mut (*s).lastw, session_get_curw(s));
+        winlink_stack_push(&mut (*s).lastw, session_get_curw(s));
         assert_eq!(session_last(s), 1);
     }
 }
@@ -866,9 +858,7 @@ fn a_group_is_synchronised_from_one_session_to_the_others() {
         assert_eq!(other.indexes(), [1, 2]);
         assert_eq!(other.current().as_deref(), Some("w0"));
         assert_eq!(
-            seen(cstr_ptr(
-                &(*(*winlink_find_by_index(&raw mut (*other.ptr()).windows, 2)).window()).name
-            )),
+            seen((*(*winlink_find_by_index(&mut (*other.ptr()).windows, 2)).window()).name_ptr()),
             "w1"
         );
         other.winlinks.clear();
@@ -973,18 +963,18 @@ fn the_history_limit_reaches_every_pane_of_the_session() {
     unsafe {
         let w = linked.window(0);
         pane.hand_to(w);
-        let gd = screen_grid_ptr(&raw mut (*pane.ptr()).base);
+        let gd = screen_grid_ptr(&mut (*pane.ptr()).base);
         for _ in 0..20 {
             grid_scroll_history(&mut *gd, 8);
         }
         assert_eq!((*gd).hsize, 20);
 
         options_set_number((*linked.ptr()).options_ptr(), c"history-limit".as_ptr(), 5);
-        session_update_history(linked.ptr());
+        session_update_history(linked.handle());
         assert_eq!((*gd).hlimit, 5);
         assert_eq!((*gd).hsize, 5);
 
-        session_update_history(linked.ptr());
+        session_update_history(linked.handle());
         assert_eq!((*gd).hsize, 4);
     }
 }
@@ -1150,10 +1140,7 @@ fn renumbering_carries_the_marked_pane_over() {
         session_renumber_windows(linked.ptr());
         assert_eq!(linked.indexes(), [0, 1]);
         assert_eq!((*marked_pane.winlink()).idx, 1);
-        assert_eq!(
-            seen(cstr_ptr(&(*(*marked_pane.winlink()).window()).name)),
-            "w1"
-        );
+        assert_eq!(seen((*(*marked_pane.winlink()).window()).name_ptr()), "w1");
         server_clear_marked();
         linked.winlinks.clear();
     }

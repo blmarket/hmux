@@ -249,7 +249,7 @@ unsafe fn cmd_find_window_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval
             null_mut::<window_pane>(),
             WindowMode::Tree,
             target,
-            new_args_ptr,
+            Some(&new_args),
         );
         CMD_RETURN_NORMAL
     }

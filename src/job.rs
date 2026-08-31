@@ -494,12 +494,13 @@ pub unsafe fn job_run(
         ::core::ptr::null_mut::<job>()
     }
 }
+/// Hands the job's file descriptor and process id to the caller and takes the
+/// job off the list, copying its tty name into `tty` when one is given.
 pub unsafe fn job_transfer(
     mut job: *mut job,
-    mut pid: *mut pid_t,
     mut tty: *mut ::core::ffi::c_char,
     mut ttylen: size_t,
-) -> ::core::ffi::c_int {
+) -> (::core::ffi::c_int, pid_t) {
     unsafe {
         let mut fd: ::core::ffi::c_int = (*job).fd;
         log_debug(
@@ -507,9 +508,7 @@ pub unsafe fn job_transfer(
             fmt_args![job, (*job).cmd.as_deref()],
         );
         let listed = take_job(job);
-        if !pid.is_null() {
-            *pid = (*job).pid;
-        }
+        let pid = (*job).pid;
         if !tty.is_null() {
             strlcpy(tty, &raw mut (*job).tty as *mut ::core::ffi::c_char, ttylen);
         }
@@ -524,7 +523,7 @@ pub unsafe fn job_transfer(
             (*job).event.free();
         }
         drop(listed);
-        fd
+        (fd, pid)
     }
 }
 pub unsafe fn job_free(mut job: *mut job) {

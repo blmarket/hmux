@@ -23,6 +23,15 @@ fn channel(name: &CStr) -> &'static WaitChannel {
     channels().get(name).expect("channel is missing")
 }
 
+/// The parked items a channel still observes, as the raw views the fixtures
+/// compare by.
+fn observed(parked: &VecDeque<CmdqItemWeak>) -> Vec<*mut cmdq_item> {
+    parked
+        .iter()
+        .map(|item| item.upgrade().expect("the parked item is alive").as_ptr())
+        .collect()
+}
+
 /// An item the command queue would hand to the command, with a client
 /// behind it: `cmdq_get_client` reads that client and `cmdq_continue`
 /// clears the waiting flag, and those are the only fields this module
@@ -74,7 +83,9 @@ fn a_channel_is_only_removed_once_it_is_woken_free_and_unwaited() {
     assert_eq!(channel_names(), ["chan"]);
 
     channel_for(c"chan").locked = false;
-    channel_for(c"chan").waiters.push_back(item.ptr());
+    channel_for(c"chan")
+        .waiters
+        .push_back(cmdq_item_weak_from_ptr(item.ptr()).expect("the item is live"));
     remove_if_idle(c"chan");
     assert_eq!(channel_names(), ["chan"]);
 
@@ -112,7 +123,10 @@ fn waiting_on_a_fresh_channel_blocks_the_item() {
     unsafe {
         assert_eq!(cmd_wait_for_wait(first.ptr(), c"chan"), CMD_RETURN_WAIT);
         assert_eq!(cmd_wait_for_wait(second.ptr(), c"chan"), CMD_RETURN_WAIT);
-        assert_eq!(channel(c"chan").waiters, [first.ptr(), second.ptr()]);
+        assert_eq!(
+            observed(&channel(c"chan").waiters),
+            [first.ptr(), second.ptr()]
+        );
         assert_eq!(first.flags(), CMDQ_WAITING);
     }
 }
@@ -148,6 +162,28 @@ fn signalling_continues_every_waiter_but_leaves_the_channel() {
     }
 }
 
+/// A waiter whose queue item has already been given up — its client died
+/// while it was parked — is skipped by the signal instead of answered
+/// through a view of a freed item.
+#[test]
+fn a_waiter_whose_item_is_gone_is_skipped_by_the_signal() {
+    let _guard = exclusive();
+    let mut kept = waiting_item();
+    unsafe {
+        {
+            let mut gone = waiting_item();
+            assert_eq!(cmd_wait_for_wait(gone.ptr(), c"chan"), CMD_RETURN_WAIT);
+        }
+        assert_eq!(cmd_wait_for_wait(kept.ptr(), c"chan"), CMD_RETURN_WAIT);
+        assert_eq!(
+            cmd_wait_for_signal(::core::ptr::null_mut(), c"chan"),
+            CMD_RETURN_NORMAL
+        );
+        assert_eq!(kept.flags() & CMDQ_WAITING, 0);
+        assert!(channel(c"chan").waiters.is_empty());
+    }
+}
+
 #[test]
 fn waiting_without_a_client_is_an_error() {
     let _guard = exclusive();
@@ -177,7 +213,7 @@ fn locking_a_locked_channel_queues_behind_it() {
     unsafe {
         cmd_wait_for_lock(holder.ptr(), c"chan");
         assert_eq!(cmd_wait_for_lock(waiter.ptr(), c"chan"), CMD_RETURN_WAIT);
-        assert_eq!(channel(c"chan").lockers, [waiter.ptr()]);
+        assert_eq!(observed(&channel(c"chan").lockers), [waiter.ptr()]);
     }
 }
 
@@ -219,7 +255,7 @@ fn unlocking_hands_the_lock_to_the_next_locker() {
         assert_eq!(next.flags() & CMDQ_WAITING, 0);
         assert_eq!(last.flags(), CMDQ_WAITING);
         assert!(channel(c"chan").locked);
-        assert_eq!(channel(c"chan").lockers, [last.ptr()]);
+        assert_eq!(observed(&channel(c"chan").lockers), [last.ptr()]);
 
         assert_eq!(cmd_wait_for_unlock(next.ptr(), c"chan"), CMD_RETURN_NORMAL);
         assert_eq!(last.flags() & CMDQ_WAITING, 0);

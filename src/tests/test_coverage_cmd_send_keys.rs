@@ -97,8 +97,8 @@ unsafe fn packed_utf8_char(bytes: &[u8]) -> utf8_char {
         for (i, b) in bytes.iter().enumerate() {
             ud.data[i] = *b;
         }
-        let mut uc: utf8_char = 0;
-        assert_eq!(crate::text::utf8_from_data(&ud, &raw mut uc), UTF8_DONE);
+        let (state, uc) = crate::text::utf8_from_data(&ud);
+        assert_eq!(state, UTF8_DONE);
         uc
     }
 }
@@ -121,7 +121,7 @@ impl Mode {
             assert!((*wp).modes.is_empty(), "a mode is already open");
             let mut fs = t.state();
             assert_eq!(
-                window_pane_set_mode(wp, wp, mode, &raw mut fs, args.ptr()),
+                window_pane_set_mode(wp, wp, mode, &raw mut fs, Some(&*args.ptr())),
                 0,
                 "the mode did not open"
             );

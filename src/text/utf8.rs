@@ -416,7 +416,11 @@ unsafe fn utf8_put_item(data: &[u8]) -> Option<u_int> {
     }
 }
 
-pub unsafe fn utf8_from_data(ud: &utf8_data, uc: *mut utf8_char) -> utf8_state {
+/// Packs `ud` into a [`utf8_char`], along with whether the pack succeeded.
+///
+/// The character comes back either way: on failure it is the placeholder the
+/// C wrote through its out-parameter, one space per column of `ud`'s width.
+pub unsafe fn utf8_from_data(ud: &utf8_data) -> (utf8_state, utf8_char) {
     unsafe {
         if ud.width > 2 {
             fatalx(
@@ -436,7 +440,7 @@ pub unsafe fn utf8_from_data(ud: &utf8_data, uc: *mut utf8_char) -> utf8_state {
             utf8_put_item(utf8_bytes(ud))
         };
         if let Some(index) = index {
-            *uc = (ud.size as utf8_char) << 24 | (ud.width as utf8_char + 1) << 29 | index;
+            let uc = (ud.size as utf8_char) << 24 | (ud.width as utf8_char + 1) << 29 | index;
             log_debug(
                 c"%s: (%d %d %.*s) -> %08x".as_ptr(),
                 fmt_args![
@@ -445,17 +449,17 @@ pub unsafe fn utf8_from_data(ud: &utf8_data, uc: *mut utf8_char) -> utf8_state {
                     ud.size as ::core::ffi::c_int,
                     ud.size as ::core::ffi::c_int,
                     &raw const ud.data as *const u_char,
-                    *uc
+                    uc
                 ],
             );
-            return UTF8_DONE;
+            return (UTF8_DONE, uc);
         }
-        *uc = match ud.width {
+        let uc = match ud.width {
             0 => 1 << 29,
             1 => 1 << 24 | 2 << 29 | 0x20,
             _ => 1 << 24 | 2 << 29 | 0x2020,
         };
-        UTF8_ERROR
+        (UTF8_ERROR, uc)
     }
 }
 
@@ -602,7 +606,7 @@ pub unsafe fn utf8_fromwc(wc: wchar_t, ud: &mut utf8_data) -> utf8_state {
         }
         ud.have = size as u_char;
         ud.size = ud.have;
-        let Ok(width) = utf8_width(&*ud) else {
+        let Ok(width) = utf8_width(ud) else {
             return UTF8_ERROR;
         };
         ud.width = width as u_char;
@@ -619,7 +623,7 @@ pub fn utf8_open(ud: &mut utf8_data, ch: u_char) -> utf8_state {
             0xf0..=0xf4 => 4,
             _ => return UTF8_ERROR,
         };
-        utf8_append(&mut *ud, ch);
+        utf8_append(ud, ch);
         UTF8_MORE
     }
 }
@@ -646,7 +650,7 @@ pub unsafe fn utf8_append(ud: &mut utf8_data, ch: u_char) -> utf8_state {
         if ud.width == 0xff {
             return UTF8_ERROR;
         }
-        let Ok(width) = utf8_width(&*ud) else {
+        let Ok(width) = utf8_width(ud) else {
             return UTF8_ERROR;
         };
         ud.width = width as u_char;
@@ -864,7 +868,7 @@ pub fn utf8_rpadcstr(s: &CStr, width: u_int) -> CString {
 pub unsafe fn utf8_cstrhas(s: *const ::core::ffi::c_char, ud: &utf8_data) -> ::core::ffi::c_int {
     unsafe {
         let copy = utf8_fromcstr(s);
-        let found = copy.iter().any(|one| utf8_bytes(one) == utf8_bytes(&*ud));
+        let found = copy.iter().any(|one| utf8_bytes(one) == utf8_bytes(ud));
         found as ::core::ffi::c_int
     }
 }

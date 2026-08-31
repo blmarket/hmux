@@ -22,7 +22,7 @@ use crate::modes::{
 };
 use crate::session::{session_get_curw, session_id, session_name, session_options};
 use crate::tests::test_fixtures::{Pane, Session, Target, Window, globals, seen};
-use crate::types::{WindowMode, cstr_ptr};
+use crate::types::WindowMode;
 use crate::window::window_get_active;
 use ::core::ffi::CStr;
 
@@ -136,7 +136,7 @@ fn window_pane_and_session_fixtures_hold_expected_invariants() {
     unsafe {
         assert_eq!(session_id(sess.ptr()), 42);
         assert_eq!(seen(session_name(sess.ptr())), "auto09-sess");
-        assert_eq!(seen(cstr_ptr(&(*win.ptr()).name)), "auto09-win");
+        assert_eq!(seen((*win.ptr()).name_ptr()), "auto09-win");
         assert_eq!((*win.ptr()).sx, 80);
         assert_eq!((*win.ptr()).sy, 24);
         assert_eq!(window_get_active(win.ptr()), pane.ptr());

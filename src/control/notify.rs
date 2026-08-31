@@ -141,7 +141,7 @@ pub unsafe fn control_notify_window_layout_changed(mut w: *mut window) {
                 || (*c).session.is_null())
             {
                 s = (*c).session;
-                if !winlink_find_by_window_id(&raw mut (*s).windows, (*w).id).is_null() {
+                if !winlink_find_by_window_id(&mut (*s).windows, (*w).id).is_null() {
                     control_write(c, c"%s".as_ptr(), fmt_args![cp.as_ptr()]);
                 }
             }
@@ -177,7 +177,7 @@ pub unsafe fn control_notify_window_unlinked(_s: *mut session, mut w: *mut windo
                 || (*c).session.is_null())
             {
                 cs = (*c).session;
-                if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
+                if !winlink_find_by_window_id(&mut (*cs).windows, (*w).id).is_null() {
                     control_write(c, c"%%window-close @%u".as_ptr(), fmt_args![(*w).id]);
                 } else {
                     control_write(
@@ -200,7 +200,7 @@ pub unsafe fn control_notify_window_linked(_s: *mut session, mut w: *mut window)
                 || (*c).session.is_null())
             {
                 cs = (*c).session;
-                if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
+                if !winlink_find_by_window_id(&mut (*cs).windows, (*w).id).is_null() {
                     control_write(c, c"%%window-add @%u".as_ptr(), fmt_args![(*w).id]);
                 } else {
                     control_write(c, c"%%unlinked-window-add @%u".as_ptr(), fmt_args![(*w).id]);
@@ -219,7 +219,7 @@ pub unsafe fn control_notify_window_renamed(mut w: *mut window) {
                 || (*c).session.is_null())
             {
                 cs = (*c).session;
-                if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
+                if !winlink_find_by_window_id(&mut (*cs).windows, (*w).id).is_null() {
                     control_write(
                         c,
                         c"%%window-renamed @%u %s".as_ptr(),

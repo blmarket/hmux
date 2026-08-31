@@ -147,13 +147,8 @@ unsafe fn format_draw_put(
     width: u_int,
 ) {
     unsafe {
-        screen_write_cursormove(
-            &mut *octx,
-            ocx.wrapping_add(offset) as c_int,
-            ocy as c_int,
-            0,
-        );
-        screen_write_fast_copy(&mut *octx, &raw mut screens[which], start, 0, width, 1);
+        screen_write_cursormove(octx, ocx.wrapping_add(offset) as c_int, ocy as c_int, 0);
+        screen_write_fast_copy(octx, &screens[which], start, 0, width, 1);
         format_update_ranges(frs, which, offset, start, width);
     }
 }
@@ -191,41 +186,22 @@ unsafe fn format_draw_put_list(
         let marker_left = screens[LIST_LEFT].cx;
         let marker_right = screens[LIST_RIGHT].cx;
         if start != 0 && width > marker_left {
-            screen_write_cursormove(
-                &mut *octx,
-                ocx.wrapping_add(offset) as c_int,
-                ocy as c_int,
-                0,
-            );
-            screen_write_fast_copy(
-                &mut *octx,
-                &raw mut screens[LIST_LEFT],
-                0,
-                0,
-                marker_left,
-                1,
-            );
+            screen_write_cursormove(octx, ocx.wrapping_add(offset) as c_int, ocy as c_int, 0);
+            screen_write_fast_copy(octx, &screens[LIST_LEFT], 0, 0, marker_left, 1);
             offset = offset.wrapping_add(marker_left);
             start = start.wrapping_add(marker_left);
             width = width.wrapping_sub(marker_left);
         }
         if start.wrapping_add(width) < screens[LIST].cx && width > marker_right {
             screen_write_cursormove(
-                &mut *octx,
+                octx,
                 ocx.wrapping_add(offset)
                     .wrapping_add(width)
                     .wrapping_sub(marker_right) as c_int,
                 ocy as c_int,
                 0,
             );
-            screen_write_fast_copy(
-                &mut *octx,
-                &raw mut screens[LIST_RIGHT],
-                0,
-                0,
-                marker_right,
-                1,
-            );
+            screen_write_fast_copy(octx, &screens[LIST_RIGHT], 0, 0, marker_right, 1);
             width = width.wrapping_sub(marker_right);
         }
 
@@ -338,8 +314,8 @@ unsafe fn format_draw_left(
 
         if width_list == 0 {
             let mut ctx = screen_write_ctx::default();
-            screen_write_start(&mut ctx, &raw mut screens[LEFT]);
-            screen_write_fast_copy(&mut ctx, &raw mut screens[AFTER], 0, 0, width_after, 1);
+            screen_write_start(&mut ctx, &mut screens[LEFT]);
+            screen_write_fast_copy(&mut ctx, &screens[AFTER], 0, 0, width_after, 1);
             screen_write_stop(&mut ctx);
             format_draw_none(octx, available, ocx, ocy, screens, frs);
             return;
@@ -455,8 +431,8 @@ unsafe fn format_draw_centre(
 
         if width_list == 0 {
             let mut ctx = screen_write_ctx::default();
-            screen_write_start(&mut ctx, &raw mut screens[CENTRE]);
-            screen_write_fast_copy(&mut ctx, &raw mut screens[AFTER], 0, 0, width_after, 1);
+            screen_write_start(&mut ctx, &mut screens[CENTRE]);
+            screen_write_fast_copy(&mut ctx, &screens[AFTER], 0, 0, width_after, 1);
             screen_write_stop(&mut ctx);
             format_draw_none(octx, available, ocx, ocy, screens, frs);
             return;
@@ -571,8 +547,8 @@ unsafe fn format_draw_right(
 
         if width_list == 0 {
             let mut ctx = screen_write_ctx::default();
-            screen_write_start(&mut ctx, &raw mut screens[RIGHT]);
-            screen_write_fast_copy(&mut ctx, &raw mut screens[AFTER], 0, 0, width_after, 1);
+            screen_write_start(&mut ctx, &mut screens[RIGHT]);
+            screen_write_fast_copy(&mut ctx, &screens[AFTER], 0, 0, width_after, 1);
             screen_write_stop(&mut ctx);
             format_draw_none(octx, available, ocx, ocy, screens, frs);
             return;
@@ -779,7 +755,7 @@ unsafe fn utf8_more(ud: &mut utf8_data, bytes: &[u8], at: &mut usize) -> utf8_st
             if *at >= bytes.len() || more != UTF8_MORE {
                 return more;
             }
-            more = utf8_append(&mut *ud, bytes[*at]);
+            more = utf8_append(ud, bytes[*at]);
         }
     }
 }
@@ -789,7 +765,7 @@ unsafe fn format_draw_many(ctx: &mut screen_write_ctx, sy: &mut style, ch: u8, n
     unsafe {
         utf8_set(&mut sy.gc.data, ch);
         for _ in 0..n {
-            screen_write_cell(&mut *ctx, &raw mut sy.gc);
+            screen_write_cell(ctx, &mut sy.gc);
         }
     }
 }
@@ -858,7 +834,7 @@ pub unsafe fn format_draw(
         let mut ctx = [screen_write_ctx::default(); TOTAL];
         let mut width: [u_int; TOTAL] = [0; TOTAL];
         for i in 0..TOTAL {
-            screen_write_start(&mut ctx[i], &raw mut s[i]);
+            screen_write_start(&mut ctx[i], &mut s[i]);
             screen_write_clearendofline(&mut ctx[i], current_default.bg as u_int);
         }
 
@@ -884,7 +860,7 @@ pub unsafe fn format_draw(
                 width[current] += n / 2;
                 if even {
                     utf8_set(&mut sy.gc.data, b'[');
-                    screen_write_cell(&mut ctx[current], &raw mut sy.gc);
+                    screen_write_cell(&mut ctx[current], &mut sy.gc);
                     width[current] += 1;
                 }
                 continue;
@@ -907,7 +883,7 @@ pub unsafe fn format_draw(
                     utf8_set(&mut sy.gc.data, bytes[at]);
                     at += 1;
                 }
-                screen_write_cell(&mut ctx[current], &raw mut sy.gc);
+                screen_write_cell(&mut ctx[current], &mut sy.gc);
                 width[current] += sy.gc.data.width as u_int;
                 continue;
             }
@@ -1100,7 +1076,7 @@ pub unsafe fn format_draw(
                 let mut gc = grid_default_cell;
                 gc.bg = fill;
                 for _ in 0..available {
-                    screen_write_putc(&mut *octx, &raw mut gc, b' ');
+                    screen_write_putc(octx, &mut gc, b' ');
                 }
             }
 
@@ -1166,9 +1142,9 @@ pub unsafe fn format_draw(
         }
 
         for i in 0..TOTAL {
-            screen_free(&raw mut s[i]);
+            screen_free(&mut s[i]);
         }
-        screen_write_cursormove(&mut *octx, ocx as c_int, ocy as c_int, 0);
+        screen_write_cursormove(octx, ocx as c_int, ocy as c_int, 0);
     }
 }
 

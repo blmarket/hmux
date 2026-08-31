@@ -40,7 +40,8 @@ worktree instead and is fixed for the life of the loop. Naming a file wins over
 anything on standard input.
 
 `--preset` chooses what runs. `codex` (the default) is codex with
-`gpt-5.6-luna` at effort `max`; `agy` is the Antigravity CLI with
+`gpt-5.6-luna` at effort `max`; `sol` is codex with `gpt-5.6-sol` at effort
+`high`; `agy` is the Antigravity CLI with
 `gemini-3.7-flash` at effort `high`; `claude` is Claude Code on `claude-opus-5`,
 which takes no effort flag. Launching `agy` also records the worktree in the
 CLI's `trustedWorkspaces`, since it would otherwise stop on its trust dialog in

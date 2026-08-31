@@ -1,6 +1,8 @@
 use crate::arguments::{args_has, args_string};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client};
+use crate::cmd::queue::{
+    CmdqItemWeak, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_item_weak_from_ptr,
+};
 use crate::fmt_args;
 use crate::log::log_debug;
 use crate::tree::GlobalTree;
@@ -40,12 +42,14 @@ pub(crate) static cmd_wait_for_entry: cmd_entry = {
 };
 
 /// One named channel: whether a `-L` holds it, whether a `-S` has already
-/// arrived, and the command queue items blocked on each of the two waits.
+/// arrived, and the command queue items blocked on each of the two waits —
+/// held as observations, so an item whose queue has already given it up is
+/// skipped rather than answered.
 struct WaitChannel {
     locked: bool,
     woken: bool,
-    waiters: VecDeque<*mut cmdq_item>,
-    lockers: VecDeque<*mut cmdq_item>,
+    waiters: VecDeque<CmdqItemWeak>,
+    lockers: VecDeque<CmdqItemWeak>,
 }
 
 static WAIT_CHANNELS: GlobalTree<CString, WaitChannel> = GlobalTree::new();
@@ -118,7 +122,9 @@ unsafe fn cmd_wait_for_signal(_item: *mut cmdq_item, name: &CStr) -> cmd_retval 
             fmt_args![name.as_ptr()],
         );
         for item in ::core::mem::take(&mut wc.waiters) {
-            cmdq_continue(item);
+            if let Some(item) = item.upgrade() {
+                cmdq_continue(&item);
+            }
         }
         remove_if_idle(name);
         CMD_RETURN_NORMAL
@@ -144,7 +150,9 @@ unsafe fn cmd_wait_for_wait(item: *mut cmdq_item, name: &CStr) -> cmd_retval {
             c"wait channel %s not woken (%p)".as_ptr(),
             fmt_args![name.as_ptr(), c],
         );
-        channel_for(name).waiters.push_back(item);
+        channel_for(name)
+            .waiters
+            .push_back(cmdq_item_weak_from_ptr(item).expect("the waiting item is live"));
         CMD_RETURN_WAIT
     }
 }
@@ -157,7 +165,8 @@ unsafe fn cmd_wait_for_lock(item: *mut cmdq_item, name: &CStr) -> cmd_retval {
         }
         let wc = channel_for(name);
         if wc.locked {
-            wc.lockers.push_back(item);
+            wc.lockers
+                .push_back(cmdq_item_weak_from_ptr(item).expect("the locking item is live"));
             return CMD_RETURN_WAIT;
         }
         wc.locked = true;
@@ -168,13 +177,19 @@ unsafe fn cmd_wait_for_lock(item: *mut cmdq_item, name: &CStr) -> cmd_retval {
 unsafe fn cmd_wait_for_unlock(item: *mut cmdq_item, name: &CStr) -> cmd_retval {
     unsafe {
         let next = match channels().get_mut(name) {
-            Some(wc) if wc.locked => match wc.lockers.pop_front() {
-                Some(next) => Some(next),
-                None => {
-                    wc.locked = false;
-                    None
+            Some(wc) if wc.locked => {
+                let mut next = None;
+                while let Some(candidate) = wc.lockers.pop_front() {
+                    if let Some(live) = candidate.upgrade() {
+                        next = Some(live);
+                        break;
+                    }
                 }
-            },
+                if next.is_none() {
+                    wc.locked = false;
+                }
+                next
+            }
             _ => {
                 cmdq_error(
                     item,
@@ -185,7 +200,7 @@ unsafe fn cmd_wait_for_unlock(item: *mut cmdq_item, name: &CStr) -> cmd_retval {
             }
         };
         match next {
-            Some(next) => cmdq_continue(next),
+            Some(next) => cmdq_continue(&next),
             None => remove_if_idle(name),
         }
         CMD_RETURN_NORMAL
@@ -200,7 +215,9 @@ pub fn cmd_wait_for_flush() {
     unsafe {
         for (name, wc) in ::core::mem::take(channels()) {
             for item in wc.waiters.into_iter().chain(wc.lockers) {
-                cmdq_continue(item);
+                if let Some(item) = item.upgrade() {
+                    cmdq_continue(&item);
+                }
             }
             log_debug(c"remove wait channel %s".as_ptr(), fmt_args![name.as_ptr()]);
         }

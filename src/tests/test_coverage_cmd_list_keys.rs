@@ -192,7 +192,7 @@ fn argument_bounds_accept_one_positional_and_the_documented_flags() {
         );
         assert_eq!(flags.status, CMD_PARSE_SUCCESS);
         let list = flags.cmdlist.as_ref().unwrap();
-        let first = cmd_list_first(list.as_ptr());
+        let first = cmd_list_first(&list);
         let args = cmd_get_args(&*first);
         assert_eq!(seen(args_get(args, b'F')), "fmt");
         assert_eq!(seen(args_get(args, b'O')), "name");

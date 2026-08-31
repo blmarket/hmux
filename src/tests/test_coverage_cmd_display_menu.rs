@@ -578,7 +578,7 @@ fn a_displayable_menu_installs_its_overlay_and_waits() {
         assert_eq!((*md).flags, MENU_STAYOPEN | MENU_NOMOUSE);
         assert_eq!((*md).border_lines, BOX_LINES_DOUBLE);
         assert_eq!((*md).choice, 1);
-        assert_eq!(seen(cstr_ptr(&(*md).style)), "bg=#ff0000");
+        assert_eq!(seen((*md).style_ptr()), "bg=#ff0000");
         assert!((*md).selected_style.is_none());
         assert!((*md).border_style.is_none());
 
@@ -593,9 +593,9 @@ fn a_displayable_menu_installs_its_overlay_and_waits() {
         let w = menu.width + 4;
         assert_eq!((*md).px, (100 - 1) / 2 - w / 2);
         assert_eq!((*md).py, 17);
-        assert_eq!((*screen_grid_ptr(&raw mut (*md).s)).sx, w);
+        assert_eq!((*screen_grid_ptr(&mut (*md).s)).sx, w);
         assert_eq!(
-            (*screen_grid_ptr(&raw mut (*md).s)).sy,
+            (*screen_grid_ptr(&mut (*md).s)).sy,
             menu.items.len() as u_int + 2
         );
         assert_eq!((*md).s.mode & MODE_CURSOR, 0);
@@ -623,7 +623,7 @@ fn a_mouse_menu_starts_in_mouse_mode_with_no_choice() {
         assert_eq!((*md).choice, -1);
         assert_ne!((*md).s.mode & MODE_MOUSE_ALL, 0);
         assert_ne!((*md).s.mode & MODE_MOUSE_BUTTON, 0);
-        assert_eq!(seen(cstr_ptr(&(*md).menu.title)), "t");
+        assert_eq!(seen((*md).menu.title_ptr()), "t");
         server_client_clear_overlay(p.tc);
     }
     drop(p);

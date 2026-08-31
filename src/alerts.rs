@@ -364,7 +364,7 @@ unsafe fn alerts_set_message(wl: *mut winlink, label: &CStr, option: &CStr) {
             }
 
             if visual == VISUAL_OFF || visual == VISUAL_BOTH {
-                tty_putcode(&raw mut (*c).tty, TTYC_BEL);
+                tty_putcode(&mut (*c).tty, TTYC_BEL);
             }
             if visual == VISUAL_OFF {
                 continue;

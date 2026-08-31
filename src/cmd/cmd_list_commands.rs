@@ -171,25 +171,25 @@ unsafe fn cmd_list_single_command(
 ) {
     unsafe {
         format_add(
-            &mut *ft,
+            ft,
             c"command_list_name",
             c"%s".as_ptr(),
             fmt_args![(*entry).name],
         );
         format_add(
-            &mut *ft,
+            ft,
             c"command_list_alias",
             c"%s".as_ptr(),
             fmt_args![text_or_empty((*entry).alias)],
         );
         format_add(
-            &mut *ft,
+            ft,
             c"command_list_usage",
             c"%s".as_ptr(),
             fmt_args![(*entry).usage],
         );
 
-        let line = format_expand(&mut *ft, CStr::from_ptr(template));
+        let line = format_expand(ft, CStr::from_ptr(template));
         if !line.as_bytes().is_empty() {
             cmdq_print(item, c"%s".as_ptr(), fmt_args![line.as_ptr()]);
         }

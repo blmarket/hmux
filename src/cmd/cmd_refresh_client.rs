@@ -284,7 +284,7 @@ unsafe fn cmd_refresh_client_control_client_size(
             cmdq_error(item, c"size too small or too big".as_ptr(), fmt_args![]);
             return CMD_RETURN_ERROR;
         }
-        tty_set_size(&raw mut (*tc).tty, x, y, 0 as u_int, 0 as u_int);
+        tty_set_size(&mut (*tc).tty, x, y, 0 as u_int, 0 as u_int);
         (*tc).flags |= CLIENT_SIZECHANGED as uint64_t;
         recalculate_sizes_now(1 as ::core::ffi::c_int);
         CMD_RETURN_NORMAL
@@ -329,7 +329,7 @@ unsafe fn cmd_refresh_client_update_offset(tc: *mut client, value: *const ::core
         }
     }
 }
-unsafe fn cmd_refresh_report(mut tty: *mut tty, mut value: *const ::core::ffi::c_char) {
+unsafe fn cmd_refresh_report(tty: &mut tty, mut value: *const ::core::ffi::c_char) {
     unsafe {
         let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
         let mut pane: u_int = 0;
@@ -368,7 +368,7 @@ unsafe fn cmd_refresh_client_exec(mut self_0: &cmd, mut item: *mut cmdq_item) ->
     unsafe {
         let args: &args = cmd_get_args(self_0);
         let mut tc: *mut client = cmdq_get_target_client(&*item);
-        let mut tty: *mut tty = &raw mut (*tc).tty;
+        let tty: &mut tty = &mut (*tc).tty;
         let mut w: *mut window = ::core::ptr::null_mut::<window>();
         let mut adjust: u_int = 0;
         if args_has(args, 'c' as i32 as u_char) != 0
@@ -430,7 +430,7 @@ unsafe fn cmd_refresh_client_exec(mut self_0: &cmd, mut item: *mut cmdq_item) ->
             return CMD_RETURN_NORMAL;
         }
         if args_has(args, 'l' as i32 as u_char) != 0 {
-            tty_clipboard_query(&raw mut (*tc).tty);
+            tty_clipboard_query(&mut (*tc).tty);
             return CMD_RETURN_NORMAL;
         }
         if args_has(args, 'F' as i32 as u_char) != 0 {

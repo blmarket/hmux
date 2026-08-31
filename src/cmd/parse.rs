@@ -148,6 +148,16 @@ pub struct cmd_parse_argument {
     pub commands: Option<::std::boxed::Box<cmd_parse_commands>>,
     pub(crate) cmdlist: Option<CmdListRef>,
 }
+impl cmd_parse_argument {
+    /// The list this argument carries, as the borrowed view the walks take,
+    /// or null for an argument that carries none.
+    fn commands_ptr(&mut self) -> *mut cmd_parse_commands {
+        self.commands
+            .as_mut()
+            .map(|cmds| &raw mut **cmds)
+            .unwrap_or(::core::ptr::null_mut::<cmd_parse_commands>())
+    }
+}
 pub type cmd_parse_argument_type = ::core::ffi::c_uint;
 pub const CMD_PARSE_PARSED_COMMANDS: cmd_parse_argument_type = 2;
 pub const CMD_PARSE_COMMANDS: cmd_parse_argument_type = 1;
@@ -212,7 +222,7 @@ unsafe fn cmd_parse_get_error(
         }
     }
 }
-unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, mut cmdlist: *mut cmd_list) {
+unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, cmdlist: &CmdListRef) {
     unsafe {
         if (*pi).item.is_null() || !(*pi).flags & CMD_PARSE_VERBOSE != 0 {
             return;
@@ -233,15 +243,6 @@ unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, mut cmdlist: *m
         }
     }
 }
-/// The list an argument carries, as the borrowed view the walks take, or null
-/// for an argument that carries none.
-fn commands_ptr(commands: &mut Option<Box<cmd_parse_commands>>) -> *mut cmd_parse_commands {
-    commands
-        .as_mut()
-        .map(|cmds| &raw mut **cmds)
-        .unwrap_or(::core::ptr::null_mut::<cmd_parse_commands>())
-}
-
 /// The commands of `cmds`, in order, as the borrowed pointers the walks over
 /// a parse tree take, walked the way the C's `TAILQ_FOREACH` walked them.
 unsafe fn command_list(
@@ -658,16 +659,15 @@ unsafe fn cmd_parse_log_commands(
                     }
                     CMD_PARSE_COMMANDS => {
                         let s = xasprintf(c"%s %u:%u".as_ptr(), fmt_args![prefix, i, j]);
-                        cmd_parse_log_commands(commands_ptr(&mut (*arg).commands), s.as_ptr());
+                        cmd_parse_log_commands((*arg).commands_ptr(), s.as_ptr());
                     }
                     CMD_PARSE_PARSED_COMMANDS => {
-                        let s = cmd_list_print(
-                            (*arg)
-                                .cmdlist
-                                .as_ref()
-                                .map_or(::core::ptr::null(), |list| list.as_ptr()),
-                            0 as ::core::ffi::c_int,
-                        );
+                        let s = (*arg)
+                            .cmdlist
+                            .as_ref()
+                            .map_or_else(::std::ffi::CString::default, |list| {
+                                cmd_list_print(list, 0)
+                            });
                         log_debug(
                             c"%s %u:%u: %s".as_ptr(),
                             fmt_args![prefix, i, j, s.as_ptr()],
@@ -770,7 +770,7 @@ unsafe fn cmd_parse_build_command(
                     value.value = ArgsValue::String((*arg).string.as_ref().unwrap().clone());
                 }
                 CMD_PARSE_COMMANDS => {
-                    cmd_parse_build_commands(commands_ptr(&mut (*arg).commands), pi, pr);
+                    cmd_parse_build_commands((*arg).commands_ptr(), pi, pr);
                     if pr.status as ::core::ffi::c_uint
                         != CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
@@ -803,7 +803,7 @@ unsafe fn cmd_parse_build_command(
                 Ok(add) => {
                     pr.status = CMD_PARSE_SUCCESS;
                     pr.cmdlist = Some(cmd_list_new());
-                    cmd_list_append(pr.cmdlist.as_ref().unwrap().as_ptr(), add);
+                    cmd_list_append(pr.cmdlist.as_ref().unwrap(), add);
                 }
                 Err(cause) => {
                     pr.status = CMD_PARSE_ERROR;
@@ -842,8 +842,8 @@ unsafe fn cmd_parse_build_commands(
         for cmd in command_list(cmds) {
             if !(*pi).flags & CMD_PARSE_ONEGROUP != 0 && (*cmd).line != line {
                 if let Some(current_list) = current.as_ref() {
-                    cmd_parse_print_commands(pi, current_list.as_ptr());
-                    cmd_list_move(result.as_ref().unwrap().as_ptr(), current_list.as_ptr());
+                    cmd_parse_print_commands(pi, current_list);
+                    cmd_list_move(result.as_ref().unwrap(), current_list);
                 }
                 current = Some(cmd_list_new());
             }
@@ -858,17 +858,14 @@ unsafe fn cmd_parse_build_commands(
             {
                 return;
             }
-            cmd_list_append_all(
-                current.as_ref().unwrap().as_ptr(),
-                pr.cmdlist.as_ref().unwrap().as_ptr(),
-            );
+            cmd_list_append_all(current.as_ref().unwrap(), pr.cmdlist.as_ref().unwrap());
             let _ = pr.cmdlist.take();
         }
         if let Some(current_list) = current.as_ref() {
-            cmd_parse_print_commands(pi, current_list.as_ptr());
-            cmd_list_move(result.as_ref().unwrap().as_ptr(), current_list.as_ptr());
+            cmd_parse_print_commands(pi, current_list);
+            cmd_list_move(result.as_ref().unwrap(), current_list);
         }
-        let s = cmd_list_print(result.as_ref().unwrap().as_ptr(), 0 as ::core::ffi::c_int);
+        let s = cmd_list_print(result.as_ref().unwrap(), 0 as ::core::ffi::c_int);
         log_debug(
             c"%s: %s".as_ptr(),
             fmt_args![c"cmd_parse_build_commands".as_ptr(), s.as_ptr()],

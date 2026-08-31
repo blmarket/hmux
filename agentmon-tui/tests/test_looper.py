@@ -485,6 +485,55 @@ def test_main_plumbs_the_claude_preset_into_the_config(
     ]
 
 
+def test_main_plumbs_the_sol_preset_into_the_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import looper as looper_module
+
+    monkeypatch.setattr("sys.stdin", _Stdin("Do the thing.\n"))
+    monkeypatch.setenv("TMUX_PANE", "%0")
+    monkeypatch.setattr(
+        looper_module,
+        "discover_context",
+        lambda **_kwargs: _FakeContext(tmp_path),
+    )
+    configs: list[LooperConfig] = []
+    monkeypatch.setattr(
+        looper_module, "Looper", lambda *args, **kwargs: _FakeLooper(configs, **kwargs)
+    )
+
+    assert main(["--preset", "sol"]) == 0
+    assert configs == [
+        LooperConfig(agent="codex", model="gpt-5.6-sol", effort="high",
+                     provider="codex")
+    ]
+
+
+def test_sol_preset_runs_codex_and_is_paced_by_codex_quota(tmp_path: Path) -> None:
+    preset = PRESETS["sol"]
+    service = FakeService("idle")
+    quota_service = FakeQuotaService(
+        report(codex_window(100.0, elapsed_days=0.5)), report(codex_window(0.0))
+    )
+    looper, lines, naps = build(
+        service,
+        quota_service,
+        tmp_path,
+        agent=preset.agent,
+        model=preset.model,
+        effort=preset.effort,
+        provider=preset.provider,
+        max_runs=1,
+    )
+
+    assert looper.run() == 0
+    assert naps == [300.0]
+    assert any("over pace" in line for line in lines)
+    assert service.splits[0]["agent"] == "codex"
+    assert service.splits[0]["model"] == "gpt-5.6-sol"
+    assert service.splits[0]["effort"] == "high"
+
+
 def test_main_rejects_a_preset_that_does_not_exist() -> None:
     with pytest.raises(SystemExit) as caught:
         main(["--preset", "nope"])

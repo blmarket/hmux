@@ -175,7 +175,7 @@ fn a_window_linked_twice_into_a_session_is_only_said_once() {
         assert_eq!((*first).flags & WINLINK_BELL, WINLINK_BELL);
         assert_eq!((*second).flags & WINLINK_BELL, WINLINK_BELL);
         assert_eq!(
-            seen(cstr_ptr(&(*c).message_string)),
+            seen((*c).message_string_ptr()),
             "Bell in current window",
             "the first winlink is the current one and the second says nothing"
         );
@@ -204,10 +204,7 @@ fn a_visual_alert_names_the_window_unless_the_client_is_looking_at_it() {
         (*here.ptr()).flags |= WINDOW_BELL;
 
         alerts_check_session(s.ptr());
-        assert_eq!(
-            seen(cstr_ptr(&(*c).message_string)),
-            "Bell in current window"
-        );
+        assert_eq!(seen((*c).message_string_ptr()), "Bell in current window");
         status_message_clear(c);
 
         (*here.ptr()).flags &= !WINDOW_BELL;
@@ -219,7 +216,7 @@ fn a_visual_alert_names_the_window_unless_the_client_is_looking_at_it() {
         );
 
         alerts_check_session(s.ptr());
-        assert_eq!(seen(cstr_ptr(&(*c).message_string)), "Bell in window 7");
+        assert_eq!(seen((*c).message_string_ptr()), "Bell in window 7");
         status_message_clear(c);
 
         assert_eq!((*here_wl).flags & WINLINK_BELL, WINLINK_BELL);

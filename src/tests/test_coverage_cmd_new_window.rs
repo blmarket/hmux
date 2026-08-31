@@ -252,8 +252,8 @@ fn an_invalid_n_refuses_the_command_and_touches_nothing() {
         assert_eq!((*caller).retval, 1);
 
         let s = chain.sptr();
-        assert_eq!(winlink_count(&raw mut (*s).windows), 1);
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 0), wl0);
+        assert_eq!(winlink_count(&(*s).windows), 1);
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 0), wl0);
         assert_eq!((*wl0).window(), w0);
         assert_eq!(window_count_panes(w0, 1), 1);
         assert_eq!(session_get_curw(s), wl0, "the refusal selected nothing");
@@ -294,13 +294,9 @@ fn searching_for_an_existing_name_selects_that_window_without_spawning() {
             wl0,
             "the old selection was stacked"
         );
-        assert_eq!(
-            winlink_count(&raw mut (*s).windows),
-            2,
-            "nothing was spawned"
-        );
+        assert_eq!(winlink_count(&(*s).windows), 2, "nothing was spawned");
         assert!(
-            winlink_find_by_index(&raw mut (*s).windows, 2).is_null(),
+            winlink_find_by_index(&mut (*s).windows, 2).is_null(),
             "no third window appeared"
         );
         assert_eq!(
@@ -346,11 +342,7 @@ fn with_d_the_search_returns_without_touching_the_selection() {
             "-d leaves the current window selected"
         );
         assert!((*s).lastw.is_empty(), "nothing was pushed onto the stack");
-        assert_eq!(
-            winlink_count(&raw mut (*s).windows),
-            2,
-            "nothing was spawned"
-        );
+        assert_eq!(winlink_count(&(*s).windows), 2, "nothing was spawned");
         assert!(
             window_get_latest(w1).is_null(),
             "-d never got as far as the latest update"
@@ -387,11 +379,7 @@ fn two_windows_sharing_the_name_refuse_the_search() {
         assert_eq!((*caller).retval, 1);
 
         let s = chain.sptr();
-        assert_eq!(
-            winlink_count(&raw mut (*s).windows),
-            2,
-            "nothing was spawned"
-        );
+        assert_eq!(winlink_count(&(*s).windows), 2, "nothing was spawned");
         assert_eq!(session_get_curw(s), wl0, "the refusal selected nothing");
     }
 }
@@ -431,12 +419,12 @@ fn an_explicit_index_in_use_fails_the_spawn_and_cleans_up() {
         assert_eq!((*caller).retval, 1);
 
         let s = chain.sptr();
-        assert_eq!(winlink_count(&raw mut (*s).windows), 1);
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 0), wl0);
+        assert_eq!(winlink_count(&(*s).windows), 1);
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 0), wl0);
         assert_eq!(session_get_curw(s), wl0);
         assert_eq!((*wl0).window(), w0);
         assert_eq!(window_count_panes(w0, 1), 1);
         assert_eq!(window_panes_first(w0), pane0, "the pane was left alone");
-        assert_eq!(seen(cstr_ptr(&(*w0).name)), "keep", "no rename happened");
+        assert_eq!(seen((*w0).name_ptr()), "keep", "no rename happened");
     }
 }

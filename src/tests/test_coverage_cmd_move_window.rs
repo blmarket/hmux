@@ -285,9 +285,9 @@ fn the_r_flag_renumbers_the_current_session_from_base_index() {
         chain.forget(wlb);
 
         let s = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 2);
-        let n0 = winlink_find_by_index(&raw mut (*s).windows, 0);
-        let n1 = winlink_find_by_index(&raw mut (*s).windows, 1);
+        assert_eq!(winlink_count(&(*s).windows), 2);
+        let n0 = winlink_find_by_index(&mut (*s).windows, 0);
+        let n1 = winlink_find_by_index(&mut (*s).windows, 1);
         assert!(!n0.is_null() && !n1.is_null());
         assert_ne!(n0, n1);
         assert_ne!(n0, wla, "the renumber rebuilt every winlink");
@@ -295,8 +295,8 @@ fn the_r_flag_renumbers_the_current_session_from_base_index() {
         assert_eq!((*n1).window(), wb);
         assert_eq!((*n0).idx, 0);
         assert_eq!((*n1).idx, 1);
-        assert!(winlink_find_by_index(&raw mut (*s).windows, 3).is_null());
-        assert!(winlink_find_by_index(&raw mut (*s).windows, 7).is_null());
+        assert!(winlink_find_by_index(&mut (*s).windows, 3).is_null());
+        assert!(winlink_find_by_index(&mut (*s).windows, 7).is_null());
         assert_eq!(
             session_get_curw(s),
             n0,
@@ -321,9 +321,9 @@ fn the_r_flag_with_an_unknown_session_refuses_and_leaves_the_gaps() {
         assert_eq!(run(&mut item), CMD_RETURN_ERROR);
 
         let s = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 2);
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 3), wla);
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 7), wlb);
+        assert_eq!(winlink_count(&(*s).windows), 2);
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 3), wla);
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 7), wlb);
         assert_eq!(session_get_curw(s), wla);
     }
 }
@@ -347,9 +347,9 @@ fn moving_to_another_session_selects_it_and_unlinks_the_source() {
 
         let home = chain.sptr(0);
         let dst = chain.sptr(away);
-        assert_eq!(winlink_count(&raw mut (*home).windows), 1);
-        assert!(winlink_find_by_index(&raw mut (*home).windows, 0).is_null());
-        assert_eq!(winlink_find_by_index(&raw mut (*home).windows, 1), wlb);
+        assert_eq!(winlink_count(&(*home).windows), 1);
+        assert!(winlink_find_by_index(&mut (*home).windows, 0).is_null());
+        assert_eq!(winlink_find_by_index(&mut (*home).windows, 1), wlb);
         assert_eq!(
             session_get_curw(home),
             wlb,
@@ -357,13 +357,13 @@ fn moving_to_another_session_selects_it_and_unlinks_the_source() {
         );
         assert!((*home).lastw.is_empty());
 
-        assert_eq!(winlink_count(&raw mut (*dst).windows), 2);
-        let moved = winlink_find_by_index(&raw mut (*dst).windows, 1);
+        assert_eq!(winlink_count(&(*dst).windows), 2);
+        let moved = winlink_find_by_index(&mut (*dst).windows, 1);
         assert!(!moved.is_null());
         assert_ne!(moved, wla, "the destination link is a fresh winlink");
         assert_eq!((*moved).window(), wa);
         assert_eq!((*moved).session(), dst);
-        assert_eq!(winlink_find_by_index(&raw mut (*dst).windows, 0), wlc);
+        assert_eq!(winlink_find_by_index(&mut (*dst).windows, 0), wlc);
         assert_eq!(
             session_get_curw(dst),
             moved,
@@ -411,8 +411,8 @@ fn the_link_window_name_leaves_the_source_window_in_place() {
 
         let home = chain.sptr(0);
         let dst = chain.sptr(away);
-        assert_eq!(winlink_count(&raw mut (*home).windows), 2);
-        assert_eq!(winlink_find_by_index(&raw mut (*home).windows, 0), wla);
+        assert_eq!(winlink_count(&(*home).windows), 2);
+        assert_eq!(winlink_find_by_index(&mut (*home).windows, 0), wla);
         assert_eq!(
             session_get_curw(home),
             wla,
@@ -420,12 +420,12 @@ fn the_link_window_name_leaves_the_source_window_in_place() {
         );
         assert!((*home).lastw.is_empty());
         assert_eq!(
-            (*winlink_find_by_index(&raw mut (*home).windows, 1)).window(),
+            (*winlink_find_by_index(&mut (*home).windows, 1)).window(),
             wb
         );
 
-        assert_eq!(winlink_count(&raw mut (*dst).windows), 2);
-        let added = winlink_find_by_index(&raw mut (*dst).windows, 1);
+        assert_eq!(winlink_count(&(*dst).windows), 2);
+        let added = winlink_find_by_index(&mut (*dst).windows, 1);
         assert!(!added.is_null());
         assert_eq!((*added).window(), wa, "the same window is now held twice");
         assert_eq!(session_get_curw(dst), added);
@@ -459,9 +459,9 @@ fn an_occupied_destination_index_refuses_and_reports_a_cause() {
         assert_eq!((*caller).retval, 1);
 
         let s = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 2);
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 0), wla);
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 1), wlb);
+        assert_eq!(winlink_count(&(*s).windows), 2);
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 0), wla);
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 1), wlb);
         assert_eq!(
             session_get_curw(s),
             wla,
@@ -487,11 +487,11 @@ fn before_shuffles_later_windows_up_to_make_room_at_the_target() {
         chain.forget(wla);
 
         let s = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 3);
-        assert!(winlink_find_by_index(&raw mut (*s).windows, 0).is_null());
-        let at_one = winlink_find_by_index(&raw mut (*s).windows, 1);
-        let at_two = winlink_find_by_index(&raw mut (*s).windows, 2);
-        let at_three = winlink_find_by_index(&raw mut (*s).windows, 3);
+        assert_eq!(winlink_count(&(*s).windows), 3);
+        assert!(winlink_find_by_index(&mut (*s).windows, 0).is_null());
+        let at_one = winlink_find_by_index(&mut (*s).windows, 1);
+        let at_two = winlink_find_by_index(&mut (*s).windows, 2);
+        let at_three = winlink_find_by_index(&mut (*s).windows, 3);
         assert_eq!((*at_one).window(), wb, "the window below the target stayed");
         assert_eq!(
             (*at_two).window(),
@@ -524,14 +524,11 @@ fn after_targets_the_slot_past_the_target_window() {
         chain.forget(wla);
 
         let s = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 2);
-        let at_two = winlink_find_by_index(&raw mut (*s).windows, 2);
+        assert_eq!(winlink_count(&(*s).windows), 2);
+        let at_two = winlink_find_by_index(&mut (*s).windows, 2);
         assert_eq!((*at_two).window(), wa, "-a picked the slot past the target");
-        assert_eq!(
-            (*winlink_find_by_index(&raw mut (*s).windows, 1)).window(),
-            wb
-        );
-        assert!(winlink_find_by_index(&raw mut (*s).windows, 0).is_null());
+        assert_eq!((*winlink_find_by_index(&mut (*s).windows, 1)).window(), wb);
+        assert!(winlink_find_by_index(&mut (*s).windows, 0).is_null());
         assert_eq!(session_get_curw(s), at_two);
     }
 }
@@ -558,8 +555,8 @@ fn renumber_windows_tightens_the_source_session_after_the_move() {
         chain.forget(wlb);
 
         let home = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*home).windows), 1);
-        let kept = winlink_find_by_index(&raw mut (*home).windows, 0);
+        assert_eq!(winlink_count(&(*home).windows), 1);
+        let kept = winlink_find_by_index(&mut (*home).windows, 0);
         assert!(!kept.is_null());
         assert_ne!(kept, wlb, "the option rebuilt the remaining winlink");
         assert_eq!((*kept).window(), wb);
@@ -568,8 +565,8 @@ fn renumber_windows_tightens_the_source_session_after_the_move() {
         assert!((*home).lastw.is_empty());
 
         let dst = chain.sptr(away);
-        assert_eq!(winlink_count(&raw mut (*dst).windows), 2);
-        let moved = winlink_find_by_index(&raw mut (*dst).windows, 1);
+        assert_eq!(winlink_count(&(*dst).windows), 2);
+        let moved = winlink_find_by_index(&mut (*dst).windows, 1);
         assert_eq!((*moved).window(), wa);
         assert_eq!(session_get_curw(dst), wlc, "-d left the destination alone");
     }
@@ -590,9 +587,9 @@ fn an_unresolvable_target_refuses_without_touching_anything() {
         assert_eq!(run(&mut item), CMD_RETURN_ERROR);
 
         let s = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 2);
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 0), wla);
-        assert_eq!(winlink_find_by_index(&raw mut (*s).windows, 1), wlb);
+        assert_eq!(winlink_count(&(*s).windows), 2);
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 0), wla);
+        assert_eq!(winlink_find_by_index(&mut (*s).windows, 1), wlb);
         assert_eq!(session_get_curw(s), wla);
         assert!((*s).lastw.is_empty());
     }

@@ -2,7 +2,8 @@ use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
 use crate::cmd::{CMD_RETURN_ERROR, CMD_RETURN_NORMAL, cmd_list_print};
 use crate::cmd::{
     CmdqStateRef, cmdq_add_formats, cmdq_append, cmdq_get_callback1, cmdq_get_command,
-    cmdq_get_flags, cmdq_get_target, cmdq_insert_after, cmdq_new_state, cmdq_running,
+    cmdq_get_flags, cmdq_get_target, cmdq_insert_after, cmdq_item_ref_of, cmdq_new_state,
+    cmdq_running,
 };
 use crate::cmd::{
     cmd_find_clear_state, cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_client,
@@ -89,7 +90,7 @@ unsafe fn notify_insert_one_hook(
             return item;
         };
         if log_get_level() != 0 {
-            let s = cmd_list_print(cmdlist.as_ptr(), 0);
+            let s = cmd_list_print(cmdlist, 0);
             log_debug(
                 c"%s: hook %s is: %s".as_ptr(),
                 fmt_args![
@@ -99,7 +100,8 @@ unsafe fn notify_insert_one_hook(
                 ],
             );
         }
-        cmdq_insert_after(item, cmdq_get_command(cmdlist, Some(state)))
+        let after = cmdq_item_ref_of(item);
+        cmdq_insert_after(&after, cmdq_get_command(cmdlist, Some(state)))
     }
 }
 
@@ -149,7 +151,7 @@ unsafe fn notify_insert_hook(mut item: *mut cmdq_item, ne: &mut notify_entry) {
         }
 
         let state = cmdq_new_state(&raw mut fs, null_mut::<key_event>(), CMDQ_STATE_NOHOOKS);
-        cmdq_add_formats(state.as_ptr(), &mut ne.formats);
+        cmdq_add_formats(&state, &mut ne.formats);
 
         if ne
             .name

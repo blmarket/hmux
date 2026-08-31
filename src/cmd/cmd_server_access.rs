@@ -4,7 +4,7 @@ use crate::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::ffi::{getpwnam, getuid};
 use crate::fmt_args;
 use crate::format::format_single;
-use crate::proc::{peer_ptr, proc_get_peer_uid};
+use crate::proc::proc_get_peer_uid;
 use crate::server::client_walk;
 use crate::server::{
     server_acl_display, server_acl_user_allow, server_acl_user_allow_write, server_acl_user_deny,
@@ -158,7 +158,7 @@ unsafe fn cmd_server_access_deny(mut item: *mut cmdq_item, mut pw: *mut passwd) 
             return CMD_RETURN_ERROR;
         }
         for loop_0 in client_walk() {
-            uid = proc_get_peer_uid(peer_ptr(&(*loop_0).peer));
+            uid = proc_get_peer_uid((*loop_0).peer_ptr());
             if uid == server_acl_get_uid(user) {
                 (*loop_0).exit_message = Some(c"access not allowed".to_owned());
                 (*loop_0).flags |= CLIENT_EXIT as uint64_t;

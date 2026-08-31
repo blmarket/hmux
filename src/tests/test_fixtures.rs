@@ -82,8 +82,8 @@ pub fn prompt_answers_clear() {
 
 use crate::cmd::cmd_find_from_winlink;
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
-use crate::cmd::{CmdqStateRef, CmdqType, cmdq_get_state_ref, cmdq_new_state};
-use crate::cmd::{cmd_get_args, cmd_get_args_ptr, cmd_list_first};
+use crate::cmd::{CmdqStateRef, CmdqType, cmdq_get_state_ref, cmdq_item_ref_of, cmdq_new_state};
+use crate::cmd::{cmd_get_args, cmd_list_first};
 use crate::environ::{environ_create_box, environ_entry_value, environ_free, environ_t};
 use crate::ffi::free;
 use crate::file::{CLIENT_DEAD, file_fire_done};
@@ -104,7 +104,7 @@ use crate::options::{options_create_boxed, options_default, options_free};
 use crate::paste::{paste_free, paste_get_name, paste_set, paste_walk};
 use crate::reactor;
 use crate::reactor::{IoWatch, Reactor, Timer};
-use crate::screen::{screen_free, screen_grid_ptr, screen_init};
+use crate::screen::{screen_free, screen_grid, screen_init};
 use crate::status::status_free;
 use crate::terminfo::TtyCode;
 use crate::terminfo::tty_term_of;
@@ -391,7 +391,7 @@ pub(crate) struct Screen(Box<screen>);
 impl Screen {
     pub(crate) fn new(sx: u_int, sy: u_int, hlimit: u_int) -> Screen {
         let mut s = Screen(zeroed_screen());
-        unsafe { screen_init(&raw mut *s.0, sx, sy, hlimit) };
+        unsafe { screen_init(&mut *s.0, sx, sy, hlimit) };
         s
     }
 
@@ -400,13 +400,13 @@ impl Screen {
     }
 
     pub(crate) fn grid(&self) -> *mut grid {
-        unsafe { screen_grid_ptr(&raw const *self.0 as *mut screen) }
+        screen_grid(&self.0) as *const grid as *mut grid
     }
 }
 
 impl Drop for Screen {
     fn drop(&mut self) {
-        unsafe { screen_free(&raw mut *self.0) };
+        unsafe { screen_free(&mut *self.0) };
     }
 }
 
@@ -540,14 +540,14 @@ impl Args {
             assert_eq!(pr.status, CMD_PARSE_SUCCESS, "{s:?} did not parse");
             let cmdlist = pr.cmdlist.take().unwrap();
             Args {
-                cmd: cmd_list_first(cmdlist.as_ptr()),
+                cmd: cmd_list_first(&cmdlist),
                 cmdlist,
             }
         }
     }
 
     pub(crate) fn ptr(&self) -> *mut args {
-        unsafe { cmd_get_args_ptr(&*self.cmd) }
+        unsafe { (*self.cmd).args_ptr() }
     }
 
     /// The list the parsed command sits in, which is what a queue item names
@@ -579,6 +579,17 @@ impl Args {
 enum ItemBox {
     Owned(CmdqItemRef),
     Queued(*mut cmdq_item),
+}
+
+impl ItemBox {
+    /// The item as a handle, whether the fixture still owns it or a queue has
+    /// taken it over.
+    fn handle(&self) -> CmdqItemRef {
+        match self {
+            ItemBox::Owned(item) => item.clone(),
+            ItemBox::Queued(item) => cmdq_item_ref_of(*item),
+        }
+    }
 }
 
 impl ::core::ops::Deref for ItemBox {
@@ -613,7 +624,7 @@ impl Item {
     /// An item with no client behind it.
     pub(crate) fn new() -> Item {
         let cmdlist = crate::cmd::cmd_list_new();
-        unsafe { crate::cmd::cmd_list_append(cmdlist.as_ptr(), empty_cmd()) };
+        unsafe { crate::cmd::cmd_list_append(&cmdlist, empty_cmd()) };
         let state = unsafe { cmdq_new_state(null_mut(), null_mut(), 0) };
         let mut it = Item {
             item: ItemBox::Owned(zeroed_cmdq_item(state.clone())),
@@ -695,15 +706,23 @@ impl Item {
     }
 
     pub(crate) fn cmd(&mut self) -> *mut cmd {
-        unsafe { crate::cmd::cmd_list_at(self.cmdlist.as_ptr(), 0) }
+        unsafe { crate::cmd::cmd_list_at(&self.cmdlist, 0) }
+    }
+
+    /// The arguments the item's command carries, as the pointer the argument
+    /// helpers take.
+    pub(crate) fn args_ptr(&mut self) -> *mut args {
+        unsafe { (*self.cmd()).args_ptr() }
     }
 
     pub(crate) fn client(&mut self) -> *mut client {
         &raw mut *self.client
     }
 
-    pub(crate) fn state_ref(&self) -> &CmdqStateRef {
-        unsafe { cmdq_get_state_ref(&raw const *self.item as *mut cmdq_item) }
+    /// The state the item shares with the rest of its queue, as a handle of
+    /// the caller's own.
+    pub(crate) fn state_ref(&self) -> CmdqStateRef {
+        cmdq_get_state_ref(&self.item.handle()).clone()
     }
 
     pub(crate) fn flags(&self) -> c_int {
@@ -759,6 +778,12 @@ impl Session {
         self.session.clone()
     }
 
+    /// The handle the fixture holds, for a callee that takes one rather than a
+    /// pointer.
+    pub(crate) fn handle(&self) -> &SessionRef {
+        &self.session
+    }
+
     pub(crate) fn environ(&self) -> *mut environ_t {
         unsafe { session_environ(self.session.as_ptr()) }
     }
@@ -806,6 +831,12 @@ impl Window {
         self.window.clone()
     }
 
+    /// The handle the fixture holds, for a callee that takes one rather than a
+    /// pointer.
+    pub(crate) fn handle(&self) -> &WindowRef {
+        &self.window
+    }
+
     pub(crate) fn options(&self) -> *mut options {
         unsafe { (*self.window.as_ptr()).options_ptr() }
     }
@@ -840,8 +871,8 @@ fn free_pane(pane: &mut window_pane) {
     unsafe {
         pane.resize_timer.disarm();
         pane.sync_timer.disarm();
-        screen_free(&raw mut pane.status_screen);
-        screen_free(&raw mut pane.base);
+        screen_free(&mut pane.status_screen);
+        screen_free(&mut pane.base);
         if let Some(oo) = pane.options.take() {
             options_free(oo);
         }
@@ -893,8 +924,8 @@ impl Pane {
         pane.control_fg = -1;
         unsafe {
             crate::style::style_ranges_init(&raw mut pane.border_status_line.ranges);
-            screen_init(&raw mut pane.base, sx, sy, hlimit);
-            screen_init(&raw mut pane.status_screen, 1, 1, 0);
+            screen_init(&mut pane.base, sx, sy, hlimit);
+            screen_init(&mut pane.status_screen, 1, 1, 0);
         }
         pane.shown = crate::types::PaneScreen::Base;
         let ptr = &raw mut *pane;
@@ -1323,7 +1354,7 @@ impl Drop for Registry {
 /// away.
 pub(crate) fn link(session: &mut Session, window: &mut Window, idx: c_int) -> *mut winlink {
     unsafe {
-        let wl = winlink_add(&raw mut (*session.ptr()).windows, idx);
+        let wl = winlink_add(&mut (*session.ptr()).windows, idx);
         assert!(!wl.is_null(), "index {idx} is already linked");
         (*wl).set_session(session.ptr());
         winlink_set_window_ref(wl, window.window.clone());
@@ -1340,7 +1371,7 @@ pub(crate) fn unlink(session: &mut Session, wl: *mut winlink) {
         if session_get_curw(session.ptr()) == wl {
             session_set_curw(session.ptr(), null_mut::<winlink>());
         }
-        crate::window::winlink_remove(&raw mut (*session.ptr()).windows, wl);
+        crate::window::winlink_remove(&mut (*session.ptr()).windows, wl);
     }
 }
 
@@ -1356,9 +1387,9 @@ pub(crate) fn unlink_all(session: &mut Session) {
         let s = session.ptr();
         while let Some(wl) = (*s)
             .windows
-            .values()
+            .values_mut()
             .next()
-            .map(|wl| wl.as_ref() as *const winlink as *mut winlink)
+            .map(|wl| &raw mut **wl)
         {
             unlink(session, wl);
         }
@@ -1414,6 +1445,11 @@ impl Target {
 
     pub(crate) fn session(&mut self) -> *mut session {
         self.session.ptr()
+    }
+
+    /// The handle on the target's session, for a callee that takes one.
+    pub(crate) fn session_handle(&self) -> &SessionRef {
+        self.session.handle()
     }
 
     pub(crate) fn winlink(&mut self, i: usize) -> *mut winlink {
@@ -1752,7 +1788,7 @@ mod tests {
         assert_eq!(item.flags(), 3);
         unsafe {
             assert_eq!(crate::cmd::cmdq_get_client(&*item.ptr()), item.client());
-            assert_eq!(seen(cstr_ptr(&(*item.cmd()).file)), "fixture.conf");
+            assert_eq!(seen((*item.cmd()).file_ptr()), "fixture.conf");
             assert_eq!((*item.cmd()).line, 7);
             assert_eq!(
                 seen(crate::arguments::args_string(cmd_get_args(&*item.cmd()), 0)),
@@ -1793,7 +1829,7 @@ mod tests {
             assert!((*first.screen()).grid.is_some());
             assert_eq!((*first.ptr()).fd, -1);
             assert_eq!((*first.ptr()).options_ptr(), first.options());
-            assert_eq!(seen(cstr_ptr(&(*w.ptr()).name)), "fixture");
+            assert_eq!(seen((*w.ptr()).name_ptr()), "fixture");
             assert_eq!((*w.ptr()).options_ptr(), w.options());
         }
     }
@@ -1832,7 +1868,7 @@ mod tests {
             let i = t.add_window(5, 80, 24);
             assert_eq!((*t.winlink(i)).idx, 5);
             assert_eq!((*t.winlink(i)).window(), t.window(i));
-            assert_eq!(winlink_count(&raw mut (*t.session()).windows), 2);
+            assert_eq!(winlink_count(&(*t.session()).windows), 2);
         }
     }
 
@@ -1923,8 +1959,8 @@ mod tests {
             assert_eq!((*wl).session(), s.ptr());
             assert_eq!((*wl).window(), w.ptr());
             assert_eq!(session_get_curw(s.ptr()), wl);
-            assert_eq!(winlink_count(&raw mut (*s.ptr()).windows), 1);
-            assert_eq!(winlink_find_by_index(&raw mut (*s.ptr()).windows, 0), wl);
+            assert_eq!(winlink_count(&(*s.ptr()).windows), 1);
+            assert_eq!(winlink_find_by_index(&mut (*s.ptr()).windows, 0), wl);
             assert_eq!(
                 winlinks_into(w.ptr())
                     .next()
@@ -1935,7 +1971,7 @@ mod tests {
         }
         unlink(&mut s, wl);
         unsafe {
-            assert_eq!(winlink_count(&raw mut (*s.ptr()).windows), 0);
+            assert_eq!(winlink_count(&(*s.ptr()).windows), 0);
             assert!(session_get_curw(s.ptr()).is_null());
             assert!(window_ref_from_ptr(w.ptr()).is_some());
         }

@@ -24,16 +24,11 @@ use std::cell::{Cell, RefCell};
 use std::ffi::{CStr, CString};
 use std::time::{Duration, Instant};
 
-use crate::fmt_args;
-use crate::options::{
-    options_default_to_string, options_get_only_ptr, options_set_string, options_table_entry,
-    options_to_string,
-};
 use crate::reactor::{Timer, TimerHandle};
-use crate::tmux::{global_options, global_s_options, global_w_options};
 use crate::types::{timeval, u_int};
 
 pub mod agent;
+pub mod git;
 pub mod host;
 
 pub use hmux_agent::observability::v1::{PaneId, ServerObservability};
@@ -115,7 +110,7 @@ pub trait Plugin {
 /// what [`init`] calls for each enabled built-in, and it is what an embedder
 /// calls for one of its own.
 pub fn register(mut plugin: Box<dyn Plugin>) {
-    apply_option_defaults(plugin.as_ref());
+    crate::server::server_apply_option_defaults(plugin.option_defaults());
     plugin.start(&ServerHost);
     let interval = plugin.interval();
     PLUGINS.with(|plugins| {
@@ -131,11 +126,14 @@ pub fn register(mut plugin: Box<dyn Plugin>) {
 /// The plugins this build carries. A new plugin is added here and enabled by
 /// name; nothing else in the server needs to know about it.
 fn builtins() -> Vec<Box<dyn Plugin>> {
-    vec![Box::new(agent::AgentPlugin::new())]
+    vec![
+        Box::new(agent::AgentPlugin::new()),
+        Box::new(git::GitPlugin::new()),
+    ]
 }
 
 /// The plugins that run when `TMUX_C2RS_PLUGINS` says nothing.
-const DEFAULT_PLUGINS: &[&str] = &["agent"];
+const DEFAULT_PLUGINS: &[&str] = &["agent", "git"];
 
 /// The plugin names `TMUX_C2RS_PLUGINS` asks for: a comma-separated list, or
 /// `all`, or `none`.
@@ -179,8 +177,9 @@ thread_local! {
 }
 
 /// Whether any plugin is registered. The lookup hooks in the format engine ask
-/// this first so that a server running none pays a single flag read.
-fn any_registered() -> bool {
+/// this first so that a server running none pays a single flag read, and the
+/// server's own option defaults ask it because they draw on plugin variables.
+pub(crate) fn any_registered() -> bool {
     PLUGINS.with(|plugins| !plugins.borrow().is_empty())
 }
 
@@ -198,48 +197,6 @@ pub(crate) fn init() {
     for plugin in builtins() {
         if all || wanted.iter().any(|name| name == plugin.name()) {
             register(plugin);
-        }
-    }
-}
-
-/// Put a plugin's option defaults in place, skipping any option the server
-/// already has a non-default value for.
-fn apply_option_defaults(plugin: &dyn Plugin) {
-    for (name, value) in plugin.option_defaults() {
-        let (Ok(name), Ok(value)) = (CString::new(*name), CString::new(*value)) else {
-            continue;
-        };
-        unsafe { set_if_default(&name, &value) };
-    }
-}
-
-/// Set one option, unless the server already holds a value for it other than
-/// the built-in default. Every global option carries an explicit value from
-/// startup, so "untouched" is a comparison against the table default rather
-/// than an absent entry.
-unsafe fn set_if_default(name: &CStr, value: &CStr) {
-    unsafe {
-        for oo in [global_options, global_s_options, global_w_options] {
-            if oo.is_null() {
-                continue;
-            }
-            let o = options_get_only_ptr(oo, name.as_ptr());
-            if o.is_null() {
-                continue;
-            }
-            let Some(entry) = options_table_entry(o) else {
-                continue;
-            };
-            if options_to_string(o, -1, 0) != options_default_to_string(entry) {
-                continue;
-            }
-            options_set_string(
-                oo,
-                name.as_ptr(),
-                0,
-                c"%s".as_ptr(),
-                fmt_args![value.as_ptr()],
-            );
         }
     }
 }

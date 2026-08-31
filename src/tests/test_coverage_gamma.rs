@@ -322,8 +322,7 @@ fn rename_window_invalid_name_is_refused_and_leaves_window_alone() {
             .targeting(&mut t)
             .with_args(c"rename-window good");
         {
-            use crate::cmd::cmd_get_args_ptr;
-            let v = crate::arguments::args_value(cmd_get_args_ptr(&*item.cmd()), 0);
+            let v = crate::arguments::args_value(item.args_ptr(), 0);
             assert!(!v.is_null());
             let bad: [c_char; 3] = [-1, -2, 0];
             (*v).value = ArgsValue::String(CStr::from_ptr(bad.as_ptr()).to_owned());

@@ -3568,7 +3568,7 @@ static tty_default_code_keys: [tty_default_key_code; 136] = [
             | KEYC_CTRL,
     },
 ];
-unsafe fn tty_keys_add(mut tty: *mut tty, mut s: *const ::core::ffi::c_char, mut key: key_code) {
+unsafe fn tty_keys_add(tty: &mut tty, mut s: *const ::core::ffi::c_char, mut key: key_code) {
     unsafe {
         let mut keystr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         keystr = key_string_lookup_key(key, 1 as ::core::ffi::c_int);
@@ -3621,7 +3621,7 @@ unsafe fn tty_keys_add1(
         }
     }
 }
-pub unsafe fn tty_keys_build(mut tty: *mut tty) {
+pub unsafe fn tty_keys_build(tty: &mut tty) {
     unsafe {
         let mut tdkr: *const tty_default_key_raw = ::core::ptr::null::<tty_default_key_raw>();
         let mut tdkx: *const tty_default_key_xterm = ::core::ptr::null::<tty_default_key_xterm>();
@@ -3679,7 +3679,7 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
                 .wrapping_div(::core::mem::size_of::<tty_default_key_code>() as usize)
         {
             tdkc = tty_default_code_keys.as_ptr().offset(i as isize);
-            s = tty_term_string(tty_term_of(&*tty), (*tdkc).code);
+            s = tty_term_string(tty_term_of(tty), (*tdkc).code);
             if *s as ::core::ffi::c_int != '\0' as i32 {
                 tty_keys_add(tty, s, (*tdkc).key);
             }
@@ -3702,13 +3702,16 @@ pub unsafe fn tty_keys_build(mut tty: *mut tty) {
         }
     }
 }
-pub unsafe fn tty_keys_free(mut tty: *mut tty) {
+pub unsafe fn tty_keys_free(tty: &mut tty) {
     unsafe {
         drop((*tty).key_tree.take());
     }
 }
 /// The key `buf` starts with, and how many of its bytes that key took.
-unsafe fn tty_keys_find<'a>(tty: *mut tty, buf: &[u8]) -> Option<(&'a mut tty_key, size_t)> {
+unsafe fn tty_keys_find<'a>(
+    tty: &'a mut tty,
+    buf: &[u8],
+) -> Option<(&'a mut tty_key, size_t)> {
     unsafe {
         let mut size = 0 as size_t;
         let tk = tty_keys_find1((*tty).key_tree.as_deref_mut(), buf, &mut size)?;
@@ -3753,9 +3756,9 @@ fn tty_keys_partial_paste_end(buf: &[u8]) -> bool {
     PASTE_END.starts_with(buf)
 }
 unsafe fn tty_keys_next1(
-    mut tty: *mut tty,
+    tty: &mut tty,
     buf: &[u8],
-    mut key: *mut key_code,
+    key: &mut key_code,
     size: &mut size_t,
     mut expired: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
@@ -3765,7 +3768,6 @@ unsafe fn tty_keys_next1(
         let mut c: *mut client = tty_client(tty);
         let mut ud = utf8_data::default();
         let mut more: utf8_state = UTF8_MORE;
-        let mut uc: utf8_char = 0;
         let mut i: u_int = 0;
         log_debug(
             c"%s: next key is %zu (%.*s) (expired=%d)".as_ptr(),
@@ -3823,7 +3825,8 @@ unsafe fn tty_keys_next1(
             {
                 return -(1 as ::core::ffi::c_int);
             }
-            if utf8_from_data(&ud, &raw mut uc) as ::core::ffi::c_uint
+            let (state, uc) = utf8_from_data(&ud);
+            if state as ::core::ffi::c_uint
                 != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
             {
                 return -(1 as ::core::ffi::c_int);
@@ -3843,7 +3846,7 @@ unsafe fn tty_keys_next1(
         -(1 as ::core::ffi::c_int)
     }
 }
-unsafe fn tty_keys_winsz(mut tty: *mut tty, buf: &[u8], size: &mut size_t) -> ::core::ffi::c_int {
+unsafe fn tty_keys_winsz(tty: &mut tty, buf: &[u8], size: &mut size_t) -> ::core::ffi::c_int {
     unsafe {
         let len = buf.len();
         let buf = buf.as_ptr() as *const ::core::ffi::c_char;
@@ -3944,7 +3947,7 @@ unsafe fn tty_keys_winsz(mut tty: *mut tty, buf: &[u8], size: &mut size_t) -> ::
         -(1 as ::core::ffi::c_int)
     }
 }
-pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
+pub unsafe fn tty_keys_next(tty: &mut tty) -> ::core::ffi::c_int {
     unsafe {
         let mut current_block: u64;
         let mut c: *mut client = tty_client(tty);
@@ -4042,13 +4045,13 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                 10299298647514879019 => {}
                                 18394967961554547273 => {}
                                 _ => {
-                                    match tty_keys_colours(
-                                        tty,
-                                        keys,
-                                        &mut size,
-                                        &mut (*tty).fg,
-                                        &mut (*tty).bg,
-                                    ) {
+                                    let mut fg = (*tty).fg;
+                                    let mut bg = (*tty).bg;
+                                    let colours =
+                                        tty_keys_colours(tty, keys, &mut size, &mut fg, &mut bg);
+                                    (*tty).fg = fg;
+                                    (*tty).bg = bg;
+                                    match colours {
                                         0 => {
                                             key = KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
                                             session_theme_changed((*c).session);
@@ -4090,7 +4093,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                                                 18394967961554547273 => {}
                                                 _ => {
                                                     match tty_keys_mouse(
-                                                        tty, keys, &mut size, &raw mut m,
+                                                        tty, keys, &mut size, &mut m,
                                                     ) {
                                                         0 => {
                                                             key = KEYC_MOUSE as ::core::ffi::c_ulong
@@ -4207,7 +4210,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
         loop {
             match current_block {
                 15385464967731526806 => {
-                    n = tty_keys_next1(tty, keys, &raw mut key, &mut size, expired);
+                    n = tty_keys_next1(tty, keys, &mut key, &mut size, expired);
                     if n == 0 as ::core::ffi::c_int {
                         current_block = 10299298647514879019;
                         continue;
@@ -4217,7 +4220,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         continue;
                     }
                     if *buf as ::core::ffi::c_int == '\u{1b}' as i32 && len > 1 as size_t {
-                        n = tty_keys_next1(tty, &keys[1..], &raw mut key, &mut size, expired);
+                        n = tty_keys_next1(tty, &keys[1..], &mut key, &mut size, expired);
                         if n == 0 as ::core::ffi::c_int {
                             if key as ::core::ffi::c_ulonglong & KEYC_IMPLIED_META != 0 {
                                 key = '\u{1b}' as i32 as key_code;
@@ -4362,9 +4365,10 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
                         tv.tv_usec = ((delay % 1000 as ::core::ffi::c_int) as ::core::ffi::c_long
                             * 1000 as ::core::ffi::c_long)
                             as __suseconds_t;
+                        let terminal: *mut tty = tty;
                         (*tty)
                             .key_timer
-                            .set_callback(move || tty_keys_callback(tty));
+                            .set_callback(move || tty_keys_callback(&mut *terminal));
                         (*tty).key_timer.arm(tv);
                         (*tty).flags |= TTY_TIMER;
                         return 0 as ::core::ffi::c_int;
@@ -4374,7 +4378,7 @@ pub unsafe fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int {
         }
     }
 }
-unsafe fn tty_keys_callback(tty: *mut tty) {
+unsafe fn tty_keys_callback(tty: &mut tty) {
     unsafe {
         if (*tty).flags & TTY_TIMER != 0 {
             while tty_keys_next(tty) != 0 {}
@@ -4382,7 +4386,7 @@ unsafe fn tty_keys_callback(tty: *mut tty) {
     }
 }
 unsafe fn tty_keys_extended_key(
-    mut tty: *mut tty,
+    tty: &mut tty,
     buf: &[u8],
     size: &mut size_t,
     mut key: *mut key_code,
@@ -4399,7 +4403,6 @@ unsafe fn tty_keys_extended_key(
         let mut nkey: key_code = 0;
         let mut onlykey: key_code = 0;
         let mut ud = utf8_data::default();
-        let mut uc: utf8_char = 0;
         *size = 0 as size_t;
         if *buf.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '\u{1b}' as i32 {
             return -(1 as ::core::ffi::c_int);
@@ -4474,8 +4477,7 @@ unsafe fn tty_keys_extended_key(
         {
             if utf8_fromwc(nkey as wchar_t, &mut ud) as ::core::ffi::c_uint
                 == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-                && utf8_from_data(&ud, &raw mut uc) as ::core::ffi::c_uint
-                    == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
+                && let (UTF8_DONE, uc) = utf8_from_data(&ud)
             {
                 nkey = uc as key_code;
             } else {
@@ -4533,10 +4535,10 @@ unsafe fn tty_keys_extended_key(
     }
 }
 unsafe fn tty_keys_mouse(
-    mut tty: *mut tty,
+    tty: &mut tty,
     buf: &[u8],
     size: &mut size_t,
-    mut m: *mut mouse_event,
+    m: &mut mouse_event,
 ) -> ::core::ffi::c_int {
     unsafe {
         let len = buf.len();
@@ -4680,14 +4682,14 @@ unsafe fn tty_keys_mouse(
         } else {
             return -(1 as ::core::ffi::c_int);
         }
-        (*m).lx = (*tty).mouse_last_x;
-        (*m).x = x;
-        (*m).ly = (*tty).mouse_last_y;
-        (*m).y = y;
-        (*m).lb = (*tty).mouse_last_b;
-        (*m).b = b;
-        (*m).sgr_type = sgr_type as u_int;
-        (*m).sgr_b = sgr_b;
+        m.lx = (*tty).mouse_last_x;
+        m.x = x;
+        m.ly = (*tty).mouse_last_y;
+        m.y = y;
+        m.lb = (*tty).mouse_last_b;
+        m.b = b;
+        m.sgr_type = sgr_type as u_int;
+        m.sgr_b = sgr_b;
         (*tty).mouse_last_x = x;
         (*tty).mouse_last_y = y;
         (*tty).mouse_last_b = b;
@@ -4695,7 +4697,7 @@ unsafe fn tty_keys_mouse(
     }
 }
 unsafe fn tty_keys_clipboard(
-    mut tty: *mut tty,
+    tty: &mut tty,
     buf: &[u8],
     size: &mut size_t,
 ) -> ::core::ffi::c_int {
@@ -4816,7 +4818,7 @@ unsafe fn tty_keys_clipboard(
     }
 }
 unsafe fn tty_keys_device_attributes(
-    mut tty: *mut tty,
+    tty: &mut tty,
     buf: &[u8],
     size: &mut size_t,
 ) -> ::core::ffi::c_int {
@@ -4824,7 +4826,6 @@ unsafe fn tty_keys_device_attributes(
         let len = buf.len();
         let buf = buf.as_ptr() as *const ::core::ffi::c_char;
         let mut c: *mut client = tty_client(tty);
-        let mut features: *mut ::core::ffi::c_int = &raw mut (*c).term_features;
         let mut i: u_int = 0;
         let mut n: u_int = 0 as u_int;
         let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
@@ -4937,16 +4938,20 @@ unsafe fn tty_keys_device_attributes(
                     fmt_args![(*c).name.as_deref(), p[i as usize] as ::core::ffi::c_int],
                 );
                 if p[i as usize] as ::core::ffi::c_int == 4 as ::core::ffi::c_int {
-                    tty_add_features(features, c"sixel".as_ptr(), c",".as_ptr());
+                    tty_add_features(&mut (*c).term_features, c"sixel".as_ptr(), c",".as_ptr());
                 }
                 if p[i as usize] as ::core::ffi::c_int == 21 as ::core::ffi::c_int {
-                    tty_add_features(features, c"margins".as_ptr(), c",".as_ptr());
+                    tty_add_features(&mut (*c).term_features, c"margins".as_ptr(), c",".as_ptr());
                 }
                 if p[i as usize] as ::core::ffi::c_int == 28 as ::core::ffi::c_int {
-                    tty_add_features(features, c"rectfill".as_ptr(), c",".as_ptr());
+                    tty_add_features(&mut (*c).term_features, c"rectfill".as_ptr(), c",".as_ptr());
                 }
                 if p[i as usize] as ::core::ffi::c_int == 52 as ::core::ffi::c_int {
-                    tty_add_features(features, c"clipboard".as_ptr(), c",".as_ptr());
+                    tty_add_features(
+                        &mut (*c).term_features,
+                        c"clipboard".as_ptr(),
+                        c",".as_ptr(),
+                    );
                 }
                 i = i.wrapping_add(1);
             }
@@ -4961,7 +4966,7 @@ unsafe fn tty_keys_device_attributes(
     }
 }
 unsafe fn tty_keys_device_attributes2(
-    mut tty: *mut tty,
+    tty: &mut tty,
     buf: &[u8],
     size: &mut size_t,
 ) -> ::core::ffi::c_int {
@@ -4969,7 +4974,6 @@ unsafe fn tty_keys_device_attributes2(
         let len = buf.len();
         let buf = buf.as_ptr() as *const ::core::ffi::c_char;
         let mut c: *mut client = tty_client(tty);
-        let mut features: *mut ::core::ffi::c_int = &raw mut (*c).term_features;
         let mut i: u_int = 0;
         let mut n: u_int = 0 as u_int;
         let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
@@ -5076,13 +5080,17 @@ unsafe fn tty_keys_device_attributes2(
         }
         match p[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int {
             77 => {
-                tty_default_features(features, c"mintty".as_ptr(), 0 as u_int);
+                tty_default_features(&mut (*c).term_features, c"mintty".as_ptr(), 0 as u_int);
             }
             84 => {
-                tty_default_features(features, c"tmux".as_ptr(), 0 as u_int);
+                tty_default_features(&mut (*c).term_features, c"tmux".as_ptr(), 0 as u_int);
             }
             85 => {
-                tty_default_features(features, c"rxvt-unicode".as_ptr(), 0 as u_int);
+                tty_default_features(
+                    &mut (*c).term_features,
+                    c"rxvt-unicode".as_ptr(),
+                    0 as u_int,
+                );
             }
             _ => {}
         }
@@ -5096,7 +5104,7 @@ unsafe fn tty_keys_device_attributes2(
     }
 }
 unsafe fn tty_keys_extended_device_attributes(
-    mut tty: *mut tty,
+    tty: &mut tty,
     buf: &[u8],
     size: &mut size_t,
 ) -> ::core::ffi::c_int {
@@ -5104,7 +5112,6 @@ unsafe fn tty_keys_extended_device_attributes(
         let len = buf.len();
         let buf = buf.as_ptr() as *const ::core::ffi::c_char;
         let mut c: *mut client = tty_client(tty);
-        let mut features: *mut ::core::ffi::c_int = &raw mut (*c).term_features;
         let mut i: u_int = 0;
         let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
         *size = 0 as size_t;
@@ -5169,42 +5176,42 @@ unsafe fn tty_keys_extended_device_attributes(
             7 as size_t,
         ) == 0 as ::core::ffi::c_int
         {
-            tty_default_features(features, c"iTerm2".as_ptr(), 0 as u_int);
+            tty_default_features(&mut (*c).term_features, c"iTerm2".as_ptr(), 0 as u_int);
         } else if strncmp(
             &raw mut tmp as *mut ::core::ffi::c_char,
             c"tmux ".as_ptr(),
             5 as size_t,
         ) == 0 as ::core::ffi::c_int
         {
-            tty_default_features(features, c"tmux".as_ptr(), 0 as u_int);
+            tty_default_features(&mut (*c).term_features, c"tmux".as_ptr(), 0 as u_int);
         } else if strncmp(
             &raw mut tmp as *mut ::core::ffi::c_char,
             c"XTerm(".as_ptr(),
             6 as size_t,
         ) == 0 as ::core::ffi::c_int
         {
-            tty_default_features(features, c"XTerm".as_ptr(), 0 as u_int);
+            tty_default_features(&mut (*c).term_features, c"XTerm".as_ptr(), 0 as u_int);
         } else if strncmp(
             &raw mut tmp as *mut ::core::ffi::c_char,
             c"mintty ".as_ptr(),
             7 as size_t,
         ) == 0 as ::core::ffi::c_int
         {
-            tty_default_features(features, c"mintty".as_ptr(), 0 as u_int);
+            tty_default_features(&mut (*c).term_features, c"mintty".as_ptr(), 0 as u_int);
         } else if strncmp(
             &raw mut tmp as *mut ::core::ffi::c_char,
             c"foot(".as_ptr(),
             5 as size_t,
         ) == 0 as ::core::ffi::c_int
         {
-            tty_default_features(features, c"foot".as_ptr(), 0 as u_int);
+            tty_default_features(&mut (*c).term_features, c"foot".as_ptr(), 0 as u_int);
         } else if strncmp(
             &raw mut tmp as *mut ::core::ffi::c_char,
             c"WezTerm ".as_ptr(),
             7 as size_t,
         ) == 0 as ::core::ffi::c_int
         {
-            tty_default_features(features, c"WezTerm".as_ptr(), 0 as u_int);
+            tty_default_features(&mut (*c).term_features, c"WezTerm".as_ptr(), 0 as u_int);
         }
         log_debug(
             c"%s: received extended DA %.*s".as_ptr(),
@@ -5218,7 +5225,7 @@ unsafe fn tty_keys_extended_device_attributes(
     }
 }
 pub unsafe fn tty_keys_colours(
-    mut tty: *mut tty,
+    tty: &mut tty,
     buf: &[u8],
     size: &mut size_t,
     fg: &mut ::core::ffi::c_int,
@@ -5336,7 +5343,7 @@ pub unsafe fn tty_keys_colours(
         0 as ::core::ffi::c_int
     }
 }
-unsafe fn tty_keys_palette(mut tty: *mut tty, buf: &[u8], size: &mut size_t) -> ::core::ffi::c_int {
+unsafe fn tty_keys_palette(tty: &mut tty, buf: &[u8], size: &mut size_t) -> ::core::ffi::c_int {
     unsafe {
         let len = buf.len();
         let buf = buf.as_ptr() as *const ::core::ffi::c_char;

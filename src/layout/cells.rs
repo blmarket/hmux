@@ -45,12 +45,9 @@ pub fn layout_root_ptr(root: &Option<Box<layout_cell>>) -> *mut layout_cell {
 }
 
 /// Where `lc` sits in `head`, which is the list it hangs in.
-unsafe fn cell_position(head: *mut layout_cells, lc: *mut layout_cell) -> Option<usize> {
-    unsafe {
-        (*head)
-            .iter()
-            .position(|cell| std::ptr::eq(&raw const **cell, lc))
-    }
+fn cell_position(head: &layout_cells, lc: *mut layout_cell) -> Option<usize> {
+    head.iter()
+        .position(|cell| std::ptr::eq(&raw const **cell, lc))
 }
 
 /// The list `lc` hangs in, which is its parent's children, or null when it is
@@ -68,7 +65,9 @@ unsafe fn siblings(lc: *mut layout_cell) -> *mut layout_cells {
 unsafe fn position(lc: *mut layout_cell) -> Option<usize> {
     unsafe {
         let head = siblings(lc);
-        (!head.is_null()).then(|| cell_position(head, lc)).flatten()
+        (!head.is_null())
+            .then(|| cell_position(&*head, lc))
+            .flatten()
     }
 }
 
@@ -123,64 +122,54 @@ unsafe fn init_children(lc: *mut layout_cell) {
 
 /// Takes `lc` out of the list it hangs in, which is `head`, and hands it to
 /// the caller, who hangs it somewhere else or gives it up by dropping it.
-unsafe fn unlink(head: *mut layout_cells, lc: *mut layout_cell) -> Option<Box<layout_cell>> {
-    unsafe {
-        let at = cell_position(head, lc)?;
-        Some((*head).remove(at))
-    }
+fn unlink(head: &mut layout_cells, lc: *mut layout_cell) -> Option<Box<layout_cell>> {
+    let at = cell_position(head, lc)?;
+    Some(head.remove(at))
 }
 
 /// Puts `lcnew` where `lc` sits in `head` and hands `lc` back to the caller.
-unsafe fn replace(
-    head: *mut layout_cells,
+fn replace(
+    head: &mut layout_cells,
     lc: *mut layout_cell,
     lcnew: Box<layout_cell>,
 ) -> Box<layout_cell> {
-    unsafe {
-        let at = cell_position(head, lc).expect("the cell is in this list");
+    let at = cell_position(head, lc).expect("the cell is in this list");
 
-        ::core::mem::replace(&mut (*head)[at], lcnew)
-    }
+    ::core::mem::replace(&mut head[at], lcnew)
 }
 
 /// Puts `lc` at the end of `head`.
-pub(crate) unsafe fn insert_tail(head: *mut layout_cells, lc: Box<layout_cell>) {
-    unsafe { (*head).push(lc) }
+pub(crate) fn insert_tail(head: &mut layout_cells, lc: Box<layout_cell>) {
+    head.push(lc)
 }
 
 /// A new cell under `lcparent`, hung at the end of `head`, as the borrowed
 /// pointer the sizing calls take.
 pub(crate) unsafe fn insert_new_tail(
-    head: *mut layout_cells,
+    head: &mut layout_cells,
     lcparent: *mut layout_cell,
 ) -> *mut layout_cell {
-    unsafe {
-        let lc = layout_create_cell(lcparent);
-        let ptr = &raw const *lc as *mut layout_cell;
-        insert_tail(head, lc);
-        ptr
-    }
+    let lc = unsafe { layout_create_cell(lcparent) };
+    let ptr = &raw const *lc as *mut layout_cell;
+    insert_tail(head, lc);
+    ptr
 }
 
 /// Puts `lc` at the front of `head`.
-unsafe fn insert_head(head: *mut layout_cells, lc: Box<layout_cell>) {
-    unsafe { (*head).insert(0, lc) }
+fn insert_head(head: &mut layout_cells, lc: Box<layout_cell>) {
+    head.insert(0, lc)
 }
 
 /// Puts `lc` in front of `mark`, which is already in `head`.
-unsafe fn insert_before(head: *mut layout_cells, mark: *mut layout_cell, lc: Box<layout_cell>) {
-    unsafe {
-        let at = cell_position(head, mark).expect("the mark is in this list");
-        (*head).insert(at, lc);
-    }
+fn insert_before(head: &mut layout_cells, mark: *mut layout_cell, lc: Box<layout_cell>) {
+    let at = cell_position(head, mark).expect("the mark is in this list");
+    head.insert(at, lc);
 }
 
 /// Puts `lc` after `mark`, which is already in `head`.
-unsafe fn insert_after(head: *mut layout_cells, mark: *mut layout_cell, lc: Box<layout_cell>) {
-    unsafe {
-        let at = cell_position(head, mark).expect("the mark is in this list");
-        (*head).insert(at + 1, lc);
-    }
+fn insert_after(head: &mut layout_cells, mark: *mut layout_cell, lc: Box<layout_cell>) {
+    let at = cell_position(head, mark).expect("the mark is in this list");
+    head.insert(at + 1, lc);
 }
 
 /// Whether `lc` is one of the floating cells, which sit over the layout rather
@@ -699,12 +688,11 @@ pub unsafe fn layout_destroy_cell(
             }
         }
 
-        layout_free_cell(w, unlink(&raw mut (*lcparent).cells, lc));
+        layout_free_cell(w, unlink(&mut (*lcparent).cells, lc));
 
         let lc = first(lcparent);
         if !lc.is_null() && next(lc).is_null() {
-            let only =
-                unlink(&raw mut (*lcparent).cells, lc).expect("the cell is under its parent");
+            let only = unlink(&mut (*lcparent).cells, lc).expect("the cell is under its parent");
             (*lc).parent = (*lcparent).parent;
             if (*lc).parent.is_null() {
                 if !floating(lc) {
@@ -715,10 +703,7 @@ pub unsafe fn layout_destroy_cell(
                 // giving the root up is what frees it.
                 layout_free_cell(w, lcroot.replace(only));
             } else {
-                layout_free_cell(
-                    w,
-                    Some(replace(&raw mut (*(*lc).parent).cells, lcparent, only)),
-                );
+                layout_free_cell(w, Some(replace(&mut (*(*lc).parent).cells, lcparent, only)));
             }
         }
     }
@@ -1226,9 +1211,9 @@ pub unsafe fn layout_split_pane(
             let new = layout_create_cell(lcparent);
             lcnew = &raw const *new as *mut layout_cell;
             if before {
-                insert_before(&raw mut (*lcparent).cells, lc, new);
+                insert_before(&mut (*lcparent).cells, lc, new);
             } else {
-                insert_after(&raw mut (*lcparent).cells, lc, new);
+                insert_after(&mut (*lcparent).cells, lc, new);
             }
         } else if full_size != 0 && (*lc).parent.is_null() && (*lc).type_0 == type_0 {
             if (*lc).type_0 == LAYOUT_LEFTRIGHT {
@@ -1251,9 +1236,9 @@ pub unsafe fn layout_split_pane(
                 layout_set_size(lcnew, sx, size as u_int, 0, 0);
             }
             if before {
-                insert_head(&raw mut (*lc).cells, new);
+                insert_head(&mut (*lc).cells, new);
             } else {
-                insert_tail(&raw mut (*lc).cells, new);
+                insert_tail(&mut (*lc).cells, new);
             }
         } else {
             let mut node = layout_create_cell((*lc).parent);
@@ -1266,16 +1251,16 @@ pub unsafe fn layout_split_pane(
                     .replace(node)
                     .expect("the cell is the root")
             } else {
-                replace(&raw mut (*(*lc).parent).cells, lc, node)
+                replace(&mut (*(*lc).parent).cells, lc, node)
             };
             (*lc).parent = lcparent;
-            insert_head(&raw mut (*lcparent).cells, only);
+            insert_head(&mut (*lcparent).cells, only);
             let new = layout_create_cell(lcparent);
             lcnew = &raw const *new as *mut layout_cell;
             if before {
-                insert_head(&raw mut (*lcparent).cells, new);
+                insert_head(&mut (*lcparent).cells, new);
             } else {
-                insert_tail(&raw mut (*lcparent).cells, new);
+                insert_tail(&mut (*lcparent).cells, new);
             }
         }
 
@@ -1334,7 +1319,7 @@ pub unsafe fn layout_floating_pane(
                 .replace(node)
                 .expect("the window has a root");
             (*lc).parent = lcparent;
-            insert_head(&raw mut (*lcparent).cells, only);
+            insert_head(&mut (*lcparent).cells, only);
             lcparent
         } else {
             (*w).layout_root_ptr()
@@ -1342,7 +1327,7 @@ pub unsafe fn layout_floating_pane(
 
         let new = layout_create_cell(lcparent);
         let lcnew = &raw const *new as *mut layout_cell;
-        insert_tail(&raw mut (*lcparent).cells, new);
+        insert_tail(&mut (*lcparent).cells, new);
         (*lcnew).flags |= LAYOUT_CELL_FLOATING;
         layout_set_size(lcnew, sx, sy, ox, oy);
         lcnew

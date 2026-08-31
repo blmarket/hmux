@@ -168,7 +168,7 @@ static tty_features: [tty_feature; 21] = [
 /// skipped: `256,bogus,title` adds `256` and nothing else. That is what the C
 /// does, and a client sending an unknown feature name loses the rest of its
 /// list the same way.
-pub unsafe fn tty_add_features(feat: *mut c_int, s: *const c_char, separators: *const c_char) {
+pub unsafe fn tty_add_features(feat: &mut c_int, s: *const c_char, separators: *const c_char) {
     unsafe {
         log_debug(c"adding terminal features %s".as_ptr(), fmt_args![s]);
         let separators = CStr::from_ptr(separators).to_bytes();
@@ -259,7 +259,7 @@ pub unsafe fn tty_apply_features(term: &mut tty_term, feat: c_int) -> c_int {
 /// down when the terminal was older than the entry asked for, but every entry
 /// below asks for version zero, so no terminal was ever turned down and the
 /// check is gone.
-pub unsafe fn tty_default_features(feat: *mut c_int, name: *const c_char, _version: u_int) {
+pub unsafe fn tty_default_features(feat: &mut c_int, name: *const c_char, _version: u_int) {
     static table: [(&CStr, &CStr); 7] = [
         (
             c"mintty",

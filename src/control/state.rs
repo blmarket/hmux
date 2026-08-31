@@ -290,7 +290,7 @@ unsafe fn control_window_pane(mut c: *mut client, mut pane: u_int) -> *mut windo
         if wp.is_null() {
             return ::core::ptr::null_mut::<window_pane>();
         }
-        if winlink_find_by_window(&raw mut (*(*c).session).windows, (*wp).window).is_null() {
+        if winlink_find_by_window(&mut (*(*c).session).windows, (*wp).window).is_null() {
             return ::core::ptr::null_mut::<window_pane>();
         }
         wp
@@ -473,7 +473,7 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
         let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
         let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
         let mut new_size: size_t = 0;
-        if winlink_find_by_window(&raw mut (*(*c).session).windows, (*wp).window).is_null() {
+        if winlink_find_by_window(&mut (*(*c).session).windows, (*wp).window).is_null() {
             return;
         }
         if (*c).flags & CONTROL_IGNORE_FLAGS as uint64_t != 0 {
@@ -487,11 +487,11 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
                 if control_check_age(c, wp, cp) != 0 {
                     return;
                 }
-                new_size = window_pane_get_new_data(wp, &raw mut (*cp).queued).1;
+                new_size = window_pane_get_new_data(wp, &(*cp).queued).1;
                 if new_size == 0 as size_t {
                     return;
                 }
-                window_pane_update_used_data(wp, &raw mut (*cp).queued, new_size);
+                window_pane_update_used_data(wp, &mut (*cp).queued, new_size);
                 let mut cb_owned = Box::new(control_block {
                     size: new_size,
                     line: None,
@@ -534,8 +534,8 @@ pub unsafe fn control_write_output(mut c: *mut client, mut wp: *mut window_pane)
                 (*wp).id
             ],
         );
-        window_pane_update_used_data(wp, &raw mut (*cp).offset, SIZE_MAX as size_t);
-        window_pane_update_used_data(wp, &raw mut (*cp).queued, SIZE_MAX as size_t);
+        window_pane_update_used_data(wp, &mut (*cp).offset, SIZE_MAX as size_t);
+        window_pane_update_used_data(wp, &mut (*cp).queued, SIZE_MAX as size_t);
     }
 }
 unsafe fn control_error(mut item: *mut cmdq_item, data: CmdqCallbackData) -> cmd_retval {
@@ -699,7 +699,7 @@ unsafe fn control_append_data(
                 message
             }
         };
-        let taken = window_pane_get_new_data(wp, &raw mut (*cp).offset);
+        let taken = window_pane_get_new_data(wp, &(*cp).offset);
         new_data = taken.0 as *mut u_char;
         new_size = taken.1;
         if new_size < size {
@@ -735,7 +735,7 @@ unsafe fn control_append_data(
             }
             i = i.wrapping_add(1);
         }
-        window_pane_update_used_data(wp, &raw mut (*cp).offset, size);
+        window_pane_update_used_data(wp, &mut (*cp).offset, size);
         Some(message)
     }
 }
@@ -974,7 +974,7 @@ unsafe fn control_check_subs_session(
 ) {
     unsafe {
         let mut s: *mut session = (*c).session;
-        let value = format_expand(&mut *ft, CStr::from_ptr((*csub).format.as_ptr()));
+        let value = format_expand(ft, CStr::from_ptr((*csub).format.as_ptr()));
         if (*csub).last.as_deref() == Some(value.as_c_str()) {
             return;
         }
@@ -1032,7 +1032,7 @@ unsafe fn control_check_subs_all_panes_one(
     unsafe {
         let mut s: *mut session = (*c).session;
         let mut w: *mut window = (*wl).window();
-        let value = format_expand(&mut *ft, CStr::from_ptr((*csub).format.as_ptr()));
+        let value = format_expand(ft, CStr::from_ptr((*csub).format.as_ptr()));
         let key = ((*wp).id, (*wl).idx as u_int);
         let last = (*csub).panes.get(&key);
         if last.map(CString::as_c_str) == Some(value.as_c_str()) {
@@ -1100,7 +1100,7 @@ unsafe fn control_check_subs_all_windows_one(
     unsafe {
         let mut s: *mut session = (*c).session;
         let mut w: *mut window = (*wl).window();
-        let value = format_expand(&mut *ft, CStr::from_ptr((*csub).format.as_ptr()));
+        let value = format_expand(ft, CStr::from_ptr((*csub).format.as_ptr()));
         let key = ((*w).id, (*wl).idx as u_int);
         let last = (*csub).windows.get(&key);
         if last.map(CString::as_c_str) == Some(value.as_c_str()) {
@@ -1190,7 +1190,7 @@ unsafe fn control_check_subs_timer(c: *mut client) {
             }
         }
         if have_all_panes != 0 {
-            wl = winlinks_first(&raw mut (*s).windows);
+            wl = winlinks_first(&mut (*s).windows);
             while !wl.is_null() {
                 let cw: *mut window = (*wl).window();
                 wp = window_panes_first(cw);
@@ -1215,7 +1215,7 @@ unsafe fn control_check_subs_timer(c: *mut client) {
             }
         }
         if have_all_windows != 0 {
-            wl = winlinks_first(&raw mut (*s).windows);
+            wl = winlinks_first(&mut (*s).windows);
             while !wl.is_null() {
                 let mut ft = format_create_defaults(
                     ::core::ptr::null_mut::<cmdq_item>(),

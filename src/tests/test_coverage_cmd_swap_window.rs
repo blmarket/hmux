@@ -469,7 +469,7 @@ fn swapping_a_window_with_itself_returns_without_touching_anything() {
         assert_eq!(run(&mut item), CMD_RETURN_NORMAL);
 
         let s = chain.sptr(0);
-        assert_eq!(winlink_count(&raw mut (*s).windows), 2);
+        assert_eq!(winlink_count(&(*s).windows), 2);
         assert_eq!((*wla).window(), wa);
         assert_eq!((*wlb).window(), wb);
         assert_eq!(
