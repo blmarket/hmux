@@ -9,8 +9,8 @@ disallowed_methods = "deny"
 await_holding_refcell_ref = "deny"
 
 [package]
-name = "tmux-c2rs"
-authors = ["C2Rust"]
+name = "hmux"
+authors = ["blmarket"]
 version = "0.0.0"
 publish = false
 edition = "2024"
@@ -20,9 +20,11 @@ autobins = false
 name = "tmux_c2rs"
 path = "src/lib.rs"
 crate-type = ["staticlib", "rlib"]
+
 [[bin]]
 path = "src/main.rs"
-name = "tmux"
+name = "hmux"
+
 [dependencies]
 c2rust-bitfields = "0.22.1"
 libc = "0.2"

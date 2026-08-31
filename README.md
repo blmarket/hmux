@@ -5,7 +5,7 @@ and its source-level `tmux-c2rs` provenance names remain unchanged for now.
 
 A whole-program [c2rust](https://github.com/immunant/c2rust) transpilation of
 the pinned tmux 3.7b source. Every C translation unit is a Rust module in one
-crate, and the crate builds a `tmux` binary that behaves like the C one.
+crate, and the crate builds an `hmux` binary that behaves like the C one.
 
 This is the bulk-transpile counterpart to `../tmux-rs`, which migrates tmux one
 externally visible C function at a time. The two are independent routes from the
@@ -259,9 +259,9 @@ configuration file is read, so `.tmux.conf` still wins.
 
 ## Testing
 
-The build is a whole `tmux` binary that reports `tmux 3.7b` and speaks the
+The build is a whole `hmux` binary that reports `tmux 3.7b` and speaks the
 pinned client's wire protocol, so it is tested from the outside rather than
-function by function: put `target/debug/tmux` where a suite expects
+function by function: put `target/debug/hmux` where a suite expects
 its tmux and compare the run against the pinned binary. `make test-c2rs` at
 the repository root puts this binary on `PATH` as the oracle and runs the
 conformance suite against it; the hmux-conformance harness picks its reference

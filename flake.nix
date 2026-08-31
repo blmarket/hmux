@@ -39,9 +39,6 @@
             cargo = rustNightly;
             rustc = rustNightly;
           };
-          # The server ships as `hmux`. The crate's [[bin]] keeps tmux's own
-          # name because that is what the conformance harness drives it as, so
-          # the rename happens here rather than in the manifest.
           hmux = rustPlatform.buildRustPackage {
             pname = "hmux";
             version = "0.0.0";
@@ -61,10 +58,6 @@
             # The unit tests reach into the server's process-wide state and
             # need a process each; `make unit-c2rs` is where they run.
             doCheck = false;
-
-            postInstall = ''
-              mv $out/bin/tmux $out/bin/hmux
-            '';
 
             meta.mainProgram = "hmux";
           };
