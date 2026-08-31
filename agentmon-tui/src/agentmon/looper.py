@@ -34,7 +34,12 @@ from pathlib import Path
 
 from . import __version__
 from .quota import QuotaReport, QuotaService, QuotaWindow
-from .services import AgentmonService, CommandError, discover_context
+from .services import (
+    AgentmonService,
+    CommandError,
+    devshell_available,
+    discover_context,
+)
 
 
 @dataclass(frozen=True)
@@ -215,6 +220,12 @@ class Looper:
                     "open and stopping the loop"
                 )
                 return 0
+            if outcome == "failed":
+                self.log(
+                    f"run {index}: the pane closed before {self.config.agent} "
+                    "started; stopping rather than repeating the failure"
+                )
+                return 1
             timed_out = outcome == "timeout"
             if outcome == "exited":
                 self.log(f"run {index}: agent pane closed on its own")
@@ -296,13 +307,18 @@ class Looper:
         return pane
 
     def await_agent(self, pane: str) -> str:
-        """Wait out one run, returning idle, blocked, exited, or timeout.
+        """Wait out one run, returning idle, blocked, exited, failed, or timeout.
 
         The agent is given a grace period to be recognized as working before
         idleness counts, so a pane hmux has not classified yet is not mistaken
         for a run that already finished. A run short enough to finish inside
         that grace period still resolves, because the wait below sees the idle
         state immediately.
+
+        A pane that closes inside that grace period never ran anything, which
+        is "failed" rather than "exited": whatever stopped it — a dev shell
+        that would not build, an agent that is not installed — stops the next
+        run just the same.
         """
         state = self.service.wait_for_pane_state(
             pane,
@@ -311,7 +327,7 @@ class Looper:
             poll=self.config.poll_seconds,
         )
         if state == "exited":
-            return "exited"
+            return "failed"
         if state is None:
             status = self.service.pane_status(pane)
             if status is not None and not status.agent:
@@ -397,8 +413,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="PERCENT", help="share of the window given to the agent pane",
     )
     parser.add_argument(
-        "--devshell", action="store_true",
-        help="start the agent inside the worktree's nix dev shell",
+        "--devshell", action=argparse.BooleanOptionalAction, default=None,
+        help="start the agent inside the worktree's nix dev shell "
+             "(default: whenever the worktree has one)",
     )
     parser.add_argument(
         "--no-commit", action="store_true",
@@ -454,6 +471,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     preset = PRESETS[args.preset]
+    # The dev shell is what pins the agent's toolchain, so it is taken whenever
+    # the worktree offers one; `--no-devshell` is for a worktree whose shell is
+    # not the environment the run wants.
+    devshell = (
+        devshell_available(context.repository.root)
+        if args.devshell is None
+        else args.devshell
+    )
     config = LooperConfig(
         agent=preset.agent,
         model=preset.model,
@@ -463,7 +488,7 @@ def main(argv: list[str] | None = None) -> int:
         run_timeout=max(0.0, args.run_timeout),
         agent_size_percent=args.size,
         commit=not args.no_commit,
-        devshell=args.devshell,
+        devshell=devshell,
         ignore_pacing=args.force,
     )
     # A piped prompt is spooled outside the worktree so auto-commit never picks
@@ -485,6 +510,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         looper.log(
             f"looping in {context.repository.root} on {context.repository.branch}"
+        )
+        looper.log(
+            "agent environment: this shell's, under the worktree's nix dev shell"
+            if config.devshell
+            else "agent environment: this shell's"
         )
         if prompt_file is not None:
             looper.log(f"prompt: {instruction_file} (re-read before every run)")

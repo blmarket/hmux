@@ -53,9 +53,15 @@ class FakeQuotaService:
 class FakeService:
     """A service whose panes follow a script, one outcome per run."""
 
-    def __init__(self, *outcomes: str | None, exit_clean: bool = True) -> None:
+    def __init__(
+        self,
+        *outcomes: str | None,
+        exit_clean: bool = True,
+        startup: str | None = "working",
+    ) -> None:
         self.outcomes = list(outcomes)
         self.exit_clean = exit_clean
+        self.startup = startup
         self.splits: list[dict] = []
         self.done_timeouts: list[float | None] = []
         self.exited: list[str] = []
@@ -69,7 +75,7 @@ class FakeService:
 
     def wait_for_pane_state(self, pane, states, *, timeout=None, poll=2.0):
         if "working" in states:
-            return "working"
+            return self.startup
         assert tuple(states) == DONE_STATES
         self.done_timeouts.append(timeout)
         return self.outcomes.pop(0)
@@ -241,6 +247,21 @@ def test_loop_harvests_an_agent_that_closed_its_own_pane(tmp_path: Path) -> None
     assert looper.run() == 0
     assert service.exited == []
     assert len(service.commits) == 1
+
+
+def test_a_pane_that_dies_before_the_agent_starts_stops_the_loop(
+    tmp_path: Path,
+) -> None:
+    """A dev shell that will not build fails every run, so stop on the first."""
+    service = FakeService(startup="exited")
+    looper, lines, _naps = build(
+        service, FakeQuotaService(report(codex_window(10.0))), tmp_path
+    )
+
+    assert looper.run() == 1
+    assert len(service.splits) == 1
+    assert service.commits == []
+    assert any("before codex started" in line for line in lines)
 
 
 def test_a_run_is_capped_at_two_hours_by_default(tmp_path: Path) -> None:
@@ -423,6 +444,51 @@ def test_main_plumbs_the_chosen_preset_into_the_config(
         LooperConfig(agent="agy", model="gemini-3.7-flash", effort="high",
                      provider="antigravity")
     ]
+
+
+def test_main_takes_the_dev_shell_when_the_worktree_has_a_flake(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import looper as looper_module
+
+    (tmp_path / "flake.nix").write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(looper_module, "devshell_available", lambda _path: True)
+    monkeypatch.setattr("sys.stdin", _Stdin("Do the thing.\n"))
+    monkeypatch.setenv("TMUX_PANE", "%0")
+    monkeypatch.setattr(
+        looper_module, "discover_context", lambda **_kwargs: _FakeContext(tmp_path)
+    )
+    configs: list[LooperConfig] = []
+    monkeypatch.setattr(
+        looper_module, "Looper", lambda *args, **kwargs: _FakeLooper(configs, **kwargs)
+    )
+
+    assert main([]) == 0
+    assert configs[0].devshell is True
+
+    configs.clear()
+    assert main(["--no-devshell"]) == 0
+    assert configs[0].devshell is False
+
+
+def test_main_leaves_the_dev_shell_alone_without_a_flake(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import looper as looper_module
+
+    monkeypatch.setattr(looper_module, "devshell_available", lambda _path: False)
+    monkeypatch.setattr("sys.stdin", _Stdin("Do the thing.\n"))
+    monkeypatch.setenv("TMUX_PANE", "%0")
+    monkeypatch.setattr(
+        looper_module, "discover_context", lambda **_kwargs: _FakeContext(tmp_path)
+    )
+    configs: list[LooperConfig] = []
+    monkeypatch.setattr(
+        looper_module, "Looper", lambda *args, **kwargs: _FakeLooper(configs, **kwargs)
+    )
+
+    assert main([]) == 0
+    assert configs[0].devshell is False
 
 
 def test_claude_preset_runs_opus_and_is_paced_by_claude_quota(

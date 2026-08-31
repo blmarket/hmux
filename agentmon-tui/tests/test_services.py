@@ -3,7 +3,10 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
+import stat
 import subprocess
+import tempfile
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,6 +25,35 @@ from agentmon.services import (
     trust_agy_workspace,
 )
 from agentmon.transcript import Transcript
+
+
+_ENVIRONMENT_PRELUDE = re.compile(
+    r"^set -a; \. (?P<spool>\S+); set \+a; rm -f (?P=spool); "
+)
+
+
+@pytest.fixture(autouse=True)
+def _spool_into_the_test_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Keep spooled environments out of the developer's own temp directory.
+
+    They are a copy of whatever the environment running the suite holds.
+    """
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
+
+def consume_environment(command: str) -> tuple[str, str]:
+    """Do to a pane command what the pane does: read the environment, remove it.
+
+    Returns the spooled environment script and the command left for the agent.
+    """
+    match = _ENVIRONMENT_PRELUDE.match(command)
+    assert match is not None, command
+    spool = Path(match.group("spool"))
+    script = spool.read_text(encoding="utf-8")
+    spool.unlink()
+    return script, command[match.end():]
 
 
 def git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -1123,7 +1155,9 @@ def test_launch_records_steps(monkeypatch: pytest.MonkeyPatch, repository: Repos
     assert any("worktree" in call for call in calls)
     assert any("new-window" in call for call in calls)
     launch_call = next(call for call in calls if "new-window" in call)
-    assert launch_call[-1] == 'exec codex --yolo "$(cat instruction.md)"'
+    assert consume_environment(launch_call[-1])[1] == (
+        'exec codex --yolo "$(cat instruction.md)"'
+    )
 
 
 def test_launch_uses_claude_command_when_selected(
@@ -1151,12 +1185,12 @@ def test_launch_uses_claude_command_when_selected(
     )
 
     launch_call = next(call for call in calls if "new-window" in call)
-    assert launch_call[-1] == (
+    assert consume_environment(launch_call[-1])[1] == (
         'exec claude --dangerously-skip-permissions "$(cat instruction.md)"'
     )
 
 
-def test_launch_with_devshell_probes_before_entering_the_shell(
+def test_launch_with_devshell_enters_the_shell(
     monkeypatch: pytest.MonkeyPatch, repository: Repository
 ) -> None:
     from agentmon import services
@@ -1181,27 +1215,22 @@ def test_launch_with_devshell_probes_before_entering_the_shell(
     )
 
     launch_call = next(call for call in calls if "new-window" in call)
-    assert launch_call[-1] == (
-        "if nix develop . --command true >/dev/null 2>&1; then "
-        'exec nix develop . --command codex --yolo "$(cat instruction.md)"; fi; '
-        'exec codex --yolo "$(cat instruction.md)"'
+    # The environment is loaded before nix, so the dev shell layers over it.
+    assert consume_environment(launch_call[-1])[1] == (
+        'exec nix develop . --command codex --yolo "$(cat instruction.md)"'
     )
 
 
-def test_devshell_fallback_is_not_tied_to_the_agent_exit_status(
-    repository: Repository,
-) -> None:
-    """A failing agent must not silently relaunch itself outside the shell."""
+def test_devshell_has_no_bare_agent_fallback(repository: Repository) -> None:
+    """A dev shell that will not build must not start the agent without it."""
     service = AgentmonService(repository, socket="/tmp/hmux.sock")
     command = service._agent_command("codex", devshell=True)
 
-    # The bare fallback is reachable only when the probe fails; once the probe
-    # succeeds the `exec` replaces the shell, so the agent's own exit status can
-    # never reach the fallback.
-    probe, _, rest = command.partition("; then ")
-    assert probe == "if nix develop . --command true >/dev/null 2>&1"
-    assert rest.startswith("exec nix develop . --command ")
+    # `exec` replaces the shell, so there is nothing after the dev shell to
+    # fall back to and no branch that could reach a bare agent.
+    assert command == 'exec nix develop . --command codex --yolo "$(cat instruction.md)"'
     assert "||" not in command
+    assert "; fi" not in command
 
 
 def test_launch_without_devshell_keeps_the_plain_command(
@@ -1532,11 +1561,9 @@ def test_launch_agent_devshell_wraps_the_interactive_command(
 
     service.launch_agent(run, agent="claude", instruction="  ", devshell=True)
 
-    # No instruction, so neither branch of the guard reads instruction.md.
+    # No instruction, so the command does not read instruction.md.
     assert captured["command"] == (
-        "if nix develop . --command true >/dev/null 2>&1; then "
-        "exec nix develop . --command claude --dangerously-skip-permissions; fi; "
-        "exec claude --dangerously-skip-permissions"
+        "exec nix develop . --command claude --dangerously-skip-permissions"
     )
 
 
@@ -1733,7 +1760,7 @@ def test_split_agent_pane_starts_the_agent_below_the_caller(
     ]
     assert calls[0][9] == "75%"
     assert calls[0][-4:-1] == ["-P", "-F", "#{pane_id}"]
-    assert calls[0][-1] == (
+    assert consume_environment(calls[0][-1])[1] == (
         "exec codex --yolo -m gpt-5.6-luna -c model_reasoning_effort=max "
         f'"$(cat {tmp_path / "prompt.md"})"'
     )
@@ -1763,6 +1790,124 @@ def test_split_agent_pane_can_hand_the_focus_to_the_agent(
     ]
 
 
+def test_environment_script_skips_what_the_new_pane_owns() -> None:
+    from agentmon import services
+
+    script = services._environment_script(
+        {
+            "HOME": "/home/x",
+            "ANTHROPIC_API_KEY": "one two",
+            "TMUX_PANE": "%3",
+            "TMUX": "/tmp/s,1,0",
+            "TERM": "xterm",
+            "SHLVL": "2",
+        }
+    )
+
+    assert script == "ANTHROPIC_API_KEY='one two'\nHOME=/home/x\n"
+
+
+def test_environment_script_drops_a_name_no_shell_can_assign() -> None:
+    """Bash exports its functions under names that would break the source."""
+    from agentmon import services
+
+    script = services._environment_script(
+        {"BASH_FUNC_which%%": "() { :; }", "HOME": "/home/x"}
+    )
+
+    assert script == "HOME=/home/x\n"
+
+
+def test_environment_script_survives_a_round_trip_through_sh(
+    tmp_path: Path,
+) -> None:
+    from agentmon import services
+
+    awkward = {
+        "QUOTED": "it's \"both\"",
+        "NEWLINE": "first\nsecond",
+        "EMPTY": "",
+        "GLOB": "*",
+    }
+    spool = tmp_path / "env.sh"
+    spool.write_text(services._environment_script(awkward), encoding="utf-8")
+    # Read back from a child, which sees exported variables and nothing else —
+    # the position the agent is in.
+    reader = tmp_path / "read.sh"
+    reader.write_text(
+        "".join(f'printf "%s\\0" "${name}"\n' for name in awkward),
+        encoding="utf-8",
+    )
+
+    dumped = subprocess.run(
+        ["sh", "-c", f"set -a; . {spool}; set +a; sh {reader}"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+
+    assert dumped.split("\0")[: len(awkward)] == list(awkward.values())
+
+
+def test_split_agent_pane_carries_the_callers_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """tmux spawns a pane from the *server's* environment, so pass ours along."""
+    from agentmon import services
+
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "%7\n", "")
+
+    monkeypatch.setattr(services, "_run", fake_run)
+    monkeypatch.setenv("AGENTMON_TEST_TOKEN", "carried")
+    monkeypatch.setenv("TMUX_PANE", "%1")
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+
+    service.split_agent_pane(target="%1", worktree=tmp_path, agent="codex")
+
+    # Sourced and removed by the pane, and only then does the agent take over.
+    script, command = consume_environment(calls[0][-1])
+    assert "AGENTMON_TEST_TOKEN=carried\n" in script
+    # The new pane is not the one this runs in, and tmux names it itself.
+    assert "TMUX_PANE" not in script
+    assert command.startswith("exec codex ")
+
+
+def test_the_spooled_environment_is_readable_only_by_its_owner(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """It carries whatever credentials the caller's environment holds."""
+    from agentmon import services
+
+    spool = services._spool_environment("HOME=/home/x\n")
+
+    assert stat.S_IMODE(spool.stat().st_mode) == 0o600
+    spool.unlink()
+
+
+def test_open_agent_window_carries_the_callers_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import services
+
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "7\n", "")
+
+    monkeypatch.setattr(services, "_run", fake_run)
+    monkeypatch.setenv("AGENTMON_TEST_TOKEN", "carried")
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+
+    service._open_agent_window(tmp_path, "branch", "exec codex")
+
+    script, command = consume_environment(calls[0][-1])
+    assert "AGENTMON_TEST_TOKEN=carried\n" in script
+    assert command == "exec codex"
+
+
 def test_split_agent_pane_requires_a_pane_id_back(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1777,6 +1922,24 @@ def test_split_agent_pane_requires_a_pane_id_back(
 
     with pytest.raises(CommandError):
         service.split_agent_pane(target="%1", worktree=tmp_path, agent="codex")
+
+
+def test_a_failed_split_takes_the_spooled_environment_with_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from agentmon import services
+
+    monkeypatch.setattr(
+        services,
+        "_run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, "\n", ""),
+    )
+    service = AgentmonService(None, socket="/tmp/hmux.sock")
+
+    with pytest.raises(CommandError):
+        service.split_agent_pane(target="%1", worktree=tmp_path, agent="codex")
+
+    assert list(tmp_path.glob("agentmon-env-*.sh")) == []
 
 
 def test_exit_agent_pane_asks_the_agent_to_quit(

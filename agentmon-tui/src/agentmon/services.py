@@ -8,9 +8,11 @@ import shlex
 import shutil
 import stat
 import subprocess
+import tempfile
 import threading
 import time
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,7 +48,26 @@ SHELL_COMMANDS = frozenset(
 # take minutes to build, and there the wait and any error are visible instead
 # of freezing the TUI.
 DEVSHELL_PREFIX = "nix develop . --command"
-DEVSHELL_PROBE = f"{DEVSHELL_PREFIX} true >/dev/null 2>&1"
+
+# What a new pane takes from the server rather than from whoever asked for it:
+# its identity inside tmux, the terminal it was handed, and the bookkeeping its
+# own shell maintains. Everything else is forwarded, so the agent runs with the
+# environment of the caller rather than the one the server was started with.
+PANE_OWNED_ENVIRONMENT = frozenset(
+    {
+        "TMUX",
+        "TMUX_PANE",
+        "TERM",
+        "TERM_PROGRAM",
+        "TERM_PROGRAM_VERSION",
+        "COLORTERM",
+        "SHELL",
+        "PWD",
+        "OLDPWD",
+        "SHLVL",
+        "_",
+    }
+)
 
 CLAUDE_RATE_LIMIT_COMMAND = "/rate-limit-options"
 CLAUDE_RATE_LIMIT_OPTION_ONE = "Stop and wait for limit to reset"
@@ -67,6 +88,7 @@ EXIT_RETRY_SECONDS = 3.0
 # remembers the answer per exact workspace path in this file.
 AGY_SETTINGS = Path(".gemini/antigravity-cli/settings.json")
 AGY_TRUSTED_KEY = "trustedWorkspaces"
+_SHELL_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
@@ -199,6 +221,39 @@ def _run_change_notification(line: str) -> bool:
 def _subscription_command() -> str:
     value = f"{_SUBSCRIPTION_NAME}:%*:{RUN_FORMAT}"
     return f"refresh-client -B {shlex.quote(value)}\n"
+
+
+def _environment_script(environment: Mapping[str, str] | None = None) -> str:
+    """This process's environment, as shell a new pane can source.
+
+    tmux spawns a pane from the environment the *server* was started with, and
+    takes only `PATH` from the client asking for the spawn. An agent started
+    from here would otherwise run with whatever the server happened to inherit,
+    however long ago that was, so every variable that is not the pane's own is
+    passed along. A dev shell entered inside the pane still layers its own
+    toolchain over the result.
+
+    `split-window -e` would say this directly, but a whole environment does not
+    fit: tmux caps a command at `MAX_IMSGSIZE` and a nix dev shell's
+    environment is several times that.
+    """
+    source = os.environ if environment is None else environment
+    return "".join(
+        f"{name}={shlex.quote(value)}\n"
+        for name, value in sorted(source.items())
+        # A name a shell cannot assign to would break the whole file when it is
+        # sourced. Bash exports its functions as `BASH_FUNC_name%%`, so this is
+        # not hypothetical.
+        if name not in PANE_OWNED_ENVIRONMENT and _SHELL_NAME.fullmatch(name)
+    )
+
+
+def _spool_environment(script: str) -> Path:
+    """Write an environment script where only its owner can read it back."""
+    handle, path = tempfile.mkstemp(prefix="agentmon-env-", suffix=".sh")
+    with os.fdopen(handle, "w", encoding="utf-8") as spool:
+        spool.write(script)
+    return Path(path)
 
 
 def _run(
@@ -1213,16 +1268,18 @@ class AgentmonService:
             instruction_file=str(instruction_file) if instruction_file else "",
             devshell=devshell,
         )
-        result = _run(
-            [
-                self.tmux, "-S", self.socket, "split-window", *([] if focus else ["-d"]),
-                "-v", "-t", target, "-l", f"{size_percent}%", "-c", str(worktree),
-                "-P", "-F", "#{pane_id}", command,
-            ]
-        )
-        pane = result.stdout.strip()
-        if not pane:
-            raise CommandError("hmux did not report a pane id for the new split")
+        with self._pane_environment(command) as pane_command:
+            result = _run(
+                [
+                    self.tmux, "-S", self.socket, "split-window",
+                    *([] if focus else ["-d"]),
+                    "-v", "-t", target, "-l", f"{size_percent}%", "-c", str(worktree),
+                    "-P", "-F", "#{pane_id}", pane_command,
+                ]
+            )
+            pane = result.stdout.strip()
+            if not pane:
+                raise CommandError("hmux did not report a pane id for the new split")
         return pane
 
     def exit_agent_pane(
@@ -1490,14 +1547,40 @@ class AgentmonService:
         # The window has to land in the session agentmon lists, or the run it
         # just started would never show up on the dashboard.
         target = f"{self.session}:" if self.session is not None else "0:"
-        result = _run(
-            [
-                self.tmux, "-S", self.socket, "new-window", "-d", "-t", target,
-                "-P", "-F", "#{window_index}", "-n", name,
-                "-c", str(worktree), command,
-            ]
-        )
+        with self._pane_environment(command) as pane_command:
+            result = _run(
+                [
+                    self.tmux, "-S", self.socket, "new-window", "-d", "-t", target,
+                    "-P", "-F", "#{window_index}", "-n", name,
+                    "-c", str(worktree), pane_command,
+                ]
+            )
         return result.stdout.strip()
+
+    @contextmanager
+    def _pane_environment(self, command: str) -> Iterator[str]:
+        """Run `command` with the caller's environment, spooled to a file.
+
+        The pane sources the spool and removes it, so the values never reach a
+        command line `ps` would show, and nothing is left behind once the agent
+        is running. `set -a` is what exports them: the file holds plain
+        assignments, so a value needs no escaping beyond shell quoting.
+
+        A spawn that fails leaves a pane that will never read the spool, so the
+        file is removed here instead — it holds whatever credentials the
+        caller's environment does.
+        """
+        script = _environment_script()
+        if not script:
+            yield command
+            return
+        spool = _spool_environment(script)
+        quoted = shlex.quote(str(spool))
+        try:
+            yield f"set -a; . {quoted}; set +a; rm -f {quoted}; {command}"
+        except BaseException:
+            spool.unlink(missing_ok=True)
+            raise
 
     def _prepare_agent_workspace(self, agent: str, worktree: Path) -> None:
         """Do whatever `agent` needs before it can be started in `worktree`.
@@ -1554,12 +1637,9 @@ class AgentmonService:
             invocation += f'{prefix} "$(cat {source})"'
         if not devshell:
             return "exec " + invocation
-        # Probe separately rather than falling back on the agent's own exit
-        # status: `nix develop -c agent || agent` cannot tell "the dev shell
-        # failed to build" from "the agent exited nonzero", and would relaunch
-        # a bare agent behind the user's back. `.` pins the flake to the
+        # The dev shell is what pins the agent's toolchain, so entering it is
+        # not optional: a shell that will not build ends the pane carrying
+        # nix's own diagnostic, rather than starting the agent with whatever
+        # environment the pane happened to inherit. `.` pins the flake to the
         # worktree instead of letting nix search parent directories.
-        return (
-            f"if {DEVSHELL_PROBE}; then exec {DEVSHELL_PREFIX} {invocation}; fi; "
-            f"exec {invocation}"
-        )
+        return f"exec {DEVSHELL_PREFIX} {invocation}"
