@@ -1,45 +1,48 @@
 [workspace]
-members = ["hmux-vt"]
+members = ["hmux-agent", "hmux-rt"]
 
-# A future that parks cx.waker() instead of cx.local_waker() hangs silently on
-# this runtime (see the hmux-rt crate's README.md), and no type can express the
-# difference — this lint is the compile-time enforcement.
-#
-# The server state is an `Rc<RefCell<_>>` and the command queue is a task, so a
-# borrow held across an await deadlocks the next command that wants the state.
-# Commands that wait borrow in tight scopes around the await instead; this lint
-# is what keeps them that way.
+# hmux-agent and hmux-rt are shared with the hmux0/ daemon, which borrows them
+# as path dependencies from outside this workspace. Their lints live here, at
+# the workspace that owns them.
 [workspace.lints.clippy]
 disallowed_methods = "deny"
 await_holding_refcell_ref = "deny"
 
 [package]
-name = "hmux"
-version = "0.1.0"
+name = "tmux-c2rs"
+authors = ["C2Rust"]
+version = "0.0.0"
+publish = false
 edition = "2024"
-description = "tmux-compatible server with agent control"
-license = "GPL-3.0-only"
-
-[[bin]]
-name = "hmux"
-path = "src/main.rs"
+autobins = false
 
 [lib]
-name = "hmux"
+name = "tmux_c2rs"
 path = "src/lib.rs"
-
-[lints]
-workspace = true
-
+crate-type = ["staticlib", "rlib"]
+[[bin]]
+path = "src/main.rs"
+name = "tmux"
 [dependencies]
-hmux-agent = { path = "../tmux-c2rs/hmux-agent" }
-hmux-rt = { path = "../tmux-c2rs/hmux-rt" }
-hmux-vt = { path = "hmux-vt" }
-bytes = "1"
+c2rust-bitfields = "0.22.1"
 libc = "0.2"
-regex = "1"
-terminfo = "0.9"
-thiserror = "1"
-clap = { version = "4", features = ["derive"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+lalrpop-util = { version = "0.23.1", default-features = false, features = ["std"] }
+hmux-agent = { path = "hmux-agent" }
+hmux-rt = { path = "hmux-rt" }
+bytes = "1"
+bytes-utils = "0.1.4"
+
+[build-dependencies]
+lalrpop = { version = "0.23.1", default-features = false }
+
+# The transpiled code keeps C's shape: `static mut` globals that every access
+# borrows, and raw pointers whose fields are reached through method calls.
+# Allowed until those two patterns are rewritten.
+[lints.rust]
+static_mut_refs = "allow"
+dangerous_implicit_autorefs = "allow"
+
+[lints.clippy]
+missing_safety_doc = "allow"
+disallowed_methods = "deny"
+await_holding_refcell_ref = "deny"

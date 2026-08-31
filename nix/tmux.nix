@@ -50,7 +50,7 @@ tmux.overrideAttrs (old: {
   # slot - `select-layout` on `<csum>,80x24,0,0{,40x24,0,0}` and friends -
   # linked a NULL cell and dereferenced it. In 3.7b this kills the server from
   # a single client command. The transpilation reproduces the 3.7b crash
-  # faithfully; the matching Rust guard lives in tmux-c2rs.
+  # faithfully; the matching Rust guard lives in hmux.
   #
   # 0004, submitted upstream as 68d54cfb, not a crash fix: a pane's
   # `border_status_line.expanded` holds the last expansion of
@@ -60,7 +60,7 @@ tmux.overrideAttrs (old: {
   # the same struct, so only the pane's was missed. `pane-border-format` is the
   # user's to set, so each leak is as large as the user makes it. hmux frees
   # it, and this keeps the oracle from being the only one of the two that does
-  # not; `tmux-c2rs/demo-expanded-mem.sh` measures either binary.
+  # not; `hmux/demo-expanded-mem.sh` measures either binary.
   #
   # 0005, submitted upstream as 9261bcd5, not a crash fix: `server_client_lost`
   # frees every other string a client owns -- `title` among them -- and not
@@ -68,7 +68,7 @@ tmux.overrideAttrs (old: {
   # so the last one a client held goes with it. The string is the active pane's
   # OSC 7 path, which whatever runs in the pane sets and `input-buffer-size`
   # lets reach a megabyte, so a program that writes to a terminal decides how
-  # much each lost client costs. `tmux-c2rs/demo-client-path-mem.sh` measures
+  # much each lost client costs. `hmux/demo-client-path-mem.sh` measures
   # either binary.
   #
   # 0006, submitted upstream as 7b640f6a, not a crash fix, and the one patch
@@ -160,7 +160,7 @@ tmux.overrideAttrs (old: {
   # is neither on `rlower` nor above the last row goes nowhere -- so text that
   # wraps there leaves the flag dangling and the next regex search over that
   # line kills the server. The transpilation carries the same fix in
-  # tmux-c2rs/src/window_copy.rs.
+  # hmux/src/window_copy.rs.
 
   patches = [
     ./tmux-3.7b-0001-do-not-crash-looking-for-next-or-previous-session.patch

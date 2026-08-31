@@ -1,6 +1,3 @@
 disallowed-methods = [
-    # The runtime's Waker half is deliberately inert (hmux-rt/README.md): only
-    # cx.local_waker() is wired to the loop, so a leaf that parks cx.waker()
-    # never wakes. Denied workspace-wide via [workspace.lints.clippy].
-    { path = "core::task::Context::waker", reason = "this runtime's Waker half is inert; park cx.local_waker() instead" },
+    { path = "core::task::Context::waker", reason = "hmux-rt uses local_waker for task wakeups" },
 ]
