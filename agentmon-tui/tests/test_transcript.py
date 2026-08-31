@@ -111,6 +111,63 @@ def write_state_database(home: Path, session_id: str, rollout: Path) -> None:
     database.close()
 
 
+def write_current_rollout(home: Path, session_id: str = SESSION_ID) -> Path:
+    rollout = (
+        home
+        / "sessions"
+        / "2026"
+        / "08"
+        / "31"
+        / f"rollout-2026-08-31T10-04-38-{session_id}.jsonl"
+    )
+    rollout.parent.mkdir(parents=True)
+    records = [
+        {
+            "timestamp": "2026-08-31T17:04:52Z",
+            "type": "session_meta",
+            "payload": {"id": session_id, "cwd": "/work"},
+        },
+        {
+            "timestamp": "2026-08-31T17:04:53Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "injected context"}],
+                "internal_chat_message_metadata_passthrough": {
+                    "content_item_kinds": [
+                        "agents_md.instructions",
+                        "environments.environment_context",
+                    ]
+                },
+            },
+        },
+        {
+            "timestamp": "2026-08-31T17:04:53Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "Build it."}],
+                "internal_chat_message_metadata_passthrough": {
+                    "content_item_kinds": ["user.text"]
+                },
+            },
+        },
+        {
+            "timestamp": "2026-08-31T17:04:54Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "Working on it."}],
+            },
+        },
+    ]
+    rollout.write_text("".join(json.dumps(record) + "\n" for record in records))
+    return rollout
+
+
 def test_loads_human_messages_via_state_database(tmp_path: Path) -> None:
     rollout = write_rollout(tmp_path)
     write_state_database(tmp_path, SESSION_ID, rollout)
@@ -123,6 +180,16 @@ def test_loads_human_messages_via_state_database(tmp_path: Path) -> None:
         ("goal", "/goal Reach 80% test coverage."),
     ]
     assert transcript.skipped_lines == ()
+
+
+def test_loads_current_response_item_user_messages(tmp_path: Path) -> None:
+    rollout = write_current_rollout(tmp_path)
+
+    transcript = extract_transcript(rollout)
+
+    assert [(message.role, message.text) for message in transcript.messages] == [
+        ("user", "Build it."),
+    ]
 
 
 def test_falls_back_to_session_directory_without_state_database(tmp_path: Path) -> None:

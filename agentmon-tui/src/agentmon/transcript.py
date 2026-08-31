@@ -1,7 +1,7 @@
 """Read user interactions from a local Codex session rollout.
 
 Codex's rollout JSONL is an implementation detail, so this module deliberately
-depends on only the small event shape needed for a visible transcript. Unknown
+depends on only the small event shapes needed for a visible transcript. Unknown
 records are ignored and malformed JSONL lines are reported on the returned
 transcript instead of making an otherwise readable session unusable.
 """
@@ -168,25 +168,29 @@ def extract_transcript(
                     except InvalidSessionId:
                         pass
 
-            if record.get("type") != "event_msg":
-                continue
-            event_type = payload.get("type")
-            if event_type == "user_message":
-                role: Role = "user"
-                text = payload.get("message")
-            elif event_type == "thread_goal_updated":
-                role = "goal"
-                goal = payload.get("goal")
-                text = goal.get("objective") if isinstance(goal, dict) else None
-                if (
-                    isinstance(text, str)
-                    and text
-                    and text not in seen_goal_objectives
-                ):
-                    seen_goal_objectives.add(text)
-                    text = f"/goal {text}"
+            if record.get("type") == "event_msg":
+                event_type = payload.get("type")
+                if event_type == "user_message":
+                    role: Role = "user"
+                    text = payload.get("message")
+                elif event_type == "thread_goal_updated":
+                    role = "goal"
+                    goal = payload.get("goal")
+                    text = goal.get("objective") if isinstance(goal, dict) else None
+                    if (
+                        isinstance(text, str)
+                        and text
+                        and text not in seen_goal_objectives
+                    ):
+                        seen_goal_objectives.add(text)
+                        text = f"/goal {text}"
+                    else:
+                        continue
                 else:
                     continue
+            elif record.get("type") == "response_item":
+                role = "user"
+                text = _response_item_user_text(payload)
             else:
                 continue
             if not isinstance(text, str) or not text:
@@ -301,3 +305,30 @@ def _session_id_from_filename(path: Path) -> str | None:
         return normalize_session_id(candidate)
     except InvalidSessionId:
         return None
+
+
+def _response_item_user_text(payload: dict[str, object]) -> str | None:
+    if payload.get("type") != "message" or payload.get("role") != "user":
+        return None
+
+    metadata = payload.get("internal_chat_message_metadata_passthrough")
+    if not isinstance(metadata, dict):
+        return None
+    content_item_kinds = metadata.get("content_item_kinds")
+    if (
+        not isinstance(content_item_kinds, list)
+        or "user.text" not in content_item_kinds
+    ):
+        return None
+
+    content = payload.get("content")
+    if not isinstance(content, list):
+        return None
+    text = "\n".join(
+        item["text"]
+        for item in content
+        if isinstance(item, dict)
+        and item.get("type") == "input_text"
+        and isinstance(item.get("text"), str)
+    )
+    return text or None
