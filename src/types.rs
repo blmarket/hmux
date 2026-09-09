@@ -3404,7 +3404,6 @@ impl ArgsValue {
     }
 }
 
-pub type args_values_t = Vec<ArgsValue>;
 #[derive(Default)]
 #[repr(C)]
 pub struct ibuf {
@@ -3432,7 +3431,7 @@ pub struct imsg {
 #[repr(C)]
 pub struct args_entry {
     pub flag: u_char,
-    pub values: args_values_t,
+    pub values: Vec<ArgsValue>,
     pub count: u_int,
     pub flags: core::ffi::c_int,
 }
