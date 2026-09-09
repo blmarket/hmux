@@ -91,7 +91,7 @@ impl RustArguments {
     pub fn set_argument_flag(
         &mut self,
         flag: u_char,
-        value: Option<Box<ArgsValue>>,
+        value: Option<ArgsValue>,
         flags: c_int,
     ) {
         unsafe { args_set(self, flag, value, flags) }
@@ -99,7 +99,7 @@ impl RustArguments {
 
     pub fn argument_flag_string(&self, flag: u_char) -> Option<&CStr> {
         let value = self.0.tree.get(&flag)?.values.last()?;
-        match value.as_ref() {
+        match value {
             ArgsValue::String(string) => Some(string.as_c_str()),
             ArgsValue::None | ArgsValue::Commands { .. } => None,
         }
@@ -137,7 +137,7 @@ impl RustArguments {
 
     pub fn argument_flag_values(&self, flag: u_char) -> Vec<&ArgsValue> {
         match self.0.tree.get(&flag) {
-            Some(entry) => entry.values.iter().map(|value| &**value).collect(),
+            Some(entry) => entry.values.iter().collect(),
             None => Vec::new(),
         }
     }
@@ -155,7 +155,7 @@ impl RustArguments {
                     continue;
                 }
                 for value in entry.values.iter() {
-                    let mut new_value = Box::new(ArgsValue::default());
+                    let mut new_value = ArgsValue::default();
                     args_copy_copy_value(&mut new_value, value, argv);
                     args_set(&mut new_args, entry.flag, Some(new_value), 0);
                 }
@@ -200,7 +200,7 @@ impl crate::Arguments for RustArguments {
         RustArguments::argument_flag_count(self, flag)
     }
 
-    fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<ArgsValue>>, flags: c_int) {
+    fn set_argument_flag(&mut self, flag: u_char, value: Option<ArgsValue>, flags: c_int) {
         RustArguments::set_argument_flag(self, flag, value, flags)
     }
 
@@ -238,7 +238,7 @@ impl crate::Arguments for args {
         RustArguments::argument_flag_count(RustArguments::from_ref(self), flag)
     }
 
-    fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<ArgsValue>>, flags: c_int) {
+    fn set_argument_flag(&mut self, flag: u_char, value: Option<ArgsValue>, flags: c_int) {
         RustArguments::set_argument_flag(RustArguments::from_mut(self), flag, value, flags)
     }
 
@@ -434,9 +434,9 @@ unsafe fn args_parse_flag_argument(
     optional: bool,
 ) -> Flags {
     unsafe {
-        let mut new = Box::new(ArgsValue::default());
+        let mut new = ArgsValue::default();
         if !rest.is_empty() {
-            *new = ArgsValue::String(rest.to_owned());
+            new = ArgsValue::String(rest.to_owned());
         } else {
             let argument = value_at(values, *i);
             if argument.is_some_and(|argument| !matches!(argument, ArgsValue::String(_))) {
@@ -810,7 +810,7 @@ pub(crate) fn args_escape_impl(s: &CStr) -> CString {
 pub unsafe fn args_set(
     args: &mut RustArguments,
     flag: u_char,
-    value: Option<Box<ArgsValue>>,
+    value: Option<ArgsValue>,
     flags: core::ffi::c_int,
 ) {
     let entry = args.0.tree.entry(flag).or_insert_with(|| {
@@ -825,7 +825,7 @@ pub unsafe fn args_set(
     let Some(value) = value else {
         return;
     };
-    if matches!(*value, ArgsValue::None) {
+    if matches!(value, ArgsValue::None) {
         return;
     }
     entry.values.push(value);
@@ -1079,7 +1079,7 @@ pub unsafe fn args_percentage(
     let Some(value) = entry.values.last() else {
         return no_number(cause, c"empty");
     };
-    let ArgsValue::String(string) = value.as_ref() else {
+    let ArgsValue::String(string) = value else {
         return no_number(cause, c"missing");
     };
     args_string_percentage(string.as_c_str(), minval, maxval, curval, cause)
@@ -1207,7 +1207,7 @@ pub unsafe fn args_percentage_and_expand(
         let Some(value) = entry.values.last() else {
             return no_number(cause, c"empty");
         };
-        let ArgsValue::String(string) = value.as_ref() else {
+        let ArgsValue::String(string) = value else {
             return no_number(cause, c"missing");
         };
         args_string_percentage_and_expand(string.as_c_str(), minval, maxval, curval, item, cause)

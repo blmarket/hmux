@@ -130,9 +130,9 @@ fn parse_spec(spec: &args_parse_t, words: &[&CStr]) -> Result<String, String> {
     }
 }
 
-/// A freshly allocated string value, as `args_set` expects to be given.
-fn string_value(s: &CStr) -> Option<Box<ArgsValue>> {
-    Some(Box::new(ArgsValue::String(s.to_owned())))
+/// An owned string value, as `args_set` expects to be given.
+fn string_value(s: &CStr) -> Option<ArgsValue> {
+    Some(ArgsValue::String(s.to_owned()))
 }
 
 #[test]
@@ -499,7 +499,7 @@ fn the_values_of_a_flag_come_back_in_order() {
 fn a_value_of_no_type_is_thrown_away_by_args_set() {
     unsafe {
         let args = Box::into_raw(Box::<RustArguments>::default());
-        let value = Box::new(ArgsValue::default());
+        let value = ArgsValue::default();
         args_set(&mut *args, b'a', Some(value), 0);
         assert_eq!((*args).argument_flag_count(b'a'), 1);
         assert!(args_value_list(&*args, b'a').is_empty());
@@ -683,8 +683,7 @@ fn a_number_argument_has_to_be_a_string() {
     let _guard = exclusive();
     unsafe {
         let args = Box::into_raw(Box::<RustArguments>::default());
-        let mut value = Box::new(ArgsValue::default());
-        *value = ArgsValue::Commands {
+        let value = ArgsValue::Commands {
             cmdlist: Some(cmdlist(c"display-message hello")),
             cached: OnceCell::new(),
         };

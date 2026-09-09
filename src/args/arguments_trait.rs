@@ -9,7 +9,7 @@ pub trait Arguments {
     fn argument_flag_count(&self, flag: u_char) -> c_int;
 
     /// Adds one occurrence of `flag`, optionally carrying a value.
-    fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<ArgsValue>>, flags: c_int);
+    fn set_argument_flag(&mut self, flag: u_char, value: Option<ArgsValue>, flags: c_int);
 
     /// Returns the last string value of `flag` when it has one.
     fn argument_flag_string(&self, flag: u_char) -> Option<&CStr>;
@@ -50,7 +50,7 @@ mod tests {
         arguments.set_argument_flag(b'a', None, 0);
         arguments.set_argument_flag(
             b'b',
-            Some(Box::new(ArgsValue::String(CString::new("value").unwrap()))),
+            Some(ArgsValue::String(CString::new("value").unwrap())),
             0,
         );
         assert_eq!(arguments.argument_flags(), [b'a', b'b']);

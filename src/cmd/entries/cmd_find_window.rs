@@ -130,8 +130,7 @@ unsafe fn cmd_find_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let pane = target.pane_ref().expect("the command target has a pane");
 
     let text = unsafe { cmd_find_window_filter(args) };
-    let mut filter = Box::new(ArgsValue::default());
-    *filter = ArgsValue::String(CString::new(text).expect("window filter contains no NUL bytes"));
+    let filter = ArgsValue::String(CString::new(text).expect("window filter contains no NUL bytes"));
 
     let mut new_args = Box::<RustArguments>::default();
     if args.argument_flag_count(b'Z') != 0 {

@@ -26,7 +26,7 @@ pub trait ArgumentEntry {
     fn argument_entry_value(&self, index: usize) -> Option<&ArgsValue>;
 
     /// Records one occurrence and retains its value when it is not `NONE`.
-    fn add_argument_occurrence(&mut self, value: Option<Box<ArgsValue>>);
+    fn add_argument_occurrence(&mut self, value: Option<ArgsValue>);
 }
 
 impl ArgumentEntry for crate::types::args_entry {
@@ -51,11 +51,11 @@ impl ArgumentEntry for crate::types::args_entry {
         self.values.len()
     }
     fn argument_entry_value(&self, index: usize) -> Option<&ArgsValue> {
-        self.values.get(index).map(Box::as_ref)
+        self.values.get(index)
     }
-    fn add_argument_occurrence(&mut self, value: Option<Box<ArgsValue>>) {
+    fn add_argument_occurrence(&mut self, value: Option<ArgsValue>) {
         self.count += 1;
-        if let Some(value) = value.filter(|value| !matches!(**value, ArgsValue::None)) {
+        if let Some(value) = value.filter(|value| !matches!(value, ArgsValue::None)) {
             self.values.push(value);
         }
     }
@@ -72,10 +72,10 @@ mod tests {
     fn entry_tracks_occurrences_and_nonempty_values() {
         let mut entry = args_entry::from_argument_flag(b'x', 1);
         entry.add_argument_occurrence(None);
-        entry.add_argument_occurrence(Some(Box::default()));
-        entry.add_argument_occurrence(Some(Box::new(ArgumentValue::from_argument_string(
+        entry.add_argument_occurrence(Some(ArgsValue::default()));
+        entry.add_argument_occurrence(Some(ArgumentValue::from_argument_string(
             CString::new("value").unwrap(),
-        ))));
+        )));
 
         assert_eq!(entry.argument_entry_flag(), b'x');
         assert_eq!(entry.argument_entry_flags(), 1);

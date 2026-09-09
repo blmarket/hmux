@@ -3404,7 +3404,7 @@ impl ArgsValue {
     }
 }
 
-pub type args_values_t = Vec<Box<ArgsValue>>;
+pub type args_values_t = Vec<ArgsValue>;
 #[derive(Default)]
 #[repr(C)]
 pub struct ibuf {
