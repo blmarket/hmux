@@ -444,7 +444,7 @@ fn the_type_names_are_what_the_log_prints() {
 #[test]
 fn a_flag_is_counted_every_time_it_is_given() {
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         assert_eq!((*args).argument_flag_count(b'a'), 0);
         args_set(&mut *args, b'a', None, 0);
         assert_eq!((*args).argument_flag_count(b'a'), 1);
@@ -458,7 +458,7 @@ fn a_flag_is_counted_every_time_it_is_given() {
 #[test]
 fn the_last_value_given_for_a_flag_is_the_one_read_back() {
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         assert!(args_get_str(&*args, b'a').is_none());
         args_set(&mut *args, b'a', None, 0);
         assert!(args_get_str(&*args, b'a').is_none());
@@ -472,7 +472,7 @@ fn the_last_value_given_for_a_flag_is_the_one_read_back() {
 #[test]
 fn the_flag_text_comes_back_as_nothing_when_the_flag_was_not_given() {
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         assert_eq!(args_get_str(&*args, b'a'), None);
         args_set(&mut *args, b'a', None, 0);
         assert_eq!(args_get_str(&*args, b'a'), None);
@@ -485,7 +485,7 @@ fn the_flag_text_comes_back_as_nothing_when_the_flag_was_not_given() {
 #[test]
 fn the_values_of_a_flag_come_back_in_order() {
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         assert!(args_value_list(&*args, b'a').is_empty());
         args_set(&mut *args, b'a', string_value(c"one"), 0);
         args_set(&mut *args, b'a', string_value(c"two"), 0);
@@ -500,7 +500,7 @@ fn the_values_of_a_flag_come_back_in_order() {
 #[test]
 fn a_value_of_no_type_is_thrown_away_by_args_set() {
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         let value = Box::new(args_value_t::default());
         args_set(&mut *args, b'a', Some(value), 0);
         assert_eq!((*args).argument_flag_count(b'a'), 1);
@@ -512,7 +512,7 @@ fn a_value_of_no_type_is_thrown_away_by_args_set() {
 #[test]
 fn the_flags_are_walked_in_order() {
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         assert_eq!(args_flags(&*args).next(), None);
         for flag in *b"cab" {
             args_set(&mut *args, flag, None, 0);
@@ -594,7 +594,7 @@ fn arguments_are_copied_with_the_template_words_replaced() {
         let args =
             parse_values(&spec_cb_template(c"a", Some(parse_as_either)), &mut values).unwrap();
         let argv = vec![CString::new("one").unwrap(), CString::new("two").unwrap()];
-        let copy = args_copy(&args, &argv);
+        let copy = args.copy_with_arguments(&argv);
         assert_eq!(
             args_print(&copy).to_string_lossy(),
             "-a one-two \"x one\" { display-message hello } "
@@ -606,11 +606,11 @@ fn arguments_are_copied_with_the_template_words_replaced() {
 #[test]
 fn copying_keeps_the_flags_and_their_values() {
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         args_set(&mut *args, b'a', None, 0);
         args_set(&mut *args, b'a', None, 0);
         args_set(&mut *args, b'b', string_value(c"one"), 0);
-        let copy = args_copy(&*args, &[]);
+        let copy = (*args).copy_with_arguments(&[]);
         assert_eq!(copy.argument_flag_count(b'a'), 2);
         assert_eq!(seen_str(args_get_str(&copy, b'b')), "one");
         assert_eq!(args_print(&copy).to_string_lossy(), "-aa -b one");
@@ -621,7 +621,7 @@ fn copying_keeps_the_flags_and_their_values() {
 #[test]
 fn an_optional_value_flag_is_printed_before_the_arguments() {
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         args_set(&mut *args, b'a', None, ARGS_ENTRY_OPTIONAL_VALUE);
         args_set(&mut *args, b'b', string_value(c"one"), 0);
         assert_eq!(args_print(&*args).to_string_lossy(), "-a -b one");
@@ -649,7 +649,7 @@ fn the_arguments_flatten_back_to_a_word_list() {
     ]);
     unsafe {
         let args = parse_values(&spec_cb(Some(parse_as_either)), &mut values).unwrap();
-        let argv = args_to_vector(&args);
+        let argv = args.to_vector();
         assert_eq!(argv.len(), 2);
         assert_eq!(argv[0].as_bytes(), b"x");
         assert_eq!(argv[1].as_bytes(), b"display-message hello");
@@ -660,7 +660,7 @@ fn the_arguments_flatten_back_to_a_word_list() {
 #[test]
 fn a_number_argument_is_read_from_the_last_value_of_a_flag() {
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         let mut cause = None;
         assert_eq!(args_strtonum(&*args, b'a', 0, 10, &mut cause), 0);
         assert_eq!(cause.take().unwrap().to_string_lossy(), "missing");
@@ -684,7 +684,7 @@ fn a_number_argument_is_read_from_the_last_value_of_a_flag() {
 fn a_number_argument_has_to_be_a_string() {
     let _guard = exclusive();
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         let mut value = Box::new(args_value_t::default());
         value.value = ArgsValue::Commands {
             cmdlist: Some(cmdlist(c"display-message hello")),
@@ -703,7 +703,7 @@ fn a_number_argument_can_be_expanded_first() {
     let _guard = exclusive();
     let runner = Runner::new();
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         let mut cause = None;
         assert_eq!(
             args_strtonum_and_expand(&*args, b'a', 0, 10, &runner.item(), &mut cause),
@@ -763,7 +763,7 @@ fn a_percentage_is_taken_of_the_current_value() {
 #[test]
 fn a_percentage_argument_comes_from_the_last_value_of_a_flag() {
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         let mut cause = None;
         assert_eq!(args_percentage(&*args, b'a', 0, 100, 50, &mut cause), 0);
         assert_eq!(cause.take().unwrap().to_string_lossy(), "missing");
@@ -784,7 +784,7 @@ fn an_expanded_percentage_argument_comes_from_the_last_value_of_a_flag() {
     let _guard = exclusive();
     let runner = Runner::new();
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         let mut cause = None;
         assert_eq!(
             args_percentage_and_expand(&*args, b'a', 0, 100, 50, &runner.item(), &mut cause),

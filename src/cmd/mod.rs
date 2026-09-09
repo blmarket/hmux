@@ -74,7 +74,7 @@ pub use entries::cmd_run_shell::cmd_run_shell_data;
 pub use entries::cmd_source_file::cmd_source_file_data;
 pub use entries::cmd_wait_for::cmd_wait_for_flush;
 
-use crate::args::{args_copy, args_parse, args_print};
+use crate::args::{args_parse, args_print};
 use crate::cmd::entries::cmd_attach_session::cmd_attach_session_entry;
 use crate::cmd::entries::cmd_bind_key::cmd_bind_key_entry;
 use crate::cmd::entries::cmd_break_pane::cmd_break_pane_entry;
@@ -574,7 +574,7 @@ pub unsafe fn cmd_copy(from: &cmd, argv: &[CString]) -> Box<cmd> {
     unsafe {
         Box::new(cmd {
             entry: from.entry,
-            args: Some(args_copy(cmd_get_args(from), argv)),
+            args: Some(cmd_get_args(from).copy_with_arguments(argv)),
             group: 0,
             file: from.file.clone(),
             line: from.line,

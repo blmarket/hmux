@@ -25,7 +25,7 @@
 //!   already in that mode.
 
 use crate::args::RustArguments;
-use crate::args::{args_create, args_set, args_string_str};
+use crate::args::{args_set, args_string_str};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -134,7 +134,7 @@ unsafe fn cmd_find_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     filter.value =
         ArgsValue::String(CString::new(text).expect("window filter contains no NUL bytes"));
 
-    let mut new_args = args_create();
+    let mut new_args = Box::<RustArguments>::default();
     if args.argument_flag_count(b'Z') != 0 {
         unsafe { args_set(&mut new_args, b'Z', None, 0) };
     }

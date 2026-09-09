@@ -143,6 +143,58 @@ impl RustArguments {
             None => Vec::new(),
         }
     }
+
+    /// Copies arguments while expanding positional templates with the supplied words.
+    pub unsafe fn copy_with_arguments(&self, argv: &[CString]) -> Box<Self> {
+        unsafe {
+            cmd_log_argv(argv, c"%s", fmt_args![c"args_copy".as_ptr()]);
+            let mut new_args = Box::<Self>::default();
+            for entry in self.0.tree.values() {
+                if entry.values.is_empty() {
+                    for _ in 0..entry.count {
+                        args_set(&mut new_args, entry.flag, None, 0);
+                    }
+                    continue;
+                }
+                for value in entry.values.iter() {
+                    let mut new_value = Box::new(args_value_t::default());
+                    args_copy_copy_value(&mut new_value, value, argv);
+                    args_set(&mut new_args, entry.flag, Some(new_value), 0);
+                }
+            }
+            if self.0.count == 0 {
+                return new_args;
+            }
+            new_args.0.count = self.0.count;
+            new_args.0.values.reserve(self.0.values.len());
+            for value in self.0.values.iter() {
+                let mut new_value = args_value_t::default();
+                args_copy_copy_value(&mut new_value, value, argv);
+                new_args.0.values.push(new_value);
+            }
+            new_args
+        }
+    }
+
+    /// Returns positional arguments as strings, printing command lists and skipping empty values.
+    pub unsafe fn to_vector(&self) -> Vec<CString> {
+        unsafe {
+            let mut argv = Vec::new();
+            for value in self.0.values.iter() {
+                match &value.value {
+                    ArgsValue::String(string) => argv.push(string.clone()),
+                    ArgsValue::Commands { cmdlist, .. } => {
+                        let s = cmdlist
+                            .as_ref()
+                            .map_or_else(CString::default, |list| list.print(0));
+                        argv.push(s);
+                    }
+                    ArgsValue::None => {}
+                }
+            }
+            argv
+        }
+    }
 }
 
 impl crate::Arguments for RustArguments {
@@ -344,10 +396,6 @@ unsafe fn args_value_as_string(value: &args_value_t) -> &CStr {
     }
 }
 
-pub fn args_create() -> Box<RustArguments> {
-    Box::default()
-}
-
 /// How the template says a flag takes its argument.
 #[derive(Clone, Copy, PartialEq)]
 enum FlagArgument {
@@ -514,9 +562,9 @@ pub unsafe fn args_parse(
 ) -> Option<Box<RustArguments>> {
     unsafe {
         if values.is_empty() {
-            return Some(args_create());
+            return Some(Box::<RustArguments>::default());
         }
-        let mut args = args_create();
+        let mut args = Box::<RustArguments>::default();
         let mut i: usize = 1;
         while i < values.len() {
             match args_parse_flags(parse, values, &mut i, &mut args, cause) {
@@ -615,56 +663,6 @@ unsafe fn args_copy_copy_value(to: &mut args_value_t, from: &args_value_t, argv:
             },
             ArgsValue::None => ArgsValue::None,
         };
-    }
-}
-
-pub unsafe fn args_copy(args: &RustArguments, argv: &[CString]) -> Box<RustArguments> {
-    unsafe {
-        cmd_log_argv(argv, c"%s", fmt_args![c"args_copy".as_ptr()]);
-        let mut new_args = args_create();
-        for entry in args.0.tree.values() {
-            if entry.values.is_empty() {
-                for _ in 0..entry.count {
-                    args_set(&mut new_args, entry.flag, None, 0);
-                }
-                continue;
-            }
-            for value in entry.values.iter() {
-                let mut new_value = Box::new(args_value_t::default());
-                args_copy_copy_value(&mut new_value, value, argv);
-                args_set(&mut new_args, entry.flag, Some(new_value), 0);
-            }
-        }
-        if args.0.count == 0 {
-            return new_args;
-        }
-        new_args.0.count = args.0.count;
-        new_args.0.values.reserve(args.0.values.len());
-        for value in args.0.values.iter() {
-            let mut new_value = args_value_t::default();
-            args_copy_copy_value(&mut new_value, value, argv);
-            new_args.0.values.push(new_value);
-        }
-        new_args
-    }
-}
-
-pub unsafe fn args_to_vector(args: &RustArguments) -> Vec<CString> {
-    unsafe {
-        let mut argv = Vec::new();
-        for value in args.0.values.iter() {
-            match &value.value {
-                ArgsValue::String(string) => argv.push(string.clone()),
-                ArgsValue::Commands { cmdlist, .. } => {
-                    let s = cmdlist
-                        .as_ref()
-                        .map_or_else(CString::default, |list| list.print(0));
-                    argv.push(s);
-                }
-                ArgsValue::None => {}
-            }
-        }
-        argv
     }
 }
 

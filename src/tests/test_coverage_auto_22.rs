@@ -6,7 +6,7 @@
 //! server or the command table, so no [`globals`] guard is needed except where
 //! noted.
 
-use crate::args::{args_create, args_escape, args_free, args_get_str, args_print, args_set};
+use crate::args::{RustArguments, args_escape, args_free, args_get_str, args_print, args_set};
 use crate::cmd::{cmd_pack_argv, cmd_stringify_argv, cmd_template_replace, cmd_unpack_argv};
 use crate::tests::test_fixtures::seen;
 use crate::tests::test_fixtures::seen_str;
@@ -211,7 +211,7 @@ fn args_escape_empty_tilde_and_quotes() {
 #[test]
 fn args_has_get_and_print_roundtrip() {
     unsafe {
-        let args = Box::into_raw(args_create());
+        let args = Box::into_raw(Box::<RustArguments>::default());
         assert!(!args.is_null());
         assert_eq!((*args).argument_flag_count(b'a'), 0);
         assert!(args_get_str(&*args, b'a').is_none());

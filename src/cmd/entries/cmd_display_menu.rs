@@ -1,7 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{
-    args_percentage, args_string_str, args_strtonum, args_to_vector, args_value_list,
-};
+use crate::args::{args_percentage, args_string_str, args_strtonum, args_value_list};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item_ref_of;
 use crate::environ::EnvironmentStore;
@@ -751,7 +749,7 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                 };
                                 argv.push(shell.to_owned());
                             } else {
-                                unsafe { argv = args_to_vector(args) };
+                                unsafe { argv = args.to_vector() };
                             }
                             if ({
                                 let flag = 'e' as i32 as u_char;

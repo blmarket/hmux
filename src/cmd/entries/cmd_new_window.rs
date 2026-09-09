@@ -24,7 +24,7 @@
 //! own index. The conversion nulls that variable where the C's loop left it.
 
 use crate::args::RustArguments;
-use crate::args::{args_to_vector, args_value_list};
+use crate::args::args_value_list;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item_weak_of;
 
@@ -183,7 +183,7 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         name: wname.as_deref(),
         ..Default::default()
     };
-    unsafe { sc.argv = args_to_vector(args) };
+    unsafe { sc.argv = args.to_vector() };
     sc.environ = Some(spawn_environ(args));
     sc.idx = idx;
     sc.cwd = args.argument_flag_string(b'c');

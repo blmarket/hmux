@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_to_vector, args_value_list};
+use crate::args::args_value_list;
 use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
 use crate::cmd::cmd_find_from_session_ref;
 use crate::cmd::cmdq_item_weak_of;
@@ -615,7 +615,7 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                             .map(ClientRef::downgrade);
                                                     }
                                                     sc.name = wname.as_deref();
-                                                    unsafe { sc.argv = args_to_vector(args) };
+                                                    unsafe { sc.argv = args.to_vector() };
                                                     sc.idx = -(1 as core::ffi::c_int);
                                                     sc.cwd = {
                                                         let flag = 'c' as i32 as u_char;
