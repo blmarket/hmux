@@ -1,6 +1,6 @@
 use crate::args::RustArguments;
 use crate::args::args_get_str;
-use crate::args::{args_count, args_has, args_string_str, args_to_vector, args_value_list};
+use crate::args::{args_has, args_string_str, args_to_vector, args_value_list};
 use crate::cmd::cmdq_item_weak_of;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -9,16 +9,14 @@ use crate::environ::new_environment_box;
 use crate::fmt_args;
 use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_WAIT, SPAWN_BEFORE,
     SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FLOATING, SPAWN_FULLSIZE, SPAWN_ZOOM,
 };
 use crate::spawn::spawn_pane;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
-use crate::types::{
-    OptionsRef, args_parse_t, cmd_find_state, spawn_context, u_char, u_int,
-};
+use crate::types::{OptionsRef, args_parse_t, cmd_find_state, spawn_context, u_char, u_int};
 use crate::window::WinlinkRef;
 use ::std::ffi::CString;
 
@@ -94,7 +92,7 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut flags: core::ffi::c_int;
     let mut cause: Option<CString> = None;
     let mut floating_cause = None;
-    let count: u_int = args_count(args);
+    let count: u_int = args.argument_count();
     let is_floating: core::ffi::c_int = if cmd_get_entry(self_0).name == cmd_new_pane_entry.name {
         (args_has(args, 'L' as i32 as u_char) == 0) as core::ffi::c_int
     } else {
@@ -240,21 +238,15 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { item.print(c"%s", fmt_args![cp.as_c_str()]) };
     }
     unsafe {
-        crate::cmd::cmd_find_from_link_ref(
-            &mut fs,
-            &link,
-            Some(&new_pane),
-            0 as core::ffi::c_int,
-        )
+        crate::cmd::cmd_find_from_link_ref(&mut fs, &link, Some(&new_pane), 0 as core::ffi::c_int)
     };
     unsafe {
-        (crate::cmd::cmdq_item_ref_of(item).expect("the command has an owner"))
-            .insert_session_hook(
-                Some(&session),
-                Some(&fs),
-                c"after-split-window",
-                fmt_args![],
-            )
+        (crate::cmd::cmdq_item_ref_of(item).expect("the command has an owner")).insert_session_hook(
+            Some(&session),
+            Some(&fs),
+            c"after-split-window",
+            fmt_args![],
+        )
     };
     drop(sc.environ.take());
     if input != 0 {

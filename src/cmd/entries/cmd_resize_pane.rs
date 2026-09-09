@@ -1,6 +1,8 @@
 use crate::args::RustArguments;
-use crate::args::{args_count, args_has, args_percentage, args_string_str};
+use crate::args::{args_has, args_percentage, args_string_str};
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_mouse_pane};
 use crate::compat::strtonum;
 use crate::consts::{
@@ -8,8 +10,6 @@ use crate::consts::{
     LAYOUT_TOPBOTTOM, PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
 };
 use crate::fmt_args;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{OptionsRef, args_parse_t, u_char, u_int};
 
 pub(crate) static cmd_resize_pane_entry: RustCommandEntry = {
@@ -64,7 +64,7 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         return CMD_RETURN_NORMAL;
     }
     unsafe { owner.unzoom_and_redraw() };
-    if args_count(args) == 0 as u_int {
+    if args.argument_count() == 0 as u_int {
         adjust = 1 as u_int;
     } else {
         match unsafe {

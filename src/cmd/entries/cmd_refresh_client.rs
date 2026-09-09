@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_count, args_get_str, args_has, args_string_str, args_value_list};
+use crate::args::{args_get_str, args_has, args_string_str, args_value_list};
 use crate::cmd::cmd_get_args;
 
 use crate::compat::strtonum;
@@ -8,13 +8,13 @@ use crate::fmt_args;
 use crate::log::log_debug;
 use crate::server::ClientPanDirection;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_CLIENT_TFLAG, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
     CONTROL_SUB_ALL_PANES, CONTROL_SUB_ALL_WINDOWS, CONTROL_SUB_PANE, CONTROL_SUB_SESSION,
     CONTROL_SUB_WINDOW, INT_MAX, WINDOW_MAXIMUM, WINDOW_MINIMUM,
 };
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{ClientRef, args_parse_t, control_sub_type, u_char, u_int};
 use crate::window::window_pane_find_by_id;
 use ::core::ffi::CStr;
@@ -209,7 +209,7 @@ unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
         || args_has(args, 'U' as i32 as u_char) != 0
         || args_has(args, 'D' as i32 as u_char) != 0
     {
-        if args_count(args) == 0 as u_int {
+        if args.argument_count() == 0 as u_int {
             adjust = 1 as u_int;
         } else {
             match unsafe {

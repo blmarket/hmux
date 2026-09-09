@@ -1,11 +1,13 @@
 use crate::args::RustArguments;
-use crate::args::{args_count, args_has, args_string_str, args_strtonum_and_expand};
+use crate::args::{args_has, args_string_str, args_strtonum_and_expand};
 use crate::cmd::{CmdqItemRef, cmdq_item_ref_of};
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::ffi::strtol;
 use crate::fmt_args;
 use crate::key_bindings::key_bindings_get_table_ref;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CLIENT_READONLY, CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_FIND_PANE,
     CMD_READONLY, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, KEYC_LITERAL, KEYC_MASK_FLAGS, KEYC_NONE,
@@ -13,11 +15,8 @@ use crate::consts::{
 };
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::text::{utf8_from_data, utf8_fromcstr};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{
-    ClientRef, OptionsRef, args_parse_t, key_code, key_event, mouse_event, u_char, u_int,
-    uint64_t,
+    ClientRef, OptionsRef, args_parse_t, key_code, key_event, mouse_event, u_char, u_int, uint64_t,
 };
 
 pub(crate) static cmd_send_keys_entry: RustCommandEntry = {
@@ -179,7 +178,7 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let key: key_code;
     let mut i: u_int;
     let mut np: u_int = 1 as u_int;
-    let count: u_int = args_count(args);
+    let count: u_int = args.argument_count();
     let mut cause = None;
     if unsafe {
         tc.is_some()

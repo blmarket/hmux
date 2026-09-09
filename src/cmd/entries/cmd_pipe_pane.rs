@@ -1,13 +1,13 @@
-use crate::args::{args_count, args_has, args_string_str};
+use crate::args::{args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, FORMAT_NONE,
 };
 use crate::fmt_args;
 use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand_time};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::args_parse_t;
 
 pub(crate) static cmd_pipe_pane_entry: RustCommandEntry = {
@@ -51,7 +51,7 @@ unsafe fn cmd_pipe_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             return CMD_RETURN_NORMAL;
         };
         if closed.removed
-            || args_count(args) == 0
+            || args.argument_count() == 0
             || args_string_str(args, 0).is_none_or(|value| value.is_empty())
         {
             return CMD_RETURN_NORMAL;

@@ -32,12 +32,14 @@
 
 use crate::args::RustArguments;
 use crate::args::{
-    args_count, args_get_str, args_has, args_make_commands, args_make_commands_get_command,
+    args_get_str, args_has, args_make_commands, args_make_commands_get_command,
     args_make_commands_prepare,
 };
 use crate::cmd::CmdqItemRef;
-use crate::cmd::cmd_get_args;
 use crate::cmd::CmdqItemWeak;
+use crate::cmd::cmd_get_args;
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmdq_append, cmdq_item_weak_of};
 use crate::consts::{
     ARGS_PARSE_COMMANDS_OR_STRING, CMD_CLIENT_TFLAG, CMD_FIND_PANE, CMD_RETURN_ERROR,
@@ -47,8 +49,6 @@ use crate::consts::{
 use crate::fmt_args;
 use crate::prompt_history::PromptHistoryType;
 use crate::status::{status_prompt_for_client, status_prompt_update_for_client};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{
     ClientRef, Prompt, PromptData, args, args_command_state, args_parse_t, args_parse_type,
     cmd_command_prompt_prompt, u_int,
@@ -201,7 +201,7 @@ unsafe fn cmd_command_prompt_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     let mut space = true;
     let prompts = if let Some(s) = args_get_str(args, b'p') {
         Some(s.to_owned())
-    } else if args_count(args) != 0 {
+    } else if args.argument_count() != 0 {
         let tmp = unsafe { args_make_commands_get_command(cdata.state.as_deref().unwrap()) };
         let mut spelled = b"(".to_vec();
         spelled.extend_from_slice(tmp.as_bytes());

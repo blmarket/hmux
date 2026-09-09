@@ -1,9 +1,11 @@
-use crate::args::RustArguments;
 use crate::GlobPaths;
-use crate::args::{args_count, args_has, args_string_str};
+use crate::args::RustArguments;
+use crate::args::{args_has, args_string_str};
 use crate::cfg::cfg_print_causes;
 use crate::cfg::{configuration_finished, load_cfg_buffer_for_client};
+use crate::cmd::cmdq_item;
 use crate::cmd::{CmdqItemRef, CmdqItemWeak, cmdq_item_weak_of};
+use crate::cmd::{RustCommandEntry, SourceFileRef, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_parse_flags};
 use crate::compat::error_message;
 use crate::consts::{
@@ -17,11 +19,7 @@ use crate::format::format_single_from_target;
 use crate::log::log_debug;
 use crate::server::client_working_directory;
 use crate::types::ClientFileEvent;
-use crate::cmd::{RustCommandEntry, SourceFileRef, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
-use crate::types::{
-    ClientFileData, ClientRef, args_parse_t, size_t, u_char, u_int, uint64_t,
-};
+use crate::types::{ClientFileData, ClientRef, args_parse_t, size_t, u_char, u_int, uint64_t};
 use crate::xmalloc::xasprintf;
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
@@ -241,7 +239,7 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let cwd = unsafe {
         cmd_source_file_quote_for_glob(client_working_directory(c.as_ref(), None).as_c_str())
     };
-    for i in 0..args_count(args) {
+    for i in 0..args.argument_count() {
         let argument = unsafe { args_string_str(args, i).expect("argument index checked") };
         let expanded = (args_has(args, b'F') != 0)
             .then(|| unsafe { format_single_from_target(item, argument) });

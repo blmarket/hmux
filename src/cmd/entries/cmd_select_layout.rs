@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_count, args_has, args_string_str};
+use crate::args::{args_has, args_string_str};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -7,11 +7,11 @@ use crate::layout::layout_set_lookup;
 
 use crate::resize::recalculate_sizes;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{args_parse_t, u_char, u_int};
 
 pub const CMD_TARGET_WINDOW_USAGE: &core::ffi::CStr = c"[-t target-window]";
@@ -122,7 +122,7 @@ unsafe fn cmd_select_layout_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             unsafe { owner.spread_pane_layout(&pane) };
         }
     } else {
-        let layoutname = if args_count(args) != 0 as u_int {
+        let layoutname = if args.argument_count() != 0 as u_int {
             unsafe { args_string_str(args, 0) }
         } else if args_has(args, 'o' as i32 as u_char) != 0 {
             oldlayout.as_deref()

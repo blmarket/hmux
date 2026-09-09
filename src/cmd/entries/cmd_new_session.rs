@@ -1,10 +1,10 @@
 use crate::args::RustArguments;
 use crate::args::args_get_str;
-use crate::args::{args_count, args_has, args_to_vector, args_value_list};
+use crate::args::{args_has, args_to_vector, args_value_list};
 use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
-use crate::cmd::entries::cmd_attach_session::cmd_attach_session;
 use crate::cmd::cmd_find_from_session_ref;
 use crate::cmd::cmdq_item_weak_of;
+use crate::cmd::entries::cmd_attach_session::cmd_attach_session;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::compat::strtonum;
@@ -19,6 +19,8 @@ use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::server::client_working_directory;
 use crate::session::{session_group_ensure, session_group_name, with_session_group_named};
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CLIENT_CONTROL, CMD_FIND_CANFAIL, CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_ERROR,
     CMD_RETURN_NORMAL, CMD_STARTSERVER, CMD_TARGET_SESSION_USAGE, CMDQ_STATE_REPEAT, USHRT_MAX,
@@ -26,8 +28,6 @@ use crate::consts::{
 use crate::spawn::spawn_window;
 use crate::tmux::global_session_options;
 use crate::tmux::{check_name, clean_name};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{
     ClientRef, OptionsRef, SessionRef, args_parse_t, cmd_find_state, spawn_context, termios,
     u_char, u_int, uint64_t,
@@ -130,7 +130,7 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut sy: u_int = 0;
     let mut dsx: u_int = 0;
     let mut dsy: u_int = 0;
-    let count: u_int = args_count(args);
+    let count: u_int = args.argument_count();
     let mut sc = spawn_context::default();
     let retval: cmd_retval;
     let mut fs = cmd_find_state::default();
@@ -689,10 +689,8 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                             )
                                                         };
                                                         unsafe {
-                                                            (crate::cmd::cmdq_item_ref_of(
-                                                                item,
-                                                            )
-                                                            .expect("the command has an owner"))
+                                                            (crate::cmd::cmdq_item_ref_of(item)
+                                                                .expect("the command has an owner"))
                                                             .insert_session_hook(
                                                                 Some(&created),
                                                                 Some(&fs),

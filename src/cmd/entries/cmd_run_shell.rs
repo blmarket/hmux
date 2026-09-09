@@ -1,7 +1,6 @@
 use crate::args::RustArguments;
 use crate::args::{
-    args_count, args_get_str, args_has, args_make_commands, args_make_commands_prepare,
-    args_string_str,
+    args_get_str, args_has, args_make_commands, args_make_commands_prepare, args_string_str,
 };
 use crate::cmd::cmd_find_from_nothing;
 use crate::cmd::cmd_get_args;
@@ -139,7 +138,7 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             return CMD_RETURN_ERROR;
         };
         d = parsed;
-    } else if args_count(args) == 0 as u_int {
+    } else if args.argument_count() == 0 as u_int {
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'C' as i32 as u_char) == 0 {
@@ -147,7 +146,7 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         if let Some(cmd) = cmd {
             let mut ft = unsafe { format_create_from_target(item) };
             i = 1 as u_int;
-            while i < args_count(args) {
+            while i < args.argument_count() {
                 let key = xasprintf(c"%u", fmt_args![i]);
                 unsafe {
                     format_add(
@@ -397,8 +396,8 @@ mod tests {
     use crate::cfg::WindowMode;
     use crate::format::format_grid_line;
     use crate::pane_identity::PaneIdentity;
-    use crate::window_pane_trait::WindowPane;
     use crate::tests::test_fixtures::{Target, globals};
+    use crate::window_pane_trait::WindowPane;
 
     fn output_state(pane_id: core::ffi::c_int) -> cmd_run_shell_data {
         cmd_run_shell_data {

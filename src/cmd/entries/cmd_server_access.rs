@@ -1,19 +1,19 @@
 use crate::args::RustArguments;
-use crate::args::{args_count, args_has, args_string_str};
+use crate::args::{args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
 use crate::ffi::getuid;
 use crate::fmt_args;
 use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{CMD_CLIENT_CANFAIL, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL};
 use crate::server::client_walk;
 use crate::server::{
     ServerAclAccess, ServerAclStore, server_acl_display, server_acl_update_clients,
     with_server_acl, with_server_acl_mut,
 };
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{__uid_t, args_parse_t, u_char, u_int, uid_t};
 use crate::{UserAccount, UserAccountRecord};
 
@@ -66,7 +66,7 @@ unsafe fn cmd_server_access_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { server_acl_display(item) };
         return CMD_RETURN_NORMAL;
     }
-    if args_count(args) == 0 as u_int {
+    if args.argument_count() == 0 as u_int {
         unsafe { item.error(c"missing user argument", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }

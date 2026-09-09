@@ -1,7 +1,7 @@
-use crate::args::RustArguments;
 use crate::CompiledRegex;
 use crate::WindowPane;
-use crate::args::{args_count, args_has, args_parse, args_string_str};
+use crate::args::RustArguments;
+use crate::args::{args_has, args_parse, args_string_str};
 use crate::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::compat::strtonum;
 use crate::compat::{cstr_eq_ignore_case, tolower};
@@ -1380,7 +1380,10 @@ unsafe fn window_copy_do_copy_end_of_line(
         let s = cs.s;
         let wl = cs.wl;
         let pane = wme.pane_ref().expect("mode has a pane");
-        let count: u_int = args_count(cs.wargs);
+        let count: u_int = {
+            let args: &RustArguments = cs.wargs;
+            args.argument_count()
+        };
         let mut np: u_int = wme.prefix;
 
         let mut prefix: Option<CString> = None;
@@ -1470,7 +1473,10 @@ unsafe fn window_copy_do_copy_line(
         let s = cs.s;
         let wl = cs.wl;
         let pane = wme.pane_ref().expect("mode has a pane");
-        let count: u_int = args_count(cs.wargs);
+        let count: u_int = {
+            let args: &RustArguments = cs.wargs;
+            args.argument_count()
+        };
         let mut np: u_int = wme.prefix;
 
         let mut prefix: Option<CString> = None;
@@ -4773,7 +4779,7 @@ pub(crate) unsafe fn window_copy_command(
         let mut action: window_copy_cmd_action;
         let mut clear: window_copy_cmd_clear = WINDOW_COPY_CMD_CLEAR_NEVER;
         let mut i: u_int;
-        let count: u_int = args_count(args);
+        let count: u_int = args.argument_count();
         let keys: core::ffi::c_int;
         let flags: core::ffi::c_int;
         let mut error: Option<CString> = None;

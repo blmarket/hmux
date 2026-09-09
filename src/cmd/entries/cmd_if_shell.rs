@@ -1,9 +1,9 @@
 use crate::args::RustArguments;
 use crate::args::args_make_commands_now;
-use crate::args::{
-    args_count, args_has, args_make_commands, args_make_commands_prepare, args_string_str,
-};
+use crate::args::{args_has, args_make_commands, args_make_commands_prepare, args_string_str};
 use crate::cmd::cmd_get_args;
+use crate::cmd::cmdq_item;
+use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{CmdqItemWeak, cmdq_append, cmdq_item_ref_of, cmdq_item_weak_of};
 use crate::compat::toupper;
 use crate::consts::{
@@ -15,8 +15,6 @@ use crate::format::format_single_from_target;
 use crate::job::job_run_for_session;
 use crate::server::client_working_directory;
 use crate::status::status_message_for_client;
-use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{
     ClientRef, JobEvent, args, args_command_state, args_parse_t, args_parse_type, u_char, u_int,
 };
@@ -79,7 +77,7 @@ unsafe fn cmd_if_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let target_client = item.target_client();
     let target_session = item.target.session();
     let cmdlist: Option<CmdListRef>;
-    let count: u_int = args_count(args);
+    let count: u_int = args.argument_count();
     let wait: core::ffi::c_int = (args_has(args, 'b' as i32 as u_char) == 0) as core::ffi::c_int;
     let shellcmd = unsafe {
         format_single_from_target(

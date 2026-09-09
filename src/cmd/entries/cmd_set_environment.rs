@@ -1,4 +1,4 @@
-use crate::args::{args_count, args_get_str, args_has, args_string_str};
+use crate::args::{args_get_str, args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
 use crate::environ::EnvironmentStore;
@@ -7,12 +7,12 @@ use crate::environ::with_global_environment_mut;
 use crate::fmt_args;
 use crate::format::format_single_from_target;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_CANFAIL, CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_ERROR,
     CMD_RETURN_NORMAL, ENVIRON_HIDDEN,
 };
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::args_parse_t;
 use ::core::ffi::CStr;
 
@@ -72,7 +72,7 @@ unsafe fn cmd_set_environment_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval
         unsafe { item.error(c"variable name contains =", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
-    let value = if args_count(args) < 2 {
+    let value = if args.argument_count() < 2 {
         None
     } else {
         Some(unsafe { args_string_str(args, 1) }.expect("argument count checked"))

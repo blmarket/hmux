@@ -14,10 +14,12 @@
 //! nothing here reaches into those trees.
 
 use crate::args::RustArguments;
-use crate::args::{args_count, args_get_str, args_has, args_string_str, args_value};
+use crate::args::{args_get_str, args_has, args_string_str, args_value};
 use crate::cmd::cmd_get_args;
 use crate::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     ARGS_PARSE_COMMANDS_OR_STRING, CMD_AFTERHOOK, CMD_FIND_PANE, CMD_PARSE_ERROR, CMD_RETURN_ERROR,
     CMD_RETURN_NORMAL, KEYC_NONE, KEYC_UNKNOWN,
@@ -25,8 +27,6 @@ use crate::consts::{
 use crate::fmt_args;
 use crate::key_bindings::key_bindings_add;
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
-use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{ArgsValue, args, args_parse_t, args_parse_type, u_int};
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
@@ -129,7 +129,7 @@ fn cmd_bind_key_args_parse(
 unsafe fn cmd_bind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
     let note = args_get_str(args, b'N');
-    let count = args_count(args);
+    let count = args.argument_count();
 
     let keyname = unsafe { args_string_str(args, 0).expect("argument count checked") };
     let key = RustKeyStringCodec.parse_key(keyname);

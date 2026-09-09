@@ -1,6 +1,7 @@
 use crate::args::RustArguments;
-use crate::args::{args_count, args_get_str, args_has, args_string_str};
-
+use crate::args::{args_get_str, args_has, args_string_str};
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_BUFFER_USAGE, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG, CMD_FIND_PANE,
@@ -10,8 +11,6 @@ use crate::fmt_args;
 use crate::paste::{
     PasteBufferStore, paste_buffer_limit, with_paste_buffers, with_paste_buffers_mut,
 };
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{args_parse_t, u_int};
 use ::std::ffi::CStr;
 
@@ -122,7 +121,7 @@ unsafe fn cmd_set_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             return CMD_RETURN_NORMAL;
         }
     }
-    if args_count(args) != 1 as u_int {
+    if args.argument_count() != 1 as u_int {
         unsafe { item.error(c"no data specified", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }

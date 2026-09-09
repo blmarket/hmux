@@ -36,10 +36,12 @@
 //!   item's own client rather than the target one.
 
 use crate::args::RustArguments;
-use crate::args::{args_count, args_get_str, args_has, args_string_str, args_strtonum};
-use crate::cmd::cmd_get_args;
+use crate::args::{args_get_str, args_has, args_string_str, args_strtonum};
 use crate::cmd::cmd_find_best_client_for_session;
+use crate::cmd::cmd_get_args;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::fmt_args;
 use crate::fmt_engine::format_buf;
 use crate::format::{
@@ -47,8 +49,6 @@ use crate::format::{
 };
 use crate::server::client_print_buffer;
 use crate::status::status_message_for_client;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{ByteBuffer, ClientRef, RustWindowPaneWeak, args_parse_t, uint64_t};
 use ::core::ffi::{CStr, c_char, c_int, c_longlong};
 
@@ -180,7 +180,7 @@ unsafe fn cmd_display_message_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval
     let session = item.target.session();
     let link = item.target.winlink_ref();
     let pane = item.target.pane_ref();
-    let count = args_count(args);
+    let count = args.argument_count();
 
     if args_has(args, b'I') != 0 {
         return unsafe { cmd_display_message_input(pane.as_ref(), item) };

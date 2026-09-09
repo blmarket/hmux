@@ -1,16 +1,16 @@
 use crate::args::RustArguments;
-use crate::args::{args_count, args_has, args_string_str, args_strtonum};
+use crate::args::{args_has, args_string_str, args_strtonum};
 use crate::cmd::cmd_get_args;
 
 use crate::compat::strtonum;
 use crate::fmt_args;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, INT_MAX,
     WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST, WINDOW_SIZE_MANUAL,
 };
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{OptionsRef, args_parse_t, u_char, u_int};
 
 pub const WINDOW_SIZE_SMALLEST: core::ffi::c_int = 1 as core::ffi::c_int;
@@ -49,7 +49,7 @@ unsafe fn cmd_resize_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let window = target.window().expect("the command target has a window");
     let mut cause = None;
     let adjust: u_int;
-    if args_count(args) == 0 as u_int {
+    if args.argument_count() == 0 as u_int {
         adjust = 1 as u_int;
     } else {
         match unsafe {
