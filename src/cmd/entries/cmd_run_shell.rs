@@ -2,8 +2,10 @@ use crate::args::{
     args_count, args_get_str, args_has, args_make_commands, args_make_commands_prepare,
     args_string_str,
 };
-use crate::cmd::cmd_get_args;
 use crate::cmd::cmd_find_from_nothing;
+use crate::cmd::cmd_get_args;
+use crate::cmd::cmdq_item;
+use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{CmdqItemWeak, cmdq_append, cmdq_item_weak_of};
 use crate::compat::toupper;
 use crate::consts::{
@@ -16,15 +18,11 @@ use crate::job::job_run_for_session;
 use crate::reactor::Timer;
 use crate::server::client_working_directory;
 use crate::status::status_message_for_client;
-use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{
-    __suseconds_t, __time_t, ClientRef, JobEvent, SessionRef, Stream, TimerHandle, WindowPane,
-    args, args_command_state, args_parse_t, args_parse_type, cmd_find_state, time_t, timeval,
-    u_char, u_int,
+    __suseconds_t, __time_t, ClientRef, JobEvent, SessionRef, Stream, TimerHandle, args,
+    args_command_state, args_parse_t, args_parse_type, cmd_find_state, time_t, timeval, u_char,
+    u_int,
 };
-#[cfg(test)]
-use crate::types::WindowMode;
 use crate::window::window_pane_find_by_id;
 use crate::xmalloc::xasprintf;
 use ::core::ffi::CStr;
@@ -394,6 +392,7 @@ unsafe fn cmd_run_shell_callback(job: JobEvent, cdata: &mut cmd_run_shell_data) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cfg::WindowMode;
     use crate::format::format_grid_line;
     use crate::pane_identity::PaneIdentity;
     use crate::tests::test_fixtures::{Target, globals};

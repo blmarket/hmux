@@ -13,35 +13,32 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 mod command_entry;
 mod entries;
-
 mod find;
 mod parse;
 mod queue;
-
+#[cfg(test)]
+pub(crate) use find::CMD_FIND_QUIET;
+#[cfg(test)]
+pub(crate) use find::cmd_find_best_client;
+pub use find::cmd_find_type;
+pub(crate) use find::{
+    cmd_find_best_client_for_session, cmd_find_best_session, cmd_find_log_state_with_window,
+};
 pub use find::{
     cmd_find_clear_state, cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_client,
     cmd_find_from_mouse, cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session,
     cmd_find_from_session_window, cmd_find_from_window, cmd_find_from_winlink,
     cmd_find_from_winlink_pane, cmd_find_valid_state,
 };
-#[cfg(test)]
-pub(crate) use find::cmd_find_best_client;
 pub(crate) use find::{
-    cmd_find_client, cmd_find_target, cmd_find_from_session_ref, cmd_find_from_link_ref,
+    cmd_find_client, cmd_find_from_link_ref, cmd_find_from_session_ref, cmd_find_target,
 };
-#[cfg(test)]
-pub(crate) use find::CMD_FIND_QUIET;
-pub(crate) use find::{
-    cmd_find_best_client_for_session, cmd_find_best_session, cmd_find_log_state_with_window,
-};
-pub use find::cmd_find_type;
-
 pub use queue::{
-    CMDQ_FIRED, CMDQ_WAITING, CmdqItemRef, CmdqItemWeak, CmdqListRef, CmdqListWeak,
-    CmdqStateRef, cmdq_append, cmdq_item, cmdq_item_list, cmdq_items, cmdq_list, cmdq_next,
-    cmdq_running, cmdq_state,
+    CMDQ_FIRED, CMDQ_WAITING, CmdqItemRef, CmdqItemWeak, CmdqListRef, CmdqListWeak, CmdqStateRef,
+    cmdq_append, cmdq_item, cmdq_item_list, cmdq_items, cmdq_list, cmdq_next, cmdq_running,
+    cmdq_state,
 };
-pub(crate) use queue::{CmdqListOps, CmdqType, cmdq_item_ref_of, cmdq_item_weak_of};
+pub(crate) use queue::{cmdq_item_ref_of, cmdq_item_weak_of};
 
 pub use parse::{
     CMD_PARSE_COMMANDS, CMD_PARSE_STRING, CMD_PARSE_SUCCESS, cmd_parse_argument, cmd_parse_command,
@@ -62,7 +59,9 @@ pub(crate) use parse::{
 };
 
 pub use entries::cmd_command_prompt::cmd_command_prompt_cdata;
-pub(crate) use entries::cmd_command_prompt::{cmd_command_prompt_callback, cmd_command_prompt_free};
+pub(crate) use entries::cmd_command_prompt::{
+    cmd_command_prompt_callback, cmd_command_prompt_free,
+};
 pub(crate) use entries::cmd_confirm_before::cmd_confirm_before_callback;
 pub use entries::cmd_confirm_before::cmd_confirm_before_data;
 pub use entries::cmd_display_panes::{DisplayPanesRef, cmd_display_panes_data};
@@ -156,30 +155,29 @@ use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::log::log_debug;
 
 pub use crate::consts::{
-    CMD_AFTERHOOK, CMDQ_STATE_NOHOOKS, KEYC_NONE,
     ARGS_PARSE_COMMANDS, ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_INVALID, ARGS_PARSE_STRING,
-    CLIENT_EXIT_DETACH, CLIENT_EXIT_RETURN, CLIENT_EXIT_SHUTDOWN, CMD_FIND_PANE, CMD_FIND_SESSION,
-    CMD_FIND_WINDOW, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS, CMD_RETURN_ERROR,
-    CMD_RETURN_NORMAL, CMD_RETURN_STOP, CMD_RETURN_WAIT, LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM,
-    LAYOUT_WINDOWPANE, MSG_COMMAND, MSG_DETACH, MSG_DETACHKILL, MSG_EXEC, MSG_EXIT, MSG_EXITED,
-    MSG_EXITING, MSG_FLAGS, MSG_IDENTIFY_CLIENTPID, MSG_IDENTIFY_CWD, MSG_IDENTIFY_DONE,
-    MSG_IDENTIFY_ENVIRON, MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_FLAGS, MSG_IDENTIFY_LONGFLAGS,
-    MSG_IDENTIFY_OLDCWD, MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT, MSG_IDENTIFY_TERM,
-    MSG_IDENTIFY_TERMINFO, MSG_IDENTIFY_TTYNAME, MSG_LOCK, MSG_OLDSTDERR, MSG_OLDSTDIN,
-    MSG_OLDSTDOUT, MSG_READ, MSG_READ_CANCEL, MSG_READ_DONE, MSG_READ_OPEN, MSG_READY, MSG_RESIZE,
-    MSG_SHELL, MSG_SHUTDOWN, MSG_SUSPEND, MSG_UNLOCK, MSG_VERSION, MSG_WAKEUP, MSG_WRITE,
-    MSG_WRITE_CLOSE, MSG_WRITE_OPEN, MSG_WRITE_READY, PANE_LINES_DOUBLE, PANE_LINES_HEAVY,
-    PANE_LINES_NUMBER, PANE_LINES_SIMPLE, PANE_LINES_SINGLE, PANE_LINES_SPACES, PROGRESS_BAR_ERROR,
-    PROGRESS_BAR_HIDDEN, PROGRESS_BAR_INDETERMINATE, PROGRESS_BAR_NORMAL, PROGRESS_BAR_PAUSED,
-    PROMPT_COMMAND, PROMPT_ENTRY, PROMPT_TYPE_COMMAND, PROMPT_TYPE_INVALID, PROMPT_TYPE_SEARCH,
-    PROMPT_TYPE_TARGET, PROMPT_TYPE_WINDOW_TARGET, SCREEN_CURSOR_BAR, SCREEN_CURSOR_BLOCK,
-    SCREEN_CURSOR_DEFAULT, SCREEN_CURSOR_UNDERLINE, STYLE_ALIGN_ABSOLUTE_CENTRE,
-    STYLE_ALIGN_CENTRE, STYLE_ALIGN_DEFAULT, STYLE_ALIGN_LEFT, STYLE_ALIGN_RIGHT,
-    STYLE_DEFAULT_BASE, STYLE_DEFAULT_POP, STYLE_DEFAULT_PUSH, STYLE_DEFAULT_SET, STYLE_LIST_FOCUS,
-    STYLE_LIST_LEFT_MARKER, STYLE_LIST_OFF, STYLE_LIST_ON, STYLE_LIST_RIGHT_MARKER,
-    STYLE_RANGE_CONTROL, STYLE_RANGE_LEFT, STYLE_RANGE_NONE, STYLE_RANGE_PANE, STYLE_RANGE_RIGHT,
-    STYLE_RANGE_SESSION, STYLE_RANGE_USER, STYLE_RANGE_WINDOW, THEME_DARK, THEME_LIGHT,
-    THEME_UNKNOWN,
+    CLIENT_EXIT_DETACH, CLIENT_EXIT_RETURN, CLIENT_EXIT_SHUTDOWN, CMD_AFTERHOOK, CMD_FIND_PANE,
+    CMD_FIND_SESSION, CMD_FIND_WINDOW, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
+    CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_STOP, CMD_RETURN_WAIT, CMDQ_STATE_NOHOOKS,
+    KEYC_NONE, LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, LAYOUT_WINDOWPANE, MSG_COMMAND, MSG_DETACH,
+    MSG_DETACHKILL, MSG_EXEC, MSG_EXIT, MSG_EXITED, MSG_EXITING, MSG_FLAGS, MSG_IDENTIFY_CLIENTPID,
+    MSG_IDENTIFY_CWD, MSG_IDENTIFY_DONE, MSG_IDENTIFY_ENVIRON, MSG_IDENTIFY_FEATURES,
+    MSG_IDENTIFY_FLAGS, MSG_IDENTIFY_LONGFLAGS, MSG_IDENTIFY_OLDCWD, MSG_IDENTIFY_STDIN,
+    MSG_IDENTIFY_STDOUT, MSG_IDENTIFY_TERM, MSG_IDENTIFY_TERMINFO, MSG_IDENTIFY_TTYNAME, MSG_LOCK,
+    MSG_OLDSTDERR, MSG_OLDSTDIN, MSG_OLDSTDOUT, MSG_READ, MSG_READ_CANCEL, MSG_READ_DONE,
+    MSG_READ_OPEN, MSG_READY, MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN, MSG_SUSPEND, MSG_UNLOCK,
+    MSG_VERSION, MSG_WAKEUP, MSG_WRITE, MSG_WRITE_CLOSE, MSG_WRITE_OPEN, MSG_WRITE_READY,
+    PANE_LINES_DOUBLE, PANE_LINES_HEAVY, PANE_LINES_NUMBER, PANE_LINES_SIMPLE, PANE_LINES_SINGLE,
+    PANE_LINES_SPACES, PROGRESS_BAR_ERROR, PROGRESS_BAR_HIDDEN, PROGRESS_BAR_INDETERMINATE,
+    PROGRESS_BAR_NORMAL, PROGRESS_BAR_PAUSED, PROMPT_COMMAND, PROMPT_ENTRY, PROMPT_TYPE_COMMAND,
+    PROMPT_TYPE_INVALID, PROMPT_TYPE_SEARCH, PROMPT_TYPE_TARGET, PROMPT_TYPE_WINDOW_TARGET,
+    SCREEN_CURSOR_BAR, SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_DEFAULT, SCREEN_CURSOR_UNDERLINE,
+    STYLE_ALIGN_ABSOLUTE_CENTRE, STYLE_ALIGN_CENTRE, STYLE_ALIGN_DEFAULT, STYLE_ALIGN_LEFT,
+    STYLE_ALIGN_RIGHT, STYLE_DEFAULT_BASE, STYLE_DEFAULT_POP, STYLE_DEFAULT_PUSH,
+    STYLE_DEFAULT_SET, STYLE_LIST_FOCUS, STYLE_LIST_LEFT_MARKER, STYLE_LIST_OFF, STYLE_LIST_ON,
+    STYLE_LIST_RIGHT_MARKER, STYLE_RANGE_CONTROL, STYLE_RANGE_LEFT, STYLE_RANGE_NONE,
+    STYLE_RANGE_PANE, STYLE_RANGE_RIGHT, STYLE_RANGE_SESSION, STYLE_RANGE_USER, STYLE_RANGE_WINDOW,
+    THEME_DARK, THEME_LIGHT, THEME_UNKNOWN,
 };
 use crate::tmux::global_options;
 pub use crate::types::{
