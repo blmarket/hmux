@@ -1,7 +1,15 @@
 use crate::args::RustArguments;
-use crate::args::{args_percentage, args_string_str, args_strtonum, args_value_list};
+use crate::args::{args_percentage, args_strtonum, args_value_list};
 use crate::cmd::cmd_get_args;
+use crate::cmd::cmdq_item;
 use crate::cmd::cmdq_item_ref_of;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::consts::{
+    _PATH_BSHELL, ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, BOX_LINES_DEFAULT,
+    BOX_LINES_NONE, CMD_AFTERHOOK, CMD_CLIENT_CFLAG, CMD_FIND_PANE, CMD_RETURN_ERROR,
+    CMD_RETURN_NORMAL, CMD_RETURN_WAIT, MENU_NOMOUSE, MENU_STAYOPEN, POPUP_CLOSEANYKEY,
+    POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO, UINT_MAX,
+};
 use crate::environ::EnvironmentStore;
 use crate::environ::{RustEnvironment, new_environment_box};
 use crate::ffi::strtol;
@@ -14,15 +22,6 @@ use crate::overlay::menu_create;
 use crate::overlay::{menu_add_item_for_client, menu_display_for_client};
 use crate::overlay::{popup_display_for_client, popup_modify_for_client, popup_present_for_client};
 use crate::server::{client_clear_overlay, client_working_directory};
-
-use crate::cmd::cmdq_item;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::consts::{
-    _PATH_BSHELL, ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, BOX_LINES_DEFAULT,
-    BOX_LINES_NONE, CMD_AFTERHOOK, CMD_CLIENT_CFLAG, CMD_FIND_PANE, CMD_RETURN_ERROR,
-    CMD_RETURN_NORMAL, CMD_RETURN_WAIT, MENU_NOMOUSE, MENU_STAYOPEN, POPUP_CLOSEANYKEY,
-    POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO, UINT_MAX,
-};
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::tmux::checkshell;
 use crate::types::{
@@ -98,7 +97,8 @@ unsafe fn cmd_display_menu_args_parse(
             }
             let fresh0 = i;
             i = i.wrapping_add(1);
-            if args_string_str(args, fresh0)
+            if args
+                .argument_string(fresh0)
                 .expect("argument index checked")
                 .is_empty()
             {
@@ -418,7 +418,8 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'C' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         if ({
             let flag = 'C' as i32 as u_char;
             args.argument_flag_string(flag)
@@ -448,7 +449,8 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         let title = if ({
             let flag = 'T' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) != 0 {
+        }) != 0
+        {
             match args.argument_flag_string(b'T') {
                 Some(given) => unsafe { format_single_from_target(item, given) },
                 None => c"".to_owned(),
@@ -465,7 +467,10 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             }
             let fresh3 = i;
             i = i.wrapping_add(1);
-            let name = unsafe { args_string_str(args, fresh3).expect("argument index checked") };
+            let name = unsafe {
+                args.argument_string(fresh3)
+                    .expect("argument index checked")
+            };
             if name.is_empty() {
                 unsafe {
                     menu_add_item_for_client(&mut menu, None, Some(item), &tc, Some(&target))
@@ -477,12 +482,18 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             } else {
                 let fresh4 = i;
                 i = i.wrapping_add(1);
-                let key = unsafe { args_string_str(args, fresh4).expect("argument index checked") };
+                let key = unsafe {
+                    args.argument_string(fresh4)
+                        .expect("argument index checked")
+                };
                 menu_item.name = Some(name);
                 menu_item.key = RustKeyStringCodec.parse_key(key);
                 let fresh5 = i;
                 i = i.wrapping_add(1);
-                let cmd = unsafe { args_string_str(args, fresh5).expect("argument index checked") };
+                let cmd = unsafe {
+                    args.argument_string(fresh5)
+                        .expect("argument index checked")
+                };
                 menu_item.command = Some(cmd);
                 unsafe {
                     menu_add_item_for_client(
@@ -547,13 +558,16 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                             if ({
                                 let flag = 'O' as i32 as u_char;
                                 args.argument_flag_count(flag)
-                            }) != 0 {
+                            }) != 0
+                            {
                                 flags |= MENU_STAYOPEN;
                             }
-                            if event.m.valid == 0 && ({
-                                let flag = 'M' as i32 as u_char;
-                                args.argument_flag_count(flag)
-                            }) == 0 {
+                            if event.m.valid == 0
+                                && ({
+                                    let flag = 'M' as i32 as u_char;
+                                    args.argument_flag_count(flag)
+                                }) == 0
+                            {
                                 flags |= MENU_NOMOUSE;
                             }
                             if unsafe {
@@ -632,7 +646,8 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'C' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         unsafe { client_clear_overlay(&mut tc) };
         return CMD_RETURN_NORMAL;
     }
@@ -644,7 +659,8 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         if ({
             let flag = 'h' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) != 0 {
+        }) != 0
+        {
             unsafe {
                 h = args_percentage(
                     args,
@@ -671,7 +687,8 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 if ({
                     let flag = 'w' as i32 as u_char;
                     args.argument_flag_count(flag)
-                }) != 0 {
+                }) != 0
+                {
                     unsafe {
                         w = args_percentage(
                             args,
@@ -725,7 +742,7 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                             } else if count == 1 as u_int {
                                 unsafe {
                                     shellcmd = Some(
-                                        args_string_str(args, 0).expect("argument count checked"),
+                                        args.argument_string(0).expect("argument count checked"),
                                     )
                                 };
                             }
@@ -745,7 +762,8 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                             if ({
                                 let flag = 'e' as i32 as u_char;
                                 args.argument_flag_count(flag)
-                            }) >= 1 as core::ffi::c_int {
+                            }) >= 1 as core::ffi::c_int
+                            {
                                 let mut e = new_environment_box();
                                 for av in args_value_list(args, 'e' as i32 as u_char) {
                                     e.put(av.string(), 0);
@@ -769,7 +787,8 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         if ({
             let flag = 'B' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) != 0 {
+        }) != 0
+        {
             lines = BOX_LINES_NONE;
             current_block = 12556861819962772176;
         } else if let Some(value) = value {
@@ -796,7 +815,8 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 if ({
                     let flag = 'T' as i32 as u_char;
                     args.argument_flag_count(flag)
-                }) != 0 {
+                }) != 0
+                {
                     unsafe {
                         title = Some(format_single_from_target(
                             item,
@@ -813,13 +833,16 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 if ({
                     let flag = 'N' as i32 as u_char;
                     args.argument_flag_count(flag)
-                }) != 0 || modify == 0 {
+                }) != 0
+                    || modify == 0
+                {
                     flags = 0 as core::ffi::c_int;
                 }
                 if ({
                     let flag = 'E' as i32 as u_char;
                     args.argument_flag_count(flag)
-                }) > 1 as core::ffi::c_int {
+                }) > 1 as core::ffi::c_int
+                {
                     if flags == -(1 as core::ffi::c_int) {
                         flags = 0 as core::ffi::c_int;
                     }
@@ -827,7 +850,8 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 } else if ({
                     let flag = 'E' as i32 as u_char;
                     args.argument_flag_count(flag)
-                }) != 0 {
+                }) != 0
+                {
                     if flags == -(1 as core::ffi::c_int) {
                         flags = 0 as core::ffi::c_int;
                     }
@@ -836,7 +860,8 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 if ({
                     let flag = 'k' as i32 as u_char;
                     args.argument_flag_count(flag)
-                }) != 0 {
+                }) != 0
+                {
                     if flags == -(1 as core::ffi::c_int) {
                         flags = 0 as core::ffi::c_int;
                     }

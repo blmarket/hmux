@@ -1,10 +1,5 @@
 use crate::args::RustArguments;
-use ::core::ffi::CStr;
-use ::std::ffi::CString;
-
-use crate::args::{args_string_str};
 use crate::cmd::cmd_get_args;
-
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
@@ -17,6 +12,8 @@ use crate::environ::with_global_environment;
 use crate::fmt_args;
 use crate::fmt_engine::format_alloc;
 use crate::types::{args_parse_t, u_char};
+use ::core::ffi::CStr;
+use ::std::ffi::CString;
 
 pub(crate) static cmd_show_environment_entry: RustCommandEntry = {
     RustCommandEntry {
@@ -107,7 +104,7 @@ fn cmd_show_environment_lines(
 unsafe fn cmd_show_environment_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args: &RustArguments = cmd_get_args(self_0);
     let target = &item.target;
-    let name = unsafe { args_string_str(args, 0) };
+    let name = unsafe { args.argument_string(0) };
     let tflag = {
         let flag = 't' as i32 as u_char;
         args.argument_flag_string(flag)
@@ -121,7 +118,8 @@ unsafe fn cmd_show_environment_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retva
     let lines = if ({
         let flag = 'g' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         with_global_environment(|env| cmd_show_environment_lines(env, args, name))
     } else {
         if (*target).session().is_none() {

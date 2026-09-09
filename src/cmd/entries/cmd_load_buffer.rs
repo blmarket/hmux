@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_string_str};
+use crate::args::{};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdqItemWeak, cmdq_item_weak_of};
@@ -131,7 +131,7 @@ unsafe fn cmd_load_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let path = unsafe {
         format_single_from_target(
             item,
-            args_string_str(args, 0).expect("argument count checked"),
+            args.argument_string(0).expect("argument count checked"),
         )
     };
     unsafe {

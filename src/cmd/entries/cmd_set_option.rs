@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_string_str};
+use crate::args::{};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -128,7 +128,7 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let argument = unsafe {
         format_single_from_target(
             item,
-            args_string_str(args, 0).expect("argument count checked"),
+            args.argument_string(0).expect("argument count checked"),
         )
     };
     if core::ptr::eq(cmd_get_entry(self_0), &cmd_set_hook_entry)
@@ -160,7 +160,7 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             Some(name) => name,
             None => unreachable!("option name was checked above"),
         };
-        let mut value = unsafe { args_string_str(args, 1) };
+        let mut value = unsafe { args.argument_string(1) };
         if let Some(raw) = value
             && ({
                 let flag = 'F' as i32 as u_char;

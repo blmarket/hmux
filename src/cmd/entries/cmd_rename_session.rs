@@ -1,16 +1,15 @@
 use crate::args::RustArguments;
-use crate::args::args_string_str;
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
 use crate::format::format_single_from_target;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
 use crate::tmux::{check_name, clean_name};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{SessionRef, args_parse_t};
 
 pub(crate) static cmd_rename_session_entry: RustCommandEntry = {
@@ -45,7 +44,7 @@ unsafe fn cmd_rename_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     let tmp = unsafe {
         format_single_from_target(
             item,
-            args_string_str(args, 0).expect("argument count checked"),
+            args.argument_string(0).expect("argument count checked"),
         )
     };
     if unsafe { check_name(Some(&tmp)) == 0 } {

@@ -1,18 +1,15 @@
-use crate::args::{args_string_str};
 use crate::cmd::cmd_get_args;
-
-use crate::environ::EnvironmentStore;
-use crate::environ::RustEnvironment;
-use crate::environ::with_global_environment_mut;
-use crate::fmt_args;
-use crate::format::format_single_from_target;
-
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_CANFAIL, CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_ERROR,
     CMD_RETURN_NORMAL, ENVIRON_HIDDEN,
 };
+use crate::environ::EnvironmentStore;
+use crate::environ::RustEnvironment;
+use crate::environ::with_global_environment_mut;
+use crate::fmt_args;
+use crate::format::format_single_from_target;
 use crate::types::args_parse_t;
 use ::core::ffi::CStr;
 
@@ -63,7 +60,7 @@ impl EnvironmentChange<'_> {
 unsafe fn cmd_set_environment_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
     let mut target_session = item.target.session();
-    let name = unsafe { args_string_str(args, 0) }.expect("argument count checked");
+    let name = unsafe { args.argument_string(0) }.expect("argument count checked");
     if name.is_empty() {
         unsafe { item.error(c"empty variable name", fmt_args![]) };
         return CMD_RETURN_ERROR;
@@ -75,7 +72,7 @@ unsafe fn cmd_set_environment_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval
     let value = if args.argument_count() < 2 {
         None
     } else {
-        Some(unsafe { args_string_str(args, 1) }.expect("argument count checked"))
+        Some(unsafe { args.argument_string(1) }.expect("argument count checked"))
     };
     let expanded = if args.argument_flag_count(b'F') != 0 {
         value.map(|value| unsafe { format_single_from_target(item, value) })

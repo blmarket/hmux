@@ -1,6 +1,6 @@
 use crate::args::RustArguments;
 use crate::args::args_get_str;
-use crate::args::{args_string_str, args_value_list};
+use crate::args::{args_value_list};
 use crate::cmd::cmdq_item_weak_of;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -134,7 +134,7 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         empty != 0
             && count != 0 as u_int
             && (count != 1 as u_int
-                || !args_string_str(args, 0)
+                || !args.argument_string(0)
                     .expect("argument count checked")
                     .is_empty())
     } {

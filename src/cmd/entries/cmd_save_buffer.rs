@@ -1,5 +1,4 @@
 use crate::args::RustArguments;
-use crate::args::args_string_str;
 use crate::cmd::cmdq_item;
 use crate::cmd::cmdq_item_weak_of;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -128,7 +127,7 @@ unsafe fn cmd_save_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe {
             format_single_from_target(
                 item,
-                args_string_str(args, 0).expect("argument count checked"),
+                args.argument_string(0).expect("argument count checked"),
             )
         }
     };

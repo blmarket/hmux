@@ -1,4 +1,4 @@
-use crate::args::{args_string_str};
+use crate::args::{};
 use crate::cmd::cmd_get_args;
 use crate::cmd::{CmdqItemWeak, cmdq_item_weak_of};
 use crate::consts::{CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_WAIT};
@@ -96,7 +96,7 @@ fn remove_if_idle(name: &CStr) {
 
 unsafe fn cmd_wait_for_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
-    let name = unsafe { args_string_str(args, 0).expect("argument count checked") };
+    let name = unsafe { args.argument_string(0).expect("argument count checked") };
     if args.argument_flag_count(b'S') != 0 {
         return unsafe { cmd_wait_for_signal(name) };
     }

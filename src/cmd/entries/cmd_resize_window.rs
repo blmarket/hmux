@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_string_str, args_strtonum};
+use crate::args::{args_strtonum};
 use crate::cmd::cmd_get_args;
 
 use crate::compat::strtonum;
@@ -54,7 +54,7 @@ unsafe fn cmd_resize_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     } else {
         match unsafe {
             strtonum(
-                args_string_str(args, 0).expect("argument count checked"),
+                args.argument_string(0).expect("argument count checked"),
                 1 as core::ffi::c_longlong,
                 INT_MAX as core::ffi::c_longlong,
             )

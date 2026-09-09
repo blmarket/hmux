@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_string_str};
+use crate::args::{};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -137,7 +137,7 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let argument = unsafe {
         format_single_from_target(
             item,
-            args_string_str(args, 0).expect("argument count checked"),
+            args.argument_string(0).expect("argument count checked"),
         )
     };
     let name = RustOptionsEngine.match_name(&argument, &mut idx, &mut ambiguous);

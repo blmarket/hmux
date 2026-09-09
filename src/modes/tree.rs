@@ -1,7 +1,7 @@
 use super::widget::{ModeTreeItemRef, mode_tree_run_command};
 use crate::WindowPane;
 use crate::args::RustArguments;
-use crate::args::{args_string_str};
+use crate::args::{};
 use crate::cmd::cmd_retval;
 use crate::cmd::{CmdqItemRef, cmdq_append};
 use crate::cmd::{cmd_find_clear_state, cmd_find_from_winlink_pane};
@@ -1064,7 +1064,7 @@ pub(crate) unsafe fn window_tree_init(
                 None => WINDOW_TREE_DEFAULT_KEY_FORMAT.to_owned(),
             },
         );
-        data.command = Some(match args.and_then(|args| args_string_str(args, 0)) {
+        data.command = Some(match args.and_then(|args| args.argument_string(0)) {
             Some(value) => value.to_owned(),
             None => WINDOW_TREE_DEFAULT_COMMAND.to_owned(),
         });

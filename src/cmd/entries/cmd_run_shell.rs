@@ -152,7 +152,7 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         let flag = 'C' as i32 as u_char;
         args.argument_flag_count(flag)
     }) == 0 {
-        let cmd = unsafe { args_string_str(args, 0) };
+        let cmd = unsafe { args.argument_string(0) };
         if let Some(cmd) = cmd {
             let mut ft = unsafe { format_create_from_target(item) };
             i = 1 as u_int;

@@ -36,7 +36,7 @@
 //!   item's own client rather than the target one.
 
 use crate::args::RustArguments;
-use crate::args::{args_string_str, args_strtonum};
+use crate::args::{args_strtonum};
 use crate::cmd::cmd_find_best_client_for_session;
 use crate::cmd::cmd_get_args;
 
@@ -199,7 +199,7 @@ unsafe fn cmd_display_message_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval
 
     let given = match count {
         0 => args.argument_flag_string(b'F'),
-        _ => unsafe { args_string_str(args, 0) },
+        _ => unsafe { args.argument_string(0) },
     };
     let template = given.unwrap_or(DISPLAY_MESSAGE_TEMPLATE);
 

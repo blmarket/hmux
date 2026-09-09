@@ -1,7 +1,6 @@
 use super::widget::mode_tree_run_command;
 use crate::WindowPane;
 use crate::args::RustArguments;
-use crate::args::args_string_str;
 use crate::fmt_args;
 use crate::format::format_true;
 use crate::format::{format_add, format_create, format_defaults, format_expand, format_single};
@@ -249,7 +248,7 @@ pub(crate) unsafe fn window_client_init(
             Some(value) => value.to_owned(),
             None => WINDOW_CLIENT_DEFAULT_KEY_FORMAT.to_owned(),
         };
-        let command = match args.and_then(|args| args_string_str(args, 0)) {
+        let command = match args.and_then(|args| args.argument_string(0)) {
             Some(value) => value.to_owned(),
             None => WINDOW_CLIENT_DEFAULT_COMMAND.to_owned(),
         };

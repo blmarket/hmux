@@ -1,6 +1,6 @@
 use crate::args::RustArguments;
 use crate::args::args_make_commands_now;
-use crate::args::{args_make_commands, args_make_commands_prepare, args_string_str};
+use crate::args::{args_make_commands, args_make_commands_prepare};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -85,7 +85,7 @@ unsafe fn cmd_if_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let shellcmd = unsafe {
         format_single_from_target(
             item,
-            args_string_str(args, 0).expect("argument count checked"),
+            args.argument_string(0).expect("argument count checked"),
         )
     };
     if ({

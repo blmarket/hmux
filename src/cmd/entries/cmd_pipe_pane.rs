@@ -1,6 +1,4 @@
-use crate::args::{args_string_str};
 use crate::cmd::cmd_get_args;
-
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
@@ -52,7 +50,7 @@ unsafe fn cmd_pipe_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         };
         if closed.removed
             || args.argument_count() == 0
-            || args_string_str(args, 0).is_none_or(|value| value.is_empty())
+            || args.argument_string(0).is_none_or(|value| value.is_empty())
         {
             return CMD_RETURN_NORMAL;
         }
@@ -81,7 +79,7 @@ unsafe fn cmd_pipe_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         );
         let command = format_expand_time(
             &mut ft,
-            args_string_str(args, 0).expect("argument count checked"),
+            args.argument_string(0).expect("argument count checked"),
         );
         match pane.connect_pipe(pair, &command, input, output) {
             Ok(()) => CMD_RETURN_NORMAL,

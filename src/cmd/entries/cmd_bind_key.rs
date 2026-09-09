@@ -14,7 +14,7 @@
 //! nothing here reaches into those trees.
 
 use crate::args::RustArguments;
-use crate::args::{args_string_str, args_value};
+use crate::args::{args_value};
 use crate::cmd::cmd_get_args;
 use crate::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 
@@ -105,7 +105,7 @@ unsafe fn binding_of(args: &RustArguments, count: u_int) -> Result<Binding, CStr
         }
         let mut pr = if count == 2 {
             cmd_parse_from_string(
-                args_string_str(args, 1).expect("argument count checked"),
+                args.argument_string(1).expect("argument count checked"),
                 None,
             )
         } else {
@@ -131,7 +131,7 @@ unsafe fn cmd_bind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let note = args.argument_flag_string(b'N');
     let count = args.argument_count();
 
-    let keyname = unsafe { args_string_str(args, 0).expect("argument count checked") };
+    let keyname = unsafe { args.argument_string(0).expect("argument count checked") };
     let key = RustKeyStringCodec.parse_key(keyname);
     if key == KEYC_NONE || key == KEYC_UNKNOWN {
         unsafe { item.error(c"unknown key: %s", fmt_args![keyname]) };

@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_string_str, args_strtonum_and_expand};
+use crate::args::{args_strtonum_and_expand};
 use crate::cmd::{CmdqItemRef, cmdq_item_ref_of};
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::ffi::strtol;
@@ -125,7 +125,10 @@ unsafe fn cmd_send_keys_inject_string(
     i: core::ffi::c_int,
 ) -> Option<CmdqItemRef> {
     unsafe {
-        let s = args_string_str(args, i as u_int).expect("argument index checked");
+        let s = {
+            let idx = i as u_int;
+            args.argument_string(idx)
+        }.expect("argument index checked");
         let mut key: key_code;
         let mut endptr: *mut core::ffi::c_char = core::ptr::null_mut::<core::ffi::c_char>();
         let n: core::ffi::c_long;

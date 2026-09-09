@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_percentage, args_string_str};
+use crate::args::{args_percentage};
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -78,7 +78,7 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     } else {
         match unsafe {
             strtonum(
-                args_string_str(args, 0).expect("argument count checked"),
+                args.argument_string(0).expect("argument count checked"),
                 1 as core::ffi::c_longlong,
                 INT_MAX as core::ffi::c_longlong,
             )

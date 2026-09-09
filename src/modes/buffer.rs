@@ -1,7 +1,6 @@
 use super::widget::mode_tree_run_command;
 use crate::WindowPane;
 use crate::args::RustArguments;
-use crate::args::args_string_str;
 use crate::cmd::{cmd_find_copy_state, cmd_find_valid_state};
 pub use crate::consts::{
     FORMAT_NONE, KEYC_NONE, PANE_REDRAW, SORT_CREATION, SORT_END, SORT_NAME, SORT_SIZE, VIS_CSTYLE,
@@ -259,7 +258,7 @@ pub(crate) unsafe fn window_buffer_init(
             Some(value) => value.to_owned(),
             None => WINDOW_BUFFER_DEFAULT_KEY_FORMAT.to_owned(),
         };
-        let command = match args.and_then(|args| args_string_str(args, 0)) {
+        let command = match args.and_then(|args| args.argument_string(0)) {
             Some(value) => value.to_owned(),
             None => WINDOW_BUFFER_DEFAULT_COMMAND.to_owned(),
         };

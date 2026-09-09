@@ -25,7 +25,7 @@
 //!   already in that mode.
 
 use crate::args::RustArguments;
-use crate::args::{args_set, args_string_str};
+use crate::args::{args_set};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -78,7 +78,7 @@ pub(crate) static cmd_find_window_entry: RustCommandEntry = RustCommandEntry {
 /// there is no null to guard here.
 unsafe fn cmd_find_window_filter(args: &RustArguments) -> Vec<u8> {
     unsafe {
-        let s = args_string_str(args, 0)
+        let s = args.argument_string(0)
             .expect("argument count checked")
             .to_bytes();
         let regex = args.argument_flag_count(b'r') != 0;

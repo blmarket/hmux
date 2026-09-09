@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_string_str};
+use crate::args::{};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -132,7 +132,7 @@ unsafe fn cmd_select_layout_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
     } else {
         let layoutname = if args.argument_count() != 0 as u_int {
-            unsafe { args_string_str(args, 0) }
+            unsafe { args.argument_string(0) }
         } else if ({
             let flag = 'o' as i32 as u_char;
             args.argument_flag_count(flag)

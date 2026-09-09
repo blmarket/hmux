@@ -1,13 +1,10 @@
 use crate::args::RustArguments;
-use crate::args::args_string_str;
 use crate::cmd::cmd_get_args;
-
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::fmt_args;
 use crate::format::format_single_from_target;
-
 use crate::tmux::check_name;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{OptionsRef, args_parse_t};
 
 use crate::consts::{
@@ -49,7 +46,7 @@ unsafe fn cmd_rename_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let name = unsafe {
         format_single_from_target(
             item,
-            args_string_str(args, 0).expect("argument count checked"),
+            args.argument_string(0).expect("argument count checked"),
         )
     };
     if unsafe { check_name(Some(&name)) == 0 } {
