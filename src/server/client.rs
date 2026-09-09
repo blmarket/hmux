@@ -1,5 +1,5 @@
 use crate::cmd::{DisplayPanesRef, cmd_retval};
-use crate::cmdq::cmdq_item;
+use crate::cmd::cmdq_item;
 use crate::ImsgMessage;
 
 use crate::WindowPane;
@@ -15,13 +15,13 @@ use super::run::client_walk;
 use super::run::{current_time, with_clients, with_clients_mut};
 use super::run::{server_add_accept, server_update_socket};
 use crate::alerts::alerts_check_session;
-use crate::arguments::args_from_vector;
+use crate::args::args_from_vector;
 use crate::cfg::start_cfg;
 use crate::cfg::{cfg_client, cfg_finished};
 
 use crate::cmd::cmd_parse_from_arguments;
-use crate::cmdq::{CmdqItemRef, cmdq_append};
-use crate::cmdq::{cmd_find_from_client, cmd_find_from_mouse};
+use crate::cmd::{CmdqItemRef, cmdq_append};
+use crate::cmd::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::compat::imsg_get_fd;
 use crate::control::{
     control_all_done, control_discard, control_pane_offset, control_pane_offset_mut, control_ready,
@@ -2686,7 +2686,7 @@ unsafe fn server_client_dispatch_command(c: &mut client, imsg: &mut imsg) -> cor
     unsafe {
         let current_block: u64;
         let mut cause = None;
-        let mut queued = crate::cmdq::cmdq_items::new();
+        let mut queued = crate::cmd::cmdq_items::new();
         if c.flags & CLIENT_EXIT as uint64_t != 0 {
             return 0 as core::ffi::c_int;
         }

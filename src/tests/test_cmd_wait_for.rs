@@ -1,5 +1,5 @@
 use super::*;
-use crate::cmdq::CMDQ_WAITING;
+use crate::cmd::CMDQ_WAITING;
 use crate::tests::test_fixtures::{Args, Item, globals};
 use ::std::sync::MutexGuard;
 

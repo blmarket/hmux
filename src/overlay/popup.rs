@@ -1,6 +1,6 @@
 use super::menu::{menu_add_items, menu_check_cb, menu_create, menu_mode_cb, menu_prepare};
 use crate::WindowPane;
-use crate::cmdq::{CmdqItemRef, CmdqItemWeak};
+use crate::cmd::{CmdqItemRef, CmdqItemWeak};
 use crate::environ::RustEnvironment;
 use crate::ffi::mkstemp;
 use crate::fmt_args;

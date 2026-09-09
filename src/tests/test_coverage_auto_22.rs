@@ -1,4 +1,4 @@
-//! Coverage for pure helpers in [`crate::cmd`] and [`crate::arguments`].
+//! Coverage for pure helpers in [`crate::cmd`] and [`crate::args`].
 //!
 //! `cmd.rs` contributes `cmd_*_argv` packing, copying and stringifying plus
 //! `cmd_template_replace`; `arguments.rs` contributes `args_escape` and the
@@ -6,7 +6,7 @@
 //! server or the command table, so no [`globals`] guard is needed except where
 //! noted.
 
-use crate::arguments::{
+use crate::args::{
     args_create, args_escape, args_free, args_get_str, args_has, args_print, args_set,
 };
 use crate::cmd::{cmd_pack_argv, cmd_stringify_argv, cmd_template_replace, cmd_unpack_argv};
@@ -233,8 +233,8 @@ fn args_has_get_and_print_roundtrip() {
         let printed2 = args_print(&*args).to_string_lossy().into_owned();
         assert!(printed2.contains("-b"), "got {printed2:?}");
         assert!(printed2.contains("val"), "got {printed2:?}");
-        assert_eq!(crate::arguments::args_count(&*args), 0);
-        assert!(crate::arguments::args_value(&*args, 0).is_none());
+        assert_eq!(crate::args::args_count(&*args), 0);
+        assert!(crate::args::args_value(&*args, 0).is_none());
         args_free(Box::from_raw(args));
     }
 }
@@ -252,12 +252,12 @@ fn args_print_with_positional_and_multiple_flags() {
         (*args).count = 1;
         let printed = args_print(&*args).to_string_lossy().into_owned();
         assert!(printed.contains("pos"), "got {printed:?}");
-        assert_eq!(crate::arguments::args_count(&*args), 1);
+        assert_eq!(crate::args::args_count(&*args), 1);
         assert_eq!(
-            seen_str(crate::arguments::args_string_str(&*args, 0)),
+            seen_str(crate::args::args_string_str(&*args, 0)),
             "pos"
         );
-        assert!(crate::arguments::args_value(&*args, 1).is_none());
+        assert!(crate::args::args_value(&*args, 1).is_none());
         args_free(Box::from_raw(args));
     }
 }

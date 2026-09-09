@@ -1,9 +1,9 @@
-use crate::arguments::args_has;
+use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 pub use crate::consts::{CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_NORMAL};
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::args_parse_t;
 use crate::window::WinlinkRef;
 

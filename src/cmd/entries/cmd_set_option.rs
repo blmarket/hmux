@@ -1,4 +1,4 @@
-use crate::arguments::{args_has, args_string_str};
+use crate::args::{args_has, args_string_str};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -12,7 +12,7 @@ pub use crate::consts::{
     OPTIONS_TABLE_WINDOW,
 };
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{
     OptionsRef, RustOptionsRef, args, args_parse_t, args_parse_type, u_char, u_int,
 };

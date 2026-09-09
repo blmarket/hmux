@@ -1,7 +1,7 @@
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
 
-use crate::arguments::{args_get_str, args_has, args_string_str};
+use crate::args::{args_get_str, args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
 pub use crate::consts::{
@@ -14,7 +14,7 @@ use crate::environ::with_global_environment;
 use crate::fmt_args;
 use crate::fmt_engine::format_alloc;
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{args, args_parse_t, u_char};
 
 pub(crate) static cmd_show_environment_entry: RustCommandEntry = {

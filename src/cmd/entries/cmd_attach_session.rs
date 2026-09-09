@@ -24,10 +24,10 @@
 //! Detaching walks the live client list, as tmux does when recording pending exits.
 //! The previous session is also retained until the attachment command returns.
 
-use crate::arguments::{args_get_str, args_has};
+use crate::args::{args_get_str, args_has};
 use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
 use crate::cmd::cmd_get_args;
-use crate::cmdq::cmd_find_target;
+use crate::cmd::cmd_find_target;
 
 use crate::ffi::getuid;
 use crate::fmt_args;
@@ -35,7 +35,7 @@ use crate::format::{format_create_for_client, format_defaults_for_handles, forma
 use crate::server::client_walk;
 use crate::session::sessions_empty;
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{ClientRef, SessionRef, args_parse_t, cmd_find_state, msgtype, uint64_t};
 #[cfg(test)]
 use crate::types::{client, tmuxpeer};

@@ -20,7 +20,7 @@
 //! own.
 
 use crate::cmd::{CmdListRef, cmd, cmd_entry, cmd_entry_flag, cmd_retval};
-use crate::cmdq::cmdq_item;
+use crate::cmd::cmdq_item;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::pane_identity::PaneIdentity;
 use crate::window_dimensions::WindowDimensionsState;
@@ -28,7 +28,7 @@ use crate::window_name::WindowNameState;
 
 use crate::pane_geometry::PaneGeometryState;
 
-use crate::cmdq::CmdqItemRef;
+use crate::cmd::CmdqItemRef;
 
 use crate::screen::RustScreen;
 use crate::session::session_new_detached;
@@ -85,10 +85,10 @@ pub fn prompt_answers_clear() {
     PROMPT_ANSWERS.lock().unwrap().clear();
 }
 
-use crate::cmdq::CmdqListOps;
-use crate::cmdq::cmd_find_from_winlink;
+use crate::cmd::CmdqListOps;
+use crate::cmd::cmd_find_from_winlink;
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
-use crate::cmdq::{CmdqStateRef, CmdqType};
+use crate::cmd::{CmdqStateRef, CmdqType};
 use crate::environ::{RustEnvironment, new_environment_box};
 use crate::ffi::free;
 use crate::file::CLIENT_DEAD;
@@ -1904,9 +1904,9 @@ mod tests {
         let _guard = globals();
         let args = Args::parse(c"wait-for -S chan");
         unsafe {
-            assert_eq!(crate::arguments::args_has(&*args.borrow(), b'S'), 1);
+            assert_eq!(crate::args::args_has(&*args.borrow(), b'S'), 1);
             assert_eq!(
-                seen_str(crate::arguments::args_string_str(&*args.borrow(), 0)),
+                seen_str(crate::args::args_string_str(&*args.borrow(), 0)),
                 "chan"
             );
             assert!(args.list_ref().command(0).is_some());
@@ -1941,7 +1941,7 @@ mod tests {
             );
             assert_eq!((*item.command()).line, 7);
             assert_eq!(
-                seen_str(crate::arguments::args_string_str(&*item.args(), 0)),
+                seen_str(crate::args::args_string_str(&*item.args(), 0)),
                 "hello"
             );
         }

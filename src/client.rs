@@ -1,5 +1,5 @@
 use crate::ImsgMessage;
-use crate::arguments::args_from_vector;
+use crate::args::args_from_vector;
 
 use crate::cmd::cmd_parse_from_arguments;
 use crate::compat::imsgbuf_flush;

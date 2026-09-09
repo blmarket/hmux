@@ -25,7 +25,7 @@
 //!   `O`, so the check can never fire for it: the parser turns the flag down
 //!   first and `args_has` is what guards the refusal.
 
-use crate::arguments::{args_get_str, args_has};
+use crate::args::{args_get_str, args_has};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -33,7 +33,7 @@ use crate::paste::{PasteBufferStore, with_paste_buffers};
 use crate::server::server_client_how_many;
 use crate::sort::{RustSortCriteria, SortCriteria};
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{WindowMode, args, args_parse_t, args_parse_type, u_int};
 use ::core::ffi::c_char;
 use ::std::ffi::CString;

@@ -1,4 +1,4 @@
-use crate::arguments::{args_count, args_has, args_percentage, args_string_str};
+use crate::args::{args_count, args_has, args_percentage, args_string_str};
 
 use crate::cmd::{cmd_get_args, cmd_mouse_pane};
 use crate::compat::strtonum;
@@ -8,7 +8,7 @@ pub use crate::consts::{
 };
 use crate::fmt_args;
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{OptionsRef, args, args_parse_t, u_char, u_int};
 
 pub(crate) static cmd_resize_pane_entry: RustCommandEntry = {

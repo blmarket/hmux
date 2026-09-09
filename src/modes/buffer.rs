@@ -1,7 +1,7 @@
 use super::widget::mode_tree_run_command;
 use crate::WindowPane;
-use crate::arguments::{args_get_str, args_string_str};
-use crate::cmdq::{cmd_find_copy_state, cmd_find_valid_state};
+use crate::args::{args_get_str, args_string_str};
+use crate::cmd::{cmd_find_copy_state, cmd_find_valid_state};
 pub use crate::consts::{
     FORMAT_NONE, KEYC_NONE, PANE_REDRAW, SORT_CREATION, SORT_END, SORT_NAME, SORT_SIZE, VIS_CSTYLE,
     VIS_OCTAL, VIS_TAB,

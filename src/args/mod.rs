@@ -1,8 +1,15 @@
+pub mod argument_command_state;
+pub mod argument_entry;
+pub mod argument_parse_spec;
+pub mod argument_text;
+pub mod argument_value;
+pub mod arguments_trait;
+
 use crate::cmd::{CmdListRef, cmd};
-use crate::cmdq::cmdq_item;
-use crate::cmdq::cmd_find_copy_state;
+use crate::cmd::cmdq_item;
+use crate::cmd::cmd_find_copy_state;
 use crate::cmd::cmd_parse_from_string;
-use crate::cmdq::cmdq_item_ref_of;
+use crate::cmd::cmdq_item_ref_of;
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_source};
 use crate::cmd::{cmd_log_argv, cmd_template_replace};
 use crate::compat::strtonum;
@@ -1160,7 +1167,7 @@ pub unsafe fn args_percentage_and_expand(
 }
 
 #[cfg(test)]
-#[path = "tests/test_arguments.rs"]
+#[path = "../tests/test_arguments.rs"]
 mod tests;
 
 #[cfg(test)]

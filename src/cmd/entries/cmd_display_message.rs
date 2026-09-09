@@ -35,9 +35,9 @@
 //!   without checking that a client asked for anything, and `-p` reads the
 //!   item's own client rather than the target one.
 
-use crate::arguments::{args_count, args_get_str, args_has, args_string_str, args_strtonum};
+use crate::args::{args_count, args_get_str, args_has, args_string_str, args_strtonum};
 use crate::cmd::cmd_get_args;
-use crate::cmdq::cmd_find_best_client_for_session;
+use crate::cmd::cmd_find_best_client_for_session;
 
 use crate::fmt_args;
 use crate::fmt_engine::format_buf;
@@ -47,7 +47,7 @@ use crate::format::{
 use crate::server::client_print_buffer;
 use crate::status::status_message_for_client;
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{ByteBuffer, ClientRef, RustWindowPaneWeak, args, args_parse_t, uint64_t};
 use ::core::ffi::{CStr, c_char, c_int, c_longlong};
 
@@ -101,7 +101,7 @@ unsafe fn cmd_display_message_input(
         let Some(wp) = wp else {
             return CMD_RETURN_NORMAL;
         };
-        match wp.start_input(&crate::cmdq::cmdq_item_ref_of(item).expect("the command has an owner"))
+        match wp.start_input(&crate::cmd::cmdq_item_ref_of(item).expect("the command has an owner"))
         {
             Err(cause) => {
                 item.error(c"%s", fmt_args![cause.as_c_str()]);

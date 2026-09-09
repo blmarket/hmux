@@ -1,6 +1,6 @@
-use crate::arguments::{args_get_str, args_has, args_string_str};
+use crate::args::{args_get_str, args_has, args_string_str};
 use crate::cmd::cmd_get_args;
-use crate::cmdq::{CmdqItemWeak, cmdq_item_weak_of};
+use crate::cmd::{CmdqItemWeak, cmdq_item_weak_of};
 use crate::compat::error_message;
 pub use crate::consts::{
     CLIENT_DEAD, CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG, CMD_FIND_PANE,
@@ -12,7 +12,7 @@ use crate::format::format_single_from_target;
 use crate::paste::{PasteBufferStore, paste_buffer_limit, with_paste_buffers_mut};
 use crate::types::ClientFileEvent;
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{ClientFileData, ClientRef, args, args_parse_t, size_t, u_char, uint64_t};
 use ::core::ffi::CStr;
 

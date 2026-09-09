@@ -12,13 +12,7 @@ extern crate libc;
 
 pub mod alerts;
 pub mod alternate_character_entry;
-pub mod argument_command_state;
-pub mod argument_entry;
-pub mod argument_parse_spec;
-pub mod argument_text;
-pub mod argument_value;
-pub mod arguments;
-pub mod arguments_trait;
+pub mod args;
 pub mod calendar_time;
 pub mod cfg;
 pub mod client;
@@ -26,7 +20,6 @@ pub mod client_file_state;
 pub mod client_identity;
 pub mod client_window_state;
 pub mod cmd;
-pub mod cmdq;
 pub mod colour_palette_state;
 mod command_catalog;
 pub mod command_entry_flag;
@@ -245,18 +238,22 @@ pub mod winlink_trait;
 pub mod xmalloc;
 
 pub use alternate_character_entry::*;
+pub use args::{
+    argument_command_state, argument_entry, argument_parse_spec, argument_text, argument_value,
+    arguments_trait,
+};
 pub use argument_command_state::*;
 pub use argument_entry::*;
 pub use argument_parse_spec::*;
 pub use argument_text::{ArgumentTextCodec, RustArgumentTextCodec};
 pub use argument_value::*;
-pub use arguments::RustArguments;
+pub use args::RustArguments;
 pub use arguments_trait::Arguments;
 pub use calendar_time::*;
 pub use client_file_state::*;
 pub use client_identity::*;
 pub use client_window_state::*;
-pub use cmdq::CmdqItemRef;
+pub use cmd::CmdqItemRef;
 pub use colour_palette_state::*;
 pub use command_catalog::{CommandCatalog, RustCommandCatalog};
 pub use cmd::{CommandEntry, CommandResult, RustCommandContext, RustCommandEntry};

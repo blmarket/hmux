@@ -1,11 +1,11 @@
 //! The commands: the table every tmux command is looked up in, the parsing
-//! and printing of a command list, and one private module per command.
+//! and printing of a command list, target lookup, command queues, and one
+//! private module per command.
 //!
 //! A command module is reached only through the table below, so the modules
 //! are private. Command behavior is tested through the conformance suites.
 //! What else the rest of the crate may use is re-exported here.
 
-use crate::cmdq::cmd_find_type;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use core::fmt;
 use std::cell::RefCell;
@@ -14,7 +14,34 @@ use std::sync::atomic::{AtomicU32, Ordering};
 mod command_entry;
 mod entries;
 
+mod find;
 mod parse;
+mod queue;
+
+pub use find::{
+    cmd_find_clear_state, cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_client,
+    cmd_find_from_mouse, cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session,
+    cmd_find_from_session_window, cmd_find_from_window, cmd_find_from_winlink,
+    cmd_find_from_winlink_pane, cmd_find_valid_state,
+};
+#[cfg(test)]
+pub(crate) use find::cmd_find_best_client;
+pub(crate) use find::{
+    cmd_find_client, cmd_find_target, cmd_find_from_session_ref, cmd_find_from_link_ref,
+};
+#[cfg(test)]
+pub(crate) use find::CMD_FIND_QUIET;
+pub(crate) use find::{
+    cmd_find_best_client_for_session, cmd_find_best_session, cmd_find_log_state_with_window,
+};
+pub use find::cmd_find_type;
+
+pub use queue::{
+    CMDQ_FIRED, CMDQ_WAITING, CmdqItemRef, CmdqItemWeak, CmdqListRef, CmdqListWeak,
+    CmdqStateRef, cmdq_append, cmdq_item, cmdq_item_list, cmdq_items, cmdq_list, cmdq_next,
+    cmdq_running, cmdq_state,
+};
+pub(crate) use queue::{CmdqListOps, CmdqType, cmdq_item_ref_of, cmdq_item_weak_of};
 
 pub use parse::{
     CMD_PARSE_COMMANDS, CMD_PARSE_STRING, CMD_PARSE_SUCCESS, cmd_parse_argument, cmd_parse_command,
@@ -45,7 +72,7 @@ pub use entries::cmd_run_shell::cmd_run_shell_data;
 pub use entries::cmd_source_file::cmd_source_file_data;
 pub use entries::cmd_wait_for::cmd_wait_for_flush;
 
-use crate::arguments::{args_copy, args_parse, args_print};
+use crate::args::{args_copy, args_parse, args_print};
 use crate::cmd::entries::cmd_attach_session::cmd_attach_session_entry;
 use crate::cmd::entries::cmd_bind_key::cmd_bind_key_entry;
 use crate::cmd::entries::cmd_break_pane::cmd_break_pane_entry;
@@ -129,6 +156,7 @@ use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::log::log_debug;
 
 pub use crate::consts::{
+    CMD_AFTERHOOK, CMDQ_STATE_NOHOOKS, KEYC_NONE,
     ARGS_PARSE_COMMANDS, ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_INVALID, ARGS_PARSE_STRING,
     CLIENT_EXIT_DETACH, CLIENT_EXIT_RETURN, CLIENT_EXIT_SHUTDOWN, CMD_FIND_PANE, CMD_FIND_SESSION,
     CMD_FIND_WINDOW, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS, CMD_RETURN_ERROR,

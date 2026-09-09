@@ -18,8 +18,8 @@
 //! `-s` named the source, since the destination is already where the caller
 //! asked for.
 
-use crate::arguments::{args_get_str, args_has};
-use crate::cmdq::cmd_find_target;
+use crate::args::{args_get_str, args_has};
+use crate::cmd::cmd_find_target;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -32,8 +32,8 @@ pub use crate::consts::{
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmd_find_type;
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmd_find_type;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{OptionsRef, SessionRef, args_parse_t, cmd_find_state};
 #[cfg(test)]
 use crate::types::{WindowRef, u_int};

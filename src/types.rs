@@ -23,9 +23,9 @@ unsafe extern "C" {
 
 pub use crate::reactor::{ByteBuffer, IoHandle, SignalHandle, Stream, TimerHandle};
 pub type TERMINAL = term;
-pub use crate::arguments::args;
-pub use crate::arguments::args_command_state;
-pub use crate::cmdq::{CmdqListRef, cmdq_list};
+pub use crate::args::args;
+pub use crate::args::args_command_state;
+pub use crate::cmd::{CmdqListRef, cmdq_list};
 pub use crate::compat::ibufqueue;
 pub use crate::compat::msgbuf;
 pub use crate::control::control_state;
@@ -737,7 +737,7 @@ impl ClientRef {
     }
 
     /// Retains the client's command queue.
-    pub(crate) fn command_queue(&self) -> crate::cmdq::CmdqListRef {
+    pub(crate) fn command_queue(&self) -> crate::cmd::CmdqListRef {
         self.0
             .value
             .borrow()
@@ -2537,7 +2537,7 @@ pub enum ClientFileData {
     #[default]
     None,
     LoadBuffer(Box<cmd_load_buffer_data>),
-    SaveBuffer(crate::cmdq::CmdqItemWeak),
+    SaveBuffer(crate::cmd::CmdqItemWeak),
     SourceFile(SourceFileRef),
     PaneInput(PaneInputRef),
 }
@@ -3284,7 +3284,7 @@ pub struct cmd_parse_input {
     /// The file the command line was read from, if it was read from one.
     pub file: Option<std::ffi::CString>,
     pub line: u_int,
-    pub item: Option<crate::cmdq::CmdqItemWeak>,
+    pub item: Option<crate::cmd::CmdqItemWeak>,
     /// The client the parse is for, observed rather than held.
     pub(crate) c: Option<ClientWeak>,
     pub fs: cmd_find_state,
@@ -3307,7 +3307,7 @@ impl cmd_parse_input {
 #[derive(Default)]
 #[repr(C)]
 pub struct spawn_context<'a> {
-    pub item: Option<crate::cmdq::CmdqItemWeak>,
+    pub item: Option<crate::cmd::CmdqItemWeak>,
     pub s: Option<SessionRef>,
     pub wl_idx: Option<core::ffi::c_int>,
     pub tc: Option<ClientWeak>,

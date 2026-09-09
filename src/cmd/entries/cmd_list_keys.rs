@@ -31,7 +31,7 @@
 //! left sitting in the front slot — the binding that was first before the
 //! filter ran.
 
-use crate::arguments::{args_get_str, args_has, args_string_str};
+use crate::args::{args_get_str, args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
@@ -54,7 +54,7 @@ use crate::status::status_message_for_client;
 use crate::text::{KeyStringCodec, RustKeyStringCodec, RustUtf8VisModel, Utf8VisModel};
 use crate::tmux::global_session_options;
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{
     OptionsRef, args, args_parse_t, format_tree, key_code, sort_criteria_t, u_int,
 };

@@ -1,8 +1,8 @@
 use crate::GlobPaths;
-use crate::arguments::{args_count, args_has, args_string_str};
+use crate::args::{args_count, args_has, args_string_str};
 use crate::cfg::cfg_print_causes;
 use crate::cfg::{configuration_finished, load_cfg_buffer_for_client};
-use crate::cmdq::{CmdqItemRef, CmdqItemWeak, cmdq_item_weak_of};
+use crate::cmd::{CmdqItemRef, CmdqItemWeak, cmdq_item_weak_of};
 use crate::cmd::{cmd_get_args, cmd_get_parse_flags};
 use crate::compat::error_message;
 pub use crate::consts::{
@@ -17,7 +17,7 @@ use crate::log::log_debug;
 use crate::server::client_working_directory;
 use crate::types::ClientFileEvent;
 pub use crate::cmd::{RustCommandEntry, SourceFileRef, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{
     ClientFileData, ClientRef, args, args_parse_t, size_t, u_char, u_int, uint64_t,
 };

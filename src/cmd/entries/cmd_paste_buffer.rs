@@ -23,14 +23,14 @@
 //! buffer; and `-p` is read before the exited-pane refusal, which no
 //! observable behaviour depends on.
 
-use crate::arguments::{args_get_str, args_has};
+use crate::args::{args_get_str, args_has};
 use crate::cmd::cmd_get_args;
 
 pub use crate::consts::{CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL};
 use crate::fmt_args;
 use crate::paste::{PasteBufferStore, with_paste_buffers, with_paste_buffers_mut};
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{args, args_parse_t};
 #[cfg(test)]
 use crate::types::window_pane;

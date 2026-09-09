@@ -1,9 +1,9 @@
-use crate::cmdq::cmdq_item;
-use crate::cmdq::CmdqItemRef;
-use crate::cmdq::CmdqStateRef;
-use crate::cmdq::cmd_find_copy_state;
+use crate::cmd::cmdq_item;
+use crate::cmd::CmdqItemRef;
+use crate::cmd::CmdqStateRef;
+use crate::cmd::cmd_find_copy_state;
 use crate::cmd::cmd_parse_and_append;
-use crate::cmdq::{CmdqItemWeak, cmdq_append};
+use crate::cmd::{CmdqItemWeak, cmdq_append};
 use crate::fmt_args;
 use crate::format::{format_create_defaults, format_create_from_state_for_client, format_expand};
 use crate::grid::grid_default_cell;
@@ -403,7 +403,7 @@ pub unsafe fn menu_prepare(
         }
         let mut state = menu_data {
             item: item
-                .and_then(crate::cmdq::cmdq_item_ref_of)
+                .and_then(crate::cmd::cmdq_item_ref_of)
                 .map(|item| item.downgrade()),
             flags,
             style: None,

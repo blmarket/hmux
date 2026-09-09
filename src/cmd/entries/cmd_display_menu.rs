@@ -1,9 +1,9 @@
-use crate::arguments::{
+use crate::args::{
     args_count, args_get_str, args_has, args_percentage, args_string_str, args_strtonum,
     args_to_vector, args_value_list,
 };
 use crate::cmd::cmd_get_args;
-use crate::cmdq::cmdq_item_ref_of;
+use crate::cmd::cmdq_item_ref_of;
 use crate::environ::EnvironmentStore;
 use crate::environ::{RustEnvironment, new_environment_box};
 use crate::ffi::strtol;
@@ -26,7 +26,7 @@ pub use crate::consts::{
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::tmux::checkshell;
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{
     ClientRef, OptionsRef, args, args_parse_t, args_parse_type, box_lines, menu_item, u_char, u_int,
 };

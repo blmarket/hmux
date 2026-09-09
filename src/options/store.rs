@@ -4,7 +4,7 @@ use crate::window_scrollbar::WindowScrollbarState;
 use super::table::{options_other_names, options_table};
 use crate::WindowPane;
 use crate::alerts::alerts_reset_all;
-use crate::arguments::{args_get_str, args_has};
+use crate::args::{args_get_str, args_has};
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
 use crate::compat::strtonum;
 use crate::ffi::fnmatch;

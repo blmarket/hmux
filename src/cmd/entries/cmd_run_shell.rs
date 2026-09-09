@@ -1,10 +1,10 @@
-use crate::arguments::{
+use crate::args::{
     args_count, args_get_str, args_has, args_make_commands, args_make_commands_prepare,
     args_string_str,
 };
 use crate::cmd::cmd_get_args;
-use crate::cmdq::cmd_find_from_nothing;
-use crate::cmdq::{CmdqItemWeak, cmdq_append, cmdq_item_weak_of};
+use crate::cmd::cmd_find_from_nothing;
+use crate::cmd::{CmdqItemWeak, cmdq_append, cmdq_item_weak_of};
 use crate::compat::toupper;
 pub use crate::consts::{
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, CMD_FIND_CANFAIL, CMD_FIND_PANE,
@@ -17,7 +17,7 @@ use crate::reactor::Timer;
 use crate::server::client_working_directory;
 use crate::status::status_message_for_client;
 pub use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{
     __suseconds_t, __time_t, ClientRef, JobEvent, SessionRef, Stream, TimerHandle, WindowPane,
     args, args_command_state, args_parse_t, args_parse_type, cmd_find_state, time_t, timeval,

@@ -1,8 +1,8 @@
 use crate::cmd::cmd_retval;
 use crate::WindowPane;
-use crate::cmdq::CmdqStateRef;
+use crate::cmd::CmdqStateRef;
 use crate::cmd::cmd_parse_and_append;
-use crate::cmdq::{CmdqItemRef, cmdq_append};
+use crate::cmd::{CmdqItemRef, cmdq_append};
 use crate::ffi::close;
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc, format_buf};

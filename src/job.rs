@@ -1,4 +1,4 @@
-use crate::cmdq::cmdq_item;
+use crate::cmd::cmdq_item;
 use crate::cfg::cfg_finished;
 use crate::cmd::cmd_log_argv;
 

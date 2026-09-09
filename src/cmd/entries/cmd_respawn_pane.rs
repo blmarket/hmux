@@ -1,8 +1,8 @@
-use crate::arguments::args_get_str;
-use crate::arguments::{args_has, args_to_vector, args_value_list};
+use crate::args::args_get_str;
+use crate::args::{args_has, args_to_vector, args_value_list};
 use crate::cmd::cmd_get_args;
 
-use crate::cmdq::cmdq_item_weak_of;
+use crate::cmd::cmdq_item_weak_of;
 use crate::environ::EnvironmentStore;
 use crate::environ::new_environment_box;
 use crate::fmt_args;
@@ -12,7 +12,7 @@ pub use crate::consts::{
 };
 use crate::spawn::spawn_pane;
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{args, args_parse_t, spawn_context, u_char};
 use ::std::ffi::CString;
 

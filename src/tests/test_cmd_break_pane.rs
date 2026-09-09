@@ -1,5 +1,5 @@
 use super::*;
-use crate::cmdq::cmd_find_from_winlink;
+use crate::cmd::cmd_find_from_winlink;
 use crate::options::OptionsRef;
 use crate::pane_command::PaneCommandState;
 use crate::tests::test_fixtures::{

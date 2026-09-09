@@ -34,14 +34,14 @@
 //! allocations on a green path.
 
 use crate::WindowPane;
-use crate::arguments::args_count;
-use crate::cmdq::CmdqItemRef;
+use crate::args::args_count;
+use crate::cmd::CmdqItemRef;
 use crate::cmd::cmd;
 use crate::cmd::cmd_load_buffer_data;
 use crate::cmd::cmd_source_file_data;
 use crate::cmd::CMD_FIND_PANE;
-use crate::cmdq::{CmdqType, KEYC_NONE, cmdq_append, cmdq_next};
-use crate::cmdq::{CmdqListRef, CmdqStateRef};
+use crate::cmd::{CmdqType, KEYC_NONE, cmdq_append, cmdq_next};
+use crate::cmd::{CmdqListRef, CmdqStateRef};
 use crate::file::CLIENT_DEAD;
 use crate::overlay::{menu_add_item, menu_create};
 use crate::pane_identity::PaneIdentity;
@@ -93,7 +93,7 @@ unsafe fn run_file_completion(data: ClientFileData, dead: bool, stream: core::ff
     }
 }
 
-fn failing_command(_cmd: &cmd, _item: &crate::cmdq::cmdq_item) -> cmd_retval {
+fn failing_command(_cmd: &cmd, _item: &crate::cmd::cmdq_item) -> cmd_retval {
     crate::cmd::CMD_RETURN_ERROR
 }
 

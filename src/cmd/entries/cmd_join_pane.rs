@@ -6,7 +6,7 @@
 //! inherited appearance. The command chooses unzoom, selection, redraw and
 //! empty-source-window policy around that transition.
 
-use crate::arguments::args_has;
+use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
@@ -17,7 +17,7 @@ pub use crate::consts::{
     CMD_FIND_DEFAULT_MARKED, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::args_parse_t;
 #[cfg(test)]
 use crate::types::{RustWindowPaneWeak, WindowRef, cmd_find_state, u_int};

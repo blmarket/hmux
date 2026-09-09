@@ -14,7 +14,7 @@
 //! index of the window being printed, so every line of one run carries the
 //! same value — where `list-sessions` and `list-clients` count from zero.
 
-use crate::arguments::{args_get_str, args_has};
+use crate::args::{args_get_str, args_has};
 use crate::cmd::cmd_get_args;
 
 pub use crate::consts::{
@@ -27,7 +27,7 @@ use crate::format::{
 };
 use crate::sort::{RustSortCriteria, SortCriteria, sort_get_winlinks};
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmdq::cmdq_item;
+use crate::cmd::cmdq_item;
 use crate::types::{args_parse_t, format_tree, u_int};
 use ::core::ffi::{CStr, c_char};
 

@@ -2,8 +2,8 @@ use super::*;
 
 use crate::cmd::cmd_parse_from_string;
 
-use crate::cmdq::{CmdqItemRef, CmdqItemWeak};
-use crate::cmdq::{CmdqStateRef, CmdqType};
+use crate::cmd::{CmdqItemRef, CmdqItemWeak};
+use crate::cmd::{CmdqStateRef, CmdqType};
 use crate::tests::test_fixtures::seen_str;
 use crate::tests::test_fixtures::{globals, zeroed_client};
 use ::core::ffi::CStr;

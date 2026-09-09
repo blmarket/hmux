@@ -1,10 +1,10 @@
-use crate::cmdq::cmdq_item;
+use crate::cmd::cmdq_item;
 use crate::WindowPane;
 use crate::window_scrollbar::WindowScrollbarState;
 
 use crate::window_dimensions::WindowDimensionsState;
 
-use crate::arguments::{args_has, args_percentage_and_expand, args_strtonum_and_expand};
+use crate::args::{args_has, args_percentage_and_expand, args_strtonum_and_expand};
 use crate::fmt_args;
 use crate::log::{fatalx, log_debug};
 use crate::notify::notify_window;

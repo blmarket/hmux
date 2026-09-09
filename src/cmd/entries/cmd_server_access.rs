@@ -1,4 +1,4 @@
-use crate::arguments::{args_count, args_has, args_string_str};
+use crate::args::{args_count, args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
 use crate::ffi::getuid;
@@ -12,7 +12,7 @@ use crate::server::{
     with_server_acl, with_server_acl_mut,
 };
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{__uid_t, args, args_parse_t, u_char, u_int, uid_t};
 use crate::{UserAccount, UserAccountRecord};
 

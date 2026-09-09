@@ -1,6 +1,6 @@
 use super::*;
-use crate::cmdq::CMDQ_STATE_NOHOOKS as STATE_NOHOOKS;
-use crate::cmdq::CmdqListOps;
+use crate::cmd::CMDQ_STATE_NOHOOKS as STATE_NOHOOKS;
+use crate::cmd::CmdqListOps;
 use crate::log::log_add_level;
 use crate::options::{OptionsEngine, OptionsRef, RustOptionsEngine};
 use crate::tests::test_fixtures::{

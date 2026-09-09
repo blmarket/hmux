@@ -16,7 +16,7 @@
 //! while retaining the source and destination owners. The index changes
 //! reported by insertion keep the source link current within one session.
 
-use crate::arguments::{args_get_str, args_has};
+use crate::args::{args_get_str, args_has};
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
@@ -29,7 +29,7 @@ pub use crate::consts::{
 };
 use crate::tmux::check_name;
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{OptionsRef, args_parse_t};
 #[cfg(test)]
 use crate::types::{SessionRef, WindowRef, cmd_find_state, u_int, winlink};

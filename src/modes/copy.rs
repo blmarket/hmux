@@ -1,6 +1,6 @@
 use crate::CompiledRegex;
 use crate::WindowPane;
-use crate::arguments::{args_count, args_has, args_parse, args_string_str};
+use crate::args::{args_count, args_has, args_parse, args_string_str};
 use crate::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::compat::strtonum;
 use crate::compat::{cstr_eq_ignore_case, tolower};

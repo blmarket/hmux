@@ -1,6 +1,6 @@
 use crate::WindowPane;
 use crate::cmd::CMD_RETURN_NORMAL;
-use crate::cmdq::{CmdqListOps, cmdq_next};
+use crate::cmd::{CmdqListOps, cmdq_next};
 use crate::paste::{PasteBufferStore, with_paste_buffers, with_paste_buffers_mut};
 use crate::status::{status_init, status_prompt_clear};
 use crate::tests::test_fixtures::{Clients, Item, Target, globals, seen};

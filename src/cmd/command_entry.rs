@@ -2,7 +2,7 @@
 
 use super::{CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_STOP, CMD_RETURN_WAIT};
 use super::cmd;
-use crate::cmdq::cmdq_item;
+use crate::cmd::cmdq_item;
 use super::{cmd_entry_flag, cmd_retval};
 use crate::types::args_parse_t;
 use core::ffi::CStr;

@@ -1,7 +1,7 @@
 use crate::cmd::{CmdListRef, cmd_retval};
-use crate::cmdq::CmdqStateRef;
+use crate::cmd::CmdqStateRef;
 use crate::cmd::cmd_parse_from_string;
-use crate::cmdq::{CmdqItemRef, cmdq_append};
+use crate::cmd::{CmdqItemRef, cmdq_append};
 
 use crate::fmt_args;
 use crate::log::{fatalx, log_debug};

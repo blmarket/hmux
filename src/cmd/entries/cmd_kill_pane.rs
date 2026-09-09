@@ -15,14 +15,14 @@
 //! The `-a` walk snapshots pane identities before removing any of them, so
 //! no pane borrow survives the operation that frees its storage.
 
-use crate::arguments::args_has;
+use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
 
 use crate::server::server_kill_pane;
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{RustWindowPaneWeak, WindowRef, args_parse_t};
 
 pub use crate::consts::{CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL};

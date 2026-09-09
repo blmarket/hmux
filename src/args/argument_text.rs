@@ -25,7 +25,7 @@ pub struct RustArgumentTextCodec;
 
 impl ArgumentTextCodec for RustArgumentTextCodec {
     fn escape(&self, value: &CStr) -> CString {
-        crate::arguments::args_escape_impl(value)
+        crate::args::args_escape_impl(value)
     }
 
     fn percentage(
@@ -36,6 +36,6 @@ impl ArgumentTextCodec for RustArgumentTextCodec {
         current: c_longlong,
         cause: &mut Option<CString>,
     ) -> c_longlong {
-        crate::arguments::args_string_percentage_impl(value, minimum, maximum, current, cause)
+        crate::args::args_string_percentage_impl(value, minimum, maximum, current, cause)
     }
 }

@@ -1,4 +1,4 @@
-use crate::arguments::{args_count, args_get_str, args_has, args_string_str, args_value_list};
+use crate::args::{args_count, args_get_str, args_has, args_string_str, args_value_list};
 use crate::cmd::cmd_get_args;
 
 use crate::compat::strtonum;
@@ -13,7 +13,7 @@ pub use crate::consts::{
     CONTROL_SUB_WINDOW, INT_MAX, WINDOW_MAXIMUM, WINDOW_MINIMUM,
 };
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{ClientRef, args, args_parse_t, control_sub_type, u_char, u_int};
 use crate::window::window_pane_find_by_id;
 use ::core::ffi::CStr;

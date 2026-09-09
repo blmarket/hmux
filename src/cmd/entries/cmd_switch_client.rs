@@ -1,6 +1,6 @@
-use crate::arguments::{args_get_str, args_has};
+use crate::args::{args_get_str, args_has};
 use crate::cmd::cmd_get_args;
-use crate::cmdq::cmd_find_target;
+use crate::cmd::cmd_find_target;
 
 use crate::ffi::getuid;
 use crate::fmt_args;
@@ -12,8 +12,8 @@ pub use crate::consts::{
 };
 use crate::sort::{RustSortCriteria, SortCriteria};
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmd_find_type;
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmd_find_type;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{
     args, args_parse_t, cmd_find_state, sort_criteria_t, u_char, uid_t, uint64_t,
 };

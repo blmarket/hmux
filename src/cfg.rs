@@ -1,8 +1,8 @@
 use crate::cmd::cmd_retval;
-use crate::cmdq::cmdq_item;
+use crate::cmd::cmdq_item;
 use crate::WindowPane as _;
-use crate::cmdq::CmdqStateRef;
-use crate::cmdq::{CmdqItemRef, CmdqItemWeak, cmdq_append};
+use crate::cmd::CmdqStateRef;
+use crate::cmd::{CmdqItemRef, CmdqItemWeak, cmdq_append};
 use crate::cmd::{cmd_parse_from_buffer, cmd_parse_from_file};
 use crate::compat::error_message;
 use crate::control::control_write;

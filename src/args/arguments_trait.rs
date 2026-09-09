@@ -41,7 +41,7 @@ pub trait Arguments {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::arguments::RustArguments;
+    use crate::args::RustArguments;
     use crate::types::ArgsValue;
     use std::ffi::CString;
 

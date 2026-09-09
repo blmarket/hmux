@@ -14,7 +14,7 @@
 //! of lines printed so far, so a client that is skipped leaves a gap in the
 //! numbering of the ones after it.
 
-use crate::arguments::{args_get_str, args_has};
+use crate::args::{args_get_str, args_has};
 use crate::cmd::cmd_get_args;
 
 pub use crate::consts::{
@@ -27,7 +27,7 @@ use crate::format::{
 };
 use crate::sort::{RustSortCriteria, SortCriteria, sort_get_clients};
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{ClientRef, args_parse_t, format_tree, sort_criteria_t, u_int};
 #[cfg(test)]
 use crate::types::uint64_t;

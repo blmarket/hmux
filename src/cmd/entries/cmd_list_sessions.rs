@@ -8,7 +8,7 @@
 //! session's defaults plus `line`, and with `-f` the filter is expanded first
 //! and the line printed only when it is true.
 
-use crate::arguments::{args_get_str, args_has};
+use crate::args::{args_get_str, args_has};
 use crate::cmd::cmd_get_args;
 
 pub use crate::consts::{
@@ -20,7 +20,7 @@ use crate::format::{
 };
 use crate::sort::{RustSortCriteria, SortCriteria, sort_get_sessions};
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{SessionRef, args_parse_t, format_tree, sort_criteria_t, u_int};
 use ::core::ffi::CStr;
 

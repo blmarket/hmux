@@ -42,7 +42,7 @@ pub trait ArgumentCommandState: Default {
 mod tests {
     use super::*;
     use crate::CommandParseInput;
-    use crate::arguments::args_command_state;
+    use crate::args::args_command_state;
 
     #[test]
     fn text_and_source_are_replaced_through_the_contract() {

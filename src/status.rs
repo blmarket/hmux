@@ -1,9 +1,9 @@
 use crate::cmd::cmd_retval;
-use crate::cmdq::cmdq_item;
+use crate::cmd::cmdq_item;
 use crate::cmd::cmd_confirm_before_callback;
-use crate::cmdq::{CmdqItemRef, cmdq_append};
+use crate::cmd::{CmdqItemRef, cmdq_append};
 use crate::cmd::{cmd_command_prompt_callback, cmd_command_prompt_free};
-use crate::cmdq::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_valid_state};
+use crate::cmd::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_valid_state};
 use crate::compat::error_message;
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};

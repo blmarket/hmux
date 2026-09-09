@@ -23,7 +23,7 @@
 //! collection came out empty contributes nothing at all, newline included;
 //! and `-p` reads the client's flags without checking that there is a client.
 
-use crate::arguments::{args_get_str, args_has, args_strtonum_and_expand};
+use crate::args::{args_get_str, args_has, args_strtonum_and_expand};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 pub use crate::consts::{
@@ -33,7 +33,7 @@ use crate::fmt_args;
 use crate::pane_handle::{CapturePaneEdge, PaneCapture};
 use crate::paste::{PasteBufferStore, paste_buffer_limit, with_paste_buffers_mut};
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{RustWindowPaneWeak, args, args_parse_t, size_t, u_char};
 use ::core::ffi::{c_char, c_int, c_longlong};
 pub const INT_MIN: c_int = -__INT_MAX__ - 1 as c_int;

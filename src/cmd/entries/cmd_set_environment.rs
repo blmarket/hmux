@@ -1,4 +1,4 @@
-use crate::arguments::{args_count, args_get_str, args_has, args_string_str};
+use crate::args::{args_count, args_get_str, args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
 use crate::environ::EnvironmentStore;
@@ -12,7 +12,7 @@ pub use crate::consts::{
     CMD_RETURN_NORMAL, ENVIRON_HIDDEN,
 };
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::args_parse_t;
 use ::core::ffi::CStr;
 

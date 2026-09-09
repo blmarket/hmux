@@ -24,10 +24,10 @@
 //!   when [`window_pane_set_mode`] is going to refuse them because the pane is
 //!   already in that mode.
 
-use crate::arguments::{args_create, args_has, args_set, args_string_str};
+use crate::args::{args_create, args_has, args_set, args_string_str};
 use crate::cmd::cmd_get_args;
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{ArgsValue, WindowMode, args, args_parse_t, args_value_t};
 use ::core::ffi::c_char;
 use ::std::ffi::CString;

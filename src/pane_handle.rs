@@ -225,7 +225,7 @@ impl RustWindowPaneWeak {
     /// Exclude conflicting pane state access until the file-input operation is created.
     pub(crate) unsafe fn start_input(
         &self,
-        item: &crate::cmdq::CmdqItemRef,
+        item: &crate::cmd::CmdqItemRef,
     ) -> Result<core::ffi::c_int, CString> {
         unsafe {
             let Some(pane) = self.get() else { return Ok(1) };

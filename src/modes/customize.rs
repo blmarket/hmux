@@ -1,9 +1,9 @@
 use super::widget::ModeTreeItemRef;
 use crate::WindowPane;
-use crate::arguments::{args_get_str, args_has};
+use crate::args::{args_get_str, args_has};
 
 use crate::cmd::cmd_parse_from_string;
-use crate::cmdq::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_valid_state};
+use crate::cmd::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_valid_state};
 use crate::compat::{tolower, toupper};
 use crate::fmt_args;
 use crate::format::format_true;

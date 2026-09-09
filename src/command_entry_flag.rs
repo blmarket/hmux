@@ -1,6 +1,6 @@
 //! Stable access to a command entry's source or target descriptor.
 
-use crate::cmdq::cmd_find_type;
+use crate::cmd::cmd_find_type;
 use core::ffi::{c_char, c_int};
 
 /// The option character and lookup rules for a command source or target.

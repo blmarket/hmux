@@ -1,4 +1,4 @@
-use crate::arguments::args_has;
+use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 pub use crate::consts::{
@@ -10,7 +10,7 @@ use crate::job::job_print_summary;
 use crate::message_log::{MessageLogStore, with_message_log};
 use crate::terminfo::tty_term_snapshots_for_client;
 pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmdq::cmdq_item;
+pub use crate::cmd::cmdq_item;
 pub use crate::types::{args, args_parse_t, u_char, u_int};
 
 pub const SHOW_MESSAGES_TEMPLATE: &core::ffi::CStr = c"#{t/p:message_time}: #{message_text}";
