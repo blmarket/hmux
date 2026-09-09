@@ -21,10 +21,8 @@ pub use crate::consts::{
 };
 use crate::fmt_args;
 use crate::server::client_walk;
-pub use crate::types::{
-    ClientRef, RustCommandEntry, args_parse_t, cmd, cmd_entry_flag, cmd_retval, cmdq_item, msgtype,
-    uint64_t,
-};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::types::{ClientRef, args_parse_t, msgtype, uint64_t};
 use ::core::ffi::CStr;
 
 pub(crate) static cmd_detach_client_entry: RustCommandEntry = RustCommandEntry {

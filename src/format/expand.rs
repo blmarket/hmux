@@ -1,3 +1,4 @@
+use crate::cmd::cmdq_item;
 use crate::WindowPane;
 use crate::format_modifier::FormatModifier;
 use crate::options::{OptionsEngine, RustOptionsEngine};

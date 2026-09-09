@@ -40,10 +40,8 @@ pub use crate::consts::{
 };
 use crate::spawn::spawn_window;
 use crate::tmux::{check_name, clean_name};
-pub use crate::types::{
-    ClientRef, RustCommandEntry, SessionRef, args, args_parse_t, cmd, cmd_entry_flag,
-    cmd_find_state, cmd_retval, cmdq_item, spawn_context,
-};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::types::{ClientRef, SessionRef, args, args_parse_t, cmd_find_state, spawn_context};
 #[cfg(test)]
 use crate::types::{tmuxpeer, winlink};
 use ::core::ffi::{CStr, c_int};

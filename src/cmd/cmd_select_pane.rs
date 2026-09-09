@@ -11,10 +11,8 @@ pub use crate::consts::{
 };
 #[cfg(test)]
 use crate::tty::tty_window_bigger;
-pub use crate::types::{
-    OptionsRef, RustCommandEntry, WindowRef, args_parse_t, cmd, cmd_entry_flag, cmd_retval,
-    cmdq_item,
-};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::types::{OptionsRef, WindowRef, args_parse_t};
 
 pub(crate) static cmd_select_pane_entry: RustCommandEntry = {
     RustCommandEntry {

@@ -28,9 +28,8 @@ pub use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
 use crate::tmux::check_name;
-pub use crate::types::{
-    OptionsRef, RustCommandEntry, args_parse_t, cmd, cmd_entry_flag, cmd_retval, cmdq_item,
-};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::types::{OptionsRef, args_parse_t};
 #[cfg(test)]
 use crate::types::{SessionRef, WindowRef, cmd_find_state, u_int, winlink};
 use crate::window::WinlinkRef;

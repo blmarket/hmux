@@ -1,6 +1,7 @@
 //! Stable access to the result of parsing commands.
 
-use crate::types::{CmdListRef, cmd_parse_status};
+use crate::cmd::CmdListRef;
+use crate::types::cmd_parse_status;
 use core::ffi::CStr;
 use std::ffi::CString;
 

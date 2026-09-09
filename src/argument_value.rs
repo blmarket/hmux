@@ -1,6 +1,6 @@
 //! Stable access to one parsed argument value.
 
-use crate::types::CmdListRef;
+use crate::cmd::CmdListRef;
 use core::ffi::CStr;
 use std::ffi::CString;
 

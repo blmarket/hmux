@@ -11,10 +11,8 @@ pub use crate::consts::{
     CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, SPAWN_KILL, SPAWN_RESPAWN,
 };
 use crate::spawn::spawn_pane;
-pub use crate::types::{
-    RustCommandEntry, args, args_parse_t, cmd, cmd_entry_flag, cmd_retval, cmdq_item,
-    spawn_context, u_char,
-};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::types::{args, args_parse_t, spawn_context, u_char};
 use ::std::ffi::CString;
 
 pub(crate) static cmd_respawn_pane_entry: RustCommandEntry = {

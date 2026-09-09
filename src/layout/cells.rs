@@ -1,3 +1,4 @@
+use crate::cmd::cmdq_item;
 use crate::WindowPane;
 use crate::window_scrollbar::WindowScrollbarState;
 

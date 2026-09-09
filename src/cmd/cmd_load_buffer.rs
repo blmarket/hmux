@@ -11,10 +11,8 @@ use crate::fmt_args;
 use crate::format::format_single_from_target;
 use crate::paste::{PasteBufferStore, paste_buffer_limit, with_paste_buffers_mut};
 use crate::types::ClientFileEvent;
-pub use crate::types::{
-    ClientFileData, ClientRef, RustCommandEntry, args, args_parse_t, cmd, cmd_entry_flag,
-    cmd_retval, cmdq_item, size_t, u_char, uint64_t,
-};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::types::{ClientFileData, ClientRef, args, args_parse_t, size_t, u_char, uint64_t};
 use ::core::ffi::CStr;
 
 #[derive(Clone, Default)]

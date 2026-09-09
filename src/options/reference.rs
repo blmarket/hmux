@@ -1,5 +1,6 @@
 //! Shared option-store operations for Rust and native tmux handles.
 
+use crate::cmd::CmdListRef;
 use super::{RustOptionsRef, store};
 use crate::fmt_engine::FmtArg;
 use crate::types::*;

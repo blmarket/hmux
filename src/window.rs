@@ -1,3 +1,4 @@
+use crate::cmd::cmdq_item;
 use crate::entity_id::next_entity_id;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::pane_activity::PaneActivityState;

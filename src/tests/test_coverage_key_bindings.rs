@@ -9,6 +9,7 @@
 //! build by hand is a single-node default tree, which is the shape
 //! `key_bindings_init_done` leaves for a table with one default key.
 
+use crate::cmd::CmdListRef;
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
 use crate::fmt_args;
 use crate::input::{KEYC_LITERAL, KEYC_META};

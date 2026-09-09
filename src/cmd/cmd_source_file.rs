@@ -16,9 +16,9 @@ use crate::format::format_single_from_target;
 use crate::log::log_debug;
 use crate::server::client_working_directory;
 use crate::types::ClientFileEvent;
+pub use crate::cmd::{RustCommandEntry, SourceFileRef, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
 pub use crate::types::{
-    ClientFileData, ClientRef, RustCommandEntry, SourceFileRef, args, args_parse_t, cmd,
-    cmd_entry_flag, cmd_retval, cmdq_item, size_t, u_char, u_int, uint64_t,
+    ClientFileData, ClientRef, args, args_parse_t, size_t, u_char, u_int, uint64_t,
 };
 use crate::xmalloc::xasprintf;
 use ::core::ffi::CStr;

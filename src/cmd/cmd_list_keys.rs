@@ -53,9 +53,9 @@ use crate::sort::{RustSortCriteria, SortCriteria};
 use crate::status::status_message_for_client;
 use crate::text::{KeyStringCodec, RustKeyStringCodec, RustUtf8VisModel, Utf8VisModel};
 use crate::tmux::global_session_options;
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
 pub use crate::types::{
-    OptionsRef, RustCommandEntry, args, args_parse_t, cmd, cmd_entry_flag, cmd_retval, cmdq_item,
-    format_tree, key_code, sort_criteria_t, u_int,
+    OptionsRef, args, args_parse_t, format_tree, key_code, sort_criteria_t, u_int,
 };
 use ::core::ffi::c_int;
 use ::std::ffi::{CStr, CString};

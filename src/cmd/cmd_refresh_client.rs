@@ -12,10 +12,8 @@ pub use crate::consts::{
     CONTROL_SUB_ALL_PANES, CONTROL_SUB_ALL_WINDOWS, CONTROL_SUB_PANE, CONTROL_SUB_SESSION,
     CONTROL_SUB_WINDOW, INT_MAX, WINDOW_MAXIMUM, WINDOW_MINIMUM,
 };
-pub use crate::types::{
-    ClientRef, RustCommandEntry, args, args_parse_t, cmd, cmd_entry_flag, cmd_retval, cmdq_item,
-    control_sub_type, u_char, u_int,
-};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::types::{ClientRef, args, args_parse_t, control_sub_type, u_char, u_int};
 use crate::window::window_pane_find_by_id;
 use ::core::ffi::CStr;
 use ::std::ffi::CString;

@@ -1,3 +1,4 @@
+use crate::cmd::cmd_retval;
 use crate::WindowPane;
 use crate::cmd::CmdqStateRef;
 use crate::cmd::cmd_parse_and_append;

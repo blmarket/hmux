@@ -1,3 +1,4 @@
+use crate::cmd::CmdListRef;
 use crate::window_scrollbar::WindowScrollbarState;
 
 use super::table::{options_other_names, options_table};

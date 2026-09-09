@@ -1,6 +1,6 @@
 //! Stable access to a command entry's source or target descriptor.
 
-use crate::types::cmd_find_type;
+use crate::cmd::cmd_find_type;
 use core::ffi::{c_char, c_int};
 
 /// The option character and lookup rules for a command source or target.
@@ -20,7 +20,7 @@ pub trait CommandEntryFlag {
     fn command_entry_flag_find_flags(&self) -> c_int;
 }
 
-impl CommandEntryFlag for crate::types::cmd_entry_flag {
+impl CommandEntryFlag for crate::cmd::cmd_entry_flag {
     fn from_command_entry_flag(flag: c_char, find_type: cmd_find_type, find_flags: c_int) -> Self {
         Self {
             flag,
@@ -43,7 +43,7 @@ impl CommandEntryFlag for crate::types::cmd_entry_flag {
 mod tests {
     use super::*;
     use crate::cmd::CMD_FIND_WINDOW;
-    use crate::types::cmd_entry_flag;
+    use crate::cmd::cmd_entry_flag;
 
     #[test]
     fn const_descriptor_exposes_its_lookup_rules() {

@@ -29,9 +29,8 @@ use crate::cmd::cmd_get_args;
 pub use crate::consts::{CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL};
 use crate::fmt_args;
 use crate::paste::{PasteBufferStore, with_paste_buffers, with_paste_buffers_mut};
-pub use crate::types::{
-    RustCommandEntry, args, args_parse_t, cmd, cmd_entry_flag, cmd_retval, cmdq_item,
-};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::types::{args, args_parse_t};
 #[cfg(test)]
 use crate::types::window_pane;
 use ::core::ffi::{CStr, c_char};

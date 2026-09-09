@@ -11,9 +11,9 @@ pub use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, OPTIONS_TABLE_NONE,
     OPTIONS_TABLE_WINDOW,
 };
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
 pub use crate::types::{
-    OptionsRef, RustCommandEntry, RustOptionsRef, args, args_parse_t, args_parse_type, cmd,
-    cmd_entry_flag, cmd_retval, cmdq_item, u_char, u_int,
+    OptionsRef, RustOptionsRef, args, args_parse_t, args_parse_type, u_char, u_int,
 };
 use ::std::ffi::CString;
 

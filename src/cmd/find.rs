@@ -17,9 +17,10 @@ pub use crate::consts::{
     CMD_FIND_CANFAIL, CMD_FIND_DEFAULT_MARKED, CMD_FIND_PANE, CMD_FIND_PREFER_UNATTACHED,
     CMD_FIND_QUIET, CMD_FIND_SESSION, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX, INT_MAX,
 };
+pub use crate::cmd::{cmd_find_type, cmdq_item};
 pub use crate::types::{
-    ClientRef, RustWindowPaneWeak, SessionRef, WindowRef, cmd_find_state, cmd_find_type, cmdq_item,
-    mouse_event, session, u_int, winlink,
+    ClientRef, RustWindowPaneWeak, SessionRef, WindowRef, cmd_find_state, mouse_event, session,
+    u_int, winlink,
 };
 #[cfg(test)]
 use crate::types::{RustWindowPaneRef, window_pane};

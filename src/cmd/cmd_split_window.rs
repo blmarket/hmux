@@ -13,9 +13,9 @@ pub use crate::consts::{
     SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FLOATING, SPAWN_FULLSIZE, SPAWN_ZOOM,
 };
 use crate::spawn::spawn_pane;
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
 pub use crate::types::{
-    OptionsRef, RustCommandEntry, args, args_parse_t, cmd, cmd_entry_flag, cmd_find_state,
-    cmd_retval, cmdq_item, spawn_context, u_char, u_int,
+    OptionsRef, args, args_parse_t, cmd_find_state, spawn_context, u_char, u_int,
 };
 use crate::window::WinlinkRef;
 use ::std::ffi::CString;

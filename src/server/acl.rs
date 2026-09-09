@@ -1,3 +1,4 @@
+use crate::cmd::cmdq_item;
 use super::run::client_walk;
 
 use crate::ffi::getuid;

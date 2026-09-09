@@ -12,9 +12,10 @@ pub use crate::consts::{
 };
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::text::{utf8_from_data, utf8_fromcstr};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
 pub use crate::types::{
-    ClientRef, OptionsRef, RustCommandEntry, args, args_parse_t, cmd, cmd_entry_flag, cmd_retval,
-    cmdq_item, key_code, key_event, mouse_event, u_char, u_int, uint64_t,
+    ClientRef, OptionsRef, args, args_parse_t, key_code, key_event, mouse_event, u_char, u_int,
+    uint64_t,
 };
 
 pub(crate) static cmd_send_keys_entry: RustCommandEntry = {

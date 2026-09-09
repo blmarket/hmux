@@ -19,10 +19,8 @@ use crate::format::{
     format_create_for_client, format_defaults_paste_buffer, format_expand, format_true,
 };
 use crate::sort::{RustSortCriteria, SortCriteria, SortedPasteBuffer, sort_get_buffers};
-pub use crate::types::{
-    RustCommandEntry, args_parse_t, cmd, cmd_entry_flag, cmd_retval, cmdq_item, format_tree,
-    sort_criteria_t,
-};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::types::{args_parse_t, format_tree, sort_criteria_t};
 use ::core::ffi::CStr;
 
 pub const LIST_BUFFERS_TEMPLATE: &CStr =

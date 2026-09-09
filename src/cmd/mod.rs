@@ -6,6 +6,9 @@
 //! What else the rest of the crate may use is re-exported here.
 
 use crate::options::{OptionsEngine, RustOptionsEngine};
+use core::fmt;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 mod cmd_attach_session;
 mod cmd_bind_key;
@@ -232,8 +235,8 @@ pub use crate::consts::{
 };
 use crate::tmux::global_options;
 pub use crate::types::{
-    ArgsValue, CmdListRef, OptionsRef, RustCommandEntry, RustWindowPaneWeak, SessionRef,
-    WindowPane, WindowRef, args, args_value_t, cmd_list, mouse_event, u_int,
+    ArgsValue, OptionsRef, RustWindowPaneWeak, SessionRef, WindowPane, WindowRef, args,
+    args_value_t, mouse_event, u_int,
 };
 use crate::window::WinlinkRef;
 use crate::xmalloc::xasprintf;
@@ -894,5 +897,148 @@ impl CmdListRef {
             }
             0
         })
+    }
+}
+
+pub type cmd_find_type = core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmd_entry_flag {
+    pub flag: core::ffi::c_char,
+    pub type_0: cmd_find_type,
+    pub flags: core::ffi::c_int,
+}
+impl cmd_entry_flag {
+    /// Builds a source or target lookup descriptor for a command entry.
+    pub const fn new(
+        flag: core::ffi::c_char,
+        type_0: cmd_find_type,
+        flags: core::ffi::c_int,
+    ) -> Self {
+        Self {
+            flag,
+            type_0,
+            flags,
+        }
+    }
+}
+pub type cmd_retval = core::ffi::c_int;
+pub use crate::command_entry::RustCommandEntry;
+pub type cmd_entry = RustCommandEntry;
+
+#[repr(C)]
+pub struct cmd_list {
+    pub group: u_int,
+    pub list: Option<Box<cmds>>,
+}
+
+impl crate::CommandListGroupState for cmd_list {
+    fn command_list_group(&self) -> u_int {
+        self.group
+    }
+
+    fn set_command_list_group(&mut self, group: u_int) {
+        self.group = group;
+    }
+}
+
+impl crate::CommandList for cmd_list {
+    type Command = cmd;
+
+    fn command_count(&self) -> usize {
+        self.list.as_deref().map_or(0, Vec::len)
+    }
+
+    fn command_at(&self, index: usize) -> Option<&Self::Command> {
+        self.list.as_deref()?.get(index).map(Box::as_ref)
+    }
+
+    fn command_at_mut(&mut self, index: usize) -> Option<&mut Self::Command> {
+        self.list.as_deref_mut()?.get_mut(index).map(Box::as_mut)
+    }
+}
+
+/// A strong owner of a parsed command list.
+///
+/// A shared owner of a command list. Commands remain borrowed through the
+/// list's guard, and callers can clone the owner to retain a command while
+/// mutating the queue item that selected it.
+#[derive(Clone)]
+pub struct CmdListRef(Rc<RefCell<cmd_list>>);
+
+impl CmdListRef {
+    pub(crate) fn new(value: cmd_list) -> Self {
+        Self(Rc::new(RefCell::new(value)))
+    }
+
+    pub(crate) fn with<R>(&self, operation: impl FnOnce(&cmd_list) -> R) -> R {
+        operation(&self.0.borrow())
+    }
+
+    pub(crate) fn with_mut<R>(&self, operation: impl FnOnce(&mut cmd_list) -> R) -> R {
+        operation(&mut self.0.borrow_mut())
+    }
+
+    /// Borrows one command while retaining the list's shared borrow guard.
+    pub(crate) fn command(&self, index: usize) -> Option<std::cell::Ref<'_, cmd>> {
+        std::cell::Ref::filter_map(self.0.borrow(), |list| {
+            crate::CommandList::command_at(list, index)
+        })
+        .ok()
+    }
+
+    /// Borrows one command exclusively through the list's mutable guard.
+    #[cfg(test)]
+    pub(crate) fn command_mut(&self, index: usize) -> Option<std::cell::RefMut<'_, cmd>> {
+        std::cell::RefMut::filter_map(self.0.borrow_mut(), |list| {
+            crate::CommandList::command_at_mut(list, index)
+        })
+        .ok()
+    }
+}
+
+/// The state a `source-file` run carries between the reads it starts. Several
+/// client files may be reading for one run, so they share it and the last one
+/// gone takes it with them.
+#[derive(Clone)]
+pub struct SourceFileRef(Rc<RefCell<cmd_source_file_data>>);
+
+impl SourceFileRef {
+    pub(crate) fn new(value: cmd_source_file_data) -> Self {
+        Self(Rc::new(RefCell::new(value)))
+    }
+
+    pub(crate) fn with<R>(&self, operation: impl FnOnce(&cmd_source_file_data) -> R) -> R {
+        operation(&self.0.borrow())
+    }
+
+    pub(crate) fn with_mut<R>(&self, operation: impl FnOnce(&mut cmd_source_file_data) -> R) -> R {
+        operation(&mut self.0.borrow_mut())
+    }
+}
+
+impl fmt::Debug for SourceFileRef {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("SourceFileRef")
+            .field(&Rc::as_ptr(&self.0))
+            .finish()
+    }
+}
+
+impl PartialEq for CmdListRef {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for CmdListRef {}
+
+impl fmt::Debug for CmdListRef {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("CmdListRef")
+            .field(&Rc::as_ptr(&self.0))
+            .finish()
     }
 }

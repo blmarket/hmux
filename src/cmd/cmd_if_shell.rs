@@ -14,9 +14,9 @@ use crate::format::format_single_from_target;
 use crate::job::job_run_for_session;
 use crate::server::client_working_directory;
 use crate::status::status_message_for_client;
+pub use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
 pub use crate::types::{
-    ClientRef, CmdListRef, JobEvent, RustCommandEntry, args, args_command_state, args_parse_t,
-    args_parse_type, cmd, cmd_entry_flag, cmd_retval, cmdq_item, u_char, u_int,
+    ClientRef, JobEvent, args, args_command_state, args_parse_t, args_parse_type, u_char, u_int,
 };
 use ::std::ffi::CString;
 

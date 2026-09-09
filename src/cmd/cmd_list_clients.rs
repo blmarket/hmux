@@ -26,10 +26,8 @@ use crate::format::{
     format_add, format_create_for_client, format_defaults_for_handles, format_expand, format_true,
 };
 use crate::sort::{RustSortCriteria, SortCriteria, sort_get_clients};
-pub use crate::types::{
-    ClientRef, RustCommandEntry, args_parse_t, cmd, cmd_entry_flag, cmd_retval, cmdq_item,
-    format_tree, sort_criteria_t, u_int,
-};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::types::{ClientRef, args_parse_t, format_tree, sort_criteria_t, u_int};
 #[cfg(test)]
 use crate::types::uint64_t;
 use ::core::ffi::{CStr, c_char};

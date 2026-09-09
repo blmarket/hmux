@@ -25,10 +25,10 @@ pub use crate::consts::{
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_WAIT, KEYC_MASK_KEY, KEYC_MASK_MODIFIERS,
     UINT_MAX,
 };
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
 pub use crate::types::{
-    ClientRef, OptionsRef, Overlay, OverlayState, RustCommandEntry, SessionRef, args,
-    args_command_state, args_parse_t, args_parse_type, cmd, cmd_entry_flag, cmd_retval, cmdq_item,
-    key_code, key_event, u_int,
+    ClientRef, OptionsRef, Overlay, OverlayState, SessionRef, args, args_command_state,
+    args_parse_t, args_parse_type, key_code, key_event, u_int,
 };
 #[cfg(test)]
 use crate::types::{CmdqListRef, client, screen_redraw_ctx, window_pane};

@@ -27,6 +27,7 @@
 //! walk. The one test that needs `command-alias` to say something else puts
 //! back exactly what it found rather than a default of its own.
 
+use crate::cmd::{CmdListRef, cmd};
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::pane_geometry::PaneGeometryState;
 use crate::pane_identity::PaneIdentity;

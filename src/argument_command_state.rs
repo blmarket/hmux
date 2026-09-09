@@ -1,6 +1,7 @@
 //! Stable access to a command prepared from parsed arguments.
 
-use crate::types::{ClientRef, CmdListRef, cmd_parse_input, u_int};
+use crate::cmd::CmdListRef;
+use crate::types::{ClientRef, cmd_parse_input, u_int};
 use core::ffi::CStr;
 use std::ffi::CString;
 

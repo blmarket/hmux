@@ -1,3 +1,4 @@
+use crate::cmd::CmdListRef;
 use crate::cmd::cmd_get_alias;
 use crate::cmd::cmd_parse;
 use crate::cmd::find::{cmd_find_from_client, cmd_find_valid_state};
@@ -13,12 +14,12 @@ use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::format::format_true;
 use crate::format::{format_create, format_defaults, format_expand};
 use crate::log::{fatalx, log_debug};
-pub use crate::types::{
-    ArgsValue, ClientRef, CmdListRef, args_value_t, cmd_parse_input, cmd_parse_result,
-    cmd_parse_status, size_t, u_int, wchar_t,
-};
 #[cfg(test)]
 use crate::types::cmd_find_state;
+pub use crate::types::{
+    ArgsValue, ClientRef, args_value_t, cmd_parse_input, cmd_parse_result, cmd_parse_status,
+    size_t, u_int, wchar_t,
+};
 use crate::xmalloc::xasprintf;
 use crate::{CommandParser, RustCommandParser};
 use crate::{UserAccount, UserAccountRecord};

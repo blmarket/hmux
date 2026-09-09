@@ -16,10 +16,11 @@ use crate::job::job_run_for_session;
 use crate::reactor::Timer;
 use crate::server::client_working_directory;
 use crate::status::status_message_for_client;
+pub use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
 pub use crate::types::{
-    __suseconds_t, __time_t, ClientRef, CmdListRef, JobEvent, RustCommandEntry, SessionRef, Stream,
-    TimerHandle, WindowPane, args, args_command_state, args_parse_t, args_parse_type, cmd,
-    cmd_entry_flag, cmd_find_state, cmd_retval, cmdq_item, time_t, timeval, u_char, u_int,
+    __suseconds_t, __time_t, ClientRef, JobEvent, SessionRef, Stream, TimerHandle, WindowPane,
+    args, args_command_state, args_parse_t, args_parse_type, cmd_find_state, time_t, timeval,
+    u_char, u_int,
 };
 #[cfg(test)]
 use crate::types::WindowMode;

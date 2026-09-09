@@ -25,6 +25,6 @@ mod tests {
 
     #[test]
     fn server_command_list_implements_the_aggregate_contract() {
-        assert_command_list::<crate::types::cmd_list>();
+        assert_command_list::<crate::cmd::cmd_list>();
     }
 }

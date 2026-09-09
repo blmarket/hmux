@@ -51,12 +51,13 @@ use crate::tests::test_fixtures::{
     zeroed_client, zeroed_cmdq_item,
 };
 use crate::types::ClientFileRef;
+use crate::cmd::{cmd_entry, cmd_entry_flag, cmd_retval};
 use crate::types::{
-    ClientFileData, ClientFileEvent, WindowMode, args_parse_t, cmd_entry, cmd_entry_flag,
-    cmd_retval, key_code, key_event, menu_item, mouse_event, spawn_context, u_int, window_pane,
-    winlink,
+    ClientFileData, ClientFileEvent, WindowMode, args_parse_t, key_code, key_event, menu_item,
+    mouse_event, spawn_context, u_int, window_pane, winlink,
 };
-use crate::types::{PaneInputRef, SourceFileRef};
+use crate::cmd::SourceFileRef;
+use crate::types::PaneInputRef;
 use crate::window::window_pane_current_mode_mut;
 use crate::window::window_pane_input_data;
 use crate::window::window_pane_set_mode;
@@ -91,7 +92,7 @@ unsafe fn run_file_completion(data: ClientFileData, dead: bool, stream: core::ff
     }
 }
 
-fn failing_command(_cmd: &cmd, _item: &crate::types::cmdq_item) -> cmd_retval {
+fn failing_command(_cmd: &cmd, _item: &crate::cmd::cmdq_item) -> cmd_retval {
     crate::cmd::CMD_RETURN_ERROR
 }
 

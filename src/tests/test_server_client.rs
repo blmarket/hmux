@@ -1,3 +1,4 @@
+use crate::cmd::CmdListRef;
 use super::*;
 use crate::WindowPane;
 use crate::environ::new_environment_box;
