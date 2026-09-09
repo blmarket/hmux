@@ -36,7 +36,7 @@ enum Value<'a> {
 
 /// An owned value array, freed the way the command parser frees the values
 /// it passed in.
-struct Values(Vec<args_value_t>);
+struct Values(Vec<ArgsValue>);
 
 impl Values {
     fn new(values: &[Value<'_>]) -> Values {
@@ -44,14 +44,14 @@ impl Values {
             values
                 .iter()
                 .map(|value| {
-                    let mut new = args_value_t::default();
+                    let mut new = ArgsValue::default();
                     match value {
                         Value::None => {}
                         Value::String(s) => {
-                            new.value = ArgsValue::String((*s).to_owned());
+                            new = ArgsValue::String((*s).to_owned());
                         }
                         Value::Commands(s) => {
-                            new.value = ArgsValue::Commands {
+                            new = ArgsValue::Commands {
                                 cmdlist: Some(cmdlist(s)),
                                 cached: OnceCell::new(),
                             };
@@ -68,7 +68,7 @@ impl Values {
         Values::new(&words.iter().map(|w| Value::String(w)).collect::<Vec<_>>())
     }
 
-    fn as_slice(&self) -> &[args_value_t] {
+    fn as_slice(&self) -> &[ArgsValue] {
         &self.0
     }
 }
@@ -131,10 +131,8 @@ fn parse_spec(spec: &args_parse_t, words: &[&CStr]) -> Result<String, String> {
 }
 
 /// A freshly allocated string value, as `args_set` expects to be given.
-fn string_value(s: &CStr) -> Option<Box<args_value_t>> {
-    Some(Box::new(args_value_t {
-        value: ArgsValue::String(s.to_owned()),
-    }))
+fn string_value(s: &CStr) -> Option<Box<ArgsValue>> {
+    Some(Box::new(ArgsValue::String(s.to_owned())))
 }
 
 #[test]
@@ -380,7 +378,7 @@ fn a_command_list_argument_is_kept_and_printed_in_braces() {
             "{ display-message hello }"
         );
         let value = args_value(&args, 0);
-        let cached = |value: &args_value_t| match &value.value {
+        let cached = |value: &ArgsValue| match value {
             ArgsValue::Commands { cached, .. } => cached.get().is_some(),
             _ => panic!("not a command argument"),
         };
@@ -417,7 +415,7 @@ fn an_argument_of_an_unknown_kind_is_counted_but_left_empty() {
         let args = parse_values(&spec_cb(Some(parse_as_nothing_known)), &mut values).unwrap();
         assert_eq!(args_count(&args), 1);
         assert!(matches!(
-            &args_value(&args, 0).unwrap().value,
+            args_value(&args, 0).unwrap(),
             ArgsValue::None
         ));
         assert_eq!(seen_str(args_string_str(&args, 0)), "");
@@ -491,8 +489,8 @@ fn the_values_of_a_flag_come_back_in_order() {
         args_set(&mut *args, b'a', string_value(c"two"), 0);
         let values = args_value_list(&*args, b'a');
         assert_eq!(values.len(), 2);
-        assert_eq!(values[0].value.string(), c"one");
-        assert_eq!(values[1].value.string(), c"two");
+        assert_eq!(values[0].string(), c"one");
+        assert_eq!(values[1].string(), c"two");
         args_free(Box::from_raw(args));
     }
 }
@@ -501,7 +499,7 @@ fn the_values_of_a_flag_come_back_in_order() {
 fn a_value_of_no_type_is_thrown_away_by_args_set() {
     unsafe {
         let args = Box::into_raw(Box::<RustArguments>::default());
-        let value = Box::new(args_value_t::default());
+        let value = Box::new(ArgsValue::default());
         args_set(&mut *args, b'a', Some(value), 0);
         assert_eq!((*args).argument_flag_count(b'a'), 1);
         assert!(args_value_list(&*args, b'a').is_empty());
@@ -532,7 +530,7 @@ fn the_arguments_are_read_by_index() {
         assert_eq!(seen_str(args_string_str(&args, 0)), "x");
         assert_eq!(seen_str(args_string_str(&args, 1)), "y");
         assert!(args_string_str(&args, 2).is_none());
-        assert_eq!(args_value(&args, 0).unwrap().value.string(), c"x");
+        assert_eq!(args_value(&args, 0).unwrap().string(), c"x");
         assert!(args_value(&args, 2).is_none());
         args_free(args);
     }
@@ -634,8 +632,8 @@ fn a_value_array_is_built_from_a_word_list() {
     let argv = vec![CString::new("one").unwrap(), CString::new("two").unwrap()];
     let values = args_from_vector(&argv);
     assert_eq!(values.len(), 2);
-    assert!(matches!(&values[0].value, ArgsValue::String(s) if s.as_bytes() == b"one"));
-    assert!(matches!(&values[1].value, ArgsValue::String(s) if s.as_bytes() == b"two"));
+    assert!(matches!(&values[0], ArgsValue::String(s) if s.as_bytes() == b"one"));
+    assert!(matches!(&values[1], ArgsValue::String(s) if s.as_bytes() == b"two"));
 }
 
 #[test]
@@ -685,8 +683,8 @@ fn a_number_argument_has_to_be_a_string() {
     let _guard = exclusive();
     unsafe {
         let args = Box::into_raw(Box::<RustArguments>::default());
-        let mut value = Box::new(args_value_t::default());
-        value.value = ArgsValue::Commands {
+        let mut value = Box::new(ArgsValue::default());
+        *value = ArgsValue::Commands {
             cmdlist: Some(cmdlist(c"display-message hello")),
             cached: OnceCell::new(),
         };
@@ -1065,7 +1063,7 @@ fn making_the_commands_at_once_reports_a_parse_error_to_the_queue() {
     }
 }
 
-pub(crate) fn args_free_values(values: &mut [args_value_t]) {
+pub(crate) fn args_free_values(values: &mut [ArgsValue]) {
     for value in values {
         args_free_value(value);
     }
@@ -1075,8 +1073,8 @@ pub(crate) fn args_free(args: Box<RustArguments>) {
     drop(args);
 }
 
-pub(crate) fn args_free_value(value: &mut args_value_t) {
-    value.value = ArgsValue::None;
+pub(crate) fn args_free_value(value: &mut ArgsValue) {
+    *value = ArgsValue::None;
 }
 
 #[test]

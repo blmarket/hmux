@@ -99,7 +99,7 @@ unsafe fn binding_of(args: &RustArguments, count: u_int) -> Result<Binding, CStr
         }
         let value = args_value(args, 1).expect("the binding has a command argument");
         if count == 2
-            && let ArgsValue::Commands { cmdlist, .. } = &value.value
+            && let ArgsValue::Commands { cmdlist, .. } = value
         {
             return Ok(Binding::Shared(cmdlist.clone().unwrap()));
         }

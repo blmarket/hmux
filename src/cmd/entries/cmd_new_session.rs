@@ -589,7 +589,7 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                     {
                                                         env.as_deref_mut()
                                                             .unwrap()
-                                                            .put(av.value.string(), 0);
+                                                            .put(av.string(), 0);
                                                     }
                                                     let Some(env) = env.take() else {
                                                         unreachable!();

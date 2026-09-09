@@ -29,7 +29,7 @@ use crate::args::{args_set, args_string_str};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::types::{ArgsValue, WindowMode, args_parse_t, args_value_t};
+use crate::types::{ArgsValue, WindowMode, args_parse_t};
 use ::core::ffi::c_char;
 use ::std::ffi::CString;
 
@@ -130,9 +130,8 @@ unsafe fn cmd_find_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let pane = target.pane_ref().expect("the command target has a pane");
 
     let text = unsafe { cmd_find_window_filter(args) };
-    let mut filter = Box::new(args_value_t::default());
-    filter.value =
-        ArgsValue::String(CString::new(text).expect("window filter contains no NUL bytes"));
+    let mut filter = Box::new(ArgsValue::default());
+    *filter = ArgsValue::String(CString::new(text).expect("window filter contains no NUL bytes"));
 
     let mut new_args = Box::<RustArguments>::default();
     if args.argument_flag_count(b'Z') != 0 {

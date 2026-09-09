@@ -27,7 +27,7 @@ use core::ffi::c_int;
 pub struct args {
     tree: args_tree,
     count: u_int,
-    values: Vec<args_value_t>,
+    values: Vec<ArgsValue>,
 }
 
 /// Parsed-argument state backed by hmux's transpiled argument structure.
@@ -70,16 +70,14 @@ impl RustArguments {
     pub fn from_strings(values: &[&CStr]) -> Self {
         let mut arguments = Self::default();
         for value in values {
-            arguments.0.values.push(args_value_t {
-                value: ArgsValue::String((*value).to_owned()),
-            });
+            arguments.0.values.push(ArgsValue::String((*value).to_owned()));
             arguments.0.count += 1;
         }
         arguments
     }
 
     /// Returns one positional value.
-    pub fn argument_value(&self, index: u_int) -> Option<&args_value_t> {
+    pub fn argument_value(&self, index: u_int) -> Option<&ArgsValue> {
         self.argument_values().get(index as usize)
     }
 
@@ -93,7 +91,7 @@ impl RustArguments {
     pub fn set_argument_flag(
         &mut self,
         flag: u_char,
-        value: Option<Box<args_value_t>>,
+        value: Option<Box<ArgsValue>>,
         flags: c_int,
     ) {
         unsafe { args_set(self, flag, value, flags) }
@@ -101,7 +99,7 @@ impl RustArguments {
 
     pub fn argument_flag_string(&self, flag: u_char) -> Option<&CStr> {
         let value = self.0.tree.get(&flag)?.values.last()?;
-        match &value.value {
+        match value.as_ref() {
             ArgsValue::String(string) => Some(string.as_c_str()),
             ArgsValue::None | ArgsValue::Commands { .. } => None,
         }
@@ -120,7 +118,7 @@ impl RustArguments {
         self.0.count
     }
 
-    pub fn argument_values(&self) -> &[args_value_t] {
+    pub fn argument_values(&self) -> &[ArgsValue] {
         &self.0.values
     }
 
@@ -128,7 +126,7 @@ impl RustArguments {
         let Some(argument) = self.0.values.get_mut(index as usize) else {
             return false;
         };
-        argument.value = ArgsValue::String(value.to_owned());
+        *argument = ArgsValue::String(value.to_owned());
         true
     }
 
@@ -137,7 +135,7 @@ impl RustArguments {
             .map(|value| unsafe { args_value_as_string(value) })
     }
 
-    pub fn argument_flag_values(&self, flag: u_char) -> Vec<&args_value_t> {
+    pub fn argument_flag_values(&self, flag: u_char) -> Vec<&ArgsValue> {
         match self.0.tree.get(&flag) {
             Some(entry) => entry.values.iter().map(|value| &**value).collect(),
             None => Vec::new(),
@@ -157,7 +155,7 @@ impl RustArguments {
                     continue;
                 }
                 for value in entry.values.iter() {
-                    let mut new_value = Box::new(args_value_t::default());
+                    let mut new_value = Box::new(ArgsValue::default());
                     args_copy_copy_value(&mut new_value, value, argv);
                     args_set(&mut new_args, entry.flag, Some(new_value), 0);
                 }
@@ -168,7 +166,7 @@ impl RustArguments {
             new_args.0.count = self.0.count;
             new_args.0.values.reserve(self.0.values.len());
             for value in self.0.values.iter() {
-                let mut new_value = args_value_t::default();
+                let mut new_value = ArgsValue::default();
                 args_copy_copy_value(&mut new_value, value, argv);
                 new_args.0.values.push(new_value);
             }
@@ -181,7 +179,7 @@ impl RustArguments {
         unsafe {
             let mut argv = Vec::new();
             for value in self.0.values.iter() {
-                match &value.value {
+                match value {
                     ArgsValue::String(string) => argv.push(string.clone()),
                     ArgsValue::Commands { cmdlist, .. } => {
                         let s = cmdlist
@@ -202,7 +200,7 @@ impl crate::Arguments for RustArguments {
         RustArguments::argument_flag_count(self, flag)
     }
 
-    fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<args_value_t>>, flags: c_int) {
+    fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<ArgsValue>>, flags: c_int) {
         RustArguments::set_argument_flag(self, flag, value, flags)
     }
 
@@ -218,7 +216,7 @@ impl crate::Arguments for RustArguments {
         RustArguments::argument_count(self)
     }
 
-    fn argument_values(&self) -> &[args_value_t] {
+    fn argument_values(&self) -> &[ArgsValue] {
         RustArguments::argument_values(self)
     }
 
@@ -230,7 +228,7 @@ impl crate::Arguments for RustArguments {
         RustArguments::argument_string(self, index)
     }
 
-    fn argument_flag_values(&self, flag: u_char) -> Vec<&args_value_t> {
+    fn argument_flag_values(&self, flag: u_char) -> Vec<&ArgsValue> {
         RustArguments::argument_flag_values(self, flag)
     }
 }
@@ -240,7 +238,7 @@ impl crate::Arguments for args {
         RustArguments::argument_flag_count(RustArguments::from_ref(self), flag)
     }
 
-    fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<args_value_t>>, flags: c_int) {
+    fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<ArgsValue>>, flags: c_int) {
         RustArguments::set_argument_flag(RustArguments::from_mut(self), flag, value, flags)
     }
 
@@ -256,7 +254,7 @@ impl crate::Arguments for args {
         RustArguments::argument_count(RustArguments::from_ref(self))
     }
 
-    fn argument_values(&self) -> &[args_value_t] {
+    fn argument_values(&self) -> &[ArgsValue] {
         RustArguments::argument_values(RustArguments::from_ref(self))
     }
 
@@ -268,7 +266,7 @@ impl crate::Arguments for args {
         RustArguments::argument_string(RustArguments::from_ref(self), index)
     }
 
-    fn argument_flag_values(&self, flag: u_char) -> Vec<&args_value_t> {
+    fn argument_flag_values(&self, flag: u_char) -> Vec<&ArgsValue> {
         RustArguments::argument_flag_values(RustArguments::from_ref(self), flag)
     }
 }
@@ -340,7 +338,7 @@ pub use crate::consts::{
 
 pub const ARGS_ENTRY_OPTIONAL_VALUE: core::ffi::c_int = 0x1 as core::ffi::c_int;
 
-fn value_at(values: &[args_value_t], i: usize) -> Option<&args_value_t> {
+fn value_at(values: &[ArgsValue], i: usize) -> Option<&ArgsValue> {
     values.get(i)
 }
 
@@ -361,8 +359,8 @@ fn is_flag_byte(b: u8) -> bool {
     unsafe { libc::isalnum(b.into()) != 0 }
 }
 
-unsafe fn args_copy_value(to: &mut args_value_t, from: &args_value_t) {
-    to.value = match &from.value {
+unsafe fn args_copy_value(to: &mut ArgsValue, from: &ArgsValue) {
+    *to = match from {
         ArgsValue::Commands { cmdlist, .. } => ArgsValue::Commands {
             cmdlist: cmdlist.clone(),
             cached: std::cell::OnceCell::new(),
@@ -380,9 +378,9 @@ fn args_value_type_to_string(value: &ArgsValue) -> &'static CStr {
     }
 }
 
-unsafe fn args_value_as_string(value: &args_value_t) -> &CStr {
+unsafe fn args_value_as_string(value: &ArgsValue) -> &CStr {
     unsafe {
-        match &value.value {
+        match value {
             ArgsValue::None => c"",
             ArgsValue::Commands { cmdlist, cached } => cached
                 .get_or_init(|| {
@@ -427,7 +425,7 @@ enum Flags {
 /// Takes the argument of a flag from the rest of its word, or from the word
 /// after it when the flag ends the word.
 unsafe fn args_parse_flag_argument(
-    values: &[args_value_t],
+    values: &[ArgsValue],
     i: &mut usize,
     args: &mut RustArguments,
     cause: &mut Option<CString>,
@@ -436,12 +434,12 @@ unsafe fn args_parse_flag_argument(
     optional: bool,
 ) -> Flags {
     unsafe {
-        let mut new = Box::new(args_value_t::default());
+        let mut new = Box::new(ArgsValue::default());
         if !rest.is_empty() {
-            new.value = ArgsValue::String(rest.to_owned());
+            *new = ArgsValue::String(rest.to_owned());
         } else {
             let argument = value_at(values, *i);
-            if argument.is_some_and(|argument| !matches!(&argument.value, ArgsValue::String(_))) {
+            if argument.is_some_and(|argument| !matches!(argument, ArgsValue::String(_))) {
                 *cause = Some(xasprintf(
                     c"-%c argument must be a string",
                     fmt_args![flag as core::ffi::c_int],
@@ -488,14 +486,14 @@ unsafe fn args_parse_flag_argument(
 /// as one `-` followed by flag letters.
 unsafe fn args_parse_flags(
     parse: &args_parse_t,
-    values: &[args_value_t],
+    values: &[ArgsValue],
     i: &mut usize,
     args: &mut RustArguments,
     cause: &mut Option<CString>,
 ) -> Flags {
     unsafe {
         let value = &values[*i];
-        let ArgsValue::String(string) = &value.value else {
+        let ArgsValue::String(string) = value else {
             return Flags::Arguments;
         };
         log_debug(
@@ -557,7 +555,7 @@ unsafe fn args_parse_flags(
 
 pub unsafe fn args_parse(
     parse: &args_parse_t,
-    values: &[args_value_t],
+    values: &[ArgsValue],
     cause: &mut Option<CString>,
 ) -> Option<Box<RustArguments>> {
     unsafe {
@@ -585,7 +583,7 @@ pub unsafe fn args_parse(
                     c"args_parse".as_ptr(),
                     i,
                     args_value_as_string(value).as_ptr(),
-                    args_value_type_to_string(&value.value)
+                    args_value_type_to_string(value)
                 ],
             );
             let type_0 = match parse.cb {
@@ -598,13 +596,13 @@ pub unsafe fn args_parse(
                 }
                 None => ARGS_PARSE_STRING,
             };
-            args.0.values.push(args_value_t::default());
+            args.0.values.push(ArgsValue::default());
             let new = args.0.values.last_mut().unwrap();
             args.0.count += 1;
             match type_0 {
                 ARGS_PARSE_INVALID => fatalx(c"unexpected argument type", fmt_args![]),
                 ARGS_PARSE_STRING => {
-                    if !matches!(&value.value, ArgsValue::String(_)) {
+                    if !matches!(value, ArgsValue::String(_)) {
                         *cause = Some(xasprintf(
                             c"argument %u must be \"string\"",
                             fmt_args![args.0.count],
@@ -615,7 +613,7 @@ pub unsafe fn args_parse(
                 }
                 ARGS_PARSE_COMMANDS_OR_STRING => args_copy_value(new, value),
                 ARGS_PARSE_COMMANDS => {
-                    if !matches!(&value.value, ArgsValue::Commands { .. }) {
+                    if !matches!(value, ArgsValue::Commands { .. }) {
                         *cause = Some(xasprintf(
                             c"argument %u must be { commands }",
                             fmt_args![args.0.count],
@@ -647,9 +645,9 @@ pub unsafe fn args_parse(
 }
 
 /// Copies a value, replacing `%1` to `%9` in a string with the words given.
-unsafe fn args_copy_copy_value(to: &mut args_value_t, from: &args_value_t, argv: &[CString]) {
+unsafe fn args_copy_copy_value(to: &mut ArgsValue, from: &ArgsValue, argv: &[CString]) {
     unsafe {
-        to.value = match &from.value {
+        *to = match from {
             ArgsValue::String(string) => {
                 let mut expanded = string.clone();
                 for (i, arg) in argv.iter().enumerate() {
@@ -666,11 +664,9 @@ unsafe fn args_copy_copy_value(to: &mut args_value_t, from: &args_value_t, argv:
     }
 }
 
-pub fn args_from_vector(argv: &[CString]) -> Vec<args_value_t> {
+pub fn args_from_vector(argv: &[CString]) -> Vec<ArgsValue> {
     argv.iter()
-        .map(|arg| args_value_t {
-            value: ArgsValue::String(arg.clone()),
-        })
+        .map(|arg| ArgsValue::String(arg.clone()))
         .collect()
 }
 
@@ -681,12 +677,12 @@ fn copy_of(text: &[u8]) -> CString {
 
 /// Appends one value to the printed arguments, separated by a space from
 /// whatever has been printed already.
-unsafe fn args_print_add_value(out: &mut Vec<u8>, value: &args_value_t) {
+unsafe fn args_print_add_value(out: &mut Vec<u8>, value: &ArgsValue) {
     unsafe {
         if !out.is_empty() {
             out.push(b' ');
         }
-        match &value.value {
+        match value {
             ArgsValue::Commands { cmdlist, .. } => {
                 let expanded = cmdlist
                     .as_ref()
@@ -814,7 +810,7 @@ pub(crate) fn args_escape_impl(s: &CStr) -> CString {
 pub unsafe fn args_set(
     args: &mut RustArguments,
     flag: u_char,
-    value: Option<Box<args_value_t>>,
+    value: Option<Box<ArgsValue>>,
     flags: core::ffi::c_int,
 ) {
     let entry = args.0.tree.entry(flag).or_insert_with(|| {
@@ -829,7 +825,7 @@ pub unsafe fn args_set(
     let Some(value) = value else {
         return;
     };
-    if matches!(&value.value, ArgsValue::None) {
+    if matches!(*value, ArgsValue::None) {
         return;
     }
     entry.values.push(value);
@@ -851,7 +847,7 @@ pub fn args_count(args: &RustArguments) -> u_int {
     args.argument_count()
 }
 
-pub fn args_value(args: &RustArguments, idx: u_int) -> Option<&args_value_t> {
+pub fn args_value(args: &RustArguments, idx: u_int) -> Option<&ArgsValue> {
     args.argument_value(idx)
 }
 
@@ -906,11 +902,11 @@ pub fn args_make_commands_prepare(
     });
     let cmd = match args_value(args, idx) {
         Some(value) => {
-            if let ArgsValue::Commands { cmdlist, .. } = &value.value {
+            if let ArgsValue::Commands { cmdlist, .. } = value {
                 state.cmdlist = cmdlist.clone();
                 return state;
             }
-            let ArgsValue::String(string) = &value.value else {
+            let ArgsValue::String(string) = value else {
                 unsafe { fatalx(c"unexpected argument type", fmt_args![]) };
             };
             Some(string.as_c_str())
@@ -1006,7 +1002,7 @@ pub unsafe fn args_make_commands_get_command(state: &args_command_state) -> CStr
 }
 
 /// Every value given for a flag, in the order they were given.
-pub fn args_value_list(args: &RustArguments, flag: u_char) -> Vec<&args_value_t> {
+pub fn args_value_list(args: &RustArguments, flag: u_char) -> Vec<&ArgsValue> {
     args.argument_flag_values(flag)
 }
 
@@ -1083,7 +1079,7 @@ pub unsafe fn args_percentage(
     let Some(value) = entry.values.last() else {
         return no_number(cause, c"empty");
     };
-    let ArgsValue::String(string) = &value.value else {
+    let ArgsValue::String(string) = value.as_ref() else {
         return no_number(cause, c"missing");
     };
     args_string_percentage(string.as_c_str(), minval, maxval, curval, cause)
@@ -1211,7 +1207,7 @@ pub unsafe fn args_percentage_and_expand(
         let Some(value) = entry.values.last() else {
             return no_number(cause, c"empty");
         };
-        let ArgsValue::String(string) = &value.value else {
+        let ArgsValue::String(string) = value.as_ref() else {
             return no_number(cause, c"missing");
         };
         args_string_percentage_and_expand(string.as_c_str(), minval, maxval, curval, item, cause)

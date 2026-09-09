@@ -322,7 +322,7 @@ unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     }) != 0 {
         if unsafe { tc.is_control() } {
             for av in args_value_list(args, 'A' as i32 as u_char) {
-                unsafe { cmd_refresh_client_update_offset(&mut tc, av.value.string()) };
+                unsafe { cmd_refresh_client_update_offset(&mut tc, av.string()) };
             }
             return CMD_RETURN_NORMAL;
         }
@@ -332,7 +332,7 @@ unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     }) != 0 {
         if unsafe { tc.is_control() } {
             for av in args_value_list(args, 'B' as i32 as u_char) {
-                unsafe { cmd_refresh_client_update_subscription(&mut tc, av.value.string()) };
+                unsafe { cmd_refresh_client_update_subscription(&mut tc, av.string()) };
             }
             return CMD_RETURN_NORMAL;
         }

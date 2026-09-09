@@ -61,11 +61,9 @@ unsafe fn parse_words(
     parse_flags: c_int,
 ) -> Result<Box<cmd>, String> {
     unsafe {
-        let values: Vec<args_value_t> = words
+        let values: Vec<ArgsValue> = words
             .iter()
-            .map(|word| args_value_t {
-                value: ArgsValue::String((*word).to_owned()),
-            })
+            .map(|word| ArgsValue::String((*word).to_owned()))
             .collect();
         cmd_parse(&values, file, line, parse_flags).map_err(|cause| cause.into_string().unwrap())
     }
@@ -267,11 +265,9 @@ fn parsing_refuses_a_row_of_values_that_names_no_command() {
 
         // A first value that is a brace-enclosed command list rather than a
         // word is turned down the same way, without being looked at.
-        let value = args_value_t {
-            value: ArgsValue::Commands {
-                cmdlist: None,
-                cached: std::cell::OnceCell::new(),
-            },
+        let value = ArgsValue::Commands {
+            cmdlist: None,
+            cached: std::cell::OnceCell::new(),
         };
         let cause = cmd_parse(&[value], None, 0, 0)
             .err()

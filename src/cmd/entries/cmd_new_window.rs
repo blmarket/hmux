@@ -99,7 +99,7 @@ unsafe fn select_found_window(session: &SessionRef, idx: c_int, c: Option<&Clien
 fn spawn_environ(args: &RustArguments) -> Box<RustEnvironment> {
     let mut env = new_environment_box();
     for av in args_value_list(args, b'e') {
-        env.put(av.value.string(), 0);
+        env.put(av.string(), 0);
     }
     env
 }

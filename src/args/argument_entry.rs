@@ -1,6 +1,6 @@
 //! Stable access to one parsed argument flag entry.
 
-use crate::types::{args_value_t, u_char, u_int};
+use crate::types::{ArgsValue, u_char, u_int};
 use core::ffi::c_int;
 
 /// One flag, its occurrences, and the values attached to those occurrences.
@@ -23,10 +23,10 @@ pub trait ArgumentEntry {
     fn argument_entry_value_count(&self) -> usize;
 
     /// Returns one retained value in insertion order.
-    fn argument_entry_value(&self, index: usize) -> Option<&args_value_t>;
+    fn argument_entry_value(&self, index: usize) -> Option<&ArgsValue>;
 
     /// Records one occurrence and retains its value when it is not `NONE`.
-    fn add_argument_occurrence(&mut self, value: Option<Box<args_value_t>>);
+    fn add_argument_occurrence(&mut self, value: Option<Box<ArgsValue>>);
 }
 
 impl ArgumentEntry for crate::types::args_entry {
@@ -50,14 +50,12 @@ impl ArgumentEntry for crate::types::args_entry {
     fn argument_entry_value_count(&self) -> usize {
         self.values.len()
     }
-    fn argument_entry_value(&self, index: usize) -> Option<&args_value_t> {
+    fn argument_entry_value(&self, index: usize) -> Option<&ArgsValue> {
         self.values.get(index).map(Box::as_ref)
     }
-    fn add_argument_occurrence(&mut self, value: Option<Box<args_value_t>>) {
+    fn add_argument_occurrence(&mut self, value: Option<Box<ArgsValue>>) {
         self.count += 1;
-        if let Some(value) =
-            value.filter(|value| !matches!(value.value, crate::types::ArgsValue::None))
-        {
+        if let Some(value) = value.filter(|value| !matches!(**value, ArgsValue::None)) {
             self.values.push(value);
         }
     }

@@ -168,7 +168,7 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         sc.environ
             .as_deref_mut()
             .expect("the spawn environment is initialized")
-            .put(av.value.string(), 0);
+            .put(av.string(), 0);
     }
     sc.idx = -(1 as core::ffi::c_int);
     sc.cwd = {

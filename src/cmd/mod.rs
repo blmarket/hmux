@@ -184,8 +184,8 @@ pub use crate::consts::{
 };
 use crate::tmux::global_options;
 pub use crate::types::{
-    ArgsValue, OptionsRef, RustWindowPaneWeak, SessionRef, WindowPane, WindowRef, args,
-    args_value_t, mouse_event, u_int,
+    ArgsValue, OptionsRef, RustWindowPaneWeak, SessionRef, WindowPane, WindowRef, args, mouse_event,
+    u_int,
 };
 use crate::window::WinlinkRef;
 use crate::xmalloc::xasprintf;
@@ -540,16 +540,16 @@ pub fn cmd_find(name: &CStr) -> Result<&'static RustCommandEntry, CString> {
 }
 
 pub unsafe fn cmd_parse(
-    values: &[args_value_t],
+    values: &[ArgsValue],
     file: Option<&CStr>,
     line: u_int,
     parse_flags: c_int,
 ) -> Result<Box<cmd>, CString> {
     unsafe {
-        if values.is_empty() || !matches!(&values[0].value, ArgsValue::String(_)) {
+        if values.is_empty() || !matches!(&values[0], ArgsValue::String(_)) {
             return Err(xasprintf(c"no command", fmt_args![]));
         }
-        let entry = cmd_find(values[0].value.string())?;
+        let entry = cmd_find(values[0].string())?;
         let mut error: Option<CString> = None;
         let Some(args) = args_parse(&entry.argument_parse(), values, &mut error) else {
             return Err(match error {

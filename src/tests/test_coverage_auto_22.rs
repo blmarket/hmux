@@ -223,8 +223,8 @@ fn args_has_get_and_print_roundtrip() {
         let printed1 = args_print(&*args).to_string_lossy().into_owned();
         assert_eq!(printed1, "-a");
         // set flag -b with string value
-        let mut v = Box::new(crate::types::args_value_t::default());
-        v.value = crate::types::ArgsValue::String(CString::new("val").unwrap());
+        let mut v = Box::new(crate::types::ArgsValue::default());
+        *v = crate::types::ArgsValue::String(CString::new("val").unwrap());
         args_set(&mut *args, b'b', Some(v), 0);
         assert_eq!((*args).argument_flag_count(b'b'), 1);
         assert_eq!(seen_str(args_get_str(&*args, b'b')), "val");

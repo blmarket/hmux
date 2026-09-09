@@ -1113,7 +1113,7 @@ impl CmdqItemRef {
                 i = 0 as u_int;
                 for av in arguments.argument_flag_values(flag as u_char) {
                     let tmp = xasprintf(c"hook_flag_%c_%d", fmt_args![flag as core::ffi::c_int, i]);
-                    new_state.add_format(&tmp, c"%s", fmt_args![av.value.string()]);
+                    new_state.add_format(&tmp, c"%s", fmt_args![av.string()]);
                     i = i.wrapping_add(1);
                 }
             }

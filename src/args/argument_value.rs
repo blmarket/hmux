@@ -59,9 +59,9 @@ pub trait ArgumentValue {
     }
 }
 
-impl ArgumentValue for crate::types::args_value_t {
+impl ArgumentValue for crate::types::ArgsValue {
     fn argument_value_kind(&self) -> ArgumentValueKind {
-        match self.value {
+        match self {
             crate::types::ArgsValue::None => ArgumentValueKind::None,
             crate::types::ArgsValue::String(_) => ArgumentValueKind::String,
             crate::types::ArgsValue::Commands { .. } => ArgumentValueKind::Commands,
@@ -69,21 +69,21 @@ impl ArgumentValue for crate::types::args_value_t {
     }
 
     fn argument_string_value(&self) -> Option<&CStr> {
-        match &self.value {
+        match self {
             crate::types::ArgsValue::String(value) => Some(value),
             crate::types::ArgsValue::None | crate::types::ArgsValue::Commands { .. } => None,
         }
     }
 
     fn argument_commands(&self) -> Option<&CmdListRef> {
-        match &self.value {
+        match self {
             crate::types::ArgsValue::Commands { cmdlist, .. } => cmdlist.as_ref(),
             crate::types::ArgsValue::None | crate::types::ArgsValue::String(_) => None,
         }
     }
 
     fn argument_value_string(&self) -> &CStr {
-        match &self.value {
+        match self {
             crate::types::ArgsValue::None => c"",
             crate::types::ArgsValue::String(value) => value,
             crate::types::ArgsValue::Commands { cmdlist, cached } => cached
@@ -97,15 +97,15 @@ impl ArgumentValue for crate::types::args_value_t {
     }
 
     fn clear_argument_value(&mut self) {
-        self.value = crate::types::ArgsValue::None;
+        *self = crate::types::ArgsValue::None;
     }
 
     fn set_argument_string_value(&mut self, value: CString) {
-        self.value = crate::types::ArgsValue::String(value);
+        *self = crate::types::ArgsValue::String(value);
     }
 
     fn set_argument_commands(&mut self, commands: Option<CmdListRef>) {
-        self.value = crate::types::ArgsValue::Commands {
+        *self = crate::types::ArgsValue::Commands {
             cmdlist: commands,
             cached: std::cell::OnceCell::new(),
         };
@@ -115,11 +115,11 @@ impl ArgumentValue for crate::types::args_value_t {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::args_value_t;
+    use crate::types::ArgsValue;
 
     #[test]
     fn string_values_can_be_replaced_and_cleared() {
-        let mut value = args_value_t::from_argument_string(c"one".to_owned());
+        let mut value = ArgsValue::from_argument_string(c"one".to_owned());
         assert_eq!(value.argument_value_kind(), ArgumentValueKind::String);
         assert_eq!(value.argument_string_value(), Some(c"one"));
         value.set_argument_string_value(c"two".to_owned());

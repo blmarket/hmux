@@ -757,7 +757,7 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                             }) >= 1 as core::ffi::c_int {
                                 let mut e = new_environment_box();
                                 for av in args_value_list(args, 'e' as i32 as u_char) {
-                                    e.put(av.value.string(), 0);
+                                    e.put(av.string(), 0);
                                 }
                                 env = Some(e);
                             }

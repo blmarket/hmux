@@ -4,7 +4,7 @@ use crate::cmd::{
     cmd_parse_from_arguments_impl, cmd_parse_from_buffer_impl, cmd_parse_from_file_impl,
     cmd_parse_from_string_impl,
 };
-use crate::types::{args_value_t, cmd_parse_input, cmd_parse_result};
+use crate::types::{ArgsValue, cmd_parse_input, cmd_parse_result};
 use core::ffi::CStr;
 
 /// Parses command language into executable command lists.
@@ -60,7 +60,7 @@ pub struct RustCommandParser;
 impl CommandParser for RustCommandParser {
     type Input = cmd_parse_input;
     type Result = cmd_parse_result;
-    type Argument = args_value_t;
+    type Argument = ArgsValue;
 
     unsafe fn parse_file(&self, file: Vec<u8>, input: Option<&mut Self::Input>) -> Self::Result {
         unsafe { cmd_parse_from_file_impl(file, input) }
@@ -116,9 +116,7 @@ mod tests {
                 &parser.parse_file(b"list-buffers\nlist-sessions\n".to_vec(), None),
                 2,
             );
-            let arguments = [args_value_t {
-                value: ArgsValue::String(c"list-buffers".to_owned()),
-            }];
+            let arguments = [ArgsValue::String(c"list-buffers".to_owned())];
             succeeds(&parser.parse_arguments(&arguments, None), 1);
         }
     }

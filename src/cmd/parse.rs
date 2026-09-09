@@ -17,8 +17,8 @@ use crate::log::{fatalx, log_debug};
 #[cfg(test)]
 use crate::types::cmd_find_state;
 pub use crate::types::{
-    ArgsValue, ClientRef, args_value_t, cmd_parse_input, cmd_parse_result, cmd_parse_status,
-    size_t, u_int, wchar_t,
+    ArgsValue, ClientRef, cmd_parse_input, cmd_parse_result, cmd_parse_status, size_t, u_int,
+    wchar_t,
 };
 use crate::xmalloc::xasprintf;
 use crate::{CommandParser, RustCommandParser};
@@ -587,18 +587,18 @@ unsafe fn cmd_parse_build_command(
 ) {
     unsafe {
         let mut current_block: u64;
-        let mut values = Vec::<args_value_t>::new();
+        let mut values = Vec::<ArgsValue>::new();
         *pr = cmd_parse_result::default();
         if cmd_parse_expand_alias(cmd, pi, pr) != 0 {
             return;
         }
         current_block = 5143058163439228106;
         for arg in argument_list(&mut cmd.arguments) {
-            values.push(args_value_t::default());
+            values.push(ArgsValue::default());
             let value = values.last_mut().unwrap();
             match arg.type_0 {
                 CMD_PARSE_STRING => {
-                    value.value = ArgsValue::String(arg.string.as_ref().unwrap().clone());
+                    *value = ArgsValue::String(arg.string.as_ref().unwrap().clone());
                 }
                 CMD_PARSE_COMMANDS => {
                     let commands = arg
@@ -611,13 +611,13 @@ unsafe fn cmd_parse_build_command(
                         current_block = 689484554684886290;
                         break;
                     }
-                    value.value = ArgsValue::Commands {
+                    *value = ArgsValue::Commands {
                         cmdlist: pr.cmdlist.clone(),
                         cached: std::cell::OnceCell::new(),
                     };
                 }
                 CMD_PARSE_PARSED_COMMANDS => {
-                    value.value = ArgsValue::Commands {
+                    *value = ArgsValue::Commands {
                         cmdlist: arg.cmdlist.clone(),
                         cached: std::cell::OnceCell::new(),
                     };
@@ -767,7 +767,7 @@ pub(crate) unsafe fn cmd_parse_from_buffer_impl(
     }
 }
 pub(crate) unsafe fn cmd_parse_from_arguments_impl(
-    values: &[args_value_t],
+    values: &[ArgsValue],
     pi: Option<&mut cmd_parse_input>,
 ) -> cmd_parse_result {
     unsafe {
@@ -780,8 +780,8 @@ pub(crate) unsafe fn cmd_parse_from_arguments_impl(
         cmd = cmd_parse_new_command(pi.line);
         for val in values {
             end = 0 as core::ffi::c_int;
-            if matches!(&val.value, ArgsValue::String(_)) {
-                let mut copy = val.value.string().to_bytes().to_vec();
+            if matches!(val, ArgsValue::String(_)) {
+                let mut copy = val.string().to_bytes().to_vec();
                 let mut size = copy.len();
                 if size != 0 && copy[size - 1] as core::ffi::c_int == ';' as i32 {
                     size -= 1;
@@ -801,7 +801,7 @@ pub(crate) unsafe fn cmd_parse_from_arguments_impl(
                 } else {
                     drop(copy);
                 }
-            } else if let ArgsValue::Commands { cmdlist, .. } = &val.value {
+            } else if let ArgsValue::Commands { cmdlist, .. } = val {
                 let mut arg = cmd_parse_new_argument();
                 arg.type_0 = CMD_PARSE_PARSED_COMMANDS;
                 arg.cmdlist = cmdlist.clone();
@@ -846,7 +846,7 @@ pub unsafe fn cmd_parse_from_string(
 }
 
 pub unsafe fn cmd_parse_from_arguments(
-    arguments: &[args_value_t],
+    arguments: &[ArgsValue],
     input: Option<&mut cmd_parse_input>,
 ) -> cmd_parse_result {
     unsafe { RustCommandParser.parse_arguments(arguments, input) }
