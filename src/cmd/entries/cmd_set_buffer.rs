@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_get_str, args_has, args_string_str};
+use crate::args::{args_has, args_string_str};
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -67,7 +67,7 @@ pub(crate) static cmd_delete_buffer_entry: RustCommandEntry = {
 unsafe fn cmd_set_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args: &RustArguments = cmd_get_args(self_0);
     let mut tc = item.target_client();
-    let mut bufname = args_get_str(args, b'b').map(CStr::to_owned);
+    let mut bufname = args.argument_flag_string(b'b').map(CStr::to_owned);
     let mut bufdata: Vec<u8> = Vec::new();
     let mut existing = bufname.as_deref().and_then(|name| {
         with_paste_buffers(|buffers| {
@@ -111,7 +111,7 @@ unsafe fn cmd_set_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             }
             return CMD_RETURN_ERROR;
         };
-        let new_name = args_get_str(args, b'n').expect("-n has a value");
+        let new_name = args.argument_flag_string(b'n').expect("-n has a value");
         if let Err(error) =
             with_paste_buffers_mut(|buffers| buffers.rename(old_name.as_c_str(), new_name))
         {

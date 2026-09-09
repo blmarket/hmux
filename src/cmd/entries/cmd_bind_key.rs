@@ -14,7 +14,7 @@
 //! nothing here reaches into those trees.
 
 use crate::args::RustArguments;
-use crate::args::{args_get_str, args_has, args_string_str, args_value};
+use crate::args::{args_has, args_string_str, args_value};
 use crate::cmd::cmd_get_args;
 use crate::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 
@@ -80,7 +80,7 @@ impl Binding {
 
 /// The key table the binding goes into.
 fn table_name(args: &RustArguments) -> &CStr {
-    if let Some(name) = args_get_str(args, b'T') {
+    if let Some(name) = args.argument_flag_string(b'T') {
         name
     } else if args_has(args, b'n') != 0 {
         c"root"
@@ -128,7 +128,7 @@ fn cmd_bind_key_args_parse(
 
 unsafe fn cmd_bind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
-    let note = args_get_str(args, b'N');
+    let note = args.argument_flag_string(b'N');
     let count = args.argument_count();
 
     let keyname = unsafe { args_string_str(args, 0).expect("argument count checked") };

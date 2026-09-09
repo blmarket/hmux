@@ -1,5 +1,4 @@
 use crate::args::RustArguments;
-use crate::args::args_get_str;
 use crate::args::{args_has, args_to_vector, args_value_list};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item_weak_of;
@@ -8,12 +7,12 @@ use crate::environ::EnvironmentStore;
 use crate::environ::new_environment_box;
 use crate::fmt_args;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, SPAWN_KILL, SPAWN_RESPAWN,
 };
 use crate::spawn::spawn_window;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{ClientRef, args_parse_t, spawn_context, u_char};
 use ::std::ffi::CString;
 
@@ -60,7 +59,10 @@ unsafe fn cmd_respawn_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
             .put(av.value.string(), 0);
     }
     sc.idx = -(1 as core::ffi::c_int);
-    sc.cwd = args_get_str(args, 'c' as i32 as u_char);
+    sc.cwd = {
+        let flag = 'c' as i32 as u_char;
+        args.argument_flag_string(flag)
+    };
     sc.flags = SPAWN_RESPAWN;
     if args_has(args, 'k' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_KILL;

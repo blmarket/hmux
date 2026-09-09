@@ -1,4 +1,4 @@
-use crate::args::{args_get_str, args_has};
+use crate::args::args_has;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -6,13 +6,13 @@ use crate::format::format_single_from_target;
 
 use crate::server::client_walk;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CLIENT_ACTIVEPANE, CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
 #[cfg(test)]
 use crate::tty::tty_window_bigger;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{OptionsRef, WindowRef, args_parse_t};
 
 pub(crate) static cmd_select_pane_entry: RustCommandEntry = {
@@ -150,7 +150,7 @@ unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
         return CMD_RETURN_NORMAL;
     }
-    if let Some(style) = args_get_str(args, b'P') {
+    if let Some(style) = args.argument_flag_string(b'P') {
         unsafe { pane.set_window_style(style) };
     }
     if args_has(args, b'g') != 0 {
@@ -190,7 +190,7 @@ unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { window.set_pane_input_enabled(&pane, false) };
         return CMD_RETURN_NORMAL;
     }
-    if let Some(given) = args_get_str(args, b'T') {
+    if let Some(given) = args.argument_flag_string(b'T') {
         let title = unsafe { format_single_from_target(item, given) };
         let Some(changed) = (unsafe { pane.set_title(&title) }) else {
             return CMD_RETURN_NORMAL;
@@ -236,13 +236,12 @@ unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
     let current = current_state_ref.current_snapshot();
     unsafe {
-        (crate::cmd::cmdq_item_ref_of(item).expect("the command has an owner"))
-            .insert_session_hook(
-                Some(&session),
-                Some(&current),
-                c"after-select-pane",
-                fmt_args![],
-            )
+        (crate::cmd::cmdq_item_ref_of(item).expect("the command has an owner")).insert_session_hook(
+            Some(&session),
+            Some(&current),
+            c"after-select-pane",
+            fmt_args![],
+        )
     };
     unsafe { cmd_select_pane_redraw(&window) };
     if unsafe { window.pop_zoom() != 0 } {

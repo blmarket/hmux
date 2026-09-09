@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_get_str, args_has, args_string_str, args_value_list};
+use crate::args::{args_has, args_string_str, args_value_list};
 use crate::cmd::cmd_get_args;
 
 use crate::compat::strtonum;
@@ -85,7 +85,10 @@ unsafe fn cmd_refresh_client_control_client_size(self_0: &cmd, item: &cmdq_item)
             .target_client()
             .expect("the command has a target client");
 
-        let size = args_get_str(args, 'C' as i32 as u_char);
+        let size = {
+            let flag = 'C' as i32 as u_char;
+            args.argument_flag_string(flag)
+        };
         // sscanf is a C ABI boundary: it wants the bytes, not the borrow.
         let size = size.map_or(core::ptr::null(), CStr::as_ptr);
         let mut w: u_int = 0;
@@ -256,16 +259,25 @@ unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'F' as i32 as u_char) != 0
-        && let Some(flags) = args_get_str(args, 'F' as i32 as u_char)
+        && let Some(flags) = {
+            let flag = 'F' as i32 as u_char;
+            args.argument_flag_string(flag)
+        }
     {
         unsafe { tc.apply_flags(flags) };
     }
     if args_has(args, 'f' as i32 as u_char) != 0
-        && let Some(flags) = args_get_str(args, 'f' as i32 as u_char)
+        && let Some(flags) = {
+            let flag = 'f' as i32 as u_char;
+            args.argument_flag_string(flag)
+        }
     {
         unsafe { tc.apply_flags(flags) };
     }
-    if let Some(report) = args_get_str(args, 'r' as i32 as u_char) {
+    if let Some(report) = {
+        let flag = 'r' as i32 as u_char;
+        args.argument_flag_string(flag)
+    } {
         unsafe { cmd_refresh_report(&mut tc, report) };
     }
     if args_has(args, 'A' as i32 as u_char) != 0 {

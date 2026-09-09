@@ -1,5 +1,4 @@
 use crate::args::RustArguments;
-use crate::args::args_get_str;
 use crate::args::{args_has, args_to_vector, args_value_list};
 use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
 use crate::cmd::cmd_find_from_session_ref;
@@ -143,7 +142,10 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { item.error(c"command or window name given with target", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
-    if let Some(tmp) = args_get_str(args, 'n' as i32 as u_char) {
+    if let Some(tmp) = {
+        let flag = 'n' as i32 as u_char;
+        args.argument_flag_string(flag)
+    } {
         let ename = unsafe {
             let mut ft = format_create_for_client(item.client().as_ref(), Some(item), 0, 0);
             format_defaults_for_handles(&mut ft, c.as_ref(), None, None, None);
@@ -155,7 +157,10 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
         unsafe { wname = clean_name(&ename, 0 as core::ffi::c_int) };
     }
-    if let Some(tmp) = args_get_str(args, 's' as i32 as u_char) {
+    if let Some(tmp) = {
+        let flag = 's' as i32 as u_char;
+        args.argument_flag_string(flag)
+    } {
         let ename = unsafe {
             let mut ft = format_create_for_client(item.client().as_ref(), Some(item), 0, 0);
             format_defaults_for_handles(&mut ft, c.as_ref(), None, None, None);
@@ -191,9 +196,15 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                         args_has(args, 'D' as i32 as u_char),
                         args_has(args, 'X' as i32 as u_char),
                         0 as core::ffi::c_int,
-                        args_get_str(args, 'c' as i32 as u_char),
+                        {
+                            let flag = 'c' as i32 as u_char;
+                            args.argument_flag_string(flag)
+                        },
                         args_has(args, 'E' as i32 as u_char),
-                        args_get_str(args, 'f' as i32 as u_char),
+                        {
+                            let flag = 'f' as i32 as u_char;
+                            args.argument_flag_string(flag)
+                        },
                     )
                 };
                 return retval;
@@ -210,7 +221,10 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 )
             };
         } else {
-            group = args_get_str(args, 't' as i32 as u_char);
+            group = {
+                let flag = 't' as i32 as u_char;
+                args.argument_flag_string(flag)
+            };
             if let Some(group) = group {
                 groupwith = target_session_ref.clone();
                 group_name = match groupwith.as_ref() {
@@ -263,7 +277,10 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                     } {
                         already_attached = 1 as core::ffi::c_int;
                     }
-                    if let Some(tmp) = args_get_str(args, 'c' as i32 as u_char) {
+                    if let Some(tmp) = {
+                        let flag = 'c' as i32 as u_char;
+                        args.argument_flag_string(flag)
+                    } {
                         unsafe {
                             cwd = Some({
                                 let mut ft = format_create_for_client(
@@ -345,7 +362,10 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                 971598175612140897 => {}
                                 _ => {
                                     if args_has(args, 'x' as i32 as u_char) != 0 {
-                                        let tmp = args_get_str(args, 'x' as i32 as u_char);
+                                        let tmp = {
+                                            let flag = 'x' as i32 as u_char;
+                                            args.argument_flag_string(flag)
+                                        };
                                         if tmp == Some(c"-") {
                                             if let Some(client) = &c {
                                                 dsx = client.terminal_size().width;
@@ -381,7 +401,10 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                         971598175612140897 => {}
                                         _ => {
                                             if args_has(args, 'y' as i32 as u_char) != 0 {
-                                                let tmp = args_get_str(args, 'y' as i32 as u_char);
+                                                let tmp = {
+                                                    let flag = 'y' as i32 as u_char;
+                                                    args.argument_flag_string(flag)
+                                                };
                                                 if tmp == Some(c"-") {
                                                     if let Some(client) = &c {
                                                         dsy = client.terminal_size().height;
@@ -546,8 +569,10 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                     sc.name = wname.as_deref();
                                                     unsafe { sc.argv = args_to_vector(args) };
                                                     sc.idx = -(1 as core::ffi::c_int);
-                                                    sc.cwd =
-                                                        args_get_str(args, 'c' as i32 as u_char);
+                                                    sc.cwd = {
+                                                        let flag = 'c' as i32 as u_char;
+                                                        args.argument_flag_string(flag)
+                                                    };
                                                     sc.flags = 0 as core::ffi::c_int;
                                                     if unsafe {
                                                         spawn_window(&mut sc, &mut cause).is_none()
@@ -591,10 +616,10 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                         if detached == 0 {
                                                             if args_has(args, 'f' as i32 as u_char)
                                                                 != 0
-                                                                && let Some(fflag) = args_get_str(
-                                                                    args,
-                                                                    'f' as i32 as u_char,
-                                                                )
+                                                                && let Some(fflag) = {
+                                                                    let flag = 'f' as i32 as u_char;
+                                                                    args.argument_flag_string(flag)
+                                                                }
                                                             {
                                                                 unsafe {
                                                                     c.as_mut().expect("the command has a client").apply_flags(fflag)
@@ -633,10 +658,10 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                         }
                                                         if args_has(args, 'P' as i32 as u_char) != 0
                                                         {
-                                                            let template = args_get_str(
-                                                                args,
-                                                                'F' as i32 as u_char,
-                                                            )
+                                                            let template = {
+                                                                let flag = 'F' as i32 as u_char;
+                                                                args.argument_flag_string(flag)
+                                                            }
                                                             .unwrap_or(NEW_SESSION_TEMPLATE);
                                                             let cp = unsafe {
                                                                 let link = created.curw();

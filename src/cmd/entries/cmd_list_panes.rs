@@ -21,9 +21,11 @@
 //! the template null; the three walks pass one of exactly three values, which
 //! [`Level`] now says outright, so that arm is gone with the conversion.
 
-use crate::args::{args_get_str, args_has};
+use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
     FORMAT_NONE, SORT_END,
@@ -34,8 +36,6 @@ use crate::format::{
 };
 use crate::session::SESSIONS;
 use crate::sort::{RustSortCriteria, SortCriteria};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{SessionRef, args_parse_t, format_tree, u_int};
 use crate::window::{WinlinkRef, winlinks_in};
 use ::core::ffi::{CStr, c_char};
@@ -117,7 +117,7 @@ unsafe fn passes(ft: &mut format_tree, filter: Option<&CStr>) -> bool {
 unsafe fn cmd_list_panes_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
 
-    let order = RustSortCriteria::parse_order(args_get_str(args, b'O'));
+    let order = RustSortCriteria::parse_order(args.argument_flag_string(b'O'));
     if order == SORT_END && args_has(args, b'O') != 0 {
         unsafe { item.error(c"invalid sort order", fmt_args![]) };
         return CMD_RETURN_ERROR;
@@ -156,14 +156,14 @@ unsafe fn cmd_list_panes_session(self_0: &cmd, s: &SessionRef, item: &cmdq_item,
 unsafe fn cmd_list_panes_window(self_0: &cmd, link: &WinlinkRef, item: &cmdq_item, level: Level) {
     unsafe {
         let args = cmd_get_args(self_0);
-        let template = match args_get_str(args, b'F') {
+        let template = match args.argument_flag_string(b'F') {
             Some(given) => given,
             None => level.template(),
         };
-        let filter = args_get_str(args, b'f');
+        let filter = args.argument_flag_string(b'f');
 
         let sort_crit = RustSortCriteria::new(
-            RustSortCriteria::parse_order(args_get_str(args, b'O')),
+            RustSortCriteria::parse_order(args.argument_flag_string(b'O')),
             args_has(args, b'r') != 0,
         );
 

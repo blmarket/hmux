@@ -24,8 +24,10 @@
 //! and `-p` reads the client's flags without checking that there is a client.
 
 use crate::args::RustArguments;
-use crate::args::{args_get_str, args_has, args_strtonum_and_expand};
+use crate::args::{args_has, args_strtonum_and_expand};
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{
     __INT_MAX__, CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, SHRT_MAX,
@@ -33,8 +35,6 @@ use crate::consts::{
 use crate::fmt_args;
 use crate::pane_handle::{CapturePaneEdge, PaneCapture};
 use crate::paste::{PasteBufferStore, paste_buffer_limit, with_paste_buffers_mut};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{RustWindowPaneWeak, args_parse_t, size_t, u_char};
 use ::core::ffi::{c_char, c_int, c_longlong};
 pub const INT_MIN: c_int = -__INT_MAX__ - 1 as c_int;
@@ -86,9 +86,13 @@ pub(crate) static cmd_clear_history_entry: RustCommandEntry = RustCommandEntry {
     exec: cmd_capture_pane_exec,
 };
 
-unsafe fn cmd_capture_pane_edge(args: &RustArguments, item: &cmdq_item, flag: u_char) -> CapturePaneEdge {
+unsafe fn cmd_capture_pane_edge(
+    args: &RustArguments,
+    item: &cmdq_item,
+    flag: u_char,
+) -> CapturePaneEdge {
     unsafe {
-        if args_get_str(args, flag) == Some(c"-") {
+        if args.argument_flag_string(flag) == Some(c"-") {
             return CapturePaneEdge::Dash;
         }
         let mut cause = None;
@@ -185,7 +189,7 @@ unsafe fn cmd_capture_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
     } else {
         let bufname = if args_has(args, b'b') != 0 {
-            args_get_str(args, b'b')
+            args.argument_flag_string(b'b')
         } else {
             None
         };

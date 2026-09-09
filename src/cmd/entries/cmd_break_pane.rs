@@ -16,7 +16,7 @@
 //! while retaining the source and destination owners. The index changes
 //! reported by insertion keep the source link current within one session.
 
-use crate::args::{args_get_str, args_has};
+use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
@@ -24,12 +24,12 @@ use crate::format::{format_create_for_client, format_defaults_for_handles, forma
 
 use crate::server::server_link_window;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
 use crate::tmux::check_name;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{OptionsRef, args_parse_t};
 #[cfg(test)]
 use crate::types::{SessionRef, WindowRef, cmd_find_state, u_int, winlink};
@@ -87,7 +87,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let source_pane = item.source.pane_ref().expect("a break source has a pane");
     let mut window = item.source.window().expect("a break source has a window");
     let mut index = item.target.idx;
-    let name = args_get_str(args, b'n');
+    let name = args.argument_flag_string(b'n');
     if let Some(name) = name
         && unsafe { check_name(Some(name)) == 0 }
     {
@@ -179,7 +179,9 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
 
     if args_has(args, b'P') != 0 {
-        let template = args_get_str(args, b'F').unwrap_or(BREAK_PANE_TEMPLATE);
+        let template = args
+            .argument_flag_string(b'F')
+            .unwrap_or(BREAK_PANE_TEMPLATE);
         let destination_link = unsafe { destination.link(destination_index) };
         let cp = unsafe {
             let mut ft = format_create_for_client(item.client().as_ref(), Some(item), 0, 0);

@@ -1,7 +1,7 @@
-use crate::args::RustArguments;
 use super::widget::mode_tree_run_command;
 use crate::WindowPane;
-use crate::args::{args_get_str, args_string_str};
+use crate::args::RustArguments;
+use crate::args::args_string_str;
 use crate::cmd::{cmd_find_copy_state, cmd_find_valid_state};
 pub use crate::consts::{
     FORMAT_NONE, KEYC_NONE, PANE_REDRAW, SORT_CREATION, SORT_END, SORT_NAME, SORT_SIZE, VIS_CSTYLE,
@@ -251,11 +251,11 @@ pub(crate) unsafe fn window_buffer_init(
     unsafe {
         let mut state = cmd_find_state::default();
         cmd_find_copy_state(&mut state, fs.expect("a choose mode opens from a target"));
-        let format = match args.and_then(|args| args_get_str(args, b'F')) {
+        let format = match args.and_then(|args| args.argument_flag_string(b'F')) {
             Some(value) => value.to_owned(),
             None => WINDOW_BUFFER_DEFAULT_FORMAT.to_owned(),
         };
-        let key_format = match args.and_then(|args| args_get_str(args, b'K')) {
+        let key_format = match args.and_then(|args| args.argument_flag_string(b'K')) {
             Some(value) => value.to_owned(),
             None => WINDOW_BUFFER_DEFAULT_KEY_FORMAT.to_owned(),
         };

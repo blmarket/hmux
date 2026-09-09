@@ -1,30 +1,4 @@
-//! `attach-session`: gives a client the session a target names, either as a
-//! switch away from the session it already has or as a fresh attach that has to
-//! open the client's terminal first.
-//!
-//! [`cmd_attach_session`] is called both by this command's own exec hook and by
-//! `new-session`, which parses the same flags itself, which is why the flags
-//! arrive one by one rather than as an `args` to read.
-//!
-//! What the two arms share is the middle: `-d` and `-x` send the other clients
-//! of the target away, `-E` withholds the session's `update-environment` pass,
-//! and the client is then given the session. A fresh attach opens the terminal
-//! before all that and, afterwards, always re-chooses the key table, tells the
-//! client it is ready and marks it attached; a switch re-chooses the key table
-//! only when the command is not being repeated. Neither arm reaches the clients
-//! themselves: `server_client_detach` records the pending exit and
-//! `server_client_set_session` schedules the redraw, both of which the event
-//! loop acts on later.
-//!
-//! Two orderings are kept as the C has them: `-c` and `-f` have already
-//! rewritten the session's working directory and the client's flags by the time
-//! `-r` can refuse a read-only client, so a refused attach leaves both behind;
-//! and the client's `last_session` is written before either arm can fail.
-//!
-//! Detaching walks the live client list, as tmux does when recording pending exits.
-//! The previous session is also retained until the attachment command returns.
-
-use crate::args::{args_get_str, args_has};
+use crate::args::args_has;
 use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
 use crate::cmd::cmd_find_target;
 use crate::cmd::cmd_get_args;
@@ -221,13 +195,13 @@ unsafe fn cmd_attach_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     unsafe {
         cmd_attach_session(
             item,
-            args_get_str(args, b't'),
+            args.argument_flag_string(b't'),
             args_has(args, b'd'),
             args_has(args, b'x'),
             args_has(args, b'r'),
-            args_get_str(args, b'c'),
+            args.argument_flag_string(b'c'),
             args_has(args, b'E'),
-            args_get_str(args, b'f'),
+            args.argument_flag_string(b'f'),
         )
     }
 }

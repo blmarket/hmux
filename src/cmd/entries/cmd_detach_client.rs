@@ -11,8 +11,10 @@
 //!
 //! Multi-client operations walk the live client list while recording deferred exits.
 
-use crate::args::{args_get_str, args_has};
+use crate::args::args_has;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{
     CLIENT_READONLY, CMD_CLIENT_TFLAG, CMD_FIND_CANFAIL, CMD_FIND_PANE, CMD_FIND_SESSION,
@@ -21,8 +23,6 @@ use crate::consts::{
 };
 use crate::fmt_args;
 use crate::server::client_walk;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{ClientRef, args_parse_t, msgtype, uint64_t};
 use ::core::ffi::CStr;
 
@@ -89,7 +89,7 @@ unsafe fn cmd_detach_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let c = item.client();
     let mut tc = item.target_client();
     let source = &item.source;
-    let cmd = args_get_str(args, b'E');
+    let cmd = args.argument_flag_string(b'E');
 
     if core::ptr::eq(cmd_get_entry(self_0), &cmd_suspend_client_entry) {
         unsafe { tc.as_mut().expect("the command has a client").suspend() };

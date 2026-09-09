@@ -24,7 +24,6 @@
 //! own index. The conversion nulls that variable where the C's loop left it.
 
 use crate::args::RustArguments;
-use crate::args::args_get_str;
 use crate::args::{args_has, args_to_vector, args_value_list};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item_weak_of;
@@ -35,14 +34,14 @@ use crate::fmt_args;
 use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};
 use crate::resize::recalculate_sizes;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
     SPAWN_DETACHED, SPAWN_KILL,
 };
 use crate::spawn::spawn_window;
 use crate::tmux::{check_name, clean_name};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{ClientRef, SessionRef, args_parse_t, cmd_find_state, spawn_context};
 #[cfg(test)]
 use crate::types::{tmuxpeer, winlink};
@@ -129,7 +128,7 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut idx = target_idx;
     let mut wname: Option<CString> = None;
 
-    if let Some(name) = args_get_str(args, b'n') {
+    if let Some(name) = args.argument_flag_string(b'n') {
         let expanded = unsafe {
             let mut ft = format_create_for_client(item.client().as_ref(), Some(item), 0, 0);
             format_defaults_for_handles(&mut ft, c.as_ref(), Some(&session), None, None);
@@ -187,7 +186,7 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     unsafe { sc.argv = args_to_vector(args) };
     sc.environ = Some(spawn_environ(args));
     sc.idx = idx;
-    sc.cwd = args_get_str(args, b'c');
+    sc.cwd = args.argument_flag_string(b'c');
     sc.flags = 0;
     if args_has(args, b'd') != 0 {
         sc.flags |= SPAWN_DETACHED;
@@ -212,7 +211,9 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
 
     if args_has(args, b'P') != 0 {
-        let template = args_get_str(args, b'F').unwrap_or(NEW_WINDOW_TEMPLATE);
+        let template = args
+            .argument_flag_string(b'F')
+            .unwrap_or(NEW_WINDOW_TEMPLATE);
         let owner = new_wl.window().expect("the spawned window has an owner");
         let pane = owner.active_pane_id().and_then(|id| owner.pane_by_id(id));
         let cp = unsafe {
@@ -232,8 +233,12 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut fs = cmd_find_state::default();
     unsafe { crate::cmd::cmd_find_from_link_ref(&mut fs, &new_wl, None, 0) };
     unsafe {
-        (crate::cmd::cmdq_item_ref_of(item).expect("the command has an owner"))
-            .insert_session_hook(Some(&session), Some(&fs), c"after-new-window", fmt_args![])
+        (crate::cmd::cmdq_item_ref_of(item).expect("the command has an owner")).insert_session_hook(
+            Some(&session),
+            Some(&fs),
+            c"after-new-window",
+            fmt_args![],
+        )
     };
 
     free_spawn_context(&mut sc);

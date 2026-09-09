@@ -1,8 +1,8 @@
-use crate::args::RustArguments;
-use crate::cmd::cmd_retval;
 use super::widget::{ModeTreeItemRef, mode_tree_run_command};
 use crate::WindowPane;
-use crate::args::{args_get_str, args_has, args_string_str};
+use crate::args::RustArguments;
+use crate::args::{args_has, args_string_str};
+use crate::cmd::cmd_retval;
 use crate::cmd::{CmdqItemRef, cmdq_append};
 use crate::cmd::{cmd_find_clear_state, cmd_find_from_winlink_pane};
 use crate::compat::tolower;
@@ -1052,14 +1052,18 @@ pub(crate) unsafe fn window_tree_init(
             data.type_0 = WINDOW_TREE_PANE;
         }
         data.fs = fs.expect("a choose mode opens from a target").clone();
-        data.format = Some(match args.and_then(|args| args_get_str(args, b'F')) {
-            Some(value) => value.to_owned(),
-            None => WINDOW_TREE_DEFAULT_FORMAT.to_owned(),
-        });
-        data.key_format = Some(match args.and_then(|args| args_get_str(args, b'K')) {
-            Some(value) => value.to_owned(),
-            None => WINDOW_TREE_DEFAULT_KEY_FORMAT.to_owned(),
-        });
+        data.format = Some(
+            match args.and_then(|args| args.argument_flag_string(b'F')) {
+                Some(value) => value.to_owned(),
+                None => WINDOW_TREE_DEFAULT_FORMAT.to_owned(),
+            },
+        );
+        data.key_format = Some(
+            match args.and_then(|args| args.argument_flag_string(b'K')) {
+                Some(value) => value.to_owned(),
+                None => WINDOW_TREE_DEFAULT_KEY_FORMAT.to_owned(),
+            },
+        );
         data.command = Some(match args.and_then(|args| args_string_str(args, 0)) {
             Some(value) => value.to_owned(),
             None => WINDOW_TREE_DEFAULT_COMMAND.to_owned(),

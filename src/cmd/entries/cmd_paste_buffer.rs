@@ -24,15 +24,15 @@
 //! observable behaviour depends on.
 
 use crate::args::RustArguments;
-use crate::args::{args_get_str, args_has};
+use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL};
 use crate::fmt_args;
 use crate::paste::{PasteBufferStore, with_paste_buffers, with_paste_buffers_mut};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
-use crate::types::{args_parse_t};
+use crate::types::args_parse_t;
 #[cfg(test)]
 use crate::types::window_pane;
 use ::core::ffi::{CStr, c_char};
@@ -65,7 +65,7 @@ pub(crate) static cmd_paste_buffer_entry: RustCommandEntry = RustCommandEntry {
 /// The separator that follows every newline-closed line: `-s`'s text when it
 /// was given, a newline under `-r`, and a carriage return otherwise.
 fn separator(args: &RustArguments) -> &CStr {
-    if let Some(sepstr) = args_get_str(args, b's') {
+    if let Some(sepstr) = args.argument_flag_string(b's') {
         sepstr
     } else if args_has(args, b'r') != 0 {
         c"\n"
@@ -77,9 +77,12 @@ fn separator(args: &RustArguments) -> &CStr {
 /// The buffer the command is to send: the one `-b` names, or the top of the
 /// store when it was not given, which is nothing at all when the store is
 /// empty. A `-b` that names no buffer is the error.
-unsafe fn wanted_buffer(args: &RustArguments, item: &cmdq_item) -> Result<Option<(CString, Vec<u8>)>, ()> {
+unsafe fn wanted_buffer(
+    args: &RustArguments,
+    item: &cmdq_item,
+) -> Result<Option<(CString, Vec<u8>)>, ()> {
     let bufname = if args_has(args, b'b') != 0 {
-        args_get_str(args, b'b')
+        args.argument_flag_string(b'b')
     } else {
         None
     };

@@ -3,11 +3,11 @@ use super::{
     cmd_find_target, cmd_find_valid_state,
 };
 
-use crate::args::{RustArguments, args_get_str, args_print};
+use crate::args::{RustArguments, args_print};
 use crate::cfg::cfg_add_cause;
 use crate::cfg::cfg_finished;
-use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print};
 use crate::cmd::{CommandEntry, RustCommandContext};
+use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print};
 use crate::compat::toupper;
 use crate::control::control_write;
 use crate::ffi::{getuid, time};
@@ -21,19 +21,18 @@ use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::server::server_add_message;
 use crate::server::server_client_print;
 
+pub use crate::cmd::{CmdListRef, cmd, cmd_entry_flag, cmd_retval};
 use crate::status::status_message_set;
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::text::{RustUtf8VisModel, Utf8VisModel};
 use crate::tmux::global_s_options;
 use crate::tree::GlobalQueue;
-pub use crate::cmd::{CmdListRef, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::types::{
-    ByteBuffer, ClientRef, ClientWeak, OptionsRef, RustWindowPaneWeak, SessionRef,
-    cmd_find_state, format_tree, key_code, key_event, mouse_event, session, time_t, u_char, u_int,
-    uid_t, uint64_t,
-};
 #[cfg(test)]
 use crate::types::client;
+pub use crate::types::{
+    ByteBuffer, ClientRef, ClientWeak, OptionsRef, RustWindowPaneWeak, SessionRef, cmd_find_state,
+    format_tree, key_code, key_event, mouse_event, session, time_t, u_char, u_int, uid_t, uint64_t,
+};
 use crate::xmalloc::xasprintf;
 use crate::{UserAccount, UserAccountRecord};
 use ::std::cell::{RefCell, RefMut};
@@ -381,7 +380,11 @@ unsafe fn cmdq_find_flag(item: &cmdq_item, flag: &cmd_entry_flag) -> (cmd_retval
             .expect("a target belongs to a command");
         let list = list.clone();
         let command = list.command(at).expect("the target command is in its list");
-        let value = args_get_str(cmd_get_args(&command), flag.flag as u_char);
+        let value = {
+            let args = cmd_get_args(&command);
+            let flag = flag.flag as u_char;
+            args.argument_flag_string(flag)
+        };
         if cmd_find_target(&mut fs, item, value, flag.type_0, flag.flags) != 0 as core::ffi::c_int {
             cmd_find_clear_state(&mut fs, 0 as core::ffi::c_int);
             return (CMD_RETURN_ERROR, fs);
@@ -1090,11 +1093,18 @@ impl CmdqItemRef {
                 new_state.add_format(
                     &tmp,
                     c"%s",
-                    fmt_args![arguments.argument_string(i).expect("argument index checked")],
+                    fmt_args![
+                        arguments
+                            .argument_string(i)
+                            .expect("argument index checked")
+                    ],
                 );
                 i = i.wrapping_add(1);
             }
-            for flag in arguments.argument_flags_iter().map(|flag| flag as core::ffi::c_char) {
+            for flag in arguments
+                .argument_flags_iter()
+                .map(|flag| flag as core::ffi::c_char)
+            {
                 let tmp = xasprintf(c"hook_flag_%c", fmt_args![flag as core::ffi::c_int]);
                 match arguments.argument_flag_string(flag as u_char) {
                     None => new_state.add_format(&tmp, c"1", fmt_args![]),
@@ -1325,9 +1335,9 @@ impl CmdqItemRef {
                 }
                 let quiet = (entry.flags() & CMD_CLIENT_CANFAIL != 0) as core::ffi::c_int;
                 let target_client = if entry.flags() & CMD_CLIENT_CFLAG != 0 {
-                    cmd_find_client(Some(&item), args_get_str(args, b'c'), quiet)
+                    cmd_find_client(Some(&item), args.argument_flag_string(b'c'), quiet)
                 } else if entry.flags() & CMD_CLIENT_TFLAG != 0 {
-                    cmd_find_client(Some(&item), args_get_str(args, b't'), quiet)
+                    cmd_find_client(Some(&item), args.argument_flag_string(b't'), quiet)
                 } else {
                     cmd_find_client(Some(&item), None, 1)
                 };
@@ -1486,9 +1496,7 @@ impl CmdqStateRef {
         session: &SessionRef,
         flags: core::ffi::c_int,
     ) {
-        unsafe {
-            crate::cmd::cmd_find_from_session_ref(&mut self.state().current, session, flags)
-        };
+        unsafe { crate::cmd::cmd_find_from_session_ref(&mut self.state().current, session, flags) };
     }
 
     /// Records a live link target, using its active pane if no pane is specified.
@@ -1502,9 +1510,7 @@ impl CmdqStateRef {
         pane: Option<&RustWindowPaneWeak>,
         flags: core::ffi::c_int,
     ) {
-        unsafe {
-            crate::cmd::cmd_find_from_link_ref(&mut self.state().current, link, pane, flags)
-        };
+        unsafe { crate::cmd::cmd_find_from_link_ref(&mut self.state().current, link, pane, flags) };
     }
 
     /// Gives one synchronous command operation access to its mutable mouse input.

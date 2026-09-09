@@ -1,23 +1,21 @@
 use crate::args::RustArguments;
-use crate::args::{args_get_str, args_has};
-use crate::cmd::cmd_get_args;
+use crate::args::args_has;
 use crate::cmd::cmd_find_target;
+use crate::cmd::cmd_get_args;
 
 use crate::ffi::getuid;
 use crate::fmt_args;
 use crate::key_bindings::key_bindings_get_table;
 
+use crate::cmd::cmd_find_type;
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CLIENT_READONLY, CMD_CLIENT_CFLAG, CMD_FIND_PANE, CMD_FIND_PREFER_UNATTACHED, CMD_FIND_SESSION,
     CMD_READONLY, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMDQ_STATE_REPEAT, SORT_END,
 };
 use crate::sort::{RustSortCriteria, SortCriteria};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmd_find_type;
-use crate::cmd::cmdq_item;
-use crate::types::{
-    args_parse_t, cmd_find_state, sort_criteria_t, u_char, uid_t, uint64_t,
-};
+use crate::types::{args_parse_t, cmd_find_state, sort_criteria_t, u_char, uid_t, uint64_t};
 
 pub(crate) static cmd_switch_client_entry: RustCommandEntry = {
     RustCommandEntry {
@@ -48,7 +46,10 @@ unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args: &RustArguments = cmd_get_args(self_0);
     let current_state_ref = item.state_ref();
     let mut target = cmd_find_state::default();
-    let tflag = args_get_str(args, 't' as i32 as u_char);
+    let tflag = {
+        let flag = 't' as i32 as u_char;
+        args.argument_flag_string(flag)
+    };
     let type_0: cmd_find_type;
     let flags: core::ffi::c_int;
     let c = item.client();
@@ -94,7 +95,10 @@ unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 .toggle_read_only()
         };
     }
-    let tablename = args_get_str(args, 'T' as i32 as u_char);
+    let tablename = {
+        let flag = 'T' as i32 as u_char;
+        args.argument_flag_string(flag)
+    };
     if let Some(tablename) = tablename {
         let table = key_bindings_get_table(tablename, 0 as core::ffi::c_int);
         if table.is_none() {
@@ -108,10 +112,10 @@ unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         };
         return CMD_RETURN_NORMAL;
     }
-    sort_crit.set_order(RustSortCriteria::parse_order(args_get_str(
-        args,
-        'O' as i32 as u_char,
-    )));
+    sort_crit.set_order(RustSortCriteria::parse_order({
+        let flag = 'O' as i32 as u_char;
+        args.argument_flag_string(flag)
+    }));
     if sort_crit.order() as core::ffi::c_uint == SORT_END as core::ffi::c_int as core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {

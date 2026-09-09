@@ -1,6 +1,6 @@
 use crate::WindowPane;
 use crate::args::RustArguments;
-use crate::args::{args_get_str, args_has};
+use crate::args::args_has;
 use crate::cmd::CmdqStateRef;
 use crate::cmd::cmd_mouse_at;
 use crate::cmd::cmd_parse_and_append;
@@ -930,12 +930,12 @@ impl ModeTreeDataRef {
             };
             let sort_crit = RustSortCriteria::new(
                 args.map_or(SORT_NAME, |args| {
-                    RustSortCriteria::parse_order(args_get_str(args, b'O'))
+                    RustSortCriteria::parse_order(args.argument_flag_string(b'O'))
                 }),
                 args.is_some_and(|args| args_has(args, b'r') != 0),
             );
             let filter = args
-                .and_then(|args| args_get_str(args, b'f'))
+                .and_then(|args| args.argument_flag_string(b'f'))
                 .map(CStr::to_owned);
             let screen_ref = ScreenRef::new(RustScreen::new_with_server_options(
                 wp.geometry().width,

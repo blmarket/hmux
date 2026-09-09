@@ -1,7 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{
-    args_get_str, args_has, args_make_commands, args_make_commands_prepare, args_string_str,
-};
+use crate::args::{args_has, args_make_commands, args_make_commands_prepare, args_string_str};
 use crate::cmd::cmd_find_from_nothing;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
@@ -131,7 +129,10 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut tv = timeval::default();
     let mut i: u_int;
     let wait: core::ffi::c_int = (args_has(args, 'b' as i32 as u_char) == 0) as core::ffi::c_int;
-    let delay = args_get_str(args, 'd' as i32 as u_char);
+    let delay = {
+        let flag = 'd' as i32 as u_char;
+        args.argument_flag_string(flag)
+    };
     if let Some(delay) = delay {
         let Some(parsed) = crate::compat::strtod_complete(delay) else {
             unsafe { item.error(c"invalid delay time: %s", fmt_args![delay]) };
@@ -182,7 +183,10 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         cdata.client_ref = target_client;
         cdata.flags |= JOB_NOWAIT;
     }
-    if let Some(cflag) = args_get_str(args, 'c' as i32 as u_char) {
+    if let Some(cflag) = {
+        let flag = 'c' as i32 as u_char;
+        args.argument_flag_string(flag)
+    } {
         cdata.cwd = Some(cflag.to_owned());
     } else {
         unsafe {

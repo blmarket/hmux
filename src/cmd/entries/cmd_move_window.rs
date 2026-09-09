@@ -18,7 +18,7 @@
 //! `-s` named the source, since the destination is already where the caller
 //! asked for.
 
-use crate::args::{args_get_str, args_has};
+use crate::args::args_has;
 use crate::cmd::cmd_find_target;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -27,13 +27,13 @@ use crate::fmt_args;
 use crate::resize::recalculate_sizes;
 use crate::server::server_link_window;
 
+use crate::cmd::cmd_find_type;
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_QUIET, CMD_FIND_SESSION, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX,
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmd_find_type;
-use crate::cmd::cmdq_item;
 use crate::types::{OptionsRef, SessionRef, args_parse_t, cmd_find_state};
 #[cfg(test)]
 use crate::types::{WindowRef, u_int};
@@ -126,7 +126,7 @@ unsafe fn room_for(
 
 unsafe fn cmd_move_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
-    let tflag = args_get_str(args, b't');
+    let tflag = args.argument_flag_string(b't');
     if args_has(args, b'r') != 0 {
         let Some(target) = (unsafe { resolve(item, tflag, CMD_FIND_SESSION, CMD_FIND_QUIET) })
         else {

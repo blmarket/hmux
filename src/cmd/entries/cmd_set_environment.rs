@@ -1,4 +1,4 @@
-use crate::args::{args_get_str, args_has, args_string_str};
+use crate::args::{args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
 use crate::environ::EnvironmentStore;
@@ -85,7 +85,7 @@ unsafe fn cmd_set_environment_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval
     let value = expanded.as_deref().or(value);
     let global = args_has(args, b'g') != 0;
     if !global && target_session.is_none() {
-        if let Some(target) = args_get_str(args, b't') {
+        if let Some(target) = args.argument_flag_string(b't') {
             unsafe { item.error(c"no such session: %s", fmt_args![target]) };
         } else {
             unsafe { item.error(c"no current session", fmt_args![]) };

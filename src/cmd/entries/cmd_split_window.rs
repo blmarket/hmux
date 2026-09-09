@@ -156,7 +156,10 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             .put(av.value.string(), 0);
     }
     sc.idx = -(1 as core::ffi::c_int);
-    sc.cwd = args_get_str(args, 'c' as i32 as u_char);
+    sc.cwd = {
+        let flag = 'c' as i32 as u_char;
+        args.argument_flag_string(flag)
+    };
     sc.flags = flags;
     if args_has(args, 'd' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_DETACHED;
@@ -172,13 +175,13 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     };
     {
         let options = unsafe { new_pane.options().expect("the spawned pane is present") };
-        if let Some(style) = args_get_str(args, b's') {
+        if let Some(style) = args.argument_flag_string(b's') {
             unsafe { new_pane.set_window_style(style) };
         }
-        if let Some(style) = args_get_str(args, b'S') {
+        if let Some(style) = args.argument_flag_string(b'S') {
             unsafe { options.set_string(c"pane-active-border-style", 0, c"%s", fmt_args![style]) };
         }
-        if let Some(style) = args_get_str(args, b'R') {
+        if let Some(style) = args.argument_flag_string(b'R') {
             unsafe { options.set_string(c"pane-border-style", 0, c"%s", fmt_args![style]) };
         }
         if args_has(args, 'k' as i32 as u_char) != 0 || args_has(args, 'm' as i32 as u_char) != 0 {
@@ -223,7 +226,11 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
     unsafe { session.request_redraw() };
     if args_has(args, 'P' as i32 as u_char) != 0 {
-        let template = args_get_str(args, 'F' as i32 as u_char).unwrap_or(SPLIT_WINDOW_TEMPLATE);
+        let template = {
+            let flag = 'F' as i32 as u_char;
+            args.argument_flag_string(flag)
+        }
+        .unwrap_or(SPLIT_WINDOW_TEMPLATE);
         let cp = unsafe {
             let mut ft = format_create_for_client(item.client().as_ref(), Some(item), 0, 0);
             format_defaults_for_handles(

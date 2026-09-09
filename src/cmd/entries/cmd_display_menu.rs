@@ -1,7 +1,6 @@
 use crate::args::RustArguments;
 use crate::args::{
-    args_get_str, args_has, args_percentage, args_string_str, args_strtonum, args_to_vector,
-    args_value_list,
+    args_has, args_percentage, args_string_str, args_strtonum, args_to_vector, args_value_list,
 };
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item_ref_of;
@@ -316,7 +315,10 @@ unsafe fn cmd_display_menu_get_pos(
         } else {
             format_add(&mut ft, c"popup_pane_right", c"%ld", fmt_args![n]);
         }
-        let xp = match args_get_str(args, 'x' as i32 as u_char) {
+        let xp = match {
+            let flag = 'x' as i32 as u_char;
+            args.argument_flag_string(flag)
+        } {
             None => c"#{popup_centre_x}",
             Some(given) => match given.to_bytes() {
                 b"C" => c"#{popup_centre_x}",
@@ -343,7 +345,10 @@ unsafe fn cmd_display_menu_get_pos(
             c"%s: -x: %s = %s = %u (-w %u)",
             fmt_args![c"cmd_display_menu_get_pos", xp, p.as_c_str(), px, w],
         );
-        let yp = match args_get_str(args, 'y' as i32 as u_char) {
+        let yp = match {
+            let flag = 'y' as i32 as u_char;
+            args.argument_flag_string(flag)
+        } {
             None => c"#{popup_centre_y}",
             Some(given) => match given.to_bytes() {
                 b"C" => c"#{popup_centre_y}",
@@ -386,9 +391,18 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut tc = item.target_client().expect("the command has a client");
     let target = item.target.clone();
     let mut menu_item = menu_item::default();
-    let style = args_get_str(args, 's' as i32 as u_char);
-    let border_style = args_get_str(args, 'S' as i32 as u_char);
-    let selected_style = args_get_str(args, 'H' as i32 as u_char);
+    let style = {
+        let flag = 's' as i32 as u_char;
+        args.argument_flag_string(flag)
+    };
+    let border_style = {
+        let flag = 'S' as i32 as u_char;
+        args.argument_flag_string(flag)
+    };
+    let selected_style = {
+        let flag = 'H' as i32 as u_char;
+        args.argument_flag_string(flag)
+    };
     let mut lines: box_lines = BOX_LINES_DEFAULT;
     let mut cause = None;
     let mut number_cause = None;
@@ -410,7 +424,11 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'C' as i32 as u_char) != 0 {
-        if args_get_str(args, 'C' as i32 as u_char) == Some(c"-") {
+        if ({
+            let flag = 'C' as i32 as u_char;
+            args.argument_flag_string(flag)
+        }) == Some(c"-")
+        {
             starting_choice = -(1 as core::ffi::c_int);
             current_block = 4166486009154926805;
         } else {
@@ -433,7 +451,10 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
     if current_block == 4166486009154926805 {
         let title = if args_has(args, 'T' as i32 as u_char) != 0 {
-            match args_get_str(args, 'T' as i32 as u_char) {
+            match {
+                let flag = 'T' as i32 as u_char;
+                args.argument_flag_string(flag)
+            } {
                 Some(given) => unsafe { format_single_from_target(item, given) },
                 None => c"".to_owned(),
             }
@@ -501,7 +522,10 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 {
                     current_block = 11305506228944373502;
                 } else {
-                    if let Some(value) = args_get_str(args, 'b' as i32 as u_char) {
+                    if let Some(value) = {
+                        let flag = 'b' as i32 as u_char;
+                        args.argument_flag_string(flag)
+                    } {
                         let definition = o.with_entry(c"menu-border-lines", false, |entry| {
                             RustOptionsEngine
                                 .definition(entry)
@@ -576,8 +600,14 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let (sx, sy) = (size.width, size.height);
     let default_command;
     let mut shellcmd: Option<&CStr> = None;
-    let style = args_get_str(args, 's' as i32 as u_char);
-    let border_style = args_get_str(args, 'S' as i32 as u_char);
+    let style = {
+        let flag = 's' as i32 as u_char;
+        args.argument_flag_string(flag)
+    };
+    let border_style = {
+        let flag = 'S' as i32 as u_char;
+        args.argument_flag_string(flag)
+    };
     let mut cwd: Option<CString> = None;
     let mut cause = None;
     let mut percentage_cause = None;
@@ -669,7 +699,10 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                         } {
                             current_block = 4318653505921602179;
                         } else {
-                            if let Some(value) = args_get_str(args, 'd' as i32 as u_char) {
+                            if let Some(value) = {
+                                let flag = 'd' as i32 as u_char;
+                                args.argument_flag_string(flag)
+                            } {
                                 unsafe { cwd = Some(format_single_from_target(item, value)) };
                             } else {
                                 unsafe {
@@ -716,7 +749,10 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         current_block = 14447253356787937536;
     }
     if current_block == 14447253356787937536 {
-        let value = args_get_str(args, 'b' as i32 as u_char);
+        let value = {
+            let flag = 'b' as i32 as u_char;
+            args.argument_flag_string(flag)
+        };
         if args_has(args, 'B' as i32 as u_char) != 0 {
             lines = BOX_LINES_NONE;
             current_block = 12556861819962772176;
@@ -745,7 +781,11 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                     unsafe {
                         title = Some(format_single_from_target(
                             item,
-                            args_get_str(args, 'T' as i32 as u_char).unwrap_or(c""),
+                            {
+                                let flag = 'T' as i32 as u_char;
+                                args.argument_flag_string(flag)
+                            }
+                            .unwrap_or(c""),
                         ))
                     };
                 } else {

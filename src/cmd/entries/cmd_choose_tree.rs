@@ -26,15 +26,15 @@
 //!   first and `args_has` is what guards the refusal.
 
 use crate::args::RustArguments;
-use crate::args::{args_get_str, args_has};
+use crate::args::args_has;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
 use crate::paste::{PasteBufferStore, with_paste_buffers};
 use crate::server::server_client_how_many;
 use crate::sort::{RustSortCriteria, SortCriteria};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{WindowMode, args, args_parse_t, args_parse_type, u_int};
 use ::core::ffi::c_char;
 use ::std::ffi::CString;
@@ -187,7 +187,8 @@ fn cmd_choose_tree_mode(self_0: &cmd) -> Option<WindowMode> {
 /// is fine whatever the parse answered, which is what keeps `customize-mode`,
 /// whose template has no `O` at all, out of the refusal.
 fn cmd_choose_tree_order_is_known(args: &RustArguments) -> bool {
-    RustSortCriteria::parse_order(args_get_str(args, b'O')) != SORT_END || args_has(args, b'O') == 0
+    RustSortCriteria::parse_order(args.argument_flag_string(b'O')) != SORT_END
+        || args_has(args, b'O') == 0
 }
 
 unsafe fn cmd_choose_tree_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {

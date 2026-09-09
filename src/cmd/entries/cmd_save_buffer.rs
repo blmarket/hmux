@@ -1,6 +1,8 @@
 use crate::args::RustArguments;
-use crate::args::{args_get_str, args_has, args_string_str};
+use crate::args::{args_has, args_string_str};
+use crate::cmd::cmdq_item;
 use crate::cmd::cmdq_item_weak_of;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::compat::error_message;
 use crate::consts::{
@@ -12,8 +14,6 @@ use crate::fmt_args;
 use crate::format::format_single_from_target;
 use crate::paste::{PasteBufferStore, with_paste_buffers};
 use crate::types::ClientFileEvent;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{ByteBuffer, ClientFileData, args_parse_t, u_char, uint64_t};
 use ::std::ffi::CString;
 
@@ -94,7 +94,10 @@ fn cmd_save_buffer_done(event: ClientFileEvent<'_>) {
 unsafe fn cmd_save_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args: &RustArguments = cmd_get_args(self_0);
     let c = item.client();
-    let bufdata = if let Some(bufname) = args_get_str(args, 'b' as i32 as u_char) {
+    let bufdata = if let Some(bufname) = {
+        let flag = 'b' as i32 as u_char;
+        args.argument_flag_string(flag)
+    } {
         let data =
             with_paste_buffers(|buffers| buffers.get(bufname).map(|buffer| buffer.data.to_vec()));
         if data.is_none() {

@@ -14,9 +14,11 @@
 //! index of the window being printed, so every line of one run carries the
 //! same value — where `list-sessions` and `list-clients` count from zero.
 
-use crate::args::{args_get_str, args_has};
+use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
     FORMAT_NONE, SORT_END,
@@ -26,8 +28,6 @@ use crate::format::{
     format_add, format_create_for_client, format_defaults_for_link, format_expand, format_true,
 };
 use crate::sort::{RustSortCriteria, SortCriteria, sort_get_winlinks};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{args_parse_t, format_tree, u_int};
 use ::core::ffi::{CStr, c_char};
 
@@ -80,11 +80,11 @@ unsafe fn cmd_list_windows_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
     let session = item.target.session();
 
-    let given = args_get_str(args, b'F');
-    let filter = args_get_str(args, b'f');
+    let given = args.argument_flag_string(b'F');
+    let filter = args.argument_flag_string(b'f');
 
     let mut sort_crit = RustSortCriteria::new(
-        RustSortCriteria::parse_order(args_get_str(args, b'O')),
+        RustSortCriteria::parse_order(args.argument_flag_string(b'O')),
         false,
     );
     if sort_crit.order() == SORT_END && args_has(args, b'O') != 0 {

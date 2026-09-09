@@ -5,7 +5,7 @@ use crate::window_scrollbar::WindowScrollbarState;
 use super::table::{options_other_names, options_table};
 use crate::WindowPane;
 use crate::alerts::alerts_reset_all;
-use crate::args::{args_get_str, args_has};
+use crate::args::args_has;
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
 use crate::compat::strtonum;
 use crate::ffi::fnmatch;
@@ -826,7 +826,7 @@ unsafe fn options_window_scope(
                 .cloned()
         });
         let Some(window) = window else {
-            let target = args_get_str(args, b't');
+            let target = args.argument_flag_string(b't');
             if let Some(target) = target {
                 *cause = Some(xasprintf(c"no such window: %s", fmt_args![target]));
             } else {
@@ -862,7 +862,7 @@ pub(super) unsafe fn options_scope_from_name(
             return OPTIONS_TABLE_NONE;
         };
 
-        let target = args_get_str(args, b't');
+        let target = args.argument_flag_string(b't');
         match oe.scope {
             OPTIONS_TABLE_SERVER => {
                 *oo = global_options.clone();
@@ -916,7 +916,7 @@ pub(super) unsafe fn options_scope_from_flags(
     cause: &mut Option<CString>,
 ) -> c_int {
     unsafe {
-        let target = args_get_str(args, b't');
+        let target = args.argument_flag_string(b't');
         if args_has(args, b's') != 0 {
             *oo = global_options.clone();
             return OPTIONS_TABLE_SERVER;

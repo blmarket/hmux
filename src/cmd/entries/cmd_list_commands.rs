@@ -11,9 +11,11 @@
 //! The command table stays the array the rest of the crate reads, walked to
 //! the null it ends with.
 
-use crate::args::{args_get_str, args_string_str};
+use crate::args::args_string_str;
 use crate::cmd::cmd_get_args;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_STARTSERVER, FORMAT_NONE,
 };
@@ -21,8 +23,6 @@ use crate::fmt_args;
 use crate::format::{
     format_add, format_create_for_client, format_defaults_for_handles, format_expand,
 };
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{args_parse_t, format_tree};
 use crate::{CommandCatalog, CommandEntry, RustCommandCatalog};
 use ::core::ffi::CStr;
@@ -87,7 +87,9 @@ unsafe fn cmd_list_single_command(
 
 unsafe fn cmd_list_commands(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
-    let template = args_get_str(args, b'F').unwrap_or(LIST_COMMANDS_TEMPLATE);
+    let template = args
+        .argument_flag_string(b'F')
+        .unwrap_or(LIST_COMMANDS_TEMPLATE);
 
     let mut ft = format_create_for_client(item.client().as_ref(), Some(item), FORMAT_NONE, 0);
     unsafe { format_defaults_for_handles(&mut ft, None, None, None, None) };

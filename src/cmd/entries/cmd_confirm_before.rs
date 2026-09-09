@@ -36,15 +36,15 @@
 //! which gives that same refusal without the overread.
 
 use crate::args::RustArguments;
-use crate::args::{args_get_str, args_has, args_make_commands_now};
+use crate::args::{args_has, args_make_commands_now};
 use crate::cmd::CmdqItemWeak;
-use crate::cmd::{cmdq_append, cmdq_item_weak_of};
+use crate::cmd::cmdq_item;
+use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
+use crate::cmd::{cmdq_append, cmdq_item_weak_of};
 use crate::fmt_args;
 use crate::prompt_history::PromptHistoryType;
 use crate::status::status_prompt_for_client;
-use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{
     ClientRef, Prompt, PromptData, args, args_parse_t, args_parse_type, u_char, u_int, uint64_t,
 };
@@ -109,7 +109,7 @@ fn cmd_confirm_before_args_parse(
 /// so anything from 128 up is negative and fails the lower bound, which is the
 /// same set an unsigned byte fails the upper bound on.
 fn cmd_confirm_before_key(args: &RustArguments) -> Option<u_char> {
-    let Some(confirm_key) = args_get_str(args, b'c') else {
+    let Some(confirm_key) = args.argument_flag_string(b'c') else {
         return Some(b'y');
     };
     match confirm_key.to_bytes() {
@@ -124,7 +124,7 @@ fn cmd_confirm_before_key(args: &RustArguments) -> Option<u_char> {
 /// agree.
 fn cmd_confirm_before_prompt(args: &RustArguments, cdata: &cmd_confirm_before_data) -> Vec<u8> {
     let mut prompt = Vec::new();
-    if let Some(given) = args_get_str(args, b'p') {
+    if let Some(given) = args.argument_flag_string(b'p') {
         prompt.extend_from_slice(given.to_bytes());
     } else {
         let command = cdata

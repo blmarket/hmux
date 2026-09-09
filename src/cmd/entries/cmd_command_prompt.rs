@@ -32,8 +32,7 @@
 
 use crate::args::RustArguments;
 use crate::args::{
-    args_get_str, args_has, args_make_commands, args_make_commands_get_command,
-    args_make_commands_prepare,
+    args_has, args_make_commands, args_make_commands_get_command, args_make_commands_prepare,
 };
 use crate::cmd::CmdqItemRef;
 use crate::cmd::CmdqItemWeak;
@@ -199,7 +198,7 @@ unsafe fn cmd_command_prompt_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     };
 
     let mut space = true;
-    let prompts = if let Some(s) = args_get_str(args, b'p') {
+    let prompts = if let Some(s) = args.argument_flag_string(b'p') {
         Some(s.to_owned())
     } else if args.argument_count() != 0 {
         let tmp = unsafe { args_make_commands_get_command(cdata.state.as_deref().unwrap()) };
@@ -211,7 +210,7 @@ unsafe fn cmd_command_prompt_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
         space = false;
         Some(CString::new(":").unwrap())
     };
-    let inputs = args_get_str(args, b'I').map(|s| s.to_owned());
+    let inputs = args.argument_flag_string(b'I').map(|s| s.to_owned());
 
     if args_has(args, b'l') != 0 {
         cdata.prompts.push(cmd_command_prompt_prompt {
@@ -222,7 +221,7 @@ unsafe fn cmd_command_prompt_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
         split_prompts(&mut cdata, prompts.as_deref(), inputs.as_deref(), space);
     }
 
-    if let Some(type_0) = args_get_str(args, b'T') {
+    if let Some(type_0) = args.argument_flag_string(b'T') {
         let Some(kind) = PromptHistoryType::parse(type_0) else {
             unsafe { item.error(c"unknown type: %s", fmt_args![type_0]) };
             cmd_command_prompt_free(cdata);

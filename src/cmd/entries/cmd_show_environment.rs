@@ -2,9 +2,11 @@ use crate::args::RustArguments;
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
 
-use crate::args::{args_get_str, args_has, args_string_str};
+use crate::args::{args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_CANFAIL, CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_ERROR,
     CMD_RETURN_NORMAL, ENVIRON_HIDDEN,
@@ -14,8 +16,6 @@ use crate::environ::RustEnvironment;
 use crate::environ::with_global_environment;
 use crate::fmt_args;
 use crate::fmt_engine::format_alloc;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{args_parse_t, u_char};
 
 pub(crate) static cmd_show_environment_entry: RustCommandEntry = {
@@ -108,7 +108,10 @@ unsafe fn cmd_show_environment_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retva
     let args: &RustArguments = cmd_get_args(self_0);
     let target = &item.target;
     let name = unsafe { args_string_str(args, 0) };
-    let tflag = args_get_str(args, 't' as i32 as u_char);
+    let tflag = {
+        let flag = 't' as i32 as u_char;
+        args.argument_flag_string(flag)
+    };
     if let Some(tflag) = tflag
         && (*target).session().is_none()
     {

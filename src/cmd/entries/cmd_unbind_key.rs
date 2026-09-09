@@ -1,7 +1,9 @@
 use crate::args::RustArguments;
-use crate::args::{args_get_str, args_has, args_string_str};
+use crate::args::{args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, KEYC_NONE, KEYC_UNKNOWN,
 };
@@ -9,8 +11,6 @@ use crate::fmt_args;
 use crate::key_bindings::key_bindings_get_table;
 use crate::key_bindings::{key_bindings_remove, key_bindings_remove_table};
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{args_parse_t, key_code, u_char};
 
 pub(crate) static cmd_unbind_key_entry: RustCommandEntry = {
@@ -50,7 +50,10 @@ unsafe fn cmd_unbind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             }
             return CMD_RETURN_ERROR;
         }
-        let tablename = match args_get_str(args, 'T' as i32 as u_char) {
+        let tablename = match {
+            let flag = 'T' as i32 as u_char;
+            args.argument_flag_string(flag)
+        } {
             Some(given) => given,
             None if args_has(args, 'n' as i32 as u_char) != 0 => c"root",
             None => c"prefix",
@@ -79,7 +82,10 @@ unsafe fn cmd_unbind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
         return CMD_RETURN_ERROR;
     }
-    let tablename = if let Some(given) = args_get_str(args, 'T' as i32 as u_char) {
+    let tablename = if let Some(given) = {
+        let flag = 'T' as i32 as u_char;
+        args.argument_flag_string(flag)
+    } {
         if key_bindings_get_table(given, 0 as core::ffi::c_int).is_none() {
             if quiet == 0 {
                 unsafe { item.error(c"table %s doesn't exist", fmt_args![given]) };

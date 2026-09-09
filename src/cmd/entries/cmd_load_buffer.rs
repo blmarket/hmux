@@ -1,7 +1,9 @@
 use crate::args::RustArguments;
-use crate::args::{args_get_str, args_has, args_string_str};
+use crate::args::{args_has, args_string_str};
 use crate::cmd::cmd_get_args;
+use crate::cmd::cmdq_item;
 use crate::cmd::{CmdqItemWeak, cmdq_item_weak_of};
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::compat::error_message;
 use crate::consts::{
     CLIENT_DEAD, CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG, CMD_FIND_PANE,
@@ -12,8 +14,6 @@ use crate::fmt_args;
 use crate::format::format_single_from_target;
 use crate::paste::{PasteBufferStore, paste_buffer_limit, with_paste_buffers_mut};
 use crate::types::ClientFileEvent;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{ClientFileData, ClientRef, args_parse_t, size_t, u_char, uint64_t};
 use ::core::ffi::CStr;
 
@@ -117,7 +117,11 @@ unsafe fn cmd_load_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let target_client = item.target_client();
     let mut cdata = Box::<cmd_load_buffer_data>::default();
     cdata.item = cmdq_item_weak_of(item);
-    cdata.name = args_get_str(args, 'b' as i32 as u_char).map(CStr::to_owned);
+    cdata.name = {
+        let flag = 'b' as i32 as u_char;
+        args.argument_flag_string(flag)
+    }
+    .map(CStr::to_owned);
     if args_has(args, 'w' as i32 as u_char) != 0 {
         cdata.client_ref = target_client;
     }

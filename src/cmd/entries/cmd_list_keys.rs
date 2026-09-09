@@ -32,7 +32,7 @@
 //! filter ran.
 
 use crate::args::RustArguments;
-use crate::args::{args_get_str, args_has, args_string_str};
+use crate::args::{args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
@@ -44,6 +44,8 @@ use crate::key_bindings::{
     key_binding_tablename, key_bindings_get_table, key_bindings_has_repeat,
 };
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_STARTSERVER, FORMAT_NONE, KEY_BINDING_REPEAT,
@@ -54,11 +56,7 @@ use crate::sort::{RustSortCriteria, SortCriteria};
 use crate::status::status_message_for_client;
 use crate::text::{KeyStringCodec, RustKeyStringCodec, RustUtf8VisModel, Utf8VisModel};
 use crate::tmux::global_session_options;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
-use crate::types::{
-    OptionsRef, args_parse_t, format_tree, key_code, sort_criteria_t, u_int,
-};
+use crate::types::{OptionsRef, args_parse_t, format_tree, key_code, sort_criteria_t, u_int};
 use ::core::ffi::c_int;
 use ::std::ffi::{CStr, CString};
 
@@ -92,7 +90,7 @@ pub(crate) static cmd_list_keys_entry: RustCommandEntry = RustCommandEntry {
 /// The answer is freshly allocated and owned by the caller.
 unsafe fn cmd_list_keys_get_prefix(args: &RustArguments) -> CString {
     unsafe {
-        if let Some(given) = args_get_str(args, b'P') {
+        if let Some(given) = args.argument_flag_string(b'P') {
             return given.to_owned();
         }
         let prefix = (global_session_options()
@@ -222,7 +220,7 @@ unsafe fn cmd_list_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
 
     let mut sort_crit = RustSortCriteria::new(
-        RustSortCriteria::parse_order(args_get_str(args, b'O')),
+        RustSortCriteria::parse_order(args.argument_flag_string(b'O')),
         false,
     );
     if sort_crit.order() == SORT_END && args_has(args, b'O') != 0 {
@@ -231,7 +229,7 @@ unsafe fn cmd_list_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
     sort_crit.set_reversed(args_has(args, b'r') != 0);
 
-    let tablename = args_get_str(args, b'T');
+    let tablename = args.argument_flag_string(b'T');
     if let Some(tablename) = tablename {
         table = key_bindings_get_table(tablename, 0);
         if table.is_none() {
@@ -244,7 +242,9 @@ unsafe fn cmd_list_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let single = args_has(args, b'1');
     let notes_only = args_has(args, b'N');
 
-    let template = args_get_str(args, b'F').unwrap_or(LIST_KEYS_TEMPLATE);
+    let template = args
+        .argument_flag_string(b'F')
+        .unwrap_or(LIST_KEYS_TEMPLATE);
 
     let mut l = if let Some(table) = table {
         unsafe { table.sorted_bindings(&sort_crit) }

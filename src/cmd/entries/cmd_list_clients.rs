@@ -14,9 +14,11 @@
 //! of lines printed so far, so a client that is skipped leaves a gap in the
 //! numbering of the ones after it.
 
-use crate::args::{args_get_str, args_has};
+use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_SESSION, CMD_READONLY, CMD_RETURN_ERROR,
     CMD_RETURN_NORMAL, FORMAT_NONE, SORT_END,
@@ -26,11 +28,9 @@ use crate::format::{
     format_add, format_create_for_client, format_defaults_for_handles, format_expand, format_true,
 };
 use crate::sort::{RustSortCriteria, SortCriteria, sort_get_clients};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
-use crate::types::{ClientRef, args_parse_t, format_tree, sort_criteria_t, u_int};
 #[cfg(test)]
 use crate::types::uint64_t;
+use crate::types::{ClientRef, args_parse_t, format_tree, sort_criteria_t, u_int};
 use ::core::ffi::{CStr, c_char};
 
 pub const LIST_CLIENTS_TEMPLATE: &CStr = c"#{client_name}: #{session_name} [#{client_width}x#{client_height} #{client_termname}] #{?#{!=:#{client_uid},#{uid}},[user #{?client_user,#{client_user},#{client_uid},}] ,}#{?client_flags,(,}#{client_flags}#{?client_flags,),}";
@@ -85,11 +85,13 @@ unsafe fn cmd_list_clients_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         None
     };
 
-    let template = args_get_str(args, b'F').unwrap_or(LIST_CLIENTS_TEMPLATE);
-    let filter = args_get_str(args, b'f');
+    let template = args
+        .argument_flag_string(b'F')
+        .unwrap_or(LIST_CLIENTS_TEMPLATE);
+    let filter = args.argument_flag_string(b'f');
 
     let mut sort_crit = RustSortCriteria::new(
-        RustSortCriteria::parse_order(args_get_str(args, b'O')),
+        RustSortCriteria::parse_order(args.argument_flag_string(b'O')),
         false,
     );
     if sort_crit.order() == SORT_END && args_has(args, b'O') != 0 {
