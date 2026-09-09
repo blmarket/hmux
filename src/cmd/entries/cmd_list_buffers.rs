@@ -11,7 +11,7 @@
 use crate::args::{args_get_str, args_has};
 use crate::cmd::cmd_get_args;
 
-pub use crate::consts::{
+use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, FORMAT_NONE, SORT_END,
 };
 use crate::fmt_args;
@@ -19,9 +19,9 @@ use crate::format::{
     format_create_for_client, format_defaults_paste_buffer, format_expand, format_true,
 };
 use crate::sort::{RustSortCriteria, SortCriteria, SortedPasteBuffer, sort_get_buffers};
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmd::cmdq_item;
-pub use crate::types::{args_parse_t, format_tree, sort_criteria_t};
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::cmdq_item;
+use crate::types::{args_parse_t, format_tree, sort_criteria_t};
 use ::core::ffi::CStr;
 
 pub const LIST_BUFFERS_TEMPLATE: &CStr =
@@ -101,4 +101,4 @@ unsafe fn cmd_list_buffers_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 mod tests;
 
 #[cfg(test)]
-pub use crate::consts::SORT_NAME;
+use crate::consts::SORT_NAME;

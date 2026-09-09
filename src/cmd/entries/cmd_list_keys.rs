@@ -43,7 +43,7 @@ use crate::key_bindings::{
     key_binding_tablename, key_bindings_get_table, key_bindings_has_repeat,
 };
 
-pub use crate::consts::{
+use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_STARTSERVER, FORMAT_NONE, KEY_BINDING_REPEAT,
     KEYC_MASK_KEY, KEYC_MASK_MODIFIERS, KEYC_NONE, KEYC_UNKNOWN, SORT_END,
@@ -53,9 +53,9 @@ use crate::sort::{RustSortCriteria, SortCriteria};
 use crate::status::status_message_for_client;
 use crate::text::{KeyStringCodec, RustKeyStringCodec, RustUtf8VisModel, Utf8VisModel};
 use crate::tmux::global_session_options;
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmd::cmdq_item;
-pub use crate::types::{
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::cmdq_item;
+use crate::types::{
     OptionsRef, args, args_parse_t, format_tree, key_code, sort_criteria_t, u_int,
 };
 use ::core::ffi::c_int;

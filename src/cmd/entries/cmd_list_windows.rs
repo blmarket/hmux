@@ -17,7 +17,7 @@
 use crate::args::{args_get_str, args_has};
 use crate::cmd::cmd_get_args;
 
-pub use crate::consts::{
+use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
     FORMAT_NONE, SORT_END,
 };
@@ -126,4 +126,4 @@ unsafe fn cmd_list_windows_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 mod tests;
 
 #[cfg(test)]
-pub use crate::consts::SORT_NAME;
+use crate::consts::SORT_NAME;

@@ -17,7 +17,7 @@ use crate::overlay::{menu_add_item_for_client, menu_display_for_client};
 use crate::overlay::{popup_display_for_client, popup_modify_for_client, popup_present_for_client};
 use crate::server::{client_clear_overlay, client_working_directory};
 
-pub use crate::consts::{
+use crate::consts::{
     _PATH_BSHELL, ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, BOX_LINES_DEFAULT,
     BOX_LINES_NONE, CMD_AFTERHOOK, CMD_CLIENT_CFLAG, CMD_FIND_PANE, CMD_RETURN_ERROR,
     CMD_RETURN_NORMAL, CMD_RETURN_WAIT, MENU_NOMOUSE, MENU_STAYOPEN, POPUP_CLOSEANYKEY,
@@ -25,9 +25,9 @@ pub use crate::consts::{
 };
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::tmux::checkshell;
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmd::cmdq_item;
-pub use crate::types::{
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::cmdq_item;
+use crate::types::{
     ClientRef, OptionsRef, args, args_parse_t, args_parse_type, box_lines, menu_item, u_char, u_int,
 };
 use ::std::ffi::{CStr, CString};

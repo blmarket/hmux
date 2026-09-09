@@ -38,7 +38,7 @@ use crate::cmd::CmdqItemRef;
 use crate::cmd::cmd_get_args;
 use crate::cmd::CmdqItemWeak;
 use crate::cmd::{cmdq_append, cmdq_item_weak_of};
-pub use crate::consts::{
+use crate::consts::{
     ARGS_PARSE_COMMANDS_OR_STRING, CMD_CLIENT_TFLAG, CMD_FIND_PANE, CMD_RETURN_ERROR,
     CMD_RETURN_NORMAL, CMD_RETURN_WAIT, PROMPT_BSPACE_EXIT, PROMPT_INCREMENTAL, PROMPT_KEY,
     PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_SINGLE,
@@ -46,9 +46,9 @@ pub use crate::consts::{
 use crate::fmt_args;
 use crate::prompt_history::PromptHistoryType;
 use crate::status::{status_prompt_for_client, status_prompt_update_for_client};
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmd::cmdq_item;
-pub use crate::types::{
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::cmdq_item;
+use crate::types::{
     ClientRef, Prompt, PromptData, args, args_command_state, args_parse_t, args_parse_type,
     cmd_command_prompt_prompt, u_int,
 };

@@ -24,13 +24,13 @@ use crate::format::{format_create_for_client, format_defaults_for_handles, forma
 
 use crate::server::server_link_window;
 
-pub use crate::consts::{
+use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
 use crate::tmux::check_name;
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmd::cmdq_item;
-pub use crate::types::{OptionsRef, args_parse_t};
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::cmdq_item;
+use crate::types::{OptionsRef, args_parse_t};
 #[cfg(test)]
 use crate::types::{SessionRef, WindowRef, cmd_find_state, u_int, winlink};
 use crate::window::WinlinkRef;

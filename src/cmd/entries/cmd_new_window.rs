@@ -34,15 +34,15 @@ use crate::fmt_args;
 use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};
 use crate::resize::recalculate_sizes;
 
-pub use crate::consts::{
+use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
     SPAWN_DETACHED, SPAWN_KILL,
 };
 use crate::spawn::spawn_window;
 use crate::tmux::{check_name, clean_name};
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmd::cmdq_item;
-pub use crate::types::{ClientRef, SessionRef, args, args_parse_t, cmd_find_state, spawn_context};
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::cmdq_item;
+use crate::types::{ClientRef, SessionRef, args, args_parse_t, cmd_find_state, spawn_context};
 #[cfg(test)]
 use crate::types::{tmuxpeer, winlink};
 use ::core::ffi::{CStr, c_int};

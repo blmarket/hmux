@@ -11,7 +11,7 @@
 use crate::args::{args_get_str, args_has};
 use crate::cmd::cmd_get_args;
 
-pub use crate::consts::{
+use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, FORMAT_NONE, SORT_END,
 };
 use crate::fmt_args;
@@ -19,9 +19,9 @@ use crate::format::{
     format_add, format_create_for_client, format_defaults_for_session, format_expand, format_true,
 };
 use crate::sort::{RustSortCriteria, SortCriteria, sort_get_sessions};
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmd::cmdq_item;
-pub use crate::types::{SessionRef, args_parse_t, format_tree, sort_criteria_t, u_int};
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::cmdq_item;
+use crate::types::{SessionRef, args_parse_t, format_tree, sort_criteria_t, u_int};
 use ::core::ffi::CStr;
 
 pub const LIST_SESSIONS_TEMPLATE: &CStr = c"#{session_name}: #{session_windows} windows (created #{t:session_created})#{?session_grouped, (group ,}#{session_group}#{?session_grouped,),}#{?session_attached, (attached),}";
@@ -101,4 +101,4 @@ unsafe fn cmd_list_sessions_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 mod tests;
 
 #[cfg(test)]
-pub use crate::consts::SORT_NAME;
+use crate::consts::SORT_NAME;

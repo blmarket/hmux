@@ -34,13 +34,13 @@ use crate::fmt_args;
 use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};
 use crate::server::client_walk;
 use crate::session::sessions_empty;
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmd::cmdq_item;
-pub use crate::types::{ClientRef, SessionRef, args_parse_t, cmd_find_state, msgtype, uint64_t};
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::cmdq_item;
+use crate::types::{ClientRef, SessionRef, args_parse_t, cmd_find_state, msgtype, uint64_t};
 #[cfg(test)]
 use crate::types::{client, tmuxpeer};
 
-pub use crate::consts::{
+use crate::consts::{
     CLIENT_READONLY, CMD_FIND_PANE, CMD_FIND_PREFER_UNATTACHED, CMD_FIND_SESSION, CMD_READONLY,
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_STARTSERVER, CMDQ_STATE_REPEAT, MSG_DETACH,
     MSG_DETACHKILL,
@@ -241,4 +241,4 @@ unsafe fn cmd_attach_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
 mod tests;
 
 #[cfg(test)]
-pub use crate::consts::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_EXIT_DETACH, CLIENT_IGNORESIZE};
+use crate::consts::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_EXIT_DETACH, CLIENT_IGNORESIZE};

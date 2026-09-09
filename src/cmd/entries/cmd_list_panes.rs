@@ -24,7 +24,7 @@
 use crate::args::{args_get_str, args_has};
 use crate::cmd::cmd_get_args;
 
-pub use crate::consts::{
+use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
     FORMAT_NONE, SORT_END,
 };
@@ -34,9 +34,9 @@ use crate::format::{
 };
 use crate::session::SESSIONS;
 use crate::sort::{RustSortCriteria, SortCriteria};
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmd::cmdq_item;
-pub use crate::types::{SessionRef, args_parse_t, format_tree, u_int};
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::cmdq_item;
+use crate::types::{SessionRef, args_parse_t, format_tree, u_int};
 use crate::window::{WinlinkRef, winlinks_in};
 use ::core::ffi::{CStr, c_char};
 
@@ -192,4 +192,4 @@ unsafe fn cmd_list_panes_window(self_0: &cmd, link: &WinlinkRef, item: &cmdq_ite
 mod tests;
 
 #[cfg(test)]
-pub use crate::consts::SORT_INDEX;
+use crate::consts::SORT_INDEX;

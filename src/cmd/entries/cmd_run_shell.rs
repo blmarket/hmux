@@ -6,7 +6,7 @@ use crate::cmd::cmd_get_args;
 use crate::cmd::cmd_find_from_nothing;
 use crate::cmd::{CmdqItemWeak, cmdq_append, cmdq_item_weak_of};
 use crate::compat::toupper;
-pub use crate::consts::{
+use crate::consts::{
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, CMD_FIND_CANFAIL, CMD_FIND_PANE,
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_WAIT, JOB_NOWAIT, JOB_SHOWSTDERR,
 };
@@ -16,9 +16,9 @@ use crate::job::job_run_for_session;
 use crate::reactor::Timer;
 use crate::server::client_working_directory;
 use crate::status::status_message_for_client;
-pub use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmd::cmdq_item;
-pub use crate::types::{
+use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::cmdq_item;
+use crate::types::{
     __suseconds_t, __time_t, ClientRef, JobEvent, SessionRef, Stream, TimerHandle, WindowPane,
     args, args_command_state, args_parse_t, args_parse_type, cmd_find_state, time_t, timeval,
     u_char, u_int,

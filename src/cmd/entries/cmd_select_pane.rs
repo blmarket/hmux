@@ -6,14 +6,14 @@ use crate::format::format_single_from_target;
 
 use crate::server::client_walk;
 
-pub use crate::consts::{
+use crate::consts::{
     CLIENT_ACTIVEPANE, CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
 #[cfg(test)]
 use crate::tty::tty_window_bigger;
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmd::cmdq_item;
-pub use crate::types::{OptionsRef, WindowRef, args_parse_t};
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::cmdq_item;
+use crate::types::{OptionsRef, WindowRef, args_parse_t};
 
 pub(crate) static cmd_select_pane_entry: RustCommandEntry = {
     RustCommandEntry {
@@ -284,4 +284,4 @@ mod tests {
 }
 
 #[cfg(test)]
-pub use crate::consts::{CLIENT_CONTROL, CLIENT_REDRAWSTATUS};
+use crate::consts::{CLIENT_CONTROL, CLIENT_REDRAWSTATUS};

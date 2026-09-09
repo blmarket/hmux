@@ -1,7 +1,7 @@
 use crate::args::{args_count, args_get_str, args_has, args_string_str};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-pub use crate::consts::{
+use crate::consts::{
     CMD_AFTERHOOK, CMD_BUFFER_USAGE, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG, CMD_FIND_PANE,
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
@@ -9,9 +9,9 @@ use crate::fmt_args;
 use crate::paste::{
     PasteBufferStore, paste_buffer_limit, with_paste_buffers, with_paste_buffers_mut,
 };
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmd::cmdq_item;
-pub use crate::types::{args, args_parse_t, u_int};
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::cmdq_item;
+use crate::types::{args, args_parse_t, u_int};
 use ::std::ffi::CStr;
 
 pub(crate) static cmd_set_buffer_entry: RustCommandEntry = {

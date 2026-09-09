@@ -3,12 +3,12 @@ use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
 
-pub use crate::consts::{
+use crate::consts::{
     CMD_FIND_DEFAULT_MARKED, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-pub use crate::cmd::cmdq_item;
-pub use crate::types::args_parse_t;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::cmdq_item;
+use crate::types::args_parse_t;
 
 pub(crate) static cmd_swap_pane_entry: RustCommandEntry = {
     RustCommandEntry {
