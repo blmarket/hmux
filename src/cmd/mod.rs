@@ -10,6 +10,7 @@ use core::fmt;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
+mod command_entry;
 mod cmd_attach_session;
 mod cmd_bind_key;
 mod cmd_break_pane;
@@ -235,7 +236,7 @@ pub use crate::types::{
 use crate::window::WinlinkRef;
 use crate::xmalloc::xasprintf;
 use crate::{ArgumentTextCodec, RustArgumentTextCodec};
-use crate::{CommandCatalog, CommandEntry, RustCommandCatalog};
+use crate::{CommandCatalog, RustCommandCatalog};
 use ::core::ffi::{CStr, c_int, c_uint};
 use ::std::ffi::CString;
 
@@ -917,7 +918,7 @@ impl cmd_entry_flag {
     }
 }
 pub type cmd_retval = core::ffi::c_int;
-pub use crate::command_entry::RustCommandEntry;
+pub use command_entry::{CommandEntry, CommandResult, RustCommandContext, RustCommandEntry};
 pub type cmd_entry = RustCommandEntry;
 
 #[repr(C)]

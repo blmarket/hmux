@@ -8,7 +8,7 @@ use crate::cmd::{
     cmd_find_target, cmd_find_valid_state,
 };
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print};
-use crate::command_entry::{CommandEntry, RustCommandContext};
+use crate::cmd::{CommandEntry, RustCommandContext};
 use crate::compat::toupper;
 use crate::control::control_write;
 use crate::ffi::{getuid, time};
