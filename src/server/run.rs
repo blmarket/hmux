@@ -11,7 +11,7 @@ use crate::cmd::{cmd_find_clear_state, cmd_find_valid_state};
 use crate::compat::systemd_create_socket;
 use crate::compat::{error_message, signal_description};
 use crate::ffi::{
-    __errno_location, accept, bind, close, exit, kill, killpg, listen, malloc_trim, sigfillset,
+    __errno_location, accept, bind, close, kill, killpg, listen, malloc_trim, sigfillset,
     sigprocmask, socket, time, umask, waitpid,
 };
 use crate::fmt_args;
@@ -375,7 +375,10 @@ pub unsafe fn server_start(
                     .lock()
                     .write_all(&[cause.to_bytes(), b"\n"].concat());
                 reactor::shutdown();
-                exit(1 as core::ffi::c_int);
+                {
+                    let __status = 1 as core::ffi::c_int;
+                    std::process::exit(__status)
+                };
             }
         }
         server_ev_tidy.set_callback(move || {
@@ -396,7 +399,10 @@ pub unsafe fn server_start(
         job_kill_all();
         status_prompt_save_history();
         reactor::shutdown();
-        exit(0 as core::ffi::c_int);
+        {
+            let __status = 0 as core::ffi::c_int;
+            std::process::exit(__status)
+        };
     }
 }
 fn server_loop() -> core::ffi::c_int {

@@ -18,7 +18,7 @@
 //! once a test has already failed.
 use crate::compat::error_message;
 use crate::compat::stravis;
-use crate::ffi::{__errno_location, exit};
+use crate::ffi::__errno_location;
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc, format_bytes};
 pub use crate::types::*;
@@ -126,14 +126,14 @@ pub unsafe fn fatal(msg: &CStr, args: &[FmtArg]) -> ! {
         prefix.truncate(255);
         let prefix = CString::new(prefix).expect("the fatal prefix contains no NUL");
         log_vwrite(msg, args, &prefix);
-        exit(1);
+        std::process::exit(1);
     }
 }
 
 pub unsafe fn fatalx(msg: &CStr, args: &[FmtArg]) -> ! {
     unsafe {
         log_vwrite(msg, args, c"fatal: ");
-        exit(1);
+        std::process::exit(1);
     }
 }
 

@@ -10,7 +10,7 @@ use crate::environ::{
     process_environment, process_environment_value, reset_global_environment,
     with_global_environment, with_global_environment_mut,
 };
-use crate::ffi::{access, err, errx, exit, fcntl, getcwd, getuid, nl_langinfo, setlocale, tzset};
+use crate::ffi::{access, err, errx, fcntl, getcwd, getuid, nl_langinfo, setlocale, tzset};
 use crate::fmt_args;
 use crate::log::{log_add_level, log_debug};
 use crate::options::{OptionsEngine, RustOptionsEngine};
@@ -467,19 +467,19 @@ pub static mut ptm_fd: core::ffi::c_int = -(1 as core::ffi::c_int);
 /// The command `-c` was given, which the client asks the server to run in a
 /// shell instead of attaching.
 pub static mut shell_command: Option<CString> = None;
+
 fn usage(status: core::ffi::c_int) -> ! {
-    unsafe {
-        let message = [b"usage: ".as_slice(), getprogname().to_bytes(), b" [-2CDhlNuVv] [-c shell-command] [-f file] [-L socket-name]\n            [-S socket-path] [-T features] [command [flags]]\n"].concat();
-        if status != 0 {
-            let _ = std::io::stderr().lock().write_all(&message);
-        } else {
-            let mut output = std::io::stdout().lock();
-            let _ = output.write_all(&message);
-            let _ = output.flush();
-        }
-        exit(status);
+    let message = [b"usage: ".as_slice(), getprogname().to_bytes(), b" [-2CDhlNuVv] [-c shell-command] [-f file] [-L socket-name]\n            [-S socket-path] [-T features] [command [flags]]\n"].concat();
+    if status != 0 {
+        let _ = std::io::stderr().lock().write_all(&message);
+    } else {
+        let mut output = std::io::stdout().lock();
+        let _ = output.write_all(&message);
+        let _ = output.flush();
     }
+    std::process::exit(status);
 }
+
 /// The shell `default-shell` starts out as: the one `SHELL` names, else the
 /// one the password entry gives, else `/bin/sh`.
 fn getshell() -> CString {
@@ -854,7 +854,10 @@ pub unsafe fn main_0(argv: &mut [CString]) -> core::ffi::c_int {
                     let _ = std::io::stdout()
                         .lock()
                         .write_all(&[b"tmux ".as_slice(), getversion().to_bytes(), b"\n"].concat());
-                    exit(0 as core::ffi::c_int);
+                    {
+                        let __status = 0 as core::ffi::c_int;
+                        std::process::exit(__status)
+                    };
                 }
                 108 => {
                     flags |= CLIENT_LOGIN as uint64_t;
@@ -999,7 +1002,10 @@ pub unsafe fn main_0(argv: &mut [CString]) -> core::ffi::c_int {
                     let _ = std::io::stderr()
                         .lock()
                         .write_all(&[cause.to_bytes(), b"\n"].concat());
-                    exit(1 as core::ffi::c_int);
+                    {
+                        let __status = 1 as core::ffi::c_int;
+                        std::process::exit(__status)
+                    };
                 }
             }
             flags |= CLIENT_DEFAULTSOCKET as uint64_t;
@@ -1007,7 +1013,7 @@ pub unsafe fn main_0(argv: &mut [CString]) -> core::ffi::c_int {
         socket_path = Some(path.expect("socket path was selected"));
         let status = client_main(osdep_event_init(), argv, flags, feat);
         crate::reactor::shutdown();
-        exit(status);
+        std::process::exit(status);
     }
 }
 pub const TMUX_CONF: &CStr =

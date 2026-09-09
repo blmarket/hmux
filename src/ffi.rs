@@ -58,7 +58,6 @@ unsafe extern "C" {
         __file: *const core::ffi::c_char,
         __argv: *const *mut core::ffi::c_char,
     ) -> core::ffi::c_int;
-    pub fn exit(__status: core::ffi::c_int) -> !;
     pub fn explicit_bzero(__s: *mut core::ffi::c_void, __n: size_t);
     pub fn fabs(__x: core::ffi::c_double) -> core::ffi::c_double;
     pub fn fclose(__stream: *mut FILE) -> core::ffi::c_int;
