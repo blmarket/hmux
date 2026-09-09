@@ -6,7 +6,8 @@ use crate::fmt_args;
 use crate::prompt_history::{
     PromptHistoryStore, PromptHistoryType, with_prompt_history, with_prompt_history_mut,
 };
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{args, args_parse_t, u_char, u_int};
 use core::ffi::CStr;
 

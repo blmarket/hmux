@@ -11,7 +11,8 @@ pub use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_CANFAIL, CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_ERROR,
     CMD_RETURN_NORMAL, ENVIRON_HIDDEN,
 };
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::args_parse_t;
 use ::core::ffi::CStr;
 

@@ -26,7 +26,8 @@ use crate::format::{
     format_add, format_create_for_client, format_defaults_for_link, format_expand, format_true,
 };
 use crate::sort::{RustSortCriteria, SortCriteria, sort_get_winlinks};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmdq::cmdq_item;
 use crate::types::{args_parse_t, format_tree, u_int};
 use ::core::ffi::{CStr, c_char};
 

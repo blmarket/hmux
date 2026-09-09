@@ -5,7 +5,8 @@ use crate::fmt_args;
 use crate::format::format_single_from_target;
 
 use crate::tmux::check_name;
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{OptionsRef, args, args_parse_t};
 
 pub use crate::consts::{

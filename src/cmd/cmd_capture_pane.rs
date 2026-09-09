@@ -32,7 +32,8 @@ pub use crate::consts::{
 use crate::fmt_args;
 use crate::pane_handle::{CapturePaneEdge, PaneCapture};
 use crate::paste::{PasteBufferStore, paste_buffer_limit, with_paste_buffers_mut};
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{RustWindowPaneWeak, args, args_parse_t, size_t, u_char};
 use ::core::ffi::{c_char, c_int, c_longlong};
 pub const INT_MIN: c_int = -__INT_MAX__ - 1 as c_int;

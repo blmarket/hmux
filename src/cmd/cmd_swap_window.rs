@@ -7,7 +7,8 @@ use crate::resize::recalculate_sizes;
 pub use crate::consts::{
     CMD_FIND_DEFAULT_MARKED, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{args, args_parse_t};
 use crate::window::WinlinkRef;
 

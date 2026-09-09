@@ -1,6 +1,6 @@
 use crate::arguments::args_get_str;
 use crate::arguments::{args_count, args_has, args_string_str, args_to_vector, args_value_list};
-use crate::cmd::queue::cmdq_item_weak_of;
+use crate::cmdq::cmdq_item_weak_of;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::environ::EnvironmentStore;
@@ -13,7 +13,8 @@ pub use crate::consts::{
     SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FLOATING, SPAWN_FULLSIZE, SPAWN_ZOOM,
 };
 use crate::spawn::spawn_pane;
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{
     OptionsRef, args, args_parse_t, cmd_find_state, spawn_context, u_char, u_int,
 };
@@ -198,7 +199,7 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if input != 0 {
         match unsafe {
             new_pane
-                .start_input(&crate::cmd::cmdq_item_ref_of(item).expect("the command has an owner"))
+                .start_input(&crate::cmdq::cmdq_item_ref_of(item).expect("the command has an owner"))
         } {
             Err(cause) => {
                 unsafe { owner.discard_pane(&new_pane, is_floating == 0) };
@@ -246,7 +247,7 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         )
     };
     unsafe {
-        (crate::cmd::queue::cmdq_item_ref_of(item).expect("the command has an owner"))
+        (crate::cmdq::cmdq_item_ref_of(item).expect("the command has an owner"))
             .insert_session_hook(
                 Some(&session),
                 Some(&fs),

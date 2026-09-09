@@ -11,7 +11,8 @@ pub use crate::consts::{
 };
 #[cfg(test)]
 use crate::tty::tty_window_bigger;
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{OptionsRef, WindowRef, args_parse_t};
 
 pub(crate) static cmd_select_pane_entry: RustCommandEntry = {
@@ -235,7 +236,7 @@ unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
     let current = current_state_ref.current_snapshot();
     unsafe {
-        (crate::cmd::queue::cmdq_item_ref_of(item).expect("the command has an owner"))
+        (crate::cmdq::cmdq_item_ref_of(item).expect("the command has an owner"))
             .insert_session_hook(
                 Some(&session),
                 Some(&current),

@@ -3,7 +3,7 @@ use crate::arguments::{args_count, args_has, args_to_vector, args_value_list};
 use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
 use crate::cmd::cmd_attach_session::cmd_attach_session;
 use crate::cmd::find::cmd_find_from_session_ref;
-use crate::cmd::queue::cmdq_item_weak_of;
+use crate::cmdq::cmdq_item_weak_of;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::compat::strtonum;
@@ -25,7 +25,8 @@ pub use crate::consts::{
 use crate::spawn::spawn_window;
 use crate::tmux::global_session_options;
 use crate::tmux::{check_name, clean_name};
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{
     ClientRef, OptionsRef, SessionRef, args, args_parse_t, cmd_find_state, spawn_context, termios,
     u_char, u_int, uint64_t,
@@ -687,7 +688,7 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                             )
                                                         };
                                                         unsafe {
-                                                            (crate::cmd::queue::cmdq_item_ref_of(
+                                                            (crate::cmdq::cmdq_item_ref_of(
                                                                 item,
                                                             )
                                                             .expect("the command has an owner"))

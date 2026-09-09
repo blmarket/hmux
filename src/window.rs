@@ -1,4 +1,4 @@
-use crate::cmd::cmdq_item;
+use crate::cmdq::cmdq_item;
 use crate::entity_id::next_entity_id;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::pane_activity::PaneActivityState;
@@ -14,7 +14,7 @@ use crate::window_scrollbar::{RustWindowScrollbarState, WindowScrollbarState};
 use crate::window_timestamps::{RustWindowTimestampState, WindowTimestampState};
 use crate::window_trait::Window as _;
 
-use crate::cmd::{CmdqItemWeak, cmdq_item_ref_of};
+use crate::cmdq::{CmdqItemWeak, cmdq_item_ref_of};
 use crate::compat::{cstr_eq_ignore_case, strtonum};
 use crate::control::control_write_output;
 use crate::ffi::{close, fnmatch, gethostname, getpid, ioctl, kill, utempter_remove_record};

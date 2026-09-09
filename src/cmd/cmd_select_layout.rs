@@ -9,7 +9,8 @@ use crate::resize::recalculate_sizes;
 pub use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{args, args_parse_t, u_char, u_int};
 
 pub const CMD_TARGET_WINDOW_USAGE: &core::ffi::CStr = c"[-t target-window]";

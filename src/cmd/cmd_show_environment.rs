@@ -13,7 +13,8 @@ use crate::environ::RustEnvironment;
 use crate::environ::with_global_environment;
 use crate::fmt_args;
 use crate::fmt_engine::format_alloc;
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{args, args_parse_t, u_char};
 
 pub(crate) static cmd_show_environment_entry: RustCommandEntry = {

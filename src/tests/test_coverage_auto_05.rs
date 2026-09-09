@@ -8,7 +8,7 @@
 //! menus. All tests are deterministic and stay clear of the
 //! `fatal`/`fatalx` paths.
 
-use crate::cmd::KEYC_NONE;
+use crate::cmdq::KEYC_NONE;
 use crate::overlay::{
     BOX_LINES_DEFAULT as MENU_BOX_DEFAULT, BOX_LINES_DOUBLE as MENU_BOX_DOUBLE,
     BOX_LINES_HEAVY as MENU_BOX_HEAVY, BOX_LINES_NONE as MENU_BOX_NONE,

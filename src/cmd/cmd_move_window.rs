@@ -31,7 +31,8 @@ pub use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_QUIET, CMD_FIND_SESSION, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX,
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_find_type, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_find_type, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{OptionsRef, SessionRef, args_parse_t, cmd_find_state};
 #[cfg(test)]
 use crate::types::{WindowRef, u_int};

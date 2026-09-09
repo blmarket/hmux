@@ -1,4 +1,4 @@
-use crate::cmd::cmdq_item;
+use crate::cmdq::cmdq_item;
 use crate::WindowPane;
 use crate::format_modifier::FormatModifier;
 use crate::options::{OptionsEngine, RustOptionsEngine};
@@ -9,8 +9,8 @@ use crate::window_dimensions::WindowDimensionsState;
 use crate::{UserAccount, UserAccountRecord};
 
 use crate::cfg::cfg_files;
-use crate::cmd::CmdqItemRef;
-use crate::cmd::CmdqItemWeak;
+use crate::cmdq::CmdqItemRef;
+use crate::cmdq::CmdqItemWeak;
 use crate::cmd::{cmd_mouse_at, cmd_mouse_pane};
 
 use crate::compat::strtonum;
@@ -181,7 +181,7 @@ impl format_tree {
     /// Records `item` as the item the tree was made for.
     pub(crate) fn set_item(&mut self, item: Option<&cmdq_item>) {
         self.item_ref = item
-            .and_then(crate::cmd::cmdq_item_ref_of)
+            .and_then(crate::cmdq::cmdq_item_ref_of)
             .map(|item| item.downgrade());
     }
 

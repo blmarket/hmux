@@ -1,6 +1,6 @@
 //! Stable access to command parser context.
 
-use crate::cmd::CmdqItemRef;
+use crate::cmdq::CmdqItemRef;
 use crate::types::{ClientRef, cmd_find_state, u_int};
 use core::ffi::{CStr, c_int};
 use std::ffi::CString;
@@ -87,7 +87,7 @@ impl CommandParseInput for crate::types::cmd_parse_input {
     fn command_parse_item(&self) -> Option<CmdqItemRef> {
         self.item
             .as_ref()
-            .and_then(crate::cmd::CmdqItemWeak::upgrade)
+            .and_then(crate::cmdq::CmdqItemWeak::upgrade)
     }
 
     fn set_command_parse_item(&mut self, item: Option<CmdqItemRef>) {

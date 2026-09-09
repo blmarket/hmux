@@ -9,7 +9,8 @@ pub use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_SESSION, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
     CMD_TARGET_SESSION_USAGE,
 };
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{args, args_parse_t, u_char};
 
 pub(crate) static cmd_select_window_entry: RustCommandEntry = {
@@ -181,7 +182,7 @@ unsafe fn cmd_select_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
     current_state_ref.replace_current(current.clone());
     unsafe {
-        (crate::cmd::queue::cmdq_item_ref_of(item).expect("the command has an owner"))
+        (crate::cmdq::cmdq_item_ref_of(item).expect("the command has an owner"))
             .insert_session_hook(
                 Some(&session),
                 Some(&current),

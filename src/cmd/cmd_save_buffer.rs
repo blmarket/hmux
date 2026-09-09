@@ -1,5 +1,5 @@
 use crate::arguments::{args_get_str, args_has, args_string_str};
-use crate::cmd::queue::cmdq_item_weak_of;
+use crate::cmdq::cmdq_item_weak_of;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::compat::error_message;
 pub use crate::consts::{
@@ -11,7 +11,8 @@ use crate::fmt_args;
 use crate::format::format_single_from_target;
 use crate::paste::{PasteBufferStore, with_paste_buffers};
 use crate::types::ClientFileEvent;
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{ByteBuffer, ClientFileData, args, args_parse_t, u_char, uint64_t};
 use ::std::ffi::CString;
 

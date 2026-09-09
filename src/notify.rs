@@ -1,7 +1,8 @@
-use crate::cmd::{CmdListRef, cmd_retval, cmdq_item};
+use crate::cmd::{CmdListRef, cmd_retval};
+use crate::cmdq::cmdq_item;
 use crate::cmd::CMD_RETURN_NORMAL;
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
-use crate::cmd::{CmdqItemRef, CmdqStateRef, cmdq_append, cmdq_item_ref_of, cmdq_running};
+use crate::cmdq::{CmdqItemRef, CmdqStateRef, cmdq_append, cmdq_item_ref_of, cmdq_running};
 use crate::cmd::{
     cmd_find_clear_state, cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_client,
     cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session, cmd_find_from_winlink,

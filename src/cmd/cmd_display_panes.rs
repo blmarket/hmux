@@ -13,9 +13,9 @@
 //! key handling and whether the queue waits for selection.
 
 use crate::arguments::{args_has, args_make_commands, args_make_commands_prepare, args_strtonum};
-use crate::cmd::CmdqItemRef;
+use crate::cmdq::CmdqItemRef;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::{CmdqItemWeak, cmdq_append, cmdq_item_weak_of};
+use crate::cmdq::{CmdqItemWeak, cmdq_append, cmdq_item_weak_of};
 use crate::fmt_args;
 
 use crate::server::client_set_overlay;
@@ -25,7 +25,8 @@ pub use crate::consts::{
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_WAIT, KEYC_MASK_KEY, KEYC_MASK_MODIFIERS,
     UINT_MAX,
 };
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{
     ClientRef, OptionsRef, Overlay, OverlayState, SessionRef, args, args_command_state,
     args_parse_t, args_parse_type, key_code, key_event, u_int,

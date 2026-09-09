@@ -19,7 +19,8 @@
 //! is a turn at the paste store and [`KeyTable`] is a key table of the test's
 //! own.
 
-use crate::cmd::{CmdListRef, cmd, cmd_entry, cmd_entry_flag, cmd_retval, cmdq_item};
+use crate::cmd::{CmdListRef, cmd, cmd_entry, cmd_entry_flag, cmd_retval};
+use crate::cmdq::cmdq_item;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::pane_identity::PaneIdentity;
 use crate::window_dimensions::WindowDimensionsState;
@@ -27,7 +28,7 @@ use crate::window_name::WindowNameState;
 
 use crate::pane_geometry::PaneGeometryState;
 
-use crate::cmd::CmdqItemRef;
+use crate::cmdq::CmdqItemRef;
 
 use crate::screen::RustScreen;
 use crate::session::session_new_detached;
@@ -84,10 +85,10 @@ pub fn prompt_answers_clear() {
     PROMPT_ANSWERS.lock().unwrap().clear();
 }
 
-use crate::cmd::CmdqListOps;
+use crate::cmdq::CmdqListOps;
 use crate::cmd::cmd_find_from_winlink;
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
-use crate::cmd::{CmdqStateRef, CmdqType};
+use crate::cmdq::{CmdqStateRef, CmdqType};
 use crate::environ::{RustEnvironment, new_environment_box};
 use crate::ffi::free;
 use crate::file::CLIENT_DEAD;

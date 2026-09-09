@@ -1,7 +1,8 @@
 //! Execution boundary for registered commands.
 
 use crate::cmd::{CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_STOP, CMD_RETURN_WAIT};
-use crate::cmd::{cmd, cmdq_item};
+use crate::cmd::cmd;
+use crate::cmdq::cmdq_item;
 use crate::cmd::{cmd_entry_flag, cmd_retval};
 use crate::types::args_parse_t;
 use core::ffi::CStr;

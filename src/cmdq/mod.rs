@@ -3,7 +3,7 @@ use crate::arguments::{
 };
 use crate::cfg::cfg_add_cause;
 use crate::cfg::cfg_finished;
-use crate::cmd::find::{
+use crate::cmd::{
     cmd_find_clear_state, cmd_find_client, cmd_find_copy_state, cmd_find_from_client,
     cmd_find_target, cmd_find_valid_state,
 };
@@ -651,7 +651,7 @@ mod focused_boundary_tests {
         let target_flag = cmd_entry_flag {
             flag: b't' as _,
             type_0: CMD_FIND_PANE,
-            flags: crate::cmd::find::CMD_FIND_QUIET,
+            flags: crate::cmd::CMD_FIND_QUIET,
         };
         unsafe {
             let (result, source) = cmdq_find_flag(&item.read(), &source_flag);
@@ -1487,7 +1487,7 @@ impl CmdqStateRef {
         flags: core::ffi::c_int,
     ) {
         unsafe {
-            super::find::cmd_find_from_session_ref(&mut self.state().current, session, flags)
+            crate::cmd::cmd_find_from_session_ref(&mut self.state().current, session, flags)
         };
     }
 
@@ -1503,7 +1503,7 @@ impl CmdqStateRef {
         flags: core::ffi::c_int,
     ) {
         unsafe {
-            super::find::cmd_find_from_link_ref(&mut self.state().current, link, pane, flags)
+            crate::cmd::cmd_find_from_link_ref(&mut self.state().current, link, pane, flags)
         };
     }
 

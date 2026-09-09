@@ -33,7 +33,7 @@ use crate::pane_geometry::PaneGeometryState;
 use crate::pane_identity::PaneIdentity;
 
 use crate::client::CMD_STARTSERVER;
-use crate::cmd::CMD_AFTERHOOK;
+use crate::cmdq::CMD_AFTERHOOK;
 use crate::cmd::{
     CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS, cmd_copy, cmd_find, cmd_get_alias,
     cmd_get_parse_flags, cmd_get_source, cmd_mouse_at, cmd_mouse_pane, cmd_mouse_window, cmd_parse,

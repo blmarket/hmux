@@ -46,7 +46,8 @@ use crate::format::{
 };
 use crate::server::client_print_buffer;
 use crate::status::status_message_for_client;
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{ByteBuffer, ClientRef, RustWindowPaneWeak, args, args_parse_t, uint64_t};
 use ::core::ffi::{CStr, c_char, c_int, c_longlong};
 
@@ -100,7 +101,7 @@ unsafe fn cmd_display_message_input(
         let Some(wp) = wp else {
             return CMD_RETURN_NORMAL;
         };
-        match wp.start_input(&crate::cmd::cmdq_item_ref_of(item).expect("the command has an owner"))
+        match wp.start_input(&crate::cmdq::cmdq_item_ref_of(item).expect("the command has an owner"))
         {
             Err(cause) => {
                 item.error(c"%s", fmt_args![cause.as_c_str()]);

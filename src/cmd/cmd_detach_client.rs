@@ -21,7 +21,8 @@ pub use crate::consts::{
 };
 use crate::fmt_args;
 use crate::server::client_walk;
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{ClientRef, args_parse_t, msgtype, uint64_t};
 use ::core::ffi::CStr;
 

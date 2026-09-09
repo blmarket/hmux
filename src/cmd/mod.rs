@@ -75,7 +75,6 @@ mod cmd_wait_for;
 
 mod find;
 mod parse;
-mod queue;
 
 pub use find::{
     cmd_find_clear_state, cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_client,
@@ -88,15 +87,14 @@ pub use parse::{
     cmd_parse_from_arguments, cmd_parse_from_buffer, cmd_parse_from_file, cmd_parse_from_string,
     cmd_parse_state,
 };
-#[cfg(test)]
-pub(crate) use queue::CmdqListOps;
-pub use queue::{
-    CmdqItemWeak, cmdq_append, cmdq_item, cmdq_items, cmdq_list, cmdq_next, cmdq_running,
-};
-pub use queue::{CmdqListRef, CmdqListWeak};
 
 #[cfg(test)]
-pub(crate) use find::{cmd_find_best_client, cmd_find_target};
+pub(crate) use find::cmd_find_best_client;
+pub(crate) use find::{
+    cmd_find_client, cmd_find_target, cmd_find_from_session_ref, cmd_find_from_link_ref,
+};
+#[cfg(test)]
+pub(crate) use find::CMD_FIND_QUIET;
 pub(crate) use find::{cmd_find_best_session, cmd_find_log_state_with_window};
 pub(crate) use parse::cmd_parse_and_append;
 #[cfg(test)]
@@ -109,10 +107,6 @@ pub(crate) use parse::{
     cmd_parse_from_arguments_impl, cmd_parse_from_buffer_impl, cmd_parse_from_file_impl,
     cmd_parse_from_string_impl,
 };
-pub use queue::CmdqItemRef;
-#[cfg(test)]
-pub(crate) use queue::{CMD_AFTERHOOK, CMDQ_STATE_NOHOOKS, CMDQ_WAITING, CmdqType, KEYC_NONE};
-pub(crate) use queue::{CmdqStateRef, cmdq_item_ref_of};
 
 pub use cmd_command_prompt::cmd_command_prompt_cdata;
 pub(crate) use cmd_command_prompt::{cmd_command_prompt_callback, cmd_command_prompt_free};

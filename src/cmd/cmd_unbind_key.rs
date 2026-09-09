@@ -8,7 +8,8 @@ use crate::fmt_args;
 use crate::key_bindings::key_bindings_get_table;
 use crate::key_bindings::{key_bindings_remove, key_bindings_remove_table};
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{args, args_parse_t, key_code, u_char};
 
 pub(crate) static cmd_unbind_key_entry: RustCommandEntry = {

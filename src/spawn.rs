@@ -1,7 +1,8 @@
 use crate::WindowPane as _;
 use crate::compat::error_message;
 
-use crate::cmd::{CmdqItemRef, cmd_log_argv};
+use crate::cmd::cmd_log_argv;
+use crate::cmdq::CmdqItemRef;
 
 use crate::compat::fdforkpty;
 use crate::compat::systemd_move_to_new_cgroup;

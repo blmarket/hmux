@@ -6,7 +6,7 @@ use super::defaults::server_default_options;
 use super::message::server_destroy_pane;
 use crate::WindowPane;
 use crate::cmd::cmd_wait_for_flush;
-use crate::cmd::cmdq_next;
+use crate::cmdq::cmdq_next;
 use crate::cmd::{cmd_find_clear_state, cmd_find_valid_state};
 use crate::compat::systemd_create_socket;
 use crate::compat::{error_message, signal_description};

@@ -34,7 +34,8 @@ use crate::format::{
 };
 use crate::session::SESSIONS;
 use crate::sort::{RustSortCriteria, SortCriteria};
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{SessionRef, args_parse_t, format_tree, u_int};
 use crate::window::{WinlinkRef, winlinks_in};
 use ::core::ffi::{CStr, c_char};

@@ -2,7 +2,7 @@ use crate::options::OptionsRef;
 use crate::pane_geometry::PaneGeometryState;
 
 use super::*;
-use crate::cmd::{CmdqListOps, cmdq_next};
+use crate::cmdq::{CmdqListOps, cmdq_next};
 
 use crate::reactor::ByteBuffer;
 use crate::server::client_ref_of;

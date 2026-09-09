@@ -1,6 +1,6 @@
 use crate::WindowPane;
 use crate::arguments::{args_get_str, args_has};
-use crate::cmd::CmdqStateRef;
+use crate::cmdq::CmdqStateRef;
 use crate::cmd::cmd_mouse_at;
 use crate::cmd::cmd_parse_and_append;
 

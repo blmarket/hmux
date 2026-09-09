@@ -26,7 +26,7 @@
 use crate::arguments::args_get_str;
 use crate::arguments::{args_has, args_to_vector, args_value_list};
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::cmdq_item_weak_of;
+use crate::cmdq::cmdq_item_weak_of;
 
 use crate::environ::EnvironmentStore;
 use crate::environ::{RustEnvironment, new_environment_box};
@@ -40,7 +40,8 @@ pub use crate::consts::{
 };
 use crate::spawn::spawn_window;
 use crate::tmux::{check_name, clean_name};
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{ClientRef, SessionRef, args, args_parse_t, cmd_find_state, spawn_context};
 #[cfg(test)]
 use crate::types::{tmuxpeer, winlink};
@@ -230,7 +231,7 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut fs = cmd_find_state::default();
     unsafe { crate::cmd::find::cmd_find_from_link_ref(&mut fs, &new_wl, None, 0) };
     unsafe {
-        (crate::cmd::queue::cmdq_item_ref_of(item).expect("the command has an owner"))
+        (crate::cmdq::cmdq_item_ref_of(item).expect("the command has an owner"))
             .insert_session_hook(Some(&session), Some(&fs), c"after-new-window", fmt_args![])
     };
 

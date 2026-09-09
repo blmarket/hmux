@@ -2,7 +2,7 @@ use crate::cmd::CmdListRef;
 use crate::cmd::cmd_get_alias;
 use crate::cmd::cmd_parse;
 use crate::cmd::find::{cmd_find_from_client, cmd_find_valid_state};
-use crate::cmd::queue::{CmdqItemWeak, CmdqStateRef, cmdq_append};
+use crate::cmdq::{CmdqItemWeak, CmdqStateRef, cmdq_append};
 pub use crate::consts::{
     CMD_PARSE_ERROR, CMD_PARSE_PARSEONLY, CMD_PARSE_SUCCESS, CMD_PARSE_VERBOSE, ENVIRON_HIDDEN,
     FORMAT_NOJOBS, FORMAT_NONE, UINT_MAX,

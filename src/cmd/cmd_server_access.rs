@@ -11,7 +11,8 @@ use crate::server::{
     ServerAclAccess, ServerAclStore, server_acl_display, server_acl_update_clients,
     with_server_acl, with_server_acl_mut,
 };
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{__uid_t, args, args_parse_t, u_char, u_int, uid_t};
 use crate::{UserAccount, UserAccountRecord};
 

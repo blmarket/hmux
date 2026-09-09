@@ -22,7 +22,8 @@ pub use crate::consts::{CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RE
 use crate::fmt_args;
 use crate::resize::recalculate_sizes;
 use crate::server::server_renumber_all;
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::args_parse_t;
 #[cfg(test)]
 use crate::types::cmd_find_state;

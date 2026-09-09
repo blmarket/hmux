@@ -34,10 +34,10 @@ use crate::arguments::{
     args_count, args_get_str, args_has, args_make_commands, args_make_commands_get_command,
     args_make_commands_prepare,
 };
-use crate::cmd::CmdqItemRef;
+use crate::cmdq::CmdqItemRef;
 use crate::cmd::cmd_get_args;
-use crate::cmd::queue::CmdqItemWeak;
-use crate::cmd::queue::{cmdq_append, cmdq_item_weak_of};
+use crate::cmdq::CmdqItemWeak;
+use crate::cmdq::{cmdq_append, cmdq_item_weak_of};
 pub use crate::consts::{
     ARGS_PARSE_COMMANDS_OR_STRING, CMD_CLIENT_TFLAG, CMD_FIND_PANE, CMD_RETURN_ERROR,
     CMD_RETURN_NORMAL, CMD_RETURN_WAIT, PROMPT_BSPACE_EXIT, PROMPT_INCREMENTAL, PROMPT_KEY,
@@ -46,7 +46,8 @@ pub use crate::consts::{
 use crate::fmt_args;
 use crate::prompt_history::PromptHistoryType;
 use crate::status::{status_prompt_for_client, status_prompt_update_for_client};
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval, cmdq_item};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmdq_item;
 pub use crate::types::{
     ClientRef, Prompt, PromptData, args, args_command_state, args_parse_t, args_parse_type,
     cmd_command_prompt_prompt, u_int,
