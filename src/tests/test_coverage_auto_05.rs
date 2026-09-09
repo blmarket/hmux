@@ -8,6 +8,7 @@
 //! menus. All tests are deterministic and stay clear of the
 //! `fatal`/`fatalx` paths.
 
+use crate::cmd::KEYC_NONE;
 use crate::overlay::{
     BOX_LINES_DEFAULT as MENU_BOX_DEFAULT, BOX_LINES_DOUBLE as MENU_BOX_DOUBLE,
     BOX_LINES_HEAVY as MENU_BOX_HEAVY, BOX_LINES_NONE as MENU_BOX_NONE,
@@ -37,9 +38,9 @@ use crate::overlay::{
     CLIENT_EXIT_DETACH, CLIENT_EXIT_RETURN, CLIENT_EXIT_SHUTDOWN, PROMPT_COMMAND, PROMPT_ENTRY,
     PROMPT_TYPE_COMMAND, PROMPT_TYPE_SEARCH,
 };
-use crate::tests::test_fixtures::{Clients, globals, seen};
+use crate::screen::RustScreen;
+use crate::tests::test_fixtures::{Clients, globals, seen_str};
 use crate::types::*;
-use ::core::ptr::null_mut;
 
 // ---------------------------------------------------------------------------
 // Popup / menu message constants — stable wire values
@@ -94,9 +95,7 @@ fn popup_and_menu_share_box_line_values() {
     assert_eq!(POPUP_BOX_SINGLE, 0);
     assert_ne!(POPUP_BOX_SINGLE, POPUP_BOX_NONE);
     // ladder is strict then wraps to default sentinel
-    assert!(POPUP_BOX_SINGLE < POPUP_BOX_DOUBLE);
-    assert!(POPUP_BOX_DOUBLE < POPUP_BOX_HEAVY);
-    assert!(POPUP_BOX_NONE == 6);
+    assert_eq!(POPUP_BOX_NONE, 6);
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +171,7 @@ fn prompt_and_client_exit_constants_match_headers() {
     assert_eq!(MENU_TAB, 0x2);
     assert_eq!(MENU_STAYOPEN, 0x4);
     assert_eq!(MENU_NOMOUSE | MENU_TAB | MENU_STAYOPEN, 0x7);
-    assert_eq!((MENU_NOMOUSE & MENU_TAB), 0);
+    assert_eq!(MENU_NOMOUSE & MENU_TAB, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +184,7 @@ fn popup_present_is_zero_for_a_plain_client() {
     let mut clients = Clients::new();
     let c = clients.add("plain-auto05", 80, 24);
     unsafe {
-        assert_eq!(popup_present(c), 0);
+        assert_eq!(popup_present(&*c), 0);
         assert!((*c).overlay_data().is_none());
         assert!((*c).overlay().is_none());
     }
@@ -194,12 +193,11 @@ fn popup_present_is_zero_for_a_plain_client() {
 #[test]
 fn menu_create_and_free_roundtrip_with_title() {
     let _guard = globals();
-    unsafe {
-        let title = c"auto05".as_ptr();
-        let m = menu_create(title);
+    {
+        let m = menu_create(c"auto05");
         assert_eq!(m.items.len(), 0);
         assert!(m.title.is_some());
-        assert_eq!(seen(cstr_ptr(&m.title)), "auto05");
+        assert_eq!(seen_str(m.title.as_deref()), "auto05");
         // width is format_width of the title; "auto05" is 6 cells
         assert_eq!(m.width, 6);
         assert!(m.items.is_empty());
@@ -209,10 +207,10 @@ fn menu_create_and_free_roundtrip_with_title() {
 #[test]
 fn menu_with_an_empty_title_works() {
     let _guard = globals();
-    unsafe {
-        let m = menu_create(c"".as_ptr());
+    {
+        let m = menu_create(c"");
         assert_eq!(m.items.len(), 0);
-        assert_eq!(seen(cstr_ptr(&m.title)), "");
+        assert_eq!(seen_str(m.title.as_deref()), "");
         assert_eq!(m.width, 0);
     }
 }
@@ -220,9 +218,9 @@ fn menu_with_an_empty_title_works() {
 #[test]
 fn menu_create_width_tracks_title_length() {
     let _guard = globals();
-    unsafe {
-        let short = menu_create(c"hi".as_ptr());
-        let long = menu_create(c"hello world".as_ptr());
+    {
+        let short = menu_create(c"hi");
+        let long = menu_create(c"hello world");
         assert!(long.width > short.width);
         assert_eq!(short.width, 2);
         assert_eq!(long.width, 11);
@@ -236,14 +234,14 @@ fn test_menu_add_item_and_items() {
         let mut clients = Clients::new();
         let c = clients.add("c", 80, 24);
 
-        let mut m = menu_create(c"test-menu".as_ptr());
+        let mut m = menu_create(c"test-menu");
 
         let item1 = menu_item {
             name: Some(c"Item 1"),
             key: b'a' as key_code,
             command: Some(c"cmd 1"),
         };
-        menu_add_item(&raw mut *m, Some(&item1), null_mut(), c, null_mut());
+        menu_add_item(&mut m, Some(&item1), None, &mut *c, None);
         assert_eq!(m.items.len(), 1);
 
         // Separator
@@ -252,7 +250,7 @@ fn test_menu_add_item_and_items() {
             key: 0,
             command: None,
         };
-        menu_add_item(&raw mut *m, Some(&sep), null_mut(), c, null_mut());
+        menu_add_item(&mut m, Some(&sep), None, &mut *c, None);
         assert_eq!(m.items.len(), 2);
 
         // Multiple items
@@ -261,8 +259,31 @@ fn test_menu_add_item_and_items() {
             key: 0,
             command: None,
         }];
-        menu_add_items(&raw mut *m, &items, null_mut(), c, null_mut());
+        menu_add_items(&mut m, &items, None, &mut *c, None);
         assert_eq!(m.items.len(), 3);
+    }
+}
+
+#[test]
+fn menu_width_tracks_rendered_entries_and_ignores_disabled_markers() {
+    let _guard = globals();
+    unsafe {
+        let mut clients = Clients::new();
+        let c = clients.add("c", 80, 24);
+        let mut m = menu_create(c"");
+        for (name, key, width) in [
+            (c"Item 1", b'a' as key_code, 10),
+            (c"-Disabled row", KEYC_NONE, 12),
+            (c"Short", KEYC_NONE, 12),
+        ] {
+            let item = menu_item {
+                name: Some(name),
+                key,
+                command: None,
+            };
+            menu_add_item(&mut m, Some(&item), None, &mut *c, None);
+            assert_eq!(m.width, width);
+        }
     }
 }
 
@@ -273,15 +294,15 @@ fn test_menu_callbacks() {
         let mut clients = Clients::new();
         let c = clients.add("c", 80, 24);
 
-        let mut m = menu_create(c"menu".as_ptr());
+        let mut m = menu_create(c"menu");
         let item1 = menu_item {
             name: Some(c"One"),
             key: 0,
             command: None,
         };
-        menu_add_item(&raw mut *m, Some(&item1), null_mut(), c, null_mut());
+        menu_add_item(&mut m, Some(&item1), None, &mut *c, None);
 
-        let mut s = screen::default();
+        let mut s = RustScreen::default();
         let mut md = menu_data {
             item: None,
             flags: 0,
@@ -293,30 +314,27 @@ fn test_menu_callbacks() {
             selected_style_gc: crate::grid::grid_default_cell,
             border_lines: MENU_BOX_DEFAULT,
             fs: cmd_find_state::default(),
-            s,
-            r: visible_ranges {
-                ranges: Vec::new(),
-                used: 0,
-            },
+            s: ScreenRef::new(s),
+            r: VisibleRangesRef::default(),
             px: 10,
             py: 5,
             menu: m,
             choice: 0,
             cb: None,
-            data: MenuCallbackData::None,
         };
 
-        let (s, cx, cy) = menu_mode_cb(c, &raw mut md);
-        assert!(!s.is_null());
+        let (s, cx, cy) = menu_mode_cb(&md);
+        assert_eq!(s, md.s.borrow().mode_state());
         assert_eq!(cx, 12);
         assert_eq!(cy, 6);
 
         // choice = -1
         md.choice = -1;
-        let (_, _, cy) = menu_mode_cb(c, &raw mut md);
+        let (_, _, cy) = menu_mode_cb(&md);
         assert_eq!(cy, 5);
 
-        let vr = menu_check_cb(c, &raw mut md, 0, 0, 80);
-        assert!(!vr.is_null());
+        let vr = menu_check_cb(&mut md, 0, 0, 80);
+        assert_eq!(vr.used, 1);
+        assert_eq!((vr.ranges[0].px, vr.ranges[0].nx), (0, 80));
     }
 }

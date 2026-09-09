@@ -8,28 +8,13 @@
 //! — its whole effect is the `CMD_STARTSERVER` flag, which the client reads
 //! before the command is ever run. Neither takes an argument or a target, and
 //! both answer `CMD_RETURN_NORMAL`.
-//!
-//! Coverage exemptions: none. The argument-parsing, target-finding and
-//! return-value constants below are not this module's own, but
-//! `test_coverage_cmd_kill_server` reads and pins every one of them through
-//! it, so they stay where the transpiler put them.
+
 use crate::cmd::cmd_get_entry;
+pub use crate::consts::{CMD_FIND_PANE, CMD_RETURN_NORMAL, CMD_STARTSERVER, SIGTERM};
 use crate::ffi::{getpid, kill};
 pub use crate::types::*;
-pub const ARGS_PARSE_COMMANDS: args_parse_type = 3;
-pub const ARGS_PARSE_COMMANDS_OR_STRING: args_parse_type = 2;
-pub const ARGS_PARSE_STRING: args_parse_type = 1;
-pub const ARGS_PARSE_INVALID: args_parse_type = 0;
-pub const CMD_FIND_SESSION: cmd_find_type = 2;
-pub const CMD_FIND_WINDOW: cmd_find_type = 1;
-pub const CMD_FIND_PANE: cmd_find_type = 0;
-pub const CMD_RETURN_STOP: cmd_retval = 2;
-pub const CMD_RETURN_WAIT: cmd_retval = 1;
-pub const CMD_RETURN_NORMAL: cmd_retval = 0;
-pub const CMD_RETURN_ERROR: cmd_retval = -1;
-pub const SIGTERM: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
-pub const CMD_STARTSERVER: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub(crate) static cmd_kill_server_entry: cmd_entry = cmd_entry {
+
+pub(crate) static cmd_kill_server_entry: RustCommandEntry = RustCommandEntry {
     name: c"kill-server",
     alias: None,
     args: args_parse_t {
@@ -52,7 +37,7 @@ pub(crate) static cmd_kill_server_entry: cmd_entry = cmd_entry {
     flags: 0,
     exec: cmd_kill_server_exec,
 };
-pub(crate) static cmd_start_server_entry: cmd_entry = cmd_entry {
+pub(crate) static cmd_start_server_entry: RustCommandEntry = RustCommandEntry {
     name: c"start-server",
     alias: Some(c"start"),
     args: args_parse_t {
@@ -76,11 +61,11 @@ pub(crate) static cmd_start_server_entry: cmd_entry = cmd_entry {
     exec: cmd_kill_server_exec,
 };
 
-unsafe fn cmd_kill_server_exec(self_0: &cmd, _item: *mut cmdq_item) -> cmd_retval {
-    unsafe {
-        if ::core::ptr::eq(cmd_get_entry(self_0), &cmd_kill_server_entry) {
+fn cmd_kill_server_exec(self_0: &cmd, _item: &cmdq_item) -> cmd_retval {
+    if core::ptr::eq(cmd_get_entry(self_0), &cmd_kill_server_entry) {
+        unsafe {
             kill(getpid(), SIGTERM);
         }
-        CMD_RETURN_NORMAL
     }
+    CMD_RETURN_NORMAL
 }

@@ -6,257 +6,178 @@
 //! this module, and the few modules that hold a private definition of a
 //! type that is opaque here keep their own copy, which shadows the glob.
 
+use crate::screen::Screen;
 use ::core::cell::UnsafeCell;
+use ::std::cell::RefCell;
 use ::std::fmt;
-use ::std::ops::{Deref, DerefMut};
 use ::std::rc::{Rc, Weak};
 
-use crate::screen::screen_free;
-
 unsafe extern "C" {
-    pub type _IO_codecvt;
-    pub type _IO_marker;
-    pub type _IO_wide_data;
     pub type dirent;
-    pub type re_dfa_t;
-    pub type sockaddr_at;
-    pub type sockaddr_ax25;
-    pub type sockaddr_dl;
-    pub type sockaddr_eon;
-    pub type sockaddr_in6;
-    pub type sockaddr_inarp;
-    pub type sockaddr_ipx;
-    pub type sockaddr_iso;
-    pub type sockaddr_ns;
-    pub type sockaddr_x25;
     pub type term;
 }
 
-pub use crate::reactor::{Buf, IoHandle, SignalHandle, Stream, TimerHandle};
+pub use crate::reactor::{ByteBuffer, IoHandle, SignalHandle, Stream, TimerHandle};
 pub type TERMINAL = term;
 pub use crate::arguments::args;
 pub use crate::arguments::args_command_state;
 pub use crate::cmd::cmd;
 pub use crate::cmd::cmd_command_prompt_cdata;
 pub use crate::cmd::cmd_confirm_before_data;
-pub use crate::cmd::cmd_display_panes_data;
 pub use crate::cmd::cmd_if_shell_data;
 pub use crate::cmd::cmd_load_buffer_data;
 pub use crate::cmd::cmd_run_shell_data;
 pub use crate::cmd::cmd_source_file_data;
 pub use crate::cmd::cmdq_item;
-pub use crate::cmd::cmdq_list;
 pub use crate::cmd::cmds;
+pub use crate::cmd::{CmdqListRef, cmdq_list};
+pub use crate::cmd::{DisplayPanesRef, cmd_display_panes_data};
 pub use crate::compat::ibufqueue;
 pub use crate::compat::msgbuf;
-pub use crate::compat::msghdr;
 pub use crate::control::control_state;
-pub use crate::environ::environ_entry;
-use crate::environ::environ_t;
+use crate::environ::RustEnvironment;
 pub use crate::format::format_job;
 pub use crate::format::format_job_tree;
 pub use crate::format::format_tree;
-use crate::grid::HyperlinksRef;
-pub use crate::grid::hyperlinks;
-pub use crate::input::input_request;
 pub use crate::input::{InputCtxRef, input_ctx};
-pub use crate::job::job;
+pub use crate::input::{input_request, input_request_handle};
+pub use crate::job::{JobEvent, job};
 pub use crate::key_bindings::{key_binding, key_bindings, key_table};
 pub use crate::modes::mode_tree_data;
 pub use crate::modes::mode_tree_item;
 pub use crate::modes::mode_tree_menu;
-use crate::modes::window_buffer_editdata;
 use crate::modes::window_buffer_modedata;
 use crate::modes::window_clock_mode_data;
 use crate::modes::window_copy_mode_data;
 use crate::modes::{window_client_itemdata, window_client_modedata};
 pub use crate::modes::{window_customize_itemdata, window_customize_modedata};
 pub use crate::modes::{window_tree_itemdata, window_tree_modedata};
-use crate::notify::notify_entry;
-pub use crate::options::options;
 pub use crate::options::options_array_item_t;
 pub use crate::options::options_entry;
-pub use crate::overlay::menu_data;
+pub use crate::options::{OptionsRef, RustOptionsRef};
+pub use crate::overlay::{MenuDataRef, menu_data};
 pub use crate::overlay::{PopupDataRef, PopupDataWeak, popup_data};
-pub use crate::paste::paste_buffer;
 pub use crate::proc::tmuxpeer;
-pub use crate::proc::tmuxproc;
+pub use crate::proc::{PeerRef, ProcessRef, tmuxproc};
+use crate::prompt_history::PromptHistoryType;
 pub use crate::screen::screen_sel;
 pub use crate::screen::screen_titles;
 pub use crate::screen::screen_write_citem;
 pub use crate::screen::screen_write_cline;
-pub use crate::server::server_acl_user;
 pub use crate::session::session;
 pub use crate::session::{session_group, session_groups_t};
 pub use crate::status::status_prompt_menu;
 use crate::terminfo::TtyCode;
 pub use crate::tty::tty_key;
 pub use crate::window::window_pane_input_data;
-pub use ::libc::{sockaddr_storage, termios, utsname};
-pub type __off64_t = ::core::ffi::c_long;
-pub type __off_t = ::core::ffi::c_long;
+pub use ::libc::{FILE, sockaddr_storage, termios, utsname};
+pub type __off64_t = core::ffi::c_long;
+pub type __off_t = core::ffi::c_long;
 pub type __uint64_t = u64;
-#[derive(Copy, Clone, BitfieldStruct)]
-#[repr(C)]
-pub struct _IO_FILE {
-    pub _flags: ::core::ffi::c_int,
-    pub _IO_read_ptr: *mut ::core::ffi::c_char,
-    pub _IO_read_end: *mut ::core::ffi::c_char,
-    pub _IO_read_base: *mut ::core::ffi::c_char,
-    pub _IO_write_base: *mut ::core::ffi::c_char,
-    pub _IO_write_ptr: *mut ::core::ffi::c_char,
-    pub _IO_write_end: *mut ::core::ffi::c_char,
-    pub _IO_buf_base: *mut ::core::ffi::c_char,
-    pub _IO_buf_end: *mut ::core::ffi::c_char,
-    pub _IO_save_base: *mut ::core::ffi::c_char,
-    pub _IO_backup_base: *mut ::core::ffi::c_char,
-    pub _IO_save_end: *mut ::core::ffi::c_char,
-    pub _markers: *mut _IO_marker,
-    pub _chain: *mut _IO_FILE,
-    pub _fileno: ::core::ffi::c_int,
-    #[bitfield(name = "_flags2", ty = "::core::ffi::c_int", bits = "0..=23")]
-    pub _flags2: [u8; 3],
-    pub _short_backupbuf: [::core::ffi::c_char; 1],
-    pub _old_offset: __off_t,
-    pub _cur_column: ::core::ffi::c_ushort,
-    pub _vtable_offset: ::core::ffi::c_schar,
-    pub _shortbuf: [::core::ffi::c_char; 1],
-    pub _lock: *mut ::core::ffi::c_void,
-    pub _offset: __off64_t,
-    pub _codecvt: *mut _IO_codecvt,
-    pub _wide_data: *mut _IO_wide_data,
-    pub _freeres_list: *mut _IO_FILE,
-    pub _freeres_buf: *mut ::core::ffi::c_void,
-    pub _prevchain: *mut *mut _IO_FILE,
-    pub _mode: ::core::ffi::c_int,
-    pub _unused3: ::core::ffi::c_int,
-    pub _total_written: __uint64_t,
-    pub _unused2: [::core::ffi::c_char; 8],
-}
-pub type FILE = _IO_FILE;
-pub type _IO_lock_t = ();
-pub type __blkcnt_t = ::core::ffi::c_long;
-pub type __blksize_t = ::core::ffi::c_long;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct __va_list_tag {
-    pub gp_offset: ::core::ffi::c_uint,
-    pub fp_offset: ::core::ffi::c_uint,
-    pub overflow_arg_area: *mut ::core::ffi::c_void,
-    pub reg_save_area: *mut ::core::ffi::c_void,
-}
-pub type __builtin_va_list = [__va_list_tag; 1];
-pub type __clock_t = ::core::ffi::c_long;
-pub type __clockid_t = ::core::ffi::c_int;
-pub type __dev_t = ::core::ffi::c_ulong;
-pub type __gid_t = ::core::ffi::c_uint;
-pub type __gnuc_va_list = __builtin_va_list;
-pub type __ino_t = ::core::ffi::c_ulong;
+pub type __blkcnt_t = core::ffi::c_long;
+pub type __blksize_t = core::ffi::c_long;
+pub(crate) type window_mode_init = unsafe fn(
+    &mut window_mode_entry,
+    crate::window::RustWindowPaneWeak,
+    Option<&cmd_find_state>,
+    Option<&args>,
+);
+pub type window_mode_command = unsafe fn(
+    &mut window_mode_entry,
+    Option<&mut client>,
+    Option<&session>,
+    Option<&winlink>,
+    &args,
+    Option<&mut mouse_event>,
+) -> ();
+pub type __clock_t = core::ffi::c_long;
+pub type __clockid_t = core::ffi::c_int;
+pub type __dev_t = core::ffi::c_ulong;
+pub type __gid_t = core::ffi::c_uint;
+pub type __ino_t = core::ffi::c_ulong;
 pub type __int32_t = i32;
-pub type __mode_t = ::core::ffi::c_uint;
-pub type __nlink_t = ::core::ffi::c_ulong;
-pub type __pid_t = ::core::ffi::c_int;
-pub type __re_long_size_t = ::core::ffi::c_ulong;
-pub type __sighandler_t = Option<unsafe extern "C" fn(::core::ffi::c_int) -> ()>;
+pub type __mode_t = core::ffi::c_uint;
+pub type __nlink_t = core::ffi::c_ulong;
+pub type __pid_t = core::ffi::c_int;
+pub type __re_long_size_t = core::ffi::c_ulong;
+pub type __sighandler_t = Option<unsafe extern "C" fn(core::ffi::c_int) -> ()>;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct __sigset_t {
-    pub __val: [::core::ffi::c_ulong; 16],
+    pub __val: [core::ffi::c_ulong; 16],
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union sigval {
-    pub sival_int: ::core::ffi::c_int,
-    pub sival_ptr: *mut ::core::ffi::c_void,
-}
-pub type __sigval_t = sigval;
 pub type __size_t = usize;
-pub type __socket_type = ::core::ffi::c_uint;
-pub type __socklen_t = ::core::ffi::c_uint;
-pub type __suseconds_t = ::core::ffi::c_long;
-pub type __syscall_slong_t = ::core::ffi::c_long;
-pub type __time_t = ::core::ffi::c_long;
-pub type __u_char = ::core::ffi::c_uchar;
-pub type __u_int = ::core::ffi::c_uint;
-pub type __u_short = ::core::ffi::c_ushort;
-pub type __uid_t = ::core::ffi::c_uint;
+pub type __socket_type = core::ffi::c_uint;
+pub type __socklen_t = core::ffi::c_uint;
+pub type __suseconds_t = core::ffi::c_long;
+pub type __syscall_slong_t = core::ffi::c_long;
+pub type __time_t = core::ffi::c_long;
+pub type __u_char = core::ffi::c_uchar;
+pub type __u_int = core::ffi::c_uint;
+pub type __u_short = core::ffi::c_ushort;
+pub type __uid_t = core::ffi::c_uint;
 pub type __uint16_t = u16;
 pub type __uint32_t = u32;
 pub type __uint8_t = u8;
-pub type __useconds_t = ::core::ffi::c_uint;
-pub type args_parse_type = ::core::ffi::c_uint;
+pub type __useconds_t = core::ffi::c_uint;
+pub type args_parse_type = core::ffi::c_uint;
 pub type u_int = __u_int;
 pub type args_parse_cb =
-    Option<unsafe fn(&args, u_int, &mut Option<::std::ffi::CString>) -> args_parse_type>;
+    Option<unsafe fn(&args, u_int, &mut Option<std::ffi::CString>) -> args_parse_type>;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct args_parse_t {
-    pub template: &'static ::core::ffi::CStr,
-    pub lower: ::core::ffi::c_int,
-    pub upper: ::core::ffi::c_int,
+    pub template: &'static core::ffi::CStr,
+    pub lower: core::ffi::c_int,
+    pub upper: core::ffi::c_int,
     pub cb: args_parse_cb,
 }
-pub type bitstr_t = ::core::ffi::c_uchar;
-pub type box_lines = ::core::ffi::c_int;
-pub type cc_t = ::core::ffi::c_uchar;
-pub type client_theme = ::core::ffi::c_uint;
+impl args_parse_t {
+    /// Builds an argument parser specification usable in static command entries.
+    pub const fn new(
+        template: &'static core::ffi::CStr,
+        lower: core::ffi::c_int,
+        upper: core::ffi::c_int,
+        cb: args_parse_cb,
+    ) -> Self {
+        Self {
+            template,
+            lower,
+            upper,
+            cb,
+        }
+    }
+}
+pub type bitstr_t = core::ffi::c_uchar;
+pub type box_lines = core::ffi::c_int;
+pub type cc_t = core::ffi::c_uchar;
+pub type client_theme = core::ffi::c_uint;
 pub type clockid_t = __clockid_t;
-pub type cmd_find_type = ::core::ffi::c_uint;
+pub type cmd_find_type = core::ffi::c_uint;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct cmd_entry_flag {
-    pub flag: ::core::ffi::c_char,
+    pub flag: core::ffi::c_char,
     pub type_0: cmd_find_type,
-    pub flags: ::core::ffi::c_int,
+    pub flags: core::ffi::c_int,
 }
-pub type cmd_retval = ::core::ffi::c_int;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmd_entry {
-    pub name: &'static ::core::ffi::CStr,
-    pub alias: Option<&'static ::core::ffi::CStr>,
-    pub args: args_parse_t,
-    pub usage: &'static ::core::ffi::CStr,
-    pub source: cmd_entry_flag,
-    pub target: cmd_entry_flag,
-    pub flags: ::core::ffi::c_int,
-    pub exec: unsafe fn(&cmd, *mut cmdq_item) -> cmd_retval,
-}
-
-/// A transpiled table that lives for the whole run and is only ever read.
-///
-/// The tables hold raw pointers to string literals, which are not [`Sync`], so
-/// on their own they cannot be the shared `static`s they should be. Wrapping
-/// one says once what is true of all of them. [`as_ptr`](Self::as_ptr) hands
-/// out the `*mut` the transpiled walks expect, and [`Deref`] keeps the rest of
-/// the call sites reading like the array underneath.
-///
-/// [`Deref`]: ::core::ops::Deref
-#[repr(transparent)]
-pub struct ReadOnly<T>(T);
-
-unsafe impl<T> Sync for ReadOnly<T> {}
-
-impl<T> ReadOnly<T> {
-    pub const fn new(table: T) -> Self {
-        ReadOnly(table)
+impl cmd_entry_flag {
+    /// Builds a source or target lookup descriptor for a command entry.
+    pub const fn new(
+        flag: core::ffi::c_char,
+        type_0: cmd_find_type,
+        flags: core::ffi::c_int,
+    ) -> Self {
+        Self {
+            flag,
+            type_0,
+            flags,
+        }
     }
 }
-
-impl<T, const N: usize> ReadOnly<[T; N]> {
-    /// The first element, for the walks that step to a null terminator.
-    pub const fn as_ptr(&'static self) -> *mut T {
-        self.0.as_ptr().cast_mut()
-    }
-}
-
-impl<T> ::core::ops::Deref for ReadOnly<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &self.0
-    }
-}
+pub type cmd_retval = core::ffi::c_int;
+pub use crate::command_entry::RustCommandEntry;
+pub type cmd_entry = RustCommandEntry;
 
 #[repr(C)]
 pub struct cmd_list {
@@ -264,29 +185,68 @@ pub struct cmd_list {
     pub list: Option<Box<cmds>>,
 }
 
+impl crate::CommandListGroupState for cmd_list {
+    fn command_list_group(&self) -> u_int {
+        self.group
+    }
+
+    fn set_command_list_group(&mut self, group: u_int) {
+        self.group = group;
+    }
+}
+
+impl crate::CommandList for cmd_list {
+    type Command = cmd;
+
+    fn command_count(&self) -> usize {
+        self.list.as_deref().map_or(0, Vec::len)
+    }
+
+    fn command_at(&self, index: usize) -> Option<&Self::Command> {
+        self.list.as_deref()?.get(index).map(Box::as_ref)
+    }
+
+    fn command_at_mut(&mut self, index: usize) -> Option<&mut Self::Command> {
+        self.list.as_deref_mut()?.get_mut(index).map(Box::as_mut)
+    }
+}
+
 /// A strong owner of a parsed command list.
 ///
-/// Command execution still uses raw pointers internally, but the pointer from
-/// [`as_ptr`](Self::as_ptr) is only a borrowed view while this handle remains
-/// alive. Command-list ownership must be transferred by cloning or dropping
-/// this handle, never by copying the raw pointer.
+/// A shared owner of a command list. Commands remain borrowed through the
+/// list's guard, and callers can clone the owner to retain a command while
+/// mutating the queue item that selected it.
 #[derive(Clone)]
-pub struct CmdListRef(Rc<UnsafeCell<cmd_list>>);
+pub struct CmdListRef(Rc<RefCell<cmd_list>>);
 
 impl CmdListRef {
     pub(crate) fn new(value: cmd_list) -> Self {
-        Self(Rc::new(UnsafeCell::new(value)))
+        Self(Rc::new(RefCell::new(value)))
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut cmd_list {
-        self.0.get()
+    pub(crate) fn with<R>(&self, operation: impl FnOnce(&cmd_list) -> R) -> R {
+        operation(&self.0.borrow())
     }
 
-    /// The command list this holds. Reaching it this way does not stop
-    /// anything else reaching the same list through its raw view.
-    #[allow(clippy::mut_from_ref)]
-    pub(crate) fn list(&self) -> &mut cmd_list {
-        unsafe { &mut *self.0.get() }
+    pub(crate) fn with_mut<R>(&self, operation: impl FnOnce(&mut cmd_list) -> R) -> R {
+        operation(&mut self.0.borrow_mut())
+    }
+
+    /// Borrows one command while retaining the list's shared borrow guard.
+    pub(crate) fn command(&self, index: usize) -> Option<std::cell::Ref<'_, cmd>> {
+        std::cell::Ref::filter_map(self.0.borrow(), |list| {
+            crate::CommandList::command_at(list, index)
+        })
+        .ok()
+    }
+
+    /// Borrows one command exclusively through the list's mutable guard.
+    #[cfg(test)]
+    pub(crate) fn command_mut(&self, index: usize) -> Option<std::cell::RefMut<'_, cmd>> {
+        std::cell::RefMut::filter_map(self.0.borrow_mut(), |list| {
+            crate::CommandList::command_at_mut(list, index)
+        })
+        .ok()
     }
 }
 
@@ -294,15 +254,19 @@ impl CmdListRef {
 /// client files may be reading for one run, so they share it and the last one
 /// gone takes it with them.
 #[derive(Clone)]
-pub struct SourceFileRef(Rc<UnsafeCell<cmd_source_file_data>>);
+pub struct SourceFileRef(Rc<RefCell<cmd_source_file_data>>);
 
 impl SourceFileRef {
     pub(crate) fn new(value: cmd_source_file_data) -> Self {
-        Self(Rc::new(UnsafeCell::new(value)))
+        Self(Rc::new(RefCell::new(value)))
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut cmd_source_file_data {
-        self.0.get()
+    pub(crate) fn with<R>(&self, operation: impl FnOnce(&cmd_source_file_data) -> R) -> R {
+        operation(&self.0.borrow())
+    }
+
+    pub(crate) fn with_mut<R>(&self, operation: impl FnOnce(&mut cmd_source_file_data) -> R) -> R {
+        operation(&mut self.0.borrow_mut())
     }
 }
 
@@ -310,22 +274,29 @@ impl fmt::Debug for SourceFileRef {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_tuple("SourceFileRef")
-            .field(&self.as_ptr())
+            .field(&Rc::as_ptr(&self.0))
             .finish()
     }
 }
 
 /// The state a pane's input read carries, shared the same way.
 #[derive(Clone)]
-pub struct PaneInputRef(Rc<UnsafeCell<window_pane_input_data>>);
+pub struct PaneInputRef(Rc<RefCell<window_pane_input_data>>);
 
 impl PaneInputRef {
     pub(crate) fn new(value: window_pane_input_data) -> Self {
-        Self(Rc::new(UnsafeCell::new(value)))
+        Self(Rc::new(RefCell::new(value)))
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut window_pane_input_data {
-        self.0.get()
+    pub(crate) fn with<R>(&self, operation: impl FnOnce(&window_pane_input_data) -> R) -> R {
+        operation(&self.0.borrow())
+    }
+
+    pub(crate) fn with_mut<R>(
+        &self,
+        operation: impl FnOnce(&mut window_pane_input_data) -> R,
+    ) -> R {
+        operation(&mut self.0.borrow_mut())
     }
 }
 
@@ -333,7 +304,7 @@ impl fmt::Debug for PaneInputRef {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_tuple("PaneInputRef")
-            .field(&self.as_ptr())
+            .field(&Rc::as_ptr(&self.0))
             .finish()
     }
 }
@@ -350,58 +321,111 @@ impl fmt::Debug for CmdListRef {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_tuple("CmdListRef")
-            .field(&self.as_ptr())
+            .field(&Rc::as_ptr(&self.0))
             .finish()
     }
 }
 
-/// A strong owner of a temporary status-line screen.
-#[derive(Clone)]
-pub(crate) struct StatusScreenRef(Rc<UnsafeCell<StatusScreenStorage>>);
-
-pub(crate) struct StatusScreenStorage {
-    pub(crate) value: screen,
+/// A screen read that keeps a shared screen's borrow checked until it ends.
+pub enum ScreenBorrow<'a> {
+    Owned(&'a RustScreen),
+    Shared(std::cell::Ref<'a, RustScreen>),
 }
 
-impl StatusScreenRef {
-    pub(crate) fn new(value: screen) -> Self {
-        Self(Rc::new(UnsafeCell::new(StatusScreenStorage { value })))
+impl core::ops::Deref for ScreenBorrow<'_> {
+    type Target = RustScreen;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Owned(screen) => screen,
+            Self::Shared(screen) => screen,
+        }
+    }
+}
+
+/// A strong owner of a screen with checked shared and exclusive borrows.
+#[derive(Clone)]
+pub(crate) struct ScreenRef(Rc<SharedScreen>);
+
+struct SharedScreen {
+    screen: RefCell<RustScreen>,
+    writing: std::cell::Cell<bool>,
+}
+
+pub(crate) struct ScreenWriteLease<'a> {
+    target: &'a ScreenRef,
+}
+
+impl<'a> ScreenWriteLease<'a> {
+    pub(crate) fn borrow(&self) -> std::cell::Ref<'a, RustScreen> {
+        self.target.0.screen.borrow()
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut screen {
-        unsafe { &mut (*self.0.get()).value as *mut screen }
+    pub(crate) fn borrow_mut(&self) -> std::cell::RefMut<'a, RustScreen> {
+        self.target.0.screen.borrow_mut()
+    }
+}
+
+impl Drop for ScreenWriteLease<'_> {
+    fn drop(&mut self) {
+        self.target.0.writing.set(false);
+    }
+}
+
+impl Default for ScreenRef {
+    fn default() -> Self {
+        Self::new(RustScreen::default())
+    }
+}
+
+impl ScreenRef {
+    pub(crate) fn new(value: RustScreen) -> Self {
+        Self(Rc::new(SharedScreen {
+            screen: RefCell::new(value),
+            writing: std::cell::Cell::new(false),
+        }))
+    }
+
+    pub(crate) fn borrow(&self) -> std::cell::Ref<'_, RustScreen> {
+        self.0.screen.borrow()
+    }
+
+    pub(crate) fn borrow_mut(&self) -> std::cell::RefMut<'_, RustScreen> {
+        assert!(!self.0.writing.get(), "screen has an active writer");
+        self.0.screen.borrow_mut()
+    }
+
+    pub(crate) fn begin_write(&self) -> ScreenWriteLease<'_> {
+        assert!(!self.0.writing.replace(true), "screen has an active writer");
+        ScreenWriteLease { target: self }
     }
 
     pub(crate) fn is_unique(&self) -> bool {
         Rc::strong_count(&self.0) == 1
     }
 
+    #[cfg(test)]
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+
     /// Makes a non-owning observation of this screen.
-    pub(crate) fn downgrade(&self) -> StatusScreenWeak {
-        StatusScreenWeak(Rc::downgrade(&self.0))
+    pub(crate) fn downgrade(&self) -> ScreenWeak {
+        ScreenWeak(Rc::downgrade(&self.0))
     }
 }
 
-/// A non-owning observation of an overlay screen. The status line watches the
+/// A non-owning observation of a screen. The status line watches the
 /// overlay it is drawing on this way, so that the message and prompt slots
 /// alone decide how long the screen lives.
 #[derive(Clone)]
-pub(crate) struct StatusScreenWeak(Weak<UnsafeCell<StatusScreenStorage>>);
+pub(crate) struct ScreenWeak(Weak<SharedScreen>);
 
-impl StatusScreenWeak {
-    /// The screen, or null once the slots that held it have given it up.
-    pub(crate) fn screen(&self) -> *mut screen {
-        self.0
-            .upgrade()
-            .map_or(::core::ptr::null_mut(), |held| unsafe {
-                &mut (*held.get()).value as *mut screen
-            })
-    }
-}
-
-impl Drop for StatusScreenStorage {
-    fn drop(&mut self) {
-        unsafe { screen_free(&mut self.value) };
+impl ScreenWeak {
+    /// The screen if the slots that held it still do, as the handle that
+    /// keeps it alive rather than a pointer into one that has gone.
+    pub(crate) fn upgrade(&self) -> Option<ScreenRef> {
+        self.0.upgrade().map(ScreenRef)
     }
 }
 
@@ -409,45 +433,202 @@ impl Drop for StatusScreenStorage {
 /// [`as_ptr`](Self::as_ptr) is a borrowed compatibility view; an owning edge
 /// must clone or drop this handle instead of retaining that pointer. Winlinks,
 /// queued alerts and notifications use strong handles, while the id registry
-/// and timer callbacks use [`WindowWeak`]. A pane's back-edge to its window is
-/// neither: the window owns its panes by value, so the plain pointer cannot
-/// outlive what it points at.
+/// and timer callbacks use [`WindowWeak`]. Windows hold sole ownership of their panes;
+/// each pane observes its window weakly. Pane teardown clears the translated
+/// window pointer before outstanding pane references can outlive the window.
+///
+/// Payload borrows are checked across cloned handles and remain checked until
+/// their guards are dropped. Ownership does not grant implicit payload references.
+///
+/// ```compile_fail
+/// use tmux_c2rs::types::{WindowRef, window};
+/// fn shared(owner: &WindowRef) -> &window { owner }
+/// ```
+///
+/// ```compile_fail
+/// use tmux_c2rs::types::{WindowRef, window};
+/// fn exclusive(owner: &mut WindowRef) -> &mut window { owner }
+/// ```
 #[derive(Clone)]
-pub(crate) struct WindowRef(Rc<UnsafeCell<WindowStorage>>);
+pub struct WindowRef(Rc<RefCell<WindowStorage>>);
 
 #[derive(Clone)]
-pub(crate) struct WindowWeak(Weak<UnsafeCell<WindowStorage>>);
+pub(crate) struct WindowWeak(Weak<RefCell<WindowStorage>>);
 
 pub(crate) struct WindowStorage {
     pub(crate) value: window,
-    pub(crate) managed: bool,
+    pub(crate) id_registration: Option<crate::handle_registry::HandleRegistration<WindowWeak>>,
 }
 
 impl WindowRef {
+    /// Copies the name so the result does not retain a payload borrow.
+    pub(crate) fn window_name(&self) -> Option<std::ffi::CString> {
+        crate::WindowNameState::window_name(&*self.as_window()).map(core::ffi::CStr::to_owned)
+    }
+
+    /// Snapshots pane membership without keeping panes alive or retaining a payload borrow.
+    pub(crate) fn panes(&self) -> Vec<RustWindowPaneWeak> {
+        self.as_window()
+            .panes
+            .iter()
+            .map(RustWindowPaneRef::downgrade)
+            .collect()
+    }
+
+    pub(crate) fn pane_count(&self) -> usize {
+        self.as_window().panes.len()
+    }
+
+    pub(crate) fn window_id(&self) -> u32 {
+        crate::Window::window_id(&*self.as_window())
+    }
+
+    pub(crate) fn dimensions(&self) -> crate::WindowDimensions {
+        crate::WindowDimensionsState::dimensions(&*self.as_window())
+    }
+
+    pub(crate) fn timestamps(&self) -> crate::WindowTimestamps {
+        crate::WindowTimestampState::timestamps(&*self.as_window())
+    }
+
+    pub(crate) fn previous_layout(&self) -> Option<core::ffi::c_int> {
+        crate::WindowLayoutSelectionState::previous_layout(&*self.as_window())
+    }
+
+    pub(crate) fn scrollbar_settings(&self) -> crate::WindowScrollbarSettings {
+        crate::WindowScrollbarState::scrollbar_settings(&*self.as_window())
+    }
+
+    pub(crate) fn set_window_name(&self, value: Option<&core::ffi::CStr>) {
+        crate::WindowNameState::set_window_name(&mut *self.as_window_mut(), value);
+    }
+
+    pub(crate) fn remember_layout(&self, value: core::ffi::c_int) {
+        crate::WindowLayoutSelectionState::remember_layout(&mut *self.as_window_mut(), value);
+    }
+
+    pub(crate) fn set_saved_layout(&self, value: Option<&core::ffi::CStr>) {
+        crate::WindowSavedLayoutState::set_saved_layout(&mut *self.as_window_mut(), value);
+    }
+
+    pub(crate) fn set_activity_time(&self, value: timeval) {
+        crate::WindowTimestampState::set_activity_time(&mut *self.as_window_mut(), value);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_name_update_time(&self, value: timeval) {
+        crate::WindowTimestampState::set_name_update_time(&mut *self.as_window_mut(), value);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_scrollbar_settings(&self, value: crate::WindowScrollbarSettings) {
+        crate::WindowScrollbarState::set_scrollbar_settings(&mut *self.as_window_mut(), value);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_pixels(&self, value: crate::WindowPixelSize) {
+        crate::WindowDimensionsState::set_pixels(&mut *self.as_window_mut(), value);
+    }
+
+    pub(crate) fn active_pane(&self) -> Option<RustWindowPaneWeak> {
+        crate::window::window_active_pane(&self.as_window())
+    }
+
+    pub(crate) fn active_pane_id(&self) -> Option<u_int> {
+        self.active_pane().map(|pane| pane.id())
+    }
+
+    pub(crate) fn options(&self) -> RustOptionsRef {
+        self.as_window().options_ref().clone()
+    }
+
+    pub(crate) fn winlinks(&self) -> impl Iterator<Item = crate::window::WinlinkRef> + use<> {
+        crate::window::winlinks_into(&self.as_window())
+    }
+
+    pub(crate) fn alert_flags(&self) -> core::ffi::c_int {
+        self.as_window().flags & crate::alerts::WINDOW_ALERTFLAGS
+    }
+
+    pub(crate) fn add_alert_flags(&self, flags: core::ffi::c_int) -> bool {
+        let mut window = self.as_window_mut();
+        let changed = window.flags & flags != flags;
+        window.flags |= flags;
+        changed
+    }
+
+    pub(crate) fn queue_alerts(&self) -> bool {
+        crate::WindowAlertQueueState::queue_alerts(&mut *self.as_window_mut())
+    }
+
+    pub(crate) fn finish_alerts(&self) {
+        let mut window = self.as_window_mut();
+        crate::WindowAlertQueueState::clear_queued_alerts(&mut *window);
+        window.flags &= !crate::alerts::WINDOW_ALERTFLAGS;
+    }
+
+    pub(crate) fn reset_alert_timer(&self, seconds: __time_t, callback: impl FnMut() + 'static) {
+        use crate::reactor::Timer;
+
+        let mut window = self.as_window_mut();
+        if !window.alerts_timer.is_set() {
+            window.alerts_timer.set_callback(callback);
+        }
+        window.flags &= !crate::alerts::WINDOW_SILENCE;
+        window.alerts_timer.disarm();
+        if seconds != 0 {
+            window.alerts_timer.arm(timeval {
+                tv_sec: seconds,
+                tv_usec: 0,
+            });
+        }
+    }
+
+    /// Observes a registered pane whose recorded membership is this window.
+    /// This lookup does not borrow the window payload or search its pane list;
+    /// manually constructed panes must be registered and assigned membership.
+    pub fn pane_by_id(&self, id: u32) -> Option<RustWindowPaneWeak> {
+        let pane = crate::window::window_pane_find_by_id(id)?;
+        pane.window().filter(|owner| owner.ptr_eq(self))?;
+        Some(pane)
+    }
+
     pub(crate) fn new(value: window) -> Self {
-        let reference = Self(Rc::new(UnsafeCell::new(WindowStorage {
+        let reference = Self(Rc::new(RefCell::new(WindowStorage {
             value,
-            managed: true,
+            id_registration: None,
         })));
-        crate::window::register_window_handle(&reference);
+        reference.0.borrow_mut().value.owner = Some(reference.downgrade());
         reference
     }
 
+    pub(crate) fn register_id(&self) {
+        let registration = crate::window::register_window_id(self);
+        self.0.borrow_mut().id_registration = Some(registration);
+    }
+
+    /// Borrows the window payload with runtime shared-borrow checking.
+    pub(crate) fn as_window(&self) -> std::cell::Ref<'_, window> {
+        std::cell::Ref::map(self.0.borrow(), |storage| &storage.value)
+    }
+
+    /// Borrows the window payload with runtime exclusive-borrow checking.
+    pub(crate) fn as_window_mut(&self) -> std::cell::RefMut<'_, window> {
+        std::cell::RefMut::map(self.0.borrow_mut(), |storage| &mut storage.value)
+    }
+
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+
+    /// Returns the payload address without borrowing it. Dereferencing this
+    /// pointer must respect all live guards and the allocation lifetime.
     pub(crate) fn as_ptr(&self) -> *mut window {
-        unsafe { &mut (*self.0.get()).value as *mut window }
+        unsafe { &raw mut (*self.0.as_ptr()).value }
     }
 
     pub(crate) fn downgrade(&self) -> WindowWeak {
         WindowWeak(Rc::downgrade(&self.0))
-    }
-
-    /// Gives up the teardown [`Drop`] would otherwise run. Only the tests take
-    /// this, for the windows they hand-build outside the server's own trees.
-    #[cfg(test)]
-    pub(crate) fn mark_unmanaged(&self) {
-        unsafe {
-            (*self.0.get()).managed = false;
-        }
     }
 }
 
@@ -462,8 +643,20 @@ impl WindowWeak {
 /// and notifications own sessions by cloning this handle. The live-session
 /// registry owns one handle while a session is discoverable, while clients
 /// and target state remain observational back-pointers.
+///
+/// Ownership does not grant implicit shared or exclusive payload references.
+///
+/// ```compile_fail
+/// use tmux_c2rs::types::{SessionRef, session};
+/// fn shared(owner: &SessionRef) -> &session { owner }
+/// ```
+///
+/// ```compile_fail
+/// use tmux_c2rs::types::{SessionRef, session};
+/// fn exclusive(owner: &mut SessionRef) -> &mut session { owner }
+/// ```
 #[derive(Clone)]
-pub(crate) struct SessionRef(Rc<UnsafeCell<SessionStorage>>);
+pub struct SessionRef(Rc<UnsafeCell<SessionStorage>>);
 
 #[derive(Clone)]
 pub(crate) struct SessionWeak(Weak<UnsafeCell<SessionStorage>>);
@@ -473,57 +666,601 @@ pub(crate) struct SessionStorage {
 }
 
 impl SessionRef {
-    pub(crate) fn new(value: session) -> Self {
-        let reference = Self(Rc::new(UnsafeCell::new(SessionStorage { value })));
-        crate::session::register_session_handle(&reference);
-        reference
+    pub(crate) fn new(mut value: session) -> Self {
+        Self(Rc::new_cyclic(|owner| {
+            value.owner = Some(SessionWeak(owner.clone()));
+            UnsafeCell::new(SessionStorage { value })
+        }))
+    }
+
+    /// Returns a compatibility view of the session payload.
+    ///
+    /// # Safety
+    /// The caller must prevent mutation for the lifetime of the returned
+    /// reference, including mutation through other owners or reentrant callbacks.
+    pub(crate) unsafe fn as_session(&self) -> &session {
+        unsafe { &*self.as_ptr() }
+    }
+
+    /// Returns an exclusive compatibility view of the session payload.
+    ///
+    /// # Safety
+    /// The caller must exclude all other access to the payload for this borrow's
+    /// lifetime, including access through other owners or reentrant callbacks.
+    pub(crate) unsafe fn as_session_mut(&mut self) -> &mut session {
+        unsafe { &mut *self.as_ptr() }
+    }
+
+    /// Whether both handles own the same allocation.
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 
     pub(crate) fn as_ptr(&self) -> *mut session {
-        unsafe { &mut (*self.0.get()).value as *mut session }
+        unsafe { &raw mut (*self.0.get()).value }
     }
 
     pub(crate) fn downgrade(&self) -> SessionWeak {
         SessionWeak(Rc::downgrade(&self.0))
     }
+
+    pub(crate) fn points_to(&self, value: &session) -> bool {
+        core::ptr::eq(self.as_ptr(), value)
+    }
 }
 
 impl SessionWeak {
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        self.0.ptr_eq(&other.0)
+    }
+
     pub(crate) fn upgrade(&self) -> Option<SessionRef> {
         self.0.upgrade().map(SessionRef)
     }
 }
 
-/// A strong owner of a live client allocation. The raw pointer returned by
-/// [`as_ptr`](Self::as_ptr) is a compatibility view; non-owning code should
-/// use [`with`](Self::with) for short immutable observations instead.
+/// A strong owner of a live client allocation. Owning edges clone this handle
+/// and observations use [`ClientWeak`]. Value snapshots use checked borrows;
+/// compatibility field views require explicit unsafe borrows tied to the handle's lifetime.
+/// The payload is stored in a [`RefCell`], but compatibility views use its raw
+/// pointer to allow disjoint field borrows and do not perform borrow checks.
+///
+/// Ownership does not grant implicit shared or exclusive payload references.
+///
+/// ```compile_fail
+/// use tmux_c2rs::types::{ClientRef, client};
+/// fn shared(owner: &ClientRef) -> &client { owner }
+/// ```
+///
+/// ```compile_fail
+/// use tmux_c2rs::types::{ClientRef, client};
+/// fn exclusive(owner: &mut ClientRef) -> &mut client { owner }
+/// ```
 #[derive(Clone)]
-pub(crate) struct ClientRef(Rc<UnsafeCell<ClientStorage>>);
+pub struct ClientRef(Rc<ClientStorage>);
 
 #[derive(Clone)]
-pub struct ClientWeak(Weak<UnsafeCell<ClientStorage>>);
+pub struct ClientWeak(Weak<ClientStorage>);
+
+thread_local! {
+    static NEXT_CLIENT_ID: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
 
 pub(crate) struct ClientStorage {
-    pub(crate) value: client,
+    id: u64,
+    pub(crate) value: RefCell<client>,
 }
 
 impl ClientRef {
+    /// Visits the client's existing format job cache.
+    ///
+    /// # Safety
+    /// Exclude other cache access, including reentrant callbacks, during the visit.
+    pub(crate) unsafe fn with_format_jobs<R>(
+        &mut self,
+        visit: impl FnOnce(&mut format_job_tree) -> R,
+    ) -> Option<R> {
+        unsafe { (*self.0.value.as_ptr()).jobs.as_deref_mut().map(visit) }
+    }
+
+    /// Creates a format job entry only when the client has no entry for its key.
+    ///
+    /// # Safety
+    /// Exclude other cache access, including from `create`, during this call.
+    pub(crate) unsafe fn ensure_format_job(
+        &mut self,
+        key: (u_int, std::ffi::CString),
+        create: impl FnOnce() -> Box<format_job>,
+    ) {
+        unsafe {
+            (*self.0.value.as_ptr())
+                .jobs
+                .get_or_insert_with(|| Box::new(format_job_tree::new()))
+                .entry(key)
+                .or_insert_with(create);
+        }
+    }
+
+    /// Schedules a redraw of the client's status line.
+    ///
+    /// # Safety
+    /// The flags must not otherwise be accessed during this call.
+    pub(crate) unsafe fn request_status_redraw(&mut self) {
+        unsafe {
+            *self.flags_mut() |= crate::status::CLIENT_REDRAWSTATUS as uint64_t;
+        }
+    }
+
+    /// Reads the client's discarded.
+    pub(crate) fn discarded(&self) -> size_t {
+        self.0.value.borrow().discarded
+    }
+
+    /// Reads the client's written.
+    pub(crate) fn written(&self) -> size_t {
+        self.0.value.borrow().written
+    }
+
+    /// Reads the client's pid.
+    pub(crate) fn pid(&self) -> pid_t {
+        self.0.value.borrow().pid
+    }
+
+    /// Reads the client's theme.
+    pub(crate) fn theme(&self) -> client_theme {
+        self.0.value.borrow().theme
+    }
+
+    /// Reads the client's creation time.
+    pub(crate) fn creation_time(&self) -> timeval {
+        self.0.value.borrow().creation_time
+    }
+
+    /// Copies the client's terminal name.
+    pub(crate) fn terminal_name(&self) -> Option<std::ffi::CString> {
+        self.0.value.borrow().term_name.clone()
+    }
+
+    /// Copies the client's terminal type.
+    pub(crate) fn terminal_type(&self) -> Option<std::ffi::CString> {
+        self.0.value.borrow().term_type.clone()
+    }
+
+    /// Copies terminal dimensions in cells using a checked client borrow.
+    ///
+    /// No callbacks run and no client or terminal borrow escapes the snapshot.
+    pub(crate) fn terminal_size(&self) -> crate::pane_resize::PaneSize {
+        let client = self.0.value.borrow();
+        crate::pane_resize::PaneSize {
+            width: client.tty.sx,
+            height: client.tty.sy,
+        }
+    }
+
+    /// Copies the cached window visibility flag, offsets and visible size.
+    ///
+    /// This checked snapshot does not recalculate offsets or run callbacks. No
+    /// client or terminal borrow escapes the call.
+    pub(crate) fn cached_window_offset(&self) -> (core::ffi::c_int, u_int, u_int, u_int, u_int) {
+        let client = self.0.value.borrow();
+        let tty = &client.tty;
+        (tty.oflag, tty.oox, tty.ooy, tty.osx, tty.osy)
+    }
+
+    /// Resolves and caches the connected peer's user name.
+    ///
+    /// # Safety
+    /// Exclude conflicting access to the peer and user cache during this call.
+    pub(crate) unsafe fn user_name(&mut self) -> Option<std::ffi::CString> {
+        use crate::UserAccount;
+
+        unsafe {
+            if let Some(user) = (*self.0.value.as_ptr()).user.clone() {
+                return Some(user);
+            }
+            let uid = self.peer_handle().uid();
+            if uid == uid_t::MAX {
+                return None;
+            }
+            let account = crate::UserAccountRecord::lookup_uid(uid)?;
+            let user = account.account_name().map(std::ffi::CStr::to_owned);
+            (*self.0.value.as_ptr()).user = user.clone();
+            user
+        }
+    }
+
+    /// Borrows the client's exit message state exclusively.
+    ///
+    /// # Safety
+    /// The caller must exclude other access to this field for the borrow's lifetime.
+    pub(crate) unsafe fn exit_message_mut(&mut self) -> &mut Option<std::ffi::CString> {
+        unsafe { &mut (*self.0.value.as_ptr()).exit_message }
+    }
+
+    /// Borrows the client's status state.
+    ///
+    /// # Safety
+    /// The caller must exclude mutation of this field for the borrow's lifetime.
+    pub(crate) unsafe fn status_ref(&self) -> &status_line {
+        unsafe { &(*self.0.value.as_ptr()).status }
+    }
+
+    /// Retains the client's command queue.
+    pub(crate) fn command_queue(&self) -> crate::cmd::CmdqListRef {
+        self.0
+            .value
+            .borrow()
+            .queue
+            .as_ref()
+            .expect("the client has a command queue")
+            .clone()
+    }
+
+    /// Borrows the client's exit status exclusively.
+    ///
+    /// # Safety
+    /// The caller must exclude other access to this field for the borrow's lifetime.
+    pub(crate) unsafe fn retval_mut(&mut self) -> &mut core::ffi::c_int {
+        unsafe { &mut (*self.0.value.as_ptr()).retval }
+    }
+
+    /// Reads the client's source file depth.
+    pub(crate) fn source_file_depth(&self) -> u_int {
+        self.0.value.borrow().source_file_depth
+    }
+
+    /// Reads the client's prompt.
+    pub(crate) fn prompt(&self) -> Prompt {
+        self.0.value.borrow().prompt
+    }
+
+    /// Reads the client's activity time.
+    pub(crate) fn activity_time(&self) -> timeval {
+        self.0.value.borrow().activity_time
+    }
+
+    /// Borrows the client's terminal name.
+    ///
+    /// # Safety
+    /// The field must not be mutated for the returned borrow's lifetime.
+    pub(crate) unsafe fn ttyname_ref(&self) -> &Option<std::ffi::CString> {
+        unsafe { &(*self.0.value.as_ptr()).ttyname }
+    }
+
+    /// The overlay the client is showing, which is `Overlay::None` when it is
+    /// showing none.
+    pub(crate) fn overlay(&self) -> Overlay {
+        self.0.value.borrow().overlay
+    }
+
+    /// Which overlay answers for the region the current drawing may cover.
+    pub(crate) fn overlay_check(&self) -> OverlayCheck {
+        self.0.value.borrow().overlay_check
+    }
+
+    /// Returns the drawing data for the current overlay view.
+    ///
+    /// # Safety
+    /// The accessed fields must not otherwise be accessed during this call.
+    pub(crate) unsafe fn current_overlay_data(&mut self) -> OverlayData {
+        unsafe {
+            (*self.0.value.as_ptr())
+                .overlay_data
+                .view_data((*self.0.value.as_ptr()).overlay_data_view)
+        }
+    }
+
+    /// Points the region at `view` for the drawing that follows, which is how
+    /// a popup hands it to the menu it carries and takes it back afterwards.
+    ///
+    /// # Safety
+    /// The accessed fields must not otherwise be accessed during this call.
+    pub(crate) unsafe fn set_overlay_view(&mut self, view: OverlayView) {
+        unsafe {
+            match view {
+                OverlayView::Menu => {
+                    (*self.0.value.as_ptr()).overlay_check = OverlayCheck::Menu;
+                    (*self.0.value.as_ptr()).overlay_data_view = Some(OverlayView::Menu);
+                }
+                OverlayView::Nothing => {
+                    (*self.0.value.as_ptr()).overlay_check = OverlayCheck::None;
+                    (*self.0.value.as_ptr()).overlay_data_view = Some(OverlayView::Nothing);
+                }
+                OverlayView::Popup => {
+                    (*self.0.value.as_ptr()).overlay_check = OverlayCheck::Popup;
+                    (*self.0.value.as_ptr()).overlay_data_view = None;
+                }
+            }
+        }
+    }
+
+    /// Gives the drawing data back to the overlay itself, which is what a
+    /// popup does once the menu it was carrying is gone.
+    ///
+    /// # Safety
+    /// The accessed fields must not otherwise be accessed during this call.
+    pub(crate) unsafe fn clear_overlay_view(&mut self) {
+        unsafe {
+            (*self.0.value.as_ptr()).overlay_data_view = None;
+        }
+    }
+
+    /// Borrows the environment the client was started with.
+    ///
+    /// # Safety
+    /// The accessed fields must not be exclusively borrowed during this call or
+    /// for the returned borrow's lifetime.
+    pub(crate) unsafe fn environ_ref(&self) -> &RustEnvironment {
+        unsafe {
+            (*self.0.value.as_ptr())
+                .environ
+                .as_deref()
+                .expect("a client is created with its environment")
+        }
+    }
+
+    /// Borrows the client environment exclusively.
+    ///
+    /// # Safety
+    /// The accessed fields must not otherwise be accessed during this call or for
+    /// the returned borrow's lifetime.
+    pub(crate) unsafe fn environ_mut(&mut self) -> &mut RustEnvironment {
+        unsafe {
+            (*self.0.value.as_ptr())
+                .environ
+                .as_deref_mut()
+                .expect("a client is created with its environment")
+        }
+    }
+
+    /// Retains the peer handle carrying the connected client's messages.
+    pub(crate) fn peer_handle(&self) -> PeerRef {
+        self.0
+            .value
+            .borrow()
+            .peer
+            .as_ref()
+            .expect("a connected client has a peer")
+            .clone()
+    }
+
+    /// The key table the client's next key is looked up in, if one is assigned.
+    pub(crate) fn keytable(&self) -> Option<KeyTableRef> {
+        self.0.value.borrow().keytable_ref.clone()
+    }
+
+    /// Retains the observed attachment while its session is still alive.
+    pub(crate) fn attached_session(&self) -> Option<SessionRef> {
+        self.0
+            .value
+            .borrow()
+            .attached_session
+            .as_ref()
+            .and_then(SessionWeak::upgrade)
+    }
+
+    /// Records the attachment without running session-change callbacks or redraws.
+    ///
+    /// # Safety
+    /// The accessed fields must not otherwise be accessed during this call.
+    pub(crate) unsafe fn set_attached_session(&mut self, session: Option<&SessionRef>) {
+        unsafe {
+            (*self.0.value.as_ptr()).attached_session = session.map(SessionRef::downgrade);
+        }
+    }
+
     pub(crate) fn new(value: client) -> Self {
-        let reference = Self(Rc::new(UnsafeCell::new(ClientStorage { value })));
-        crate::server::register_client_handle(&reference);
+        let reference = Self(Rc::new(ClientStorage {
+            id: NEXT_CLIENT_ID.with(|next| {
+                let id = next.get();
+                next.set(id.checked_add(1).expect("client IDs exhausted"));
+                id
+            }),
+            value: RefCell::new(value),
+        }));
+        reference.0.value.borrow_mut().owner = Some(reference.downgrade());
         reference
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut client {
-        unsafe { &(*self.0.get()).value as *const client as *mut client }
+    /// Returns a compatibility view of the client payload.
+    ///
+    /// # Safety
+    /// The caller must prevent mutation for the reference's lifetime, including
+    /// mutation through other owners or reentrant callbacks.
+    pub(crate) unsafe fn as_client(&self) -> &client {
+        unsafe { &*self.0.value.as_ptr() }
     }
 
-    pub(crate) fn with<R>(&self, f: impl FnOnce(&client) -> R) -> R {
-        unsafe { f(&(*self.0.get()).value) }
+    /// Returns an exclusive compatibility view of the client payload.
+    ///
+    /// # Safety
+    /// The caller must exclude all other access for this borrow's lifetime,
+    /// including access through other owners or reentrant callbacks.
+    pub(crate) unsafe fn as_client_mut(&mut self) -> &mut client {
+        unsafe { &mut *self.0.value.as_ptr() }
+    }
+
+    /// Borrows the terminal without borrowing the other client fields.
+    ///
+    /// # Safety
+    /// The terminal must not be mutated for the returned borrow's lifetime.
+    pub(crate) unsafe fn as_tty(&self) -> &tty {
+        unsafe { &(*self.0.value.as_ptr()).tty }
+    }
+
+    /// Borrows the terminal exclusively without borrowing other client fields.
+    ///
+    /// # Safety
+    /// The caller must exclude other terminal access for this borrow,
+    /// including access through other owners or reentrant callbacks.
+    pub(crate) unsafe fn as_tty_mut(&mut self) -> &mut tty {
+        unsafe { &mut (*self.0.value.as_ptr()).tty }
+    }
+
+    /// Borrows the display name without borrowing the client's terminal.
+    ///
+    /// # Safety
+    /// The name must not be mutated for the returned borrow's lifetime.
+    pub(crate) unsafe fn name(&self) -> Option<&std::ffi::CStr> {
+        unsafe { (*self.0.value.as_ptr()).name.as_deref() }
+    }
+
+    /// Reads the terminal descriptor without borrowing the client's terminal.
+    ///
+    /// # Safety
+    /// The descriptor must not be exclusively borrowed during this read.
+    pub(crate) unsafe fn fd(&self) -> core::ffi::c_int {
+        unsafe { (*self.0.value.as_ptr()).fd }
+    }
+
+    /// Borrows the client flags independently of the terminal.
+    ///
+    /// # Safety
+    /// The caller must exclude other access to the flags for this borrow.
+    pub(crate) unsafe fn flags_mut(&mut self) -> &mut uint64_t {
+        unsafe { &mut (*self.0.value.as_ptr()).flags }
+    }
+
+    /// Reads the client flags without borrowing the terminal.
+    ///
+    /// # Safety
+    /// The flags must not be exclusively borrowed during this read.
+    pub(crate) unsafe fn flags(&self) -> uint64_t {
+        unsafe { (*self.0.value.as_ptr()).flags }
+    }
+
+    /// Records queued terminal output without borrowing the terminal itself.
+    ///
+    /// # Safety
+    /// The written-byte count must not otherwise be accessed during this call.
+    pub(crate) unsafe fn record_written(&mut self, count: size_t) {
+        unsafe {
+            let written = &mut (*self.0.value.as_ptr()).written;
+            *written = written.wrapping_add(count);
+        }
+    }
+
+    /// Borrows the discarded-output count independently of the terminal.
+    ///
+    /// # Safety
+    /// The caller must exclude other access to the count for this borrow.
+    pub(crate) unsafe fn discarded_mut(&mut self) -> &mut size_t {
+        unsafe { &mut (*self.0.value.as_ptr()).discarded }
+    }
+
+    /// Borrows the pending-redraw count independently of the terminal.
+    ///
+    /// # Safety
+    /// The caller must exclude other access to the count for this borrow.
+    pub(crate) unsafe fn redraw_mut(&mut self) -> &mut size_t {
+        unsafe { &mut (*self.0.value.as_ptr()).redraw }
+    }
+
+    /// Borrows pending input requests independently of the terminal.
+    ///
+    /// # Safety
+    /// The caller must exclude other access to the list for this borrow.
+    pub(crate) unsafe fn input_requests_mut(&mut self) -> &mut input_requests {
+        unsafe { &mut (*self.0.value.as_ptr()).input_requests }
+    }
+
+    /// Reads the terminal features without borrowing the terminal itself.
+    ///
+    /// # Safety
+    /// The features must not be exclusively borrowed during this read.
+    pub(crate) unsafe fn terminal_features(&self) -> core::ffi::c_int {
+        unsafe { (*self.0.value.as_ptr()).term_features }
+    }
+
+    /// Borrows the terminal features independently of the terminal.
+    ///
+    /// # Safety
+    /// The caller must exclude other access to the features for this borrow.
+    pub(crate) unsafe fn terminal_features_mut(&mut self) -> &mut core::ffi::c_int {
+        unsafe { &mut (*self.0.value.as_ptr()).term_features }
+    }
+
+    /// Borrows the reported terminal type independently of the terminal.
+    ///
+    /// # Safety
+    /// The caller must exclude other access to the type for this borrow.
+    pub(crate) unsafe fn terminal_type_mut(&mut self) -> &mut Option<std::ffi::CString> {
+        unsafe { &mut (*self.0.value.as_ptr()).term_type }
+    }
+
+    /// Borrows the terminal definition without borrowing the terminal itself.
+    ///
+    /// # Safety
+    /// The name and capabilities must not be mutated, and the features must
+    /// not otherwise be accessed, for the lifetime of the returned borrows.
+    pub(crate) unsafe fn terminal_definition(
+        &mut self,
+    ) -> (
+        Option<&std::ffi::CStr>,
+        &[std::ffi::CString],
+        &mut core::ffi::c_int,
+    ) {
+        unsafe {
+            (
+                (*self.0.value.as_ptr()).term_name.as_deref(),
+                &(*self.0.value.as_ptr()).term_caps,
+                &mut (*self.0.value.as_ptr()).term_features,
+            )
+        }
+    }
+
+    /// Checks for an overlay without borrowing the client's terminal.
+    ///
+    /// # Safety
+    /// The overlay state must not be exclusively borrowed during this read.
+    pub(crate) unsafe fn has_overlay(&self) -> bool {
+        unsafe { (*self.0.value.as_ptr()).overlay.is_some() }
+    }
+
+    /// Checks for an overlay region callback without borrowing the terminal.
+    ///
+    /// # Safety
+    /// The overlay check must not be exclusively borrowed during this read.
+    pub(crate) unsafe fn has_overlay_check(&self) -> bool {
+        unsafe { (*self.0.value.as_ptr()).overlay_check.is_some() }
+    }
+
+    /// Queries the overlay's visible ranges without borrowing the terminal.
+    ///
+    /// # Safety
+    /// The caller must exclude other access to the overlay data while its
+    /// region callback runs. Other client fields may remain borrowed.
+    pub(crate) unsafe fn overlay_ranges(
+        &mut self,
+        px: u_int,
+        py: u_int,
+        nx: u_int,
+    ) -> Option<VisibleRangesRef> {
+        unsafe {
+            let check = (*self.0.value.as_ptr()).overlay_check;
+            if check.is_none() {
+                return None;
+            }
+            let view = (*self.0.value.as_ptr()).overlay_data_view;
+            let data = (*self.0.value.as_ptr()).overlay_data.view_data(view);
+            Some(check.call(data, px, py, nx))
+        }
+    }
+
+    pub(crate) fn as_ptr(&self) -> *mut client {
+        self.0.value.as_ptr()
+    }
+
+    pub(crate) fn id(&self) -> u64 {
+        self.0.id
     }
 
     pub(crate) fn downgrade(&self) -> ClientWeak {
         ClientWeak(Rc::downgrade(&self.0))
+    }
+
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 }
 
@@ -531,73 +1268,111 @@ impl ClientWeak {
     pub(crate) fn upgrade(&self) -> Option<ClientRef> {
         self.0.upgrade().map(ClientRef)
     }
-}
 
-impl Deref for ClientRef {
-    type Target = client;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*self.as_ptr() }
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.0, &other.0)
     }
 }
 
-impl DerefMut for ClientRef {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.as_ptr() }
-    }
-}
-
-/// A strong owner of a live key-binding table. The raw pointer returned by
-/// [`as_ptr`](Self::as_ptr) is an observational view and is valid only while
-/// this handle, or another strong handle to the same table, is alive. The
-/// global table tree and each client key-table field own independent clones.
+/// A shared key-binding table with checked access to its state.
 #[derive(Clone)]
-pub(crate) struct KeyTableRef(Rc<UnsafeCell<key_table>>);
+pub(crate) struct KeyTableRef(Rc<RefCell<key_table>>);
 
 impl KeyTableRef {
     pub(crate) fn new(value: key_table) -> Self {
-        Self(Rc::new(UnsafeCell::new(value)))
+        Self(Rc::new(RefCell::new(value)))
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut key_table {
-        self.0.get()
+    pub(crate) fn borrow(&self) -> std::cell::Ref<'_, key_table> {
+        self.0.borrow()
+    }
+
+    pub(crate) fn borrow_mut(&self) -> std::cell::RefMut<'_, key_table> {
+        self.0.borrow_mut()
+    }
+
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 }
 
-/// A strong owner of a client file operation. The raw pointer passed to I/O
-/// callbacks is an observational view; deferred callbacks carry this handle
-/// so completion cannot outlive the operation. The file's client pointer is
-/// currently governed by the client's existing hold and is not an owning edge.
+impl PartialEq for KeyTableRef {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr_eq(other)
+    }
+}
+
+impl Eq for KeyTableRef {}
+
+impl fmt::Debug for KeyTableRef {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("KeyTableRef")
+            .field(&Rc::as_ptr(&self.0))
+            .finish()
+    }
+}
+
+/// Shared ownership of a client file operation with checked state access.
 #[derive(Clone)]
-pub(crate) struct ClientFileRef(Rc<UnsafeCell<client_file>>);
+pub(crate) struct ClientFileRef(Rc<RefCell<client_file>>);
 
 impl ClientFileRef {
     pub(crate) fn new(value: client_file) -> Self {
-        Self(Rc::new(UnsafeCell::new(value)))
+        Self(Rc::new(RefCell::new(value)))
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut client_file {
-        self.0.get()
+    pub(crate) fn borrow(&self) -> std::cell::Ref<'_, client_file> {
+        self.0.borrow()
+    }
+
+    pub(crate) fn borrow_mut(&self) -> std::cell::RefMut<'_, client_file> {
+        self.0.borrow_mut()
+    }
+
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 }
 
 #[derive(Clone)]
-pub struct ModeTreeDataRef(Rc<UnsafeCell<mode_tree_data>>);
+pub struct ModeTreeDataRef(Rc<ModeTreeStorage>);
+
+struct ModeTreeStorage {
+    state: RefCell<mode_tree_data>,
+    screen: ScreenRef,
+}
 
 #[derive(Clone)]
-pub struct ModeTreeDataWeak(Weak<UnsafeCell<mode_tree_data>>);
+pub struct ModeTreeDataWeak(Weak<ModeTreeStorage>);
 
 impl ModeTreeDataRef {
-    pub(crate) fn new(value: mode_tree_data) -> Self {
-        let reference = Self(Rc::new(UnsafeCell::new(value)));
-        unsafe {
-            (*reference.as_ptr()).owner = Some(reference.downgrade());
-        }
-        reference
+    pub(crate) fn new(value: mode_tree_data, screen: ScreenRef) -> Self {
+        Self(Rc::new(ModeTreeStorage {
+            state: RefCell::new(value),
+            screen,
+        }))
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut mode_tree_data {
-        self.0.get()
+    /// The tree's screen, independently accessible from its item state.
+    pub(crate) fn screen_handle(&self) -> &ScreenRef {
+        &self.0.screen
+    }
+
+    pub(crate) unsafe fn set_default_cursor(&self, options: &RustOptionsRef) {
+        unsafe { self.0.screen.borrow_mut().set_default_cursor(options) }
+    }
+
+    pub(crate) fn borrow(&self) -> std::cell::Ref<'_, mode_tree_data> {
+        self.0.state.borrow()
+    }
+
+    pub(crate) fn borrow_mut(&self) -> std::cell::RefMut<'_, mode_tree_data> {
+        self.0.state.borrow_mut()
+    }
+
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 
     pub(crate) fn downgrade(&self) -> ModeTreeDataWeak {
@@ -616,22 +1391,28 @@ impl ModeTreeDataWeak {
 }
 
 #[derive(Clone)]
-pub struct WindowBufferModeDataRef(Rc<UnsafeCell<window_buffer_modedata>>);
+pub struct WindowBufferModeDataRef(Rc<RefCell<window_buffer_modedata>>);
 
 #[derive(Clone)]
-pub struct WindowBufferModeDataWeak(Weak<UnsafeCell<window_buffer_modedata>>);
+pub struct WindowBufferModeDataWeak(Weak<RefCell<window_buffer_modedata>>);
 
 impl WindowBufferModeDataRef {
     pub(crate) fn new(value: window_buffer_modedata) -> Self {
-        let reference = Self(Rc::new(UnsafeCell::new(value)));
-        unsafe {
-            (*reference.as_ptr()).owner = Some(reference.downgrade());
-        }
+        let reference = Self(Rc::new(RefCell::new(value)));
+        reference.borrow_mut().owner = Some(reference.downgrade());
         reference
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut window_buffer_modedata {
-        self.0.get()
+    pub(crate) fn borrow(&self) -> std::cell::Ref<'_, window_buffer_modedata> {
+        self.0.borrow()
+    }
+
+    pub(crate) fn borrow_mut(&self) -> std::cell::RefMut<'_, window_buffer_modedata> {
+        self.0.borrow_mut()
+    }
+
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 
     pub(crate) fn downgrade(&self) -> WindowBufferModeDataWeak {
@@ -646,22 +1427,28 @@ impl WindowBufferModeDataWeak {
 }
 
 #[derive(Clone)]
-pub struct WindowClientModeDataRef(Rc<UnsafeCell<window_client_modedata>>);
+pub struct WindowClientModeDataRef(Rc<RefCell<window_client_modedata>>);
 
 #[derive(Clone)]
-pub struct WindowClientModeDataWeak(Weak<UnsafeCell<window_client_modedata>>);
+pub struct WindowClientModeDataWeak(Weak<RefCell<window_client_modedata>>);
 
 impl WindowClientModeDataRef {
     pub(crate) fn new(value: window_client_modedata) -> Self {
-        let reference = Self(Rc::new(UnsafeCell::new(value)));
-        unsafe {
-            (*reference.as_ptr()).owner = Some(reference.downgrade());
-        }
+        let reference = Self(Rc::new(RefCell::new(value)));
+        reference.borrow_mut().owner = Some(reference.downgrade());
         reference
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut window_client_modedata {
-        self.0.get()
+    pub(crate) fn borrow(&self) -> std::cell::Ref<'_, window_client_modedata> {
+        self.0.borrow()
+    }
+
+    pub(crate) fn borrow_mut(&self) -> std::cell::RefMut<'_, window_client_modedata> {
+        self.0.borrow_mut()
+    }
+
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 
     pub(crate) fn downgrade(&self) -> WindowClientModeDataWeak {
@@ -676,22 +1463,28 @@ impl WindowClientModeDataWeak {
 }
 
 #[derive(Clone)]
-pub struct WindowTreeModeDataRef(Rc<UnsafeCell<window_tree_modedata>>);
+pub struct WindowTreeModeDataRef(Rc<RefCell<window_tree_modedata>>);
 
 #[derive(Clone)]
-pub struct WindowTreeModeDataWeak(Weak<UnsafeCell<window_tree_modedata>>);
+pub struct WindowTreeModeDataWeak(Weak<RefCell<window_tree_modedata>>);
 
 impl WindowTreeModeDataRef {
     pub(crate) fn new(value: window_tree_modedata) -> Self {
-        let reference = Self(Rc::new(UnsafeCell::new(value)));
-        unsafe {
-            (*reference.as_ptr()).owner = Some(reference.downgrade());
-        }
+        let reference = Self(Rc::new(RefCell::new(value)));
+        reference.borrow_mut().owner = Some(reference.downgrade());
         reference
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut window_tree_modedata {
-        self.0.get()
+    pub(crate) fn borrow(&self) -> std::cell::Ref<'_, window_tree_modedata> {
+        self.0.borrow()
+    }
+
+    pub(crate) fn borrow_mut(&self) -> std::cell::RefMut<'_, window_tree_modedata> {
+        self.0.borrow_mut()
+    }
+
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 
     pub(crate) fn downgrade(&self) -> WindowTreeModeDataWeak {
@@ -710,22 +1503,28 @@ impl WindowTreeModeDataWeak {
 }
 
 #[derive(Clone)]
-pub struct WindowCustomizeModeDataRef(Rc<UnsafeCell<window_customize_modedata>>);
+pub struct WindowCustomizeModeDataRef(Rc<RefCell<window_customize_modedata>>);
 
 #[derive(Clone)]
-pub struct WindowCustomizeModeDataWeak(Weak<UnsafeCell<window_customize_modedata>>);
+pub struct WindowCustomizeModeDataWeak(Weak<RefCell<window_customize_modedata>>);
 
 impl WindowCustomizeModeDataRef {
     pub(crate) fn new(value: window_customize_modedata) -> Self {
-        let reference = Self(Rc::new(UnsafeCell::new(value)));
-        unsafe {
-            (*reference.as_ptr()).owner = Some(reference.downgrade());
-        }
+        let reference = Self(Rc::new(RefCell::new(value)));
+        reference.borrow_mut().owner = Some(reference.downgrade());
         reference
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut window_customize_modedata {
-        self.0.get()
+    pub(crate) fn borrow(&self) -> std::cell::Ref<'_, window_customize_modedata> {
+        self.0.borrow()
+    }
+
+    pub(crate) fn borrow_mut(&self) -> std::cell::RefMut<'_, window_customize_modedata> {
+        self.0.borrow_mut()
+    }
+
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 
     pub(crate) fn downgrade(&self) -> WindowCustomizeModeDataWeak {
@@ -743,12 +1542,12 @@ impl WindowCustomizeModeDataWeak {
     }
 }
 
-pub type cmd_parse_status = ::core::ffi::c_uint;
+pub type cmd_parse_status = core::ffi::c_uint;
 #[repr(C)]
 pub struct cmd_parse_result {
     pub status: cmd_parse_status,
     pub(crate) cmdlist: Option<CmdListRef>,
-    pub error: Option<::std::ffi::CString>,
+    pub error: Option<std::ffi::CString>,
 }
 impl Default for cmd_parse_result {
     /// The `CMD_PARSE_SUCCESS` status with neither a command list nor an error.
@@ -760,24 +1559,10 @@ impl Default for cmd_parse_result {
         }
     }
 }
-#[derive(Default)]
-#[repr(C)]
-pub enum CmdqCallbackData {
-    #[default]
-    None,
-    NotifyEntry(Box<notify_entry>),
-    WindowTreeModeData(WindowTreeModeDataWeak),
-    String(::std::ffi::CString),
-    KeyEvent(Box<key_event>),
-}
-
-pub type CmdqCallbackFn = unsafe fn(*mut cmdq_item, CmdqCallbackData) -> cmd_retval;
-
-pub type cmdq_cb = Option<CmdqCallbackFn>;
 pub use crate::style::colour_palette;
-pub type control_sub_type = ::core::ffi::c_uint;
+pub type control_sub_type = core::ffi::c_uint;
 pub type size_t = usize;
-pub type format_entry_cb = Option<unsafe fn(&format_tree) -> Option<::std::ffi::CString>>;
+pub type format_entry_cb = Option<unsafe fn(&format_tree) -> Option<std::ffi::CString>>;
 pub type gid_t = __gid_t;
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
@@ -794,7 +1579,7 @@ pub struct stat_t {
     pub st_mode: __mode_t,
     pub st_uid: __uid_t,
     pub st_gid: __gid_t,
-    pub __pad0: ::core::ffi::c_int,
+    pub __pad0: core::ffi::c_int,
     pub st_rdev: __dev_t,
     pub st_size: __off_t,
     pub st_blksize: __blksize_t,
@@ -803,22 +1588,6 @@ pub struct stat_t {
     pub st_mtim: timespec,
     pub st_ctim: timespec,
     pub __glibc_reserved: [__syscall_slong_t; 3],
-}
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
-pub struct glob_t {
-    pub gl_pathc: __size_t,
-    pub gl_pathv: *mut *mut ::core::ffi::c_char,
-    pub gl_offs: __size_t,
-    pub gl_flags: ::core::ffi::c_int,
-    pub gl_closedir: Option<unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()>,
-    pub gl_readdir: Option<unsafe extern "C" fn(*mut ::core::ffi::c_void) -> *mut dirent>,
-    pub gl_opendir:
-        Option<unsafe extern "C" fn(*const ::core::ffi::c_char) -> *mut ::core::ffi::c_void>,
-    pub gl_lstat:
-        Option<unsafe extern "C" fn(*const ::core::ffi::c_char, *mut stat_t) -> ::core::ffi::c_int>,
-    pub gl_stat:
-        Option<unsafe extern "C" fn(*const ::core::ffi::c_char, *mut stat_t) -> ::core::ffi::c_int>,
 }
 pub type u_char = __u_char;
 pub type u_short = __u_short;
@@ -829,9 +1598,9 @@ pub struct grid_cell {
     pub data: utf8_data,
     pub attr: u_short,
     pub flags: u_char,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub us: ::core::ffi::c_int,
+    pub fg: core::ffi::c_int,
+    pub bg: core::ffi::c_int,
+    pub us: core::ffi::c_int,
     pub link: u_int,
 }
 pub use crate::text::utf8_char;
@@ -841,9 +1610,9 @@ pub struct grid_extd_entry {
     pub data: utf8_char,
     pub attr: u_short,
     pub flags: u_char,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub us: ::core::ffi::c_int,
+    pub fg: core::ffi::c_int,
+    pub bg: core::ffi::c_int,
+    pub us: core::ffi::c_int,
     pub link: u_int,
 }
 pub use crate::text::hanguljamo_state;
@@ -862,8 +1631,8 @@ pub struct imsgbuf {
     pub w: Option<Box<msgbuf>>,
     pub pid: pid_t,
     pub maxsize: uint32_t,
-    pub fd: ::core::ffi::c_int,
-    pub flags: ::core::ffi::c_int,
+    pub fd: core::ffi::c_int,
+    pub flags: core::ffi::c_int,
 }
 pub type in_addr_t = uint32_t;
 #[derive(Copy, Clone)]
@@ -879,41 +1648,34 @@ pub enum InputRequestData {
     #[default]
     None,
     Palette {
-        idx: ::core::ffi::c_int,
-        c: ::core::ffi::c_int,
+        idx: core::ffi::c_int,
+        c: core::ffi::c_int,
     },
     Clipboard {
-        clip: ::core::ffi::c_char,
+        clip: core::ffi::c_char,
         data: Vec<u8>,
     },
 }
-pub type input_request_type = ::core::ffi::c_uint;
+pub type input_request_type = core::ffi::c_uint;
 /// The requests one parser is waiting on a reply to, oldest first. A request
-/// belongs to the parser that made it until `input_free_request` takes it off.
-pub type input_request_list = ::std::vec::Vec<::std::boxed::Box<input_request>>;
-/// The requests one client is answering, oldest first, as the borrowed view
-/// the replies walk. The parser that made each one owns it.
-pub type input_requests = ::std::vec::Vec<*mut input_request>;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct iovec {
-    pub iov_base: *mut ::core::ffi::c_void,
-    pub iov_len: size_t,
-}
-pub type job_complete_cb = Option<unsafe fn(*mut job) -> ()>;
-pub type job_free_cb = Option<unsafe fn(JobData) -> ()>;
-pub type job_update_cb = Option<unsafe fn(*mut job) -> ()>;
+/// belongs to the parser that made it until its request handle is freed.
+pub type input_request_list = Vec<Box<input_request>>;
+/// The requests one client is answering, oldest first. The parser that made
+/// each one owns it.
+pub type input_requests = Vec<input_request_handle>;
+pub type job_complete_cb = Option<Box<dyn FnOnce(JobEvent)>>;
+pub type job_update_cb = Option<std::rc::Rc<dyn Fn(JobEvent)>>;
 pub use crate::text::{key_code, key_code_type};
-pub type tty_code_type = ::core::ffi::c_uint;
+pub type tty_code_type = core::ffi::c_uint;
 /// A mouse event. The default is an invalid one, which is what a client
 /// starts out holding.
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct mouse_event {
-    pub valid: ::core::ffi::c_int,
-    pub ignore: ::core::ffi::c_int,
+    pub valid: core::ffi::c_int,
+    pub ignore: core::ffi::c_int,
     pub key: key_code,
-    pub statusat: ::core::ffi::c_int,
+    pub statusat: core::ffi::c_int,
     pub statuslines: u_int,
     pub x: u_int,
     pub y: u_int,
@@ -923,9 +1685,9 @@ pub struct mouse_event {
     pub lb: u_int,
     pub ox: u_int,
     pub oy: u_int,
-    pub s: ::core::ffi::c_int,
-    pub w: ::core::ffi::c_int,
-    pub wp: ::core::ffi::c_int,
+    pub s: core::ffi::c_int,
+    pub w: core::ffi::c_int,
+    pub wp: core::ffi::c_int,
     pub sgr_type: u_int,
     pub sgr_b: u_int,
 }
@@ -937,7 +1699,7 @@ pub struct key_event {
     pub m: mouse_event,
     pub buf: Vec<u8>,
 }
-pub type layout_type = ::core::ffi::c_uint;
+pub type layout_type = core::ffi::c_uint;
 /// One item of a menu template. The default is the separator item: no name,
 /// no key and no command.
 /// One item a caller hands to `menu_add_item`. Its strings are borrowed:
@@ -948,11 +1710,11 @@ pub type layout_type = ::core::ffi::c_uint;
 pub struct menu_item<'a> {
     /// What the item reads as, which is expanded as a format before it is
     /// drawn, or nothing for the separator line.
-    pub name: Option<&'a ::core::ffi::CStr>,
+    pub name: Option<&'a core::ffi::CStr>,
     pub key: key_code,
     /// The command the item runs, or nothing for one whose caller runs its
     /// own.
-    pub command: Option<&'a ::core::ffi::CStr>,
+    pub command: Option<&'a core::ffi::CStr>,
 }
 
 /// One line of a menu as the menu itself holds it, which is not the same
@@ -961,20 +1723,26 @@ pub struct menu_item<'a> {
 /// entry's name is the expansion the menu made and owns.
 #[repr(C)]
 pub struct menu_entry {
-    pub name: Option<::std::ffi::CString>,
+    pub name: Option<std::ffi::CString>,
     pub key: key_code,
-    pub command: Option<::std::ffi::CString>,
+    pub command: Option<std::ffi::CString>,
 }
 impl menu_entry {
-    /// The text the menu draws for the entry, or null for a separator.
-    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.name)
+    /// Whether the entry is a named choice rather than a separator or disabled row.
+    pub(crate) fn is_selectable(&self) -> bool {
+        self.name()
+            .is_some_and(|name| !name.to_bytes().starts_with(b"-"))
     }
 
-    /// The command the entry runs when it is chosen, or null for one that runs
-    /// none.
-    pub(crate) fn command_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.command)
+    /// The text the menu draws for the entry, or nothing for a separator.
+    pub(crate) fn name(&self) -> Option<&core::ffi::CStr> {
+        self.name.as_deref()
+    }
+
+    /// The command the entry runs when it is chosen, or nothing for one that
+    /// runs none.
+    pub(crate) fn command(&self) -> Option<&core::ffi::CStr> {
+        self.command.as_deref()
     }
 }
 impl Default for menu_entry {
@@ -989,253 +1757,110 @@ impl Default for menu_entry {
 }
 #[repr(C)]
 pub struct menu {
-    pub title: Option<::std::ffi::CString>,
+    pub title: Option<std::ffi::CString>,
     pub items: Vec<menu_entry>,
     pub width: u_int,
 }
-impl menu {
-    /// The title drawn on the menu's border.
-    pub(crate) fn title_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.title)
-    }
-}
-#[derive(Default)]
-#[repr(C)]
-pub enum MenuCallbackData {
-    #[default]
-    None,
-    ModeTreeMenu(Box<mode_tree_menu>),
-    StatusPromptMenu(Box<status_prompt_menu>),
-    Popup(PopupDataWeak),
-}
-pub type menu_choice_cb = Option<unsafe fn(*mut menu, u_int, key_code, MenuCallbackData) -> ()>;
-pub type sort_order = ::core::ffi::c_uint;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sort_criteria_t {
-    pub order: sort_order,
-    pub reversed: ::core::ffi::c_int,
-    pub order_seq: Option<&'static [sort_order]>,
-}
-impl Default for sort_criteria_t {
-    /// Sorting by activity, forwards, with no explicit order sequence.
-    fn default() -> sort_criteria_t {
-        sort_criteria_t {
-            order: crate::sort::SORT_ACTIVITY,
-            reversed: 0,
-            order_seq: None,
-        }
-    }
-}
+
+pub type menu_choice_cb = Option<Box<dyn FnOnce(u_int, key_code)>>;
+pub type sort_order = core::ffi::c_uint;
+pub type sort_criteria_t = crate::sort::RustSortCriteria;
 pub type uint64_t = __uint64_t;
-pub type mode_tree_build_cb = Option<
-    unsafe fn(WindowModeData, &sort_criteria_t, &mut uint64_t, *const ::core::ffi::c_char) -> (),
->;
-pub type mode_tree_height_cb = Option<fn(&mut mode_tree_data, u_int) -> u_int>;
+pub type mode_tree_build_cb =
+    Option<Rc<dyn Fn(&sort_criteria_t, &mut uint64_t, Option<&core::ffi::CStr>)>>;
+pub type mode_tree_height_cb = Option<Rc<dyn Fn() -> u_int>>;
 /// The help a mode shows: its own lines, the least width they need, and the
 /// word `%1` stands for in every line.
-pub type mode_tree_help_cb = Option<
-    fn() -> (
-        &'static [&'static ::core::ffi::CStr],
-        u_int,
-        &'static ::core::ffi::CStr,
-    ),
->;
-pub type mode_tree_key_cb = Option<unsafe fn(WindowModeData, ModeTreeItemData, u_int) -> key_code>;
-pub type mode_tree_search_cb = Option<
-    unsafe fn(
-        WindowModeData,
-        ModeTreeItemData,
-        *const ::core::ffi::c_char,
-        ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int,
->;
-pub type mode_tree_sort_cb = Option<fn(&mut sort_criteria_t) -> ()>;
+pub type mode_tree_help = Option<(
+    &'static [&'static core::ffi::CStr],
+    u_int,
+    &'static core::ffi::CStr,
+)>;
+pub type mode_tree_key_cb = Option<Rc<dyn Fn(ModeTreeItemData, u_int) -> key_code>>;
+pub type mode_tree_search_cb =
+    Option<Rc<dyn Fn(ModeTreeItemData, &core::ffi::CStr, core::ffi::c_int) -> core::ffi::c_int>>;
+pub type mode_tree_sort_cb = Option<Rc<dyn Fn(&mut sort_criteria_t)>>;
 pub type mode_tree_swap_cb =
-    Option<unsafe fn(ModeTreeItemData, ModeTreeItemData, &sort_criteria_t) -> ::core::ffi::c_int>;
+    Option<Rc<dyn Fn(ModeTreeItemData, ModeTreeItemData, &sort_criteria_t) -> core::ffi::c_int>>;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct msg_command {
-    pub argc: ::core::ffi::c_int,
+    pub argc: core::ffi::c_int,
 }
-pub type msgtype = ::core::ffi::c_uint;
-pub type nl_item = ::core::ffi::c_int;
-/// The values of an array option, by index, so that the indexes need not run
-/// without gaps.
-pub type options_array = ::std::collections::BTreeMap<u_int, options_array_item_t>;
+pub type msgtype = core::ffi::c_uint;
+pub type nl_item = core::ffi::c_int;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct options_name_map {
-    pub from: &'static ::core::ffi::CStr,
-    pub to: &'static ::core::ffi::CStr,
+    pub from: &'static core::ffi::CStr,
+    pub to: &'static core::ffi::CStr,
 }
-pub type options_table_type = ::core::ffi::c_uint;
+pub type options_table_type = core::ffi::c_uint;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct options_table_entry_t {
-    pub name: &'static ::core::ffi::CStr,
-    pub alternative_name: Option<&'static ::core::ffi::CStr>,
+    pub name: &'static core::ffi::CStr,
+    pub alternative_name: Option<&'static core::ffi::CStr>,
     pub type_0: options_table_type,
-    pub scope: ::core::ffi::c_int,
-    pub flags: ::core::ffi::c_int,
+    pub scope: core::ffi::c_int,
+    pub flags: core::ffi::c_int,
     pub minimum: u_int,
     pub maximum: u_int,
-    pub choices: Option<&'static [&'static ::core::ffi::CStr]>,
-    pub default_str: Option<&'static ::core::ffi::CStr>,
-    pub default_num: ::core::ffi::c_longlong,
-    pub default_arr: Option<&'static [&'static ::core::ffi::CStr]>,
-    pub separator: Option<&'static ::core::ffi::CStr>,
-    pub pattern: Option<&'static ::core::ffi::CStr>,
-    pub text: Option<&'static ::core::ffi::CStr>,
-    pub unit: Option<&'static ::core::ffi::CStr>,
+    pub choices: Option<&'static [&'static core::ffi::CStr]>,
+    pub default_str: Option<&'static core::ffi::CStr>,
+    pub default_num: core::ffi::c_longlong,
+    pub default_arr: Option<&'static [&'static core::ffi::CStr]>,
+    pub separator: Option<&'static core::ffi::CStr>,
+    pub pattern: Option<&'static core::ffi::CStr>,
+    pub text: Option<&'static core::ffi::CStr>,
+    pub unit: Option<&'static core::ffi::CStr>,
 }
-pub type style_align = ::core::ffi::c_uint;
-pub type style_default_type = ::core::ffi::c_uint;
-pub type style_list = ::core::ffi::c_uint;
-pub type style_range_type = ::core::ffi::c_uint;
+pub type style_align = core::ffi::c_uint;
+pub type style_default_type = core::ffi::c_uint;
+pub type style_list = core::ffi::c_uint;
+pub type style_range_type = core::ffi::c_uint;
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct style {
     pub gc: grid_cell,
-    pub ignore: ::core::ffi::c_int,
-    pub fill: ::core::ffi::c_int,
+    pub ignore: core::ffi::c_int,
+    pub fill: core::ffi::c_int,
     pub align: style_align,
     pub list: style_list,
     pub range_type: style_range_type,
     pub range_argument: u_int,
-    pub range_string: [::core::ffi::c_char; 16],
-    pub width: ::core::ffi::c_int,
-    pub width_percentage: ::core::ffi::c_int,
-    pub pad: ::core::ffi::c_int,
+    pub range_string: [core::ffi::c_char; 16],
+    pub width: core::ffi::c_int,
+    pub width_percentage: core::ffi::c_int,
+    pub pad: core::ffi::c_int,
     pub default_type: style_default_type,
 }
-/// What one value of an option holds. The kind the option's table entry
-/// names is what it is set to; nothing else is ever read out of it.
-#[derive(Default)]
-#[repr(C)]
-pub enum options_value {
-    /// A value the option has not been given yet.
-    #[default]
-    None,
-    Number(::core::ffi::c_longlong),
-    String(::std::ffi::CString),
-    Commands(CmdListRef),
-}
-
-impl options_value {
-    /// The number the value holds, or zero when it holds something else.
-    pub fn number(&self) -> ::core::ffi::c_longlong {
-        match self {
-            options_value::Number(number) => *number,
-            _ => 0,
-        }
-    }
-
-    /// The string the value holds, which every caller of this has already
-    /// established it is.
-    pub fn string(&self) -> &::core::ffi::CStr {
-        match self {
-            options_value::String(string) => string,
-            _ => panic!("not a string option"),
-        }
-    }
-
-    /// The command list the value holds, or nothing when it holds something
-    /// else.
-    pub fn cmdlist(&self) -> Option<&CmdListRef> {
-        match self {
-            options_value::Commands(cmdlist) => Some(cmdlist),
-            _ => None,
-        }
-    }
-
-    /// The command list the value holds as a handle, so a caller can keep it.
-    pub(crate) fn commands(&self) -> Option<CmdListRef> {
-        match self {
-            options_value::Commands(cmdlist) => Some(cmdlist.clone()),
-            _ => None,
-        }
-    }
-}
-pub type pane_lines = ::core::ffi::c_uint;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct passwd {
-    pub pw_name: *mut ::core::ffi::c_char,
-    pub pw_passwd: *mut ::core::ffi::c_char,
-    pub pw_uid: __uid_t,
-    pub pw_gid: __gid_t,
-    pub pw_gecos: *mut ::core::ffi::c_char,
-    pub pw_dir: *mut ::core::ffi::c_char,
-    pub pw_shell: *mut ::core::ffi::c_char,
-}
-pub type popup_finish_edit_cb =
-    Option<unsafe fn(::std::vec::Vec<u8>, ::std::boxed::Box<window_buffer_editdata>) -> ()>;
-pub type progress_bar_state = ::core::ffi::c_uint;
+pub use crate::options::options_value;
+pub type pane_lines = core::ffi::c_uint;
+pub type popup_finish_edit_cb = Box<dyn FnOnce(Vec<u8>)>;
+pub type progress_bar_state = core::ffi::c_uint;
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct progress_bar {
     pub state: progress_bar_state,
-    pub progress: ::core::ffi::c_int,
+    pub progress: core::ffi::c_int,
 }
-pub type prompt_type = ::core::ffi::c_uint;
-pub type reg_syntax_t = ::core::ffi::c_ulong;
-#[derive(Copy, Clone, BitfieldStruct)]
-#[repr(C)]
-pub struct re_pattern_buffer {
-    pub buffer: *mut re_dfa_t,
-    pub allocated: __re_long_size_t,
-    pub used: __re_long_size_t,
-    pub syntax: reg_syntax_t,
-    pub fastmap: *mut ::core::ffi::c_char,
-    pub translate: *mut ::core::ffi::c_uchar,
-    pub re_nsub: size_t,
-    #[bitfield(name = "can_be_null", ty = "::core::ffi::c_uint", bits = "0..=0")]
-    #[bitfield(name = "regs_allocated", ty = "::core::ffi::c_uint", bits = "1..=2")]
-    #[bitfield(name = "fastmap_accurate", ty = "::core::ffi::c_uint", bits = "3..=3")]
-    #[bitfield(name = "no_sub", ty = "::core::ffi::c_uint", bits = "4..=4")]
-    #[bitfield(name = "not_bol", ty = "::core::ffi::c_uint", bits = "5..=5")]
-    #[bitfield(name = "not_eol", ty = "::core::ffi::c_uint", bits = "6..=6")]
-    #[bitfield(name = "newline_anchor", ty = "::core::ffi::c_uint", bits = "7..=7")]
-    pub can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor: [u8; 1],
-    #[bitfield(padding)]
-    pub c2rust_padding: [u8; 7],
-}
-/// The pattern buffer `regcomp` expects to be handed, which is the all-zero
-/// one: the compile fills in every field it uses. `Default` cannot be derived
-/// because `buffer` points at an extern type.
-impl Default for re_pattern_buffer {
-    fn default() -> Self {
-        Self {
-            buffer: ::core::ptr::null_mut(),
-            allocated: 0,
-            used: 0,
-            syntax: 0,
-            fastmap: ::core::ptr::null_mut(),
-            translate: ::core::ptr::null_mut(),
-            re_nsub: 0,
-            can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor: [0;
-                1],
-            c2rust_padding: [0; 7],
-        }
-    }
-}
-pub type regex_t = re_pattern_buffer;
-pub type regoff_t = ::core::ffi::c_int;
+pub type prompt_type = core::ffi::c_uint;
+pub type regoff_t = core::ffi::c_int;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct regmatch_t {
     pub rm_so: regoff_t,
     pub rm_eo: regoff_t,
 }
-pub type sa_family_t = ::core::ffi::c_ushort;
-pub type screen_cursor_style = ::core::ffi::c_uint;
+pub type sa_family_t = core::ffi::c_ushort;
+pub type screen_cursor_style = core::ffi::c_uint;
 pub type sigset_t = __sigset_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct sockaddr {
     pub sa_family: sa_family_t,
-    pub sa_data: [::core::ffi::c_char; 14],
+    pub sa_data: [core::ffi::c_char; 14],
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -1243,13 +1868,13 @@ pub struct sockaddr_in {
     pub sin_family: sa_family_t,
     pub sin_port: in_port_t,
     pub sin_addr: in_addr,
-    pub sin_zero: [::core::ffi::c_uchar; 8],
+    pub sin_zero: [core::ffi::c_uchar; 8],
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct sockaddr_un {
     pub sun_family: sa_family_t,
-    pub sun_path: [::core::ffi::c_char; 108],
+    pub sun_path: [u8; 108],
 }
 impl Default for sockaddr_un {
     /// An address in no family, with an empty path.
@@ -1261,9 +1886,9 @@ impl Default for sockaddr_un {
     }
 }
 pub type socklen_t = __socklen_t;
-pub type speed_t = ::core::ffi::c_uint;
+pub type speed_t = core::ffi::c_uint;
 pub type ssize_t = isize;
-pub type tcflag_t = ::core::ffi::c_uint;
+pub type tcflag_t = core::ffi::c_uint;
 pub type time_t = __time_t;
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
@@ -1281,26 +1906,24 @@ impl timeval {
         timeval { tv_sec: 0, tv_usec }
     }
 }
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
+#[derive(Clone, Default)]
 pub struct tm {
-    pub tm_sec: ::core::ffi::c_int,
-    pub tm_min: ::core::ffi::c_int,
-    pub tm_hour: ::core::ffi::c_int,
-    pub tm_mday: ::core::ffi::c_int,
-    pub tm_mon: ::core::ffi::c_int,
-    pub tm_year: ::core::ffi::c_int,
-    pub tm_wday: ::core::ffi::c_int,
-    pub tm_yday: ::core::ffi::c_int,
-    pub tm_isdst: ::core::ffi::c_int,
-    pub tm_gmtoff: ::core::ffi::c_long,
-    pub tm_zone: *const ::core::ffi::c_char,
+    pub tm_sec: core::ffi::c_int,
+    pub tm_min: core::ffi::c_int,
+    pub tm_hour: core::ffi::c_int,
+    pub tm_mday: core::ffi::c_int,
+    pub tm_mon: core::ffi::c_int,
+    pub tm_year: core::ffi::c_int,
+    pub tm_wday: core::ffi::c_int,
+    pub tm_yday: core::ffi::c_int,
+    pub tm_isdst: core::ffi::c_int,
+    pub tm_gmtoff: core::ffi::c_long,
+    pub tm_zone: Option<std::rc::Rc<core::ffi::CStr>>,
 }
-pub type tty_code_code = ::core::ffi::c_uint;
+pub type tty_code_code = core::ffi::c_uint;
 pub type uid_t = __uid_t;
 pub type uint8_t = __uint8_t;
 pub use crate::text::utf8_state;
-pub type va_list = __builtin_va_list;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct visible_range {
@@ -1313,64 +1936,78 @@ pub struct visible_ranges {
     pub ranges: Vec<visible_range>,
     pub used: u_int,
 }
-pub type wchar_t = ::libc::wchar_t;
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
-pub struct window_pane_offset {
-    pub used: size_t,
+/// Shared scratch storage for overlay clipping. Drawing may check the overlay
+/// again, so each span is read with a borrow that ends before output begins.
+#[derive(Clone, Default)]
+pub struct VisibleRangesRef(Rc<RefCell<visible_ranges>>);
+
+impl VisibleRangesRef {
+    pub fn borrow(&self) -> std::cell::Ref<'_, visible_ranges> {
+        self.0.borrow()
+    }
+
+    pub fn borrow_mut(&self) -> std::cell::RefMut<'_, visible_ranges> {
+        self.0.borrow_mut()
+    }
+
+    pub fn range_at(&self, index: u_int) -> Option<visible_range> {
+        let ranges = self.borrow();
+        (index < ranges.used).then(|| ranges.ranges[index as usize])
+    }
 }
+pub type wchar_t = libc::wchar_t;
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct winsize {
-    pub ws_row: ::core::ffi::c_ushort,
-    pub ws_col: ::core::ffi::c_ushort,
-    pub ws_xpixel: ::core::ffi::c_ushort,
-    pub ws_ypixel: ::core::ffi::c_ushort,
+    pub ws_row: core::ffi::c_ushort,
+    pub ws_col: core::ffi::c_ushort,
+    pub ws_xpixel: core::ffi::c_ushort,
+    pub ws_ypixel: core::ffi::c_ushort,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct msg_read_open {
-    pub stream: ::core::ffi::c_int,
-    pub fd: ::core::ffi::c_int,
+    pub stream: core::ffi::c_int,
+    pub fd: core::ffi::c_int,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct msg_read_data {
-    pub stream: ::core::ffi::c_int,
+    pub stream: core::ffi::c_int,
 }
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct msg_read_done {
-    pub stream: ::core::ffi::c_int,
-    pub error: ::core::ffi::c_int,
+    pub stream: core::ffi::c_int,
+    pub error: core::ffi::c_int,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct msg_read_cancel {
-    pub stream: ::core::ffi::c_int,
+    pub stream: core::ffi::c_int,
 }
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct msg_write_open {
-    pub stream: ::core::ffi::c_int,
-    pub fd: ::core::ffi::c_int,
-    pub flags: ::core::ffi::c_int,
+    pub stream: core::ffi::c_int,
+    pub fd: core::ffi::c_int,
+    pub flags: core::ffi::c_int,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct msg_write_data {
-    pub stream: ::core::ffi::c_int,
+    pub stream: core::ffi::c_int,
 }
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct msg_write_ready {
-    pub stream: ::core::ffi::c_int,
-    pub error: ::core::ffi::c_int,
+    pub stream: core::ffi::c_int,
+    pub error: core::ffi::c_int,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct msg_write_close {
-    pub stream: ::core::ffi::c_int,
+    pub stream: core::ffi::c_int,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -1382,7 +2019,7 @@ pub struct tty_default_key_code {
 #[repr(C)]
 pub struct tty_default_key_raw {
     /// The bytes the terminal sends for the key.
-    pub string: &'static ::core::ffi::CStr,
+    pub string: &'static core::ffi::CStr,
     pub key: key_code,
 }
 #[derive(Copy, Clone)]
@@ -1390,7 +2027,7 @@ pub struct tty_default_key_raw {
 pub struct tty_default_key_xterm {
     /// The bytes the terminal sends for the key, with `_` standing where the
     /// modifier digit goes.
-    pub template: &'static ::core::ffi::CStr,
+    pub template: &'static core::ffi::CStr,
     pub key: key_code,
 }
 #[derive(Copy, Clone)]
@@ -1398,84 +2035,57 @@ pub struct tty_default_key_xterm {
 pub struct tty_term_code_entry {
     pub type_0: tty_code_type,
     /// The terminfo name of the capability.
-    pub name: &'static ::core::ffi::CStr,
+    pub name: &'static core::ffi::CStr,
+}
+impl tty_term_code_entry {
+    /// Builds a static terminal capability table entry.
+    pub const fn new(type_0: tty_code_type, name: &'static core::ffi::CStr) -> Self {
+        Self { type_0, name }
+    }
 }
 
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct input_cell {
     pub cell: grid_cell,
-    pub set: ::core::ffi::c_int,
-    pub g0set: ::core::ffi::c_int,
-    pub g1set: ::core::ffi::c_int,
+    pub set: core::ffi::c_int,
+    pub g0set: core::ffi::c_int,
+    pub g1set: core::ffi::c_int,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct input_table_entry {
-    pub ch: ::core::ffi::c_int,
+    pub ch: core::ffi::c_int,
     /// The intermediate bytes the sequence carries before its final byte.
-    pub interm: &'static ::core::ffi::CStr,
-    pub type_0: ::core::ffi::c_int,
+    pub interm: &'static core::ffi::CStr,
+    pub type_0: core::ffi::c_int,
 }
 
 #[derive(Clone)]
 #[repr(C)]
 pub struct cmd_command_prompt_prompt {
-    pub input: Option<::std::ffi::CString>,
-    pub prompt: Option<::std::ffi::CString>,
+    pub input: Option<std::ffi::CString>,
+    pub prompt: Option<std::ffi::CString>,
 }
 #[derive(Clone, Default)]
 #[repr(C)]
 pub struct window_buffer_itemdata {
-    pub name: Option<::std::ffi::CString>,
+    pub name: Option<std::ffi::CString>,
     pub order: u_int,
     pub size: size_t,
 }
 impl window_buffer_itemdata {
     /// The name of the paste buffer the row stands for.
-    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.name)
+    #[cfg(test)]
+    pub(crate) fn name(&self) -> Option<&core::ffi::CStr> {
+        self.name.as_deref()
     }
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union __SOCKADDR_ARG {
-    pub __sockaddr__: *mut sockaddr,
-    pub __sockaddr_at__: *mut sockaddr_at,
-    pub __sockaddr_ax25__: *mut sockaddr_ax25,
-    pub __sockaddr_dl__: *mut sockaddr_dl,
-    pub __sockaddr_eon__: *mut sockaddr_eon,
-    pub __sockaddr_in__: *mut sockaddr_in,
-    pub __sockaddr_in6__: *mut sockaddr_in6,
-    pub __sockaddr_inarp__: *mut sockaddr_inarp,
-    pub __sockaddr_ipx__: *mut sockaddr_ipx,
-    pub __sockaddr_iso__: *mut sockaddr_iso,
-    pub __sockaddr_ns__: *mut sockaddr_ns,
-    pub __sockaddr_un__: *mut sockaddr_un,
-    pub __sockaddr_x25__: *mut sockaddr_x25,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union __CONST_SOCKADDR_ARG {
-    pub __sockaddr__: *const sockaddr,
-    pub __sockaddr_at__: *const sockaddr_at,
-    pub __sockaddr_ax25__: *const sockaddr_ax25,
-    pub __sockaddr_dl__: *const sockaddr_dl,
-    pub __sockaddr_eon__: *const sockaddr_eon,
-    pub __sockaddr_in__: *const sockaddr_in,
-    pub __sockaddr_in6__: *const sockaddr_in6,
-    pub __sockaddr_inarp__: *const sockaddr_inarp,
-    pub __sockaddr_ipx__: *const sockaddr_ipx,
-    pub __sockaddr_iso__: *const sockaddr_iso,
-    pub __sockaddr_ns__: *const sockaddr_ns,
-    pub __sockaddr_un__: *const sockaddr_un,
-    pub __sockaddr_x25__: *const sockaddr_x25,
 }
 #[repr(C)]
 pub struct format_modifier {
-    pub modifier: [::core::ffi::c_char; 3],
+    pub modifier: [u8; 3],
     pub size: u_int,
-    pub argv: Vec<::std::ffi::CString>,
+    pub argv: Vec<std::ffi::CString>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -1497,10 +2107,10 @@ pub struct grid_cell_entry {
     pub c2rust_unnamed: grid_cell_entry_union,
     pub flags: u_char,
 }
-const _: () = assert!(::core::mem::size_of::<grid_cell_entry>() == 5);
+const _: () = assert!(size_of::<grid_cell_entry>() == 5);
 #[repr(C)]
 pub struct grid {
-    pub flags: ::core::ffi::c_int,
+    pub flags: core::ffi::c_int,
     pub sx: u_int,
     pub sy: u_int,
     pub hscrolled: u_int,
@@ -1509,109 +2119,57 @@ pub struct grid {
     pub linedata: Vec<grid_line>,
 }
 pub use crate::grid::grid_line;
-/// A cursor walking a grid. It borrows the grid, so a walk cannot outlive
-/// the lines it is reading.
-pub struct grid_reader<'a> {
-    pub gd: &'a grid,
-    pub cx: u_int,
-    pub cy: u_int,
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct style_range {
     pub type_0: style_range_type,
     pub argument: u_int,
-    pub string: [::core::ffi::c_char; 16],
+    pub string: [core::ffi::c_char; 16],
     pub start: u_int,
     pub end: u_int,
 }
-pub type style_ranges = ::std::vec::Vec<style_range>;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_resize_t {
-    pub sx: u_int,
-    pub sy: u_int,
-    pub osx: u_int,
-    pub osy: u_int,
-}
-pub type window_pane_resizes = ::std::collections::VecDeque<window_pane_resize_t>;
+pub type style_ranges = Vec<style_range>;
 #[derive(Default)]
 pub struct style_line_entry {
-    pub expanded: Option<::std::ffi::CString>,
+    pub expanded: Option<std::ffi::CString>,
     pub ranges: style_ranges,
 }
-#[repr(C)]
-pub struct screen {
-    pub title: Option<::std::ffi::CString>,
-    pub path: Option<::std::ffi::CString>,
-    pub titles: Option<Box<screen_titles>>,
-    pub ntitles: u_int,
-    pub grid: Option<Box<grid>>,
-    pub cx: u_int,
-    pub cy: u_int,
-    pub cstyle: screen_cursor_style,
-    pub default_cstyle: screen_cursor_style,
-    pub ccolour: ::core::ffi::c_int,
-    pub default_ccolour: ::core::ffi::c_int,
-    pub rupper: u_int,
-    pub rlower: u_int,
-    pub mode: ::core::ffi::c_int,
-    pub default_mode: ::core::ffi::c_int,
-    pub saved_cx: u_int,
-    pub saved_cy: u_int,
-    pub saved_grid: Option<Box<grid>>,
-    pub saved_cell: grid_cell,
-    pub saved_flags: ::core::ffi::c_int,
-    pub tabs: Vec<u8>,
-    pub sel: Option<Box<screen_sel>>,
-    pub write_list: Vec<screen_write_cline>,
-    pub(crate) hyperlinks: Option<HyperlinksRef>,
-    pub progress_bar: progress_bar,
-}
-impl screen {
-    /// The title the screen was given, which the terminal showing it is set
-    /// to.
-    pub(crate) fn title_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.title)
-    }
-
-    /// The working directory the screen last reported, or null when it has
-    /// reported none.
-    pub(crate) fn path_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.path)
-    }
-}
-pub type client_exit_type = ::core::ffi::c_uint;
-pub type client_prompt_mode = ::core::ffi::c_uint;
+pub type client_exit_type = core::ffi::c_uint;
+pub type client_prompt_mode = core::ffi::c_uint;
 #[repr(C)]
 pub struct winlink {
-    pub idx: ::core::ffi::c_int,
+    pub idx: core::ffi::c_int,
     /// The session that holds the link, observed rather than held: the
     /// session owns the link, so holding it back would be a cycle.
     pub(crate) session_ref: Option<SessionWeak>,
     pub(crate) window_ref: Option<WindowRef>,
-    pub flags: ::core::ffi::c_int,
+    pub flags: core::ffi::c_int,
+}
+
+impl crate::WinlinkIdentity for winlink {
+    fn winlink_index(&self) -> core::ffi::c_int {
+        self.idx
+    }
+
+    fn set_winlink_index(&mut self, index: core::ffi::c_int) {
+        self.idx = index;
+    }
+}
+
+impl crate::WinlinkFlagsState for winlink {
+    fn winlink_flags(&self) -> core::ffi::c_int {
+        self.flags
+    }
+
+    fn set_winlink_flags(&mut self, flags: core::ffi::c_int) {
+        self.flags = flags;
+    }
 }
 
 impl winlink {
     /// The session that holds this link, or null once it has gone.
-    pub(crate) fn session(&self) -> *mut session {
-        self.session_ref
-            .as_ref()
-            .and_then(SessionWeak::upgrade)
-            .map_or(::core::ptr::null_mut(), |s| s.as_ptr())
-    }
-
-    /// Records `s` as the session that holds this link.
-    pub(crate) fn set_session(&mut self, s: *mut session) {
-        self.session_ref = crate::session::session_ref_from_ptr(s).map(|s| s.downgrade());
-    }
-
-    /// The window this link points at, or null while the link holds none.
-    pub(crate) fn window(&self) -> *mut window {
-        self.window_ref
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), WindowRef::as_ptr)
+    pub(crate) fn session(&self) -> Option<SessionRef> {
+        self.session_ref.as_ref().and_then(SessionWeak::upgrade)
     }
 
     /// The handle on the window this link points at, borrowed for as long as
@@ -1623,138 +2181,222 @@ impl winlink {
 #[derive(Default)]
 #[repr(C)]
 pub struct window {
-    pub id: u_int,
+    pub(crate) owner: Option<WindowWeak>,
+    pub(crate) id: u32,
     pub(crate) latest: Option<ClientWeak>,
-    pub name: Option<::std::ffi::CString>,
+    pub(crate) name_state: crate::window_name::RustWindowNameState,
     pub name_event: TimerHandle,
-    pub name_time: timeval,
+    pub(crate) timestamps: crate::window_timestamps::RustWindowTimestampState,
     pub alerts_timer: TimerHandle,
     pub offset_timer: TimerHandle,
-    pub activity_time: timeval,
-    pub creation_time: timeval,
-    /// The id of the pane the window is showing as its active one, or
-    /// nothing while it has none. A pane is named by its id and nothing
-    /// else, so the window never holds one that has been destroyed.
-    pub active_id: Option<u_int>,
+    /// The pane the window is showing as its active one.
+    pub active_pane: Option<RustWindowPaneWeak>,
     pub last_panes: window_pane_stack_t,
     pub z_index: window_pane_stack_t,
-    pub panes: window_panes_t,
-    pub lastlayout: ::core::ffi::c_int,
-    pub layout_root: Option<::std::boxed::Box<layout_cell>>,
-    pub saved_layout_root: Option<::std::boxed::Box<layout_cell>>,
-    pub old_layout: Option<::std::ffi::CString>,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub manual_sx: u_int,
-    pub manual_sy: u_int,
-    pub xpixel: u_int,
-    pub ypixel: u_int,
-    pub new_sx: u_int,
-    pub new_sy: u_int,
-    pub new_xpixel: u_int,
-    pub new_ypixel: u_int,
-    pub last_new_pane_x: u_int,
-    pub last_new_pane_y: u_int,
-    pub sb: ::core::ffi::c_int,
-    pub sb_pos: ::core::ffi::c_int,
-    pub fill_character: Option<Box<utf8_data>>,
-    pub flags: ::core::ffi::c_int,
-    pub alerts_queued: ::core::ffi::c_int,
-    pub options: Option<Box<options>>,
+    pub(crate) panes: window_panes_t,
+    pub(crate) layout_selection: crate::window_layout_selection::RustWindowLayoutSelectionState,
+    pub layout_root: Option<Box<layout_cell>>,
+    pub saved_layout_root: Option<Box<layout_cell>>,
+    pub(crate) saved_layout_state: crate::window_saved_layout::RustWindowSavedLayoutState,
+    pub(crate) dimensions: crate::window_dimensions::RustWindowDimensionsState,
+    pub(crate) scrollbar: crate::window_scrollbar::RustWindowScrollbarState,
+    pub(crate) fill_character_state: crate::window_fill_character::RustWindowFillCharacterState,
+    pub flags: core::ffi::c_int,
+    pub(crate) alert_queue: crate::window_alert_queue::RustWindowAlertQueueState,
+    pub options: Option<crate::options::RustOptionsRef>,
     /// The sessions' links to this window, in the order they were made. A
     /// link belongs to its session, not to the window.
     pub(crate) winlinks: window_winlinks,
 }
+
 impl window {
-    /// The window's own option set, or null for a window that carries none.
-    pub(crate) fn options_ptr(&self) -> *mut options {
-        crate::options::options_ptr(&self.options)
-    }
-
-    /// The root cell of the window's layout, or null for a window that has
-    /// none.
-    pub(crate) fn layout_root_ptr(&self) -> *mut layout_cell {
-        crate::layout::layout_root_ptr(&self.layout_root)
-    }
-
-    /// The root cell of the layout the window had before a pane in it was
-    /// zoomed, or null for a window that is not zoomed.
-    pub(crate) fn saved_layout_root_ptr(&self) -> *mut layout_cell {
-        crate::layout::layout_root_ptr(&self.saved_layout_root)
-    }
-
-    /// The name the window is filed under.
-    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.name)
-    }
-
-    /// The layout the window had before the current one was set, which
-    /// `select-layout -o` goes back to, or null when it has none to go back
-    /// to.
-    pub(crate) fn old_layout_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.old_layout)
+    pub(crate) fn active_pane_id(&self) -> Option<u_int> {
+        self.active_pane
+            .as_ref()
+            .filter(|pane| pane.is_alive())
+            .map(|pane| pane.id())
     }
 }
-#[derive(Default)]
-#[repr(C)]
-pub struct window_pane {
-    pub id: u_int,
-    pub active_point: u_int,
-    /// The window that owns this pane. A borrow, not an owning edge: the
-    /// window holds its panes by value, so a pane never outlives it.
-    pub window: *mut window,
-    pub options: Option<Box<options>>,
-    pub layout_cell: *mut layout_cell,
-    pub saved_layout_cell: *mut layout_cell,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub xoff: ::core::ffi::c_int,
-    pub yoff: ::core::ffi::c_int,
-    pub flags: ::core::ffi::c_int,
-    pub sb_slider_y: u_int,
-    pub sb_slider_h: u_int,
-    pub argv: Vec<::std::ffi::CString>,
-    pub shell: Option<::std::ffi::CString>,
-    pub cwd: Option<::std::ffi::CString>,
-    pub pid: pid_t,
-    pub tty: [::core::ffi::c_char; 32],
-    pub status: ::core::ffi::c_int,
-    pub dead_time: timeval,
-    pub fd: ::core::ffi::c_int,
-    pub event: Stream,
-    pub offset: window_pane_offset,
-    pub base_offset: size_t,
-    pub resize_queue: window_pane_resizes,
-    pub resize_timer: TimerHandle,
-    pub sync_timer: TimerHandle,
-    pub ictx: Option<InputCtxRef>,
-    pub cached_gc: grid_cell,
-    pub cached_active_gc: grid_cell,
-    pub palette: colour_palette,
-    pub last_theme: client_theme,
-    pub border_status_line: style_line_entry,
-    pub pipe_fd: ::core::ffi::c_int,
-    pub pipe_pid: pid_t,
-    pub pipe_event: Stream,
-    pub pipe_offset: window_pane_offset,
-    /// Which screen the pane is showing: its own, or the one the mode at the
-    /// front of its mode list draws on.
-    pub(crate) shown: PaneScreen,
-    pub base: screen,
-    pub status_screen: screen,
-    pub status_size: size_t,
-    pub modes: window_modes,
-    pub searchstr: Option<::std::ffi::CString>,
-    pub searchregex: ::core::ffi::c_int,
-    pub border_gc_set: ::core::ffi::c_int,
-    pub border_gc: grid_cell,
-    pub active_border_gc_set: ::core::ffi::c_int,
-    pub active_border_gc: grid_cell,
-    pub control_bg: ::core::ffi::c_int,
-    pub control_fg: ::core::ffi::c_int,
-    pub scrollbar_style: style,
-    pub r: visible_ranges,
+
+impl crate::window_dimensions::WindowDimensionsState for window {
+    fn dimensions(&self) -> crate::window_dimensions::WindowDimensions {
+        crate::window_dimensions::WindowDimensionsState::dimensions(&self.dimensions)
+    }
+
+    fn set_dimensions(&mut self, dimensions: crate::window_dimensions::WindowDimensions) {
+        crate::window_dimensions::WindowDimensionsState::set_dimensions(
+            &mut self.dimensions,
+            dimensions,
+        );
+    }
+
+    fn set_size(&mut self, size: crate::pane_resize::PaneSize) {
+        crate::window_dimensions::WindowDimensionsState::set_size(&mut self.dimensions, size);
+    }
+
+    fn set_manual_size(&mut self, size: crate::pane_resize::PaneSize) {
+        crate::window_dimensions::WindowDimensionsState::set_manual_size(
+            &mut self.dimensions,
+            size,
+        );
+    }
+
+    fn set_pixels(&mut self, pixels: crate::window_dimensions::WindowPixelSize) {
+        crate::window_dimensions::WindowDimensionsState::set_pixels(&mut self.dimensions, pixels);
+    }
+
+    fn set_pending_size(&mut self, size: crate::pane_resize::PaneSize) {
+        crate::window_dimensions::WindowDimensionsState::set_pending_size(
+            &mut self.dimensions,
+            size,
+        );
+    }
+
+    fn set_pending_pixels(&mut self, pixels: crate::window_dimensions::WindowPixelSize) {
+        crate::window_dimensions::WindowDimensionsState::set_pending_pixels(
+            &mut self.dimensions,
+            pixels,
+        );
+    }
+
+    fn set_last_new_pane(&mut self, position: crate::window_dimensions::WindowCellPosition) {
+        crate::window_dimensions::WindowDimensionsState::set_last_new_pane(
+            &mut self.dimensions,
+            position,
+        );
+    }
 }
+
+impl crate::window_timestamps::WindowTimestampState for window {
+    fn timestamps(&self) -> crate::window_timestamps::WindowTimestamps {
+        crate::window_timestamps::WindowTimestampState::timestamps(&self.timestamps)
+    }
+
+    fn set_creation_time(&mut self, time: timeval) {
+        crate::window_timestamps::WindowTimestampState::set_creation_time(
+            &mut self.timestamps,
+            time,
+        );
+    }
+
+    fn set_activity_time(&mut self, time: timeval) {
+        crate::window_timestamps::WindowTimestampState::set_activity_time(
+            &mut self.timestamps,
+            time,
+        );
+    }
+
+    fn set_name_update_time(&mut self, time: timeval) {
+        crate::window_timestamps::WindowTimestampState::set_name_update_time(
+            &mut self.timestamps,
+            time,
+        );
+    }
+}
+
+impl crate::window_fill_character::WindowFillCharacterState for window {
+    fn fill_character(&self) -> Option<utf8_data> {
+        crate::window_fill_character::WindowFillCharacterState::fill_character(
+            &self.fill_character_state,
+        )
+    }
+
+    fn set_fill_character(&mut self, character: Option<utf8_data>) {
+        crate::window_fill_character::WindowFillCharacterState::set_fill_character(
+            &mut self.fill_character_state,
+            character,
+        );
+    }
+}
+
+impl crate::window_alert_queue::WindowAlertQueueState for window {
+    fn alerts_are_queued(&self) -> bool {
+        crate::window_alert_queue::WindowAlertQueueState::alerts_are_queued(&self.alert_queue)
+    }
+
+    fn queue_alerts(&mut self) -> bool {
+        crate::window_alert_queue::WindowAlertQueueState::queue_alerts(&mut self.alert_queue)
+    }
+
+    fn clear_queued_alerts(&mut self) {
+        crate::window_alert_queue::WindowAlertQueueState::clear_queued_alerts(
+            &mut self.alert_queue,
+        );
+    }
+}
+
+impl crate::window_scrollbar::WindowScrollbarState for window {
+    fn scrollbar_settings(&self) -> crate::window_scrollbar::WindowScrollbarSettings {
+        crate::window_scrollbar::WindowScrollbarState::scrollbar_settings(&self.scrollbar)
+    }
+
+    fn set_scrollbar_settings(
+        &mut self,
+        settings: crate::window_scrollbar::WindowScrollbarSettings,
+    ) {
+        crate::window_scrollbar::WindowScrollbarState::set_scrollbar_settings(
+            &mut self.scrollbar,
+            settings,
+        );
+    }
+}
+impl crate::window_layout_selection::WindowLayoutSelectionState for window {
+    fn previous_layout(&self) -> Option<core::ffi::c_int> {
+        crate::window_layout_selection::WindowLayoutSelectionState::previous_layout(
+            &self.layout_selection,
+        )
+    }
+
+    fn remember_layout(&mut self, layout: core::ffi::c_int) {
+        crate::window_layout_selection::WindowLayoutSelectionState::remember_layout(
+            &mut self.layout_selection,
+            layout,
+        );
+    }
+
+    fn clear_previous_layout(&mut self) {
+        crate::window_layout_selection::WindowLayoutSelectionState::clear_previous_layout(
+            &mut self.layout_selection,
+        );
+    }
+}
+
+impl crate::window_saved_layout::WindowSavedLayoutState for window {
+    fn saved_layout(&self) -> Option<&core::ffi::CStr> {
+        crate::window_saved_layout::WindowSavedLayoutState::saved_layout(&self.saved_layout_state)
+    }
+
+    fn set_saved_layout(&mut self, layout: Option<&core::ffi::CStr>) {
+        crate::window_saved_layout::WindowSavedLayoutState::set_saved_layout(
+            &mut self.saved_layout_state,
+            layout,
+        );
+    }
+}
+
+impl crate::window_name::WindowNameState for window {
+    fn window_name(&self) -> Option<&core::ffi::CStr> {
+        crate::window_name::WindowNameState::window_name(&self.name_state)
+    }
+
+    fn set_window_name(&mut self, name: Option<&core::ffi::CStr>) {
+        crate::window_name::WindowNameState::set_window_name(&mut self.name_state, name);
+    }
+}
+
+impl crate::window_trait::Window for window {
+    fn window_id(&self) -> u32 {
+        self.id
+    }
+}
+impl window {
+    /// The window's shared option handle.
+    pub(crate) fn options_ref(&self) -> &RustOptionsRef {
+        self.options.as_ref().expect("options are initialized")
+    }
+}
+pub use crate::WindowPane;
+pub use crate::window_pane::{RustWindowPane, RustWindowPaneRef, RustWindowPaneWeak, window_pane};
 
 /// Which screen a pane is showing.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
@@ -1766,73 +2408,28 @@ pub enum PaneScreen {
     Mode,
 }
 
-impl window_pane {
-    /// The pane's own option set, or null for a pane that carries none.
-    pub(crate) fn options_ptr(&self) -> *mut options {
-        crate::options::options_ptr(&self.options)
-    }
-
-    /// The screen the pane is showing. A pane showing a mode falls back to
-    /// its own screen when the mode list has run out.
-    pub fn screen(&self) -> *mut screen {
-        let base = &raw const self.base as *mut screen;
-        match self.shown {
-            PaneScreen::Base => base,
-            PaneScreen::Mode => match self.modes.first() {
-                Some(wme) => wme.screen,
-                None => base,
-            },
-        }
-    }
-
-    /// The shell the pane's command was run under.
-    pub(crate) fn shell_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.shell)
-    }
-
-    /// The directory the pane's command started in.
-    pub(crate) fn cwd_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.cwd)
-    }
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_mode {
     /// The mode's name, as `#{pane_mode}` and `choose-tree` report it.
-    pub name: &'static ::core::ffi::CStr,
+    pub name: &'static core::ffi::CStr,
+    pub(crate) init: window_mode_init,
+    pub free: unsafe fn(&mut window_mode_entry),
+    pub resize: unsafe fn(&mut window_mode_entry, u_int, u_int),
+    pub optional: WindowModeOptional,
+}
+
+/// Optional mode behavior, absent unless the mode supplies it.
+#[derive(Copy, Clone, Default)]
+pub struct WindowModeOptional {
     /// The format the mode draws its lines with, or nothing for a mode that
     /// has none of its own.
-    pub default_format: Option<&'static ::core::ffi::CStr>,
-    pub init: Option<
-        unsafe fn(&mut window_mode_entry, *mut cmd_find_state, Option<&args>) -> *mut screen,
-    >,
-    pub free: Option<unsafe fn(&mut window_mode_entry) -> ()>,
-    pub resize: Option<unsafe fn(&mut window_mode_entry, u_int, u_int) -> ()>,
-    pub update: Option<unsafe fn(&mut window_mode_entry) -> ()>,
+    pub default_format: Option<&'static core::ffi::CStr>,
     pub style_changed: Option<unsafe fn(&mut window_mode_entry) -> ()>,
-    pub key: Option<
-        unsafe fn(
-            &mut window_mode_entry,
-            *mut client,
-            *mut session,
-            *mut winlink,
-            key_code,
-            *mut mouse_event,
-        ) -> (),
-    >,
-    pub key_table: Option<unsafe fn(&mut window_mode_entry) -> &'static ::core::ffi::CStr>,
-    pub command: Option<
-        unsafe fn(
-            &mut window_mode_entry,
-            *mut client,
-            *mut session,
-            *mut winlink,
-            &args,
-            Option<&mut mouse_event>,
-        ) -> (),
-    >,
-    pub formats: Option<unsafe fn(&mut window_mode_entry, &mut format_tree) -> ()>,
-    pub get_screen: Option<unsafe fn(&mut window_mode_entry) -> *mut screen>,
+    pub key_table: Option<unsafe fn(&window_mode_entry) -> &'static core::ffi::CStr>,
+    pub command: Option<window_mode_command>,
+    pub formats: Option<unsafe fn(&window_mode_entry, &mut format_tree) -> ()>,
+    pub get_screen: Option<fn(&window_mode_entry) -> Option<&RustScreen>>,
 }
 /// Which logical mode a pane is in, and the selector for the [`window_mode`]
 /// table that mode dispatches through.
@@ -1883,111 +2480,128 @@ pub(crate) enum WindowModeState {
     Tree(WindowTreeModeDataRef),
     Customize(WindowCustomizeModeDataRef),
 }
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Default)]
 #[repr(C)]
 pub enum ModeTreeItemData {
     #[default]
     None,
-    Buffer(*mut window_buffer_itemdata),
-    Client(*mut window_client_itemdata),
-    Tree(*mut window_tree_itemdata),
-    Customize(*mut window_customize_itemdata),
+    Buffer(Rc<window_buffer_itemdata>),
+    Client(Rc<window_client_itemdata>),
+    Tree(window_tree_itemdata),
+    Customize(Rc<window_customize_itemdata>),
 }
 impl ModeTreeItemData {
-    pub fn buffer(self) -> *mut window_buffer_itemdata {
+    pub fn buffer(self) -> Option<Rc<window_buffer_itemdata>> {
         match self {
-            ModeTreeItemData::Buffer(data) => data,
-            ModeTreeItemData::None => ::core::ptr::null_mut(),
+            ModeTreeItemData::Buffer(data) => Some(data),
+            ModeTreeItemData::None => None,
             _ => panic!("not buffer-mode item data"),
         }
     }
 
-    pub fn client(self) -> *mut window_client_itemdata {
+    pub fn client(self) -> Option<Rc<window_client_itemdata>> {
         match self {
-            ModeTreeItemData::Client(data) => data,
-            ModeTreeItemData::None => ::core::ptr::null_mut(),
+            ModeTreeItemData::Client(data) => Some(data),
+            ModeTreeItemData::None => None,
             _ => panic!("not client-mode item data"),
         }
     }
 
-    pub fn tree(self) -> *mut window_tree_itemdata {
+    pub fn tree(&self) -> Option<window_tree_itemdata> {
         match self {
-            ModeTreeItemData::Tree(data) => data,
-            ModeTreeItemData::None => ::core::ptr::null_mut(),
+            ModeTreeItemData::Tree(data) => Some(*data),
+            ModeTreeItemData::None => None,
             _ => panic!("not tree-mode item data"),
         }
     }
 
-    pub fn customize(self) -> *mut window_customize_itemdata {
+    pub fn customize(self) -> Option<Rc<window_customize_itemdata>> {
         match self {
-            ModeTreeItemData::Customize(data) => data,
-            ModeTreeItemData::None => ::core::ptr::null_mut(),
+            ModeTreeItemData::Customize(data) => Some(data),
+            ModeTreeItemData::None => None,
             _ => panic!("not customize-mode item data"),
         }
     }
 }
 #[repr(C)]
 pub struct window_mode_entry {
-    pub wp: *mut window_pane,
-    pub swp: *mut window_pane,
+    pub(crate) pane_weak: Option<RustWindowPaneWeak>,
+    pub(crate) source_pane: Option<RustWindowPaneWeak>,
     pub(crate) state: WindowModeState,
-    pub screen: *mut screen,
+    pub(crate) screen_ready: bool,
     pub prefix: u_int,
     pub(crate) mode_tree_ref: Option<ModeTreeDataRef>,
 }
+impl window_mode_entry {
+    /// Observes the pane while its owner still exists.
+    pub(crate) fn pane_ref(&self) -> Option<RustWindowPaneWeak> {
+        self.pane_weak
+            .as_ref()
+            .filter(|pane| pane.is_alive())
+            .cloned()
+    }
+
+    /// Observes the source pane directly until it is destroyed.
+    pub(crate) unsafe fn source_pane_ref(&self) -> Option<crate::window::RustWindowPaneWeak> {
+        self.source_pane
+            .as_ref()
+            .filter(|pane| pane.is_alive())
+            .cloned()
+    }
+}
+
 #[derive(Default)]
 #[repr(C)]
 pub struct layout_cell {
     pub type_0: layout_type,
-    pub flags: ::core::ffi::c_int,
-    pub parent: *mut layout_cell,
+    pub flags: core::ffi::c_int,
+    pub(crate) has_parent: bool,
     pub sx: u_int,
     pub sy: u_int,
-    pub xoff: ::core::ffi::c_int,
-    pub yoff: ::core::ffi::c_int,
-    /// The id of the pane the cell holds, or nothing for a cell that holds
-    /// other cells instead. A pane is named by its id and nothing else, so a
-    /// cell never holds one that has been destroyed.
-    pub wp_id: Option<u_int>,
+    pub xoff: core::ffi::c_int,
+    pub yoff: core::ffi::c_int,
+    /// The pane allocation held by this leaf, or nothing for a branch cell.
+    pub wp_ref: Option<RustWindowPaneWeak>,
     pub cells: layout_cells,
 }
 #[derive(Default)]
 #[repr(C)]
 pub struct client {
-    pub name: Option<::std::ffi::CString>,
-    pub peer: Option<Box<tmuxpeer>>,
-    pub user: Option<::std::ffi::CString>,
-    pub queue: Option<Box<cmdq_list>>,
+    pub(crate) owner: Option<ClientWeak>,
+    pub name: Option<std::ffi::CString>,
+    pub peer: Option<PeerRef>,
+    pub user: Option<std::ffi::CString>,
+    pub queue: Option<CmdqListRef>,
     pub windows: client_windows,
     pub control_state: Option<Box<control_state>>,
     pub pause_age: u_int,
     pub pid: pid_t,
-    pub fd: ::core::ffi::c_int,
-    pub out_fd: ::core::ffi::c_int,
+    pub fd: core::ffi::c_int,
+    pub out_fd: core::ffi::c_int,
     pub event: IoHandle,
-    pub retval: ::core::ffi::c_int,
+    pub retval: core::ffi::c_int,
     pub creation_time: timeval,
     pub activity_time: timeval,
     pub last_activity_time: timeval,
-    pub environ: Option<Box<environ_t>>,
+    pub environ: Option<Box<RustEnvironment>>,
     pub jobs: Option<Box<format_job_tree>>,
-    pub title: Option<::std::ffi::CString>,
-    pub path: Option<::std::ffi::CString>,
-    pub cwd: Option<::std::ffi::CString>,
+    pub title: Option<std::ffi::CString>,
+    pub path: Option<std::ffi::CString>,
+    pub cwd: Option<std::ffi::CString>,
     pub progress_bar: progress_bar,
-    pub term_name: Option<::std::ffi::CString>,
-    pub term_features: ::core::ffi::c_int,
-    pub term_type: Option<::std::ffi::CString>,
-    pub term_caps: Vec<::std::ffi::CString>,
-    pub ttyname: Option<::std::ffi::CString>,
+    pub term_name: Option<std::ffi::CString>,
+    pub term_features: core::ffi::c_int,
+    pub term_type: Option<std::ffi::CString>,
+    pub term_caps: Vec<std::ffi::CString>,
+    pub ttyname: Option<std::ffi::CString>,
     pub tty: tty,
     pub written: size_t,
     pub discarded: size_t,
     pub redraw: size_t,
     pub repeat_timer: TimerHandle,
     pub click_timer: TimerHandle,
-    pub click_loc: ::core::ffi::c_int,
-    pub click_wp: ::core::ffi::c_int,
+    pub click_loc: core::ffi::c_int,
+    pub click_wp: core::ffi::c_int,
     pub click_button: u_int,
     pub click_event: mouse_event,
     pub status: status_line,
@@ -1996,33 +2610,33 @@ pub struct client {
     pub flags: uint64_t,
     pub exit_type: client_exit_type,
     pub exit_msgtype: msgtype,
-    pub exit_session: Option<::std::ffi::CString>,
-    pub exit_message: Option<::std::ffi::CString>,
+    pub exit_session: Option<std::ffi::CString>,
+    pub exit_message: Option<std::ffi::CString>,
     pub(crate) keytable_ref: Option<KeyTableRef>,
     pub last_key: key_code,
     pub paste_time: time_t,
     pub redraw_panes: uint64_t,
     pub redraw_scrollbars: uint64_t,
-    pub message_ignore_keys: ::core::ffi::c_int,
-    pub message_ignore_styles: ::core::ffi::c_int,
-    pub message_string: Option<::std::ffi::CString>,
-    pub(crate) message_overlay: Option<StatusScreenRef>,
+    pub message_ignore_keys: core::ffi::c_int,
+    pub message_ignore_styles: core::ffi::c_int,
+    pub message_string: Option<std::ffi::CString>,
+    pub(crate) message_overlay: Option<ScreenRef>,
     pub message_timer: TimerHandle,
-    pub prompt_string: Option<::std::ffi::CString>,
-    pub(crate) prompt_overlay: Option<StatusScreenRef>,
+    pub prompt_string: Option<std::ffi::CString>,
+    pub(crate) prompt_overlay: Option<ScreenRef>,
     pub prompt_buffer: Vec<utf8_data>,
     pub prompt_state: cmd_find_state,
-    pub prompt_last: Option<::std::ffi::CString>,
+    pub prompt_last: Option<std::ffi::CString>,
     pub prompt_index: size_t,
     pub prompt: Prompt,
     pub prompt_data: PromptData,
     pub prompt_hindex: [u_int; 4],
     pub prompt_mode: client_prompt_mode,
     pub prompt_saved: Option<Vec<utf8_data>>,
-    pub prompt_flags: ::core::ffi::c_int,
-    pub prompt_type: prompt_type,
-    pub prompt_cursor: ::core::ffi::c_int,
-    pub session: *mut session,
+    pub prompt_flags: core::ffi::c_int,
+    pub prompt_type: PromptHistoryType,
+    pub prompt_cursor: core::ffi::c_int,
+    attached_session: Option<SessionWeak>,
     pub(crate) last_session: Option<SessionWeak>,
     pub(crate) pan_window: Option<WindowWeak>,
     pub pan_ox: u_int,
@@ -2036,7 +2650,7 @@ pub struct client {
     overlay_check: OverlayCheck,
     overlay: Overlay,
     overlay_data: OverlayState,
-    overlay_data_view: Option<OverlayData>,
+    overlay_data_view: Option<OverlayView>,
     pub overlay_timer: TimerHandle,
     pub(crate) files: client_files_t,
     pub source_file_depth: u_int,
@@ -2045,69 +2659,43 @@ pub struct client {
 #[repr(C)]
 pub struct client_file {
     pub(crate) client_ref: Option<ClientRef>,
-    pub peer: *mut tmuxpeer,
+    pub peer: Option<PeerRef>,
     /// Which set of files this one belongs to.
     pub(crate) tree: FileOwner,
-    pub stream: ::core::ffi::c_int,
-    pub path: Option<::std::ffi::CString>,
-    pub buffer: Box<Buf>,
+    pub stream: core::ffi::c_int,
+    pub path: Option<std::ffi::CString>,
+    pub buffer: Box<ByteBuffer>,
     pub event: Stream,
-    pub fd: ::core::ffi::c_int,
-    pub error: ::core::ffi::c_int,
-    pub closed: ::core::ffi::c_int,
-    pub done: ::core::ffi::c_int,
-    pub cb: client_file_cb,
+    pub fd: core::ffi::c_int,
+    pub error: core::ffi::c_int,
+    pub closed: core::ffi::c_int,
+    pub done: core::ffi::c_int,
+    pub(crate) cb: client_file_cb,
     pub data: ClientFileData,
 }
 
 impl client_file {
-    /// The client the file belongs to, or null for one opened against a peer
-    /// alone.
-    pub(crate) fn client(&self) -> *mut client {
-        self.client_ref
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), ClientRef::as_ptr)
-    }
-
-    /// The path the file was opened on.
-    pub(crate) fn path_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.path)
+    /// The client the file belongs to, if it was opened for one.
+    pub(crate) fn client(&self) -> Option<ClientRef> {
+        self.client_ref.clone()
     }
 }
-#[derive(Default)]
+#[derive(Clone, Default)]
 #[repr(C)]
 pub enum ClientFileData {
     #[default]
     None,
     LoadBuffer(Box<cmd_load_buffer_data>),
-    LoadBufferView(*mut cmd_load_buffer_data),
     SaveBuffer(crate::cmd::CmdqItemWeak),
     SourceFile(SourceFileRef),
     PaneInput(PaneInputRef),
 }
-
-impl ClientFileData {
-    pub(crate) fn view(&self) -> ClientFileData {
-        match self {
-            ClientFileData::None => ClientFileData::None,
-            ClientFileData::LoadBuffer(data) => ClientFileData::LoadBufferView(data.as_ref()
-                as *const cmd_load_buffer_data
-                as *mut cmd_load_buffer_data),
-            ClientFileData::LoadBufferView(data) => ClientFileData::LoadBufferView(*data),
-            ClientFileData::SaveBuffer(data) => ClientFileData::SaveBuffer(data.clone()),
-            ClientFileData::SourceFile(data) => ClientFileData::SourceFile(data.clone()),
-            ClientFileData::PaneInput(data) => ClientFileData::PaneInput(data.clone()),
-        }
-    }
-}
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 #[repr(C)]
 pub struct client_window {
     pub window: u_int,
-    /// The id of the pane the client has made active in this window, or
-    /// nothing while it has made none. A pane is named by its id and nothing
-    /// else, so the entry never names one that has been destroyed.
-    pub pane_id: Option<u_int>,
+    /// The pane allocation selected by this client in the window.
+    pub pane_ref: Option<RustWindowPaneWeak>,
     pub sx: u_int,
     pub sy: u_int,
 }
@@ -2116,103 +2704,119 @@ pub struct client_window {
 #[derive(Clone, Default)]
 #[repr(C)]
 pub struct cmd_find_state {
-    pub flags: ::core::ffi::c_int,
+    pub flags: core::ffi::c_int,
     /// The session the state found, observed rather than held, so that a
     /// state kept across a queue turn finds nothing rather than freed memory.
     pub(crate) s_ref: Option<SessionWeak>,
     /// The index of the link the state found, resolved against the session
     /// above, or nothing when it found none.
-    pub wl_idx: Option<::core::ffi::c_int>,
+    pub wl_idx: Option<core::ffi::c_int>,
     /// The window the state found, observed the same way.
     pub(crate) w_ref: Option<WindowWeak>,
-    /// The id of the pane the state found, or nothing when it found none. A
-    /// pane is named by its id and nothing else, so a state that outlives the
-    /// pane it found answers with nothing rather than with freed memory.
-    pub wp_id: Option<u_int>,
-    pub idx: ::core::ffi::c_int,
+    /// The pane allocation the state found, independently of its saved window.
+    pub wp_ref: Option<RustWindowPaneWeak>,
+    pub idx: core::ffi::c_int,
 }
 
 impl cmd_find_state {
     /// The session the state found, or null when it found none or the server
     /// has since given it up.
-    pub fn session(&self) -> *mut session {
-        self.s_ref
-            .as_ref()
-            .and_then(SessionWeak::upgrade)
-            .map_or(::core::ptr::null_mut(), |s| s.as_ptr())
+    pub fn session(&self) -> Option<SessionRef> {
+        self.s_ref.as_ref().and_then(SessionWeak::upgrade)
     }
 
     /// Records `s` as the session the state found.
-    pub fn set_session(&mut self, s: *mut session) {
-        self.s_ref = crate::session::session_ref_from_ptr(s).map(|s| s.downgrade());
+    pub fn set_session(&mut self, s: Option<&session>) {
+        let reference = s.and_then(crate::session::session_ref_of);
+        self.set_session_ref(reference.as_ref());
     }
 
-    /// The link the state found, or null when it found none or the session
-    /// has since given it up.
-    pub fn winlink(&self) -> *mut winlink {
-        crate::session::winlink_of(self.session(), self.wl_idx)
+    /// Records an owner as a weak observation without borrowing its payload.
+    pub(crate) fn set_session_ref(&mut self, s: Option<&SessionRef>) {
+        self.s_ref = s.map(SessionRef::downgrade);
+    }
+
+    /// Retains the session owning the window link identified by this target.
+    pub(crate) fn winlink_ref(&self) -> Option<crate::window::WinlinkRef> {
+        crate::window::WinlinkRef::new(self.session()?, self.wl_idx?)
     }
 
     /// Records `wl` as the link the state found.
-    pub unsafe fn set_winlink(&mut self, wl: *mut winlink) {
-        self.wl_idx = unsafe { wl.as_ref().map(|wl| wl.idx) };
+    pub fn set_winlink(&mut self, wl: Option<&winlink>) {
+        self.wl_idx = wl.map(|wl| wl.idx);
     }
 
     /// The window the state found, or null the same way.
-    pub fn window(&self) -> *mut window {
-        self.w_ref
-            .as_ref()
-            .and_then(WindowWeak::upgrade)
-            .map_or(::core::ptr::null_mut(), |w| w.as_ptr())
+    pub fn window(&self) -> Option<WindowRef> {
+        self.w_ref.as_ref().and_then(WindowWeak::upgrade)
     }
 
-    /// Records `w` as the window the state found.
-    pub fn set_window(&mut self, w: *mut window) {
-        self.w_ref = crate::window::window_ref_from_ptr(w).map(|w| w.downgrade());
+    /// Records an owner as a weak observation without borrowing its payload.
+    pub(crate) fn set_window_ref(&mut self, w: Option<&WindowRef>) {
+        self.w_ref = w.map(WindowRef::downgrade);
     }
 
-    /// The pane the state found, or null when it found none or the server has
-    /// since given that pane up.
-    pub fn pane(&self) -> *mut window_pane {
-        let Some(id) = self.wp_id else {
-            return ::core::ptr::null_mut();
-        };
-        let w = self.window();
-        match w.is_null() {
-            true => crate::window::window_pane_find_by_id(id),
-            false => crate::window::window_pane_of_id(w, id),
-        }
+    /// Observes the original pane allocation while it remains alive.
+    pub(crate) fn pane_ref(&self) -> Option<RustWindowPaneWeak> {
+        self.wp_ref
+            .clone()
+            .filter(|pane| unsafe { pane.get().is_some() })
     }
 
-    /// Records `wp` as the pane the state found, or none when it is null.
-    pub unsafe fn set_pane(&mut self, wp: *mut window_pane) {
-        self.wp_id = unsafe { wp.as_ref().map(|wp| wp.id) };
+    /// Observes the original pane allocation for window-list lookup.
+    pub(crate) fn pane_list_ref(&self) -> Option<RustWindowPaneWeak> {
+        self.pane_ref()
+    }
+
+    /// Records the pane allocation the state found.
+    pub fn set_pane(&mut self, wp: Option<&impl crate::WindowPane>) {
+        self.wp_ref = wp.and_then(|pane| unsafe { crate::window::window_pane_ref_of(pane) });
+    }
+}
+
+impl crate::CommandFindFlagsState for cmd_find_state {
+    fn command_find_flags(&self) -> core::ffi::c_int {
+        self.flags
+    }
+
+    fn set_command_find_flags(&mut self, flags: core::ffi::c_int) {
+        self.flags = flags;
+    }
+}
+
+impl crate::CommandFindIndexState for cmd_find_state {
+    fn command_find_index(&self) -> core::ffi::c_int {
+        self.idx
+    }
+
+    fn set_command_find_index(&mut self, index: core::ffi::c_int) {
+        self.idx = index;
     }
 }
 /// The state of one redraw. The default is a context for no client, with
 /// every offset and size zero.
-#[derive(Copy, Clone, Default)]
+#[derive(Clone, Default)]
 #[repr(C)]
 pub struct screen_redraw_ctx {
-    pub c: *mut client,
+    pub c: Option<ClientRef>,
     pub statuslines: u_int,
-    pub statustop: ::core::ffi::c_int,
-    pub pane_status: ::core::ffi::c_int,
+    pub statustop: core::ffi::c_int,
+    pub pane_status: core::ffi::c_int,
     pub pane_lines: pane_lines,
-    pub pane_scrollbars: ::core::ffi::c_int,
-    pub pane_scrollbars_pos: ::core::ffi::c_int,
+    pub pane_scrollbars: core::ffi::c_int,
+    pub pane_scrollbars_pos: core::ffi::c_int,
     pub no_pane_gc: grid_cell,
-    pub no_pane_gc_set: ::core::ffi::c_int,
+    pub no_pane_gc_set: core::ffi::c_int,
     pub sx: u_int,
     pub sy: u_int,
-    pub ox: ::core::ffi::c_int,
-    pub oy: ::core::ffi::c_int,
+    pub ox: core::ffi::c_int,
+    pub oy: core::ffi::c_int,
 }
 #[derive(Default)]
 #[repr(C)]
 pub struct status_line {
     pub timer: TimerHandle,
-    pub screen: screen,
+    pub screen: RustScreen,
     /// Which screen the status line is drawn on: its own, or the overlay a
     /// message or prompt put in front of it.
     pub(crate) active: StatusActive,
@@ -2228,20 +2832,51 @@ pub(crate) enum StatusActive {
     Own,
     /// The screen a message or prompt put in front of it, watched rather
     /// than held: the overlay slots are what keep it.
-    Overlay(StatusScreenWeak),
+    Overlay(ScreenWeak),
 }
 
 impl status_line {
-    /// The screen the status line is drawing on.
-    pub(crate) fn active(&self) -> *mut screen {
-        let own = &raw const self.screen as *mut screen;
+    /// Runs `use_screen` with the screen currently displayed by this status
+    /// line, checking overlay borrows and keeping its owner alive for the call.
+    pub(crate) fn with_active<R>(&mut self, use_screen: impl FnOnce(&mut RustScreen) -> R) -> R {
         match &self.active {
-            StatusActive::Own => own,
-            StatusActive::Overlay(watched) => match watched.screen() {
-                overlay if overlay.is_null() => own,
-                overlay => overlay,
+            StatusActive::Own => use_screen(&mut self.screen),
+            StatusActive::Overlay(watched) => match watched.upgrade() {
+                Some(held) => use_screen(&mut held.borrow_mut()),
+                None => use_screen(&mut self.screen),
             },
         }
+    }
+
+    /// Replaces the active screen for an overlay redraw, handing the callback
+    /// its old contents and the status line's own screen when that is distinct.
+    pub(crate) fn replace_active_with<R>(
+        &mut self,
+        replacement: RustScreen,
+        use_screen: impl FnOnce(&mut RustScreen, RustScreen, Option<&RustScreen>) -> R,
+    ) -> R {
+        match &self.active {
+            StatusActive::Overlay(watched) => match watched.upgrade() {
+                Some(held) => {
+                    let mut active = held.borrow_mut();
+                    let old = core::mem::replace(&mut *active, replacement);
+                    use_screen(&mut active, old, Some(&self.screen))
+                }
+                None => {
+                    let old = core::mem::replace(&mut self.screen, replacement);
+                    use_screen(&mut self.screen, old, None)
+                }
+            },
+            StatusActive::Own => {
+                let old = core::mem::replace(&mut self.screen, replacement);
+                use_screen(&mut self.screen, old, None)
+            }
+        }
+    }
+
+    /// The mode of the screen currently displayed by this status line.
+    pub(crate) fn active_mode(&mut self) -> core::ffi::c_int {
+        self.with_active(|screen| screen.mode())
     }
 
     /// Whether the status line is drawing on its own screen.
@@ -2249,6 +2884,7 @@ impl status_line {
         matches!(self.active, StatusActive::Own)
     }
 }
+pub type mouse_drag_cb = Option<Rc<dyn Fn(&mut client, &mouse_event)>>;
 #[repr(C)]
 pub struct tty {
     /// The client whose terminal this is, observed rather than held: a tty
@@ -2264,40 +2900,40 @@ pub struct tty {
     pub cx: u_int,
     pub cy: u_int,
     pub cstyle: screen_cursor_style,
-    pub ccolour: ::core::ffi::c_int,
-    pub oflag: ::core::ffi::c_int,
+    pub ccolour: core::ffi::c_int,
+    pub oflag: core::ffi::c_int,
     pub oox: u_int,
     pub ooy: u_int,
     pub osx: u_int,
     pub osy: u_int,
-    pub mode: ::core::ffi::c_int,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
+    pub mode: core::ffi::c_int,
+    pub fg: core::ffi::c_int,
+    pub bg: core::ffi::c_int,
     pub rlower: u_int,
     pub rupper: u_int,
     pub rleft: u_int,
     pub rright: u_int,
     pub event_in: IoHandle,
-    pub in_0: Option<Box<Buf>>,
+    pub in_0: Option<Box<ByteBuffer>>,
     pub event_out: IoHandle,
-    pub out: Option<Box<Buf>>,
+    pub out: Option<Box<ByteBuffer>>,
     pub timer: TimerHandle,
     pub discarded: size_t,
     pub tio: termios,
-    pub r: visible_ranges,
+    pub r: VisibleRangesRef,
     pub cell: grid_cell,
     pub last_cell: grid_cell,
-    pub flags: ::core::ffi::c_int,
-    pub term: Option<Box<tty_term>>,
+    pub flags: core::ffi::c_int,
+    pub term: Option<crate::terminfo::TerminalRef>,
     pub mouse_last_x: u_int,
     pub mouse_last_y: u_int,
     pub mouse_last_b: u_int,
-    pub mouse_drag_flag: ::core::ffi::c_int,
-    pub mouse_scrolling_flag: ::core::ffi::c_int,
-    pub mouse_slider_mpos: ::core::ffi::c_int,
-    pub mouse_last_pane: ::core::ffi::c_int,
-    pub mouse_drag_update: Option<unsafe fn(*mut client, &mouse_event) -> ()>,
-    pub mouse_drag_release: Option<unsafe fn(*mut client, &mouse_event) -> ()>,
+    pub mouse_drag_flag: core::ffi::c_int,
+    pub mouse_scrolling_flag: core::ffi::c_int,
+    pub mouse_slider_mpos: core::ffi::c_int,
+    pub mouse_last_pane: core::ffi::c_int,
+    pub mouse_drag_update: mouse_drag_cb,
+    pub mouse_drag_release: mouse_drag_cb,
     pub key_timer: TimerHandle,
     pub key_tree: Option<Box<tty_key>>,
 }
@@ -2335,8 +2971,8 @@ impl Default for tty {
             out: None,
             timer: TimerHandle::default(),
             discarded: 0,
-            tio: unsafe { ::core::mem::zeroed() },
-            r: visible_ranges::default(),
+            tio: unsafe { core::mem::zeroed() },
+            r: VisibleRangesRef::default(),
             cell: grid_cell::default(),
             last_cell: grid_cell::default(),
             flags: 0,
@@ -2357,38 +2993,30 @@ impl Default for tty {
 }
 #[repr(C)]
 pub struct tty_term {
-    pub name: Option<::std::ffi::CString>,
-    pub features: ::core::ffi::c_int,
-    pub acs: [[::core::ffi::c_char; 2]; 256],
-    pub codes: Box<[TtyCode]>,
-    pub flags: ::core::ffi::c_int,
+    pub(crate) name: Option<std::ffi::CString>,
+    pub(crate) features: core::ffi::c_int,
+    pub(crate) acs: [[u8; 2]; 256],
+    pub(crate) codes: Box<[TtyCode]>,
+    pub(crate) flags: core::ffi::c_int,
+    pub(crate) registration: Option<crate::terminfo::TerminalRegistration>,
 }
-impl tty_term {
-    /// The terminal type the entry describes.
-    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.name)
-    }
-}
-pub type winlinks = ::std::collections::BTreeMap<::core::ffi::c_int, ::std::boxed::Box<winlink>>;
+pub type winlinks = std::collections::BTreeMap<core::ffi::c_int, Box<winlink>>;
 /// The modes a pane has open, the one it is showing first. A mode belongs to
 /// the pane until `window_pane_reset_mode` takes it off.
-pub type window_modes = ::std::vec::Vec<::std::boxed::Box<window_mode_entry>>;
+pub type window_modes = Vec<Box<window_mode_entry>>;
 /// The links to one window, in the order they were made.
 /// The sessions' links to a window, in the order they were made, named by
 /// the session that holds each and the index it holds it at. A link belongs
 /// to its session, not to the window.
-pub(crate) type window_winlinks = ::std::vec::Vec<(SessionWeak, ::core::ffi::c_int)>;
+pub(crate) type window_winlinks = Vec<(SessionWeak, core::ffi::c_int)>;
 
 /// A session's most-recently-used window links, most recent first.
 /// The indexes of the links on a session's most-recent order, newest first.
-pub type winlink_stack = ::std::vec::Vec<::core::ffi::c_int>;
-/// The panes a window holds, in pane-index order, and the window owns them:
-/// a pane lives exactly as long as its place in this vector. Each pane sits
-/// behind its own `Box` so the raw `*mut window_pane` the layout cells, the
-/// find state and the pane registry keep stays put while the window owns it.
-/// A plain Rust vector rather than a TAILQ so that dropping the window tears
-/// it down without writing through per-pane back-pointers.
-pub type window_panes_t = ::std::vec::Vec<::std::boxed::Box<window_pane>>;
+pub type winlink_stack = Vec<core::ffi::c_int>;
+/// A window's sole pane owners, in pane-index order. Moving an owner between
+/// windows preserves the pane's address. Server removal tears down resources
+/// and frees the payload; outstanding observations do not delay destruction.
+pub(crate) type window_panes_t = Vec<RustWindowPaneRef>;
 /// An ordered pile of panes — the most-recently-used stack, most recent
 /// first, and the stacking order, topmost first. A plain Rust vector rather
 /// than a TAILQ so that dropping the window tears it down without writing
@@ -2396,57 +3024,84 @@ pub type window_panes_t = ::std::vec::Vec<::std::boxed::Box<window_pane>>;
 /// The ids of the panes on one of a window's two orders, most recent or
 /// topmost first. A pane is named by its id, so an order never holds one the
 /// window has given up.
-pub type window_pane_stack_t = ::std::vec::Vec<u_int>;
+pub type window_pane_stack_t = Vec<RustWindowPaneWeak>;
 /// The cells directly under one layout cell, left to right or top to bottom.
 /// A cell belongs to the list it hangs in.
-pub type layout_cells = ::std::vec::Vec<::std::boxed::Box<layout_cell>>;
-pub(crate) type client_files_t = ::std::collections::BTreeMap<::core::ffi::c_int, ClientFileRef>;
+pub type layout_cells = Vec<Box<layout_cell>>;
+pub(crate) type client_files_t = std::collections::BTreeMap<core::ffi::c_int, ClientFileRef>;
 
 /// Which set of files a file belongs to: one client's, the whole process's,
-/// or none at all once it has been taken out of the set it was in.
+/// another owned set, or none once it has been removed.
 #[derive(Clone, Default)]
 pub(crate) enum FileOwner {
     #[default]
     None,
     /// The files of one client, observed rather than held.
     Client(ClientWeak),
-    /// A set the caller keeps itself and outlives every file in it: the one
-    /// set the client process holds for all of its files.
-    Held(*mut client_files_t),
+    /// The process-global set, borrowed only while visiting it.
+    Global(&'static crate::tree::GlobalTree<core::ffi::c_int, ClientFileRef>),
+    /// An owned set observed without keeping its files in an ownership cycle.
+    #[cfg(test)]
+    Shared(Weak<RefCell<client_files_t>>),
 }
 
 impl FileOwner {
-    /// The set itself, or null once whatever held it has gone.
-    pub(crate) fn tree(&self) -> *mut client_files_t {
+    /// Visits the file set and returns its client owner alongside the result.
+    /// The file-set borrow ends before the caller can invoke a file callback.
+    ///
+    /// # Safety
+    /// For client-owned sets, the caller must exclude other access to the file
+    /// set during the visit, including access from reentrant callbacks.
+    pub(crate) unsafe fn with_tree<R>(
+        &self,
+        visit: impl FnOnce(&mut client_files_t) -> R,
+    ) -> (Option<ClientRef>, Option<R>) {
         match self {
-            FileOwner::None => ::core::ptr::null_mut(),
-            FileOwner::Client(watched) => watched
-                .upgrade()
-                .map_or(::core::ptr::null_mut(), |c| unsafe {
-                    &raw mut (*c.as_ptr()).files
-                }),
-            FileOwner::Held(files) => *files,
+            FileOwner::None => (None, None),
+            FileOwner::Client(watched) => match watched.upgrade() {
+                Some(c) => {
+                    let result = visit(unsafe { &mut (*c.0.value.as_ptr()).files });
+                    (Some(c), Some(result))
+                }
+                None => (None, None),
+            },
+            FileOwner::Global(files) => (None, Some(visit(&mut files.map()))),
+            #[cfg(test)]
+            FileOwner::Shared(watched) => match watched.upgrade() {
+                Some(files) => {
+                    let result = visit(&mut files.borrow_mut());
+                    (None, Some(result))
+                }
+                None => (None, None),
+            },
         }
     }
 }
-pub type client_windows = ::std::collections::BTreeMap<u_int, client_window>;
-pub type client_file_cb = Option<
-    unsafe fn(
-        *mut client,
-        *const ::core::ffi::c_char,
-        ::core::ffi::c_int,
-        ::core::ffi::c_int,
-        *mut Buf,
-        ClientFileData,
-    ) -> (),
->;
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub type client_windows = std::collections::BTreeMap<u_int, client_window>;
+pub(crate) enum ClientFileEvent<'a> {
+    Read {
+        client: Option<&'a ClientRef>,
+        error: core::ffi::c_int,
+        buffer: &'a mut ByteBuffer,
+        data: &'a ClientFileData,
+    },
+    Done {
+        client: Option<ClientRef>,
+        path: std::ffi::CString,
+        error: core::ffi::c_int,
+        buffer: ByteBuffer,
+        data: ClientFileData,
+    },
+    CheckExit,
+}
+pub(crate) type client_file_cb = Option<Rc<dyn for<'a> Fn(ClientFileEvent<'a>)>>;
+#[derive(Clone, PartialEq, Eq, Debug)]
 #[repr(C)]
 pub enum OverlayData {
     None,
-    Menu(*mut menu_data),
-    Popup(*mut popup_data),
-    DisplayPanes(*mut cmd_display_panes_data),
+    Menu(MenuDataRef),
+    Popup(PopupDataRef),
+    DisplayPanes(DisplayPanesRef),
 }
 
 #[derive(Default)]
@@ -2454,22 +3109,33 @@ pub enum OverlayData {
 pub enum OverlayState {
     #[default]
     None,
-    Menu(Box<menu_data>),
+    Menu(MenuDataRef),
     Popup(PopupDataRef),
-    DisplayPanes(Box<cmd_display_panes_data>),
+    DisplayPanes(DisplayPanesRef),
 }
 
 impl OverlayState {
-    pub fn data(&self) -> OverlayData {
+    fn view_data(&mut self, view: Option<OverlayView>) -> OverlayData {
+        match view {
+            Some(OverlayView::Menu) => {
+                let OverlayState::Popup(popup) = self else {
+                    panic!("a menu view belongs to a popup");
+                };
+                let popup = popup.borrow();
+                let menu = popup.md.as_ref().expect("a menu view has a menu").clone();
+                OverlayData::Menu(menu)
+            }
+            Some(OverlayView::Nothing) => OverlayData::None,
+            None | Some(OverlayView::Popup) => self.data(),
+        }
+    }
+
+    pub fn data(&mut self) -> OverlayData {
         match self {
             OverlayState::None => OverlayData::None,
-            OverlayState::Menu(data) => {
-                OverlayData::Menu(data.as_ref() as *const menu_data as *mut menu_data)
-            }
-            OverlayState::Popup(data) => OverlayData::Popup(data.as_ptr()),
-            OverlayState::DisplayPanes(data) => OverlayData::DisplayPanes(data.as_ref()
-                as *const cmd_display_panes_data
-                as *mut cmd_display_panes_data),
+            OverlayState::Menu(data) => OverlayData::Menu(data.clone()),
+            OverlayState::Popup(data) => OverlayData::Popup(data.clone()),
+            OverlayState::DisplayPanes(data) => OverlayData::DisplayPanes(data.clone()),
         }
     }
 
@@ -2477,43 +3143,52 @@ impl OverlayState {
         matches!(self, OverlayState::None)
     }
 
-    pub fn menu(&self) -> *mut menu_data {
+    pub fn menu(&mut self) -> MenuDataRef {
         self.data().menu()
     }
 
-    pub fn popup(&self) -> *mut popup_data {
+    pub fn popup(&mut self) -> PopupDataRef {
         self.data().popup()
     }
 
-    pub fn display_panes(&self) -> *mut cmd_display_panes_data {
+    pub fn display_panes(&mut self) -> DisplayPanesRef {
         self.data().display_panes()
     }
 }
 
 impl client {
-    /// The peer the client's messages travel over, or null for a client that
-    /// has none.
-    pub(crate) fn peer_ptr(&self) -> *mut tmuxpeer {
-        crate::proc::peer_ptr(&self.peer)
+    /// Retains the observed attachment while its session is still alive.
+    pub(crate) fn attached_session(&self) -> Option<SessionRef> {
+        self.attached_session
+            .as_ref()
+            .and_then(SessionWeak::upgrade)
+    }
+
+    /// Records the attachment without running session-change callbacks or redraws.
+    pub(crate) fn set_attached_session(&mut self, session: Option<&SessionRef>) {
+        self.attached_session = session.map(SessionRef::downgrade);
+    }
+
+    /// The peer handle carrying the connected client's messages.
+    pub(crate) fn peer_handle(&self) -> &PeerRef {
+        self.peer.as_ref().expect("a connected client has a peer")
     }
 
     /// The environment the client was started with, or null for a client that
     /// carries none.
-    pub(crate) fn environ_ptr(&self) -> *mut environ_t {
-        crate::environ::environ_ptr(&self.environ)
+    pub(crate) fn environ_mut(&mut self) -> &mut RustEnvironment {
+        self.environ
+            .as_deref_mut()
+            .expect("a client is created with its environment")
     }
 
-    /// The key table the client's next key is looked up in, or null before
-    /// one has been given to it.
-    pub(crate) fn keytable(&self) -> *mut key_table {
-        self.keytable_ref
-            .as_ref()
-            .map_or(::core::ptr::null_mut(), KeyTableRef::as_ptr)
+    /// The key table the client's next key is looked up in, if one is assigned.
+    pub(crate) fn keytable(&self) -> Option<KeyTableRef> {
+        self.keytable_ref.clone()
     }
 
-    pub(crate) fn current_overlay_data(&self) -> OverlayData {
-        self.overlay_data_view
-            .unwrap_or_else(|| self.overlay_data.data())
+    pub(crate) fn current_overlay_data(&mut self) -> OverlayData {
+        self.overlay_data.view_data(self.overlay_data_view)
     }
 
     /// The overlay the client is showing, which is `Overlay::None` when it is
@@ -2528,8 +3203,8 @@ impl client {
     }
 
     /// What the overlay is showing, which the module that put it up owns.
-    pub(crate) fn overlay_data(&self) -> &OverlayState {
-        &self.overlay_data
+    pub(crate) fn overlay_data(&mut self) -> &mut OverlayState {
+        &mut self.overlay_data
     }
 
     /// Puts `overlay` up, showing `data`. The region goes to whichever
@@ -2545,8 +3220,8 @@ impl client {
     /// Takes the overlay down and hands back what it was showing, so that the
     /// caller can free it. Nothing answers for the region afterwards.
     pub(crate) fn take_overlay(&mut self) -> (Overlay, OverlayState) {
-        let overlay = ::core::mem::replace(&mut self.overlay, Overlay::None);
-        let data = ::core::mem::take(&mut self.overlay_data);
+        let overlay = core::mem::replace(&mut self.overlay, Overlay::None);
+        let data = core::mem::take(&mut self.overlay_data);
         self.overlay_check = OverlayCheck::None;
         self.overlay_data_view = None;
         (overlay, data)
@@ -2556,13 +3231,13 @@ impl client {
     /// a popup hands it to the menu it carries and takes it back afterwards.
     pub(crate) fn set_overlay_view(&mut self, view: OverlayView) {
         match view {
-            OverlayView::Menu(md) => {
+            OverlayView::Menu => {
                 self.overlay_check = OverlayCheck::Menu;
-                self.overlay_data_view = Some(OverlayData::Menu(md));
+                self.overlay_data_view = Some(OverlayView::Menu);
             }
             OverlayView::Nothing => {
                 self.overlay_check = OverlayCheck::None;
-                self.overlay_data_view = Some(OverlayData::None);
+                self.overlay_data_view = Some(OverlayView::Nothing);
             }
             OverlayView::Popup => {
                 self.overlay_check = OverlayCheck::Popup;
@@ -2576,61 +3251,6 @@ impl client {
     pub(crate) fn clear_overlay_view(&mut self) {
         self.overlay_data_view = None;
     }
-
-    /// The name the client is filed under, which is the name of the terminal
-    /// it attached on unless it was given one of its own.
-    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.name)
-    }
-
-    /// The name of the terminal device the client attached on.
-    pub(crate) fn ttyname_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.ttyname)
-    }
-
-    /// The terminal type the client reported when it attached.
-    pub(crate) fn term_name_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.term_name)
-    }
-
-    /// The title the client's terminal was last set to.
-    pub(crate) fn title_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.title)
-    }
-
-    /// The working directory the client's terminal was last told about, which
-    /// follows the active pane's.
-    pub(crate) fn path_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.path)
-    }
-
-    /// The directory the client started in.
-    pub(crate) fn cwd_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.cwd)
-    }
-
-    /// The session the client's exit message names, for a client leaving one
-    /// it was attached to.
-    pub(crate) fn exit_session_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.exit_session)
-    }
-
-    /// The message the client is showing on its status line, or null when it
-    /// is showing none.
-    pub(crate) fn message_string_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.message_string)
-    }
-
-    /// The text drawn ahead of the input the client's prompt is taking.
-    pub(crate) fn prompt_string_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.prompt_string)
-    }
-
-    /// The input the client's prompt last took, which an incremental prompt
-    /// puts back when its buffer empties.
-    pub(crate) fn prompt_last_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.prompt_last)
-    }
 }
 
 /// Who answers for the region the current drawing may cover, while a popup
@@ -2638,7 +3258,7 @@ impl client {
 #[derive(Copy, Clone)]
 pub(crate) enum OverlayView {
     /// The menu the popup carries, which owns the drawing data as well.
-    Menu(*mut menu_data),
+    Menu,
     /// Nobody, so no drawing may be covered and there is nothing to draw
     /// with, which is the state a popup writes its own screen under.
     Nothing,
@@ -2768,15 +3388,15 @@ impl PartialEq for PromptData {
         match (self, other) {
             (Self::None, Self::None) => true,
             (Self::CommandPrompt(left), Self::CommandPrompt(right)) => {
-                ::core::ptr::eq(&**left, &**right)
+                core::ptr::eq(&**left, &**right)
             }
             (Self::ConfirmBefore(left), Self::ConfirmBefore(right)) => {
-                ::core::ptr::eq(&**left, &**right)
+                core::ptr::eq(&**left, &**right)
             }
             (Self::ModeTree(left), Self::ModeTree(right)) => left.ptr_eq(right),
             (Self::WindowTree(left), Self::WindowTree(right)) => left.ptr_eq(right),
             (Self::CustomizeSet(left), Self::CustomizeSet(right)) => {
-                ::core::ptr::eq(&**left, &**right)
+                core::ptr::eq(&**left, &**right)
             }
             (Self::CustomizeChange(left), Self::CustomizeChange(right)) => left.ptr_eq(right),
             _ => false,
@@ -2787,7 +3407,7 @@ impl PartialEq for PromptData {
 impl Eq for PromptData {}
 
 impl ::core::fmt::Debug for PromptData {
-    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::None => "None",
             Self::CommandPrompt(_) => "CommandPrompt(..)",
@@ -2800,31 +3420,20 @@ impl ::core::fmt::Debug for PromptData {
     }
 }
 
-#[derive(Default)]
-#[repr(C)]
-pub enum JobData {
-    #[default]
-    None,
-    Format(*mut format_job),
-    Popup(PopupDataWeak),
-    RunShell(Box<cmd_run_shell_data>),
-    IfShell(Box<cmd_if_shell_data>),
-}
-
 /// Every client the server holds, in the order they connected. A client
 /// belongs to the client registry, not to this list.
-pub(crate) type clients_t = ::std::vec::Vec<ClientRef>;
-pub(crate) type sessions_t = ::std::collections::BTreeMap<::std::ffi::CString, SessionRef>;
+pub(crate) type clients_t = Vec<ClientRef>;
+pub(crate) type sessions_t = std::collections::BTreeMap<std::ffi::CString, SessionRef>;
 /// Where a command being parsed came from. The default names no source file,
 /// no issuing item or client, and no target.
 #[derive(Clone, Default)]
 #[repr(C)]
 pub struct cmd_parse_input {
-    pub flags: ::core::ffi::c_int,
+    pub flags: core::ffi::c_int,
     /// The file the command line was read from, if it was read from one.
-    pub file: Option<::std::ffi::CString>,
+    pub file: Option<std::ffi::CString>,
     pub line: u_int,
-    pub item: *mut cmdq_item,
+    pub item: Option<crate::cmd::CmdqItemWeak>,
     /// The client the parse is for, observed rather than held.
     pub(crate) c: Option<ClientWeak>,
     pub fs: cmd_find_state,
@@ -2833,128 +3442,109 @@ pub struct cmd_parse_input {
 impl cmd_parse_input {
     /// The file the command line came from, or nothing when it came from
     /// none.
-    pub fn file(&self) -> Option<&::core::ffi::CStr> {
+    pub fn file(&self) -> Option<&core::ffi::CStr> {
         self.file.as_deref()
     }
 
-    /// The client the parse is for, or null when it is for none.
-    pub fn client(&self) -> *mut client {
-        self.c
-            .as_ref()
-            .and_then(ClientWeak::upgrade)
-            .map_or(::core::ptr::null_mut(), |c| c.as_ptr())
+    /// The client the parse is for, or nothing when it is for none.
+    pub fn client(&self) -> Option<ClientRef> {
+        self.c.as_ref().and_then(ClientWeak::upgrade)
     }
 }
-/// What one spawn was asked for. The strings are borrowed from the command
-/// that asked; the objects are views into the graph the spawn itself changes,
-/// so they stay raw.
+/// What one spawn was asked for. Strings borrow the command that asked,
+/// and the session owner remains alive through the operation.
 #[derive(Default)]
 #[repr(C)]
 pub struct spawn_context<'a> {
     pub item: Option<crate::cmd::CmdqItemWeak>,
-    pub s: *mut session,
-    pub wl: *mut winlink,
+    pub s: Option<SessionRef>,
+    pub wl_idx: Option<core::ffi::c_int>,
     pub tc: Option<ClientWeak>,
-    pub wp0: *mut window_pane,
-    pub lc: *mut layout_cell,
-    pub name: Option<&'a ::core::ffi::CStr>,
-    pub argv: Vec<::std::ffi::CString>,
-    pub environ: Option<Box<environ_t>>,
-    pub idx: ::core::ffi::c_int,
-    pub cwd: Option<&'a ::core::ffi::CStr>,
-    pub flags: ::core::ffi::c_int,
+    pub wp0: Option<RustWindowPaneWeak>,
+    pub name: Option<&'a core::ffi::CStr>,
+    pub argv: Vec<std::ffi::CString>,
+    pub environ: Option<Box<RustEnvironment>>,
+    pub idx: core::ffi::c_int,
+    pub cwd: Option<&'a core::ffi::CStr>,
+    pub flags: core::ffi::c_int,
 }
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[repr(C)]
 pub enum TtyCtxArg {
     #[default]
     None,
-    Pane(*mut window_pane),
-    Popup(*mut popup_data),
+    Pane(RustWindowPaneWeak),
+    Popup(PopupDataWeak),
 }
-#[derive(Copy, Clone, Default)]
+#[derive(Clone, Default)]
 #[repr(C)]
-pub struct tty_ctx {
-    pub s: *mut screen,
+pub struct tty_ctx<'a> {
     pub redraw_cb: tty_ctx_redraw_cb,
     pub set_client_cb: tty_ctx_set_client_cb,
     pub arg: TtyCtxArg,
-    pub cell: *const grid_cell,
-    pub flags: ::core::ffi::c_int,
-    pub value: TtyCtxValue,
+    pub cell: Option<grid_cell>,
+    pub flags: core::ffi::c_int,
+    pub value: TtyCtxValue<'a>,
     pub ocx: u_int,
     pub ocy: u_int,
     pub orupper: u_int,
     pub orlower: u_int,
-    pub xoff: ::core::ffi::c_int,
-    pub yoff: ::core::ffi::c_int,
-    pub rxoff: ::core::ffi::c_int,
-    pub ryoff: ::core::ffi::c_int,
+    pub xoff: core::ffi::c_int,
+    pub yoff: core::ffi::c_int,
+    pub rxoff: core::ffi::c_int,
+    pub ryoff: core::ffi::c_int,
     pub sx: u_int,
     pub sy: u_int,
     pub bg: u_int,
     pub defaults: grid_cell,
-    pub palette: *mut colour_palette,
+    pub palette: Option<colour_palette>,
     pub wox: u_int,
     pub woy: u_int,
     pub wsx: u_int,
     pub wsy: u_int,
 }
 #[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tty_ctx_data {
-    pub data: *const ::core::ffi::c_char,
-    pub size: size_t,
+pub struct tty_ctx_data<'a> {
+    pub data: &'a [u8],
 }
 pub type tty_ctx_redraw_cb = Option<unsafe fn(&tty_ctx) -> ()>;
 #[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tty_ctx_sel {
-    pub clip: *const ::core::ffi::c_char,
-    pub data: *const ::core::ffi::c_char,
-    pub size: size_t,
+pub struct tty_ctx_sel<'a> {
+    pub clip: &'a core::ffi::CStr,
+    pub data: &'a [u8],
 }
-pub type tty_ctx_set_client_cb = Option<unsafe fn(&mut tty_ctx, *mut client) -> ::core::ffi::c_int>;
+pub type tty_ctx_set_client_cb = Option<unsafe fn(&mut tty_ctx, &mut client) -> core::ffi::c_int>;
 /// What a terminal command carries besides its position: a count, a run of
 /// bytes, or a selection to hand to the terminal.
 #[derive(Copy, Clone, Default)]
-pub enum TtyCtxValue {
+pub enum TtyCtxValue<'a> {
     #[default]
     None,
     Num(u_int),
-    Data(tty_ctx_data),
-    Sel(tty_ctx_sel),
+    Data(tty_ctx_data<'a>),
+    Sel(tty_ctx_sel<'a>),
 }
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
-pub struct screen_write_ctx {
-    pub wp: *mut window_pane,
-    pub s: *mut screen,
-    pub flags: ::core::ffi::c_int,
-    pub init_ctx_cb: screen_write_init_ctx_cb,
-    pub arg: *mut popup_data,
-    pub item: crate::screen::CItem,
-    pub scrolled: u_int,
-    pub bg: u_int,
-}
-pub type screen_write_init_ctx_cb = Option<unsafe fn(&mut screen_write_ctx, &mut tty_ctx) -> ()>;
 /// An argument's kind and payload.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[repr(C)]
 pub enum ArgsValue {
     #[default]
     None,
-    String(::std::ffi::CString),
+    String(std::ffi::CString),
     Commands {
         cmdlist: Option<CmdListRef>,
-        cached: Option<::std::ffi::CString>,
+        /// The printed form of `cmdlist`, which a caller asking for the
+        /// value as a string wants and which is the same every time it is
+        /// asked for. Printing it needs no more than the value itself, so
+        /// it is filled in on the first ask rather than by whoever built it.
+        cached: std::cell::OnceCell<std::ffi::CString>,
     },
 }
 
 impl ArgsValue {
     /// The string the value holds, which every caller of this has already
     /// established it is.
-    pub fn string(&self) -> &::core::ffi::CStr {
+    pub fn string(&self) -> &core::ffi::CStr {
         match self {
             ArgsValue::String(string) => string,
             _ => panic!("not a string argument"),
@@ -2967,16 +3557,16 @@ impl ArgsValue {
 pub struct args_value_t {
     pub value: ArgsValue,
 }
-pub type args_values_t = ::std::vec::Vec<::std::boxed::Box<args_value_t>>;
+pub type args_values_t = Vec<Box<args_value_t>>;
 #[derive(Default)]
 #[repr(C)]
 pub struct ibuf {
-    pub buf: ::bytes::BytesMut,
+    pub buf: bytes::BytesMut,
     pub size: size_t,
     pub max: size_t,
     pub wpos: size_t,
     pub rpos: size_t,
-    pub fd: ::core::ffi::c_int,
+    pub fd: core::ffi::c_int,
     /// Whether the bytes were copied out of somebody else's range rather
     /// than allocated here. A borrowed buffer may be read, but not grown,
     /// resized, given a descriptor, or handed to a queue.
@@ -2986,39 +3576,158 @@ pub struct ibuf {
 #[repr(C)]
 pub struct imsg {
     pub hdr: imsg_hdr,
-    /// The message body, a view into the buffer below.
-    pub data: *mut ::core::ffi::c_uchar,
+    /// The original body range, independent of the buffer's read cursor.
+    pub(crate) body_range: core::ops::Range<usize>,
     /// The buffer the message was read out of, which the message owns until
     /// it is given up or handed on to a queue.
     pub buf: Option<Box<ibuf>>,
-}
-pub struct message_entry {
-    pub msg: ::std::ffi::CString,
-    pub msg_num: u_int,
-    pub msg_time: timeval,
-}
-#[repr(C)]
-pub struct hyperlinks_uri {
-    pub inner: u_int,
-    pub internal_id: Option<::std::ffi::CString>,
-    pub external_id: Option<::std::ffi::CString>,
-    pub uri: Option<::std::ffi::CString>,
 }
 #[repr(C)]
 pub struct args_entry {
     pub flag: u_char,
     pub values: args_values_t,
     pub count: u_int,
-    pub flags: ::core::ffi::c_int,
+    pub flags: core::ffi::c_int,
 }
-pub type args_tree = ::std::collections::BTreeMap<u_char, ::std::boxed::Box<args_entry>>;
+pub type args_tree = std::collections::BTreeMap<u_char, Box<args_entry>>;
 /// The children of one tree item, or the tree's own top level, in the order
 /// they were added. An item belongs to the list it sits on.
-pub type mode_tree_list = ::std::vec::Vec<::std::boxed::Box<mode_tree_item>>;
+pub type mode_tree_list = Vec<Box<mode_tree_item>>;
 
-pub fn cstr_ptr(s: &Option<::std::ffi::CString>) -> *mut ::core::ffi::c_char {
-    match s {
-        Some(s) => s.as_ptr() as *mut ::core::ffi::c_char,
-        None => ::core::ptr::null_mut::<::core::ffi::c_char>(),
+/// Whether `haystack` holds `needle` anywhere in it. An empty needle is in
+/// everything, which is what `strstr` answers for one.
+pub fn bytes_have(haystack: &[u8], needle: &[u8]) -> bool {
+    needle.is_empty() || haystack.windows(needle.len()).any(|at| at == needle)
+}
+
+/// [`bytes_have`] ignoring case. The C folds by the locale and hmux runs in
+/// the C locale, where that is the ASCII fold this does.
+pub fn bytes_have_nocase(haystack: &[u8], needle: &[u8]) -> bool {
+    needle.is_empty()
+        || haystack
+            .windows(needle.len())
+            .any(|at| at.eq_ignore_ascii_case(needle))
+}
+
+/// [`bytes_have`] over C strings, which is `strstr` asked as the question
+/// every caller of it was really asking: none of them wants the position it
+/// returns, only whether it is there.
+pub fn cstr_has(haystack: &core::ffi::CStr, needle: &core::ffi::CStr) -> bool {
+    bytes_have(haystack.to_bytes(), needle.to_bytes())
+}
+
+/// [`cstr_has`] ignoring case, which is `strcasestr`.
+pub fn cstr_has_nocase(haystack: &core::ffi::CStr, needle: &core::ffi::CStr) -> bool {
+    bytes_have_nocase(haystack.to_bytes(), needle.to_bytes())
+}
+use crate::screen::RustScreen;
+
+impl VisibleRangesRef {
+    pub fn is_empty(&self) -> bool {
+        self.borrow().is_empty()
+    }
+    pub fn ensure_capacity(&self, count: u_int) {
+        self.borrow_mut().ensure_capacity(count)
+    }
+    pub fn set_overlay_range(
+        &self,
+        x: u_int,
+        y: u_int,
+        width: u_int,
+        height: u_int,
+        px: u_int,
+        py: u_int,
+        count: u_int,
+    ) {
+        self.borrow_mut()
+            .set_overlay_range(x, y, width, height, px, py, count)
+    }
+    pub unsafe fn set_visible_ranges(
+        &self,
+        pane: Option<&impl crate::WindowPane>,
+        x: core::ffi::c_int,
+        y: core::ffi::c_int,
+        width: u_int,
+    ) {
+        unsafe { self.borrow_mut().set_visible_ranges(pane, x, y, width) }
+    }
+    pub unsafe fn clip_visible_ranges(
+        &self,
+        pane: Option<&impl crate::WindowPane>,
+        x: core::ffi::c_int,
+        y: core::ffi::c_int,
+        width: u_int,
+    ) {
+        unsafe { self.borrow_mut().clip_visible_ranges(pane, x, y, width) }
+    }
+}
+
+#[cfg(test)]
+mod reference_borrow_tests {
+    use super::*;
+    use crate::tests::test_fixtures::{globals, zeroed, zeroed_client};
+
+    #[test]
+    fn peer_snapshot_releases_client_borrow_and_keeps_peer_alive() {
+        let _guard = globals();
+        let client = zeroed_client();
+        let peer = PeerRef::new(*zeroed::<crate::proc::tmuxpeer>());
+        peer.borrow_mut().uid = 42;
+        client.0.value.borrow_mut().peer = Some(peer);
+        let retained = client.peer_handle();
+        client.0.value.borrow_mut().peer = None;
+        drop(client);
+        assert_eq!(retained.uid(), 42);
+    }
+
+    #[test]
+    #[should_panic(expected = "already mutably borrowed")]
+    fn client_snapshot_checks_borrows_across_owners() {
+        let _guard = globals();
+        let client = zeroed_client();
+        let other = client.clone();
+        let _exclusive = client.0.value.borrow_mut();
+        other.pid();
+    }
+}
+
+impl ClientRef {
+    /// Records a command exit code without exposing mutable client storage.
+    pub(crate) fn set_return_code(&self, code: core::ffi::c_int) {
+        self.0.value.borrow_mut().retval = code;
+    }
+
+    /// Enters a source-file invocation with the existing wrapping depth arithmetic.
+    pub(crate) fn enter_source_file(&self) {
+        let mut client = self.0.value.borrow_mut();
+        client.source_file_depth = client.source_file_depth.wrapping_add(1);
+    }
+
+    /// Completes a source-file invocation with the existing wrapping depth arithmetic.
+    pub(crate) fn leave_source_file(&self) {
+        let mut client = self.0.value.borrow_mut();
+        client.source_file_depth = client.source_file_depth.wrapping_sub(1);
+    }
+}
+
+impl ClientRef {
+    /// Reports whether a prompt string is installed, including an empty string.
+    pub(crate) fn has_prompt_text(&self) -> bool {
+        self.0.value.borrow().prompt_string.is_some()
+    }
+
+    /// Logs a wait-channel observation using the existing client pointer label.
+    /// The pointer is formatted here and is not exposed to the command.
+    pub(crate) fn log_wait_channel(&self, name: &core::ffi::CStr, woken: bool) {
+        unsafe {
+            crate::log::log_debug(
+                if woken {
+                    c"wait channel %s already woken (%p)"
+                } else {
+                    c"wait channel %s not woken (%p)"
+                },
+                crate::fmt_args![name, self.as_ptr()],
+            );
+        }
     }
 }

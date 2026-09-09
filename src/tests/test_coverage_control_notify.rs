@@ -18,35 +18,30 @@
 
 use crate::control::control_state;
 use crate::control::*;
-use crate::server::CLIENT_CONTROL;
+use crate::server::{CLIENT_CONTROL, client_ref_of};
 use crate::tests::test_fixtures::{
     Clients, Layout, Pane, Session, StreamBuffer, Window, globals, link, unlink,
 };
-use ::core::ptr::null_mut;
 
 /// A control-mode client's write side: the state [`control_write`] reaches
 /// through the client and the buffer event it writes into, read back with
 /// [`ControlOut::written`]. Detaches itself from the client when it goes.
 struct ControlOut {
-    c: *mut client,
+    c: ClientRef,
     bev: StreamBuffer,
 }
 
 impl ControlOut {
     /// Marks `c` a control client and gives it a fresh empty state,
     /// writing through the buffer event.
-    fn new(c: *mut client) -> ControlOut {
+    fn new(c: &mut client) -> ControlOut {
         let out = ControlOut {
-            c,
+            c: client_ref_of(c).expect("the fixture client has an owner"),
             bev: StreamBuffer::new(),
         };
-        unsafe {
-            let state = (*c)
-                .control_state
-                .insert(Box::new(control_state::default()));
-            state.write_event = out.bev.ptr();
-            (*c).flags |= CLIENT_CONTROL as u64;
-        }
+        let state = c.control_state.insert(Box::new(control_state::default()));
+        state.write_event = out.bev.ptr();
+        c.flags |= CLIENT_CONTROL as u64;
         out
     }
 
@@ -58,7 +53,7 @@ impl ControlOut {
 
 impl Drop for ControlOut {
     fn drop(&mut self) {
-        unsafe { (*self.c).control_state = None };
+        unsafe { self.c.as_client_mut().control_state = None };
     }
 }
 
@@ -203,7 +198,7 @@ fn notifications_reach_only_control_clients_carrying_a_state() {
     unsafe {
         (*bare).flags |= CLIENT_CONTROL as u64;
     }
-    let out = ControlOut::new(ctrl);
+    let out = ControlOut::new(unsafe { &mut *ctrl });
     unsafe {
         control_notify_pane_mode_changed(5);
 
@@ -239,19 +234,19 @@ fn layout_changes_are_skipped_until_a_laid_out_window_is_held_by_ones_own_sessio
     let mut elsewhere = Session::new(3, "elsewhere");
     let mut list = Clients::new();
     let watcher = list.add("watcher", 80, 24);
-    let out = ControlOut::new(watcher);
+    let out = ControlOut::new(unsafe { &mut *watcher });
     unsafe {
-        (*watcher).session = elsewhere.ptr();
-        control_notify_window_layout_changed(bare.ptr());
+        (*watcher).set_attached_session(Some(elsewhere.handle()));
+        control_notify_window_layout_changed(bare.handle());
         assert_eq!(
             out.written(),
             Vec::<u8>::new(),
             "no winlink on the window ends the walk early"
         );
 
-        (*watcher).session = holding.ptr();
+        (*watcher).set_attached_session(Some(holding.handle()));
         let bare_wl = link(&mut holding, &mut bare, 1);
-        control_notify_window_layout_changed(bare.ptr());
+        control_notify_window_layout_changed(bare.handle());
         assert_eq!(
             out.written(),
             Vec::<u8>::new(),
@@ -259,25 +254,25 @@ fn layout_changes_are_skipped_until_a_laid_out_window_is_held_by_ones_own_sessio
         );
         unlink(&mut holding, bare_wl);
 
-        (*watcher).session = elsewhere.ptr();
+        (*watcher).set_attached_session(Some(elsewhere.handle()));
         let laid_wl = link(&mut holding, l.window(), 0);
-        control_notify_window_layout_changed(l.w());
+        control_notify_window_layout_changed(l.window().handle());
         assert_eq!(
             out.written(),
             Vec::<u8>::new(),
             "another session's client is not told"
         );
 
-        (*watcher).session = null_mut();
-        control_notify_window_layout_changed(l.w());
+        (*watcher).set_attached_session(None);
+        control_notify_window_layout_changed(l.window().handle());
         assert_eq!(
             out.written(),
             Vec::<u8>::new(),
             "a sessionless client is not told"
         );
 
-        (*watcher).session = holding.ptr();
-        control_notify_window_layout_changed(l.w());
+        (*watcher).set_attached_session(Some(holding.handle()));
+        control_notify_window_layout_changed(l.window().handle());
         assert_eq!(
             out.written(),
             b"%layout-change @1 b25e,80x24,0,0,1 b25e,80x24,0,0,1 *\n"
@@ -294,16 +289,16 @@ fn pane_changes_need_an_active_pane_and_then_name_window_and_pane() {
     let mut p = Pane::new(3, 80, 24, 100);
     let mut list = Clients::new();
     let ctrl = list.add("ctrl", 80, 24);
-    let out = ControlOut::new(ctrl);
+    let out = ControlOut::new(unsafe { &mut *ctrl });
     unsafe {
-        control_notify_window_pane_changed(w.ptr());
+        control_notify_window_pane_changed(w.handle());
         assert!(
             out.written().is_empty(),
             "a window without an active pane is skipped"
         );
 
         w.add_pane(&mut p);
-        control_notify_window_pane_changed(w.ptr());
+        control_notify_window_pane_changed(w.handle());
         assert_eq!(out.written(), b"%window-pane-changed @9 %3\n");
     }
 }
@@ -316,36 +311,36 @@ fn add_close_and_rename_lines_follow_each_clients_own_session() {
     let mut w = Window::new(4, "shared", 80, 24);
     let mut list = Clients::new();
     let watcher = list.add("watcher", 80, 24);
-    let out = ControlOut::new(watcher);
+    let out = ControlOut::new(unsafe { &mut *watcher });
     unsafe {
         let wl = link(&mut home, &mut w, 0);
 
-        (*watcher).session = home.ptr();
-        control_notify_window_linked(home.ptr(), w.ptr());
+        (*watcher).set_attached_session(Some(home.handle()));
+        control_notify_window_linked(home.ptr().as_ref(), w.handle());
         assert_eq!(out.written(), b"%window-add @4\n");
 
-        control_notify_window_unlinked(home.ptr(), w.ptr());
+        control_notify_window_unlinked(home.ptr().as_ref(), w.handle());
         assert_eq!(out.written(), b"%window-close @4\n");
 
-        control_notify_window_renamed(w.ptr());
+        control_notify_window_renamed(w.handle());
         assert_eq!(out.written(), b"%window-renamed @4 shared\n");
 
-        (*watcher).session = away.ptr();
-        control_notify_window_linked(home.ptr(), w.ptr());
+        (*watcher).set_attached_session(Some(away.handle()));
+        control_notify_window_linked(home.ptr().as_ref(), w.handle());
         assert_eq!(
             out.written(),
             b"%unlinked-window-add @4\n",
             "away has no winlink for the window"
         );
 
-        control_notify_window_unlinked(home.ptr(), w.ptr());
+        control_notify_window_unlinked(home.ptr().as_ref(), w.handle());
         assert_eq!(out.written(), b"%unlinked-window-close @4\n");
 
-        control_notify_window_renamed(w.ptr());
+        control_notify_window_renamed(w.handle());
         assert_eq!(out.written(), b"%unlinked-window-renamed @4 shared\n");
 
-        (*watcher).session = null_mut();
-        control_notify_window_linked(home.ptr(), w.ptr());
+        (*watcher).set_attached_session(None);
+        control_notify_window_linked(home.ptr().as_ref(), w.handle());
         assert_eq!(
             out.written(),
             Vec::<u8>::new(),
@@ -364,21 +359,21 @@ fn session_changes_speak_to_the_moved_client_differently_from_the_rest() {
     let mover = list.add("mover", 80, 24);
     let watcher = list.add("watcher", 80, 24);
     unsafe {
-        (*watcher).session = moved_to.ptr();
+        (*watcher).set_attached_session(Some(moved_to.handle()));
     }
-    let out = ControlOut::new(watcher);
+    let out = ControlOut::new(unsafe { &mut *watcher });
     unsafe {
-        control_notify_client_session_changed(mover);
+        control_notify_client_session_changed(&mut *mover);
         assert!(
             out.written().is_empty(),
             "a client moving from nowhere is not announced"
         );
 
-        (*mover).session = moved_to.ptr();
-        control_notify_client_session_changed(mover);
+        (*mover).set_attached_session(Some(moved_to.handle()));
+        control_notify_client_session_changed(&mut *mover);
         assert_eq!(out.written(), b"%client-session-changed mover $6 six\n");
 
-        control_notify_client_session_changed(watcher);
+        control_notify_client_session_changed(&mut *watcher);
         assert_eq!(
             out.written(),
             b"%session-changed $6 six\n",
@@ -394,18 +389,21 @@ fn detach_rename_and_lifecycle_lines_name_their_subjects() {
     let mut list = Clients::new();
     let leaver = list.add("gone", 80, 24);
     let ctrl = list.add("ctrl", 80, 24);
-    let out = ControlOut::new(ctrl);
+    let out = ControlOut::new(unsafe { &mut *ctrl });
     unsafe {
-        control_notify_client_detached(leaver);
+        control_notify_client_detached(&mut *leaver);
         assert_eq!(out.written(), b"%client-detached gone\n");
 
-        control_notify_session_created(s.ptr());
+        control_notify_client_detached(&mut *ctrl);
+        assert_eq!(out.written(), b"%client-detached ctrl\n");
+
+        control_notify_session_created(&*s.ptr());
         assert_eq!(out.written(), b"%sessions-changed\n");
 
-        control_notify_session_closed(s.ptr());
+        control_notify_session_closed(&*s.ptr());
         assert_eq!(out.written(), b"%sessions-changed\n");
 
-        control_notify_session_renamed(s.ptr());
+        control_notify_session_renamed(&*s.ptr());
         assert_eq!(out.written(), b"%session-renamed $7 seven\n");
     }
 }
@@ -417,11 +415,13 @@ fn session_window_changes_report_the_current_window() {
     let mut w = Window::new(5, "current", 80, 24);
     let mut list = Clients::new();
     let ctrl = list.add("ctrl", 80, 24);
-    let out = ControlOut::new(ctrl);
+    let out = ControlOut::new(unsafe { &mut *ctrl });
     unsafe {
+        control_notify_session_window_changed(&*s.ptr());
+        assert_eq!(out.written(), b"%session-window-changed $8 @0\n");
         let wl = link(&mut s, &mut w, 0);
 
-        control_notify_session_window_changed(s.ptr());
+        control_notify_session_window_changed(&*s.ptr());
         assert_eq!(out.written(), b"%session-window-changed $8 @5\n");
 
         unlink(&mut s, wl);
@@ -433,7 +433,7 @@ fn paste_buffer_lines_carry_the_buffer_name() {
     let _guard = globals();
     let mut list = Clients::new();
     let ctrl = list.add("ctrl", 80, 24);
-    let out = ControlOut::new(ctrl);
+    let out = ControlOut::new(unsafe { &mut *ctrl });
     unsafe {
         control_notify_paste_buffer_changed(Some(c"buf-one"));
         assert_eq!(out.written(), b"%paste-buffer-changed buf-one\n");
@@ -441,4 +441,17 @@ fn paste_buffer_lines_carry_the_buffer_name() {
         control_notify_paste_buffer_deleted(Some(c"buf-two"));
         assert_eq!(out.written(), b"%paste-buffer-deleted buf-two\n");
     }
+}
+
+#[test]
+fn control_output_retains_its_client_until_the_helper_is_dropped() {
+    let _guard = globals();
+    let mut list = Clients::new();
+    let client = list.add("retained-output", 80, 24);
+    let out = ControlOut::new(unsafe { &mut *client });
+    let weak = out.c.downgrade();
+    drop(list);
+    assert!(weak.upgrade().is_some());
+    drop(out);
+    assert!(weak.upgrade().is_none());
 }

@@ -18,8 +18,8 @@
 
 use crate::grid::{grid_default_cell, grid_get_line};
 use crate::grid::{grid_view_set_cell, grid_view_set_padding};
-use crate::reactor::Buf;
-use crate::terminfo::TtyCode;
+use crate::reactor::ByteBuffer;
+use crate::terminfo::TerminalCapabilities;
 use crate::tests::test_fixtures::{Screen, ascii, globals, zeroed_client, zeroed_term, zeroed_tty};
 use crate::tty::TTY_BLOCK;
 use crate::tty::{
@@ -30,14 +30,14 @@ use crate::tty::{
     TTYC_ECH, TTYC_EL, TTYC_EL1, TTYC_XT, tty_draw_line,
 };
 use crate::types::*;
-use ::core::ffi::{CStr, c_char};
-use ::core::ptr::null_mut;
+use ::core::ffi::CStr;
+use ::std::ffi::CString;
 
 /// A cell holding `bytes` as one character taking `width` columns. Nothing
 /// checks that the two agree, which is what lets a test drive the codeset
 /// fallback with a character a real grid would carry unchanged.
 fn cell(bytes: &[u8], width: u8) -> grid_cell {
-    let mut gc = unsafe { grid_default_cell };
+    let mut gc = { grid_default_cell };
     gc.data.data[..bytes.len()].copy_from_slice(bytes);
     gc.data.have = bytes.len() as u_char;
     gc.data.size = bytes.len() as u_char;
@@ -46,10 +46,10 @@ fn cell(bytes: &[u8], width: u8) -> grid_cell {
 }
 
 /// Puts `text` on `screen`, one ASCII cell per byte from `px`.
-fn write_text(screen: &Screen, px: u_int, py: u_int, text: &str) {
+fn write_text(screen: &mut Screen, px: u_int, py: u_int, text: &str) {
     for (i, &byte) in text.as_bytes().iter().enumerate() {
         let gc = ascii(byte);
-        unsafe { grid_view_set_cell(&mut *screen.grid(), px + i as u_int, py, &gc) };
+        grid_view_set_cell(screen.grid_mut(), px + i as u_int, py, &gc);
     }
 }
 
@@ -72,8 +72,9 @@ impl Drawer {
             seen: 0,
         };
         d.tty.term = Some(zeroed_term());
-        d.tty.owner = crate::server::client_ref_from_ptr(&raw mut *d.client).map(|c| c.downgrade());
-        d.tty.out = Some(Box::new(Buf::new()));
+        d.tty.owner = crate::server::client_ref_of(&*(unsafe { d.client.as_client() }))
+            .map(|c| c.downgrade());
+        d.tty.out = Some(Box::new(ByteBuffer::new()));
         d.tty.sx = sx;
         d.tty.sy = sy;
         d
@@ -83,19 +84,29 @@ impl Drawer {
         &raw mut *self.tty
     }
 
-    fn term_mut(&mut self) -> &mut tty_term {
-        self.tty.term.as_mut().expect("the fixture built a term")
+    fn term_mut(&mut self) -> std::cell::RefMut<'_, tty_term> {
+        self.tty
+            .term
+            .as_ref()
+            .expect("the fixture built a term")
+            .borrow_mut()
     }
 
     /// Gives `code` a string value, as a terminfo entry carrying that
     /// capability would.
     fn set_string(&mut self, code: tty_code_code, s: &'static CStr) {
-        self.term_mut().codes[code as usize] = TtyCode::String(s.to_owned());
+        let mut terminal = self.term_mut();
+        let mut capability = terminal.capability_name(code).to_bytes().to_vec();
+        capability.push(b'=');
+        capability.extend(s.to_bytes());
+        terminal.apply_overrides(&CString::new(capability).unwrap());
     }
 
     /// Gives the ACS key `ch` the one-byte drawing character `to`.
     fn set_acs(&mut self, ch: u8, to: u8) {
-        self.term_mut().acs[ch as usize] = [to as c_char, 0 as c_char];
+        let capability = CString::new([b"acsc=".as_slice(), &[ch, to]].concat()).unwrap();
+        self.term_mut().apply_overrides(&capability);
+        self.term_mut().refresh_derived();
     }
 
     /// What has been written since this was last asked.
@@ -118,14 +129,14 @@ fn draw(d: &mut Drawer, s: &mut Screen, py: u_int, nx: u_int, atx: u_int, aty: u
     unsafe {
         tty_draw_line(
             &mut *d.ptr(),
-            s.ptr(),
+            &mut *s.ptr(),
             0,
             py,
             nx,
             atx,
             aty,
             &grid_default_cell,
-            null_mut::<colour_palette>(),
+            None,
         );
     }
 }
@@ -179,28 +190,28 @@ fn drawing_outside_the_terminal_returns_before_anything_is_written() {
     unsafe {
         tty_draw_line(
             &mut *d.ptr(),
-            s.ptr(),
+            &mut *s.ptr(),
             0,
             0,
             10,
             80,
             0,
             &grid_default_cell,
-            null_mut::<colour_palette>(),
+            None,
         );
         assert!(d.written().is_empty(), "an off-edge draw wrote bytes");
         assert_eq!((*d.ptr()).cx, 0);
 
         tty_draw_line(
             &mut *d.ptr(),
-            s.ptr(),
+            &mut *s.ptr(),
             0,
             0,
             0,
             0,
             0,
             &grid_default_cell,
-            null_mut::<colour_palette>(),
+            None,
         );
         assert!(d.written().is_empty(), "a zero-width draw wrote bytes");
         assert_eq!((*d.ptr()).cx, 0);
@@ -223,7 +234,7 @@ fn text_runs_are_flushed_and_the_background_cleared_behind_them() {
     let _guard = globals();
     let mut d = Drawer::new(10, 24);
     let mut s = Screen::new(10, 24, 100);
-    write_text(&s, 0, 0, "abc");
+    write_text(&mut s, 0, 0, "abc");
     unsafe { (*d.ptr()).flags |= TTY_NOCURSOR };
     draw(&mut d, &mut s, 0, 10, 0, 0);
     assert_eq!(d.written(), b"abc       ");
@@ -276,9 +287,9 @@ fn leading_padding_cells_are_cleared_before_what_follows_them() {
     let mut d = Drawer::new(8, 24);
     let mut s = Screen::new(8, 24, 100);
     for px in 0..3 {
-        unsafe { grid_view_set_padding(&mut *s.grid(), px, 0) };
+        grid_view_set_padding(s.grid_mut(), px, 0);
     }
-    write_text(&s, 3, 0, "xy");
+    write_text(&mut s, 3, 0, "xy");
     draw(&mut d, &mut s, 0, 8, 0, 0);
     assert_eq!(d.written(), b"   xy   ");
     unsafe { assert_eq!((*d.ptr()).cx, 8) };
@@ -291,7 +302,8 @@ fn a_wrapped_previous_line_clears_without_moving_the_cursor() {
     let mut wrapped = Drawer::new(16, 24);
     let mut ws = Screen::new(16, 4, 100);
     unsafe {
-        grid_get_line(&mut *ws.grid(), (*ws.grid()).hsize).flags |= GRID_LINE_WRAPPED;
+        let hsize = ws.grid().hsize;
+        grid_get_line(ws.grid_mut(), hsize).flags |= GRID_LINE_WRAPPED;
         (*wrapped.ptr()).cx = 16;
         (*wrapped.ptr()).cy = 3;
     }
@@ -327,7 +339,7 @@ fn a_blocked_terminal_counts_what_it_discards() {
     let _guard = globals();
     let mut d = Drawer::new(10, 24);
     let mut s = Screen::new(10, 24, 100);
-    write_text(&s, 0, 0, "abc");
+    write_text(&mut s, 0, 0, "abc");
     unsafe { (*d.ptr()).flags |= TTY_BLOCK };
     draw(&mut d, &mut s, 0, 10, 0, 0);
     assert!(d.written().is_empty(), "a blocked terminal wrote bytes");
@@ -343,7 +355,7 @@ fn characters_outside_the_codeset_become_acs_keys_or_underscores() {
     let mut d = Drawer::new(8, 24);
     let mut s = Screen::new(8, 24, 100);
     let gc = cell(&[0xe2, 0x94, 0x80], 1);
-    unsafe { grid_view_set_cell(&mut *s.grid(), 0, 0, &gc) };
+    grid_view_set_cell(s.grid_mut(), 0, 0, &gc);
 
     draw(&mut d, &mut s, 0, 8, 0, 0);
     assert_eq!(d.written(), b"q       ", "the ACS key was not drawn");
@@ -353,7 +365,7 @@ fn characters_outside_the_codeset_become_acs_keys_or_underscores() {
     assert_eq!(d.written(), b"A       ", "the translation was not applied");
 
     let latin = cell(&[0xc3, 0xa9], 1);
-    unsafe { grid_view_set_cell(&mut *s.grid(), 0, 0, &latin) };
+    grid_view_set_cell(s.grid_mut(), 0, 0, &latin);
     draw(&mut d, &mut s, 0, 8, 0, 0);
     assert_eq!(
         d.written(),

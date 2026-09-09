@@ -1,9 +1,4 @@
-//! What is left uncovered here, and why. `fatal` and `fatalx` end the
-//! process, so a unit test that entered one would take the whole run with
-//! it; they are also the only callers that reach `log_vwrite` with no log
-//! open, so its first guard goes with them. The failure arm left inside
-//! `log_vwrite`, for an escaping that could not be made, is the C
-//! allocator's to answer, and a test cannot make it refuse.
+//! Log output and fatal process exits are checked in isolated child processes.
 
 use super::*;
 
@@ -17,17 +12,15 @@ const CHILD: &str = "TMUX_C2RS_LOG_TEST_CHILD";
 /// reached from outside: every module's `log_debug` writes to whatever file
 /// this one has open, and the debug level is read by the guards in front of
 /// those calls, which another module's tests borrow through
-/// [`log_with_level`]. So a test that opens the log or moves the level
-/// cannot run beside cargo's other test threads — one of them writing to
-/// the file while this one closes it is a use-after-free, which showed up
-/// as a segmentation fault about one run in three. The child is this same
-/// test binary with one test selected and one thread to run it on.
+/// [`log_with_level`]. The child process keeps unrelated messages and level
+/// changes out of the assertions. It is the same test binary with one test
+/// selected and one test thread.
 fn in_a_child_process(test: &str) -> bool {
-    if ::std::env::var_os(CHILD).is_some() {
+    if std::env::var_os(CHILD).is_some() {
         return false;
     }
-    let exe = ::std::env::current_exe().expect("the test binary");
-    let out = ::std::process::Command::new(exe)
+    let exe = std::env::current_exe().expect("the test binary");
+    let out = std::process::Command::new(exe)
         .args(["--exact", test, "--test-threads=1", "--nocapture"])
         .env(CHILD, "1")
         .output()
@@ -72,14 +65,14 @@ impl Log {
 
     /// Where `log_open` puts what it writes, which is the name it is given
     /// and this process's id.
-    fn path(&self) -> ::std::path::PathBuf {
-        ::std::path::PathBuf::from(format!("tmux-unit-test-{}.log", ::std::process::id()))
+    fn path(&self) -> std::path::PathBuf {
+        std::path::PathBuf::from(format!("tmux-unit-test-{}.log", std::process::id()))
     }
 
     /// What has been written to the log so far, with the timestamp in
     /// front of each line taken off.
     fn lines(&self) -> Vec<String> {
-        ::std::fs::read_to_string(self.path())
+        std::fs::read_to_string(self.path())
             .unwrap_or_default()
             .lines()
             .map(|line| {
@@ -92,11 +85,11 @@ impl Log {
     }
 
     fn forget(&self) {
-        let _ = ::std::fs::remove_file(self.path());
+        let _ = std::fs::remove_file(self.path());
     }
 
     fn open(&self) {
-        unsafe { log_open(c"unit-test".as_ptr()) };
+        log_open(c"unit-test");
     }
 }
 
@@ -123,7 +116,7 @@ log_test!(the_level_starts_at_nothing_and_goes_up_one_at_a_time, {
 log_test!(a_log_at_level_zero_is_not_opened_at_all, {
     let log = Log::new();
     log.open();
-    unsafe { log_debug(c"nothing".as_ptr(), fmt_args![]) };
+    unsafe { log_debug(c"nothing", fmt_args![]) };
     assert!(!log.path().exists());
     assert_eq!(log.lines(), Vec::<String>::new());
 });
@@ -133,8 +126,8 @@ log_test!(a_log_that_is_open_takes_what_is_written_to_it, {
     unsafe {
         log_add_level();
         log.open();
-        log_debug(c"one %d".as_ptr(), fmt_args![1 as ::core::ffi::c_int]);
-        log_debug(c"two %s".as_ptr(), fmt_args![c"here".as_ptr()]);
+        log_debug(c"one %d", fmt_args![1 as c_int]);
+        log_debug(c"two %s", fmt_args![c"here".as_ptr()]);
     }
     assert_eq!(log.lines(), ["one 1", "two here"]);
 });
@@ -144,7 +137,7 @@ log_test!(what_is_written_is_escaped, {
     unsafe {
         log_add_level();
         log.open();
-        log_debug(c"a\nb\tc\x07d\x80e".as_ptr(), fmt_args![]);
+        log_debug(c"a\nb\tc\x07d\x80e", fmt_args![]);
     }
     assert_eq!(log.lines(), ["a\\nb\\tc\\ad\\200e"]);
 });
@@ -154,9 +147,9 @@ log_test!(a_log_that_is_closed_takes_nothing_more, {
     unsafe {
         log_add_level();
         log.open();
-        log_debug(c"before".as_ptr(), fmt_args![]);
+        log_debug(c"before", fmt_args![]);
         log_close();
-        log_debug(c"after".as_ptr(), fmt_args![]);
+        log_debug(c"after", fmt_args![]);
         log_close();
     }
     assert_eq!(log.lines(), ["before"]);
@@ -167,9 +160,9 @@ log_test!(opening_a_log_twice_carries_on_where_the_first_left_off, {
     unsafe {
         log_add_level();
         log.open();
-        log_debug(c"first".as_ptr(), fmt_args![]);
+        log_debug(c"first", fmt_args![]);
         log.open();
-        log_debug(c"second".as_ptr(), fmt_args![]);
+        log_debug(c"second", fmt_args![]);
     }
     assert_eq!(log.lines(), ["first", "second"]);
 });
@@ -177,13 +170,13 @@ log_test!(opening_a_log_twice_carries_on_where_the_first_left_off, {
 log_test!(toggling_opens_the_log_and_toggling_again_closes_it, {
     let log = Log::new();
     unsafe {
-        log_toggle(c"unit-test".as_ptr());
+        log_toggle(c"unit-test");
         assert_eq!(log_get_level(), 1);
-        log_debug(c"between".as_ptr(), fmt_args![]);
+        log_debug(c"between", fmt_args![]);
         log_add_level();
-        log_toggle(c"unit-test".as_ptr());
+        log_toggle(c"unit-test");
         assert_eq!(log_get_level(), 0);
-        log_debug(c"after".as_ptr(), fmt_args![]);
+        log_debug(c"after", fmt_args![]);
     }
     assert_eq!(log.lines(), ["log opened", "between", "log closed"]);
 });
@@ -208,8 +201,8 @@ log_test!(a_log_that_cannot_be_opened_stays_closed, {
     let log = Log::new();
     unsafe {
         log_add_level();
-        log_open(c"no/such/place".as_ptr());
-        log_debug(c"nowhere".as_ptr(), fmt_args![]);
+        log_open(c"no/such/place");
+        log_debug(c"nowhere", fmt_args![]);
         assert_eq!(log_get_level(), 1);
     }
     assert!(!log.path().exists());
@@ -217,19 +210,113 @@ log_test!(a_log_that_cannot_be_opened_stays_closed, {
 
 log_test!(a_log_is_named_after_what_it_was_opened_with, {
     let log = Log::new();
-    let other = ::std::path::PathBuf::from(format!("tmux-other-name-{}.log", ::std::process::id()));
-    let _ = ::std::fs::remove_file(&other);
+    let other = std::path::PathBuf::from(format!("tmux-other-name-{}.log", std::process::id()));
+    let _ = std::fs::remove_file(&other);
     unsafe {
         log_add_level();
-        log_open(c"other-name".as_ptr());
-        log_debug(c"in the other one".as_ptr(), fmt_args![]);
+        log_open(c"other-name");
+        log_debug(c"in the other one", fmt_args![]);
         log_close();
     }
     assert!(!log.path().exists());
     assert!(
-        ::std::fs::read_to_string(&other)
+        std::fs::read_to_string(&other)
             .expect("the other log")
             .contains("in the other one")
     );
-    let _ = ::std::fs::remove_file(&other);
+    let _ = std::fs::remove_file(&other);
 });
+
+log_test!(concurrent_writes_and_reopens_keep_each_record_intact, {
+    let log = Log::new();
+    log_add_level();
+    log.open();
+    std::thread::scope(|scope| {
+        for worker in 0..4 {
+            scope.spawn(move || unsafe {
+                for record in 0..100 {
+                    log_debug(c"worker %d record %d", fmt_args![worker, record]);
+                }
+            });
+        }
+        scope.spawn(|| {
+            for _ in 0..50 {
+                log_close();
+                log_open(c"unit-test");
+            }
+        });
+    });
+    log.open();
+    unsafe {
+        log_debug(c"final", fmt_args![]);
+    }
+    log_close();
+    let lines = log.lines();
+    assert_eq!(lines.last().map(String::as_str), Some("final"));
+    for line in &lines[..lines.len() - 1] {
+        let fields: Vec<_> = line.split_whitespace().collect();
+        assert_eq!(fields.len(), 4);
+        assert_eq!(fields[0], "worker");
+        assert_eq!(fields[2], "record");
+        assert!(fields[1].parse::<u32>().unwrap() < 4);
+        assert!(fields[3].parse::<u32>().unwrap() < 100);
+    }
+    assert_eq!(
+        lines.iter().collect::<std::collections::HashSet<_>>().len(),
+        lines.len()
+    );
+});
+
+#[test]
+fn fatal_preserves_errno_and_exits_with_or_without_an_open_log() {
+    let test = "log::tests::fatal_preserves_errno_and_exits_with_or_without_an_open_log";
+    if let Ok(mode) = std::env::var(CHILD) {
+        unsafe {
+            if mode == "fatal-open" {
+                log_add_level();
+                log_open(c"unit-test");
+            }
+            *__errno_location() = libc::EACCES;
+            fatal(c"operation %s", fmt_args![c"failed\nretry"]);
+        }
+    }
+    for mode in ["fatal-open", "fatal-closed"] {
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test, "--test-threads=1", "--nocapture"])
+            .env(CHILD, mode)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let path = format!("tmux-unit-test-{}.log", child.id());
+        let out = child.wait_with_output().unwrap();
+        let logged = std::fs::read_to_string(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(out.status.code(), Some(1), "{out:?}");
+        if mode == "fatal-open" {
+            let logged = logged.unwrap();
+            let error = error_message(libc::EACCES);
+            assert_eq!(logged.lines().count(), 1);
+            assert_eq!(
+                logged.split_once(' ').unwrap().1,
+                format!(
+                    "fatal: {}: operation failed\\nretry\n",
+                    error.to_string_lossy()
+                )
+            );
+        } else {
+            assert_eq!(logged.unwrap_err().kind(), std::io::ErrorKind::NotFound);
+        }
+    }
+}
+
+/// Puts the debug level back where a test found it. What the level changes is
+/// the guards in front of the calls that build a message first; whether
+/// anything is written out as well wants a log that has been opened, which
+/// only this module's own tests do.
+pub(crate) fn log_with_level<T>(level: c_int, body: impl FnOnce() -> T) -> T {
+    let was = log_level.swap(level, Ordering::Relaxed);
+    let answer = body();
+    log_level.store(was, Ordering::Relaxed);
+    answer
+}

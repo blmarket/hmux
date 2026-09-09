@@ -9,15 +9,15 @@ fn tostring(c: c_int) -> String {
 }
 
 fn fromstring(s: &CStr) -> c_int {
-    unsafe { colour_fromstring(s.as_ptr()) }
+    unsafe { colour_fromstring(s) }
 }
 
 fn byname(s: &CStr) -> c_int {
-    unsafe { colour_byname(s.as_ptr()) }
+    colour_byname(s)
 }
 
 fn parse_x11(s: &CStr) -> c_int {
-    unsafe { colour_parseX11(s.as_ptr()) }
+    colour_parseX11(s)
 }
 
 #[test]
@@ -65,10 +65,8 @@ fn a_nearer_cube_colour_wins_over_the_grey_ramp() {
 
 #[test]
 fn rgb_components_join_and_split_back() {
-    unsafe {
-        assert_eq!(colour_join_rgb(0x12, 0x34, 0x56), 0x123456 | RGB);
-        assert_eq!(colour_split_rgb(0x123456 | RGB), (0x12, 0x34, 0x56));
-    }
+    assert_eq!(colour_join_rgb(0x12, 0x34, 0x56), 0x123456 | RGB);
+    assert_eq!(colour_split_rgb(0x123456 | RGB), (0x12, 0x34, 0x56));
 }
 
 #[test]
@@ -329,7 +327,7 @@ fn freeing_a_palette_drops_both_tables() {
     let mut p = blank_palette();
     colour_palette_init(&mut p);
     colour_palette_set(Some(&mut p), 3, 1);
-    p.default_palette = Some(Box::new([-1; 256]));
+    p.default_palette = Some(std::sync::Arc::new([-1; 256]));
     colour_palette_free(Some(&mut p));
     assert!(p.palette.is_none());
     assert!(p.default_palette.is_none());
@@ -374,7 +372,7 @@ fn a_palette_entry_falls_back_to_the_default_table() {
     colour_palette_init(&mut p);
     let mut def = Box::new([-1; 256]);
     def[2] = 0x444444 | RGB;
-    p.default_palette = Some(def);
+    p.default_palette = Some(def.into());
     assert_eq!(colour_palette_get(Some(&p), 2), 0x444444 | RGB);
     assert_eq!(colour_palette_get(Some(&p), 3), -1);
     colour_palette_set(Some(&mut p), 2, 0x555555 | RGB);
@@ -388,7 +386,7 @@ fn no_defaults_leaves_no_default_table() {
     colour_palette_init(&mut p);
     colour_palette_from_defaults(Some(&mut p), None);
     assert!(p.default_palette.is_none());
-    p.default_palette = Some(Box::new([-1; 256]));
+    p.default_palette = Some(std::sync::Arc::new([-1; 256]));
     colour_palette_from_defaults(Some(&mut p), None);
     assert!(p.default_palette.is_none());
     colour_palette_from_defaults(None, None);
@@ -423,4 +421,8 @@ fn a_second_fill_replaces_the_whole_default_table() {
     colour_palette_from_defaults(Some(&mut p), Some(&[-1; 256]));
     assert_eq!(colour_palette_get(Some(&p), 5), -1);
     colour_palette_free(Some(&mut p));
+}
+
+pub(crate) fn colour_256toRGB(c: core::ffi::c_int) -> core::ffi::c_int {
+    rgb_of_256(c)
 }

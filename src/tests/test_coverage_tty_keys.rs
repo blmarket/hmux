@@ -4,7 +4,7 @@
 //! OSC 10/11 colour-response parser [`tty_keys_colours`] and the module's
 //! constant metadata.
 //!
-//! [`tty_keys_next`] and the mouse, clipboard, device-attributes and palette
+//! [`ClientRef::next_tty_key`] and the mouse, clipboard, device-attributes and palette
 //! helpers behind it consume a live client's input evbuffer and hand keys on
 //! through the event loop, so they want a connected client and stay
 //! unexercised here; so do the private add/find walkers, which build drives
@@ -16,10 +16,9 @@
 //! root while inspecting it, and [`tty_keys_free`] takes the root when a
 //! fixture is done with it.
 
-use crate::options::options_array_set;
-use crate::options::options_get_ptr;
+use crate::options::{OptionsEngine, OptionsRef, RustOptionsEngine};
 use crate::style::COLOUR_FLAG_RGB;
-use crate::terminfo::{TTYC_KF1, TtyCode};
+use crate::terminfo::TerminalCapabilities;
 use crate::tests::test_fixtures::{Tty, globals};
 use crate::tmux::global_options;
 use crate::tty::{
@@ -35,7 +34,7 @@ use crate::tty::{
 };
 use crate::types::{key_code, size_t};
 use ::core::ffi::c_int;
-use ::std::ffi::CString;
+use ::std::ffi::{CStr, CString};
 
 /// The key a stored binding answers with, walking the tree the way the
 /// module's own finder does over plain bytes. [`KEYC_UNKNOWN`] when nothing
@@ -71,10 +70,12 @@ fn count_nodes(tk: Option<&tty_key>) -> usize {
 /// Reports capability `code` as carrying the string `s`, the way a terminfo
 /// entry would. Only ever given a key capability a string: a number there is
 /// answered by the module under test with a fatal error.
-unsafe fn bind_capability(t: &mut Tty, code: usize, s: &CString) {
-    unsafe {
-        t.term_mut().codes[code] = TtyCode::String(s.clone());
-    }
+unsafe fn bind_capability(t: &mut Tty, name: &CStr, s: &CString) {
+    let code = t
+        .term()
+        .find_capability(name)
+        .expect("the terminal capability exists");
+    t.set_string(code, s);
 }
 
 /// Runs one colour response through the parser against `t`, answering what it
@@ -177,21 +178,21 @@ fn building_binds_the_builtin_sequences_and_a_rebuild_leaves_the_same_tree() {
         let tree = (*t.ptr()).key_tree.as_deref();
         assert!(tree.is_some());
 
-        assert_eq!(lookup(tree, b"\x1bOA"), (KEYC_UP | KEYC_CURSOR));
-        assert_eq!(lookup(tree, b"\x1b[B"), (KEYC_DOWN | KEYC_CURSOR));
-        assert_eq!(lookup(tree, b"\x1b[D"), (KEYC_LEFT | KEYC_CURSOR));
-        assert_eq!(lookup(tree, b"\x1b[C"), (KEYC_RIGHT | KEYC_CURSOR));
+        assert_eq!(lookup(tree, b"\x1bOA"), KEYC_UP | KEYC_CURSOR);
+        assert_eq!(lookup(tree, b"\x1b[B"), KEYC_DOWN | KEYC_CURSOR);
+        assert_eq!(lookup(tree, b"\x1b[D"), KEYC_LEFT | KEYC_CURSOR);
+        assert_eq!(lookup(tree, b"\x1b[C"), KEYC_RIGHT | KEYC_CURSOR);
         assert_eq!(lookup(tree, b"\x1b[15~"), KEYC_F5);
-        assert_eq!(lookup(tree, b"\x1bOp"), (KEYC_KP_ZERO | KEYC_KEYPAD));
+        assert_eq!(lookup(tree, b"\x1bOp"), KEYC_KP_ZERO | KEYC_KEYPAD);
         assert_eq!(
             lookup(tree, b"\x1b[201~"),
-            (KEYC_PASTE_END | KEYC_IMPLIED_META)
+            KEYC_PASTE_END | KEYC_IMPLIED_META
         );
 
-        assert_eq!(lookup(tree, b"\x1b[1;5A"), (KEYC_UP | KEYC_CTRL));
+        assert_eq!(lookup(tree, b"\x1b[1;5A"), KEYC_UP | KEYC_CTRL);
         assert_eq!(
             lookup(tree, b"\x1b[3;3~"),
-            (KEYC_DC | KEYC_META | KEYC_IMPLIED_META)
+            KEYC_DC | KEYC_META | KEYC_IMPLIED_META
         );
 
         assert_eq!(lookup(tree, b"\x1b[999999~"), KEYC_UNKNOWN);
@@ -204,7 +205,7 @@ fn building_binds_the_builtin_sequences_and_a_rebuild_leaves_the_same_tree() {
         let rebuilt = (*t.ptr()).key_tree.as_deref();
         assert!(rebuilt.is_some());
         assert_eq!(count_nodes(rebuilt), nodes);
-        assert_eq!(lookup(rebuilt, b"\x1bOA"), (KEYC_UP | KEYC_CURSOR));
+        assert_eq!(lookup(rebuilt, b"\x1bOA"), KEYC_UP | KEYC_CURSOR);
         assert_eq!(lookup(rebuilt, b"\x1b[15~"), KEYC_F5);
 
         tty_keys_free(&mut *t.ptr());
@@ -220,13 +221,13 @@ fn a_capability_the_term_reports_is_bound_and_nothing_without_one() {
         tty_keys_build(&mut *t.ptr());
         let bare = (*t.ptr()).key_tree.as_deref();
         assert_eq!(lookup(bare, kf1.as_bytes()), KEYC_UNKNOWN);
-        assert_eq!(lookup(bare, b"\x1bOA"), (KEYC_UP | KEYC_CURSOR));
+        assert_eq!(lookup(bare, b"\x1bOA"), KEYC_UP | KEYC_CURSOR);
 
-        bind_capability(&mut t, TTYC_KF1 as usize, &kf1);
+        bind_capability(&mut t, c"kf1", &kf1);
         tty_keys_build(&mut *t.ptr());
         let bound = (*t.ptr()).key_tree.as_deref();
         assert_eq!(lookup(bound, kf1.as_bytes()), KEYC_F1);
-        assert_eq!(lookup(bound, b"\x1bOA"), (KEYC_UP | KEYC_CURSOR));
+        assert_eq!(lookup(bound, b"\x1bOA"), KEYC_UP | KEYC_CURSOR);
 
         tty_keys_free(&mut *t.ptr());
     }
@@ -238,24 +239,37 @@ fn the_user_keys_option_extends_the_default_tree_by_index() {
     let mut t = Tty::new();
     let custom = CString::new(b"\x1b]u;fixture\x07".as_slice()).expect("no NUL");
     unsafe {
-        let o = options_get_ptr(global_options, c"user-keys".as_ptr());
-        assert!(
-            !o.is_null(),
-            "user-keys is not defaulted into global options"
-        );
+        let store = global_options
+            .as_ref()
+            .expect("global options are initialized");
 
         tty_keys_build(&mut *t.ptr());
         let bare = (*t.ptr()).key_tree.as_deref();
         assert_eq!(lookup(bare, custom.as_bytes()), KEYC_UNKNOWN);
 
-        assert_eq!(options_array_set(o, 0, custom.as_ptr(), 0, &mut None), 0);
+        assert_eq!(
+            store.with_entry_mut(c"user-keys", false, |entry| RustOptionsEngine.array_set(
+                entry.unwrap(),
+                0,
+                Some(&custom),
+                0,
+                &mut None
+            )),
+            0
+        );
         tty_keys_build(&mut *t.ptr());
         let extended = (*t.ptr()).key_tree.as_deref();
         assert_eq!(lookup(extended, custom.as_bytes()), KEYC_USER);
-        assert_eq!(lookup(extended, b"\x1bOA"), (KEYC_UP | KEYC_CURSOR));
+        assert_eq!(lookup(extended, b"\x1bOA"), KEYC_UP | KEYC_CURSOR);
 
         assert_eq!(
-            options_array_set(o, 0, ::core::ptr::null(), 0, &mut None),
+            store.with_entry_mut(c"user-keys", false, |entry| RustOptionsEngine.array_set(
+                entry.unwrap(),
+                0,
+                None,
+                0,
+                &mut None
+            )),
             0
         );
         tty_keys_free(&mut *t.ptr());
@@ -369,7 +383,7 @@ fn an_oversize_payload_is_rejected_rather_than_parsed() {
     let _guard = globals();
     let mut t = Tty::new();
     let mut seq = Vec::from(&b"\x1b]10;"[..]);
-    seq.extend(::std::iter::repeat_n(b'a', 200));
+    seq.extend(std::iter::repeat_n(b'a', 200));
     let mut fg = -42;
     let mut bg = -42;
     let (rc, size) = unsafe { parse_osc(&mut t, &seq, &mut fg, &mut bg) };

@@ -1,14 +1,15 @@
 use super::*;
+use crate::terminfo::TerminalCapabilities;
 use crate::tests::test_fixtures::{Tty, globals, seen};
 use ::core::ffi::CStr;
 
 /// What `tty_acs_get` answers for `ch`, or `None` if it has no translation.
 unsafe fn get(tty: &tty, ch: u8) -> Option<String> {
-    unsafe { tty_acs_get(Some(tty), ch).map(|s| seen(s.as_ptr())) }
+    unsafe { tty_acs_get(Some(tty), ch).map(|s| s.to_string_lossy().into_owned()) }
 }
 
 /// What `tty_acs_reverse_get` answers for the whole of `s`.
-fn reverse(s: &CStr) -> ::core::ffi::c_int {
+fn reverse(s: &CStr) -> c_int {
     tty_acs_reverse_get(s.to_bytes())
 }
 
@@ -86,10 +87,7 @@ fn a_terminal_that_needs_acs_reads_its_own_translations() {
     unsafe {
         assert_eq!(get(&*t.ptr(), b'q'), Some("-".to_string()));
         assert_eq!(get(&*t.ptr(), b'x'), None);
-        assert_eq!(
-            tty_acs_get(Some(&*t.ptr()), b'q').map(CStr::as_ptr),
-            Some(&raw const t.term().acs[b'q' as usize][0])
-        );
+        assert_eq!(t.term().acs(b'q'), Some(c"-"));
     }
 }
 
@@ -99,11 +97,11 @@ fn reverse_lookup_only_answers_for_two_and_three_byte_strings() {
         assert_eq!(reverse(c""), -1);
         assert_eq!(reverse(c"-"), -1);
         assert_eq!(reverse(c"abcd"), -1);
-        assert_eq!(reverse(c"\u{00b7}"), b'~' as ::core::ffi::c_int);
+        assert_eq!(reverse(c"\u{00b7}"), b'~' as c_int);
         assert_eq!(reverse(c"\u{00b0}"), -1);
-        assert_eq!(reverse(c"\u{2500}"), b'q' as ::core::ffi::c_int);
-        assert_eq!(reverse(c"\u{2503}"), b'x' as ::core::ffi::c_int);
-        assert_eq!(reverse(c"\u{256c}"), b'n' as ::core::ffi::c_int);
+        assert_eq!(reverse(c"\u{2500}"), b'q' as c_int);
+        assert_eq!(reverse(c"\u{2503}"), b'x' as c_int);
+        assert_eq!(reverse(c"\u{256c}"), b'n' as c_int);
         assert_eq!(reverse(c"\u{2592}"), -1);
     }
 }
@@ -116,7 +114,7 @@ fn every_reverse_entry_is_found_and_both_tables_are_sorted() {
             for entry in table {
                 assert!(entry.string.to_bytes() > last, "the table is not sorted");
                 last = entry.string.to_bytes();
-                assert_eq!(reverse(entry.string), entry.key as ::core::ffi::c_int);
+                assert_eq!(reverse(entry.string), entry.key as c_int);
             }
         }
     }
@@ -143,33 +141,33 @@ fn a_border_cell_carries_the_character_and_nothing_else() {
 fn the_border_tables_answer_one_character_per_cell_type() {
     unsafe {
         assert_eq!(
-            seen(tty_acs_double_borders(0).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_double_borders(0).data.as_ptr() as *const core::ffi::c_char),
             ""
         );
         assert_eq!(tty_acs_double_borders(0).size, 0);
         assert_eq!(
-            seen(tty_acs_double_borders(1).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_double_borders(1).data.as_ptr() as *const core::ffi::c_char),
             "\u{2551}"
         );
         assert_eq!(
-            seen(tty_acs_double_borders(12).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_double_borders(12).data.as_ptr() as *const core::ffi::c_char),
             "\u{00b7}"
         );
         assert_eq!(tty_acs_double_borders(12).size, 2);
         assert_eq!(
-            seen(tty_acs_heavy_borders(1).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_heavy_borders(1).data.as_ptr() as *const core::ffi::c_char),
             "\u{2503}"
         );
         assert_eq!(
-            seen(tty_acs_heavy_borders(12).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_heavy_borders(12).data.as_ptr() as *const core::ffi::c_char),
             "\u{00b7}"
         );
         assert_eq!(
-            seen(tty_acs_rounded_borders(3).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_rounded_borders(3).data.as_ptr() as *const core::ffi::c_char),
             "\u{256d}"
         );
         assert_eq!(
-            seen(tty_acs_rounded_borders(12).data.as_ptr() as *const ::core::ffi::c_char),
+            seen(tty_acs_rounded_borders(12).data.as_ptr() as *const core::ffi::c_char),
             "\u{00b7}"
         );
         for i in 1..13 {
@@ -178,4 +176,15 @@ fn the_border_tables_answer_one_character_per_cell_type() {
             assert_eq!(tty_acs_rounded_borders(i).width, 1);
         }
     }
+}
+
+#[test]
+fn retained_acs_translation_survives_terminal_changes_and_drop() {
+    let _guard = globals();
+    let mut tty = Tty::new();
+    tty.set_acs(b'q', "-");
+    let translation = unsafe { tty_acs_get(Some(&*tty.ptr()), b'q') }.unwrap();
+    tty.set_acs(b'q', "+");
+    drop(tty);
+    assert_eq!(translation.as_ref(), c"-");
 }

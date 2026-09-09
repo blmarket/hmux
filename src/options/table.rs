@@ -23,46 +23,19 @@
 //!
 //! Coverage exemptions: none.
 pub use crate::types::*;
-use ::core::ffi::{CStr, c_int, c_longlong, c_uint, c_ulonglong};
+use ::core::ffi::{CStr, c_int, c_longlong, c_ulonglong};
 
-pub type keyc = ::core::ffi::c_ulong;
-pub const KEYC_NONE: keyc = 8589934592;
-pub const KEYC_CTRL: c_ulonglong = 0x200000000000;
+pub use crate::consts::{
+    ALERT_ANY, ALERT_OTHER, BOX_LINES_SINGLE, INPUT_BUF_DEFAULT_SIZE, INT_MAX, KEYC_CTRL,
+    KEYC_NONE, MODEKEY_EMACS, OPTIONS_TABLE_CHOICE, OPTIONS_TABLE_COLOUR, OPTIONS_TABLE_COMMAND,
+    OPTIONS_TABLE_FLAG, OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_IS_STYLE,
+    OPTIONS_TABLE_KEY, OPTIONS_TABLE_NUMBER, OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER,
+    OPTIONS_TABLE_SESSION, OPTIONS_TABLE_STRING, OPTIONS_TABLE_WINDOW, PANE_LINES_SINGLE,
+    PANE_SCROLLBARS_OFF, PANE_SCROLLBARS_RIGHT, PANE_STATUS_OFF, SHRT_MAX, UINT_MAX, USHRT_MAX,
+    VISUAL_OFF, WINDOW_SIZE_LATEST,
+};
 
-pub const SHRT_MAX: c_int = 32767;
-pub const INT_MAX: c_int = 2147483647;
-pub const USHRT_MAX: c_int = 65535;
-pub const UINT_MAX: c_uint = 4294967295;
-
-pub const OPTIONS_TABLE_STRING: options_table_type = 0;
-pub const OPTIONS_TABLE_NUMBER: options_table_type = 1;
-pub const OPTIONS_TABLE_KEY: options_table_type = 2;
-pub const OPTIONS_TABLE_COLOUR: options_table_type = 3;
-pub const OPTIONS_TABLE_FLAG: options_table_type = 4;
-pub const OPTIONS_TABLE_CHOICE: options_table_type = 5;
-pub const OPTIONS_TABLE_COMMAND: options_table_type = 6;
-
-pub const OPTIONS_TABLE_SERVER: c_int = 0x1;
-pub const OPTIONS_TABLE_SESSION: c_int = 0x2;
-pub const OPTIONS_TABLE_WINDOW: c_int = 0x4;
-pub const OPTIONS_TABLE_PANE: c_int = 0x8;
-
-pub const OPTIONS_TABLE_IS_ARRAY: c_int = 0x1;
-pub const OPTIONS_TABLE_IS_HOOK: c_int = 0x2;
-pub const OPTIONS_TABLE_IS_STYLE: c_int = 0x4;
-
-pub const ALERT_ANY: c_int = 1;
-pub const ALERT_OTHER: c_int = 3;
-pub const VISUAL_OFF: c_int = 0;
-pub const MODEKEY_EMACS: c_int = 0;
-pub const BOX_LINES_SINGLE: box_lines = 0;
-pub const PANE_LINES_SINGLE: pane_lines = 0;
 pub const PANE_BORDER_COLOUR: c_int = 1;
-pub const PANE_STATUS_OFF: c_int = 0;
-pub const PANE_SCROLLBARS_OFF: c_int = 0;
-pub const PANE_SCROLLBARS_RIGHT: c_int = 0;
-pub const WINDOW_SIZE_LATEST: c_int = 3;
-pub const INPUT_BUF_DEFAULT_SIZE: c_int = 1048576;
 
 /// A list of strings an entry borrows, either the choices a choice option
 /// accepts or the default members of an array option.

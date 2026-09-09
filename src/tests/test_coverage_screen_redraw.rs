@@ -24,9 +24,14 @@
 //! caller-owned cells and fill caller-owned range buffers, and the client a
 //! probe needs carries its session chain but never draws.
 
+use crate::options::OptionsRef;
+use crate::pane_geometry::PaneGeometryState;
+use crate::pane_identity::PaneIdentity;
+use crate::window_fill_character::WindowFillCharacterState;
+
 use crate::grid::grid_default_cell;
 use crate::layout::LAYOUT_CELL_FLOATING;
-use crate::options::options_set_number;
+
 use crate::screen::{
     BORDER_MARKERS, CELL_BORDERS, CELL_BOTTOMJOIN, CELL_BOTTOMLEFT, CELL_BOTTOMRIGHT, CELL_INSIDE,
     CELL_JOIN, CELL_LEFTJOIN, CELL_LEFTRIGHT, CELL_OUTSIDE, CELL_RIGHTJOIN, CELL_SCROLLBAR,
@@ -40,15 +45,15 @@ use crate::screen::{
     PANE_STATUS_TOP, SCREEN_REDRAW_BORDER_BOTTOM, SCREEN_REDRAW_BORDER_LEFT,
     SCREEN_REDRAW_BORDER_RIGHT, SCREEN_REDRAW_BORDER_TOP, SCREEN_REDRAW_INSIDE,
     SCREEN_REDRAW_OUTSIDE, SIMPLE_BORDERS, START_ISOLATE, screen_redraw_border_set,
-    screen_redraw_cell_border, screen_redraw_check_is, screen_redraw_clip_visible_ranges,
-    screen_redraw_is_visible, screen_redraw_pane_border, screen_redraw_two_panes,
-    screen_redraw_type_of_cell,
+    screen_redraw_cell_border, screen_redraw_check_is, screen_redraw_is_visible,
+    screen_redraw_pane_border, screen_redraw_two_panes, screen_redraw_type_of_cell,
 };
+use crate::server::client_ref_of;
 use crate::terminfo::{tty_acs_double_borders, tty_acs_heavy_borders};
 use crate::tests::test_fixtures::{Pane, Session, Window, globals, link, unlink, zeroed_client};
 use crate::types::{
-    ClientRef, client, grid_cell, layout_cell, layout_type, screen_redraw_ctx, u_char, u_int,
-    u_short, utf8_data, visible_range, visible_ranges, window, window_pane, winlink,
+    ClientRef, client, grid_cell, layout_cell, screen_redraw_ctx, u_char, u_int, u_short,
+    utf8_data, visible_range, visible_ranges, window, window_pane, winlink,
 };
 use ::core::ffi::c_int;
 use ::core::ptr::null_mut;
@@ -68,7 +73,7 @@ fn glyph(s: &[u8]) -> utf8_data {
 /// A default cell whose attribute starts at `attr` and whose character is
 /// deliberately dirty, so a dresser that leaves either alone shows itself.
 fn undressed(attr: u_short) -> grid_cell {
-    let mut gc = unsafe { grid_default_cell };
+    let mut gc = { grid_default_cell };
     gc.attr = attr;
     gc.data = glyph(b"?");
     gc
@@ -104,8 +109,7 @@ impl Pair {
         let id = 1 + self.panes.len() as u_int;
         let mut pane = Pane::new(id, sx, sy, 20);
         unsafe {
-            (*pane.ptr()).xoff = xoff;
-            (*pane.ptr()).yoff = yoff;
+            (*pane.ptr()).set_position(xoff, yoff);
         }
         self.window.add_pane(&mut pane);
         self.panes.push(pane);
@@ -148,7 +152,7 @@ impl Viewed {
             wl: null_mut(),
         };
         v.wl = link(&mut v.session, &mut v.pair.window, 0);
-        unsafe { (*v.c()).session = v.session.ptr() };
+        unsafe { (*v.c()).set_attached_session(Some(v.session.handle())) };
         v
     }
 
@@ -157,7 +161,7 @@ impl Viewed {
     }
 
     fn c(&mut self) -> *mut client {
-        &raw mut *self.client
+        unsafe { self.client.as_client_mut() }
     }
 
     fn w(&mut self) -> *mut window {
@@ -172,7 +176,7 @@ impl Viewed {
     /// helpers read: the client chain and the pane status line's position.
     fn ctx(&mut self, pane_status: c_int) -> Box<screen_redraw_ctx> {
         let mut ctx = Box::new(screen_redraw_ctx::default());
-        ctx.c = self.c();
+        ctx.c = unsafe { client_ref_of(&*self.c()) };
         ctx.pane_status = pane_status;
         ctx
     }
@@ -302,13 +306,13 @@ fn every_client_redraw_bit_lands_in_the_all_flag() {
 #[test]
 fn the_isolate_markers_wrap_a_line_in_direction_codes() {
     for (i, byte) in [0xe2u8, 0x81, 0xa6].iter().enumerate() {
-        assert_eq!(START_ISOLATE[i] as u8, *byte);
+        assert_eq!(START_ISOLATE.to_bytes()[i], *byte);
     }
     for (i, byte) in [0xe2u8, 0x81, 0xa9].iter().enumerate() {
-        assert_eq!(END_ISOLATE[i] as u8, *byte);
+        assert_eq!(END_ISOLATE.to_bytes()[i], *byte);
     }
-    assert_eq!(START_ISOLATE[3], 0);
-    assert_eq!(END_ISOLATE[3], 0);
+    assert_eq!(START_ISOLATE.to_bytes_with_nul()[3], 0);
+    assert_eq!(END_ISOLATE.to_bytes_with_nul()[3], 0);
 }
 
 /// No ranges at all means nothing can hide a column, and a column is visible
@@ -342,15 +346,15 @@ fn a_request_that_covers_nothing_empties_the_caller_ranges() {
         visible_range { px: 5, nx: 2 },
     ]);
     unsafe {
-        screen_redraw_clip_visible_ranges(null_mut(), 0, -1, 8, &mut rs.r);
+        rs.r.clip_visible_ranges(None::<&crate::types::window_pane>, 0, -1, 8);
         assert_eq!(rs.r.used, 0);
 
         rs.r.used = 2;
-        screen_redraw_clip_visible_ranges(null_mut(), 0, 0, 0, &mut rs.r);
+        rs.r.clip_visible_ranges(None::<&crate::types::window_pane>, 0, 0, 0);
         assert_eq!(rs.r.used, 0);
 
         rs.r.used = 2;
-        screen_redraw_clip_visible_ranges(null_mut(), -4, 0, 4, &mut rs.r);
+        rs.r.clip_visible_ranges(None::<&crate::types::window_pane>, -4, 0, 4);
         assert_eq!(rs.r.used, 0);
     }
 }
@@ -368,12 +372,12 @@ fn ranges_survive_unchanged_when_nothing_stands_over_them() {
         visible_range { px: 40, nx: 1 },
     ]);
     unsafe {
-        screen_redraw_clip_visible_ranges(null_mut(), -1, 2, 6, &mut rs.r);
+        rs.r.clip_visible_ranges(None::<&crate::types::window_pane>, -1, 2, 6);
         assert_eq!(rs.r.used, 2);
         assert_eq!((rs.r.ranges[0].px, rs.r.ranges[0].nx), (3, 5));
         assert_eq!((rs.r.ranges[1].px, rs.r.ranges[1].nx), (40, 1));
 
-        screen_redraw_clip_visible_ranges(p.wp(0), 2, 5, 6, &mut rs.r);
+        rs.r.clip_visible_ranges(Some(&*p.wp(0)), 2, 5, 6);
         assert_eq!(rs.r.used, 0);
     }
 }
@@ -387,7 +391,7 @@ fn a_lone_pane_leaves_the_whole_range_alone() {
     p.add(4, 1, 8, 3);
     let mut rs = Ranges::new(&[visible_range { px: 1, nx: 20 }]);
     unsafe {
-        screen_redraw_clip_visible_ranges(p.wp(0), 1, 2, 20, &mut rs.r);
+        rs.r.clip_visible_ranges(Some(&*p.wp(0)), 1, 2, 20);
         assert_eq!(rs.r.used, 1);
         assert_eq!((rs.r.ranges[0].px, rs.r.ranges[0].nx), (1, 20));
     }
@@ -405,7 +409,7 @@ fn a_pane_in_front_cuts_the_range_short_at_its_left_edge() {
     let base = p.add(2, 1, 6, 3);
     let mut rs = Ranges::new(&[visible_range { px: 0, nx: 12 }]);
     unsafe {
-        screen_redraw_clip_visible_ranges(p.wp(base), 0, 2, 12, &mut rs.r);
+        rs.r.clip_visible_ranges(Some(&*p.wp(base)), 0, 2, 12);
         assert_eq!(rs.r.used, 1);
         assert_eq!((rs.r.ranges[0].px, rs.r.ranges[0].nx), (0, 9));
     }
@@ -422,10 +426,69 @@ fn a_pane_in_front_splits_the_range_in_two() {
     let base = p.add(2, 1, 6, 3);
     let mut rs = Ranges::new(&[visible_range { px: 0, nx: 20 }]);
     unsafe {
-        screen_redraw_clip_visible_ranges(p.wp(base), 0, 2, 20, &mut rs.r);
+        rs.r.clip_visible_ranges(Some(&*p.wp(base)), 0, 2, 20);
         assert_eq!(rs.r.used, 2);
         assert_eq!((rs.r.ranges[0].px, rs.r.ranges[0].nx), (0, 9));
         assert_eq!((rs.r.ranges[1].px, rs.r.ranges[1].nx), (17, 3));
+    }
+}
+
+#[test]
+fn seeded_ranges_clip_negative_starts_and_window_edges() {
+    let _guard = globals();
+    let mut rs = Ranges::new(&[]);
+    unsafe {
+        rs.r.set_visible_ranges(None::<&crate::types::window_pane>, -2, 0, 7);
+        assert_eq!(rs.r.used, 1);
+        assert_eq!((rs.r.ranges[0].px, rs.r.ranges[0].nx), (0, 5));
+
+        let mut p = Pair::new(10, 4);
+        let base = p.add(0, 0, 10, 4);
+        rs.r.set_visible_ranges(Some(&*p.wp(base)), 7, 2, 20);
+        assert_eq!(rs.r.used, 1);
+        assert_eq!((rs.r.ranges[0].px, rs.r.ranges[0].nx), (7, 3));
+
+        rs.r.set_visible_ranges(Some(&*p.wp(base)), 0, 4, 5);
+        assert_eq!(rs.r.used, 0);
+    }
+}
+
+#[test]
+fn panes_in_front_can_trim_either_end_or_hide_a_range() {
+    let _guard = globals();
+    let mut p = Pair::new(30, 6);
+    p.add(0, 0, 6, 5);
+    let base = p.add(10, 0, 10, 5);
+    let mut rs = Ranges::new(&[visible_range { px: 3, nx: 10 }]);
+    unsafe {
+        rs.r.clip_visible_ranges(Some(&*p.wp(base)), 3, 2, 10);
+        assert_eq!(rs.r.used, 1);
+        assert_eq!((rs.r.ranges[0].px, rs.r.ranges[0].nx), (7, 6));
+
+        rs.r.ranges[0] = visible_range { px: 0, nx: 6 };
+        rs.r.used = 1;
+        rs.r.clip_visible_ranges(Some(&*p.wp(base)), 0, 2, 6);
+        assert_eq!(rs.r.used, 1);
+        assert_eq!(rs.r.ranges[0].nx, 0);
+    }
+}
+
+#[test]
+fn tiled_borders_do_not_occlude_but_floating_borders_do() {
+    let _guard = globals();
+    let mut p = Pair::new(20, 8);
+    let front = p.add(4, 2, 6, 3);
+    let base = p.add(0, 0, 20, 8);
+    let mut rs = Ranges::new(&[visible_range { px: 0, nx: 15 }]);
+    unsafe {
+        rs.r.clip_visible_ranges(Some(&*p.wp(base)), 0, 1, 15);
+        assert_eq!((rs.r.ranges[0].px, rs.r.ranges[0].nx), (0, 15));
+
+        crate::tests::test_fixtures::set_pane_floating(&mut *p.w(), (*p.wp(front)).pane_id(), true);
+        rs.r.clip_visible_ranges(Some(&*p.wp(base)), 0, 1, 15);
+        assert_eq!(rs.r.used, 2);
+        assert_eq!((rs.r.ranges[0].px, rs.r.ranges[0].nx), (0, 3));
+        assert_eq!((rs.r.ranges[1].px, rs.r.ranges[1].nx), (11, 4));
     }
 }
 
@@ -438,9 +501,15 @@ fn a_fill_character_takes_over_outside_cells_untouched() {
     p.add(0, 0, 8, 4);
     let fill = Box::new(glyph(b"#"));
     unsafe {
-        (*p.w()).fill_character = Some(fill);
+        (*p.w()).set_fill_character(Some(*fill));
         let mut gc = undressed(GRID_ATTR_CHARSET as u_short);
-        screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SINGLE, CELL_OUTSIDE, &mut gc);
+        screen_redraw_border_set(
+            &p.window.reference(),
+            Some(&*p.wp(0)),
+            PANE_LINES_SINGLE,
+            CELL_OUTSIDE,
+            &mut gc,
+        );
         expect_dressed_as(&gc, glyph(b"#"));
         assert_eq!(gc.attr as c_int & GRID_ATTR_CHARSET, GRID_ATTR_CHARSET);
     }
@@ -470,14 +539,30 @@ fn plain_and_simple_lines_dress_cells_from_their_own_tables() {
     ];
     for t in kinds {
         let mut plain = undressed(GRID_ATTR_REVERSE as u_short);
-        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SINGLE, t, &mut plain) };
+        unsafe {
+            screen_redraw_border_set(
+                &p.window.reference(),
+                Some(&*p.wp(0)),
+                PANE_LINES_SINGLE,
+                t,
+                &mut plain,
+            )
+        };
         assert_eq!(plain.attr as c_int & GRID_ATTR_CHARSET, GRID_ATTR_CHARSET);
         assert_eq!(plain.attr as c_int & GRID_ATTR_REVERSE, GRID_ATTR_REVERSE);
         assert_eq!(plain.data.data[0], CELL_BORDERS[t as usize]);
         assert_eq!((plain.data.size, plain.data.width), (1, 1));
 
         let mut simple = undressed(GRID_ATTR_CHARSET as u_short);
-        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SIMPLE, t, &mut simple) };
+        unsafe {
+            screen_redraw_border_set(
+                &p.window.reference(),
+                Some(&*p.wp(0)),
+                PANE_LINES_SIMPLE,
+                t,
+                &mut simple,
+            )
+        };
         assert_eq!(simple.attr as c_int & GRID_ATTR_CHARSET, 0);
         assert_eq!(simple.data.data[0], SIMPLE_BORDERS[t as usize]);
     }
@@ -507,19 +592,43 @@ fn double_heavy_and_space_lines_take_their_characters_whole() {
     ];
     for t in kinds {
         let mut doubled = undressed(GRID_ATTR_CHARSET as u_short);
-        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_DOUBLE, t, &mut doubled) };
+        unsafe {
+            screen_redraw_border_set(
+                &p.window.reference(),
+                Some(&*p.wp(0)),
+                PANE_LINES_DOUBLE,
+                t,
+                &mut doubled,
+            )
+        };
         assert_eq!(doubled.attr as c_int & GRID_ATTR_CHARSET, 0);
         let want = *tty_acs_double_borders(t);
         expect_dressed_as(&doubled, want);
 
         let mut heavy = undressed(GRID_ATTR_CHARSET as u_short);
-        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_HEAVY, t, &mut heavy) };
+        unsafe {
+            screen_redraw_border_set(
+                &p.window.reference(),
+                Some(&*p.wp(0)),
+                PANE_LINES_HEAVY,
+                t,
+                &mut heavy,
+            )
+        };
         assert_eq!(heavy.attr as c_int & GRID_ATTR_CHARSET, 0);
         let want = *tty_acs_heavy_borders(t);
         expect_dressed_as(&heavy, want);
 
         let mut spaced = undressed(GRID_ATTR_CHARSET as u_short);
-        unsafe { screen_redraw_border_set(p.w(), p.wp(0), PANE_LINES_SPACES, t, &mut spaced) };
+        unsafe {
+            screen_redraw_border_set(
+                &p.window.reference(),
+                Some(&*p.wp(0)),
+                PANE_LINES_SPACES,
+                t,
+                &mut spaced,
+            )
+        };
         assert_eq!(spaced.attr as c_int & GRID_ATTR_CHARSET, 0);
         assert_eq!(spaced.data.data[0], b' ');
         assert_eq!((spaced.data.size, spaced.data.width), (1, 1));
@@ -536,25 +645,31 @@ fn numbered_lines_show_the_pane_index_or_a_star() {
     p.add(8, 0, 8, 4);
     unsafe {
         let mut second = undressed(GRID_ATTR_CHARSET as u_short);
-        screen_redraw_border_set(p.w(), p.wp(1), PANE_LINES_NUMBER, CELL_TOPLEFT, &mut second);
+        screen_redraw_border_set(
+            &p.window.reference(),
+            Some(&*p.wp(1)),
+            PANE_LINES_NUMBER,
+            CELL_TOPLEFT,
+            &mut second,
+        );
         assert_eq!(second.data.data[0], b'1');
         assert_eq!(second.attr as c_int & GRID_ATTR_CHARSET, 0);
 
         let mut star = undressed(0);
         screen_redraw_border_set(
-            p.w(),
-            null_mut(),
+            &p.window.reference(),
+            None::<&crate::types::window_pane>,
             PANE_LINES_NUMBER,
             CELL_TOPLEFT,
             &mut star,
         );
         assert_eq!(star.data.data[0], b'*');
 
-        options_set_number((*p.w()).options_ptr(), c"pane-base-index".as_ptr(), 9);
+        (*(*p.w()).options_ref()).set_number(c"pane-base-index", 9);
         let mut rebased = undressed(0);
         screen_redraw_border_set(
-            p.w(),
-            p.wp(0),
+            &p.window.reference(),
+            Some(&*p.wp(0)),
             PANE_LINES_NUMBER,
             CELL_TOPLEFT,
             &mut rebased,
@@ -563,91 +678,51 @@ fn numbered_lines_show_the_pane_index_or_a_star() {
     }
 }
 
-/// The two-pane walk counts only panes hanging off a shared parent cell: two
-/// such panes answer with the split direction, a third breaks it, a floating
-/// partner or a missing parent leaves it at one, and panes without cells are
-/// not counted at all.
+/// Two tiled panes are found through the owned tree even without back pointers.
 #[test]
 fn two_panes_answers_only_for_exactly_two_sharing_a_parent() {
     let _guard = globals();
-    let mut bare = Pair::new(12, 6);
-    bare.add(0, 0, 6, 6);
-    bare.add(6, 0, 6, 6);
+    let mut pair = Pair::new(18, 6);
+    pair.add(0, 0, 6, 6);
+    pair.add(6, 0, 6, 6);
+    pair.add(12, 0, 6, 6);
     unsafe {
-        assert_eq!(screen_redraw_two_panes(bare.w()), None);
-    }
+        let w = &mut *pair.w();
+        assert_eq!(screen_redraw_two_panes(pair.window.handle()), None);
 
-    let mut split = Pair::new(12, 6);
-    split.add(0, 0, 6, 6);
-    split.add(6, 0, 6, 6);
-    let mut parent = Box::new(layout_cell::default());
-    let mut left = Box::new(layout_cell::default());
-    let mut right = Box::new(layout_cell::default());
-    unsafe {
-        left.parent = &raw mut *parent;
-        right.parent = &raw mut *parent;
-        (*split.wp(0)).layout_cell = &raw mut *left;
-        (*split.wp(1)).layout_cell = &raw mut *right;
-
+        let mut parent = Box::new(layout_cell::default());
         parent.type_0 = LAYOUT_LEFTRIGHT;
-        assert_eq!(screen_redraw_two_panes(split.w()), Some(LAYOUT_LEFTRIGHT));
-
-        parent.type_0 = LAYOUT_TOPBOTTOM;
-        assert_eq!(screen_redraw_two_panes(split.w()), Some(LAYOUT_TOPBOTTOM));
-    }
-
-    let mut triple = Pair::new(18, 6);
-    triple.add(0, 0, 6, 6);
-    triple.add(6, 0, 6, 6);
-    triple.add(12, 0, 6, 6);
-    let mut parent3 = Box::new(layout_cell::default());
-    let mut cells3 = [
-        Box::new(layout_cell::default()),
-        Box::new(layout_cell::default()),
-        Box::new(layout_cell::default()),
-    ];
-    unsafe {
-        for (i, cell) in cells3.iter_mut().enumerate() {
-            cell.parent = &raw mut *parent3;
-            (*triple.wp(i)).layout_cell = &raw mut **cell;
+        for pane in w.panes.iter().take(2) {
+            let mut cell = Box::new(layout_cell::default());
+            cell.wp_ref = Some(pane.downgrade());
+            parent.cells.push(cell);
         }
-        assert_eq!(screen_redraw_two_panes(triple.w()), None);
-    }
+        w.layout_root = Some(parent);
+        assert_eq!(
+            screen_redraw_two_panes(pair.window.handle()),
+            Some(LAYOUT_LEFTRIGHT)
+        );
 
-    let mut floaty = Pair::new(12, 6);
-    floaty.add(0, 0, 6, 6);
-    floaty.add(6, 0, 6, 6);
-    let mut parent4 = Box::new(layout_cell::default());
-    let mut cell4 = Box::new(layout_cell::default());
-    let mut hover4 = Box::new(layout_cell::default());
-    unsafe {
-        cell4.parent = &raw mut *parent4;
-        hover4.parent = &raw mut *parent4;
-        hover4.flags |= LAYOUT_CELL_FLOATING;
-        (*floaty.wp(0)).layout_cell = &raw mut *cell4;
-        (*floaty.wp(1)).layout_cell = &raw mut *hover4;
-        assert_eq!(screen_redraw_two_panes(floaty.w()), None);
-    }
+        w.layout_root.as_mut().unwrap().type_0 = LAYOUT_TOPBOTTOM;
+        assert_eq!(
+            screen_redraw_two_panes(pair.window.handle()),
+            Some(LAYOUT_TOPBOTTOM)
+        );
 
-    let mut orphan = Pair::new(12, 6);
-    orphan.add(0, 0, 6, 6);
-    orphan.add(6, 0, 6, 6);
-    let mut left5 = Box::new(layout_cell::default());
-    let mut right5 = Box::new(layout_cell::default());
-    unsafe {
-        (*orphan.wp(0)).layout_cell = &raw mut *left5;
-        (*orphan.wp(1)).layout_cell = &raw mut *right5;
-        assert_eq!(screen_redraw_two_panes(orphan.w()), None);
-    }
+        w.layout_root.as_mut().unwrap().cells[1].flags |= LAYOUT_CELL_FLOATING;
+        assert_eq!(screen_redraw_two_panes(pair.window.handle()), None);
+        w.layout_root.as_mut().unwrap().cells[1].flags = 0;
 
-    let mut lone = Pair::new(6, 6);
-    lone.add(0, 0, 6, 6);
-    let mut parent6 = Box::new(layout_cell::default());
-    let mut cell6 = Box::new(layout_cell::default());
-    unsafe {
-        cell6.parent = &raw mut *parent6;
-        (*lone.wp(0)).layout_cell = &raw mut *cell6;
-        assert_eq!(screen_redraw_two_panes(lone.w()), None);
+        let mut third = Box::new(layout_cell::default());
+        third.wp_ref = Some(w.panes[2].downgrade());
+        w.layout_root.as_mut().unwrap().cells.push(third);
+        assert_eq!(screen_redraw_two_panes(pair.window.handle()), None);
+
+        w.layout_root.as_mut().unwrap().cells.truncate(1);
+        assert_eq!(screen_redraw_two_panes(pair.window.handle()), None);
+
+        w.layout_root = w.layout_root.take().unwrap().cells.pop();
+        assert_eq!(screen_redraw_two_panes(pair.window.handle()), None);
     }
 }
 
@@ -662,13 +737,25 @@ fn check_is_answers_yes_only_on_a_true_edge() {
     let mut ctx = Box::new(screen_redraw_ctx::default());
     unsafe {
         assert_eq!(
-            screen_redraw_check_is(&mut ctx, 5, 3, null_mut::<window_pane>()) as c_int,
+            screen_redraw_check_is(&mut ctx, 5, 3, None::<&crate::types::window_pane>) as c_int,
             0
         );
-        assert_eq!(screen_redraw_check_is(&mut ctx, 5, 3, p.wp(0)) as c_int, 0);
-        assert_eq!(screen_redraw_check_is(&mut ctx, 11, 6, p.wp(0)) as c_int, 0);
-        assert_eq!(screen_redraw_check_is(&mut ctx, 10, 4, p.wp(0)) as c_int, 1);
-        assert_eq!(screen_redraw_check_is(&mut ctx, 5, 1, p.wp(0)) as c_int, 1);
+        assert_eq!(
+            screen_redraw_check_is(&mut ctx, 5, 3, Some(&mut *p.wp(0))) as c_int,
+            0
+        );
+        assert_eq!(
+            screen_redraw_check_is(&mut ctx, 11, 6, Some(&mut *p.wp(0))) as c_int,
+            0
+        );
+        assert_eq!(
+            screen_redraw_check_is(&mut ctx, 10, 4, Some(&mut *p.wp(0))) as c_int,
+            1
+        );
+        assert_eq!(
+            screen_redraw_check_is(&mut ctx, 5, 1, Some(&mut *p.wp(0))) as c_int,
+            1
+        );
     }
 }
 
@@ -684,57 +771,57 @@ fn a_placed_pane_wears_its_borders_around_itself() {
     unsafe {
         let mut ctx = Box::new(screen_redraw_ctx::default());
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 5, 3),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 5, 3),
             SCREEN_REDRAW_INSIDE
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 3, 4),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 3, 4),
             SCREEN_REDRAW_BORDER_LEFT
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 10, 4),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 10, 4),
             SCREEN_REDRAW_BORDER_RIGHT
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 5, 1),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 5, 1),
             SCREEN_REDRAW_BORDER_TOP
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 5, 5),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 5, 5),
             SCREEN_REDRAW_BORDER_BOTTOM
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 11, 3),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 11, 3),
             SCREEN_REDRAW_OUTSIDE
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 3, 6),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 3, 6),
             SCREEN_REDRAW_OUTSIDE
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 0, 0),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 0, 0),
             SCREEN_REDRAW_OUTSIDE
         );
 
         let mut topctx = Box::new(screen_redraw_ctx::default());
         topctx.pane_status = PANE_STATUS_TOP;
         assert_eq!(
-            screen_redraw_pane_border(&mut topctx, p.wp(wp), 5, 1),
+            screen_redraw_pane_border(&mut topctx, &mut *p.wp(wp), 5, 1),
             SCREEN_REDRAW_BORDER_TOP
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut topctx, p.wp(wp), 5, 5),
+            screen_redraw_pane_border(&mut topctx, &mut *p.wp(wp), 5, 5),
             SCREEN_REDRAW_OUTSIDE
         );
 
         let mut botctx = Box::new(screen_redraw_ctx::default());
         botctx.pane_status = PANE_STATUS_BOTTOM;
         assert_eq!(
-            screen_redraw_pane_border(&mut botctx, p.wp(wp), 5, 1),
+            screen_redraw_pane_border(&mut botctx, &mut *p.wp(wp), 5, 1),
             SCREEN_REDRAW_OUTSIDE
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut botctx, p.wp(wp), 5, 5),
+            screen_redraw_pane_border(&mut botctx, &mut *p.wp(wp), 5, 5),
             SCREEN_REDRAW_BORDER_BOTTOM
         );
     }
@@ -748,37 +835,37 @@ fn a_floating_pane_wears_its_borders_one_column_out() {
     let _guard = globals();
     let mut p = Pair::new(10, 6);
     let wp = p.add(2, 1, 4, 2);
-    let mut fcell = Box::new(layout_cell::default());
-    fcell.flags |= LAYOUT_CELL_FLOATING;
-    unsafe { (*p.wp(wp)).layout_cell = &raw mut *fcell };
+    unsafe {
+        crate::tests::test_fixtures::set_pane_floating(&mut *p.w(), (*p.wp(wp)).pane_id(), true)
+    };
     unsafe {
         let mut ctx = Box::new(screen_redraw_ctx::default());
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 3, 1),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 3, 1),
             SCREEN_REDRAW_INSIDE
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 1, 2),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 1, 2),
             SCREEN_REDRAW_BORDER_LEFT
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 6, 2),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 6, 2),
             SCREEN_REDRAW_BORDER_RIGHT
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 3, 0),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 3, 0),
             SCREEN_REDRAW_BORDER_TOP
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 3, 3),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 3, 3),
             SCREEN_REDRAW_BORDER_BOTTOM
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 7, 2),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 7, 2),
             SCREEN_REDRAW_OUTSIDE
         );
         assert_eq!(
-            screen_redraw_pane_border(&mut ctx, p.wp(wp), 0, 0),
+            screen_redraw_pane_border(&mut ctx, &mut *p.wp(wp), 0, 0),
             SCREEN_REDRAW_OUTSIDE
         );
     }
@@ -796,9 +883,18 @@ fn the_neighbour_probe_walks_the_z_order_until_someone_answers() {
     let mut full = Viewed::new(10, 5);
     let mut ctx = full.ctx(PANE_STATUS_OFF);
     unsafe {
-        assert_eq!(screen_redraw_cell_border(&mut ctx, full.wp(0), 5, 3), 0);
-        assert_eq!(screen_redraw_cell_border(&mut ctx, full.wp(0), 10, 3), 1);
-        assert_eq!(screen_redraw_cell_border(&mut ctx, full.wp(0), 11, 3), 0);
+        assert_eq!(
+            screen_redraw_cell_border(&mut ctx, &mut *full.wp(0), 5, 3),
+            0
+        );
+        assert_eq!(
+            screen_redraw_cell_border(&mut ctx, &mut *full.wp(0), 10, 3),
+            1
+        );
+        assert_eq!(
+            screen_redraw_cell_border(&mut ctx, &mut *full.wp(0), 11, 3),
+            0
+        );
     }
 
     let mut halves = Viewed::empty(10, 5);
@@ -806,30 +902,46 @@ fn the_neighbour_probe_walks_the_z_order_until_someone_answers() {
     halves.add(6, 0, 4, 5);
     let mut ctx = halves.ctx(PANE_STATUS_OFF);
     unsafe {
-        assert_eq!(screen_redraw_cell_border(&mut ctx, halves.wp(0), 3, 3), 0);
-        assert_eq!(screen_redraw_cell_border(&mut ctx, halves.wp(0), 4, 3), 1);
-        assert_eq!(screen_redraw_cell_border(&mut ctx, halves.wp(0), 5, 3), 1);
-        assert_eq!(screen_redraw_cell_border(&mut ctx, halves.wp(0), 7, 3), 0);
+        assert_eq!(
+            screen_redraw_cell_border(&mut ctx, &mut *halves.wp(0), 3, 3),
+            0
+        );
+        assert_eq!(
+            screen_redraw_cell_border(&mut ctx, &mut *halves.wp(0), 4, 3),
+            1
+        );
+        assert_eq!(
+            screen_redraw_cell_border(&mut ctx, &mut *halves.wp(0), 5, 3),
+            1
+        );
+        assert_eq!(
+            screen_redraw_cell_border(&mut ctx, &mut *halves.wp(0), 7, 3),
+            0
+        );
     }
 
     let mut hovering = Viewed::empty(10, 6);
     hovering.add(0, 0, 10, 6);
     let floater = hovering.add(2, 1, 4, 2);
-    let mut fcell = Box::new(layout_cell::default());
-    fcell.flags |= LAYOUT_CELL_FLOATING;
-    unsafe { (*hovering.wp(floater)).layout_cell = &raw mut *fcell };
+    unsafe {
+        crate::tests::test_fixtures::set_pane_floating(
+            &mut *hovering.w(),
+            (*hovering.wp(floater)).pane_id(),
+            true,
+        )
+    };
     let mut ctx = hovering.ctx(PANE_STATUS_OFF);
     unsafe {
         assert_eq!(
-            screen_redraw_cell_border(&mut ctx, hovering.wp(floater), 3, 1),
+            screen_redraw_cell_border(&mut ctx, &mut *hovering.wp(floater), 3, 1),
             0
         );
         assert_eq!(
-            screen_redraw_cell_border(&mut ctx, hovering.wp(floater), 1, 1),
+            screen_redraw_cell_border(&mut ctx, &mut *hovering.wp(floater), 1, 1),
             1
         );
         assert_eq!(
-            screen_redraw_cell_border(&mut ctx, hovering.wp(floater), 0, 0),
+            screen_redraw_cell_border(&mut ctx, &mut *hovering.wp(floater), 0, 0),
             0
         );
     }
@@ -848,23 +960,23 @@ fn the_junction_table_turns_neighbour_bits_into_cells() {
     let mut ctx = v.ctx(PANE_STATUS_OFF);
     unsafe {
         assert_eq!(
-            screen_redraw_type_of_cell(&mut ctx, v.wp(0), 4, 2),
+            screen_redraw_type_of_cell(&mut ctx, &mut *v.wp(0), 4, 2),
             CELL_OUTSIDE
         );
         assert_eq!(
-            screen_redraw_type_of_cell(&mut ctx, v.wp(0), 10, 0),
+            screen_redraw_type_of_cell(&mut ctx, &mut *v.wp(0), 10, 0),
             CELL_TOPBOTTOM
         );
         assert_eq!(
-            screen_redraw_type_of_cell(&mut ctx, v.wp(0), 10, 3),
+            screen_redraw_type_of_cell(&mut ctx, &mut *v.wp(0), 10, 3),
             CELL_TOPBOTTOM
         );
         assert_eq!(
-            screen_redraw_type_of_cell(&mut ctx, v.wp(0), 5, 5),
+            screen_redraw_type_of_cell(&mut ctx, &mut *v.wp(0), 5, 5),
             CELL_LEFTRIGHT
         );
         assert_eq!(
-            screen_redraw_type_of_cell(&mut ctx, v.wp(0), 10, 5),
+            screen_redraw_type_of_cell(&mut ctx, &mut *v.wp(0), 10, 5),
             CELL_BOTTOMRIGHT
         );
     }

@@ -1,324 +1,367 @@
 use crate::ffi::time;
 use crate::fmt_args;
 use crate::notify::notify_paste_buffer;
-use crate::options::options_get_number;
-use crate::text::utf8_stravisx;
-use crate::tmux::clean_name;
-use crate::tmux::global_options;
-use crate::tree::GlobalTree;
-pub use crate::types::*;
+use crate::options::OptionsRef;
+
+use crate::text::{RustUtf8VisModel, Utf8VisModel};
+use crate::tmux::{clean_name, global_options};
+use crate::types::{time_t, u_int};
 use crate::xmalloc::xasprintf;
-use ::core::cmp::Reverse;
-use ::core::ffi::{CStr, c_char, c_int};
-use ::core::ops::Bound;
-use ::core::ptr::{null, null_mut};
-use ::std::ffi::CString;
+use core::cell::RefCell;
+use core::cmp::Reverse;
+use core::ffi::{CStr, c_int};
+use core::ptr::null_mut;
+use std::collections::BTreeMap;
+use std::ffi::CString;
 
-pub const RB_BLACK: c_int = 0 as c_int;
-pub const RB_RED: c_int = 1 as c_int;
-pub const RB_NEGINF: c_int = -(1 as c_int);
-pub const RB_INF: c_int = 1 as c_int;
-pub const VIS_OCTAL: c_int = 0x1 as c_int;
-pub const VIS_CSTYLE: c_int = 0x2 as c_int;
-pub const VIS_TAB: c_int = 0x8 as c_int;
-pub const VIS_NL: c_int = 0x10 as c_int;
-static mut paste_next_index: u_int = 0;
-static mut paste_next_order: u_int = 0;
-static mut paste_num_automatic: u_int = 0;
-/// The name of every buffer by falling order, newest first. Each name is the
-/// key the buffer itself is held under in [`paste_by_name`].
-static paste_by_time: GlobalTree<Reverse<u_int>, CString> = GlobalTree::new();
+const VIS_OCTAL: c_int = 0x1;
+const VIS_CSTYLE: c_int = 0x2;
+const VIS_TAB: c_int = 0x8;
+const VIS_NL: c_int = 0x10;
 
-/// One paste buffer: the bytes it holds, the name it is held under, when it
-/// was made and where it sits in the falling order the store walks.
-///
-/// The fields are the buffer's own; outside this module a buffer is read
-/// through the `paste_buffer_*` accessors and changed only by going back
-/// through the store, which is what keeps the two trees below in step with
-/// each other.
+/// An immutable observation of one paste buffer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PasteBufferRef<'a> {
+    /// The name under which the buffer is stored.
+    pub name: &'a CStr,
+    /// The buffer bytes, which may contain NUL and need not be UTF-8.
+    pub data: &'a [u8],
+    /// The wall-clock time at which the buffer was created.
+    pub created: time_t,
+    /// The buffer's monotonically increasing creation order.
+    pub order: u_int,
+}
+
+/// A store of named and automatically named tmux paste buffers.
+pub trait PasteBufferStore {
+    /// Walks all buffers newest first.
+    fn buffers(&self) -> impl Iterator<Item = PasteBufferRef<'_>>;
+
+    /// Returns whether the store has no buffers.
+    fn is_empty(&self) -> bool;
+
+    /// Finds the newest automatic buffer.
+    fn top(&self) -> Option<PasteBufferRef<'_>>;
+
+    /// Finds the buffer filed under a nonempty name.
+    fn get(&self, name: &CStr) -> Option<PasteBufferRef<'_>>;
+
+    /// Adds an automatically named buffer and enforces `automatic_limit`.
+    fn add_automatic(&mut self, prefix: Option<&CStr>, data: Vec<u8>, automatic_limit: u_int);
+
+    /// Adds or replaces a named buffer.
+    fn set_named(&mut self, name: &CStr, data: Vec<u8>) -> Result<(), CString>;
+
+    /// Renames a buffer and makes it a named rather than automatic buffer.
+    fn rename(&mut self, old_name: &CStr, new_name: &CStr) -> Result<(), CString>;
+
+    /// Removes a named buffer, returning whether it existed.
+    fn remove(&mut self, name: &CStr) -> bool;
+
+    /// Replaces only a named buffer's data, returning whether it existed.
+    fn replace(&mut self, name: &CStr, data: Vec<u8>) -> bool;
+
+    /// Returns the escaped display sample for a named buffer.
+    fn sample(&self, name: &CStr) -> Option<CString>;
+}
+
 #[derive(Default)]
-#[repr(C)]
-pub struct paste_buffer {
+struct RustPasteBuffer {
     data: Vec<u8>,
     name: CString,
     created: time_t,
-    automatic: c_int,
+    automatic: bool,
     order: u_int,
 }
 
-/// The buffers by name, which is what holds them.
-static paste_by_name: GlobalTree<CString, Box<paste_buffer>> = GlobalTree::new();
-
-/// The buffer named `name`, or null when the store has none.
-fn buffer_of(name: &CStr) -> *mut paste_buffer {
-    paste_by_name
-        .map()
-        .get(name)
-        .map(|pb| &raw const **pb as *mut paste_buffer)
-        .unwrap_or(null_mut::<paste_buffer>())
+enum PasteBufferEvent {
+    Changed(CString),
+    Deleted(CString),
 }
 
-/// Every buffer the store holds, newest first.
-fn newest_first() -> Vec<*mut paste_buffer> {
-    paste_by_time
-        .map()
-        .values()
-        .map(|name| buffer_of(name))
-        .collect()
+/// The Rust paste-buffer store used by hmux.
+pub struct RustPasteBufferStore {
+    next_index: u_int,
+    next_order: u_int,
+    num_automatic: u_int,
+    by_time: BTreeMap<Reverse<u_int>, CString>,
+    by_name: BTreeMap<CString, RustPasteBuffer>,
+    record_events: bool,
+    events: Vec<PasteBufferEvent>,
 }
 
-/// The name the buffer is held under.
-pub fn paste_buffer_name(pb: &paste_buffer) -> &CStr {
-    &pb.name
-}
-
-pub fn paste_buffer_order(pb: &paste_buffer) -> u_int {
-    pb.order
-}
-
-pub fn paste_buffer_created(pb: &paste_buffer) -> time_t {
-    pb.created
-}
-
-/// The bytes the buffer holds, which are not necessarily a C string.
-pub fn paste_buffer_data(pb: &paste_buffer) -> &[u8] {
-    &pb.data
-}
-
-/// Whether the store named the buffer itself, which is what makes it one of
-/// the ones `buffer-limit` counts and drops the oldest of.
-pub fn paste_buffer_automatic(pb: &paste_buffer) -> c_int {
-    pb.automatic
-}
-
-/// The next buffer by falling order, or the newest one when `pb` is null.
-pub unsafe fn paste_walk(pb: *mut paste_buffer) -> *mut paste_buffer {
-    unsafe {
-        let tree = paste_by_time.map();
-        let next = if pb.is_null() {
-            tree.values().next()
-        } else {
-            tree.range((Bound::Excluded(Reverse((*pb).order)), Bound::Unbounded))
-                .next()
-                .map(|(_, name)| name)
-        };
-        next.map(|name| buffer_of(name))
-            .unwrap_or(null_mut::<paste_buffer>())
-    }
-}
-
-pub fn paste_is_empty() -> c_int {
-    paste_by_time.map().is_empty() as c_int
-}
-
-/// The newest automatic buffer, and a copy of its name through `name` if the
-/// caller wants one.
-pub unsafe fn paste_get_top(name: Option<&mut Option<CString>>) -> *mut paste_buffer {
-    unsafe {
-        let found = newest_first().into_iter().find(|&pb| (*pb).automatic != 0);
-        let Some(pb) = found else {
-            return null_mut::<paste_buffer>();
-        };
-        if let Some(name) = name {
-            *name = Some((*pb).name.clone());
+impl RustPasteBufferStore {
+    /// Makes an independent empty store with no server notifications.
+    pub fn new() -> Self {
+        Self {
+            next_index: 0,
+            next_order: 0,
+            num_automatic: 0,
+            by_time: BTreeMap::new(),
+            by_name: BTreeMap::new(),
+            record_events: false,
+            events: Vec::new(),
         }
-        pb
     }
-}
 
-pub unsafe fn paste_get_name(name: *const c_char) -> *mut paste_buffer {
-    unsafe {
-        if name.is_null() || *name == 0 {
-            return null_mut::<paste_buffer>();
+    const fn server() -> Self {
+        Self {
+            next_index: 0,
+            next_order: 0,
+            num_automatic: 0,
+            by_time: BTreeMap::new(),
+            by_name: BTreeMap::new(),
+            record_events: true,
+            events: Vec::new(),
         }
-        buffer_of(CStr::from_ptr(name))
     }
-}
 
-pub unsafe fn paste_free(pb: *mut paste_buffer) {
-    unsafe {
-        let name = (*pb).name.clone();
-        let order = (*pb).order;
-        let automatic = (*pb).automatic != 0;
-        notify_paste_buffer(name.as_ptr(), 1);
-        paste_by_time.map().remove(&Reverse(order));
-        let _ = paste_by_name.map().remove(&name);
+    fn observe(buffer: &RustPasteBuffer) -> PasteBufferRef<'_> {
+        PasteBufferRef {
+            name: buffer.name.as_c_str(),
+            data: &buffer.data,
+            created: buffer.created,
+            order: buffer.order,
+        }
+    }
+
+    fn changed(&mut self, name: CString) {
+        if self.record_events {
+            self.events.push(PasteBufferEvent::Changed(name));
+        }
+    }
+
+    fn deleted(&mut self, name: CString) {
+        if self.record_events {
+            self.events.push(PasteBufferEvent::Deleted(name));
+        }
+    }
+
+    fn remove_existing(&mut self, name: &CStr) -> bool {
+        let Some(buffer) = self.by_name.remove(name) else {
+            return false;
+        };
+        self.by_time.remove(&Reverse(buffer.order));
+        if buffer.automatic {
+            self.num_automatic = self.num_automatic.wrapping_sub(1);
+        }
+        self.deleted(buffer.name);
+        true
+    }
+
+    fn next_automatic_name(&mut self, prefix: &CStr) -> CString {
+        loop {
+            let mut name = prefix.to_bytes().to_vec();
+            name.extend_from_slice(self.next_index.to_string().as_bytes());
+            self.next_index = self.next_index.wrapping_add(1);
+            let name = CString::new(name).expect("a C string prefix has no NUL");
+            if !self.by_name.contains_key(name.as_c_str()) {
+                return name;
+            }
+        }
+    }
+
+    fn insert(&mut self, name: CString, data: Vec<u8>, automatic: bool) {
+        let order = self.next_order;
+        self.next_order = self.next_order.wrapping_add(1);
+        let buffer = RustPasteBuffer {
+            data,
+            name: name.clone(),
+            created: unsafe { time(null_mut::<time_t>()) },
+            automatic,
+            order,
+        };
         if automatic {
-            paste_num_automatic = paste_num_automatic.wrapping_sub(1);
+            self.num_automatic = self.num_automatic.wrapping_add(1);
         }
+        self.by_time.insert(Reverse(order), name.clone());
+        self.by_name.insert(name.clone(), buffer);
+        self.changed(name);
+    }
+
+    fn take_events(&mut self) -> Vec<PasteBufferEvent> {
+        core::mem::take(&mut self.events)
     }
 }
 
-/// Adds an automatic buffer named after `prefix`, freeing the oldest automatic
-/// buffers first if the store is at `buffer-limit`. The buffer takes `data`
-/// over.
-pub unsafe fn paste_add(prefix: *const c_char, data: Vec<u8>) {
-    unsafe {
-        let prefix = if prefix.is_null() {
-            c"buffer".as_ptr()
-        } else {
-            prefix
-        };
+impl Default for RustPasteBufferStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PasteBufferStore for RustPasteBufferStore {
+    fn buffers(&self) -> impl Iterator<Item = PasteBufferRef<'_>> {
+        self.by_time
+            .values()
+            .filter_map(|name| self.by_name.get(name))
+            .map(Self::observe)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.by_time.is_empty()
+    }
+
+    fn top(&self) -> Option<PasteBufferRef<'_>> {
+        self.buffers().find(|buffer| {
+            self.by_name
+                .get(buffer.name)
+                .is_some_and(|buffer| buffer.automatic)
+        })
+    }
+
+    fn get(&self, name: &CStr) -> Option<PasteBufferRef<'_>> {
+        if name.is_empty() {
+            return None;
+        }
+        self.by_name.get(name).map(Self::observe)
+    }
+
+    fn add_automatic(&mut self, prefix: Option<&CStr>, data: Vec<u8>, automatic_limit: u_int) {
         if data.is_empty() {
             return;
         }
-
-        let limit = options_get_number(global_options, c"buffer-limit".as_ptr()) as u_int;
-        let mut oldest_first = newest_first();
-        oldest_first.reverse();
-        for pb in oldest_first {
-            if paste_num_automatic < limit {
+        let oldest = self.by_time.values().rev().cloned().collect::<Vec<_>>();
+        for name in oldest {
+            if self.num_automatic < automatic_limit {
                 break;
             }
-            if (*pb).automatic != 0 {
-                paste_free(pb);
+            if self
+                .by_name
+                .get(name.as_c_str())
+                .is_some_and(|buffer| buffer.automatic)
+            {
+                self.remove_existing(name.as_c_str());
             }
         }
-
-        let mut pb = Box::new(paste_buffer::default());
-        let pb_ptr = &raw mut *pb;
-        loop {
-            (*pb_ptr).name = xasprintf(c"%s%u".as_ptr(), fmt_args![prefix, paste_next_index]);
-            paste_next_index = paste_next_index.wrapping_add(1);
-            if paste_get_name((*pb_ptr).name.as_ptr()).is_null() {
-                break;
-            }
-        }
-
-        (*pb_ptr).data = data;
-        (*pb_ptr).automatic = 1;
-        paste_num_automatic = paste_num_automatic.wrapping_add(1);
-        (*pb_ptr).created = time(null_mut::<time_t>());
-        (*pb_ptr).order = paste_next_order;
-        paste_next_order = paste_next_order.wrapping_add(1);
-        let name = (*pb_ptr).name.clone();
-        let order = (*pb_ptr).order;
-        paste_by_name.map().insert(name.clone(), pb);
-        paste_by_time.map().insert(Reverse(order), name.clone());
-        notify_paste_buffer(name.as_ptr(), 0);
+        let name = self.next_automatic_name(prefix.unwrap_or(c"buffer"));
+        self.insert(name, data, true);
     }
-}
 
-/// Renames the buffer `oldname` to `newname`, which also makes it one the user
-/// named rather than an automatic one. Renaming a buffer to the name it
-/// already has stops at the "same buffer" check, so it stays automatic.
-pub unsafe fn paste_rename(oldname: *const c_char, newname: *const c_char) -> Result<(), CString> {
-    unsafe {
-        if oldname.is_null() || *oldname == 0 {
-            return Err(c"no buffer".to_owned());
-        }
-        if newname.is_null() || *newname == 0 {
-            return Err(c"new name is empty".to_owned());
-        }
-
-        let Some(name) = clean_name(newname, 0) else {
-            return Err(xasprintf(
-                c"invalid buffer name: %s".as_ptr(),
-                fmt_args![newname],
-            ));
-        };
-
-        let pb = paste_get_name(oldname);
-        if pb.is_null() {
-            return Err(xasprintf(c"no buffer %s".as_ptr(), fmt_args![oldname]));
-        }
-
-        let pb_new = paste_get_name(name.as_ptr());
-        if pb_new == pb {
-            return Ok(());
-        }
-        if !pb_new.is_null() {
-            paste_free(pb_new);
-        }
-
-        let old_name = (*pb).name.clone();
-        let mut pb_box = paste_by_name
-            .map()
-            .remove(&old_name)
-            .expect("paste buffer is indexed by its name");
-        let pb = &raw mut *pb_box;
-        (*pb).name = name;
-        if (*pb).automatic != 0 {
-            paste_num_automatic = paste_num_automatic.wrapping_sub(1);
-        }
-        (*pb).automatic = 0;
-        let new_name = (*pb).name.clone();
-        paste_by_name.map().insert(new_name.clone(), pb_box);
-        paste_by_time
-            .map()
-            .insert(Reverse((*pb).order), new_name.clone());
-
-        notify_paste_buffer(oldname, 1);
-        notify_paste_buffer(new_name.as_ptr(), 0);
-        Ok(())
-    }
-}
-
-/// Adds a buffer under `name`, replacing whatever was there, or an automatic
-/// one when there is no name. The buffer takes `data` over.
-pub unsafe fn paste_set(data: Vec<u8>, name: *const c_char) -> Result<(), CString> {
-    unsafe {
+    fn set_named(&mut self, name: &CStr, data: Vec<u8>) -> Result<(), CString> {
         if data.is_empty() {
             return Ok(());
         }
-        if name.is_null() {
-            paste_add(null::<c_char>(), data);
-            return Ok(());
-        }
-        if *name == 0 {
+        if name.is_empty() {
             return Err(c"empty buffer name".to_owned());
         }
-
-        let Some(newname) = clean_name(name, 0) else {
+        let Some(name) = (unsafe { clean_name(name, 0) }) else {
             return Err(xasprintf(
-                c"invalid buffer name: %s".as_ptr(),
-                fmt_args![name],
+                c"invalid buffer name: %s",
+                fmt_args![name.as_ptr()],
             ));
         };
-
-        let mut pb = Box::new(paste_buffer {
-            data,
-            name: newname,
-            ..Default::default()
-        });
-        let pb_ptr = &raw mut *pb;
-        (*pb_ptr).order = paste_next_order;
-        paste_next_order = paste_next_order.wrapping_add(1);
-        (*pb_ptr).created = time(null_mut::<time_t>());
-
-        let old = paste_get_name((*pb_ptr).name.as_ptr());
-        if !old.is_null() {
-            paste_free(old);
-        }
-
-        let name = (*pb_ptr).name.clone();
-        let order = (*pb_ptr).order;
-        paste_by_name.map().insert(name.clone(), pb);
-        paste_by_time.map().insert(Reverse(order), name.clone());
-        notify_paste_buffer(name.as_ptr(), 0);
+        self.remove_existing(name.as_c_str());
+        self.insert(name, data, false);
         Ok(())
     }
-}
 
-/// Swaps a buffer's data for `data`.
-pub unsafe fn paste_replace(pb: *mut paste_buffer, data: Vec<u8>) {
-    unsafe {
-        (*pb).data = data;
-        notify_paste_buffer((*pb).name.as_ptr(), 0);
+    fn rename(&mut self, old_name: &CStr, new_name: &CStr) -> Result<(), CString> {
+        if old_name.is_empty() {
+            return Err(c"no buffer".to_owned());
+        }
+        if new_name.is_empty() {
+            return Err(c"new name is empty".to_owned());
+        }
+        let Some(new_name) = (unsafe { clean_name(new_name, 0) }) else {
+            return Err(xasprintf(
+                c"invalid buffer name: %s",
+                fmt_args![new_name.as_ptr()],
+            ));
+        };
+        if !self.by_name.contains_key(old_name) {
+            return Err(xasprintf(c"no buffer %s", fmt_args![old_name.as_ptr()]));
+        }
+        if old_name == new_name.as_c_str() {
+            return Ok(());
+        }
+        self.remove_existing(new_name.as_c_str());
+        let mut buffer = self
+            .by_name
+            .remove(old_name)
+            .expect("the old paste buffer was just found");
+        if buffer.automatic {
+            self.num_automatic = self.num_automatic.wrapping_sub(1);
+        }
+        buffer.automatic = false;
+        buffer.name = new_name.clone();
+        self.by_time.insert(Reverse(buffer.order), new_name.clone());
+        self.by_name.insert(new_name.clone(), buffer);
+        self.deleted(old_name.to_owned());
+        self.changed(new_name);
+        Ok(())
+    }
+
+    fn remove(&mut self, name: &CStr) -> bool {
+        self.remove_existing(name)
+    }
+
+    fn replace(&mut self, name: &CStr, data: Vec<u8>) -> bool {
+        let Some(buffer) = self.by_name.get_mut(name) else {
+            return false;
+        };
+        buffer.data = data;
+        let name = buffer.name.clone();
+        self.changed(name);
+        true
+    }
+
+    fn sample(&self, name: &CStr) -> Option<CString> {
+        self.by_name
+            .get(name)
+            .map(|buffer| make_sample(&buffer.data))
     }
 }
 
-/// The first two hundred characters of a buffer, escaped for display, with
-/// trailing dots when there was more. The dots are written *at* the two
-/// hundredth character rather than after the escaping stopped, so an escaped
-/// form that ran long is cut back to two hundred before they go on.
-pub fn paste_make_sample(pb: &paste_buffer) -> CString {
+thread_local! {
+    static PASTE_BUFFERS: RefCell<RustPasteBufferStore> = const {
+        RefCell::new(RustPasteBufferStore::server())
+    };
+}
+
+/// Runs `read` with shared access to this thread's server paste-buffer store.
+pub(crate) fn with_paste_buffers<R>(read: impl FnOnce(&RustPasteBufferStore) -> R) -> R {
+    PASTE_BUFFERS.with_borrow(read)
+}
+
+/// Runs `mutate` exclusively, then dispatches notifications after releasing
+/// this thread's store borrow so observers may revisit the committed state.
+pub(crate) fn with_paste_buffers_mut<R>(mutate: impl FnOnce(&mut RustPasteBufferStore) -> R) -> R {
+    let (result, events) = PASTE_BUFFERS.with_borrow_mut(|store| {
+        let result = mutate(store);
+        let events = store.take_events();
+        (result, events)
+    });
+    for event in events {
+        unsafe {
+            match event {
+                PasteBufferEvent::Changed(name) => notify_paste_buffer(name.as_c_str(), 0),
+                PasteBufferEvent::Deleted(name) => notify_paste_buffer(name.as_c_str(), 1),
+            }
+        }
+    }
+    result
+}
+
+/// Returns the live automatic-buffer limit.
+pub(crate) unsafe fn paste_buffer_limit() -> u_int {
+    unsafe {
+        (global_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .number(c"buffer-limit") as u_int
+    }
+}
+
+fn make_sample(data: &[u8]) -> CString {
     const FLAGS: c_int = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
     const WIDTH: usize = 200;
 
-    let len = ::core::cmp::min(pb.data.len(), WIDTH);
-    let mut sample = utf8_stravisx(&pb.data[..len], FLAGS).into_bytes();
-    if pb.data.len() > WIDTH || sample.len() > WIDTH {
+    let len = core::cmp::min(data.len(), WIDTH);
+    let mut sample = RustUtf8VisModel
+        .encode_utf8(&data[..len], FLAGS)
+        .into_bytes();
+    if data.len() > WIDTH || sample.len() > WIDTH {
         sample.truncate(WIDTH);
         sample.extend_from_slice(b"...");
     }
@@ -326,5 +369,5 @@ pub fn paste_make_sample(pb: &paste_buffer) -> CString {
 }
 
 #[cfg(test)]
-#[path = "tests/test_paste.rs"]
+#[path = "tests/test_paste_adapter.rs"]
 mod tests;

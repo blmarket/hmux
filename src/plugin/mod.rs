@@ -22,6 +22,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::ffi::{CStr, CString};
+use std::os::unix::ffi::OsStrExt;
 use std::time::{Duration, Instant};
 
 use crate::reactor::{Timer, TimerHandle};
@@ -95,7 +96,7 @@ pub trait Plugin {
     }
 
     /// The value of `key` for `pane`, or `None` to expand to nothing.
-    fn resolve(&self, pane: PaneId, key: &str) -> Option<String>;
+    fn resolve(&self, pane: PaneId, key: &str) -> Option<CString>;
 
     /// Called as things happen, for a plugin that wants to react promptly.
     fn on_notify(&mut self, event: &Event<'_>) {
@@ -143,22 +144,36 @@ const DEFAULT_PLUGINS: &[&str] = &["agent", "git"];
 /// a shell writes for a variable it wants cleared — turns every plugin off,
 /// and that is the setting to compare against tmux under: it leaves the
 /// format hooks reading one flag and no option default touched.
-fn enabled_names() -> Vec<String> {
-    let Ok(value) = std::env::var("TMUX_C2RS_PLUGINS") else {
+fn enabled_names() -> Vec<CString> {
+    let Some(value) = std::env::var_os("TMUX_C2RS_PLUGINS") else {
         return DEFAULT_PLUGINS
             .iter()
-            .map(|name| name.to_string())
+            .map(|name| CString::new(*name).expect("a plugin name has no NUL"))
             .collect();
     };
-    let names: Vec<String> = value
-        .split(',')
-        .map(|name| name.trim().to_ascii_lowercase())
+    let names: Vec<CString> = value
+        .as_bytes()
+        .split(|&byte| byte == b',')
+        .map(trim_ascii)
         .filter(|name| !name.is_empty())
+        .filter_map(|name| {
+            CString::new(name.iter().map(u8::to_ascii_lowercase).collect::<Vec<_>>()).ok()
+        })
         .collect();
-    match names.iter().any(|name| name == "none") {
+    match names.iter().any(|name| name.as_c_str() == c"none") {
         true => Vec::new(),
         false => names,
     }
+}
+
+fn trim_ascii(mut value: &[u8]) -> &[u8] {
+    while value.first().is_some_and(u8::is_ascii_whitespace) {
+        value = &value[1..];
+    }
+    while value.last().is_some_and(u8::is_ascii_whitespace) {
+        value = &value[..value.len() - 1];
+    }
+    value
 }
 
 /// One registered plugin and the schedule it runs on.
@@ -193,9 +208,13 @@ pub(crate) fn init() {
     if wanted.is_empty() {
         return;
     }
-    let all = wanted.iter().any(|name| name == "all");
+    let all = wanted.iter().any(|name| name.as_c_str() == c"all");
     for plugin in builtins() {
-        if all || wanted.iter().any(|name| name == plugin.name()) {
+        if all
+            || wanted
+                .iter()
+                .any(|name| name.to_bytes() == plugin.name().as_bytes())
+        {
             register(plugin);
         }
     }
@@ -271,7 +290,7 @@ pub(crate) fn note_pane_output(id: u_int) {
 }
 
 /// Pass a server notification on to the plugins, under the name its hook has.
-pub(crate) fn note_notification(name: Option<&CStr>, pane: ::core::ffi::c_int) {
+pub(crate) fn note_notification(name: Option<&CStr>, pane: core::ffi::c_int) {
     if !any_registered() {
         return;
     }
@@ -280,7 +299,7 @@ pub(crate) fn note_notification(name: Option<&CStr>, pane: ::core::ffi::c_int) {
     };
     on_event(&Event::Notify {
         name,
-        pane: (pane >= 0).then(|| PaneId(pane as u_int)),
+        pane: (pane >= 0).then_some(PaneId(pane as u_int)),
     });
 }
 
@@ -327,7 +346,7 @@ pub(crate) fn find(wp_id: Option<u_int>, key: &CStr) -> Option<CString> {
         }
         None
     })?;
-    CString::new(value).ok()
+    Some(value)
 }
 
 /// Every plugin variable for the pane `wp_id`, for the walks that enumerate a
@@ -349,7 +368,7 @@ pub(crate) fn each(wp_id: Option<u_int>) -> Vec<(CString, CString)> {
                 let Some(value) = plugin.resolve(PaneId(wp_id), key) else {
                     continue;
                 };
-                let (Ok(key), Ok(value)) = (CString::new(*key), CString::new(value)) else {
+                let Ok(key) = CString::new(*key) else {
                     continue;
                 };
                 out.push((key, value));
@@ -377,9 +396,9 @@ mod tests {
             &["fake_pane", "fake_silent"]
         }
 
-        fn resolve(&self, pane: PaneId, key: &str) -> Option<String> {
+        fn resolve(&self, pane: PaneId, key: &str) -> Option<CString> {
             match key {
-                "fake_pane" => Some(::std::format!("pane-{}", pane.0)),
+                "fake_pane" => Some(CString::new(format!("pane-{}", pane.0)).expect("pane id")),
                 _ => None,
             }
         }
@@ -439,12 +458,16 @@ mod tests {
         // state, and nothing else in this process reads the variable.
         unsafe {
             std::env::remove_var("TMUX_C2RS_PLUGINS");
-            assert_eq!(enabled_names(), DEFAULT_PLUGINS, "unset means the default");
+            assert_eq!(
+                enabled_names(),
+                [c"agent", c"git"],
+                "unset means the default"
+            );
 
             std::env::set_var("TMUX_C2RS_PLUGINS", " Agent , ,all ");
             assert_eq!(
                 enabled_names(),
-                vec!["agent".to_string(), "all".to_string()]
+                vec![c"agent".to_owned(), c"all".to_owned()]
             );
 
             std::env::set_var("TMUX_C2RS_PLUGINS", "none");

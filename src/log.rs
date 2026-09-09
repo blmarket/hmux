@@ -3,7 +3,7 @@
 //! line in it before ending the process.
 //!
 //! A log is opened only above level zero, is named after what opened it and
-//! the process it belongs to, and is line-buffered so that a crash loses
+//! the process it belongs to, and is unbuffered so that a crash loses
 //! nothing already written. Every message is escaped before it goes in, so
 //! that a pane's own bytes cannot break the line or the file, and is stamped
 //! with the time it was written. Runtime messages are written by the daemon
@@ -13,36 +13,32 @@
 //! and expand the format string with the crate's own printf engine, so nothing
 //! here needs a C calling convention.
 //!
-//! Coverage exemptions: `fatal` and `fatalx`, which end the process — a test
-//! that entered one would take the whole run with it. They are also the only
-//! callers that reach `log_vwrite` with no log open, so its first guard is
-//! exempt with them. In the test module, the two lines that build the panic
-//! message for a child process are only read once a test has already failed.
+//! Fatal logging is tested in child processes so its exit cannot end the
+//! test runner. The panic messages for failed child processes are only read
+//! once a test has already failed.
+use crate::compat::error_message;
 use crate::compat::stravis;
-use crate::ffi::{
-    __errno_location, exit, fclose, fflush, fopen, fprintf, getpid, gettimeofday, setvbuf,
-    snprintf, strerror,
-};
+use crate::ffi::{__errno_location, exit};
 use crate::fmt_args;
-use crate::fmt_engine::{FmtArg, format_alloc};
+use crate::fmt_engine::{FmtArg, format_alloc, format_bytes};
 pub use crate::types::*;
-use ::core::ffi::{CStr, c_char, c_int, c_long, c_longlong};
-use ::core::ptr::null_mut;
+use ::core::ffi::{CStr, c_int};
 use ::core::sync::atomic::{AtomicI32, Ordering};
+use ::std::ffi::{CString, OsStr};
+use ::std::fs::{File, OpenOptions};
+use ::std::io::Write;
+use ::std::os::unix::ffi::OsStrExt;
+use ::std::sync::Mutex;
 
-pub const _IOLBF: c_int = 1;
-pub const VIS_OCTAL: c_int = 0x1;
-pub const VIS_CSTYLE: c_int = 0x2;
-pub const VIS_TAB: c_int = 0x8;
-pub const VIS_NL: c_int = 0x10;
+pub use crate::consts::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 
 /// How a message is escaped on its way into the log: control bytes as C
 /// escapes where there is one and octal where there is not, tabs and newlines
 /// included, so that one message stays one line.
 const ESCAPING: c_int = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
 
-/// The log that is open, or nothing.
-static mut log_file: *mut FILE = null_mut();
+/// The owned log stream, or nothing, serialized with writes and reopening.
+static log_file: Mutex<Option<File>> = Mutex::new(None);
 
 /// How much is logged: nothing at all at zero, everything above it. Only the
 /// guards in front of the calls that build a message read it past that, so the
@@ -57,48 +53,35 @@ pub fn log_get_level() -> c_int {
     log_level.load(Ordering::Relaxed)
 }
 
-/// Puts the debug level back where a test found it. What the level changes is
-/// the guards in front of the calls that build a message first; whether
-/// anything is written out as well wants a log that has been opened, which
-/// only this module's own tests do.
-#[cfg(test)]
-pub(crate) fn log_with_level<T>(level: c_int, body: impl FnOnce() -> T) -> T {
-    let was = log_level.swap(level, Ordering::Relaxed);
-    let answer = body();
-    log_level.store(was, Ordering::Relaxed);
-    answer
-}
-
 /// Opens the log for `name`, in a file named after it and this process. A level
 /// of zero opens nothing, and a file that would not open leaves the log closed
 /// without saying so.
-pub unsafe fn log_open(name: *const c_char) {
-    unsafe {
-        if log_level.load(Ordering::Relaxed) == 0 {
-            return;
-        }
-        log_close();
-        let mut path = b"tmux-".to_vec();
-        path.extend_from_slice(CStr::from_ptr(name).to_bytes());
-        path.extend_from_slice(format!("-{}.log\0", getpid() as c_long).as_bytes());
-        log_file = fopen(path.as_ptr() as *const c_char, c"a".as_ptr());
-        if log_file.is_null() {
-            return;
-        }
-        setvbuf(log_file, null_mut::<c_char>(), _IOLBF, 0);
+pub fn log_open(name: &CStr) {
+    if log_level.load(Ordering::Relaxed) == 0 {
+        return;
     }
+    let mut active = log_file.lock().unwrap_or_else(|error| error.into_inner());
+    drop(active.take());
+    let mut path = b"tmux-".to_vec();
+    path.extend_from_slice(name.to_bytes());
+    path.extend_from_slice(format!("-{}.log", std::process::id()).as_bytes());
+    *active = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(OsStr::from_bytes(&path))
+        .ok();
 }
 
 /// Turns the log on if it is off and off if it is on, writing the change into
 /// the log itself on either side of it.
-pub unsafe fn log_toggle(name: *const c_char) {
+pub unsafe fn log_toggle(name: &CStr) {
     unsafe {
         if log_level.load(Ordering::Relaxed) == 0 {
             log_level.store(1, Ordering::Relaxed);
             log_open(name);
-            log_debug(c"log opened".as_ptr(), fmt_args![]);
+            log_debug(c"log opened", fmt_args![]);
         } else {
-            log_debug(c"log closed".as_ptr(), fmt_args![]);
+            log_debug(c"log closed", fmt_args![]);
             log_level.store(0, Ordering::Relaxed);
             log_close();
         }
@@ -106,67 +89,48 @@ pub unsafe fn log_toggle(name: *const c_char) {
 }
 
 pub fn log_close() {
-    unsafe {
-        if !log_file.is_null() {
-            fclose(log_file);
-        }
-        log_file = null_mut();
-    }
+    let mut active = log_file.lock().unwrap_or_else(|error| error.into_inner());
+    drop(active.take());
 }
 
 /// Writes one line to the log: the time, `prefix`, and `msg` filled in from
 /// `ap` and escaped. Nothing is written if there is no log open, if the
 /// message could not be built or if it could not be escaped.
-unsafe fn log_vwrite(msg: *const c_char, args: &[FmtArg], prefix: &CStr) {
-    unsafe {
-        if log_file.is_null() {
+unsafe fn log_vwrite(msg: &CStr, args: &[FmtArg], prefix: &CStr) {
+    {
+        let mut active = log_file.lock().unwrap_or_else(|error| error.into_inner());
+        let Some(file) = active.as_mut() else {
             return;
-        }
+        };
         let built = format_alloc(msg, args);
-        let escaped = stravis(built.as_ptr(), ESCAPING);
-        let mut tv = timeval::default();
-        gettimeofday(&raw mut tv, null_mut());
-        if fprintf(
-            log_file,
-            c"%lld.%06d %s%s\n".as_ptr(),
-            tv.tv_sec as c_longlong,
-            tv.tv_usec as c_int,
-            prefix.as_ptr(),
-            escaped.as_ptr(),
-        ) != -1
-        {
-            fflush(log_file);
-        }
+        let escaped = stravis(&built, ESCAPING);
+        let tv = timeval::now();
+        let mut line = format!("{}.{:06} ", tv.tv_sec, tv.tv_usec).into_bytes();
+        line.extend_from_slice(prefix.to_bytes());
+        line.extend_from_slice(escaped.to_bytes());
+        line.push(b'\n');
+        let _ = file.write_all(&line);
     }
 }
 
-pub unsafe fn log_debug(msg: *const c_char, args: &[FmtArg]) {
+pub unsafe fn log_debug(msg: &CStr, args: &[FmtArg]) {
     unsafe {
-        if log_file.is_null() {
-            return;
-        }
         log_vwrite(msg, args, c"");
     }
 }
 
-pub unsafe fn fatal(msg: *const c_char, args: &[FmtArg]) -> ! {
+pub unsafe fn fatal(msg: &CStr, args: &[FmtArg]) -> ! {
     unsafe {
-        let mut prefix = [0 as c_char; 256];
-        if snprintf(
-            prefix.as_mut_ptr(),
-            256,
-            c"fatal: %s: ".as_ptr(),
-            strerror(*__errno_location()),
-        ) < 0
-        {
-            exit(1);
-        }
-        log_vwrite(msg, args, CStr::from_ptr(prefix.as_ptr()));
+        let error = error_message(*__errno_location());
+        let mut prefix = format_bytes(c"fatal: %s: ", fmt_args![error.as_c_str()]);
+        prefix.truncate(255);
+        let prefix = CString::new(prefix).expect("the fatal prefix contains no NUL");
+        log_vwrite(msg, args, &prefix);
         exit(1);
     }
 }
 
-pub unsafe fn fatalx(msg: *const c_char, args: &[FmtArg]) -> ! {
+pub unsafe fn fatalx(msg: &CStr, args: &[FmtArg]) -> ! {
     unsafe {
         log_vwrite(msg, args, c"fatal: ");
         exit(1);
@@ -176,3 +140,6 @@ pub unsafe fn fatalx(msg: *const c_char, args: &[FmtArg]) -> ! {
 #[cfg(test)]
 #[path = "tests/test_log.rs"]
 mod tests;
+
+#[cfg(test)]
+pub(crate) use tests::log_with_level;

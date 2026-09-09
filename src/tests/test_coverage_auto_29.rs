@@ -24,7 +24,7 @@ struct Outcome {
 fn call(numstr: &CStr, minval: i64, maxval: i64, preset: i32) -> Outcome {
     unsafe {
         *__errno_location() = preset;
-        let result = strtonum(numstr.as_ptr(), minval, maxval);
+        let result = strtonum(numstr, minval, maxval);
         Outcome {
             value: result.unwrap_or(0),
             errstr: result
@@ -144,11 +144,11 @@ fn errno_preserved_on_success_and_set_on_failure() {
     // a discarded message still leaves errno set
     unsafe {
         *__errno_location() = 55;
-        let v = strtonum(c"nope".as_ptr(), 0, 100).unwrap_or(0);
+        let v = strtonum(c"nope", 0, 100).unwrap_or(0);
         assert_eq!(v, 0);
         assert_eq!(*__errno_location(), EINVAL);
         *__errno_location() = 55;
-        let v = strtonum(c"10".as_ptr(), 0, 100).unwrap_or(0);
+        let v = strtonum(c"10", 0, 100).unwrap_or(0);
         assert_eq!(v, 10);
         assert_eq!(*__errno_location(), 55);
     }

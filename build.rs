@@ -5,5 +5,4 @@ fn main() {
     println!("cargo:rustc-link-lib=utempter");
     println!("cargo:rustc-link-lib=systemd");
     println!("cargo:rustc-link-lib=m");
-    println!("cargo:rustc-link-lib=resolv");
 }

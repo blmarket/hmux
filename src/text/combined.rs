@@ -1,13 +1,38 @@
-use crate::types::wchar_t;
 use super::utf8::{utf8_data, utf8_towc};
+use crate::types::wchar_t;
 
 /// How far a hangul jamo sequence has been read.
-pub type hanguljamo_state = ::core::ffi::c_uint;
+pub type hanguljamo_state = core::ffi::c_uint;
 
 pub const HANGULJAMO_STATE_NOT_COMPOSABLE: hanguljamo_state = 3;
 pub const HANGULJAMO_STATE_COMPOSABLE: hanguljamo_state = 2;
 pub const HANGULJAMO_STATE_CHOSEONG: hanguljamo_state = 1;
 pub const HANGULJAMO_STATE_NOT_HANGULJAMO: hanguljamo_state = 0;
+
+/// Terminal rules for deciding when adjacent UTF-8 values form one cell.
+pub trait Utf8Compositor {
+    /// Returns whether `value` ends in a zero-width joiner.
+    fn has_zwj(&self, value: &utf8_data) -> bool;
+
+    /// Returns whether `value` is a zero-width joiner.
+    fn is_zwj(&self, value: &utf8_data) -> bool;
+
+    /// Returns whether `value` is an emoji variation selector.
+    fn is_variation_selector(&self, value: &utf8_data) -> bool;
+
+    /// Returns whether `value` is a Hangul filler.
+    fn is_hangul_filler(&self, value: &utf8_data) -> bool;
+
+    /// Returns whether `with` and `add` form one terminal cell.
+    fn should_combine(&self, with: &utf8_data, add: &utf8_data) -> bool;
+
+    /// Classifies how `next` extends the Hangul sequence in `previous`.
+    fn hangul_state(&self, previous: &utf8_data, next: &utf8_data) -> hanguljamo_state;
+}
+
+/// Grapheme-composition rules implemented by hmux.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RustUtf8Compositor;
 
 /// The zero-width joiner, U+200D.
 const ZWJ: &[u8] = &[0xe2, 0x80, 0x8d];
@@ -16,9 +41,9 @@ const VARIATION_SELECTOR: &[u8] = &[0xef, 0xb8, 0x8f];
 /// The Hangul filler, U+3164.
 const HANGUL_FILLER: &[u8] = &[0xe3, 0x85, 0xa4];
 /// The regional indicators, U+1F1E6 to U+1F1FF: two of them spell a flag.
-const REGIONAL: ::core::ops::RangeInclusive<wchar_t> = 0x1f1e6..=0x1f1ff;
+const REGIONAL: core::ops::RangeInclusive<wchar_t> = 0x1f1e6..=0x1f1ff;
 /// The skin tone modifiers, U+1F3FB to U+1F3FF.
-const SKIN_TONE: ::core::ops::RangeInclusive<wchar_t> = 0x1f3fb..=0x1f3ff;
+const SKIN_TONE: core::ops::RangeInclusive<wchar_t> = 0x1f3fb..=0x1f3ff;
 
 /// The bytes a character is written as. A character never holds more than the
 /// 32 bytes of its own array, so the slice is always in range.
@@ -222,6 +247,32 @@ pub fn hanguljamo_check_state(p_ud: &utf8_data, ud: &utf8_data) -> hanguljamo_st
         return HANGULJAMO_STATE_COMPOSABLE;
     }
     HANGULJAMO_STATE_NOT_COMPOSABLE
+}
+
+impl Utf8Compositor for RustUtf8Compositor {
+    fn has_zwj(&self, value: &utf8_data) -> bool {
+        utf8_has_zwj(value)
+    }
+
+    fn is_zwj(&self, value: &utf8_data) -> bool {
+        utf8_is_zwj(value)
+    }
+
+    fn is_variation_selector(&self, value: &utf8_data) -> bool {
+        utf8_is_vs(value)
+    }
+
+    fn is_hangul_filler(&self, value: &utf8_data) -> bool {
+        utf8_is_hangul_filler(value)
+    }
+
+    fn should_combine(&self, with: &utf8_data, add: &utf8_data) -> bool {
+        utf8_should_combine(with, add)
+    }
+
+    fn hangul_state(&self, previous: &utf8_data, next: &utf8_data) -> hanguljamo_state {
+        hanguljamo_check_state(previous, next)
+    }
 }
 
 #[cfg(test)]

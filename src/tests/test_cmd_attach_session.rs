@@ -1,17 +1,16 @@
 use super::*;
-use crate::cfg::cfg_print_causes;
-use crate::cmd::cmd_server_access::CLIENT_EXIT;
-use crate::cmd::cmdq_get_current;
+use crate::cfg::{cfg_finished, cfg_print_causes};
+
+use crate::environ::new_environment_box;
 use crate::key_bindings::{key_bindings_get_table_ref, key_bindings_remove_table};
 use crate::server::client_get_last_session;
-use crate::server::message_log;
-use crate::session::{session_attached, session_get_curw};
+
 use crate::tests::test_fixtures::{
-    Clients, Environ, Item, Pane, Registry, Session, Target, Window, ensure_reactor, globals, link,
-    seen, unlink_all, zeroed,
+    Clients, Item, Pane, Registry, Session, Target, Window, ensure_reactor, globals, link,
+    unlink_all, zeroed,
 };
-use crate::window::window_get_active;
-use ::core::ptr::null;
+use crate::window::CLIENT_EXIT;
+use crate::window::window_active_pane;
 use ::std::ffi::CString;
 use ::std::sync::MutexGuard;
 
@@ -21,7 +20,7 @@ use ::std::sync::MutexGuard;
 /// lock.
 fn attached_globals() -> MutexGuard<'static, ()> {
     let guard = globals();
-    message_log.queue().clear();
+    crate::tests::test_fixtures::reset_message_log();
     guard
 }
 
@@ -35,13 +34,13 @@ struct RootTable;
 
 impl Drop for RootTable {
     fn drop(&mut self) {
-        unsafe { key_bindings_remove_table(c"root".as_ptr()) };
+        unsafe { key_bindings_remove_table(c"root") };
     }
 }
 
 /// `cfg_finished` for the length of a test, back to what it was afterwards
 /// even if the test panics.
-struct ConfigFinished(::core::ffi::c_int);
+struct ConfigFinished(c_int);
 
 impl ConfigFinished {
     fn new() -> ConfigFinished {
@@ -72,20 +71,23 @@ struct Wired {
 
 unsafe fn wire_up(c: *mut client) -> Wired {
     unsafe {
-        (*c).environ = Some(Environ::new().owned());
+        (*c).environ = Some(new_environment_box());
         let ttyname = CString::new("/dev/pts/attach").expect("no NUL");
         (*c).ttyname = Some(ttyname.clone());
-        (*c).peer = Some(zeroed::<tmuxpeer>());
-        let table_ref = key_bindings_get_table_ref(c"root".as_ptr(), 1).unwrap();
+        (*c).peer = Some(crate::proc::PeerRef::new(*zeroed::<tmuxpeer>()));
+        let table_ref = key_bindings_get_table_ref(c"root", 1).unwrap();
         (*c).keytable_ref = Some(table_ref);
         Wired { c, ttyname }
     }
 }
 
 impl Wired {
-    /// The peer the client owns.
-    fn peer(&self) -> *mut tmuxpeer {
-        unsafe { (*self.c).peer_ptr() }
+    /// Mutably borrows the peer the client owns.
+    ///
+    /// # Safety
+    /// The client must remain alive and other access to its peer must not overlap.
+    unsafe fn peer_mut(&mut self) -> std::cell::RefMut<'_, tmuxpeer> {
+        unsafe { (*self.c).peer_handle().borrow_mut() }
     }
 }
 
@@ -100,13 +102,7 @@ impl Drop for Wired {
 /// Everything the server's message log holds. Entries accumulate across the
 /// whole test binary, so assertions look for their own wording.
 fn logged_messages() -> Vec<String> {
-    unsafe {
-        let mut out = Vec::new();
-        for m in message_log.queue().iter() {
-            out.push(seen(m.msg.as_ptr()));
-        }
-        out
-    }
+    crate::tests::test_fixtures::logged_messages()
 }
 
 /// Hands cfg.rs's cause list to `cfg_print_causes`, which frees every
@@ -115,7 +111,7 @@ fn logged_messages() -> Vec<String> {
 fn drain_config_causes() {
     unsafe {
         let mut item = Item::new();
-        cfg_print_causes(item.ptr());
+        cfg_print_causes(&*item.ptr());
     }
 }
 
@@ -133,21 +129,35 @@ fn switching_with_d_detaches_the_other_clients_of_the_target() {
     let c = list.add("d-switcher", 80, 24);
     unsafe {
         let _wired = wire_up(c);
-        (*c).session = old.ptr();
+        (*c).set_attached_session(Some(old.handle()));
         let other = list.add("d-displaced", 80, 24);
-        (*other).session = t.session();
+        (*other).set_attached_session(Some(t.session_handle()));
 
         let mut item = Item::new();
         item.set_client(c);
         let mut item = item.targeting(&mut t);
-        let rv = cmd_attach_session(item.ptr(), null(), 1, 0, 0, null(), 0, null());
+        let rv = cmd_attach_session(&item.read(), None, 1, 0, 0, None, 0, None);
         assert_eq!(rv, CMD_RETURN_NORMAL);
 
-        assert_eq!((*c).session, t.session());
-        assert_eq!(client_get_last_session(c), old.ptr());
+        assert!(
+            (*c).attached_session()
+                .is_some_and(|attached| attached.ptr_eq(t.session_handle()))
+        );
+        assert!(
+            client_get_last_session(&*c)
+                .is_some_and(|s| core::ptr::eq(&*s.as_session(), &*old.ptr()))
+        );
         assert_eq!((*other).exit_type, CLIENT_EXIT_DETACH);
         assert_eq!((*other).exit_msgtype, MSG_DETACH);
-        assert_eq!(seen((*other).exit_session_ptr()), "0");
+        assert_eq!(
+            (*other)
+                .exit_session
+                .as_deref()
+                .expect("client text")
+                .to_string_lossy()
+                .into_owned(),
+            "0"
+        );
         assert_ne!((*other).flags & CLIENT_EXIT as u64, 0);
         assert_eq!((*c).flags & CLIENT_EXIT as u64, 0, "the attacher stays");
         assert_eq!(
@@ -171,17 +181,20 @@ fn switching_with_x_kills_the_other_clients_instead() {
     let c = list.add("x-switcher", 80, 24);
     unsafe {
         let _wired = wire_up(c);
-        (*c).session = old.ptr();
+        (*c).set_attached_session(Some(old.handle()));
         let other = list.add("x-displaced", 80, 24);
-        (*other).session = t.session();
+        (*other).set_attached_session(Some(t.session_handle()));
 
         let mut item = Item::new();
         item.set_client(c);
         let mut item = item.targeting(&mut t);
-        let rv = cmd_attach_session(item.ptr(), null(), 0, 1, 0, null(), 0, null());
+        let rv = cmd_attach_session(&item.read(), None, 0, 1, 0, None, 0, None);
         assert_eq!(rv, CMD_RETURN_NORMAL);
 
-        assert_eq!((*c).session, t.session());
+        assert!(
+            (*c).attached_session()
+                .is_some_and(|attached| attached.ptr_eq(t.session_handle()))
+        );
         assert_eq!((*other).exit_type, CLIENT_EXIT_DETACH);
         assert_eq!((*other).exit_msgtype, MSG_DETACHKILL);
     }
@@ -206,7 +219,6 @@ fn a_target_window_without_panes_leaves_the_current_state_without_one() {
     let mut p_full = Pane::new(40, 80, 24, 100);
     w_full.add_pane(&mut p_full);
     registry.add_window(&mut w_full);
-    registry.add_pane(&mut p_full);
     let _wl_full = link(&mut full, &mut w_full, 0);
     let mut w_solo = Window::new(41, "solo-win", 80, 24);
     registry.add_window(&mut w_solo);
@@ -215,22 +227,37 @@ fn a_target_window_without_panes_leaves_the_current_state_without_one() {
     let c = list.add("solofan", 80, 24);
     unsafe {
         let _wired = wire_up(c);
-        (*c).session = full.ptr();
-        assert!(window_get_active(w_solo.ptr()).is_null());
+        (*c).set_attached_session(Some(full.handle()));
+        assert!(window_active_pane(&*w_solo.ptr()).is_none());
 
         let mut item = Item::new();
         item.set_client(c);
-        let rv = cmd_attach_session(item.ptr(), c"solo".as_ptr(), 0, 0, 0, null(), 1, null());
+        let rv = cmd_attach_session(&item.read(), Some(c"solo"), 0, 0, 0, None, 1, None);
         assert_eq!(rv, CMD_RETURN_NORMAL);
 
-        assert_eq!((*c).session, solo.ptr());
-        assert_eq!(session_get_curw(solo.ptr()), wl_solo);
+        assert!(
+            (*c).attached_session()
+                .is_some_and(|attached| attached.ptr_eq(solo.handle()))
+        );
+        assert!(core::ptr::eq((&*solo.ptr()).curw().unwrap(), wl_solo));
 
-        let current = cmdq_get_current(item.ptr());
-        assert_eq!((*current).session(), solo.ptr());
-        assert_eq!((*current).winlink(), wl_solo);
-        assert_eq!((*current).window(), w_solo.ptr());
-        assert!((*current).pane().is_null());
+        let current = (*item.ptr()).current();
+        assert_eq!(
+            (*current).session().as_ref().map(|s| s.as_ptr()),
+            Some(solo.ptr())
+        );
+        assert!(core::ptr::eq(
+            (*current).winlink_ref().unwrap().get().unwrap(),
+            wl_solo
+        ));
+        assert_eq!(
+            (*current)
+                .window()
+                .as_ref()
+                .map_or(core::ptr::null_mut(), |w| w.as_ptr()),
+            w_solo.ptr()
+        );
+        assert!((*current).pane_list_ref().is_none());
     }
     unlink_all(&mut full);
     unlink_all(&mut solo);
@@ -253,15 +280,18 @@ fn a_client_that_is_not_a_terminal_is_refused_the_attach() {
         let mut item = Item::new();
         item.set_client(c);
         let mut item = item.targeting(&mut t);
-        let rv = cmd_attach_session(item.ptr(), null(), 0, 0, 0, null(), 0, null());
+        let rv = cmd_attach_session(&item.read(), None, 0, 0, 0, None, 0, None);
         assert_eq!(rv, CMD_RETURN_ERROR);
 
         assert_eq!(
             logged_messages(),
             ["no-terminal message: open terminal failed: not a terminal"]
         );
-        assert!((*c).session.is_null());
-        assert_eq!(session_attached(t.session()), 0);
+        assert!((*c).attached_session().is_none());
+        assert_eq!(
+            crate::SessionAttachmentState::session_attached(&*t.session()),
+            0
+        );
     }
 }
 
@@ -285,11 +315,17 @@ fn a_finished_config_hands_the_session_to_cfg_show_causes() {
         let mut item = Item::new();
         item.set_client(c);
         let mut item = item.targeting(&mut t);
-        let rv = cmd_attach_session(item.ptr(), null(), 0, 0, 0, null(), 0, null());
+        let rv = cmd_attach_session(&item.read(), None, 0, 0, 0, None, 0, None);
         assert_eq!(rv, CMD_RETURN_NORMAL);
 
-        assert_eq!((*c).session, t.session());
-        assert_eq!(session_attached(t.session()), 1);
+        assert!(
+            (*c).attached_session()
+                .is_some_and(|attached| attached.ptr_eq(t.session_handle()))
+        );
+        assert_eq!(
+            crate::SessionAttachmentState::session_attached(&*t.session()),
+            1
+        );
     }
 }
 /// `-r` against a client that is already read-only and whose peer runs as
@@ -306,15 +342,18 @@ fn a_read_only_client_whose_peer_is_this_user_still_attaches() {
     unsafe {
         (*c).flags |= CLIENT_CONTROL as u64 | CLIENT_READONLY as u64;
         let mut wired = wire_up(c);
-        (*wired.peer()).uid = getuid();
+        wired.peer_mut().uid = getuid();
 
         let mut item = Item::new();
         item.set_client(c);
         let mut item = item.targeting(&mut t);
-        let rv = cmd_attach_session(item.ptr(), null(), 0, 0, 1, null(), 0, null());
+        let rv = cmd_attach_session(&item.read(), None, 0, 0, 1, None, 0, None);
         assert_eq!(rv, CMD_RETURN_NORMAL);
 
-        assert_eq!((*c).session, t.session());
+        assert!(
+            (*c).attached_session()
+                .is_some_and(|attached| attached.ptr_eq(t.session_handle()))
+        );
         assert_eq!(
             (*c).flags & (CLIENT_READONLY | CLIENT_IGNORESIZE) as u64,
             (CLIENT_READONLY | CLIENT_IGNORESIZE) as u64

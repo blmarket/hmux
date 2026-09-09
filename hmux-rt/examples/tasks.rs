@@ -80,7 +80,7 @@ fn main() -> io::Result<()> {
     // versioned.
     println!("== consecutive suspensions, fresh fd each ==");
     let scene = handle.clone();
-    let print = stamp.clone();
+    let print = stamp;
     runtime.block_on(async move {
         let one = run_shell(&scene, "echo one").await.expect("first");
         println!("{} first suspension:  {:?}", print(), text(&one));
@@ -93,7 +93,7 @@ fn main() -> io::Result<()> {
     // object at all.
     println!("== client waits on command, no fd ==");
     let scene = handle.clone();
-    let print = stamp.clone();
+    let print = stamp;
     let reply = runtime.block_on(async move {
         let shell = scene.clone();
         let command = scene.spawn_join(async move {
@@ -110,7 +110,7 @@ fn main() -> io::Result<()> {
     // event order, not spawn order.
     println!("== three tasks interleave ==");
     let scene = handle.clone();
-    let print = stamp.clone();
+    let print = stamp;
     runtime.block_on(async move {
         let shell = scene.clone();
         let slow = scene.spawn_join(async move {

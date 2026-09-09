@@ -9,7 +9,7 @@
 //!
 //! Coverage exemptions: none.
 pub use crate::types::*;
-use ::core::ffi::{c_char, c_int, c_uint};
+use ::core::ffi::{c_int, c_uint};
 
 unsafe extern "C" {
     fn utf8proc_iterate(
@@ -57,35 +57,32 @@ pub fn utf8proc_wcwidth(wc: wchar_t) -> c_int {
 /// utf8proc writes -1 to `pwc` for a codepoint that is not one, which is a
 /// separate answer from the negative length it gives for bytes it could not
 /// read at all; both are the same refusal here.
-pub unsafe fn utf8proc_mbtowc(pwc: *mut wchar_t, s: *const c_char, n: size_t) -> c_int {
-    unsafe {
-        if s.is_null() {
-            return 0;
-        }
-        let read = utf8proc_iterate(
-            s as *const utf8proc_uint8_t,
-            n as utf8proc_ssize_t,
-            pwc as *mut utf8proc_int32_t,
-        );
-        if *pwc == -1 as wchar_t || read < 0 {
-            return -1;
-        }
-        read as c_int
+pub fn utf8proc_mbtowc(pwc: Option<&mut wchar_t>, s: Option<&[u8]>) -> c_int {
+    let Some(s) = s else {
+        return 0;
+    };
+    let mut codepoint = 0;
+    let read =
+        unsafe { utf8proc_iterate(s.as_ptr(), s.len() as utf8proc_ssize_t, &raw mut codepoint) };
+    if codepoint == -1 || read < 0 {
+        return -1;
     }
+    if let Some(pwc) = pwc {
+        *pwc = codepoint as wchar_t;
+    }
+    read as c_int
 }
 
 /// Writes `wc` to `s` as its bytes and answers how many it took; -1 for a
 /// codepoint that stands for no character, and zero for nowhere to write it.
-pub unsafe fn utf8proc_wctomb(s: *mut c_char, wc: wchar_t) -> c_int {
-    unsafe {
-        if s.is_null() {
-            return 0;
-        }
-        if !utf8proc_codepoint_valid(wc as utf8proc_int32_t) {
-            return -1;
-        }
-        utf8proc_encode_char(wc as utf8proc_int32_t, s as *mut utf8proc_uint8_t) as c_int
+pub fn utf8proc_wctomb(s: Option<&mut [u8; 4]>, wc: wchar_t) -> c_int {
+    let Some(s) = s else {
+        return 0;
+    };
+    if unsafe { !utf8proc_codepoint_valid(wc as utf8proc_int32_t) } {
+        return -1;
     }
+    unsafe { utf8proc_encode_char(wc as utf8proc_int32_t, s.as_mut_ptr()) as c_int }
 }
 
 #[cfg(test)]

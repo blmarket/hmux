@@ -8,7 +8,7 @@
 //! every test that reaches any of it holds that guard.
 //!
 //! The second is a set of owned builders that free what they made when they go
-//! out of scope. [`Grid`], [`Screen`], [`Options`], [`Environ`], [`Args`],
+//! out of scope. [`Grid`], [`Screen`], [`Options`], [`Args`],
 //! [`Item`] and [`Format`] wrap the real constructors. [`Session`], [`Window`]
 //! and [`Pane`] do not: they are hand-built structs carrying just the
 //! invariants a unit test needs, because the real `session_create`/
@@ -19,18 +19,22 @@
 //! is a turn at the paste store and [`KeyTable`] is a key table of the test's
 //! own.
 
-use crate::cmd::{CmdqItemRef, CmdqItemWeak};
-use crate::options::{options_get_only_ptr, options_get_ptr};
-use crate::session::{
-    session_environ, session_get_curw, session_id, session_name, session_new_detached,
-    session_options, session_set_curw,
-};
+use crate::options::{OptionsEngine, RustOptionsEngine};
+use crate::pane_identity::PaneIdentity;
+use crate::window_dimensions::WindowDimensionsState;
+use crate::window_name::WindowNameState;
+
+use crate::pane_geometry::PaneGeometryState;
+
+use crate::cmd::CmdqItemRef;
+
+use crate::screen::RustScreen;
+use crate::session::session_new_detached;
 pub use crate::types::*;
 use crate::window::winlinks_into;
-use crate::window::{window_get_active, window_set_active};
+use crate::window::{window_active_pane, window_set_active};
 use crate::window::{
-    window_pane_reset_mode_all, window_panes_first, window_panes_insert_tail, window_panes_next,
-    window_ref_from_ptr, winlink_add, winlink_set_window_ref,
+    window_pane_reset_mode_all, window_panes_insert_tail, window_ref_of, winlink_insert,
 };
 
 impl cmd_parse_result {
@@ -50,14 +54,13 @@ impl cmd_parse_result {
 /// Every call a [`Prompt::Recorder`] prompt made to its input callback, as the
 /// answer it carried and whether it was the final one. A test holds
 /// [`globals`], so the list is only ever touched by one of them at a time.
-static PROMPT_ANSWERS: ::std::sync::Mutex<Vec<(String, c_int)>> =
-    ::std::sync::Mutex::new(Vec::new());
+static PROMPT_ANSWERS: std::sync::Mutex<Vec<(String, c_int)>> = std::sync::Mutex::new(Vec::new());
 
 /// What [`Prompt::Recorder`] answers with. Returning zero is what a one-shot
 /// prompt's callback does, and what makes the accepting paths take the prompt
 /// back down.
 pub unsafe fn prompt_recorder(
-    _c: *mut client,
+    _c: &mut client,
     _data: &mut PromptData,
     s: Option<&CStr>,
     done: c_int,
@@ -80,14 +83,13 @@ pub fn prompt_answers_clear() {
     PROMPT_ANSWERS.lock().unwrap().clear();
 }
 
+use crate::cmd::CmdqListOps;
 use crate::cmd::cmd_find_from_winlink;
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
-use crate::cmd::{CmdqStateRef, CmdqType, cmdq_get_state_ref, cmdq_item_ref_of, cmdq_new_state};
-use crate::cmd::{cmd_get_args, cmd_list_first};
-use crate::environ::{environ_create_box, environ_entry_value, environ_free, environ_t};
+use crate::cmd::{CmdqStateRef, CmdqType};
+use crate::environ::{RustEnvironment, new_environment_box};
 use crate::ffi::free;
-use crate::file::{CLIENT_DEAD, file_fire_done};
-use crate::fmt_args;
+use crate::file::CLIENT_DEAD;
 use crate::format::{
     FORMAT_NONE, format_create, format_defaults, format_expand, format_expand_time,
 };
@@ -96,22 +98,77 @@ use crate::key_bindings::{
     key_binding_cmdlist_ref, key_binding_note, key_bindings_add, key_bindings_get_table,
     key_bindings_remove,
 };
+use crate::message_log::{
+    MessageLogStore, MessageLogTime, RustMessageLog, with_message_log, with_message_log_mut,
+};
 use crate::options::{
     OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
-    options_table,
 };
-use crate::options::{options_create_boxed, options_default, options_free};
-use crate::paste::{paste_free, paste_get_name, paste_set, paste_walk};
+
+use crate::paste::{PasteBufferStore, with_paste_buffers, with_paste_buffers_mut};
 use crate::reactor;
 use crate::reactor::{IoWatch, Reactor, Timer};
-use crate::screen::{screen_free, screen_grid, screen_init};
 use crate::status::status_free;
-use crate::terminfo::TtyCode;
 use crate::terminfo::tty_term_of;
+use crate::terminfo::{RustTerminalCapabilities, TerminalCapabilities};
 use ::core::ffi::{CStr, c_char, c_int, c_void};
-use ::core::ptr::{null, null_mut};
+use ::core::ptr::null_mut;
 use ::std::ffi::CString;
 use ::std::sync::MutexGuard;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LoggedMessage {
+    pub text: CString,
+    pub number: u32,
+    pub time: MessageLogTime,
+}
+
+pub(crate) fn message_log_entries() -> Vec<LoggedMessage> {
+    with_message_log(|log| {
+        log.entries()
+            .map(|entry| LoggedMessage {
+                text: entry.text.to_owned(),
+                number: entry.number,
+                time: entry.time,
+            })
+            .collect()
+    })
+}
+
+pub(crate) fn logged_messages() -> Vec<String> {
+    let mut messages = message_log_entries();
+    messages.reverse();
+    messages
+        .into_iter()
+        .map(|entry| String::from_utf8_lossy(entry.text.as_bytes()).into_owned())
+        .collect()
+}
+
+pub(crate) fn message_log_count() -> usize {
+    with_message_log(|log| log.entries().count())
+}
+
+pub(crate) fn reset_message_log() {
+    with_message_log_mut(|log| *log = RustMessageLog::new());
+}
+
+pub(crate) struct MessageLogGuard {
+    saved: Option<RustMessageLog>,
+}
+
+impl MessageLogGuard {
+    pub(crate) fn take() -> Self {
+        let saved = with_message_log_mut(core::mem::take);
+        Self { saved: Some(saved) }
+    }
+}
+
+impl Drop for MessageLogGuard {
+    fn drop(&mut self) {
+        let saved = self.saved.take().expect("message log guard owns a store");
+        with_message_log_mut(|log| *log = saved);
+    }
+}
 
 /// The globals `main` sets up that the modules' tests need — the environment,
 /// the three option trees and the socket path the format engine reports.
@@ -120,12 +177,21 @@ use ::std::sync::MutexGuard;
 /// server built at startup wants this and nothing more, and two such tests
 /// have no reason to wait for each other.
 pub(crate) fn globals_ready() {
-    static SETUP: ::std::sync::Once = ::std::sync::Once::new();
+    static SETUP: std::sync::Once = std::sync::Once::new();
     SETUP.call_once(|| unsafe {
         crate::tmux::global_options_create();
-        defaults(crate::tmux::global_options, OPTIONS_TABLE_SERVER);
-        defaults(crate::tmux::global_s_options, OPTIONS_TABLE_SESSION);
-        defaults(crate::tmux::global_w_options, OPTIONS_TABLE_WINDOW);
+        defaults(
+            crate::tmux::global_options.as_ref().unwrap(),
+            OPTIONS_TABLE_SERVER,
+        );
+        defaults(
+            crate::tmux::global_s_options.as_ref().unwrap(),
+            OPTIONS_TABLE_SESSION,
+        );
+        defaults(
+            crate::tmux::global_w_options.as_ref().unwrap(),
+            OPTIONS_TABLE_WINDOW,
+        );
         crate::tmux::socket_path = Some(c"/tmp/tmux-fixture/default".to_owned());
     });
 }
@@ -137,7 +203,7 @@ pub(crate) fn globals_ready() {
 /// tests on parallel threads, so a test that mutates any of that holds the
 /// guard this returns for as long as it is looking.
 pub(crate) fn globals() -> MutexGuard<'static, ()> {
-    static GLOBALS: ::std::sync::Mutex<()> = ::std::sync::Mutex::new(());
+    static GLOBALS: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let guard = GLOBALS
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -177,22 +243,22 @@ pub(crate) unsafe fn release_client(c: *mut client) {
         if !(*c).files.is_empty() {
             reactor::current().run_once();
             for cf in (*c).files.values().cloned().collect::<Vec<_>>() {
-                (*cf.as_ptr()).error = ::libc::EINTR;
-                file_fire_done(cf);
+                cf.borrow_mut().error = libc::EINTR;
+                cf.fire_done();
             }
             reactor::current().run_once();
             (*c).flags |= CLIENT_DEAD as uint64_t;
             reactor::current().run_once();
             while !(*c).files.is_empty() {
                 for cf in (*c).files.values().cloned().collect::<Vec<_>>() {
-                    (*cf.as_ptr()).error = ::libc::EINTR;
-                    file_fire_done(cf);
+                    cf.borrow_mut().error = libc::EINTR;
+                    cf.fire_done();
                 }
                 reactor::current().run_once();
             }
         }
-        status_free(c);
-        (*c).status.screen = screen::default();
+        status_free(&mut *c);
+        (*c).status.screen = RustScreen::default();
         (*c).exit_session = None;
         (*c).exit_message = None;
     }
@@ -203,38 +269,35 @@ mod client_handle_tests {
     use super::{globals, zeroed_client};
 
     #[test]
-    fn an_immutable_handle_view_can_be_used_without_an_owning_pointer() {
+    fn an_explicit_handle_view_can_be_used_without_an_owning_pointer() {
         let _guard = globals();
         let client = zeroed_client();
         let weak = client.downgrade();
-        let pointer = client.with(|value| value as *const _);
-        assert_eq!(pointer as *mut _, client.as_ptr());
+        let pointer = unsafe { client.as_client() as *const _ };
+        assert!(core::ptr::eq(pointer, client.as_ptr()));
         drop(client);
         assert!(weak.upgrade().is_none());
     }
 }
 
 /// Gives `oo` the default value of every option in `scope`.
-unsafe fn defaults(oo: *mut options, scope: c_int) {
-    unsafe {
-        for oe in &options_table {
-            if oe.scope & scope != 0 {
-                options_default(oo, oe);
-            }
+unsafe fn defaults(oo: &RustOptionsRef, scope: c_int) {
+    for oe in RustOptionsEngine.table() {
+        if oe.scope & scope != 0 {
+            unsafe { oo.set_default(oe) };
         }
     }
 }
 
 /// How many terminal capabilities `tty_term` keeps a slot for.
-const TTY_CODES: usize = 233;
-
+///
 /// A zeroed value of a `#[repr(C)]` struct, the way `xcalloc` hands one out.
 /// Only for a type every one of whose fields zero is a valid value for — a
 /// `Vec` is not one, since a null buffer pointer is not a value it may even
 /// hold. A type that has a `Default` says so itself, and is built with that
 /// instead; this is for the C structs that have none.
 pub(crate) fn zeroed<T>() -> Box<T> {
-    Box::new(unsafe { ::core::mem::zeroed() })
+    Box::new(unsafe { core::mem::zeroed() })
 }
 
 /// The entry a fixture command carries until one is parsed for it. A command
@@ -264,7 +327,7 @@ static PLACEHOLDER_ENTRY: cmd_entry = cmd_entry {
     exec: placeholder_exec,
 };
 
-unsafe fn placeholder_exec(_cmd: &cmd, _item: *mut cmdq_item) -> cmd_retval {
+fn placeholder_exec(_cmd: &cmd, _item: &cmdq_item) -> cmd_retval {
     panic!("the fixture command was never given an entry")
 }
 
@@ -280,15 +343,8 @@ pub(crate) fn empty_cmd() -> Box<cmd> {
     })
 }
 
-/// The item a stored handle names, or null once its queue has given it up.
-pub(crate) fn held_item(held: &Option<CmdqItemWeak>) -> *mut cmdq_item {
-    held.as_ref()
-        .and_then(CmdqItemWeak::upgrade)
-        .map_or(null_mut(), |item| item.as_ptr())
-}
-
 pub(crate) fn zeroed_cmdq_item(state: CmdqStateRef) -> CmdqItemRef {
-    crate::cmd::cmdq_item_new(
+    CmdqItemRef::from_type(
         CmdqType::Command {
             cmdlist: None,
             at: 0,
@@ -297,15 +353,14 @@ pub(crate) fn zeroed_cmdq_item(state: CmdqStateRef) -> CmdqItemRef {
     )
 }
 
-/// An empty valid screen ready for `screen_init` to overwrite.
-pub(crate) fn zeroed_screen() -> Box<screen> {
-    Box::new(screen::default())
+/// An empty valid screen ready to initialize.
+pub(crate) fn zeroed_screen() -> Box<RustScreen> {
+    Box::new(RustScreen::default())
 }
 
 /// A client the way `server_client_create` hands one out, near enough: zeroed,
-/// but with the five status lines' range lists and the prompt buffer made into
-/// real empty `Vec`s first, which is what `status_init` and
-/// `server_client_create` do for a live client.
+/// with the five status lines' range lists and the prompt buffer as real empty
+/// `Vec`s, as required for a live client.
 pub(crate) fn zeroed_client() -> ClientRef {
     ClientRef::new(client::default())
 }
@@ -322,14 +377,8 @@ pub(crate) fn zeroed_pane() -> Box<window_pane> {
 
 /// A terminal description the way `tty_term_create` leaves one, near enough:
 /// zeroed, but with a full-length code table of missing entries.
-pub(crate) fn zeroed_term() -> Box<tty_term> {
-    Box::new(tty_term {
-        name: None,
-        features: 0,
-        acs: [[0; 2]; 256],
-        codes: (0..TTY_CODES).map(|_| TtyCode::None).collect(),
-        flags: 0,
-    })
+pub(crate) fn zeroed_term() -> crate::terminfo::TerminalRef {
+    std::rc::Rc::new(std::cell::RefCell::new(RustTerminalCapabilities::new(c"")))
 }
 
 /// A terminal the way `tty_init` leaves one, near enough: zeroed, but with the
@@ -346,26 +395,22 @@ impl Grid {
         Grid(grid_create(sx, sy, hlimit))
     }
 
-    pub(crate) fn ptr(&self) -> *mut grid {
-        self.0.as_ref() as *const grid as *mut grid
-    }
-
     /// Writes `s` from (px, py), one ASCII cell per byte.
-    pub(crate) fn write(&self, px: u_int, py: u_int, s: &str) {
+    pub(crate) fn write(&mut self, px: u_int, py: u_int, s: &str) {
         for (i, byte) in s.bytes().enumerate() {
             let gc = ascii(byte);
-            unsafe { grid_set_cell(&mut *self.ptr(), px + i as u_int, py, &gc) };
+            grid_set_cell(&mut *self, px + i as u_int, py, &gc);
         }
     }
 
     pub(crate) fn cell(&self, px: u_int, py: u_int) -> grid_cell {
-        let mut gc = unsafe { grid_default_cell };
-        unsafe { gc = grid_get_cell(&*self.ptr(), px, py) };
+        let mut gc = { grid_default_cell };
+        gc = grid_get_cell(&*self, px, py);
         gc
     }
 }
 
-impl ::core::ops::Deref for Grid {
+impl core::ops::Deref for Grid {
     type Target = grid;
 
     fn deref(&self) -> &grid {
@@ -373,9 +418,15 @@ impl ::core::ops::Deref for Grid {
     }
 }
 
+impl core::ops::DerefMut for Grid {
+    fn deref_mut(&mut self) -> &mut grid {
+        &mut self.0
+    }
+}
+
 /// One cell holding the ASCII byte `ch` in the default style.
 pub(crate) fn ascii(ch: u8) -> grid_cell {
-    let mut gc = unsafe { grid_default_cell };
+    let mut gc = { grid_default_cell };
     gc.data.data[0] = ch;
     gc.data.have = 1;
     gc.data.size = 1;
@@ -383,61 +434,49 @@ pub(crate) fn ascii(ch: u8) -> grid_cell {
     gc
 }
 
-/// A screen, freed at the end of the test. The screen itself is owned here
-/// rather than by the module under test, since `screen_init` fills a caller's
-/// struct.
-pub(crate) struct Screen(Box<screen>);
+/// A screen owned by the test fixture.
+pub(crate) struct Screen(Box<RustScreen>);
 
 impl Screen {
     pub(crate) fn new(sx: u_int, sy: u_int, hlimit: u_int) -> Screen {
-        let mut s = Screen(zeroed_screen());
-        unsafe { screen_init(&mut *s.0, sx, sy, hlimit) };
-        s
+        Screen(Box::new(RustScreen::new_with_server_options(
+            sx, sy, hlimit,
+        )))
     }
 
-    pub(crate) fn ptr(&mut self) -> *mut screen {
+    pub(crate) fn ptr(&mut self) -> *mut RustScreen {
         &raw mut *self.0
     }
-
-    pub(crate) fn grid(&self) -> *mut grid {
-        screen_grid(&self.0) as *const grid as *mut grid
-    }
 }
 
-impl Drop for Screen {
-    fn drop(&mut self) {
-        unsafe { screen_free(&mut *self.0) };
-    }
-}
+impl core::ops::Deref for Screen {
+    type Target = RustScreen;
 
-impl ::core::ops::Deref for Screen {
-    type Target = screen;
-
-    fn deref(&self) -> &screen {
+    fn deref(&self) -> &RustScreen {
         &self.0
     }
 }
 
-impl ::core::ops::DerefMut for Screen {
-    fn deref_mut(&mut self) -> &mut screen {
+impl core::ops::DerefMut for Screen {
+    fn deref_mut(&mut self) -> &mut RustScreen {
         &mut self.0
     }
 }
 
 /// An option set, freed at the end of the test.
-pub(crate) struct Options(*mut options);
+pub(crate) struct Options(RustOptionsRef);
 
 impl Options {
     /// An empty set below `parent`.
-    pub(crate) fn empty(parent: *mut options) -> Options {
-        Options(Box::into_raw(options_create_boxed(parent)))
+    pub(crate) fn empty(parent: Option<&RustOptionsRef>) -> Options {
+        Options(RustOptionsEngine.create(parent))
     }
 
     /// A set holding the default value of every option in `scope`, one of the
     /// `OPTIONS_TABLE_*` bits.
     pub(crate) fn defaults(scope: c_int) -> Options {
-        let oo = Options::empty(null_mut());
-        unsafe { defaults(oo.0, scope) };
+        let oo = Options::empty(None);
+        unsafe { defaults(&oo, scope) };
         oo
     }
 
@@ -456,71 +495,17 @@ impl Options {
         Options::defaults(OPTIONS_TABLE_PANE)
     }
 
-    pub(crate) fn ptr(&self) -> *mut options {
+    /// Hands shared ownership of the option set to a caller, such as a session.
+    pub(crate) fn owned(self) -> crate::options::RustOptionsRef {
         self.0
     }
-
-    /// Hands the option set over to a caller that takes ownership of it, such
-    /// as a session.
-    pub(crate) fn leak(self) -> *mut options {
-        let oo = self.0;
-        ::core::mem::forget(self);
-        oo
-    }
-
-    /// The same for a caller that owns it as a box of its own.
-    pub(crate) fn owned(self) -> Box<options> {
-        unsafe { Box::from_raw(self.leak()) }
-    }
 }
 
-impl Drop for Options {
-    fn drop(&mut self) {
-        unsafe { options_free(Box::from_raw(self.0)) };
-    }
-}
+impl core::ops::Deref for Options {
+    type Target = RustOptionsRef;
 
-/// An environment, freed at the end of the test.
-pub(crate) struct Environ(*mut environ_t);
-
-impl Environ {
-    pub(crate) fn new() -> Environ {
-        Environ(Box::into_raw(environ_create_box()))
-    }
-
-    pub(crate) fn from_box(env: Box<environ_t>) -> Environ {
-        Environ(Box::into_raw(env))
-    }
-
-    /// Takes over an environment somebody else made, so that it is freed at
-    /// the end of the test too.
-    pub(crate) fn owning(env: *mut environ_t) -> Environ {
-        assert!(!env.is_null(), "the environment is missing");
-        Environ(env)
-    }
-
-    pub(crate) fn ptr(&self) -> *mut environ_t {
-        self.0
-    }
-
-    /// Hands the environment over to a caller that takes ownership of it, such
-    /// as a session.
-    pub(crate) fn leak(self) -> *mut environ_t {
-        let p = self.0;
-        ::core::mem::forget(self);
-        p
-    }
-
-    /// The same for a caller that owns it as a box of its own, such as a
-    /// client.
-    pub(crate) fn owned(self) -> Box<environ_t> {
-        unsafe { Box::from_raw(self.leak()) }
-    }
-}
-
-impl Drop for Environ {
-    fn drop(&mut self) {
-        unsafe { environ_free(self.0) };
+    fn deref(&self) -> &RustOptionsRef {
+        &self.0
     }
 }
 
@@ -528,7 +513,6 @@ impl Drop for Environ {
 /// command list owns the arguments, so it is kept alive alongside them.
 pub(crate) struct Args {
     cmdlist: CmdListRef,
-    cmd: *mut cmd,
 }
 
 impl Args {
@@ -536,18 +520,19 @@ impl Args {
     /// command. Panics if `s` is not a command line.
     pub(crate) fn parse(s: &CStr) -> Args {
         unsafe {
-            let mut pr = cmd_parse_from_string(s.as_ptr(), null_mut::<cmd_parse_input>());
+            let mut pr = cmd_parse_from_string(s, None);
             assert_eq!(pr.status, CMD_PARSE_SUCCESS, "{s:?} did not parse");
             let cmdlist = pr.cmdlist.take().unwrap();
-            Args {
-                cmd: cmd_list_first(&cmdlist),
-                cmdlist,
-            }
+            Args { cmdlist }
         }
     }
 
-    pub(crate) fn ptr(&self) -> *mut args {
-        unsafe { (*self.cmd).args_ptr() }
+    /// Borrows the parsed arguments through their command-list owner.
+    pub(crate) fn borrow(&self) -> std::cell::Ref<'_, args> {
+        std::cell::Ref::map(
+            self.cmdlist.command(0).expect("the parsed command"),
+            |command| command.args.as_deref().expect("the parsed arguments"),
+        )
     }
 
     /// The list the parsed command sits in, which is what a queue item names
@@ -556,12 +541,14 @@ impl Args {
         self.cmdlist.clone()
     }
 
-    pub(crate) fn cmd(&self) -> *mut cmd {
-        self.cmd
+    /// Borrows the first parsed command through its list owner.
+    pub(crate) fn command(&self) -> std::cell::Ref<'_, cmd> {
+        self.cmdlist.command(0).expect("the parsed command")
     }
 
-    pub(crate) fn list(&self) -> *mut cmd_list {
-        self.cmdlist.as_ptr()
+    /// Borrows the first parsed command exclusively through its list owner.
+    pub(crate) fn command_mut(&self) -> std::cell::RefMut<'_, cmd> {
+        self.cmdlist.command_mut(0).expect("the parsed command")
     }
 
     pub(crate) fn list_ref(&self) -> &CmdListRef {
@@ -569,51 +556,10 @@ impl Args {
     }
 }
 
-/// A command-queue item, the command it is running and the state it shares
-/// with the rest of its queue, all zeroed the way `xcalloc` hands them out.
-/// That is enough for the fields the commands themselves touch:
-/// `cmdq_get_client` reads the item's client, `cmdq_continue` clears its
-/// waiting flag, `cmdq_error` reaches `cfg_add_cause` through the command's
-/// file name and line, and `cmdq_merge_formats` reads the state's format tree.
-/// The item itself, which the fixture owns until a queue takes it over.
-enum ItemBox {
-    Owned(CmdqItemRef),
-    Queued(*mut cmdq_item),
-}
-
-impl ItemBox {
-    /// The item as a handle, whether the fixture still owns it or a queue has
-    /// taken it over.
-    fn handle(&self) -> CmdqItemRef {
-        match self {
-            ItemBox::Owned(item) => item.clone(),
-            ItemBox::Queued(item) => cmdq_item_ref_of(*item),
-        }
-    }
-}
-
-impl ::core::ops::Deref for ItemBox {
-    type Target = cmdq_item;
-
-    fn deref(&self) -> &cmdq_item {
-        match self {
-            ItemBox::Owned(item) => item.item(),
-            ItemBox::Queued(item) => unsafe { &**item },
-        }
-    }
-}
-
-impl ::core::ops::DerefMut for ItemBox {
-    fn deref_mut(&mut self) -> &mut cmdq_item {
-        match self {
-            ItemBox::Owned(item) => item.item(),
-            ItemBox::Queued(item) => unsafe { &mut **item },
-        }
-    }
-}
-
+/// Retains a command, its queue item, and the state used by fixture operations.
 pub(crate) struct Item {
-    item: ItemBox,
+    item: CmdqItemRef,
+    queued: bool,
     cmdlist: CmdListRef,
     client: ClientRef,
     state: CmdqStateRef,
@@ -623,17 +569,18 @@ pub(crate) struct Item {
 impl Item {
     /// An item with no client behind it.
     pub(crate) fn new() -> Item {
-        let cmdlist = crate::cmd::cmd_list_new();
-        unsafe { crate::cmd::cmd_list_append(&cmdlist, empty_cmd()) };
-        let state = unsafe { cmdq_new_state(null_mut(), null_mut(), 0) };
-        let mut it = Item {
-            item: ItemBox::Owned(zeroed_cmdq_item(state.clone())),
+        let cmdlist = CmdListRef::empty();
+        cmdlist.append(empty_cmd());
+        let state = unsafe { CmdqStateRef::create(None, None, 0) };
+        let it = Item {
+            item: zeroed_cmdq_item(state.clone()),
+            queued: false,
             cmdlist: cmdlist.clone(),
             client: zeroed_client(),
             state,
             args: None,
         };
-        it.item.type_0 = CmdqType::Command {
+        it.item.item().type_0 = CmdqType::Command {
             cmdlist: Some(cmdlist),
             at: 0,
         };
@@ -644,31 +591,38 @@ impl Item {
     /// command.
     ///
     pub(crate) fn with_client() -> Item {
-        let mut it = Item::new();
-        it.item.client = Some(it.client.clone());
+        let it = Item::new();
+        it.item.item().client = Some(it.client.clone());
         it
     }
 
     pub(crate) fn set_client(&mut self, c: *mut client) {
-        self.item.client = crate::server::client_ref_from_ptr(c);
+        self.item.item().client = unsafe { crate::server::client_ref_of(&*c) };
     }
 
     /// Where the command came from, which is what `cmdq_error` reports.
-    pub(crate) fn from_file(mut self, file: &'static CStr, line: u_int) -> Item {
-        unsafe {
-            (*self.cmd()).file = Some(file.to_owned());
-            (*self.cmd()).line = line;
+    pub(crate) fn with_file(mut self, file: &'static CStr, line: u_int) -> Item {
+        {
+            let mut command = self.cmdlist.command_mut(0).expect("the fixture command");
+            command.file = Some(file.to_owned());
+            command.line = line;
         }
         self
+    }
+
+    pub(crate) fn from_file(self, file: &'static CStr, line: u_int) -> Item {
+        self.with_file(file, line)
     }
 
     /// Runs the command line `s` through the parser and points the item's
     /// command at the arguments it produced.
     pub(crate) fn with_args(mut self, s: &CStr) -> Item {
         let mut args = Args::parse(s);
-        unsafe {
-            (*self.cmd()).entry = (*args.cmd()).entry;
-            (*self.cmd()).args = Some((*args.cmd()).args.take().unwrap());
+        {
+            let mut source = args.cmdlist.command_mut(0).expect("the parsed command");
+            let mut target = self.cmdlist.command_mut(0).expect("the fixture command");
+            target.entry = source.entry;
+            target.args = source.args.take();
         }
         self.args = Some(args);
         self
@@ -678,65 +632,97 @@ impl Item {
     /// winlink, the way the command queue prepares an item before running its
     /// command. The item's own client, if it has one, becomes the target
     /// client too.
-    pub(crate) fn targeting(mut self, target: &mut Target) -> Item {
+    pub(crate) fn targeting(self, target: &mut Target) -> Item {
         let fs = target.state();
-        self.item.target = fs.clone();
-        self.item.source = fs.clone();
-        unsafe { (*self.state.as_ptr()).current = fs };
-        if let Some(client) = self.item.client.as_ref() {
-            self.item.target_client = Some(client.downgrade());
+        {
+            let mut item = self.item.item();
+            item.target = fs.clone();
+            item.source = fs.clone();
+            if let Some(client) = item.client.as_ref().map(ClientRef::downgrade) {
+                item.target_client = Some(client);
+            }
         }
+        self.state.state().current = fs;
         self
     }
 
     pub(crate) fn ptr(&mut self) -> *mut cmdq_item {
-        &raw mut *self.item
+        self.item.as_ptr()
     }
 
-    /// Puts the item at the back of `queue`, which takes it over, so that the
-    /// command queue can find it there the way it finds an item it queued
-    /// itself. The fixture keeps the command and state it points at alive.
-    pub(crate) fn queue_onto(&mut self, queue: &mut cmdq_list) -> *mut cmdq_item {
-        let ptr = self.ptr();
-        if let ItemBox::Owned(item) = ::core::mem::replace(&mut self.item, ItemBox::Queued(ptr)) {
-            item.item().queue = &raw mut *queue;
-            queue.list.push_back(item);
+    pub(crate) fn handle(&self) -> CmdqItemRef {
+        self.item.clone()
+    }
+
+    pub(crate) fn item_mut(&self) -> std::cell::RefMut<'_, cmdq_item> {
+        self.item.item()
+    }
+
+    pub(crate) fn read(&self) -> std::cell::Ref<'_, cmdq_item> {
+        self.item.read()
+    }
+
+    /// Shares the item with the queue while retaining the fixture's own handle.
+    pub(crate) fn queue_onto(&mut self, queue: &CmdqListRef) {
+        if !self.queued {
+            self.item.item().queue = Some(queue.downgrade());
+            queue.append_item(self.item.clone());
+            self.queued = true;
         }
-        ptr
     }
 
-    pub(crate) fn cmd(&mut self) -> *mut cmd {
-        unsafe { crate::cmd::cmd_list_at(&self.cmdlist, 0) }
+    pub(crate) fn command(&self) -> std::cell::Ref<'_, cmd> {
+        self.cmdlist.command(0).expect("the fixture command")
     }
 
-    /// The arguments the item's command carries, as the pointer the argument
-    /// helpers take.
-    pub(crate) fn args_ptr(&mut self) -> *mut args {
-        unsafe { (*self.cmd()).args_ptr() }
+    pub(crate) fn command_mut(&self) -> std::cell::RefMut<'_, cmd> {
+        self.cmdlist.command_mut(0).expect("the fixture command")
+    }
+
+    pub(crate) fn with_command<R>(&self, operation: impl FnOnce(&cmd, &cmdq_item) -> R) -> R {
+        let command = self.cmdlist.command(0).expect("the fixture command");
+        let item = self.handle();
+        operation(&command, &item.read())
+    }
+
+    /// The command arguments under a shared borrow of their list.
+    pub(crate) fn args(&self) -> std::cell::Ref<'_, args> {
+        std::cell::Ref::map(
+            self.cmdlist.command(0).expect("the fixture command"),
+            |command| command.args.as_deref().expect("the fixture arguments"),
+        )
+    }
+
+    /// The command arguments under an exclusive borrow of their list.
+    pub(crate) fn args_mut(&self) -> std::cell::RefMut<'_, args> {
+        std::cell::RefMut::map(
+            self.cmdlist.command_mut(0).expect("the fixture command"),
+            |command| command.args.as_deref_mut().expect("the fixture arguments"),
+        )
     }
 
     pub(crate) fn client(&mut self) -> *mut client {
-        &raw mut *self.client
+        unsafe { self.client.as_client_mut() }
     }
 
     /// The state the item shares with the rest of its queue, as a handle of
     /// the caller's own.
     pub(crate) fn state_ref(&self) -> CmdqStateRef {
-        cmdq_get_state_ref(&self.item.handle()).clone()
+        self.item.state_ref()
     }
 
     pub(crate) fn flags(&self) -> c_int {
-        self.item.flags
+        self.item.read().flags
     }
 
     pub(crate) fn set_flags(&mut self, flags: c_int) {
-        self.item.flags = flags;
+        self.item.item().flags = flags;
     }
 }
 
 impl Drop for Item {
     fn drop(&mut self) {
-        unsafe { release_client(&raw mut *self.client) };
+        unsafe { release_client(self.client.as_client_mut()) };
     }
 }
 
@@ -759,7 +745,7 @@ impl Session {
             name.clone(),
             CString::new("/").expect("no NUL"),
             Options::session().owned(),
-            Environ::new().owned(),
+            new_environment_box(),
         );
         let mut s = Session { session, name };
         unsafe { (*s.session.as_ptr()).lastw.clear() };
@@ -784,12 +770,24 @@ impl Session {
         &self.session
     }
 
-    pub(crate) fn environ(&self) -> *mut environ_t {
-        unsafe { session_environ(self.session.as_ptr()) }
+    /// Borrows the session environment for reading.
+    ///
+    /// # Safety
+    /// No other session owner may mutate the environment during this borrow.
+    pub(crate) unsafe fn environ(&self) -> &RustEnvironment {
+        unsafe { self.session.as_session().environ_ref() }
     }
 
-    pub(crate) fn options(&self) -> *mut options {
-        unsafe { session_options(self.session.as_ptr()) }
+    /// Borrows the session environment for mutation.
+    ///
+    /// # Safety
+    /// Other session owners must not access the environment during this borrow.
+    pub(crate) unsafe fn environ_mut(&mut self) -> &mut RustEnvironment {
+        unsafe { self.session.as_session_mut().environ_mut() }
+    }
+
+    pub(crate) fn options(&self) -> RustOptionsRef {
+        unsafe { self.session.as_session().options_ref().clone() }
     }
 }
 
@@ -804,18 +802,19 @@ impl Window {
     pub(crate) fn new(id: u_int, name: &str, sx: u_int, sy: u_int) -> Window {
         let mut value = zeroed_window();
         value.id = id;
-        value.name = Some(CString::new(name).expect("a window name has no NUL"));
-        value.old_layout = None;
-        value.fill_character = None;
+        let name = CString::new(name).expect("a window name has no NUL");
+        value.set_window_name(Some(&name));
         value.options = Some(Options::window().owned());
-        value.sx = sx;
-        value.sy = sy;
-        value.manual_sx = sx;
-        value.manual_sy = sy;
-        value.lastlayout = -1;
+        value.set_size(crate::pane_resize::PaneSize {
+            width: sx,
+            height: sy,
+        });
+        value.set_manual_size(crate::pane_resize::PaneSize {
+            width: sx,
+            height: sy,
+        });
         value.winlinks = window_winlinks::new();
         let window = WindowRef::new(*value);
-        window.mark_unmanaged();
         Window { window }
     }
 
@@ -837,8 +836,8 @@ impl Window {
         &self.window
     }
 
-    pub(crate) fn options(&self) -> *mut options {
-        unsafe { (*self.window.as_ptr()).options_ptr() }
+    pub(crate) fn options(&self) -> RustOptionsRef {
+        self.window.options()
     }
 
     /// Puts `pane` at the end of the window's pane list and makes it active if
@@ -850,31 +849,34 @@ impl Window {
     /// that has already gone, is a test that has lost track of its own
     /// fixtures.
     pub(crate) fn add_pane(&mut self, pane: &mut Pane) {
-        unsafe {
-            let w = self.window.as_ptr();
-            let owned = pane.take();
-            let wp = window_panes_insert_tail(w, owned);
-            (*wp).window = w;
-            crate::window::pane_registry_add(wp);
-            (*w).z_index.push((*wp).id);
-            if window_get_active(w).is_null() {
-                window_set_active(w, wp);
+        {
+            let owned = RustWindowPaneRef::new(pane.take());
+            pane.observer = Some(owned.downgrade());
+            let id = owned.pane_id();
+            let mut w = self.window.as_window_mut();
+            window_panes_insert_tail(&mut w, owned);
+            w.z_index
+                .push(crate::window::window_pane_find_by_id(id).unwrap());
+            if crate::window::window_active_pane(&w).is_none() {
+                w.active_pane = w
+                    .panes
+                    .iter()
+                    .find(|pane| pane.pane_id() == id)
+                    .map(|pane| pane.downgrade());
             }
         }
     }
 }
 
 /// Gives back what [`Pane::new`] made: the two screens, the timers and the
-/// option set. A fixture pane has no process behind it and no entry in the
-/// server's pane tree, so this is the whole of its teardown.
-fn free_pane(pane: &mut window_pane) {
-    unsafe {
-        pane.resize_timer.disarm();
-        pane.sync_timer.disarm();
-        screen_free(&mut pane.status_screen);
-        screen_free(&mut pane.base);
-        if let Some(oo) = pane.options.take() {
-            options_free(oo);
+/// option set. A fixture pane has no process behind it, so this is the whole
+/// of its teardown before its owning registration is dropped.
+fn free_pane(pane: &mut impl crate::WindowPane) {
+    {
+        pane.resize_timer_mut().disarm();
+        pane.sync_timer_mut().disarm();
+        if let Some(oo) = pane.options_mut().take() {
+            RustOptionsEngine.destroy(oo);
         }
     }
 }
@@ -883,13 +885,14 @@ impl Drop for Window {
     fn drop(&mut self) {
         unsafe {
             let w = self.window.as_ptr();
-            for mut pane in ::core::mem::take(&mut (*w).panes) {
-                crate::window::pane_registry_remove(pane.id);
-                free_pane(&mut pane);
+            for mut pane in core::mem::take(&mut (*w).panes) {
+                free_pane(pane.as_pane_mut());
+                crate::window::window_pane_set_window_ref(pane.as_pane_mut(), None);
+                drop(pane.into_pane());
             }
             (*w).z_index.clear();
             (*w).last_panes.clear();
-            window_set_active(w, null_mut::<window_pane>());
+            window_set_active(&mut *w, None::<&crate::types::window_pane>);
         }
     }
 }
@@ -897,7 +900,7 @@ impl Drop for Window {
 /// A pane that is **not** in the server's `all_window_panes` tree, has no
 /// process behind it (`fd` and `pipe_fd` stay -1, `argv` and `shell` stay
 /// null), no timers armed and no input parser. Its base screen is
-/// real — `screen_init` fills it and `screen_free` empties it again — and
+/// real and owned by the pane, and
 /// `screen` points at that base, which is what the drawing and copy-mode code
 /// reads. Nothing here spawns a shell; a test that wants one wants the
 /// conformance suite.
@@ -907,36 +910,39 @@ impl Drop for Window {
 /// this is only the pointer to it.
 pub(crate) struct Pane {
     pane: Option<Box<window_pane>>,
+    observer: Option<RustWindowPaneWeak>,
     ptr: *mut window_pane,
 }
 
 impl Pane {
     pub(crate) fn new(id: u_int, sx: u_int, sy: u_int, hlimit: u_int) -> Pane {
         let mut pane = zeroed_pane();
-        pane.id = id;
+        pane.set_pane_id(id);
         crate::window::window_pane_reserve_id(id);
-        pane.options = Some(Options::pane().owned());
-        pane.sx = sx;
-        pane.sy = sy;
-        pane.fd = -1;
-        pane.pipe_fd = -1;
-        pane.control_bg = -1;
-        pane.control_fg = -1;
-        unsafe {
-            crate::style::style_ranges_init(&raw mut pane.border_status_line.ranges);
-            screen_init(&mut pane.base, sx, sy, hlimit);
-            screen_init(&mut pane.status_screen, 1, 1, 0);
+        *pane.options_mut() = Some(Options::pane().owned());
+        pane.set_size(crate::pane_resize::PaneSize {
+            width: sx,
+            height: sy,
+        });
+        *pane.fd_mut() = -1;
+        *pane.pipe_fd_mut() = -1;
+        {
+            *pane.base_mut() = RustScreen::new_with_server_options(sx, sy, hlimit);
+            *pane.status_screen_mut() = RustScreen::new_with_server_options(1, 1, 0);
         }
-        pane.shown = crate::types::PaneScreen::Base;
+        *pane.shown_mut() = PaneScreen::Base;
         let ptr = &raw mut *pane;
         Pane {
             pane: Some(pane),
+            observer: None,
             ptr,
         }
     }
 
     pub(crate) fn ptr(&mut self) -> *mut window_pane {
-        self.ptr
+        self.observer
+            .as_ref()
+            .map_or(self.ptr, |pane| pane.as_mut_ptr())
     }
 
     /// Gives the pane itself up, for a window to take over. What is left
@@ -952,27 +958,34 @@ impl Pane {
     /// bare pointer. `w` takes the pane over and must outlive it.
     pub(crate) fn hand_to(&mut self, w: *mut window) -> *mut window_pane {
         unsafe {
-            let wp = window_panes_insert_tail(w, self.take());
-            crate::window::window_pane_set_window(wp, w);
-            crate::window::pane_registry_add(wp);
-            (*w).z_index.push((*wp).id);
+            let wp = self.ptr();
+            let owned = RustWindowPaneRef::new(self.take());
+            self.observer = Some(owned.downgrade());
+            window_panes_insert_tail(&mut *w, owned);
+            crate::window::window_pane_set_window(&mut *wp, w.as_ref());
+            (*w).z_index
+                .push(crate::window::window_pane_find_by_id((*wp).pane_id()).unwrap());
             wp
         }
     }
 
-    pub(crate) fn screen(&mut self) -> *mut screen {
-        unsafe { (*self.ptr).screen() }
+    pub(crate) fn base(&self) -> &RustScreen {
+        unsafe { (*self.ptr).base() }
     }
 
-    pub(crate) fn options(&self) -> *mut options {
-        unsafe { (*self.ptr).options_ptr() }
+    pub(crate) fn base_mut(&mut self) -> &mut RustScreen {
+        unsafe { (*self.ptr).base_mut() }
+    }
+
+    pub(crate) fn options(&self) -> RustOptionsRef {
+        unsafe { (*self.ptr).options_ref().clone() }
     }
 }
 
 impl Drop for Pane {
     fn drop(&mut self) {
         if let Some(mut pane) = self.pane.take() {
-            free_pane(&mut pane);
+            free_pane(&mut *pane);
         }
     }
 }
@@ -989,6 +1002,23 @@ pub(crate) struct Layout {
 }
 
 impl Layout {
+    pub(crate) fn reference(&self) -> WindowRef {
+        self.window.reference()
+    }
+
+    pub(crate) fn cell(&mut self, pane: usize) -> Option<std::cell::Ref<'_, layout_cell>> {
+        let id = unsafe { (*self.pane(pane)).pane_id() };
+        let w = { self.window.handle().as_window() };
+        std::cell::Ref::filter_map(w, |w| {
+            crate::layout::layout_cell_for_pane(
+                w.layout_root.as_deref(),
+                &crate::window::window_pane_find_by_id(id).expect("the pane allocation exists"),
+            )
+            .map(|(cell, _)| cell)
+        })
+        .ok()
+    }
+
     /// A window of `sx` by `sy` with one pane filling it, as `layout_init`
     /// leaves a freshly created window.
     pub(crate) fn new(sx: u_int, sy: u_int) -> Layout {
@@ -998,7 +1028,12 @@ impl Layout {
             next_id: 0,
         };
         l.add_pane(sx, sy);
-        unsafe { crate::layout::layout_init(l.w(), l.pane(0)) };
+        unsafe {
+            (l.reference()).init_layout(
+                &crate::window::window_pane_find_by_id((*l.pane(0)).pane_id())
+                    .expect("the layout pane exists"),
+            )
+        };
         l
     }
 
@@ -1031,77 +1066,84 @@ impl Layout {
     /// The tree as one line: each node is its type, size and offset, with its
     /// children in brackets.
     pub(crate) fn dump(&mut self) -> String {
-        unsafe { dump_cell((*self.w()).layout_root_ptr()) }
+        unsafe { dump_cell((*self.w()).layout_root.as_deref()) }
     }
 
     /// The sizes and offsets the panes themselves were given.
-    pub(crate) fn panes(&mut self) -> Vec<String> {
+    pub(crate) fn panes(&self) -> Vec<String> {
         unsafe {
-            let mut out = Vec::new();
-            let w = self.w();
-            let mut wp = window_panes_first(w);
-            while !wp.is_null() {
-                out.push(format!(
-                    "%{} {}x{}+{}+{}",
-                    (*wp).id,
-                    (*wp).sx,
-                    (*wp).sy,
-                    (*wp).xoff,
-                    (*wp).yoff
-                ));
-                wp = window_panes_next(w, wp);
-            }
-            out
+            self.window
+                .handle()
+                .as_window()
+                .panes
+                .iter()
+                .map(|pane| {
+                    let pane = pane.as_pane();
+                    let geometry = pane.geometry();
+                    format!(
+                        "%{} {}x{}+{}+{}",
+                        pane.pane_id(),
+                        geometry.width,
+                        geometry.height,
+                        geometry.x,
+                        geometry.y
+                    )
+                })
+                .collect()
         }
     }
 }
 
 impl Drop for Layout {
     fn drop(&mut self) {
-        unsafe { crate::layout::layout_free(self.window.ptr()) };
+        (self.window.reference()).free_layout();
     }
 }
 
 /// One cell of a layout tree as a string, with its children in brackets. A
 /// floating cell is marked with a star.
-pub(crate) unsafe fn dump_cell(lc: *mut layout_cell) -> String {
-    unsafe {
-        use crate::layout::{
-            LAYOUT_CELL_FLOATING, LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, LAYOUT_WINDOWPANE,
-        };
-        if lc.is_null() {
-            return "-".to_string();
+pub(crate) fn dump_cell(lc: Option<&layout_cell>) -> String {
+    use crate::layout::{
+        LAYOUT_CELL_FLOATING, LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, LAYOUT_WINDOWPANE,
+    };
+    let Some(lc) = lc else {
+        return "-".to_string();
+    };
+    let here = format!("{}x{}+{}+{}", lc.sx, lc.sy, lc.xoff, lc.yoff);
+    let floating = if lc.flags & LAYOUT_CELL_FLOATING != 0 {
+        "*"
+    } else {
+        ""
+    };
+    match lc.type_0 {
+        LAYOUT_WINDOWPANE => format!(
+            "%{}{floating} {here}",
+            lc.wp_ref
+                .as_ref()
+                .map(|pane| pane.id())
+                .unwrap_or(u_int::MAX)
+        ),
+        LAYOUT_LEFTRIGHT | LAYOUT_TOPBOTTOM => {
+            let kids: Vec<String> = lc
+                .cells
+                .iter()
+                .map(|child| dump_cell(Some(child)))
+                .collect();
+            let name = if lc.type_0 == LAYOUT_LEFTRIGHT {
+                "LR"
+            } else {
+                "TB"
+            };
+            format!("{name}{floating} {here} [{}]", kids.join(" | "))
         }
-        let here = format!("{}x{}+{}+{}", (*lc).sx, (*lc).sy, (*lc).xoff, (*lc).yoff);
-        let floating = if (*lc).flags & LAYOUT_CELL_FLOATING != 0 {
-            "*"
-        } else {
-            ""
-        };
-        match (*lc).type_0 {
-            LAYOUT_WINDOWPANE => format!("%{}{floating} {here}", (*lc).wp_id.unwrap_or(u_int::MAX)),
-            LAYOUT_LEFTRIGHT | LAYOUT_TOPBOTTOM => {
-                let kids: Vec<String> = crate::list::foreach_owned(&raw mut (*lc).cells)
-                    .map(|child| dump_cell(child))
-                    .collect();
-                let name = if (*lc).type_0 == LAYOUT_LEFTRIGHT {
-                    "LR"
-                } else {
-                    "TB"
-                };
-                format!("{name}{floating} {here} [{}]", kids.join(" | "))
-            }
-            _ => format!("?{floating} {here}"),
-        }
+        _ => format!("?{floating} {here}"),
     }
 }
 
 /// A terminal that is **not** attached to anything: a zeroed `tty` pointing at
-/// a zeroed `tty_term` and the zeroed `client` behind it. The term's code table
-/// is a full-length list of missing entries, so `tty_term_has` answers
-/// no for every capability until [`Tty::set_number`] gives one a value, and its
-/// ACS table starts empty. No terminfo entry is read, no descriptor is open and
-/// no timer is armed; a test that wants a real terminal wants the
+/// an empty terminal capability description and the zeroed `client` behind it.
+/// No terminfo entry is read, no descriptor is open and no timer is armed; a
+/// test that wants a real terminal wants the
 /// conformance suite.
 ///
 /// The client behind it is a [`ClientRef`], which registers itself in the
@@ -1119,7 +1161,7 @@ impl Tty {
         };
         let mut term = zeroed_term();
         t.tty.term = Some(term);
-        t.tty.owner = crate::server::client_ref_from_ptr(&raw mut *t.client).map(|c| c.downgrade());
+        t.tty.owner = Some(t.client.downgrade());
         t
     }
 
@@ -1127,39 +1169,60 @@ impl Tty {
         &raw mut *self.tty
     }
 
-    pub(crate) fn term(&self) -> &tty_term {
+    pub(crate) fn term(&self) -> std::cell::Ref<'_, tty_term> {
         tty_term_of(&self.tty)
     }
 
-    /// The terminal as a raw pointer, for the calls that still take one.
-    pub(crate) fn term_ptr(&mut self) -> *mut tty_term {
-        self.term_mut()
-    }
-
-    pub(crate) fn term_mut(&mut self) -> &mut tty_term {
-        self.tty.term.as_mut().expect("the fixture built a term")
+    pub(crate) fn term_mut(&mut self) -> std::cell::RefMut<'_, tty_term> {
+        self.tty
+            .term
+            .as_ref()
+            .expect("the fixture built a term")
+            .borrow_mut()
     }
 
     /// Gives `code` a number, as a terminfo entry carrying that capability
     /// would.
     pub(crate) fn set_number(&mut self, code: tty_code_code, number: c_int) {
-        self.term_mut().codes[code as usize] = TtyCode::Number(number);
+        let name = self.term().capability_name(code).to_owned();
+        let capability = CString::new(format!(
+            "{}={number}",
+            String::from_utf8_lossy(name.to_bytes())
+        ))
+        .expect("a terminal capability override has no NUL");
+        self.term_mut().apply_overrides(&capability);
     }
 
     /// Gives `code` a string, as a terminfo entry carrying that capability
     /// would.
     pub(crate) fn set_string(&mut self, code: tty_code_code, s: &CStr) {
-        self.term_mut().codes[code as usize] = TtyCode::String(s.to_owned());
+        let mut capability = self.term().capability_name(code).to_bytes().to_vec();
+        capability.push(b'=');
+        for &byte in s.to_bytes() {
+            capability.push(byte);
+            if byte == b':' {
+                capability.push(byte);
+            }
+        }
+        self.term_mut().apply_overrides(
+            &CString::new(capability).expect("a terminal capability override has no NUL"),
+        );
     }
 
     /// Gives `code` a flag, as a boolean terminfo capability would.
     pub(crate) fn set_flag(&mut self, code: tty_code_code, flag: c_int) {
-        self.term_mut().codes[code as usize] = TtyCode::Flag(flag);
+        assert_ne!(flag, 0, "the public override syntax only adds true flags");
+        let capability = self.term().capability_name(code).to_owned();
+        self.term_mut().apply_overrides(&capability);
     }
 
     /// Takes `code` back out of the terminal's table, leaving it missing.
     pub(crate) fn clear_code(&mut self, code: tty_code_code) {
-        self.term_mut().codes[code as usize] = TtyCode::None;
+        let mut capability = self.term().capability_name(code).to_bytes().to_vec();
+        capability.push(b'@');
+        self.term_mut().apply_overrides(
+            &CString::new(capability).expect("a terminal capability override has no NUL"),
+        );
     }
 
     /// The one-byte ACS translation the terminal reports for `ch`, as the
@@ -1167,18 +1230,23 @@ impl Tty {
     pub(crate) fn set_acs(&mut self, ch: u8, to: &str) {
         let bytes = to.as_bytes();
         assert!(bytes.len() < 2, "an ACS translation is a single byte");
-        self.term_mut().acs[ch as usize] =
-            [bytes.first().copied().unwrap_or(0) as c_char, 0 as c_char];
+        let mut capability = b"acsc=".to_vec();
+        capability.push(ch);
+        capability.extend(bytes);
+        self.term_mut().apply_overrides(
+            &CString::new(capability).expect("an ACS capability override has no NUL"),
+        );
+        self.term_mut().refresh_derived();
     }
 
     pub(crate) fn set_client_flags(&mut self, flags: u64) {
-        self.client.flags = flags;
+        *unsafe { self.client.flags_mut() } = flags;
     }
 }
 
 /// Initializes the process-local reactor used by tests.
 pub(crate) fn ensure_reactor() {
-    static BASE: ::std::sync::Once = ::std::sync::Once::new();
+    static BASE: std::sync::Once = std::sync::Once::new();
     BASE.call_once(|| {
         reactor::current();
     });
@@ -1189,7 +1257,7 @@ pub(crate) fn ensure_reactor() {
 pub(crate) struct StreamBuffer {
     bev: Stream,
     fds: [c_int; 2],
-    seen: ::std::cell::Cell<usize>,
+    seen: std::cell::Cell<usize>,
 }
 
 impl StreamBuffer {
@@ -1198,7 +1266,7 @@ impl StreamBuffer {
         let mut fds = [-1 as c_int; 2];
         unsafe {
             assert_eq!(
-                ::libc::socketpair(::libc::AF_UNIX, ::libc::SOCK_STREAM, 0, fds.as_mut_ptr()),
+                libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr()),
                 0,
                 "no socket pair"
             );
@@ -1207,7 +1275,7 @@ impl StreamBuffer {
             StreamBuffer {
                 bev,
                 fds,
-                seen: ::std::cell::Cell::new(0),
+                seen: std::cell::Cell::new(0),
             }
         }
     }
@@ -1233,8 +1301,8 @@ impl Drop for StreamBuffer {
     fn drop(&mut self) {
         unsafe {
             self.bev.free();
-            ::libc::close(self.fds[0]);
-            ::libc::close(self.fds[1]);
+            libc::close(self.fds[0]);
+            libc::close(self.fds[1]);
         }
     }
 }
@@ -1251,9 +1319,9 @@ pub(crate) struct Clients {
 
 impl Clients {
     pub(crate) fn new() -> Clients {
-        unsafe {
+        {
             assert!(
-                crate::server::clients.is_empty(),
+                crate::server::with_clients(|clients| clients.is_empty()),
                 "the client list is not empty"
             );
         }
@@ -1266,12 +1334,13 @@ impl Clients {
     /// `sy` and no pixel size.
     pub(crate) fn add(&mut self, name: &str, sx: u_int, sy: u_int) -> *mut client {
         let mut c = zeroed_client();
-        c.name = Some(CString::new(name).expect("a client name has no NUL"));
-        c.tty.sx = sx;
-        c.tty.sy = sy;
-        let p = &raw mut *c;
-        unsafe {
-            crate::server::clients.push(c.clone());
+        (unsafe { c.as_client_mut() }).name =
+            Some(CString::new(name).expect("a client name has no NUL"));
+        unsafe { c.as_tty_mut() }.sx = sx;
+        unsafe { c.as_tty_mut() }.sy = sy;
+        let p: *mut client = unsafe { c.as_client_mut() };
+        {
+            crate::server::with_clients_mut(|clients| clients.push(c.clone()));
         }
         self.clients.push(c);
         p
@@ -1281,24 +1350,19 @@ impl Clients {
 impl Drop for Clients {
     fn drop(&mut self) {
         unsafe {
-            crate::server::clients.clear();
+            crate::server::with_clients_mut(|clients| clients.clear());
             for c in &mut self.clients {
-                release_client(c.as_ptr());
+                release_client(c.as_client_mut());
             }
         }
     }
 }
 
-/// The server's global `sessions`, `windows` and `all_window_panes` trees,
-/// holding fixture sessions, windows and panes for the length of a test. All
-/// three are globals, so a test that builds one takes [`globals`] too; each
-/// tree starts empty, which [`Registry::new`] asserts, and is emptied again at
-/// the end of the test, without ever running session or window teardown.
-///
-/// Emptying is a reset of the tree heads, the way [`Clients`] gives back the
-/// client list, and not a node-by-node removal: a removal reads and writes the
-/// nodes, and a test's fixtures are ordinary locals which may already have gone
-/// out of scope by the time the registry does.
+/// The server's session and window indexes, holding fixture objects for the
+/// length of a test. Panes register through the same owning [`RustWindowPane`]
+/// as production panes and are not managed here. A test that builds these
+/// indexes takes [`globals`] too, and [`Registry::new`] asserts they start
+/// empty.
 pub(crate) struct Registry;
 
 impl Registry {
@@ -1308,7 +1372,7 @@ impl Registry {
             "the session tree is not empty"
         );
         assert!(
-            crate::window::windows.map().is_empty(),
+            crate::window::window_ids().is_empty(),
             "the window tree is not empty"
         );
         assert!(
@@ -1325,27 +1389,14 @@ impl Registry {
 
     /// Puts `w` in the window tree, which is keyed by id.
     pub(crate) fn add_window(&mut self, w: &mut Window) {
-        let p = w.ptr();
-        unsafe {
-            crate::window::windows
-                .map()
-                .insert((*p).id, w.window.downgrade())
-        };
-    }
-
-    /// Puts `pane` in the tree of every pane the server has, which is keyed by
-    /// id.
-    pub(crate) fn add_pane(&mut self, pane: &mut Pane) {
-        let p = pane.ptr();
-        unsafe { crate::window::pane_registry_add(p) };
+        w.window.register_id();
     }
 }
 
 impl Drop for Registry {
     fn drop(&mut self) {
         crate::session::session_registry_clear();
-        crate::window::windows.map().clear();
-        crate::window::pane_registry_clear();
+        crate::window::window_registry_clear();
     }
 }
 
@@ -1354,24 +1405,36 @@ impl Drop for Registry {
 /// away.
 pub(crate) fn link(session: &mut Session, window: &mut Window, idx: c_int) -> *mut winlink {
     unsafe {
-        let wl = winlink_add(&mut (*session.ptr()).windows, idx);
-        assert!(!wl.is_null(), "index {idx} is already linked");
-        (*wl).set_session(session.ptr());
-        winlink_set_window_ref(wl, window.window.clone());
-        if session_get_curw(session.ptr()).is_null() {
-            session_set_curw(session.ptr(), wl);
+        let mut owner = session.reference();
+        let observer = owner.downgrade();
+        let link = winlink_insert(&mut owner.as_session_mut().windows, idx)
+            .expect("the fixture index is available");
+        link.session_ref = Some(observer);
+        link.set_window(window.window.clone());
+        let index = link.idx;
+        if owner.curw().is_none() {
+            owner.as_session_mut().curw_idx = Some(index);
         }
-        wl
+        let link = owner
+            .as_session_mut()
+            .windows
+            .get_mut(&index)
+            .expect("the fixture link remains registered");
+        &raw mut **link
     }
 }
 
 /// Takes `wl` back out of its session, freeing it.
 pub(crate) fn unlink(session: &mut Session, wl: *mut winlink) {
     unsafe {
-        if session_get_curw(session.ptr()) == wl {
-            session_set_curw(session.ptr(), null_mut::<winlink>());
+        if session.handle().curw().is_some_and(|current| {
+            current
+                .get()
+                .is_some_and(|current| core::ptr::eq(current, wl))
+        }) {
+            session.handle().set_curw(null_mut::<winlink>().as_ref());
         }
-        crate::window::winlink_remove(&mut (*session.ptr()).windows, wl);
+        crate::window::winlink_remove(&mut (*session.ptr()).windows, (*wl).idx);
     }
 }
 
@@ -1384,16 +1447,13 @@ pub(crate) fn unlink(session: &mut Session, wl: *mut winlink) {
 /// which is what `winlink_remove` walks to drop its reference.
 pub(crate) fn unlink_all(session: &mut Session) {
     unsafe {
-        let s = session.ptr();
-        while let Some(wl) = (*s)
-            .windows
-            .values_mut()
-            .next()
-            .map(|wl| &raw mut **wl)
-        {
-            unlink(session, wl);
+        let mut owner = session.reference();
+        let session = owner.as_session_mut();
+        session.curw_idx = None;
+        while let Some(index) = session.windows.keys().next().copied() {
+            crate::window::winlink_remove(&mut session.windows, index);
         }
-        (*s).lastw.clear();
+        session.lastw.clear();
     }
 }
 
@@ -1435,7 +1495,6 @@ impl Target {
         let mut p = Pane::new(self.panes.len() as u_int, sx, sy, 100);
         w.add_pane(&mut p);
         self.registry.add_window(&mut w);
-        self.registry.add_pane(&mut p);
         let wl = link(&mut self.session, &mut w, idx);
         self.windows.push(w);
         self.panes.push(p);
@@ -1468,7 +1527,18 @@ impl Target {
     /// winlink, its window and that window's active pane.
     pub(crate) fn state(&mut self) -> cmd_find_state {
         let mut fs = *Box::new(cmd_find_state::default());
-        unsafe { cmd_find_from_winlink(&mut fs, session_get_curw(self.session.ptr()), 0) };
+        unsafe {
+            cmd_find_from_winlink(
+                &mut fs,
+                self.session
+                    .handle()
+                    .curw()
+                    .expect("the target has a current window")
+                    .get()
+                    .expect("the current link is live"),
+                0,
+            )
+        };
         fs
     }
 }
@@ -1476,7 +1546,11 @@ impl Target {
 impl Drop for Target {
     fn drop(&mut self) {
         for p in &mut self.panes {
-            unsafe { window_pane_reset_mode_all(p.ptr()) };
+            unsafe {
+                if let Some(pane) = p.ptr().as_mut() {
+                    window_pane_reset_mode_all(pane);
+                }
+            }
         }
         self.winlinks.clear();
         unlink_all(&mut self.session);
@@ -1492,14 +1566,7 @@ impl Format {
     /// An empty tree with no client or item behind it, as `format_create`
     /// leaves one.
     pub(crate) fn new() -> Format {
-        Format(unsafe {
-            format_create(
-                null_mut::<client>(),
-                null_mut::<cmdq_item>(),
-                FORMAT_NONE,
-                0,
-            )
-        })
+        Format(format_create(None, None, FORMAT_NONE, 0))
     }
 
     /// A tree carrying the defaults for whichever of a client, session,
@@ -1512,7 +1579,15 @@ impl Format {
         wp: *mut window_pane,
     ) -> Format {
         let ft = Format::new();
-        unsafe { format_defaults(&mut *ft.ptr(), c, s, wl, wp) };
+        unsafe {
+            format_defaults(
+                &mut *ft.ptr(),
+                c.as_ref(),
+                s.as_ref(),
+                wl.as_ref(),
+                wp.as_ref(),
+            )
+        };
         ft
     }
 
@@ -1520,7 +1595,20 @@ impl Format {
     /// client.
     pub(crate) fn from_target(target: &mut Target) -> Format {
         let fs = target.state();
-        Format::defaults(null_mut::<client>(), fs.session(), fs.winlink(), fs.pane())
+        let session = fs.session();
+        let link = fs.winlink_ref();
+        let pane = fs.pane_list_ref();
+        let mut format = Format::new();
+        unsafe {
+            format_defaults(
+                format.tree(),
+                None,
+                session.as_ref().map(|session| session.as_session()),
+                link.as_ref().and_then(|link| link.get()),
+                pane.as_ref().and_then(|pane| pane.get()),
+            );
+        }
+        format
     }
 
     pub(crate) fn ptr(&self) -> *mut format_tree {
@@ -1577,22 +1665,16 @@ impl KeyTable {
     /// Binds `key` to the command line `s`, with a note when one is given.
     pub(crate) fn bind(&mut self, key: key_code, s: &CStr, note: Option<&CStr>) {
         unsafe {
-            let mut pr = cmd_parse_from_string(s.as_ptr(), null_mut::<cmd_parse_input>());
+            let mut pr = cmd_parse_from_string(s, None);
             assert_eq!(pr.status, CMD_PARSE_SUCCESS, "{s:?} did not parse");
-            key_bindings_add(
-                self.name.as_ptr(),
-                key,
-                note.map_or(null::<c_char>(), |n| n.as_ptr()),
-                0,
-                pr.cmdlist.take(),
-            );
+            key_bindings_add(&self.name, key, note, 0, pr.cmdlist.take());
         }
         self.keys.push(key);
     }
 
     /// The table itself, which exists once something is bound in it.
-    pub(crate) fn ptr(&self) -> *mut key_table {
-        unsafe { key_bindings_get_table(self.name.as_ptr(), 0) }
+    pub(crate) fn handle(&self) -> KeyTableRef {
+        key_bindings_get_table(&self.name, 0).unwrap()
     }
 }
 
@@ -1600,7 +1682,7 @@ impl Drop for KeyTable {
     fn drop(&mut self) {
         unsafe {
             for key in &self.keys {
-                key_bindings_remove(self.name.as_ptr(), *key);
+                key_bindings_remove(&self.name, *key);
             }
         }
     }
@@ -1621,24 +1703,24 @@ impl Paste {
     }
 
     /// A buffer named `name` holding `data`, owned by the store.
-    pub(crate) fn add(&self, name: &CStr, data: &str) -> *mut paste_buffer {
-        unsafe {
-            assert!(
-                paste_set(data.as_bytes().to_vec(), name.as_ptr()).is_ok(),
-                "buffer {name:?} was not set"
-            );
-            paste_get_name(name.as_ptr())
-        }
+    pub(crate) fn add(&self, name: &CStr, data: &str) -> CString {
+        assert!(
+            with_paste_buffers_mut(|buffers| { buffers.set_named(name, data.as_bytes().to_vec()) })
+                .is_ok(),
+            "buffer {name:?} was not set"
+        );
+        name.to_owned()
     }
 
     unsafe fn empty() {
-        unsafe {
-            let mut pb = paste_walk(null_mut::<paste_buffer>());
-            while !pb.is_null() {
-                let next = paste_walk(pb);
-                paste_free(pb);
-                pb = next;
-            }
+        let names = with_paste_buffers(|buffers| {
+            buffers
+                .buffers()
+                .map(|buffer| buffer.name.to_owned())
+                .collect::<Vec<_>>()
+        });
+        for name in names {
+            with_paste_buffers_mut(|buffers| buffers.remove(name.as_c_str()));
         }
     }
 }
@@ -1661,26 +1743,88 @@ pub(crate) unsafe fn taken(p: *mut c_char) -> String {
 /// The contents of a C string somebody else still owns.
 pub(crate) unsafe fn seen(p: *const c_char) -> String {
     unsafe {
-        assert!(!p.is_null(), "the string is missing");
-        String::from_utf8_lossy(CStr::from_ptr(p).to_bytes()).into_owned()
+        seen_str(if p.is_null() {
+            None
+        } else {
+            Some(CStr::from_ptr(p))
+        })
     }
+}
+
+/// The contents of a borrowed string somebody else still owns.
+pub(crate) fn seen_str(value: Option<&CStr>) -> String {
+    value
+        .expect("the string is missing")
+        .to_string_lossy()
+        .into_owned()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::environ::{environ_find, environ_set};
+
+    #[test]
+    fn command_borrows_check_cloned_owners_and_release_missing_slots() {
+        let _guard = globals();
+        let list = CmdListRef::empty();
+        list.append(empty_cmd());
+        assert!(list.command(1).is_none());
+        let other = list.clone();
+        let shared = list.command(0).unwrap();
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { other.command_mut(0) }))
+                .is_err()
+        );
+        drop(shared);
+        other.command_mut(0).unwrap().line = 42;
+        assert_eq!(list.command(0).unwrap().line, 42);
+        assert!(other.command_mut(1).is_none());
+        assert!(list.command(0).is_some());
+    }
+
+    #[test]
+    fn a_fixture_retains_its_item_after_the_queue_releases_it() {
+        let _guard = globals();
+        let mut fixture = Item::new().with_file(c"queued.conf", 23);
+        let weak = fixture.handle().downgrade();
+        let queue = CmdqListRef::empty();
+        fixture.queue_onto(&queue);
+        drop(queue);
+        assert!(weak.upgrade().is_some());
+        fixture.with_command(|command, item| {
+            assert_eq!(command.file.as_deref(), Some(c"queued.conf"));
+            assert!(item.queue.as_ref().unwrap().upgrade().is_none());
+        });
+        drop(fixture);
+        assert!(weak.upgrade().is_none());
+    }
+
+    #[test]
+    fn a_retained_command_survives_replacing_its_queue_item() {
+        let _guard = globals();
+        let mut fixture = Item::new().with_file(c"retained.conf", 17);
+        let mut item = fixture.item_mut();
+        let (list, at) = item.command_location().unwrap();
+        let list = list.clone();
+        let command = list.command(at).unwrap();
+        item.type_0 = CmdqType::Callback { callback: None };
+        assert!(item.command_location().is_none());
+        assert!(item.command().is_none());
+        drop(item);
+        drop(fixture);
+        assert_eq!(command.file.as_deref(), Some(c"retained.conf"));
+        assert_eq!(command.line, 17);
+    }
+    use crate::environ::EnvironmentStore;
     use crate::grid::grid_string_cells;
-    use crate::options::options_get_string;
-    use crate::window::{winlink_count, winlink_find_by_index};
+
+    use crate::window::winlink_count;
 
     #[test]
     fn a_buffer_event_keeps_what_is_written_to_it() {
         let _guard = globals();
         let bev = StreamBuffer::new();
-        unsafe {
-            bev.ptr().write(c"hi".as_ptr() as *const u8, 2);
-        }
+        bev.ptr().write(b"hi");
         assert_eq!(bev.written(), b"hi");
         assert_eq!(bev.written(), b"");
     }
@@ -1691,28 +1835,31 @@ mod tests {
         let session = Options::session();
         let window = Options::window();
         let pane = Options::pane();
-        unsafe {
+        {
             assert_eq!(
-                seen(options_get_string(
-                    session.ptr(),
-                    c"word-separators".as_ptr()
-                )),
+                session
+                    .string_ref(c"word-separators")
+                    .to_string_lossy()
+                    .into_owned(),
                 "!\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~"
             );
-            assert!(options_get_ptr(session.ptr(), c"window-status-format".as_ptr()).is_null());
+            assert!(session.with_entry(c"window-status-format", false, |entry| entry.is_none()));
             assert_eq!(
-                seen(options_get_string(
-                    window.ptr(),
-                    c"window-status-format".as_ptr()
-                )),
+                window
+                    .string_ref(c"window-status-format")
+                    .to_string_lossy()
+                    .into_owned(),
                 "#I:#W#{?window_flags,#{window_flags}, }"
             );
-            assert!(!options_get_ptr(pane.ptr(), c"pane-border-format".as_ptr()).is_null());
-            assert!(options_get_ptr(pane.ptr(), c"word-separators".as_ptr()).is_null());
-            let child = Options::empty(session.ptr());
-            assert!(options_get_only_ptr(child.ptr(), c"word-separators".as_ptr()).is_null());
+            assert!(!pane.with_entry(c"pane-border-format", false, |entry| entry.is_none()));
+            assert!(pane.with_entry(c"word-separators", false, |entry| entry.is_none()));
+            let child = Options::empty(Some(&session));
+            assert!(child.with_entry(c"word-separators", true, |entry| entry.is_none()));
             assert_eq!(
-                seen(options_get_string(child.ptr(), c"word-separators".as_ptr())),
+                child
+                    .string_ref(c"word-separators")
+                    .to_string_lossy()
+                    .into_owned(),
                 "!\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~"
             );
         }
@@ -1721,12 +1868,12 @@ mod tests {
     #[test]
     fn a_grid_takes_text_and_reads_it_back() {
         let _guard = globals();
-        let grid = Grid::new(10, 5, 100);
+        let mut grid = Grid::new(10, 5, 100);
         grid.write(0, 0, "abc");
         assert_eq!(grid.sx, 10);
         assert_eq!(grid.cell(1, 0).data.data[0], b'b');
-        unsafe {
-            let p = grid_string_cells(&*grid.ptr(), 0, 0, 10, None, 0, null_mut());
+        {
+            let p = grid_string_cells(&grid, 0, 0, 10, None, 0, None);
             assert_eq!(p.to_string_lossy(), "abc");
         }
     }
@@ -1736,7 +1883,7 @@ mod tests {
         let _guard = globals();
         let mut s = Screen::new(10, 5, 100);
         assert!(!s.ptr().is_null());
-        unsafe {
+        {
             assert_eq!((*s.grid()).sx, 10);
             assert_eq!((*s.grid()).sy, 5);
         }
@@ -1745,22 +1892,9 @@ mod tests {
     #[test]
     fn an_environment_holds_what_is_put_in_it() {
         let _guard = globals();
-        let env = Environ::new();
-        unsafe {
-            environ_set(
-                env.ptr(),
-                c"FOO".as_ptr(),
-                0,
-                c"%s".as_ptr(),
-                fmt_args![c"bar".as_ptr()],
-            );
-            assert_eq!(
-                environ_entry_value(
-                    environ_find(&*env.ptr(), c"FOO".as_ptr()).expect("the entry just set"),
-                ),
-                Some(c"bar")
-            );
-        }
+        let mut env = new_environment_box();
+        env.set(c"FOO", 0, c"bar");
+        assert_eq!(env.find(c"FOO").and_then(|entry| entry.value), Some(c"bar"));
     }
 
     #[test]
@@ -1768,9 +1902,12 @@ mod tests {
         let _guard = globals();
         let args = Args::parse(c"wait-for -S chan");
         unsafe {
-            assert_eq!(crate::arguments::args_has(&*args.ptr(), b'S'), 1);
-            assert_eq!(seen(crate::arguments::args_string(&*args.ptr(), 0)), "chan");
-            assert!(!args.list().is_null());
+            assert_eq!(crate::arguments::args_has(&*args.borrow(), b'S'), 1);
+            assert_eq!(
+                seen_str(crate::arguments::args_string_str(&*args.borrow(), 0)),
+                "chan"
+            );
+            assert!(args.list_ref().command(0).is_some());
         }
     }
 
@@ -1778,20 +1915,31 @@ mod tests {
     fn an_item_carries_a_client_a_command_and_its_arguments() {
         let _guard = globals();
         let mut plain = Item::new();
-        assert!(unsafe { crate::cmd::cmdq_get_client(&*plain.ptr()) }.is_null());
-        assert_eq!(unsafe { (*plain.ptr()).cmd() }, plain.cmd());
+        assert!(unsafe { (*plain.ptr()).client() }.is_none());
+        let handle = plain.handle();
+        assert!(core::ptr::eq(
+            &*handle.item().command().unwrap(),
+            &*plain.command()
+        ));
 
         let mut item = Item::with_client()
-            .from_file(c"fixture.conf", 7)
+            .with_file(c"fixture.conf", 7)
             .with_args(c"display-message hello");
         item.set_flags(3);
         assert_eq!(item.flags(), 3);
         unsafe {
-            assert_eq!(crate::cmd::cmdq_get_client(&*item.ptr()), item.client());
-            assert_eq!(seen((*item.cmd()).file_ptr()), "fixture.conf");
-            assert_eq!((*item.cmd()).line, 7);
+            assert!(
+                (*item.ptr())
+                    .client()
+                    .is_some_and(|client| client.ptr_eq(&item.client))
+            );
             assert_eq!(
-                seen(crate::arguments::args_string(cmd_get_args(&*item.cmd()), 0)),
+                seen_str(item.cmdlist.command(0).unwrap().file.as_deref()),
+                "fixture.conf"
+            );
+            assert_eq!((*item.command()).line, 7);
+            assert_eq!(
+                seen_str(crate::arguments::args_string_str(&*item.args(), 0)),
                 "hello"
             );
         }
@@ -1802,12 +1950,12 @@ mod tests {
         let _guard = globals();
         let mut s = Session::new(4, "fixture");
         unsafe {
-            assert_eq!(session_id(s.ptr()), 4);
-            assert_eq!(seen(session_name(s.ptr())), "fixture");
+            assert_eq!(s.handle().id(), 4);
+            assert_eq!(s.handle().name().as_deref(), Some(c"fixture"));
             assert!((*s.ptr()).windows.is_empty());
             assert!((*s.ptr()).lastw.is_empty());
-            assert_eq!(session_options(s.ptr()), s.options());
-            assert_eq!(session_environ(s.ptr()), s.environ());
+            assert!(s.handle().options().ptr_eq(&s.options()));
+            assert!(core::ptr::eq(s.handle().clone().environ(), s.environ()));
         }
     }
 
@@ -1820,17 +1968,37 @@ mod tests {
         w.add_pane(&mut first);
         w.add_pane(&mut second);
         unsafe {
-            assert_eq!(window_get_active(w.ptr()), first.ptr());
-            assert_eq!(window_panes_first(w.ptr()), first.ptr());
-            assert_eq!(window_panes_next(w.ptr(), first.ptr()), second.ptr());
-            assert_eq!(window_panes_next(w.ptr(), second.ptr()), null_mut());
-            assert_eq!((*first.ptr()).window, w.ptr());
-            assert_eq!(first.screen(), &raw mut (*first.ptr()).base);
-            assert!((*first.screen()).grid.is_some());
-            assert_eq!((*first.ptr()).fd, -1);
-            assert_eq!((*first.ptr()).options_ptr(), first.options());
-            assert_eq!(seen((*w.ptr()).name_ptr()), "fixture");
-            assert_eq!((*w.ptr()).options_ptr(), w.options());
+            assert!(window_active_pane(&*w.ptr()).is_some_and(|pane| {
+                pane.get()
+                    .is_some_and(|active| core::ptr::addr_eq(active, first.ptr()))
+            }));
+            let payload = w.handle().as_window();
+            let mut panes = payload.panes.iter();
+            assert!(core::ptr::addr_eq(
+                panes.next().unwrap().get().unwrap(),
+                first.ptr()
+            ));
+            assert!(core::ptr::addr_eq(
+                panes.next().unwrap().get().unwrap(),
+                second.ptr()
+            ));
+            assert!(panes.next().is_none());
+            drop(payload);
+            assert!((*first.ptr()).window_context().unwrap().ptr_eq(w.handle()));
+            assert!(core::ptr::eq(&*(*first.ptr()).screen_ref(), first.base()));
+            assert!(first.base().is_initialized());
+            assert_eq!(*(*first.ptr()).fd(), -1);
+            assert!((*first.ptr()).options_ref().ptr_eq(&first.options()));
+            assert_eq!(
+                seen(
+                    (*w.ptr())
+                        .window_name()
+                        .expect("a window has a name")
+                        .as_ptr()
+                ),
+                "fixture"
+            );
+            assert!((*w.ptr()).options_ref().ptr_eq(&w.options()));
         }
     }
 
@@ -1843,9 +2011,13 @@ mod tests {
         assert_eq!(l.count(), 1);
         l.add_pane(80, 24);
         assert_eq!(l.count(), 2);
-        assert_eq!(unsafe { (*l.pane(1)).id }, 2);
-        assert_eq!(unsafe { (*l.w()).sx }, 80);
-        assert_eq!(l.window().options(), unsafe { (*l.w()).options_ptr() });
+        assert_eq!(unsafe { (*l.pane(1)).pane_id() }, 2);
+        assert_eq!(unsafe { (*l.w()).dimensions().size.width }, 80);
+        assert!(
+            l.window()
+                .options()
+                .ptr_eq(unsafe { (*l.w()).options_ref() })
+        );
     }
 
     #[test]
@@ -1853,21 +2025,43 @@ mod tests {
         let _guard = globals();
         let mut t = Target::new(80, 24);
         unsafe {
+            assert!(SessionRef::find(c"0").is_some_and(|found| found.as_ptr() == t.session()));
+            assert!(
+                WindowRef::find_by_id(0)
+                    .is_some_and(|owner| core::ptr::eq(owner.as_ptr(), t.window(0)))
+            );
             assert_eq!(
-                crate::session::session_find(c"0".as_ptr() as *mut c_char),
+                crate::window::window_pane_find_by_id(0)
+                    .unwrap()
+                    .as_mut_ptr(),
+                t.pane(0)
+            );
+            assert!(core::ptr::eq((&*t.session()).curw().unwrap(), t.winlink(0)));
+            let fs = t.state();
+            assert_eq!(
+                fs.session().as_ref().map_or(null_mut(), |s| s.as_ptr()),
                 t.session()
             );
-            assert_eq!(crate::window::window_find_by_id(0), t.window(0));
-            assert_eq!(crate::window::window_pane_find_by_id(0), t.pane(0));
-            assert_eq!(session_get_curw(t.session()), t.winlink(0));
-            let fs = t.state();
-            assert_eq!(fs.session(), t.session());
-            assert_eq!(fs.winlink(), t.winlink(0));
-            assert_eq!(fs.window(), t.window(0));
-            assert_eq!(fs.pane(), t.pane(0));
+            assert!(core::ptr::eq(
+                fs.winlink_ref().unwrap().get().unwrap(),
+                t.winlink(0)
+            ));
+            assert_eq!(
+                fs.window().as_ref().map_or(null_mut(), |w| w.as_ptr()),
+                t.window(0)
+            );
+            assert!(core::ptr::addr_eq(
+                fs.pane_list_ref().unwrap().get().unwrap(),
+                t.pane(0)
+            ));
             let i = t.add_window(5, 80, 24);
             assert_eq!((*t.winlink(i)).idx, 5);
-            assert_eq!((*t.winlink(i)).window(), t.window(i));
+            assert!(
+                t.session.handle().as_session().windows[&5]
+                    .window_handle()
+                    .unwrap()
+                    .ptr_eq(t.windows[i].handle())
+            );
             assert_eq!(winlink_count(&(*t.session()).windows), 2);
         }
     }
@@ -1879,15 +2073,24 @@ mod tests {
         let (s, wl, wp) = (t.session(), t.winlink(0), t.pane(0));
         let mut item = Item::with_client().targeting(&mut t);
         unsafe {
-            let target = crate::cmd::cmdq_get_target(item.ptr());
-            assert_eq!((*target).session(), s);
-            assert_eq!((*target).winlink(), wl);
-            assert_eq!((*target).pane(), wp);
-            let current = crate::cmd::cmdq_get_current(item.ptr());
-            assert_eq!((*current).session(), s);
+            let target = (*item.ptr()).target();
+            assert_eq!((*target).session().as_ref().map(|s| s.as_ptr()), Some(s));
+            assert!(core::ptr::eq(
+                (*target).winlink_ref().unwrap().get().unwrap(),
+                wl
+            ));
+            assert!(core::ptr::addr_eq(
+                (*target).pane_list_ref().unwrap().get().unwrap(),
+                wp
+            ));
+            let current = (*item.ptr()).current();
+            assert_eq!((*current).session().as_ref().map(|s| s.as_ptr()), Some(s));
             assert_eq!(
-                crate::cmd::cmdq_get_target_client(&*item.ptr()),
-                item.client()
+                (*item.ptr())
+                    .target_client()
+                    .as_ref()
+                    .map(ClientRef::as_ptr),
+                Some(item.client())
             );
         }
     }
@@ -1917,17 +2120,19 @@ mod tests {
                 c"display-message hello",
                 Some(c"a fixture binding"),
             );
-            let kt = table.ptr();
-            assert!(!kt.is_null(), "no table");
-            unsafe {
-                let bd = crate::key_bindings::key_bindings_get(kt, b'x' as key_code);
-                assert!(!bd.is_null(), "no binding for x");
-                assert_eq!(key_binding_note(bd), Some(c"a fixture binding"));
-                assert!(key_binding_cmdlist_ref(bd).is_some());
+            let kt = table.handle();
+            {
+                let bd = crate::key_bindings::key_bindings_get(&kt.borrow(), b'x' as key_code);
+                assert!(bd.is_some(), "no binding for x");
+                assert_eq!(
+                    key_binding_note(bd.as_ref().unwrap()),
+                    Some(c"a fixture binding")
+                );
+                assert!(key_binding_cmdlist_ref(bd.as_ref().unwrap()).is_some());
             }
         }
         assert!(
-            unsafe { key_bindings_get_table(c"fixture-keys".as_ptr(), 0) }.is_null(),
+            { key_bindings_get_table(c"fixture-keys", 0) }.is_none(),
             "the table is still there"
         );
     }
@@ -1937,15 +2142,37 @@ mod tests {
         let _guard = globals();
         {
             let store = Paste::new();
-            assert!(unsafe { crate::paste::paste_get_top(None) }.is_null());
-            let pb = store.add(c"fixture", "hello");
-            assert!(!pb.is_null());
-            unsafe {
-                assert_eq!(crate::paste::paste_buffer_data(&*pb), b"hello");
-                assert_eq!(crate::paste::paste_get_name(c"fixture".as_ptr()), pb);
-            }
+            assert!(with_paste_buffers(PasteBufferStore::is_empty));
+            store.add(c"fixture", "hello");
+            assert_eq!(
+                with_paste_buffers(|buffers| {
+                    buffers.get(c"fixture").map(|buffer| buffer.data.to_vec())
+                }),
+                Some(b"hello".to_vec())
+            );
         }
-        assert!(unsafe { crate::paste::paste_get_top(None) }.is_null());
+        assert!(with_paste_buffers(PasteBufferStore::is_empty));
+    }
+
+    #[test]
+    fn window_link_snapshot_checks_removed_links_and_preserves_order() {
+        let _guard = globals();
+        let mut session = Session::new(1, "snapshot");
+        let mut window = Window::new(1, "win", 80, 24);
+        let first = link(&mut session, &mut window, 4);
+        let second = link(&mut session, &mut window, 2);
+        let owner = window.reference();
+        let mut snapshot = { owner.winlinks() };
+
+        unlink(&mut session, first);
+        let removed = snapshot.next().expect("the snapshot keeps its first entry");
+        assert_eq!(removed.index(), 4);
+        assert!(removed.get().is_none());
+        let remaining = snapshot.next().expect("the second link remains");
+        assert_eq!(remaining.get().map(|link| link.idx), Some(2));
+        assert!(snapshot.next().is_none());
+        unlink(&mut session, second);
+        assert!(remaining.get().is_none());
     }
 
     #[test]
@@ -1956,24 +2183,93 @@ mod tests {
         let wl = link(&mut s, &mut w, 0);
         unsafe {
             assert_eq!((*wl).idx, 0);
-            assert_eq!((*wl).session(), s.ptr());
-            assert_eq!((*wl).window(), w.ptr());
-            assert_eq!(session_get_curw(s.ptr()), wl);
+            assert_eq!((*wl).session().map_or(null_mut(), |s| s.as_ptr()), s.ptr());
+            assert!(
+                s.handle().as_session().windows[&0]
+                    .window_handle()
+                    .unwrap()
+                    .ptr_eq(w.handle())
+            );
+            assert!(core::ptr::eq((&*s.ptr()).curw().unwrap(), wl));
             assert_eq!(winlink_count(&(*s.ptr()).windows), 1);
-            assert_eq!(winlink_find_by_index(&mut (*s.ptr()).windows, 0), wl);
-            assert_eq!(
-                winlinks_into(w.ptr())
+            assert!(
+                (*s.ptr())
+                    .windows
+                    .get(&0)
+                    .map(Box::as_ref)
+                    .is_some_and(|link| core::ptr::eq(link, wl))
+            );
+            assert!(
+                winlinks_into(&*w.ptr())
                     .next()
-                    .unwrap_or(::core::ptr::null_mut()),
-                wl
+                    .is_some_and(|held| held.get().is_some_and(|link| core::ptr::eq(link, wl)))
             );
             assert!((*wl).window_ref.is_some());
         }
         unlink(&mut s, wl);
         unsafe {
             assert_eq!(winlink_count(&(*s.ptr()).windows), 0);
-            assert!(session_get_curw(s.ptr()).is_null());
-            assert!(window_ref_from_ptr(w.ptr()).is_some());
+            assert!(s.handle().curw().is_none());
+            assert!(window_ref_of(&*w.ptr()).is_some());
         }
+    }
+}
+
+/// Gives a test pane an owned layout cell without changing its geometry or z-order.
+pub(crate) fn set_pane_floating(w: &mut window, pane_id: u_int, floating: bool) {
+    use crate::layout::{
+        LAYOUT_CELL_FLOATING, LAYOUT_LEFTRIGHT, LayoutCellPath, layout_create_cell,
+    };
+
+    let path = w.layout_root.as_deref().and_then(|root| {
+        LayoutCellPath::for_pane(
+            root,
+            &crate::window::window_pane_find_by_id(pane_id).expect("the pane allocation exists"),
+        )
+    });
+    if path.is_none() {
+        let geometry = unsafe {
+            w.panes
+                .iter()
+                .find(|pane| pane.pane_id() == pane_id)
+                .unwrap()
+                .as_pane()
+        }
+        .geometry();
+        let mut cell = layout_create_cell(None);
+        cell.wp_ref = w
+            .panes
+            .iter()
+            .find(|pane| pane.pane_id() == pane_id)
+            .map(|pane| pane.downgrade());
+        (cell.sx, cell.sy, cell.xoff, cell.yoff) =
+            (geometry.width, geometry.height, geometry.x, geometry.y);
+        if let Some(root) = w.layout_root.as_deref() {
+            if root.wp_ref.as_ref().map(|pane| pane.id()).is_some() {
+                let mut parent = layout_create_cell(None);
+                parent.type_0 = LAYOUT_LEFTRIGHT;
+                let size = w.dimensions().size;
+                (parent.sx, parent.sy, parent.xoff, parent.yoff) = (size.width, size.height, 0, 0);
+                let mut only = w.layout_root.replace(parent).unwrap();
+                only.has_parent = true;
+                w.layout_root.as_deref_mut().unwrap().cells.push(only);
+            }
+            cell.has_parent = true;
+            w.layout_root.as_deref_mut().unwrap().cells.push(cell);
+        } else {
+            w.layout_root = Some(cell);
+        }
+    }
+    let root = w.layout_root.as_deref_mut().unwrap();
+    let path = LayoutCellPath::for_pane(
+        root,
+        &crate::window::window_pane_find_by_id(pane_id).expect("the pane allocation exists"),
+    )
+    .unwrap();
+    let cell = path.get_mut(root).unwrap();
+    if floating {
+        cell.flags |= LAYOUT_CELL_FLOATING;
+    } else {
+        cell.flags &= !LAYOUT_CELL_FLOATING;
     }
 }

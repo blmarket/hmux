@@ -1,50 +1,23 @@
-use crate::ffi::{regcomp, regexec, regfree};
+use crate::CompiledRegex;
 pub use crate::types::*;
 use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
+
+/// A regular-expression substitution engine with tmux's `regsub` semantics.
+pub trait RegsubEngine {
+    /// Replaces matches in `text`, returning nothing when `pattern` is invalid.
+    fn substitute(pattern: &CStr, replacement: &CStr, text: &CStr, flags: c_int)
+    -> Option<CString>;
+}
+
+/// The Rust implementation used by hmux.
+pub struct RustRegsub;
 
 /// How many match slots the substitution gives `regexec`: the whole match and
 /// the nine groups a `\0` to `\9` in the replacement can name. The C tested
 /// the group's number against this count before reading its slot; a single
 /// digit is below ten whatever it is, so that test is gone.
 const NMATCH: usize = 10;
-
-/// A compiled pattern, freed when it goes out of scope.
-struct Regex(regex_t);
-
-impl Regex {
-    /// Compiles `pattern` under `flags`, or nothing when it is not a pattern.
-    fn compile(pattern: &CStr, flags: c_int) -> Option<Regex> {
-        let mut r = regex_t::default();
-        if unsafe { regcomp(&raw mut r, pattern.as_ptr(), flags) } != 0 {
-            return None;
-        }
-        Some(Regex(r))
-    }
-
-    /// Where the pattern matches in `text` from the byte `at`, as offsets from
-    /// `at` itself. The first slot is the whole match, the rest are the
-    /// groups, and a group that matched nothing has both its offsets alike.
-    fn exec(&self, text: &CStr, at: usize) -> Option<[regmatch_t; NMATCH]> {
-        let mut m = [regmatch_t { rm_so: 0, rm_eo: 0 }; NMATCH];
-        let matched = unsafe {
-            regexec(
-                &raw const self.0,
-                text.as_ptr().add(at),
-                NMATCH as size_t,
-                m.as_mut_ptr(),
-                0,
-            ) == 0
-        };
-        matched.then_some(m)
-    }
-}
-
-impl Drop for Regex {
-    fn drop(&mut self) {
-        unsafe { regfree(&raw mut self.0) };
-    }
-}
 
 /// Writes `with` onto the end of `out`, turning each `\0` to `\9` into what
 /// the group of that number matched at `at`. A backslash in front of anything
@@ -93,7 +66,7 @@ fn substitute(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<
     if pattern_bytes.is_empty() {
         return Some(bytes.to_vec());
     }
-    let re = Regex::compile(pattern, flags)?;
+    let re = CompiledRegex::compile(pattern, flags)?;
     let anchored = pattern_bytes[0] == b'^';
     let end = bytes.len();
     let mut out = Vec::new();
@@ -101,7 +74,7 @@ fn substitute(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<
     let mut last = 0;
     let mut empty = false;
     while start <= end {
-        let Some(m) = re.exec(text, start) else {
+        let Some(m) = re.captures::<NMATCH>(text, start, 0) else {
             out.extend_from_slice(&bytes[start..end]);
             break;
         };
@@ -128,9 +101,20 @@ fn substitute(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<
 
 /// `text` with every match of `pattern` replaced by `with`, or nothing when
 /// `pattern` does not compile.
-pub fn regsub(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<CString> {
+fn regsub(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<CString> {
     let answer = substitute(pattern, with, text, flags)?;
     Some(unsafe { CString::from_vec_unchecked(answer) })
+}
+
+impl RegsubEngine for RustRegsub {
+    fn substitute(
+        pattern: &CStr,
+        replacement: &CStr,
+        text: &CStr,
+        flags: c_int,
+    ) -> Option<CString> {
+        regsub(pattern, replacement, text, flags)
+    }
 }
 
 #[cfg(test)]

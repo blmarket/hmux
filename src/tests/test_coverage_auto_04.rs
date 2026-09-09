@@ -5,14 +5,17 @@
 //! `input_parse_buffer` (zero-length fast path) and the request-queue no-ops.
 //! All tests are deterministic and avoid the fatal/IO paths.
 
+use crate::WindowPane;
+use crate::input::InputCtxRef;
 use crate::input::{
     INPUT_BUF_DEFAULT_SIZE, INPUT_BUF_START, INPUT_DISCARD, INPUT_END_BEL, INPUT_END_ST,
     INPUT_LAST, INPUT_REQUEST_CLIPBOARD, INPUT_REQUEST_PALETTE, INPUT_REQUEST_QUEUE,
-    INPUT_REQUEST_TIMEOUT, input_cancel_requests, input_free_box, input_init, input_parse_buffer,
-    input_pending, input_request_reply, input_reset, input_set_buffer_size,
+    INPUT_REQUEST_TIMEOUT, input_cancel_requests, input_parse_buffer, input_set_buffer_size,
 };
-use crate::reactor::Stream;
-use crate::style::{colour_palette_free, colour_palette_init};
+use crate::pane_identity::PaneIdentity;
+use crate::reactor::{ByteBuffer, Stream};
+use crate::screen::Screen;
+use crate::style::{ColourEngine, RustColourEngine};
 use crate::tests::test_fixtures::{Pane, Window, ensure_reactor, globals};
 use crate::types::InputRequestData;
 
@@ -69,8 +72,8 @@ fn input_set_buffer_size_roundtrip_is_observable_via_later_allocation() {
 struct Ctx {
     _window: Window,
     pane: Pane,
-    ictx: *mut crate::input::input_ctx,
-    _guard: ::std::sync::MutexGuard<'static, ()>,
+    ictx: crate::input::InputCtxRef,
+    _guard: std::sync::MutexGuard<'static, ()>,
 }
 
 impl Ctx {
@@ -82,10 +85,13 @@ impl Ctx {
         window.add_pane(&mut pane);
         let wp = pane.ptr();
         let ictx = unsafe {
-            colour_palette_init(&mut (*wp).palette);
-            let ctx = input_init(crate::input::InputOwner::Pane((*wp).id), Stream::NONE);
-            (*wp).ictx = Some(ctx);
-            crate::input::ictx_opt(&(*wp).ictx).unwrap_or(::core::ptr::null_mut())
+            RustColourEngine.init_palette((*wp).palette_mut());
+            let ctx = InputCtxRef::create(
+                crate::input::InputOwner::Pane((*wp).pane_id()),
+                Stream::NONE,
+            );
+            *(*wp).ictx_mut() = Some(ctx);
+            crate::input::ictx_opt((*wp).ictx()).unwrap()
         };
         Self {
             _window: window,
@@ -104,10 +110,10 @@ impl Drop for Ctx {
     fn drop(&mut self) {
         unsafe {
             let wp = self.wp();
-            if let Some(ictx) = (*wp).ictx.take() {
-                input_free_box(ictx);
+            if let Some(ictx) = (*wp).ictx_mut().take() {
+                ictx.close();
             }
-            colour_palette_free(Some(&mut (*wp).palette));
+            RustColourEngine.free_palette(Some((*wp).palette_mut()));
         }
     }
 }
@@ -119,13 +125,14 @@ impl Drop for Ctx {
 #[test]
 fn input_init_creates_pending_buffer_and_free_releases_it() {
     let ctx = Ctx::new();
-    unsafe {
-        let pending = input_pending(&mut *ctx.ictx);
-        assert!(!pending.is_null());
-        assert_eq!((*pending).len(), 0);
+    {
+        let mut ictx = ctx.ictx.borrow_mut();
+        let pending = ictx.pending().unwrap();
+        assert_eq!(pending.len(), 0);
+        drop(ictx);
         // ictx fields initialised by input_init
-        assert!((*ctx.ictx).input_buf.capacity() >= INPUT_BUF_START as usize);
-        assert_eq!((*ctx.ictx).input_buf, [b'\0']);
+        assert!(ctx.ictx.borrow().input_buf.capacity() >= INPUT_BUF_START as usize);
+        assert_eq!(ctx.ictx.borrow().input_buf, [b'\0']);
     }
     // free happens in Drop — just check no panic
 }
@@ -135,23 +142,23 @@ fn input_reset_clears_intermediate_and_flags_without_touching_screen() {
     let mut ctx = Ctx::new();
     unsafe {
         // seed some state that input_reset must clear
-        (*ctx.ictx).interm_len = 2;
-        (*ctx.ictx).interm_buf[0] = b'(';
-        (*ctx.ictx).interm_buf[1] = b')';
-        (*ctx.ictx).param_len = 3;
-        (*ctx.ictx).param_buf[0] = b'1';
-        (*ctx.ictx).input_buf.extend_from_slice(b"abcd");
-        (*ctx.ictx).flags = INPUT_DISCARD | INPUT_LAST;
+        ctx.ictx.borrow_mut().interm_len = 2;
+        ctx.ictx.borrow_mut().interm_buf[0] = b'(';
+        ctx.ictx.borrow_mut().interm_buf[1] = b')';
+        ctx.ictx.borrow_mut().param_len = 3;
+        ctx.ictx.borrow_mut().param_buf[0] = b'1';
+        ctx.ictx.borrow_mut().input_buf.extend_from_slice(b"abcd");
+        ctx.ictx.borrow_mut().flags = INPUT_DISCARD | INPUT_LAST;
 
-        input_reset(&mut *ctx.ictx, 0);
+        ctx.ictx.reset(0);
 
-        assert_eq!((*ctx.ictx).interm_len, 0);
-        assert_eq!((*ctx.ictx).param_len, 0);
-        assert_eq!((*ctx.ictx).flags & INPUT_DISCARD, 0);
+        assert_eq!(ctx.ictx.borrow().interm_len, 0);
+        assert_eq!(ctx.ictx.borrow().param_len, 0);
+        assert_eq!(ctx.ictx.borrow().flags & INPUT_DISCARD, 0);
         // state must be ground
-        assert_eq!((*ctx.ictx).state.name, c"ground");
+        assert_eq!(ctx.ictx.borrow().state.name, c"ground");
         // buffer still valid
-        assert_eq!((*ctx.ictx).input_buf, [b'\0']);
+        assert_eq!(ctx.ictx.borrow().input_buf, [b'\0']);
     }
 }
 
@@ -159,16 +166,17 @@ fn input_reset_clears_intermediate_and_flags_without_touching_screen() {
 fn input_parse_buffer_with_zero_length_is_noop() {
     let mut ctx = Ctx::new();
     unsafe {
-        let before_cx = (*ctx.pane.screen()).cx;
-        let before_cy = (*ctx.pane.screen()).cy;
-        let pending_before = (*input_pending(&mut *ctx.ictx)).len();
-        input_parse_buffer(ctx.wp(), b"".as_ptr(), 0);
-        assert_eq!((*input_pending(&mut *ctx.ictx)).len(), pending_before);
-        assert_eq!((*ctx.pane.screen()).cx, before_cx);
-        assert_eq!((*ctx.pane.screen()).cy, before_cy);
+        let before = ctx.pane.base().cursor();
+        let pending_before = ctx.ictx.pending().unwrap().len();
+        input_parse_buffer(&mut *ctx.wp(), ByteBuffer::new());
+        assert_eq!(ctx.ictx.pending().unwrap().len(), pending_before);
+        assert_eq!(ctx.pane.base().cursor(), before);
         // printable path works after the no-op
-        input_parse_buffer(ctx.wp(), b"hi".as_ptr(), 2);
-        assert_eq!((*ctx.pane.screen()).cx, 2);
+        input_parse_buffer(
+            &mut *ctx.wp(),
+            ByteBuffer::from(bytes::Bytes::from_static(b"hi")),
+        );
+        assert_eq!(ctx.pane.base().cursor().0, 2);
     }
 }
 
@@ -178,8 +186,8 @@ fn input_cancel_requests_on_empty_client_is_noop() {
     ensure_reactor();
     unsafe {
         let mut c = Box::new(crate::types::client::default());
-        ::core::ptr::write(&raw mut c.input_requests, Vec::new());
-        input_cancel_requests(&raw mut *c);
+        core::ptr::write(&raw mut c.input_requests, Vec::new());
+        input_cancel_requests(&mut c);
         assert!(c.input_requests.is_empty());
     }
 }
@@ -189,16 +197,11 @@ fn input_request_reply_with_no_matching_request_is_noop() {
     let _guard = globals();
     ensure_reactor();
     unsafe {
-        let mut c = Box::new(crate::types::client::default());
-        ::core::ptr::write(&raw mut c.input_requests, Vec::new());
+        let mut c = crate::tests::test_fixtures::zeroed_client();
         // no requests queued; must not crash
-        input_request_reply(&raw mut *c, INPUT_REQUEST_PALETTE, &InputRequestData::None);
-        input_request_reply(
-            &raw mut *c,
-            INPUT_REQUEST_CLIPBOARD,
-            &InputRequestData::None,
-        );
-        input_request_reply(&raw mut *c, INPUT_REQUEST_QUEUE, &InputRequestData::None);
-        assert!(c.input_requests.is_empty());
+        c.handle_input_reply(INPUT_REQUEST_PALETTE, &InputRequestData::None);
+        c.handle_input_reply(INPUT_REQUEST_CLIPBOARD, &InputRequestData::None);
+        c.handle_input_reply(INPUT_REQUEST_QUEUE, &InputRequestData::None);
+        assert!(c.input_requests_mut().is_empty());
     }
 }

@@ -22,7 +22,8 @@
 //! there, so everything downstream of the refusals stays out of reach on
 //! purpose.
 
-use crate::session::session_get_curw;
+use crate::WindowPane;
+
 use crate::spawn::{
     _PATH_BSHELL, _PATH_DEFPATH, CLIENT_EXIT_DETACH, CLIENT_EXIT_RETURN, CLIENT_EXIT_SHUTDOWN,
     IUTF8, LAYOUT_CELL_FLOATING, LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, LAYOUT_WINDOWPANE, MODE_CRLF,
@@ -49,11 +50,11 @@ use crate::spawn::{
     TCSANOW, THEME_DARK, THEME_LIGHT, THEME_UNKNOWN, VERASE, WINDOW_ZOOMED, WINLINK_ACTIVITY,
     WINLINK_ALERTFLAGS, WINLINK_BELL, WINLINK_SILENCE, spawn_pane, spawn_window,
 };
-use crate::tests::test_fixtures::{Item, Pane, Session, Window, globals, link, seen, unlink_all};
+use crate::tests::test_fixtures::{Item, Pane, Session, Window, globals, link, unlink_all};
 use crate::types::*;
-use crate::window::{window_panes_first, winlink_count, winlink_find_by_index};
+use crate::window::{WinlinkRef, winlink_count};
+use crate::window_pane::RustWindowPaneWeak;
 use ::core::ffi::c_int;
-use ::core::ptr::null_mut;
 
 /// A descriptor number parked in the fixture pane's `fd`, so that both entry
 /// points see a pane that is still attached. Nothing ever closes it: every
@@ -66,18 +67,15 @@ const FAKE_FD: c_int = 10;
 /// winlink tree and the window's own pane list, so ordinary fixture memory is
 /// enough.
 struct Rig {
-    s: *mut session,
-    w: *mut window,
-    p: *mut window_pane,
-    wl: *mut winlink,
-    _session: Session,
-    _window: Window,
-    _pane: Pane,
+    p: RustWindowPaneWeak,
+    wl: WinlinkRef,
+    session: Session,
+    window: Window,
 }
 
 impl Drop for Rig {
     fn drop(&mut self) {
-        unlink_all(&mut self._session);
+        unlink_all(&mut self.session);
     }
 }
 
@@ -86,17 +84,24 @@ impl Rig {
         let mut session = Session::new(0, "0");
         let mut window = Window::new(0, "keep", 80, 24);
         let mut pane = Pane::new(1, 80, 24, 100);
-        unsafe { (*pane.ptr()).fd = FAKE_FD };
         window.add_pane(&mut pane);
-        let wl = link(&mut session, &mut window, idx);
+        let mut p = {
+            window
+                .handle()
+                .as_window()
+                .panes
+                .first()
+                .map(|pane| pane.downgrade())
+                .unwrap()
+        };
+        unsafe { *p.as_pane_mut().fd_mut() = FAKE_FD };
+        link(&mut session, &mut window, idx);
+        let wl = WinlinkRef::new(session.reference(), idx).unwrap();
         Rig {
-            s: session.ptr(),
-            w: window.ptr(),
-            p: pane.ptr(),
+            p,
             wl,
-            _session: session,
-            _window: window,
-            _pane: pane,
+            session,
+            window,
         }
     }
 }
@@ -107,15 +112,15 @@ impl Rig {
 fn context(
     item: &mut Item,
     rig: &Rig,
-    wp0: *mut window_pane,
+    wp0: Option<&RustWindowPaneWeak>,
     flags: c_int,
     idx: c_int,
 ) -> Box<spawn_context<'static>> {
     let mut sc = Box::new(spawn_context::default());
-    sc.item = crate::cmd::cmdq_item_weak_from_ptr(item.ptr());
-    sc.s = rig.s;
-    sc.wl = rig.wl;
-    sc.wp0 = wp0;
+    sc.item = Some(item.handle().downgrade());
+    sc.s = Some(rig.session.reference());
+    sc.wl_idx = Some(rig.wl.index());
+    sc.wp0 = wp0.and_then(|pane| crate::window::window_pane_find_by_id(pane.pane_id()));
     sc.idx = idx;
     sc.flags = flags;
     sc
@@ -335,23 +340,66 @@ fn respawning_a_window_with_an_attached_pane_refuses_without_touching_it() {
     let _guard = globals();
     let mut rig = Rig::new(0);
     let mut item = Item::new();
-    let mut sc = context(&mut item, &rig, rig.p, SPAWN_RESPAWN, -1);
+    let mut sc = context(&mut item, &rig, Some(&rig.p), SPAWN_RESPAWN, -1);
     unsafe {
         let mut cause = None;
         let out = spawn_window(&mut sc, &mut cause);
-        assert!(out.is_null(), "the respawn was refused");
+        assert!(out.is_none(), "the respawn was refused");
         assert_eq!(cause.unwrap().to_str().unwrap(), "window 0:0 still active");
 
-        assert_eq!(winlink_count(&(*rig.s).windows), 1);
-        assert_eq!(winlink_find_by_index(&mut (*rig.s).windows, 0), rig.wl);
-        assert_eq!((*rig.wl).window(), rig.w);
-        assert_eq!((*rig.wl).flags, 0, "the alert flags were left alone");
-        assert_eq!(window_panes_first(rig.w), rig.p);
-        assert_eq!((*rig.p).fd, FAKE_FD, "the pane was never closed");
-        assert_eq!(seen((*rig.w).name_ptr()), "keep", "no rename happened");
+        assert_eq!(winlink_count(&rig.session.handle().as_session().windows), 1);
+        assert!(
+            rig.session
+                .handle()
+                .as_session()
+                .windows
+                .get(&0)
+                .map(Box::as_ref)
+                .is_some_and(|link| core::ptr::eq(link, rig.wl.get().unwrap()))
+        );
+        assert!(
+            rig.wl
+                .get()
+                .unwrap()
+                .window_handle()
+                .unwrap()
+                .ptr_eq(rig.window.handle())
+        );
         assert_eq!(
-            session_get_curw(rig.s),
-            rig.wl,
+            rig.wl.get().unwrap().flags,
+            0,
+            "the alert flags were left alone"
+        );
+        assert!(
+            rig.window
+                .handle()
+                .as_window()
+                .panes
+                .first()
+                .is_some_and(|owner| owner.downgrade().ptr_eq(&rig.p))
+        );
+        assert_eq!(*rig.p.as_pane().fd(), FAKE_FD, "the pane was never closed");
+        assert_eq!(
+            rig.window
+                .handle()
+                .window_name()
+                .as_deref()
+                .expect("a window has a name")
+                .to_str()
+                .unwrap(),
+            "keep",
+            "no rename happened"
+        );
+        assert!(
+            core::ptr::eq(
+                rig.session
+                    .handle()
+                    .curw()
+                    .unwrap()
+                    .get()
+                    .expect("the current link is live"),
+                rig.wl.get().unwrap()
+            ),
             "the selection was left alone"
         );
     }
@@ -362,22 +410,59 @@ fn an_explicit_index_already_in_use_refuses_the_window_spawn() {
     let _guard = globals();
     let mut rig = Rig::new(0);
     let mut item = Item::new();
-    let mut sc = context(&mut item, &rig, null_mut(), SPAWN_DETACHED, 0);
+    let mut sc = context(&mut item, &rig, None, SPAWN_DETACHED, 0);
     unsafe {
         let mut cause = None;
         let out = spawn_window(&mut sc, &mut cause);
-        assert!(out.is_null(), "the spawn was refused");
+        assert!(out.is_none(), "the spawn was refused");
         assert_eq!(cause.unwrap().to_str().unwrap(), "index 0 in use");
 
-        assert_eq!(winlink_count(&(*rig.s).windows), 1);
-        assert_eq!(winlink_find_by_index(&mut (*rig.s).windows, 0), rig.wl);
-        assert_eq!((*rig.wl).window(), rig.w);
-        assert_eq!((*rig.wl).flags, 0, "the alert flags were not cleared");
-        assert_eq!(window_panes_first(rig.w), rig.p);
-        assert_eq!((*rig.p).fd, FAKE_FD);
-        assert_eq!(session_get_curw(rig.s), rig.wl, "nothing was selected");
+        assert_eq!(winlink_count(&rig.session.handle().as_session().windows), 1);
         assert!(
-            (*rig.s).lastw.is_empty(),
+            rig.session
+                .handle()
+                .as_session()
+                .windows
+                .get(&0)
+                .map(Box::as_ref)
+                .is_some_and(|link| core::ptr::eq(link, rig.wl.get().unwrap()))
+        );
+        assert!(
+            rig.wl
+                .get()
+                .unwrap()
+                .window_handle()
+                .unwrap()
+                .ptr_eq(rig.window.handle())
+        );
+        assert_eq!(
+            rig.wl.get().unwrap().flags,
+            0,
+            "the alert flags were not cleared"
+        );
+        assert!(
+            rig.window
+                .handle()
+                .as_window()
+                .panes
+                .first()
+                .is_some_and(|owner| owner.downgrade().ptr_eq(&rig.p))
+        );
+        assert_eq!(*rig.p.as_pane().fd(), FAKE_FD);
+        assert!(
+            core::ptr::eq(
+                rig.session
+                    .handle()
+                    .curw()
+                    .unwrap()
+                    .get()
+                    .expect("the current link is live"),
+                rig.wl.get().unwrap()
+            ),
+            "nothing was selected"
+        );
+        assert!(
+            rig.session.handle().as_session().lastw.is_empty(),
             "nothing was pushed onto the stack"
         );
     }
@@ -388,21 +473,154 @@ fn respawning_a_pane_that_is_still_attached_refuses_before_any_descriptor_work()
     let _guard = globals();
     let mut rig = Rig::new(0);
     let mut item = Item::new();
-    let mut sc = context(&mut item, &rig, rig.p, SPAWN_RESPAWN, -1);
+    let mut sc = context(&mut item, &rig, Some(&rig.p), SPAWN_RESPAWN, -1);
     unsafe {
         let mut cause = None;
-        let out = spawn_pane(&mut sc, &mut cause);
-        assert!(out.is_null(), "the respawn was refused");
+        let out = spawn_pane(&mut sc, None, &mut cause);
+        assert!(out.is_none(), "the respawn was refused");
         assert_eq!(cause.unwrap().to_str().unwrap(), "pane 0:0.0 still active");
 
-        assert_eq!((*rig.p).fd, FAKE_FD, "the pane's descriptor stayed open");
-        assert_eq!(window_panes_first(rig.w), rig.p, "the pane was kept");
-        assert_eq!(winlink_count(&(*rig.s).windows), 1);
         assert_eq!(
-            session_get_curw(rig.s),
-            rig.wl,
+            *rig.p.as_pane().fd(),
+            FAKE_FD,
+            "the pane's descriptor stayed open"
+        );
+        assert!(
+            rig.window
+                .handle()
+                .as_window()
+                .panes
+                .first()
+                .is_some_and(|owner| owner.downgrade().ptr_eq(&rig.p)),
+            "the pane was kept"
+        );
+        assert_eq!(winlink_count(&rig.session.handle().as_session().windows), 1);
+        assert!(
+            core::ptr::eq(
+                rig.session
+                    .handle()
+                    .curw()
+                    .unwrap()
+                    .get()
+                    .expect("the current link is live"),
+                rig.wl.get().unwrap()
+            ),
             "the selection was left alone"
         );
-        assert_eq!(seen((*rig.w).name_ptr()), "keep");
+        assert_eq!(
+            rig.window
+                .handle()
+                .window_name()
+                .as_deref()
+                .expect("a window has a name")
+                .to_str()
+                .unwrap(),
+            "keep"
+        );
+    }
+}
+
+#[test]
+fn a_spawn_context_keeps_its_session_alive_until_it_is_dropped() {
+    let _guard = globals();
+    let session = Session::new(91, "spawn-owner");
+    let weak = session.weak();
+    let context = spawn_context {
+        s: Some(session.reference()),
+        ..Default::default()
+    };
+    drop(session);
+    assert!(weak.upgrade().is_some());
+    drop(context);
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn spawning_refuses_a_destroyed_pane() {
+    let _guard = globals();
+    let rig = Rig::new(0);
+    let mut item = Item::new();
+    let mut sc = context(&mut item, &rig, Some(&rig.p), SPAWN_RESPAWN, -1);
+    unsafe {
+        let removed = crate::window::window_panes_take(
+            &mut rig.window.reference().as_window_mut(),
+            &crate::window::window_pane_find_by_id(rig.p.pane_id()).expect("the pane exists"),
+        )
+        .unwrap();
+        assert_eq!(*removed.as_pane().fd(), FAKE_FD);
+        drop(removed);
+        let mut cause = None;
+        assert!(spawn_pane(&mut sc, None, &mut cause).is_none());
+        assert_eq!(cause.as_deref(), Some(c"pane no longer exists"));
+        assert!(rig.window.handle().as_window().panes.is_empty());
+    }
+}
+
+#[test]
+fn spawning_refuses_a_window_that_has_been_unlinked() {
+    let _guard = globals();
+    let mut rig = Rig::new(0);
+    let mut item = Item::new();
+    let mut sc = context(&mut item, &rig, Some(&rig.p), SPAWN_RESPAWN, -1);
+    unlink_all(&mut rig.session);
+    unsafe {
+        let mut cause = None;
+        assert!(spawn_window(&mut sc, &mut cause).is_none());
+        assert_eq!(cause.as_deref(), Some(c"window no longer exists"));
+        cause = None;
+        assert!(spawn_pane(&mut sc, None, &mut cause).is_none());
+        assert_eq!(cause.as_deref(), Some(c"window no longer exists"));
+        assert_eq!(*rig.p.as_pane().fd(), FAKE_FD);
+        assert!(
+            rig.window
+                .handle()
+                .as_window()
+                .panes
+                .first()
+                .is_some_and(|owner| owner.downgrade().ptr_eq(&rig.p))
+        );
+    }
+}
+
+#[test]
+fn shell_names_borrow_the_last_component_unless_the_path_ends_with_a_slash() {
+    for (path, expected) in [
+        (c"/bin/sh", c"sh"),
+        (c"sh", c"sh"),
+        (c"/usr/local/bin/shell", c"shell"),
+        (c"/bin/", c"/bin/"),
+        (c"/", c"/"),
+        (c"", c""),
+        (c"/bin/\xffsh", c"\xffsh"),
+    ] {
+        assert_eq!(crate::spawn::spawn_shell_name(path), expected);
+    }
+}
+
+#[test]
+fn replacing_the_current_window_overrides_detached_spawning() {
+    let _guard = globals();
+    crate::tests::test_fixtures::ensure_reactor();
+    let mut session = Session::new(0, "replace");
+    let mut old_window = Window::new(90, "old", 80, 24);
+    link(&mut session, &mut old_window, 0);
+    let item = Item::new();
+    let mut sc = spawn_context::default();
+    sc.item = Some(item.handle().downgrade());
+    sc.s = Some(session.reference());
+    sc.idx = 0;
+    sc.flags = SPAWN_KILL | SPAWN_DETACHED | SPAWN_EMPTY;
+    sc.name = Some(c"replacement");
+    let mut cause = None;
+    unsafe {
+        let result = spawn_window(&mut sc, &mut cause);
+        let flags = sc.flags;
+        let current = session.reference().as_session().curw_idx;
+        let index = result.as_ref().map(|link| link.index());
+        unlink_all(&mut session);
+        assert!(cause.is_none());
+        assert_eq!(index, Some(0));
+        assert_eq!(current, Some(0));
+        assert_eq!(flags & SPAWN_DETACHED, 0);
     }
 }

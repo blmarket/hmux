@@ -213,7 +213,6 @@ fn sort_order_constants_are_consecutive_from_zero() {
 #[test]
 fn format_expand_state_default_is_zeroed() {
     let st = format_expand_state::default();
-    assert!(st.ft.is_null());
     assert_eq!(st.loop_0, 0);
     assert_eq!(st.start_time, 0);
     assert_eq!(st.flags, 0);
@@ -224,12 +223,11 @@ fn format_expand_state_default_is_zeroed() {
 }
 
 #[test]
-fn format_expand_state_default_is_copy_and_clone() {
+fn format_expand_state_default_is_clone() {
     let a = format_expand_state::default();
-    let b = a;
+    let b = a.clone();
     let c = b;
     assert_eq!(a.loop_0, c.loop_0);
     assert_eq!(a.flags, c.flags);
-    assert!(c.ft.is_null());
     assert_eq!(c.start_time, 0);
 }

@@ -12,13 +12,13 @@ use ::core::ffi::c_int;
 fn nothing_is_known_about_a_descriptor_that_is_no_terminal() {
     unsafe {
         let mut fds = [-1 as c_int; 2];
-        assert_eq!(::libc::pipe(fds.as_mut_ptr()), 0, "no pipe");
+        assert_eq!(libc::pipe(fds.as_mut_ptr()), 0, "no pipe");
         assert!(osdep_get_name(fds[0]).is_none());
         assert!(osdep_get_cwd(fds[0]).is_none());
         assert!(osdep_get_name(-1).is_none());
         assert!(osdep_get_cwd(-1).is_none());
-        ::libc::close(fds[0]);
-        ::libc::close(fds[1]);
+        libc::close(fds[0]);
+        libc::close(fds[1]);
     }
 }
 

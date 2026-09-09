@@ -15,11 +15,9 @@
 //! client. The private free path is reached here both directly and after a
 //! popup menu selection.
 
-use crate::environ::environ_t;
 use crate::fmt_args;
 use crate::grid::{grid_default_cell, grid_get_cell};
-use crate::modes::window_buffer_editdata;
-use crate::options::options_set_string;
+
 use crate::overlay::{
     _PATH_BSHELL, _PATH_TMP, BOTTOM, BOX_LINES_DEFAULT, BOX_LINES_DOUBLE, BOX_LINES_HEAVY,
     BOX_LINES_NONE, BOX_LINES_PADDED, BOX_LINES_ROUNDED, BOX_LINES_SIMPLE, BOX_LINES_SINGLE,
@@ -27,19 +25,16 @@ use crate::overlay::{
     KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE, LEFT, MOUSE_BUTTON_1, MOUSE_BUTTON_3,
     MOUSE_MASK_BUTTONS, MOUSE_MASK_CTRL, MOUSE_MASK_META, MOUSE_MASK_MODIFIERS, MOUSE_MASK_SHIFT,
     MOVE, NONE, OFF, PANE_CHANGED, POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO,
-    POPUP_INTERNAL, POPUP_NOJOB, RIGHT, SIGHUP, SIZE, TOP, TTY_CTX_WINDOW_BIGGER, popup_data,
-    popup_display, popup_editor, popup_key_cb, popup_modify, popup_present, popup_write,
+    POPUP_INTERNAL, POPUP_NOJOB, RIGHT, SIGHUP, SIZE, TOP, TTY_CTX_WINDOW_BIGGER, popup_display,
+    popup_editor, popup_modify, popup_present, popup_write,
 };
-use crate::screen::screen_grid;
-use crate::screen::screen_grid_ptr;
 use crate::server::server_client_clear_overlay;
 use crate::tests::test_fixtures::{
     Clients, Session, Window, ensure_reactor, globals, link, seen, unlink_all,
 };
 use crate::tmux::global_options;
 use crate::types::*;
-use ::core::ffi::{c_char, c_int};
-use ::core::ptr::{null, null_mut};
+use ::core::ffi::c_int;
 
 #[test]
 fn the_popup_flags_are_single_bits_and_the_states_are_ladders() {
@@ -106,7 +101,7 @@ struct Popup {
     window: Window,
     clients: Clients,
     c: *mut client,
-    _guard: ::std::sync::MutexGuard<'static, ()>,
+    _guard: std::sync::MutexGuard<'static, ()>,
 }
 
 impl Drop for Popup {
@@ -126,7 +121,7 @@ impl Popup {
         link(&mut session, &mut window, 0);
         let mut clients = Clients::new();
         let c = clients.add(name, 80, 24);
-        unsafe { (*c).session = session.ptr() };
+        unsafe { (*c).set_attached_session(Some(session.handle())) };
         Popup {
             session,
             window,
@@ -141,7 +136,7 @@ impl Popup {
     }
 
     /// The live popup behind the client, once one has been displayed.
-    fn pd(&self) -> *mut popup_data {
+    fn pd(&self) -> PopupDataRef {
         unsafe { (*self.c).overlay_data().popup() }
     }
 
@@ -153,20 +148,20 @@ impl Popup {
             popup_display(
                 flags,
                 lines,
-                null_mut::<cmdq_item>(),
+                None,
                 2,
                 1,
                 sx,
                 sy,
-                null_mut::<environ_t>(),
-                null::<c_char>(),
+                None,
+                None,
                 &[],
-                null::<c_char>(),
-                c"fixture".as_ptr(),
-                self.c,
-                s,
-                null::<c_char>(),
-                null::<c_char>(),
+                None,
+                Some(c"fixture"),
+                &mut *self.c,
+                Some(&*s),
+                None,
+                None,
                 None,
             )
         }
@@ -184,18 +179,18 @@ fn a_client_without_an_overlay_is_not_a_popup_and_popup_write_leaves_it_alone() 
     let mut clients = Clients::new();
     let c = clients.add("plain", 80, 24);
     unsafe {
-        assert_eq!(popup_present(c), 0);
+        assert_eq!(popup_present(&*c), 0);
 
         let flags_before = (*c).flags;
-        popup_write(c, b"ignored".as_ptr() as *const c_char, 7);
+        popup_write(&mut *c, b"ignored");
         assert_eq!((*c).flags, flags_before);
         assert!((*c).overlay_check().is_none());
         assert!((*c).overlay().is_none());
         assert!((*c).overlay_data().is_none());
-        assert_eq!(popup_present(c), 0);
+        assert_eq!(popup_present(&*c), 0);
 
-        server_client_clear_overlay(c);
-        assert_eq!(popup_present(c), 0);
+        server_client_clear_overlay(&mut *c);
+        assert_eq!(popup_present(&*c), 0);
     }
 }
 
@@ -218,7 +213,7 @@ fn popup_display_refuses_sizes_that_cannot_hold_the_borders_or_the_terminal() {
                 -1,
                 "a {sx}x{sy} popup with border lines {lines} should have been refused"
             );
-            assert_eq!(popup_present(p.c), 0, "{lines} {sx}x{sy}");
+            assert_eq!(popup_present(&*p.c), 0, "{lines} {sx}x{sy}");
             assert!((*p.c).overlay_data().is_none(), "{lines} {sx}x{sy}");
         }
     }
@@ -231,38 +226,37 @@ fn a_jobless_popup_wires_the_overlay_and_answers_present() {
         assert_eq!(p.display(POPUP_NOJOB), 0);
 
         let pd = p.pd();
-        assert!(!pd.is_null());
-        assert_eq!(popup_present(p.c), 1);
+        assert_eq!(popup_present(&*p.c), 1);
 
-        assert_eq!((*pd).flags, POPUP_NOJOB);
-        assert_eq!((*pd).border_lines, BOX_LINES_SINGLE);
-        assert_eq!(seen((*pd).title_ptr()), "fixture");
-        assert_eq!((*pd).status, 128 + SIGHUP);
-        assert_eq!((*pd).px, 2);
-        assert_eq!((*pd).py, 1);
-        assert_eq!((*pd).sx, 10);
-        assert_eq!((*pd).sy, 6);
-        assert_eq!((*pd).ppx, (*pd).px);
-        assert_eq!((*pd).ppy, (*pd).py);
-        assert_eq!((*pd).psx, (*pd).sx);
-        assert_eq!((*pd).psy, (*pd).sy);
-        assert_eq!((*pd).dragging, OFF);
-        assert_eq!((*pd).close, 0);
-        assert!((*pd).job_id.is_none());
-        assert!((*pd).ictx.is_some());
-        assert!((*pd).item.is_none());
-        assert!((*pd).close_cb.is_none());
-        assert_eq!((*pd).palette.fg, 8);
-        assert_eq!((*pd).palette.bg, 8);
+        assert_eq!(pd.borrow().flags, POPUP_NOJOB);
+        assert_eq!(pd.borrow().border_lines, BOX_LINES_SINGLE);
+        assert_eq!(pd.borrow().title.as_deref(), Some(c"fixture"));
+        assert_eq!(pd.borrow().status, 128 + SIGHUP);
+        assert_eq!(pd.borrow().px, 2);
+        assert_eq!(pd.borrow().py, 1);
+        assert_eq!(pd.borrow().sx, 10);
+        assert_eq!(pd.borrow().sy, 6);
+        assert_eq!(pd.borrow().ppx, pd.borrow().px);
+        assert_eq!(pd.borrow().ppy, pd.borrow().py);
+        assert_eq!(pd.borrow().psx, pd.borrow().sx);
+        assert_eq!(pd.borrow().psy, pd.borrow().sy);
+        assert_eq!(pd.borrow().dragging, OFF);
+        assert_eq!(pd.borrow().close, 0);
+        assert!(pd.borrow().job_id.is_none());
+        assert!(pd.borrow().ictx.is_some());
+        assert!(pd.borrow().item.is_none());
+        assert!(pd.borrow().close_cb.is_none());
+        assert_eq!(pd.borrow().palette.fg, 8);
+        assert_eq!(pd.borrow().palette.bg, 8);
 
-        assert_eq!((*screen_grid_ptr(&mut (*pd).s)).sx, 8);
-        assert_eq!((*screen_grid_ptr(&mut (*pd).s)).sy, 4);
+        assert_eq!(RustScreen::grid(&pd.borrow().s.borrow()).sx, 8);
+        assert_eq!(RustScreen::grid(&pd.borrow().s.borrow()).sy, 4);
 
         assert_eq!((*p.c).overlay_check(), OverlayCheck::Popup);
         assert_eq!((*p.c).overlay(), Overlay::Popup);
 
-        server_client_clear_overlay(p.c);
-        assert_eq!(popup_present(p.c), 0);
+        server_client_clear_overlay(&mut *p.c);
+        assert_eq!(popup_present(&*p.c), 0);
         assert!((*p.c).overlay().is_none());
         assert!((*p.c).overlay_data().is_none());
     }
@@ -277,18 +271,18 @@ fn popup_write_feeds_the_job_stream_into_the_popup_screen_while_it_is_up() {
 
         (*p.c).set_overlay_view(OverlayView::Nothing);
 
-        popup_write(p.c, b"hi".as_ptr() as *const c_char, 2);
+        popup_write(&mut *p.c, b"hi");
 
         assert!((*p.c).overlay_check().is_some());
-        assert_eq!((*p.c).overlay_data().data(), OverlayData::Popup(pd));
+        assert_eq!((*p.c).overlay_data().data().popup(), pd);
 
         let mut gc = grid_default_cell;
-        gc = grid_get_cell(screen_grid(&(*pd).s), 0, 0);
+        gc = grid_get_cell(RustScreen::grid(&pd.borrow().s.borrow()), 0, 0);
         assert_eq!(gc.data.data[0], b'h');
-        gc = grid_get_cell(screen_grid(&(*pd).s), 1, 0);
+        gc = grid_get_cell(RustScreen::grid(&pd.borrow().s.borrow()), 1, 0);
         assert_eq!(gc.data.data[0], b'i');
 
-        server_client_clear_overlay(p.c);
+        server_client_clear_overlay(&mut *p.c);
     }
 }
 
@@ -300,78 +294,71 @@ fn popup_modify_updates_the_title_styles_and_flags_of_the_live_popup() {
         let pd = p.pd();
 
         assert_eq!(
-            popup_modify(p.c, null(), null(), null(), BOX_LINES_DEFAULT, -1),
+            popup_modify(&mut *p.c, None, None, None, BOX_LINES_DEFAULT, -1),
             0
         );
-        assert_eq!((*pd).flags, POPUP_NOJOB);
+        assert_eq!(pd.borrow().flags, POPUP_NOJOB);
 
         assert_eq!(
             popup_modify(
-                p.c,
-                c"renamed".as_ptr(),
-                null(),
-                null(),
+                &mut *p.c,
+                Some(c"renamed"),
+                None,
+                None,
                 BOX_LINES_DEFAULT,
                 -1
             ),
             0
         );
-        assert_eq!(seen((*pd).title_ptr()), "renamed");
+        assert_eq!(pd.borrow().title.as_deref(), Some(c"renamed"));
         assert_eq!(
-            popup_modify(
-                p.c,
-                c"again".as_ptr(),
-                null(),
-                null(),
-                BOX_LINES_DEFAULT,
-                -1
-            ),
+            popup_modify(&mut *p.c, Some(c"again"), None, None, BOX_LINES_DEFAULT, -1),
             0
         );
-        assert_eq!(seen((*pd).title_ptr()), "again");
+        assert_eq!(pd.borrow().title.as_deref(), Some(c"again"));
 
         assert_eq!(
             popup_modify(
-                p.c,
-                null(),
-                c"bg=red".as_ptr(),
-                null(),
+                &mut *p.c,
+                None,
+                Some(c"bg=red"),
+                None,
                 BOX_LINES_DEFAULT,
                 -1
             ),
             0
         );
-        assert_eq!((*pd).defaults.bg, 1);
+        assert_eq!(pd.borrow().defaults.bg, 1);
 
         assert_eq!(
             popup_modify(
-                p.c,
-                null(),
-                null(),
-                c"fg=blue".as_ptr(),
+                &mut *p.c,
+                None,
+                None,
+                Some(c"fg=blue"),
                 BOX_LINES_DEFAULT,
                 -1
             ),
             0
         );
-        assert_eq!((*pd).border_cell.fg, 4);
+        assert_eq!(pd.borrow().border_cell.fg, 4);
 
         (*p.c).flags &= !(CLIENT_REDRAWOVERLAY as u64);
         assert_eq!(
             popup_modify(
-                p.c,
-                null(),
-                null(),
-                null(),
+                &mut *p.c,
+                None,
+                None,
+                None,
                 BOX_LINES_DEFAULT,
                 POPUP_CLOSEEXIT | POPUP_CLOSEEXITZERO
             ),
             0
         );
-        assert_eq!((*pd).flags, POPUP_CLOSEEXIT | POPUP_CLOSEEXITZERO);
+        assert_eq!(pd.borrow().flags, POPUP_CLOSEEXIT | POPUP_CLOSEEXITZERO);
         assert_ne!((*p.c).flags & CLIENT_REDRAWOVERLAY as u64, 0);
 
-        server_client_clear_overlay(p.c);
+        server_client_clear_overlay(&mut *p.c);
     }
 }
 
@@ -381,16 +368,15 @@ fn displaying_over_a_live_popup_replaces_it_with_a_fresh_one() {
     unsafe {
         assert_eq!(p.display(POPUP_NOJOB), 0);
         let first = p.pd();
-        assert!(!first.is_null());
 
         assert_eq!(p.display(POPUP_NOJOB | POPUP_INTERNAL), 0);
         let second = p.pd();
         assert_ne!(second, first);
-        assert_eq!(popup_present(p.c), 1);
-        assert_eq!((*second).flags, POPUP_NOJOB | POPUP_INTERNAL);
+        assert_eq!(popup_present(&*p.c), 1);
+        assert_eq!(second.borrow().flags, POPUP_NOJOB | POPUP_INTERNAL);
 
-        server_client_clear_overlay(p.c);
-        assert_eq!(popup_present(p.c), 0);
+        server_client_clear_overlay(&mut *p.c);
+        assert_eq!(popup_present(&*p.c), 0);
     }
 }
 
@@ -398,31 +384,20 @@ fn displaying_over_a_live_popup_replaces_it_with_a_fresh_one() {
 fn popup_editor_declines_when_no_editor_is_configured() {
     let _guard = globals();
     unsafe {
-        options_set_string(
-            global_options,
-            c"editor".as_ptr(),
-            0,
-            c"%s".as_ptr(),
-            fmt_args![c"".as_ptr()],
-        );
+        (global_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .set_string(c"editor", 0, c"%s", fmt_args![c"".as_ptr()]);
+        let mut c = client::default();
         let rv = popup_editor(
-            null_mut::<client>(),
-            null(),
-            0,
-            None,
-            Box::new(window_buffer_editdata {
-                wp_id: 0,
-                name: None,
-                order: 0,
-            }),
+            &mut c,
+            b"",
+            Box::new(|_| unreachable!("an editor-less popup cannot complete")),
         );
-        options_set_string(
-            global_options,
-            c"editor".as_ptr(),
-            0,
-            c"%s".as_ptr(),
-            fmt_args![c"/usr/bin/vi".as_ptr()],
-        );
+        (global_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .set_string(c"editor", 0, c"%s", fmt_args![c"/usr/bin/vi".as_ptr()]);
         assert_eq!(rv, -1);
     }
 }
@@ -430,13 +405,18 @@ fn popup_editor_declines_when_no_editor_is_configured() {
 unsafe fn open_popup_menu(p: &mut Popup) {
     unsafe {
         let pd = p.pd();
-        let mut event = key_event::default();
-        event.key = KEYC_MOUSE as key_code;
-        event.m.x = (*pd).px;
-        event.m.y = (*pd).py;
+        let mut event = key_event {
+            key: KEYC_MOUSE as key_code,
+            ..Default::default()
+        };
+        event.m.x = pd.borrow().px;
+        event.m.y = pd.borrow().py;
         event.m.b = MOUSE_BUTTON_3 as u_int;
-        assert_eq!(popup_key_cb(p.c, pd, &raw mut event), 0);
-        assert!((*pd).md.is_some());
+        assert_eq!(
+            ((*p.c).overlay_data().popup()).key(&mut *p.c, &mut event),
+            0
+        );
+        assert!(pd.borrow().md.is_some());
     }
 }
 
@@ -448,7 +428,7 @@ fn clearing_a_popup_with_an_open_menu_releases_the_menu_data() {
     unsafe {
         assert_eq!(p.display(POPUP_NOJOB), 0);
         open_popup_menu(&mut p);
-        server_client_clear_overlay(p.c);
+        server_client_clear_overlay(&mut *p.c);
         assert!((*p.c).overlay_data().is_none());
     }
 }
@@ -462,12 +442,18 @@ fn choosing_close_from_a_popup_menu_gives_up_the_menu_data() {
     unsafe {
         assert_eq!(p.display(POPUP_NOJOB), 0);
         open_popup_menu(&mut p);
-        let pd = p.pd();
-        let mut event = key_event::default();
-        event.key = b'q' as key_code;
-        assert_eq!(popup_key_cb(p.c, pd, &raw mut event), 0);
+        let _pd = p.pd();
+        let mut event = key_event {
+            key: b'q' as key_code,
+            ..Default::default()
+        };
+        assert_eq!(
+            ((*p.c).overlay_data().popup()).key(&mut *p.c, &mut event),
+            0
+        );
         assert!((*p.c).overlay_data().is_none());
-        server_client_clear_overlay(p.c);
+        server_client_clear_overlay(&mut *p.c);
         assert!((*p.c).overlay_data().is_none());
     }
 }
+use crate::screen::RustScreen;

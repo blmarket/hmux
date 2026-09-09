@@ -15,6 +15,7 @@ use crate::reactor::{Interest, Readiness, Token};
 use crate::timer::{TimerId, TimerQueue};
 
 pub type TaskId = u64;
+pub(crate) type SpawnedTask = (TaskId, Pin<Box<dyn Future<Output = ()>>>, bool);
 
 /// Readiness mailbox shared between one [`AsyncFd`] and the loop.
 #[derive(Default)]
@@ -46,7 +47,7 @@ pub(crate) struct IoEntry {
 #[derive(Default)]
 pub(crate) struct TaskShared {
     /// Tasks waiting to be adopted, with whether they still owe a first poll.
-    pub(crate) spawned: RefCell<Vec<(TaskId, Pin<Box<dyn Future<Output = ()>>>, bool)>>,
+    pub(crate) spawned: RefCell<Vec<SpawnedTask>>,
     pub(crate) io: RefCell<BTreeMap<u64, IoEntry>>,
     /// Ids in `io` the loop still owes work on: descriptors created since the
     /// last sync, and those whose `AsyncFd` is gone.

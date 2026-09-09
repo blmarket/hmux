@@ -1,4 +1,4 @@
-use super::{options_other_names, options_table};
+use crate::options::{OptionsEngine, RustOptionsEngine};
 use ::core::ffi::CStr;
 use ::std::fmt::Write as _;
 
@@ -25,7 +25,7 @@ fn strings(out: &mut String, label: &str, list: Option<&[&CStr]>) {
 
 fn dump() -> String {
     let mut out = String::new();
-    for (i, e) in options_table.iter().enumerate() {
+    for (i, e) in RustOptionsEngine.table().iter().enumerate() {
         let _ = writeln!(out, "entry {i}");
         let _ = writeln!(out, "  name={}", text(Some(e.name)));
         let _ = writeln!(out, "  alternative_name={}", text(e.alternative_name));
@@ -43,7 +43,7 @@ fn dump() -> String {
         let _ = writeln!(out, "  text={}", text(e.text));
         let _ = writeln!(out, "  unit={}", text(e.unit));
     }
-    for (i, m) in options_other_names.iter().enumerate() {
+    for (i, m) in RustOptionsEngine.aliases().iter().enumerate() {
         let _ = writeln!(out, "other_name {i}");
         let _ = writeln!(out, "  from={}", text(Some(m.from)));
         let _ = writeln!(out, "  to={}", text(Some(m.to)));

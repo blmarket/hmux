@@ -1,8 +1,8 @@
 use super::*;
-use ::core::ffi::{CStr, c_char, c_int};
+use core::ffi::{CStr, c_char, c_int};
 
 fn step(cp: &mut c_char, c: u8, state: &mut c_int, flag: c_int) -> c_int {
-    unsafe { unvis(&raw mut *cp, c as c_char, &raw mut *state, flag) }
+    unvis(cp, c as c_char, state, flag)
 }
 
 /// Feed every byte of `input` through `unvis`, collecting the characters it
@@ -35,11 +35,8 @@ fn strunvis_call(src: &CStr) -> Option<Vec<u8>> {
 }
 
 fn strnunvis_call(src: &CStr, sz: usize) -> (ssize_t, Vec<u8>) {
-    let mut buf = vec![0xaau8 as c_char; sz + 16];
-    let dst = unsafe { buf.as_mut_ptr().add(8) };
-    let n = unsafe { strnunvis(dst, src.as_ptr(), sz as size_t) };
-    let written = buf[8..8 + sz].iter().map(|&b| b as u8).collect();
-    (n, written)
+    let result = strnunvis(src, sz as size_t);
+    (result.status, result.output)
 }
 
 #[test]
@@ -168,14 +165,8 @@ fn strunvis_stops_at_a_decoded_nul() {
 
 #[test]
 fn strnunvis_decodes_within_the_buffer() {
-    assert_eq!(
-        strnunvis_call(c"abc", 8),
-        (3, b"abc\0\xaa\xaa\xaa\0".to_vec())
-    );
-    assert_eq!(
-        strnunvis_call(c"\\1x", 8),
-        (2, b"\x01x\0\xaa\xaa\xaa\xaa\0".to_vec())
-    );
+    assert_eq!(strnunvis_call(c"abc", 8), (3, b"abc\0".to_vec()));
+    assert_eq!(strnunvis_call(c"\\1x", 8), (2, b"\x01x\0".to_vec()));
 }
 
 #[test]
@@ -187,10 +178,7 @@ fn strnunvis_truncates_but_returns_the_full_length() {
 
 #[test]
 fn strnunvis_flushes_a_pending_octal_escape_at_the_end() {
-    assert_eq!(
-        strnunvis_call(c"ab\\1", 8),
-        (3, b"ab\x01\0\xaa\xaa\xaa\0".to_vec())
-    );
+    assert_eq!(strnunvis_call(c"ab\\1", 8), (3, b"ab\x01\0".to_vec()));
     assert_eq!(strnunvis_call(c"ab\\1", 3), (3, b"ab\0".to_vec()));
 }
 
@@ -201,9 +189,6 @@ fn strnunvis_writes_nothing_when_there_is_no_room() {
 
 #[test]
 fn strnunvis_reports_a_syntax_error() {
-    assert_eq!(
-        strnunvis_call(c"a\\z", 8),
-        (-1, b"a\0\xaa\xaa\xaa\xaa\xaa\0".to_vec())
-    );
+    assert_eq!(strnunvis_call(c"a\\z", 8), (-1, b"a\0".to_vec()));
     assert_eq!(strnunvis_call(c"a\\z", 1), (-1, b"\0".to_vec()));
 }

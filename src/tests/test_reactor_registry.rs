@@ -106,12 +106,13 @@ fn persistent_io_can_disable_itself_without_a_second_callback() {
     let callback_context = Rc::downgrade(&context);
     let id = control.allocate_io(source.as_raw_fd(), Interest::Read, WatchMode::Persistent, {
         move |_fd, _events| {
-            if let Some(callback_context) = callback_context.upgrade() {
-                if callback_context.calls.fetch_add(1, Ordering::SeqCst) == 0 {
-                    callback_context
-                        .control
-                        .disable_io(callback_context.id.get());
-                }
+            let Some(callback_context) = callback_context.upgrade() else {
+                return;
+            };
+            if callback_context.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                callback_context
+                    .control
+                    .disable_io(callback_context.id.get());
             }
         }
     });

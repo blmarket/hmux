@@ -12,30 +12,23 @@
 //! The tables and the bindings in them belong to `key_bindings`, which is what
 //! creates a table that is not there yet and what owns every binding in it;
 //! nothing here reaches into those trees.
-//!
-//! Coverage exemptions: none.
-use crate::arguments::{args_count, args_get, args_has, args_string, args_value, args_values};
+
+use crate::arguments::{args_count, args_get_str, args_has, args_string_str, args_value};
+use crate::cmd::cmd_get_args;
 use crate::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
-use crate::cmd::queue::cmdq_error;
-use crate::cmd::{cmd_get_args, cmd_get_args_ptr};
+
+pub use crate::consts::{
+    ARGS_PARSE_COMMANDS_OR_STRING, CMD_AFTERHOOK, CMD_FIND_PANE, CMD_PARSE_ERROR, CMD_RETURN_ERROR,
+    CMD_RETURN_NORMAL, KEYC_NONE, KEYC_UNKNOWN,
+};
 use crate::fmt_args;
 use crate::key_bindings::key_bindings_add;
-use crate::text::key_string_lookup_string;
+use crate::text::{KeyStringCodec, RustKeyStringCodec};
 pub use crate::types::*;
 use ::core::ffi::CStr;
-use ::core::ptr::null_mut;
 use ::std::ffi::CString;
-pub type keyc = ::core::ffi::c_ulong;
-pub const KEYC_F5: keyc = 8589934604;
-pub const KEYC_UNKNOWN: keyc = 8589934593;
-pub const KEYC_NONE: keyc = 8589934592;
-pub const ARGS_PARSE_COMMANDS_OR_STRING: args_parse_type = 2;
-pub const CMD_FIND_PANE: cmd_find_type = 0;
-pub const CMD_RETURN_NORMAL: cmd_retval = 0;
-pub const CMD_RETURN_ERROR: cmd_retval = -1;
-pub const CMD_PARSE_ERROR: cmd_parse_status = 0;
-pub const CMD_AFTERHOOK: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub(crate) static cmd_bind_key_entry: cmd_entry = cmd_entry {
+
+pub(crate) static cmd_bind_key_entry: RustCommandEntry = RustCommandEntry {
     name: c"bind-key",
     alias: Some(c"bind"),
     args: args_parse_t {
@@ -83,40 +76,37 @@ impl Binding {
 }
 
 /// The key table the binding goes into.
-unsafe fn table_name(args: &args) -> &CStr {
-    unsafe {
-        if args_has(args, b'T') != 0 {
-            CStr::from_ptr(args_get(args, b'T'))
-        } else if args_has(args, b'n') != 0 {
-            c"root"
-        } else {
-            c"prefix"
-        }
+fn table_name(args: &args) -> &CStr {
+    if let Some(name) = args_get_str(args, b'T') {
+        name
+    } else if args_has(args, b'n') != 0 {
+        c"root"
+    } else {
+        c"prefix"
     }
 }
 
 /// Reads what the line binds to the key, answering the parser's error message
 /// — which the caller gives back — when the words after the key are not a
 /// command.
-unsafe fn binding_of(args: *mut args, count: u_int) -> Result<Binding, CString> {
+unsafe fn binding_of(args: &args, count: u_int) -> Result<Binding, CString> {
     unsafe {
         if count == 1 {
             return Ok(Binding::Keep);
         }
-        let value = args_value(args, 1);
+        let value = args_value(args, 1).expect("the binding has a command argument");
         if count == 2
-            && let ArgsValue::Commands { cmdlist, .. } = &(*value).value
+            && let ArgsValue::Commands { cmdlist, .. } = &value.value
         {
             return Ok(Binding::Shared(cmdlist.clone().unwrap()));
         }
         let mut pr = if count == 2 {
-            cmd_parse_from_string(args_string(&*args, 1), null_mut::<cmd_parse_input>())
-        } else {
-            cmd_parse_from_arguments(
-                args_values(args).add(1),
-                count.wrapping_sub(1),
-                null_mut::<cmd_parse_input>(),
+            cmd_parse_from_string(
+                args_string_str(args, 1).expect("argument count checked"),
+                None,
             )
+        } else {
+            cmd_parse_from_arguments(&args.values[1..], None)
         };
         if pr.status == CMD_PARSE_ERROR {
             return Err(pr.error.take().unwrap());
@@ -133,36 +123,28 @@ fn cmd_bind_key_args_parse(
     ARGS_PARSE_COMMANDS_OR_STRING
 }
 
-unsafe fn cmd_bind_key_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
-    unsafe {
-        let args = cmd_get_args(self_0);
-        let note = args_get(args, b'N');
-        let count = args_count(args);
+unsafe fn cmd_bind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
+    let args = cmd_get_args(self_0);
+    let note = args_get_str(args, b'N');
+    let count = args_count(args);
 
-        let keyname = args_string(args, 0);
-        let key = key_string_lookup_string(keyname);
-        if key == KEYC_NONE || key == KEYC_UNKNOWN {
-            cmdq_error(item, c"unknown key: %s".as_ptr(), fmt_args![keyname]);
+    let keyname = unsafe { args_string_str(args, 0).expect("argument count checked") };
+    let key = RustKeyStringCodec.parse_key(keyname);
+    if key == KEYC_NONE || key == KEYC_UNKNOWN {
+        unsafe { item.error(c"unknown key: %s", fmt_args![keyname]) };
+        return CMD_RETURN_ERROR;
+    }
+
+    let tablename = table_name(args);
+    let repeat = args_has(args, b'r');
+
+    let binding = match unsafe { binding_of(args, count) } {
+        Ok(binding) => binding,
+        Err(error) => {
+            unsafe { item.error(c"%s", fmt_args![error.as_c_str()]) };
             return CMD_RETURN_ERROR;
         }
-
-        let tablename = table_name(args);
-        let repeat = args_has(args, b'r');
-
-        let binding = match binding_of(cmd_get_args_ptr(self_0), count) {
-            Ok(binding) => binding,
-            Err(error) => {
-                cmdq_error(item, c"%s".as_ptr(), fmt_args![error.as_ptr()]);
-                return CMD_RETURN_ERROR;
-            }
-        };
-        key_bindings_add(
-            tablename.as_ptr(),
-            key,
-            note,
-            repeat,
-            binding.into_cmdlist(),
-        );
-        CMD_RETURN_NORMAL
-    }
+    };
+    unsafe { key_bindings_add(tablename, key, note, repeat, binding.into_cmdlist()) };
+    CMD_RETURN_NORMAL
 }

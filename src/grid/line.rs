@@ -33,11 +33,11 @@ pub struct grid_line {
 /// The line holds what tmux's does, in the order that leaves no padding: the
 /// same two pointers, three `u_int`s, `int` and `time_t`.
 const _: () = assert!(
-    ::core::mem::size_of::<grid_line>()
-        == 2 * ::core::mem::size_of::<*const u8>()
-            + 3 * ::core::mem::size_of::<u_int>()
-            + ::core::mem::size_of::<c_int>()
-            + ::core::mem::size_of::<time_t>()
+    size_of::<grid_line>()
+        == 2 * size_of::<*const u8>()
+            + 3 * size_of::<u_int>()
+            + size_of::<c_int>()
+            + size_of::<time_t>()
 );
 
 /// Take `to` items over the `from` the pointer already holds. A count of none
@@ -149,6 +149,12 @@ impl grid_line {
         self.extddata = unsafe { resize(self.extddata, self.extdsize, to) };
         self.extdsize = to;
         self.extddata_mut().copy_from_slice(entries);
+    }
+}
+
+impl Default for grid_line {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

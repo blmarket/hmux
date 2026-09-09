@@ -1,16 +1,28 @@
 pub use crate::types::*;
-pub const UNVIS_VALID: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const UNVIS_VALIDPUSH: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const UNVIS_NOCHAR: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
-pub const UNVIS_SYNBAD: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-pub const UNVIS_END: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const S_GROUND: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const S_START: ::core::ffi::c_int = 1;
-pub const S_META: ::core::ffi::c_int = 2;
-pub const S_META1: ::core::ffi::c_int = 3;
-pub const S_CTRL: ::core::ffi::c_int = 4;
-pub const S_OCTAL2: ::core::ffi::c_int = 5;
-pub const S_OCTAL3: ::core::ffi::c_int = 6;
+#[cfg(test)]
+pub const UNVIS_VALID: core::ffi::c_int = 1 as core::ffi::c_int;
+#[cfg(test)]
+pub const UNVIS_VALIDPUSH: core::ffi::c_int = 2 as core::ffi::c_int;
+#[cfg(test)]
+pub const UNVIS_NOCHAR: core::ffi::c_int = 3 as core::ffi::c_int;
+#[cfg(test)]
+pub const UNVIS_SYNBAD: core::ffi::c_int = -(1 as core::ffi::c_int);
+#[cfg(test)]
+pub const UNVIS_END: core::ffi::c_int = 1 as core::ffi::c_int;
+#[cfg(test)]
+pub const S_GROUND: core::ffi::c_int = 0 as core::ffi::c_int;
+#[cfg(test)]
+pub const S_START: core::ffi::c_int = 1;
+#[cfg(test)]
+pub const S_META: core::ffi::c_int = 2;
+#[cfg(test)]
+pub const S_META1: core::ffi::c_int = 3;
+#[cfg(test)]
+pub const S_CTRL: core::ffi::c_int = 4;
+#[cfg(test)]
+pub const S_OCTAL2: core::ffi::c_int = 5;
+#[cfg(test)]
+pub const S_OCTAL3: core::ffi::c_int = 6;
 /// The decoder's position inside an escape sequence, mirroring the `S_*`
 /// state codes the caller stores between calls.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -25,7 +37,8 @@ enum State {
 }
 
 impl State {
-    fn from_code(code: ::core::ffi::c_int) -> Option<Self> {
+    #[cfg(test)]
+    fn from_code(code: core::ffi::c_int) -> Option<Self> {
         match code {
             S_GROUND => Some(State::Ground),
             S_START => Some(State::Start),
@@ -38,7 +51,8 @@ impl State {
         }
     }
 
-    fn code(self) -> ::core::ffi::c_int {
+    #[cfg(test)]
+    fn code(self) -> core::ffi::c_int {
         match self {
             State::Ground => S_GROUND,
             State::Start => S_START,
@@ -52,6 +66,7 @@ impl State {
 
     /// Whether the caller's character cell holds a partly built character that
     /// the next byte is folded into.
+    #[cfg(test)]
     fn holds_partial(self) -> bool {
         matches!(
             self,
@@ -76,7 +91,8 @@ enum Step {
 }
 
 impl Step {
-    fn code(self) -> ::core::ffi::c_int {
+    #[cfg(test)]
+    fn code(self) -> core::ffi::c_int {
         match self {
             Step::More => 0,
             Step::Valid => UNVIS_VALID,
@@ -184,39 +200,39 @@ fn decode(src: &[u8]) -> Result<Vec<u8>, Vec<u8>> {
     Ok(out)
 }
 
-/// Write as much of `out` as fits in the `sz` bytes at `dst`, in `strnunvis`'s
-/// style: the last byte of the buffer is always a terminator, and one also
-/// follows the copied bytes when they leave room for it.
-unsafe fn store_bounded(dst: *mut ::core::ffi::c_char, sz: usize, out: &[u8]) {
-    unsafe {
-        if sz == 0 {
-            return;
-        }
-        for (i, &b) in out.iter().take(sz - 1).enumerate() {
-            *dst.add(i) = b as ::core::ffi::c_char;
-        }
-        if out.len() < sz {
-            *dst.add(out.len()) = 0;
-        }
-        *dst.add(sz - 1) = 0;
-    }
+/// The result of the bounded string decoder. `status` is the full decoded
+/// length on success or -1 on a syntax error; `output` contains the bytes that
+/// fit, followed by a NUL when the requested size is nonzero.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StrnunvisResult {
+    pub status: ssize_t,
+    pub output: Vec<u8>,
 }
 
-pub unsafe fn unvis(
-    cp: *mut ::core::ffi::c_char,
-    c: ::core::ffi::c_char,
-    astate: *mut ::core::ffi::c_int,
-    flag: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    unsafe {
-        let state = State::from_code(*astate);
-        if flag & UNVIS_END != 0 {
-            let (next, step) = finish(state);
-            if let Some(next) = next {
-                *astate = next.code();
-            }
-            return step.code();
+fn store_bounded(sz: usize, out: &[u8]) -> Vec<u8> {
+    if sz == 0 {
+        return Vec::new();
+    }
+    let mut bounded = out[..out.len().min(sz - 1)].to_vec();
+    bounded.push(0);
+    bounded
+}
+
+#[cfg(test)]
+pub fn unvis(
+    cp: &mut core::ffi::c_char,
+    c: core::ffi::c_char,
+    astate: &mut core::ffi::c_int,
+    flag: core::ffi::c_int,
+) -> core::ffi::c_int {
+    let state = State::from_code(*astate);
+    if flag & UNVIS_END != 0 {
+        let (next, step) = finish(state);
+        if let Some(next) = next {
+            *astate = next.code();
         }
+        step.code()
+    } else {
         let partial = if state.is_some_and(State::holds_partial) {
             *cp as u8
         } else {
@@ -225,7 +241,7 @@ pub unsafe fn unvis(
         let (next, step, value) = advance(state, c as u8, partial);
         *astate = next.code();
         if let Some(value) = value {
-            *cp = value as ::core::ffi::c_char;
+            *cp = value as core::ffi::c_char;
         }
         step.code()
     }
@@ -235,28 +251,22 @@ pub unsafe fn unvis(
 /// not valid. The C wrote the decoded bytes into a caller's buffer, terminated
 /// them and answered their count; the string here stops at the first NUL the
 /// escapes decode to, which is where reading that buffer back stopped.
-pub fn strunvis(src: &::core::ffi::CStr) -> Option<::std::ffi::CString> {
+pub fn strunvis(src: &core::ffi::CStr) -> Option<std::ffi::CString> {
     let out = decode(src.to_bytes()).ok()?;
     let end = out.iter().position(|&b| b == 0).unwrap_or(out.len());
-    Some(::std::ffi::CString::new(&out[..end]).expect("the bytes stop at the first nul"))
+    Some(std::ffi::CString::new(&out[..end]).expect("the bytes stop at the first nul"))
 }
 
-pub unsafe fn strnunvis(
-    dst: *mut ::core::ffi::c_char,
-    src: *const ::core::ffi::c_char,
-    sz: size_t,
-) -> ssize_t {
-    unsafe {
-        match decode(::core::ffi::CStr::from_ptr(src).to_bytes()) {
-            Ok(out) => {
-                store_bounded(dst, sz, &out);
-                out.len() as ssize_t
-            }
-            Err(partial) => {
-                store_bounded(dst, sz, &partial);
-                -1
-            }
-        }
+pub fn strnunvis(src: &core::ffi::CStr, sz: size_t) -> StrnunvisResult {
+    match decode(src.to_bytes()) {
+        Ok(out) => StrnunvisResult {
+            status: out.len() as ssize_t,
+            output: store_bounded(sz, &out),
+        },
+        Err(partial) => StrnunvisResult {
+            status: -1,
+            output: store_bounded(sz, &partial),
+        },
     }
 }
 

@@ -1,14 +1,17 @@
 use super::*;
+use crate::WindowPane;
 use crate::fmt_args;
 use crate::grid::grid_view_get_cell;
 use crate::grid::{grid_get_line, grid_string_cells};
-use crate::layout::LAYOUT_CELL_FLOATING;
-use crate::options::options_set_number;
-use crate::overlay::popup_data;
-use crate::screen::{screen_clear_selection, screen_grid_ptr, screen_set_selection};
+use crate::options::OptionsRef;
+
+use crate::pane_identity::PaneIdentity;
+use crate::screen::Screen as ScreenBoundary;
 use crate::tests::test_fixtures::{Pane, Screen, Window, ascii, globals};
+use crate::window::{
+    screen_write_start_sync, screen_write_stop_sync, screen_write_sync_callback_for_test,
+};
 use ::core::ffi::c_int;
-use ::core::ptr::null_mut;
 
 /// A screen with a writing context over it and no pane behind it, which is
 /// what keeps the terminal out of the way: `tty_write` answers at once when
@@ -16,50 +19,52 @@ use ::core::ptr::null_mut;
 /// touches the screen and its grid.
 struct Writer {
     screen: Screen,
-    ctx: Box<screen_write_ctx>,
+    state: screen_write_state,
 }
 
 impl Writer {
     fn new(sx: u_int, sy: u_int, hlimit: u_int) -> Writer {
         let mut w = Writer {
             screen: Screen::new(sx, sy, hlimit),
-            ctx: Box::new(screen_write_ctx::default()),
+            state: screen_write_state::default(),
         };
-        let s = w.screen.ptr();
-        unsafe { screen_write_start(&mut w.ctx, &mut *s) };
+        w.state = unsafe { screen_write_start(&mut w.screen) };
         w
     }
 
-    fn ptr(&mut self) -> *mut screen_write_ctx {
-        &raw mut *self.ctx
+    fn ctx(&mut self) -> screen_write_ctx<'_> {
+        screen_write_ctx::new(&mut self.state, &mut self.screen)
     }
 
-    fn s(&mut self) -> *mut screen {
-        self.screen.ptr()
+    fn screen(&mut self) -> &mut RustScreen {
+        &mut self.screen
     }
 
-    fn grid(&self) -> *mut grid {
+    fn grid(&self) -> &grid {
         self.screen.grid()
+    }
+
+    fn grid_mut(&mut self) -> &mut grid {
+        self.screen.grid_mut()
     }
 
     /// Everything written so far, made visible: the collected text is
     /// flushed onto the grid first.
     fn flush(&mut self) {
         unsafe {
-            screen_write_collect_end(&mut *self.ptr());
-            screen_write_collect_flush(&mut *self.ptr(), 0, c"test".as_ptr());
+            screen_write_collect_end(&mut self.ctx());
+            screen_write_collect_flush(&mut self.ctx(), 0, c"test");
         }
     }
 
     /// The visible screen, one string per line with trailing blanks cut.
     fn lines(&mut self) -> Vec<String> {
         self.flush();
-        unsafe {
+        {
             let gd = self.grid();
             (0..(*gd).sy)
                 .map(|y| {
-                    let p =
-                        grid_string_cells(&*gd, 0, (*gd).hsize + y, (*gd).sx, None, 0, null_mut());
+                    let p = grid_string_cells(&*gd, 0, (*gd).hsize + y, (*gd).sx, None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -69,11 +74,11 @@ impl Writer {
     /// The scrollback, oldest line first.
     fn history(&mut self) -> Vec<String> {
         self.flush();
-        unsafe {
+        {
             let gd = self.grid();
             (0..(*gd).hsize)
                 .map(|y| {
-                    let p = grid_string_cells(&*gd, 0, y, (*gd).sx, None, 0, null_mut());
+                    let p = grid_string_cells(&*gd, 0, y, (*gd).sx, None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -83,8 +88,8 @@ impl Writer {
     /// One cell of the visible screen.
     fn cell(&mut self, px: u_int, py: u_int) -> grid_cell {
         self.flush();
-        let mut gc = unsafe { grid_default_cell };
-        unsafe { gc = grid_view_get_cell(&*self.grid(), px, py) };
+        let mut gc = { grid_default_cell };
+        gc = grid_view_get_cell(&*self.grid(), px, py);
         gc
     }
 
@@ -92,7 +97,7 @@ impl Writer {
     /// clear with a colour leaves behind.
     fn backgrounds(&mut self, py: u_int) -> Vec<c_int> {
         self.flush();
-        unsafe {
+        {
             let gd = self.grid();
             (0..(*gd).sx)
                 .map(|x| {
@@ -105,18 +110,18 @@ impl Writer {
     }
 
     fn cursor(&mut self) -> (u_int, u_int) {
-        unsafe { ((*self.s()).cx, (*self.s()).cy) }
+        self.screen.cursor()
     }
 
     fn move_to(&mut self, px: u_int, py: u_int) {
-        unsafe { screen_write_cursormove(&mut *self.ptr(), px as c_int, py as c_int, 0) };
+        unsafe { screen_write_cursormove(&mut self.ctx(), px as c_int, py as c_int, 0) };
     }
 
     /// Writes `text` one ASCII cell at a time, as the input parser would.
     fn puts(&mut self, text: &str) {
         for byte in text.bytes() {
             let gc = ascii(byte);
-            unsafe { screen_write_cell(&mut *self.ptr(), &gc) };
+            unsafe { screen_write_cell(&mut self.ctx(), &gc) };
         }
     }
 
@@ -125,19 +130,18 @@ impl Writer {
     fn collect(&mut self, text: &str) {
         for byte in text.bytes() {
             let gc = ascii(byte);
-            unsafe { screen_write_collect_add(&mut *self.ptr(), &gc) };
+            unsafe { screen_write_collect_add(&mut self.ctx(), &gc) };
         }
     }
 
     /// The visible screen as it stands, without flushing what is still
     /// collected.
     fn peek(&mut self) -> Vec<String> {
-        unsafe {
+        {
             let gd = self.grid();
             (0..(*gd).sy)
                 .map(|y| {
-                    let p =
-                        grid_string_cells(&*gd, 0, (*gd).hsize + y, (*gd).sx, None, 0, null_mut());
+                    let p = grid_string_cells(&*gd, 0, (*gd).hsize + y, (*gd).sx, None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -153,7 +157,7 @@ impl Writer {
 
 impl Drop for Writer {
     fn drop(&mut self) {
-        unsafe { screen_write_stop(&mut self.ctx) };
+        unsafe { screen_write_stop(&mut self.ctx()) };
     }
 }
 
@@ -163,7 +167,7 @@ fn a_writer_starts_at_the_top_left_of_an_empty_screen() {
     let mut w = Writer::new(10, 3, 100);
     assert_eq!(w.cursor(), (0, 0));
     assert_eq!(w.lines(), ["", "", ""]);
-    assert!(!unsafe { (*w.s()).write_list.is_empty() });
+    assert!(!{ w.screen().write_list().is_empty() });
 }
 
 #[test]
@@ -184,21 +188,21 @@ fn the_cursor_moves_and_stops_at_the_edges() {
     w.move_to(4, 3);
     assert_eq!(w.cursor(), (4, 3));
     unsafe {
-        screen_write_cursorup(&mut *w.ptr(), 1);
+        screen_write_cursorup(&mut w.ctx(), 1);
         assert_eq!(w.cursor(), (4, 2));
-        screen_write_cursorup(&mut *w.ptr(), 99);
+        screen_write_cursorup(&mut w.ctx(), 99);
         assert_eq!(w.cursor(), (4, 0));
-        screen_write_cursordown(&mut *w.ptr(), 2);
+        screen_write_cursordown(&mut w.ctx(), 2);
         assert_eq!(w.cursor(), (4, 2));
-        screen_write_cursordown(&mut *w.ptr(), 99);
+        screen_write_cursordown(&mut w.ctx(), 99);
         assert_eq!(w.cursor(), (4, 4));
-        screen_write_cursorleft(&mut *w.ptr(), 2);
+        screen_write_cursorleft(&mut w.ctx(), 2);
         assert_eq!(w.cursor(), (2, 4));
-        screen_write_cursorleft(&mut *w.ptr(), 99);
+        screen_write_cursorleft(&mut w.ctx(), 99);
         assert_eq!(w.cursor(), (0, 4));
-        screen_write_cursorright(&mut *w.ptr(), 3);
+        screen_write_cursorright(&mut w.ctx(), 3);
         assert_eq!(w.cursor(), (3, 4));
-        screen_write_cursorright(&mut *w.ptr(), 99);
+        screen_write_cursorright(&mut w.ctx(), 99);
         assert_eq!(w.cursor(), (9, 4));
     }
 }
@@ -209,29 +213,29 @@ fn the_cursor_moves_and_stops_at_the_edges() {
 fn the_cursor_stops_at_the_scrolling_region() {
     let _guard = globals();
     let mut w = Writer::new(10, 6, 100);
-    unsafe { screen_write_scrollregion(&mut *w.ptr(), 2, 4) };
+    unsafe { screen_write_scrollregion(&mut w.ctx(), 2, 4) };
     w.move_to(0, 3);
     unsafe {
-        screen_write_cursorup(&mut *w.ptr(), 99);
+        screen_write_cursorup(&mut w.ctx(), 99);
         assert_eq!(w.cursor(), (0, 2));
-        screen_write_cursordown(&mut *w.ptr(), 99);
+        screen_write_cursordown(&mut w.ctx(), 99);
         assert_eq!(w.cursor(), (0, 4));
     }
     w.move_to(0, 5);
     unsafe {
-        screen_write_cursorup(&mut *w.ptr(), 99);
+        screen_write_cursorup(&mut w.ctx(), 99);
         assert_eq!(w.cursor(), (0, 2));
     }
     w.move_to(0, 1);
     unsafe {
-        screen_write_cursorup(&mut *w.ptr(), 99);
+        screen_write_cursorup(&mut w.ctx(), 99);
         assert_eq!(w.cursor(), (0, 0));
-        screen_write_cursordown(&mut *w.ptr(), 99);
+        screen_write_cursordown(&mut w.ctx(), 99);
         assert_eq!(w.cursor(), (0, 4));
     }
     w.move_to(0, 5);
     unsafe {
-        screen_write_cursordown(&mut *w.ptr(), 99);
+        screen_write_cursordown(&mut w.ctx(), 99);
         assert_eq!(w.cursor(), (0, 5));
     }
 }
@@ -243,19 +247,20 @@ fn backspace_steps_back_and_over_a_wrapped_line() {
     let _guard = globals();
     let mut w = Writer::new(10, 3, 100);
     w.move_to(3, 1);
-    unsafe { screen_write_backspace(&mut *w.ptr()) };
+    unsafe { screen_write_backspace(&mut w.ctx()) };
     assert_eq!(w.cursor(), (2, 1));
     w.move_to(0, 1);
-    unsafe { screen_write_backspace(&mut *w.ptr()) };
+    unsafe { screen_write_backspace(&mut w.ctx()) };
     assert_eq!(w.cursor(), (0, 1));
     unsafe {
-        let gd = w.grid();
-        grid_get_line(&mut *gd, (*gd).hsize).flags |= GRID_LINE_WRAPPED;
-        screen_write_backspace(&mut *w.ptr());
+        let gd = w.grid_mut();
+        let hsize = gd.hsize;
+        grid_get_line(gd, hsize).flags |= GRID_LINE_WRAPPED;
+        screen_write_backspace(&mut w.ctx());
     }
     assert_eq!(w.cursor(), (9, 0));
     w.move_to(0, 0);
-    unsafe { screen_write_backspace(&mut *w.ptr()) };
+    unsafe { screen_write_backspace(&mut w.ctx()) };
     assert_eq!(w.cursor(), (0, 0));
 }
 
@@ -264,7 +269,7 @@ fn a_carriage_return_goes_to_the_start_of_the_line() {
     let _guard = globals();
     let mut w = Writer::new(10, 3, 100);
     w.write_at(4, 1, "ab");
-    unsafe { screen_write_carriagereturn(&mut *w.ptr()) };
+    unsafe { screen_write_carriagereturn(&mut w.ctx()) };
     assert_eq!(w.cursor(), (0, 1));
 }
 
@@ -274,18 +279,18 @@ fn the_cursor_may_be_moved_from_the_regions_own_top() {
     let _guard = globals();
     let mut w = Writer::new(10, 6, 100);
     unsafe {
-        screen_write_scrollregion(&mut *w.ptr(), 2, 4);
-        screen_write_cursormove(&mut *w.ptr(), 1, 1, 1);
+        screen_write_scrollregion(&mut w.ctx(), 2, 4);
+        screen_write_cursormove(&mut w.ctx(), 1, 1, 1);
         assert_eq!(w.cursor(), (1, 1));
-        screen_write_mode_set(&mut *w.ptr(), MODE_ORIGIN);
-        screen_write_cursormove(&mut *w.ptr(), 1, 1, 1);
+        screen_write_mode_set(&mut w.ctx(), MODE_ORIGIN);
+        screen_write_cursormove(&mut w.ctx(), 1, 1, 1);
         assert_eq!(w.cursor(), (1, 3));
-        screen_write_cursormove(&mut *w.ptr(), 1, 99, 1);
+        screen_write_cursormove(&mut w.ctx(), 1, 99, 1);
         assert_eq!(w.cursor(), (1, 4));
-        screen_write_mode_clear(&mut *w.ptr(), MODE_ORIGIN);
-        screen_write_cursormove(&mut *w.ptr(), -1, -1, 0);
+        screen_write_mode_clear(&mut w.ctx(), MODE_ORIGIN);
+        screen_write_cursormove(&mut w.ctx(), -1, -1, 0);
         assert_eq!(w.cursor(), (1, 4));
-        screen_write_cursormove(&mut *w.ptr(), 99, 99, 0);
+        screen_write_cursormove(&mut w.ctx(), 99, 99, 0);
         assert_eq!(w.cursor(), (9, 5));
     }
 }
@@ -296,14 +301,14 @@ fn a_scrolling_region_must_be_more_than_one_line_and_fit() {
     let _guard = globals();
     let mut w = Writer::new(10, 6, 100);
     unsafe {
-        screen_write_scrollregion(&mut *w.ptr(), 3, 3);
-        assert_eq!(((*w.s()).rupper, (*w.s()).rlower), (0, 5));
-        screen_write_scrollregion(&mut *w.ptr(), 99, 1);
-        assert_eq!(((*w.s()).rupper, (*w.s()).rlower), (0, 5));
-        screen_write_scrollregion(&mut *w.ptr(), 1, 99);
-        assert_eq!(((*w.s()).rupper, (*w.s()).rlower), (1, 5));
-        screen_write_scrollregion(&mut *w.ptr(), 1, 4);
-        assert_eq!(((*w.s()).rupper, (*w.s()).rlower), (1, 4));
+        screen_write_scrollregion(&mut w.ctx(), 3, 3);
+        assert_eq!(w.screen().region(), (0, 5));
+        screen_write_scrollregion(&mut w.ctx(), 99, 1);
+        assert_eq!(w.screen().region(), (0, 5));
+        screen_write_scrollregion(&mut w.ctx(), 1, 99);
+        assert_eq!(w.screen().region(), (1, 5));
+        screen_write_scrollregion(&mut w.ctx(), 1, 4);
+        assert_eq!(w.screen().region(), (1, 4));
     }
 }
 
@@ -312,11 +317,11 @@ fn a_mode_is_set_and_cleared() {
     let _guard = globals();
     let mut w = Writer::new(10, 3, 100);
     unsafe {
-        let before = (*w.s()).mode;
-        screen_write_mode_set(&mut *w.ptr(), MODE_INSERT);
-        assert_eq!((*w.s()).mode, before | MODE_INSERT);
-        screen_write_mode_clear(&mut *w.ptr(), MODE_INSERT);
-        assert_eq!((*w.s()).mode, before);
+        let before = w.screen().mode();
+        screen_write_mode_set(&mut w.ctx(), MODE_INSERT);
+        assert_eq!(w.screen().mode(), before | MODE_INSERT);
+        screen_write_mode_clear(&mut w.ctx(), MODE_INSERT);
+        assert_eq!(w.screen().mode(), before);
     }
 }
 
@@ -328,11 +333,11 @@ fn a_line_is_cleared_whole_or_from_the_cursor() {
     w.write_at(0, 1, "abcdef");
     w.write_at(0, 2, "abcdef");
     w.move_to(3, 0);
-    unsafe { screen_write_clearendofline(&mut *w.ptr(), 8) };
+    unsafe { screen_write_clearendofline(&mut w.ctx(), 8) };
     w.move_to(3, 1);
-    unsafe { screen_write_clearstartofline(&mut *w.ptr(), 8) };
+    unsafe { screen_write_clearstartofline(&mut w.ctx(), 8) };
     w.move_to(3, 2);
-    unsafe { screen_write_clearline(&mut *w.ptr(), 8) };
+    unsafe { screen_write_clearline(&mut w.ctx(), 8) };
     assert_eq!(w.lines(), ["abc", "    ef", ""]);
 }
 
@@ -341,7 +346,7 @@ fn a_clear_keeps_the_colour_it_was_given() {
     let _guard = globals();
     let mut w = Writer::new(4, 2, 100);
     w.write_at(0, 0, "abcd");
-    unsafe { screen_write_clearline(&mut *w.ptr(), 2) };
+    unsafe { screen_write_clearline(&mut w.ctx(), 2) };
     assert_eq!(w.backgrounds(0), [2, 2, 2, 2]);
 }
 
@@ -351,13 +356,13 @@ fn characters_are_inserted_and_deleted_on_a_line() {
     let mut w = Writer::new(6, 2, 100);
     w.write_at(0, 0, "abcdef");
     w.move_to(2, 0);
-    unsafe { screen_write_insertcharacter(&mut *w.ptr(), 2, 8) };
+    unsafe { screen_write_insertcharacter(&mut w.ctx(), 2, 8) };
     assert_eq!(w.lines()[0], "ab  cd");
     w.move_to(2, 0);
-    unsafe { screen_write_deletecharacter(&mut *w.ptr(), 2, 8) };
+    unsafe { screen_write_deletecharacter(&mut w.ctx(), 2, 8) };
     assert_eq!(w.lines()[0], "abcd");
     w.move_to(1, 0);
-    unsafe { screen_write_clearcharacter(&mut *w.ptr(), 2, 8) };
+    unsafe { screen_write_clearcharacter(&mut w.ctx(), 2, 8) };
     assert_eq!(w.lines()[0], "a  d");
 }
 
@@ -369,15 +374,15 @@ fn an_insert_or_delete_count_is_cut_down_to_the_line() {
     let mut w = Writer::new(6, 2, 100);
     w.write_at(0, 0, "abcdef");
     w.move_to(4, 0);
-    unsafe { screen_write_deletecharacter(&mut *w.ptr(), 99, 8) };
+    unsafe { screen_write_deletecharacter(&mut w.ctx(), 99, 8) };
     assert_eq!(w.lines()[0], "abcd");
     w.write_at(0, 0, "abcdef");
     w.move_to(4, 0);
-    unsafe { screen_write_insertcharacter(&mut *w.ptr(), 0, 8) };
+    unsafe { screen_write_insertcharacter(&mut w.ctx(), 0, 8) };
     assert_eq!(w.lines()[0], "abcd e");
     w.write_at(0, 0, "abcdef");
     w.move_to(4, 0);
-    unsafe { screen_write_clearcharacter(&mut *w.ptr(), 99, 8) };
+    unsafe { screen_write_clearcharacter(&mut w.ctx(), 99, 8) };
     assert_eq!(w.lines()[0], "abcd");
 }
 
@@ -400,29 +405,29 @@ fn lines_moved_from_outside_the_region_move_the_whole_screen() {
         }
     };
     fill(&mut w);
-    unsafe { screen_write_scrollregion(&mut *w.ptr(), 1, 2) };
+    unsafe { screen_write_scrollregion(&mut w.ctx(), 1, 2) };
     w.move_to(2, 0);
     unsafe {
-        screen_write_insertline(&mut *w.ptr(), 1, 8);
+        screen_write_insertline(&mut w.ctx(), 1, 8);
         assert_eq!(w.lines(), ["", "l0", "l1", "l2"]);
-        screen_write_deleteline(&mut *w.ptr(), 1, 8);
+        screen_write_deleteline(&mut w.ctx(), 1, 8);
         assert_eq!(w.lines(), ["l0", "l1", "l2", ""]);
-        screen_write_insertline(&mut *w.ptr(), 99, 8);
+        screen_write_insertline(&mut w.ctx(), 99, 8);
         assert_eq!(w.lines(), ["l0", "l1", "l2", ""]);
-        screen_write_deleteline(&mut *w.ptr(), 99, 8);
+        screen_write_deleteline(&mut w.ctx(), 99, 8);
         assert_eq!(w.lines(), ["", "", "", ""]);
         w.write_at(2, 0, "abcd");
         w.move_to(2, 0);
-        screen_write_insertcharacter(&mut *w.ptr(), 2, 8);
+        screen_write_insertcharacter(&mut w.ctx(), 2, 8);
         assert_eq!(w.lines()[0], "    ab");
-        screen_write_deletecharacter(&mut *w.ptr(), 2, 8);
+        screen_write_deletecharacter(&mut w.ctx(), 2, 8);
         assert_eq!(w.lines()[0], "  ab");
     }
     w.move_to(0, 3);
     unsafe {
-        screen_write_insertline(&mut *w.ptr(), 0, 8);
+        screen_write_insertline(&mut w.ctx(), 0, 8);
         assert_eq!(w.lines()[3], "");
-        screen_write_deleteline(&mut *w.ptr(), 0, 8);
+        screen_write_deleteline(&mut w.ctx(), 0, 8);
         assert_eq!(w.lines()[3], "");
     }
 }
@@ -435,10 +440,10 @@ fn lines_are_inserted_and_deleted() {
         w.write_at(0, y, &format!("l{y}"));
     }
     w.move_to(0, 1);
-    unsafe { screen_write_insertline(&mut *w.ptr(), 1, 8) };
+    unsafe { screen_write_insertline(&mut w.ctx(), 1, 8) };
     assert_eq!(w.lines(), ["l0", "", "l1", "l2"]);
     w.move_to(0, 1);
-    unsafe { screen_write_deleteline(&mut *w.ptr(), 1, 8) };
+    unsafe { screen_write_deleteline(&mut w.ctx(), 1, 8) };
     assert_eq!(w.lines(), ["l0", "l1", "l2", ""]);
 }
 
@@ -450,12 +455,12 @@ fn lines_are_inserted_and_deleted_inside_a_region() {
     for y in 0..5 {
         w.write_at(0, y, &format!("l{y}"));
     }
-    unsafe { screen_write_scrollregion(&mut *w.ptr(), 1, 3) };
+    unsafe { screen_write_scrollregion(&mut w.ctx(), 1, 3) };
     w.move_to(0, 1);
-    unsafe { screen_write_insertline(&mut *w.ptr(), 1, 8) };
+    unsafe { screen_write_insertline(&mut w.ctx(), 1, 8) };
     assert_eq!(w.lines(), ["l0", "", "l1", "l2", "l4"]);
     w.move_to(0, 1);
-    unsafe { screen_write_deleteline(&mut *w.ptr(), 99, 8) };
+    unsafe { screen_write_deleteline(&mut w.ctx(), 99, 8) };
     assert_eq!(w.lines(), ["l0", "", "", "", "l4"]);
 }
 
@@ -470,14 +475,14 @@ fn the_screen_is_cleared_whole_or_from_the_cursor() {
     };
     fill(&mut w);
     w.move_to(2, 1);
-    unsafe { screen_write_clearendofscreen(&mut *w.ptr(), 8) };
+    unsafe { screen_write_clearendofscreen(&mut w.ctx(), 8) };
     assert_eq!(w.lines(), ["abcd", "ab", ""]);
     fill(&mut w);
     w.move_to(2, 1);
-    unsafe { screen_write_clearstartofscreen(&mut *w.ptr(), 8) };
+    unsafe { screen_write_clearstartofscreen(&mut w.ctx(), 8) };
     assert_eq!(w.lines(), ["", "   d", "abcd"]);
     fill(&mut w);
-    unsafe { screen_write_clearscreen(&mut *w.ptr(), 8) };
+    unsafe { screen_write_clearscreen(&mut w.ctx(), 8) };
     assert_eq!(w.lines(), ["", "", ""]);
 }
 
@@ -488,7 +493,7 @@ fn a_line_feed_scrolls_the_screen_and_keeps_the_history() {
     w.write_at(0, 0, "aa");
     w.write_at(0, 1, "bb");
     w.move_to(0, 1);
-    unsafe { screen_write_linefeed(&mut *w.ptr(), 0, 8) };
+    unsafe { screen_write_linefeed(&mut w.ctx(), 0, 8) };
     assert_eq!(w.lines(), ["bb", ""]);
     assert_eq!(w.history(), ["aa"]);
 }
@@ -500,10 +505,10 @@ fn scrolling_up_and_down_moves_the_lines() {
     for y in 0..4 {
         w.write_at(0, y, &format!("l{y}"));
     }
-    unsafe { screen_write_scrollup(&mut *w.ptr(), 2, 8) };
+    unsafe { screen_write_scrollup(&mut w.ctx(), 2, 8) };
     assert_eq!(w.lines(), ["l2", "l3", "", ""]);
     assert_eq!(w.history(), ["l0", "l1"]);
-    unsafe { screen_write_scrolldown(&mut *w.ptr(), 1, 8) };
+    unsafe { screen_write_scrolldown(&mut w.ctx(), 1, 8) };
     assert_eq!(w.lines(), ["", "l2", "l3", ""]);
 }
 
@@ -515,10 +520,10 @@ fn a_reverse_index_moves_up_and_scrolls_at_the_top() {
         w.write_at(0, y, &format!("l{y}"));
     }
     w.move_to(0, 1);
-    unsafe { screen_write_reverseindex(&mut *w.ptr(), 8) };
+    unsafe { screen_write_reverseindex(&mut w.ctx(), 8) };
     assert_eq!(w.cursor(), (0, 0));
     assert_eq!(w.lines(), ["l0", "l1", "l2"]);
-    unsafe { screen_write_reverseindex(&mut *w.ptr(), 8) };
+    unsafe { screen_write_reverseindex(&mut w.ctx(), 8) };
     assert_eq!(w.lines(), ["", "l0", "l1"]);
 }
 
@@ -528,9 +533,9 @@ fn the_history_is_thrown_away_when_asked() {
     let mut w = Writer::new(4, 2, 100);
     w.write_at(0, 0, "aa");
     w.move_to(0, 1);
-    unsafe { screen_write_linefeed(&mut *w.ptr(), 0, 8) };
+    unsafe { screen_write_linefeed(&mut w.ctx(), 0, 8) };
     assert_eq!(w.history(), ["aa"]);
-    unsafe { screen_write_clearhistory(&mut *w.ptr()) };
+    unsafe { screen_write_clearhistory(&mut w.ctx()) };
     assert!(w.history().is_empty());
 }
 
@@ -538,7 +543,7 @@ fn the_history_is_thrown_away_when_asked() {
 fn the_alignment_test_fills_the_screen_with_letters() {
     let _guard = globals();
     let mut w = Writer::new(4, 2, 100);
-    unsafe { screen_write_alignmenttest(&mut *w.ptr()) };
+    unsafe { screen_write_alignmenttest(&mut w.ctx()) };
     assert_eq!(w.lines(), ["EEEE", "EEEE"]);
     assert_eq!(w.cursor(), (0, 0));
 }
@@ -549,10 +554,10 @@ fn a_reset_clears_the_screen_and_the_region() {
     let mut w = Writer::new(4, 3, 100);
     w.write_at(0, 0, "abcd");
     unsafe {
-        screen_write_scrollregion(&mut *w.ptr(), 1, 2);
-        screen_write_reset(&mut *w.ptr());
-        assert_eq!(((*w.s()).rupper, (*w.s()).rlower), (0, 2));
-        assert_eq!((*w.s()).mode & MODE_CURSOR, MODE_CURSOR);
+        screen_write_scrollregion(&mut w.ctx(), 1, 2);
+        screen_write_reset(&mut w.ctx());
+        assert_eq!(w.screen().region(), (0, 2));
+        assert_eq!(w.screen().mode() & MODE_CURSOR, MODE_CURSOR);
     }
     assert_eq!(w.lines(), ["", "", ""]);
     assert_eq!(w.cursor(), (0, 0));
@@ -561,7 +566,7 @@ fn a_reset_clears_the_screen_and_the_region() {
 /// One cell holding the UTF-8 character `text`, as the input parser builds
 /// one.
 fn utf8(text: &str) -> grid_cell {
-    let mut gc = unsafe { grid_default_cell };
+    let mut gc = { grid_default_cell };
     let bytes = text.as_bytes();
     assert!(bytes.len() > 1, "a one-byte character is not opened");
     unsafe {
@@ -577,32 +582,23 @@ fn utf8(text: &str) -> grid_cell {
 fn the_width_of_a_string_counts_what_would_be_drawn() {
     let _guard = globals();
     unsafe {
+        assert_eq!(screen_write_strlen(c"%s", fmt_args![c"abc".as_ptr()]), 3);
+        assert_eq!(screen_write_strlen(c"%s", fmt_args![c"a\tb".as_ptr()]), 3);
+        assert_eq!(screen_write_strlen(c"%s", fmt_args![c"a\x07b".as_ptr()]), 2);
         assert_eq!(
-            screen_write_strlen(c"%s".as_ptr(), fmt_args![c"abc".as_ptr()]),
-            3
-        );
-        assert_eq!(
-            screen_write_strlen(c"%s".as_ptr(), fmt_args![c"a\tb".as_ptr()]),
-            3
-        );
-        assert_eq!(
-            screen_write_strlen(c"%s".as_ptr(), fmt_args![c"a\x07b".as_ptr()]),
-            2
-        );
-        assert_eq!(
-            screen_write_strlen(c"%s".as_ptr(), fmt_args![c"a\u{4e00}b".as_ptr()]),
+            screen_write_strlen(c"%s", fmt_args![c"a\u{4e00}b".as_ptr()]),
             4
         );
         assert_eq!(
-            screen_write_strlen(c"%s".as_ptr(), fmt_args![c"a\u{e9}b".as_ptr()]),
+            screen_write_strlen(c"%s", fmt_args![c"a\u{e9}b".as_ptr()]),
             3
         );
         assert_eq!(
-            screen_write_strlen(c"%s".as_ptr(), fmt_args![c"a\xe4\xb8".as_ptr()]),
+            screen_write_strlen(c"%s", fmt_args![c"a\xe4\xb8".as_ptr()]),
             1
         );
         assert_eq!(
-            screen_write_strlen(c"%s".as_ptr(), fmt_args![c"a\xff\xffb".as_ptr()]),
+            screen_write_strlen(c"%s", fmt_args![c"a\xff\xffb".as_ptr()]),
             2
         );
     }
@@ -612,14 +608,9 @@ fn the_width_of_a_string_counts_what_would_be_drawn() {
 fn a_formatted_string_is_written_cell_by_cell() {
     let _guard = globals();
     let mut w = Writer::new(10, 3, 100);
-    let gc = unsafe { grid_default_cell };
+    let gc = { grid_default_cell };
     unsafe {
-        screen_write_puts(
-            &mut *w.ptr(),
-            &gc,
-            c"%s-%d".as_ptr(),
-            fmt_args![c"ab".as_ptr(), 7],
-        );
+        screen_write_puts(&mut w.ctx(), &gc, c"%s-%d", fmt_args![c"ab".as_ptr(), 7]);
     }
     assert_eq!(w.lines()[0], "ab-7");
 }
@@ -631,22 +622,17 @@ fn a_formatted_string_is_written_cell_by_cell() {
 fn a_written_string_reads_its_own_control_bytes() {
     let _guard = globals();
     let mut w = Writer::new(10, 3, 100);
-    let gc = unsafe { grid_default_cell };
+    let gc = { grid_default_cell };
     unsafe {
-        screen_write_puts(
-            &mut *w.ptr(),
-            &gc,
-            c"%s".as_ptr(),
-            fmt_args![c"ab\ncd".as_ptr()],
-        );
+        screen_write_puts(&mut w.ctx(), &gc, c"%s", fmt_args![c"ab\ncd".as_ptr()]);
     }
     assert_eq!(w.lines(), ["ab", "cd", ""]);
     let mut w = Writer::new(10, 3, 100);
     unsafe {
         screen_write_puts(
-            &mut *w.ptr(),
+            &mut w.ctx(),
             &gc,
-            c"%s".as_ptr(),
+            c"%s",
             fmt_args![c"a\x01b\x01c\x07d".as_ptr()],
         );
     }
@@ -663,24 +649,18 @@ fn a_written_string_reads_its_own_control_bytes() {
 fn a_string_may_be_cut_to_a_width() {
     let _guard = globals();
     let mut w = Writer::new(10, 2, 100);
-    let gc = unsafe { grid_default_cell };
+    let gc = { grid_default_cell };
     unsafe {
-        screen_write_nputs(
-            &mut *w.ptr(),
-            3,
-            &gc,
-            c"%s".as_ptr(),
-            fmt_args![c"abcdef".as_ptr()],
-        );
+        screen_write_nputs(&mut w.ctx(), 3, &gc, c"%s", fmt_args![c"abcdef".as_ptr()]);
     }
     assert_eq!(w.lines()[0], "abc");
     let mut w = Writer::new(10, 2, 100);
     unsafe {
         screen_write_nputs(
-            &mut *w.ptr(),
+            &mut w.ctx(),
             3,
             &gc,
-            c"%s".as_ptr(),
+            c"%s",
             fmt_args![c"ab\u{4e00}c".as_ptr()],
         );
     }
@@ -688,10 +668,10 @@ fn a_string_may_be_cut_to_a_width() {
     let mut w = Writer::new(10, 2, 100);
     unsafe {
         screen_write_nputs(
-            &mut *w.ptr(),
+            &mut w.ctx(),
             -1,
             &gc,
-            c"%s".as_ptr(),
+            c"%s",
             fmt_args![c"a\xe4\xb8".as_ptr()],
         );
     }
@@ -699,10 +679,10 @@ fn a_string_may_be_cut_to_a_width() {
     let mut w = Writer::new(10, 2, 100);
     unsafe {
         screen_write_nputs(
-            &mut *w.ptr(),
+            &mut w.ctx(),
             -1,
             &gc,
-            c"%s".as_ptr(),
+            c"%s",
             fmt_args![c"a\xff\xffb".as_ptr()],
         );
     }
@@ -714,17 +694,17 @@ fn a_string_may_be_cut_to_a_width() {
 #[test]
 fn text_is_wrapped_over_the_lines_it_is_given() {
     let _guard = globals();
-    let gc = unsafe { grid_default_cell };
+    let gc = { grid_default_cell };
     let mut w = Writer::new(12, 4, 100);
     let all = unsafe {
         screen_write_text(
-            &mut *w.ptr(),
+            &mut w.ctx(),
             0,
             6,
             3,
             0,
             &gc,
-            c"%s".as_ptr(),
+            c"%s",
             fmt_args![c"one two three".as_ptr()],
         )
     };
@@ -733,13 +713,13 @@ fn text_is_wrapped_over_the_lines_it_is_given() {
     let mut w = Writer::new(12, 4, 100);
     let all = unsafe {
         screen_write_text(
-            &mut *w.ptr(),
+            &mut w.ctx(),
             0,
             6,
             4,
             0,
             &gc,
-            c"%s".as_ptr(),
+            c"%s",
             fmt_args![c"one two".as_ptr()],
         )
     };
@@ -748,13 +728,13 @@ fn text_is_wrapped_over_the_lines_it_is_given() {
     let mut w = Writer::new(12, 4, 100);
     let all = unsafe {
         screen_write_text(
-            &mut *w.ptr(),
+            &mut w.ctx(),
             0,
             6,
             2,
             0,
             &gc,
-            c"%s".as_ptr(),
+            c"%s",
             fmt_args![c"one two three".as_ptr()],
         )
     };
@@ -763,13 +743,13 @@ fn text_is_wrapped_over_the_lines_it_is_given() {
     let mut w = Writer::new(12, 4, 100);
     unsafe {
         screen_write_text(
-            &mut *w.ptr(),
+            &mut w.ctx(),
             0,
             6,
             3,
             0,
             &gc,
-            c"%s".as_ptr(),
+            c"%s",
             fmt_args![c"a\nbb\nccc".as_ptr()],
         );
     }
@@ -777,13 +757,13 @@ fn text_is_wrapped_over_the_lines_it_is_given() {
     let mut w = Writer::new(12, 4, 100);
     unsafe {
         screen_write_text(
-            &mut *w.ptr(),
+            &mut w.ctx(),
             0,
             4,
             3,
             0,
             &gc,
-            c"%s".as_ptr(),
+            c"%s",
             fmt_args![c"abcdefgh".as_ptr()],
         );
     }
@@ -794,17 +774,17 @@ fn text_is_wrapped_over_the_lines_it_is_given() {
 #[test]
 fn text_that_carries_on_leaves_the_cursor_where_it_stopped() {
     let _guard = globals();
-    let gc = unsafe { grid_default_cell };
+    let gc = { grid_default_cell };
     let mut w = Writer::new(12, 4, 100);
     let all = unsafe {
         screen_write_text(
-            &mut *w.ptr(),
+            &mut w.ctx(),
             0,
             6,
             3,
             1,
             &gc,
-            c"%s".as_ptr(),
+            c"%s",
             fmt_args![c"ab".as_ptr()],
         )
     };
@@ -812,13 +792,13 @@ fn text_that_carries_on_leaves_the_cursor_where_it_stopped() {
     assert_eq!(w.cursor(), (2, 0));
     let all = unsafe {
         screen_write_text(
-            &mut *w.ptr(),
+            &mut w.ctx(),
             0,
             6,
             3,
             1,
             &gc,
-            c"%s".as_ptr(),
+            c"%s",
             fmt_args![c"cdef".as_ptr()],
         )
     };
@@ -836,7 +816,7 @@ fn a_screen_is_copied_from_another_one() {
     src.flush();
     let mut w = Writer::new(6, 3, 100);
     w.move_to(1, 1);
-    unsafe { screen_write_fast_copy(&mut *w.ptr(), &*src.s(), 0, 0, 3, 2) };
+    unsafe { screen_write_fast_copy(&mut w.ctx(), src.screen(), 0, 0, 3, 2) };
     assert_eq!(w.lines(), ["", " abc", " ghi"]);
 }
 
@@ -849,7 +829,7 @@ fn a_copy_stops_at_the_edges() {
     src.flush();
     let mut w = Writer::new(4, 2, 100);
     w.move_to(2, 0);
-    unsafe { screen_write_fast_copy(&mut *w.ptr(), &*src.s(), 0, 0, 4, 4) };
+    unsafe { screen_write_fast_copy(&mut w.ctx(), src.screen(), 0, 0, 4, 4) };
     assert_eq!(w.lines(), ["  ab", ""]);
 }
 
@@ -857,11 +837,11 @@ fn a_copy_stops_at_the_edges() {
 fn a_horizontal_line_is_drawn_with_its_ends() {
     let _guard = globals();
     let mut w = Writer::new(6, 2, 100);
-    unsafe { screen_write_hline(&mut *w.ptr(), 4, 1, 1, BOX_LINES_SIMPLE, None) };
+    unsafe { screen_write_hline(&mut w.ctx(), 4, 1, 1, BOX_LINES_SIMPLE, None) };
     assert_eq!(w.lines()[0], "+--+");
     assert_eq!(w.cursor(), (0, 0));
     let mut w = Writer::new(6, 2, 100);
-    unsafe { screen_write_hline(&mut *w.ptr(), 4, 0, 0, BOX_LINES_SIMPLE, None) };
+    unsafe { screen_write_hline(&mut w.ctx(), 4, 0, 0, BOX_LINES_SIMPLE, None) };
     assert_eq!(w.lines()[0], "----");
 }
 
@@ -869,7 +849,7 @@ fn a_horizontal_line_is_drawn_with_its_ends() {
 fn a_vertical_line_is_drawn_with_its_ends() {
     let _guard = globals();
     let mut w = Writer::new(4, 4, 100);
-    unsafe { screen_write_vline(&mut *w.ptr(), 4, 1, 1) };
+    unsafe { screen_write_vline(&mut w.ctx(), 4, 1, 1) };
     assert_eq!(w.lines(), ["w", "x", "x", "v"]);
     assert_eq!(
         w.cell(0, 1).attr as c_int & GRID_ATTR_CHARSET,
@@ -882,11 +862,11 @@ fn a_vertical_line_is_drawn_with_its_ends() {
 fn a_box_is_drawn_round_the_cursor() {
     let _guard = globals();
     let mut w = Writer::new(6, 4, 100);
-    unsafe { screen_write_box(&mut *w.ptr(), 6, 3, BOX_LINES_SIMPLE, None, None) };
+    unsafe { screen_write_box(&mut w.ctx(), 6, 3, BOX_LINES_SIMPLE, None, None) };
     assert_eq!(w.lines(), ["+----+", "|    |", "+----+", ""]);
     let mut w = Writer::new(8, 4, 100);
     unsafe {
-        screen_write_box(&mut *w.ptr(), 8, 3, BOX_LINES_SIMPLE, None, Some(c"hi"));
+        screen_write_box(&mut w.ctx(), 8, 3, BOX_LINES_SIMPLE, None, Some(c"hi"));
     }
     assert_eq!(w.lines()[0], "+-hi---+");
 }
@@ -900,17 +880,19 @@ fn a_preview_shows_the_top_left_of_another_screen() {
     }
     src.flush();
     let mut w = Writer::new(6, 4, 100);
-    unsafe { screen_write_preview(&mut *w.ptr(), &*src.s(), 4, 2) };
+    unsafe { screen_write_preview(&mut w.ctx(), src.screen(), 4, 2) };
     assert_eq!(w.lines(), ["2", "3", "", ""]);
     let mut w = Writer::new(6, 4, 100);
     unsafe {
-        (*src.s()).mode &= !MODE_CURSOR;
-        screen_write_preview(&mut *w.ptr(), &*src.s(), 4, 2);
-        (*src.s()).mode |= MODE_CURSOR;
+        let mode = src.screen().mode();
+        src.screen().set_mode(mode & !MODE_CURSOR);
+        screen_write_preview(&mut w.ctx(), src.screen(), 4, 2);
+        let mode = src.screen().mode();
+        src.screen().set_mode(mode | MODE_CURSOR);
     }
     assert_eq!(w.lines(), ["l0", "l1", "", ""]);
     let mut w = Writer::new(6, 4, 100);
-    unsafe { screen_write_preview(&mut *w.ptr(), &*src.s(), 9, 9) };
+    unsafe { screen_write_preview(&mut w.ctx(), src.screen(), 9, 9) };
     assert_eq!(w.lines(), ["l0", "l1", "l2", "l3"]);
 }
 
@@ -918,11 +900,10 @@ fn a_preview_shows_the_top_left_of_another_screen() {
 fn the_selection_and_a_raw_string_are_handed_to_the_terminal() {
     let _guard = globals();
     let mut w = Writer::new(6, 2, 100);
-    let mut buf = *b"hi";
     unsafe {
-        screen_write_setselection(&mut *w.ptr(), c"clipboard".as_ptr(), buf.as_mut_ptr(), 2);
-        screen_write_rawstring(&mut *w.ptr(), buf.as_mut_ptr(), 2, 0);
-        screen_write_rawstring(&mut *w.ptr(), buf.as_mut_ptr(), 2, 1);
+        screen_write_setselection(&mut w.ctx(), c"clipboard", b"hi");
+        screen_write_rawstring(&mut w.ctx(), b"hi", 0);
+        screen_write_rawstring(&mut w.ctx(), b"hi", 1);
     }
     assert_eq!(w.lines(), ["", ""]);
 }
@@ -933,11 +914,11 @@ fn the_alternate_screen_is_swapped_in_and_out() {
     let mut w = Writer::new(4, 2, 100);
     w.write_at(0, 0, "main");
     w.flush();
-    let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_write_alternateon(&mut *w.ptr(), &mut gc, 1) };
+    let mut gc = { grid_default_cell };
+    unsafe { screen_write_alternateon(&mut w.ctx(), &mut gc, 1) };
     assert_eq!(w.lines(), ["", ""]);
     w.write_at(0, 0, "alt");
-    unsafe { screen_write_alternateoff(&mut *w.ptr(), &mut gc, 1) };
+    unsafe { screen_write_alternateoff(&mut w.ctx(), &mut gc, 1) };
     assert_eq!(w.lines(), ["main", ""]);
 }
 
@@ -947,8 +928,8 @@ fn the_alternate_screen_is_only_swapped_out_when_it_was_in() {
     let _guard = globals();
     let mut w = Writer::new(4, 2, 100);
     w.write_at(0, 0, "main");
-    let mut gc = unsafe { grid_default_cell };
-    unsafe { screen_write_alternateoff(&mut *w.ptr(), &mut gc, 0) };
+    let mut gc = { grid_default_cell };
+    unsafe { screen_write_alternateoff(&mut w.ctx(), &mut gc, 0) };
     assert_eq!(w.lines(), ["main", ""]);
 }
 
@@ -957,7 +938,7 @@ fn a_wide_character_takes_two_cells_and_leaves_padding() {
     let _guard = globals();
     let mut w = Writer::new(6, 2, 100);
     let gc = utf8("\u{4e00}");
-    unsafe { screen_write_cell(&mut *w.ptr(), &gc) };
+    unsafe { screen_write_cell(&mut w.ctx(), &gc) };
     assert_eq!(w.cursor(), (2, 0));
     assert_eq!(w.cell(0, 0).data.size, 3);
     assert_eq!(
@@ -974,7 +955,7 @@ fn a_wide_character_wraps_rather_than_being_cut() {
     let mut w = Writer::new(3, 2, 100);
     w.puts("ab");
     let gc = utf8("\u{4e00}");
-    unsafe { screen_write_cell(&mut *w.ptr(), &gc) };
+    unsafe { screen_write_cell(&mut w.ctx(), &gc) };
     assert_eq!(w.lines(), ["ab", "\u{4e00}"]);
 }
 
@@ -985,13 +966,13 @@ fn writing_over_a_wide_character_clears_both_of_its_cells() {
     let _guard = globals();
     let mut w = Writer::new(6, 2, 100);
     let wide = utf8("\u{4e00}");
-    unsafe { screen_write_cell(&mut *w.ptr(), &wide) };
+    unsafe { screen_write_cell(&mut w.ctx(), &wide) };
     w.flush();
     w.move_to(0, 0);
     w.puts("x");
     assert_eq!(w.lines()[0], "x");
     let mut w = Writer::new(6, 2, 100);
-    unsafe { screen_write_cell(&mut *w.ptr(), &wide) };
+    unsafe { screen_write_cell(&mut w.ctx(), &wide) };
     w.flush();
     w.move_to(1, 0);
     w.puts("x");
@@ -1006,7 +987,7 @@ fn a_combining_character_joins_the_cell_in_front_of_it() {
     let mut w = Writer::new(6, 2, 100);
     w.puts("e");
     let gc = utf8("\u{301}");
-    unsafe { screen_write_cell(&mut *w.ptr(), &gc) };
+    unsafe { screen_write_cell(&mut w.ctx(), &gc) };
     assert_eq!(w.cursor(), (1, 0));
     assert_eq!(w.lines()[0], "e\u{301}");
 }
@@ -1026,7 +1007,7 @@ fn a_line_wraps_when_it_is_full() {
 fn a_line_that_may_not_wrap_keeps_writing_the_last_cell() {
     let _guard = globals();
     let mut w = Writer::new(3, 2, 100);
-    unsafe { screen_write_mode_clear(&mut *w.ptr(), MODE_WRAP) };
+    unsafe { screen_write_mode_clear(&mut w.ctx(), MODE_WRAP) };
     w.puts("abcde");
     assert_eq!(w.lines(), ["abe", ""]);
 }
@@ -1039,7 +1020,7 @@ fn insert_mode_pushes_the_line_along() {
     w.puts("abcd");
     w.flush();
     w.move_to(1, 0);
-    unsafe { screen_write_mode_set(&mut *w.ptr(), MODE_INSERT) };
+    unsafe { screen_write_mode_set(&mut w.ctx(), MODE_INSERT) };
     w.puts("x");
     assert_eq!(w.lines()[0], "axbcd");
 }
@@ -1050,7 +1031,7 @@ fn a_tab_is_kept_as_a_tab() {
     let mut w = Writer::new(10, 2, 100);
     let mut gc = ascii(b' ');
     gc.flags = (gc.flags as c_int | GRID_FLAG_TAB) as u_char;
-    unsafe { screen_write_cell(&mut *w.ptr(), &gc) };
+    unsafe { screen_write_cell(&mut w.ctx(), &gc) };
     assert_eq!(w.cell(0, 0).flags as c_int & GRID_FLAG_TAB, GRID_FLAG_TAB);
 }
 
@@ -1079,22 +1060,22 @@ fn collected_text_written_over_is_trimmed() {
     let _guard = globals();
     let mut w = Writer::new(8, 2, 100);
     w.collect("abcdef");
-    unsafe { screen_write_collect_end(&mut *w.ptr()) };
+    unsafe { screen_write_collect_end(&mut w.ctx()) };
     w.move_to(2, 0);
     w.collect("XY");
     assert_eq!(w.lines()[0], "abXYef");
     let mut w = Writer::new(8, 2, 100);
     w.collect("abcdef");
-    unsafe { screen_write_collect_end(&mut *w.ptr()) };
+    unsafe { screen_write_collect_end(&mut w.ctx()) };
     w.move_to(0, 0);
     w.collect("XYZWVU");
     assert_eq!(w.lines()[0], "XYZWVU");
     let mut w = Writer::new(8, 2, 100);
     w.collect("cd");
-    unsafe { screen_write_collect_end(&mut *w.ptr()) };
+    unsafe { screen_write_collect_end(&mut w.ctx()) };
     w.move_to(4, 0);
     w.collect("gh");
-    unsafe { screen_write_collect_end(&mut *w.ptr()) };
+    unsafe { screen_write_collect_end(&mut w.ctx()) };
     w.move_to(1, 0);
     w.collect("XYZWV");
     assert_eq!(w.lines()[0], "cXYZWV");
@@ -1110,35 +1091,35 @@ fn a_cell_the_collector_cannot_hold_goes_straight_through() {
     let mut w = Writer::new(8, 2, 100);
     let wide = utf8("\u{4e00}");
     w.collect("ab");
-    unsafe { screen_write_collect_add(&mut *w.ptr(), &wide) };
+    unsafe { screen_write_collect_add(&mut w.ctx(), &wide) };
     assert_eq!(w.peek()[0], "ab\u{4e00}");
 
     let mut w = Writer::new(8, 2, 100);
     let mut gc = ascii(b'x');
     gc.attr = (gc.attr as c_int | GRID_ATTR_CHARSET) as u_short;
-    unsafe { screen_write_collect_add(&mut *w.ptr(), &gc) };
+    unsafe { screen_write_collect_add(&mut w.ctx(), &gc) };
     assert_eq!(w.peek()[0], "x");
 
     let mut w = Writer::new(8, 2, 100);
     let mut gc = ascii(b' ');
     gc.flags = (gc.flags as c_int | GRID_FLAG_TAB) as u_char;
-    unsafe { screen_write_collect_add(&mut *w.ptr(), &gc) };
+    unsafe { screen_write_collect_add(&mut w.ctx(), &gc) };
     assert_eq!(w.cursor(), (1, 0));
 
     let mut w = Writer::new(8, 2, 100);
-    unsafe { screen_write_mode_clear(&mut *w.ptr(), MODE_WRAP) };
+    unsafe { screen_write_mode_clear(&mut w.ctx(), MODE_WRAP) };
     w.collect("ab");
     assert_eq!(w.peek()[0], "ab");
 
     let mut w = Writer::new(8, 2, 100);
-    unsafe { screen_write_mode_set(&mut *w.ptr(), MODE_INSERT) };
+    unsafe { screen_write_mode_set(&mut w.ctx(), MODE_INSERT) };
     w.collect("ab");
     assert_eq!(w.peek()[0], "ab");
 
     let mut w = Writer::new(8, 2, 100);
-    let mut gc = unsafe { grid_default_cell };
-    unsafe {
-        screen_set_selection(w.s(), 0, 0, 2, 0, 0, 0, 0, &mut gc);
+    let gc = { grid_default_cell };
+    {
+        w.screen().set_selection(0, 0, 2, 0, false, 0, 0, &gc);
     }
     w.collect("ab");
     assert_eq!(w.peek()[0], "ab");
@@ -1146,7 +1127,7 @@ fn a_cell_the_collector_cannot_hold_goes_straight_through() {
         w.cell(0, 0).flags as c_int & GRID_FLAG_SELECTED,
         GRID_FLAG_SELECTED
     );
-    unsafe { screen_clear_selection(&mut *w.s()) };
+    w.screen().clear_selection();
     w.move_to(0, 0);
     w.puts("cd");
     assert_eq!(w.cell(0, 0).flags as c_int & GRID_FLAG_SELECTED, 0);
@@ -1157,12 +1138,12 @@ fn collected_text_survives_a_scroll() {
     let _guard = globals();
     let mut w = Writer::new(4, 2, 100);
     w.collect("ab");
-    unsafe { screen_write_collect_end(&mut *w.ptr()) };
+    unsafe { screen_write_collect_end(&mut w.ctx()) };
     w.move_to(0, 1);
     w.collect("cd");
-    unsafe { screen_write_collect_end(&mut *w.ptr()) };
+    unsafe { screen_write_collect_end(&mut w.ctx()) };
     w.move_to(0, 1);
-    unsafe { screen_write_linefeed(&mut *w.ptr(), 0, 8) };
+    unsafe { screen_write_linefeed(&mut w.ctx(), 0, 8) };
     w.collect("ef");
     assert_eq!(w.lines(), ["cd", "ef"]);
     assert_eq!(w.history(), ["ab"]);
@@ -1184,7 +1165,7 @@ fn a_box_may_be_drawn_in_any_of_its_line_styles() {
     let mut drawn = Vec::new();
     for lines in styles {
         let mut w = Writer::new(4, 3, 100);
-        unsafe { screen_write_box(&mut *w.ptr(), 4, 3, lines, None, None) };
+        unsafe { screen_write_box(&mut w.ctx(), 4, 3, lines, None, None) };
         drawn.push(w.lines()[0].clone());
     }
     assert_eq!(
@@ -1205,8 +1186,8 @@ fn a_box_may_be_drawn_in_any_of_its_line_styles() {
 #[test]
 fn a_menu_is_drawn_with_a_border_and_a_choice() {
     let _guard = globals();
-    let entry = |name: Option<&::core::ffi::CStr>| menu_entry {
-        name: name.map(::core::ffi::CStr::to_owned),
+    let entry = |name: Option<&CStr>| menu_entry {
+        name: name.map(CStr::to_owned),
         key: 0,
         command: None,
     };
@@ -1221,17 +1202,9 @@ fn a_menu_is_drawn_with_a_border_and_a_choice() {
         width: 7,
     };
     let mut w = Writer::new(12, 8, 100);
-    let gc = unsafe { grid_default_cell };
+    let gc = { grid_default_cell };
     unsafe {
-        screen_write_menu(
-            &mut *w.ptr(),
-            &raw mut m,
-            0,
-            BOX_LINES_SIMPLE,
-            &gc,
-            &gc,
-            &gc,
-        );
+        screen_write_menu(&mut w.ctx(), &m, 0, BOX_LINES_SIMPLE, &gc, &gc, &gc);
     }
     assert_eq!(
         w.lines(),
@@ -1258,15 +1231,15 @@ fn the_debug_paths_run_at_a_raised_log_level() {
     crate::log::log_with_level(1, || {
         let mut w = Writer::new(6, 3, 100);
         unsafe {
-            screen_write_mode_set(&mut *w.ptr(), MODE_INSERT);
-            screen_write_mode_clear(&mut *w.ptr(), MODE_INSERT);
+            screen_write_mode_set(&mut w.ctx(), MODE_INSERT);
+            screen_write_mode_clear(&mut w.ctx(), MODE_INSERT);
         }
         w.collect("abcdefgh");
         w.puts("ij");
         unsafe {
-            screen_write_clearline(&mut *w.ptr(), 8);
-            screen_write_clearendofscreen(&mut *w.ptr(), 8);
-            screen_write_linefeed(&mut *w.ptr(), 0, 8);
+            screen_write_clearline(&mut w.ctx(), 8);
+            screen_write_clearendofscreen(&mut w.ctx(), 8);
+            screen_write_linefeed(&mut w.ctx(), 0, 8);
         }
         assert_eq!(w.lines(), ["abcdef", "", ""]);
     });
@@ -1281,7 +1254,7 @@ fn the_debug_paths_run_at_a_raised_log_level() {
 struct PaneWriter {
     window: Window,
     pane: Pane,
-    ctx: Box<screen_write_ctx>,
+    state: screen_write_state,
 }
 
 impl PaneWriter {
@@ -1296,16 +1269,16 @@ impl PaneWriter {
         let mut w = PaneWriter {
             window: Window::new(1, "writer", wsx, wsy),
             pane: Pane::new(1, sx, sy, 100),
-            ctx: Box::new(screen_write_ctx::default()),
+            state: screen_write_state::default(),
         };
         w.window.add_pane(&mut w.pane);
-        let (wp, screen) = (w.pane.ptr(), w.pane.screen());
-        unsafe { screen_write_start_pane(&mut w.ctx, wp, Some(&mut *screen)) };
+        let wp = w.pane.ptr();
+        w.state = unsafe { screen_write_start_pane_base(&mut *wp) };
         w
     }
 
-    fn ptr(&mut self) -> *mut screen_write_ctx {
-        &raw mut *self.ctx
+    fn ctx(&mut self) -> screen_write_ctx<'_> {
+        screen_write_ctx::new(&mut self.state, self.pane.base_mut())
     }
 
     fn wp(&mut self) -> *mut window_pane {
@@ -1314,13 +1287,12 @@ impl PaneWriter {
 
     fn lines(&mut self) -> Vec<String> {
         unsafe {
-            screen_write_collect_end(&mut *self.ptr());
-            screen_write_collect_flush(&mut *self.ptr(), 0, c"test".as_ptr());
-            let gd = screen_grid_ptr(&mut *self.pane.screen());
+            screen_write_collect_end(&mut self.ctx());
+            screen_write_collect_flush(&mut self.ctx(), 0, c"test");
+            let gd = RustScreen::grid_mut(self.pane.base_mut());
             (0..(*gd).sy)
                 .map(|y| {
-                    let p =
-                        grid_string_cells(&*gd, 0, (*gd).hsize + y, (*gd).sx, None, 0, null_mut());
+                    let p = grid_string_cells(&*gd, 0, (*gd).hsize + y, (*gd).sx, None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -1330,19 +1302,19 @@ impl PaneWriter {
     fn puts(&mut self, text: &str) {
         for byte in text.bytes() {
             let gc = ascii(byte);
-            unsafe { screen_write_cell(&mut *self.ptr(), &gc) };
+            unsafe { screen_write_cell(&mut self.ctx(), &gc) };
         }
     }
 
     fn move_to(&mut self, px: u_int, py: u_int) {
-        unsafe { screen_write_cursormove(&mut *self.ptr(), px as c_int, py as c_int, 0) };
+        unsafe { screen_write_cursormove(&mut self.ctx(), px as c_int, py as c_int, 0) };
     }
 }
 
 impl Drop for PaneWriter {
     fn drop(&mut self) {
         unsafe {
-            screen_write_stop(&mut self.ctx);
+            screen_write_stop(&mut self.ctx());
             (*self.window.ptr()).offset_timer.disarm();
         }
     }
@@ -1354,7 +1326,11 @@ fn a_pane_is_drawn_into_the_screen_it_carries() {
     let mut w = PaneWriter::new(6, 3);
     w.puts("hello");
     assert_eq!(w.lines(), ["hello", "", ""]);
-    assert_eq!(unsafe { (*w.wp()).window }, w.window.ptr());
+    assert!(
+        unsafe { (*w.wp()).window_context() }
+            .unwrap()
+            .ptr_eq(w.window.handle())
+    );
 }
 
 /// A pane that does not fit its window is obscured, and the drawing code
@@ -1367,23 +1343,23 @@ fn a_pane_that_does_not_fit_its_window_is_obscured() {
     w.puts("abcdef");
     w.move_to(1, 0);
     unsafe {
-        screen_write_insertcharacter(&mut *w.ptr(), 2, 8);
+        screen_write_insertcharacter(&mut w.ctx(), 2, 8);
         assert_eq!(w.lines()[0], "a  bcdef");
-        screen_write_deletecharacter(&mut *w.ptr(), 2, 8);
+        screen_write_deletecharacter(&mut w.ctx(), 2, 8);
         assert_eq!(w.lines()[0], "abcdef");
-        screen_write_clearcharacter(&mut *w.ptr(), 1, 8);
-        screen_write_insertline(&mut *w.ptr(), 1, 8);
-        screen_write_deleteline(&mut *w.ptr(), 1, 8);
-        screen_write_clearline(&mut *w.ptr(), 8);
-        screen_write_clearendofline(&mut *w.ptr(), 8);
-        screen_write_clearstartofline(&mut *w.ptr(), 8);
-        screen_write_clearendofscreen(&mut *w.ptr(), 8);
-        screen_write_clearstartofscreen(&mut *w.ptr(), 8);
-        screen_write_clearscreen(&mut *w.ptr(), 8);
-        screen_write_reverseindex(&mut *w.ptr(), 8);
-        screen_write_scrollup(&mut *w.ptr(), 1, 8);
-        screen_write_scrolldown(&mut *w.ptr(), 1, 8);
-        screen_write_alignmenttest(&mut *w.ptr());
+        screen_write_clearcharacter(&mut w.ctx(), 1, 8);
+        screen_write_insertline(&mut w.ctx(), 1, 8);
+        screen_write_deleteline(&mut w.ctx(), 1, 8);
+        screen_write_clearline(&mut w.ctx(), 8);
+        screen_write_clearendofline(&mut w.ctx(), 8);
+        screen_write_clearstartofline(&mut w.ctx(), 8);
+        screen_write_clearendofscreen(&mut w.ctx(), 8);
+        screen_write_clearstartofscreen(&mut w.ctx(), 8);
+        screen_write_clearscreen(&mut w.ctx(), 8);
+        screen_write_reverseindex(&mut w.ctx(), 8);
+        screen_write_scrollup(&mut w.ctx(), 1, 8);
+        screen_write_scrolldown(&mut w.ctx(), 1, 8);
+        screen_write_alignmenttest(&mut w.ctx());
     }
     assert_eq!(w.lines(), ["EEEEEEEE", "EEEEEEEE", "EEEEEEEE", "EEEEEEEE"]);
 }
@@ -1395,32 +1371,45 @@ fn a_pane_that_does_not_fit_its_window_is_obscured() {
 fn a_pane_under_a_floating_one_is_obscured() {
     let _guard = globals();
     let mut over = Pane::new(2, 6, 3, 100);
-    let mut cell = Box::new(layout_cell::default());
-    cell.flags = LAYOUT_CELL_FLOATING;
     let mut w = PaneWriter::new(6, 3);
     unsafe {
         let base = w.wp();
         let above = over.hand_to(w.window.ptr());
-        (*above).layout_cell = &raw mut *cell;
-        (*w.window.ptr()).z_index.retain(|id| *id != (*above).id);
+        crate::tests::test_fixtures::set_pane_floating(
+            &mut *w.window.ptr(),
+            (*above).pane_id(),
+            true,
+        );
+        (*w.window.ptr())
+            .z_index
+            .retain(|pane| pane.id() != (*above).pane_id());
         let at = (*w.window.ptr())
             .z_index
             .iter()
-            .position(|id| *id == (*base).id)
+            .position(|pane| pane.id() == (*base).pane_id())
             .unwrap();
-        (*w.window.ptr()).z_index.insert(at, (*above).id);
+        (*w.window.ptr()).z_index.insert(
+            at,
+            crate::window::window_pane_find_by_id((*above).pane_id()).unwrap(),
+        );
 
         let mut ttyctx = Box::new(tty_ctx::default());
-        screen_write_initctx(&mut *w.ptr(), &mut ttyctx, 0, 1);
+        screen_write_initctx(&mut w.ctx(), &mut ttyctx, 0, 1);
         assert_eq!(ttyctx.flags & TTY_CTX_PANE_OBSCURED, TTY_CTX_PANE_OBSCURED);
 
-        (*w.ptr()).flags &= !(SCREEN_WRITE_CHECKED_IF_OBSCURED | SCREEN_WRITE_OBSCURED);
-        (*above).layout_cell = null_mut::<layout_cell>();
+        w.ctx().flags &= !(SCREEN_WRITE_CHECKED_IF_OBSCURED | SCREEN_WRITE_OBSCURED);
+        crate::tests::test_fixtures::set_pane_floating(
+            &mut *w.window.ptr(),
+            (*above).pane_id(),
+            false,
+        );
         let mut ttyctx = Box::new(tty_ctx::default());
-        screen_write_initctx(&mut *w.ptr(), &mut ttyctx, 0, 1);
+        screen_write_initctx(&mut w.ctx(), &mut ttyctx, 0, 1);
         assert_eq!(ttyctx.flags & TTY_CTX_PANE_OBSCURED, 0);
 
-        (*w.window.ptr()).z_index.retain(|id| *id != (*above).id);
+        (*w.window.ptr())
+            .z_index
+            .retain(|pane| pane.id() != (*above).pane_id());
     }
 }
 
@@ -1431,14 +1420,14 @@ fn the_obscured_answer_is_only_worked_out_once() {
     let mut w = PaneWriter::sized(8, 4, 4, 2);
     unsafe {
         let mut ttyctx = Box::new(tty_ctx::default());
-        screen_write_initctx(&mut *w.ptr(), &mut ttyctx, 0, 1);
+        screen_write_initctx(&mut w.ctx(), &mut ttyctx, 0, 1);
         assert_eq!(ttyctx.flags & TTY_CTX_PANE_OBSCURED, TTY_CTX_PANE_OBSCURED);
         let mut ttyctx = Box::new(tty_ctx::default());
-        screen_write_initctx(&mut *w.ptr(), &mut ttyctx, 0, 1);
+        screen_write_initctx(&mut w.ctx(), &mut ttyctx, 0, 1);
         assert_eq!(ttyctx.flags & TTY_CTX_PANE_OBSCURED, TTY_CTX_PANE_OBSCURED);
-        (*w.ptr()).flags &= !SCREEN_WRITE_OBSCURED;
+        w.ctx().flags &= !SCREEN_WRITE_OBSCURED;
         let mut ttyctx = Box::new(tty_ctx::default());
-        screen_write_initctx(&mut *w.ptr(), &mut ttyctx, 0, 1);
+        screen_write_initctx(&mut w.ctx(), &mut ttyctx, 0, 1);
         assert_eq!(ttyctx.flags & TTY_CTX_PANE_OBSCURED, 0);
     }
 }
@@ -1449,21 +1438,23 @@ fn a_synchronised_pane_is_not_redrawn_line_by_line() {
     let _guard = globals();
     let mut w = PaneWriter::sized(8, 4, 4, 2);
     unsafe {
-        screen_write_start_sync(w.wp());
-        assert_eq!((*w.wp()).base.mode & MODE_SYNC, MODE_SYNC);
-        screen_write_mode_set(&mut *w.ptr(), MODE_SYNC);
+        screen_write_start_sync(w.wp().as_mut());
+        assert_eq!((*w.wp()).base().mode() & MODE_SYNC, MODE_SYNC);
+        screen_write_mode_set(&mut w.ctx(), MODE_SYNC);
         w.puts("abc");
-        screen_write_insertcharacter(&mut *w.ptr(), 1, 8);
-        screen_write_mode_clear(&mut *w.ptr(), MODE_SYNC);
-        screen_write_stop_sync(w.wp());
-        assert_eq!((*w.wp()).base.mode & MODE_SYNC, 0);
-        screen_write_start_sync(null_mut::<window_pane>());
-        screen_write_stop_sync(null_mut::<window_pane>());
-        screen_write_sync_callback(w.wp());
-        (*w.wp()).base.mode |= MODE_SYNC;
-        screen_write_sync_callback(w.wp());
-        assert_eq!((*w.wp()).base.mode & MODE_SYNC, 0);
-        assert_eq!((*w.wp()).flags & PANE_REDRAW, PANE_REDRAW);
+        screen_write_insertcharacter(&mut w.ctx(), 1, 8);
+        screen_write_mode_clear(&mut w.ctx(), MODE_SYNC);
+        screen_write_stop_sync(w.wp().as_mut());
+        assert_eq!((*w.wp()).base().mode() & MODE_SYNC, 0);
+        screen_write_start_sync(None::<&mut crate::types::window_pane>);
+        screen_write_stop_sync(None::<&mut crate::types::window_pane>);
+        screen_write_sync_callback_for_test(&mut *w.wp());
+        (*w.wp())
+            .base_mut()
+            .set_mode((*w.wp()).base().mode() | MODE_SYNC);
+        screen_write_sync_callback_for_test(&mut *w.wp());
+        assert_eq!((*w.wp()).base().mode() & MODE_SYNC, 0);
+        assert_eq!(*(*w.wp()).flags() & PANE_REDRAW, PANE_REDRAW);
     }
 }
 
@@ -1471,12 +1462,12 @@ fn a_synchronised_pane_is_not_redrawn_line_by_line() {
 fn a_full_redraw_asks_for_one() {
     let _guard = globals();
     let mut w = Writer::new(4, 2, 100);
-    unsafe { screen_write_fullredraw(&mut *w.ptr()) };
+    unsafe { screen_write_fullredraw(&mut w.ctx()) };
     let mut w = PaneWriter::new(4, 2);
     unsafe {
-        (*w.wp()).flags &= !PANE_REDRAW;
-        screen_write_fullredraw(&mut *w.ptr());
-        assert_eq!((*w.wp()).flags & PANE_REDRAW, PANE_REDRAW);
+        *(*w.wp()).flags_mut() &= !PANE_REDRAW;
+        screen_write_fullredraw(&mut w.ctx());
+        assert_eq!(*(*w.wp()).flags() & PANE_REDRAW, PANE_REDRAW);
     }
 }
 
@@ -1489,7 +1480,7 @@ fn a_cursor_move_inside_a_pane_arms_the_offset_timer() {
     w.move_to(2, 1);
     unsafe {
         assert!((*w.window.ptr()).offset_timer.is_set());
-        screen_write_offset_timer(&w.window.reference());
+        screen_write_offset_timer(w.window.reference());
     }
 }
 
@@ -1498,21 +1489,18 @@ fn a_cursor_move_inside_a_pane_arms_the_offset_timer() {
 #[test]
 fn a_writer_may_be_started_with_a_callback() {
     let _guard = globals();
-    unsafe fn init(ctx: &mut screen_write_ctx, ttyctx: &mut tty_ctx) {
-        unsafe {
-            ttyctx.defaults.fg = 8;
-            ttyctx.defaults.bg = 8;
-            ttyctx.palette = &raw mut (*ctx.arg).palette;
-        }
-    }
-    let mut pd = Box::new(popup_data::default());
-    pd.palette.fg = 4;
-    pd.palette.bg = 5;
+    let mut palette = colour_palette::default();
+    palette.fg = 4;
+    palette.bg = 5;
+    let init = std::rc::Rc::new(move |ttyctx: &mut tty_ctx| {
+        ttyctx.defaults.fg = 8;
+        ttyctx.defaults.bg = 8;
+        ttyctx.palette = Some(palette.clone());
+    });
     let mut screen = Screen::new(4, 2, 100);
-    let mut ctx = Box::new(screen_write_ctx::default());
-    let s = screen.ptr();
     unsafe {
-        screen_write_start_callback(&mut ctx, s, Some(init), &raw mut *pd);
+        let mut state = screen_write_start_callback(&mut screen, Some(init));
+        let mut ctx = screen_write_ctx::new(&mut state, &mut screen);
         let mut ttyctx = Box::new(tty_ctx::default());
         screen_write_initctx(&mut ctx, &mut ttyctx, 0, 0);
         assert_eq!((ttyctx.defaults.fg, ttyctx.defaults.bg), (4, 5));
@@ -1526,23 +1514,23 @@ fn a_cursor_count_of_nothing_is_read_as_one() {
     let mut w = Writer::new(6, 4, 100);
     w.move_to(3, 2);
     unsafe {
-        screen_write_cursorup(&mut *w.ptr(), 0);
+        screen_write_cursorup(&mut w.ctx(), 0);
         assert_eq!(w.cursor(), (3, 1));
-        screen_write_cursordown(&mut *w.ptr(), 0);
+        screen_write_cursordown(&mut w.ctx(), 0);
         assert_eq!(w.cursor(), (3, 2));
-        screen_write_cursorleft(&mut *w.ptr(), 0);
+        screen_write_cursorleft(&mut w.ctx(), 0);
         assert_eq!(w.cursor(), (2, 2));
-        screen_write_cursorright(&mut *w.ptr(), 0);
+        screen_write_cursorright(&mut w.ctx(), 0);
         assert_eq!(w.cursor(), (3, 2));
     }
     w.move_to(5, 2);
     unsafe {
-        screen_write_cursorright(&mut *w.ptr(), 1);
+        screen_write_cursorright(&mut w.ctx(), 1);
         assert_eq!(w.cursor(), (5, 2));
     }
     w.move_to(0, 2);
     unsafe {
-        screen_write_cursorleft(&mut *w.ptr(), 1);
+        screen_write_cursorleft(&mut w.ctx(), 1);
         assert_eq!(w.cursor(), (0, 2));
     }
 }
@@ -1557,11 +1545,11 @@ fn a_cursor_past_the_last_column_steps_back_first() {
     w.move_to(0, 1);
     w.puts("abcd");
     assert_eq!(w.cursor(), (4, 1));
-    unsafe { screen_write_cursorup(&mut *w.ptr(), 1) };
+    unsafe { screen_write_cursorup(&mut w.ctx(), 1) };
     assert_eq!(w.cursor(), (3, 0));
     w.move_to(0, 1);
     w.puts("abcd");
-    unsafe { screen_write_cursordown(&mut *w.ptr(), 1) };
+    unsafe { screen_write_cursordown(&mut w.ctx(), 1) };
     assert_eq!(w.cursor(), (3, 2));
 }
 
@@ -1572,9 +1560,9 @@ fn nothing_is_inserted_past_the_end_of_a_line() {
     w.move_to(0, 0);
     w.puts("abcd");
     unsafe {
-        screen_write_insertcharacter(&mut *w.ptr(), 1, 8);
-        screen_write_deletecharacter(&mut *w.ptr(), 1, 8);
-        screen_write_clearcharacter(&mut *w.ptr(), 1, 8);
+        screen_write_insertcharacter(&mut w.ctx(), 1, 8);
+        screen_write_deletecharacter(&mut w.ctx(), 1, 8);
+        screen_write_clearcharacter(&mut w.ctx(), 1, 8);
     }
     assert_eq!(w.lines()[0], "abcd");
 }
@@ -1587,7 +1575,7 @@ fn clearing_to_the_start_from_the_last_column_clears_the_line() {
     let mut w = Writer::new(4, 2, 100);
     w.write_at(0, 0, "abcd");
     w.move_to(3, 0);
-    unsafe { screen_write_clearstartofline(&mut *w.ptr(), 8) };
+    unsafe { screen_write_clearstartofline(&mut w.ctx(), 8) };
     assert_eq!(w.lines()[0], "");
 }
 
@@ -1601,24 +1589,24 @@ fn a_scroll_in_a_new_colour_flushes_first() {
     let mut w = Writer::new(4, 3, 100);
     w.collect("ab");
     unsafe {
-        screen_write_collect_end(&mut *w.ptr());
-        screen_write_linefeed(&mut *w.ptr(), 0, 2);
-        assert_eq!((*w.ptr()).bg, 2);
+        screen_write_collect_end(&mut w.ctx());
+        screen_write_linefeed(&mut w.ctx(), 0, 2);
+        assert_eq!(w.ctx().bg, 2);
     }
     assert_eq!(w.lines(), ["ab", "", ""]);
     let mut w = Writer::new(4, 3, 100);
     w.collect("ab");
     unsafe {
-        screen_write_collect_end(&mut *w.ptr());
-        screen_write_scrollup(&mut *w.ptr(), 0, 3);
-        assert_eq!((*w.ptr()).bg, 3);
+        screen_write_collect_end(&mut w.ctx());
+        screen_write_scrollup(&mut w.ctx(), 0, 3);
+        assert_eq!(w.ctx().bg, 3);
     }
     assert_eq!(w.history(), ["ab"]);
     let mut w = Writer::new(4, 3, 100);
     unsafe {
-        screen_write_scrollup(&mut *w.ptr(), 99, 8);
-        screen_write_scrolldown(&mut *w.ptr(), 0, 8);
-        screen_write_scrolldown(&mut *w.ptr(), 99, 8);
+        screen_write_scrollup(&mut w.ctx(), 99, 8);
+        screen_write_scrolldown(&mut w.ctx(), 0, 8);
+        screen_write_scrolldown(&mut w.ctx(), 99, 8);
     }
     assert_eq!(w.lines(), ["", "", ""]);
 }
@@ -1630,14 +1618,14 @@ fn clearing_from_the_top_of_a_pane_scrolls_it_into_the_history() {
     let _guard = globals();
     let mut w = PaneWriter::new(4, 2);
     unsafe {
-        options_set_number((*w.wp()).options_ptr(), c"scroll-on-clear".as_ptr(), 1);
+        (*(*w.wp()).options_ref()).set_number(c"scroll-on-clear", 1);
     }
     w.puts("ab");
     w.move_to(0, 0);
-    unsafe { screen_write_clearendofscreen(&mut *w.ptr(), 8) };
+    unsafe { screen_write_clearendofscreen(&mut w.ctx(), 8) };
     assert_eq!(w.lines(), ["", ""]);
-    unsafe {
-        let gd = screen_grid_ptr(&mut *w.pane.screen());
+    {
+        let gd = RustScreen::grid_mut(w.pane.base_mut());
         assert_eq!((*gd).hsize, 1);
     }
 }
@@ -1647,12 +1635,18 @@ fn a_reset_turns_on_extended_keys_when_the_option_asks() {
     let _guard = globals();
     let mut w = Writer::new(4, 2, 100);
     unsafe {
-        options_set_number(global_options, c"extended-keys".as_ptr(), 2);
-        screen_write_reset(&mut *w.ptr());
-        assert_eq!((*w.s()).mode & MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED);
-        options_set_number(global_options, c"extended-keys".as_ptr(), 0);
-        screen_write_reset(&mut *w.ptr());
-        assert_eq!((*w.s()).mode & MODE_KEYS_EXTENDED, 0);
+        (global_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .set_number(c"extended-keys", 2);
+        screen_write_reset(&mut w.ctx());
+        assert_eq!(w.screen().mode() & MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED);
+        (global_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .set_number(c"extended-keys", 0);
+        screen_write_reset(&mut w.ctx());
+        assert_eq!(w.screen().mode() & MODE_KEYS_EXTENDED, 0);
     }
 }
 
@@ -1665,14 +1659,18 @@ fn a_pane_writer_falls_back_to_the_panes_own_screen() {
         let mut window = Window::new(1, "writer", 6, 3);
         let mut pane = Pane::new(1, 6, 3, 100);
         window.add_pane(&mut pane);
-        let mut ctx = Box::new(screen_write_ctx::default());
         let wp = pane.ptr();
         unsafe {
-            screen_write_start_pane(&mut ctx, wp, None);
-            assert_eq!(ctx.s, (*wp).screen());
-            let gc = ascii(b'x');
-            screen_write_cell(&mut ctx, &gc);
-            screen_write_stop(&mut ctx);
+            use crate::screen::ScreenWriteCtx;
+            *(*wp).shown_mut() = PaneScreen::Mode;
+            let mut writer = crate::screen::RustScreenWriteCtx::on_pane(&mut *wp);
+            writer.cell(&ascii(b'x'));
+            writer.finish();
+            assert_eq!((*wp).base().cursor(), (1, 0));
+            assert_eq!(
+                grid_view_get_cell((*wp).base().grid(), 0, 0).data.data[0],
+                b'x'
+            );
             (*window.ptr()).offset_timer.disarm();
         }
     });
@@ -1689,10 +1687,10 @@ fn a_preview_is_pulled_back_inside_the_screen_it_shows() {
     }
     src.move_to(9, 5);
     let mut w = Writer::new(10, 6, 100);
-    unsafe { screen_write_preview(&mut *w.ptr(), &*src.s(), 4, 2) };
+    unsafe { screen_write_preview(&mut w.ctx(), src.screen(), 4, 2) };
     assert_eq!(w.lines()[0], "ghij");
     let mut w = Writer::new(10, 6, 100);
-    unsafe { screen_write_preview(&mut *w.ptr(), &*src.s(), 20, 20) };
+    unsafe { screen_write_preview(&mut w.ctx(), src.screen(), 20, 20) };
     assert_eq!(w.lines()[0], "abcdefghij");
 }
 
@@ -1706,7 +1704,7 @@ fn a_copy_into_a_pane_stops_at_the_panes_own_edges() {
     src.write_at(0, 0, "abcdef");
     src.flush();
     let mut w = PaneWriter::new(4, 3);
-    unsafe { screen_write_fast_copy(&mut *w.ptr(), &*src.s(), 0, 0, 6, 3) };
+    unsafe { screen_write_fast_copy(&mut w.ctx(), src.screen(), 0, 0, 6, 3) };
     assert_eq!(w.lines(), ["abcd", "", ""]);
 }
 
@@ -1752,11 +1750,11 @@ fn the_characters_that_join_what_is_in_front_of_them() {
     let mut w = Writer::new(8, 2, 100);
     w.puts("a");
     unsafe {
-        screen_write_cell(&mut *w.ptr(), &filler);
+        screen_write_cell(&mut w.ctx(), &filler);
         assert_eq!(w.cursor(), (1, 0));
-        screen_write_cell(&mut *w.ptr(), &zwj);
+        screen_write_cell(&mut w.ctx(), &zwj);
         assert_eq!(w.cursor(), (1, 0));
-        screen_write_cell(&mut *w.ptr(), &vs);
+        screen_write_cell(&mut w.ctx(), &vs);
         assert_eq!(w.cursor(), (2, 0));
     }
     assert_eq!(w.cell(0, 0).data.size, 7);
@@ -1767,7 +1765,7 @@ fn the_characters_that_join_what_is_in_front_of_them() {
 
     let mut w = Writer::new(8, 2, 100);
     unsafe {
-        screen_write_cell(&mut *w.ptr(), &zwj);
+        screen_write_cell(&mut w.ctx(), &zwj);
         assert_eq!(w.cursor(), (0, 0));
     }
 }
@@ -1782,11 +1780,20 @@ fn a_variation_selector_widens_nothing_when_asked_not_to() {
     let mut w = Writer::new(8, 2, 100);
     unsafe {
         let name = c"variation-selector-always-wide".as_ptr();
-        let before = options_get_number(global_options, name);
-        options_set_number(global_options, name, 0);
+        let before = (global_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .number(CStr::from_ptr(name));
+        (global_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .set_number(CStr::from_ptr(name), 0);
         w.puts("a");
-        screen_write_cell(&mut *w.ptr(), &vs);
-        options_set_number(global_options, name, before);
+        screen_write_cell(&mut w.ctx(), &vs);
+        (global_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .set_number(CStr::from_ptr(name), before);
     }
     assert_eq!(w.cursor(), (1, 0));
     assert_eq!(w.cell(0, 0).data.size, 4);
@@ -1802,9 +1809,9 @@ fn hangul_jamo_compose_into_the_cell_in_front_of_them() {
     let tail = utf8("\u{11a8}");
     let mut w = Writer::new(8, 2, 100);
     unsafe {
-        screen_write_cell(&mut *w.ptr(), &lead);
-        screen_write_cell(&mut *w.ptr(), &vowel);
-        screen_write_cell(&mut *w.ptr(), &tail);
+        screen_write_cell(&mut w.ctx(), &lead);
+        screen_write_cell(&mut w.ctx(), &vowel);
+        screen_write_cell(&mut w.ctx(), &tail);
     }
     assert_eq!(w.cursor(), (2, 0));
     assert_eq!(w.cell(0, 0).data.size, 9);
@@ -1819,10 +1826,10 @@ fn a_join_that_would_not_fit_is_written_on_its_own() {
     let hand = utf8("\u{1f44b}");
     let mut w = Writer::new(8, 2, 100);
     unsafe {
-        screen_write_cell(&mut *w.ptr(), &hand);
+        screen_write_cell(&mut w.ctx(), &hand);
         for _ in 0..5 {
-            screen_write_cell(&mut *w.ptr(), &zwj);
-            screen_write_cell(&mut *w.ptr(), &hand);
+            screen_write_cell(&mut w.ctx(), &zwj);
+            screen_write_cell(&mut w.ctx(), &hand);
         }
     }
     assert!(w.cell(0, 0).data.size <= 32);
@@ -1836,14 +1843,14 @@ fn writing_over_padding_clears_the_character_it_belongs_to() {
     let wide = utf8("\u{4e00}");
     let mut w = Writer::new(6, 2, 100);
     unsafe {
-        screen_write_cell(&mut *w.ptr(), &wide);
-        screen_write_cell(&mut *w.ptr(), &wide);
+        screen_write_cell(&mut w.ctx(), &wide);
+        screen_write_cell(&mut w.ctx(), &wide);
     }
     w.flush();
     w.move_to(1, 0);
     let mut tab = ascii(b' ');
     tab.flags = (tab.flags as c_int | GRID_FLAG_TAB) as u_char;
-    unsafe { screen_write_cell(&mut *w.ptr(), &tab) };
+    unsafe { screen_write_cell(&mut w.ctx(), &tab) };
     assert_eq!(w.lines()[0], " \t\u{4e00}");
 }
 
@@ -1851,18 +1858,18 @@ fn writing_over_padding_clears_the_character_it_belongs_to() {
 fn a_pane_may_refuse_the_alternate_screen() {
     let _guard = globals();
     let mut w = PaneWriter::new(4, 2);
-    let mut gc = unsafe { grid_default_cell };
+    let mut gc = { grid_default_cell };
     w.puts("main");
     unsafe {
-        options_set_number((*w.wp()).options_ptr(), c"alternate-screen".as_ptr(), 0);
-        screen_write_alternateon(&mut *w.ptr(), &mut gc, 0);
+        (*(*w.wp()).options_ref()).set_number(c"alternate-screen", 0);
+        screen_write_alternateon(&mut w.ctx(), &mut gc, 0);
         assert_eq!(w.lines()[0], "main");
-        screen_write_alternateoff(&mut *w.ptr(), &mut gc, 0);
+        screen_write_alternateoff(&mut w.ctx(), &mut gc, 0);
         assert_eq!(w.lines()[0], "main");
-        options_set_number((*w.wp()).options_ptr(), c"alternate-screen".as_ptr(), 1);
-        screen_write_alternateon(&mut *w.ptr(), &mut gc, 0);
+        (*(*w.wp()).options_ref()).set_number(c"alternate-screen", 1);
+        screen_write_alternateon(&mut w.ctx(), &mut gc, 0);
         assert_eq!(w.lines()[0], "");
-        screen_write_alternateoff(&mut *w.ptr(), &mut gc, 0);
+        screen_write_alternateoff(&mut w.ctx(), &mut gc, 0);
         assert_eq!(w.lines()[0], "main");
     }
 }
@@ -1875,8 +1882,8 @@ fn collected_text_erases_the_padding_it_lands_on() {
     let wide = utf8("\u{4e00}");
     let mut w = Writer::new(8, 2, 100);
     unsafe {
-        screen_write_cell(&mut *w.ptr(), &wide);
-        screen_write_cell(&mut *w.ptr(), &wide);
+        screen_write_cell(&mut w.ctx(), &wide);
+        screen_write_cell(&mut w.ctx(), &wide);
     }
     w.flush();
     w.move_to(1, 0);
@@ -1884,8 +1891,8 @@ fn collected_text_erases_the_padding_it_lands_on() {
     assert_eq!(w.lines()[0], " ab");
     let mut w = Writer::new(8, 2, 100);
     unsafe {
-        screen_write_cell(&mut *w.ptr(), &wide);
-        screen_write_cell(&mut *w.ptr(), &wide);
+        screen_write_cell(&mut w.ctx(), &wide);
+        screen_write_cell(&mut w.ctx(), &wide);
     }
     w.flush();
     w.move_to(0, 0);
@@ -1899,9 +1906,9 @@ fn the_first_write_opens_a_synchronised_update() {
     let _guard = globals();
     let mut w = Writer::new(4, 3, 100);
     unsafe {
-        assert_eq!((*w.ptr()).flags & SCREEN_WRITE_SYNC, 0);
-        screen_write_insertline(&mut *w.ptr(), 1, 8);
-        assert_eq!((*w.ptr()).flags & SCREEN_WRITE_SYNC, SCREEN_WRITE_SYNC);
+        assert_eq!(w.ctx().flags & SCREEN_WRITE_SYNC, 0);
+        screen_write_insertline(&mut w.ctx(), 1, 8);
+        assert_eq!(w.ctx().flags & SCREEN_WRITE_SYNC, SCREEN_WRITE_SYNC);
     }
 }
 
@@ -1915,15 +1922,15 @@ fn an_obscured_pane_redraws_what_it_cleared() {
     w.move_to(0, 2);
     w.puts("efgh");
     unsafe {
-        screen_write_clearstartofscreen(&mut *w.ptr(), 8);
+        screen_write_clearstartofscreen(&mut w.ctx(), 8);
         assert_eq!(w.lines(), ["", "", "", ""]);
     }
     w.move_to(0, 1);
     w.puts("abcd");
     unsafe {
-        screen_write_clearstartofscreen(&mut *w.ptr(), 8);
-        screen_write_clearendofscreen(&mut *w.ptr(), 8);
-        screen_write_clearscreen(&mut *w.ptr(), 8);
+        screen_write_clearstartofscreen(&mut w.ctx(), 8);
+        screen_write_clearendofscreen(&mut w.ctx(), 8);
+        screen_write_clearscreen(&mut w.ctx(), 8);
         assert_eq!(w.lines(), ["", "", "", ""]);
     }
 }
@@ -1935,23 +1942,23 @@ fn an_obscured_pane_redraws_itself_when_lines_move() {
     let _guard = globals();
     let mut w = PaneWriter::sized(4, 4, 2, 2);
     unsafe {
-        screen_write_scrollregion(&mut *w.ptr(), 2, 3);
+        screen_write_scrollregion(&mut w.ctx(), 2, 3);
     }
     w.move_to(0, 0);
     w.puts("abcd");
     w.move_to(0, 0);
     unsafe {
-        screen_write_insertline(&mut *w.ptr(), 1, 8);
+        screen_write_insertline(&mut w.ctx(), 1, 8);
         assert_eq!(w.lines(), ["", "abcd", "", ""]);
-        screen_write_deleteline(&mut *w.ptr(), 1, 8);
+        screen_write_deleteline(&mut w.ctx(), 1, 8);
         assert_eq!(w.lines(), ["abcd", "", "", ""]);
-        screen_write_insertline(&mut *w.ptr(), 0, 8);
-        screen_write_deleteline(&mut *w.ptr(), 0, 8);
+        screen_write_insertline(&mut w.ctx(), 0, 8);
+        screen_write_deleteline(&mut w.ctx(), 0, 8);
     }
     w.move_to(0, 3);
     unsafe {
-        screen_write_insertline(&mut *w.ptr(), 99, 8);
-        screen_write_deleteline(&mut *w.ptr(), 99, 8);
+        screen_write_insertline(&mut w.ctx(), 99, 8);
+        screen_write_deleteline(&mut w.ctx(), 99, 8);
     }
 }
 
@@ -1964,23 +1971,25 @@ fn a_pane_one_column_wide_is_redrawn_cell_by_cell() {
     w.puts("a");
     w.move_to(0, 0);
     unsafe {
-        screen_write_clearcharacter(&mut *w.ptr(), 1, 8);
-        screen_write_insertcharacter(&mut *w.ptr(), 1, 8);
+        screen_write_clearcharacter(&mut w.ctx(), 1, 8);
+        screen_write_insertcharacter(&mut w.ctx(), 1, 8);
     }
     assert_eq!(w.lines(), ["", "", ""]);
     let mut w = PaneWriter::sized(1, 3, 1, 1);
     let wide = utf8("\u{4e00}");
     unsafe {
-        screen_write_cell(&mut *w.ptr(), &wide);
-        screen_write_insertcharacter(&mut *w.ptr(), 1, 8);
+        screen_write_cell(&mut w.ctx(), &wide);
+        screen_write_insertcharacter(&mut w.ctx(), 1, 8);
     }
     let mut w = PaneWriter::sized(1, 3, 1, 1);
-    let mut gc = unsafe { grid_default_cell };
+    let gc = { grid_default_cell };
     unsafe {
-        screen_set_selection(w.pane.screen(), 0, 0, 1, 0, 0, 0, 0, &mut gc);
+        w.pane
+            .base_mut()
+            .set_selection(0, 0, 1, 0, false, 0, 0, &gc);
         w.puts("a");
-        screen_write_insertcharacter(&mut *w.ptr(), 1, 8);
-        screen_clear_selection(&mut *w.pane.screen());
+        screen_write_insertcharacter(&mut w.ctx(), 1, 8);
+        w.pane.base_mut().clear_selection();
     }
 }
 
@@ -1992,7 +2001,7 @@ fn writing_over_padding_reaches_back_to_the_character() {
     let wide = utf8("\u{4e00}");
     let mut w = Writer::new(6, 2, 100);
     w.puts("a");
-    unsafe { screen_write_cell(&mut *w.ptr(), &wide) };
+    unsafe { screen_write_cell(&mut w.ctx(), &wide) };
     w.flush();
     w.move_to(2, 0);
     w.puts("x");
@@ -2010,12 +2019,12 @@ fn a_wide_character_over_a_tab_leaves_tab_cells() {
     let mut tab = ascii(b' ');
     tab.flags = (tab.flags as c_int | GRID_FLAG_TAB) as u_char;
     unsafe {
-        screen_write_cell(&mut *w.ptr(), &tab);
-        screen_write_cell(&mut *w.ptr(), &wide);
+        screen_write_cell(&mut w.ctx(), &tab);
+        screen_write_cell(&mut w.ctx(), &wide);
     }
     w.flush();
     w.move_to(0, 0);
-    unsafe { screen_write_cell(&mut *w.ptr(), &wide) };
+    unsafe { screen_write_cell(&mut w.ctx(), &wide) };
     assert_eq!(w.cell(2, 0).flags as c_int & GRID_FLAG_TAB, GRID_FLAG_TAB);
 }
 
@@ -2028,7 +2037,7 @@ fn clearing_to_the_start_of_the_screen_from_past_the_line_clears_it() {
     w.move_to(0, 1);
     w.puts("abcd");
     assert_eq!(w.cursor(), (4, 1));
-    unsafe { screen_write_clearstartofscreen(&mut *w.ptr(), 8) };
+    unsafe { screen_write_clearstartofscreen(&mut w.ctx(), 8) };
     assert_eq!(w.lines(), ["", ""]);
 }
 
@@ -2036,9 +2045,90 @@ fn clearing_to_the_start_of_the_screen_from_past_the_line_clears_it() {
 fn a_character_is_put_with_a_style_of_its_own() {
     let _guard = globals();
     let mut w = Writer::new(4, 2, 100);
-    let mut gc = unsafe { grid_default_cell };
+    let mut gc = { grid_default_cell };
     gc.fg = 3;
-    unsafe { screen_write_putc(&mut *w.ptr(), &gc, b'x') };
+    unsafe { screen_write_putc(&mut w.ctx(), &gc, b'x') };
     assert_eq!(w.cell(0, 0).data.data[0], b'x');
     assert_eq!(w.cell(0, 0).fg, 3);
+}
+
+#[test]
+fn collected_item_pool_preserves_released_data_until_fifo_reuse() {
+    let mut pool = CItemPool::new();
+    let first = pool.allocate();
+    let second = pool.allocate();
+    pool.items[first as usize].wrapped = 1;
+    pool.items[first as usize].used = 42;
+    pool.free.extend([first, second]);
+    assert_eq!(pool.items[first as usize].wrapped, 1);
+    assert_eq!(pool.items[first as usize].used, 42);
+    assert_eq!(pool.allocate(), first);
+    assert_eq!(pool.items[first as usize].wrapped, 0);
+    assert_eq!(pool.items[first as usize].used, 0);
+    assert_eq!(pool.allocate(), second);
+    assert_eq!(pool.items.len(), 2);
+}
+
+#[test]
+fn collected_item_pool_never_allocates_the_sentinel_or_wraps() {
+    assert_eq!(next_citem_index(CITEM_NONE as usize - 1), CITEM_NONE - 1);
+    assert!(std::panic::catch_unwind(|| next_citem_index(CITEM_NONE as usize)).is_err());
+    if let Some(overflow) = (CITEM_NONE as usize).checked_add(1) {
+        assert!(std::panic::catch_unwind(|| next_citem_index(overflow)).is_err());
+    }
+}
+
+#[test]
+fn collected_item_pool_serializes_concurrent_allocations_and_keeps_snapshots() {
+    let threads: Vec<_> = (0..8)
+        .map(|owner| {
+            std::thread::spawn(move || {
+                let mut items = Vec::new();
+                for sequence in 0..64 {
+                    let ci = screen_write_get_citem();
+                    with_citem(ci, |item| {
+                        item.x = owner;
+                        item.used = sequence;
+                    });
+                    items.push((ci, owner, sequence));
+                }
+                items
+            })
+        })
+        .collect();
+    let mut ids = std::collections::BTreeSet::new();
+    let mut live = Vec::new();
+    for thread in threads {
+        for (ci, owner, sequence) in thread.join().unwrap() {
+            assert!(ids.insert(ci));
+            let snapshot = citem_snapshot(ci);
+            assert_eq!((snapshot.x, snapshot.used), (owner, sequence));
+            live.push(ci);
+        }
+    }
+    citem_free_all(&mut live);
+    assert!(live.is_empty());
+}
+
+#[test]
+fn terminal_callbacks_ignore_a_pane_destroyed_after_context_creation() {
+    let _guard = globals();
+    let mut ttyctx = tty_ctx::default();
+    {
+        let mut writer = PaneWriter::new(6, 3);
+        unsafe { screen_write_initctx(&mut writer.ctx(), &mut ttyctx, 0, 0) };
+    }
+    let TtyCtxArg::Pane(pane) = &ttyctx.arg else {
+        panic!("a pane writer sets a pane callback argument");
+    };
+    assert!(!pane.is_alive());
+    let mut clients = crate::tests::test_fixtures::Clients::new();
+    let client = clients.add("client", 6, 3);
+    unsafe {
+        ttyctx.redraw_cb.expect("pane contexts can request redraw")(&ttyctx);
+        assert_eq!(
+            ttyctx.set_client_cb.expect("pane contexts select clients")(&mut ttyctx, &mut *client),
+            0
+        );
+    }
 }

@@ -39,13 +39,18 @@ fn counting(source: &UnixStream, mode: WatchMode) -> (IoHandle, Rc<AtomicUsize>)
     let calls = Rc::new(AtomicUsize::new(0));
     let counted = Rc::clone(&calls);
     let mut watch = IoHandle::ZERO;
-    watch.set_callback(source.as_raw_fd(), Interest::Read, mode, move |fd, _events| {
-        let mut byte = 0u8;
-        unsafe {
-            libc::read(fd, (&raw mut byte).cast(), 1);
-        }
-        counted.fetch_add(1, Ordering::SeqCst);
-    });
+    watch.set_callback(
+        source.as_raw_fd(),
+        Interest::Read,
+        mode,
+        move |fd, _events| {
+            let mut byte = 0u8;
+            unsafe {
+                libc::read(fd, (&raw mut byte).cast(), 1);
+            }
+            counted.fetch_add(1, Ordering::SeqCst);
+        },
+    );
     (watch, calls)
 }
 

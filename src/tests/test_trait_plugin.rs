@@ -8,6 +8,7 @@
 //! the process-wide state a server keeps in statics.
 
 use ::std::cell::RefCell;
+use ::std::ffi::CString;
 use ::std::io;
 use ::std::rc::Rc;
 use ::std::time::Duration;
@@ -44,7 +45,7 @@ impl FakeHost {
         }
     }
 
-    fn asked(&self) -> ::std::cell::Ref<'_, Asked> {
+    fn asked(&self) -> std::cell::Ref<'_, Asked> {
         self.asked.borrow()
     }
 }
@@ -88,7 +89,7 @@ impl PaneObservability for FakePane {
     fn screen(&self, _source: ScreenSource, _lines: usize) -> io::Result<ScreenTail> {
         Ok(ScreenTail {
             revision: 1,
-            text: String::new(),
+            text: CString::default(),
             cursor_visible: true,
             cursor_shape: 0,
         })
@@ -98,7 +99,7 @@ impl PaneObservability for FakePane {
         Ok(0)
     }
 
-    fn title(&self) -> io::Result<Option<String>> {
+    fn title(&self) -> io::Result<Option<CString>> {
         Ok(None)
     }
 }
@@ -177,7 +178,7 @@ fn option_defaults_are_named_pairs() {
             &[("status-interval", "1")]
         }
 
-        fn resolve(&self, _pane: PaneId, _key: &str) -> Option<String> {
+        fn resolve(&self, _pane: PaneId, _key: &str) -> Option<CString> {
             None
         }
     }
@@ -195,26 +196,29 @@ fn option_defaults_are_named_pairs() {
 /// format need not tell the two apart.
 #[test]
 fn a_pane_with_nothing_published_reads_as_empty_metadata() {
-    fn resolve(plugin: &impl Plugin, key: &str) -> Option<String> {
+    fn resolve(plugin: &impl Plugin, key: &str) -> Option<CString> {
         plugin.resolve(UNKNOWN, key)
     }
 
     let plugin = AgentPlugin::new();
-    assert_eq!(resolve(&plugin, "pane_agent").as_deref(), Some(""));
-    assert_eq!(resolve(&plugin, "pane_agent_state").as_deref(), Some("none"));
-    assert_eq!(resolve(&plugin, "pane_agent_pid").as_deref(), Some(""));
+    assert_eq!(resolve(&plugin, "pane_agent").as_deref(), Some(c""));
+    assert_eq!(
+        resolve(&plugin, "pane_agent_state").as_deref(),
+        Some(c"none")
+    );
+    assert_eq!(resolve(&plugin, "pane_agent_pid").as_deref(), Some(c""));
     assert_eq!(
         resolve(&plugin, "pane_agent_session_id").as_deref(),
-        Some("")
+        Some(c"")
     );
-    assert_eq!(resolve(&plugin, "pane_agent_model").as_deref(), Some(""));
+    assert_eq!(resolve(&plugin, "pane_agent_model").as_deref(), Some(c""));
 }
 
 /// A key outside the plugin's list is declined, which is what leaves it to the
 /// rest of the format engine.
 #[test]
 fn a_key_the_plugin_does_not_own_is_declined() {
-    fn resolve(plugin: &impl Plugin, key: &str) -> Option<String> {
+    fn resolve(plugin: &impl Plugin, key: &str) -> Option<CString> {
         plugin.resolve(UNKNOWN, key)
     }
 
@@ -289,11 +293,14 @@ fn a_tick_leaves_an_unknown_pane_reading_as_empty() {
     let mut plugin = AgentPlugin::new();
     plugin.tick(&host);
 
-    fn resolve(plugin: &impl Plugin, key: &str) -> Option<String> {
+    fn resolve(plugin: &impl Plugin, key: &str) -> Option<CString> {
         plugin.resolve(UNKNOWN, key)
     }
-    assert_eq!(resolve(&plugin, "pane_agent").as_deref(), Some(""));
-    assert_eq!(resolve(&plugin, "pane_agent_state").as_deref(), Some("none"));
+    assert_eq!(resolve(&plugin, "pane_agent").as_deref(), Some(c""));
+    assert_eq!(
+        resolve(&plugin, "pane_agent_state").as_deref(),
+        Some(c"none")
+    );
 }
 
 /// A plugin that does not care about events is not disturbed by them: the
@@ -321,7 +328,7 @@ fn events_a_plugin_ignores_change_nothing() {
         },
     );
 
-    assert_eq!(plugin.resolve(UNKNOWN, "pane_agent").as_deref(), Some(""));
+    assert_eq!(plugin.resolve(UNKNOWN, "pane_agent").as_deref(), Some(c""));
 }
 
 /// Registration calls `start` once before anything else; a plugin with
@@ -338,7 +345,7 @@ fn starting_a_plugin_leaves_it_ready_to_resolve() {
 
     assert_eq!(
         plugin.resolve(UNKNOWN, "pane_agent_state").as_deref(),
-        Some("none")
+        Some(c"none")
     );
 }
 
@@ -357,6 +364,10 @@ fn a_pane_the_server_does_not_have_has_no_working_directory() {
 
     assert!(host.asked().invalidated.is_empty(), "nothing to redraw");
     for key in plugin.variables() {
-        assert_eq!(plugin.resolve(PaneId(1), key).as_deref(), Some(""), "{key}");
+        assert_eq!(
+            plugin.resolve(PaneId(1), key).as_deref(),
+            Some(c""),
+            "{key}"
+        );
     }
 }

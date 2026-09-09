@@ -1,10 +1,10 @@
-//! Unit tests for [`crate::status::status_prompt_key`] and the buffer editing
+//! Unit tests for [`status_prompt_key`] and the buffer editing
 //! it drives — the paths that read and rewrite a client's `prompt_buffer`.
 //!
 //! `status_prompt_key` is reachable from a fixture client: it needs a session
 //! for `status-keys`, an input callback to answer, and the active status
 //! screen pointed at the client's own, which is the invariant
-//! [`crate::status::status_prompt_set`] pushes and pops against. A fresh
+//! [`status_prompt_set`] pushes and pops against. A fresh
 //! fixture client has a zeroed status line, so [`Asker`] points that pointer
 //! at the embedded screen once, on the way in; every prompt after that leaves
 //! it as it found it, because opening one over another pops the screen it
@@ -17,27 +17,26 @@
 //! than on how the buffer happens to be allocated, so they hold across a
 //! change of its representation.
 //!
-//! The prompt history is a set of process globals, so the test that walks it
-//! empties all four slots on the way in and on the way out.
+//! History setup and inspection use the prompt-history store surface.
 //!
 //! What stays uncovered here is `status_prompt_redraw` and the completion
 //! menu, both of which want a terminal.
 
-use crate::text::{KEYC_UNKNOWN, key_string_lookup_string};
-use crate::options::options_set_number;
-use crate::session::session_options;
+use crate::prompt_history::{
+    PromptHistoryStore, PromptHistoryType, with_prompt_history, with_prompt_history_mut,
+};
+
 use crate::status::{
-    MODEKEY_VI, PROMPT_COMMAND, PROMPT_ENTRY, PROMPT_INCREMENTAL, PROMPT_KEY, PROMPT_NTYPES,
-    PROMPT_NUMERIC, PROMPT_SINGLE, PROMPT_TYPE_COMMAND, PROMPT_TYPE_SEARCH, status_prompt_clear,
-    status_prompt_hlist, status_prompt_key, status_prompt_set,
+    MODEKEY_VI, PROMPT_COMMAND, PROMPT_ENTRY, PROMPT_INCREMENTAL, PROMPT_KEY, PROMPT_NUMERIC,
+    PROMPT_SINGLE, status_prompt_clear, status_prompt_key, status_prompt_set,
 };
 use crate::tests::test_fixtures::{
     Clients, Target, ensure_reactor, globals, prompt_answers, prompt_answers_clear,
 };
-use crate::types::*;
 use crate::text::utf8_vec_tocstr;
+use crate::text::{KEYC_UNKNOWN, KeyStringCodec, RustKeyStringCodec};
+use crate::types::*;
 use ::core::ffi::{CStr, c_int};
-use ::core::ptr::null_mut;
 use ::std::ffi::CString;
 
 /// The answers recorded since the last prompt was opened.
@@ -52,14 +51,14 @@ unsafe fn prompt(c: *mut client, input: &CStr, flags: c_int) {
     unsafe {
         prompt_answers_clear();
         status_prompt_set(
-            c,
-            null_mut(),
+            &mut *c,
+            None,
             c":",
             Some(input),
             Prompt::Recorder,
             PromptData::None,
             flags,
-            PROMPT_TYPE_COMMAND,
+            PromptHistoryType::Command,
         );
     }
 }
@@ -82,9 +81,9 @@ unsafe fn prompting(c: *mut client) -> bool {
 unsafe fn press(c: *mut client, key: &str) {
     unsafe {
         let name = CString::new(key).expect("a key name has no NUL");
-        let k = key_string_lookup_string(name.as_ptr());
+        let k = RustKeyStringCodec.parse_key(&name);
         assert_ne!(k, KEYC_UNKNOWN, "unknown key {key}");
-        status_prompt_key(c, k);
+        status_prompt_key(&mut *c, k);
     }
 }
 
@@ -121,17 +120,12 @@ unsafe fn saved(c: *mut client) -> Option<String> {
 }
 
 /// Empties all four history slots, the way a fresh server has them.
-unsafe fn drain_history() {
-    unsafe {
-        for t in 0..PROMPT_NTYPES as usize {
-            hlists()[t].clear();
-        }
-    }
+fn drain_history() {
+    with_prompt_history_mut(PromptHistoryStore::clear_all);
 }
 
-/// The four history slots, reached the way every caller reaches them.
-unsafe fn hlists() -> &'static mut [Vec<::std::ffi::CString>; 4] {
-    unsafe { &mut status_prompt_hlist }
+fn history_len(kind: PromptHistoryType) -> usize {
+    with_prompt_history(|history| history.entries(kind).count())
 }
 
 /// A client with a session behind it, which is where the prompt reads
@@ -149,8 +143,8 @@ impl Asker {
         let c = clients.add("asker", 80, 24);
         unsafe {
             ensure_reactor();
-            (*c).session = target.session();
-            (*c).status.active = crate::types::StatusActive::Own;
+            (*c).set_attached_session(Some(target.session_handle()));
+            (*c).status.active = StatusActive::Own;
         }
         Asker {
             _target: target,
@@ -162,11 +156,8 @@ impl Asker {
     /// Picks the vi editor for the prompt, which upstream reads per keypress.
     unsafe fn vi_keys(&mut self) {
         unsafe {
-            options_set_number(
-                session_options((*self.c).session),
-                c"status-keys".as_ptr(),
-                MODEKEY_VI as ::core::ffi::c_longlong,
-            );
+            ((*self.c).attached_session().unwrap().options())
+                .set_number(c"status-keys", MODEKEY_VI as core::ffi::c_longlong);
         }
     }
 }
@@ -183,7 +174,7 @@ fn a_prompt_holds_its_input_with_the_cursor_at_the_end() {
         assert_eq!(buffer(c), "hello");
         assert_eq!((*c).prompt_index, 5);
         assert!(saved(c).is_none());
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -204,7 +195,7 @@ fn typing_inserts_at_the_cursor_and_moves_it_on() {
         type_text(c, "XY");
         assert_eq!(buffer(c), "aXYbc");
         assert_eq!((*c).prompt_index, 3);
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -230,7 +221,7 @@ fn typing_grows_the_buffer_past_its_first_allocation() {
         type_text(c, "Z");
         assert_eq!(buffer(c), format!("Z{want}"));
         assert_eq!((*c).prompt_index, 1);
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -252,7 +243,7 @@ fn a_multibyte_character_takes_one_place_in_the_buffer() {
         press(c, "BSpace");
         assert_eq!(buffer(c), "");
         assert_eq!((*c).prompt_index, 0);
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -287,7 +278,7 @@ fn the_cursor_walks_by_character_and_stops_at_both_ends() {
         press(c, "End");
         assert_eq!((*c).prompt_index, 4);
         assert_eq!(buffer(c), "abcd", "walking leaves the line alone");
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -317,7 +308,7 @@ fn the_cursor_walks_by_word() {
         press(c, "M-f");
         assert_eq!((*c).prompt_index, 13, "and no further the other way");
         assert_eq!(buffer(c), "one two three");
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -345,7 +336,7 @@ fn characters_go_away_before_and_at_the_cursor() {
         press(c, "BSpace");
         assert_eq!(buffer(c), "ab", "there is nothing before the cursor");
         assert_eq!((*c).prompt_index, 0);
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -368,7 +359,7 @@ fn cutting_the_line_keeps_nothing() {
         assert_eq!(buffer(c), "");
         assert_eq!((*c).prompt_index, 0);
         assert!(saved(c).is_none());
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -395,7 +386,7 @@ fn keys_that_walk_the_line_have_nothing_to_walk_on_an_empty_prompt() {
         assert_eq!(buffer(c), "");
         assert_eq!((*c).prompt_index, 0);
         assert!(prompting(c));
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -419,7 +410,7 @@ fn deleting_stops_at_the_end_of_the_line() {
         press(c, "C-d");
         assert_eq!(buffer(c), "", "there is nothing left to take");
         assert!(prompting(c));
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -441,7 +432,7 @@ fn cutting_the_word_before_the_cursor_keeps_it() {
         assert_eq!(buffer(c), "one ");
         assert_eq!((*c).prompt_index, 4);
         assert_eq!(saved(c).as_deref(), Some("two "));
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -465,7 +456,7 @@ fn what_was_cut_is_pasted_back_at_the_cursor() {
         press(c, "C-y");
         assert_eq!(buffer(c), "threeone two three", "and in at the front");
         assert_eq!((*c).prompt_index, 5);
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -485,7 +476,7 @@ fn transposing_swaps_the_two_characters_before_the_cursor() {
         prompt(c, c"a", 0);
         press(c, "C-t");
         assert_eq!(buffer(c), "a", "one character has nothing to swap with");
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -539,7 +530,7 @@ fn walking_the_history_replaces_the_line() {
             type_text(c, line);
             press(c, "Enter");
         }
-        assert_eq!(hlists()[PROMPT_TYPE_COMMAND as usize].len(), 2);
+        assert_eq!(history_len(PromptHistoryType::Command), 2);
 
         prompt(c, c"", 0);
         press(c, "Up");
@@ -552,7 +543,7 @@ fn walking_the_history_replaces_the_line() {
         press(c, "Down");
         assert_eq!(buffer(c), "", "off the bottom is the empty line again");
 
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
         drain_history();
     }
 }
@@ -572,22 +563,22 @@ fn each_prompt_type_keeps_its_own_history() {
         press(c, "Enter");
 
         status_prompt_set(
-            c,
-            null_mut(),
+            &mut *c,
+            None,
             c":",
             Some(c""),
             Prompt::Recorder,
             PromptData::None,
             0,
-            PROMPT_TYPE_SEARCH,
+            PromptHistoryType::Search,
         );
         press(c, "Up");
         assert_eq!(buffer(c), "", "the search history is still empty");
 
-        assert_eq!(hlists()[PROMPT_TYPE_COMMAND as usize].len(), 1);
-        assert_eq!(hlists()[PROMPT_TYPE_SEARCH as usize].len(), 0);
+        assert_eq!(history_len(PromptHistoryType::Command), 1);
+        assert_eq!(history_len(PromptHistoryType::Search), 0);
 
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
         drain_history();
     }
 }
@@ -629,7 +620,7 @@ fn vi_keys_move_and_edit_in_command_mode() {
         assert_eq!((*c).prompt_mode, PROMPT_ENTRY);
         type_text(c, "o");
         assert_eq!(buffer(c), "one two three", "typing works again");
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -710,7 +701,7 @@ fn an_incremental_prompt_reports_every_change() {
 
         press(c, "BSpace");
         assert_eq!(answers().last().cloned(), Some(("=a".to_string(), 0)));
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -739,7 +730,7 @@ fn a_first_prompt_has_nothing_put_by_to_paste() {
         press(c, "C-y");
         assert_eq!(buffer(c), "abc", "there is nothing to paste in");
         assert_eq!((*c).prompt_index, 3);
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -764,7 +755,7 @@ fn completing_fills_in_the_rest_of_a_command() {
         prompt(c, c"zzzz", 0);
         press(c, "Tab");
         assert_eq!(buffer(c), "zzzz", "nothing completes it");
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -796,7 +787,7 @@ fn vi_command_mode_keys_edit_and_move() {
             assert_eq!((*c).prompt_index, index, "vi {key} leaves the cursor");
             assert_eq!((*c).prompt_mode, mode, "vi {key} leaves the mode");
         }
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
     }
 }
 
@@ -822,7 +813,7 @@ fn vi_command_mode_walks_the_history() {
         press(c, "j");
         assert_eq!(buffer(c), "");
 
-        status_prompt_clear(c);
+        status_prompt_clear(&mut *c);
         drain_history();
     }
 }

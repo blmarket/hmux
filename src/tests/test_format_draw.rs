@@ -1,9 +1,8 @@
 use super::*;
+use super::{screen_write_ctx, screen_write_start, screen_write_stop};
 use crate::grid::{grid_default_cell, grid_string_cells};
-use crate::screen::{screen_write_start, screen_write_stop};
 use crate::tests::test_fixtures::{Screen, globals};
 use ::core::ffi::{CStr, c_char, c_int};
-use ::core::ptr::null_mut;
 
 /// What one call to `format_draw` left behind: the row it drew and the
 /// style ranges it reported, each as `<type>|<argument>|<string> start-end`.
@@ -25,10 +24,10 @@ fn draw_over(
 ) -> Drawn {
     let _guard = globals();
     let mut s = Screen::new(available.max(1), 1, 0);
-    let mut ctx = Box::new(screen_write_ctx::default());
     let mut srs = style_ranges::new();
     unsafe {
-        screen_write_start(&mut ctx, &mut *s.ptr());
+        let mut state = screen_write_start(&mut s);
+        let mut ctx = screen_write_ctx::new(&mut state, &mut s);
         let base = grid_default_cell;
         format_draw(
             &mut ctx,
@@ -39,8 +38,9 @@ fn draw_over(
             default_colours,
         );
         screen_write_stop(&mut ctx);
+        drop(ctx);
 
-        let line = grid_string_cells(&*s.grid(), 0, 0, available.max(1), None, 0, null_mut())
+        let line = grid_string_cells(&*s.grid(), 0, 0, available.max(1), None, 0, None)
             .to_string_lossy()
             .into_owned();
         let ranges = srs

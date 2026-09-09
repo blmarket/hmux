@@ -1,12 +1,15 @@
 use super::*;
-use crate::text::key_string_lookup_string;
+use crate::WindowPane;
 use crate::log::log_add_level;
-use crate::options::options_set_number;
+use crate::options::OptionsRef;
+use crate::pane_identity::PaneIdentity;
+
 use crate::resize::WINDOW_ZOOMED;
+use crate::screen::Screen as ScreenBoundary;
 use crate::tests::test_fixtures::{Pane, Screen, StreamBuffer, Window, globals};
+use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::window::window_set_active;
 use ::core::ffi::{CStr, c_int};
-use ::core::ptr::null_mut;
 use ::std::sync::MutexGuard;
 
 /// A screen to read the terminal modes from, a buffer event to write the
@@ -20,16 +23,21 @@ struct Keys {
 
 impl Keys {
     fn new() -> Keys {
-        static BUILD: ::std::sync::Once = ::std::sync::Once::new();
+        static BUILD: std::sync::Once = std::sync::Once::new();
         let guard = globals();
         BUILD.call_once(input_key_build);
         unsafe {
-            options_set_number(
-                global_options,
-                c"backspace".as_ptr(),
-                key_string_lookup_string(c"C-?".as_ptr()) as ::core::ffi::c_longlong,
+            (global_options
+                .as_ref()
+                .expect("global options are initialized"))
+            .set_number(
+                c"backspace",
+                RustKeyStringCodec.parse_key(c"C-?") as core::ffi::c_longlong,
             );
-            options_set_number(global_options, c"extended-keys-format".as_ptr(), 0);
+            (global_options
+                .as_ref()
+                .expect("global options are initialized"))
+            .set_number(c"extended-keys-format", 0);
         }
         Keys {
             screen: Screen::new(10, 2, 0),
@@ -39,37 +47,44 @@ impl Keys {
     }
 
     fn mode(&mut self, mode: c_int) -> &mut Keys {
-        self.screen.mode = mode;
+        self.screen.set_mode(mode);
         self
     }
 
     /// What `input_key` writes for the key named `s`, and what it answered.
     fn key(&mut self, s: &CStr) -> (c_int, String) {
-        let key = unsafe { key_string_lookup_string(s.as_ptr()) };
+        let key = RustKeyStringCodec.parse_key(s);
         assert_ne!(key, KEYC_UNKNOWN as key_code, "{s:?} is not a key");
         self.code(key)
     }
 
     /// The same for a key code worked out by hand.
     fn code(&mut self, key: key_code) -> (c_int, String) {
-        let answer = unsafe { input_key(self.screen.ptr(), self.bev.ptr(), key) };
+        let answer = unsafe { input_key(&*self.screen.ptr(), self.bev.ptr(), key) };
         (answer, shown(&self.bev.written()))
     }
 
     /// The backspace the terminal is told to send.
     fn backspace(&mut self, s: &CStr) -> &mut Keys {
         unsafe {
-            options_set_number(
-                global_options,
-                c"backspace".as_ptr(),
-                key_string_lookup_string(s.as_ptr()) as ::core::ffi::c_longlong,
+            (global_options
+                .as_ref()
+                .expect("global options are initialized"))
+            .set_number(
+                c"backspace",
+                RustKeyStringCodec.parse_key(s) as core::ffi::c_longlong,
             );
         }
         self
     }
 
-    fn extended_format(&mut self, format: ::core::ffi::c_longlong) -> &mut Keys {
-        unsafe { options_set_number(global_options, c"extended-keys-format".as_ptr(), format) };
+    fn extended_format(&mut self, format: core::ffi::c_longlong) -> &mut Keys {
+        unsafe {
+            (global_options
+                .as_ref()
+                .expect("global options are initialized"))
+            .set_number(c"extended-keys-format", format)
+        };
         self
     }
 }
@@ -203,7 +218,7 @@ fn a_paste_key_is_only_written_when_the_terminal_asked_for_them() {
 fn a_key_with_meta_the_table_does_not_carry_is_written_after_an_escape() {
     let mut keys = Keys::new();
     assert_eq!(keys.key(c"M-Up"), (0, "<esc>[1;3A".into()));
-    let up = unsafe { key_string_lookup_string(c"Up".as_ptr()) };
+    let up = RustKeyStringCodec.parse_key(c"Up");
     assert_eq!(keys.code(up | KEYC_META), (0, "<esc><esc>[A".into()));
 }
 
@@ -326,13 +341,13 @@ fn a_mouse_report_needs_the_terminal_to_have_asked_for_one() {
     let mut m = Box::new(mouse_event::default());
     m.sgr_type = b' ' as u_int;
     assert_eq!(mouse(&mut s, &mut m, 0, 0), None);
-    s.mode = MODE_MOUSE_STANDARD;
+    s.set_mode(MODE_MOUSE_STANDARD);
     assert_eq!(mouse(&mut s, &mut m, 0, 0), Some("<esc>[M !!".into()));
 }
 
 /// What `input_key_get_mouse` answers, or `None` if it wrote nothing.
 fn mouse(s: &mut Screen, m: &mut mouse_event, x: u_int, y: u_int) -> Option<String> {
-    unsafe { input_key_get_mouse(s.ptr(), m, x, y).map(|report| shown(&report)) }
+    unsafe { input_key_get_mouse(&*s.ptr(), m, x, y).map(|report| shown(&report)) }
 }
 
 #[test]
@@ -342,9 +357,9 @@ fn a_drag_is_only_reported_when_the_terminal_follows_them() {
     let mut m = Box::new(mouse_event::default());
     m.sgr_type = b' ' as u_int;
     m.b = MOUSE_MASK_DRAG as u_int;
-    s.mode = MODE_MOUSE_STANDARD;
+    s.set_mode(MODE_MOUSE_STANDARD);
     assert_eq!(mouse(&mut s, &mut m, 0, 0), None);
-    s.mode = MODE_MOUSE_BUTTON;
+    s.set_mode(MODE_MOUSE_BUTTON);
     assert_eq!(mouse(&mut s, &mut m, 0, 0), Some("<esc>[M@!!".into()));
 }
 
@@ -356,9 +371,9 @@ fn a_drag_with_no_button_down_is_only_reported_to_a_terminal_wanting_all() {
     m.sgr_type = b' ' as u_int;
     m.b = (MOUSE_MASK_DRAG | 3) as u_int;
     m.lb = 3;
-    s.mode = MODE_MOUSE_BUTTON;
+    s.set_mode(MODE_MOUSE_BUTTON);
     assert_eq!(mouse(&mut s, &mut m, 0, 0), None);
-    s.mode = MODE_MOUSE_ALL;
+    s.set_mode(MODE_MOUSE_ALL);
     assert_eq!(mouse(&mut s, &mut m, 0, 0), Some("<esc>[MC!!".into()));
 }
 
@@ -369,11 +384,11 @@ fn an_sgr_report_names_the_button_and_the_place_in_full() {
     let mut m = Box::new(mouse_event::default());
     m.sgr_type = b'M' as u_int;
     m.sgr_b = 0;
-    s.mode = MODE_MOUSE_STANDARD | MODE_MOUSE_SGR;
+    s.set_mode(MODE_MOUSE_STANDARD | MODE_MOUSE_SGR);
     assert_eq!(mouse(&mut s, &mut m, 4, 9), Some("<esc>[<0;5;10M".into()));
     m.sgr_b = (MOUSE_MASK_DRAG | 3) as u_int;
     assert_eq!(mouse(&mut s, &mut m, 4, 9), None);
-    s.mode = MODE_MOUSE_ALL | MODE_MOUSE_SGR;
+    s.set_mode(MODE_MOUSE_ALL | MODE_MOUSE_SGR);
     assert_eq!(mouse(&mut s, &mut m, 4, 9), Some("<esc>[<35;5;10M".into()));
 }
 
@@ -383,7 +398,7 @@ fn a_utf8_report_carries_places_two_bytes_wide() {
     let mut s = Screen::new(10, 2, 0);
     let mut m = Box::new(mouse_event::default());
     m.sgr_type = b' ' as u_int;
-    s.mode = MODE_MOUSE_STANDARD | MODE_MOUSE_UTF8;
+    s.set_mode(MODE_MOUSE_STANDARD | MODE_MOUSE_UTF8);
     assert_eq!(mouse(&mut s, &mut m, 0, 0), Some("<esc>[M !!".into()));
     assert_eq!(
         mouse(&mut s, &mut m, 200, 0),
@@ -400,12 +415,12 @@ fn a_report_of_a_place_too_far_out_stops_at_the_edge() {
     let mut s = Screen::new(10, 2, 0);
     let mut m = Box::new(mouse_event::default());
     m.sgr_type = b' ' as u_int;
-    s.mode = MODE_MOUSE_STANDARD;
+    s.set_mode(MODE_MOUSE_STANDARD);
     assert_eq!(
         mouse(&mut s, &mut m, 300, 300),
         Some("<esc>[M <ff><ff>".into())
     );
-    s.mode = MODE_MOUSE_BUTTON;
+    s.set_mode(MODE_MOUSE_BUTTON);
     m.b = 224;
     assert_eq!(mouse(&mut s, &mut m, 0, 0), None);
 }
@@ -416,8 +431,8 @@ fn a_pane_is_given_the_bytes_of_a_key() {
     let mut pane = Pane::new(1, 10, 2, 0);
     let bev = StreamBuffer::new();
     unsafe {
-        (*pane.ptr()).event = bev.ptr();
-        assert_eq!(input_key_pane(pane.ptr(), b'a' as key_code, None), 0);
+        *(*pane.ptr()).event_mut() = bev.ptr();
+        assert_eq!(input_key_pane(&*pane.ptr(), b'a' as key_code, None), 0);
     }
     assert_eq!(shown(&bev.written()), "a");
 }
@@ -433,31 +448,31 @@ fn a_pane_is_given_a_mouse_report_only_for_a_click_inside_it() {
     m.sgr_type = b' ' as u_int;
     m.wp = 1;
     unsafe {
-        (*pane.ptr()).event = bev.ptr();
-        (*pane.screen()).mode = MODE_MOUSE_STANDARD;
+        *(*pane.ptr()).event_mut() = bev.ptr();
+        pane.base_mut().set_mode(MODE_MOUSE_STANDARD);
 
         let key = KEYC_MOUSE as key_code;
-        assert_eq!(input_key_pane(pane.ptr(), key, Some(&m)), 0);
+        assert_eq!(input_key_pane(&*pane.ptr(), key, Some(&m)), 0);
         assert_eq!(shown(&bev.written()), "<esc>[M !!");
 
         m.ignore = 1;
-        assert_eq!(input_key_pane(pane.ptr(), key, Some(&m)), 0);
+        assert_eq!(input_key_pane(&*pane.ptr(), key, Some(&m)), 0);
         assert_eq!(shown(&bev.written()), "");
 
         m.ignore = 0;
         m.x = 20;
-        assert_eq!(input_key_pane(pane.ptr(), key, Some(&m)), 0);
+        assert_eq!(input_key_pane(&*pane.ptr(), key, Some(&m)), 0);
         assert_eq!(shown(&bev.written()), "");
 
         m.x = 0;
         m.wp = 2;
-        assert_eq!(input_key_pane(pane.ptr(), key, Some(&m)), 0);
+        assert_eq!(input_key_pane(&*pane.ptr(), key, Some(&m)), 0);
         assert_eq!(shown(&bev.written()), "");
 
         m.wp = 1;
         (*window.ptr()).flags |= WINDOW_ZOOMED;
-        window_set_active(window.ptr(), null_mut::<window_pane>());
-        assert_eq!(input_key_pane(pane.ptr(), key, Some(&m)), 0);
+        window_set_active(&mut *window.ptr(), None::<&crate::types::window_pane>);
+        assert_eq!(input_key_pane(&*pane.ptr(), key, Some(&m)), 0);
         assert_eq!(shown(&bev.written()), "");
     }
 }
@@ -472,11 +487,11 @@ fn a_pane_names_the_key_in_the_log_and_takes_a_mouse_type_key_too() {
     unsafe {
         log_add_level();
         assert_ne!(log_get_level(), 0);
-        (*pane.ptr()).event = bev.ptr();
-        assert_eq!(input_key_pane(pane.ptr(), b'a' as key_code, None), 0);
+        *(*pane.ptr()).event_mut() = bev.ptr();
+        assert_eq!(input_key_pane(&*pane.ptr(), b'a' as key_code, None), 0);
         assert_eq!(shown(&bev.written()), "a");
         assert_eq!(
-            input_key_pane(pane.ptr(), (KEYC_TYPE_MOUSEMOVE as key_code) << 32, None),
+            input_key_pane(&*pane.ptr(), (KEYC_TYPE_MOUSEMOVE as key_code) << 32, None),
             0
         );
         assert_eq!(shown(&bev.written()), "");
@@ -497,10 +512,10 @@ fn a_pane_writes_nothing_for_a_report_its_terminal_turned_down() {
     m.wp = 1;
     m.b = MOUSE_MASK_DRAG as u_int;
     unsafe {
-        (*pane.ptr()).event = bev.ptr();
-        (*pane.screen()).mode = MODE_MOUSE_STANDARD;
+        *(*pane.ptr()).event_mut() = bev.ptr();
+        pane.base_mut().set_mode(MODE_MOUSE_STANDARD);
         assert_eq!(
-            input_key_pane(pane.ptr(), KEYC_MOUSE as key_code, Some(&m)),
+            input_key_pane(&*pane.ptr(), KEYC_MOUSE as key_code, Some(&m)),
             0
         );
     }
@@ -522,8 +537,8 @@ fn a_key_the_extended_form_cannot_name_is_written_as_nothing() {
 #[test]
 fn a_cursor_or_keypad_key_the_table_does_not_carry_is_looked_up_plain() {
     let mut keys = Keys::new();
-    let up = unsafe { key_string_lookup_string(c"Up".as_ptr()) };
-    let kp = unsafe { key_string_lookup_string(c"KP*".as_ptr()) };
+    let up = RustKeyStringCodec.parse_key(c"Up");
+    let kp = RustKeyStringCodec.parse_key(c"KP*");
     assert_eq!(
         keys.mode(MODE_KCURSOR).code(up | KEYC_CURSOR | KEYC_SHIFT),
         (0, "<esc>[1;2A".into())
@@ -540,10 +555,12 @@ fn a_cursor_or_keypad_key_the_table_does_not_carry_is_looked_up_plain() {
 fn a_backspace_option_naming_a_mouse_key_is_ignored() {
     let mut keys = Keys::new();
     unsafe {
-        options_set_number(
-            global_options,
-            c"backspace".as_ptr(),
-            (((KEYC_TYPE_MOUSEMOVE as key_code) << 32) | 1) as ::core::ffi::c_longlong,
+        (global_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .set_number(
+            c"backspace",
+            (((KEYC_TYPE_MOUSEMOVE as key_code) << 32) | 1) as core::ffi::c_longlong,
         );
     }
     assert_eq!(
@@ -558,8 +575,63 @@ fn a_pane_told_about_a_mouse_key_with_no_report_behind_it_writes_nothing() {
     let mut pane = Pane::new(1, 10, 2, 0);
     let bev = StreamBuffer::new();
     unsafe {
-        (*pane.ptr()).event = bev.ptr();
-        assert_eq!(input_key_pane(pane.ptr(), KEYC_MOUSE as key_code, None), 0);
+        *(*pane.ptr()).event_mut() = bev.ptr();
+        assert_eq!(
+            input_key_pane(&*pane.ptr(), KEYC_MOUSE as key_code, None),
+            0
+        );
     }
     assert_eq!(shown(&bev.written()), "");
+}
+
+#[test]
+fn pane_input_encodes_keys_and_mouse_from_the_shared_shown_screen() {
+    use crate::tests::test_fixtures::Target;
+    use crate::types::WindowMode;
+    use crate::window::window_pane_set_mode;
+
+    let _guard = globals();
+    let mut target = Target::new(20, 6);
+    let output = StreamBuffer::new();
+    unsafe {
+        let pane = &mut *target.pane(0);
+        *pane.event_mut() = output.ptr();
+        let pane_screen_mode = MODE_KCURSOR | MODE_MOUSE_STANDARD;
+        pane.base_mut().set_mode(pane_screen_mode);
+        assert_eq!(
+            window_pane_set_mode(pane, None, WindowMode::View, None, None),
+            0
+        );
+        let shown_screen = pane.modes()[0]
+            .state
+            .copy_mode_data_ref()
+            .unwrap()
+            .screen
+            .clone();
+        shown_screen.borrow_mut().set_mode(0);
+        let key = RustKeyStringCodec.parse_key(c"Up");
+        assert_eq!(input_key_pane(pane, key, None), 0);
+        assert_eq!(output.written(), b"\x1b[A");
+        let mouse = mouse_event {
+            wp: pane.pane_id() as c_int,
+            sgr_type: b' ' as u_int,
+            ..Default::default()
+        };
+        assert_eq!(
+            input_key_pane(pane, KEYC_MOUSE as key_code, Some(&mouse)),
+            0
+        );
+        assert!(output.written().is_empty());
+        shown_screen
+            .borrow_mut()
+            .set_mode(MODE_KCURSOR | MODE_MOUSE_STANDARD);
+        let _screen_borrow = shown_screen.borrow();
+        assert_eq!(input_key_pane(pane, key, None), 0);
+        assert_eq!(output.written(), b"\x1bOA");
+        assert_eq!(
+            input_key_pane(pane, KEYC_MOUSE as key_code, Some(&mouse)),
+            0
+        );
+        assert_eq!(output.written(), b"\x1b[M !!");
+    }
 }

@@ -11,10 +11,11 @@
 //! Values are computed on the tick and `resolve` reads what the last one
 //! published, so expanding a status format never touches the filesystem.
 
+use crate::WindowPane;
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsString;
+use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs;
-use std::os::unix::ffi::OsStringExt;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -46,15 +47,15 @@ const INTERVAL: Duration = Duration::from_millis(500);
 /// `#{?git_worktree,…}` rather than on the plugin being enabled.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct PaneGit {
-    worktree: String,
-    worktree_path: String,
-    subdir: String,
-    repo: String,
-    branch: String,
-    head: String,
-    action: String,
-    action_step: String,
-    action_total: String,
+    worktree: CString,
+    worktree_path: CString,
+    subdir: CString,
+    repo: CString,
+    branch: CString,
+    head: CString,
+    action: CString,
+    action_step: CString,
+    action_total: CString,
 }
 
 /// The per-pane values, plus the two caches that keep the sweep cheap: the
@@ -117,7 +118,7 @@ impl GitPlugin {
         };
         PaneGit {
             worktree: file_name(&found.worktree),
-            worktree_path: found.worktree.to_string_lossy().into_owned(),
+            worktree_path: CString::new(found.worktree.as_os_str().as_bytes()).unwrap_or_default(),
             subdir: subdir(&found.worktree, cwd),
             repo: found.repo,
             head: match repo.branch.is_empty() {
@@ -186,9 +187,9 @@ impl Plugin for GitPlugin {
         self.published = panes;
     }
 
-    fn resolve(&self, pane: PaneId, key: &str) -> Option<String> {
+    fn resolve(&self, pane: PaneId, key: &str) -> Option<CString> {
         let value = self.published.get(&pane);
-        let field = |pick: fn(&PaneGit) -> &str| Some(value.map_or("", pick).to_string());
+        let field = |pick: fn(&PaneGit) -> &CStr| Some(value.map_or(c"", pick).to_owned());
         match key {
             "git_worktree" => field(|git| &git.worktree),
             "git_worktree_path" => field(|git| &git.worktree_path),
@@ -210,7 +211,7 @@ impl Plugin for GitPlugin {
 struct Discovery {
     worktree: PathBuf,
     gitdir: PathBuf,
-    repo: String,
+    repo: CString,
     /// Whether refs live in a reftable rather than in files, which is what
     /// makes reading `HEAD` as a file meaningless.
     reftable: bool,
@@ -247,18 +248,18 @@ type Stamp = (Option<SystemTime>, Option<SystemTime>);
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Repo {
     stamp: Stamp,
-    branch: String,
-    commit: String,
-    action: String,
-    step: String,
-    total: String,
+    branch: CString,
+    commit: CString,
+    action: CString,
+    step: CString,
+    total: CString,
 }
 
 impl Repo {
     fn read(found: &Discovery, stamp: Stamp) -> Repo {
         let (action, step, total) = read_action(&found.gitdir);
         let (mut branch, commit) = match found.reftable {
-            true => (String::new(), String::new()),
+            true => (CString::default(), CString::default()),
             false => read_head(&found.gitdir),
         };
         if branch.is_empty() {
@@ -291,11 +292,8 @@ fn stamp(gitdir: &Path) -> Option<Stamp> {
 /// The working directory of the pane's foreground process, as the pane's own
 /// `#{pane_current_path}` reads it.
 fn pane_cwd(pane: PaneId) -> Option<PathBuf> {
-    let wp = window_pane_find_by_id(pane.0);
-    if wp.is_null() {
-        return None;
-    }
-    let cwd = osdep_get_cwd(unsafe { (*wp).fd })?;
+    let pane = window_pane_find_by_id(pane.0)?;
+    let cwd = osdep_get_cwd(unsafe { *pane.as_pane().fd() })?;
     let path = PathBuf::from(OsString::from_vec(cwd.into_bytes()));
     path.is_absolute().then_some(path)
 }
@@ -312,77 +310,86 @@ fn git_dir_at(dir: &Path) -> Option<PathBuf> {
     if !meta.is_file() {
         return None;
     }
-    let text = fs::read_to_string(&dot).ok()?;
+    let text = fs::read(&dot).ok()?;
     let named = text
-        .lines()
-        .find_map(|line| line.strip_prefix("gitdir:"))?
-        .trim();
+        .split(|&byte| byte == b'\n')
+        .find_map(|line| line.strip_prefix(b"gitdir:"))?;
+    let named = trim_ascii(named);
     match named.is_empty() {
         true => None,
-        false => Some(normalize(&dir.join(named))),
+        false => Some(normalize(&dir.join(OsStr::from_bytes(named)))),
     }
 }
 
 /// The git directory the whole repository shares, which is the given one
 /// unless it is a linked worktree's.
 fn common_dir(gitdir: &Path) -> PathBuf {
-    let named = fs::read_to_string(gitdir.join("commondir"))
-        .ok()
-        .and_then(|text| text.lines().next().map(str::trim).map(str::to_string))
-        .unwrap_or_default();
+    let text = fs::read(gitdir.join("commondir")).unwrap_or_default();
+    let named = trim_ascii(text.split(|&byte| byte == b'\n').next().unwrap_or_default());
     match named.is_empty() {
         true => gitdir.to_path_buf(),
-        false => normalize(&gitdir.join(named)),
+        false => normalize(&gitdir.join(OsStr::from_bytes(named))),
     }
 }
 
 /// The repository's name: the directory holding its common git directory, or
 /// the bare directory's own name with the conventional suffix dropped.
-fn repo_name(common: &Path) -> String {
+fn repo_name(common: &Path) -> CString {
     let name = file_name(common);
-    if name == ".git" {
+    if name.as_c_str() == c".git" {
         return common.parent().map(file_name).unwrap_or_default();
     }
-    name.strip_suffix(".git").unwrap_or(&name).to_string()
+    CString::new(
+        name.to_bytes()
+            .strip_suffix(b".git")
+            .unwrap_or(name.to_bytes()),
+    )
+    .expect("a path component has no interior NUL")
 }
 
 /// The branch `HEAD` names and, when it names none, the short form of the
 /// commit it is parked on.
-fn read_head(gitdir: &Path) -> (String, String) {
-    let Ok(text) = fs::read_to_string(gitdir.join("HEAD")) else {
-        return (String::new(), String::new());
+fn read_head(gitdir: &Path) -> (CString, CString) {
+    let Ok(text) = fs::read(gitdir.join("HEAD")) else {
+        return (CString::default(), CString::default());
     };
-    let line = text.lines().next().unwrap_or_default().trim();
-    if let Some(reference) = line.strip_prefix("ref:") {
-        let reference = reference.trim();
-        let branch = reference.strip_prefix("refs/heads/").unwrap_or(reference);
+    let line = trim_ascii(text.split(|&byte| byte == b'\n').next().unwrap_or_default());
+    if let Some(reference) = line.strip_prefix(b"ref:") {
+        let reference = trim_ascii(reference);
+        let branch = reference.strip_prefix(b"refs/heads/").unwrap_or(reference);
         // What a reftable repository leaves in the file for readers that
         // predate it; there is no branch name here to be had.
-        if branch == ".invalid" {
-            return (String::new(), String::new());
+        if branch == b".invalid" {
+            return (CString::default(), CString::default());
         }
-        return (branch.to_string(), String::new());
+        return (
+            CString::new(branch).expect("a branch name has no NUL"),
+            CString::default(),
+        );
     }
-    match line.len() >= 7 && line.chars().all(|byte| byte.is_ascii_hexdigit()) {
-        true => (String::new(), line[..7].to_string()),
-        false => (String::new(), String::new()),
+    match line.len() >= 7 && line.iter().all(u8::is_ascii_hexdigit) {
+        true => (
+            CString::default(),
+            CString::new(&line[..7]).expect("a commit id has no NUL"),
+        ),
+        false => (CString::default(), CString::default()),
     }
 }
 
 /// The branch an interrupted rebase is rebuilding. HEAD is detached for the
 /// length of the operation, and this is the name the pane was on before it
 /// started.
-fn rebased_branch(gitdir: &Path) -> String {
+fn rebased_branch(gitdir: &Path) -> CString {
     for dir in ["rebase-merge", "rebase-apply"] {
-        let Ok(text) = fs::read_to_string(gitdir.join(dir).join("head-name")) else {
+        let Ok(text) = fs::read(gitdir.join(dir).join("head-name")) else {
             continue;
         };
-        let name = text.lines().next().unwrap_or_default().trim();
-        if let Some(branch) = name.strip_prefix("refs/heads/") {
-            return branch.to_string();
+        let name = trim_ascii(text.split(|&byte| byte == b'\n').next().unwrap_or_default());
+        if let Some(branch) = name.strip_prefix(b"refs/heads/") {
+            return CString::new(branch).expect("a branch name has no NUL");
         }
     }
-    String::new()
+    CString::default()
 }
 
 /// The operation the repository is in the middle of, with the step it has
@@ -393,11 +400,11 @@ fn rebased_branch(gitdir: &Path) -> String {
 /// interactive` — is written for every rebase the merge backend runs, so
 /// reporting an interactive rebase from it would be wrong for the common
 /// case rather than right for the rare one.
-fn read_action(gitdir: &Path) -> (String, String, String) {
+fn read_action(gitdir: &Path) -> (CString, CString, CString) {
     let merge = gitdir.join("rebase-merge");
     if merge.is_dir() {
         return (
-            "rebase".to_string(),
+            c"rebase".to_owned(),
             count(&merge.join("msgnum")),
             count(&merge.join("end")),
         );
@@ -409,7 +416,7 @@ fn read_action(gitdir: &Path) -> (String, String, String) {
             false => "am",
         };
         return (
-            action.to_string(),
+            CString::new(action).expect("an action name has no NUL"),
             count(&apply.join("next")),
             count(&apply.join("last")),
         );
@@ -421,37 +428,52 @@ fn read_action(gitdir: &Path) -> (String, String, String) {
         ("REVERT_HEAD", "revert"),
     ] {
         if gitdir.join(marker).exists() {
-            return (action.to_string(), String::new(), String::new());
+            return (
+                CString::new(action).expect("an action name has no NUL"),
+                CString::default(),
+                CString::default(),
+            );
         }
     }
-    (String::new(), String::new(), String::new())
+    (CString::default(), CString::default(), CString::default())
 }
 
 /// A progress counter, or nothing when the file is missing or holds something
 /// that is not one.
-fn count(path: &Path) -> String {
-    let Ok(text) = fs::read_to_string(path) else {
-        return String::new();
+fn count(path: &Path) -> CString {
+    let Ok(text) = fs::read(path) else {
+        return CString::default();
     };
-    let value = text.lines().next().unwrap_or_default().trim();
-    match !value.is_empty() && value.chars().all(|byte| byte.is_ascii_digit()) {
-        true => value.to_string(),
-        false => String::new(),
+    let value = trim_ascii(text.split(|&byte| byte == b'\n').next().unwrap_or_default());
+    match !value.is_empty() && value.iter().all(u8::is_ascii_digit) {
+        true => CString::new(value).expect("a progress count has no NUL"),
+        false => CString::default(),
     }
+}
+
+fn trim_ascii(mut value: &[u8]) -> &[u8] {
+    while value.first().is_some_and(u8::is_ascii_whitespace) {
+        value = &value[1..];
+    }
+    while value.last().is_some_and(u8::is_ascii_whitespace) {
+        value = &value[..value.len() - 1];
+    }
+    value
 }
 
 /// The path from the worktree root down to the pane's directory, empty at the
 /// root itself.
-fn subdir(worktree: &Path, cwd: &Path) -> String {
+fn subdir(worktree: &Path, cwd: &Path) -> CString {
     cwd.strip_prefix(worktree)
-        .map(|rest| rest.to_string_lossy().into_owned())
+        .ok()
+        .and_then(|rest| CString::new(rest.as_os_str().as_bytes()).ok())
         .unwrap_or_default()
 }
 
 /// The last component of a path, as a string.
-fn file_name(path: &Path) -> String {
+fn file_name(path: &Path) -> CString {
     path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
+        .and_then(|name| CString::new(name.as_bytes()).ok())
         .unwrap_or_default()
 }
 
@@ -562,18 +584,18 @@ mod tests {
         let found = Discovery::find(&deep).expect("a worktree");
         assert_eq!(found.worktree, scratch.root.join("h1"));
         assert_eq!(found.gitdir, gitdir);
-        assert_eq!(found.repo, "hmux", "the repository, not the worktree");
-        assert_eq!(file_name(&found.worktree), "h1");
-        assert_eq!(subdir(&found.worktree, &deep), "tmux-c2rs/src");
+        assert_eq!(found.repo, c"hmux", "the repository, not the worktree");
+        assert_eq!(file_name(&found.worktree), c"h1");
+        assert_eq!(subdir(&found.worktree, &deep), c"tmux-c2rs/src");
         assert_eq!(
             subdir(&found.worktree, &scratch.root.join("h1")),
-            "",
+            c"",
             "nothing below the root"
         );
 
         let repo = Repo::read(&found, (None, None));
-        assert_eq!(repo.branch, "h1");
-        assert_eq!(repo.action, "");
+        assert_eq!(repo.branch, c"h1");
+        assert_eq!(repo.action, c"");
     }
 
     /// A plain checkout: `.git` is the git directory, and the repository and
@@ -584,9 +606,9 @@ mod tests {
         scratch.write("hmux/.git/HEAD", "ref: refs/heads/master\n");
 
         let found = Discovery::find(&scratch.dir("hmux")).expect("a worktree");
-        assert_eq!(found.repo, "hmux");
+        assert_eq!(found.repo, c"hmux");
         assert_eq!(found.gitdir, scratch.root.join("hmux/.git"));
-        assert_eq!(Repo::read(&found, (None, None)).branch, "master");
+        assert_eq!(Repo::read(&found, (None, None)).branch, c"master");
     }
 
     /// A directory in no repository at all, which is every pane whose window
@@ -609,8 +631,8 @@ mod tests {
 
         let found = Discovery::find(&scratch.dir("repo")).expect("a worktree");
         let repo = Repo::read(&found, (None, None));
-        assert_eq!(repo.branch, "");
-        assert_eq!(repo.commit, "38b63b0");
+        assert_eq!(repo.branch, c"");
+        assert_eq!(repo.commit, c"38b63b0");
     }
 
     /// A rebase stopped part way through, which is the state a multiplexer is
@@ -630,9 +652,9 @@ mod tests {
 
         let found = Discovery::find(&scratch.dir("repo")).expect("a worktree");
         let repo = Repo::read(&found, (None, None));
-        assert_eq!(repo.action, "rebase");
-        assert_eq!((repo.step.as_str(), repo.total.as_str()), ("2", "7"));
-        assert_eq!(repo.branch, "h1", "the branch being rebased");
+        assert_eq!(repo.action, c"rebase");
+        assert_eq!((repo.step.as_c_str(), repo.total.as_c_str()), (c"2", c"7"));
+        assert_eq!(repo.branch, c"h1", "the branch being rebased");
     }
 
     /// The markers an interrupted merge, bisect, cherry-pick or revert leave,
@@ -652,13 +674,17 @@ mod tests {
             fs::write(gitdir.join(marker), "").expect("a marker");
             assert_eq!(
                 read_action(&gitdir),
-                (action.to_string(), String::new(), String::new())
+                (
+                    CString::new(action).expect("an action has no NUL"),
+                    CString::default(),
+                    CString::default(),
+                )
             );
             fs::remove_file(gitdir.join(marker)).expect("a marker");
         }
         assert_eq!(
             read_action(&gitdir),
-            (String::new(), String::new(), String::new()),
+            (CString::default(), CString::default(), CString::default()),
             "an idle repository"
         );
     }
@@ -675,7 +701,7 @@ mod tests {
         let found = Discovery::find(&scratch.dir("repo")).expect("a worktree");
         assert!(found.reftable);
         let repo = Repo::read(&found, (None, None));
-        assert_eq!((repo.branch.as_str(), repo.commit.as_str()), ("", ""));
+        assert_eq!((repo.branch.as_c_str(), repo.commit.as_c_str()), (c"", c""));
     }
 
     /// A pane the last sweep had nothing for reads as empty everywhere, and
@@ -687,7 +713,7 @@ mod tests {
         for key in plugin.variables() {
             assert_eq!(
                 plugin.resolve(PaneId(u_int::MAX), key).as_deref(),
-                Some(""),
+                Some(c""),
                 "{key} is claimed but not answered"
             );
         }
@@ -703,7 +729,13 @@ mod tests {
             Path::new("/a/b/.git")
         );
         assert_eq!(normalize(Path::new("/a/./b/")), Path::new("/a/b"));
-        assert_eq!(repo_name(Path::new("/a/hmux/.git")), "hmux");
-        assert_eq!(repo_name(Path::new("/a/hmux.git")), "hmux", "a bare repo");
+        assert_eq!(repo_name(Path::new("/a/hmux/.git")), c"hmux");
+        assert_eq!(repo_name(Path::new("/a/hmux.git")), c"hmux", "a bare repo");
+    }
+
+    #[test]
+    fn repository_names_retain_non_utf8_bytes() {
+        let path = PathBuf::from(OsString::from_vec(b"/a/repo-\xff/.git".to_vec()));
+        assert_eq!(repo_name(&path).to_bytes(), b"repo-\xff");
     }
 }

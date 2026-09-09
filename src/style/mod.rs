@@ -9,23 +9,19 @@ mod colour;
 mod parse;
 
 pub use colour::{
-    colour_256to16, colour_find_rgb, colour_force_rgb, colour_fromstring, colour_join_rgb,
-    colour_palette, colour_palette_clear, colour_palette_free, colour_palette_from_defaults,
-    colour_palette_get, colour_palette_init, colour_palette_set, colour_parseX11, colour_split_rgb,
-    colour_tostring, colour_totheme,
+    ColourEngine, RustColourEngine, THEME_DARK, THEME_LIGHT, THEME_UNKNOWN, colour_palette,
 };
 pub use parse::{
-    style_add, style_apply, style_copy, style_default, style_parse, style_ranges_free,
-    style_ranges_get_range, style_ranges_init, style_set, style_set_scrollbar_style_from_option,
-    style_tostring,
+    RustStyleCodec, StyleCodec, StyleParseError, pane_scrollbar_style_from_option, style_add,
+    style_apply, style_copy, style_default, style_parse, style_ranges_free, style_ranges_get_range,
+    style_set, style_set_scrollbar_style_from_option, style_tostring,
 };
 
+pub use attributes::{AttributeCodec, RustAttributeCodec};
 #[cfg(test)]
-pub(crate) use attributes::{
-    GRID_ATTR_BRIGHT, GRID_ATTR_DIM, attributes_fromstring, attributes_tostring,
-};
+pub(crate) use attributes::{GRID_ATTR_BRIGHT, GRID_ATTR_DIM};
 #[cfg(test)]
-pub(crate) use colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, colour_byname};
+pub(crate) use colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB};
 #[cfg(test)]
 pub(crate) use parse::{
     GRID_ATTR_NOATTR, STYLE_ALIGN_CENTRE, STYLE_LIST_ON, STYLE_LIST_RIGHT_MARKER,

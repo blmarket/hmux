@@ -34,52 +34,31 @@
 //! * The target client's flags are read to pick the control-channel arm
 //!   without checking that a client asked for anything, and `-p` reads the
 //!   item's own client rather than the target one.
-//!
-//! Coverage exemptions: none.
 
-use crate::arguments::{args_count, args_get, args_has, args_string, args_strtonum};
+use crate::arguments::{args_count, args_get_str, args_has, args_string_str, args_strtonum};
 use crate::cmd::cmd_get_args;
-use crate::cmd::find::cmd_find_best_client;
-use crate::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_get_target_client, cmdq_print,
-};
+use crate::cmd::find::cmd_find_best_client_for_session;
+
 use crate::fmt_args;
 use crate::fmt_engine::format_buf;
-use crate::format::{format_create, format_defaults, format_each, format_expand_time};
-use crate::server::server_client_print;
-use crate::status::status_message_set;
+use crate::format::{
+    format_create_for_client, format_defaults_for_handles, format_each, format_expand_time,
+};
+use crate::server::client_print_buffer;
+use crate::status::status_message_for_client;
 pub use crate::types::*;
-use crate::window::window_pane_start_input;
 use ::core::ffi::{CStr, c_char, c_int, c_longlong};
-use ::core::ptr::null_mut;
 
-pub const CMD_FIND_PANE: cmd_find_type = 0;
-pub const CMD_RETURN_WAIT: cmd_retval = 1;
-pub const CMD_RETURN_NORMAL: cmd_retval = 0;
-pub const CMD_RETURN_ERROR: cmd_retval = -1;
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
-pub const CMD_FIND_CANFAIL: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const CMD_AFTERHOOK: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const CMD_CLIENT_CFLAG: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const CMD_CLIENT_CANFAIL: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const CLIENT_CONTROL: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-pub const FORMAT_VERBOSE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const FORMAT_NONE: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;
-
-/// What a `display-message` with neither an argument nor `-F` shows.
-pub const DISPLAY_MESSAGE_TEMPLATE: [::core::ffi::c_char; 96] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 96],
-        [::core::ffi::c_char; 96],
-    >(
-        *b"[#{session_name}] #{window_index}:#{window_name}, current pane #{pane_index} - (%H:%M %d-%b-%y)\0",
-    )
+pub use crate::consts::{
+    CLIENT_CONTROL, CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_FIND_CANFAIL,
+    CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_WAIT, FORMAT_NONE,
+    FORMAT_VERBOSE, UINT_MAX,
 };
 
-pub(crate) static cmd_display_message_entry: cmd_entry = cmd_entry {
+/// What a `display-message` with neither an argument nor `-F` shows.
+pub const DISPLAY_MESSAGE_TEMPLATE: &CStr = c"[#{session_name}] #{window_index}:#{window_name}, current pane #{pane_index} - (%H:%M %d-%b-%y)";
+
+pub(crate) static cmd_display_message_entry: RustCommandEntry = RustCommandEntry {
     name: c"display-message",
     alias: Some(c"display"),
     args: args_parse_t {
@@ -103,22 +82,6 @@ pub(crate) static cmd_display_message_entry: cmd_entry = cmd_entry {
     exec: cmd_display_message_exec,
 };
 
-/// One entry of the format tree `-a` walks, printed back through the command
-/// queue. `arg` is the item, which is what the walk was started with.
-unsafe fn cmd_display_message_each(
-    key: &::core::ffi::CStr,
-    value: &::core::ffi::CStr,
-    arg: *mut cmdq_item,
-) {
-    unsafe {
-        cmdq_print(
-            arg,
-            c"%s=%s".as_ptr(),
-            fmt_args![key.as_ptr(), value.as_ptr()],
-        );
-    }
-}
-
 /// The `-I` path: hands `wp` over to the client behind `item` as its standard
 /// input, and answers what the command should.
 ///
@@ -128,14 +91,18 @@ unsafe fn cmd_display_message_each(
 /// once the read has been handed to the client's peer — so each of them ends
 /// the command here. The transpiled fourth arm, which fell through to the rest
 /// of exec, could not be reached and is gone with the rewrite.
-unsafe fn cmd_display_message_input(wp: *mut window_pane, item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_display_message_input(
+    wp: Option<&RustWindowPaneWeak>,
+    item: &cmdq_item,
+) -> cmd_retval {
     unsafe {
-        if wp.is_null() {
+        let Some(wp) = wp else {
             return CMD_RETURN_NORMAL;
-        }
-        match window_pane_start_input(wp, item) {
+        };
+        match wp.start_input(&crate::cmd::cmdq_item_ref_of(item).expect("the command has an owner"))
+        {
             Err(cause) => {
-                cmdq_error(item, c"%s".as_ptr(), fmt_args![cause.as_ptr()]);
+                item.error(c"%s", fmt_args![cause.as_c_str()]);
                 CMD_RETURN_ERROR
             }
             Ok(1) => CMD_RETURN_NORMAL,
@@ -151,7 +118,7 @@ unsafe fn cmd_display_message_input(wp: *mut window_pane, item: *mut cmdq_item) 
 /// The accepted range is a `long long` up to `UINT_MAX`, and the answer is an
 /// `int`, so the top half of that range wraps negative exactly as upstream's
 /// does.
-fn cmd_display_message_delay(args: &args) -> Result<c_int, ::std::ffi::CString> {
+fn cmd_display_message_delay(args: &args) -> Result<c_int, std::ffi::CString> {
     if args_has(args, b'd') == 0 {
         return Ok(-1);
     }
@@ -171,97 +138,111 @@ fn cmd_display_message_delay(args: &args) -> Result<c_int, ::std::ffi::CString> 
 /// line. There is no fifth arm, so a message with no target client and no `-p`
 /// goes nowhere.
 unsafe fn cmd_display_message_show(
-    item: *mut cmdq_item,
-    tc: *mut client,
+    item: &cmdq_item,
+    tc: Option<&mut ClientRef>,
     args: &args,
-    msg: *const c_char,
+    msg: &CStr,
     delay: c_int,
 ) {
     unsafe {
-        if cmdq_get_client(&*item).is_null() {
-            cmdq_error(item, c"%s".as_ptr(), fmt_args![msg]);
+        if item.client().is_none() {
+            item.error(c"%s", fmt_args![msg]);
         } else if args_has(args, b'p') != 0 {
-            cmdq_print(item, c"%s".as_ptr(), fmt_args![msg]);
-        } else if !tc.is_null() && (*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
-            let mut evb = Buf::new();
-            format_buf(&mut evb, c"%%message %s".as_ptr(), fmt_args![msg]);
-            server_client_print(tc, 0, &mut evb);
-        } else if !tc.is_null() {
-            status_message_set(
-                tc,
+            item.print(c"%s", fmt_args![msg]);
+        } else if tc
+            .as_deref()
+            .is_some_and(|tc| tc.flags() & CLIENT_CONTROL as uint64_t != 0)
+        {
+            let mut evb = ByteBuffer::new();
+            format_buf(&mut evb, c"%%message %s", fmt_args![msg]);
+            client_print_buffer(tc, 0, &mut evb);
+        } else if let Some(tc) = tc {
+            status_message_for_client(
+                Some(tc),
                 delay,
                 0,
                 args_has(args, b'N'),
                 args_has(args, b'C'),
-                c"%s".as_ptr(),
+                c"%s",
                 fmt_args![msg],
             );
         }
     }
 }
 
-unsafe fn cmd_display_message_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
-    unsafe {
-        let args = cmd_get_args(self_0);
-        let target = cmdq_get_target(item);
-        let tc = cmdq_get_target_client(&*item);
-        let s = (*target).session();
-        let wl = (*target).winlink();
-        let wp = (*target).pane();
-        let count = args_count(args);
+unsafe fn cmd_display_message_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
+    let args = cmd_get_args(self_0);
+    let target_client = item.target_client();
+    let mut tc = target_client.clone();
+    let session = item.target.session();
+    let link = item.target.winlink_ref();
+    let pane = item.target.pane_ref();
+    let count = args_count(args);
 
-        if args_has(args, b'I') != 0 {
-            return cmd_display_message_input(wp, item);
-        }
-        if args_has(args, b'F') != 0 && count != 0 {
-            cmdq_error(
-                item,
-                c"only one of -F or argument must be given".as_ptr(),
-                fmt_args![],
-            );
+    if args_has(args, b'I') != 0 {
+        return unsafe { cmd_display_message_input(pane.as_ref(), item) };
+    }
+    if args_has(args, b'F') != 0 && count != 0 {
+        unsafe { item.error(c"only one of -F or argument must be given", fmt_args![]) };
+        return CMD_RETURN_ERROR;
+    }
+    let delay = match cmd_display_message_delay(args) {
+        Ok(delay) => delay,
+        Err(cause) => {
+            unsafe { item.error(c"delay %s", fmt_args![cause.as_c_str()]) };
             return CMD_RETURN_ERROR;
         }
-        let delay = match cmd_display_message_delay(args) {
-            Ok(delay) => delay,
-            Err(cause) => {
-                cmdq_error(item, c"delay %s".as_ptr(), fmt_args![cause.as_ptr()]);
-                return CMD_RETURN_ERROR;
-            }
-        };
+    };
 
-        let mut template = match count {
-            0 => args_get(args, b'F'),
-            _ => args_string(args, 0),
-        };
-        if template.is_null() {
-            template = DISPLAY_MESSAGE_TEMPLATE.as_ptr();
+    let given = match count {
+        0 => args_get_str(args, b'F'),
+        _ => unsafe { args_string_str(args, 0) },
+    };
+    let template = given.unwrap_or(DISPLAY_MESSAGE_TEMPLATE);
+
+    let c = if target_client
+        .as_ref()
+        .is_some_and(|tc| match session.as_ref() {
+            Some(session) => tc
+                .attached_session()
+                .is_some_and(|current| session.ptr_eq(&current)),
+            None => tc.attached_session().is_none(),
+        }) {
+        target_client.clone()
+    } else {
+        session
+            .as_ref()
+            .and_then(|session| unsafe { cmd_find_best_client_for_session(session) })
+    };
+
+    let flags = match args_has(args, b'v') {
+        0 => 0,
+        _ => FORMAT_VERBOSE,
+    };
+    let mut ft = format_create_for_client(item.client().as_ref(), Some(item), FORMAT_NONE, flags);
+    unsafe {
+        format_defaults_for_handles(
+            &mut ft,
+            c.as_ref(),
+            session.as_ref(),
+            link.as_ref(),
+            pane.as_ref(),
+        )
+    };
+
+    if args_has(args, b'a') != 0 {
+        unsafe {
+            format_each(&mut ft, |key, value| {
+                (*item).print(c"%s=%s", fmt_args![key, value]);
+            });
         }
-
-        let c = if !tc.is_null() && (*tc).session == s {
-            tc
-        } else if !s.is_null() {
-            cmd_find_best_client(s)
-        } else {
-            null_mut::<client>()
-        };
-
-        let flags = match args_has(args, b'v') {
-            0 => 0,
-            _ => FORMAT_VERBOSE,
-        };
-        let mut ft = format_create(cmdq_get_client(&*item), item, FORMAT_NONE, flags);
-        format_defaults(&mut ft, c, s, wl, wp);
-
-        if args_has(args, b'a') != 0 {
-            format_each(&mut ft, Some(cmd_display_message_each), item);
-            return CMD_RETURN_NORMAL;
-        }
-
-        let msg = match args_has(args, b'l') {
-            0 => format_expand_time(&mut ft, CStr::from_ptr(template)),
-            _ => CStr::from_ptr(template).to_owned(),
-        };
-        cmd_display_message_show(item, tc, args, msg.as_ptr(), delay);
-        CMD_RETURN_NORMAL
+        return CMD_RETURN_NORMAL;
     }
+
+    let msg = match args_has(args, b'l') {
+        0 => unsafe { format_expand_time(&mut ft, template) },
+        _ => template.to_owned(),
+    };
+    unsafe { cmd_display_message_show(item, tc.as_mut(), args, &msg, delay) };
+    CMD_RETURN_NORMAL
 }

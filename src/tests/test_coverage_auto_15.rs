@@ -1,6 +1,6 @@
 //! Coverage for [`crate::options`] — the pure-data option registry.
 //!
-//! `options_table.rs` is a single static array plus a small alias map. Both
+//! `RustOptionsEngine.table().rs` is a single static array plus a small alias map. Both
 //! are read-only for the whole run; the option and command code only walks
 //! them. These tests pin the structural invariants that a regressing edit
 //! would break — constants, array length, terminator, name uniqueness and
@@ -12,8 +12,9 @@ use crate::options::{
     OPTIONS_TABLE_CHOICE, OPTIONS_TABLE_COLOUR, OPTIONS_TABLE_COMMAND, OPTIONS_TABLE_FLAG,
     OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_KEY,
     OPTIONS_TABLE_NUMBER, OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION,
-    OPTIONS_TABLE_STRING, OPTIONS_TABLE_WINDOW, options_other_names, options_table,
+    OPTIONS_TABLE_STRING, OPTIONS_TABLE_WINDOW,
 };
+use crate::options::{OptionsEngine, RustOptionsEngine};
 use ::core::ffi::CStr;
 use ::std::collections::HashSet;
 
@@ -22,7 +23,7 @@ use ::std::collections::HashSet;
 // ---------------------------------------------------------------------------
 
 fn table_len() -> usize {
-    options_table.len()
+    RustOptionsEngine.table().len()
 }
 
 fn cstr_len(s: &CStr) -> usize {
@@ -71,14 +72,14 @@ fn options_table_type_scope_and_flag_constants_match_header() {
 #[test]
 fn options_table_length_is_stable() {
     // tmux 3.7b ships 221 entries
-    assert_eq!(options_table.len(), 221, "array len changed");
+    assert_eq!(RustOptionsEngine.table().len(), 221, "array len changed");
 }
 
 #[test]
 fn options_table_names_are_unique_non_empty_and_nul_terminated() {
     let mut seen_names = HashSet::new();
-    for e in &options_table {
-        unsafe {
+    for e in RustOptionsEngine.table() {
+        {
             let s = seen(e.name);
             assert!(!s.is_empty(), "empty name");
             assert!(!s.contains('\0'));
@@ -107,8 +108,8 @@ fn options_table_names_are_unique_non_empty_and_nul_terminated() {
         assert_eq!(e.flags & !0x7, 0, "unknown flag bit");
     }
     // spot-check ordering: server block first; word-separators exists
-    unsafe {
-        assert_eq!(seen(options_table[0].name), "backspace");
+    {
+        assert_eq!(seen(RustOptionsEngine.table()[0].name), "backspace");
         assert!(
             find(c"word-separators").is_some(),
             "word-separators missing"
@@ -117,7 +118,7 @@ fn options_table_names_are_unique_non_empty_and_nul_terminated() {
             find(c"window-unlinked").is_some(),
             "window-unlinked missing"
         );
-        assert!(!seen(options_table[table_len() - 1].name).is_empty());
+        assert!(!seen(RustOptionsEngine.table()[table_len() - 1].name).is_empty());
     }
 }
 
@@ -127,8 +128,8 @@ fn options_table_names_are_unique_non_empty_and_nul_terminated() {
 
 #[test]
 fn options_other_names_maps_american_spellings() {
-    assert_eq!(options_other_names.len(), 6);
-    for m in &options_other_names {
+    assert_eq!(RustOptionsEngine.aliases().len(), 6);
+    for m in RustOptionsEngine.aliases() {
         let from = seen(m.from);
         let to = seen(m.to);
         assert!(!from.is_empty());
@@ -143,10 +144,16 @@ fn options_other_names_maps_american_spellings() {
         );
     }
     // first mapping is stable
-    assert_eq!(seen(options_other_names[0].from), "display-panes-color");
-    assert_eq!(seen(options_other_names[0].to), "display-panes-colour");
-    assert_eq!(seen(options_other_names[5].from), "pane-colors");
-    assert_eq!(seen(options_other_names[5].to), "pane-colours");
+    assert_eq!(
+        seen(RustOptionsEngine.aliases()[0].from),
+        "display-panes-color"
+    );
+    assert_eq!(
+        seen(RustOptionsEngine.aliases()[0].to),
+        "display-panes-colour"
+    );
+    assert_eq!(seen(RustOptionsEngine.aliases()[5].from), "pane-colors");
+    assert_eq!(seen(RustOptionsEngine.aliases()[5].to), "pane-colours");
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +161,8 @@ fn options_other_names_maps_american_spellings() {
 // ---------------------------------------------------------------------------
 
 fn find(name: &CStr) -> Option<&'static crate::types::options_table_entry_t> {
-    options_table
+    RustOptionsEngine
+        .table()
         .iter()
         .find(|&e| e.name == name)
         .map(|v| v as _)
@@ -216,7 +224,7 @@ fn options_table_known_entries_have_expected_scope_type_and_defaults() {
 
 #[test]
 fn options_table_choice_entries_have_non_null_choices_and_others_do_not() {
-    for e in &options_table {
+    for e in RustOptionsEngine.table() {
         if e.type_0 == OPTIONS_TABLE_CHOICE {
             let choices = e
                 .choices
@@ -250,7 +258,7 @@ fn options_table_choice_entries_have_non_null_choices_and_others_do_not() {
 
 #[test]
 fn options_table_array_and_style_flags_match_separator() {
-    for e in &options_table {
+    for e in RustOptionsEngine.table() {
         let is_array = e.flags & OPTIONS_TABLE_IS_ARRAY != 0;
         let is_style = e.flags & OPTIONS_TABLE_IS_STYLE != 0;
         {
@@ -313,7 +321,7 @@ fn options_table_default_string_or_array_consistency() {
     assert_eq!(seen(e.default_str.expect("a default")), "");
     // number/flag/choice normally have null default_str, but COLOUR arrays
     // (pane-colours) carry "" as an empty palette and are allowed.
-    for e in &options_table {
+    for e in RustOptionsEngine.table() {
         if e.type_0 != OPTIONS_TABLE_STRING && e.type_0 != OPTIONS_TABLE_COMMAND {
             if e.type_0 == OPTIONS_TABLE_COLOUR && e.flags & OPTIONS_TABLE_IS_ARRAY != 0 {
                 // exactly pane-colours in this table

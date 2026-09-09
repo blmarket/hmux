@@ -1,44 +1,57 @@
 use super::*;
-use crate::environ::{environ_entry_flags, environ_entry_name, environ_entry_value};
-use crate::ffi::{getenv, unsetenv};
+use crate::environ::EnvironmentStore;
+use crate::environ::process_environment_value;
+use crate::environ::{
+    environment_for_session, log_environment, push_environment_to_process, update_environment,
+};
+use crate::environ::{with_global_environment, with_global_environment_mut};
+use crate::ffi::{setenv, unsetenv};
 use crate::fmt_args;
-use crate::options::options_get_ptr;
-use crate::options::{options_array_clear, options_array_set};
-use crate::tests::test_fixtures::{Environ, Options, Session, globals, seen};
-use crate::tmux::global_environ;
+use crate::options::{OptionsEngine, OptionsRef, RustOptionsEngine};
+use crate::tests::test_fixtures::{Options, Session, globals};
 use ::core::ffi::{CStr, c_int};
-use ::core::ptr::null_mut;
 use ::std::ffi::CString;
 
-/// What the process environment holds now, name and value apiece. Pushing
-/// an environment calls `clearenv`, which gives up the array the process
-/// started with, so putting the pointer back afterwards leaves every later
-/// test reading freed memory — the array has to be built again entry by
-/// entry instead.
 fn process_environment() -> Vec<(CString, CString)> {
     unsafe {
         let mut out = Vec::new();
-        let mut p = environ;
-        while !p.is_null() && !(*p).is_null() {
-            let entry = CStr::from_ptr(*p).to_bytes().to_vec();
-            if let Some(at) = entry.iter().position(|b| *b == b'=') {
+        for entry in crate::environ::process_environment() {
+            let entry = entry.to_bytes();
+            if let Some(at) = entry.iter().position(|byte| *byte == b'=') {
                 out.push((
                     CString::new(&entry[..at]).expect("no NUL"),
                     CString::new(&entry[at + 1..]).expect("no NUL"),
                 ));
             }
-            p = p.offset(1);
         }
         out
     }
 }
 
-/// Puts back what [`process_environment`] found, dropping anything set
-/// since.
+#[test]
+fn process_environment_snapshots_own_bytes_before_iteration() {
+    let _guard = globals();
+    let saved = process_environment();
+    unsafe {
+        assert_eq!(
+            setenv(c"HMUX_ENV_SNAPSHOT".as_ptr(), c"before=\xff".as_ptr(), 1),
+            0
+        );
+        let mut snapshot = crate::environ::process_environment();
+        assert_eq!(unsetenv(c"HMUX_ENV_SNAPSHOT".as_ptr()), 0);
+        assert_eq!(
+            setenv(c"HMUX_ENV_SNAPSHOT".as_ptr(), c"after".as_ptr(), 1),
+            0
+        );
+        restore_process_environment(&saved);
+        let entry = snapshot.find(|entry| entry.to_bytes().starts_with(b"HMUX_ENV_SNAPSHOT="));
+        assert_eq!(entry.as_deref(), Some(c"HMUX_ENV_SNAPSHOT=before=\xff"));
+    }
+}
+
 fn restore_process_environment(saved: &[(CString, CString)]) {
     unsafe {
-        let now = process_environment();
-        for (name, _) in &now {
+        for (name, _) in &process_environment() {
             unsetenv(name.as_ptr());
         }
         for (name, value) in saved {
@@ -47,297 +60,158 @@ fn restore_process_environment(saved: &[(CString, CString)]) {
     }
 }
 
-/// The value of one entry, if it has one.
-fn value_seen(envent: &environ_entry) -> Option<String> {
-    environ_entry_value(envent).map(|value| value.to_string_lossy().into_owned())
-}
-
-/// Every entry of `env` in tree order: name, value and flags.
-unsafe fn dump(env: *mut environ_t) -> Vec<(String, Option<String>, c_int)> {
-    unsafe {
-        environ_entries(&*env)
-            .map(|envent| {
-                (
-                    seen(environ_entry_name(envent).as_ptr()),
-                    value_seen(envent),
-                    environ_entry_flags(envent),
-                )
-            })
-            .collect()
-    }
-}
-
-/// The names of `env` in tree order.
-unsafe fn names(env: *mut environ_t) -> Vec<String> {
-    unsafe { dump(env).into_iter().map(|(name, _, _)| name).collect() }
-}
-
-/// The value of one name, if the entry is there and has one.
-unsafe fn value(env: *mut environ_t, name: &CStr) -> Option<String> {
-    unsafe { environ_find(&*env, name.as_ptr()).and_then(|envent| value_seen(envent)) }
-}
-
-/// Sets `name` to `value`, the way every caller of the varargs does.
-unsafe fn set(env: *mut environ_t, name: &CStr, flags: c_int, value: &CStr) {
-    unsafe {
-        environ_set(
-            env,
-            name.as_ptr(),
-            flags,
-            c"%s".as_ptr(),
-            fmt_args![value.as_ptr()],
-        );
-    }
-}
-
 #[test]
-fn a_new_environment_is_empty() {
-    let env = Environ::new();
+fn process_environment_values_preserve_empty_and_owned_non_utf8_bytes() {
+    let _guard = globals();
+    let saved = process_environment();
     unsafe {
-        assert!((*env.ptr()).is_empty());
-        assert!(names(env.ptr()).is_empty());
-        assert!(environ_find(&*env.ptr(), c"ANY".as_ptr()).is_none());
+        let name = c"HMUX_ENV_VALUE";
+        assert_eq!(unsetenv(name.as_ptr()), 0);
+        let missing = process_environment_value(name);
+        assert_eq!(setenv(name.as_ptr(), c"".as_ptr(), 1), 0);
+        let empty = process_environment_value(name);
+        assert_eq!(setenv(name.as_ptr(), c"before=\xff".as_ptr(), 1), 0);
+        let before = process_environment_value(name);
+        assert_eq!(setenv(name.as_ptr(), c"after".as_ptr(), 1), 0);
+        let after = process_environment_value(name);
+        restore_process_environment(&saved);
+        assert!(missing.is_none());
+        assert_eq!(empty.as_deref(), Some(c""));
+        assert_eq!(before.as_deref(), Some(c"before=\xff"));
+        assert_eq!(after.as_deref(), Some(c"after"));
     }
 }
 
-#[test]
-fn freeing_nothing_is_allowed() {
-    unsafe { environ_free(null_mut::<environ_t>()) };
+fn dump(env: &RustEnvironment) -> Vec<(String, Option<String>, c_int)> {
+    env.entries()
+        .map(|entry| {
+            (
+                entry.name.to_string_lossy().into_owned(),
+                entry
+                    .value
+                    .map(|value| value.to_string_lossy().into_owned()),
+                entry.flags,
+            )
+        })
+        .collect()
 }
 
-#[test]
-fn entries_come_back_in_name_order() {
-    let env = Environ::new();
-    unsafe {
-        for name in [c"PATH", c"HOME", c"TERM", c"AAA"] {
-            set(env.ptr(), name, 0, c"x");
-        }
-        assert_eq!(names(env.ptr()), ["AAA", "HOME", "PATH", "TERM"]);
-    }
-}
-
-#[test]
-fn setting_a_name_again_replaces_its_value_and_flags() {
-    let env = Environ::new();
-    unsafe {
-        set(env.ptr(), c"NAME", ENVIRON_HIDDEN, c"first");
-        assert_eq!(
-            dump(env.ptr()),
-            [("NAME".to_owned(), Some("first".to_owned()), ENVIRON_HIDDEN)]
-        );
-
-        set(env.ptr(), c"NAME", 0, c"second");
-        assert_eq!(
-            dump(env.ptr()),
-            [("NAME".to_owned(), Some("second".to_owned()), 0)]
-        );
-    }
-}
-
-#[test]
-fn a_value_is_built_from_the_format_and_its_arguments() {
-    let env = Environ::new();
-    unsafe {
-        environ_set(
-            env.ptr(),
-            c"NAME".as_ptr(),
-            0,
-            c"%s-%d".as_ptr(),
-            fmt_args![c"tmux".as_ptr(), 7 as c_int],
-        );
-        assert_eq!(value(env.ptr(), c"NAME"), Some("tmux-7".to_owned()));
-    }
-}
-
-#[test]
-fn clearing_leaves_a_named_entry_with_no_value() {
-    let env = Environ::new();
-    unsafe {
-        set(env.ptr(), c"NAME", ENVIRON_HIDDEN, c"value");
-        environ_clear(env.ptr(), c"NAME".as_ptr());
-        assert_eq!(dump(env.ptr()), [("NAME".to_owned(), None, ENVIRON_HIDDEN)]);
-
-        environ_clear(env.ptr(), c"OTHER".as_ptr());
-        assert_eq!(
-            dump(env.ptr()),
-            [
-                ("NAME".to_owned(), None, ENVIRON_HIDDEN),
-                ("OTHER".to_owned(), None, 0),
-            ]
-        );
-    }
-}
-
-#[test]
-fn putting_splits_at_the_first_equals() {
-    let env = Environ::new();
-    unsafe {
-        environ_put(env.ptr(), c"NAME=a=b".as_ptr(), ENVIRON_HIDDEN);
-        assert_eq!(
-            dump(env.ptr()),
-            [("NAME".to_owned(), Some("a=b".to_owned()), ENVIRON_HIDDEN)]
-        );
-
-        environ_put(env.ptr(), c"EMPTY=".as_ptr(), 0);
-        assert_eq!(value(env.ptr(), c"EMPTY"), Some(String::new()));
-
-        environ_put(env.ptr(), c"=novalue".as_ptr(), 0);
-        assert_eq!(value(env.ptr(), c""), Some("novalue".to_owned()));
-
-        environ_put(env.ptr(), c"NOEQUALS".as_ptr(), 0);
-        assert!(environ_find(&*env.ptr(), c"NOEQUALS".as_ptr()).is_none());
-    }
-}
-
-#[test]
-fn unsetting_takes_the_entry_away() {
-    let env = Environ::new();
-    unsafe {
-        set(env.ptr(), c"ONE", 0, c"1");
-        set(env.ptr(), c"TWO", 0, c"2");
-        environ_unset(env.ptr(), c"ONE".as_ptr());
-        assert_eq!(names(env.ptr()), ["TWO"]);
-
-        environ_unset(env.ptr(), c"ONE".as_ptr());
-        assert_eq!(names(env.ptr()), ["TWO"]);
-    }
-}
-
-#[test]
-fn copying_carries_values_over_and_clears_what_had_none() {
-    let src = Environ::new();
-    let dst = Environ::new();
-    unsafe {
-        set(src.ptr(), c"KEPT", ENVIRON_HIDDEN, c"value");
-        environ_clear(src.ptr(), c"GONE".as_ptr());
-        set(dst.ptr(), c"GONE", 0, c"was here");
-        set(dst.ptr(), c"OWN", 0, c"mine");
-
-        environ_copy(src.ptr(), dst.ptr());
-
-        assert_eq!(
-            dump(dst.ptr()),
-            [
-                ("GONE".to_owned(), None, 0),
-                ("KEPT".to_owned(), Some("value".to_owned()), ENVIRON_HIDDEN),
-                ("OWN".to_owned(), Some("mine".to_owned()), 0),
-            ]
-        );
-    }
+fn value(env: &RustEnvironment, name: &CStr) -> Option<String> {
+    env.find(name)
+        .and_then(|entry| entry.value)
+        .map(|value| value.to_string_lossy().into_owned())
 }
 
 #[test]
 fn updating_copies_what_the_option_matches_and_clears_the_rest() {
     let _guard = globals();
     let oo = Options::session();
-    let src = Environ::new();
-    let dst = Environ::new();
+    let mut src = RustEnvironment::empty();
+    let mut dst = RustEnvironment::empty();
     unsafe {
-        let o = options_get_ptr(oo.ptr(), c"update-environment".as_ptr());
-        options_array_clear(o);
-        let mut cause: Option<CString> = None;
-        for (i, pattern) in [c"SSH_*", c"DISPLAY", c"NEVER"].iter().enumerate() {
-            assert_eq!(
-                options_array_set(o, i as u_int, pattern.as_ptr(), 0, &mut cause),
-                0
-            );
-        }
-
-        set(src.ptr(), c"SSH_AUTH_SOCK", ENVIRON_HIDDEN, c"/tmp/sock");
-        set(src.ptr(), c"SSH_CONNECTION", 0, c"conn");
-        set(src.ptr(), c"OTHER", 0, c"other");
-        set(dst.ptr(), c"NEVER", 0, c"stale");
-
-        environ_update(oo.ptr(), src.ptr(), dst.ptr());
-
-        assert_eq!(
-            dump(dst.ptr()),
-            [
-                ("DISPLAY".to_owned(), None, 0),
-                ("NEVER".to_owned(), None, 0),
-                ("SSH_AUTH_SOCK".to_owned(), Some("/tmp/sock".to_owned()), 0),
-                ("SSH_CONNECTION".to_owned(), Some("conn".to_owned()), 0),
-            ]
-        );
+        oo.with_entry_mut(c"update-environment", false, |entry| {
+            let entry = entry.unwrap();
+            RustOptionsEngine.array_clear(entry);
+            let mut cause: Option<CString> = None;
+            for (i, pattern) in [c"SSH_*", c"DISPLAY", c"NEVER"].iter().enumerate() {
+                assert_eq!(
+                    RustOptionsEngine.array_set(entry, i as u_int, Some(pattern), 0, &mut cause),
+                    0
+                );
+            }
+        });
+        src.set(c"SSH_AUTH_SOCK", ENVIRON_HIDDEN, c"/tmp/sock");
+        src.set(c"SSH_CONNECTION", 0, c"conn");
+        src.set(c"OTHER", 0, c"other");
+        dst.set(c"NEVER", 0, c"stale");
+        update_environment(&*oo, &src, &mut dst);
     }
+    assert_eq!(
+        dump(&dst),
+        [
+            ("DISPLAY".to_owned(), None, 0),
+            ("NEVER".to_owned(), None, 0),
+            ("SSH_AUTH_SOCK".to_owned(), Some("/tmp/sock".to_owned()), 0),
+            ("SSH_CONNECTION".to_owned(), Some("conn".to_owned()), 0),
+        ]
+    );
 }
 
 #[test]
 fn updating_without_the_option_does_nothing() {
     let _guard = globals();
-    let oo = Options::empty(null_mut());
-    let src = Environ::new();
-    let dst = Environ::new();
-    unsafe {
-        set(src.ptr(), c"DISPLAY", 0, c":0");
-        environ_update(oo.ptr(), src.ptr(), dst.ptr());
-        assert!(names(dst.ptr()).is_empty());
-    }
+    let oo = Options::empty(None);
+    let mut src = RustEnvironment::empty();
+    let mut dst = RustEnvironment::empty();
+    src.set(c"DISPLAY", 0, c":0");
+    unsafe { update_environment(&*oo, &src, &mut dst) };
+    assert!(dst.entries().next().is_none());
 }
 
 #[test]
 fn pushing_sets_what_is_visible_and_named_and_has_a_value() {
     let _guard = globals();
-    let env = Environ::new();
-    unsafe {
-        set(env.ptr(), c"C2RS_PUSHED", 0, c"yes");
-        set(env.ptr(), c"C2RS_HIDDEN", ENVIRON_HIDDEN, c"no");
-        set(env.ptr(), c"", 0, c"nameless");
-        environ_clear(env.ptr(), c"C2RS_CLEARED".as_ptr());
-
-        let saved = process_environment();
-        environ_push(&*env.ptr());
-        let pushed = seen(getenv(c"C2RS_PUSHED".as_ptr()));
-        let hidden = getenv(c"C2RS_HIDDEN".as_ptr());
-        let cleared = getenv(c"C2RS_CLEARED".as_ptr());
-        restore_process_environment(&saved);
-
-        assert_eq!(pushed, "yes");
-        assert_eq!(hidden, null_mut());
-        assert_eq!(cleared, null_mut());
-        assert!(getenv(c"C2RS_PUSHED".as_ptr()).is_null());
-    }
+    let mut env = RustEnvironment::empty();
+    env.set(c"C2RS_PUSHED", 0, c"yes");
+    env.set(c"C2RS_HIDDEN", ENVIRON_HIDDEN, c"no");
+    env.set(c"", 0, c"nameless");
+    env.clear(c"C2RS_CLEARED");
+    let saved = process_environment();
+    unsafe { push_environment_to_process(&env) };
+    let (pushed, hidden, cleared) = unsafe {
+        (
+            process_environment_value(c"C2RS_PUSHED"),
+            process_environment_value(c"C2RS_HIDDEN"),
+            process_environment_value(c"C2RS_CLEARED"),
+        )
+    };
+    restore_process_environment(&saved);
+    assert_eq!(pushed.as_deref(), Some(c"yes"));
+    assert!(hidden.is_none());
+    assert!(cleared.is_none());
+    assert!(unsafe { process_environment_value(c"C2RS_PUSHED").is_none() });
 }
 
 #[test]
 fn logging_walks_every_entry_that_has_a_name_and_a_value() {
-    let env = Environ::new();
-    unsafe {
-        set(env.ptr(), c"ONE", 0, c"1");
-        set(env.ptr(), c"", 0, c"nameless");
-        environ_clear(env.ptr(), c"CLEARED".as_ptr());
-        environ_log(&*env.ptr(), c"%s: ".as_ptr(), fmt_args![c"prefix".as_ptr()]);
-        assert_eq!(names(env.ptr()), ["", "CLEARED", "ONE"]);
-    }
+    let mut env = RustEnvironment::empty();
+    env.set(c"ONE", 0, c"1");
+    env.set(c"", 0, c"nameless");
+    env.clear(c"CLEARED");
+    unsafe { log_environment(&env, c"%s: ", fmt_args![c"prefix".as_ptr()]) };
+    assert_eq!(
+        env.entries()
+            .map(|entry| entry.name.to_bytes())
+            .collect::<Vec<_>>(),
+        [b"".as_slice(), b"CLEARED".as_slice(), b"ONE".as_slice()]
+    );
 }
 
 #[test]
 fn a_session_environment_is_the_global_one_plus_the_terminal_and_tmux() {
     let _guard = globals();
     unsafe {
-        set(global_environ, c"C2RS_GLOBAL", 0, c"global");
+        with_global_environment_mut(|env| env.set(c"C2RS_GLOBAL", 0, c"global"));
         let saved = socket_path.take();
         socket_path = Some(c"/tmp/c2rs.sock".to_owned());
-
-        let env = Environ::from_box(environ_for_session(null_mut::<session>(), 0));
-        assert_eq!(value(env.ptr(), c"C2RS_GLOBAL"), Some("global".to_owned()));
-        assert_eq!(value(env.ptr(), c"TERM_PROGRAM"), Some("tmux".to_owned()));
+        let env = environment_for_session(None, 0);
+        assert_eq!(value(&env, c"C2RS_GLOBAL"), Some("global".to_owned()));
+        assert_eq!(value(&env, c"TERM_PROGRAM"), Some("tmux".to_owned()));
         assert_eq!(
-            value(env.ptr(), c"TERM_PROGRAM_VERSION"),
+            value(&env, c"TERM_PROGRAM_VERSION"),
             Some("3.7b".to_owned())
         );
-        assert_eq!(value(env.ptr(), c"COLORTERM"), Some("truecolor".to_owned()));
-        assert!(value(env.ptr(), c"TERM").is_some());
-        assert_eq!(value(env.ptr(), c"LISTEN_PID"), None);
-        assert_eq!(value(env.ptr(), c"LISTEN_FDS"), None);
-        assert_eq!(value(env.ptr(), c"LISTEN_FDNAMES"), None);
+        assert_eq!(value(&env, c"COLORTERM"), Some("truecolor".to_owned()));
+        assert!(value(&env, c"TERM").is_some());
+        assert_eq!(value(&env, c"LISTEN_PID"), None);
+        assert_eq!(value(&env, c"LISTEN_FDS"), None);
+        assert_eq!(value(&env, c"LISTEN_FDNAMES"), None);
         assert_eq!(
-            value(env.ptr(), c"TMUX"),
+            value(&env, c"TMUX"),
             Some(format!("/tmp/c2rs.sock,{},-1", getpid()))
         );
-
         socket_path = saved;
-        environ_unset(global_environ, c"C2RS_GLOBAL".as_ptr());
+        with_global_environment_mut(|env| env.unset(c"C2RS_GLOBAL"));
     }
 }
 
@@ -348,20 +222,71 @@ fn a_session_environment_can_leave_the_terminal_out_and_takes_the_session_over()
     unsafe {
         let saved = socket_path.take();
         socket_path = Some(c"/tmp/c2rs.sock".to_owned());
-        set(s.environ(), c"C2RS_SESSION", 0, c"session");
-
-        let env = Environ::from_box(environ_for_session(s.ptr(), 1));
+        s.environ_mut().set(c"C2RS_SESSION", 0, c"session");
+        let env = environment_for_session(Some(s.handle().as_session()), 1);
+        assert_eq!(value(&env, c"C2RS_SESSION"), Some("session".to_owned()));
+        assert_eq!(value(&env, c"TERM_PROGRAM"), None);
+        assert_eq!(value(&env, c"COLORTERM"), None);
         assert_eq!(
-            value(env.ptr(), c"C2RS_SESSION"),
-            Some("session".to_owned())
-        );
-        assert_eq!(value(env.ptr(), c"TERM_PROGRAM"), None);
-        assert_eq!(value(env.ptr(), c"COLORTERM"), None);
-        assert_eq!(
-            value(env.ptr(), c"TMUX"),
+            value(&env, c"TMUX"),
             Some(format!("/tmp/c2rs.sock,{},9", getpid()))
         );
-
         socket_path = saved;
     }
+}
+
+#[test]
+fn global_environment_is_private_to_each_thread() {
+    use crate::environ::reset_global_environment;
+
+    reset_global_environment();
+    with_global_environment_mut(|env| env.set(c"OWNER", ENVIRON_HIDDEN, c"parent"));
+    std::thread::spawn(|| {
+        with_global_environment(|env| assert!(env.find(c"OWNER").is_none()));
+        with_global_environment_mut(|env| env.set(c"OWNER", 0, c"worker"));
+        reset_global_environment();
+        with_global_environment(|env| assert!(env.find(c"OWNER").is_none()));
+        with_global_environment_mut(|env| env.set(c"OWNER", 0, c"exit"));
+    })
+    .join()
+    .unwrap();
+    with_global_environment(|env| {
+        let entry = env.find(c"OWNER").unwrap();
+        assert_eq!(entry.value, Some(c"parent"));
+        assert_eq!(entry.flags, ENVIRON_HIDDEN);
+    });
+    reset_global_environment();
+}
+
+#[test]
+fn global_environment_checks_reentry_and_recovers_after_rejection() {
+    use crate::environ::reset_global_environment;
+
+    reset_global_environment();
+    with_global_environment_mut(|env| env.set(c"VALUE", 0, c"original"));
+    with_global_environment(|env| {
+        with_global_environment(|nested| {
+            assert_eq!(value(env, c"VALUE"), value(nested, c"VALUE"));
+        });
+        assert!(
+            std::panic::catch_unwind(|| {
+                with_global_environment_mut(|env| env.unset(c"VALUE"));
+            })
+            .is_err()
+        );
+        assert_eq!(value(env, c"VALUE").as_deref(), Some("original"));
+    });
+    with_global_environment_mut(|env| {
+        assert!(
+            std::panic::catch_unwind(|| {
+                with_global_environment(|_| ());
+            })
+            .is_err()
+        );
+        env.set(c"VALUE", 0, c"updated");
+    });
+    with_global_environment(|env| {
+        assert_eq!(value(env, c"VALUE").as_deref(), Some("updated"));
+    });
+    reset_global_environment();
 }

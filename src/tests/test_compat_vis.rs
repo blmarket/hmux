@@ -1,45 +1,37 @@
 use super::*;
-use ::core::ffi::{CStr, c_char, c_int};
+use ::core::ffi::{CStr, c_int};
 
 /// One `vis` call into a guarded buffer, returning the bytes it wrote. The
 /// returned pointer must land on the terminator it also writes.
 fn vis_call(c: c_int, flag: c_int, nextc: c_int) -> Vec<u8> {
-    let mut buf = [0xaau8 as c_char; 16];
-    let end = unsafe { vis(buf.as_mut_ptr(), c, flag, nextc) };
-    let n = unsafe { end.offset_from(buf.as_ptr()) } as usize;
-    assert_eq!(buf[n], 0, "missing terminator for {c:#x}/{flag:#x}");
-    buf[..n].iter().map(|&b| b as u8).collect()
+    vis(c, flag, nextc)
 }
 
 fn strvis_call(src: &CStr, flag: c_int) -> (c_int, Vec<u8>) {
-    let mut dst = vec![0xaau8 as c_char; src.count_bytes() * 4 + 8];
-    let n = unsafe { strvis(dst.as_mut_ptr(), src.as_ptr(), flag) };
-    let bytes = unsafe { CStr::from_ptr(dst.as_ptr()).to_bytes().to_vec() };
-    (n, bytes)
+    let bytes = strvis(src, flag);
+    (bytes.len() as c_int, bytes)
 }
 
-fn strvisx_call(src: &[u8], len: usize, flag: c_int) -> (c_int, Vec<u8>) {
-    let mut owned: Vec<c_char> = src.iter().map(|&b| b as c_char).collect();
-    owned.push(0);
-    let mut dst = vec![0xaau8 as c_char; src.len() * 4 + 8];
-    let n = unsafe { strvisx(dst.as_mut_ptr(), owned.as_ptr(), len as size_t, flag) };
-    let bytes = unsafe { CStr::from_ptr(dst.as_ptr()).to_bytes().to_vec() };
-    (n, bytes)
+fn strvisx_call(src: &[u8], flag: c_int) -> (c_int, Vec<u8>) {
+    let bytes = strvisx(src, flag);
+    (bytes.len() as c_int, bytes)
 }
 
 /// `strnvis` into a `siz`-byte window with guard bytes on both sides; the
 /// second element is the whole window, so a short write shows up as the
 /// `0xaa` filler it left behind.
 fn strnvis_call(src: &CStr, siz: usize, flag: c_int) -> (c_int, Vec<u8>) {
-    let mut buf = vec![0xaau8 as c_char; siz + 16];
-    let dst = unsafe { buf.as_mut_ptr().add(8) };
-    let n = unsafe { strnvis(dst, src.as_ptr(), siz as size_t, flag) };
-    let written = buf[8..8 + siz].iter().map(|&b| b as u8).collect();
-    (n, written)
+    let result = strnvis(src, siz as size_t, flag);
+    let mut written = vec![0xaa; siz];
+    written[..result.output.len()].copy_from_slice(&result.output);
+    if siz > 0 {
+        written[result.output.len()] = 0;
+    }
+    (result.len, written)
 }
 
 fn stravis_call(src: &CStr, flag: c_int) -> (c_int, Vec<u8>) {
-    let out = unsafe { stravis(src.as_ptr(), flag) };
+    let out = stravis(src, flag);
     let bytes = out.as_bytes().to_vec();
     (bytes.len() as c_int, bytes)
 }
@@ -162,18 +154,12 @@ fn strvis_encodes_a_whole_string() {
 
 #[test]
 fn strvisx_encodes_a_counted_string_including_nuls() {
-    assert_eq!(strvisx_call(b"", 0, 0), (0, b"".to_vec()));
-    assert_eq!(strvisx_call(b"a", 1, 0), (1, b"a".to_vec()));
-    assert_eq!(strvisx_call(b"ab", 2, 0), (2, b"ab".to_vec()));
-    assert_eq!(strvisx_call(b"a\0b", 3, VIS_CSTYLE), (4, b"a\\0b".to_vec()));
-    assert_eq!(
-        strvisx_call(b"a\0 b", 4, VIS_CSTYLE),
-        (5, b"a\\0 b".to_vec())
-    );
-    assert_eq!(
-        strvisx_call(b"\x000", 2, VIS_CSTYLE),
-        (5, b"\\0000".to_vec())
-    );
+    assert_eq!(strvisx_call(b"", 0), (0, b"".to_vec()));
+    assert_eq!(strvisx_call(b"a", 0), (1, b"a".to_vec()));
+    assert_eq!(strvisx_call(b"ab", 0), (2, b"ab".to_vec()));
+    assert_eq!(strvisx_call(b"a\0b", VIS_CSTYLE), (4, b"a\\0b".to_vec()));
+    assert_eq!(strvisx_call(b"a\0 b", VIS_CSTYLE), (5, b"a\\0 b".to_vec()));
+    assert_eq!(strvisx_call(b"\x000", VIS_CSTYLE), (5, b"\\0000".to_vec()));
 }
 
 #[test]

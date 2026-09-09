@@ -1,37 +1,28 @@
 use super::*;
 use ::core::ffi::CStr;
-use ::std::sync::Mutex;
 
 const UNKNOWN: key_code = KEYC_UNKNOWN as key_code;
-
-/// `key_string_lookup_key` answers out of one static buffer, so only one
-/// test may hold its answer at a time.
-static OUT: Mutex<()> = Mutex::new(());
 
 fn lookup(string: &CStr) -> key_code {
     // A character of more than three bytes is interned into the process-wide
     // UTF-8 table, so this changes shared state and takes the guard.
     let _globals = crate::tests::test_fixtures::globals();
-    unsafe { key_string_lookup_string(string.as_ptr()) }
+    key_string_lookup_string(string)
 }
 
-fn name_of(key: key_code, with_flags: ::core::ffi::c_int) -> Vec<u8> {
-    OUT.clear_poison();
-    let _guard = OUT.lock().expect("just cleared any poison");
+fn name_of(key: key_code, with_flags: core::ffi::c_int) -> Vec<u8> {
     let _globals = crate::tests::test_fixtures::globals();
-    unsafe {
-        CStr::from_ptr(key_string_lookup_key(key, with_flags))
-            .to_bytes()
-            .to_vec()
-    }
+    RustKeyStringCodec
+        .format_key(key, with_flags != 0)
+        .into_bytes()
 }
 
 fn name(key: key_code) -> Vec<u8> {
-    name_of(key, 0 as ::core::ffi::c_int)
+    name_of(key, 0 as core::ffi::c_int)
 }
 
 fn name_with_flags(key: key_code) -> Vec<u8> {
-    name_of(key, 1 as ::core::ffi::c_int)
+    name_of(key, 1 as core::ffi::c_int)
 }
 
 #[test]
@@ -248,14 +239,17 @@ fn the_flag_suffix_lists_the_flags_that_are_set() {
 
 #[test]
 fn a_string_is_only_a_key_when_it_holds_exactly_one_character() {
-    let mut buf = [0 as ::core::ffi::c_char; 8];
-    assert_eq!(unsafe { key_from_cstr(buf.as_mut_ptr()) }, None);
+    let mut buf = [0 as core::ffi::c_char; 8];
+    assert_eq!(key_from_cstr(unsafe { CStr::from_ptr(buf.as_ptr()) }), None);
     for (i, &b) in b"ab\0".iter().enumerate() {
-        buf[i] = b as ::core::ffi::c_char;
+        buf[i] = b as core::ffi::c_char;
     }
-    assert_eq!(unsafe { key_from_cstr(buf.as_mut_ptr()) }, None);
+    assert_eq!(key_from_cstr(unsafe { CStr::from_ptr(buf.as_ptr()) }), None);
     buf[1] = 0;
-    assert_eq!(unsafe { key_from_cstr(buf.as_mut_ptr()) }, Some(0x41000061));
+    assert_eq!(
+        key_from_cstr(unsafe { CStr::from_ptr(buf.as_ptr()) }),
+        Some(0x41000061)
+    );
 }
 
 #[test]
@@ -265,15 +259,14 @@ fn a_character_too_long_to_pack_is_not_a_key() {
     ud.have = 1;
     ud.size = 1;
     ud.width = 1;
-    assert_eq!(unsafe { key_from_data(&raw mut ud) }, Some(0x41000061));
+    assert_eq!(unsafe { key_from_data(&ud) }, Some(0x41000061));
     ud.size = 33;
-    assert_eq!(unsafe { key_from_data(&raw mut ud) }, None);
+    assert_eq!(unsafe { key_from_data(&ud) }, None);
 }
 
 #[test]
 fn every_table_name_survives_a_round_trip() {
-    for i in 0..1314 {
-        let entry = key_string_table[i];
+    for entry in key_string_table.iter() {
         assert_eq!(
             lookup(entry.string) & KEYC_MASK_KEY,
             entry.key & KEYC_MASK_KEY

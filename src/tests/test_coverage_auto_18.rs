@@ -7,7 +7,7 @@ use crate::compat::{
     VIS_ALL, VIS_CSTYLE, VIS_DQ, VIS_GLOB, VIS_NL, VIS_NOSLASH, VIS_OCTAL, VIS_SAFE, VIS_SP,
     VIS_TAB, stravis, strnvis, strvis, strvisx, vis,
 };
-use ::core::ffi::{CStr, c_char, c_int};
+use ::core::ffi::{CStr, c_int};
 
 // ---------------------------------------------------------------------------
 // helpers – mirror the in-module suite but kept local so the file is self-
@@ -15,46 +15,31 @@ use ::core::ffi::{CStr, c_char, c_int};
 // ---------------------------------------------------------------------------
 
 fn vis_call(c: c_int, flag: c_int, nextc: c_int) -> Vec<u8> {
-    let mut buf = [0xaau8 as c_char; 16];
-    let end = unsafe { vis(buf.as_mut_ptr(), c, flag, nextc) };
-    let n = unsafe { end.offset_from(buf.as_ptr()) } as usize;
-    assert_eq!(buf[n], 0, "missing terminator for {c:#x}/{flag:#x}");
-    buf[..n].iter().map(|&b| b as u8).collect()
+    vis(c, flag, nextc)
 }
 
 fn strvis_call(src: &CStr, flag: c_int) -> (c_int, Vec<u8>) {
-    let mut dst = vec![0xaau8 as c_char; src.count_bytes() * 4 + 8];
-    let n = unsafe { strvis(dst.as_mut_ptr(), src.as_ptr(), flag) };
-    let bytes = unsafe { CStr::from_ptr(dst.as_ptr()).to_bytes().to_vec() };
-    (n, bytes)
+    let bytes = strvis(src, flag);
+    (bytes.len() as c_int, bytes)
 }
 
 fn strnvis_call(src: &CStr, siz: usize, flag: c_int) -> (c_int, Vec<u8>) {
-    let mut buf = vec![0xaau8 as c_char; siz + 16];
-    let dst = unsafe { buf.as_mut_ptr().add(8) };
-    let n = unsafe { strnvis(dst, src.as_ptr(), siz as crate::types::size_t, flag) };
-    let written = buf[8..8 + siz].iter().map(|&b| b as u8).collect();
-    (n, written)
+    let result = strnvis(src, siz as crate::types::size_t, flag);
+    let mut written = vec![0xaa; siz];
+    written[..result.output.len()].copy_from_slice(&result.output);
+    if siz > 0 {
+        written[result.output.len()] = 0;
+    }
+    (result.len, written)
 }
 
-fn strvisx_call(src: &[u8], len: usize, flag: c_int) -> (c_int, Vec<u8>) {
-    let mut owned: Vec<c_char> = src.iter().map(|&b| b as c_char).collect();
-    owned.push(0);
-    let mut dst = vec![0xaau8 as c_char; src.len() * 4 + 8];
-    let n = unsafe {
-        strvisx(
-            dst.as_mut_ptr(),
-            owned.as_ptr(),
-            len as crate::types::size_t,
-            flag,
-        )
-    };
-    let bytes = unsafe { CStr::from_ptr(dst.as_ptr()).to_bytes().to_vec() };
-    (n, bytes)
+fn strvisx_call(src: &[u8], flag: c_int) -> (c_int, Vec<u8>) {
+    let bytes = strvisx(src, flag);
+    (bytes.len() as c_int, bytes)
 }
 
 fn stravis_call(src: &CStr, flag: c_int) -> (c_int, Vec<u8>) {
-    let bytes = unsafe { stravis(src.as_ptr(), flag) }.into_bytes();
+    let bytes = stravis(src, flag).into_bytes();
     (bytes.len() as c_int, bytes)
 }
 
@@ -139,20 +124,17 @@ fn strnvis_truncation_reports_full_length_with_mixed_escapes() {
 #[test]
 fn strvisx_handles_embedded_nuls_and_octal_padding() {
     // empty counted string
-    assert_eq!(strvisx_call(b"", 0, 0), (0, b"".to_vec()));
+    assert_eq!(strvisx_call(b"", 0), (0, b"".to_vec()));
     // single NUL via cstyle without follower
-    assert_eq!(strvisx_call(b"\0", 1, VIS_CSTYLE), (2, b"\\0".to_vec()));
+    assert_eq!(strvisx_call(b"\0", VIS_CSTYLE), (2, b"\\0".to_vec()));
     // NUL followed by octal digit pads to 3 digits
-    assert_eq!(
-        strvisx_call(b"\x000", 2, VIS_CSTYLE),
-        (5, b"\\0000".to_vec())
-    );
+    assert_eq!(strvisx_call(b"\x000", VIS_CSTYLE), (5, b"\\0000".to_vec()));
     // NUL followed by non-octal does not pad
-    assert_eq!(strvisx_call(b"\0a", 2, VIS_CSTYLE), (3, b"\\0a".to_vec()));
+    assert_eq!(strvisx_call(b"\0a", VIS_CSTYLE), (3, b"\\0a".to_vec()));
     // raw NUL without cstyle is caret form
-    assert_eq!(strvisx_call(b"\0", 1, 0), (3, b"\\^@".to_vec()));
+    assert_eq!(strvisx_call(b"\0", 0), (3, b"\\^@".to_vec()));
     // counted string with interior NUL + visible tail
-    assert_eq!(strvisx_call(b"a\0b", 3, VIS_CSTYLE), (4, b"a\\0b".to_vec()));
+    assert_eq!(strvisx_call(b"a\0b", VIS_CSTYLE), (4, b"a\\0b".to_vec()));
 }
 
 #[test]

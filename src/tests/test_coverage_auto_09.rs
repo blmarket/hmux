@@ -10,6 +10,14 @@
 //! that a [`Target`]/[`Session`]/[`Window`]/[`Pane`] chain can be built
 //! under `globals()`. Nothing here hits `fatal`.
 
+use crate::WindowPane;
+use crate::pane_identity::PaneIdentity;
+use crate::window_dimensions::WindowDimensionsState;
+use crate::window_name::WindowNameState;
+use crate::window_trait::Window as _;
+
+use crate::pane_geometry::PaneGeometryState;
+
 use crate::modes::{
     WINDOW_CUSTOMIZE_DEFAULT_FORMAT, WINDOW_CUSTOMIZE_GLOBAL_SESSION,
     WINDOW_CUSTOMIZE_GLOBAL_WINDOW, WINDOW_CUSTOMIZE_KEY, WINDOW_CUSTOMIZE_NONE,
@@ -20,10 +28,10 @@ use crate::modes::{
     WINDOW_TREE_DEFAULT_COMMAND, WINDOW_TREE_DEFAULT_FORMAT, WINDOW_TREE_DEFAULT_KEY_FORMAT,
     WINDOW_TREE_NONE, WINDOW_TREE_PANE, WINDOW_TREE_SESSION, WINDOW_TREE_WINDOW,
 };
-use crate::session::{session_get_curw, session_id, session_name, session_options};
+
 use crate::tests::test_fixtures::{Pane, Session, Target, Window, globals, seen};
 use crate::types::WindowMode;
-use crate::window::window_get_active;
+use crate::window::window_active_pane;
 use ::core::ffi::CStr;
 
 // ---------------------------------------------------------------------------
@@ -99,14 +107,12 @@ fn window_customize_scope_ladder_and_change_constants() {
 
 #[test]
 fn window_customize_default_format_mentions_scope() {
-    unsafe {
-        let fmt = WINDOW_CUSTOMIZE_DEFAULT_FORMAT;
-        let s = fmt.to_str().unwrap();
-        assert!(s.contains("is_option"), "fmt was {s:?}");
-        assert!(s.contains("option_value"), "fmt was {s:?}");
-        assert!(!s.is_empty());
-        assert!(s.len() < 200);
-    }
+    let fmt = WINDOW_CUSTOMIZE_DEFAULT_FORMAT;
+    let s = fmt.to_str().unwrap();
+    assert!(s.contains("is_option"), "fmt was {s:?}");
+    assert!(s.contains("option_value"), "fmt was {s:?}");
+    assert!(!s.is_empty());
+    assert!(s.len() < 200);
 }
 
 #[test]
@@ -134,20 +140,35 @@ fn window_pane_and_session_fixtures_hold_expected_invariants() {
     let mut pane = Pane::new(99, 80, 24, 100);
     win.add_pane(&mut pane);
     unsafe {
-        assert_eq!(session_id(sess.ptr()), 42);
-        assert_eq!(seen(session_name(sess.ptr())), "auto09-sess");
-        assert_eq!(seen((*win.ptr()).name_ptr()), "auto09-win");
-        assert_eq!((*win.ptr()).sx, 80);
-        assert_eq!((*win.ptr()).sy, 24);
-        assert_eq!(window_get_active(win.ptr()), pane.ptr());
-        assert_eq!((*pane.ptr()).id, 99);
-        assert_eq!((*pane.ptr()).sx, 80);
-        assert_eq!((*pane.ptr()).sy, 24);
-        assert_eq!((*pane.ptr()).fd, -1);
+        assert_eq!(crate::SessionIdentity::session_id(&*sess.ptr()), 42);
+        assert_eq!(
+            crate::SessionNameState::session_name(&*sess.ptr()),
+            Some(c"auto09-sess")
+        );
+        assert_eq!(
+            seen(
+                (*win.ptr())
+                    .window_name()
+                    .expect("a window has a name")
+                    .as_ptr()
+            ),
+            "auto09-win"
+        );
+        assert_eq!((*win.ptr()).dimensions().size.width, 80);
+        assert_eq!((*win.ptr()).dimensions().size.height, 24);
+        assert!(window_active_pane(&*win.ptr()).is_some_and(|active_owner| {
+            active_owner
+                .get()
+                .is_some_and(|active| core::ptr::addr_eq(active, pane.ptr()))
+        }));
+        assert_eq!((*pane.ptr()).pane_id(), 99);
+        assert_eq!((*pane.ptr()).geometry().width, 80);
+        assert_eq!((*pane.ptr()).geometry().height, 24);
+        assert_eq!(*(*pane.ptr()).fd(), -1);
         // options are present
-        assert!(!(*win.ptr()).options_ptr().is_null());
-        assert!(!(*pane.ptr()).options_ptr().is_null());
-        assert!(!session_options(sess.ptr()).is_null());
+        let _ = (*win.ptr()).options_ref();
+        let _ = (*pane.ptr()).options_ref();
+        let _ = (&mut *sess.ptr()).options_ref().clone();
     }
 }
 
@@ -159,27 +180,35 @@ fn target_registers_session_window_and_pane_under_globals() {
     unsafe {
         // session 0 named "0" is registered
         let s = target.session();
-        assert_eq!(seen(session_name(s)), "0");
-        assert_eq!(session_id(s), 0);
+        assert_eq!(crate::SessionNameState::session_name(&*s), Some(c"0"));
+        assert_eq!(crate::SessionIdentity::session_id(&*s), 0);
         // first window is the one Target built
         let w0 = target.window(0);
         let w1 = target.window(1);
         assert!(!w0.is_null());
         assert!(!w1.is_null());
         assert_ne!(w0, w1);
-        assert_eq!((*w0).id, 0);
-        assert_eq!((*w1).id, 1);
+        assert_eq!((*w0).window_id(), 0);
+        assert_eq!((*w1).window_id(), 1);
         // panes are distinct
         let p0 = target.pane(0);
         let p1 = target.pane(1);
         assert_ne!(p0, p1);
         // find state points at session's curw
         let fs = target.state();
-        assert_eq!(fs.session(), s);
-        assert_eq!(fs.winlink(), session_get_curw(s));
+        assert_eq!(
+            fs.session()
+                .as_ref()
+                .map_or(core::ptr::null_mut(), |s| s.as_ptr()),
+            s
+        );
+        assert!(core::ptr::eq(
+            (&*s).curw().unwrap(),
+            fs.winlink_ref().unwrap().get().unwrap()
+        ));
         // zeroed helper produces a zeroed struct
         let z: crate::types::window_pane = *Box::new(crate::types::window_pane::default());
-        assert_eq!(z.id, 0);
-        assert_eq!(z.fd, 0);
+        assert_eq!(z.pane_id(), 0);
+        assert_eq!(*z.fd(), 0);
     }
 }

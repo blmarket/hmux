@@ -129,7 +129,7 @@ impl Reactor for Base {
         runtime_control().defer(callback);
     }
 
-    fn describe(&self) -> String {
-        "hmux-rt (mio)".to_owned()
+    fn describe(&self) -> std::ffi::CString {
+        c"hmux-rt (mio)".to_owned()
     }
 }

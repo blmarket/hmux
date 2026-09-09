@@ -3,7 +3,7 @@
 //! A single background [`AgentObserver`] polls pane observability and classifies
 //! each pane's agent lifecycle state. Detection is split into a generic harness
 //! (this module) and per-agent [`AgentDetector`]s (e.g. [`codex`], [`claude`],
-//! [`pi`], and [`agy`]),
+//! [`pi`], [`agy`], and [`opencode`]),
 //! so adding an agent is a matter of adding a detector rather than another
 //! poller. Running one observer with a detector registry — instead of one thread
 //! per agent — avoids two observers fighting over the same pane, and matches how
@@ -11,7 +11,7 @@
 
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
-use std::ffi::{OsStr, OsString};
+use std::ffi::{CStr, CString, OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, SystemTime};
@@ -24,6 +24,7 @@ use crate::platform::{CurrentPlatform, Platform};
 pub mod agy;
 pub mod claude;
 pub mod codex;
+pub mod opencode;
 pub mod pi;
 mod session_model;
 pub mod status;
@@ -175,7 +176,7 @@ pub(crate) trait AgentDetector {
     fn session_id_source(&self) -> Option<SessionIdSource>;
 
     /// Extract a session id from an open file owned by the agent process.
-    fn session_id_from_open_file(&self, _path: &Path) -> Option<String> {
+    fn session_id_from_open_file(&self, _path: &Path) -> Option<CString> {
         None
     }
 
@@ -186,7 +187,7 @@ pub(crate) trait AgentDetector {
     }
 
     /// Extract a session id from a session file's name (not its full path).
-    fn session_id_from_file_name(&self, _name: &OsStr) -> Option<String> {
+    fn session_id_from_file_name(&self, _name: &OsStr) -> Option<CString> {
         None
     }
 
@@ -230,6 +231,7 @@ pub(crate) fn default_detectors() -> Vec<Box<dyn AgentDetector>> {
         Box::new(claude::ClaudeDetector),
         Box::new(pi::PiDetector),
         Box::new(agy::AgyDetector),
+        Box::new(opencode::OpencodeDetector),
     ]
 }
 
@@ -320,8 +322,8 @@ struct ReportedStatus {
     agent: Option<&'static str>,
     state: AgentState,
     pid: Option<u32>,
-    session_id: Option<String>,
-    model: Option<String>,
+    session_id: Option<CString>,
+    model: Option<CString>,
 }
 
 struct TrackedPane {
@@ -342,7 +344,7 @@ struct TrackedPane {
     /// when the agent's live session changes (a new Codex rollout, or a newer
     /// cwd-scoped transcript adopted after activity correlation — see
     /// [`should_adopt_transcript`]).
-    agent_session_id: Option<String>,
+    agent_session_id: Option<CString>,
     /// Whether the attributed session was named outright by the agent's own
     /// environment stamp rather than guessed from the session directory. An
     /// exact identification is not displaced by a guess — see
@@ -361,7 +363,7 @@ struct TrackedPane {
     model_scan: Option<ModelScan>,
     /// The model the session file most recently named, as published on the
     /// pane's status.
-    agent_model: Option<String>,
+    agent_model: Option<CString>,
 }
 
 impl TrackedPane {
@@ -535,11 +537,13 @@ fn inspect(
             id,
             tracked,
             AgentState::Exited,
-            tracked.revision,
-            process.child_pid,
-            None,
-            tracked.agent.map(|i| detectors[i].label()),
-            hub,
+            PublishMetadata {
+                revision: tracked.revision,
+                child_pid: process.child_pid,
+                agent_pid: None,
+                agent: tracked.agent.map(|i| detectors[i].label()),
+                hub,
+            },
         );
         return;
     }
@@ -575,11 +579,13 @@ fn inspect(
             id,
             tracked,
             AgentState::Unknown,
-            Some(revision),
-            process.child_pid,
-            None,
-            None,
-            hub,
+            PublishMetadata {
+                revision: Some(revision),
+                child_pid: process.child_pid,
+                agent_pid: None,
+                agent: None,
+                hub,
+            },
         );
         return;
     }
@@ -682,11 +688,13 @@ fn inspect(
             id,
             tracked,
             state,
-            Some(revision),
-            process.child_pid,
-            Some(pid),
-            Some(detectors[detector].label()),
-            hub,
+            PublishMetadata {
+                revision: Some(revision),
+                child_pid: process.child_pid,
+                agent_pid: Some(pid),
+                agent: Some(detectors[detector].label()),
+                hub,
+            },
         );
         return;
     }
@@ -720,11 +728,14 @@ fn inspect(
     };
     tracked.revision = Some(screen.revision);
 
+    let screen_text = screen.text.to_string_lossy();
+    let title_text = title.as_deref().map(CStr::to_string_lossy);
+    let title_text = title_text.as_deref();
     let (detection, label, agent_pid) = match scan {
         TreeScan::Found { detector, pid, .. } => (
             detectors[detector].detect_with_cursor(
-                &screen.text,
-                title.as_deref(),
+                &screen_text,
+                title_text,
                 CursorEvidence {
                     visible: screen.cursor_visible,
                     shape: screen.cursor_shape,
@@ -739,7 +750,7 @@ fn inspect(
         // the process tree has already identified Codex, but ordinary shells on
         // macOS often have a static hostname title.
         TreeScan::NoProcessTable => {
-            let (detection, label) = run_all(detectors, &screen.text, None);
+            let (detection, label) = run_all(detectors, &screen_text, None);
             (detection, label, None)
         }
         TreeScan::NotFound => unreachable!("handled above"),
@@ -750,11 +761,13 @@ fn inspect(
             id,
             tracked,
             state,
-            Some(screen.revision),
-            process.child_pid,
-            agent_pid,
-            label,
-            hub,
+            PublishMetadata {
+                revision: Some(screen.revision),
+                child_pid: process.child_pid,
+                agent_pid,
+                agent: label,
+                hub,
+            },
         ),
         Detection::KeepPrevious => {}
     }
@@ -876,16 +889,27 @@ fn run_all(
     keep_previous.unwrap_or((Detection::State(AgentState::Unknown), None))
 }
 
-fn publish(
-    id: PaneId,
-    tracked: &mut TrackedPane,
-    state: AgentState,
+struct PublishMetadata<'a> {
     revision: Option<u64>,
     child_pid: Option<u32>,
     agent_pid: Option<u32>,
     agent: Option<&'static str>,
-    hub: Option<&StatusHub>,
+    hub: Option<&'a StatusHub>,
+}
+
+fn publish(
+    id: PaneId,
+    tracked: &mut TrackedPane,
+    state: AgentState,
+    metadata: PublishMetadata<'_>,
 ) {
+    let PublishMetadata {
+        revision,
+        child_pid,
+        agent_pid,
+        agent,
+        hub,
+    } = metadata;
     let reported = ReportedStatus {
         agent,
         state,
@@ -1140,7 +1164,7 @@ fn find_open_file_session_in_tree(
     snapshot: &ProcessSnapshot,
     root: u32,
     detector: &dyn AgentDetector,
-) -> Option<(String, PathBuf)> {
+) -> Option<(CString, PathBuf)> {
     let mut pending = vec![root];
     let mut visited = HashSet::new();
     while let Some(pid) = pending.pop() {
@@ -1178,7 +1202,7 @@ fn find_cwd_transcript_session(
     snapshot: &ProcessSnapshot,
     pid: u32,
     detector: &dyn AgentDetector,
-) -> Option<(String, PathBuf)> {
+) -> Option<(CString, PathBuf)> {
     let cwd = snapshot.source.cwd(pid)?;
     let dir = detector.session_dir_for_cwd(&cwd)?;
     // Without a readable start time nothing can be dated, so every file stays a
@@ -1206,7 +1230,7 @@ fn find_cwd_transcript_session(
 fn adopt_session(
     tracked: &mut TrackedPane,
     snapshot: &ProcessSnapshot,
-    session_id: String,
+    session_id: CString,
     session_file: PathBuf,
     stamped: bool,
 ) {
@@ -1238,7 +1262,7 @@ fn find_descendant_env_session(
     snapshot: &ProcessSnapshot,
     agent_pid: u32,
     detector: &dyn AgentDetector,
-) -> Option<(String, PathBuf)> {
+) -> Option<(CString, PathBuf)> {
     let stamp = detector.session_env_stamp()?;
     let cwd = snapshot.source.cwd(agent_pid)?;
     let mut pending = snapshot.children_of(agent_pid).to_vec();
@@ -1261,12 +1285,13 @@ fn find_descendant_env_session(
         };
         let owned_by_agent =
             value(stamp.owner_pid).and_then(|owner| owner.parse::<u32>().ok()) == Some(agent_pid);
-        if owned_by_agent {
-            if let Some(session_id) = value(stamp.session_id) {
-                if let Some(file) = detector.session_file_for_id(&cwd, session_id) {
-                    return Some((session_id.to_ascii_lowercase(), file));
-                }
-            }
+        if owned_by_agent
+            && let Some(session_id) = value(stamp.session_id)
+            && let Some(file) = detector.session_file_for_id(&cwd, session_id)
+        {
+            return CString::new(session_id.to_ascii_lowercase())
+                .ok()
+                .map(|session_id| (session_id, file));
         }
         pending.extend(snapshot.children_of(pid).iter().copied());
     }

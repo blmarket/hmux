@@ -5,7 +5,8 @@
 //! selector or input waiting for user action is blocked, the braille
 //! `Working...` status is working, and the stable title is the idle fallback.
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::{CString, OsStr, OsString};
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use super::{AgentDetector, AgentState, Detection, SessionIdSource, is_braille, is_uuid};
@@ -41,7 +42,7 @@ impl AgentDetector for PiDetector {
         session_dir(cwd)
     }
 
-    fn session_id_from_file_name(&self, name: &OsStr) -> Option<String> {
+    fn session_id_from_file_name(&self, name: &OsStr) -> Option<CString> {
         session_id_from_file_name(name)
     }
 
@@ -56,38 +57,42 @@ pub(crate) fn session_dir(cwd: &Path) -> Option<PathBuf> {
     Some(
         Path::new(&home)
             .join(".pi/agent/sessions")
-            .join(project_slug(cwd)),
+            .join(OsStr::from_bytes(project_slug(cwd).as_bytes())),
     )
 }
 
-fn project_slug(cwd: &Path) -> String {
+fn project_slug(cwd: &Path) -> CString {
     let path = cwd.to_string_lossy();
     let path = path.trim_start_matches(['/', '\\']);
-    let encoded = path
-        .chars()
-        .map(|c| {
-            if matches!(c, '/' | '\\' | ':') {
-                '-'
-            } else {
-                c
-            }
-        })
-        .collect::<String>();
-    format!("--{encoded}--")
+    let mut encoded = b"--".to_vec();
+    for character in path.chars() {
+        let character = if matches!(character, '/' | '\\' | ':') {
+            '-'
+        } else {
+            character
+        };
+        let mut bytes = [0; 4];
+        encoded.extend_from_slice(character.encode_utf8(&mut bytes).as_bytes());
+    }
+    encoded.extend_from_slice(b"--");
+    CString::new(encoded).expect("a project slug has no NUL")
 }
 
 /// Default filenames are `<timestamp>_<session-id>.jsonl`. Accepting a bare
 /// UUID stem also covers explicitly named session files without weakening UUID
 /// validation.
-fn session_id_from_file_name(name: &OsStr) -> Option<String> {
+fn session_id_from_file_name(name: &OsStr) -> Option<CString> {
     let stem = name.to_str()?.strip_suffix(".jsonl")?;
     let candidate = stem.rsplit_once('_').map_or(stem, |(_, id)| id);
-    is_uuid(candidate).then(|| candidate.to_ascii_lowercase())
+    is_uuid(candidate)
+        .then(|| CString::new(candidate.to_ascii_lowercase()).expect("a UUID has no NUL"))
 }
 
 fn detect(screen: &str, title: Option<&str>) -> Detection {
     let lines = screen.lines().collect::<Vec<_>>();
-    let active_region = last_bordered_region(&lines).to_lowercase();
+    let active_region = last_bordered_region(&lines)
+        .to_string_lossy()
+        .to_lowercase();
 
     // Extension selectors and inputs replace Pi's editor. These controls are
     // the point where an active turn waits for a human response, so they outrank
@@ -149,16 +154,17 @@ fn has_pi_signature(screen: &str) -> bool {
     })
 }
 
-fn last_bordered_region(lines: &[&str]) -> String {
+fn last_bordered_region(lines: &[&str]) -> CString {
     let borders = lines
         .iter()
         .enumerate()
         .filter_map(|(index, line)| is_horizontal_rule(line).then_some(index))
         .collect::<Vec<_>>();
-    match borders.as_slice() {
+    let text = match borders.as_slice() {
         [.., start, end] => lines[start + 1..*end].join("\n"),
-        _ => String::new(),
-    }
+        _ => Default::default(),
+    };
+    CString::new(text).expect("screen text has no NUL")
 }
 
 fn is_horizontal_rule(line: &str) -> bool {
@@ -284,7 +290,7 @@ mod tests {
     fn cwd_maps_to_pi_session_directory() {
         assert_eq!(
             project_slug(Path::new("/home/hun/srv/pi")),
-            "--home-hun-srv-pi--"
+            c"--home-hun-srv-pi--"
         );
         let home = std::env::var_os("HOME").expect("HOME set in test environment");
         assert_eq!(
@@ -300,7 +306,7 @@ mod tests {
                 "2026-07-25T03-35-20-915Z_019F9757-7C53-7898-A7D1-C8C780212888.jsonl"
             ))
             .as_deref(),
-            Some("019f9757-7c53-7898-a7d1-c8c780212888")
+            Some(c"019f9757-7c53-7898-a7d1-c8c780212888")
         );
         assert_eq!(
             session_id_from_file_name(OsStr::new("not-a-session.jsonl")),

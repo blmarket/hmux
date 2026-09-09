@@ -23,26 +23,27 @@
 //! the option trees are process-wide, so every test that reaches them holds
 //! the [`globals`] guard; the mouse tests take their session, window and pane
 //! out of [`Target`], which registers server-free fixtures in the trees
-//! `session_find_by_id`, `window_find_by_id` and `window_pane_find_by_id`
+//! `session_find_by_id`, `window_find_by_id_ref` and `window_pane_find_by_id`
 //! walk. The one test that needs `command-alias` to say something else puts
 //! back exactly what it found rather than a default of its own.
 
+use crate::options::{OptionsEngine, RustOptionsEngine};
+use crate::pane_geometry::PaneGeometryState;
+use crate::pane_identity::PaneIdentity;
+
+use crate::client::CMD_STARTSERVER;
 use crate::cmd::CMD_AFTERHOOK;
-use crate::cmd::cmd_attach_session::{CMD_STARTSERVER, cmd_attach_session_entry};
 use crate::cmd::{
-    CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS, cmd_copy, cmd_find, cmd_free, cmd_get_alias,
-    cmd_get_parse_flags, cmd_get_source, cmd_list_all_have, cmd_list_any_have, cmd_list_append_all,
-    cmd_list_copy, cmd_list_move, cmd_list_new, cmd_list_print, cmd_mouse_at, cmd_mouse_pane,
-    cmd_mouse_window, cmd_parse, cmd_print, cmd_table, cmd_template_replace,
+    CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS, cmd_copy, cmd_find, cmd_get_alias,
+    cmd_get_parse_flags, cmd_get_source, cmd_mouse_at, cmd_mouse_pane, cmd_mouse_window, cmd_parse,
+    cmd_print, cmd_table, cmd_template_replace,
 };
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
-use crate::options::options_get_only_ptr;
-use crate::options::{options_array_get, options_array_set, options_create_boxed, options_free};
-use crate::session::session_get_curw;
-use crate::tests::test_fixtures::{Target, globals, seen, zeroed_pane};
+
+use crate::tests::test_fixtures::{Target, globals, zeroed_pane};
 use crate::types::*;
 use ::core::ffi::{CStr, c_int};
-use ::core::ptr::{null, null_mut};
+use std::ffi::CString;
 
 //
 // helpers
@@ -59,61 +60,41 @@ unsafe fn parse_words(
     parse_flags: c_int,
 ) -> Result<Box<cmd>, String> {
     unsafe {
-        let mut values: Vec<args_value_t> = words
+        let values: Vec<args_value_t> = words
             .iter()
-            .map(|word| {
-                let mut value = args_value_t::default();
-                value.value = ArgsValue::String((*word).to_owned());
-                value
+            .map(|word| args_value_t {
+                value: ArgsValue::String((*word).to_owned()),
             })
             .collect();
-        cmd_parse(
-            values.as_mut_ptr(),
-            words.len() as u_int,
-            file,
-            line,
-            parse_flags,
-        )
-        .map_err(|cause| cause.into_string().unwrap())
+        cmd_parse(&values, file, line, parse_flags).map_err(|cause| cause.into_string().unwrap())
     }
 }
 
 /// What [`cmd_find`] says about `name` — either the entry it settled on or the
 /// reason it would not.
-unsafe fn find(name: &CStr) -> Result<&'static CStr, String> {
-    unsafe {
-        let mut cause = None;
-        let entry = cmd_find(name.as_ptr(), &mut cause);
-        if entry.is_null() {
-            Err(cause.unwrap().into_string().unwrap())
-        } else {
-            assert!(cause.is_none(), "a found command left a reason behind");
-            Ok((*entry).name)
-        }
-    }
+fn find(name: &CStr) -> Result<&'static CStr, String> {
+    cmd_find(name)
+        .map(|entry| entry.name)
+        .map_err(|cause| cause.into_string().unwrap())
 }
 
 /// A command list parsed from `s`, owned by the caller.
 unsafe fn commands(s: &CStr) -> CmdListRef {
     unsafe {
-        let mut pr = cmd_parse_from_string(s.as_ptr(), null_mut::<cmd_parse_input>());
+        let mut pr = cmd_parse_from_string(s, None);
         assert_eq!(pr.status, CMD_PARSE_SUCCESS, "{s:?} did not parse");
         pr.cmdlist.take().unwrap()
     }
 }
 
 unsafe fn printed(cmdlist: &CmdListRef, flags: c_int) -> String {
-    unsafe {
-        cmd_list_print(cmdlist, flags)
-            .to_string_lossy()
-            .into_owned()
-    }
+    unsafe { cmdlist.print(flags).to_string_lossy().into_owned() }
 }
 
 /// What `template` becomes with `s` put in for argument `idx`.
 unsafe fn expand(template: &CStr, s: &CStr, idx: c_int) -> String {
-    unsafe {
-        cmd_template_replace(template.as_ptr(), s.as_ptr(), idx)
+    {
+        cmd_template_replace(template, s, idx)
             .to_string_lossy()
             .into_owned()
     }
@@ -157,9 +138,9 @@ fn the_command_table_is_a_run_of_entries_in_name_order() {
 
     // Entries are held by reference to the modules' own statics, whose
     // addresses the crate compares against all over the place.
-    assert!(::core::ptr::eq(
+    assert!(core::ptr::eq(
         cmd_table[0],
-        &raw const cmd_attach_session_entry
+        cmd_find(c"attach-session").unwrap()
     ));
 }
 
@@ -170,7 +151,7 @@ fn the_command_table_is_a_run_of_entries_in_name_order() {
 #[test]
 fn a_command_is_found_by_its_full_name_its_alias_or_an_unambiguous_prefix() {
     let _guard = globals();
-    unsafe {
+    {
         assert_eq!(find(c"list-buffers"), Ok(c"list-buffers"));
         assert_eq!(find(c"lsb"), Ok(c"list-buffers"));
 
@@ -196,7 +177,7 @@ fn a_command_is_found_by_its_full_name_its_alias_or_an_unambiguous_prefix() {
 #[test]
 fn an_ambiguous_prefix_is_reported_with_every_name_it_could_be() {
     let _guard = globals();
-    unsafe {
+    {
         // Two or more matches, and the reason lists them in table order with
         // the trailing ", " cut back off.
         assert_eq!(
@@ -225,7 +206,7 @@ fn an_ambiguous_prefix_is_reported_with_every_name_it_could_be() {
 #[test]
 fn an_empty_name_is_a_prefix_of_every_command_in_the_table() {
     let _guard = globals();
-    unsafe {
+    {
         let names = table_names();
         let expected = format!("ambiguous command: , could be: {}", names.join(", "));
         assert_eq!(find(c""), Err(expected));
@@ -252,7 +233,7 @@ fn parsing_keeps_the_parse_flags_and_where_the_command_came_from() {
 
         assert_eq!(cmd_get_parse_flags(&*cmd_ptr), 0x3);
         let (file, line) = cmd_get_source(&*cmd_ptr);
-        assert_eq!(seen(file), "/etc/tmux.conf");
+        assert_eq!(file, Some(c"/etc/tmux.conf"));
         assert_eq!(line, 17);
 
         // A copy carries the entry, the file and the line over, and gets
@@ -260,8 +241,11 @@ fn parsing_keeps_the_parse_flags_and_where_the_command_came_from() {
         let mut copy = cmd_copy(&cmd, &[]);
         let copy_ptr = &raw mut *copy;
         let (copied_file, copied_line) = cmd_get_source(&*copy_ptr);
-        assert_eq!(seen(copied_file), "/etc/tmux.conf");
-        assert_ne!(copied_file, file, "the copy has a file name of its own");
+        assert_eq!(copied_file, Some(c"/etc/tmux.conf"));
+        assert!(
+            !core::ptr::eq(copied_file.unwrap().as_ptr(), file.unwrap().as_ptr()),
+            "the copy has a file name of its own"
+        );
         assert_eq!(copied_line, 17);
         assert_eq!(cmd_get_parse_flags(&*copy_ptr), 0);
         assert_eq!(cmd_print(&*copy_ptr).to_string_lossy(), "list-buffers");
@@ -282,12 +266,13 @@ fn parsing_refuses_a_row_of_values_that_names_no_command() {
 
         // A first value that is a brace-enclosed command list rather than a
         // word is turned down the same way, without being looked at.
-        let mut value = args_value_t::default();
-        value.value = ArgsValue::Commands {
-            cmdlist: None,
-            cached: None,
+        let value = args_value_t {
+            value: ArgsValue::Commands {
+                cmdlist: None,
+                cached: std::cell::OnceCell::new(),
+            },
         };
-        let cause = cmd_parse(&raw mut value, 1, None, 0, 0)
+        let cause = cmd_parse(&[value], None, 0, 0)
             .err()
             .expect("a command list value names no command");
         assert_eq!(cause.to_str().unwrap(), "no command");
@@ -329,30 +314,32 @@ fn parsing_reports_a_bad_flag_as_the_commands_usage_or_as_the_parsers_reason() {
 fn an_alias_entry_without_an_equals_sign_is_skipped() {
     let _guard = globals();
     unsafe {
-        let o = options_get_only_ptr(crate::tmux::global_options, c"command-alias".as_ptr());
-        assert!(!o.is_null());
-
-        // Put an entry carrying no `=` at the first index the array has none
-        // at, and take exactly that index away again afterwards.
-        let mut idx: u_int = 0;
-        while !options_array_get(o, idx).is_null() {
-            idx += 1;
-        }
-        assert_eq!(
-            options_array_set(o, idx, c"bare-entry".as_ptr(), 0, &mut None),
-            0
-        );
-
-        assert!(cmd_get_alias(c"bare-entry".as_ptr()).is_none());
-        assert!(cmd_get_alias(c"bare".as_ptr()).is_none());
-        // The entries around it still answer.
-        assert_eq!(
-            cmd_get_alias(c"splitp".as_ptr()).as_deref(),
-            Some(c"split-window")
-        );
-
-        assert_eq!(options_array_set(o, idx, null(), 0, &mut None), 0);
-        assert!(options_array_get(o, idx).is_null());
+        let store = crate::tmux::global_options
+            .as_ref()
+            .expect("global options are initialized");
+        let idx = store.with_entry_mut(c"command-alias", true, |entry| {
+            let entry = entry.unwrap();
+            let mut idx = 0;
+            while RustOptionsEngine.array_get(entry, idx).is_some() {
+                idx += 1;
+            }
+            assert_eq!(
+                RustOptionsEngine.array_set(entry, idx, Some(c"bare-entry"), 0, &mut None),
+                0
+            );
+            idx
+        });
+        assert!(cmd_get_alias(c"bare-entry").is_none());
+        assert!(cmd_get_alias(c"bare").is_none());
+        assert_eq!(cmd_get_alias(c"splitp").as_deref(), Some(c"split-window"));
+        store.with_entry_mut(c"command-alias", true, |entry| {
+            let entry = entry.unwrap();
+            assert_eq!(
+                RustOptionsEngine.array_set(entry, idx, None, 0, &mut None),
+                0
+            );
+            assert!(RustOptionsEngine.array_get(entry, idx).is_none());
+        });
     }
 }
 
@@ -363,18 +350,15 @@ fn there_is_no_alias_at_all_when_the_option_is_not_there() {
         // An option set that has never been given a default carries no
         // `command-alias`, and the lookup answers nothing rather than walking
         // an array it has not got. The global set is put back as it was.
-        let saved = crate::tmux::global_options;
-        let empty = Box::into_raw(options_create_boxed(null_mut::<options>()));
-        crate::tmux::global_options = empty;
-        let answer = cmd_get_alias(c"splitp".as_ptr());
+        let saved = crate::tmux::global_options.take();
+        let empty = RustOptionsEngine.create(None);
+        crate::tmux::global_options = Some(empty.clone());
+        let answer = cmd_get_alias(c"splitp");
         crate::tmux::global_options = saved;
-        options_free(Box::from_raw(empty));
+        RustOptionsEngine.destroy(empty);
 
         assert!(answer.is_none());
-        assert_eq!(
-            cmd_get_alias(c"splitp".as_ptr()).as_deref(),
-            Some(c"split-window")
-        );
+        assert_eq!(cmd_get_alias(c"splitp").as_deref(), Some(c"split-window"));
     }
 }
 
@@ -388,7 +372,7 @@ fn a_command_list_prints_its_groups_with_double_separators() {
     unsafe {
         let first = commands(c"list-buffers ; list-clients");
         let second = commands(c"list-panes");
-        cmd_list_move(&first, &second);
+        first.move_from(&second);
 
         // Commands of one group are joined by a single separator and the step
         // between groups by a double one.
@@ -421,18 +405,18 @@ fn moving_an_empty_list_onto_another_leaves_it_as_it_was() {
     let _guard = globals();
     unsafe {
         let first = commands(c"list-buffers");
-        let empty = cmd_list_new();
+        let empty = CmdListRef::empty();
 
-        cmd_list_move(&first, &empty);
+        first.move_from(&empty);
         assert_eq!(printed(&first, 0), "list-buffers");
 
         // The same the other way about: what a move takes over keeps its
         // order, and the list it came from is left empty rather than freed.
         let second = commands(c"list-panes");
-        cmd_list_append_all(&empty, &second);
+        empty.append_all(&second);
         assert_eq!(printed(&empty, 0), "list-panes");
         assert_eq!(printed(&second, 0), "");
-        cmd_list_append_all(&empty, &second);
+        empty.append_all(&second);
         assert_eq!(printed(&empty, 0), "list-panes");
     }
 }
@@ -443,14 +427,14 @@ fn copying_a_command_list_keeps_its_groups_apart() {
     unsafe {
         // Every command of one group stays in one group in the copy.
         let one = commands(c"list-buffers ; list-clients");
-        let copy = cmd_list_copy(&one, &[]);
+        let copy = one.copy_with_arguments(&[]);
         assert_eq!(printed(&copy, 0), "list-buffers ; list-clients");
 
         // A copy of a list holding two groups takes a fresh group number at
         // each step, so the step is still there afterwards.
         let two = commands(c"list-panes");
-        cmd_list_move(&one, &two);
-        let copy = cmd_list_copy(&one, &[]);
+        one.move_from(&two);
+        let copy = one.copy_with_arguments(&[]);
         assert_eq!(
             printed(&copy, 0),
             "list-buffers ; list-clients ;; list-panes"
@@ -468,24 +452,24 @@ fn a_command_lists_flags_are_read_across_every_command_in_it() {
     unsafe {
         // Every command in this one runs its after hook.
         let all = commands(c"list-windows ; rename-window name");
-        assert_eq!(cmd_list_all_have(&all, CMD_AFTERHOOK), 1);
-        assert_eq!(cmd_list_any_have(&all, CMD_AFTERHOOK), 1);
+        assert_eq!(all.all_have(CMD_AFTERHOOK), 1);
+        assert_eq!(all.any_have(CMD_AFTERHOOK), 1);
 
         // One of these does and one does not.
         let some = commands(c"list-windows ; kill-window");
-        assert_eq!(cmd_list_all_have(&some, CMD_AFTERHOOK), 0);
-        assert_eq!(cmd_list_any_have(&some, CMD_AFTERHOOK), 1);
+        assert_eq!(some.all_have(CMD_AFTERHOOK), 0);
+        assert_eq!(some.any_have(CMD_AFTERHOOK), 1);
 
         // Neither of these does.
         let none = commands(c"kill-window ; kill-session");
-        assert_eq!(cmd_list_all_have(&none, CMD_AFTERHOOK), 0);
-        assert_eq!(cmd_list_any_have(&none, CMD_AFTERHOOK), 0);
-        assert_eq!(cmd_list_any_have(&none, CMD_STARTSERVER), 0);
+        assert_eq!(none.all_have(CMD_AFTERHOOK), 0);
+        assert_eq!(none.any_have(CMD_AFTERHOOK), 0);
+        assert_eq!(none.any_have(CMD_STARTSERVER), 0);
 
         // An empty list has every flag and none of them.
-        let empty = cmd_list_new();
-        assert_eq!(cmd_list_all_have(&empty, CMD_AFTERHOOK), 1);
-        assert_eq!(cmd_list_any_have(&empty, CMD_AFTERHOOK), 0);
+        let empty = CmdListRef::empty();
+        assert_eq!(empty.all_have(CMD_AFTERHOOK), 1);
+        assert_eq!(empty.any_have(CMD_AFTERHOOK), 0);
     }
 }
 
@@ -497,26 +481,28 @@ fn a_command_lists_flags_are_read_across_every_command_in_it() {
 fn a_mouse_event_lands_at_a_pane_offset_or_outside_the_pane_altogether() {
     unsafe {
         let mut wp = zeroed_pane();
-        wp.xoff = 10;
-        wp.yoff = 5;
-        wp.sx = 20;
-        wp.sy = 8;
+        wp.set_geometry(crate::pane_geometry::PaneGeometry {
+            x: 10,
+            y: 5,
+            width: 20,
+            height: 8,
+        });
         let wp = &raw mut *wp;
 
         let mut m = *Box::new(mouse_event::default());
         m.x = 12;
         m.y = 6;
-        assert_eq!(cmd_mouse_at(wp, &m, 0), Some((2, 1)));
+        assert_eq!(cmd_mouse_at(&*wp, &m, 0), Some((2, 1)));
 
         // The offsets a scrolled window carries are added on first.
         m.ox = 3;
         m.oy = 2;
-        assert_eq!(cmd_mouse_at(wp, &m, 0), Some((5, 3)));
+        assert_eq!(cmd_mouse_at(&*wp, &m, 0), Some((5, 3)));
 
         // With `last` set it is the previous position that is read.
         m.lx = 11;
         m.ly = 5;
-        assert_eq!(cmd_mouse_at(wp, &m, 1), Some((4, 2)));
+        assert_eq!(cmd_mouse_at(&*wp, &m, 1), Some((4, 2)));
 
         // A status line at the top pushes the rows down by its height.
         m.ox = 0;
@@ -524,32 +510,32 @@ fn a_mouse_event_lands_at_a_pane_offset_or_outside_the_pane_altogether() {
         m.statusat = 0;
         m.statuslines = 2;
         m.y = 8;
-        assert_eq!(cmd_mouse_at(wp, &m, 0), Some((2, 1)));
+        assert_eq!(cmd_mouse_at(&*wp, &m, 0), Some((2, 1)));
 
         // A status line anywhere else does not, and neither does one the event
         // landed above.
         m.statusat = 1;
         m.y = 6;
-        assert_eq!(cmd_mouse_at(wp, &m, 0), Some((2, 1)));
+        assert_eq!(cmd_mouse_at(&*wp, &m, 0), Some((2, 1)));
         m.statusat = 0;
         m.statuslines = 8;
-        assert_eq!(cmd_mouse_at(wp, &m, 0), Some((2, 1)));
+        assert_eq!(cmd_mouse_at(&*wp, &m, 0), Some((2, 1)));
 
         m.statuslines = 0;
-        assert_eq!(cmd_mouse_at(wp, &m, 0), Some((2, 1)));
+        assert_eq!(cmd_mouse_at(&*wp, &m, 0), Some((2, 1)));
 
         // Outside the pane, in either direction on either axis.
         m.statuslines = 0;
         m.x = 9;
         m.y = 6;
-        assert_eq!(cmd_mouse_at(wp, &m, 0), None);
+        assert_eq!(cmd_mouse_at(&*wp, &m, 0), None);
         m.x = 30;
-        assert_eq!(cmd_mouse_at(wp, &m, 0), None);
+        assert_eq!(cmd_mouse_at(&*wp, &m, 0), None);
         m.x = 12;
         m.y = 4;
-        assert_eq!(cmd_mouse_at(wp, &m, 0), None);
+        assert_eq!(cmd_mouse_at(&*wp, &m, 0), None);
         m.y = 13;
-        assert_eq!(cmd_mouse_at(wp, &m, 0), None);
+        assert_eq!(cmd_mouse_at(&*wp, &m, 0), None);
     }
 }
 
@@ -582,17 +568,30 @@ fn a_mouse_event_resolves_to_the_window_its_ids_name() {
         // No window means the session's current one, and the session comes
         // back alongside it.
         m.s = 0;
-        assert_eq!(
-            cmd_mouse_window(&m),
-            Some((target.session(), session_get_curw(target.session())))
-        );
+        let (session, wl) = cmd_mouse_window(&m).expect("current window");
+        let wl = wl.expect("current link");
+        assert_eq!(session.as_ptr(), target.session());
+        assert!(wl.get().is_some_and(|link| {
+            core::ptr::eq(
+                link,
+                target
+                    .session_handle()
+                    .curw()
+                    .unwrap()
+                    .get()
+                    .expect("the current link is live"),
+            )
+        }));
 
         // A window id is looked up in the server's tree and then found among
         // the session's links.
         m.w = 1;
-        assert_eq!(
-            cmd_mouse_window(&m),
-            Some((target.session(), target.winlink(1)))
+        let (session, wl) = cmd_mouse_window(&m).expect("named window");
+        let wl = wl.expect("named link");
+        assert_eq!(session.as_ptr(), target.session());
+        assert!(
+            wl.get()
+                .is_some_and(|link| core::ptr::eq(link, target.winlink(1)))
         );
 
         // A window that has gone points nowhere.
@@ -619,21 +618,30 @@ fn a_mouse_event_resolves_to_a_pane_inside_the_window_it_names() {
         m.s = 0;
         m.w = -1;
         m.wp = -1;
-        assert_eq!(
-            cmd_mouse_pane(&m),
-            Some((
-                target.session(),
-                session_get_curw(target.session()),
-                target.pane(0)
-            ))
+        let (session, wl, wp) = cmd_mouse_pane(&m).expect("active pane");
+        assert_eq!(session.as_ptr(), target.session());
+        assert!(wl.get().is_some_and(|link| {
+            core::ptr::eq(
+                link,
+                target
+                    .session_handle()
+                    .curw()
+                    .unwrap()
+                    .get()
+                    .expect("the current link is live"),
+            )
+        }));
+        assert!(
+            wp.get()
+                .is_some_and(|pane| core::ptr::addr_eq(pane, target.pane(0)))
         );
 
         // A pane id is looked up in the server's tree and has to be in the
         // window the event named.
         m.wp = 0;
         assert_eq!(
-            cmd_mouse_pane(&m).map(|(_, _, wp)| wp),
-            Some(target.pane(0))
+            cmd_mouse_pane(&m).map(|(_, _, wp)| wp.id()),
+            Some((*target.pane(0)).pane_id())
         );
 
         // The second window's pane is a real pane, but not this window's.
@@ -713,4 +721,50 @@ fn a_placeholder_followed_by_a_percent_escapes_what_it_puts_in() {
         // An empty argument leaves the placeholder standing for nothing.
         assert_eq!(expand(c"[%1%]", c"", 1), "[]");
     }
+}
+
+#[test]
+fn mouse_lookup_checks_membership_while_retained_handles_follow_the_allocation() {
+    let _guard = globals();
+    let _target = Target::new(80, 24);
+    let mut mouse = mouse_event::default();
+    mouse.valid = 1;
+    mouse.s = 0;
+    mouse.w = -1;
+    mouse.wp = -1;
+    unsafe {
+        let (_, _, mut pane) = cmd_mouse_pane(&mouse).expect("active mouse pane");
+        let mut owner = pane.window().unwrap();
+        let removed = crate::window::window_panes_take(
+            &mut owner.as_window_mut(),
+            &crate::window::window_pane_find_by_id(pane.id()).expect("the pane exists"),
+        )
+        .unwrap();
+        assert!(pane.ptr_eq(&removed.downgrade()));
+        assert!(pane.get().is_some());
+        assert!(pane.get_mut().is_some());
+        assert!(cmd_mouse_pane(&mouse).is_none());
+        crate::window::window_panes_insert_tail(&mut owner.as_window_mut(), removed);
+        assert_eq!(pane.get().unwrap().pane_id(), pane.id());
+    }
+}
+
+pub(crate) fn cmd_pack_argv(argv: &[CString], out: &mut [u8]) -> c_int {
+    if crate::CommandTextCodec::pack(&crate::RustCommandTextCodec, argv, out) {
+        0
+    } else {
+        -1
+    }
+}
+
+pub(crate) fn cmd_unpack_argv(packed: &mut [u8], argc: c_int) -> Option<Vec<CString>> {
+    crate::CommandTextCodec::unpack(&crate::RustCommandTextCodec, packed, argc)
+}
+
+pub(crate) fn cmd_stringify_argv(argv: &[CString]) -> CString {
+    crate::CommandTextCodec::stringify(&crate::RustCommandTextCodec, argv)
+}
+
+pub(crate) fn cmd_free(cmd: Box<cmd>) {
+    drop(cmd);
 }

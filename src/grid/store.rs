@@ -1,44 +1,187 @@
-use super::links::hyperlinks_get;
+pub use crate::consts::{
+    COLOUR_FLAG_256, COLOUR_FLAG_RGB, GRID_ATTR_BLINK, GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET,
+    GRID_ATTR_DIM, GRID_ATTR_HIDDEN, GRID_ATTR_ITALICS, GRID_ATTR_OVERLINE, GRID_ATTR_REVERSE,
+    GRID_ATTR_STRIKETHROUGH, GRID_ATTR_UNDERSCORE, GRID_ATTR_UNDERSCORE_2, GRID_ATTR_UNDERSCORE_3,
+    GRID_ATTR_UNDERSCORE_4, GRID_ATTR_UNDERSCORE_5, GRID_FLAG_CLEARED, GRID_FLAG_EXTENDED,
+    GRID_FLAG_PADDING, GRID_FLAG_TAB, GRID_HISTORY, GRID_LINE_DEAD, GRID_LINE_EXTENDED,
+    GRID_LINE_HYPERLINK, GRID_LINE_WRAPPED, GRID_STRING_EMPTY_CELLS, GRID_STRING_ESCAPE_SEQUENCES,
+    GRID_STRING_TRIM_SPACES, GRID_STRING_WITH_SEQUENCES, UINT_MAX,
+};
 use crate::fmt_args;
+use crate::grid::Hyperlinks;
 use crate::log::{fatalx, log_debug};
+use crate::screen::Screen;
 use crate::server::current_time;
-use crate::style::colour_split_rgb;
+use crate::style::{ColourEngine, RustColourEngine};
 use crate::text::{utf8_build_one, utf8_cstrhas, utf8_from_data, utf8_set, utf8_to_data};
 pub use crate::types::*;
 use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
-pub const UINT_MAX: ::core::ffi::c_uint = u_int::MAX;
-pub const COLOUR_FLAG_256: ::core::ffi::c_int = 0x1000000 as ::core::ffi::c_int;
-pub const COLOUR_FLAG_RGB: ::core::ffi::c_int = 0x2000000 as ::core::ffi::c_int;
-pub const GRID_ATTR_BRIGHT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const GRID_ATTR_DIM: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const GRID_ATTR_BLINK: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const GRID_ATTR_REVERSE: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const GRID_ATTR_HIDDEN: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const GRID_ATTR_ITALICS: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const GRID_ATTR_CHARSET: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const GRID_ATTR_STRIKETHROUGH: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_2: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_3: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_4: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_5: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
-pub const GRID_ATTR_OVERLINE: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-pub const GRID_FLAG_FG256: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const GRID_FLAG_BG256: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const GRID_FLAG_PADDING: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const GRID_FLAG_EXTENDED: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const GRID_FLAG_CLEARED: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const GRID_FLAG_TAB: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const GRID_LINE_WRAPPED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const GRID_LINE_EXTENDED: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const GRID_LINE_DEAD: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const GRID_LINE_HYPERLINK: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const GRID_STRING_WITH_SEQUENCES: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const GRID_STRING_ESCAPE_SEQUENCES: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const GRID_STRING_TRIM_SPACES: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const GRID_STRING_EMPTY_CELLS: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const GRID_HISTORY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
+
+pub const GRID_FLAG_FG256: c_int = 0x1 as c_int;
+pub const GRID_FLAG_BG256: c_int = 0x2 as c_int;
+
+/// Storage and transformation operations of a terminal grid.
+pub trait Grid {
+    /// The cell representation stored by this grid implementation.
+    type Cell: crate::GridCell;
+    /// The screen representation used while rendering selected cells.
+    type Screen: Screen;
+
+    /// Returns visible size, history size, and history limit.
+    fn dimensions(&self) -> (u_int, u_int, u_int, u_int);
+    /// Returns whether two grids have identical stored content.
+    fn content_eq(&self, other: &Self) -> bool;
+    /// Reads one cell.
+    fn cell(&self, px: u_int, py: u_int) -> Self::Cell;
+    /// Writes one cell.
+    fn set_cell(&mut self, px: u_int, py: u_int, cell: &Self::Cell);
+    /// Writes a padding cell.
+    fn set_padding(&mut self, px: u_int, py: u_int);
+    /// Writes one-byte cells using a shared style.
+    fn set_cells(&mut self, px: u_int, py: u_int, cell: &Self::Cell, text: &[u8]);
+    /// Clears a rectangle.
+    fn clear(&mut self, px: u_int, py: u_int, nx: u_int, ny: u_int, background: u_int);
+    /// Clears complete lines.
+    fn clear_lines(&mut self, py: u_int, ny: u_int, background: u_int);
+    /// Moves complete lines.
+    fn move_lines(&mut self, dy: u_int, py: u_int, ny: u_int, background: u_int);
+    /// Moves cells within one line.
+    fn move_cells(&mut self, dx: u_int, px: u_int, py: u_int, nx: u_int, background: u_int);
+    /// Moves visible lines into history.
+    fn collect_history(&mut self, all: bool);
+    /// Removes history lines.
+    fn remove_history(&mut self, lines: u_int);
+    /// Removes all history.
+    fn clear_history(&mut self);
+    /// Scrolls the visible grid into history.
+    fn scroll_history(&mut self, background: u_int);
+    /// Scrolls a visible region into history.
+    fn scroll_history_region(&mut self, upper: u_int, lower: u_int, background: u_int);
+    /// Copies complete lines from another grid.
+    fn duplicate_lines(&mut self, dy: u_int, source: &Self, sy: u_int, ny: u_int);
+    /// Reflows the grid to a new width.
+    fn reflow(&mut self, width: u_int);
+    /// Maps a physical position into its wrapped-line position.
+    fn wrap_position(&self, px: u_int, py: u_int) -> (u_int, u_int);
+    /// Maps a wrapped-line position back into a physical position.
+    fn unwrap_position(&self, wx: u_int, wy: u_int) -> (u_int, u_int);
+    /// Returns the occupied length of one line.
+    fn line_length(&self, py: u_int) -> u_int;
+    /// Tests the cell at a position against a byte set.
+    fn in_set(&self, px: u_int, py: u_int, set: &CStr) -> c_int;
+    /// Renders a run of cells as terminal text.
+    fn string_cells(
+        &self,
+        px: u_int,
+        py: u_int,
+        nx: u_int,
+        last_cell: Option<&mut Self::Cell>,
+        flags: c_int,
+        screen: Option<&Self::Screen>,
+    ) -> CString;
+}
+
+impl Grid for grid {
+    type Cell = grid_cell;
+    type Screen = crate::screen::RustScreen;
+
+    fn dimensions(&self) -> (u_int, u_int, u_int, u_int) {
+        (self.sx, self.sy, self.hsize, self.hlimit)
+    }
+
+    fn content_eq(&self, other: &Self) -> bool {
+        grid_compare(self, other) == 0
+    }
+
+    fn cell(&self, px: u_int, py: u_int) -> Self::Cell {
+        grid_get_cell(self, px, py)
+    }
+
+    fn set_cell(&mut self, px: u_int, py: u_int, cell: &Self::Cell) {
+        grid_set_cell(self, px, py, cell)
+    }
+
+    fn set_padding(&mut self, px: u_int, py: u_int) {
+        grid_set_padding(self, px, py)
+    }
+
+    fn set_cells(&mut self, px: u_int, py: u_int, cell: &Self::Cell, text: &[u8]) {
+        grid_set_cells(self, px, py, cell, text)
+    }
+
+    fn clear(&mut self, px: u_int, py: u_int, nx: u_int, ny: u_int, background: u_int) {
+        grid_clear(self, px, py, nx, ny, background)
+    }
+
+    fn clear_lines(&mut self, py: u_int, ny: u_int, background: u_int) {
+        grid_clear_lines(self, py, ny, background)
+    }
+
+    fn move_lines(&mut self, dy: u_int, py: u_int, ny: u_int, background: u_int) {
+        grid_move_lines(self, dy, py, ny, background)
+    }
+
+    fn move_cells(&mut self, dx: u_int, px: u_int, py: u_int, nx: u_int, background: u_int) {
+        grid_move_cells(self, dx, px, py, nx, background)
+    }
+
+    fn collect_history(&mut self, all: bool) {
+        grid_collect_history(self, c_int::from(all))
+    }
+
+    fn remove_history(&mut self, lines: u_int) {
+        grid_remove_history(self, lines)
+    }
+
+    fn clear_history(&mut self) {
+        grid_clear_history(self)
+    }
+
+    fn scroll_history(&mut self, background: u_int) {
+        grid_scroll_history(self, background)
+    }
+
+    fn scroll_history_region(&mut self, upper: u_int, lower: u_int, background: u_int) {
+        grid_scroll_history_region(self, upper, lower, background)
+    }
+
+    fn duplicate_lines(&mut self, dy: u_int, source: &Self, sy: u_int, ny: u_int) {
+        grid_duplicate_lines(self, dy, source, sy, ny)
+    }
+
+    fn reflow(&mut self, width: u_int) {
+        grid_reflow(self, width)
+    }
+
+    fn wrap_position(&self, px: u_int, py: u_int) -> (u_int, u_int) {
+        grid_wrap_position(self, px, py)
+    }
+
+    fn unwrap_position(&self, wx: u_int, wy: u_int) -> (u_int, u_int) {
+        grid_unwrap_position(self, wx, wy)
+    }
+
+    fn line_length(&self, py: u_int) -> u_int {
+        grid_line_length(self, py)
+    }
+
+    fn in_set(&self, px: u_int, py: u_int, set: &CStr) -> c_int {
+        grid_in_set(self, px, py, set)
+    }
+
+    fn string_cells(
+        &self,
+        px: u_int,
+        py: u_int,
+        nx: u_int,
+        last_cell: Option<&mut Self::Cell>,
+        flags: c_int,
+        screen: Option<&Self::Screen>,
+    ) -> CString {
+        grid_string_cells(self, px, py, nx, last_cell, flags, screen)
+    }
+}
 
 /// The character of a cell that holds one byte.
 const fn one_byte(byte: u_char) -> [u_char; 32] {
@@ -162,7 +305,7 @@ fn grid_extended_cell(gl: &mut grid_line, px: u_int, gc: &grid_cell) -> u_int {
         if gce.flags as c_int & GRID_FLAG_EXTENDED == 0 {
             grid_get_extended_cell(gl, px, flags);
         } else if gce.c2rust_unnamed.offset >= gl.extdsize() {
-            fatalx(c"offset too big".as_ptr(), fmt_args![]);
+            fatalx(c"offset too big", fmt_args![]);
         }
         gl.flags |= GRID_LINE_EXTENDED;
         if gc.link != 0 {
@@ -219,6 +362,11 @@ pub fn grid_get_line(gd: &mut grid, line: u_int) -> &mut grid_line {
     line_at_mut(gd, line)
 }
 
+/// Borrows a stored line by index, using the same storage bounds as `grid_get_line`.
+pub fn grid_get_line_ref(gd: &grid, line: u_int) -> &grid_line {
+    line_at(gd, line)
+}
+
 pub fn grid_adjust_lines(gd: &mut grid, lines: u_int) {
     gd.linedata.resize_with(lines as usize, grid_line::new);
 }
@@ -262,10 +410,7 @@ fn grid_clear_cell(gd: &mut grid, px: u_int, py: u_int, bg: u_int, moved: bool) 
 fn grid_check_y(gd: &grid, from: &CStr, py: u_int) -> bool {
     unsafe {
         if py >= gd.hsize + gd.sy {
-            log_debug(
-                c"%s: y out of range: %u".as_ptr(),
-                fmt_args![from.as_ptr(), py],
-            );
+            log_debug(c"%s: y out of range: %u", fmt_args![from.as_ptr(), py]);
             return false;
         }
         true
@@ -340,6 +485,7 @@ pub fn grid_create(sx: u_int, sy: u_int, hlimit: u_int) -> Box<grid> {
     })
 }
 
+#[cfg(test)]
 pub fn grid_destroy(gd: Box<grid>) {
     drop(gd);
 }
@@ -350,8 +496,8 @@ pub fn grid_compare(ga: &grid, gb: &grid) -> c_int {
     if ga.sx != gb.sx || ga.sy != gb.sy {
         return 1;
     }
-    let mut gca = scratch_cell();
-    let mut gcb = scratch_cell();
+    let mut gca;
+    let mut gcb;
     for yy in 0..ga.sy {
         let cellsize = line_at(ga, yy).cellsize();
         if cellsize != line_at(gb, yy).cellsize() {
@@ -450,7 +596,7 @@ pub fn grid_scroll_history_region(gd: &mut grid, upper: u_int, lower: u_int, bg:
         let lower = lower as usize + 1;
 
         /* Move the line into the history. */
-        let promoted = std::mem::replace(&mut gd.linedata[upper], grid_line::new());
+        let promoted = std::mem::take(&mut gd.linedata[upper]);
         gd.linedata[history] = promoted;
         gd.linedata[history].time = current_time;
 
@@ -751,12 +897,12 @@ impl Values {
 
     /// The three parts of an RGB colour, after the code that introduces one.
     fn rgb(code: c_int, colour: c_int) -> Values {
-        let (r, g, b) = colour_split_rgb(colour);
+        let (r, g, b) = RustColourEngine.split_rgb(colour);
         Values::of(&[code, 2, r as c_int, g as c_int, b as c_int])
     }
 }
 
-impl ::core::ops::Deref for Values {
+impl core::ops::Deref for Values {
     type Target = [c_int];
 
     fn deref(&self) -> &[c_int] {
@@ -920,90 +1066,84 @@ fn grid_string_cells_code(
     gc: &grid_cell,
     buf: &mut Code,
     flags: c_int,
-    sc: *mut screen,
+    sc: Option<&RustScreen>,
     has_link: &mut bool,
 ) {
-    unsafe {
-        let attr = gc.attr as u_int;
-        let mut lastattr = lastgc.attr as u_int;
-        let mut s: Vec<u_int> = Vec::new();
+    let attr = gc.attr as u_int;
+    let mut lastattr = lastgc.attr as u_int;
+    let mut s: Vec<u_int> = Vec::new();
 
-        /* If any attribute is removed, begin with 0. */
-        let removed = ATTRS
-            .iter()
-            .any(|(mask, _)| !attr & mask != 0 && lastattr & mask != 0);
-        if removed || (lastgc.us != 8 && gc.us == 8) {
-            s.push(0);
-            lastattr &= GRID_ATTR_CHARSET as u_int;
+    /* If any attribute is removed, begin with 0. */
+    let removed = ATTRS
+        .iter()
+        .any(|(mask, _)| !attr & mask != 0 && lastattr & mask != 0);
+    if removed || (lastgc.us != 8 && gc.us == 8) {
+        s.push(0);
+        lastattr &= GRID_ATTR_CHARSET as u_int;
+    }
+
+    /* For each attribute that is newly set, add its code. */
+    for (mask, code) in ATTRS {
+        if attr & mask != 0 && lastattr & mask == 0 {
+            s.push(code);
         }
+    }
 
-        /* For each attribute that is newly set, add its code. */
-        for (mask, code) in ATTRS {
-            if attr & mask != 0 && lastattr & mask == 0 {
-                s.push(code);
-            }
-        }
-
-        /* Write the attributes. */
-        buf.clear();
-        if !s.is_empty() {
-            buf.push(escape(flags));
-            buf.push(b"[");
-            for (i, value) in s.iter().enumerate() {
-                if *value < 10 {
-                    buf.push(format!("{value}").as_bytes());
-                } else {
-                    buf.push(format!("{}:{}", value / 10, value % 10).as_bytes());
-                }
-                if i + 1 < s.len() {
-                    buf.push(b";");
-                }
-            }
-            buf.push(b"m");
-        }
-
-        /* If a colour changed, write its parameters. */
-        for (of, of_last) in [
-            (grid_string_cells_fg(gc), grid_string_cells_fg(lastgc)),
-            (grid_string_cells_bg(gc), grid_string_cells_bg(lastgc)),
-            (grid_string_cells_us(gc), grid_string_cells_us(lastgc)),
-        ] {
-            grid_string_cells_add_code(buf, &s, &of, &of_last, flags);
-        }
-
-        /* Append shift in/shift out if needed. */
-        let charset = GRID_ATTR_CHARSET as u_int;
-        if attr & charset != 0 && lastattr & charset == 0 {
-            if flags & GRID_STRING_ESCAPE_SEQUENCES != 0 {
-                buf.push(b"\\016"); /* SO */
+    /* Write the attributes. */
+    buf.clear();
+    if !s.is_empty() {
+        buf.push(escape(flags));
+        buf.push(b"[");
+        for (i, value) in s.iter().enumerate() {
+            if *value < 10 {
+                buf.push(format!("{value}").as_bytes());
             } else {
-                buf.push(b"\x0e"); /* SO */
+                buf.push(format!("{}:{}", value / 10, value % 10).as_bytes());
+            }
+            if i + 1 < s.len() {
+                buf.push(b";");
             }
         }
-        if attr & charset == 0 && lastattr & charset != 0 {
-            if flags & GRID_STRING_ESCAPE_SEQUENCES != 0 {
-                buf.push(b"\\017"); /* SI */
-            } else {
-                buf.push(b"\x0f"); /* SI */
-            }
-        }
+        buf.push(b"m");
+    }
 
-        /* Add hyperlink if changed. */
-        if !sc.is_null() && lastgc.link != gc.link {
-            let hyperlinks = (*sc).hyperlinks_ptr();
-            if !hyperlinks.is_null() {
-                if let Some((uri, internal_id, _)) = hyperlinks_get(&*hyperlinks, gc.link) {
-                    *has_link = grid_string_cells_add_hyperlink(
-                        buf,
-                        internal_id.to_bytes(),
-                        uri.to_bytes(),
-                        flags,
-                    );
-                } else if *has_link {
-                    grid_string_cells_add_hyperlink(buf, b"", b"", flags);
-                    *has_link = false;
-                }
-            }
+    /* If a colour changed, write its parameters. */
+    for (of, of_last) in [
+        (grid_string_cells_fg(gc), grid_string_cells_fg(lastgc)),
+        (grid_string_cells_bg(gc), grid_string_cells_bg(lastgc)),
+        (grid_string_cells_us(gc), grid_string_cells_us(lastgc)),
+    ] {
+        grid_string_cells_add_code(buf, &s, &of, &of_last, flags);
+    }
+
+    /* Append shift in/shift out if needed. */
+    let charset = GRID_ATTR_CHARSET as u_int;
+    if attr & charset != 0 && lastattr & charset == 0 {
+        if flags & GRID_STRING_ESCAPE_SEQUENCES != 0 {
+            buf.push(b"\\016"); /* SO */
+        } else {
+            buf.push(b"\x0e"); /* SO */
+        }
+    }
+    if attr & charset == 0 && lastattr & charset != 0 {
+        if flags & GRID_STRING_ESCAPE_SEQUENCES != 0 {
+            buf.push(b"\\017"); /* SI */
+        } else {
+            buf.push(b"\x0f"); /* SI */
+        }
+    }
+
+    /* Add hyperlink if changed. */
+    if let Some(sc) = sc
+        && lastgc.link != gc.link
+    {
+        let hyperlinks = sc.hyperlinks();
+        if let Some((uri, internal_id, _)) = hyperlinks.get(gc.link) {
+            *has_link =
+                grid_string_cells_add_hyperlink(buf, internal_id.to_bytes(), uri.to_bytes(), flags);
+        } else if *has_link {
+            grid_string_cells_add_hyperlink(buf, b"", b"", flags);
+            *has_link = false;
         }
     }
 }
@@ -1023,7 +1163,7 @@ pub fn grid_string_cells(
     nx: u_int,
     mut lastgc: Option<&mut grid_cell>,
     flags: c_int,
-    s: *mut screen,
+    s: Option<&RustScreen>,
 ) -> CString {
     let Some(gl) = grid_peek_line(gd, py) else {
         return copy_of(b"");
@@ -1037,7 +1177,7 @@ pub fn grid_string_cells(
     let mut out: Vec<u8> = Vec::new();
     let mut code = Code::new();
     let mut has_link = false;
-    let mut gc = scratch_cell();
+    let mut gc;
     for xx in px..px.wrapping_add(nx) {
         if xx >= end {
             break;
@@ -1471,7 +1611,7 @@ pub fn grid_line_length(gd: &grid, py: u_int) -> u_int {
     if px > gd.sx {
         px = gd.sx;
     }
-    let mut gc = scratch_cell();
+    let mut gc;
     while px > 0 {
         gc = grid_get_cell(gd, px - 1, py);
         if gc.flags as c_int & GRID_FLAG_PADDING != 0 || cell_bytes(&gc) != b" " {
@@ -1485,8 +1625,7 @@ pub fn grid_line_length(gd: &grid, py: u_int) -> u_int {
 /// Whether the character at a position is in a set, and for a tab how many of
 /// its columns are still to come.
 pub fn grid_in_set(gd: &grid, px: u_int, py: u_int, set: &CStr) -> c_int {
-    let mut gc = scratch_cell();
-    gc = grid_get_cell(gd, px, py);
+    let gc = grid_get_cell(gd, px, py);
     if set.to_bytes().contains(&b'\t') {
         if gc.flags as c_int & GRID_FLAG_PADDING != 0 {
             /*
@@ -1495,7 +1634,7 @@ pub fn grid_in_set(gd: &grid, px: u_int, py: u_int, set: &CStr) -> c_int {
              * a cell that far out answers with the default cell.
              */
             let mut pxx = px;
-            let mut tmp_gc = scratch_cell();
+            let mut tmp_gc;
             loop {
                 pxx = pxx.wrapping_sub(1);
                 tmp_gc = grid_get_cell(gd, pxx, py);
@@ -1513,9 +1652,10 @@ pub fn grid_in_set(gd: &grid, px: u_int, py: u_int, set: &CStr) -> c_int {
     if gc.flags as c_int & GRID_FLAG_PADDING != 0 {
         return 0;
     }
-    unsafe { utf8_cstrhas(set.as_ptr(), &gc.data) }
+    utf8_cstrhas(set, &gc.data)
 }
 
 #[cfg(test)]
 #[path = "../tests/test_grid.rs"]
 mod tests;
+use crate::screen::RustScreen;

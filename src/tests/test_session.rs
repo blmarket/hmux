@@ -1,26 +1,61 @@
-//! What is left uncovered here, and why. The `fatal` arm for a clock that
-//! would not answer and the `fatalx` arm for a session the sorted list does
-//! not hold end the process, so a unit test that entered one would take the
-//! whole run with it. `server_clear_marked` inside
-//! `session_renumber_windows` cannot be reached: the marked winlink is only
-//! remembered by the index it was just given, and a winlink that has just
-//! been added at an index is found at it. Nothing else is left.
-
 use super::*;
+use crate::WindowPane;
+use crate::environ::new_environment_box;
 use crate::grid::grid_scroll_history;
-use crate::options::options_set_number;
-use crate::screen::screen_grid_ptr;
-use crate::session::winlink_of;
-use crate::session::{session_get_curw, session_set_curw};
+use crate::options::OptionsRef;
+use crate::sort::{RustSortCriteria, SortCriteria};
+use crate::tests::test_fixtures::seen_str;
 use crate::tests::test_fixtures::{
-    Environ, Options, Pane, Session, Window, ensure_reactor, globals, link, seen, unlink, zeroed,
+    Options, Pane, Session, Window, ensure_reactor, globals, link, unlink, zeroed,
 };
 use crate::window::PANE_FOCUSED;
 use crate::window::window_set_active;
-use ::core::ffi::{CStr, c_char, c_int};
-use ::core::ptr::{null, null_mut};
+use ::core::ffi::{CStr, c_int};
+use ::core::ptr::null_mut;
 use ::std::ffi::CString;
 use ::std::sync::MutexGuard;
+
+#[test]
+fn moved_session_payload_cannot_recover_its_previous_owner() {
+    let mut original = SessionRef::new(session::default());
+    let moved = std::mem::take(unsafe { original.as_session_mut() });
+    assert!(session_ref_of(&moved).is_none());
+    let replacement = SessionRef::new(moved);
+    assert!(
+        session_ref_of(unsafe { replacement.as_session() })
+            .unwrap()
+            .ptr_eq(&replacement)
+    );
+}
+
+#[test]
+fn session_observer_expires_when_its_last_owner_drops() {
+    std::thread::spawn(|| {
+        let reference = SessionRef::new(session::default());
+        let observer = reference.downgrade();
+        assert!(session_ref_of(unsafe { reference.as_session() }).is_some());
+        drop(reference);
+        assert!(observer.upgrade().is_none());
+    })
+    .join()
+    .unwrap();
+}
+
+#[test]
+fn session_cleanup_survives_thread_local_owner_teardown() {
+    thread_local! {
+        static LAST_SESSION: std::cell::RefCell<Option<SessionRef>> = const {
+            std::cell::RefCell::new(None)
+        };
+    }
+    std::thread::spawn(|| {
+        LAST_SESSION.with_borrow_mut(|last| {
+            *last = Some(SessionRef::new(session::default()));
+        });
+    })
+    .join()
+    .unwrap();
+}
 
 /// A turn at the server-wide state these tests reach — the session tree,
 /// the session groups, the id the next session is given and the marked
@@ -28,11 +63,8 @@ use ::std::sync::MutexGuard;
 fn server() -> MutexGuard<'static, ()> {
     let guard = globals();
     ensure_reactor();
-    assert!(sessions.map().is_empty(), "the session tree is not empty");
-    assert!(
-        session_groups.map().is_empty(),
-        "the session groups are not empty"
-    );
+    assert!(SESSIONS.map().is_empty(), "the session tree is not empty");
+    assert!(session_groups_empty(), "the session groups are not empty");
     guard
 }
 
@@ -72,11 +104,10 @@ impl Named {
 }
 
 /// The names in a tree, in the order it walks them.
-unsafe fn walk(head: *mut sessions_t) -> Vec<String> {
+unsafe fn walk(head: &sessions_t) -> Vec<String> {
     unsafe {
-        (*head)
-            .values()
-            .map(|s| seen((*s.as_ptr()).name_ptr()))
+        head.values()
+            .map(|s| seen_str(s.as_session().name.as_deref()))
             .collect()
     }
 }
@@ -95,16 +126,16 @@ impl Created {
     /// of its own — which is what `cmd-new-session` hands over.
     fn session(&mut self, prefix: Option<&CStr>, name: Option<&CStr>) -> *mut session {
         unsafe {
-            let s = session_create(
-                prefix.map_or(null::<c_char>(), |p| p.as_ptr()),
-                name.map_or(null::<c_char>(), |n| n.as_ptr()),
-                c"/tmp".as_ptr(),
-                Environ::new().owned(),
+            let reference = SessionRef::create(
+                prefix,
+                name,
+                c"/tmp",
+                new_environment_box(),
                 Options::session().owned(),
-                null_mut::<termios>(),
+                None,
             );
-            self.0
-                .push(session_ref_from_ptr(s).expect("created session handle"));
+            let s = reference.as_ptr();
+            self.0.push(reference);
             s
         }
     }
@@ -114,17 +145,23 @@ impl Drop for Created {
     fn drop(&mut self) {
         for reference in &self.0 {
             let s = reference.as_ptr();
-            if unsafe { session_alive(s) } == 0 {
+            if i32::from(
+                (unsafe { s.as_ref() })
+                    .and_then(crate::session::session_ref_of)
+                    .is_some_and(|session| session.is_registered()),
+            ) == 0
+            {
                 continue;
             }
-            session_registry_remove(s);
+            session_registry_remove(unsafe { &*s });
         }
     }
 }
 
 /// The names of every session the server has.
 fn registered() -> Vec<String> {
-    unsafe { walk(sessions.map()) }
+    let mut registered = SESSIONS.map();
+    unsafe { walk(&registered) }
 }
 
 #[test]
@@ -132,16 +169,16 @@ fn a_session_is_created_with_the_name_it_is_given() {
     let _guard = server();
     let mut created = Created::new();
     unsafe {
-        let was = next_session_id;
+        let was = next_session_id().unwrap();
         let s = created.session(None, Some(c"named"));
-        assert_eq!(seen((*s).name_ptr()), "named");
+        assert_eq!(seen_str((*s).name.as_deref()), "named");
         assert_eq!((*s).id, was);
-        assert_eq!(::core::ptr::read(&raw const next_session_id), was + 1);
-        assert_eq!(seen((*s).cwd_ptr()), "/tmp");
-        assert!(session_ref_from_ptr(s).is_some());
+        assert_eq!(next_session_id().unwrap(), was + 1);
+        assert_eq!(seen_str((*s).cwd.as_deref()), "/tmp");
+        assert!(session_ref_of(&*s).is_some());
         assert_eq!((*s).flags, 0);
         assert!((*s).tio.is_none());
-        assert!(session_get_curw(s).is_null());
+        assert!((&*s).curw().is_none());
         assert!((*s).windows.is_empty());
         assert_eq!(registered(), ["named"]);
         assert_eq!((*s).activity_time.tv_sec, (*s).creation_time.tv_sec);
@@ -158,8 +195,14 @@ fn a_session_with_no_name_is_named_after_its_id() {
     unsafe {
         let first = created.session(Some(c"pre"), None);
         let second = created.session(None, None);
-        assert_eq!(seen((*first).name_ptr()), format!("pre-{}", (*first).id));
-        assert_eq!(seen((*second).name_ptr()), format!("{}", (*second).id));
+        assert_eq!(
+            seen_str((*first).name.as_deref()),
+            format!("pre-{}", (*first).id)
+        );
+        assert_eq!(
+            seen_str((*second).name.as_deref()),
+            format!("{}", (*second).id)
+        );
         assert_eq!((*second).id, (*first).id + 1);
     }
 }
@@ -171,12 +214,18 @@ fn a_name_that_is_taken_costs_the_next_session_its_id() {
     let _guard = server();
     let mut created = Created::new();
     unsafe {
-        let next_id = ::core::ptr::read(&raw const next_session_id);
+        let next_id = next_session_id().unwrap();
         let taken_name = CString::new(format!("pre-{}", next_id + 1)).expect("no NUL");
         let held = created.session(None, Some(taken_name.as_c_str()));
         let next = created.session(Some(c"pre"), None);
-        assert_eq!(seen((*held).name_ptr()), format!("pre-{}", (*held).id + 1));
-        assert_eq!(seen((*next).name_ptr()), format!("pre-{}", (*held).id + 2));
+        assert_eq!(
+            seen_str((*held).name.as_deref()),
+            format!("pre-{}", (*held).id + 1)
+        );
+        assert_eq!(
+            seen_str((*next).name.as_deref()),
+            format!("pre-{}", (*held).id + 2)
+        );
         assert_eq!((*next).id, (*held).id + 2);
     }
 }
@@ -190,36 +239,39 @@ fn the_terminal_settings_are_copied_into_the_session() {
     unsafe {
         let mut tio = zeroed::<termios>();
         tio.c_iflag = 0x2d5;
-        let s = session_create(
-            null::<c_char>(),
-            c"tio".as_ptr(),
-            c"/tmp".as_ptr(),
-            Environ::new().owned(),
+        let s = SessionRef::create(
+            None,
+            Some(c"tio"),
+            c"/tmp",
+            new_environment_box(),
             Options::session().owned(),
-            &raw mut *tio,
+            Some(&tio),
         );
-        created
-            .0
-            .push(session_ref_from_ptr(s).expect("created session handle"));
+        created.0.push(s.clone());
         tio.c_iflag = 0;
-        assert_eq!((*s).tio.as_ref().unwrap().c_iflag, 0x2d5);
+        assert_eq!(s.as_session().tio.as_ref().unwrap().c_iflag, 0x2d5);
     }
 }
 
 #[test]
 fn a_session_is_alive_while_the_server_holds_it() {
     let _guard = server();
-    let mut created = Created::new();
-    let mut apart = Session::new(1, "apart");
-    unsafe {
-        let s = created.session(None, Some(c"held"));
-        assert_eq!(session_alive(s), 1);
-        assert_eq!(session_alive(apart.ptr()), 0);
-        let name = name_of((*s).name_ptr()).to_owned();
-        let reference = session_registry_remove(s).expect("session owner");
-        assert_eq!(session_alive(s), 0);
-        sessions.map().insert(name, reference);
-    }
+    let apart = Session::new(1, "apart");
+    let reference = unsafe {
+        SessionRef::create(
+            None,
+            Some(c"held"),
+            c"/tmp",
+            new_environment_box(),
+            Options::session().owned(),
+            None,
+        )
+    };
+    assert!(reference.is_registered());
+    assert!(!apart.handle().is_registered());
+    session_registry_remove(unsafe { reference.as_session() });
+    assert!(!reference.is_registered());
+    assert_eq!(reference.name().as_deref(), Some(c"held"));
 }
 
 #[test]
@@ -229,12 +281,14 @@ fn a_session_is_found_by_name_and_by_id() {
     unsafe {
         let s = created.session(None, Some(c"findable"));
         let id = (*s).id;
-        assert_eq!(session_find(c"findable".as_ptr()), s);
-        assert!(session_find(c"nonesuch".as_ptr()).is_null());
-        assert_eq!(session_find_by_id(id), s);
-        assert!(session_find_by_id(id + 1000).is_null());
+        assert!(SessionRef::find(c"findable").is_some_and(|found| found.as_ptr() == s));
+        assert!(SessionRef::find(c"nonesuch").is_none());
+        assert!(SessionRef::find_by_id(id).is_some_and(|found| found.as_ptr() == s));
+        assert!(SessionRef::find_by_id(id + 1000).is_none());
         let by_str = CString::new(format!("${id}")).expect("no NUL");
-        assert_eq!(session_find_by_id_str(by_str.as_ptr()), s);
+        assert!(
+            SessionRef::find_by_id_str(by_str.as_c_str()).is_some_and(|found| found.as_ptr() == s)
+        );
     }
 }
 
@@ -247,12 +301,12 @@ fn an_id_that_is_not_a_number_after_a_dollar_finds_nothing() {
     unsafe {
         let s = created.session(None, Some(c"findable"));
         let plain = CString::new(format!("{}", (*s).id)).expect("no NUL");
-        assert!(session_find_by_id_str(plain.as_ptr()).is_null());
-        assert!(session_find_by_id_str(c"$".as_ptr()).is_null());
-        assert!(session_find_by_id_str(c"$x".as_ptr()).is_null());
-        assert!(session_find_by_id_str(c"$-1".as_ptr()).is_null());
-        assert!(session_find_by_id_str(c"$99999999999".as_ptr()).is_null());
-        assert!(session_find_by_id_str(c"".as_ptr()).is_null());
+        assert!(SessionRef::find_by_id_str(plain.as_c_str()).is_none());
+        assert!(SessionRef::find_by_id_str(c"$").is_none());
+        assert!(SessionRef::find_by_id_str(c"$x").is_none());
+        assert!(SessionRef::find_by_id_str(c"$-1").is_none());
+        assert!(SessionRef::find_by_id_str(c"$99999999999").is_none());
+        assert!(SessionRef::find_by_id_str(c"").is_none());
     }
 }
 
@@ -265,14 +319,18 @@ fn a_session_is_kept_while_anything_holds_a_handle_to_it() {
     let mut created = Created::new();
     unsafe {
         let s = created.session(None, Some(c"counted"));
-        let reference = session_ref_from_ptr(s).expect("session owner");
+        let reference = SessionRef::find_by_id((*s).id).expect("session owner");
         let weak = reference.downgrade();
-        let name = name_of((*s).name_ptr()).to_owned();
-        session_registry_remove(s);
-        assert_eq!(seen((*s).name_ptr()), "counted");
+        let name = (*s)
+            .name
+            .as_deref()
+            .expect("a created session has a name")
+            .to_owned();
+        session_registry_remove(&*s);
+        assert_eq!(seen_str((*s).name.as_deref()), "counted");
         assert!(weak.upgrade().is_some());
-        sessions.map().insert(name, reference);
-        session_registry_remove(s);
+        SESSIONS.map().insert(name, reference);
+        session_registry_remove(&*s);
         created.0.clear();
         assert!(weak.upgrade().is_none());
     }
@@ -284,7 +342,7 @@ fn a_session_is_kept_while_anything_holds_a_handle_to_it() {
 struct Linked {
     session: Session,
     windows: Vec<Window>,
-    winlinks: Vec<*mut winlink>,
+    winlinks: Vec<crate::window::WinlinkRef>,
 }
 
 impl Linked {
@@ -299,9 +357,9 @@ impl Linked {
         for i in 0..windows {
             linked.attach(&format!("w{i}"), i as c_int + 1);
         }
-        if let Some(first) = linked.winlinks.first() {
-            unsafe { session_set_curw(linked.session.ptr(), *first) };
-        }
+        let current = linked.winlinks.first().map(|link| link.index());
+        unsafe { linked.session.handle().clone().as_session_mut().curw_idx = current };
+
         linked
     }
 
@@ -309,19 +367,19 @@ impl Linked {
     /// The window's id is one nothing else has: the server tells two
     /// windows apart by it, and two sessions holding windows of the same
     /// id look to it like two sessions holding one window.
-    fn attach(&mut self, name: &str, idx: c_int) -> *mut winlink {
-        static NEXT_ID: ::std::sync::atomic::AtomicU32 = ::std::sync::atomic::AtomicU32::new(1);
-        let id = NEXT_ID.fetch_add(1, ::std::sync::atomic::Ordering::Relaxed) as u_int;
-        let mut w = Window::new(id, name, 80, 24);
-        let wl = unsafe {
-            let mut cause = None;
-            let wl = session_attach(self.session.ptr(), w.ptr(), idx, &mut cause);
-            assert!(!wl.is_null(), "index {idx} was in use");
-            wl
-        };
+    fn attach(&mut self, name: &str, idx: c_int) -> crate::window::WinlinkRef {
+        static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+        let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as u_int;
+        let w = Window::new(id, name, 80, 24);
+        let mut session = self.handle().clone();
+        let mut cause = None;
+        let index = unsafe { session.attach(w.reference(), idx, &mut cause) }
+            .expect("the fixture index is available");
+        let link =
+            crate::window::WinlinkRef::new(session, index).expect("the fixture link was attached");
         self.windows.push(w);
-        self.winlinks.push(wl);
-        wl
+        self.winlinks.push(link.clone());
+        link
     }
 
     fn ptr(&mut self) -> *mut session {
@@ -336,28 +394,40 @@ impl Linked {
         self.windows[i].ptr()
     }
 
-    fn wl(&self, i: usize) -> *mut winlink {
-        self.winlinks[i]
+    fn wl(&self, i: usize) -> crate::window::WinlinkRef {
+        self.winlinks[i].clone()
     }
 
     /// Which window is current, by name.
-    fn current(&mut self) -> Option<String> {
-        unsafe {
-            let curw = session_get_curw(self.ptr());
-            (!curw.is_null()).then(|| seen((*(*curw).window()).name_ptr()))
+    fn current(&self) -> Option<String> {
+        {
+            let link = self.handle().curw()?;
+            let window = link.window()?;
+            Some(
+                window
+                    .window_name()
+                    .as_deref()?
+                    .to_string_lossy()
+                    .into_owned(),
+            )
         }
     }
 
     /// The windows the session has been in, most recent first.
-    fn last(&mut self) -> Vec<String> {
+    fn last(&self) -> Vec<String> {
         unsafe {
-            (*self.ptr())
+            let session = self.handle().as_session();
+            session
                 .lastw
                 .iter()
-                .map(|&idx| {
-                    let wl = winlink_of(self.ptr(), Some(idx));
-                    (*(*wl).window())
-                        .name
+                .map(|index| {
+                    let link = session
+                        .windows
+                        .get(index)
+                        .expect("a stacked link belongs to the session");
+                    link.window_handle()
+                        .expect("a fixture link has a window")
+                        .window_name()
                         .as_deref()
                         .map_or(String::new(), |name| name.to_string_lossy().into_owned())
                 })
@@ -366,34 +436,25 @@ impl Linked {
     }
 
     /// The indexes the session's windows are linked at.
-    fn indexes(&mut self) -> Vec<c_int> {
-        unsafe {
-            let mut out = Vec::new();
-            let mut wl = winlinks_first(&mut (*self.ptr()).windows);
-            while !wl.is_null() {
-                out.push((*wl).idx);
-                wl = winlinks_after(wl);
-            }
-            out
-        }
+    fn indexes(&self) -> Vec<c_int> {
+        unsafe { self.handle().as_session().windows.keys().copied().collect() }
     }
 }
 
 impl Drop for Linked {
     fn drop(&mut self) {
         unsafe {
-            let s = self.session.ptr();
-            session_set_curw(s, null_mut::<winlink>());
-            while !(*s).lastw.is_empty() {
-                winlink_stack_remove(&mut (*s).lastw, winlink_of(s, (*s).lastw.first().copied()));
+            let mut owner = self.handle().clone();
+            owner.as_session_mut().curw_idx = None;
+            while let Some(index) = owner.as_session().lastw.first().copied() {
+                let session = owner.as_session_mut();
+                winlink_stack_remove(
+                    &mut session.lastw,
+                    session.windows.get_mut(&index).map(Box::as_mut),
+                );
             }
-            while let Some(wl) = (*s)
-                .windows
-                .values_mut()
-                .next()
-                .map(|wl| &raw mut **wl)
-            {
-                winlink_remove(&mut (*s).windows, wl);
+            while let Some(index) = owner.as_session().windows.keys().next().copied() {
+                winlink_remove(&mut owner.as_session_mut().windows, index);
             }
         }
     }
@@ -403,12 +464,17 @@ impl Drop for Linked {
 fn a_window_is_linked_into_a_session_at_an_index_of_its_own() {
     let _guard = server();
     let mut linked = Linked::new("attach", 0);
-    unsafe {
-        let wl = linked.attach("only", 3);
-        assert_eq!((*wl).idx, 3);
-        assert_eq!((*wl).session(), linked.ptr());
-        assert_eq!((*wl).window(), linked.window(0));
-        assert!((*wl).window_ref.is_some());
+    {
+        let link = linked.attach("only", 3);
+        assert_eq!(link.index(), 3);
+        assert!(link.session().ptr_eq(linked.handle()));
+        assert!(
+            link.get()
+                .unwrap()
+                .window_handle()
+                .unwrap()
+                .ptr_eq(linked.windows[0].handle())
+        );
         assert_eq!(linked.indexes(), [3]);
     }
 }
@@ -422,8 +488,8 @@ fn an_index_that_is_in_use_is_refused_with_a_reason() {
     let mut spare = Window::new(9, "spare", 80, 24);
     unsafe {
         let mut cause = None;
-        let wl = session_attach(linked.ptr(), spare.ptr(), 1, &mut cause);
-        assert!(wl.is_null());
+        let index = linked.handle().attach(spare.reference(), 1, &mut cause);
+        assert!(index.is_none());
         assert_eq!(cause.unwrap().to_str().unwrap(), "index in use: 1");
     }
 }
@@ -431,13 +497,11 @@ fn an_index_that_is_in_use_is_refused_with_a_reason() {
 #[test]
 fn a_session_knows_which_windows_are_linked_into_it() {
     let _guard = server();
-    let mut first = Linked::new("first", 1);
-    let mut second = Linked::new("second", 1);
-    unsafe {
-        assert_eq!(session_has(first.ptr(), first.window(0)), 1);
-        assert_eq!(session_has(first.ptr(), second.window(0)), 0);
-        assert_eq!(session_has(second.ptr(), second.window(0)), 1);
-    }
+    let first = Linked::new("first", 1);
+    let second = Linked::new("second", 1);
+    assert!(first.handle().has(first.windows[0].handle()));
+    assert!(!first.handle().has(second.windows[0].handle()));
+    assert!(second.handle().has(second.windows[0].handle()));
 }
 
 /// A session group holding sessions for the length of a test, which is
@@ -446,38 +510,35 @@ fn a_session_knows_which_windows_are_linked_into_it() {
 /// failure. A group the last session leaves is freed by the server
 /// itself; one nothing ever joined is taken out here.
 struct Group {
-    group: *mut session_group,
     name: CString,
-    sessions: Vec<*mut session>,
+    sessions: Vec<SessionRef>,
 }
 
 impl Group {
     fn new(name: &CStr) -> Group {
+        session_group_ensure(name);
         Group {
-            group: unsafe { session_group_new(name.as_ptr()) },
             name: name.to_owned(),
             sessions: Vec::new(),
         }
     }
 
-    fn add(&mut self, s: *mut session) {
-        unsafe { session_group_add(self.group, s) };
+    fn add(&mut self, s: SessionRef) {
+        s.join_group(&self.name);
         self.sessions.push(s);
     }
 
-    fn ptr(&self) -> *mut session_group {
-        self.group
+    fn count(&self) -> u_int {
+        with_session_group_named(&self.name, session_group_count).expect("the group exists")
     }
 }
 
 impl Drop for Group {
     fn drop(&mut self) {
-        unsafe {
-            for s in &self.sessions {
-                session_group_remove(*s);
-            }
-            let _ = session_groups.map().remove(&self.name);
+        for member in &self.sessions {
+            member.leave_group();
         }
+        session_group_registry_remove(&self.name);
     }
 }
 
@@ -490,13 +551,14 @@ fn a_group_is_found_by_name_among_the_ones_the_server_holds() {
     let alpha = Group::new(c"alpha");
     let beta = Group::new(c"beta");
     let gamma = Group::new(c"gamma");
-    unsafe {
-        assert_eq!(session_group_find(c"alpha".as_ptr()), alpha.ptr());
-        assert_eq!(session_group_find(c"beta".as_ptr()), beta.ptr());
-        assert_eq!(session_group_find(c"gamma".as_ptr()), gamma.ptr());
-        assert!(session_group_find(c"delta".as_ptr()).is_null());
-        assert_eq!(session_group_count(alpha.ptr()), 0);
+    for (name, group) in [(c"alpha", &alpha), (c"beta", &beta), (c"gamma", &gamma)] {
+        assert_eq!(
+            with_session_group_named(name, |group| session_group_name(group).to_owned()),
+            Some(group.name.clone())
+        );
     }
+    assert!(with_session_group_named(c"delta", |_| ()).is_none());
+    assert_eq!(alpha.count(), 0);
 }
 
 #[test]
@@ -505,20 +567,18 @@ fn a_window_is_linked_when_a_winlink_is_outside_the_session_or_group() {
     let mut linked = Linked::new("linked", 1);
     let mut second = Linked::new("second", 0);
     let second_wl = link(&mut second.session, &mut linked.windows[0], 0);
-    unsafe {
-        let w = linked.window(0);
-        let s = linked.ptr();
-        assert_eq!(session_is_linked(s, w), 1);
+    {
+        assert!(linked.handle().is_linked(linked.windows[0].handle()));
 
         let mut group = Group::new(c"group");
-        group.add(s);
-        group.add(second.ptr());
-        assert_eq!(session_group_count(group.ptr()), 2);
-        assert_eq!(session_is_linked(s, w), 0);
+        group.add(linked.session.reference());
+        group.add(second.session.reference());
+        assert_eq!(group.count(), 2);
+        assert!(!linked.handle().is_linked(linked.windows[0].handle()));
 
         let mut outside = Session::new(3, "outside");
         let outside_wl = link(&mut outside, &mut linked.windows[0], 0);
-        assert_eq!(session_is_linked(s, w), 1);
+        assert!(linked.handle().is_linked(linked.windows[0].handle()));
         unlink(&mut outside, outside_wl);
     }
     unlink(&mut second.session, second_wl);
@@ -532,14 +592,45 @@ fn the_current_window_is_set_and_the_one_before_it_is_remembered() {
     let mut linked = Linked::new("current", 3);
     unsafe {
         let s = linked.ptr();
-        assert_eq!(session_set_current(s, null_mut::<winlink>()), -1);
-        assert_eq!(session_set_current(s, linked.wl(0)), 1);
-        assert_eq!(session_set_current(s, linked.wl(1)), 0);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .set_current(None),
+            -1
+        );
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .set_current(Some(99)),
+            -1
+        );
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .set_current(Some(linked.wl(0).index())),
+            1
+        );
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .set_current(Some(linked.wl(1).index())),
+            0
+        );
         assert_eq!(linked.current().as_deref(), Some("w1"));
         assert_eq!(linked.last(), ["w0"]);
-        assert_eq!(session_set_current(s, linked.wl(2)), 0);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .set_current(Some(linked.wl(2).index())),
+            0
+        );
         assert_eq!(linked.last(), ["w1", "w0"]);
-        assert_eq!(session_set_current(s, linked.wl(0)), 0);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .set_current(Some(linked.wl(0).index())),
+            0
+        );
         assert_eq!(linked.last(), ["w2", "w1"]);
     }
 }
@@ -552,12 +643,35 @@ fn a_session_goes_back_to_the_window_it_came_from() {
     let mut linked = Linked::new("last", 2);
     unsafe {
         let s = linked.ptr();
-        assert_eq!(session_last(s), -1);
-        session_set_current(s, linked.wl(1));
-        assert_eq!(session_last(s), 0);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .last(),
+            -1
+        );
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .set_current(Some(linked.wl(1).index()));
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .last(),
+            0
+        );
         assert_eq!(linked.current().as_deref(), Some("w0"));
-        winlink_stack_push(&mut (*s).lastw, session_get_curw(s));
-        assert_eq!(session_last(s), 1);
+        {
+            let session = &mut *s;
+            let current = session
+                .curw_idx
+                .and_then(|index| session.windows.get_mut(&index));
+            winlink_stack_push(&mut session.lastw, current.map(|link| &mut **link));
+        }
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .last(),
+            1
+        );
     }
 }
 
@@ -567,10 +681,25 @@ fn a_window_is_selected_by_its_index() {
     let mut linked = Linked::new("select", 2);
     unsafe {
         let s = linked.ptr();
-        assert_eq!(session_select(s, 2), 0);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .select(2),
+            0
+        );
         assert_eq!(linked.current().as_deref(), Some("w1"));
-        assert_eq!(session_select(s, 2), 1);
-        assert_eq!(session_select(s, 99), -1);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .select(2),
+            1
+        );
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .select(99),
+            -1
+        );
     }
 }
 
@@ -582,21 +711,55 @@ fn the_next_and_previous_windows_wrap_round() {
     let mut linked = Linked::new("walk", 3);
     unsafe {
         let s = linked.ptr();
-        assert_eq!(session_next(s, 0), 0);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .next(0),
+            0
+        );
         assert_eq!(linked.current().as_deref(), Some("w1"));
-        assert_eq!(session_next(s, 0), 0);
-        assert_eq!(session_next(s, 0), 0);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .next(0),
+            0
+        );
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .next(0),
+            0
+        );
         assert_eq!(linked.current().as_deref(), Some("w0"));
-        assert_eq!(session_previous(s, 0), 0);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .previous(0),
+            0
+        );
         assert_eq!(linked.current().as_deref(), Some("w2"));
-        assert_eq!(session_previous(s, 0), 0);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .previous(0),
+            0
+        );
         assert_eq!(linked.current().as_deref(), Some("w1"));
 
-        let curw = session_get_curw(s);
-        session_set_curw(s, null_mut::<winlink>());
-        assert_eq!(session_next(s, 0), -1);
-        assert_eq!(session_previous(s, 0), -1);
-        session_set_curw(s, curw);
+        let current = (*s).curw_idx.take();
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .next(0),
+            -1
+        );
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .previous(0),
+            -1
+        );
+        (*s).curw_idx = current;
     }
 }
 
@@ -611,21 +774,56 @@ fn the_walk_can_be_asked_for_windows_with_alerts_only() {
     let mut linked = Linked::new("alerts", 4);
     unsafe {
         let s = linked.ptr();
-        assert_eq!(session_next(s, 1), -1);
-        assert_eq!(session_previous(s, 1), -1);
-        (*linked.wl(2)).flags |= WINLINK_BELL;
-        assert_eq!(session_next(s, 1), 0);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .next(1),
+            -1
+        );
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .previous(1),
+            -1
+        );
+        linked.wl(2).get_mut().unwrap().flags |= WINLINK_BELL;
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .next(1),
+            0
+        );
         assert_eq!(linked.current().as_deref(), Some("w2"));
-        (*linked.wl(2)).flags |= WINLINK_BELL;
-        (*linked.wl(0)).flags |= WINLINK_ACTIVITY;
-        assert_eq!(session_next(s, 1), 0);
+        linked.wl(2).get_mut().unwrap().flags |= WINLINK_BELL;
+        linked.wl(0).get_mut().unwrap().flags |= WINLINK_ACTIVITY;
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .next(1),
+            0
+        );
         assert_eq!(linked.current().as_deref(), Some("w0"));
-        (*linked.wl(3)).flags |= WINLINK_SILENCE;
-        assert_eq!(session_previous(s, 1), 0);
+        linked.wl(3).get_mut().unwrap().flags |= WINLINK_SILENCE;
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .previous(1),
+            0
+        );
         assert_eq!(linked.current().as_deref(), Some("w3"));
-        assert_eq!(session_previous(s, 1), 0);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .previous(1),
+            0
+        );
         assert_eq!(linked.current().as_deref(), Some("w2"));
-        assert_eq!(session_previous(s, 1), -1);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .previous(1),
+            -1
+        );
     }
 }
 
@@ -638,14 +836,41 @@ fn detaching_a_window_moves_off_it_first() {
     let mut linked = Linked::new("detach", 3);
     unsafe {
         let s = linked.ptr();
-        session_set_current(s, linked.wl(1));
-        assert_eq!(session_detach(s, linked.wl(1)), 0);
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .set_current(Some(linked.wl(1).index()));
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .detach(linked.wl(1).index()),
+            0
+        );
         assert_eq!(linked.current().as_deref(), Some("w0"));
         assert_eq!(linked.indexes(), [1, 3]);
-        assert_eq!(session_detach(s, linked.wl(2)), 0);
-        assert_eq!(session_detach(s, linked.wl(0)), 1);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .detach(2),
+            0
+        );
+        assert_eq!(linked.current().as_deref(), Some("w0"));
+        assert_eq!(linked.indexes(), [1, 3]);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .detach(linked.wl(2).index()),
+            0
+        );
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .detach(linked.wl(0).index()),
+            1
+        );
         assert!(linked.indexes().is_empty());
-        session_set_curw(s, null_mut::<winlink>());
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .set_curw(null_mut::<winlink>().as_ref());
         linked.winlinks.clear();
     }
 }
@@ -667,13 +892,17 @@ fn activity_is_taken_from_the_caller_or_from_the_clock() {
             tv_sec: 1234,
             tv_usec: 567,
         };
-        session_update_activity(s, &raw const from as *mut timeval);
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .update_activity(Some(&from));
         assert_eq!((*s).activity_time.tv_sec, 1234);
         assert_eq!((*s).activity_time.tv_usec, 567);
         assert!((*s).lock_timer.is_set());
         assert!(!locking(s));
 
-        session_update_activity(s, null_mut::<timeval>());
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .update_activity(None);
         assert!((*s).activity_time.tv_sec > 1234);
         (*s).lock_timer.disarm();
     }
@@ -687,16 +916,22 @@ fn an_attached_session_locks_after_the_time_it_is_given() {
     let mut fixture = Session::new(1, "locking");
     unsafe {
         let s = fixture.ptr();
-        options_set_number((*s).options_ptr(), c"lock-after-time".as_ptr(), 60);
-        session_update_activity(s, null_mut::<timeval>());
+        ((*s).options_ref()).set_number(c"lock-after-time", 60);
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .update_activity(None);
         assert!(!locking(s), "nobody is attached");
 
         (*s).attached = 1;
-        session_update_activity(s, null_mut::<timeval>());
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .update_activity(None);
         assert!(locking(s));
 
-        options_set_number((*s).options_ptr(), c"lock-after-time".as_ptr(), 0);
-        session_update_activity(s, null_mut::<timeval>());
+        ((*s).options_ref()).set_number(c"lock-after-time", 0);
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .update_activity(None);
         assert!(!locking(s), "there is no time to lock after");
         (*s).attached = 0;
         (*s).lock_timer.disarm();
@@ -712,9 +947,18 @@ fn a_session_with_no_current_window_is_not_destroyed() {
     let mut created = Created::new();
     unsafe {
         let s = created.session(None, Some(c"halfway"));
-        session_destroy(s, 1, c"a test".as_ptr());
-        assert_eq!(session_alive(s), 1);
-        assert!(session_ref_from_ptr(s).is_some());
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .destroy(1, c"a test");
+        assert_eq!(
+            i32::from(
+                (s.as_ref())
+                    .and_then(crate::session::session_ref_of)
+                    .is_some_and(|session| session.is_registered())
+            ),
+            1
+        );
+        assert!(session_ref_of(&*s).is_some());
     }
 }
 
@@ -729,16 +973,31 @@ fn destroying_a_session_unlinks_everything_it_held() {
     unsafe {
         let s = created.session(None, Some(c"doomed"));
         let mut cause = None;
-        let wl = session_attach(s, first.ptr(), 1, &mut cause);
-        let wl2 = session_attach(s, second.ptr(), 2, &mut cause);
-        session_set_curw(s, wl);
-        session_set_current(s, wl2);
+        let wl = crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .attach(first.reference(), 1, &mut cause);
+        let wl2 = crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .attach(second.reference(), 2, &mut cause);
+        (*s).curw_idx = wl;
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .set_current(wl2);
         assert!(!(*s).lastw.is_empty());
-        let weak = session_ref_from_ptr(s).expect("session owner").downgrade();
-        session_destroy(s, 1, c"a test".as_ptr());
-        assert_eq!(session_alive(s), 0);
+        let weak = session_ref_of(&*s).expect("session owner").downgrade();
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .destroy(1, c"a test");
+        assert_eq!(
+            i32::from(
+                (s.as_ref())
+                    .and_then(crate::session::session_ref_of)
+                    .is_some_and(|session| session.is_registered())
+            ),
+            0
+        );
         assert!(registered().is_empty());
-        assert!(session_get_curw(s).is_null());
+        assert!((&*s).curw().is_none());
         assert!((*s).windows.is_empty());
         assert!(weak.upgrade().is_some());
     }
@@ -754,17 +1013,33 @@ fn the_next_and_previous_sessions_wrap_round_the_sorted_list() {
         let a = created.session(None, Some(c"aaa"));
         let b = created.session(None, Some(c"bbb"));
         let c = created.session(None, Some(c"ccc"));
-        let mut crit = sort_criteria_t {
-            order: SORT_NAME,
-            reversed: 0,
-            order_seq: None,
-        };
-        assert_eq!(session_next_session(a, &crit), b);
-        assert_eq!(session_next_session(c, &crit), a);
-        assert_eq!(session_previous_session(a, &crit), c);
-        assert_eq!(session_previous_session(b, &crit), a);
-        crit.reversed = 1;
-        assert_eq!(session_next_session(a, &crit), c);
+        let mut crit = RustSortCriteria::new(SORT_NAME, false);
+        assert!(
+            crate::session::session_ref_of(&*a)
+                .and_then(|session| session.next_session(&crit))
+                .is_some_and(|s| s.as_ptr() == b)
+        );
+        assert!(
+            crate::session::session_ref_of(&*c)
+                .and_then(|session| session.next_session(&crit))
+                .is_some_and(|s| s.as_ptr() == a)
+        );
+        assert!(
+            crate::session::session_ref_of(&*a)
+                .and_then(|session| session.previous_session(&crit))
+                .is_some_and(|s| s.as_ptr() == c)
+        );
+        assert!(
+            crate::session::session_ref_of(&*b)
+                .and_then(|session| session.previous_session(&crit))
+                .is_some_and(|s| s.as_ptr() == a)
+        );
+        crit.set_reversed(true);
+        assert!(
+            crate::session::session_ref_of(&*a)
+                .and_then(|session| session.next_session(&crit))
+                .is_some_and(|s| s.as_ptr() == c)
+        );
     }
 }
 
@@ -774,18 +1049,30 @@ fn the_next_and_previous_sessions_wrap_round_the_sorted_list() {
 fn a_session_the_server_has_given_up_has_no_neighbours() {
     let _guard = server();
     let mut apart = Session::new(1, "apart");
-    let mut crit = sort_criteria_t {
-        order: SORT_NAME,
-        reversed: 0,
-        order_seq: None,
-    };
+    let mut crit = RustSortCriteria::new(SORT_NAME, false);
     unsafe {
-        assert!(session_next_session(apart.ptr(), &crit).is_null());
-        assert!(session_previous_session(apart.ptr(), &crit).is_null());
+        assert!(
+            crate::session::session_ref_of(&*apart.ptr())
+                .and_then(|session| session.next_session(&crit))
+                .is_none()
+        );
+        assert!(
+            crate::session::session_ref_of(&*apart.ptr())
+                .and_then(|session| session.previous_session(&crit))
+                .is_none()
+        );
         let mut created = Created::new();
         created.session(None, Some(c"only"));
-        assert!(session_next_session(apart.ptr(), &crit).is_null());
-        assert!(session_previous_session(apart.ptr(), &crit).is_null());
+        assert!(
+            crate::session::session_ref_of(&*apart.ptr())
+                .and_then(|session| session.next_session(&crit))
+                .is_none()
+        );
+        assert!(
+            crate::session::session_ref_of(&*apart.ptr())
+                .and_then(|session| session.previous_session(&crit))
+                .is_none()
+        );
     }
 }
 
@@ -794,33 +1081,63 @@ fn a_session_the_server_has_given_up_has_no_neighbours() {
 #[test]
 fn a_group_is_made_once_and_holds_each_session_once() {
     let _guard = server();
-    let mut first = Session::new(1, "one");
-    let mut second = Session::new(2, "two");
+    let first = Session::new(1, "one");
+    let second = Session::new(2, "two");
+    let mut first = first.reference();
+    let mut second = second.reference();
+    assert!(with_session_group_named(c"group", |_| ()).is_none());
+    let group = Group::new(c"group");
+    assert_eq!(group.count(), 0);
     unsafe {
-        assert!(session_group_find(c"group".as_ptr()).is_null());
-        let sg = session_group_new(c"group".as_ptr());
-        assert_eq!(session_group_new(c"group".as_ptr()), sg);
-        assert_eq!(session_group_find(c"group".as_ptr()), sg);
-        assert_eq!(seen(session_group_name(sg).as_ptr()), "group");
-        assert_eq!(session_group_count(sg), 0);
+        first.join_group(&group.name);
+        first.join_group(&group.name);
+        session_group_ensure(&group.name);
+        assert_eq!(group.count(), 1);
+        second.join_group(&group.name);
+        assert_eq!(group.count(), 2);
+        for member in [&first, &second] {
+            assert_eq!(
+                member.with_group(|group| session_group_name(group).to_owned()),
+                Some(group.name.clone())
+            );
+        }
+        first.as_session_mut().attached = 2;
+        second.as_session_mut().attached = 1;
+        assert_eq!(
+            with_session_group_named(&group.name, session_group_attached_count),
+            Some(3)
+        );
+        first.leave_group();
+        assert_eq!(group.count(), 1);
+        assert!(first.with_group(|_| ()).is_none());
+        second.leave_group();
+        assert!(with_session_group_named(&group.name, |_| ()).is_none());
+    }
+}
 
-        session_group_add(sg, first.ptr());
-        session_group_add(sg, first.ptr());
-        assert_eq!(session_group_count(sg), 1);
-        session_group_add(sg, second.ptr());
-        assert_eq!(session_group_count(sg), 2);
-        assert_eq!(session_group_contains(first.ptr()), sg);
-        assert_eq!(session_group_contains(second.ptr()), sg);
-
-        (*first.ptr()).attached = 2;
-        (*second.ptr()).attached = 1;
-        assert_eq!(session_group_attached_count(sg), 3);
-
-        session_group_remove(first.ptr());
-        assert_eq!(session_group_count(sg), 1);
-        assert!(session_group_contains(first.ptr()).is_null());
-        session_group_remove(second.ptr());
-        assert!(session_group_find(c"group".as_ptr()).is_null());
+#[test]
+fn safe_group_walk_survives_members_leaving_the_group() {
+    let _guard = server();
+    let mut first = Session::new(1, "first");
+    let mut second = Session::new(2, "second");
+    let mut group = Group::new(c"snapshot");
+    group.add(second.reference());
+    group.add(first.reference());
+    let mut first = first.reference();
+    let mut second = second.reference();
+    {
+        let mut walk = first.group_walk_safe().unwrap();
+        let second_member = walk.next().unwrap();
+        assert!(second_member.ptr_eq(&second));
+        second.leave_group();
+        let first_member = walk.next().unwrap();
+        assert!(first_member.ptr_eq(&first));
+        first.leave_group();
+        assert!(first.with_group(|_| ()).is_none());
+        assert!(with_session_group_named(c"snapshot", |_| ()).is_none());
+        assert!(walk.next().is_none());
+        assert_eq!(second_member.name().as_deref(), Some(c"second"));
+        assert_eq!(first_member.name().as_deref(), Some(c"first"));
     }
 }
 
@@ -831,11 +1148,17 @@ fn a_session_that_is_in_no_group_is_left_alone() {
     let _guard = server();
     let mut apart = Session::new(1, "apart");
     unsafe {
-        assert!(session_group_contains(apart.ptr()).is_null());
-        session_group_remove(apart.ptr());
-        session_group_synchronize_to(apart.ptr());
-        session_group_synchronize_from(apart.ptr());
-        assert!(session_group_contains(apart.ptr()).is_null());
+        assert!(apart.reference().with_group(|_| ()).is_none());
+        if let Some(session) = crate::session::session_ref_of(&mut *apart.ptr()) {
+            session.leave_group();
+        };
+        if let Some(session) = crate::session::session_ref_of(&mut *apart.ptr()) {
+            session.synchronize_group_to();
+        };
+        if let Some(session) = crate::session::session_ref_of(&mut *apart.ptr()) {
+            session.synchronize_group_from();
+        };
+        assert!(apart.reference().with_group(|_| ()).is_none());
     }
 }
 
@@ -849,17 +1172,27 @@ fn a_group_is_synchronised_from_one_session_to_the_others() {
     let mut other = Linked::new("other", 1);
     unsafe {
         let mut group = Group::new(c"group");
-        group.add(target.ptr());
-        group.add(other.ptr());
+        group.add(target.session.reference());
+        group.add(other.session.reference());
         assert_eq!(target.indexes(), [1, 2]);
         assert_eq!(other.indexes(), [1]);
 
-        session_group_synchronize_from(target.ptr());
+        if let Some(session) = crate::session::session_ref_of(&mut *target.ptr()) {
+            session.synchronize_group_from();
+        };
         assert_eq!(other.indexes(), [1, 2]);
         assert_eq!(other.current().as_deref(), Some("w0"));
         assert_eq!(
-            seen((*(*winlink_find_by_index(&mut (*other.ptr()).windows, 2)).window()).name_ptr()),
-            "w1"
+            other
+                .session
+                .handle()
+                .as_session()
+                .windows
+                .get(&2)
+                .and_then(|link| link.window_handle())
+                .and_then(|window| window.window_name())
+                .as_deref(),
+            Some(c"w1")
         );
         other.winlinks.clear();
     }
@@ -875,10 +1208,12 @@ fn a_session_is_synchronised_to_what_the_rest_of_its_group_holds() {
     let mut joining = Linked::new("joining", 1);
     unsafe {
         let mut group = Group::new(c"group");
-        group.add(holding.ptr());
-        group.add(joining.ptr());
+        group.add(holding.session.reference());
+        group.add(joining.session.reference());
 
-        session_group_synchronize_to(joining.ptr());
+        if let Some(session) = crate::session::session_ref_of(&mut *joining.ptr()) {
+            session.synchronize_group_to();
+        };
         assert_eq!(joining.indexes(), [1, 2]);
         assert_eq!(holding.indexes(), [1, 2]);
         joining.winlinks.clear();
@@ -894,13 +1229,19 @@ fn a_group_of_one_has_nothing_to_synchronise() {
     let mut empty = Linked::new("empty", 0);
     unsafe {
         let mut group = Group::new(c"group");
-        group.add(alone.ptr());
-        session_group_synchronize_to(alone.ptr());
-        session_group_synchronize_from(alone.ptr());
+        group.add(alone.session.reference());
+        if let Some(session) = crate::session::session_ref_of(&mut *alone.ptr()) {
+            session.synchronize_group_to();
+        };
+        if let Some(session) = crate::session::session_ref_of(&mut *alone.ptr()) {
+            session.synchronize_group_from();
+        };
         assert_eq!(alone.indexes(), [1]);
 
-        group.add(empty.ptr());
-        session_group_synchronize_from(empty.ptr());
+        group.add(empty.session.reference());
+        if let Some(session) = crate::session::session_ref_of(&mut *empty.ptr()) {
+            session.synchronize_group_from();
+        };
         assert_eq!(alone.indexes(), [1]);
     }
 }
@@ -916,16 +1257,24 @@ fn renumbering_closes_the_gaps_between_the_windows() {
         linked.attach("w0", 1);
         linked.attach("w1", 4);
         linked.attach("w2", 9);
-        session_set_curw(s, linked.wl(1));
-        session_set_current(s, linked.wl(2));
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .set_curw(linked.wl(1).get());
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .set_current(Some(linked.wl(2).index()));
 
-        session_renumber_windows(s);
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .renumber_windows();
         assert_eq!(linked.indexes(), [0, 1, 2]);
         assert_eq!(linked.current().as_deref(), Some("w2"));
         assert_eq!(linked.last(), ["w1"]);
 
-        options_set_number((*s).options_ptr(), c"base-index".as_ptr(), 5);
-        session_renumber_windows(s);
+        ((*s).options_ref()).set_number(c"base-index", 5);
+        crate::session::session_ref_of(&mut *s)
+            .expect("session owner")
+            .renumber_windows();
         assert_eq!(linked.indexes(), [5, 6, 7]);
         assert_eq!(linked.current().as_deref(), Some("w2"));
         linked.winlinks.clear();
@@ -944,10 +1293,14 @@ fn a_theme_change_reaches_every_pane_of_the_session() {
         let w = linked.window(0);
         first.hand_to(w);
         second.hand_to(w);
-        session_theme_changed(linked.ptr());
-        assert_ne!((*first.ptr()).flags & PANE_THEMECHANGED, 0);
-        assert_ne!((*second.ptr()).flags & PANE_THEMECHANGED, 0);
-        session_theme_changed(null_mut::<session>());
+        if let Some(session) = linked.ptr().as_mut() {
+            crate::session::session_ref_of(session)
+                .expect("session owner")
+                .theme_changed();
+        };
+        assert_ne!(*(*first.ptr()).flags() & PANE_THEMECHANGED, 0);
+        assert_ne!(*(*second.ptr()).flags() & PANE_THEMECHANGED, 0);
+        ();
     }
 }
 
@@ -963,18 +1316,18 @@ fn the_history_limit_reaches_every_pane_of_the_session() {
     unsafe {
         let w = linked.window(0);
         pane.hand_to(w);
-        let gd = screen_grid_ptr(&mut (*pane.ptr()).base);
+        let gd = RustScreen::grid_mut((*pane.ptr()).base_mut());
         for _ in 0..20 {
             grid_scroll_history(&mut *gd, 8);
         }
         assert_eq!((*gd).hsize, 20);
 
-        options_set_number((*linked.ptr()).options_ptr(), c"history-limit".as_ptr(), 5);
-        session_update_history(linked.handle());
+        (*(*linked.ptr()).options_ref()).set_number(c"history-limit", 5);
+        linked.handle().update_history();
         assert_eq!((*gd).hlimit, 5);
         assert_eq!((*gd).hsize, 5);
 
-        session_update_history(linked.handle());
+        linked.handle().update_history();
         assert_eq!((*gd).hsize, 4);
     }
 }
@@ -987,7 +1340,7 @@ fn a_session_is_freed_once_nothing_holds_it() {
     let _guard = server();
     let mut created = Created::new();
     let s = created.session(None, Some(c"doomed"));
-    let reference = session_registry_remove(s).expect("session owner");
+    let reference = session_registry_remove(unsafe { &*s }).expect("session owner");
     let weak = reference.downgrade();
     session_defer_cleanup(reference);
     created.0.clear();
@@ -1004,9 +1357,9 @@ fn the_lock_timer_locks_a_session_somebody_is_attached_to() {
     let mut fixture = Session::new(1, "locked");
     unsafe {
         let s = fixture.ptr();
-        session_lock_timer(s);
+        session_lock_timer(&mut *s);
         (*s).attached = 1;
-        session_lock_timer(s);
+        session_lock_timer(&mut *s);
         (*s).attached = 0;
     }
 }
@@ -1022,13 +1375,24 @@ fn moving_between_windows_can_carry_the_focus_with_it() {
         let s = linked.ptr();
         let w = linked.window(0);
         let wp = pane.hand_to(w);
-        window_set_active(w, wp);
-        (*wp).flags |= PANE_FOCUSED;
-        options_set_number(global_options, c"focus-events".as_ptr(), 1);
-        assert_eq!(session_set_current(s, linked.wl(1)), 0);
-        options_set_number(global_options, c"focus-events".as_ptr(), 0);
-        assert_eq!((*wp).flags & PANE_FOCUSED, 0);
-        window_set_active(w, null_mut::<window_pane>());
+        window_set_active(&mut *w, Some(&*wp));
+        *(*wp).flags_mut() |= PANE_FOCUSED;
+        (global_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .set_number(c"focus-events", 1);
+        assert_eq!(
+            crate::session::session_ref_of(&mut *s)
+                .expect("session owner")
+                .set_current(Some(linked.wl(1).index())),
+            0
+        );
+        (global_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .set_number(c"focus-events", 0);
+        assert_eq!(*(*wp).flags() & PANE_FOCUSED, 0);
+        window_set_active(&mut *w, None::<&crate::types::window_pane>);
     }
 }
 
@@ -1046,16 +1410,18 @@ fn synchronising_moves_a_session_off_a_window_the_target_has_not_got() {
     unsafe {
         target.attach("t0", 1);
         target.attach("t1", 2);
-        session_set_curw(target.ptr(), target.wl(1));
+        target.handle().set_curw(target.wl(1).get());
         other.attach("o0", 7);
         other.attach("o1", 8);
-        session_set_curw(other.ptr(), other.wl(0));
-        session_set_current(other.ptr(), other.wl(1));
+        other.handle().set_curw(other.wl(0).get());
+        other.handle().set_current(Some(other.wl(1).index()));
 
         let mut group = Group::new(c"group");
-        group.add(target.ptr());
-        group.add(other.ptr());
-        session_group_synchronize_from(target.ptr());
+        group.add(target.session.reference());
+        group.add(other.session.reference());
+        if let Some(session) = crate::session::session_ref_of(&mut *target.ptr()) {
+            session.synchronize_group_from();
+        };
 
         assert_eq!(other.indexes(), [1, 2]);
         assert_eq!(other.current(), None);
@@ -1075,18 +1441,20 @@ fn synchronising_keeps_the_windows_a_session_has_been_in() {
     unsafe {
         target.attach("t0", 1);
         target.attach("t1", 2);
-        session_set_curw(target.ptr(), target.wl(1));
+        target.handle().set_curw(target.wl(1).get());
         other.attach("o0", 1);
         other.attach("o1", 2);
-        session_set_curw(other.ptr(), other.wl(0));
-        session_set_current(other.ptr(), other.wl(1));
+        other.handle().set_curw(other.wl(0).get());
+        other.handle().set_current(Some(other.wl(1).index()));
         assert_eq!(other.last(), ["o0"]);
-        session_set_curw(other.ptr(), null_mut::<winlink>());
+        other.handle().set_curw(null_mut::<winlink>().as_ref());
 
         let mut group = Group::new(c"group");
-        group.add(target.ptr());
-        group.add(other.ptr());
-        session_group_synchronize_from(target.ptr());
+        group.add(target.session.reference());
+        group.add(other.session.reference());
+        if let Some(session) = crate::session::session_ref_of(&mut *target.ptr()) {
+            session.synchronize_group_from();
+        };
 
         assert_eq!(other.indexes(), [1, 2]);
         assert_eq!(other.current().as_deref(), Some("t1"));
@@ -1107,19 +1475,45 @@ fn synchronising_a_session_of_one_window_has_nowhere_to_move_it() {
     let mut other = Linked::new("other", 0);
     unsafe {
         target.attach("t0", 1);
-        session_set_curw(target.ptr(), target.wl(0));
+        target.handle().set_curw(target.wl(0).get());
         other.attach("o0", 9);
-        session_set_curw(other.ptr(), other.wl(0));
+        other.handle().set_curw(other.wl(0).get());
         assert!((*other.ptr()).lastw.is_empty());
 
         let mut group = Group::new(c"group");
-        group.add(target.ptr());
-        group.add(other.ptr());
-        session_group_synchronize_from(target.ptr());
+        group.add(target.session.reference());
+        group.add(other.session.reference());
+        if let Some(session) = crate::session::session_ref_of(&mut *target.ptr()) {
+            session.synchronize_group_from();
+        };
 
         assert_eq!(other.indexes(), [1]);
         assert_eq!(other.current(), None);
         other.winlinks.clear();
+    }
+}
+
+#[test]
+fn renumbering_does_not_retarget_another_sessions_mark_at_the_same_index() {
+    let _guard = server();
+    let mut renumbered = Linked::new("renumbered", 0);
+    let mut marked = Linked::new("marked", 0);
+    unsafe {
+        renumbered.attach("renumbered-window", 6);
+        marked.attach("marked-window", 6);
+        marked_pane.set_session(marked.ptr().as_ref());
+        marked_pane.set_winlink(marked.wl(0).get());
+        marked_pane.set_window_ref(Some(marked.windows[0].handle()));
+        let marked_window = marked_pane.window().unwrap();
+
+        renumbered.handle().renumber_windows();
+
+        assert_eq!(renumbered.indexes(), [0]);
+        assert_eq!(marked_pane.wl_idx, Some(6));
+        assert!(marked_pane.session().unwrap().ptr_eq(marked.handle()));
+        assert!(marked_pane.window().unwrap().ptr_eq(&marked_window));
+        server_clear_marked();
+        renumbered.winlinks.clear();
     }
 }
 
@@ -1132,16 +1526,209 @@ fn renumbering_carries_the_marked_pane_over() {
     unsafe {
         linked.attach("w0", 2);
         linked.attach("w1", 6);
-        session_set_curw(linked.ptr(), linked.wl(0));
-        marked_pane.set_winlink(linked.wl(1));
-        marked_pane.set_session(linked.ptr());
-        marked_pane.set_window(linked.window(1));
+        linked.handle().set_curw(linked.wl(0).get());
+        marked_pane.set_winlink(linked.wl(1).get());
+        marked_pane.set_session(linked.ptr().as_ref());
+        marked_pane.set_window_ref(Some(linked.windows[1].handle()));
 
-        session_renumber_windows(linked.ptr());
+        linked.handle().renumber_windows();
         assert_eq!(linked.indexes(), [0, 1]);
-        assert_eq!((*marked_pane.winlink()).idx, 1);
-        assert_eq!(seen((*(*marked_pane.winlink()).window()).name_ptr()), "w1");
+        let marked = marked_pane.winlink_ref().unwrap();
+        let link = marked.get().unwrap();
+        assert_eq!(link.idx, 1);
+        assert_eq!(
+            link.window_handle()
+                .unwrap()
+                .window_name()
+                .as_deref()
+                .unwrap(),
+            c"w1"
+        );
         server_clear_marked();
         linked.winlinks.clear();
     }
+}
+use crate::screen::RustScreen;
+
+#[test]
+fn session_id_exhaustion_prevents_reuse_and_partial_registration() {
+    let _guard = server();
+    let mut created = Created::new();
+    NEXT_SESSION_ID.set(Some(u_int::MAX));
+    let last = created.session(None, Some(c"last"));
+    assert_eq!(unsafe { (*last).id }, u_int::MAX);
+    assert_eq!(next_session_id(), None);
+    unsafe {
+        let mut format = crate::format::format_create(None, None, 0, 0);
+        assert_eq!(
+            crate::format::format_expand(&mut format, c"#{next_session_id}").as_c_str(),
+            c""
+        );
+    }
+    for _ in 0..2 {
+        let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            created.session(None, Some(c"rejected"));
+        }));
+        assert!(failed.is_err());
+        assert_eq!(registered(), ["last"]);
+        assert_eq!(next_session_id(), None);
+    }
+    std::thread::spawn(|| assert_eq!(next_session_id(), Some(0)))
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn session_id_exhaustion_while_skipping_a_name_leaves_no_partial_session() {
+    let _guard = server();
+    let mut created = Created::new();
+    NEXT_SESSION_ID.set(Some(u_int::MAX - 1));
+    let name = CString::new(format!("pre-{}", u_int::MAX)).unwrap();
+    created.session(None, Some(&name));
+    let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        created.session(Some(c"pre"), None);
+    }));
+    assert!(failed.is_err());
+    assert_eq!(registered(), [name.to_str().unwrap()]);
+    assert_eq!(next_session_id(), None);
+}
+
+#[test]
+fn session_group_registry_is_thread_local_and_observes_sessions_weakly() {
+    std::thread::spawn(|| {
+        let reference = SessionRef::new(session::default());
+        let observer = reference.downgrade();
+        session_group_ensure(c"isolated");
+        reference.join_group(c"isolated");
+        assert_eq!(
+            with_session_group_named(c"isolated", session_group_count),
+            Some(1)
+        );
+        std::thread::spawn(|| {
+            assert!(session_groups_empty());
+            assert!(with_session_group_named(c"isolated", |_| ()).is_none());
+            session_group_ensure(c"isolated");
+            session_group_registry_remove(c"isolated");
+            assert!(session_groups_empty());
+        })
+        .join()
+        .unwrap();
+        assert!(with_session_group_named(c"isolated", |_| ()).is_some());
+        drop(reference);
+        assert!(observer.upgrade().is_none());
+        assert_eq!(
+            with_session_group_named(c"isolated", session_group_count),
+            Some(0)
+        );
+        session_group_registry_remove(c"isolated");
+        assert!(session_groups_empty());
+    })
+    .join()
+    .unwrap();
+}
+
+#[test]
+fn session_group_registry_teardown_can_precede_a_retained_session() {
+    thread_local! {
+        static LAST_SESSION: std::cell::RefCell<Option<SessionRef>> = const { std::cell::RefCell::new(None) };
+    }
+    std::thread::spawn(|| {
+        LAST_SESSION.with_borrow_mut(|last| {
+            let reference = SessionRef::new(session::default());
+            session_group_ensure(c"retained");
+            reference.join_group(c"retained");
+            *last = Some(reference);
+        });
+    })
+    .join()
+    .unwrap();
+}
+
+#[test]
+fn target_session_observation_uses_owners_without_borrowing_the_payload() {
+    let reference = SessionRef::new(session::default());
+    let mut target = cmd_find_state::default();
+    target.set_session_ref(Some(&reference));
+    assert!(target.session().unwrap().ptr_eq(&reference));
+    drop(reference);
+    assert!(target.session().is_none());
+}
+
+pub(crate) fn session_groups_empty() -> bool {
+    SESSION_GROUPS.with_borrow(|groups| groups.is_empty())
+}
+
+pub(crate) fn session_registry_clear() {
+    SESSIONS.map().clear();
+}
+
+/// A session of `name` that is not in the server's registry and has no
+/// windows, for a test that wants one to hand to the function under test
+/// rather than one the server will run.
+pub(crate) fn session_new_detached(
+    id: u_int,
+    name: CString,
+    cwd: CString,
+    oo: crate::options::RustOptionsRef,
+    env: Box<RustEnvironment>,
+) -> SessionRef {
+    SessionRef::new(session {
+        id,
+        name: Some(name),
+        cwd: Some(cwd),
+        options: Some(oo),
+        environ: Some(env),
+        ..session::default()
+    })
+}
+
+#[test]
+fn session_property_snapshots_survive_changes_through_another_handle() {
+    let _guard = server();
+    let fixture = Session::new(17, "before");
+    let session = fixture.reference();
+    let other = session.clone();
+    unsafe { session.set_cwd(c"/before".to_owned()) };
+    let name = session.name();
+    let cwd = session.cwd();
+    let options = session.options();
+    unsafe {
+        other.rename(c"after".to_owned());
+        other.set_cwd(c"/after".to_owned());
+        other.add_attached();
+        other.set_alerted(true);
+        other.set_activity_time(timeval {
+            tv_sec: 123,
+            tv_usec: 456,
+        });
+    }
+    assert_eq!(name.as_deref(), Some(c"before"));
+    assert_eq!(cwd.as_deref(), Some(c"/before"));
+    assert_eq!(session.name().as_deref(), Some(c"after"));
+    assert_eq!(session.cwd().as_deref(), Some(c"/after"));
+    assert_eq!(session.id(), 17);
+    assert_eq!(session.attached(), 1);
+    assert!(session.alerted());
+    assert_eq!(session.activity_time().tv_sec, 123);
+    assert_eq!(session.activity_time().tv_usec, 456);
+    assert!(options.ptr_eq(&session.options()));
+}
+
+#[test]
+fn a_current_window_snapshot_survives_unlinking_its_session_link() {
+    let _guard = server();
+    let linked = Linked::new("linked", 1);
+    let session = linked.handle();
+    let link = session.curw().expect("the session has a current link");
+    let window = session
+        .current_window()
+        .expect("the session has a current window");
+    assert!(link.window().unwrap().ptr_eq(&window));
+    assert_eq!(unsafe { session.detach(link.index()) }, 1);
+    assert!(session.curw().is_none());
+    assert!(session.current_window().is_none());
+    assert!(link.window().is_none());
+    assert!(link.key().is_none());
+    assert!(unsafe { link.clone().set_window(window.clone()) }.is_none());
+    assert_eq!(window.window_name().as_deref(), Some(c"w0"));
 }

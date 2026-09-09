@@ -1,23 +1,51 @@
+use super::term::TerminalCapabilities;
 use crate::fmt_args;
 use crate::log::log_debug;
-use super::term::tty_term_apply;
 pub use crate::types::*;
-use ::core::ffi::{CStr, c_char, c_int};
+use ::core::ffi::{CStr, c_int};
 
-pub const TERM_256COLOURS: c_int = 0x1;
-pub const TERM_DECSLRM: c_int = 0x4;
-pub const TERM_DECFRA: c_int = 0x8;
-pub const TERM_RGBCOLOURS: c_int = 0x10;
-pub const TERM_SIXEL: c_int = 0x40;
+pub use crate::consts::{TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_RGBCOLOURS, TERM_SIXEL};
+
+/// Parses and names terminal feature bitsets.
+pub trait TerminalFeatureSet {
+    /// Adds the recognized names from `features` to `current`.
+    fn add(&self, current: c_int, features: &CStr, separators: &CStr) -> c_int;
+
+    /// Returns the names present in `features`, in bit order.
+    fn names(&self, features: c_int) -> std::ffi::CString;
+
+    /// Adds the defaults associated with a terminal name and version.
+    fn defaults(&self, current: c_int, name: &CStr, version: u_int) -> c_int;
+}
+
+/// Terminal feature-set operations implemented by hmux.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RustTerminalFeatureSet;
+
+impl TerminalFeatureSet for RustTerminalFeatureSet {
+    fn add(&self, mut current: c_int, features: &CStr, separators: &CStr) -> c_int {
+        tty_add_features_impl(&mut current, features, separators);
+        current
+    }
+
+    fn names(&self, features: c_int) -> std::ffi::CString {
+        tty_get_features_impl(features)
+    }
+
+    fn defaults(&self, mut current: c_int, name: &CStr, version: u_int) -> c_int {
+        tty_default_features_impl(&mut current, name, version);
+        current
+    }
+}
 
 /// One terminal feature: the name a user writes, the terminfo capabilities it
 /// stands for and the terminal flags it carries. A feature's bit is its index
 /// in [`tty_features`], so the order below is the wire order of the feature
 /// flags a client sends.
-struct tty_feature {
-    name: &'static CStr,
-    capabilities: &'static [&'static CStr],
-    flags: c_int,
+pub struct tty_feature {
+    pub name: &'static CStr,
+    pub capabilities: &'static [&'static CStr],
+    pub flags: c_int,
 }
 
 /// The sixty-four function keys `ignorefkeys` takes away. A capability ending
@@ -168,27 +196,24 @@ static tty_features: [tty_feature; 21] = [
 /// skipped: `256,bogus,title` adds `256` and nothing else. That is what the C
 /// does, and a client sending an unknown feature name loses the rest of its
 /// list the same way.
-pub unsafe fn tty_add_features(feat: &mut c_int, s: *const c_char, separators: *const c_char) {
+fn tty_add_features_impl(feat: &mut c_int, s: &CStr, separators: &CStr) {
     unsafe {
-        log_debug(c"adding terminal features %s".as_ptr(), fmt_args![s]);
-        let separators = CStr::from_ptr(separators).to_bytes();
-        for next in CStr::from_ptr(s)
-            .to_bytes()
-            .split(|byte| separators.contains(byte))
-        {
+        log_debug(c"adding terminal features %s", fmt_args![s.as_ptr()]);
+        let separators = separators.to_bytes();
+        for next in s.to_bytes().split(|byte| separators.contains(byte)) {
             let found = tty_features
                 .iter()
                 .position(|tf| tf.name.to_bytes().eq_ignore_ascii_case(next));
             let Some(i) = found else {
                 log_debug(
-                    c"unknown terminal feature: %.*s".as_ptr(),
+                    c"unknown terminal feature: %.*s",
                     fmt_args![next.len() as c_int, next.as_ptr()],
                 );
                 break;
             };
             if *feat & (1 << i) == 0 {
                 log_debug(
-                    c"adding terminal feature: %s".as_ptr(),
+                    c"adding terminal feature: %s",
                     fmt_args![tty_features[i].name.as_ptr()],
                 );
                 *feat |= 1 << i;
@@ -199,7 +224,7 @@ pub unsafe fn tty_add_features(feat: &mut c_int, s: *const c_char, separators: *
 
 /// Names the features `feat` carries, comma-separated in bit order, as the
 /// caller's own string.
-pub fn tty_get_features(feat: c_int) -> ::std::ffi::CString {
+fn tty_get_features_impl(feat: c_int) -> std::ffi::CString {
     let mut names = Vec::<u8>::new();
     for (i, tf) in tty_features.iter().enumerate() {
         if feat & (1 << i) != 0 {
@@ -209,7 +234,7 @@ pub fn tty_get_features(feat: c_int) -> ::std::ffi::CString {
             names.extend_from_slice(tf.name.to_bytes());
         }
     }
-    ::std::ffi::CString::new(names).expect("a feature name has no interior NUL")
+    std::ffi::CString::new(names).expect("a feature name has no interior NUL")
 }
 
 /// Gives `term` the capabilities and terminal flags of every feature in `feat`
@@ -218,29 +243,26 @@ pub fn tty_get_features(feat: c_int) -> ::std::ffi::CString {
 ///
 /// Every feature in the table names at least one capability, so the C's check
 /// for a feature with none is gone.
-pub unsafe fn tty_apply_features(term: &mut tty_term, feat: c_int) -> c_int {
+pub(crate) unsafe fn tty_apply_features(term: &mut tty_term, feat: c_int) -> c_int {
     unsafe {
         if feat == 0 {
             return 0;
         }
         log_debug(
-            c"applying terminal features: %s".as_ptr(),
-            fmt_args![tty_get_features(feat).as_c_str()],
+            c"applying terminal features: %s",
+            fmt_args![RustTerminalFeatureSet.names(feat).as_c_str()],
         );
         for (i, tf) in tty_features.iter().enumerate() {
             if term.features & (1 << i) != 0 || feat & (1 << i) == 0 {
                 continue;
             }
             log_debug(
-                c"applying terminal feature: %s".as_ptr(),
+                c"applying terminal feature: %s",
                 fmt_args![tf.name.as_ptr()],
             );
             for capability in tf.capabilities {
-                log_debug(
-                    c"adding capability: %s".as_ptr(),
-                    fmt_args![capability.as_ptr()],
-                );
-                tty_term_apply(term, capability.as_ptr(), 1);
+                log_debug(c"adding capability: %s", fmt_args![capability.as_ptr()]);
+                term.apply_overrides(capability);
             }
             term.flags |= tf.flags;
         }
@@ -259,7 +281,7 @@ pub unsafe fn tty_apply_features(term: &mut tty_term, feat: c_int) -> c_int {
 /// down when the terminal was older than the entry asked for, but every entry
 /// below asks for version zero, so no terminal was ever turned down and the
 /// check is gone.
-pub unsafe fn tty_default_features(feat: &mut c_int, name: *const c_char, _version: u_int) {
+fn tty_default_features_impl(feat: &mut c_int, name: &CStr, _version: u_int) {
     static table: [(&CStr, &CStr); 7] = [
         (
             c"mintty",
@@ -290,14 +312,23 @@ pub unsafe fn tty_default_features(feat: &mut c_int, name: *const c_char, _versi
             c"256,RGB,bpaste,clipboard,mouse,strikethrough,title,ccolour,cstyle,extkeys,focus",
         ),
     ];
-    unsafe {
-        let name = CStr::from_ptr(name);
-        for (entry, features) in table {
-            if entry == name {
-                tty_add_features(feat, features.as_ptr(), c",".as_ptr());
-            }
+    for (entry, features) in table {
+        if entry == name {
+            tty_add_features_impl(feat, features, c",");
         }
     }
+}
+
+pub fn tty_add_features(feat: &mut c_int, features: &CStr, separators: &CStr) {
+    *feat = RustTerminalFeatureSet.add(*feat, features, separators);
+}
+
+pub fn tty_get_features(features: c_int) -> std::ffi::CString {
+    RustTerminalFeatureSet.names(features)
+}
+
+pub fn tty_default_features(feat: &mut c_int, name: &CStr, version: u_int) {
+    *feat = RustTerminalFeatureSet.defaults(*feat, name, version);
 }
 #[cfg(test)]
 #[path = "../tests/test_tty_features.rs"]

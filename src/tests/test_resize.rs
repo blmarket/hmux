@@ -1,15 +1,17 @@
 use super::*;
+use crate::WindowPane;
 use crate::layout::{LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM};
-use crate::layout::{layout_assign_pane, layout_free, layout_init, layout_split_pane};
-use crate::options::{options_set_number, options_set_string};
+use crate::options::OptionsRef;
+use crate::pane_geometry::PaneGeometryState;
+use crate::pane_identity::PaneIdentity;
 use crate::server::server_client_add_client_window;
-use crate::session::{session_attached, session_set_curw};
 use crate::tests::test_fixtures::{
     Clients, Pane, Registry, Session, Window, globals, link, unlink,
 };
+use crate::window::PANE_ZOOMED;
 use crate::window::window_set_active;
 use crate::window::window_set_latest;
-use crate::window::{PANE_ZOOMED, window_zoom};
+use crate::window_dimensions::WindowDimensionsState;
 use ::core::ffi::c_int;
 use ::core::ptr::null_mut;
 
@@ -24,14 +26,27 @@ struct Win {
 }
 
 impl Win {
+    fn reference(&self) -> WindowRef {
+        self.window.reference()
+    }
+
     fn new(sx: u_int, sy: u_int) -> Win {
+        Self::with_id(1, sx, sy)
+    }
+
+    fn with_id(id: u_int, sx: u_int, sy: u_int) -> Win {
         let mut w = Win {
-            window: Window::new(1, "resize", sx, sy),
+            window: Window::new(id, "resize", sx, sy),
             panes: Vec::new(),
             next_id: 0,
         };
         w.add_pane(sx, sy);
-        unsafe { layout_init(w.ptr(), w.pane(0)) };
+        unsafe {
+            (w.reference()).init_layout(
+                &crate::window::window_pane_find_by_id((*w.pane(0)).pane_id())
+                    .expect("the layout pane exists"),
+            )
+        };
         w
     }
 
@@ -58,10 +73,21 @@ impl Win {
     /// Splits pane `i` and gives the new cell a pane of its own.
     fn split(&mut self, i: usize, type_0: layout_type) -> usize {
         unsafe {
-            let lc = layout_split_pane(self.pane(i), type_0, -1, 0);
-            assert!(!lc.is_null(), "there was no room to split");
+            let pane_id = (*self.pane(i)).pane_id();
+            let lc = (self.window.reference()).split_pane_layout(
+                &crate::window::window_pane_find_by_id(pane_id).expect("the layout pane exists"),
+                type_0,
+                -1,
+                0,
+            );
+            assert!(lc.is_some(), "there was no room to split");
             let j = self.add_pane(1, 1);
-            layout_assign_pane(lc, self.pane(j), 0);
+            (self.reference()).assign_pane_layout(
+                lc.as_ref().unwrap(),
+                &crate::window::window_pane_find_by_id((*self.pane(j)).pane_id())
+                    .expect("the layout pane exists"),
+                0,
+            );
             j
         }
     }
@@ -71,10 +97,10 @@ impl Win {
         unsafe {
             let w = self.ptr();
             (
-                (*w).sx,
-                (*w).sy,
-                (*(*w).layout_root_ptr()).sx,
-                (*(*w).layout_root_ptr()).sy,
+                (*w).dimensions().size.width,
+                (*w).dimensions().size.height,
+                (*(*w).layout_root.as_deref_mut().unwrap()).sx,
+                (*(*w).layout_root.as_deref_mut().unwrap()).sy,
             )
         }
     }
@@ -82,7 +108,7 @@ impl Win {
 
 impl Drop for Win {
     fn drop(&mut self) {
-        unsafe { layout_free(self.window.ptr()) };
+        (self.window.reference()).free_layout();
     }
 }
 
@@ -95,7 +121,6 @@ unsafe fn ignores(c: *mut client) -> c_int {
 /// whether it found a size at all.
 unsafe fn calculate(
     type_0: c_int,
-    current: c_int,
     c: *mut client,
     s: *mut session,
     w: *mut window,
@@ -105,8 +130,10 @@ unsafe fn calculate(
         let mut sy = 0;
         let mut xpixel = 0;
         let mut ypixel = 0;
-        let size =
-            clients_calculate_size(type_0, current, c, s, w, default_window_size_skip_client);
+        let w = w.as_ref().and_then(crate::window::window_ref_of);
+        let size = clients_calculate_size(type_0, c.as_ref(), w.as_ref(), |client| {
+            default_window_size_skip_client(client, s.as_ref(), w.as_ref())
+        });
         sx = size.sx;
         sy = size.sy;
         xpixel = size.xpixel;
@@ -122,7 +149,10 @@ unsafe fn default_size(
     w: *mut window,
     type_0: c_int,
 ) -> (u_int, u_int, u_int, u_int) {
-    unsafe { default_window_size(c, s, w, type_0) }
+    unsafe {
+        let w = w.as_ref().and_then(crate::window::window_ref_of);
+        default_window_size(c.as_ref(), &*s, w.as_ref(), type_0)
+    }
 }
 
 #[test]
@@ -130,11 +160,11 @@ fn resizing_a_window_moves_it_and_its_layout() {
     let _guard = globals();
     let mut w = Win::new(80, 24);
     unsafe { (*w.ptr()).flags |= WINDOW_RESIZE };
-    unsafe { resize_window(w.ptr(), 40, 10, -1, -1) };
+    unsafe { (w.reference()).resize_with_layout(40, 10, -1, -1) };
     assert_eq!(w.size(), (40, 10, 40, 10));
     unsafe {
-        assert_eq!((*w.pane(0)).sx, 40);
-        assert_eq!((*w.pane(0)).sy, 10);
+        assert_eq!((*w.pane(0)).geometry().width, 40);
+        assert_eq!((*w.pane(0)).geometry().height, 10);
         assert_eq!((*w.ptr()).flags & WINDOW_RESIZE, 0);
     }
 }
@@ -143,9 +173,9 @@ fn resizing_a_window_moves_it_and_its_layout() {
 fn a_window_size_is_clamped_to_the_window_minimum_and_maximum() {
     let _guard = globals();
     let mut w = Win::new(80, 24);
-    unsafe { resize_window(w.ptr(), 0, 0, -1, -1) };
+    unsafe { (w.reference()).resize_with_layout(0, 0, -1, -1) };
     assert_eq!(w.size(), (1, 1, 1, 1));
-    unsafe { resize_window(w.ptr(), 20000, 20000, -1, -1) };
+    unsafe { (w.reference()).resize_with_layout(20000, 20000, -1, -1) };
     assert_eq!(w.size(), (10000, 10000, 10000, 10000));
 }
 
@@ -154,12 +184,12 @@ fn a_window_is_never_smaller_than_its_layout_needs() {
     let _guard = globals();
     let mut w = Win::new(80, 24);
     w.split(0, LAYOUT_LEFTRIGHT);
-    unsafe { resize_window(w.ptr(), 1, 1, -1, -1) };
+    unsafe { (w.reference()).resize_with_layout(1, 1, -1, -1) };
     assert_eq!(w.size(), (3, 1, 3, 1));
 
     let mut tall = Win::new(80, 24);
     tall.split(0, LAYOUT_TOPBOTTOM);
-    unsafe { resize_window(tall.ptr(), 1, 1, -1, -1) };
+    unsafe { (tall.reference()).resize_with_layout(1, 1, -1, -1) };
     assert_eq!(tall.size(), (1, 3, 1, 3));
 }
 
@@ -168,13 +198,20 @@ fn a_zoomed_window_is_unzoomed_and_zoomed_again_around_the_resize() {
     let _guard = globals();
     let mut w = Win::new(80, 24);
     w.split(0, LAYOUT_LEFTRIGHT);
-    assert_eq!(unsafe { window_zoom(w.pane(0)) }, 0);
+    let id = unsafe { (*w.pane(0)).pane_id() };
+    assert_eq!(
+        unsafe {
+            (w.reference())
+                .zoom(&crate::window::window_pane_find_by_id(id).expect("the selected pane exists"))
+        },
+        0
+    );
     unsafe {
         assert_ne!((*w.ptr()).flags & WINDOW_ZOOMED, 0);
-        resize_window(w.ptr(), 40, 10, -1, -1);
+        (w.reference()).resize_with_layout(40, 10, -1, -1);
         assert_ne!((*w.ptr()).flags & WINDOW_ZOOMED, 0);
-        assert_ne!((*w.pane(0)).flags & PANE_ZOOMED, 0);
-        assert_eq!((*w.pane(0)).sx, 40);
+        assert_ne!(*(*w.pane(0)).flags() & PANE_ZOOMED, 0);
+        assert_eq!((*w.pane(0)).geometry().width, 40);
     }
     assert_eq!(w.size().0, 40);
 }
@@ -187,7 +224,7 @@ fn a_client_with_no_session_or_on_its_way_out_is_ignored() {
     let c = list.add("c", 80, 24);
     assert_eq!(unsafe { ignores(c) }, 1);
     unsafe {
-        (*c).session = s.ptr();
+        (*c).set_attached_session(Some(s.handle()));
         assert_eq!(ignores(c), 0);
         for flag in [CLIENT_DEAD, CLIENT_SUSPENDED, CLIENT_EXIT] {
             (*c).flags = flag as uint64_t;
@@ -203,17 +240,17 @@ fn a_client_ignoring_size_gives_way_to_one_that_does_not() {
     let mut list = Clients::new();
     let first = list.add("first", 80, 24);
     unsafe {
-        (*first).session = s.ptr();
+        (*first).set_attached_session(Some(s.handle()));
         (*first).flags = CLIENT_IGNORESIZE as uint64_t;
         assert_eq!(ignores(first), 0);
         let second = list.add("second", 80, 24);
-        (*second).session = s.ptr();
+        (*second).set_attached_session(Some(s.handle()));
         assert_eq!(ignores(first), 1);
         (*second).flags = CLIENT_DEAD as uint64_t;
         assert_eq!(ignores(first), 0);
         (*second).flags = CLIENT_IGNORESIZE as uint64_t;
         assert_eq!(ignores(first), 0);
-        (*second).session = null_mut::<session>();
+        (*second).set_attached_session(None);
         assert_eq!(ignores(first), 0);
     }
 }
@@ -225,7 +262,7 @@ fn a_control_client_is_ignored_until_it_reports_a_size() {
     let mut list = Clients::new();
     let c = list.add("c", 80, 24);
     unsafe {
-        (*c).session = s.ptr();
+        (*c).set_attached_session(Some(s.handle()));
         (*c).flags = CLIENT_CONTROL as uint64_t;
         assert_eq!(ignores(c), 1);
         (*c).flags = (CLIENT_CONTROL | CLIENT_SIZECHANGED) as uint64_t;
@@ -241,17 +278,17 @@ fn the_clients_showing_a_window_are_counted_up_to_two() {
     let mut s = Session::new(1, "count");
     let mut w = Win::new(80, 24);
     let mut list = Clients::new();
-    assert_eq!(unsafe { clients_with_window(w.ptr()) }, 0);
+    assert_eq!(unsafe { clients_with_window(w.handle()) }, 0);
     let first = list.add("first", 80, 24);
-    unsafe { (*first).session = s.ptr() };
-    assert_eq!(unsafe { clients_with_window(w.ptr()) }, 0);
+    unsafe { (*first).set_attached_session(Some(s.handle())) };
+    assert_eq!(unsafe { clients_with_window(w.handle()) }, 0);
     let wl = link(&mut s, &mut w.window, 0);
-    assert_eq!(unsafe { clients_with_window(w.ptr()) }, 1);
+    assert_eq!(unsafe { clients_with_window(w.handle()) }, 1);
     let second = list.add("second", 80, 24);
-    unsafe { (*second).session = s.ptr() };
+    unsafe { (*second).set_attached_session(Some(s.handle())) };
     let third = list.add("third", 80, 24);
-    unsafe { (*third).session = s.ptr() };
-    assert_eq!(unsafe { clients_with_window(w.ptr()) }, 2);
+    unsafe { (*third).set_attached_session(Some(s.handle())) };
+    assert_eq!(unsafe { clients_with_window(w.handle()) }, 2);
     unlink(&mut s, wl);
 }
 
@@ -263,18 +300,18 @@ fn the_largest_size_is_the_biggest_terminal_of_any_client() {
     let wl = link(&mut s, &mut w.window, 0);
     let mut list = Clients::new();
     assert_eq!(
-        unsafe { calculate(WINDOW_SIZE_LARGEST, 0, null_mut(), s.ptr(), w.ptr()) },
+        unsafe { calculate(WINDOW_SIZE_LARGEST, null_mut(), s.ptr(), w.ptr()) },
         (0, 0, 0, 0, 0)
     );
     let first = list.add("first", 80, 24);
     let second = list.add("second", 100, 20);
     unsafe {
-        (*first).session = s.ptr();
-        (*second).session = s.ptr();
+        (*first).set_attached_session(Some(s.handle()));
+        (*second).set_attached_session(Some(s.handle()));
         (*second).tty.xpixel = 8;
         (*second).tty.ypixel = 16;
         assert_eq!(
-            calculate(WINDOW_SIZE_LARGEST, 0, null_mut(), s.ptr(), w.ptr()),
+            calculate(WINDOW_SIZE_LARGEST, null_mut(), s.ptr(), w.ptr()),
             (1, 100, 24, 8, 16)
         );
     }
@@ -289,16 +326,16 @@ fn the_smallest_size_is_the_smallest_terminal_of_any_client() {
     let wl = link(&mut s, &mut w.window, 0);
     let mut list = Clients::new();
     assert_eq!(
-        unsafe { calculate(0x7f, 0, null_mut(), s.ptr(), w.ptr()) },
+        unsafe { calculate(0x7f, null_mut(), s.ptr(), w.ptr()) },
         (0, UINT_MAX, UINT_MAX, 0, 0)
     );
     let first = list.add("first", 80, 24);
     let second = list.add("second", 100, 20);
     unsafe {
-        (*first).session = s.ptr();
-        (*second).session = s.ptr();
+        (*first).set_attached_session(Some(s.handle()));
+        (*second).set_attached_session(Some(s.handle()));
         assert_eq!(
-            calculate(0x7f, 0, null_mut(), s.ptr(), w.ptr()),
+            calculate(0x7f, null_mut(), s.ptr(), w.ptr()),
             (1, 80, 20, 0, 0)
         );
     }
@@ -316,14 +353,14 @@ fn a_client_not_showing_the_window_is_skipped() {
     let inside = list.add("inside", 80, 24);
     let outside = list.add("outside", 20, 10);
     unsafe {
-        (*inside).session = s.ptr();
-        (*outside).session = other.ptr();
+        (*inside).set_attached_session(Some(s.handle()));
+        (*outside).set_attached_session(Some(other.handle()));
         assert_eq!(
-            calculate(WINDOW_SIZE_LARGEST, 0, null_mut(), s.ptr(), w.ptr()),
+            calculate(WINDOW_SIZE_LARGEST, null_mut(), s.ptr(), w.ptr()),
             (1, 80, 24, 0, 0)
         );
         assert_eq!(
-            calculate(WINDOW_SIZE_LARGEST, 0, null_mut(), other.ptr(), null_mut()),
+            calculate(WINDOW_SIZE_LARGEST, null_mut(), other.ptr(), null_mut()),
             (1, 20, 10, 0, 0)
         );
     }
@@ -335,14 +372,16 @@ fn a_manual_size_is_the_windows_own_and_needs_no_client() {
     let _guard = globals();
     let mut w = Win::new(80, 24);
     unsafe {
-        (*w.ptr()).manual_sx = 33;
-        (*w.ptr()).manual_sy = 11;
+        (*w.ptr()).set_manual_size(crate::pane_resize::PaneSize {
+            width: 33,
+            height: 11,
+        });
         assert_eq!(
-            calculate(WINDOW_SIZE_MANUAL, 0, null_mut(), null_mut(), w.ptr()),
+            calculate(WINDOW_SIZE_MANUAL, null_mut(), null_mut(), w.ptr()),
             (1, 33, 11, 0, 0)
         );
         assert_eq!(
-            calculate(WINDOW_SIZE_MANUAL, 0, null_mut(), null_mut(), null_mut()),
+            calculate(WINDOW_SIZE_MANUAL, null_mut(), null_mut(), null_mut()),
             (0, UINT_MAX, UINT_MAX, 0, 0)
         );
     }
@@ -358,16 +397,16 @@ fn the_latest_size_follows_the_window_s_latest_client() {
     let first = list.add("first", 80, 24);
     let second = list.add("second", 100, 20);
     unsafe {
-        (*first).session = s.ptr();
-        (*second).session = s.ptr();
-        window_set_latest(w.ptr(), first);
+        (*first).set_attached_session(Some(s.handle()));
+        (*second).set_attached_session(Some(s.handle()));
+        window_set_latest(&mut *w.ptr(), Some(&*first));
         assert_eq!(
-            calculate(WINDOW_SIZE_LATEST, 0, null_mut(), s.ptr(), w.ptr()),
+            calculate(WINDOW_SIZE_LATEST, null_mut(), s.ptr(), w.ptr()),
             (1, 80, 24, 0, 0)
         );
-        window_set_latest(w.ptr(), second);
+        window_set_latest(&mut *w.ptr(), Some(&*second));
         assert_eq!(
-            calculate(WINDOW_SIZE_LATEST, 0, null_mut(), s.ptr(), w.ptr()),
+            calculate(WINDOW_SIZE_LATEST, null_mut(), s.ptr(), w.ptr()),
             (1, 100, 20, 0, 0)
         );
     }
@@ -383,17 +422,17 @@ fn a_client_that_reported_a_size_for_the_window_is_read_from_that() {
     let mut list = Clients::new();
     let c = list.add("c", 80, 24);
     unsafe {
-        (*c).session = s.ptr();
-        let cw = server_client_add_client_window(c, (*w.ptr()).id);
-        (*cw).sx = 40;
-        (*cw).sy = 12;
+        (*c).set_attached_session(Some(s.handle()));
+        let cw = server_client_add_client_window(&mut *c, (*w.ptr()).window_id());
+        cw.sx = 40;
+        cw.sy = 12;
         assert_eq!(
-            calculate(WINDOW_SIZE_LARGEST, 0, null_mut(), s.ptr(), w.ptr()),
+            calculate(WINDOW_SIZE_LARGEST, null_mut(), s.ptr(), w.ptr()),
             (1, 40, 12, 0, 0)
         );
-        (*server_client_add_client_window(c, (*w.ptr()).id)).sx = 0;
+        server_client_add_client_window(&mut *c, (*w.ptr()).window_id()).sx = 0;
         assert_eq!(
-            calculate(WINDOW_SIZE_LARGEST, 0, null_mut(), s.ptr(), w.ptr()),
+            calculate(WINDOW_SIZE_LARGEST, null_mut(), s.ptr(), w.ptr()),
             (1, 80, 24, 0, 0)
         );
     }
@@ -409,24 +448,24 @@ fn a_client_that_changed_a_window_size_holds_the_answer_down() {
     let mut list = Clients::new();
     let c = list.add("c", 80, 24);
     unsafe {
-        (*c).session = s.ptr();
+        (*c).set_attached_session(Some(s.handle()));
         (*c).flags = CLIENT_WINDOWSIZECHANGED as uint64_t;
         assert_eq!(
-            calculate(WINDOW_SIZE_LARGEST, 0, null_mut(), s.ptr(), w.ptr()),
+            calculate(WINDOW_SIZE_LARGEST, null_mut(), s.ptr(), w.ptr()),
             (1, 80, 24, 0, 0)
         );
-        let cw = server_client_add_client_window(c, (*w.ptr()).id);
-        (*cw).sx = 40;
-        (*cw).sy = 0;
+        let cw = server_client_add_client_window(&mut *c, (*w.ptr()).window_id());
+        cw.sx = 40;
+        cw.sy = 0;
         assert_eq!(
-            calculate(WINDOW_SIZE_LARGEST, 0, null_mut(), s.ptr(), w.ptr()),
+            calculate(WINDOW_SIZE_LARGEST, null_mut(), s.ptr(), w.ptr()),
             (1, 40, 24, 0, 0)
         );
-        let cw = server_client_add_client_window(c, (*w.ptr()).id);
-        (*cw).sx = 0;
-        (*cw).sy = 12;
+        let cw = server_client_add_client_window(&mut *c, (*w.ptr()).window_id());
+        cw.sx = 0;
+        cw.sy = 12;
         assert_eq!(
-            calculate(WINDOW_SIZE_LARGEST, 0, null_mut(), s.ptr(), w.ptr()),
+            calculate(WINDOW_SIZE_LARGEST, null_mut(), s.ptr(), w.ptr()),
             (1, 80, 12, 0, 0)
         );
     }
@@ -443,24 +482,14 @@ fn the_default_window_size_falls_back_on_the_session_option() {
         (80, 24, 0, 0)
     );
     unsafe {
-        options_set_string(
-            s.options(),
-            c"default-size".as_ptr(),
-            0,
-            c"%s".as_ptr(),
-            fmt_args![c"120x40".as_ptr()],
-        );
+        s.options()
+            .set_string(c"default-size", 0, c"%s", fmt_args![c"120x40".as_ptr()]);
         assert_eq!(
             default_size(null_mut(), s.ptr(), null_mut(), WINDOW_SIZE_LARGEST),
             (120, 40, 0, 0)
         );
-        options_set_string(
-            s.options(),
-            c"default-size".as_ptr(),
-            0,
-            c"%s".as_ptr(),
-            fmt_args![c"nonsense".as_ptr()],
-        );
+        s.options()
+            .set_string(c"default-size", 0, c"%s", fmt_args![c"nonsense".as_ptr()]);
         assert_eq!(
             default_size(null_mut(), s.ptr(), null_mut(), WINDOW_SIZE_LARGEST),
             (80, 24, 0, 0)
@@ -478,8 +507,8 @@ fn the_default_window_size_reads_the_window_size_option_when_asked() {
     let mut list = Clients::new();
     let c = list.add("c", 90, 30);
     unsafe {
-        (*c).session = s.ptr();
-        window_set_latest(w.ptr(), c);
+        (*c).set_attached_session(Some(s.handle()));
+        window_set_latest(&mut *w.ptr(), Some(&*c));
         assert_eq!(
             default_size(null_mut(), s.ptr(), w.ptr(), -1),
             (90, 30, 0, 0)
@@ -495,7 +524,7 @@ fn the_latest_size_of_a_client_that_asked_is_taken_straight_from_it() {
     let mut list = Clients::new();
     let c = list.add("c", 90, 30);
     unsafe {
-        (*c).session = s.ptr();
+        (*c).set_attached_session(Some(s.handle()));
         (*c).tty.xpixel = 9;
         (*c).tty.ypixel = 18;
         assert_eq!(
@@ -516,22 +545,16 @@ fn a_default_window_size_is_clamped_the_way_a_resize_is() {
     let mut s = Session::new(1, "clamped");
     let list = Clients::new();
     unsafe {
-        options_set_string(
-            s.options(),
-            c"default-size".as_ptr(),
-            0,
-            c"%s".as_ptr(),
-            fmt_args![c"0x0".as_ptr()],
-        );
+        s.options()
+            .set_string(c"default-size", 0, c"%s", fmt_args![c"0x0".as_ptr()]);
         assert_eq!(
             default_size(null_mut(), s.ptr(), null_mut(), WINDOW_SIZE_LARGEST),
             (1, 1, 0, 0)
         );
-        options_set_string(
-            s.options(),
-            c"default-size".as_ptr(),
+        s.options().set_string(
+            c"default-size",
             0,
-            c"%s".as_ptr(),
+            c"%s",
             fmt_args![c"20000x20000".as_ptr()],
         );
         assert_eq!(
@@ -547,11 +570,11 @@ fn a_window_with_no_active_pane_is_not_resized() {
     let _guard = globals();
     let mut w = Win::new(80, 24);
     unsafe {
-        window_set_active(w.ptr(), null_mut::<window_pane>());
-        recalculate_size(w.handle(), 1);
+        window_set_active(&mut *w.ptr(), None::<&crate::types::window_pane>);
+        (w.handle()).recalculate_size(1);
     }
     assert_eq!(w.size(), (80, 24, 80, 24));
-    unsafe { window_set_active(w.ptr(), w.pane(0)) };
+    unsafe { window_set_active(&mut *w.ptr(), Some(&*w.pane(0))) };
 }
 
 #[test]
@@ -559,7 +582,7 @@ fn a_window_no_client_can_size_is_left_where_it_is() {
     let _guard = globals();
     let mut w = Win::new(80, 24);
     let list = Clients::new();
-    unsafe { recalculate_size(w.handle(), 0) };
+    unsafe { (w.handle()).recalculate_size(0) };
     assert_eq!(w.size(), (80, 24, 80, 24));
     drop(list);
 }
@@ -573,16 +596,22 @@ fn a_recalculated_size_is_held_until_the_next_redraw_unless_it_is_wanted_now() {
     let mut list = Clients::new();
     let c = list.add("c", 40, 12);
     unsafe {
-        (*c).session = s.ptr();
-        recalculate_size(w.handle(), 0);
+        (*c).set_attached_session(Some(s.handle()));
+        (w.handle()).recalculate_size(0);
         assert_eq!(w.size(), (80, 24, 80, 24));
         assert_ne!((*w.ptr()).flags & WINDOW_RESIZE, 0);
-        assert_eq!(((*w.ptr()).new_sx, (*w.ptr()).new_sy), (40, 12));
-        recalculate_size(w.handle(), 0);
+        assert_eq!(
+            (
+                (*w.ptr()).dimensions().pending_size.width,
+                (*w.ptr()).dimensions().pending_size.height
+            ),
+            (40, 12)
+        );
+        (w.handle()).recalculate_size(0);
         assert_eq!(w.size(), (80, 24, 80, 24));
-        recalculate_size(w.handle(), 1);
+        (w.handle()).recalculate_size(1);
         assert_eq!(w.size(), (40, 12, 40, 12));
-        recalculate_size(w.handle(), 0);
+        (w.handle()).recalculate_size(0);
         assert_eq!(w.size(), (40, 12, 40, 12));
     }
     unlink(&mut s, wl);
@@ -596,14 +625,14 @@ fn a_manual_window_is_resized_at_once() {
     let wl = link(&mut s, &mut w.window, 0);
     let list = Clients::new();
     unsafe {
-        options_set_number(
-            w.window.options(),
-            c"window-size".as_ptr(),
-            WINDOW_SIZE_MANUAL as i64,
-        );
-        (*w.ptr()).manual_sx = 50;
-        (*w.ptr()).manual_sy = 15;
-        recalculate_size(w.handle(), 0);
+        w.window
+            .options()
+            .set_number(c"window-size", WINDOW_SIZE_MANUAL as i64);
+        (*w.ptr()).set_manual_size(crate::pane_resize::PaneSize {
+            width: 50,
+            height: 15,
+        });
+        (w.handle()).recalculate_size(0);
         assert_eq!(w.size(), (50, 15, 50, 15));
     }
     drop(list);
@@ -615,18 +644,17 @@ fn an_aggressive_resize_only_counts_the_clients_showing_the_window() {
     let _guard = globals();
     let mut s = Session::new(1, "aggressive");
     let mut shown = Win::new(80, 24);
-    let mut hidden = Win::new(80, 24);
-    unsafe { (*hidden.ptr()).id = 2 };
+    let mut hidden = Win::with_id(2, 80, 24);
     let first = link(&mut s, &mut shown.window, 0);
     let second = link(&mut s, &mut hidden.window, 1);
     let mut list = Clients::new();
     let c = list.add("c", 40, 12);
     unsafe {
-        (*c).session = s.ptr();
-        options_set_number(hidden.window.options(), c"aggressive-resize".as_ptr(), 1);
-        recalculate_size(hidden.handle(), 1);
+        (*c).set_attached_session(Some(s.handle()));
+        hidden.window.options().set_number(c"aggressive-resize", 1);
+        (hidden.handle()).recalculate_size(1);
         assert_eq!(hidden.size(), (80, 24, 80, 24));
-        recalculate_size(shown.handle(), 1);
+        (shown.handle()).recalculate_size(1);
         assert_eq!(shown.size(), (40, 12, 40, 12));
     }
     unlink(&mut s, second);
@@ -642,12 +670,12 @@ fn a_client_whose_session_shows_no_window_at_all_is_skipped() {
     let mut list = Clients::new();
     let c = list.add("c", 40, 12);
     unsafe {
-        (*c).session = s.ptr();
-        session_set_curw(s.ptr(), null_mut::<winlink>());
-        recalculate_size(w.handle(), 1);
+        (*c).set_attached_session(Some(s.handle()));
+        s.handle().set_curw(null_mut::<winlink>().as_ref());
+        (w.handle()).recalculate_size(1);
         assert_eq!(w.size(), (80, 24, 80, 24));
-        session_set_curw(s.ptr(), wl);
-        recalculate_size(w.handle(), 1);
+        s.handle().set_curw(wl.as_ref());
+        (w.handle()).recalculate_size(1);
         assert_eq!(w.size(), (40, 12, 40, 12));
     }
     unlink(&mut s, wl);
@@ -666,10 +694,13 @@ fn recalculating_every_size_counts_the_attached_clients_and_the_status_lines() {
     let attached = list.add("attached", 40, 12);
     let bare = list.add("bare", 40, 12);
     unsafe {
-        (*attached).session = s.ptr();
-        options_set_number(s.options(), c"status".as_ptr(), 1);
+        (*attached).set_attached_session(Some(s.handle()));
+        s.options().set_number(c"status", 1);
         recalculate_sizes_now(1);
-        assert_eq!(session_attached(s.ptr()), 1);
+        assert_eq!(
+            crate::SessionAttachmentState::session_attached(&*s.ptr()),
+            1
+        );
         assert_eq!((*s.ptr()).statuslines, 1);
         assert_eq!((*attached).flags & CLIENT_STATUSOFF as uint64_t, 0);
         assert_eq!((*bare).flags & CLIENT_STATUSOFF as uint64_t, 0);
@@ -679,4 +710,40 @@ fn recalculating_every_size_counts_the_attached_clients_and_the_status_lines() {
         assert_ne!((*attached).flags & CLIENT_STATUSOFF as uint64_t, 0);
     }
     unlink(&mut s, wl);
+}
+
+#[test]
+fn resize_selection_skips_clients_without_a_current_window() {
+    let _guard = globals();
+    let mut target = crate::tests::test_fixtures::Target::new(20, 6);
+    target.add_window(1, 20, 6);
+    let mut client = crate::tests::test_fixtures::zeroed_client();
+    unsafe {
+        let mut session = target.session_handle().clone();
+        let window = crate::window::window_ref_of(&*target.window(0)).unwrap();
+        assert!(recalculate_size_skip_client(client.as_client(), 0, &window));
+        client.set_attached_session(Some(&session));
+        assert!(!recalculate_size_skip_client(
+            client.as_client(),
+            0,
+            &window
+        ));
+        assert!(!recalculate_size_skip_client(
+            client.as_client(),
+            1,
+            &window
+        ));
+        session.as_session_mut().curw_idx = Some(1);
+        assert!(!recalculate_size_skip_client(
+            client.as_client(),
+            0,
+            &window
+        ));
+        assert!(recalculate_size_skip_client(client.as_client(), 1, &window));
+        for index in [None, Some(99)] {
+            session.as_session_mut().curw_idx = index;
+            assert!(recalculate_size_skip_client(client.as_client(), 0, &window));
+            assert!(recalculate_size_skip_client(client.as_client(), 1, &window));
+        }
+    }
 }

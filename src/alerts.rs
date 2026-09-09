@@ -2,7 +2,7 @@
 //! in a window becomes a marked winlink, a hook and a message on the status
 //! line of every client watching it.
 //!
-//! Nothing here checks anything the moment it is told. [`alerts_queue`] only
+//! Nothing here checks anything the moment it is told. [`WindowRef::raise_alerts`] only
 //! records the family on the window, puts the window on a queue and — the
 //! first time round — asks ensure_reactor for one deferred callback; that callback
 //! is what runs the checks, empties the queue and puts the latch down again,
@@ -33,38 +33,28 @@
 use crate::fmt_args;
 use crate::log::log_debug;
 use crate::notify::notify_winlink;
-use crate::options::options_get_number;
+
 use crate::reactor;
-use crate::reactor::{Reactor, Timer};
+use crate::reactor::Reactor;
 use crate::server::client_walk;
 use crate::server::server_status_session;
-use crate::session::{
-    session_alerted, session_attached, session_get_curw, session_options, session_set_alerted,
-};
+
 use crate::status::status_message_set;
 use crate::tree::GlobalQueue;
 use crate::tty::tty_putcode;
 pub use crate::types::*;
-use crate::window::winlinks_into;
-use crate::window::{window_find_by_id_ref, window_ref_from_ptr, windows, winlinks_in};
+use crate::window::WINDOWS;
 use ::core::ffi::{CStr, c_int};
 
-pub const RB_NEGINF: c_int = -1;
-pub const EV_TIMEOUT: c_int = 0x1;
-pub const ALERT_ANY: c_int = 1;
+pub use crate::consts::{
+    ALERT_ANY, ALERT_OTHER, CLIENT_CONTROL, EV_TIMEOUT, RB_NEGINF, TTYC_BEL, VISUAL_OFF,
+    WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL, WINDOW_SILENCE, WINLINK_ACTIVITY,
+    WINLINK_BELL, WINLINK_SILENCE,
+};
+
 pub const ALERT_CURRENT: c_int = 2;
-pub const ALERT_OTHER: c_int = 3;
-pub const VISUAL_OFF: c_int = 0;
+
 pub const VISUAL_BOTH: c_int = 2;
-pub const WINDOW_BELL: c_int = 0x1;
-pub const WINDOW_ACTIVITY: c_int = 0x2;
-pub const WINDOW_SILENCE: c_int = 0x4;
-pub const WINDOW_ALERTFLAGS: c_int = WINDOW_BELL | WINDOW_ACTIVITY | WINDOW_SILENCE;
-pub const WINLINK_BELL: c_int = 0x1;
-pub const WINLINK_ACTIVITY: c_int = 0x2;
-pub const WINLINK_SILENCE: c_int = 0x4;
-pub const CLIENT_CONTROL: c_int = 0x2000;
-pub const TTYC_BEL: tty_code_code = 4;
 
 /// Whether a deferred check is already asked for, so that a burst of alerts
 /// asks ensure_reactor for one callback and not one each.
@@ -125,24 +115,8 @@ static SILENCE: Family = Family {
 };
 
 /// The winlinks that show `w`, in the order the window's own list holds them.
-fn showing(w: &WindowRef) -> impl Iterator<Item = *mut winlink> {
-    unsafe { winlinks_into(w.as_ptr()) }
-}
-
-/// Every window the server knows, in id order.
-fn each_window() -> impl Iterator<Item = WindowRef> {
-    let ids: Vec<u_int> = windows.map().keys().copied().collect();
-    ids.into_iter().filter_map(window_find_by_id_ref)
-}
-
-/// The silence timer expiring: nothing has been written to the window for
-/// `monitor-silence` seconds, so it is queued for a silence check.
-unsafe fn alerts_timer(w_ref: &WindowRef) {
-    unsafe {
-        let w = w_ref.as_ptr();
-        log_debug(c"@%u alerts timer expired".as_ptr(), fmt_args![(*w).id]);
-        alerts_queue_window(w_ref, WINDOW_SILENCE);
-    }
+fn showing(w: &WindowRef) -> impl Iterator<Item = crate::window::WinlinkRef> {
+    w.winlinks()
 }
 
 /// The deferred check ensure_reactor runs once per batch: every queued window is
@@ -151,16 +125,14 @@ unsafe fn alerts_timer(w_ref: &WindowRef) {
 /// end of the callback releases the queue's ownership.
 unsafe fn alerts_callback() {
     unsafe {
-        let mut queued = ::core::mem::take(alerts_list.queue());
+        let mut queued = core::mem::take(&mut *alerts_list.queue());
         while let Some(w_ref) = queued.pop_front() {
-            let alerts = alerts_check_all(&w_ref);
-            let w = w_ref.as_ptr();
+            let alerts = w_ref.check_all_alerts();
             log_debug(
-                c"@%u alerts check, alerts %#x".as_ptr(),
-                fmt_args![(*w).id, alerts],
+                c"@%u alerts check, alerts %#x",
+                fmt_args![w_ref.window_id(), alerts],
             );
-            (*w).alerts_queued = 0;
-            (*w).flags &= !WINDOW_ALERTFLAGS;
+            w_ref.finish_alerts();
         }
         alerts_fired = 0;
     }
@@ -169,225 +141,89 @@ unsafe fn alerts_callback() {
 /// Whether `wl` is one the session's `{bell,activity,silence}-action` asks to
 /// be told about: none means nothing happens, current means only the current
 /// window and other means only windows that are not it.
-unsafe fn alerts_action_applies(wl: *mut winlink, name: &CStr) -> bool {
+unsafe fn alerts_action_applies(wl: &winlink, name: &CStr) -> bool {
     unsafe {
-        let action = options_get_number(session_options((*wl).session()), name.as_ptr()) as c_int;
-        if action == ALERT_ANY {
-            return true;
+        let session = wl.session().expect("a link has a session");
+        let action = session.options().number(name) as c_int;
+        let current = session
+            .curw()
+            .is_some_and(|current| current.index() == wl.idx);
+        match action {
+            ALERT_ANY => true,
+            ALERT_CURRENT => current,
+            ALERT_OTHER => !current,
+            _ => false,
         }
-        if action == ALERT_CURRENT {
-            return wl == session_get_curw((*wl).session());
-        }
-        if action == ALERT_OTHER {
-            return wl != session_get_curw((*wl).session());
-        }
-        false
-    }
-}
-
-/// Checks every family against `w` and answers the window flags that applied.
-unsafe fn alerts_check_all(w: &WindowRef) -> c_int {
-    unsafe { alerts_check(w, &BELL) | alerts_check(w, &ACTIVITY) | alerts_check(w, &SILENCE) }
-}
-
-/// One family's check: with the flag standing and the option watched, every
-/// winlink showing the window is marked and its hook raised, and the first of
-/// each session to get that far also puts a message on that session's clients.
-/// Answers the family's window flag, or zero if there was nothing to do.
-unsafe fn alerts_check(w_ref: &WindowRef, family: &Family) -> c_int {
-    unsafe {
-        let w = w_ref.as_ptr();
-        if (*w).flags & family.window_flag == 0 {
-            return 0;
-        }
-        if options_get_number((*w).options_ptr(), family.monitor.as_ptr()) == 0 {
-            return 0;
-        }
-
-        for wl in showing(w_ref) {
-            session_set_alerted((*wl).session(), false);
-        }
-
-        for wl in showing(w_ref) {
-            if !family.again && (*wl).flags & family.winlink_flag != 0 {
-                continue;
-            }
-            let s = (*wl).session();
-            if session_get_curw(s) != wl || session_attached(s) == 0 {
-                (*wl).flags |= family.winlink_flag;
-                server_status_session(s);
-            }
-            if !alerts_action_applies(wl, family.action) {
-                continue;
-            }
-            notify_winlink(family.hook.as_ptr(), wl);
-
-            if session_alerted(s) {
-                continue;
-            }
-            session_set_alerted(s, true);
-
-            alerts_set_message(wl, family.label, family.visual);
-        }
-
-        family.window_flag
     }
 }
 
 /// Checks every window `s` shows, without waiting for the event loop.
-pub unsafe fn alerts_check_session(s: *mut session) {
+pub unsafe fn alerts_check_session(s: &mut session) {
     unsafe {
-        for wl in winlinks_in(s) {
-            if let Some(w_ref) = (*wl).window_handle() {
-                alerts_check_all(w_ref);
-            }
+        let windows: Vec<_> = s
+            .windows
+            .values()
+            .filter_map(|wl| wl.window_handle().cloned())
+            .collect();
+        for window in windows {
+            window.check_all_alerts();
         }
-    }
-}
-
-/// Whether any of the families in `flags` is watched on the window.
-unsafe fn alerts_enabled(w_ref: &WindowRef, flags: c_int) -> bool {
-    unsafe {
-        let w = w_ref.as_ptr();
-        for family in [&BELL, &ACTIVITY, &SILENCE] {
-            if flags & family.window_flag != 0
-                && options_get_number((*w).options_ptr(), family.monitor.as_ptr()) != 0
-            {
-                return true;
-            }
-        }
-        false
     }
 }
 
 /// Re-arms every window's silence timer, which is what an option change asks
 /// for.
 pub fn alerts_reset_all() {
-    unsafe {
-        for w_ref in each_window() {
-            alerts_reset(&w_ref);
+    WINDOWS.with(|windows| unsafe {
+        for w_ref in windows.iter().filter_map(|(_, window)| window.upgrade()) {
+            w_ref.reset_alerts();
         }
-    }
-}
-
-/// Drops the window's silence flag and arms its silence timer afresh, for
-/// as many seconds as `monitor-silence` asks; zero seconds leaves it unarmed.
-unsafe fn alerts_reset(w_ref: &WindowRef) {
-    unsafe {
-        let w = w_ref.as_ptr();
-        if !(*w).alerts_timer.is_set() {
-            let w_weak = w_ref.downgrade();
-            (*w).alerts_timer.set_callback(move || {
-                let Some(w_ref) = w_weak.upgrade() else {
-                    return;
-                };
-                alerts_timer(&w_ref);
-            });
-        }
-
-        (*w).flags &= !WINDOW_SILENCE;
-        (*w).alerts_timer.disarm();
-
-        let tv = timeval {
-            tv_sec: options_get_number((*w).options_ptr(), c"monitor-silence".as_ptr()) as __time_t,
-            tv_usec: 0,
-        };
-
-        log_debug(
-            c"@%u alerts timer reset %u".as_ptr(),
-            fmt_args![(*w).id, tv.tv_sec as u_int],
-        );
-        if tv.tv_sec != 0 {
-            (*w).alerts_timer.arm(tv);
-        }
-    }
-}
-
-/// The queue's contents, in arrival order, for the tests: membership used to
-/// be readable through the links the `window` struct carried, and is not any
-/// more.
-#[cfg(test)]
-pub(crate) fn queued_windows() -> Vec<*mut window> {
-    alerts_list.queue().iter().map(WindowRef::as_ptr).collect()
-}
-
-/// Records `flags` on `w` and, if anyone is watching any of them, puts the
-/// window on the queue the deferred check drains.
-pub unsafe fn alerts_queue(w: *mut window, flags: c_int) {
-    unsafe {
-        let Some(w_ref) = window_ref_from_ptr(w) else {
-            return;
-        };
-        alerts_queue_window(&w_ref, flags);
-    }
-}
-
-/// The queueing itself, once the window is held rather than merely pointed at.
-unsafe fn alerts_queue_window(w_ref: &WindowRef, flags: c_int) {
-    unsafe {
-        let w = w_ref.as_ptr();
-        alerts_reset(w_ref);
-
-        if (*w).flags & flags != flags {
-            (*w).flags |= flags;
-            log_debug(
-                c"@%u alerts flags added %#x".as_ptr(),
-                fmt_args![(*w).id, flags],
-            );
-        }
-
-        if alerts_enabled(w_ref, flags) {
-            if (*w).alerts_queued == 0 {
-                (*w).alerts_queued = 1;
-                alerts_list.queue().push_back(w_ref.clone());
-            }
-
-            if alerts_fired == 0 {
-                log_debug(c"alerts check queued (by @%u)".as_ptr(), fmt_args![(*w).id]);
-                reactor::current().defer(|| alerts_callback());
-                alerts_fired = 1;
-            }
-        }
-    }
+    });
 }
 
 /// Passes an alert on to the user. Every client of the winlink's session that
 /// is not a control client hears it: `visual-{bell,activity,silence}` off
 /// means the terminal bell alone, on means the message alone and both means
 /// both.
-unsafe fn alerts_set_message(wl: *mut winlink, label: &CStr, option: &CStr) {
+unsafe fn alerts_set_message(wl: &winlink, label: &CStr, option: &CStr) {
     unsafe {
-        let visual = options_get_number(session_options((*wl).session()), option.as_ptr()) as c_int;
-        for c in client_walk() {
-            if (*c).session != (*wl).session() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
+        let session = wl.session().expect("a link has a session");
+        let visual = (session.options()).number(option) as c_int;
+        for mut c in client_walk() {
+            if !c.attached_session().is_some_and(|s| session.ptr_eq(&s))
+                || c.flags() & CLIENT_CONTROL as uint64_t != 0
+            {
                 continue;
             }
 
             if visual == VISUAL_OFF || visual == VISUAL_BOTH {
-                tty_putcode(&mut (*c).tty, TTYC_BEL);
+                tty_putcode(c.as_tty_mut(), TTYC_BEL);
             }
             if visual == VISUAL_OFF {
                 continue;
             }
-            if session_get_curw((*c).session) == wl {
+            if session
+                .curw()
+                .is_some_and(|current| current.index() == wl.idx)
+            {
                 status_message_set(
-                    c,
+                    Some(c.as_client_mut()),
                     -1,
                     1,
                     0,
                     0,
-                    c"%s in current window".as_ptr(),
-                    fmt_args![label.as_ptr()],
+                    c"%s in current window",
+                    fmt_args![label],
                 );
             } else {
                 status_message_set(
-                    c,
+                    Some(c.as_client_mut()),
                     -1,
                     1,
                     0,
                     0,
-                    c"%s in window %d".as_ptr(),
-                    fmt_args![label.as_ptr(), (*wl).idx],
+                    c"%s in window %d",
+                    fmt_args![label, wl.idx],
                 );
             }
         }
@@ -397,3 +233,142 @@ unsafe fn alerts_set_message(wl: *mut winlink, label: &CStr, option: &CStr) {
 #[cfg(test)]
 #[path = "tests/test_alerts.rs"]
 mod tests;
+
+#[cfg(test)]
+pub(crate) use tests::queued_window_ids;
+
+impl WindowRef {
+    /// The silence timer expiring: nothing has been written to the window for
+    /// `monitor-silence` seconds, so it is queued for a silence check.
+    unsafe fn on_alert_timer(&self) {
+        let w_ref = self;
+
+        unsafe {
+            log_debug(c"@%u alerts timer expired", fmt_args![w_ref.window_id()]);
+            w_ref.raise_alerts(WINDOW_SILENCE);
+        }
+    }
+    /// Checks every family against `w` and answers the window flags that applied.
+    unsafe fn check_all_alerts(&self) -> c_int {
+        let w = self;
+
+        unsafe { w.check_alert(&BELL) | w.check_alert(&ACTIVITY) | w.check_alert(&SILENCE) }
+    }
+    /// One family's check: with the flag standing and the option watched, every
+    /// winlink showing the window is marked and its hook raised, and the first of
+    /// each session to get that far also puts a message on that session's clients.
+    /// Answers the family's window flag, or zero if there was nothing to do.
+    unsafe fn check_alert(&self, family: &Family) -> c_int {
+        let w_ref = self;
+
+        unsafe {
+            if w_ref.alert_flags() & family.window_flag == 0 {
+                return 0;
+            }
+            if w_ref.options().number(family.monitor) == 0 {
+                return 0;
+            }
+
+            for held in showing(w_ref) {
+                if held.get().is_some() {
+                    held.session().set_alerted(false);
+                }
+            }
+
+            for mut held in showing(w_ref) {
+                let Some(flags) = held.get().map(|wl| wl.flags) else {
+                    continue;
+                };
+                if !family.again && flags & family.winlink_flag != 0 {
+                    continue;
+                }
+                let mut session = held.session().clone();
+                let active = session
+                    .curw()
+                    .is_some_and(|current| current.index() == held.index());
+                if !active || session.attached() == 0 {
+                    if let Some(wl) = held.get_mut() {
+                        wl.flags |= family.winlink_flag;
+                    }
+                    server_status_session(session.as_session_mut());
+                }
+                let Some(wl) = held.get() else {
+                    continue;
+                };
+                if !alerts_action_applies(wl, family.action) {
+                    continue;
+                }
+                notify_winlink(family.hook, wl);
+                if session.alerted() {
+                    continue;
+                }
+                session.set_alerted(true);
+                if let Some(wl) = held.get() {
+                    alerts_set_message(wl, family.label, family.visual);
+                }
+            }
+
+            family.window_flag
+        }
+    }
+    /// Whether any of the families in `flags` is watched on the window.
+    unsafe fn alerts_enabled(&self, flags: c_int) -> bool {
+        let w = self;
+
+        unsafe {
+            for family in [&BELL, &ACTIVITY, &SILENCE] {
+                if flags & family.window_flag != 0 && w.options().number(family.monitor) != 0 {
+                    return true;
+                }
+            }
+            false
+        }
+    }
+    /// Drops the window's silence flag and arms its silence timer afresh, for
+    /// as many seconds as `monitor-silence` asks; zero seconds leaves it unarmed.
+    unsafe fn reset_alerts(&self) {
+        let w = self;
+
+        unsafe {
+            let seconds = w.options().number(c"monitor-silence");
+            let weak = w.downgrade();
+            w.reset_alert_timer(seconds as __time_t, move || {
+                if let Some(window) = weak.upgrade() {
+                    window.on_alert_timer();
+                }
+            });
+            log_debug(
+                c"@%u alerts timer reset %u",
+                fmt_args![w.window_id(), seconds as u_int],
+            );
+        }
+    }
+    /// Records `flags` on `w` and, if anyone is watching any of them, puts the
+    /// window on the queue the deferred check drains.
+    pub unsafe fn raise_alerts(&self, flags: c_int) {
+        let w = self;
+
+        unsafe {
+            w.reset_alerts();
+
+            if w.add_alert_flags(flags) {
+                log_debug(
+                    c"@%u alerts flags added %#x",
+                    fmt_args![w.window_id(), flags],
+                );
+            }
+
+            if w.alerts_enabled(flags) {
+                if w.queue_alerts() {
+                    alerts_list.queue().push_back(w.clone());
+                }
+
+                if alerts_fired == 0 {
+                    log_debug(c"alerts check queued (by @%u)", fmt_args![w.window_id()]);
+                    reactor::current().defer(|| alerts_callback());
+                    alerts_fired = 1;
+                }
+            }
+        }
+    }
+}

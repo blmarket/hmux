@@ -1,5 +1,7 @@
 use super::*;
-use crate::options::options_set_number;
+use crate::options::OptionsRef;
+use crate::tmux::global_s_options;
+
 use crate::tests::test_fixtures::{Item, globals};
 use ::core::ffi::{CStr, c_longlong};
 
@@ -10,22 +12,37 @@ struct Prefix(c_longlong);
 impl Prefix {
     /// Remembers what `prefix` is set to now.
     fn guard() -> Prefix {
-        unsafe { Prefix(options_get_number(global_s_options, c"prefix".as_ptr())) }
+        unsafe {
+            Prefix(
+                (global_s_options
+                    .as_ref()
+                    .expect("global options are initialized"))
+                .number(c"prefix"),
+            )
+        }
     }
 
     /// Makes `prefix` the key `name` spells, or no key at all when it
     /// spells none.
     fn set(name: &CStr) {
         unsafe {
-            let key = key_string_lookup_string(name.as_ptr());
-            options_set_number(global_s_options, c"prefix".as_ptr(), key as c_longlong);
+            let key = RustKeyStringCodec.parse_key(name);
+            (global_s_options
+                .as_ref()
+                .expect("global options are initialized"))
+            .set_number(c"prefix", key as c_longlong);
         }
     }
 }
 
 impl Drop for Prefix {
     fn drop(&mut self) {
-        unsafe { options_set_number(global_s_options, c"prefix".as_ptr(), self.0) };
+        unsafe {
+            (global_s_options
+                .as_ref()
+                .expect("global options are initialized"))
+            .set_number(c"prefix", self.0)
+        };
     }
 }
 
@@ -34,7 +51,7 @@ impl Drop for Prefix {
 fn prefix_of(s: &CStr) -> String {
     unsafe {
         let mut item = Item::new().with_args(s);
-        let p = cmd_list_keys_get_prefix(cmd_get_args(&*item.cmd()));
+        let p = cmd_list_keys_get_prefix(&*item.args());
         p.to_string_lossy().into_owned()
     }
 }

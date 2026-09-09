@@ -1,3 +1,5 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+
 use bytes::{Buf as BytesBuf, BufMut as BytesBufMut, Bytes, BytesMut};
 use bytes_utils::SegmentedBuf;
 use std::io::{self, IoSlice};
@@ -7,12 +9,12 @@ const TAIL_CAPACITY: usize = 16 * 1024;
 const MAX_IOV: usize = 64;
 
 #[derive(Clone, Debug, Default)]
-pub struct Buf {
+pub struct ByteBuffer {
     segments: SegmentedBuf<Bytes>,
     tail: BytesMut,
 }
 
-impl Buf {
+impl ByteBuffer {
     pub fn new() -> Self {
         Self::default()
     }
@@ -63,6 +65,28 @@ impl Buf {
         self.segments.extend(segments);
     }
 
+    pub fn split_to(&mut self, count: usize) -> Self {
+        assert!(count <= self.len());
+        self.seal_tail();
+        let mut result = Self::new();
+        let mut remaining = count;
+        while remaining != 0 {
+            let count = remaining.min(self.segments.chunk().len());
+            result.append_bytes(self.segments.copy_to_bytes(count));
+            remaining -= count;
+        }
+        result
+    }
+
+    pub fn slice(&mut self, offset: usize, count: usize) -> Self {
+        assert!(offset <= self.len());
+        assert!(count <= self.len() - offset);
+        self.seal_tail();
+        let mut result = self.clone();
+        result.advance(offset);
+        result.split_to(count)
+    }
+
     pub fn drain(&mut self, count: usize) {
         self.advance(count.min(self.len()));
     }
@@ -72,6 +96,8 @@ impl Buf {
         self.tail.clear();
     }
 
+    /// Consumes up to `count` bytes. The `bytes::Buf` trait operation instead
+    /// requires the entire requested count to be available.
     pub fn copy_to_bytes(&mut self, count: usize) -> Bytes {
         let count = count.min(self.len());
         if count == 0 {
@@ -112,6 +138,14 @@ impl Buf {
 
     pub fn as_slice(&mut self) -> &[u8] {
         self.pullup(self.len())
+    }
+
+    /// Retains contiguous input without consuming it. Later buffer mutations do
+    /// not change the snapshot, and already contiguous bytes are shared.
+    pub fn snapshot(&mut self) -> Bytes {
+        let len = self.len();
+        self.pullup(len);
+        self.slice(0, len).copy_to_bytes(len)
     }
 
     pub fn read_line(&mut self) -> Option<Bytes> {
@@ -174,7 +208,7 @@ impl Buf {
     }
 }
 
-impl bytes::Buf for Buf {
+impl bytes::Buf for ByteBuffer {
     fn remaining(&self) -> usize {
         self.len()
     }
@@ -187,14 +221,6 @@ impl bytes::Buf for Buf {
         }
     }
 
-    fn advance(&mut self, count: usize) {
-        Self::advance(self, count);
-    }
-
-    fn copy_to_bytes(&mut self, count: usize) -> Bytes {
-        Self::copy_to_bytes(self, count)
-    }
-
     fn chunks_vectored<'a>(&'a self, dst: &mut [IoSlice<'a>]) -> usize {
         let mut count = self.segments.chunks_vectored(dst);
         if count < dst.len() && !self.tail.is_empty() {
@@ -203,9 +229,32 @@ impl bytes::Buf for Buf {
         }
         count
     }
+
+    fn advance(&mut self, count: usize) {
+        Self::advance(self, count);
+    }
+
+    fn copy_to_bytes(&mut self, count: usize) -> Bytes {
+        assert!(count <= self.len(), "buffer copy exceeds remaining bytes");
+        Self::copy_to_bytes(self, count)
+    }
 }
 
-unsafe impl bytes::BufMut for Buf {
+impl From<Bytes> for ByteBuffer {
+    fn from(bytes: Bytes) -> Self {
+        let mut buffer = Self::new();
+        buffer.append_bytes(bytes);
+        buffer
+    }
+}
+
+impl From<Vec<u8>> for ByteBuffer {
+    fn from(vec: Vec<u8>) -> Self {
+        Self::from(Bytes::from(vec))
+    }
+}
+
+unsafe impl bytes::BufMut for ByteBuffer {
     fn remaining_mut(&self) -> usize {
         isize::MAX as usize - self.len()
     }

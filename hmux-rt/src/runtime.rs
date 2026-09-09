@@ -31,12 +31,14 @@ use crate::timer::{ExpiredTimer, TimerQueue};
 const DISPATCH_BUDGET: usize = 64;
 const TURN_TIMEOUT: Duration = Duration::from_millis(10);
 
+type Task = Pin<Box<dyn Future<Output = ()>>>;
+
 /// An event loop that exists to run tasks and nothing else.
 pub struct TaskRuntime {
     reactor: MioReactor<u64>,
     /// The slot is `None` while its future is being polled, which lets a
     /// running task spawn and register without re-borrowing.
-    tasks: HashMap<TaskId, Option<Pin<Box<dyn Future<Output = ()>>>>>,
+    tasks: HashMap<TaskId, Option<Task>>,
     /// Everything a running task may reach, including the run queue every wake
     /// lands on.
     shared: Rc<TaskShared>,

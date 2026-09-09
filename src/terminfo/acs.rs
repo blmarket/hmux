@@ -1,22 +1,49 @@
+use super::term::{TerminalCapabilities, tty_term_of};
 use crate::tty::tty_client;
-use super::term::{tty_term_has, tty_term_number, tty_term_of};
 pub use crate::types::*;
 use ::core::ffi::{CStr, c_int};
 
 pub const TTYC_U8: tty_code_code = 230;
-pub const CLIENT_UTF8: c_int = 0x10000 as c_int;
+pub use crate::consts::CLIENT_UTF8;
+
+/// The line-drawing family used for one border cell.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BorderCharacterSet {
+    Double,
+    Heavy,
+    Rounded,
+}
+
+/// Portable alternate-character and border mappings.
+///
+/// Terminal-specific ACS selection remains part of the tty context; this
+/// boundary owns the context-free mapping tables used by screen and tty code.
+pub trait AlternateCharacterSet {
+    /// Returns the Unicode form of an ACS key.
+    fn unicode_for_key(&self, key: u8) -> Option<std::ffi::CString>;
+
+    /// Returns the ACS key for a complete Unicode character.
+    fn key_for_unicode(&self, value: &[u8]) -> Option<u8>;
+
+    /// Returns one character from a border family.
+    fn border(&self, family: BorderCharacterSet, cell_type: u8) -> Option<utf8_data>;
+}
+
+/// Alternate-character mappings implemented by hmux.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RustAlternateCharacterSet;
 
 /// The UTF-8 string an ACS key stands for. The table below is sorted by key.
-struct tty_acs_entry {
-    key: u8,
-    string: &'static CStr,
+pub struct tty_acs_entry {
+    pub key: u8,
+    pub string: &'static CStr,
 }
 
 /// The ACS key a UTF-8 string stands for. The two tables below are sorted by
 /// string, one per string length.
-struct tty_acs_reverse_entry {
-    string: &'static CStr,
-    key: u8,
+pub struct tty_acs_reverse_entry {
+    pub string: &'static CStr,
+    pub key: u8,
 }
 
 /// One border character as a single UTF-8 cell. The empty string is the cell
@@ -371,17 +398,17 @@ static tty_acs_rounded_borders_list: [utf8_data; 13] = [
 /// `cell_type` is one of the thirteen border cell types the drawing code
 /// names, `CELL_INSIDE` through `CELL_OUTSIDE`; `CELL_SCROLLBAR` never reaches
 /// here, since both callers turn it away first.
-pub fn tty_acs_double_borders(cell_type: c_int) -> &'static utf8_data {
+fn tty_acs_double_borders_impl(cell_type: c_int) -> &'static utf8_data {
     &tty_acs_double_borders_list[cell_type as usize]
 }
 
 /// See [`tty_acs_double_borders`] for the range of `cell_type`.
-pub fn tty_acs_heavy_borders(cell_type: c_int) -> &'static utf8_data {
+fn tty_acs_heavy_borders_impl(cell_type: c_int) -> &'static utf8_data {
     &tty_acs_heavy_borders_list[cell_type as usize]
 }
 
 /// See [`tty_acs_double_borders`] for the range of `cell_type`.
-pub fn tty_acs_rounded_borders(cell_type: c_int) -> &'static utf8_data {
+fn tty_acs_rounded_borders_impl(cell_type: c_int) -> &'static utf8_data {
     &tty_acs_rounded_borders_list[cell_type as usize]
 }
 
@@ -391,16 +418,15 @@ pub fn tty_acs_rounded_borders(cell_type: c_int) -> &'static utf8_data {
 /// together, which is how a user turns UTF-8 line drawing off; otherwise the
 /// client's own UTF-8 flag decides.
 pub unsafe fn tty_acs_needed(tty: Option<&tty>) -> c_int {
-    unsafe {
+    {
         let Some(tty) = tty else {
             return 0;
         };
-        if tty_term_has(tty_term_of(tty), TTYC_U8) != 0
-            && tty_term_number(tty_term_of(tty), TTYC_U8) == 0
-        {
+        if tty_term_of(tty).has(TTYC_U8) && tty_term_of(tty).number(TTYC_U8) == 0 {
             return 1;
         }
-        if (*tty_client(tty)).flags & CLIENT_UTF8 as uint64_t != 0 {
+        let flags = unsafe { tty_client(tty).expect("the tty has a client").flags() };
+        if flags & CLIENT_UTF8 as uint64_t != 0 {
             return 0;
         }
         1
@@ -411,22 +437,22 @@ pub unsafe fn tty_acs_needed(tty: Option<&tty>) -> c_int {
 /// when it wants ACS, and the UTF-8 character otherwise. Nothing if neither
 /// has one.
 ///
-/// The terminal's own translation borrows from `tty`, so the answer lives only
-/// as long as the caller keeps that terminal; the module's own table is
-/// `'static`.
-pub unsafe fn tty_acs_get<'a>(tty: Option<&tty>, ch: u_char) -> Option<&'a CStr> {
+/// Terminal translations are retained independently of the tty; the module's
+/// own Unicode table is borrowed for its static lifetime.
+pub unsafe fn tty_acs_get(
+    tty: Option<&tty>,
+    ch: u_char,
+) -> Option<std::borrow::Cow<'static, CStr>> {
     unsafe {
         if let Some(tty) = tty
             && tty_acs_needed(Some(tty)) != 0
         {
-            let acs = &tty_term_of(tty).acs[ch as usize];
-            if acs[0] == 0 {
-                return None;
-            }
-            return Some(CStr::from_ptr(acs.as_ptr()));
+            return tty_term_of(tty)
+                .acs(ch)
+                .map(|value| std::borrow::Cow::Owned(value.to_owned()));
         }
         match tty_acs_table.binary_search_by_key(&ch, |entry| entry.key) {
-            Ok(i) => Some(tty_acs_table[i].string),
+            Ok(i) => Some(std::borrow::Cow::Borrowed(tty_acs_table[i].string)),
             Err(_) => None,
         }
     }
@@ -434,7 +460,7 @@ pub unsafe fn tty_acs_get<'a>(tty: Option<&tty>, ch: u_char) -> Option<&'a CStr>
 
 /// The ACS key for the UTF-8 bytes in `s`, or -1 if there is none. Only two-
 /// and three-byte strings have one.
-pub fn tty_acs_reverse_get(s: &[u8]) -> c_int {
+fn tty_acs_reverse_get_impl(s: &[u8]) -> c_int {
     let table: &[tty_acs_reverse_entry] = match s.len() {
         2 => &tty_acs_reverse2,
         3 => &tty_acs_reverse3,
@@ -444,6 +470,53 @@ pub fn tty_acs_reverse_get(s: &[u8]) -> c_int {
         Ok(i) => table[i].key as c_int,
         Err(_) => -1,
     }
+}
+
+fn tty_acs_unicode_for_key(key: u8) -> Option<&'static CStr> {
+    tty_acs_table
+        .binary_search_by_key(&key, |entry| entry.key)
+        .ok()
+        .map(|index| tty_acs_table[index].string)
+}
+
+impl AlternateCharacterSet for RustAlternateCharacterSet {
+    fn unicode_for_key(&self, key: u8) -> Option<std::ffi::CString> {
+        tty_acs_unicode_for_key(key).map(CStr::to_owned)
+    }
+
+    fn key_for_unicode(&self, value: &[u8]) -> Option<u8> {
+        let key = tty_acs_reverse_get_impl(value);
+        (key >= 0).then_some(key as u8)
+    }
+
+    fn border(&self, family: BorderCharacterSet, cell_type: u8) -> Option<utf8_data> {
+        if cell_type > 12 {
+            return None;
+        }
+        Some(*match family {
+            BorderCharacterSet::Double => tty_acs_double_borders_impl(cell_type as c_int),
+            BorderCharacterSet::Heavy => tty_acs_heavy_borders_impl(cell_type as c_int),
+            BorderCharacterSet::Rounded => tty_acs_rounded_borders_impl(cell_type as c_int),
+        })
+    }
+}
+
+pub fn tty_acs_double_borders(cell_type: c_int) -> &'static utf8_data {
+    tty_acs_double_borders_impl(cell_type)
+}
+
+pub fn tty_acs_heavy_borders(cell_type: c_int) -> &'static utf8_data {
+    tty_acs_heavy_borders_impl(cell_type)
+}
+
+pub fn tty_acs_rounded_borders(cell_type: c_int) -> &'static utf8_data {
+    tty_acs_rounded_borders_impl(cell_type)
+}
+
+pub fn tty_acs_reverse_get(s: &[u8]) -> c_int {
+    RustAlternateCharacterSet
+        .key_for_unicode(s)
+        .map_or(-1, c_int::from)
 }
 
 #[cfg(test)]

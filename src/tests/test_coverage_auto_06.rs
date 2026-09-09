@@ -6,22 +6,21 @@
 //! [`globals`] when touching globals or option trees.
 
 use crate::fmt_args;
-use crate::options::{options_get_number, options_set_number};
+use crate::options::OptionsRef;
+
 use crate::server::{
     MSG_COMMAND, MSG_FLAGS, MSG_IDENTIFY_CWD, MSG_IDENTIFY_DONE, MSG_IDENTIFY_FLAGS,
     MSG_IDENTIFY_TERM, MSG_READ, MSG_READ_DONE, MSG_READ_OPEN, MSG_VERSION, MSG_WRITE,
     MSG_WRITE_CLOSE, MSG_WRITE_OPEN, PANE_LINES_DOUBLE, PANE_LINES_SINGLE, server_add_message,
     server_check_marked, server_clear_marked, server_is_marked, server_set_marked,
 };
-use crate::session::session_options;
+
 use crate::status::{
     CLIENT_CONTROL, CLIENT_STATUSOFF, PROMPT_NTYPES, PROMPT_TYPE_COMMAND, PROMPT_TYPE_INVALID,
     PROMPT_TYPE_SEARCH, PROMPT_TYPE_TARGET, PROMPT_TYPE_WINDOW_TARGET, status_at_line,
     status_line_size, status_prompt_line_at, status_prompt_type, status_prompt_type_string,
-    status_update_cache,
 };
-use crate::tests::test_fixtures::{Clients, Target, globals, seen};
-use ::core::ptr::null_mut;
+use crate::tests::test_fixtures::{Clients, Target, globals};
 
 // ---------------------------------------------------------------------------
 // Constants — wire values are stable
@@ -71,23 +70,29 @@ fn server_marked_pane_set_check_is_and_clear() {
         let s = target.session();
         let wl = target.winlink(0);
         let wp = target.pane(0);
-        server_set_marked(s, wl, wp);
+        server_set_marked(s.as_ref(), wl.as_ref(), wp.as_ref());
         assert_eq!(server_check_marked(), 1);
-        assert_eq!(server_is_marked(s, wl, wp), 1);
+        assert_eq!(server_is_marked(s.as_ref(), wl.as_ref(), wp.as_ref()), 1);
 
         // different pane is not marked
         let mut other_pane_box = Box::new(crate::types::window_pane::default());
         let other_wp = &raw mut *other_pane_box;
-        assert_eq!(server_is_marked(s, wl, other_wp), 0);
+        assert_eq!(
+            server_is_marked(s.as_ref(), wl.as_ref(), other_wp.as_ref()),
+            0
+        );
 
         // null args never marked
-        assert_eq!(server_is_marked(null_mut(), wl, wp), 0);
-        assert_eq!(server_is_marked(s, null_mut(), wp), 0);
-        assert_eq!(server_is_marked(s, wl, null_mut()), 0);
+        assert_eq!(server_is_marked(None, wl.as_ref(), wp.as_ref()), 0);
+        assert_eq!(server_is_marked(s.as_ref(), None, wp.as_ref()), 0);
+        assert_eq!(
+            server_is_marked(s.as_ref(), wl.as_ref(), None::<&crate::types::window_pane>),
+            0
+        );
 
         server_clear_marked();
         assert_eq!(server_check_marked(), 0);
-        assert_eq!(server_is_marked(s, wl, wp), 0);
+        assert_eq!(server_is_marked(s.as_ref(), wl.as_ref(), wp.as_ref()), 0);
     }
 }
 
@@ -97,10 +102,13 @@ fn server_marked_pane_survives_null_session_window() {
     unsafe {
         server_clear_marked();
         // setting with nulls still stores them; check returns 0 because valid_state fails
-        server_set_marked(null_mut(), null_mut(), null_mut());
+        server_set_marked(None, None, None::<&crate::types::window_pane>);
         assert_eq!(server_check_marked(), 0);
         // is_marked with nulls returns 0 regardless
-        assert_eq!(server_is_marked(null_mut(), null_mut(), null_mut()), 0);
+        assert_eq!(
+            server_is_marked(None, None, None::<&crate::types::window_pane>),
+            0
+        );
         server_clear_marked();
     }
 }
@@ -114,25 +122,22 @@ fn server_add_message_appends_entries() {
     let _guard = globals();
     unsafe {
         let before = message_count();
-        server_add_message(c"auto06 %s".as_ptr(), fmt_args![c"hello".as_ptr()]);
-        server_add_message(c"auto06 second".as_ptr(), fmt_args![]);
+        server_add_message(c"auto06 %s", fmt_args![c"hello".as_ptr()]);
+        server_add_message(c"auto06 second", fmt_args![]);
         let after = message_count();
         assert_eq!(after, before + 2);
         // last message text contains our prefix
-        let txt = seen(
-            crate::server::message_log
-                .queue()
-                .back()
-                .expect("the two lines just recorded are still there")
-                .msg
-                .as_ptr(),
-        );
+        let txt = crate::tests::test_fixtures::message_log_entries()
+            .into_iter()
+            .next()
+            .map(|entry| String::from_utf8_lossy(entry.text.as_bytes()).into_owned())
+            .expect("the two lines just recorded are still there");
         assert!(txt.contains("auto06"), "last msg was {txt:?}");
     }
 }
 
 fn message_count() -> usize {
-    crate::server::message_log.queue().len()
+    crate::tests::test_fixtures::message_log_count()
 }
 
 // ---------------------------------------------------------------------------
@@ -141,27 +146,25 @@ fn message_count() -> usize {
 
 #[test]
 fn status_prompt_type_roundtrips_all_known_strings() {
-    unsafe {
-        assert_eq!(status_prompt_type_string(0), c"command");
-        assert_eq!(status_prompt_type_string(1), c"search");
-        assert_eq!(status_prompt_type_string(2), c"target");
-        assert_eq!(status_prompt_type_string(3), c"window-target");
-        // out of range returns "invalid"
-        assert_eq!(status_prompt_type_string(4), c"invalid");
-        assert_eq!(status_prompt_type_string(99), c"invalid");
-        assert_eq!(status_prompt_type_string(255), c"invalid");
+    assert_eq!(status_prompt_type_string(0), c"command");
+    assert_eq!(status_prompt_type_string(1), c"search");
+    assert_eq!(status_prompt_type_string(2), c"target");
+    assert_eq!(status_prompt_type_string(3), c"window-target");
+    // out of range returns "invalid"
+    assert_eq!(status_prompt_type_string(4), c"invalid");
+    assert_eq!(status_prompt_type_string(99), c"invalid");
+    assert_eq!(status_prompt_type_string(255), c"invalid");
 
-        assert_eq!(status_prompt_type(c"command"), PROMPT_TYPE_COMMAND);
-        assert_eq!(status_prompt_type(c"search"), PROMPT_TYPE_SEARCH);
-        assert_eq!(status_prompt_type(c"target"), PROMPT_TYPE_TARGET);
-        assert_eq!(
-            status_prompt_type(c"window-target"),
-            PROMPT_TYPE_WINDOW_TARGET
-        );
-        assert_eq!(status_prompt_type(c"invalid"), PROMPT_TYPE_INVALID);
-        assert_eq!(status_prompt_type(c"unknown"), PROMPT_TYPE_INVALID);
-        assert_eq!(status_prompt_type(c""), PROMPT_TYPE_INVALID);
-    }
+    assert_eq!(status_prompt_type(c"command"), PROMPT_TYPE_COMMAND);
+    assert_eq!(status_prompt_type(c"search"), PROMPT_TYPE_SEARCH);
+    assert_eq!(status_prompt_type(c"target"), PROMPT_TYPE_TARGET);
+    assert_eq!(
+        status_prompt_type(c"window-target"),
+        PROMPT_TYPE_WINDOW_TARGET
+    );
+    assert_eq!(status_prompt_type(c"invalid"), PROMPT_TYPE_INVALID);
+    assert_eq!(status_prompt_type(c"unknown"), PROMPT_TYPE_INVALID);
+    assert_eq!(status_prompt_type(c""), PROMPT_TYPE_INVALID);
 }
 
 // ---------------------------------------------------------------------------
@@ -175,26 +178,26 @@ fn status_update_cache_sets_statusat_from_options() {
     unsafe {
         let s = target.session();
         // default from Target is whatever session defaults set; force status off then on
-        options_set_number(session_options(s), c"status".as_ptr(), 0);
-        status_update_cache(target.session_handle());
+        ((&mut *s).options_ref().clone()).set_number(c"status", 0);
+        (target.session_handle()).update_status_cache();
         assert_eq!((*s).statuslines, 0);
         assert_eq!((*s).statusat, -1);
 
-        options_set_number(session_options(s), c"status".as_ptr(), 2);
-        options_set_number(session_options(s), c"status-position".as_ptr(), 0);
-        status_update_cache(target.session_handle());
+        ((&mut *s).options_ref().clone()).set_number(c"status", 2);
+        ((&mut *s).options_ref().clone()).set_number(c"status-position", 0);
+        (target.session_handle()).update_status_cache();
         assert_eq!((*s).statuslines, 2);
         assert_eq!((*s).statusat, 0);
 
-        options_set_number(session_options(s), c"status-position".as_ptr(), 1);
-        status_update_cache(target.session_handle());
+        ((&mut *s).options_ref().clone()).set_number(c"status-position", 1);
+        (target.session_handle()).update_status_cache();
         assert_eq!((*s).statuslines, 2);
         assert_eq!((*s).statusat, 1);
 
         // restore
-        options_set_number(session_options(s), c"status".as_ptr(), 1);
-        options_set_number(session_options(s), c"status-position".as_ptr(), 0);
-        status_update_cache(target.session_handle());
+        ((&mut *s).options_ref().clone()).set_number(c"status", 1);
+        ((&mut *s).options_ref().clone()).set_number(c"status-position", 0);
+        (target.session_handle()).update_status_cache();
     }
 }
 
@@ -206,44 +209,47 @@ fn status_line_size_and_at_line_with_flags() {
     unsafe {
         let s = target.session();
         // ensure cache is consistent: 1 line at top
-        options_set_number(session_options(s), c"status".as_ptr(), 1);
-        options_set_number(session_options(s), c"status-position".as_ptr(), 0);
-        status_update_cache(target.session_handle());
+        ((&mut *s).options_ref().clone()).set_number(c"status", 1);
+        ((&mut *s).options_ref().clone()).set_number(c"status-position", 0);
+        (target.session_handle()).update_status_cache();
 
         let c = clients.add("auto06-status", 80, 24);
-        (*c).session = s;
+        (*c).set_attached_session(Some(target.session_handle()));
 
         // normal: line_size is session's statuslines
-        assert_eq!(status_line_size(c), 1);
+        assert_eq!(status_line_size(&*c), 1);
         // top position -> at_line is session statusat (0)
-        assert_eq!(status_at_line(c), 0);
+        assert_eq!(status_at_line(&*c), 0);
 
         // status at bottom -> line is sy - lines
-        options_set_number(session_options(s), c"status-position".as_ptr(), 1);
-        status_update_cache(target.session_handle());
+        ((&mut *s).options_ref().clone()).set_number(c"status-position", 1);
+        (target.session_handle()).update_status_cache();
         (*c).tty.sy = 24;
-        assert_eq!(status_at_line(c), 23); // 24 - 1
+        assert_eq!(status_at_line(&*c), 23); // 24 - 1
 
         // flagged off -> 0 / -1
         (*c).flags |= CLIENT_STATUSOFF as u64;
-        assert_eq!(status_line_size(c), 0);
-        assert_eq!(status_at_line(c), -1);
+        assert_eq!(status_line_size(&*c), 0);
+        assert_eq!(status_at_line(&*c), -1);
         (*c).flags &= !(CLIENT_STATUSOFF as u64);
 
         (*c).flags |= CLIENT_CONTROL as u64;
-        assert_eq!(status_line_size(c), 0);
-        assert_eq!(status_at_line(c), -1);
+        assert_eq!(status_line_size(&*c), 0);
+        assert_eq!(status_at_line(&*c), -1);
         (*c).flags &= !(CLIENT_CONTROL as u64);
 
         // null session -> falls back to global_s_options "status"
-        (*c).session = null_mut();
-        let expected = options_get_number(crate::tmux::global_s_options, c"status".as_ptr()) as u32;
-        assert_eq!(status_line_size(c), expected);
+        (*c).set_attached_session(None);
+        let expected = (crate::tmux::global_s_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .number(c"status") as u32;
+        assert_eq!(status_line_size(&*c), expected);
 
         // restore
-        (*c).session = s;
-        options_set_number(session_options(s), c"status-position".as_ptr(), 0);
-        status_update_cache(target.session_handle());
+        (*c).set_attached_session(Some(target.session_handle()));
+        ((&mut *s).options_ref().clone()).set_number(c"status-position", 0);
+        (target.session_handle()).update_status_cache();
     }
 }
 
@@ -254,30 +260,30 @@ fn status_prompt_line_at_clamps_to_lines() {
     let mut clients = Clients::new();
     unsafe {
         let s = target.session();
-        options_set_number(session_options(s), c"status".as_ptr(), 3);
-        options_set_number(session_options(s), c"message-line".as_ptr(), 1);
-        status_update_cache(target.session_handle());
+        ((&mut *s).options_ref().clone()).set_number(c"status", 3);
+        ((&mut *s).options_ref().clone()).set_number(c"message-line", 1);
+        (target.session_handle()).update_status_cache();
 
         let c = clients.add("auto06-prompt-line", 80, 24);
-        (*c).session = s;
+        (*c).set_attached_session(Some(target.session_handle()));
         (*c).tty.sy = 24;
 
         // message-line within range
-        assert_eq!(status_prompt_line_at(c), 1);
+        assert_eq!(status_prompt_line_at(&*c), 1);
 
         // clamped when message-line >= lines
-        options_set_number(session_options(s), c"message-line".as_ptr(), 10);
-        assert_eq!(status_prompt_line_at(c), 2); // lines -1
+        ((&mut *s).options_ref().clone()).set_number(c"message-line", 10);
+        assert_eq!(status_prompt_line_at(&*c), 2); // lines -1
 
         // zero lines -> 0
-        options_set_number(session_options(s), c"status".as_ptr(), 0);
-        status_update_cache(target.session_handle());
-        assert_eq!(status_prompt_line_at(c), 0);
+        ((&mut *s).options_ref().clone()).set_number(c"status", 0);
+        (target.session_handle()).update_status_cache();
+        assert_eq!(status_prompt_line_at(&*c), 0);
 
         // restore
-        options_set_number(session_options(s), c"status".as_ptr(), 1);
-        options_set_number(session_options(s), c"message-line".as_ptr(), 0);
-        status_update_cache(target.session_handle());
+        ((&mut *s).options_ref().clone()).set_number(c"status", 1);
+        ((&mut *s).options_ref().clone()).set_number(c"message-line", 0);
+        (target.session_handle()).update_status_cache();
     }
 }
 
@@ -288,12 +294,12 @@ fn status_get_range_returns_null_for_out_of_bounds_y() {
     unsafe {
         let c = clients.add("auto06-range", 80, 24);
         // the fixture's entries hold empty range lists; status_get_range checks y < 5
-        let r = crate::status::status_get_range(c, 0, 5);
-        assert!(r.is_null());
-        let r2 = crate::status::status_get_range(c, 0, 10);
-        assert!(r2.is_null());
+        let r = crate::status::status_get_range(&*c, 0, 5);
+        assert!(r.is_none());
+        let r2 = crate::status::status_get_range(&*c, 0, 10);
+        assert!(r2.is_none());
         // y=0 is within bounds but still returns null when no ranges set
-        let r0 = crate::status::status_get_range(c, 0, 0);
-        assert!(r0.is_null());
+        let r0 = crate::status::status_get_range(&*c, 0, 0);
+        assert!(r0.is_none());
     }
 }

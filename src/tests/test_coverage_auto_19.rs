@@ -92,23 +92,13 @@ fn token_state_constants_ordered() {
 fn cmd_parse_state_default_is_zeroed() {
     let st = cmd_parse_state::default();
     assert!(st.f.is_none());
-    assert!(st.buf.is_null());
+    assert!(st.buf.is_none());
     assert_eq!(st.len, 0);
     assert_eq!(st.off, 0);
     assert_eq!(st.condition, 0);
     assert_eq!(st.eol, 0);
     assert_eq!(st.eof, 0);
-    assert!(st.input.is_null());
+    assert!(st.input.is_none());
     assert_eq!(st.escapes, 0);
     assert!(st.error.is_none());
-}
-
-#[test]
-fn cmd_parse_state_default_is_cloneable() {
-    let a = cmd_parse_state::default();
-    let b = a.clone();
-    let c = b.clone();
-    assert_eq!(a.len, c.len);
-    assert_eq!(a.off, c.off);
-    assert!(c.f.is_none());
 }

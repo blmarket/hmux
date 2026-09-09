@@ -1,15 +1,15 @@
 use super::*;
 use ::core::ffi::CStr;
 
-fn tostring(attr: ::core::ffi::c_int) -> String {
+fn tostring(attr: core::ffi::c_int) -> String {
     attributes_tostring(attr).to_str().unwrap().to_owned()
 }
 
-fn fromstring(s: &CStr) -> ::core::ffi::c_int {
+fn fromstring(s: &CStr) -> core::ffi::c_int {
     attributes_fromstring(s)
 }
 
-const NAMED: [(&str, ::core::ffi::c_int); 15] = [
+const NAMED: [(&str, core::ffi::c_int); 15] = [
     ("acs", GRID_ATTR_CHARSET),
     ("bright", GRID_ATTR_BRIGHT),
     ("dim", GRID_ATTR_DIM),
@@ -79,9 +79,9 @@ fn fromstring_maps_each_name() {
         if name == "noattr" {
             continue;
         }
-        let owned = ::std::ffi::CString::new(name).unwrap();
+        let owned = std::ffi::CString::new(name).unwrap();
         assert_eq!(fromstring(&owned), bit, "{name}");
-        let upper = ::std::ffi::CString::new(name.to_uppercase()).unwrap();
+        let upper = std::ffi::CString::new(name.to_uppercase()).unwrap();
         assert_eq!(fromstring(&upper), bit, "{name}");
     }
     assert_eq!(fromstring(c"bold"), GRID_ATTR_BRIGHT);

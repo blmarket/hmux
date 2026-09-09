@@ -1,705 +1,664 @@
-use crate::cmd::{cmd_log_argv, cmd_stringify_argv};
-use crate::cmd::{cmdq_get_client, cmdq_get_name, cmdq_get_target};
+use crate::WindowPane as _;
+use crate::compat::error_message;
+
+use crate::cmd::{CmdqItemRef, cmd_log_argv};
+
 use crate::compat::fdforkpty;
 use crate::compat::systemd_move_to_new_cgroup;
-use crate::environ::{
-    environ_copy, environ_entry_value, environ_find, environ_for_session, environ_log, environ_ptr,
-    environ_push, environ_set,
-};
+use crate::environ::EnvironmentStore;
+use crate::environ::{environment_for_session, log_environment, push_environment_to_process};
 use crate::ffi::{
     __errno_location, _exit, chdir, close, closefrom, execl, execvp, getcwd, getpid, kill,
-    sigfillset, sigprocmask, strerror, strrchr, tcgetattr, tcsetattr, utempter_add_record,
+    sigfillset, sigprocmask, tcgetattr, tcsetattr, utempter_add_record,
 };
 use crate::fmt_args;
-use crate::format::format_single;
-use crate::input::input_free_box;
-use crate::layout::{layout_assign_pane, layout_close_pane, layout_free, layout_init};
+use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};
+
+use crate::layout::LayoutCellPath;
 use crate::log::{log_close, log_debug};
 use crate::names::default_window_name;
 use crate::notify::{notify_session_window, notify_window};
-use crate::options::{options_get_number, options_get_string, options_set_number};
+
+use crate::pane_command::PaneCommandState;
 use crate::proc::proc_clear_signals;
 use crate::resize::default_window_size;
-use crate::screen::{screen_grid_ptr, screen_reinit};
+use crate::screen::Screen;
+use crate::screen::screen_reinit;
 use crate::server::server_proc;
 use crate::server::{server_client_get_cwd, server_client_remove_pane};
-use crate::session::{
-    session_get_curw, session_id, session_name, session_options, session_set_curw, session_tio,
+
+pub use crate::consts::{
+    _PATH_BSHELL, CLIENT_EXIT_DETACH, CLIENT_EXIT_RETURN, CLIENT_EXIT_SHUTDOWN,
+    LAYOUT_CELL_FLOATING, LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, LAYOUT_WINDOWPANE, MODE_CRLF,
+    MODE_CURSOR, MSG_COMMAND, MSG_DETACH, MSG_DETACHKILL, MSG_EXEC, MSG_EXIT, MSG_EXITED,
+    MSG_EXITING, MSG_FLAGS, MSG_IDENTIFY_CLIENTPID, MSG_IDENTIFY_CWD, MSG_IDENTIFY_DONE,
+    MSG_IDENTIFY_ENVIRON, MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_FLAGS, MSG_IDENTIFY_LONGFLAGS,
+    MSG_IDENTIFY_OLDCWD, MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT, MSG_IDENTIFY_TERM,
+    MSG_IDENTIFY_TERMINFO, MSG_IDENTIFY_TTYNAME, MSG_LOCK, MSG_OLDSTDERR, MSG_OLDSTDIN,
+    MSG_OLDSTDOUT, MSG_READ, MSG_READ_CANCEL, MSG_READ_DONE, MSG_READ_OPEN, MSG_READY, MSG_RESIZE,
+    MSG_SHELL, MSG_SHUTDOWN, MSG_SUSPEND, MSG_UNLOCK, MSG_VERSION, MSG_WAKEUP, MSG_WRITE,
+    MSG_WRITE_CLOSE, MSG_WRITE_OPEN, MSG_WRITE_READY, PANE_EMPTY, PANE_EXITED, PANE_LINES_DOUBLE,
+    PANE_LINES_HEAVY, PANE_LINES_NUMBER, PANE_LINES_SIMPLE, PANE_LINES_SINGLE, PANE_LINES_SPACES,
+    PANE_STATUSDRAWN, PANE_STATUSREADY, PROGRESS_BAR_ERROR, PROGRESS_BAR_HIDDEN,
+    PROGRESS_BAR_INDETERMINATE, PROGRESS_BAR_NORMAL, PROGRESS_BAR_PAUSED, PROMPT_COMMAND,
+    PROMPT_ENTRY, PROMPT_TYPE_COMMAND, PROMPT_TYPE_INVALID, PROMPT_TYPE_SEARCH, PROMPT_TYPE_TARGET,
+    PROMPT_TYPE_WINDOW_TARGET, SCREEN_CURSOR_BAR, SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_DEFAULT,
+    SCREEN_CURSOR_UNDERLINE, SIG_BLOCK, SIG_SETMASK, SIGCHLD, SPAWN_DETACHED, SPAWN_EMPTY,
+    SPAWN_FLOATING, SPAWN_KILL, SPAWN_RESPAWN, SPAWN_ZOOM, STDERR_FILENO, STDIN_FILENO,
+    STYLE_ALIGN_ABSOLUTE_CENTRE, STYLE_ALIGN_CENTRE, STYLE_ALIGN_DEFAULT, STYLE_ALIGN_LEFT,
+    STYLE_ALIGN_RIGHT, STYLE_DEFAULT_BASE, STYLE_DEFAULT_POP, STYLE_DEFAULT_PUSH,
+    STYLE_DEFAULT_SET, STYLE_LIST_FOCUS, STYLE_LIST_LEFT_MARKER, STYLE_LIST_OFF, STYLE_LIST_ON,
+    STYLE_LIST_RIGHT_MARKER, STYLE_RANGE_CONTROL, STYLE_RANGE_LEFT, STYLE_RANGE_NONE,
+    STYLE_RANGE_PANE, STYLE_RANGE_RIGHT, STYLE_RANGE_SESSION, STYLE_RANGE_USER, STYLE_RANGE_WINDOW,
+    TCSANOW, THEME_DARK, THEME_LIGHT, THEME_UNKNOWN, VERASE, WINDOW_ZOOMED, WINLINK_ACTIVITY,
+    WINLINK_ALERTFLAGS, WINLINK_BELL, WINLINK_SILENCE,
 };
-use crate::session::{session_group_synchronize_from, session_select};
 use crate::tmux::{checkshell, find_home};
 use crate::tmux::{global_options, ptm_fd};
 pub use crate::types::*;
-use crate::window::window_set_latest;
+use crate::window::{WinlinkRef, window_set_latest};
 use crate::window::{
-    window_add_pane, window_create, window_destroy_panes, window_pane_index,
-    window_pane_reset_mode_all, window_pane_resize, window_pane_set_event, window_panes_first,
-    window_panes_insert_head, window_panes_next, window_panes_take, window_remove_pane,
-    window_set_active_pane, winlink_add, winlink_find_by_index, winlink_remove,
-    winlink_set_window_ref, winlink_stack_remove,
+    window_add_pane, window_pane_reset_mode_all, window_pane_resize, window_pane_set_event,
+    window_panes_insert_head, winlink_remove, winlink_stack_remove,
 };
-use crate::window::{window_get_active, window_set_active};
 use crate::xmalloc::xasprintf;
+use crate::{CommandTextCodec, RustCommandTextCodec};
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
-pub const MSG_READ_CANCEL: msgtype = 307;
-pub const MSG_WRITE_CLOSE: msgtype = 306;
-pub const MSG_WRITE_READY: msgtype = 305;
-pub const MSG_WRITE: msgtype = 304;
-pub const MSG_WRITE_OPEN: msgtype = 303;
-pub const MSG_READ_DONE: msgtype = 302;
-pub const MSG_READ: msgtype = 301;
-pub const MSG_READ_OPEN: msgtype = 300;
-pub const MSG_FLAGS: msgtype = 218;
-pub const MSG_EXEC: msgtype = 217;
-pub const MSG_WAKEUP: msgtype = 216;
-pub const MSG_UNLOCK: msgtype = 215;
-pub const MSG_SUSPEND: msgtype = 214;
-pub const MSG_OLDSTDOUT: msgtype = 213;
-pub const MSG_OLDSTDIN: msgtype = 212;
-pub const MSG_OLDSTDERR: msgtype = 211;
-pub const MSG_SHUTDOWN: msgtype = 210;
-pub const MSG_SHELL: msgtype = 209;
-pub const MSG_RESIZE: msgtype = 208;
-pub const MSG_READY: msgtype = 207;
-pub const MSG_LOCK: msgtype = 206;
-pub const MSG_EXITING: msgtype = 205;
-pub const MSG_EXITED: msgtype = 204;
-pub const MSG_EXIT: msgtype = 203;
-pub const MSG_DETACHKILL: msgtype = 202;
-pub const MSG_DETACH: msgtype = 201;
-pub const MSG_COMMAND: msgtype = 200;
-pub const MSG_IDENTIFY_TERMINFO: msgtype = 112;
-pub const MSG_IDENTIFY_LONGFLAGS: msgtype = 111;
-pub const MSG_IDENTIFY_STDOUT: msgtype = 110;
-pub const MSG_IDENTIFY_FEATURES: msgtype = 109;
-pub const MSG_IDENTIFY_CWD: msgtype = 108;
-pub const MSG_IDENTIFY_CLIENTPID: msgtype = 107;
-pub const MSG_IDENTIFY_DONE: msgtype = 106;
-pub const MSG_IDENTIFY_ENVIRON: msgtype = 105;
-pub const MSG_IDENTIFY_STDIN: msgtype = 104;
-pub const MSG_IDENTIFY_OLDCWD: msgtype = 103;
-pub const MSG_IDENTIFY_TTYNAME: msgtype = 102;
-pub const MSG_IDENTIFY_TERM: msgtype = 101;
-pub const MSG_IDENTIFY_FLAGS: msgtype = 100;
-pub const MSG_VERSION: msgtype = 12;
-pub const PANE_LINES_SPACES: pane_lines = 5;
-pub const PANE_LINES_NUMBER: pane_lines = 4;
-pub const PANE_LINES_SIMPLE: pane_lines = 3;
-pub const PANE_LINES_HEAVY: pane_lines = 2;
-pub const PANE_LINES_DOUBLE: pane_lines = 1;
-pub const PANE_LINES_SINGLE: pane_lines = 0;
-pub const PROGRESS_BAR_PAUSED: progress_bar_state = 4;
-pub const PROGRESS_BAR_INDETERMINATE: progress_bar_state = 3;
-pub const PROGRESS_BAR_ERROR: progress_bar_state = 2;
-pub const PROGRESS_BAR_NORMAL: progress_bar_state = 1;
-pub const PROGRESS_BAR_HIDDEN: progress_bar_state = 0;
-pub const SCREEN_CURSOR_BAR: screen_cursor_style = 3;
-pub const SCREEN_CURSOR_UNDERLINE: screen_cursor_style = 2;
-pub const SCREEN_CURSOR_BLOCK: screen_cursor_style = 1;
-pub const SCREEN_CURSOR_DEFAULT: screen_cursor_style = 0;
-pub const STYLE_DEFAULT_SET: style_default_type = 3;
-pub const STYLE_DEFAULT_POP: style_default_type = 2;
-pub const STYLE_DEFAULT_PUSH: style_default_type = 1;
-pub const STYLE_DEFAULT_BASE: style_default_type = 0;
-pub const STYLE_RANGE_CONTROL: style_range_type = 7;
-pub const STYLE_RANGE_USER: style_range_type = 6;
-pub const STYLE_RANGE_SESSION: style_range_type = 5;
-pub const STYLE_RANGE_WINDOW: style_range_type = 4;
-pub const STYLE_RANGE_PANE: style_range_type = 3;
-pub const STYLE_RANGE_RIGHT: style_range_type = 2;
-pub const STYLE_RANGE_LEFT: style_range_type = 1;
-pub const STYLE_RANGE_NONE: style_range_type = 0;
-pub const STYLE_LIST_RIGHT_MARKER: style_list = 4;
-pub const STYLE_LIST_LEFT_MARKER: style_list = 3;
-pub const STYLE_LIST_FOCUS: style_list = 2;
-pub const STYLE_LIST_ON: style_list = 1;
-pub const STYLE_LIST_OFF: style_list = 0;
-pub const STYLE_ALIGN_ABSOLUTE_CENTRE: style_align = 4;
-pub const STYLE_ALIGN_RIGHT: style_align = 3;
-pub const STYLE_ALIGN_CENTRE: style_align = 2;
-pub const STYLE_ALIGN_LEFT: style_align = 1;
-pub const STYLE_ALIGN_DEFAULT: style_align = 0;
-pub const THEME_DARK: client_theme = 2;
-pub const THEME_LIGHT: client_theme = 1;
-pub const THEME_UNKNOWN: client_theme = 0;
-pub const LAYOUT_WINDOWPANE: layout_type = 2;
-pub const LAYOUT_TOPBOTTOM: layout_type = 1;
-pub const LAYOUT_LEFTRIGHT: layout_type = 0;
-pub const PROMPT_TYPE_INVALID: prompt_type = 255;
-pub const PROMPT_TYPE_WINDOW_TARGET: prompt_type = 3;
-pub const PROMPT_TYPE_TARGET: prompt_type = 2;
-pub const PROMPT_TYPE_SEARCH: prompt_type = 1;
-pub const PROMPT_TYPE_COMMAND: prompt_type = 0;
-pub const PROMPT_COMMAND: client_prompt_mode = 1;
-pub const PROMPT_ENTRY: client_prompt_mode = 0;
-pub const CLIENT_EXIT_DETACH: client_exit_type = 2;
-pub const CLIENT_EXIT_SHUTDOWN: client_exit_type = 1;
-pub const CLIENT_EXIT_RETURN: client_exit_type = 0;
-pub const SIGCHLD: ::core::ffi::c_int = 17 as ::core::ffi::c_int;
-pub const SIG_BLOCK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const SIG_SETMASK: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const STDIN_FILENO: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const STDERR_FILENO: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const VERASE: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const IUTF8: ::core::ffi::c_int = 0o40000 as ::core::ffi::c_int;
-pub const TCSANOW: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+
+pub const IUTF8: core::ffi::c_int = 0o40000 as core::ffi::c_int;
+
 pub const _PATH_DEFPATH: &CStr = c"/usr/bin:/bin";
-pub const _PATH_BSHELL: &CStr = c"/bin/sh";
-pub const MODE_CURSOR: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const MODE_CRLF: ::core::ffi::c_int = 0x4000 as ::core::ffi::c_int;
-pub const PANE_EXITED: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const PANE_STATUSREADY: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
-pub const PANE_STATUSDRAWN: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
-pub const PANE_EMPTY: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
-pub const WINDOW_ZOOMED: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const WINLINK_BELL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const WINLINK_ACTIVITY: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const WINLINK_SILENCE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const WINLINK_ALERTFLAGS: ::core::ffi::c_int =
-    WINLINK_BELL | WINLINK_ACTIVITY | WINLINK_SILENCE;
-pub const LAYOUT_CELL_FLOATING: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const SPAWN_KILL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const SPAWN_DETACHED: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const SPAWN_RESPAWN: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const SPAWN_NONOTIFY: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const SPAWN_EMPTY: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const SPAWN_ZOOM: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const SPAWN_FLOATING: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, sc: &mut spawn_context) {
+
+pub const SPAWN_NONOTIFY: core::ffi::c_int = 0x10 as core::ffi::c_int;
+
+pub(crate) fn spawn_shell_name(shell: &CStr) -> &CStr {
+    let bytes = shell.to_bytes();
+    match bytes.iter().rposition(|&byte| byte == b'/') {
+        Some(at) if at + 1 < bytes.len() => {
+            CStr::from_bytes_with_nul(&shell.to_bytes_with_nul()[at + 1..])
+                .expect("a shell name ends with its path")
+        }
+        _ => shell,
+    }
+}
+
+unsafe fn spawn_log(from: &CStr, sc: &spawn_context) {
     unsafe {
-        let mut s: *mut session = sc.s;
-        let mut wl: *mut winlink = sc.wl;
-        let mut wp0: *mut window_pane = sc.wp0;
+        let s = sc.s.as_ref().expect("a spawn context has a session owner");
+        let wl = sc.wl_idx;
         let item = spawn_item(sc);
         log_debug(
-            c"%s: %s, flags=%#x".as_ptr(),
-            fmt_args![from, cmdq_get_name(&*item), sc.flags],
+            c"%s: %s, flags=%#x",
+            fmt_args![from, (item.read()).name(), sc.flags],
         );
-        let tmp = if !wl.is_null() && !wp0.is_null() {
-            xasprintf(c"wl=%d wp0=%%%u".as_ptr(), fmt_args![(*wl).idx, (*wp0).id])
-        } else if !wl.is_null() {
-            xasprintf(c"wl=%d wp0=none".as_ptr(), fmt_args![(*wl).idx])
-        } else if !wp0.is_null() {
-            xasprintf(c"wl=none wp0=%%%u".as_ptr(), fmt_args![(*wp0).id])
-        } else {
-            xasprintf(c"wl=none wp0=none".as_ptr(), fmt_args![])
+        let tmp = match (wl, sc.wp0.as_ref().map(|pane| pane.id())) {
+            (Some(wl), Some(id)) => xasprintf(c"wl=%d wp0=%%%u", fmt_args![wl, id]),
+            (Some(wl), None) => xasprintf(c"wl=%d wp0=none", fmt_args![wl]),
+            (None, Some(id)) => xasprintf(c"wl=none wp0=%%%u", fmt_args![id]),
+            (None, None) => xasprintf(c"wl=none wp0=none", fmt_args![]),
         };
         log_debug(
-            c"%s: s=$%u %s idx=%d".as_ptr(),
-            fmt_args![from, session_id(s), tmp.as_ptr(), sc.idx],
+            c"%s: s=$%u %s idx=%d",
+            fmt_args![from, s.id(), tmp.as_c_str(), sc.idx],
         );
-        log_debug(
-            c"%s: name=%s".as_ptr(),
-            fmt_args![from, sc.name.map_or(c"none".as_ptr(), CStr::as_ptr)],
-        );
+        log_debug(c"%s: name=%s", fmt_args![from, sc.name.unwrap_or(c"none")]);
     }
 }
 /// The queue item the spawn was asked from, which is waiting on it.
-fn spawn_item(sc: &spawn_context) -> *mut cmdq_item {
+fn spawn_item(sc: &spawn_context) -> CmdqItemRef {
     sc.item
         .as_ref()
         .and_then(|item| item.upgrade())
-        .map_or(::core::ptr::null_mut::<cmdq_item>(), |item| item.as_ptr())
+        .expect("a spawn context has a live queue item")
 }
 
 /// The client the spawn was asked for, or none.
-fn spawn_client(sc: &spawn_context) -> *mut client {
-    sc.tc
-        .as_ref()
-        .and_then(ClientWeak::upgrade)
-        .map_or(::core::ptr::null_mut::<client>(), |c| c.as_ptr())
+fn spawn_client(sc: &spawn_context) -> Option<ClientRef> {
+    sc.tc.as_ref().and_then(ClientWeak::upgrade)
 }
 
-pub unsafe fn spawn_window(sc: &mut spawn_context, cause: &mut Option<CString>) -> *mut winlink {
+pub(crate) unsafe fn spawn_window(
+    sc: &mut spawn_context,
+    cause: &mut Option<CString>,
+) -> Option<WinlinkRef> {
     unsafe {
-        let mut s: *mut session = sc.s;
-        let mut w: *mut window = ::core::ptr::null_mut::<window>();
-        let mut w_ref: Option<WindowRef> = None;
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-        let mut idx: ::core::ffi::c_int = sc.idx;
-        let mut sx: u_int = 0;
-        let mut sy: u_int = 0;
-        let mut xpixel: u_int = 0;
-        let mut ypixel: u_int = 0;
-        spawn_log(c"spawn_window".as_ptr(), sc);
+        let mut session = sc.s.clone().expect("a spawn context has a session owner");
+        let window;
+        let index;
+        spawn_log(c"spawn_window", sc);
         if sc.flags & SPAWN_RESPAWN != 0 {
-            w = (*sc.wl).window();
-            w_ref = (*sc.wl).window_ref.clone();
-            if !sc.flags & SPAWN_KILL != 0 {
-                wp = window_panes_first(w);
-                while !wp.is_null() {
-                    if (*wp).fd != -(1 as ::core::ffi::c_int) {
-                        break;
-                    }
-                    wp = window_panes_next(w, wp);
-                }
-                if !wp.is_null() {
-                    *cause = Some(xasprintf(
-                        c"window %s:%d still active".as_ptr(),
-                        fmt_args![session_name(s), (*sc.wl).idx],
-                    ));
-                    return ::core::ptr::null_mut::<winlink>();
-                }
-            }
-            sc.wp0 = window_panes_first(w);
-            let kept = window_panes_take(w, sc.wp0).expect("the window holds its first pane");
-            layout_free(w);
-            window_destroy_panes(w);
-            sc.wp0 = window_panes_insert_head(w, kept);
-            window_pane_resize(sc.wp0, (*w).sx, (*w).sy);
-            layout_init(w, sc.wp0);
-            window_set_active(w, ::core::ptr::null_mut::<window_pane>());
-            window_set_active_pane(w, sc.wp0, 0 as ::core::ffi::c_int);
-        }
-        if !sc.flags & SPAWN_RESPAWN != 0 && idx != -(1 as ::core::ffi::c_int) {
-            wl = winlink_find_by_index(&mut (*s).windows, idx);
-            if !wl.is_null() && !sc.flags & SPAWN_KILL != 0 {
-                *cause = Some(xasprintf(c"index %d in use".as_ptr(), fmt_args![idx]));
-                return ::core::ptr::null_mut::<winlink>();
-            }
-            if !wl.is_null() {
-                (*wl).flags &= !WINLINK_ALERTFLAGS;
-                notify_session_window(c"window-unlinked".as_ptr(), s, (*wl).window());
-                winlink_stack_remove(&mut (*s).lastw, wl);
-                winlink_remove(&mut (*s).windows, wl);
-                if session_get_curw(s) == wl {
-                    session_set_curw(s, ::core::ptr::null_mut::<winlink>());
-                    sc.flags &= !SPAWN_DETACHED;
-                }
-            }
-        }
-        if !sc.flags & SPAWN_RESPAWN != 0 {
-            if idx == -(1 as ::core::ffi::c_int) {
-                idx = (-(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong
-                    - options_get_number(session_options(s), c"base-index".as_ptr()))
-                    as ::core::ffi::c_int;
-            }
-            sc.wl = winlink_add(&mut (*s).windows, idx);
-            if sc.wl.is_null() {
+            let Some(existing) = sc
+                .wl_idx
+                .filter(|index| session.as_session().windows.contains_key(index))
+            else {
+                *cause = Some(c"window no longer exists".to_owned());
+                return None;
+            };
+            index = existing;
+            window = session
+                .as_session()
+                .windows
+                .get(&index)
+                .and_then(|link| link.window_handle())
+                .expect("a link owns its window")
+                .clone();
+            if sc.flags & SPAWN_KILL == 0
+                && window
+                    .as_window()
+                    .panes
+                    .iter()
+                    .any(|pane| *pane.as_pane().fd() != -1)
+            {
                 *cause = Some(xasprintf(
-                    c"couldn't add window %d".as_ptr(),
-                    fmt_args![idx],
+                    c"window %s:%d still active",
+                    fmt_args![session.name().as_deref(), index],
                 ));
-                return ::core::ptr::null_mut::<winlink>();
+                return None;
             }
-            (sx, sy, xpixel, ypixel) = default_window_size(
-                spawn_client(sc),
-                s,
-                ::core::ptr::null_mut::<window>(),
-                -(1 as ::core::ffi::c_int),
+            let kept = window.as_window_mut().panes.remove(0);
+            window.free_layout();
+            window.destroy_panes();
+            let retained_pane = window_panes_insert_head(&mut window.as_window_mut(), kept);
+            let pane_id = retained_pane.id();
+            sc.wp0 = Some(retained_pane);
+            let size = window.dimensions().size;
+            let mut payload = window.as_window_mut();
+            let pane = payload
+                .panes
+                .iter_mut()
+                .find(|pane| pane.pane_id() == pane_id)
+                .expect("the retained pane belongs to its window")
+                .as_pane_mut();
+            window_pane_resize(pane, size.width, size.height);
+            drop(payload);
+            window.init_layout(
+                &crate::window::window_pane_find_by_id(pane_id).expect("the layout pane exists"),
             );
-            w_ref = Some(window_create(sx, sy, xpixel, ypixel));
-            w = w_ref.as_ref().unwrap().as_ptr();
-            if session_get_curw(s).is_null() {
-                session_set_curw(s, sc.wl);
-            }
-            (*sc.wl).set_session(s);
-            window_set_latest(w, spawn_client(sc));
-            winlink_set_window_ref(sc.wl, w_ref.as_ref().unwrap().clone());
+            window.as_window_mut().active_pane = None;
+            window.set_active_pane(
+                &crate::window::window_pane_find_by_id(pane_id).expect("the selected pane exists"),
+                0,
+            );
         } else {
-            w = ::core::ptr::null_mut::<window>();
+            let mut requested = sc.idx;
+            if requested != -1 && session.as_session().windows.contains_key(&requested) {
+                if sc.flags & SPAWN_KILL == 0 {
+                    *cause = Some(xasprintf(c"index %d in use", fmt_args![requested]));
+                    return None;
+                }
+                let was_current = session.curw().is_some_and(|link| link.index() == requested);
+                let replaced = {
+                    let link = session
+                        .as_session_mut()
+                        .windows
+                        .get_mut(&requested)
+                        .unwrap();
+                    link.flags &= !WINLINK_ALERTFLAGS;
+                    link.window_handle()
+                        .expect("a link owns its window")
+                        .clone()
+                };
+                notify_session_window(c"window-unlinked", session.as_session(), &replaced);
+                drop(replaced);
+                {
+                    let s = session.as_session_mut();
+                    winlink_stack_remove(
+                        &mut s.lastw,
+                        s.windows.get_mut(&requested).map(Box::as_mut),
+                    );
+                    winlink_remove(&mut s.windows, requested);
+                    if was_current {
+                        s.curw_idx = None;
+                        sc.flags &= !SPAWN_DETACHED;
+                    }
+                }
+            }
+            if requested == -1 {
+                requested = (-1 - session.options().number(c"base-index")) as core::ffi::c_int;
+            }
+            sc.wl_idx =
+                crate::window::winlink_insert(&mut session.as_session_mut().windows, requested)
+                    .map(|link| link.idx);
+            let Some(created) = sc.wl_idx else {
+                *cause = Some(xasprintf(c"couldn't add window %d", fmt_args![requested]));
+                return None;
+            };
+            index = created;
+            let client = spawn_client(sc);
+            let (sx, sy, xpixel, ypixel) = default_window_size(
+                client.as_ref().map(|client| client.as_client()),
+                session.as_session(),
+                None,
+                -1,
+            );
+            window = WindowRef::create(sx, sy, xpixel, ypixel);
+            if session.curw().is_none() {
+                session.as_session_mut().curw_idx = Some(index);
+            }
+            window_set_latest(
+                &mut window.as_window_mut(),
+                client.as_ref().map(|client| client.as_client()),
+            );
+            let observer = session.downgrade();
+            let link = session
+                .as_session_mut()
+                .windows
+                .get_mut(&index)
+                .expect("the new link remains registered");
+            link.session_ref = Some(observer);
+            link.set_window(window.clone());
         }
         sc.flags |= SPAWN_NONOTIFY;
-        wp = spawn_pane(sc, cause);
-        if wp.is_null() {
-            if !sc.flags & SPAWN_RESPAWN != 0 {
-                if session_get_curw(s) == sc.wl {
-                    session_set_curw(s, ::core::ptr::null_mut::<winlink>());
+        if spawn_pane(sc, None, cause).is_none() {
+            if sc.flags & SPAWN_RESPAWN == 0 {
+                let s = session.as_session_mut();
+                if s.curw().is_some_and(|link| link.idx == index) {
+                    s.curw_idx = None;
                 }
-                winlink_remove(&mut (*s).windows, sc.wl);
+                winlink_remove(&mut s.windows, index);
+                sc.wl_idx = None;
             }
-            return ::core::ptr::null_mut::<winlink>();
+            return None;
         }
-        if !sc.flags & SPAWN_RESPAWN != 0 {
+        if sc.flags & SPAWN_RESPAWN == 0 {
             if sc.name.is_none_or(|name| name.is_empty()) {
-                (*w).name = Some(default_window_name(w));
+                let name = default_window_name(&window);
+                window.set_window_name(Some(&name));
             } else {
-                (*w).name = Some(sc.name.expect("the name just looked at").to_owned());
-                options_set_number(
-                    (*w).options_ptr(),
-                    c"automatic-rename".as_ptr(),
-                    0 as ::core::ffi::c_longlong,
-                );
+                window.set_window_name(sc.name);
+                window.options().set_number(c"automatic-rename", 0);
             }
         }
-        if !sc.flags & SPAWN_DETACHED != 0 {
-            session_select(s, (*sc.wl).idx);
+        if sc.flags & SPAWN_DETACHED == 0 {
+            session.select(index);
         }
-        if !sc.flags & SPAWN_RESPAWN != 0 {
-            notify_session_window(c"window-linked".as_ptr(), s, w);
+        if sc.flags & SPAWN_RESPAWN == 0 {
+            notify_session_window(c"window-linked", session.as_session(), &window);
         }
-        session_group_synchronize_from(s);
-        sc.wl
+        session.synchronize_group_from();
+        WinlinkRef::new(session, index)
     }
 }
-pub unsafe fn spawn_pane(sc: &mut spawn_context, cause: &mut Option<CString>) -> *mut window_pane {
+
+pub(crate) unsafe fn spawn_pane(
+    sc: &mut spawn_context,
+    lc: Option<&LayoutCellPath>,
+    cause: &mut Option<CString>,
+) -> Option<RustWindowPaneWeak> {
     unsafe {
-        let mut item: *mut cmdq_item = spawn_item(sc);
-        let mut target: *mut cmd_find_state = cmdq_get_target(item);
-        let mut c: *mut client = cmdq_get_client(&*item);
-        let mut s: *mut session = sc.s;
-        let mut w: *mut window = (*sc.wl).window();
-        let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-        let mut cwd: Option<CString> = None;
-        let mut path: [::core::ffi::c_char; 4096] = [0; 4096];
-        let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut tmp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut home: *const ::core::ffi::c_char =
-            find_home().map_or(::core::ptr::null(), CStr::as_ptr);
-        let mut actual_cwd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-        let mut idx: u_int = 0;
-        let mut now: termios = ::core::mem::zeroed();
-        let mut hlimit: u_int = 0;
-        let mut ws = winsize::default();
+        let item_ref = spawn_item(sc);
+        let (mut c, target_session) =
+            item_ref.with_item(|item| (item.client(), item.target.session()));
+
+        let session = sc.s.clone().expect("a spawn context has a session owner");
+        let Some(link) = sc
+            .wl_idx
+            .and_then(|index| WinlinkRef::new(session.clone(), index))
+        else {
+            *cause = Some(c"window no longer exists".to_owned());
+            return None;
+        };
+        let window = link
+            .get()
+            .and_then(winlink::window_handle)
+            .expect("a link owns its window")
+            .clone();
+        let previous = sc.wp0.as_ref().filter(|pane| pane.is_alive()).cloned();
+        if previous.is_none() && (sc.wp0.is_some() || sc.flags & SPAWN_RESPAWN != 0) {
+            *cause = Some(c"pane no longer exists".to_owned());
+            return None;
+        }
+        let mut cwd: Option<CString>;
+        let mut path: [core::ffi::c_char; 4096] = [0; 4096];
+        let home = find_home();
+        let mut actual_cwd: Option<&CStr> = None;
+        let mut now: termios = core::mem::zeroed();
+
+        let mut ws: winsize;
         let mut set: sigset_t = __sigset_t { __val: [0; 16] };
         let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
-        let mut key: key_code = 0;
-        spawn_log(c"spawn_pane".as_ptr(), sc);
+        let key: key_code;
+        spawn_log(c"spawn_pane", sc);
         if let Some(sc_cwd) = sc.cwd {
-            let expanded = format_single(
-                item,
-                sc_cwd,
-                c,
-                (*target).session(),
-                ::core::ptr::null_mut::<winlink>(),
-                ::core::ptr::null_mut::<window_pane>(),
-            );
-            let relative = expanded.as_ptr();
-            if *relative as ::core::ffi::c_int != '/' as i32 {
+            let expanded = item_ref.with_item(|item| {
+                let mut ft = format_create_for_client(item.client().as_ref(), Some(item), 0, 0);
+                format_defaults_for_handles(
+                    &mut ft,
+                    c.as_ref(),
+                    target_session.as_ref(),
+                    None,
+                    None,
+                );
+                format_expand(&mut ft, sc_cwd)
+            });
+            if !expanded.as_bytes().starts_with(b"/") {
                 cwd = Some(xasprintf(
-                    c"%s%s%s".as_ptr(),
+                    c"%s%s%s",
                     fmt_args![
-                        server_client_get_cwd(c, (*target).session()),
-                        if *relative as ::core::ffi::c_int != '\0' as i32 {
-                            c"/".as_ptr()
-                        } else {
-                            c"".as_ptr()
-                        },
-                        relative
+                        server_client_get_cwd(
+                            c.as_ref().map(|client| client.as_client()),
+                            target_session.as_ref().map(|session| session.as_session())
+                        )
+                        .as_c_str(),
+                        if expanded.is_empty() { c"" } else { c"/" },
+                        expanded.as_c_str()
                     ],
                 ));
             } else {
                 cwd = Some(expanded);
             }
         } else if !sc.flags & SPAWN_RESPAWN != 0 {
-            cwd = Some(CStr::from_ptr(server_client_get_cwd(c, (*target).session())).to_owned());
+            cwd = Some(server_client_get_cwd(
+                c.as_ref().map(|client| client.as_client()),
+                target_session.as_ref().map(|session| session.as_session()),
+            ));
         } else {
             cwd = None;
         }
-        hlimit = options_get_number(session_options(s), c"history-limit".as_ptr()) as u_int;
+        let hlimit: u_int = (session.options()).number(c"history-limit") as u_int;
+        let new_id;
+        let mut new_pane;
         if sc.flags & SPAWN_RESPAWN != 0 {
-            if (*sc.wp0).fd != -(1 as ::core::ffi::c_int) && !sc.flags & SPAWN_KILL != 0 {
-                (_, idx) = window_pane_index(sc.wp0);
+            new_pane = previous.expect("respawning requires an existing pane");
+            let previous = &mut new_pane;
+            new_id = previous.id();
+            if *previous.get().expect("the respawn pane is present").fd() != -1
+                && sc.flags & SPAWN_KILL == 0
+            {
+                let index = crate::window::window_pane_index(
+                    &window.as_window(),
+                    previous.get().expect("the respawn pane exists"),
+                )
+                .1;
                 *cause = Some(xasprintf(
-                    c"pane %s:%d.%u still active".as_ptr(),
-                    fmt_args![session_name(s), (*sc.wl).idx, idx],
+                    c"pane %s:%d.%u still active",
+                    fmt_args![session.name().as_deref(), link.index(), index],
                 ));
-                return ::core::ptr::null_mut::<window_pane>();
+                return None;
             }
-            if (*sc.wp0).fd != -(1 as ::core::ffi::c_int) {
-                (*sc.wp0).event.free();
-                close((*sc.wp0).fd);
+            let pane = previous.get_mut().expect("the respawn pane is present");
+            if *pane.fd() != -1 {
+                pane.event().free();
+                close(*pane.fd());
             }
-            window_pane_reset_mode_all(sc.wp0);
-            screen_reinit(&mut (*sc.wp0).base);
-            if let Some(ictx) = (*sc.wp0).ictx.take() {
-                input_free_box(ictx);
+            window_pane_reset_mode_all(pane);
+            screen_reinit(pane.base_mut());
+            if let Some(ictx) = pane.ictx_mut().take() {
+                ictx.close();
             }
-            new_wp = sc.wp0;
-            (*new_wp).flags &= !(PANE_STATUSREADY | PANE_STATUSDRAWN);
+            *pane.flags_mut() &= !(PANE_STATUSREADY | PANE_STATUSDRAWN);
         } else {
-            if sc.lc.is_null() {
-                new_wp =
-                    window_add_pane(w, ::core::ptr::null_mut::<window_pane>(), hlimit, sc.flags);
-                layout_init(w, new_wp);
+            if let Some(lc) = lc {
+                new_pane = window_add_pane(
+                    &mut window.as_window_mut(),
+                    sc.wp0.as_ref(),
+                    hlimit,
+                    sc.flags,
+                );
+                new_id = new_pane.id();
+                window.assign_pane_layout(
+                    lc,
+                    &new_pane,
+                    (sc.flags & SPAWN_ZOOM != 0) as core::ffi::c_int,
+                );
             } else {
-                new_wp = window_add_pane(w, sc.wp0, hlimit, sc.flags);
-                if sc.flags & SPAWN_ZOOM != 0 {
-                    layout_assign_pane(sc.lc, new_wp, 1 as ::core::ffi::c_int);
-                } else {
-                    layout_assign_pane(sc.lc, new_wp, 0 as ::core::ffi::c_int);
-                }
+                new_pane = window_add_pane(&mut window.as_window_mut(), None, hlimit, sc.flags);
+                new_id = new_pane.id();
+                window.init_layout(&new_pane);
             }
             if sc.flags & SPAWN_FLOATING != 0 {
-                (*(*new_wp).layout_cell).flags |= LAYOUT_CELL_FLOATING;
-            }
-            if (*w).flags & WINDOW_ZOOMED != 0 {
-                (*new_wp).saved_layout_cell = (*new_wp).layout_cell;
+                let mut payload = window.as_window_mut();
+                let root = payload
+                    .layout_root
+                    .as_deref_mut()
+                    .expect("the spawned pane has a layout");
+                let path = LayoutCellPath::for_pane(
+                    root,
+                    &crate::window::window_pane_find_by_id(new_id)
+                        .expect("the pane allocation exists"),
+                )
+                .expect("the spawned pane has a cell");
+                path.get_mut(root).unwrap().flags |= LAYOUT_CELL_FLOATING;
             }
         }
+        let pixels = window.dimensions().pixels;
+        let _window_id = window.window_id();
+        let new_wp = new_pane.get_mut().expect("the spawned pane is present");
         let argv = if sc.argv.is_empty() && sc.flags & SPAWN_RESPAWN == 0 {
-            cmd = options_get_string(session_options(s), c"default-command".as_ptr());
-            if !cmd.is_null() && *cmd as ::core::ffi::c_int != '\0' as i32 {
-                vec![CStr::from_ptr(cmd).to_owned()]
+            let command = session.options().string_ref(c"default-command");
+            if !command.is_empty() {
+                vec![command.as_ref().to_owned()]
             } else {
                 Vec::new()
             }
         } else {
-            ::core::mem::take(&mut sc.argv)
+            core::mem::take(&mut sc.argv)
         };
+        let mut pane_command = new_wp.pane_command();
         if cwd.is_some() {
-            (*new_wp).cwd = cwd.take();
+            pane_command.cwd = cwd.take();
         }
         if !argv.is_empty() {
-            (*new_wp).argv = argv;
+            pane_command.argv = argv;
         }
-        let mut child = environ_for_session(s, 0 as ::core::ffi::c_int);
-        if sc.environ.is_some() {
-            environ_copy(environ_ptr(&sc.environ), &mut *child);
+        let mut child = environment_for_session(Some(session.as_session()), 0 as core::ffi::c_int);
+        if let Some(environ) = sc.environ.as_deref() {
+            child.copy_from(environ);
         }
-        environ_set(
-            &mut *child,
-            c"TMUX_PANE".as_ptr(),
-            0 as ::core::ffi::c_int,
-            c"%%%u".as_ptr(),
-            fmt_args![(*new_wp).id],
-        );
-        if !c.is_null() && (*c).session.is_null() {
-            let path =
-                environ_find(&*(*c).environ_ptr(), c"PATH".as_ptr()).and_then(environ_entry_value);
+        let tmux_pane = xasprintf(c"%%%u", fmt_args![new_id]);
+        child.set(c"TMUX_PANE", 0, &tmux_pane);
+        if let Some(client) = c.as_mut()
+            && client.attached_session().is_none()
+        {
+            let path = client
+                .environ_mut()
+                .find(c"PATH")
+                .and_then(|entry| entry.value);
             if let Some(path) = path {
-                environ_set(
-                    &mut *child,
-                    c"PATH".as_ptr(),
-                    0 as ::core::ffi::c_int,
-                    c"%s".as_ptr(),
-                    fmt_args![path],
-                );
+                child.set(c"PATH", 0, path);
             }
         }
-        if environ_find(&child, c"PATH".as_ptr()).is_none() {
-            environ_set(
-                &mut *child,
-                c"PATH".as_ptr(),
-                0 as ::core::ffi::c_int,
-                c"%s".as_ptr(),
-                fmt_args![_PATH_DEFPATH.as_ptr()],
-            );
+        if child.find(c"PATH").is_none() {
+            child.set(c"PATH", 0, _PATH_DEFPATH);
         }
         if !sc.flags & SPAWN_RESPAWN != 0 {
-            tmp = options_get_string(session_options(s), c"default-shell".as_ptr());
-            if checkshell(tmp) == 0 {
-                tmp = _PATH_BSHELL.as_ptr();
-            }
-            (*new_wp).shell = Some(CStr::from_ptr(tmp).to_owned());
+            let configured = session.options().string_ref(c"default-shell");
+            let shell = if checkshell(Some(&configured)) == 0 {
+                _PATH_BSHELL
+            } else {
+                &configured
+            };
+            pane_command.shell = Some(shell.to_owned());
         }
-        environ_set(
-            &mut *child,
-            c"SHELL".as_ptr(),
-            0 as ::core::ffi::c_int,
-            c"%s".as_ptr(),
-            fmt_args![(*new_wp).shell.as_deref()],
-        );
-        log_debug(
-            c"%s: shell=%s".as_ptr(),
-            fmt_args![c"spawn_pane".as_ptr(), (*new_wp).shell.as_deref()],
-        );
-        if !(*new_wp).argv.is_empty() {
-            let command = cmd_stringify_argv(&(*new_wp).argv);
-            log_debug(
-                c"%s: cmd=%s".as_ptr(),
-                fmt_args![c"spawn_pane".as_ptr(), command.as_ptr()],
-            );
+        new_wp.set_pane_command(&pane_command);
+        if let Some(shell) = pane_command.shell.as_deref() {
+            child.set(c"SHELL", 0, shell);
         }
         log_debug(
-            c"%s: cwd=%s".as_ptr(),
-            fmt_args![c"spawn_pane".as_ptr(), (*new_wp).cwd.as_deref()],
+            c"%s: shell=%s",
+            fmt_args![c"spawn_pane", pane_command.shell.as_deref()],
         );
-        cmd_log_argv(
-            &(*new_wp).argv,
-            c"%s".as_ptr(),
-            fmt_args![c"spawn_pane".as_ptr()],
+        if !pane_command.argv.is_empty() {
+            let command = RustCommandTextCodec.stringify(&pane_command.argv);
+            log_debug(c"%s: cmd=%s", fmt_args![c"spawn_pane", command.as_c_str()]);
+        }
+        log_debug(
+            c"%s: cwd=%s",
+            fmt_args![c"spawn_pane", pane_command.cwd.as_deref()],
         );
-        environ_log(
-            &child,
-            c"%s: environment ".as_ptr(),
-            fmt_args![c"spawn_pane".as_ptr()],
-        );
-        ws = ::core::mem::zeroed();
-        ws.ws_col = (*screen_grid_ptr(&mut (*new_wp).base)).sx as ::core::ffi::c_ushort;
-        ws.ws_row = (*screen_grid_ptr(&mut (*new_wp).base)).sy as ::core::ffi::c_ushort;
-        ws.ws_xpixel = (*w).xpixel.wrapping_mul(ws.ws_col as u_int) as ::core::ffi::c_ushort;
-        ws.ws_ypixel = (*w).ypixel.wrapping_mul(ws.ws_row as u_int) as ::core::ffi::c_ushort;
+        cmd_log_argv(&pane_command.argv, c"%s", fmt_args![c"spawn_pane"]);
+        log_environment(&child, c"%s: environment ", fmt_args![c"spawn_pane"]);
+        ws = core::mem::zeroed();
+        ws.ws_col = new_wp.base().grid().sx as core::ffi::c_ushort;
+        ws.ws_row = new_wp.base().grid().sy as core::ffi::c_ushort;
+        ws.ws_xpixel = pixels.width.wrapping_mul(ws.ws_col as u_int) as core::ffi::c_ushort;
+        ws.ws_ypixel = pixels.height.wrapping_mul(ws.ws_row as u_int) as core::ffi::c_ushort;
         sigfillset(&raw mut set);
         sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
         if sc.flags & SPAWN_EMPTY != 0 {
-            (*new_wp).flags |= PANE_EMPTY;
-            (*new_wp).base.mode &= !MODE_CURSOR;
-            (*new_wp).base.mode |= MODE_CRLF;
+            *new_wp.flags_mut() |= PANE_EMPTY;
+            let pane_screen_mode = (new_wp.base().mode() & !MODE_CURSOR) | MODE_CRLF;
+            new_wp.base_mut().set_mode(pane_screen_mode);
         } else {
-            if !getcwd(
-                &raw mut path as *mut ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 4096]>() as size_t,
-            )
-            .is_null()
-            {
-                if chdir((*new_wp).cwd_ptr()) == 0 as ::core::ffi::c_int {
-                    actual_cwd = (*new_wp).cwd_ptr();
-                } else if !home.is_null() && chdir(home) == 0 as ::core::ffi::c_int {
-                    actual_cwd = home;
-                } else if chdir(c"/".as_ptr()) == 0 as ::core::ffi::c_int {
-                    actual_cwd = c"/".as_ptr();
+            if !getcwd(path.as_mut_ptr(), path.len()).is_null() {
+                if let Some(cwd) = pane_command.cwd.as_deref()
+                    && chdir(cwd.as_ptr()) == 0
+                {
+                    actual_cwd = Some(cwd);
+                } else if let Some(home) = home
+                    && chdir(home.as_ptr()) == 0
+                {
+                    actual_cwd = Some(home);
+                } else if chdir(c"/".as_ptr()) == 0 {
+                    actual_cwd = Some(c"/");
                 }
             }
-            (*new_wp).pid = fdforkpty(
-                ptm_fd,
-                &raw mut (*new_wp).fd,
-                &raw mut (*new_wp).tty as *mut ::core::ffi::c_char,
-                ::core::ptr::null_mut::<termios>(),
-                &raw mut ws,
-            );
-            if (*new_wp).pid == -(1 as ::core::ffi::c_int) {
+            let forkpty = fdforkpty(ptm_fd, None, Some(&ws));
+            *new_wp.pid_mut() = forkpty.pid;
+            *new_wp.fd_mut() = forkpty.master_fd;
+            *new_wp.tty_mut() = forkpty.tty_name;
+            if *new_wp.pid() == -(1 as core::ffi::c_int) {
                 *cause = Some(xasprintf(
-                    c"fork failed: %s".as_ptr(),
-                    fmt_args![strerror(*__errno_location())],
+                    c"fork failed: %s",
+                    fmt_args![error_message(*__errno_location()).as_c_str()],
                 ));
-                (*new_wp).fd = -(1 as ::core::ffi::c_int);
+                *new_wp.fd_mut() = -(1 as core::ffi::c_int);
                 if !sc.flags & SPAWN_RESPAWN != 0 {
                     server_client_remove_pane(new_wp);
-                    layout_close_pane(new_wp);
-                    window_remove_pane(w, new_wp);
+                    let pane_id = new_id;
+                    window.close_pane_layout(
+                        &crate::window::window_pane_find_by_id(pane_id)
+                            .expect("the layout pane exists"),
+                    );
+                    window.remove_pane(&new_pane);
                 }
                 sigprocmask(
                     SIG_SETMASK,
                     &raw mut oldset,
-                    ::core::ptr::null_mut::<sigset_t>(),
+                    core::ptr::null_mut::<sigset_t>(),
                 );
-                return ::core::ptr::null_mut::<window_pane>();
+                return None;
             }
-            if (*new_wp).pid != 0 as ::core::ffi::c_int {
-                if !actual_cwd.is_null()
-                    && chdir(&raw mut path as *mut ::core::ffi::c_char) != 0 as ::core::ffi::c_int
-                    && (home.is_null() || chdir(home) != 0 as ::core::ffi::c_int)
+            if *new_wp.pid() != 0 as core::ffi::c_int {
+                if actual_cwd.is_some()
+                    && chdir(path.as_ptr()) != 0
+                    && home.is_none_or(|home| chdir(home.as_ptr()) != 0)
                 {
                     chdir(c"/".as_ptr());
                 }
             } else {
                 let mut cgroup_cause = None;
-                if systemd_move_to_new_cgroup(&mut cgroup_cause) < 0 as ::core::ffi::c_int
+                if systemd_move_to_new_cgroup(&mut cgroup_cause) < 0 as core::ffi::c_int
                     && let Some(cgroup_cause) = cgroup_cause
                 {
                     log_debug(
-                        c"%s: moving pane to new cgroup failed: %s".as_ptr(),
-                        fmt_args![c"spawn_pane".as_ptr(), cgroup_cause.as_ptr()],
+                        c"%s: moving pane to new cgroup failed: %s",
+                        fmt_args![c"spawn_pane", cgroup_cause.as_c_str()],
                     );
                 }
-                if !actual_cwd.is_null() {
-                    environ_set(
-                        &mut *child,
-                        c"PWD".as_ptr(),
-                        0 as ::core::ffi::c_int,
-                        c"%s".as_ptr(),
-                        fmt_args![actual_cwd],
-                    );
+                if let Some(actual_cwd) = actual_cwd {
+                    child.set(c"PWD", 0, actual_cwd);
                 }
-                if tcgetattr(STDIN_FILENO, &raw mut now) != 0 as ::core::ffi::c_int {
-                    _exit(1 as ::core::ffi::c_int);
+                if tcgetattr(STDIN_FILENO, &raw mut now) != 0 as core::ffi::c_int {
+                    _exit(1 as core::ffi::c_int);
                 }
-                if let Some(tio) = &session_tio(s) {
+                if let Some(tio) = &session.tio() {
                     now.c_cc = tio.c_cc;
                 }
-                key = options_get_number(global_options, c"backspace".as_ptr()) as key_code;
+                key = (global_options
+                    .as_ref()
+                    .expect("global options are initialized"))
+                .number(c"backspace") as key_code;
                 if key >= 0x7f as key_code {
                     now.c_cc[VERASE as usize] = '\u{7f}' as i32 as cc_t;
                 } else {
                     now.c_cc[VERASE as usize] = key as cc_t;
                 }
                 now.c_iflag |= IUTF8 as tcflag_t;
-                if tcsetattr(STDIN_FILENO, TCSANOW, &raw mut now) != 0 as ::core::ffi::c_int {
-                    _exit(1 as ::core::ffi::c_int);
+                if tcsetattr(STDIN_FILENO, TCSANOW, &raw mut now) != 0 as core::ffi::c_int {
+                    _exit(1 as core::ffi::c_int);
                 }
-                proc_clear_signals(server_proc, 1 as ::core::ffi::c_int);
-                closefrom(STDERR_FILENO + 1 as ::core::ffi::c_int);
+                proc_clear_signals(
+                    &mut server_proc
+                        .as_ref()
+                        .expect("server process is initialized")
+                        .borrow_mut(),
+                    1 as core::ffi::c_int,
+                );
+                closefrom(STDERR_FILENO + 1 as core::ffi::c_int);
                 sigprocmask(
                     SIG_SETMASK,
                     &raw mut oldset,
-                    ::core::ptr::null_mut::<sigset_t>(),
+                    core::ptr::null_mut::<sigset_t>(),
                 );
                 log_close();
-                environ_push(&child);
-                if (*new_wp).argv.len() > 1 {
-                    let argvp: Vec<*mut ::core::ffi::c_char> = (*new_wp)
+                push_environment_to_process(&child);
+                if pane_command.argv.len() > 1 {
+                    let argvp: Vec<*mut core::ffi::c_char> = pane_command
                         .argv
                         .iter()
-                        .map(|arg| arg.as_ptr() as *mut ::core::ffi::c_char)
-                        .chain(::core::iter::once(::core::ptr::null_mut()))
+                        .map(|arg| arg.as_ptr() as *mut core::ffi::c_char)
+                        .chain(core::iter::once(core::ptr::null_mut()))
                         .collect();
                     execvp(argvp[0], argvp.as_ptr());
-                    _exit(1 as ::core::ffi::c_int);
+                    _exit(1 as core::ffi::c_int);
                 }
-                cp = strrchr((*new_wp).shell_ptr(), '/' as i32);
-                if (*new_wp).argv.len() == 1 {
-                    tmp = (&(*new_wp).argv)[0].as_ptr();
-                    let argv0 = if !cp.is_null()
-                        && *cp.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-                            != '\0' as i32
-                    {
-                        xasprintf(
-                            c"%s".as_ptr(),
-                            fmt_args![cp.offset(1 as ::core::ffi::c_int as isize)],
-                        )
-                    } else {
-                        xasprintf(c"%s".as_ptr(), fmt_args![(*new_wp).shell.as_deref()])
-                    };
+                let shell = pane_command.shell.as_deref().expect("a pane has a shell");
+                let shell_name = spawn_shell_name(shell);
+                if pane_command.argv.len() == 1 {
                     execl(
-                        (*new_wp).shell_ptr(),
-                        argv0.as_ptr() as *mut ::core::ffi::c_char,
+                        shell.as_ptr(),
+                        shell_name.as_ptr(),
                         c"-c".as_ptr(),
-                        tmp,
-                        ::core::ptr::null_mut::<::core::ffi::c_char>(),
+                        pane_command.argv[0].as_ptr(),
+                        core::ptr::null::<core::ffi::c_char>(),
                     );
-                    _exit(1 as ::core::ffi::c_int);
+                    _exit(1 as core::ffi::c_int);
                 }
-                let argv0 = if !cp.is_null()
-                    && *cp.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
-                        != '\0' as i32
-                {
-                    xasprintf(
-                        c"-%s".as_ptr(),
-                        fmt_args![cp.offset(1 as ::core::ffi::c_int as isize)],
-                    )
-                } else {
-                    xasprintf(c"-%s".as_ptr(), fmt_args![(*new_wp).shell.as_deref()])
-                };
+                let argv0 = xasprintf(c"-%s", fmt_args![shell_name]);
                 execl(
-                    (*new_wp).shell_ptr(),
-                    argv0.as_ptr() as *mut ::core::ffi::c_char,
-                    ::core::ptr::null_mut::<::core::ffi::c_char>(),
+                    shell.as_ptr(),
+                    argv0.as_ptr(),
+                    core::ptr::null::<core::ffi::c_char>(),
                 );
-                _exit(1 as ::core::ffi::c_int);
+                _exit(1 as core::ffi::c_int);
             }
         }
-        if !(*new_wp).flags & PANE_EMPTY != 0 {
+        if !*new_wp.flags() & PANE_EMPTY != 0 {
             let cp = xasprintf(
-                c"tmux(%lu).%%%u".as_ptr(),
-                fmt_args![getpid() as ::core::ffi::c_long, (*new_wp).id],
+                c"tmux(%lu).%%%u",
+                fmt_args![getpid() as core::ffi::c_long, new_id],
             );
-            utempter_add_record((*new_wp).fd, cp.as_ptr() as *mut ::core::ffi::c_char);
+            utempter_add_record(*new_wp.fd(), cp.as_ptr() as *mut core::ffi::c_char);
             kill(getpid(), SIGCHLD);
         }
-        (*new_wp).flags &= !PANE_EXITED;
+        *new_wp.flags_mut() &= !PANE_EXITED;
         sigprocmask(
             SIG_SETMASK,
             &raw mut oldset,
-            ::core::ptr::null_mut::<sigset_t>(),
+            core::ptr::null_mut::<sigset_t>(),
         );
         window_pane_set_event(new_wp);
         if sc.flags & SPAWN_RESPAWN != 0 {
-            return new_wp;
+            return Some(new_pane);
         }
-        if !sc.flags & SPAWN_DETACHED != 0 || window_get_active(w).is_null() {
-            if sc.flags & SPAWN_NONOTIFY != 0 {
-                window_set_active_pane(w, new_wp, 0 as ::core::ffi::c_int);
-            } else {
-                window_set_active_pane(w, new_wp, 1 as ::core::ffi::c_int);
-            }
+        let has_active = window.active_pane_id().is_some_and(|id| {
+            window
+                .as_window()
+                .panes
+                .iter()
+                .any(|pane| pane.pane_id() == id)
+        });
+        if sc.flags & SPAWN_DETACHED == 0 || !has_active {
+            window.set_active_pane(
+                &crate::window::window_pane_find_by_id(new_id).expect("the selected pane exists"),
+                (sc.flags & SPAWN_NONOTIFY == 0) as core::ffi::c_int,
+            );
         }
-        if !sc.flags & SPAWN_NONOTIFY != 0 {
-            notify_window(c"window-layout-changed".as_ptr(), w);
+        if sc.flags & SPAWN_NONOTIFY == 0 {
+            notify_window(c"window-layout-changed", Some(&window));
         }
-        new_wp
+        Some(new_pane)
     }
 }

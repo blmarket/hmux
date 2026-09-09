@@ -8,7 +8,7 @@ use hmux_rt::{AsyncFd, Interest as RtInterest, Readiness, TaskHandle, TaskId};
 
 use super::notify::{Notify, Select2, SelectResult, yield_now};
 use super::{Interest, StreamCb, StreamErrorCb};
-use crate::reactor::buffer::Buf;
+use crate::reactor::buffer::ByteBuffer;
 use crate::types::size_t;
 
 pub const STREAM_EVENT_READING: c_short = 0x01;
@@ -61,7 +61,7 @@ impl Stream {
         }
     }
 
-    pub fn with_input<R>(&self, callback: impl FnOnce(&mut Buf) -> R) -> Option<R> {
+    pub fn with_input<R>(&self, callback: impl FnOnce(&mut ByteBuffer) -> R) -> Option<R> {
         if self.0 == 0 {
             None
         } else {
@@ -69,7 +69,7 @@ impl Stream {
         }
     }
 
-    pub fn with_output<R>(&self, callback: impl FnOnce(&mut Buf) -> R) -> Option<R> {
+    pub fn with_output<R>(&self, callback: impl FnOnce(&mut ByteBuffer) -> R) -> Option<R> {
         if self.0 == 0 {
             None
         } else {
@@ -77,22 +77,21 @@ impl Stream {
         }
     }
 
-    pub unsafe fn write(&self, data: *const u8, len: size_t) -> c_int {
-        if self.0 == 0 || (data.is_null() && len != 0) {
+    pub fn write(&self, data: &[u8]) -> c_int {
+        if self.0 == 0 {
             return -1;
         }
-        if len == 0 {
+        if data.is_empty() {
             return 0;
         }
-        let bytes = unsafe { std::slice::from_raw_parts(data, len) };
-        if current_stream_registry().write(self.0, bytes) {
+        if current_stream_registry().write(self.0, data) {
             0
         } else {
             -1
         }
     }
 
-    pub fn write_buffer(&self, buffer: &mut Buf) -> c_int {
+    pub fn write_buffer(&self, buffer: &mut ByteBuffer) -> c_int {
         if self.0 != 0 && current_stream_registry().write_buffer(self.0, buffer) {
             0
         } else {
@@ -127,8 +126,8 @@ struct StreamState {
     error_callback: Option<StreamErrorCb>,
     read_enabled: bool,
     write_enabled: bool,
-    input: Buf,
-    output: Buf,
+    input: ByteBuffer,
+    output: ByteBuffer,
     low_watermark: usize,
     high_watermark: usize,
     low_notification_armed: bool,
@@ -184,8 +183,8 @@ impl StreamRegistry {
             error_callback,
             read_enabled: false,
             write_enabled: false,
-            input: Buf::new(),
-            output: Buf::new(),
+            input: ByteBuffer::new(),
+            output: ByteBuffer::new(),
             low_watermark: 0,
             high_watermark: 0,
             low_notification_armed: false,
@@ -243,12 +242,12 @@ impl StreamRegistry {
             .unwrap_or(0)
     }
 
-    fn with_input<R>(&self, id: usize, callback: impl FnOnce(&mut Buf) -> R) -> Option<R> {
+    fn with_input<R>(&self, id: usize, callback: impl FnOnce(&mut ByteBuffer) -> R) -> Option<R> {
         let state = self.lookup(id)?;
         Some(callback(&mut state.borrow_mut().input))
     }
 
-    fn with_output<R>(&self, id: usize, callback: impl FnOnce(&mut Buf) -> R) -> Option<R> {
+    fn with_output<R>(&self, id: usize, callback: impl FnOnce(&mut ByteBuffer) -> R) -> Option<R> {
         let state = self.lookup(id)?;
         Some(callback(&mut state.borrow_mut().output))
     }
@@ -273,7 +272,7 @@ impl StreamRegistry {
         true
     }
 
-    fn write_buffer(&self, id: usize, buffer: &mut Buf) -> bool {
+    fn write_buffer(&self, id: usize, buffer: &mut ByteBuffer) -> bool {
         let Some(state) = self.lookup(id) else {
             return false;
         };
@@ -414,7 +413,7 @@ async fn run_stream(task_handle: TaskHandle, id: usize, state: SharedStream, gen
             continue;
         };
         if registered != Some(wanted) {
-            descriptor = None;
+            drop(descriptor.take());
             let raw = unsafe { BorrowedFd::borrow_raw(fd) };
             match AsyncFd::new(&task_handle, raw, wanted) {
                 Ok(async_fd) => {
@@ -441,31 +440,20 @@ async fn run_stream(task_handle: TaskHandle, id: usize, state: SharedStream, gen
             SelectResult::Left(readiness) => Some(readiness),
             SelectResult::Right(()) => None,
         };
-        let (mut read_enabled, mut write_enabled, mut has_output) = {
-            let state = state.borrow();
-            if state.closed || state.generation != generation {
-                return;
-            }
-            (
-                state.read_enabled,
-                state.write_enabled,
-                !state.output.is_empty(),
-            )
-        };
+        if !is_current(&state, generation) {
+            return;
+        }
         if let Some(callback) = take_pending_write_callback(&state, generation) {
             callback(Stream(id));
             if !is_current(&state, generation) {
                 return;
             }
         }
-        let Some((new_read_enabled, new_write_enabled, new_has_output)) =
+        let Some((mut read_enabled, write_enabled, has_output)) =
             current_stream_flags(&state, generation)
         else {
             return;
         };
-        read_enabled = new_read_enabled;
-        write_enabled = new_write_enabled;
-        has_output = new_has_output;
         let should_write = readiness
             .is_none_or(|value| value.is_writable() || value.intersects(Readiness::WRITE_CLOSED));
         let should_read = readiness
@@ -491,13 +479,10 @@ async fn run_stream(task_handle: TaskHandle, id: usize, state: SharedStream, gen
                     return;
                 }
             }
-            let Some((new_read_enabled, new_write_enabled, _)) =
-                current_stream_flags(&state, generation)
-            else {
+            let Some((new_read_enabled, _, _)) = current_stream_flags(&state, generation) else {
                 return;
             };
             read_enabled = new_read_enabled;
-            write_enabled = new_write_enabled;
             if result.budget_exhausted {
                 notify.notify();
                 yield_now().await;

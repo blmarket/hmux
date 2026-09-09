@@ -473,6 +473,7 @@ impl RuntimeControl {
         self.inner.borrow_mut().ios.remove(&id);
     }
 
+    #[cfg(test)]
     pub(crate) fn is_io_enabled(&self, id: usize) -> bool {
         self.inner
             .borrow()

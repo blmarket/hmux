@@ -4,11 +4,12 @@
 //! guard, control-range tostring name reuse, case-insensitive prefixes, and
 //! attribute alias / delimiter handling.
 
-use crate::style::{GRID_ATTR_BRIGHT, GRID_ATTR_DIM, attributes_fromstring, attributes_tostring};
+use crate::style::{GRID_ATTR_BRIGHT, GRID_ATTR_DIM};
 use crate::style::{
     GRID_ATTR_NOATTR, STYLE_ALIGN_CENTRE, STYLE_LIST_ON, STYLE_LIST_RIGHT_MARKER,
     STYLE_RANGE_CONTROL, STYLE_RANGE_LEFT, STYLE_RANGE_RIGHT, style_parse, style_tostring,
 };
+use crate::{AttributeCodec, RustAttributeCodec};
 use ::core::ffi::{CStr, c_char};
 
 fn blank_style() -> Box<crate::types::style> {
@@ -18,7 +19,7 @@ fn blank_style() -> Box<crate::types::style> {
 }
 
 fn base_cell() -> crate::types::grid_cell {
-    let mut gc = unsafe { crate::grid::grid_default_cell };
+    let mut gc = { crate::grid::grid_default_cell };
     gc.fg = 1;
     gc.bg = 2;
     gc.us = 3;
@@ -26,7 +27,7 @@ fn base_cell() -> crate::types::grid_cell {
     gc
 }
 
-fn parse(s: &CStr) -> (Box<crate::types::style>, ::core::ffi::c_int) {
+fn parse(s: &CStr) -> (Box<crate::types::style>, core::ffi::c_int) {
     let mut sy = blank_style();
     let gc = base_cell();
     let rc = unsafe { style_parse(&mut sy, &gc, s.to_bytes()) };
@@ -47,12 +48,15 @@ fn range_string(sy: &crate::types::style) -> String {
     unsafe { crate::tests::test_fixtures::seen(&raw const sy.range_string as *const c_char) }
 }
 
-fn attr_tostring(attr: ::core::ffi::c_int) -> String {
-    attributes_tostring(attr).to_string_lossy().into_owned()
+fn attr_tostring(attr: core::ffi::c_int) -> String {
+    RustAttributeCodec
+        .to_string(attr)
+        .to_string_lossy()
+        .into_owned()
 }
 
-fn attr_fromstring(s: &CStr) -> ::core::ffi::c_int {
-    attributes_fromstring(s)
+fn attr_fromstring(s: &CStr) -> core::ffi::c_int {
+    RustAttributeCodec.from_string(s)
 }
 
 // ---------------------------------------------------------------------------

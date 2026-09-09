@@ -77,8 +77,8 @@ unsafe fn reset() {
         client_exitsession = None;
         client_execshell = None;
         client_execcmd = None;
-        client_proc = null_mut();
-        client_peer = null_mut();
+        client_proc = None;
+        client_peer = None;
         client_flags = 0;
         client_suspended = 0;
         client_attached = 0;
@@ -94,15 +94,12 @@ unsafe fn client_string_ptr(value: *const Option<CString>) -> *const c_char {
     unsafe { (*value).as_ref().map_or(null(), |value| value.as_ptr()) }
 }
 
-/// A client process with one peer to talk to. The process is zeroed apart
-/// from its empty peer list — enough for `proc_exit`, which only walks the
-/// list and sets the exit flag — and the peer is zeroed apart from a message
-/// buffer on one end of a socket pair, which is all `proc_send` needs to
-/// compose into. Both are installed into the client statics; dropping the
-/// harness takes them out again before its buffers go away.
+/// A retained client process and a peer with a message buffer on one end of
+/// a socket pair. Both are installed into the client statics; dropping the
+/// harness takes them out before its buffers go away.
 struct Harness {
-    pr: Box<tmuxproc>,
-    peer: Box<tmuxpeer>,
+    pr: ProcessRef,
+    peer: PeerRef,
     far: Box<imsgbuf>,
     fds: [c_int; 2],
 }
@@ -123,29 +120,25 @@ impl Harness {
             );
         }
         let mut h = Harness {
-            pr: Box::new(tmuxproc::default()),
-            peer: zeroed::<tmuxpeer>(),
+            pr: ProcessRef::default(),
+            peer: PeerRef::new(*zeroed::<tmuxpeer>()),
             far: zeroed::<imsgbuf>(),
             fds,
         };
         unsafe {
-            assert_eq!(imsgbuf_init(&mut h.peer.ibuf, h.fds[0]), 0);
-            imsgbuf_allow_fdpass(&mut h.peer.ibuf);
+            assert_eq!(imsgbuf_init(&mut h.peer.borrow_mut().ibuf, h.fds[0]), 0);
+            imsgbuf_allow_fdpass(&mut h.peer.borrow_mut().ibuf);
             assert_eq!(imsgbuf_init(&mut h.far, h.fds[1]), 0);
-            h.peer.event.set_callback(
+            h.peer.borrow_mut().event.set_callback(
                 h.fds[0],
                 Interest::Read,
                 WatchMode::Once,
                 move |fd, events| never(fd, events, null_mut()),
             );
-            client_proc = &raw mut *h.pr;
-            client_peer = &raw mut *h.peer;
+            client_proc = Some(h.pr.clone());
+            client_peer = Some(h.peer.clone());
         }
         h
-    }
-
-    fn pr(&mut self) -> *mut tmuxproc {
-        &raw mut *self.pr
     }
 
     /// Everything the client has queued for the server since last asked, by
@@ -154,19 +147,19 @@ impl Harness {
     fn sent(&mut self) -> Vec<uint32_t> {
         unsafe {
             let mut out = Vec::new();
-            while imsgbuf_queuelen(&mut self.peer.ibuf) > 0 {
-                assert_eq!(imsgbuf_flush(&mut self.peer.ibuf), 0);
+            while imsgbuf_queuelen(&mut self.peer.borrow_mut().ibuf) > 0 {
+                assert_eq!(imsgbuf_flush(&mut self.peer.borrow_mut().ibuf), 0);
                 let rv = imsgbuf_read(&mut self.far);
                 assert_eq!(rv, 1, "imsgbuf_read answered {rv}");
             }
             loop {
-                let mut m = Box::new(imsg::default());
-                match imsg_get(&mut self.far, &raw mut *m) {
-                    0 => break,
-                    len if len > 0 => out.push(imsg_get_type(&raw mut *m)),
-                    other => panic!("imsg_get answered {other}"),
-                }
-                imsg_free(&raw mut *m);
+                let (mut m, _len) = match imsg_get(&mut self.far) {
+                    Ok(Some(message)) => message,
+                    Ok(None) => break,
+                    Err(_) => panic!("imsg_get failed"),
+                };
+                out.push(imsg_get_type(&m));
+                imsg_free(m);
             }
             out
         }
@@ -176,10 +169,10 @@ impl Harness {
 impl Drop for Harness {
     fn drop(&mut self) {
         unsafe {
-            client_proc = null_mut();
-            client_peer = null_mut();
-            self.peer.event.disable();
-            imsgbuf_clear(&mut self.peer.ibuf);
+            client_proc = None;
+            client_peer = None;
+            self.peer.borrow_mut().event.disable();
+            imsgbuf_clear(&mut self.peer.borrow_mut().ibuf);
             imsgbuf_clear(&mut self.far);
             close(self.fds[0]);
             close(self.fds[1]);
@@ -187,21 +180,23 @@ impl Drop for Harness {
     }
 }
 
-/// A message of type `ty` carrying `payload`, shaped as dispatch reads one:
-/// only the header type and length and the data pointer are filled in.
+/// A message of type `ty` owning the payload dispatch reads.
 unsafe fn incoming(ty: uint32_t, payload: &[u8]) -> Box<imsg> {
-    let mut m = Box::new(imsg::default());
-    m.hdr.type_0 = ty;
-    m.hdr.len = (IMSG_HEADER_SIZE + payload.len()) as uint32_t;
-    m.data = payload.as_ptr() as *mut u8;
-    m
+    use crate::ImsgMessage;
+    Box::new(imsg::from_imsg_message(
+        ty,
+        (IMSG_HEADER_SIZE + payload.len()) as u32,
+        0,
+        0,
+        payload,
+    ))
 }
 
 /// Hands the server's message of type `ty` carrying `payload` to the router.
 unsafe fn deliver(ty: uint32_t, payload: &[u8]) {
     unsafe {
         let mut m = incoming(ty, payload);
-        client_dispatch(&raw mut *m, null_mut());
+        client_dispatch(Some(&mut m));
     }
 }
 
@@ -488,7 +483,7 @@ fn an_empty_msg_exit_payload_changes_nothing() {
         client_exitval = 4;
         client_exitreason = CLIENT_EXIT_DETACHED;
 
-        client_dispatch_exit_message(null_mut(), 0);
+        client_dispatch_exit_message(&[]);
 
         assert_eq!(exit_value(), 4);
         assert_eq!(exit_reason(), CLIENT_EXIT_DETACHED);
@@ -508,7 +503,7 @@ fn a_bare_msg_exit_sets_only_the_exit_value() {
         reset();
         let payload = exit_payload(-7, b"");
 
-        client_dispatch_exit_message(payload.as_ptr() as *mut c_char, payload.len());
+        client_dispatch_exit_message(&payload);
 
         assert_eq!(exit_value(), -7);
         assert_eq!(exit_reason(), CLIENT_EXIT_NONE);
@@ -525,7 +520,7 @@ fn a_msg_exit_with_a_message_carries_both() {
         reset();
         let payload = exit_payload(9, b"done\0");
 
-        client_dispatch_exit_message(payload.as_ptr() as *mut c_char, payload.len());
+        client_dispatch_exit_message(&payload);
 
         assert_eq!(exit_value(), 9);
         assert_eq!(exit_reason(), CLIENT_EXIT_MESSAGE_PROVIDED);
@@ -548,7 +543,7 @@ fn a_msg_exit_message_ends_at_its_first_nul() {
         reset();
         let payload = exit_payload(1, b"stopped\0trailing\0");
 
-        client_dispatch_exit_message(payload.as_ptr() as *mut c_char, payload.len());
+        client_dispatch_exit_message(&payload);
 
         assert_eq!(exit_reason(), CLIENT_EXIT_MESSAGE_PROVIDED);
         assert_eq!(
@@ -571,7 +566,7 @@ fn an_unterminated_msg_exit_message_drops_its_last_byte() {
         reset();
         let payload = exit_payload(1, b"cut");
 
-        client_dispatch_exit_message(payload.as_ptr() as *mut c_char, payload.len());
+        client_dispatch_exit_message(&payload);
 
         assert_eq!(exit_reason(), CLIENT_EXIT_MESSAGE_PROVIDED);
         assert_eq!(seen(client_string_ptr(&raw const client_exitmessage)), "cu");
@@ -590,7 +585,7 @@ fn a_fresh_lock_file_is_created_and_held() {
     let _ = std::fs::remove_file(&path);
     let cpath = CString::new(path.to_str().unwrap()).unwrap();
 
-    let fd = unsafe { client_get_lock(cpath.as_ptr() as *mut c_char) };
+    let fd = unsafe { client_get_lock(&cpath) };
     assert!(fd >= 0, "no lock descriptor");
     assert!(path.exists(), "the lock file was not created");
 
@@ -609,7 +604,7 @@ fn an_unopenable_lock_file_is_refused() {
 
     unsafe {
         *__errno_location() = 0;
-        assert_eq!(client_get_lock(cpath.as_ptr() as *mut c_char), -1);
+        assert_eq!(client_get_lock(&cpath), -1);
         assert_eq!(*__errno_location(), ENOENT);
     }
 }
@@ -622,11 +617,7 @@ fn an_over_long_socket_path_is_refused() {
     unsafe {
         *__errno_location() = 0;
         assert_eq!(
-            client_connect(
-                reactor::current(),
-                long.as_ptr(),
-                CLIENT_NOSTARTSERVER as uint64_t
-            ),
+            client_connect(reactor::current(), &long, CLIENT_NOSTARTSERVER as uint64_t),
             -1
         );
         assert_eq!(*__errno_location(), ENAMETOOLONG);
@@ -644,11 +635,7 @@ fn a_missing_socket_is_refused_when_no_server_may_be_started() {
     unsafe {
         *__errno_location() = 0;
         assert_eq!(
-            client_connect(
-                reactor::current(),
-                cpath.as_ptr(),
-                CLIENT_NOSTARTSERVER as uint64_t
-            ),
+            client_connect(reactor::current(), &cpath, CLIENT_NOSTARTSERVER as uint64_t),
             -1
         );
         assert_eq!(*__errno_location(), ENOENT);
@@ -665,11 +652,7 @@ fn a_deaf_socket_path_reports_connection_refused() {
     unsafe {
         *__errno_location() = 0;
         assert_eq!(
-            client_connect(
-                reactor::current(),
-                cpath.as_ptr(),
-                CLIENT_NOSTARTSERVER as uint64_t
-            ),
+            client_connect(reactor::current(), &cpath, CLIENT_NOSTARTSERVER as uint64_t),
             -1
         );
         assert_eq!(*__errno_location(), ECONNREFUSED);
@@ -688,8 +671,8 @@ fn a_refused_socket_without_start_server_flags_is_not_retried() {
         assert_eq!(
             client_connect(
                 reactor::current(),
-                cpath.as_ptr(),
-                (CLIENT_LOGIN | CLIENT_CONTROL) as uint64_t
+                &cpath,
+                (CLIENT_LOGIN | CLIENT_CONTROL) as uint64_t,
             ),
             -1
         );
@@ -707,11 +690,11 @@ fn losing_the_server_ends_an_unattached_wait() {
         reset();
         let mut h = Harness::new();
 
-        client_dispatch(null_mut(), null_mut());
+        client_dispatch(None);
 
         assert_eq!(exit_reason(), CLIENT_EXIT_LOST_SERVER);
         assert_eq!(exit_value(), 1);
-        assert_eq!((*h.pr()).exit, 1);
+        assert_eq!(h.pr.borrow().exit, 1);
         assert!(h.sent().is_empty());
     }
 }
@@ -727,10 +710,10 @@ fn a_reported_loss_does_not_overwrite_an_earlier_reason() {
         client_exitflag = 1;
         client_exitreason = CLIENT_EXIT_MESSAGE_PROVIDED;
 
-        client_dispatch(null_mut(), null_mut());
+        client_dispatch(None);
 
         assert_eq!(exit_reason(), CLIENT_EXIT_MESSAGE_PROVIDED);
-        assert_eq!((*h.pr()).exit, 1);
+        assert_eq!(h.pr.borrow().exit, 1);
 
         client_exitreason = CLIENT_EXIT_NONE;
         client_exitflag = 0;
@@ -803,7 +786,7 @@ fn an_empty_msg_exit_ends_the_wait() {
         assert_eq!(exit_asked(), 1);
         assert_eq!(exit_value(), 0);
         assert_eq!(exit_reason(), CLIENT_EXIT_NONE);
-        assert_eq!((*h.pr()).exit, 1);
+        assert_eq!(h.pr.borrow().exit, 1);
 
         client_exitflag = 0;
     }
@@ -828,7 +811,7 @@ fn a_msg_exit_with_text_records_both_before_finishing() {
         );
         assert_eq!(exit_reason(), CLIENT_EXIT_MESSAGE_PROVIDED);
         assert_eq!(exit_asked(), 1);
-        assert_eq!((*h.pr()).exit, 1);
+        assert_eq!(h.pr.borrow().exit, 1);
 
         client_exitmessage = None;
         client_exitreason = CLIENT_EXIT_NONE;
@@ -850,7 +833,7 @@ fn msg_shutdown_walks_the_same_wait_path_as_msg_exit() {
         assert_eq!(exit_value(), 2);
         assert!(client_exitmessage.is_none());
         assert_eq!(exit_asked(), 1);
-        assert_eq!((*h.pr()).exit, 1);
+        assert_eq!(h.pr.borrow().exit, 1);
 
         client_exitflag = 0;
     }
@@ -866,7 +849,7 @@ fn msg_exited_from_the_server_ends_the_process() {
 
         deliver(MSG_EXITED as uint32_t, b"");
 
-        assert_eq!((*h.pr()).exit, 1);
+        assert_eq!(h.pr.borrow().exit, 1);
         assert_eq!(exit_asked(), 0);
         assert_eq!(exit_value(), 0);
     }
@@ -883,10 +866,10 @@ fn a_protocol_mismatch_is_fatal_to_the_wait_state() {
 
         let mut m = incoming(MSG_VERSION as uint32_t, b"");
         m.hdr.peerid = 0x0109;
-        client_dispatch(&raw mut *m, null_mut());
+        client_dispatch(Some(&mut m));
 
         assert_eq!(exit_value(), 1);
-        assert_eq!((*h.pr()).exit, 1);
+        assert_eq!(h.pr.borrow().exit, 1);
     }
 }
 
@@ -901,7 +884,7 @@ fn an_old_server_stream_is_refused_without_touching_the_exit_value() {
 
         deliver(211, b"");
 
-        assert_eq!((*h.pr()).exit, 1);
+        assert_eq!(h.pr.borrow().exit, 1);
         assert_eq!(exit_value(), 0);
     }
 }
@@ -919,7 +902,7 @@ fn uninteresting_messages_are_dropped_while_waiting() {
         deliver(999, b"junk");
 
         assert!(h.sent().is_empty());
-        assert_eq!((*h.pr()).exit, 0);
+        assert_eq!(h.pr.borrow().exit, 0);
         assert_eq!(exit_asked(), 0);
         assert_eq!(exit_reason(), CLIENT_EXIT_NONE);
     }
@@ -1015,7 +998,7 @@ fn an_attached_client_names_msg_exit_but_keeps_an_earlier_reason() {
         assert_eq!(exit_reason(), CLIENT_EXIT_EXITED);
         assert_eq!(h.sent(), [MSG_EXITING as uint32_t]);
 
-        assert_eq!((*h.pr()).exit, 0);
+        assert_eq!(h.pr.borrow().exit, 0);
 
         client_exitreason = CLIENT_EXIT_NONE;
         client_attached = 0;
@@ -1056,7 +1039,7 @@ fn msg_exited_while_attached_ends_the_process() {
 
         deliver(MSG_EXITED as uint32_t, b"");
 
-        assert_eq!((*h.pr()).exit, 1);
+        assert_eq!(h.pr.borrow().exit, 1);
 
         client_attached = 0;
     }
@@ -1090,7 +1073,7 @@ fn an_unattached_client_ignores_uninteresting_signals() {
 
         client_signal(crate::client::SIGWINCH);
 
-        assert_eq!((*h.pr()).exit, 0);
+        assert_eq!(h.pr.borrow().exit, 0);
         assert!(h.sent().is_empty());
         assert_eq!(exit_reason(), CLIENT_EXIT_NONE);
         assert_eq!(exit_value(), 0);
@@ -1106,11 +1089,11 @@ fn an_unattached_client_ends_on_sigterm_and_sighup() {
         let mut h = Harness::new();
 
         client_signal(crate::client::SIGTERM);
-        assert_eq!((*h.pr()).exit, 1);
+        assert_eq!(h.pr.borrow().exit, 1);
 
-        (*h.pr()).exit = 0;
+        h.pr.borrow_mut().exit = 0;
         client_signal(crate::client::SIGHUP);
-        assert_eq!((*h.pr()).exit, 1);
+        assert_eq!(h.pr.borrow().exit, 1);
     }
 }
 
@@ -1176,7 +1159,7 @@ fn an_attached_client_asks_for_a_resize_on_sigwinch() {
         client_signal(crate::client::SIGWINCH);
 
         assert_eq!(h.sent(), [MSG_RESIZE as uint32_t]);
-        assert_eq!((*h.pr()).exit, 0);
+        assert_eq!(h.pr.borrow().exit, 0);
         assert_eq!(exit_reason(), CLIENT_EXIT_NONE);
 
         client_attached = 0;
@@ -1195,14 +1178,14 @@ fn an_attached_client_wakes_up_on_sigcont() {
         client_attached = 1;
         client_suspended = 1;
 
-        let mut old: libc::sigaction = ::core::mem::zeroed();
+        let mut old: libc::sigaction = core::mem::zeroed();
         assert_eq!(sigaction(crate::client::SIGTSTP, null(), &raw mut old), 0);
 
         client_signal(crate::client::SIGCONT);
 
-        let mut now: libc::sigaction = ::core::mem::zeroed();
+        let mut now: libc::sigaction = core::mem::zeroed();
         assert_eq!(sigaction(crate::client::SIGTSTP, null(), &raw mut now), 0);
-        assert_eq!(now.sa_sigaction as usize, ::libc::SIG_IGN);
+        assert_eq!(now.sa_sigaction as usize, libc::SIG_IGN);
         assert_eq!(
             sigaction(crate::client::SIGTSTP, &raw const old, null_mut()),
             0
@@ -1223,10 +1206,10 @@ fn client_exit_ends_the_process_when_no_files_are_pending() {
         reset();
         let mut h = Harness::new();
 
-        assert_eq!((*h.pr()).exit, 0);
+        assert_eq!(h.pr.borrow().exit, 0);
         client_exit();
 
-        assert_eq!((*h.pr()).exit, 1);
+        assert_eq!(h.pr.borrow().exit, 1);
     }
 }
 
@@ -1239,12 +1222,12 @@ fn the_file_callback_defers_to_pending_transfers_until_asked_to_exit() {
         reset();
         let mut h = Harness::new();
 
-        client_file_check_cb(null_mut(), null(), 0, 0, null_mut(), ClientFileData::None);
-        assert_eq!((*h.pr()).exit, 0);
+        client_file_check_cb(ClientFileEvent::CheckExit);
+        assert_eq!(h.pr.borrow().exit, 0);
 
         client_exitflag = 1;
-        client_file_check_cb(null_mut(), null(), 0, 0, null_mut(), ClientFileData::None);
-        assert_eq!((*h.pr()).exit, 1);
+        client_file_check_cb(ClientFileEvent::CheckExit);
+        assert_eq!(h.pr.borrow().exit, 1);
 
         client_exitflag = 0;
     }

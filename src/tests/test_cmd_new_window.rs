@@ -1,20 +1,17 @@
 use super::*;
-use crate::cmd::cmdq_set_target_client;
+
 use crate::proc::PEER_BAD;
-use crate::server::message_log;
 use crate::tests::test_fixtures::{
-    Clients, Item, Pane, Registry, Session, Window, ensure_reactor, globals, link, seen, unlink,
-    zeroed,
+    Clients, Item, Pane, Registry, Session, Window, ensure_reactor, globals, link, unlink, zeroed,
 };
-use crate::window::winlink_find_by_index;
 use ::core::ffi::{CStr, c_int};
 
 /// Runs the item's parsed command through the entry's exec hook, the way
 /// the command queue would.
 fn run(item: &mut Item) -> cmd_retval {
     unsafe {
-        let e = &raw const cmd_new_window_entry;
-        ((*e).exec)(&*item.cmd(), item.ptr())
+        let e = &cmd_new_window_entry;
+        item.with_command(|command, item| (e.exec)(command, item))
     }
 }
 
@@ -59,18 +56,12 @@ impl Drop for One {
 /// only one in it: letting go of whatever was recorded before is the same
 /// reset the shared fixtures give the server's trees.
 fn reset_message_log() {
-    message_log.queue().clear();
+    crate::tests::test_fixtures::reset_message_log();
 }
 
 /// The lines the server has recorded since the log was reset.
 fn recorded_messages() -> Vec<String> {
-    unsafe {
-        let mut out = Vec::new();
-        for m in message_log.queue().iter() {
-            out.push(seen(m.msg.as_ptr()));
-        }
-        out
-    }
+    crate::tests::test_fixtures::logged_messages()
 }
 
 /// Drives the hook over a session of one window at index 0, with the
@@ -84,19 +75,24 @@ fn drive(line: &'static CStr, idx: c_int) -> (cmd_retval, Vec<String>) {
         let mut peer = zeroed::<tmuxpeer>();
         peer.flags |= PEER_BAD;
         let caller = clients.add("caller", 80, 24);
-        (*caller).peer = Some(peer);
+        (*caller).peer = Some(crate::proc::PeerRef::new(*peer));
 
         let mut one = One::new();
         let mut item = Item::with_client().with_args(line);
         let p = item.ptr();
         item.set_client(caller);
-        cmdq_set_target_client(p, caller);
+        (*p).set_target_client(
+            caller
+                .as_ref()
+                .and_then(crate::server::client_ref_of)
+                .as_ref(),
+        );
         let mut target = *Box::new(cmd_find_state::default());
-        target.set_session(one.session.ptr());
+        target.set_session(one.session.ptr().as_ref());
         target.idx = idx;
         (*p).target = target.clone();
         (*p).source = target.clone();
-        *cmdq_get_current(p) = target.clone();
+        *(item.read()).current() = target.clone();
 
         reset_message_log();
         let retval = run(&mut item);
@@ -104,13 +100,15 @@ fn drive(line: &'static CStr, idx: c_int) -> (cmd_retval, Vec<String>) {
 
         assert_eq!((*caller).retval, 1, "the caller was told it failed");
         let s = one.session.ptr();
-        assert_eq!(
-            winlink_find_by_index(&mut (*s).windows, 0),
-            one.wl,
+        assert!(
+            (*s).windows
+                .get(&0)
+                .map(Box::as_ref)
+                .is_some_and(|link| core::ptr::eq(link, one.wl)),
             "the window stayed where it was linked"
         );
         assert!(
-            winlink_find_by_index(&mut (*s).windows, 1).is_null(),
+            (*s).windows.get(&1).is_none(),
             "nothing was shuffled up out of the way"
         );
         (retval, messages)

@@ -33,6 +33,7 @@ hmux-agent = { path = "hmux-agent" }
 hmux-rt = { path = "hmux-rt" }
 bytes = "1"
 bytes-utils = "0.1.4"
+hashlink = "0.12.1"
 
 [build-dependencies]
 lalrpop = { version = "0.23.1", default-features = false }
@@ -46,5 +47,6 @@ dangerous_implicit_autorefs = "allow"
 
 [lints.clippy]
 missing_safety_doc = "allow"
+too_many_arguments = "allow"
 disallowed_methods = "deny"
 await_holding_refcell_ref = "deny"

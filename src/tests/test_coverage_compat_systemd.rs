@@ -1,10 +1,10 @@
 //! Unit tests for [`crate::compat`].
 //!
 //! The module is tmux's systemd glue: the socket-activation shim
-//! ([`systemd_activated`](crate::compat::systemd_activated) and
-//! [`systemd_create_socket`](crate::compat::systemd_create_socket))
+//! ([`systemd_activated`](systemd_activated) and
+//! [`systemd_create_socket`](systemd_create_socket))
 //! and the D-Bus call that moves a spawned pane into a transient scope,
-//! [`systemd_move_to_new_cgroup`](crate::compat::systemd_move_to_new_cgroup),
+//! [`systemd_move_to_new_cgroup`](systemd_move_to_new_cgroup),
 //! together with the `sd-bus` shapes it needs — the opaque bus types, the
 //! `sd_bus_error` value type, the 128-bit id union, the job-watch record the
 //! signal callback fills, the Linux socket-type and errno numbers, and the
@@ -14,7 +14,7 @@
 //! an inherited descriptor or a fabricated D-Bus message: the constants
 //! against their Linux ABI values, the layouts of the three concrete records,
 //! the one branch of
-//! [`job_removed_handler`](crate::compat::job_removed_handler)
+//! [`job_removed_handler`](job_removed_handler)
 //! that answers before any bus traffic (a watch with no path returns zero
 //! without reading the message), and the activation probe in its natural
 //! state — a plain test process carries no `LISTEN_PID`/`LISTEN_FDS`, so
@@ -37,8 +37,8 @@ use crate::compat::{
     systemd_create_socket, systemd_job_watch, systemd_move_to_new_cgroup,
 };
 use crate::types::*;
-use ::core::ffi::{CStr, c_char, c_int};
-use ::core::ptr::{null, null_mut};
+use ::core::ffi::c_int;
+use ::core::ptr::null_mut;
 use ::std::ffi::CString;
 
 /// The shape `systemd_create_socket` offers its callers: the client flags
@@ -58,12 +58,12 @@ fn socket_type_constants_hold_the_linux_protocol_numbers() {
     assert_eq!(SOCK_SEQPACKET, 5);
     assert_eq!(SOCK_DCCP, 6);
     assert_eq!(SOCK_PACKET, 10);
-    assert_eq!(SOCK_STREAM as u64, ::libc::SOCK_STREAM as u64);
-    assert_eq!(SOCK_DGRAM as u64, ::libc::SOCK_DGRAM as u64);
-    assert_eq!(SOCK_RAW as u64, ::libc::SOCK_RAW as u64);
-    assert_eq!(SOCK_RDM as u64, ::libc::SOCK_RDM as u64);
-    assert_eq!(SOCK_SEQPACKET as u64, ::libc::SOCK_SEQPACKET as u64);
-    assert_eq!(SOCK_DCCP as u64, ::libc::SOCK_DCCP as u64);
+    assert_eq!(SOCK_STREAM as u64, libc::SOCK_STREAM as u64);
+    assert_eq!(SOCK_DGRAM as u64, libc::SOCK_DGRAM as u64);
+    assert_eq!(SOCK_RAW as u64, libc::SOCK_RAW as u64);
+    assert_eq!(SOCK_RDM as u64, libc::SOCK_RDM as u64);
+    assert_eq!(SOCK_SEQPACKET as u64, libc::SOCK_SEQPACKET as u64);
+    assert_eq!(SOCK_DCCP as u64, libc::SOCK_DCCP as u64);
     // assert_eq!(SOCK_PACKET as u64, ::libc::SOCK_PACKET as u64);
     let all = [
         SOCK_STREAM,
@@ -87,8 +87,8 @@ fn socket_type_constants_hold_the_linux_protocol_numbers() {
 fn nonblock_and_cloexec_carry_the_open_flag_bits_the_callers_or_in() {
     assert_eq!(SOCK_NONBLOCK, 2048);
     assert_eq!(SOCK_CLOEXEC, 524288);
-    assert_eq!(SOCK_NONBLOCK as u64, ::libc::O_NONBLOCK as u64);
-    assert_eq!(SOCK_CLOEXEC as u64, ::libc::O_CLOEXEC as u64);
+    assert_eq!(SOCK_NONBLOCK as u64, libc::O_NONBLOCK as u64);
+    assert_eq!(SOCK_CLOEXEC as u64, libc::O_CLOEXEC as u64);
     let composed = SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
     assert_eq!(composed & SOCK_STREAM, SOCK_STREAM);
     assert_eq!(composed & SOCK_NONBLOCK, SOCK_NONBLOCK);
@@ -104,25 +104,25 @@ fn nonblock_and_cloexec_carry_the_open_flag_bits_the_callers_or_in() {
 fn errno_constants_hold_the_linux_values_the_shim_reports() {
     assert_eq!(E2BIG, 7);
     assert_eq!(EPFNOSUPPORT, 96);
-    assert_eq!(E2BIG, ::libc::E2BIG);
-    assert_eq!(EPFNOSUPPORT, ::libc::EPFNOSUPPORT);
+    assert_eq!(E2BIG, libc::E2BIG);
+    assert_eq!(EPFNOSUPPORT, libc::EPFNOSUPPORT);
     assert_ne!(E2BIG, EPFNOSUPPORT);
 }
 
 #[test]
 fn sd_listen_fds_start_is_past_the_standard_descriptors() {
     assert_eq!(SD_LISTEN_FDS_START, 3);
-    assert!(SD_LISTEN_FDS_START > ::libc::STDERR_FILENO);
-    assert_eq!(SD_LISTEN_FDS_START, ::libc::STDERR_FILENO + 1);
+    assert!(SD_LISTEN_FDS_START > libc::STDERR_FILENO);
+    assert_eq!(SD_LISTEN_FDS_START, libc::STDERR_FILENO + 1);
 }
 
 #[test]
-fn the_null_bus_error_is_all_zeroes_and_copies_by_value() {
+fn the_null_bus_error_is_empty_and_clones_by_value() {
     let e = SD_BUS_ERROR_NULL;
-    assert!(e.name.is_null());
-    assert!(e.message.is_null());
+    assert!(e.name.is_none());
+    assert!(e.message.is_none());
     assert_eq!(e._need_free, 0);
-    let mut copy = e;
+    let mut copy = e.clone();
     copy._need_free = 1;
     assert_eq!(e._need_free, 0, "SD_BUS_ERROR_NULL was mutated by a copy");
     assert_eq!(copy.name, e.name);
@@ -132,16 +132,16 @@ fn the_null_bus_error_is_all_zeroes_and_copies_by_value() {
 #[test]
 fn a_bus_error_carries_a_name_a_message_and_its_need_free_flag() {
     let e = sd_bus_error {
-        name: c"org.freedesktop.systemd.Error".as_ptr(),
-        message: c"boom".as_ptr(),
+        name: Some(c"org.freedesktop.systemd.Error".to_owned()),
+        message: Some(c"boom".to_owned()),
         _need_free: 1,
     };
-    unsafe {
+    {
         assert_eq!(
-            CStr::from_ptr(e.name).to_bytes(),
+            e.name.as_ref().unwrap().to_bytes(),
             b"org.freedesktop.systemd.Error"
         );
-        assert_eq!(CStr::from_ptr(e.message).to_bytes(), b"boom");
+        assert_eq!(e.message.as_ref().unwrap().to_bytes(), b"boom");
     }
     assert_eq!(e._need_free, 1);
 }
@@ -173,10 +173,10 @@ fn a_did128_reads_its_bytes_and_its_qwords_the_same_way() {
 #[test]
 fn a_job_watch_holds_a_path_and_a_done_flag() {
     let mut w = systemd_job_watch {
-        path: c"/org/freedesktop/systemd1/job/41".as_ptr(),
+        path: Some(c"/org/freedesktop/systemd1/job/41".to_owned()),
         done: 0,
     };
-    assert!(!w.path.is_null());
+    assert!(w.path.is_some());
     w.done = 1;
     assert_eq!(w.done, 1);
     w.done = 0;
@@ -195,11 +195,11 @@ fn job_removed_handler_matches_the_message_handler_shape() {
 fn job_removed_handler_answers_zero_when_the_watch_has_no_path() {
     unsafe {
         let mut watch = systemd_job_watch {
-            path: null::<c_char>(),
+            path: None,
             done: 7,
         };
         let mut err = SD_BUS_ERROR_NULL;
-        let r = job_removed_handler(null_mut(), &raw mut watch, &raw mut err);
+        let r = job_removed_handler(null_mut(), (&raw mut watch).cast(), (&raw mut err).cast());
         assert_eq!(r, 0);
         assert_eq!(watch.done, 7, "a pathless watch must stay untouched");
     }
@@ -215,7 +215,7 @@ fn the_entry_points_keep_their_server_shaped_signatures() {
 fn systemd_activated_answers_no_without_an_inherited_listener() {
     for name in ["LISTEN_PID", "LISTEN_FDS"] {
         assert!(
-            ::std::env::var(name).is_err(),
+            std::env::var(name).is_err(),
             "{name} is set in the harness environment, so this probe would read inherited fds"
         );
     }

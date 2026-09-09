@@ -73,6 +73,13 @@ token that provider's CLI already stores, and are cached for five minutes in
 `$XDG_CACHE_HOME/agentmon/quota.json` so the TUI dialog and any number of
 loops share one lookup.
 
+While the quota dialog is open, it refreshes five minutes after each load
+finishes, plus a fresh random delay of up to 30 seconds. The previous report
+stays visible during refresh. Press `r` to bypass the cache and refresh now.
+During an automatic load, repeated presses queue one forced refresh; during
+a forced load, they reuse that request. Closing the dialog stops automatic
+refreshes.
+
 Antigravity reports what is left rather than what is spent, and splits its
 quota into a Gemini group and one for the Claude and GPT models it can proxy.
 Only the Gemini windows are surfaced, since those are the ones an `agy` run on

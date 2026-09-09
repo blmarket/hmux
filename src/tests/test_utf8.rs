@@ -1,15 +1,15 @@
 use super::*;
 use crate::compat::{VIS_CSTYLE, VIS_NL, VIS_OCTAL};
 use crate::ffi::free;
-use crate::options::{options_array_set, options_codepoint_widths, options_get_ptr};
+use crate::options::{OptionsEngine, OptionsRef, RustOptionsEngine};
+
 use crate::tests::test_fixtures::globals;
 use crate::tmux::global_options;
 use ::core::ffi::{CStr, c_char, c_int, c_void};
 
-/// The UTF-8 trees and the width cache are process globals, so the tests
-/// that reach them take turns, and each one starts and ends with them
-/// empty, the way the server starts.
-struct Globals(::std::sync::MutexGuard<'static, ()>);
+/// Serializes tests that reset the shared character store and process options.
+/// Each test also starts and ends with an empty thread-local width cache.
+struct Globals(std::sync::MutexGuard<'static, ()>);
 
 impl Drop for Globals {
     fn drop(&mut self) {
@@ -23,15 +23,12 @@ fn exclusive() -> Globals {
     Globals(guard)
 }
 
-/// Empties the trees and the width cache. The items are leaked: the server
-/// never takes one out again, so the trees have no remove.
+/// Resets the shared character store and width cache between isolated tests.
 fn forget_everything() {
-    unsafe {
-        utf8_data_tree.map().clear();
-        utf8_index_tree.map().clear();
-        utf8_width_cache.map().clear();
-        utf8_next_index = 0;
-        utf8_no_width = 0;
+    {
+        *UTF8_STORE.lock().unwrap() = Utf8Store::new();
+        UTF8_WIDTH_CACHE.with_borrow_mut(|cache| cache.clear());
+        UTF8_NO_WIDTH.set(false);
     }
 }
 
@@ -148,12 +145,12 @@ fn a_character_that_no_codepoint_answers_to_is_an_error() {
 #[test]
 fn the_width_is_not_worked_out_while_the_cache_is_being_filled() {
     let _guard = exclusive();
-    unsafe {
-        utf8_no_width = 1;
+    {
+        UTF8_NO_WIDTH.set(true);
         let (state, ud) = open_append(b"\xed\xa0\x80");
         assert_eq!(state, UTF8_DONE);
         assert_eq!(ud.width, 0);
-        utf8_no_width = 0;
+        UTF8_NO_WIDTH.set(false);
     }
 }
 
@@ -275,7 +272,7 @@ fn the_width_cache_turns_down_what_it_cannot_read() {
         ] {
             utf8_add_to_width_cache(spec);
             assert!(
-                utf8_width_cache.map().is_empty(),
+                UTF8_WIDTH_CACHE.with_borrow(|cache| cache.is_empty()),
                 "{spec:?} went into the cache"
             );
         }
@@ -287,20 +284,36 @@ fn the_width_cache_is_rebuilt_from_the_defaults_and_the_option() {
     let _guard = exclusive();
     unsafe {
         utf8_insert_width_cache(0x41, 2);
-        let o = options_get_ptr(global_options, c"codepoint-widths".as_ptr());
-        options_array_set(o, 0, c"U+42=2".as_ptr(), 0, &mut None);
+        let store = global_options
+            .as_ref()
+            .expect("global options are initialized");
+        store.with_entry_mut(c"codepoint-widths", false, |entry| {
+            RustOptionsEngine.array_set(entry.unwrap(), 0, Some(c"U+42=2"), 0, &mut None)
+        });
 
-        utf8_update_width_cache(options_codepoint_widths(global_options));
+        utf8_update_width_cache(
+            (global_options
+                .as_ref()
+                .expect("global options are initialized"))
+            .codepoint_widths(),
+        );
 
         assert!(utf8_find_in_width_cache(0x41).is_none());
         assert_eq!(utf8_find_in_width_cache(0x42).unwrap(), 2);
         assert_eq!(utf8_find_in_width_cache(0x261d).unwrap(), 2);
         assert_eq!(utf8_find_in_width_cache(0x1faf8).unwrap(), 2);
 
-        utf8_update_width_cache(options_codepoint_widths(global_options));
+        utf8_update_width_cache(
+            (global_options
+                .as_ref()
+                .expect("global options are initialized"))
+            .codepoint_widths(),
+        );
         assert_eq!(utf8_find_in_width_cache(0x42).unwrap(), 2);
 
-        options_array_set(o, 0, c"".as_ptr(), 0, &mut None);
+        store.with_entry_mut(c"codepoint-widths", false, |entry| {
+            RustOptionsEngine.array_set(entry.unwrap(), 0, Some(c""), 0, &mut None)
+        });
     }
 }
 
@@ -311,7 +324,7 @@ fn a_short_character_is_carried_in_the_utf8_char_itself() {
         let ud = filled(b"\xc3\xa9", 1);
         let (state, uc) = utf8_from_data(&ud);
         assert_eq!((state, uc), (UTF8_DONE, 0x4200a9c3));
-        assert!(utf8_data_tree.map().is_empty());
+        assert!(UTF8_STORE.lock().unwrap().by_data.is_empty());
 
         let mut back = utf8_data::default();
         utf8_to_data(uc, &mut back);
@@ -395,7 +408,7 @@ fn a_character_that_will_not_fit_comes_back_as_spaces() {
 fn the_last_index_is_where_the_trees_stop_taking_characters() {
     let _guard = exclusive();
     unsafe {
-        utf8_next_index = 0xffffff + 1;
+        UTF8_STORE.lock().unwrap().next_index = UTF8_INDEX_END;
         let ud = filled("😀".as_bytes(), 2);
         assert_eq!(utf8_from_data(&ud), (UTF8_ERROR, 0x41002020));
     }
@@ -427,45 +440,39 @@ fn copying_a_character_clears_what_is_past_its_end() {
 #[test]
 fn a_string_is_taken_apart_into_characters_and_put_back_together() {
     let _guard = exclusive();
-    unsafe {
-        let ud = utf8_fromcstr(c"a\xc3\xa9\xff\xf0\x9f\x98\x80".as_ptr());
-        assert_eq!(utf8_vec_strlen(&ud), 4);
-        assert_eq!(bytes_of(&ud[0]), b"a");
-        assert_eq!(bytes_of(&ud[1]), b"\xc3\xa9");
-        assert_eq!(bytes_of(&ud[2]), b"\xff");
-        assert_eq!(bytes_of(&ud[3]), "😀".as_bytes());
-        assert_eq!(utf8_vec_strwidth(&ud, -1), 5);
-        assert_eq!(utf8_vec_strwidth(&ud, 2), 2);
-        assert_eq!(utf8_vec_strwidth(&ud, 0), 0);
+    let ud = utf8_fromcstr(c"a\xc3\xa9\xff\xf0\x9f\x98\x80");
+    assert_eq!(utf8_vec_strlen(&ud), 4);
+    assert_eq!(bytes_of(&ud[0]), b"a");
+    assert_eq!(bytes_of(&ud[1]), b"\xc3\xa9");
+    assert_eq!(bytes_of(&ud[2]), b"\xff");
+    assert_eq!(bytes_of(&ud[3]), "😀".as_bytes());
+    assert_eq!(utf8_vec_strwidth(&ud, -1), 5);
+    assert_eq!(utf8_vec_strwidth(&ud, 2), 2);
+    assert_eq!(utf8_vec_strwidth(&ud, 0), 0);
 
-        let s = utf8_vec_tocstr(&ud);
-        assert_eq!(s.as_bytes(), b"a\xc3\xa9\xff\xf0\x9f\x98\x80");
-    }
+    let s = utf8_vec_tocstr(&ud);
+    assert_eq!(s.as_bytes(), b"a\xc3\xa9\xff\xf0\x9f\x98\x80");
 }
 
 #[test]
 fn a_half_finished_character_at_the_end_is_taken_one_byte_at_a_time() {
     let _guard = exclusive();
-    unsafe {
-        let ud = utf8_fromcstr(c"\xc3".as_ptr());
-        assert_eq!(utf8_vec_strlen(&ud), 1);
-        assert_eq!(bytes_of(&ud[0]), b"\xc3");
+    let ud = utf8_fromcstr(c"\xc3");
+    assert_eq!(utf8_vec_strlen(&ud), 1);
+    assert_eq!(bytes_of(&ud[0]), b"\xc3");
 
-        let ud = utf8_fromcstr(c"".as_ptr());
-        assert_eq!(utf8_vec_strlen(&ud), 0);
-    }
+    let ud = utf8_fromcstr(c"");
+    assert_eq!(utf8_vec_strlen(&ud), 0);
 }
 
 #[test]
 fn the_width_of_a_string_counts_its_printable_bytes() {
     let _guard = exclusive();
-    unsafe {
-        assert_eq!(utf8_cstrwidth(c"abc".as_ptr()), 3);
-        assert_eq!(utf8_cstrwidth(c"a\xc3\xa9\xf0\x9f\x98\x80".as_ptr()), 4);
-        assert_eq!(utf8_cstrwidth(c"a\x01b\x7f".as_ptr()), 2);
-        assert_eq!(utf8_cstrwidth(c"\xc3".as_ptr()), 0);
-        assert_eq!(utf8_cstrwidth(c"".as_ptr()), 0);
-    }
+    assert_eq!(utf8_cstrwidth(c"abc"), 3);
+    assert_eq!(utf8_cstrwidth(c"a\xc3\xa9\xf0\x9f\x98\x80"), 4);
+    assert_eq!(utf8_cstrwidth(c"a\x01b\x7f"), 2);
+    assert_eq!(utf8_cstrwidth(c"\xc3"), 0);
+    assert_eq!(utf8_cstrwidth(c""), 0);
 }
 
 #[test]
@@ -481,59 +488,40 @@ fn a_string_is_padded_to_a_width_on_either_side() {
 #[test]
 fn a_string_is_searched_for_a_character() {
     let _guard = exclusive();
-    unsafe {
-        let e = filled(b"\xc3\xa9", 1);
-        let a = filled(b"a", 1);
-        assert_eq!(utf8_cstrhas(c"a\xc3\xa9b".as_ptr(), &e), 1);
-        assert_eq!(utf8_cstrhas(c"a\xc3\xa9b".as_ptr(), &a), 1);
-        assert_eq!(utf8_cstrhas(c"abc".as_ptr(), &e), 0);
-        assert_eq!(utf8_cstrhas(c"".as_ptr(), &a), 0);
-    }
+    let e = filled(b"\xc3\xa9", 1);
+    let a = filled(b"a", 1);
+    assert_eq!(utf8_cstrhas(c"a\xc3\xa9b", &e), 1);
+    assert_eq!(utf8_cstrhas(c"a\xc3\xa9b", &a), 1);
+    assert_eq!(utf8_cstrhas(c"abc", &e), 0);
+    assert_eq!(utf8_cstrhas(c"", &a), 0);
 }
 
 #[test]
 fn a_string_is_valid_when_it_is_utf8_and_printable() {
     let _guard = exclusive();
-    unsafe {
-        assert_eq!(utf8_isvalid(c"abc".as_ptr()), 1);
-        assert_eq!(utf8_isvalid(c"a\xc3\xa9b".as_ptr()), 1);
-        assert_eq!(utf8_isvalid(c"".as_ptr()), 1);
-        assert_eq!(utf8_isvalid(c"a\x01b".as_ptr()), 0);
-        assert_eq!(utf8_isvalid(c"a\x7f".as_ptr()), 0);
-        assert_eq!(utf8_isvalid(c"\xff".as_ptr()), 0);
-        assert_eq!(utf8_isvalid(c"\xc3".as_ptr()), 0);
-    }
+    assert_eq!(utf8_isvalid(c"abc"), 1);
+    assert_eq!(utf8_isvalid(c"a\xc3\xa9b"), 1);
+    assert_eq!(utf8_isvalid(c""), 1);
+    assert_eq!(utf8_isvalid(c"a\x01b"), 0);
+    assert_eq!(utf8_isvalid(c"a\x7f"), 0);
+    assert_eq!(utf8_isvalid(c"\xff"), 0);
+    assert_eq!(utf8_isvalid(c"\xc3"), 0);
 }
 
 #[test]
 fn sanitizing_replaces_everything_that_is_not_plain_ascii() {
     let _guard = exclusive();
-    unsafe {
-        assert_eq!(utf8_sanitize(c"abc".as_ptr()).as_bytes(), b"abc");
-        assert_eq!(utf8_sanitize(c"a\x01b\x7f".as_ptr()).as_bytes(), b"a_b_");
-        assert_eq!(utf8_sanitize(c"a\xc3\xa9".as_ptr()).as_bytes(), b"a_");
-        assert_eq!(
-            utf8_sanitize(c"\xf0\x9f\x98\x80".as_ptr()).as_bytes(),
-            b"__"
-        );
-        assert_eq!(utf8_sanitize(c"\xc3".as_ptr()).as_bytes(), b"_");
-        assert_eq!(utf8_sanitize(c"".as_ptr()).as_bytes(), b"");
-    }
+    assert_eq!(utf8_sanitize(c"abc").as_bytes(), b"abc");
+    assert_eq!(utf8_sanitize(c"a\x01b\x7f").as_bytes(), b"a_b_");
+    assert_eq!(utf8_sanitize(c"a\xc3\xa9").as_bytes(), b"a_");
+    assert_eq!(utf8_sanitize(c"\xf0\x9f\x98\x80").as_bytes(), b"__");
+    assert_eq!(utf8_sanitize(c"\xc3").as_bytes(), b"_");
+    assert_eq!(utf8_sanitize(c"").as_bytes(), b"");
 }
 
-/// `utf8_strvis` into a buffer of the size its own callers allocate.
+/// The visible form produced by `utf8_strvis`.
 fn strvis(src: &[u8], flag: c_int) -> Vec<u8> {
-    unsafe {
-        let mut dst = vec![0u8; src.len() * 4 + 1];
-        let len = utf8_strvis(
-            dst.as_mut_ptr().cast::<c_char>(),
-            src.as_ptr().cast::<c_char>(),
-            src.len() as size_t,
-            flag,
-        );
-        dst.truncate(len as usize);
-        dst
-    }
+    utf8_strvis(src, flag)
 }
 
 #[test]
@@ -571,4 +559,121 @@ fn the_visible_form_is_allocated_to_fit() {
 
     let dst = utf8_stravisx(b"a", VIS_OCTAL);
     assert_eq!(dst.as_bytes(), b"a");
+}
+
+#[test]
+fn visual_decode_returns_bytes_and_rejects_bad_syntax() {
+    assert_eq!(RustUtf8VisModel.decode(c"a\\nb"), Some(b"a\nb".to_vec()));
+    assert_eq!(RustUtf8VisModel.decode(c"a\\0b"), Some(b"a\0b".to_vec()));
+    assert_eq!(RustUtf8VisModel.decode(c"a\\z"), None);
+}
+
+#[test]
+fn character_store_exhaustion_keeps_existing_identities_and_both_indexes() {
+    let mut store = Utf8Store::new();
+    store.next_index = UTF8_INDEX_END - 1;
+    let last = utf8_stored_of("😀".as_bytes());
+    let rejected = utf8_stored_of("😁".as_bytes());
+    assert_eq!(store.intern(last), Some((UTF8_INDEX_END - 1, true)));
+    assert_eq!(store.intern(rejected), None);
+    assert_eq!(store.intern(rejected), None);
+    assert_eq!(store.intern(last), Some((UTF8_INDEX_END - 1, false)));
+    assert_eq!(store.by_data.len(), 1);
+    assert_eq!(store.by_index.get(&(UTF8_INDEX_END - 1)), Some(&last));
+}
+
+#[test]
+fn character_store_shares_consistent_ids_across_concurrent_callers() {
+    let _guard = exclusive();
+    let threads: Vec<_> = (0..8)
+        .map(|offset| {
+            std::thread::spawn(move || {
+                let mut packed = Vec::new();
+                for n in 0..128 {
+                    let codepoint = char::from_u32(0x1f600 + (n + offset) % 32).unwrap();
+                    let mut bytes = [0; 4];
+                    let text = codepoint.encode_utf8(&mut bytes);
+                    let ud = filled(text.as_bytes(), 2);
+                    let (state, uc) = unsafe { utf8_from_data(&ud) };
+                    assert_eq!(state, UTF8_DONE);
+                    packed.push((uc, bytes));
+                }
+                packed
+            })
+        })
+        .collect();
+    for thread in threads {
+        for (uc, bytes) in thread.join().unwrap() {
+            let mut ud = utf8_data::default();
+            utf8_to_data(uc, &mut ud);
+            assert_eq!(&ud.data[..4], &bytes);
+        }
+    }
+    let store = UTF8_STORE.lock().unwrap();
+    assert_eq!(store.by_data.len(), 32);
+    assert_eq!(store.by_index.len(), 32);
+    for (data, index) in &store.by_data {
+        assert_eq!(store.by_index.get(index), Some(data));
+    }
+}
+
+#[test]
+fn width_configuration_and_suppression_are_thread_local() {
+    let _guard = exclusive();
+    utf8_update_width_cache([c"U+1F600=1".to_owned()]);
+    without_width(|| {
+        std::thread::spawn(|| {
+            assert!(!UTF8_NO_WIDTH.get());
+            assert_eq!(utf8_find_in_width_cache(0x1f600), None);
+            utf8_update_width_cache([c"U+1F600=2".to_owned()]);
+            assert_eq!(utf8_find_in_width_cache(0x1f600), Some(2));
+        })
+        .join()
+        .unwrap();
+        assert!(UTF8_NO_WIDTH.get());
+        assert_eq!(utf8_find_in_width_cache(0x1f600), Some(1));
+    });
+    assert!(!UTF8_NO_WIDTH.get());
+}
+
+#[test]
+fn width_suppression_restores_nested_and_unwound_state() {
+    std::thread::spawn(|| {
+        assert!(!UTF8_NO_WIDTH.get());
+        without_width(|| {
+            assert!(UTF8_NO_WIDTH.get());
+            without_width(|| assert!(UTF8_NO_WIDTH.get()));
+            assert!(UTF8_NO_WIDTH.get());
+            let failed = std::panic::catch_unwind(|| without_width(|| panic!("parser failure")));
+            assert!(failed.is_err());
+            assert!(UTF8_NO_WIDTH.get());
+        });
+        assert!(!UTF8_NO_WIDTH.get());
+        let failed = std::panic::catch_unwind(|| without_width(|| panic!("parser failure")));
+        assert!(failed.is_err());
+        assert!(!UTF8_NO_WIDTH.get());
+    })
+    .join()
+    .unwrap();
+}
+
+#[test]
+fn codepoint_parser_borrows_the_suffix_and_preserves_c_numeric_forms() {
+    let text = c"U+ +0x41-U+42";
+    let (first, rest) = utf8_parse_codepoint(text).unwrap();
+    assert_eq!(first, 0x41);
+    assert_eq!(rest, c"-U+42");
+    assert_eq!(
+        utf8_parse_codepoint(c"U+\t0042trailing"),
+        Some((0x42, c"trailing"))
+    );
+    assert_eq!(utf8_parse_codepoint(c"U+42"), Some((0x42, c"")));
+    assert_eq!(utf8_parse_codepoint(c"U+0"), None);
+    assert_eq!(utf8_parse_codepoint(c"U+-1"), None);
+    assert_eq!(utf8_parse_codepoint(c"U+FFFFFFFFFFFFFFFFFFFFFFFF"), None);
+}
+
+/// The visible form of `src` up to its terminator.
+pub(crate) fn utf8_stravis(src: &CStr, flag: core::ffi::c_int) -> CString {
+    utf8_stravisx(src.to_bytes(), flag)
 }

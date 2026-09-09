@@ -8,6 +8,7 @@
 //! structs the way the fixtures do. Nothing here calls `fatal` and nothing
 //! touches a real pane's data path.
 
+use crate::WindowPane;
 use crate::control::{
     BUFFER_EOL_ANY, BUFFER_EOL_CRLF, BUFFER_EOL_CRLF_STRICT, BUFFER_EOL_LF, BUFFER_EOL_NUL,
     CLIENT_CONTROL_NOOUTPUT, CLIENT_CONTROL_PAUSEAFTER, CLIENT_DEAD, CLIENT_EXIT, CLIENT_SUSPENDED,
@@ -35,9 +36,11 @@ use crate::control::{
     control_remove_sub, control_reset_offsets, control_set_pane_off, control_set_pane_on,
     control_state, control_write,
 };
+use crate::pane_identity::PaneIdentity;
 use crate::reactor::Timer;
 use crate::tests::test_fixtures::{StreamBuffer, globals, zeroed_client, zeroed_pane};
 use crate::types::*;
+use crate::{PaneOutputOffset, RustPaneOutputOffset};
 use ::std::ffi::CString;
 
 // ---------------------------------------------------------------------------
@@ -50,7 +53,7 @@ use ::std::ffi::CString;
 struct FakeControl {
     client: ClientRef,
     _bev: StreamBuffer,
-    _guard: ::std::sync::MutexGuard<'static, ()>,
+    _guard: std::sync::MutexGuard<'static, ()>,
 }
 
 impl FakeControl {
@@ -59,11 +62,11 @@ impl FakeControl {
         let bev = StreamBuffer::new();
         let mut state = Box::new(control_state::default());
         state.write_event = bev.ptr();
-        state.read_event = crate::reactor::Stream::NONE;
+        state.read_event = Stream::NONE;
         let mut client = zeroed_client();
-        client.control_state = Some(state);
+        (unsafe { client.as_client_mut() }).control_state = Some(state);
         // give the client a name so log_debug has something to print
-        client.name = Some(CString::new("fake").unwrap());
+        (unsafe { client.as_client_mut() }).name = Some(CString::new("fake").unwrap());
         FakeControl {
             client,
             _bev: bev,
@@ -72,13 +75,12 @@ impl FakeControl {
     }
 
     fn ptr(&mut self) -> *mut client {
-        &raw mut *self.client
+        unsafe { self.client.as_client_mut() }
     }
 
     /// The control state the client owns.
     fn state(&mut self) -> *mut control_state {
-        &raw mut **self
-            .client
+        &raw mut **(unsafe { self.client.as_client_mut() })
             .control_state
             .as_mut()
             .expect("the client keeps its control state")
@@ -99,7 +101,7 @@ impl Drop for FakeControl {
             (*cs).all_blocks.clear();
             // free any manually inserted panes (control_reset_offsets would
             // normally do this, but tests may not call it)
-            for (_, cp) in ::core::mem::take(&mut (*cs).panes) {
+            for (_, cp) in core::mem::take(&mut (*cs).panes) {
                 drop(cp);
             }
         }
@@ -270,11 +272,11 @@ fn empty_control_state_starts_with_no_panes_blocks_or_subs() {
 fn all_done_is_true_when_nothing_is_queued_and_false_otherwise() {
     let mut fc = FakeControl::new();
     unsafe {
-        assert_eq!(control_all_done(fc.ptr()), 1, "empty state is done");
+        assert_eq!(control_all_done(&*fc.ptr()), 1, "empty state is done");
         // write a line – goes straight to the evbuffer because all_blocks is empty
-        control_write(fc.ptr(), c"hello".as_ptr(), &[]);
+        control_write(&mut *fc.ptr(), c"hello", &[]);
         // now the output buffer is non-empty, so not done
-        assert_eq!(control_all_done(fc.ptr()), 0);
+        assert_eq!(control_all_done(&*fc.ptr()), 0);
         // draining is done by reading via written(), but the evbuffer still
         // holds the data until the loop drains it; control_all_done still sees it
         let data = fc.written();
@@ -282,7 +284,7 @@ fn all_done_is_true_when_nothing_is_queued_and_false_otherwise() {
         // evbuffer still reports the length as seen by control_all_done?
         // StreamBuffer keeps the evbuffer length; written() only tracks a cursor,
         // so control_all_done still returns 0
-        assert_eq!(control_all_done(fc.ptr()), 0);
+        assert_eq!(control_all_done(&*fc.ptr()), 0);
     }
 }
 
@@ -294,7 +296,7 @@ fn all_done_is_true_when_nothing_is_queued_and_false_otherwise() {
 fn control_write_goes_immediately_when_no_blocks_are_queued() {
     let mut fc = FakeControl::new();
     unsafe {
-        control_write(fc.ptr(), c"%%hello %u".as_ptr(), crate::fmt_args![42u32]);
+        control_write(&mut *fc.ptr(), c"%%hello %u", crate::fmt_args![42u32]);
         let data = fc.written();
         assert_eq!(data, b"%hello 42\n");
         // no block was queued
@@ -309,6 +311,7 @@ fn control_write_queues_when_blocks_are_pending() {
         // fabricate a pending block so the next write is queued
         let cs = fc.state();
         let cb_owned = Box::new(crate::control::control_block {
+            id: 0,
             size: 0,
             line: Some(c"queued".to_owned()),
             t: 0,
@@ -317,7 +320,7 @@ fn control_write_queues_when_blocks_are_pending() {
         (*cs).all_blocks.push(cb_owned);
 
         // now a write should be queued, not emitted
-        control_write(fc.ptr(), c"second".as_ptr(), &[]);
+        control_write(&mut *fc.ptr(), c"second", &[]);
         assert_eq!(
             fc.written(),
             Vec::<u8>::new(),
@@ -328,9 +331,9 @@ fn control_write_queues_when_blocks_are_pending() {
             2,
             "the second block is behind the first"
         );
-        assert!(::core::ptr::eq(&raw const *(*cs).all_blocks[0], cb));
+        assert!(core::ptr::eq(&raw const *(*cs).all_blocks[0], cb));
         // all_done must be false while blocks are queued
-        assert_eq!(control_all_done(fc.ptr()), 0);
+        assert_eq!(control_all_done(&*fc.ptr()), 0);
     }
 }
 
@@ -346,8 +349,8 @@ fn reset_offsets_clears_panes_and_pending_list() {
         // insert a dummy pane directly into the map
         let mut cp_box = Box::new(crate::control::control_pane {
             pane: 99,
-            offset: window_pane_offset { used: 0 },
-            queued: window_pane_offset { used: 0 },
+            offset: RustPaneOutputOffset::default(),
+            queued: RustPaneOutputOffset::default(),
             flags: 0,
             pending_flag: 0,
             blocks: crate::control::control_pane_blocks::new(),
@@ -355,9 +358,9 @@ fn reset_offsets_clears_panes_and_pending_list() {
         let cp = &raw mut *cp_box;
         (*cs).panes.insert(99, cp_box);
         (*cs).pending_count = 1;
-        (*cs).pending_list.push(cp);
+        (*cs).pending_list.push(std::ptr::NonNull::new(cp).unwrap());
 
-        control_reset_offsets(fc.ptr());
+        control_reset_offsets(&mut *fc.ptr());
 
         assert!((*cs).panes.is_empty(), "panes cleared");
         assert!((*cs).pending_list.is_empty(), "pending list cleared");
@@ -373,18 +376,18 @@ fn reset_offsets_clears_panes_and_pending_list() {
 fn pane_offset_respects_nooutput_and_missing_pane() {
     let mut fc = FakeControl::new();
     let mut wp = zeroed_pane();
-    wp.id = 1;
+    wp.set_pane_id(1);
     unsafe {
         // NOOUTPUT flag forces off=0 and null return
         (*fc.ptr()).flags |= CLIENT_CONTROL_NOOUTPUT as u64;
-        let (ret, off) = control_pane_offset(fc.ptr(), &raw mut *wp);
-        assert!(ret.is_null());
+        let (ret, off) = control_pane_offset(&*fc.ptr(), &*wp);
+        assert!(ret.is_none());
         assert_eq!(off, 0);
 
         // without the flag but with no pane registered, same result
         (*fc.ptr()).flags &= !(CLIENT_CONTROL_NOOUTPUT as u64);
-        let (ret, off) = control_pane_offset(fc.ptr(), &raw mut *wp);
-        assert!(ret.is_null());
+        let (ret, off) = control_pane_offset(&*fc.ptr(), &*wp);
+        assert!(ret.is_none());
         assert_eq!(off, 0);
     }
 }
@@ -393,14 +396,14 @@ fn pane_offset_respects_nooutput_and_missing_pane() {
 fn control_pane_state_transitions() {
     let mut fc = FakeControl::new();
     let mut wp = zeroed_pane();
-    wp.id = 5;
-    wp.offset = window_pane_offset { used: 100 };
+    wp.set_pane_id(5);
+    *wp.offset_mut() = RustPaneOutputOffset::at(100);
     unsafe {
-        control_set_pane_off(fc.ptr(), &raw mut *wp);
-        control_set_pane_on(fc.ptr(), &raw mut *wp);
+        control_set_pane_off(&mut *fc.ptr(), &*wp);
+        control_set_pane_on(&mut *fc.ptr(), &*wp);
 
-        control_pause_pane(fc.ptr(), &raw mut *wp);
-        control_continue_pane(fc.ptr(), &raw mut *wp);
+        control_pause_pane(&mut *fc.ptr(), &*wp);
+        control_continue_pane(&mut *fc.ptr(), &*wp);
     }
 }
 
@@ -409,16 +412,16 @@ fn control_subs_add_and_remove() {
     let mut fc = FakeControl::new();
     unsafe {
         control_add_sub(
-            fc.ptr(),
-            c"sub1".as_ptr(),
-            crate::control::CONTROL_SUB_SESSION,
+            &mut *fc.ptr(),
+            c"sub1",
+            CONTROL_SUB_SESSION,
             0,
-            c"#{session_name}".as_ptr(),
+            c"#{session_name}",
         );
 
-        control_ready(fc.ptr());
-        control_discard(fc.ptr());
+        control_ready(&*fc.ptr());
+        control_discard(&mut *fc.ptr());
 
-        control_remove_sub(fc.ptr(), c"sub1".as_ptr());
+        control_remove_sub(&mut *fc.ptr(), c"sub1");
     }
 }

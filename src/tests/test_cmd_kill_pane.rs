@@ -1,14 +1,15 @@
 use super::*;
+use crate::pane_identity::PaneIdentity;
 use crate::tests::test_fixtures::{Item, Target, ensure_reactor, globals};
-use crate::window::window_get_active;
-use crate::window::{window_add_pane, window_count_panes, window_panes_first, window_panes_last};
+use crate::window::window_active_pane;
+use crate::window::{window_add_pane, window_count_panes};
 
 /// Runs the item's parsed command through the entry's exec hook, the way
 /// the command queue would.
 fn run(item: &mut Item) -> cmd_retval {
     unsafe {
-        let e = &raw const cmd_kill_pane_entry;
-        ((*e).exec)(&*item.cmd(), item.ptr())
+        let e = &cmd_kill_pane_entry;
+        item.with_command(|command, item| (e.exec)(command, item))
     }
 }
 
@@ -25,33 +26,57 @@ fn with_a_every_other_pane_of_the_window_is_removed_and_freed() {
     let _guard = globals();
     ensure_reactor();
     let mut t = Target::new(80, 24);
-    let wl = t.winlink(0);
-    let w = t.window(0);
-    let target = t.pane(0);
+    let wl = t.state().winlink_ref().unwrap();
+    let mut w = t.state().window().unwrap();
+    let target = t.state().pane_list_ref().unwrap();
 
     let mut item = Item::new().with_args(c"kill-pane -a").targeting(&mut t);
     unsafe {
-        let other = window_add_pane(w, target, 100, 0);
-        assert!(!other.is_null());
-        assert_eq!(window_count_panes(w, 1), 2);
-        assert_eq!((*wl).window(), w);
-        assert_eq!(
-            window_get_active(w),
-            target,
+        let other = window_add_pane(&mut w.as_window_mut(), Some(&target), 100, 0).id();
+        assert!(
+            w.as_window()
+                .panes
+                .iter()
+                .any(|pane| pane.pane_id() == other)
+        );
+        assert_eq!(window_count_panes(&w.as_window(), 1), 2);
+        assert!(wl.get().unwrap().window_handle().unwrap().ptr_eq(&w));
+        assert!(
+            w.active_pane().is_some_and(|pane| pane.ptr_eq(&target)),
             "the fixture pane is the active one"
         );
 
         assert_eq!(run(&mut item), CMD_RETURN_NORMAL);
 
         assert_eq!(
-            window_count_panes(w, 1),
+            window_count_panes(&w.as_window(), 1),
             1,
             "the sibling was removed from the window"
         );
-        assert_eq!(window_panes_first(w), target);
-        assert_eq!(window_panes_last(w), target);
-        assert_eq!((*w).z_index, vec![(*target).id]);
-        assert_eq!(window_get_active(w), target, "the target kept the window");
+        assert!(
+            w.as_window()
+                .panes
+                .first()
+                .is_some_and(|owner| owner.downgrade().ptr_eq(&target))
+        );
+        assert!(
+            w.as_window()
+                .panes
+                .last()
+                .is_some_and(|owner| owner.downgrade().ptr_eq(&target))
+        );
+        assert_eq!(
+            w.as_window()
+                .z_index
+                .iter()
+                .map(|pane| pane.id())
+                .collect::<Vec<_>>(),
+            vec![target.pane_id()]
+        );
+        assert!(
+            w.active_pane().is_some_and(|pane| pane.ptr_eq(&target)),
+            "the target kept the window"
+        );
     }
 }
 
@@ -69,23 +94,44 @@ fn without_a_the_target_pane_alone_is_killed() {
 
     let mut item = Item::new().with_args(c"kill-pane");
     unsafe {
-        let doomed = window_add_pane(w, kept, 100, 0);
-        assert!(!doomed.is_null());
-        assert_eq!(window_count_panes(w, 1), 2);
+        let doomed = window_add_pane(
+            &mut *w,
+            crate::window::window_pane_ref_of(&*kept).as_ref(),
+            100,
+            0,
+        )
+        .id();
+        assert!((*w).panes.iter().any(|pane| pane.pane_id() == doomed));
+        assert_eq!(window_count_panes(&mut *w, 1), 2);
 
         let mut fs = t.state();
-        fs.set_pane(doomed);
+        fs.wp_ref = crate::window::window_pane_find_by_id(doomed);
         (*item.ptr()).target = fs;
 
         assert_eq!(run(&mut item), CMD_RETURN_NORMAL);
 
-        assert_eq!(window_count_panes(w, 1), 1);
-        assert_eq!(window_panes_first(w), kept);
-        assert_eq!(window_panes_last(w), kept);
-        assert_eq!((*w).z_index, vec![(*kept).id]);
+        assert_eq!(window_count_panes(&mut *w, 1), 1);
+        assert!((*w).panes.first().is_some_and(|owner| {
+            owner
+                .get()
+                .is_some_and(|pane| core::ptr::addr_eq(pane, kept))
+        }));
+        assert!((*w).panes.last().is_some_and(|owner| {
+            owner
+                .get()
+                .is_some_and(|pane| core::ptr::addr_eq(pane, kept))
+        }));
         assert_eq!(
-            window_get_active(w),
-            kept,
+            (*w).z_index
+                .iter()
+                .map(|pane| pane.id())
+                .collect::<Vec<_>>(),
+            vec![(*kept).pane_id()]
+        );
+        assert!(
+            window_active_pane(&*w).is_some_and(|pane| pane
+                .get()
+                .is_some_and(|active| core::ptr::addr_eq(active, kept))),
             "the window kept its active pane"
         );
     }

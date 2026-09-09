@@ -1,20 +1,43 @@
 use crate::ffi::forkpty;
 pub use crate::types::*;
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
-pub fn getptmfd() -> ::core::ffi::c_int {
-    2147483647 as ::core::ffi::c_int
+pub fn getptmfd() -> core::ffi::c_int {
+    2147483647 as core::ffi::c_int
 }
+
+pub struct FdForkptyResult {
+    pub pid: pid_t,
+    pub master_fd: core::ffi::c_int,
+    pub tty_name: [u8; 32],
+}
+
 pub unsafe fn fdforkpty(
-    _ptmfd: ::core::ffi::c_int,
-    mut master: *mut ::core::ffi::c_int,
-    mut name: *mut ::core::ffi::c_char,
-    mut tio: *mut termios,
-    mut ws: *mut winsize,
-) -> pid_t {
-    unsafe { forkpty(master, name, tio, ws) as pid_t }
+    _ptmfd: core::ffi::c_int,
+    tio: Option<&termios>,
+    ws: Option<&winsize>,
+) -> FdForkptyResult {
+    let mut master_fd = 0;
+    let mut tty_name = [0; 32];
+    let pid = unsafe {
+        forkpty(
+            &raw mut master_fd,
+            tty_name.as_mut_ptr().cast(),
+            tio.map_or(core::ptr::null(), |tio| tio as *const termios),
+            ws.map_or(core::ptr::null(), |ws| ws as *const winsize),
+        ) as pid_t
+    };
+    FdForkptyResult {
+        pid,
+        master_fd,
+        tty_name,
+    }
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;
 
 #[cfg(test)]
 #[path = "../tests/test_compat_fdforkpty.rs"]
 mod tests;
+
+#[cfg(test)]
+pub use crate::consts::INT_MAX;
+
+#[cfg(test)]
+pub use crate::consts::__INT_MAX__;

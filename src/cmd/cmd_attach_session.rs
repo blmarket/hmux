@@ -21,56 +21,30 @@
 //! `-r` can refuse a read-only client, so a refused attach leaves both behind;
 //! and the client's `last_session` is written before either arm can fail.
 //!
-//! The server's client list is walked through its own links, since `client` is
-//! the crate's own type and every other module reads the same list.
-//!
-//! Coverage exemptions: the `MSG_READY` sent to a client that is not a control
-//! client. `server_client_open` waives the terminal only for control clients,
-//! so reaching that send means having taken a real terminal through `tty_open`
-//! and having a live peer to send to.
-use crate::arguments::{args_get, args_has};
-use crate::cfg::{cfg_finished, cfg_show_causes};
+//! Detaching walks the live client list, as tmux does when recording pending exits.
+//! The previous session is also retained until the attachment command returns.
+
+use crate::arguments::{args_get_str, args_has};
+use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
 use crate::cmd::cmd_get_args;
-use crate::cmd::find::{cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_target};
-use crate::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags};
-use crate::environ::environ_update;
+use crate::cmd::find::cmd_find_target;
+
 use crate::ffi::getuid;
 use crate::fmt_args;
-use crate::format::format_single;
-use crate::notify::notify_client;
-use crate::proc::{proc_get_peer_uid, proc_send};
-use crate::server::client_set_last_session;
+use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};
 use crate::server::client_walk;
-use crate::server::{
-    server_client_check_nested, server_client_detach, server_client_open, server_client_set_flags,
-    server_client_set_key_table, server_client_set_session,
-};
-use crate::session::{
-    session_environ, session_options, session_set_current, session_set_cwd, sessions_empty,
-};
+use crate::session::sessions_empty;
 pub use crate::types::*;
-use crate::window::window_set_active_pane;
-use ::core::ffi::{CStr, c_char, c_int};
-use ::core::ptr::null;
+
+pub use crate::consts::{
+    CLIENT_READONLY, CMD_FIND_PANE, CMD_FIND_PREFER_UNATTACHED, CMD_FIND_SESSION, CMD_READONLY,
+    CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_STARTSERVER, CMDQ_STATE_REPEAT, MSG_DETACH,
+    MSG_DETACHKILL,
+};
+use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
-pub const MSG_DETACHKILL: msgtype = 202;
-pub const MSG_DETACH: msgtype = 201;
-pub const MSG_READY: msgtype = 207;
-pub const CLIENT_EXIT_DETACH: client_exit_type = 2;
-pub const CMD_FIND_SESSION: cmd_find_type = 2;
-pub const CMD_FIND_WINDOW: cmd_find_type = 1;
-pub const CMD_FIND_PANE: cmd_find_type = 0;
-pub const CMD_RETURN_NORMAL: cmd_retval = 0;
-pub const CMD_RETURN_ERROR: cmd_retval = -1;
-pub const CMD_FIND_PREFER_UNATTACHED: c_int = 0x1;
-pub const CMDQ_STATE_REPEAT: c_int = 0x1;
-pub const CMD_STARTSERVER: c_int = 0x1;
-pub const CMD_READONLY: c_int = 0x2;
-pub const CLIENT_ATTACHED: c_int = 0x80;
-pub const CLIENT_READONLY: c_int = 0x800;
-pub const CLIENT_CONTROL: c_int = 0x2000;
-pub const CLIENT_IGNORESIZE: c_int = 0x20000;
-pub(crate) static cmd_attach_session_entry: cmd_entry = cmd_entry {
+
+pub(crate) static cmd_attach_session_entry: RustCommandEntry = RustCommandEntry {
     name: c"attach-session",
     alias: Some(c"attach"),
     args: args_parse_t {
@@ -94,18 +68,19 @@ pub(crate) static cmd_attach_session_entry: cmd_entry = cmd_entry {
     exec: cmd_attach_session_exec,
 };
 
-/// What one of the server's walks answered, as nothing once it has run out.
-fn walked<T>(p: *mut T) -> Option<*mut T> {
-    if p.is_null() { None } else { Some(p) }
-}
-
 /// Sends every client of `s` other than `c` away with `msgtype`, which is what
 /// `-d` and `-x` ask for. A client attached to something else, and the one
 /// doing the attaching, are left alone.
-unsafe fn detach_others(c: *mut client, s: *mut session, msgtype: msgtype) {
+unsafe fn detach_others(c: &ClientRef, s: &SessionRef, msgtype: msgtype) {
     unsafe {
-        for c_loop in client_walk().filter(|c_loop| (**c_loop).session == s && *c_loop != c) {
-            server_client_detach(c_loop, msgtype);
+        for mut c_loop in client_walk() {
+            if !c_loop.ptr_eq(c)
+                && c_loop
+                    .attached_session()
+                    .is_some_and(|session| session.ptr_eq(s))
+            {
+                c_loop.detach(msgtype);
+            }
         }
     }
 }
@@ -113,38 +88,33 @@ unsafe fn detach_others(c: *mut client, s: *mut session, msgtype: msgtype) {
 /// Whether `tflag` names something inside a session rather than a session,
 /// which is what decides how much of the target has to be resolved. The C looks
 /// for the first `:` or `.` with `strcspn` and asks whether it landed on one.
-unsafe fn names_a_pane(tflag: *const c_char) -> bool {
-    !tflag.is_null()
-        && unsafe { CStr::from_ptr(tflag) }
-            .to_bytes()
-            .iter()
-            .any(|b| *b == b':' || *b == b'.')
+fn names_a_pane(tflag: Option<&CStr>) -> bool {
+    tflag.is_some_and(|tflag| tflag.to_bytes().iter().any(|b| *b == b':' || *b == b'.'))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn cmd_attach_session(
-    item: *mut cmdq_item,
-    tflag: *const c_char,
+    item: &cmdq_item,
+    tflag: Option<&CStr>,
     dflag: c_int,
     xflag: c_int,
     rflag: c_int,
-    cflag: *const c_char,
+    cflag: Option<&CStr>,
     Eflag: c_int,
-    fflag: *const c_char,
+    fflag: Option<&CStr>,
 ) -> cmd_retval {
     unsafe {
         if sessions_empty() {
-            cmdq_error(item, c"no sessions".as_ptr(), fmt_args![]);
+            item.error(c"no sessions", fmt_args![]);
             return CMD_RETURN_ERROR;
         }
 
-        let c = cmdq_get_client(&*item);
-        if c.is_null() {
+        let Some(mut c) = item.client() else {
             return CMD_RETURN_NORMAL;
-        }
-        if server_client_check_nested(c) != 0 {
-            cmdq_error(
-                item,
-                c"sessions should be nested with care, unset $TMUX to force".as_ptr(),
+        };
+        if c.is_nested() {
+            item.error(
+                c"sessions should be nested with care, unset $TMUX to force",
                 fmt_args![],
             );
             return CMD_RETURN_ERROR;
@@ -159,49 +129,63 @@ pub unsafe fn cmd_attach_session(
         if cmd_find_target(&mut target, item, tflag, type_0, flags) != 0 {
             return CMD_RETURN_ERROR;
         }
-        let s = target.session();
-        let wl = target.winlink();
-        let wp = target.pane();
+        let mut session = target
+            .session()
+            .expect("a resolved attach target has a session");
+        let link = target.winlink_ref();
+        let pane = target.pane_list_ref();
 
-        if !wl.is_null() {
-            let current = cmdq_get_current(item);
-            if !wp.is_null() {
-                window_set_active_pane((*wp).window, wp, 1);
+        if let Some(link) = link.as_ref() {
+            if let Some(pane) = pane.as_ref()
+                && let Some(window) = pane.window()
+            {
+                window.set_active_pane(
+                    &crate::window::window_pane_find_by_id(pane.id())
+                        .expect("the selected pane exists"),
+                    1,
+                );
             }
-            session_set_current(s, wl);
-            match walked(wp) {
-                Some(wp) => cmd_find_from_winlink_pane(&mut *current, wl, wp, 0),
-                None => cmd_find_from_winlink(&mut *current, wl, 0),
+            session.set_current(Some(link.index()));
+            if link.window().is_some() {
+                item.state_ref().update_current_link(
+                    link,
+                    pane.as_ref().filter(|pane| pane.is_alive()),
+                    0,
+                );
             }
         }
 
-        if !cflag.is_null() {
-            let cwd = format_single(item, CStr::from_ptr(cflag), c, s, wl, wp);
-            session_set_cwd(s, cwd);
+        if let Some(cflag) = cflag {
+            let cwd = {
+                let mut ft = format_create_for_client(item.client().as_ref(), Some(item), 0, 0);
+                format_defaults_for_handles(
+                    &mut ft,
+                    Some(&c),
+                    Some(&session),
+                    link.as_ref(),
+                    pane.as_ref(),
+                );
+                format_expand(&mut ft, cflag)
+            };
+            session.set_cwd(cwd);
         }
-        if !fflag.is_null() {
-            server_client_set_flags(c, fflag);
+        if let Some(fflag) = fflag {
+            c.apply_flags(fflag);
         }
         if rflag != 0 {
-            if (*c).flags & CLIENT_READONLY as uint64_t != 0
-                && proc_get_peer_uid((*c).peer_ptr()) != getuid()
-            {
-                cmdq_error(item, c"client is read-only".as_ptr(), fmt_args![]);
+            if c.flags() & CLIENT_READONLY as uint64_t != 0 && (c.peer_handle()).uid() != getuid() {
+                item.error(c"client is read-only", fmt_args![]);
                 return CMD_RETURN_ERROR;
             }
-            (*c).flags |= (CLIENT_READONLY | CLIENT_IGNORESIZE) as uint64_t;
+            c.make_read_only();
         }
 
-        client_set_last_session(c, (*c).session);
-        let fresh = (*c).session.is_null();
+        let _last_session = c.remember_session();
+        let fresh = c.attached_session().is_none();
         if fresh {
             let mut cause: Option<CString> = None;
-            if server_client_open(c, &mut cause) != 0 {
-                cmdq_error(
-                    item,
-                    c"open terminal failed: %s".as_ptr(),
-                    fmt_args![cause.as_ref().map_or(null(), |cause| cause.as_ptr())],
-                );
+            if c.open_terminal(&mut cause) != 0 {
+                item.error(c"open terminal failed: %s", fmt_args![cause.as_deref()]);
                 return CMD_RETURN_ERROR;
             }
         }
@@ -212,42 +196,38 @@ pub unsafe fn cmd_attach_session(
             } else {
                 MSG_DETACH
             };
-            detach_others(c, s, msgtype);
+            detach_others(&c, &session, msgtype);
         }
         if Eflag == 0 {
-            environ_update(session_options(s), (*c).environ_ptr(), session_environ(s));
+            session.update_environment_from(&c);
         }
-        server_client_set_session(c, s);
-        if fresh || cmdq_get_flags(&*item) & CMDQ_STATE_REPEAT == 0 {
-            server_client_set_key_table(c, null());
+        c.set_session(Some(&session));
+        if fresh || item.flags() & CMDQ_STATE_REPEAT == 0 {
+            c.set_key_table(None);
         }
         if fresh {
-            if (*c).flags & CLIENT_CONTROL as uint64_t == 0 {
-                proc_send((*c).peer_ptr(), MSG_READY, -1, null(), 0);
-            }
-            notify_client(c"client-attached".as_ptr(), c);
-            (*c).flags |= CLIENT_ATTACHED as uint64_t;
+            c.finish_attachment();
         }
 
-        if cfg_finished != 0 {
-            cfg_show_causes(s);
+        if configuration_finished() {
+            cfg_show_causes_for_session(Some(&session));
         }
         CMD_RETURN_NORMAL
     }
 }
 
-unsafe fn cmd_attach_session_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
+unsafe fn cmd_attach_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
+    let args = cmd_get_args(self_0);
     unsafe {
-        let args = cmd_get_args(self_0);
         cmd_attach_session(
             item,
-            args_get(args, b't'),
+            args_get_str(args, b't'),
             args_has(args, b'd'),
             args_has(args, b'x'),
             args_has(args, b'r'),
-            args_get(args, b'c'),
+            args_get_str(args, b'c'),
             args_has(args, b'E'),
-            args_get(args, b'f'),
+            args_get_str(args, b'f'),
         )
     }
 }
@@ -255,3 +235,6 @@ unsafe fn cmd_attach_session_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_ret
 #[cfg(test)]
 #[path = "../tests/test_cmd_attach_session.rs"]
 mod tests;
+
+#[cfg(test)]
+pub use crate::consts::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_EXIT_DETACH, CLIENT_IGNORESIZE};

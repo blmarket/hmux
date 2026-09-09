@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import random
 import shlex
 import subprocess
 import tempfile
@@ -19,6 +20,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.events import Key
 from textual.screen import ModalScreen, Screen
+from textual.timer import Timer
 from textual.widgets import (
     Button,
     Checkbox,
@@ -46,7 +48,7 @@ from .model import (
     Repository,
     normalize_launch_agent,
 )
-from .quota import QuotaReport, QuotaService, QuotaWindow
+from .quota import DEFAULT_TTL_SECONDS, QuotaReport, QuotaService, QuotaWindow
 from .services import (
     AgentmonService,
     CommandError,
@@ -1789,6 +1791,14 @@ class QuotaScreen(ModalScreen):
     TRACK_COLOR = "#33414f"
     PACE_COLOR = "#4d7fa8"
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._refresh_timer: Timer | None = None
+        self._loading = False
+        self._forcing = False
+        self._pending_force = False
+        self._quota_closed = True
+
     def compose(self) -> ComposeResult:
         with Vertical(id="quota-dialog"):
             yield Label("Subscription quotas", classes="dialog-title")
@@ -1810,21 +1820,54 @@ class QuotaScreen(ModalScreen):
         return legend
 
     def on_mount(self) -> None:
-        self._load_report(False)
+        self._quota_closed = False
+        self._request_report()
 
-    @work(thread=True, exclusive=True, group="quota")
+    def on_unmount(self) -> None:
+        self._quota_closed = True
+        self._pending_force = False
+        self._stop_refresh_timer()
+
+    def _stop_refresh_timer(self) -> None:
+        if self._refresh_timer is not None:
+            self._refresh_timer.stop()
+            self._refresh_timer = None
+
+    def _request_report(self, force: bool = False) -> None:
+        if self._quota_closed:
+            return
+        self._stop_refresh_timer()
+        if self._loading:
+            self._pending_force |= force and not self._forcing
+            return
+        self._loading = True
+        self._forcing = force
+        if force:
+            self.query_one("#quota-meta", Static).update("Refreshing quota usage…")
+        self._load_report(force)
+
+    @work(thread=True, group="quota")
     def _load_report(self, force: bool) -> None:
-        report = self.app.quota_service.report(force=force)
-        self.app.call_from_thread(self._apply_report, report)
+        app = self.app
+        report = app.quota_service.report(force=force)
+        app.call_from_thread(self._apply_report, report)
 
     def _apply_report(self, report: QuotaReport) -> None:
-        if not self.is_mounted:
+        self._loading = False
+        if self._quota_closed or not self.is_mounted:
             return
         self.query_one("#quota-content", Static).update(self._render_report(report))
         fetched = report.fetched_at.astimezone().strftime("%H:%M:%S")
         self.query_one("#quota-meta", Static).update(
             Text(f"Fetched {fetched} · cached between refreshes", style="#8492a0")
         )
+        if self._pending_force:
+            self._pending_force = False
+            self._request_report(True)
+        else:
+            self._refresh_timer = self.set_timer(
+                DEFAULT_TTL_SECONDS + random.uniform(0, 30), self._request_report
+            )
 
     @classmethod
     def _render_report(cls, report: QuotaReport, now: datetime | None = None) -> Text:
@@ -1936,11 +1979,13 @@ class QuotaScreen(ModalScreen):
         return bar
 
     def action_close(self) -> None:
+        self._quota_closed = True
+        self._pending_force = False
+        self._stop_refresh_timer()
         self.dismiss()
 
     def action_refresh(self) -> None:
-        self.query_one("#quota-content", Static).update("Refreshing quota usage…")
-        self._load_report(True)
+        self._request_report(True)
 
 
 class DemoService(AgentmonService):
@@ -2263,7 +2308,7 @@ class AgentmonApp(App):
     def action_toggle_quotas(self) -> None:
         for existing in self.screen_stack:
             if isinstance(existing, QuotaScreen):
-                existing.dismiss()
+                existing.action_close()
                 return
         self.push_screen(QuotaScreen())
 

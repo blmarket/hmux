@@ -1,16 +1,5 @@
 use super::*;
-use crate::tests::test_fixtures::{Format, Item, Pane, Registry, Session, Window, globals};
-
-#[test]
-fn option_is_the_flag_text_or_nothing() {
-    let _guard = globals();
-    let mut item = Item::new().with_args(c"list-panes -F abc");
-    unsafe {
-        let args = cmd_get_args(&*item.cmd());
-        assert_eq!(option(args, b'F'), Some(c"abc"));
-        assert_eq!(option(args, b'f'), None);
-    }
-}
+use crate::tests::test_fixtures::{Format, Pane, Registry, Session, Window, globals};
 
 #[test]
 fn passes_is_true_without_a_filter_and_follows_the_filter_with_one() {
@@ -58,7 +47,7 @@ fn each_session_hands_over_every_registered_session_in_name_order() {
     let mut bee = Session::new(71, "b");
     let mut ay = Session::new(72, "a");
     assert_eq!(
-        each_session().count(),
+        SESSIONS.read().values().count(),
         0,
         "an empty server walks to nothing"
     );
@@ -66,7 +55,11 @@ fn each_session_hands_over_every_registered_session_in_name_order() {
     registry.add_session(&mut ay);
 
     assert_eq!(
-        each_session().map(|s| s.as_ptr()).collect::<Vec<_>>(),
+        SESSIONS
+            .read()
+            .values()
+            .map(|s| s.as_ptr())
+            .collect::<Vec<_>>(),
         vec![ay.ptr(), bee.ptr()]
     );
 }
@@ -81,23 +74,25 @@ fn sorted_panes_is_the_windows_panes_in_the_order_asked_for() {
     w.add_pane(&mut first);
     w.add_pane(&mut second);
     registry.add_window(&mut w);
-    registry.add_pane(&mut first);
-    registry.add_pane(&mut second);
 
     unsafe {
-        let mut crit = sort_criteria_t {
-            order: SORT_INDEX,
-            reversed: 0,
-            order_seq: None,
-        };
+        let mut crit = RustSortCriteria::new(SORT_INDEX, false);
         assert_eq!(
-            sorted_panes(w.ptr(), &mut crit),
-            &[first.ptr(), second.ptr()]
+            (w.handle())
+                .sorted_panes(&crit)
+                .iter()
+                .map(|pane| pane.id())
+                .collect::<Vec<_>>(),
+            [77, 78]
         );
-        crit.reversed = 1;
+        crit.set_reversed(true);
         assert_eq!(
-            sorted_panes(w.ptr(), &mut crit),
-            &[second.ptr(), first.ptr()]
+            (w.handle())
+                .sorted_panes(&crit)
+                .iter()
+                .map(|pane| pane.id())
+                .collect::<Vec<_>>(),
+            [78, 77]
         );
     }
 }

@@ -14,7 +14,7 @@
 
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::ffi::OsString;
+use std::ffi::{CString, OsString};
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -156,13 +156,6 @@ impl ProcessSource for FakeProcessSource {
         self.open_files.get(&pid).cloned().unwrap_or_default()
     }
 
-    fn read_span(&self, path: &Path, offset: u64, max_len: usize) -> Option<Vec<u8>> {
-        let content = self.file_contents.get(path)?;
-        let start = (offset as usize).min(content.len());
-        let end = (start + max_len).min(content.len());
-        Some(content[start..end].to_vec())
-    }
-
     fn file_len(&self, path: &Path) -> Option<u64> {
         self.file_contents
             .get(path)
@@ -180,19 +173,26 @@ impl ProcessSource for FakeProcessSource {
     fn environ(&self, pid: u32) -> Vec<(OsString, OsString)> {
         self.environ.get(&pid).cloned().unwrap_or_default()
     }
+
+    fn read_span(&self, path: &Path, offset: u64, max_len: usize) -> Option<Vec<u8>> {
+        let content = self.file_contents.get(path)?;
+        let start = (offset as usize).min(content.len());
+        let end = (start + max_len).min(content.len());
+        Some(content[start..end].to_vec())
+    }
 }
 
 /// One replayed observation: an optional window title and a screen tail.
 #[derive(Clone)]
 struct Frame {
-    title: Option<String>,
-    screen: String,
+    title: Option<CString>,
+    screen: CString,
 }
 
 fn frame(title: Option<&str>, screen: &str) -> Frame {
     Frame {
-        title: title.map(str::to_owned),
-        screen: screen.to_owned(),
+        title: title.map(|value| CString::new(value).expect("title")),
+        screen: CString::new(screen).expect("screen"),
     }
 }
 
@@ -253,7 +253,7 @@ impl PaneObservability for ScriptedPane {
         Ok(0)
     }
 
-    fn title(&self) -> io::Result<Option<String>> {
+    fn title(&self) -> io::Result<Option<CString>> {
         Ok(self.current().1.title)
     }
 }
@@ -442,7 +442,7 @@ fn claude_below_shell_is_detected_and_transitions_are_logged() {
 fn claude_session_id_is_read_from_the_newest_cwd_transcript() {
     let session_id = "df817fbe-b190-483c-ba9c-a4c5d2f9d04c";
     let cwd = PathBuf::from("/work/proj");
-    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let transcript_dir = claude::transcript_dir(&cwd).expect("HOME set in test environment");
 
     // Pane child (100) is a shell; claude (200) runs beneath it in `cwd`. The
     // newest transcript in the project directory names the live session; an older
@@ -499,12 +499,12 @@ fn claude_session_id_is_read_from_the_newest_cwd_transcript() {
     assert_eq!(status.pid, Some(200));
     assert_eq!(
         status.session_id.as_deref(),
-        Some(session_id),
+        Some(CString::new(session_id).expect("session id").as_c_str()),
         "the newest transcript in the cwd's project directory should be attributed"
     );
     assert_eq!(
         status.model.as_deref(),
-        Some("claude-fable-5"),
+        Some(c"claude-fable-5"),
         "the model last named in the session transcript should be published"
     );
 }
@@ -518,7 +518,7 @@ fn descendant_environment_stamp_names_the_session_exactly() {
     let mine = "22222222-2222-4222-8222-222222222222";
     let neighbour = "11111111-1111-4111-8111-111111111111";
     let cwd = PathBuf::from("/work/proj");
-    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let transcript_dir = claude::transcript_dir(&cwd).expect("HOME set in test environment");
     let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
     let neighbour_path = transcript_dir.join(format!("{neighbour}.jsonl"));
 
@@ -583,12 +583,12 @@ fn descendant_environment_stamp_names_the_session_exactly() {
     let status = snap.panes.get(&PaneId(0)).expect("status published");
     assert_eq!(
         status.session_id.as_deref(),
-        Some(mine),
+        Some(CString::new(mine).expect("session id").as_c_str()),
         "the stamp on a spawned process should outrank the newest-transcript guess"
     );
     assert_eq!(
         status.model.as_deref(),
-        Some("claude-opus-5"),
+        Some(c"claude-opus-5"),
         "the model must come from the stamped session's own transcript"
     );
 }
@@ -602,7 +602,7 @@ fn inherited_environment_stamp_from_another_agent_is_ignored() {
     let outer = "11111111-1111-4111-8111-111111111111";
     let mine = "22222222-2222-4222-8222-222222222222";
     let cwd = PathBuf::from("/work/proj");
-    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let transcript_dir = claude::transcript_dir(&cwd).expect("HOME set in test environment");
     let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
 
     // This pane's claude (200) was itself launched by another claude (900), so
@@ -655,10 +655,10 @@ fn inherited_environment_stamp_from_another_agent_is_ignored() {
     let status = snap.panes.get(&PaneId(0)).expect("status published");
     assert_eq!(
         status.session_id.as_deref(),
-        Some(mine),
+        Some(CString::new(mine).expect("session id").as_c_str()),
         "an inherited stamp owned by a different agent must not be attributed"
     );
-    assert_eq!(status.model.as_deref(), Some("claude-opus-5"));
+    assert_eq!(status.model.as_deref(), Some(c"claude-opus-5"));
 }
 
 /// A freshly started agent has no transcript of its own until its first turn
@@ -673,7 +673,7 @@ fn transcript_older_than_the_agent_is_not_adopted() {
     let neighbour = "11111111-1111-4111-8111-111111111111";
     let mine = "22222222-2222-4222-8222-222222222222";
     let cwd = PathBuf::from("/work/proj");
-    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let transcript_dir = claude::transcript_dir(&cwd).expect("HOME set in test environment");
     let neighbour_path = transcript_dir.join(format!("{neighbour}.jsonl"));
     let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
 
@@ -743,12 +743,12 @@ fn transcript_older_than_the_agent_is_not_adopted() {
     let status = snap.panes.get(&PaneId(0)).expect("status published");
     assert_eq!(
         status.session_id.as_deref(),
-        Some(mine),
+        Some(CString::new(mine).expect("session id").as_c_str()),
         "the agent's own transcript should be adopted once it exists"
     );
     assert_eq!(
         status.model.as_deref(),
-        Some("claude-opus-5"),
+        Some(c"claude-opus-5"),
         "the model published must come from this agent's own session"
     );
 }
@@ -763,7 +763,7 @@ fn same_cwd_sibling_transcript_does_not_steal_attribution() {
     let mine = "11111111-1111-4111-8111-111111111111";
     let sibling = "22222222-2222-4222-8222-222222222222";
     let cwd = PathBuf::from("/work/proj");
-    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let transcript_dir = claude::transcript_dir(&cwd).expect("HOME set in test environment");
     let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
     let sibling_path = transcript_dir.join(format!("{sibling}.jsonl"));
 
@@ -837,10 +837,10 @@ fn same_cwd_sibling_transcript_does_not_steal_attribution() {
     let status = snap.panes.get(&PaneId(0)).expect("status published");
     assert_eq!(
         status.session_id.as_deref(),
-        Some(mine),
+        Some(CString::new(mine).expect("session id").as_c_str()),
         "a growing attributed transcript must not be displaced by a sibling"
     );
-    assert_eq!(status.model.as_deref(), Some("claude-opus-5"));
+    assert_eq!(status.model.as_deref(), Some(c"claude-opus-5"));
 }
 
 /// The counterpart: when the pane's own agent starts a new session in the same
@@ -852,7 +852,7 @@ fn silent_transcript_yields_to_newer_one_growing_while_pane_works() {
     let old = "11111111-1111-4111-8111-111111111111";
     let new = "22222222-2222-4222-8222-222222222222";
     let cwd = PathBuf::from("/work/proj");
-    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let transcript_dir = claude::transcript_dir(&cwd).expect("HOME set in test environment");
     let old_path = transcript_dir.join(format!("{old}.jsonl"));
     let new_path = transcript_dir.join(format!("{new}.jsonl"));
 
@@ -910,10 +910,10 @@ fn silent_transcript_yields_to_newer_one_growing_while_pane_works() {
     let status = snap.panes.get(&PaneId(0)).expect("status published");
     assert_eq!(
         status.session_id.as_deref(),
-        Some(new),
+        Some(CString::new(new).expect("session id").as_c_str()),
         "sustained correlated growth must re-attribute the pane"
     );
-    assert_eq!(status.model.as_deref(), Some("claude-fable-5"));
+    assert_eq!(status.model.as_deref(), Some(c"claude-fable-5"));
 }
 
 /// A working agent writes its transcript in bursts: one long tool call leaves it
@@ -926,7 +926,7 @@ fn neighbour_streaming_through_a_tool_call_does_not_steal_attribution() {
     let mine = "11111111-1111-4111-8111-111111111111";
     let neighbour = "22222222-2222-4222-8222-222222222222";
     let cwd = PathBuf::from("/work/proj");
-    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let transcript_dir = claude::transcript_dir(&cwd).expect("HOME set in test environment");
     let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
     let neighbour_path = transcript_dir.join(format!("{neighbour}.jsonl"));
 
@@ -986,12 +986,12 @@ fn neighbour_streaming_through_a_tool_call_does_not_steal_attribution() {
     let status = snap.panes.get(&PaneId(0)).expect("status published");
     assert_eq!(
         status.session_id.as_deref(),
-        Some(mine),
+        Some(CString::new(mine).expect("session id").as_c_str()),
         "a tool call's silence must not hand the pane to a streaming neighbour"
     );
     assert_eq!(
         status.model.as_deref(),
-        Some("claude-fable-5"),
+        Some(c"claude-fable-5"),
         "the pane must keep reporting its own session's model"
     );
 }
@@ -1006,7 +1006,7 @@ fn stamped_session_is_not_displaced_by_a_streaming_neighbour() {
     let mine = "11111111-1111-4111-8111-111111111111";
     let neighbour = "22222222-2222-4222-8222-222222222222";
     let cwd = PathBuf::from("/work/proj");
-    let transcript_dir = super::claude::transcript_dir(&cwd).expect("HOME set in test environment");
+    let transcript_dir = claude::transcript_dir(&cwd).expect("HOME set in test environment");
     let mine_path = transcript_dir.join(format!("{mine}.jsonl"));
     let neighbour_path = transcript_dir.join(format!("{neighbour}.jsonl"));
 
@@ -1080,10 +1080,10 @@ fn stamped_session_is_not_displaced_by_a_streaming_neighbour() {
     let status = snap.panes.get(&PaneId(0)).expect("status published");
     assert_eq!(
         status.session_id.as_deref(),
-        Some(mine),
+        Some(CString::new(mine).expect("session id").as_c_str()),
         "an exactly identified session must not be replaced by a directory guess"
     );
-    assert_eq!(status.model.as_deref(), Some("claude-fable-5"));
+    assert_eq!(status.model.as_deref(), Some(c"claude-fable-5"));
 }
 
 /// Pi keeps one static title across its lifecycle, so its current TUI controls
@@ -1093,7 +1093,7 @@ fn stamped_session_is_not_displaced_by_a_streaming_neighbour() {
 fn pi_lifecycle_and_session_are_published() {
     let session_id = "019f9757-7c53-7898-a7d1-c8c780212888";
     let cwd = PathBuf::from("/work/proj");
-    let transcript_dir = super::pi::session_dir(&cwd).expect("HOME set in test environment");
+    let transcript_dir = pi::session_dir(&cwd).expect("HOME set in test environment");
     let source = FakeProcessSource::new(
         vec![(100, 1), (200, 100)],
         HashMap::from([
@@ -1143,11 +1143,81 @@ fn pi_lifecycle_and_session_are_published() {
         Some(&AgentStatus {
             agent: "pi",
             pid: Some(200),
-            session_id: Some(session_id.to_string()),
+            session_id: Some(CString::new(session_id).expect("session id")),
             model: None,
             state: AgentState::Idle,
         })
     );
+    assert_ordered(
+        &logs,
+        &["state=Idle", "state=Working", "state=Blocked", "state=Idle"],
+    );
+}
+
+/// An OpenCode process below the pane shell is attributed by its executable,
+/// and its TUI interrupt and permission controls drive the lifecycle.
+#[test]
+fn opencode_below_shell_is_detected_and_transitions_are_logged() {
+    let source = FakeProcessSource::new(
+        vec![(100, 1), (200, 100)],
+        HashMap::from([
+            (100u32, vec![OsString::from("zsh")]),
+            (
+                200u32,
+                vec![OsString::from("/run/current-system/sw/bin/opencode")],
+            ),
+        ]),
+        HashMap::from([(
+            200u32,
+            vec![
+                OsString::from("/run/current-system/sw/bin/opencode"),
+                OsString::from("--yolo"),
+            ],
+        )]),
+        true,
+    );
+    let pane = ScriptedPane::new(
+        100,
+        vec![
+            frame(
+                Some("OC | Executing tasks.md"),
+                "done\nctrl+p commands  • OpenCode 1.18.23",
+            ),
+            frame(Some("OC | Executing tasks.md"), "working\nesc interrupt"),
+            frame(
+                Some("OC | Executing tasks.md"),
+                "△ Permission required\n↑↓ select   enter confirm   esc dismiss",
+            ),
+            frame(
+                Some("OC | Executing tasks.md"),
+                "done\nctrl+p commands  • OpenCode 1.18.23",
+            ),
+        ],
+    );
+    let server = FakeServer { pane: pane.clone() };
+    let detectors = default_detectors();
+    let hub = StatusHub::new();
+
+    let logs = capture_logs(|| {
+        let mut panes = HashMap::new();
+        for _ in 0..pane.frames.len() {
+            poll(&server, &detectors, &source, Some(&hub), &mut panes);
+            pane.step();
+        }
+    });
+
+    assert_eq!(
+        hub.snapshot().panes.get(&PaneId(0)),
+        Some(&AgentStatus {
+            agent: "opencode",
+            pid: Some(200),
+            session_id: None,
+            model: None,
+            state: AgentState::Idle,
+        })
+    );
+    assert!(logs.contains("agent=Some(\"opencode\")"));
+    assert!(!logs.contains("agent=None"));
     assert_ordered(
         &logs,
         &["state=Idle", "state=Working", "state=Blocked", "state=Idle"],
@@ -1226,7 +1296,7 @@ fn agy_lifecycle_and_session_are_published() {
         Some(&AgentStatus {
             agent: "agy",
             pid: Some(200),
-            session_id: Some(session_id.to_string()),
+            session_id: Some(CString::new(session_id).expect("session id")),
             model: None,
             state: AgentState::Idle,
         })
@@ -1275,7 +1345,10 @@ fn resumed_codex_session_id_is_read_from_its_open_rollout() {
     let status = &hub.snapshot().panes[&PaneId(0)];
     assert_eq!(status.agent, "codex");
     assert_eq!(status.pid, Some(200));
-    assert_eq!(status.session_id.as_deref(), Some(session_id));
+    assert_eq!(
+        status.session_id.as_deref(),
+        Some(CString::new(session_id).expect("session id").as_c_str())
+    );
 }
 
 /// Non-interactive Codex has no TUI prompt or OSC lifecycle title. Its explicit

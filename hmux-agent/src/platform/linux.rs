@@ -4,6 +4,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
+use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::ptr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -30,10 +31,10 @@ impl OutputWakeup for EventFd {
                 libc::write(
                     self.0.as_raw_fd(),
                     (&value as *const u64).cast(),
-                    std::mem::size_of::<u64>(),
+                    size_of::<u64>(),
                 )
             };
-            if written == std::mem::size_of::<u64>() as isize {
+            if written == size_of::<u64>() as isize {
                 return Ok(());
             }
             if written >= 0 {
@@ -62,10 +63,10 @@ impl OutputWakeup for EventFd {
                 libc::read(
                     self.0.as_raw_fd(),
                     (&mut value as *mut u64).cast(),
-                    std::mem::size_of::<u64>(),
+                    size_of::<u64>(),
                 )
             };
-            if read == std::mem::size_of::<u64>() as isize {
+            if read == size_of::<u64>() as isize {
                 return Ok(());
             }
             if read >= 0 {
@@ -138,7 +139,7 @@ impl Platform for Linux {
 
     fn peer_uid(socket: BorrowedFd<'_>) -> Option<u32> {
         let mut credentials = unsafe { std::mem::zeroed::<libc::ucred>() };
-        let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+        let mut length = size_of::<libc::ucred>() as libc::socklen_t;
         let status = unsafe {
             libc::getsockopt(
                 socket.as_raw_fd(),
@@ -149,16 +150,6 @@ impl Platform for Linux {
             )
         };
         (status == 0).then_some(credentials.uid)
-    }
-
-    fn process_open_files(pid: u32) -> Vec<PathBuf> {
-        let Ok(entries) = fs::read_dir(format!("/proc/{pid}/fd")) else {
-            return Vec::new();
-        };
-        entries
-            .flatten()
-            .filter_map(|entry| fs::read_link(entry.path()).ok())
-            .collect()
     }
 
     fn process_table() -> Option<Vec<ProcessInfo>> {
@@ -202,7 +193,7 @@ impl Platform for Linux {
                 cmdline
                     .split(|byte| *byte == 0)
                     .filter(|arg| !arg.is_empty())
-                    .map(|arg| OsString::from(String::from_utf8_lossy(arg).as_ref()))
+                    .map(|arg| OsString::from_vec(arg.to_vec()))
                     .collect()
             })
             .unwrap_or_default()
@@ -210,6 +201,16 @@ impl Platform for Linux {
 
     fn process_cwd(pid: u32) -> Option<PathBuf> {
         fs::read_link(format!("/proc/{pid}/cwd")).ok()
+    }
+
+    fn process_open_files(pid: u32) -> Vec<PathBuf> {
+        let Ok(entries) = fs::read_dir(format!("/proc/{pid}/fd")) else {
+            return Vec::new();
+        };
+        entries
+            .flatten()
+            .filter_map(|entry| fs::read_link(entry.path()).ok())
+            .collect()
     }
 
     fn process_start_time(pid: u32) -> Option<SystemTime> {
@@ -409,7 +410,7 @@ mod tests {
                 libc::write(
                     report_write,
                     (&group_leader as *const libc::pid_t).cast(),
-                    std::mem::size_of::<libc::pid_t>(),
+                    size_of::<libc::pid_t>(),
                 );
                 loop {
                     libc::pause();
@@ -423,10 +424,10 @@ mod tests {
             libc::read(
                 report_read,
                 (&mut pgid as *mut libc::pid_t).cast(),
-                std::mem::size_of::<libc::pid_t>(),
+                size_of::<libc::pid_t>(),
             )
         };
-        let cwd = (read == std::mem::size_of::<libc::pid_t>() as isize).then(|| {
+        let cwd = (read == size_of::<libc::pid_t>() as isize).then(|| {
             let foreground = unsafe { libc::tcgetpgrp(master) };
             let cwd = Linux::pane_cwd(unsafe { BorrowedFd::borrow_raw(master) });
             (foreground, cwd)

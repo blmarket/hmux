@@ -16,6 +16,7 @@
 //! heuristic: an agent could log an unrelated structural `model` member, which
 //! is why values are validated as plausible model identifiers before use.
 
+use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
 use super::ProcessSource;
@@ -63,12 +64,9 @@ impl ModelScan {
     /// they name, or `None` when nothing new names one. The first call reads
     /// the whole file, so attaching to a long-running session still finds the
     /// model it last recorded.
-    pub(crate) fn advance(&mut self, source: &dyn ProcessSource) -> Option<String> {
+    pub(crate) fn advance(&mut self, source: &dyn ProcessSource) -> Option<CString> {
         let mut newest = None;
-        loop {
-            let Some(chunk) = source.read_span(&self.path, self.offset, SCAN_CHUNK) else {
-                break;
-            };
+        while let Some(chunk) = source.read_span(&self.path, self.offset, SCAN_CHUNK) {
             if chunk.is_empty() {
                 break;
             }
@@ -93,7 +91,7 @@ impl ModelScan {
 /// The last plausible model value named in `window`. An occurrence whose
 /// closing quote lies beyond the window (split across chunks) is skipped here
 /// and picked up whole on the next chunk via the carry.
-fn last_model_in(window: &[u8]) -> Option<String> {
+fn last_model_in(window: &[u8]) -> Option<CString> {
     let mut end = window.len();
     while let Some(at) = window[..end]
         .windows(NEEDLE.len())
@@ -103,7 +101,7 @@ fn last_model_in(window: &[u8]) -> Option<String> {
         if let Some(len) = window[value_start..].iter().position(|&byte| byte == b'"') {
             let value = &window[value_start..value_start + len];
             if is_model_identifier(value) {
-                return String::from_utf8(value.to_vec()).ok();
+                return CString::new(value).ok();
             }
         }
         end = at;
@@ -180,7 +178,7 @@ mod tests {
 "#;
         let source = FileSource::new("/s.jsonl", content);
         let mut scan = ModelScan::new(PathBuf::from("/s.jsonl"));
-        assert_eq!(scan.advance(&source).as_deref(), Some("claude-fable-5"));
+        assert_eq!(scan.advance(&source).as_deref(), Some(c"claude-fable-5"));
         // Nothing appended: no new model.
         assert_eq!(scan.advance(&source), None);
     }
@@ -192,14 +190,14 @@ mod tests {
             br#"{"type":"turn_context","payload":{"model":"gpt-5-codex"}}"#,
         );
         let mut scan = ModelScan::new(PathBuf::from("/s.jsonl"));
-        assert_eq!(scan.advance(&source).as_deref(), Some("gpt-5-codex"));
+        assert_eq!(scan.advance(&source).as_deref(), Some(c"gpt-5-codex"));
 
         source.append(
             "/s.jsonl",
             br#"
 {"type":"turn_context","payload":{"model":"gpt-5.1-codex"}}"#,
         );
-        assert_eq!(scan.advance(&source).as_deref(), Some("gpt-5.1-codex"));
+        assert_eq!(scan.advance(&source).as_deref(), Some(c"gpt-5.1-codex"));
     }
 
     #[test]
@@ -209,7 +207,7 @@ mod tests {
         content.extend_from_slice(br#""model":"claude-opus-5""#);
         let source = FileSource::new("/s.jsonl", &content);
         let mut scan = ModelScan::new(PathBuf::from("/s.jsonl"));
-        assert_eq!(scan.advance(&source).as_deref(), Some("claude-opus-5"));
+        assert_eq!(scan.advance(&source).as_deref(), Some(c"claude-opus-5"));
     }
 
     #[test]
@@ -220,7 +218,7 @@ mod tests {
 {"toolResult":"saw \"model\":\"gpt-oops\" in a log"}
 {"message":{"model":"<synthetic>"}}
 "#;
-        assert_eq!(last_model_in(content).as_deref(), Some("claude-opus-5"));
+        assert_eq!(last_model_in(content).as_deref(), Some(c"claude-opus-5"));
         assert_eq!(last_model_in(br#""model":"""#), None);
     }
 }

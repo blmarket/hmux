@@ -33,75 +33,65 @@
 //! callback-owned `LoadBuffer`, `SourceFile`, `PaneInput` and `KeyEvent`
 //! allocations on a green path.
 
+use crate::WindowPane;
 use crate::arguments::args_count;
+use crate::cmd::CmdqItemRef;
 use crate::cmd::cmd;
-use crate::cmd::cmd_load_buffer::cmd_load_buffer_data;
-use crate::cmd::cmd_source_file::cmd_source_file_data;
-use crate::cmd::{
-    CMD_FIND_PANE, CmdqType, KEYC_NONE, cmdq_append, cmdq_get_callback1, cmdq_new, cmdq_new_state,
-    cmdq_next,
-};
-use crate::file::{CLIENT_DEAD, file_create_with_client, file_fire_done};
+use crate::cmd::cmd_load_buffer_data;
+use crate::cmd::cmd_source_file_data;
+use crate::cmd::{CMD_FIND_PANE, CmdqType, KEYC_NONE, cmdq_append, cmdq_next};
+use crate::cmd::{CmdqListRef, CmdqStateRef};
+use crate::file::CLIENT_DEAD;
 use crate::overlay::{menu_add_item, menu_create};
-use crate::reactor::{self, Buf, Reactor};
+use crate::pane_identity::PaneIdentity;
+use crate::reactor::{self, Reactor};
 use crate::spawn::{SPAWN_RESPAWN, spawn_pane};
 use crate::tests::test_fixtures::{
     Args, Item, Pane, Session, Target, Window, ensure_reactor, globals, link, unlink_all, zeroed,
     zeroed_client, zeroed_cmdq_item,
 };
+use crate::types::ClientFileRef;
 use crate::types::{
-    ClientFileData, CmdqCallbackData, WindowMode, args_parse_t, cmd_entry, cmd_entry_flag,
+    ClientFileData, ClientFileEvent, WindowMode, args_parse_t, cmd_entry, cmd_entry_flag,
     cmd_retval, key_code, key_event, menu_item, mouse_event, spawn_context, u_int, window_pane,
     winlink,
 };
 use crate::types::{PaneInputRef, SourceFileRef};
-use crate::window::window_pane_current_mode;
+use crate::window::window_pane_current_mode_mut;
 use crate::window::window_pane_input_data;
 use crate::window::window_pane_set_mode;
 use ::core::ffi::CStr;
-use ::core::ptr::null_mut;
 
 /// A descriptor number the spawn rig's pane claims to hold. Nothing opens or
 /// closes it; it is there so that a respawn sees a pane that is still live.
-const FAKE_FD: ::core::ffi::c_int = 10;
+const FAKE_FD: core::ffi::c_int = 10;
 
-unsafe fn free_file_data(
-    _c: *mut crate::types::client,
-    _path: *const ::core::ffi::c_char,
-    _error: ::core::ffi::c_int,
-    _closed: ::core::ffi::c_int,
-    _buffer: *mut Buf,
-    data: ClientFileData,
-) {
-    drop(data);
-}
-
-unsafe fn run_file_completion(data: ClientFileData, dead: bool, stream: ::core::ffi::c_int) {
-    unsafe {
-        let c = zeroed_client();
-        let c_ptr = c.as_ptr();
-        if dead {
-            (*c_ptr).flags |= CLIENT_DEAD as u64;
-        }
-        let cf = file_create_with_client(c_ptr, stream, Some(free_file_data), data);
-        file_fire_done(cf);
-        reactor::current().run_once();
-        assert!((*c_ptr).files.is_empty());
+fn free_file_data(event: ClientFileEvent<'_>) {
+    if let ClientFileEvent::Done { data, .. } = event {
+        drop(data);
     }
 }
 
-unsafe fn free_key_event_data(
-    _item: *mut crate::types::cmdq_item,
-    data: CmdqCallbackData,
-) -> cmd_retval {
-    let CmdqCallbackData::KeyEvent(event) = data else {
-        panic!("callback data is not a key event");
-    };
-    drop(event);
-    0
+unsafe fn run_file_completion(data: ClientFileData, dead: bool, stream: core::ffi::c_int) {
+    unsafe {
+        let mut c = zeroed_client();
+        if dead {
+            *c.flags_mut() |= CLIENT_DEAD as u64;
+        }
+        let cf = ClientFileRef::create_with_client(
+            Some(c.as_client_mut()),
+            stream,
+            Some(std::rc::Rc::new(free_file_data)),
+            data,
+        );
+        cf.borrow_mut().path = Some(c"test".to_owned());
+        cf.fire_done();
+        reactor::current().run_once();
+        assert!(c.as_client().files.is_empty());
+    }
 }
 
-unsafe fn failing_command(_cmd: &cmd, _item: *mut crate::types::cmdq_item) -> cmd_retval {
+fn failing_command(_cmd: &cmd, _item: &crate::types::cmdq_item) -> cmd_retval {
     crate::cmd::CMD_RETURN_ERROR
 }
 
@@ -139,12 +129,12 @@ struct CmdqLeakRig {
 impl CmdqLeakRig {
     fn new(group: u_int) -> CmdqLeakRig {
         let mut client = zeroed_client();
-        client.queue = Some(cmdq_new());
-        client.environ = Some(Box::new(::std::collections::BTreeMap::new()));
+        (unsafe { client.as_client_mut() }).queue = Some(CmdqListRef::empty());
+        (unsafe { client.as_client_mut() }).environ = Some(crate::environ::new_environment_box());
         let command = Args::parse(c"display-message");
         unsafe {
-            (*command.cmd()).entry = &LEAK_ENTRY;
-            let state = cmdq_new_state(null_mut(), null_mut(), 0);
+            command.command_mut().entry = &LEAK_ENTRY;
+            let state = CmdqStateRef::create(None, None, 0);
             let command_item = zeroed_cmdq_item(state);
             command_item.item().name = Some(c"leak-command".to_owned());
             command_item.item().type_0 = CmdqType::Command {
@@ -157,27 +147,26 @@ impl CmdqLeakRig {
                 m: mouse_event::default(),
                 buf: b"callback-data".to_vec(),
             });
-            let mut callback = cmdq_get_callback1(
-                c"free-key-event".as_ptr(),
-                Some(free_key_event_data),
-                CmdqCallbackData::KeyEvent(event),
-            );
+            let mut callback = CmdqItemRef::callback_items(c"free-key-event", move |_item| {
+                drop(event);
+                0
+            });
             callback[0].item().group = group;
-            cmdq_append(client.as_ptr(), ::std::vec![command_item]);
-            cmdq_append(client.as_ptr(), callback);
+            cmdq_append(Some(&client), vec![command_item]);
+            cmdq_append(Some(&client), callback);
         }
         CmdqLeakRig { client, command }
     }
 
     unsafe fn run(&self) -> u_int {
-        unsafe { cmdq_next(self.client.as_ptr()) }
+        unsafe { cmdq_next(Some(&self.client)) }
     }
 }
 
 /// A callback in the failed command's group is removed before it fires, so
 /// its raw key-event payload is reclaimed with the queue item.
 #[test]
-fn a_grouped_callback_gives_up_raw_key_event_data() {
+fn a_grouped_callback_gives_up_its_captured_key_event() {
     let _g = globals();
     let rig = CmdqLeakRig::new(1);
     unsafe {
@@ -188,7 +177,7 @@ fn a_grouped_callback_gives_up_raw_key_event_data() {
 /// A callback outside the failed command's group remains queued and frees its
 /// raw key-event payload when the queue reaches it.
 #[test]
-fn an_ungrouped_callback_releases_raw_key_event_data() {
+fn an_ungrouped_callback_releases_its_captured_key_event() {
     let _g = globals();
     let rig = CmdqLeakRig::new(0);
     unsafe {
@@ -310,13 +299,19 @@ unsafe fn send_keys_x(t: &mut Target, line: &CStr, values: u_int) {
         let wp = t.pane(0);
         let mut fs = t.state();
         let open = Args::parse(c"copy-mode");
-        window_pane_set_mode(wp, wp, WindowMode::Copy, &raw mut fs, Some(&*open.ptr()));
-        let wme = window_pane_current_mode(wp);
-        assert!(!wme.is_null(), "the pane did not open copy mode");
+        let source_pane_id = (*wp).pane_id();
+        window_pane_set_mode(
+            &mut *wp,
+            crate::window::window_pane_find_by_id(source_pane_id),
+            WindowMode::Copy,
+            Some(&fs),
+            Some(&*open.borrow()),
+        );
+        let wme = window_pane_current_mode_mut(&mut *wp).expect("the pane did not open copy mode");
 
         let args = Args::parse(line);
         assert_eq!(
-            args_count(&*args.ptr()),
+            args_count(&*args.borrow()),
             values,
             "{line:?} did not parse into the arguments the test needs"
         );
@@ -324,12 +319,13 @@ unsafe fn send_keys_x(t: &mut Target, line: &CStr, values: u_int) {
             WindowMode::Copy.has_command(),
             "copy mode carries a command hook"
         );
+        let session = t.session_handle().clone();
         WindowMode::Copy.command(
-            &mut *wme,
-            null_mut::<crate::types::client>(),
-            t.session(),
-            t.winlink(0),
-            &*args.ptr(),
+            wme,
+            None,
+            Some(session.as_session()),
+            t.winlink(0).as_ref(),
+            &*args.borrow(),
             None,
         );
     }
@@ -352,7 +348,7 @@ impl SpawnRig {
         let mut session = Session::new(0, "0");
         let mut window = Window::new(0, "keep", 80, 24);
         let mut pane = Pane::new(1, 80, 24, 100);
-        unsafe { (*pane.ptr()).fd = FAKE_FD };
+        unsafe { *(*pane.ptr()).fd_mut() = FAKE_FD };
         window.add_pane(&mut pane);
         let wl = link(&mut session, &mut window, 0);
         SpawnRig {
@@ -366,21 +362,21 @@ impl SpawnRig {
 
     /// Runs a respawn of the still-attached pane asking for `cwd`, and answers
     /// the cause it was refused with.
-    unsafe fn refuse(&mut self, cwd: Option<&::core::ffi::CStr>) -> String {
+    unsafe fn refuse(&mut self, cwd: Option<&CStr>) -> String {
         unsafe {
             let mut item = Item::new().with_args(c"respawn-pane");
             let mut sc = Box::new(spawn_context::default());
-            sc.item = crate::cmd::cmdq_item_weak_from_ptr(item.ptr());
-            sc.s = self.session.ptr();
-            sc.wl = self.wl;
-            sc.wp0 = self.pane;
+            sc.item = Some(item.handle().downgrade());
+            sc.s = Some(self.session.reference());
+            sc.wl_idx = Some((*self.wl).idx);
+            sc.wp0 = crate::window::window_pane_find_by_id((*self.pane).pane_id());
             sc.idx = -1;
             sc.flags = SPAWN_RESPAWN;
             sc.cwd = cwd;
 
             let mut cause = None;
-            let out = spawn_pane(&mut sc, &mut cause);
-            assert!(out.is_null(), "the respawn was not refused");
+            let out = spawn_pane(&mut sc, None, &mut cause);
+            assert!(out.is_none(), "the respawn was not refused");
             cause.unwrap().into_string().unwrap()
         }
     }
@@ -511,19 +507,13 @@ fn a_menu_item_that_formats_to_nothing_gives_up_its_formatted_name() {
     let _g = globals();
     unsafe {
         let mut c = zeroed_client();
-        let mut menu = menu_create(c"leak".as_ptr());
+        let mut menu = menu_create(c"leak");
         let item = menu_item {
             name: Some(c"#{no_such_format}"),
             key: KEYC_NONE as key_code,
             command: None,
         };
-        menu_add_item(
-            &raw mut *menu,
-            Some(&item),
-            null_mut::<crate::types::cmdq_item>(),
-            &raw mut *c,
-            null_mut::<crate::types::cmd_find_state>(),
-        );
+        menu_add_item(&mut menu, Some(&item), None, c.as_client_mut(), None);
         assert_eq!(menu.items.len(), 0, "the empty item was not dropped");
     }
 }
@@ -535,19 +525,13 @@ fn a_menu_item_that_formats_to_a_name_frees_the_expansion() {
     let _g = globals();
     unsafe {
         let mut c = zeroed_client();
-        let mut menu = menu_create(c"leak".as_ptr());
+        let mut menu = menu_create(c"leak");
         let item = menu_item {
             name: Some(c"kept"),
             key: KEYC_NONE as key_code,
             command: None,
         };
-        menu_add_item(
-            &raw mut *menu,
-            Some(&item),
-            null_mut::<crate::types::cmdq_item>(),
-            &raw mut *c,
-            null_mut::<crate::types::cmd_find_state>(),
-        );
+        menu_add_item(&mut menu, Some(&item), None, c.as_client_mut(), None);
         assert_eq!(menu.items.len(), 1, "the item was not kept");
     }
 }

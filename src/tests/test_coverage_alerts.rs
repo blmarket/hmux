@@ -1,5 +1,5 @@
 //! Unit tests for the alert engine in [`crate::alerts`]: the queue that
-//! batches windows waiting for an alert check ([`alerts_queue`]), the pass
+//! batches windows waiting for an alert check ([`WindowRef::raise_alerts`]), the pass
 //! over one session's winlinks ([`alerts_check_session`]) and the reset sweep
 //! over every registered window ([`alerts_reset_all`]).
 //!
@@ -21,15 +21,16 @@
 use crate::alerts::{
     ALERT_ANY, ALERT_CURRENT, ALERT_OTHER, WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL,
     WINDOW_SILENCE, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE, alerts_check_session,
-    alerts_queue, alerts_reset_all, queued_windows,
+    alerts_reset_all, queued_window_ids,
 };
-use crate::options::options_set_number;
+
 use crate::reactor::Timer;
-use crate::session::{session_add_attached, session_alerted};
+
 use crate::tests::test_fixtures::{
     Registry, Session, Window, ensure_reactor, globals, link, unlink,
 };
 use crate::types::*;
+use crate::window_alert_queue::WindowAlertQueueState;
 use ::core::ffi::c_longlong;
 
 /// Whether the window's silence timer is pending in the event base.
@@ -58,14 +59,17 @@ fn queueing_a_monitored_family_sets_the_flags_and_links_the_window() {
     ensure_reactor();
     let mut w = Window::new(1, "bell", 80, 24);
     unsafe {
-        assert_eq!((*w.ptr()).alerts_queued, 0);
-        assert!(!queued_windows().contains(&w.ptr()));
+        assert!(!(*w.ptr()).alerts_are_queued());
+        assert!(!queued_window_ids().contains(&w.reference().window_id()));
 
-        alerts_queue(w.ptr(), WINDOW_BELL);
+        (w.reference()).raise_alerts(WINDOW_BELL);
 
         assert_eq!((*w.ptr()).flags & WINDOW_BELL, WINDOW_BELL);
-        assert_eq!((*w.ptr()).alerts_queued, 1);
-        assert_eq!(queued_windows().last().copied(), Some(w.ptr()));
+        assert!((*w.ptr()).alerts_are_queued());
+        assert_eq!(
+            queued_window_ids().last().copied(),
+            Some(w.reference().window_id())
+        );
         assert!(!timer_armed(w.ptr()));
     }
     leave_queued(w);
@@ -77,21 +81,21 @@ fn queueing_a_family_nobody_monitors_sets_the_flags_but_never_queues() {
     ensure_reactor();
     let mut w = Window::new(2, "quiet", 80, 24);
     unsafe {
-        options_set_number(w.options(), c"monitor-bell".as_ptr(), 0);
+        w.options().set_number(c"monitor-bell", 0);
 
-        alerts_queue(w.ptr(), WINDOW_BELL);
+        (w.reference()).raise_alerts(WINDOW_BELL);
         assert_eq!((*w.ptr()).flags & WINDOW_BELL, WINDOW_BELL);
-        assert_eq!((*w.ptr()).alerts_queued, 0);
-        assert!(!queued_windows().contains(&w.ptr()));
+        assert!(!(*w.ptr()).alerts_are_queued());
+        assert!(!queued_window_ids().contains(&w.reference().window_id()));
 
-        alerts_queue(w.ptr(), WINDOW_ACTIVITY);
+        (w.reference()).raise_alerts(WINDOW_ACTIVITY);
         assert_eq!((*w.ptr()).flags & WINDOW_ACTIVITY, WINDOW_ACTIVITY);
-        assert_eq!((*w.ptr()).alerts_queued, 0);
+        assert!(!(*w.ptr()).alerts_are_queued());
 
-        alerts_queue(w.ptr(), WINDOW_SILENCE);
+        (w.reference()).raise_alerts(WINDOW_SILENCE);
         assert_eq!((*w.ptr()).flags & WINDOW_SILENCE, WINDOW_SILENCE);
-        assert_eq!((*w.ptr()).alerts_queued, 0);
-        assert!(!queued_windows().contains(&w.ptr()));
+        assert!(!(*w.ptr()).alerts_are_queued());
+        assert!(!queued_window_ids().contains(&w.reference().window_id()));
     }
 }
 
@@ -101,17 +105,20 @@ fn queueing_a_mixed_request_queues_when_any_one_family_is_monitored() {
     ensure_reactor();
     let mut w = Window::new(3, "mixed", 80, 24);
     unsafe {
-        options_set_number(w.options(), c"monitor-bell".as_ptr(), 0);
-        options_set_number(w.options(), c"monitor-activity".as_ptr(), 1);
+        w.options().set_number(c"monitor-bell", 0);
+        w.options().set_number(c"monitor-activity", 1);
 
-        alerts_queue(w.ptr(), WINDOW_BELL | WINDOW_ACTIVITY);
+        (w.reference()).raise_alerts(WINDOW_BELL | WINDOW_ACTIVITY);
 
         assert_eq!(
             (*w.ptr()).flags & (WINDOW_BELL | WINDOW_ACTIVITY),
             WINDOW_BELL | WINDOW_ACTIVITY
         );
-        assert_eq!((*w.ptr()).alerts_queued, 1);
-        assert_eq!(queued_windows().last().copied(), Some(w.ptr()));
+        assert!((*w.ptr()).alerts_are_queued());
+        assert_eq!(
+            queued_window_ids().last().copied(),
+            Some(w.reference().window_id())
+        );
     }
     leave_queued(w);
 }
@@ -122,13 +129,13 @@ fn queueing_twice_leaves_one_entry_and_one_flag_set() {
     ensure_reactor();
     let mut w = Window::new(4, "twice", 80, 24);
     unsafe {
-        options_set_number(w.options(), c"monitor-activity".as_ptr(), 1);
-        alerts_queue(w.ptr(), WINDOW_ACTIVITY);
-        let queued = queued_windows();
-        alerts_queue(w.ptr(), WINDOW_ACTIVITY);
+        w.options().set_number(c"monitor-activity", 1);
+        (w.reference()).raise_alerts(WINDOW_ACTIVITY);
+        let queued = queued_window_ids();
+        (w.reference()).raise_alerts(WINDOW_ACTIVITY);
 
-        assert_eq!((*w.ptr()).alerts_queued, 1);
-        assert_eq!(queued_windows(), queued);
+        assert!((*w.ptr()).alerts_are_queued());
+        assert_eq!(queued_window_ids(), queued);
         assert_eq!((*w.ptr()).flags & WINDOW_ACTIVITY, WINDOW_ACTIVITY);
     }
     leave_queued(w);
@@ -141,16 +148,22 @@ fn two_queued_windows_are_chained_in_arrival_order() {
     let mut first = Window::new(5, "first", 80, 24);
     let mut second = Window::new(6, "second", 80, 24);
     unsafe {
-        options_set_number(first.options(), c"monitor-activity".as_ptr(), 1);
-        options_set_number(second.options(), c"monitor-activity".as_ptr(), 1);
+        first.options().set_number(c"monitor-activity", 1);
+        second.options().set_number(c"monitor-activity", 1);
 
-        alerts_queue(first.ptr(), WINDOW_ACTIVITY);
-        alerts_queue(second.ptr(), WINDOW_ACTIVITY);
+        (first.reference()).raise_alerts(WINDOW_ACTIVITY);
+        (second.reference()).raise_alerts(WINDOW_ACTIVITY);
 
-        let queued = queued_windows();
-        assert_eq!(queued[queued.len() - 2..], [first.ptr(), second.ptr()]);
-        assert_eq!((*first.ptr()).alerts_queued, 1);
-        assert_eq!((*second.ptr()).alerts_queued, 1);
+        let queued = queued_window_ids();
+        assert_eq!(
+            queued[queued.len() - 2..],
+            [
+                first.reference().window_id(),
+                second.reference().window_id(),
+            ]
+        );
+        assert!((*first.ptr()).alerts_are_queued());
+        assert!((*second.ptr()).alerts_are_queued());
     }
     leave_queued(first);
     leave_queued(second);
@@ -162,23 +175,23 @@ fn queueing_resets_the_silence_state_before_rearming_what_is_still_monitored() {
     ensure_reactor();
     let mut w = Window::new(7, "silence", 80, 24);
     unsafe {
-        options_set_number(w.options(), c"monitor-silence".as_ptr(), 2);
+        w.options().set_number(c"monitor-silence", 2);
 
-        alerts_queue(w.ptr(), WINDOW_SILENCE);
+        (w.reference()).raise_alerts(WINDOW_SILENCE);
         assert!(timer_armed(w.ptr()));
         assert_eq!((*w.ptr()).flags & WINDOW_SILENCE, WINDOW_SILENCE);
-        assert_eq!((*w.ptr()).alerts_queued, 1);
+        assert!((*w.ptr()).alerts_are_queued());
 
-        options_set_number(w.options(), c"monitor-silence".as_ptr(), 0);
-        options_set_number(w.options(), c"monitor-bell".as_ptr(), 1);
-        alerts_queue(w.ptr(), WINDOW_BELL);
+        w.options().set_number(c"monitor-silence", 0);
+        w.options().set_number(c"monitor-bell", 1);
+        (w.reference()).raise_alerts(WINDOW_BELL);
         assert!(!timer_armed(w.ptr()));
         assert_eq!(
             (*w.ptr()).flags & WINDOW_ALERTFLAGS,
             WINDOW_BELL,
             "the silence flag is reset away and only the queued family comes back"
         );
-        assert_eq!((*w.ptr()).alerts_queued, 1);
+        assert!((*w.ptr()).alerts_are_queued());
     }
     leave_queued(w);
 }
@@ -191,10 +204,10 @@ fn queueing_no_flags_at_all_still_runs_the_reset() {
     unsafe {
         (*w.ptr()).flags |= WINDOW_SILENCE;
 
-        alerts_queue(w.ptr(), 0);
+        (w.reference()).raise_alerts(0);
 
         assert_eq!((*w.ptr()).flags & WINDOW_ALERTFLAGS, 0);
-        assert_eq!((*w.ptr()).alerts_queued, 0);
+        assert!(!(*w.ptr()).alerts_are_queued());
         assert!(!timer_armed(w.ptr()));
     }
 }
@@ -245,14 +258,14 @@ fn alerts_reset_all_arms_the_timer_exactly_where_silence_is_monitored() {
     unsafe {
         (*watched.ptr()).flags |= WINDOW_SILENCE;
         (*ignored.ptr()).flags |= WINDOW_SILENCE;
-        options_set_number(watched.options(), c"monitor-silence".as_ptr(), 5);
+        watched.options().set_number(c"monitor-silence", 5);
 
         alerts_reset_all();
         assert!(timer_armed(watched.ptr()));
         assert!(!timer_armed(ignored.ptr()));
 
-        options_set_number(watched.options(), c"monitor-silence".as_ptr(), 0);
-        options_set_number(ignored.options(), c"monitor-silence".as_ptr(), 9);
+        watched.options().set_number(c"monitor-silence", 0);
+        ignored.options().set_number(c"monitor-silence", 9);
         alerts_reset_all();
         assert!(!timer_armed(watched.ptr()));
         assert!(timer_armed(ignored.ptr()));
@@ -273,34 +286,28 @@ fn alerts_check_session_checks_every_monitored_family_of_every_winlink() {
     let loud_wl = link(&mut s, &mut loud, 0);
     let quiet_wl = link(&mut s, &mut quiet, 1);
     unsafe {
-        options_set_number(loud.options(), c"monitor-activity".as_ptr(), 1);
-        options_set_number(loud.options(), c"monitor-silence".as_ptr(), 1);
-        options_set_number(
-            s.options(),
-            c"activity-action".as_ptr(),
-            ALERT_ANY as c_longlong,
-        );
-        options_set_number(
-            s.options(),
-            c"silence-action".as_ptr(),
-            ALERT_ANY as c_longlong,
-        );
+        loud.options().set_number(c"monitor-activity", 1);
+        loud.options().set_number(c"monitor-silence", 1);
+        s.options()
+            .set_number(c"activity-action", ALERT_ANY as c_longlong);
+        s.options()
+            .set_number(c"silence-action", ALERT_ANY as c_longlong);
         (*loud.ptr()).flags |= WINDOW_BELL | WINDOW_ACTIVITY | WINDOW_SILENCE;
 
-        alerts_check_session(s.ptr());
+        alerts_check_session(&mut *s.ptr());
 
         assert_eq!(
             (*loud_wl).flags,
             WINLINK_BELL | WINLINK_ACTIVITY | WINLINK_SILENCE
         );
         assert_eq!((*quiet_wl).flags, 0);
-        assert!(session_alerted(s.ptr()));
+        assert!(crate::SessionAlertState::session_alerted(&*s.ptr()));
         assert_eq!(
             (*loud.ptr()).flags & WINDOW_ALERTFLAGS,
             WINDOW_BELL | WINDOW_ACTIVITY | WINDOW_SILENCE,
             "checking never clears the window's own flags"
         );
-        assert_eq!((*loud.ptr()).alerts_queued, 0);
+        assert!(!(*loud.ptr()).alerts_are_queued());
 
         unlink(&mut s, loud_wl);
         unlink(&mut s, quiet_wl);
@@ -316,19 +323,16 @@ fn alerts_check_session_leaves_unmonitored_or_unflagged_families_alone() {
     unsafe {
         (*w.ptr()).flags |= WINDOW_ACTIVITY;
 
-        alerts_check_session(s.ptr());
+        alerts_check_session(&mut *s.ptr());
         assert_eq!((*wl).flags, 0);
-        assert!(!session_alerted(s.ptr()));
+        assert!(!crate::SessionAlertState::session_alerted(&*s.ptr()));
 
-        options_set_number(w.options(), c"monitor-activity".as_ptr(), 1);
-        options_set_number(
-            s.options(),
-            c"activity-action".as_ptr(),
-            ALERT_ANY as c_longlong,
-        );
-        alerts_check_session(s.ptr());
+        w.options().set_number(c"monitor-activity", 1);
+        s.options()
+            .set_number(c"activity-action", ALERT_ANY as c_longlong);
+        alerts_check_session(&mut *s.ptr());
         assert_eq!((*wl).flags, WINLINK_ACTIVITY);
-        assert!(session_alerted(s.ptr()));
+        assert!(crate::SessionAlertState::session_alerted(&*s.ptr()));
 
         unlink(&mut s, wl);
     }
@@ -341,52 +345,46 @@ fn activity_and_silence_notify_once_while_bell_notifies_on_every_pass() {
     let mut w = Window::new(17, "guarded-win", 80, 24);
     let wl = link(&mut s, &mut w, 0);
     unsafe {
-        options_set_number(w.options(), c"monitor-activity".as_ptr(), 1);
-        options_set_number(w.options(), c"monitor-silence".as_ptr(), 1);
-        options_set_number(
-            s.options(),
-            c"activity-action".as_ptr(),
-            ALERT_ANY as c_longlong,
-        );
-        options_set_number(
-            s.options(),
-            c"silence-action".as_ptr(),
-            ALERT_ANY as c_longlong,
-        );
+        w.options().set_number(c"monitor-activity", 1);
+        w.options().set_number(c"monitor-silence", 1);
+        s.options()
+            .set_number(c"activity-action", ALERT_ANY as c_longlong);
+        s.options()
+            .set_number(c"silence-action", ALERT_ANY as c_longlong);
         (*w.ptr()).flags |= WINDOW_ACTIVITY | WINDOW_SILENCE;
 
-        alerts_check_session(s.ptr());
+        alerts_check_session(&mut *s.ptr());
         assert_eq!((*wl).flags, WINLINK_ACTIVITY | WINLINK_SILENCE);
-        assert!(session_alerted(s.ptr()));
+        assert!(crate::SessionAlertState::session_alerted(&*s.ptr()));
 
-        alerts_check_session(s.ptr());
+        alerts_check_session(&mut *s.ptr());
         assert_eq!((*wl).flags, WINLINK_ACTIVITY | WINLINK_SILENCE);
         assert!(
-            !session_alerted(s.ptr()),
+            !crate::SessionAlertState::session_alerted(&*s.ptr()),
             "the once-only families clear the mark and then decline to raise it again"
         );
 
         (*w.ptr()).flags |= WINDOW_BELL;
-        alerts_check_session(s.ptr());
+        alerts_check_session(&mut *s.ptr());
         assert_eq!(
             (*wl).flags,
             WINLINK_BELL | WINLINK_ACTIVITY | WINLINK_SILENCE
         );
         assert!(
-            !session_alerted(s.ptr()),
+            !crate::SessionAlertState::session_alerted(&*s.ptr()),
             "bell runs first and raises the mark, but the skipped guarded families clear it again on their way past"
         );
 
         (*w.ptr()).flags &= !(WINDOW_ACTIVITY | WINDOW_SILENCE);
-        alerts_check_session(s.ptr());
+        alerts_check_session(&mut *s.ptr());
         assert!(
-            session_alerted(s.ptr()),
+            crate::SessionAlertState::session_alerted(&*s.ptr()),
             "with nothing checked after it, bell's own raise survives"
         );
 
-        alerts_check_session(s.ptr());
+        alerts_check_session(&mut *s.ptr());
         assert!(
-            session_alerted(s.ptr()),
+            crate::SessionAlertState::session_alerted(&*s.ptr()),
             "bell carries no once-only mark and notifies again"
         );
 
@@ -406,33 +404,27 @@ fn the_bell_action_decides_whose_notification_outlives_the_pass() {
         (*first.ptr()).flags |= WINDOW_BELL;
         (*second.ptr()).flags |= WINDOW_BELL;
 
-        alerts_check_session(s.ptr());
+        alerts_check_session(&mut *s.ptr());
         assert_eq!((*first_wl).flags, WINLINK_BELL);
         assert_eq!((*second_wl).flags, WINLINK_BELL);
-        assert!(session_alerted(s.ptr()));
+        assert!(crate::SessionAlertState::session_alerted(&*s.ptr()));
 
-        options_set_number(
-            s.options(),
-            c"bell-action".as_ptr(),
-            ALERT_CURRENT as c_longlong,
-        );
-        alerts_check_session(s.ptr());
+        s.options()
+            .set_number(c"bell-action", ALERT_CURRENT as c_longlong);
+        alerts_check_session(&mut *s.ptr());
         assert!(
-            !session_alerted(s.ptr()),
+            !crate::SessionAlertState::session_alerted(&*s.ptr()),
             "the second window's check clears the mark the first raised"
         );
 
-        options_set_number(
-            s.options(),
-            c"bell-action".as_ptr(),
-            ALERT_OTHER as c_longlong,
-        );
-        alerts_check_session(s.ptr());
-        assert!(session_alerted(s.ptr()));
+        s.options()
+            .set_number(c"bell-action", ALERT_OTHER as c_longlong);
+        alerts_check_session(&mut *s.ptr());
+        assert!(crate::SessionAlertState::session_alerted(&*s.ptr()));
 
-        options_set_number(s.options(), c"bell-action".as_ptr(), 0);
-        alerts_check_session(s.ptr());
-        assert!(!session_alerted(s.ptr()));
+        s.options().set_number(c"bell-action", 0);
+        alerts_check_session(&mut *s.ptr());
+        assert!(!crate::SessionAlertState::session_alerted(&*s.ptr()));
 
         unlink(&mut s, first_wl);
         unlink(&mut s, second_wl);
@@ -448,39 +440,33 @@ fn a_shared_window_is_checked_per_session_with_that_sessions_own_action() {
     let first_wl = link(&mut first, &mut w, 0);
     let second_wl = link(&mut second, &mut w, 5);
     unsafe {
-        session_add_attached(first.ptr());
-        session_add_attached(second.ptr());
-        options_set_number(
-            first.options(),
-            c"bell-action".as_ptr(),
-            ALERT_CURRENT as c_longlong,
-        );
-        options_set_number(
-            second.options(),
-            c"bell-action".as_ptr(),
-            ALERT_OTHER as c_longlong,
-        );
+        first.handle().add_attached();
+        second.handle().add_attached();
+        first
+            .options()
+            .set_number(c"bell-action", ALERT_CURRENT as c_longlong);
+        second
+            .options()
+            .set_number(c"bell-action", ALERT_OTHER as c_longlong);
         (*w.ptr()).flags |= WINDOW_BELL;
 
-        alerts_check_session(first.ptr());
+        alerts_check_session(&mut *first.ptr());
         assert_eq!(
             (*first_wl).flags & WINLINK_BELL,
             0,
             "an attached session's current winlink is never marked"
         );
         assert_eq!((*second_wl).flags & WINLINK_BELL, 0);
-        assert!(session_alerted(first.ptr()));
-        assert!(!session_alerted(second.ptr()));
+        assert!(crate::SessionAlertState::session_alerted(&*first.ptr()));
+        assert!(!crate::SessionAlertState::session_alerted(&*second.ptr()));
 
-        options_set_number(
-            second.options(),
-            c"bell-action".as_ptr(),
-            ALERT_ANY as c_longlong,
-        );
-        alerts_check_session(first.ptr());
+        second
+            .options()
+            .set_number(c"bell-action", ALERT_ANY as c_longlong);
+        alerts_check_session(&mut *first.ptr());
         assert_eq!((*second_wl).flags & WINLINK_BELL, 0);
-        assert!(session_alerted(second.ptr()));
-        assert!(session_alerted(first.ptr()));
+        assert!(crate::SessionAlertState::session_alerted(&*second.ptr()));
+        assert!(crate::SessionAlertState::session_alerted(&*first.ptr()));
 
         unlink(&mut first, first_wl);
         unlink(&mut second, second_wl);
@@ -492,8 +478,8 @@ fn alerts_check_session_on_a_session_without_windows_does_nothing() {
     let _guard = globals();
     let mut s = Session::new(7, "empty");
     unsafe {
-        alerts_check_session(s.ptr());
-        assert!(!session_alerted(s.ptr()));
+        alerts_check_session(&mut *s.ptr());
+        assert!(!crate::SessionAlertState::session_alerted(&*s.ptr()));
     }
 }
 
@@ -503,14 +489,14 @@ fn every_alert_choice_reads_back_through_the_option_it_is_set_through() {
     let mut s = Session::new(8, "choices");
     unsafe {
         for (name, value) in [
-            (c"bell-action".as_ptr(), ALERT_ANY as c_longlong),
-            (c"bell-action".as_ptr(), ALERT_CURRENT as c_longlong),
-            (c"bell-action".as_ptr(), ALERT_OTHER as c_longlong),
-            (c"activity-action".as_ptr(), ALERT_CURRENT as c_longlong),
-            (c"silence-action".as_ptr(), ALERT_OTHER as c_longlong),
+            (c"bell-action", ALERT_ANY as c_longlong),
+            (c"bell-action", ALERT_CURRENT as c_longlong),
+            (c"bell-action", ALERT_OTHER as c_longlong),
+            (c"activity-action", ALERT_CURRENT as c_longlong),
+            (c"silence-action", ALERT_OTHER as c_longlong),
         ] {
-            options_set_number(s.options(), name, value);
-            assert_eq!(crate::options::options_get_number(s.options(), name), value);
+            s.options().set_number(name, value);
+            assert_eq!(s.options().number(name), value);
         }
     }
 }

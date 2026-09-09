@@ -4,15 +4,13 @@ use crate::input::{KEYC_CTRL, KEYC_META};
 use crate::key_bindings::{
     key_binding_key, key_bindings_add, key_bindings_get_table, key_bindings_remove,
 };
-use crate::layout::LAYOUT_CELL_FLOATING;
-use crate::paste::{paste_buffer_name, paste_free, paste_get_name, paste_set, paste_walk};
-use crate::screen::screen_set_title;
-use crate::session::{session_activity_time, session_name, session_set_activity_time};
+use crate::pane_activity::PaneActivityState;
+use crate::paste::{PasteBufferStore, with_paste_buffers, with_paste_buffers_mut};
 use crate::tests::test_fixtures::{
-    Clients, Pane, Registry, Session, Window, globals, link, seen, unlink,
+    Clients, Pane, Registry, Session, Window, globals, link, unlink,
 };
-use ::core::ffi::{c_char, c_int};
-use ::core::ptr::null_mut;
+use crate::window_timestamps::WindowTimestampState;
+use ::core::ffi::c_int;
 use ::std::ffi::CString;
 use ::std::sync::MutexGuard;
 
@@ -22,7 +20,7 @@ use ::std::sync::MutexGuard;
 /// tests on parallel threads, so every test that asks for a list holds
 /// both, always in this order.
 fn sorting() -> (MutexGuard<'static, ()>, MutexGuard<'static, ()>) {
-    static LISTS: ::std::sync::Mutex<()> = ::std::sync::Mutex::new(());
+    static LISTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let outer = globals();
     let inner = LISTS
         .lock()
@@ -33,11 +31,7 @@ fn sorting() -> (MutexGuard<'static, ()>, MutexGuard<'static, ()>) {
 /// What a caller fills in before asking for a sorted list, with no
 /// sequence of orders behind it.
 fn crit(order: sort_order, reversed: c_int) -> sort_criteria_t {
-    sort_criteria_t {
-        order,
-        reversed,
-        order_seq: None,
-    }
+    RustSortCriteria::new(order, reversed != 0)
 }
 
 /// A timeval, as a creation or activity time.
@@ -50,31 +44,43 @@ fn at(sec: i64, usec: i64) -> timeval {
 
 #[test]
 fn an_order_is_read_back_from_its_name_whatever_its_case() {
-    assert_eq!(sort_order_from_string(Some(c"activity")), SORT_ACTIVITY);
-    assert_eq!(sort_order_from_string(Some(c"creation")), SORT_CREATION);
-    assert_eq!(sort_order_from_string(Some(c"index")), SORT_INDEX);
-    assert_eq!(sort_order_from_string(Some(c"modifier")), SORT_MODIFIER);
-    assert_eq!(sort_order_from_string(Some(c"name")), SORT_NAME);
-    assert_eq!(sort_order_from_string(Some(c"order")), SORT_ORDER);
-    assert_eq!(sort_order_from_string(Some(c"size")), SORT_SIZE);
-    assert_eq!(sort_order_from_string(Some(c"z")), SORT_Z);
-    assert_eq!(sort_order_from_string(Some(c"ACTIVITY")), SORT_ACTIVITY);
-    assert_eq!(sort_order_from_string(Some(c"Size")), SORT_SIZE);
-    assert_eq!(sort_order_from_string(Some(c"Z")), SORT_Z);
+    assert_eq!(
+        RustSortCriteria::parse_order(Some(c"activity")),
+        SORT_ACTIVITY
+    );
+    assert_eq!(
+        RustSortCriteria::parse_order(Some(c"creation")),
+        SORT_CREATION
+    );
+    assert_eq!(RustSortCriteria::parse_order(Some(c"index")), SORT_INDEX);
+    assert_eq!(
+        RustSortCriteria::parse_order(Some(c"modifier")),
+        SORT_MODIFIER
+    );
+    assert_eq!(RustSortCriteria::parse_order(Some(c"name")), SORT_NAME);
+    assert_eq!(RustSortCriteria::parse_order(Some(c"order")), SORT_ORDER);
+    assert_eq!(RustSortCriteria::parse_order(Some(c"size")), SORT_SIZE);
+    assert_eq!(RustSortCriteria::parse_order(Some(c"z")), SORT_Z);
+    assert_eq!(
+        RustSortCriteria::parse_order(Some(c"ACTIVITY")),
+        SORT_ACTIVITY
+    );
+    assert_eq!(RustSortCriteria::parse_order(Some(c"Size")), SORT_SIZE);
+    assert_eq!(RustSortCriteria::parse_order(Some(c"Z")), SORT_Z);
 }
 
 #[test]
 fn key_is_another_name_for_index_and_title_for_name() {
-    assert_eq!(sort_order_from_string(Some(c"key")), SORT_INDEX);
-    assert_eq!(sort_order_from_string(Some(c"title")), SORT_NAME);
+    assert_eq!(RustSortCriteria::parse_order(Some(c"key")), SORT_INDEX);
+    assert_eq!(RustSortCriteria::parse_order(Some(c"title")), SORT_NAME);
 }
 
 #[test]
 fn a_name_that_is_no_order_and_no_name_at_all_are_the_end() {
-    assert_eq!(sort_order_from_string(Some(c"")), SORT_END);
-    assert_eq!(sort_order_from_string(Some(c"nonesuch")), SORT_END);
-    assert_eq!(sort_order_from_string(Some(c"activityx")), SORT_END);
-    assert_eq!(sort_order_from_string(None), SORT_END);
+    assert_eq!(RustSortCriteria::parse_order(Some(c"")), SORT_END);
+    assert_eq!(RustSortCriteria::parse_order(Some(c"nonesuch")), SORT_END);
+    assert_eq!(RustSortCriteria::parse_order(Some(c"activityx")), SORT_END);
+    assert_eq!(RustSortCriteria::parse_order(None), SORT_END);
 }
 
 #[test]
@@ -89,41 +95,39 @@ fn an_order_prints_as_its_first_name_and_the_end_prints_as_nothing() {
         (SORT_SIZE, "size"),
         (SORT_Z, "z"),
     ] {
-        let text = sort_order_to_string(order).expect("a name");
+        let text = RustSortCriteria::order_name(order).expect("a name");
         assert_eq!(text.to_str().expect("ascii"), name);
-        assert_eq!(sort_order_from_string(Some(text)), order);
+        assert_eq!(RustSortCriteria::parse_order(Some(text)), order);
     }
-    assert_eq!(sort_order_to_string(SORT_END), None);
-    assert_eq!(sort_order_to_string(SORT_END + 1), None);
+    assert_eq!(RustSortCriteria::order_name(SORT_END), None);
+    assert_eq!(RustSortCriteria::order_name(SORT_END + 1), None);
 }
 
 #[test]
 fn an_order_with_no_sequence_behind_it_stays_where_it_is() {
-    unsafe {
-        let mut c = crit(SORT_NAME, 0);
-        sort_next_order(&mut c);
-        assert_eq!(c.order, SORT_NAME);
-    }
+    let mut c = crit(SORT_NAME, 0);
+    c.advance();
+    assert_eq!(c.order(), SORT_NAME);
 }
 
 #[test]
 fn the_next_order_walks_the_sequence_and_wraps_at_its_end() {
     let mut c = crit(SORT_ACTIVITY, 0);
-    c.order_seq = Some(&[SORT_ACTIVITY, SORT_NAME, SORT_SIZE]);
-    sort_next_order(&mut c);
-    assert_eq!(c.order, SORT_NAME);
-    sort_next_order(&mut c);
-    assert_eq!(c.order, SORT_SIZE);
-    sort_next_order(&mut c);
-    assert_eq!(c.order, SORT_ACTIVITY);
+    c.set_cycle(&[SORT_ACTIVITY, SORT_NAME, SORT_SIZE]);
+    c.advance();
+    assert_eq!(c.order(), SORT_NAME);
+    c.advance();
+    assert_eq!(c.order(), SORT_SIZE);
+    c.advance();
+    assert_eq!(c.order(), SORT_ACTIVITY);
 }
 
 #[test]
 fn an_order_the_sequence_does_not_hold_starts_it_again() {
     let mut c = crit(SORT_INDEX, 0);
-    c.order_seq = Some(&[SORT_NAME, SORT_SIZE]);
-    sort_next_order(&mut c);
-    assert_eq!(c.order, SORT_NAME);
+    c.set_cycle(&[SORT_NAME, SORT_SIZE]);
+    c.advance();
+    assert_eq!(c.order(), SORT_NAME);
 }
 
 /// A sequence holding nothing at all leaves the order at the end marker,
@@ -131,17 +135,17 @@ fn an_order_the_sequence_does_not_hold_starts_it_again() {
 #[test]
 fn an_empty_sequence_leaves_the_order_at_the_end() {
     let mut c = crit(SORT_NAME, 0);
-    c.order_seq = Some(&[]);
-    sort_next_order(&mut c);
-    assert_eq!(c.order, SORT_END);
+    c.set_cycle(&[]);
+    c.advance();
+    assert_eq!(c.order(), SORT_END);
 }
 
 #[test]
 fn a_sequence_of_one_order_keeps_answering_it() {
     let mut c = crit(SORT_SIZE, 0);
-    c.order_seq = Some(&[SORT_SIZE]);
-    sort_next_order(&mut c);
-    assert_eq!(c.order, SORT_SIZE);
+    c.set_cycle(&[SORT_SIZE]);
+    c.advance();
+    assert_eq!(c.order(), SORT_SIZE);
 }
 
 #[test]
@@ -154,16 +158,16 @@ fn the_window_tree_never_swaps_by_index_and_swaps_by_a_name_that_differs() {
     let wl2 = link(&mut session, &mut second, 2);
     unsafe {
         let mut c = crit(SORT_INDEX, 0);
-        assert_eq!(sort_would_window_tree_swap(&c, wl1, wl2), 0);
-        assert_eq!(sort_would_window_tree_swap(&c, wl2, wl1), 0);
+        assert_eq!(sort_would_window_tree_swap(&c, &*wl1, &*wl2), 0);
+        assert_eq!(sort_would_window_tree_swap(&c, &*wl2, &*wl1), 0);
 
         let mut c = crit(SORT_NAME, 0);
-        assert_eq!(sort_would_window_tree_swap(&c, wl1, wl2), 1);
-        assert_eq!(sort_would_window_tree_swap(&c, wl1, wl1), 0);
+        assert_eq!(sort_would_window_tree_swap(&c, &*wl1, &*wl2), 1);
+        assert_eq!(sort_would_window_tree_swap(&c, &*wl1, &*wl1), 0);
 
         let mut c = crit(SORT_NAME, 1);
-        assert_eq!(sort_would_window_tree_swap(&c, wl1, wl2), 1);
-        assert_eq!(sort_would_window_tree_swap(&c, wl1, wl1), 0);
+        assert_eq!(sort_would_window_tree_swap(&c, &*wl1, &*wl2), 1);
+        assert_eq!(sort_would_window_tree_swap(&c, &*wl1, &*wl1), 0);
     }
     unlink(&mut session, wl1);
     unlink(&mut session, wl2);
@@ -183,10 +187,13 @@ impl Buffers {
     /// Adds a named buffer holding `data`, newer than every buffer before
     /// it.
     fn add(&self, name: &str, data: &str) {
-        unsafe {
-            let name = CString::new(name).expect("no NUL");
-            assert!(paste_set(data.as_bytes().to_vec(), name.as_ptr()).is_ok());
-        }
+        let name = CString::new(name).expect("no NUL");
+        assert!(
+            with_paste_buffers_mut(|buffers| {
+                buffers.set_named(name.as_c_str(), data.as_bytes().to_vec())
+            })
+            .is_ok()
+        );
     }
 }
 
@@ -197,25 +204,24 @@ impl Drop for Buffers {
 }
 
 fn empty_store() {
-    unsafe {
-        let mut pb = paste_walk(null_mut::<paste_buffer>());
-        while !pb.is_null() {
-            let next = paste_walk(pb);
-            paste_free(pb);
-            pb = next;
-        }
+    let names = with_paste_buffers(|buffers| {
+        buffers
+            .buffers()
+            .map(|buffer| buffer.name.to_owned())
+            .collect::<Vec<_>>()
+    });
+    for name in names {
+        with_paste_buffers_mut(|buffers| buffers.remove(name.as_c_str()));
     }
 }
 
 /// The names of the buffers the store hands back under `order`.
 fn buffers(order: sort_order, reversed: c_int) -> Vec<String> {
-    unsafe {
-        let mut c = crit(order, reversed);
-        let l = sort_get_buffers(&c);
-        l.iter()
-            .map(|&pb| paste_buffer_name(&*pb).to_string_lossy().into_owned())
-            .collect()
-    }
+    let c = crit(order, reversed);
+    sort_get_buffers(&c)
+        .iter()
+        .map(|buffer| buffer.name.to_string_lossy().into_owned())
+        .collect()
 }
 
 #[test]
@@ -304,7 +310,14 @@ fn clients_named(order: sort_order, reversed: c_int) -> Vec<String> {
     unsafe {
         let mut c = crit(order, reversed);
         let l = sort_get_clients(&c);
-        l.iter().map(|&c| seen((*c).name_ptr())).collect()
+        l.iter()
+            .map(|c| {
+                c.name()
+                    .expect("client name")
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect()
     }
 }
 
@@ -399,10 +412,18 @@ fn no_clients_at_all_hand_back_nothing() {
 
 /// The names of the sessions the server hands back under `order`.
 fn sessions_named(order: sort_order, reversed: c_int) -> Vec<String> {
-    unsafe {
+    {
         let mut c = crit(order, reversed);
         let l = sort_get_sessions(&c);
-        l.iter().map(|&s| seen(session_name(s))).collect()
+        l.iter()
+            .map(|s| {
+                s.name()
+                    .as_deref()
+                    .expect("the session has a name")
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect()
     }
 }
 
@@ -430,9 +451,9 @@ fn sessions_sort_by_creation_oldest_first_and_activity_newest_first() {
     let mut newer = Session::new(2, "newer");
     unsafe {
         (*older.ptr()).creation_time = at(100, 0);
-        session_set_activity_time(older.ptr(), at(100, 5));
+        older.handle().set_activity_time(at(100, 5));
         (*newer.ptr()).creation_time = at(100, 7);
-        session_set_activity_time(newer.ptr(), at(200, 0));
+        newer.handle().set_activity_time(at(200, 0));
     }
     registry.add_session(&mut older);
     registry.add_session(&mut newer);
@@ -472,27 +493,35 @@ fn no_sessions_at_all_hand_back_nothing() {
 /// on. The pane and the screen behind it are the server-free fixtures.
 fn titled(id: u_int, title: &str, sx: u_int, sy: u_int) -> Pane {
     let mut pane = Pane::new(id, sx, sy, 100);
-    unsafe {
+    {
         let title = CString::new(title).expect("no NUL");
-        assert_eq!(screen_set_title(&mut *pane.screen(), title.as_ptr(), 0), 1);
+        assert_eq!(pane.base_mut().set_title(&title, 0), 1);
     }
     pane
 }
 
 /// The titles of panes, which is how a test tells them apart.
-unsafe fn titles(l: &[*mut window_pane]) -> Vec<String> {
+unsafe fn titles(l: &[RustWindowPaneWeak]) -> Vec<String> {
     unsafe {
         l.iter()
-            .map(|&wp| seen((*(*wp).screen()).title_ptr()))
+            .map(|wp| {
+                wp.get()
+                    .unwrap()
+                    .screen_ref()
+                    .title()
+                    .unwrap_or(c"")
+                    .to_string_lossy()
+                    .into_owned()
+            })
             .collect()
     }
 }
 
 /// The panes of `w`, by title, under `order`.
-unsafe fn window_panes(w: *mut window, order: sort_order, reversed: c_int) -> Vec<String> {
+unsafe fn window_panes(w: &WindowRef, order: sort_order, reversed: c_int) -> Vec<String> {
     unsafe {
-        let mut c = crit(order, reversed);
-        let l = sort_get_panes_window(w, &c);
+        let c = crit(order, reversed);
+        let l = w.sorted_panes(&c);
         titles(&l)
     }
 }
@@ -508,13 +537,13 @@ fn panes_sort_by_id_by_size_and_by_title() {
     window.add_pane(&mut second);
     window.add_pane(&mut third);
     unsafe {
-        let w = window.ptr();
-        assert_eq!(window_panes(w, SORT_CREATION, 0), ["aaa", "bbb", "ccc"]);
-        assert_eq!(window_panes(w, SORT_CREATION, 1), ["ccc", "bbb", "aaa"]);
-        assert_eq!(window_panes(w, SORT_SIZE, 0), ["bbb", "aaa", "ccc"]);
-        assert_eq!(window_panes(w, SORT_SIZE, 1), ["ccc", "aaa", "bbb"]);
-        assert_eq!(window_panes(w, SORT_NAME, 0), ["aaa", "bbb", "ccc"]);
-        assert_eq!(window_panes(w, SORT_NAME, 1), ["ccc", "bbb", "aaa"]);
+        let mut w = window.reference();
+        assert_eq!(window_panes(&w, SORT_CREATION, 0), ["aaa", "bbb", "ccc"]);
+        assert_eq!(window_panes(&w, SORT_CREATION, 1), ["ccc", "bbb", "aaa"]);
+        assert_eq!(window_panes(&w, SORT_SIZE, 0), ["bbb", "aaa", "ccc"]);
+        assert_eq!(window_panes(&w, SORT_SIZE, 1), ["ccc", "aaa", "bbb"]);
+        assert_eq!(window_panes(&w, SORT_NAME, 0), ["aaa", "bbb", "ccc"]);
+        assert_eq!(window_panes(&w, SORT_NAME, 1), ["ccc", "bbb", "aaa"]);
     }
 }
 
@@ -526,19 +555,25 @@ fn panes_sort_by_where_they_are_in_the_window_and_by_when_they_were_last_active(
     let mut second = titled(2, "second", 80, 24);
     let mut third = titled(3, "third", 80, 24);
     unsafe {
-        (*first.ptr()).active_point = 30;
-        (*second.ptr()).active_point = 10;
-        (*third.ptr()).active_point = 20;
+        (*first.ptr()).mark_active_at(30);
+        (*second.ptr()).mark_active_at(10);
+        (*third.ptr()).mark_active_at(20);
     }
     window.add_pane(&mut first);
     window.add_pane(&mut second);
     window.add_pane(&mut third);
     unsafe {
-        let w = window.ptr();
-        assert_eq!(window_panes(w, SORT_INDEX, 0), ["first", "second", "third"]);
-        assert_eq!(window_panes(w, SORT_INDEX, 1), ["third", "second", "first"]);
+        let mut w = window.reference();
         assert_eq!(
-            window_panes(w, SORT_ACTIVITY, 0),
+            window_panes(&w, SORT_INDEX, 0),
+            ["first", "second", "third"]
+        );
+        assert_eq!(
+            window_panes(&w, SORT_INDEX, 1),
+            ["third", "second", "first"]
+        );
+        assert_eq!(
+            window_panes(&w, SORT_ACTIVITY, 0),
             ["second", "third", "first"]
         );
     }
@@ -556,14 +591,20 @@ fn panes_share_a_z_index_until_one_of_them_floats() {
     window.add_pane(&mut first);
     window.add_pane(&mut second);
     unsafe {
-        let w = window.ptr();
-        assert_eq!(window_panes(w, SORT_Z, 0), ["aaa", "bbb"]);
-        let mut cell = Box::new(layout_cell::default());
-        cell.flags = LAYOUT_CELL_FLOATING;
-        (*first.ptr()).layout_cell = &raw mut *cell;
-        assert_eq!(window_panes(w, SORT_Z, 0), ["bbb", "aaa"]);
-        assert_eq!(window_panes(w, SORT_Z, 1), ["aaa", "bbb"]);
-        (*first.ptr()).layout_cell = null_mut::<layout_cell>();
+        let mut w = window.reference();
+        assert_eq!(window_panes(&w, SORT_Z, 0), ["aaa", "bbb"]);
+        crate::tests::test_fixtures::set_pane_floating(
+            &mut w.as_window_mut(),
+            (*first.ptr()).pane_id(),
+            true,
+        );
+        assert_eq!(window_panes(&w, SORT_Z, 0), ["bbb", "aaa"]);
+        assert_eq!(window_panes(&w, SORT_Z, 1), ["aaa", "bbb"]);
+        crate::tests::test_fixtures::set_pane_floating(
+            &mut w.as_window_mut(),
+            (*first.ptr()).pane_id(),
+            false,
+        );
     }
 }
 
@@ -572,8 +613,29 @@ fn a_window_with_no_panes_hands_back_nothing() {
     let _guard = sorting();
     let mut window = Window::new(1, "w", 80, 24);
     unsafe {
-        assert!(window_panes(window.ptr(), SORT_NAME, 0).is_empty());
+        assert!(window_panes(window.handle(), SORT_NAME, 0).is_empty());
     }
+}
+
+#[test]
+fn sorted_pane_observers_do_not_retain_panes_or_the_window() {
+    let _guard = sorting();
+    let mut window = Window::new(1, "held", 80, 24);
+    let mut pane = titled(7, "pane", 80, 24);
+    window.add_pane(&mut pane);
+    let weak = window.handle().downgrade();
+    let panes = unsafe { (window.handle()).sorted_panes(&crit(SORT_INDEX, 0)) };
+    assert_eq!(panes.len(), 1);
+    assert_eq!(panes[0].id(), 7);
+    assert!(unsafe { panes[0].get() }.is_some());
+
+    let weak_pane = panes[0].clone();
+    drop(window);
+    assert!(weak.upgrade().is_none());
+    assert!(weak_pane.upgrade().is_none());
+    assert!(unsafe { panes[0].get() }.is_none());
+    drop(panes);
+    assert!(weak_pane.upgrade().is_none());
 }
 
 #[test]
@@ -592,11 +654,11 @@ fn a_session_hands_back_the_panes_of_every_window_linked_into_it() {
     let wl2 = link(&mut session, &mut second, 2);
     unsafe {
         let mut c = crit(SORT_NAME, 0);
-        let l = sort_get_panes_session(session.ptr(), &c);
+        let l = sort_get_panes_session(&mut *session.ptr(), &c);
         assert_eq!(titles(&l), ["one", "three", "two"]);
 
         let mut c = crit(SORT_END, 0);
-        let l = sort_get_panes_session(session.ptr(), &c);
+        let l = sort_get_panes_session(&mut *session.ptr(), &c);
         assert_eq!(titles(&l), ["one", "two", "three"]);
     }
     unlink(&mut session, wl1);
@@ -639,12 +701,15 @@ fn no_sessions_at_all_hand_back_no_panes() {
 }
 
 /// The names of the windows winlinks point at.
-unsafe fn linked(l: &[*mut winlink]) -> Vec<String> {
-    unsafe {
+unsafe fn linked(l: &[WinlinkRef]) -> Vec<String> {
+    {
         l.iter()
-            .map(|&wl| {
-                (*(*wl).window())
-                    .name
+            .map(|wl| {
+                wl.get()
+                    .unwrap()
+                    .window_handle()
+                    .unwrap()
+                    .window_name()
                     .as_deref()
                     .map_or(String::new(), |name| name.to_string_lossy().into_owned())
             })
@@ -653,10 +718,10 @@ unsafe fn linked(l: &[*mut winlink]) -> Vec<String> {
 }
 
 /// The winlinks of `s`, by window name, under `order`.
-unsafe fn session_winlinks(s: *mut session, order: sort_order, reversed: c_int) -> Vec<String> {
+unsafe fn session_winlinks(s: &SessionRef, order: sort_order, reversed: c_int) -> Vec<String> {
     unsafe {
         let mut c = crit(order, reversed);
-        let l = sort_get_winlinks_session(s, &c);
+        let l = s.sorted_winlinks(&c);
         linked(&l)
     }
 }
@@ -672,7 +737,7 @@ fn winlinks_sort_by_index_by_window_name_and_by_window_size() {
     let wl2 = link(&mut session, &mut second, 1);
     let wl3 = link(&mut session, &mut third, 2);
     unsafe {
-        let s = session.ptr();
+        let s = session.handle();
         assert_eq!(session_winlinks(s, SORT_INDEX, 0), ["aaa", "bbb", "ccc"]);
         assert_eq!(session_winlinks(s, SORT_INDEX, 1), ["ccc", "bbb", "aaa"]);
         assert_eq!(session_winlinks(s, SORT_NAME, 0), ["aaa", "bbb", "ccc"]);
@@ -691,15 +756,15 @@ fn winlinks_sort_by_the_creation_and_activity_of_their_windows() {
     let mut older = Window::new(1, "older", 80, 24);
     let mut newer = Window::new(2, "newer", 80, 24);
     unsafe {
-        (*older.ptr()).creation_time = at(100, 0);
-        (*older.ptr()).activity_time = at(100, 5);
-        (*newer.ptr()).creation_time = at(100, 7);
-        (*newer.ptr()).activity_time = at(200, 0);
+        (*older.ptr()).set_creation_time(at(100, 0));
+        (*older.ptr()).set_activity_time(at(100, 5));
+        (*newer.ptr()).set_creation_time(at(100, 7));
+        (*newer.ptr()).set_activity_time(at(200, 0));
     }
     let wl1 = link(&mut session, &mut older, 1);
     let wl2 = link(&mut session, &mut newer, 2);
     unsafe {
-        let s = session.ptr();
+        let s = session.handle();
         assert_eq!(session_winlinks(s, SORT_CREATION, 0), ["older", "newer"]);
         assert_eq!(session_winlinks(s, SORT_CREATION, 1), ["newer", "older"]);
         assert_eq!(session_winlinks(s, SORT_ACTIVITY, 0), ["newer", "older"]);
@@ -718,7 +783,7 @@ fn winlinks_of_windows_at_one_time_fall_back_on_the_window_names() {
     let wl1 = link(&mut session, &mut bbb, 1);
     let wl2 = link(&mut session, &mut aaa, 2);
     unsafe {
-        let s = session.ptr();
+        let s = session.handle();
         assert_eq!(session_winlinks(s, SORT_CREATION, 0), ["aaa", "bbb"]);
         assert_eq!(session_winlinks(s, SORT_ACTIVITY, 0), ["aaa", "bbb"]);
         assert_eq!(session_winlinks(s, SORT_Z, 0), ["aaa", "bbb"]);
@@ -760,7 +825,7 @@ fn a_session_with_no_windows_hands_back_no_winlinks() {
     let _guard = sorting();
     let mut session = Session::new(1, "s");
     unsafe {
-        assert!(session_winlinks(session.ptr(), SORT_INDEX, 0).is_empty());
+        assert!(session_winlinks(session.handle(), SORT_INDEX, 0).is_empty());
     }
 }
 
@@ -784,24 +849,15 @@ impl Table {
 
     fn add(&mut self, key: key_code) {
         unsafe {
-            let mut pr = cmd_parse_from_string(
-                c"display-message hi".as_ptr(),
-                null_mut::<cmd_parse_input>(),
-            );
+            let mut pr = cmd_parse_from_string(c"display-message hi", None);
             assert_eq!(pr.status, CMD_PARSE_SUCCESS);
-            key_bindings_add(
-                self.name.as_ptr(),
-                key,
-                ::core::ptr::null::<c_char>(),
-                0,
-                pr.cmdlist.take(),
-            );
+            key_bindings_add(&self.name, key, None, 0, pr.cmdlist.take());
         }
         self.keys.push(key);
     }
 
-    fn ptr(&self) -> *mut key_table {
-        unsafe { key_bindings_get_table(self.name.as_ptr(), 0) }
+    fn handle(&self) -> KeyTableRef {
+        key_bindings_get_table(&self.name, 0).unwrap()
     }
 }
 
@@ -809,7 +865,7 @@ impl Drop for Table {
     fn drop(&mut self) {
         unsafe {
             for key in &self.keys {
-                key_bindings_remove(self.name.as_ptr(), *key);
+                key_bindings_remove(&self.name, *key);
             }
         }
     }
@@ -831,15 +887,15 @@ fn tables() -> (MutexGuard<'static, ()>, MutexGuard<'static, ()>) {
 }
 
 /// The keys of bindings.
-unsafe fn keys(l: &[*mut key_binding]) -> Vec<key_code> {
-    unsafe { l.iter().map(|&bd| key_binding_key(bd)).collect() }
+fn keys(l: &[key_binding]) -> Vec<key_code> {
+    l.iter().map(key_binding_key).collect()
 }
 
 /// The bindings of `table` under `order`, by key.
-unsafe fn table_keys(table: *mut key_table, order: sort_order, reversed: c_int) -> Vec<key_code> {
+unsafe fn table_keys(table: &KeyTableRef, order: sort_order, reversed: c_int) -> Vec<key_code> {
     unsafe {
         let mut c = crit(order, reversed);
-        let l = sort_get_key_bindings_table(table, &c);
+        let l = sort_get_key_bindings_table(&mut table.borrow_mut(), &c);
         keys(&l)
     }
 }
@@ -853,15 +909,15 @@ fn key_bindings_sort_by_the_key_itself() {
     table.add(b'b' as key_code);
     unsafe {
         assert_eq!(
-            table_keys(table.ptr(), SORT_INDEX, 0),
+            table_keys(&table.handle(), SORT_INDEX, 0),
             [b'a' as key_code, b'b' as key_code, b'c' as key_code]
         );
         assert_eq!(
-            table_keys(table.ptr(), SORT_INDEX, 1),
+            table_keys(&table.handle(), SORT_INDEX, 1),
             [b'c' as key_code, b'b' as key_code, b'a' as key_code]
         );
         assert_eq!(
-            table_keys(table.ptr(), SORT_END, 0),
+            table_keys(&table.handle(), SORT_END, 0),
             [b'a' as key_code, b'b' as key_code, b'c' as key_code]
         );
     }
@@ -882,15 +938,15 @@ fn the_modifiers_of_a_key_are_cut_off_both_of_the_comparisons() {
     table.add(b'a' as key_code | KEYC_META);
     unsafe {
         assert_eq!(
-            table_keys(table.ptr(), SORT_INDEX, 0),
+            table_keys(&table.handle(), SORT_INDEX, 0),
             [b'a' as key_code | KEYC_META, b'a' as key_code]
         );
         assert_eq!(
-            table_keys(table.ptr(), SORT_MODIFIER, 0),
+            table_keys(&table.handle(), SORT_MODIFIER, 0),
             [b'a' as key_code | KEYC_META, b'a' as key_code]
         );
         assert_eq!(
-            table_keys(table.ptr(), SORT_MODIFIER, 1),
+            table_keys(&table.handle(), SORT_MODIFIER, 1),
             [b'a' as key_code, b'a' as key_code | KEYC_META]
         );
     }
@@ -908,7 +964,7 @@ fn two_bindings_of_one_table_are_turned_round_by_their_table_name() {
     table.add(b'b' as key_code);
     unsafe {
         assert_eq!(
-            table_keys(table.ptr(), SORT_NAME, 0),
+            table_keys(&table.handle(), SORT_NAME, 0),
             [b'b' as key_code, b'a' as key_code]
         );
     }
@@ -928,7 +984,7 @@ fn every_binding_of_a_table_is_turned_round_by_their_table_name() {
     }
     unsafe {
         assert_eq!(
-            table_keys(table.ptr(), SORT_NAME, 0),
+            table_keys(&table.handle(), SORT_NAME, 0),
             (b'a'..=b'j')
                 .rev()
                 .map(|k| k as key_code)
@@ -971,9 +1027,9 @@ fn each_table_keeps_its_place_when_its_own_run_is_turned_round() {
 #[test]
 fn a_table_with_no_bindings_hands_back_nothing() {
     let _guards = tables();
-    let mut table = Box::new(key_table::new(CString::default()));
+    let table = KeyTableRef::new(key_table::new(CString::default()));
     unsafe {
-        assert!(table_keys(&raw mut *table, SORT_INDEX, 0).is_empty());
+        assert!(table_keys(&table, SORT_INDEX, 0).is_empty());
     }
 }
 
@@ -1031,48 +1087,42 @@ fn no_key_tables_at_all_hand_back_nothing() {
 
 /// What one of the comparisons answers for `a` and `b` under `order`.
 unsafe fn compares<T>(
-    cmp: Compare<T>,
+    cmp: impl Fn(&T, &T, &sort_criteria_t) -> c_int,
     order: sort_order,
     reversed: c_int,
     a: *mut T,
     b: *mut T,
 ) -> c_int {
-    unsafe { cmp(a, b, &crit(order, reversed)) }
+    unsafe { cmp(&*a, &*b, &crit(order, reversed)) }
 }
 
 /// The two buffers a comparison test works over, the second one newer than
 /// the first.
-fn two_buffers(store: &Buffers) -> (*mut paste_buffer, *mut paste_buffer) {
-    unsafe {
-        store.add("aaa", "xx");
-        store.add("bbb", "xxxx");
-        (
-            paste_get_name(c"aaa".as_ptr()),
-            paste_get_name(c"bbb".as_ptr()),
-        )
-    }
+fn two_buffers(store: &Buffers) -> (SortedPasteBuffer, SortedPasteBuffer) {
+    store.add("aaa", "xx");
+    store.add("bbb", "xxxx");
+    let mut buffers = sort_get_buffers(&crit(SORT_NAME, 0));
+    (buffers.remove(0), buffers.remove(0))
 }
 
 #[test]
 fn a_buffer_comparison_answers_the_names_the_orders_and_the_sizes() {
     let _guard = sorting();
     let store = Buffers::new();
-    unsafe {
-        let (aaa, bbb) = two_buffers(&store);
-        assert!(compares(sort_buffer_cmp, SORT_NAME, 0, aaa, bbb) < 0);
-        assert!(compares(sort_buffer_cmp, SORT_NAME, 0, bbb, aaa) > 0);
-        assert_eq!(compares(sort_buffer_cmp, SORT_NAME, 0, aaa, aaa), 0);
-        assert!(compares(sort_buffer_cmp, SORT_NAME, 1, aaa, bbb) > 0);
+    let (aaa, bbb) = two_buffers(&store);
+    assert!(sort_buffer_cmp(&aaa, &bbb, &crit(SORT_NAME, 0)) < 0);
+    assert!(sort_buffer_cmp(&bbb, &aaa, &crit(SORT_NAME, 0)) > 0);
+    assert_eq!(sort_buffer_cmp(&aaa, &aaa, &crit(SORT_NAME, 0)), 0);
+    assert!(sort_buffer_cmp(&aaa, &bbb, &crit(SORT_NAME, 1)) > 0);
 
-        assert_eq!(compares(sort_buffer_cmp, SORT_CREATION, 0, aaa, bbb), 1);
-        assert_eq!(compares(sort_buffer_cmp, SORT_CREATION, 0, bbb, aaa), -1);
-        assert_eq!(compares(sort_buffer_cmp, SORT_CREATION, 1, aaa, bbb), -1);
-        assert_eq!(compares(sort_buffer_cmp, SORT_CREATION, 0, aaa, aaa), 0);
+    assert_eq!(sort_buffer_cmp(&aaa, &bbb, &crit(SORT_CREATION, 0)), 1);
+    assert_eq!(sort_buffer_cmp(&bbb, &aaa, &crit(SORT_CREATION, 0)), -1);
+    assert_eq!(sort_buffer_cmp(&aaa, &bbb, &crit(SORT_CREATION, 1)), -1);
+    assert_eq!(sort_buffer_cmp(&aaa, &aaa, &crit(SORT_CREATION, 0)), 0);
 
-        assert_eq!(compares(sort_buffer_cmp, SORT_SIZE, 0, aaa, bbb), -2);
-        assert_eq!(compares(sort_buffer_cmp, SORT_SIZE, 0, bbb, aaa), 2);
-        assert_eq!(compares(sort_buffer_cmp, SORT_SIZE, 1, aaa, bbb), 2);
-    }
+    assert_eq!(sort_buffer_cmp(&aaa, &bbb, &crit(SORT_SIZE, 0)), -2);
+    assert_eq!(sort_buffer_cmp(&bbb, &aaa, &crit(SORT_SIZE, 0)), 2);
+    assert_eq!(sort_buffer_cmp(&aaa, &bbb, &crit(SORT_SIZE, 1)), 2);
 }
 
 /// A buffer knows nothing of the orders the other stores sort by, so it
@@ -1081,12 +1131,10 @@ fn a_buffer_comparison_answers_the_names_the_orders_and_the_sizes() {
 fn a_buffer_comparison_falls_back_on_the_names_for_any_other_order() {
     let _guard = sorting();
     let store = Buffers::new();
-    unsafe {
-        let (aaa, bbb) = two_buffers(&store);
-        for order in [SORT_ACTIVITY, SORT_INDEX, SORT_MODIFIER, SORT_ORDER, SORT_Z] {
-            assert!(compares(sort_buffer_cmp, order, 0, aaa, bbb) < 0);
-            assert!(compares(sort_buffer_cmp, order, 0, bbb, aaa) > 0);
-        }
+    let (aaa, bbb) = two_buffers(&store);
+    for order in [SORT_ACTIVITY, SORT_INDEX, SORT_MODIFIER, SORT_ORDER, SORT_Z] {
+        assert!(sort_buffer_cmp(&aaa, &bbb, &crit(order, 0)) < 0);
+        assert!(sort_buffer_cmp(&bbb, &aaa, &crit(order, 0)) > 0);
     }
 }
 
@@ -1173,14 +1221,22 @@ fn a_session_comparison_answers_the_creation_and_activity_times() {
             for (a, b) in [(at(100, 0), at(200, 0)), (at(100, 0), at(100, 5))] {
                 (*aaa).creation_time = a;
                 (*bbb).creation_time = b;
-                session_set_activity_time(aaa, a);
-                session_set_activity_time(bbb, b);
+                crate::session::session_ref_of(&mut *aaa)
+                    .expect("session owner")
+                    .set_activity_time(a);
+                crate::session::session_ref_of(&mut *bbb)
+                    .expect("session owner")
+                    .set_activity_time(b);
                 assert_eq!(compares(sort_session_cmp, order, 0, aaa, bbb), older);
                 assert_eq!(compares(sort_session_cmp, order, 0, bbb, aaa), newer);
                 assert_eq!(compares(sort_session_cmp, order, 1, aaa, bbb), -older);
             }
             (*bbb).creation_time = (*aaa).creation_time;
-            session_set_activity_time(bbb, session_activity_time(aaa));
+            crate::session::session_ref_of(&mut *bbb)
+                .expect("session owner")
+                .set_activity_time(
+                    crate::SessionTimestampState::session_timestamps(&*aaa).activity,
+                );
             assert!(compares(sort_session_cmp, order, 0, aaa, bbb) < 0);
         }
     }
@@ -1195,26 +1251,25 @@ fn a_pane_comparison_answers_everything_a_pane_is_sorted_by() {
     window.add_pane(&mut first);
     window.add_pane(&mut second);
     unsafe {
-        let aaa = first.ptr();
-        let bbb = second.ptr();
-        (*aaa).active_point = 5;
-        (*bbb).active_point = 9;
-        assert_eq!(compares(sort_pane_cmp, SORT_ACTIVITY, 0, aaa, bbb), -4);
-        assert_eq!(compares(sort_pane_cmp, SORT_ACTIVITY, 1, aaa, bbb), 4);
-        assert_eq!(compares(sort_pane_cmp, SORT_CREATION, 0, aaa, bbb), -4);
-        assert_eq!(compares(sort_pane_cmp, SORT_SIZE, 0, aaa, bbb), -4);
-        assert_eq!(compares(sort_pane_cmp, SORT_INDEX, 0, aaa, bbb), -1);
-        assert_eq!(compares(sort_pane_cmp, SORT_INDEX, 0, bbb, aaa), 1);
-        assert!(compares(sort_pane_cmp, SORT_Z, 0, aaa, bbb) < 0);
-        let mut cell = Box::new(layout_cell::default());
-        cell.flags = LAYOUT_CELL_FLOATING;
-        (*aaa).layout_cell = &raw mut *cell;
-        assert_eq!(compares(sort_pane_cmp, SORT_Z, 0, aaa, bbb), -2);
-        assert_eq!(compares(sort_pane_cmp, SORT_Z, 1, aaa, bbb), 2);
-        (*aaa).layout_cell = null_mut::<layout_cell>();
-        assert!(compares(sort_pane_cmp, SORT_NAME, 0, aaa, bbb) < 0);
+        let mut owner = window.reference();
+        let mut aaa = owner.as_window().panes[0].downgrade();
+        let mut bbb = owner.as_window().panes[1].downgrade();
+        aaa.as_pane_mut().mark_active_at(5);
+        bbb.as_pane_mut().mark_active_at(9);
+        assert_eq!(sort_pane_cmp(&aaa, &bbb, &crit(SORT_ACTIVITY, 0)), -4);
+        assert_eq!(sort_pane_cmp(&aaa, &bbb, &crit(SORT_ACTIVITY, 1)), 4);
+        assert_eq!(sort_pane_cmp(&aaa, &bbb, &crit(SORT_CREATION, 0)), -4);
+        assert_eq!(sort_pane_cmp(&aaa, &bbb, &crit(SORT_SIZE, 0)), -4);
+        assert_eq!(sort_pane_cmp(&aaa, &bbb, &crit(SORT_INDEX, 0)), -1);
+        assert_eq!(sort_pane_cmp(&bbb, &aaa, &crit(SORT_INDEX, 0)), 1);
+        assert!(sort_pane_cmp(&aaa, &bbb, &crit(SORT_Z, 0)) < 0);
+        crate::tests::test_fixtures::set_pane_floating(&mut owner.as_window_mut(), aaa.id(), true);
+        assert_eq!(sort_pane_cmp(&aaa, &bbb, &crit(SORT_Z, 0)), -2);
+        assert_eq!(sort_pane_cmp(&aaa, &bbb, &crit(SORT_Z, 1)), 2);
+        crate::tests::test_fixtures::set_pane_floating(&mut owner.as_window_mut(), aaa.id(), false);
+        assert!(sort_pane_cmp(&aaa, &bbb, &crit(SORT_NAME, 0)) < 0);
         for order in [SORT_MODIFIER, SORT_ORDER] {
-            assert!(compares(sort_pane_cmp, order, 0, aaa, bbb) < 0);
+            assert!(sort_pane_cmp(&aaa, &bbb, &crit(order, 0)) < 0);
         }
     }
 }
@@ -1254,16 +1309,17 @@ fn a_winlink_comparison_answers_the_times_of_the_windows_behind_it() {
         let bbb = second.ptr();
         for (order, older, newer) in [(SORT_CREATION, -1, 1), (SORT_ACTIVITY, 1, -1)] {
             for (a, b) in [(at(100, 0), at(200, 0)), (at(100, 0), at(100, 5))] {
-                (*aaa).creation_time = a;
-                (*bbb).creation_time = b;
-                (*aaa).activity_time = a;
-                (*bbb).activity_time = b;
+                (*aaa).set_creation_time(a);
+                (*bbb).set_creation_time(b);
+                (*aaa).set_activity_time(a);
+                (*bbb).set_activity_time(b);
                 assert_eq!(compares(sort_winlink_cmp, order, 0, wl1, wl2), older);
                 assert_eq!(compares(sort_winlink_cmp, order, 0, wl2, wl1), newer);
                 assert_eq!(compares(sort_winlink_cmp, order, 1, wl1, wl2), -older);
             }
-            (*bbb).creation_time = (*aaa).creation_time;
-            (*bbb).activity_time = (*aaa).activity_time;
+            let times = (*aaa).timestamps();
+            (*bbb).set_creation_time(times.creation);
+            (*bbb).set_activity_time(times.activity);
             assert!(compares(sort_winlink_cmp, order, 0, wl1, wl2) < 0);
         }
     }
@@ -1285,33 +1341,30 @@ fn a_key_binding_comparison_answers_one_for_two_bindings_of_a_table() {
     unsafe {
         let mut c = crit(SORT_END, 0);
         let l = sort_get_key_bindings(&c);
-        let aaa = l[0];
-        let bbb = l[1];
-        assert_eq!(compares(sort_key_binding_cmp, SORT_INDEX, 0, aaa, bbb), -1);
-        assert_eq!(compares(sort_key_binding_cmp, SORT_INDEX, 0, bbb, aaa), 1);
-        assert_eq!(compares(sort_key_binding_cmp, SORT_INDEX, 1, aaa, bbb), 1);
-        assert_eq!(
-            compares(sort_key_binding_cmp, SORT_MODIFIER, 0, aaa, bbb),
-            1
-        );
-        assert_eq!(compares(sort_key_binding_cmp, SORT_NAME, 0, aaa, bbb), 1);
-        assert_eq!(compares(sort_key_binding_cmp, SORT_NAME, 1, aaa, bbb), -1);
+        let aaa = &l[0];
+        let bbb = &l[1];
+        assert_eq!(sort_key_binding_cmp(aaa, bbb, &crit(SORT_INDEX, 0)), -1);
+        assert_eq!(sort_key_binding_cmp(bbb, aaa, &crit(SORT_INDEX, 0)), 1);
+        assert_eq!(sort_key_binding_cmp(aaa, bbb, &crit(SORT_INDEX, 1)), 1);
+        assert_eq!(sort_key_binding_cmp(aaa, bbb, &crit(SORT_MODIFIER, 0)), 1);
+        assert_eq!(sort_key_binding_cmp(aaa, bbb, &crit(SORT_NAME, 0)), 1);
+        assert_eq!(sort_key_binding_cmp(aaa, bbb, &crit(SORT_NAME, 1)), -1);
         for order in [SORT_ACTIVITY, SORT_CREATION, SORT_ORDER, SORT_SIZE, SORT_Z] {
-            assert_eq!(compares(sort_key_binding_cmp, order, 0, aaa, bbb), 1);
+            assert_eq!(sort_key_binding_cmp(aaa, bbb, &crit(order, 0)), 1);
         }
     }
 }
 
 /// A comparison that answers *greater* for every pair, which is the shape
 /// the key comparison takes for two bindings of one table.
-fn always_greater(_a: *mut c_int, _b: *mut c_int) -> c_int {
+fn always_greater(_a: &*mut c_int, _b: &*mut c_int) -> c_int {
     1
 }
 
 /// A comparison by what is pointed at: a consistent order, with a tie
 /// wherever two entries carry the same number.
-unsafe fn by_value(a: *mut c_int, b: *mut c_int) -> c_int {
-    unsafe { *a - *b }
+unsafe fn by_value(a: &*mut c_int, b: &*mut c_int) -> c_int {
+    unsafe { **a - **b }
 }
 
 /// One entry per number, as the list of pointers a collector would hold.
@@ -1352,5 +1405,36 @@ fn entries_that_compare_equal_keep_the_order_they_came_in() {
         let mut settled = came_in.clone();
         settled.sort_by_key(|p| unsafe { **p });
         assert_eq!(l, settled, "{len} entries");
+    }
+}
+
+pub(crate) unsafe fn sort_get_panes(sort_crit: &sort_criteria_t) -> Vec<RustWindowPaneWeak> {
+    unsafe {
+        let mut l = Vec::new();
+        for s in SESSIONS.read().values() {
+            for wl in s.as_session().windows.values() {
+                if let Some(window) = wl.window_handle() {
+                    l.extend(panes_of(window));
+                }
+            }
+        }
+        sort_list(&mut l, sort_pane_cmp, sort_crit);
+        l
+    }
+}
+
+pub(crate) unsafe fn sort_get_panes_session(
+    s: &session,
+    sort_crit: &sort_criteria_t,
+) -> Vec<RustWindowPaneWeak> {
+    {
+        let mut l = Vec::new();
+        for wl in s.windows.values() {
+            if let Some(window) = wl.window_handle() {
+                l.extend(panes_of(window));
+            }
+        }
+        sort_list(&mut l, sort_pane_cmp, sort_crit);
+        l
     }
 }

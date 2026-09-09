@@ -1,12 +1,15 @@
 use super::*;
-use crate::cmd::cmd_get_args;
-use crate::options::options_set_number;
+use crate::options::OptionsRef;
+use crate::pane_geometry::PaneGeometryState;
+use crate::pane_identity::PaneIdentity;
+use crate::screen::PANE_SCROLLBARS_RIGHT;
 use crate::tests::test_fixtures::{Item, Pane, Window, globals};
 use crate::window::PANE_SCROLLBARS_ALWAYS;
-use crate::window::window_get_active;
+use crate::window::window_active_pane;
 use crate::window::{window_pane_is_floating, window_pane_show_scrollbar};
+use crate::window_dimensions::WindowDimensionsState;
+use crate::window_scrollbar::{WindowScrollbarSettings, WindowScrollbarState};
 use ::core::ffi::c_int;
-use ::core::ptr::null_mut;
 use ::std::ffi::CString;
 use ::std::sync::MutexGuard;
 
@@ -19,7 +22,62 @@ struct Layout {
     next_id: u_int,
 }
 
+fn set_scrollbar_dimensions(wp: &mut impl crate::WindowPane, width: c_int, padding: c_int) {
+    let mut style = wp.scrollbar_style();
+    style.width = width;
+    style.padding = padding;
+    wp.set_scrollbar_style(style);
+}
+
 impl Layout {
+    fn reference(&self) -> WindowRef {
+        self.window.reference()
+    }
+
+    fn cell(&mut self, pane: usize) -> Option<std::cell::Ref<'_, layout_cell>> {
+        let id = unsafe { (*self.pane(pane)).pane_id() };
+        let w = { self.window.handle().as_window() };
+        std::cell::Ref::filter_map(w, |w| {
+            crate::layout::layout_cell_for_pane(
+                w.layout_root.as_deref(),
+                &crate::window::window_pane_find_by_id(id).expect("the pane allocation exists"),
+            )
+            .map(|(cell, _)| cell)
+        })
+        .ok()
+    }
+
+    fn cell_path(&mut self, pane: usize) -> LayoutCellPath {
+        let id = unsafe { (*self.pane(pane)).pane_id() };
+        let w = { self.window.handle().as_window() };
+        LayoutCellPath::for_pane(
+            w.layout_root.as_deref().unwrap(),
+            &crate::window::window_pane_find_by_id(id).expect("the pane allocation exists"),
+        )
+        .unwrap()
+    }
+
+    fn border(&mut self, pane: usize, status: c_int) -> c_int {
+        let id = unsafe { (*self.pane(pane)).pane_id() };
+        let w = { self.window.handle().as_window() };
+        layout_add_horizontal_border(
+            w.layout_root.as_deref(),
+            layout_cell_for_pane(
+                w.layout_root.as_deref(),
+                &crate::window::window_pane_find_by_id(id).expect("the pane allocation exists"),
+            )
+            .unwrap()
+            .0,
+            status,
+        )
+    }
+
+    fn set_floating(&mut self, pane: usize, floating: bool) {
+        let id = unsafe { (*self.pane(pane)).pane_id() };
+        let mut owner = self.window.reference();
+        crate::tests::test_fixtures::set_pane_floating(&mut owner.as_window_mut(), id, floating);
+    }
+
     /// A window of `sx` by `sy` with one pane filling it, as `layout_init`
     /// leaves a freshly created window.
     fn new(sx: u_int, sy: u_int) -> Layout {
@@ -29,7 +87,12 @@ impl Layout {
             next_id: 0,
         };
         l.add_pane(sx, sy);
-        unsafe { layout_init(l.w(), l.pane(0)) };
+        unsafe {
+            (l.reference()).init_layout(
+                &crate::window::window_pane_find_by_id((*l.pane(0)).pane_id())
+                    .expect("the layout pane exists"),
+            )
+        };
         l
     }
 
@@ -39,6 +102,51 @@ impl Layout {
 
     fn pane(&mut self, i: usize) -> *mut window_pane {
         self.panes[i].ptr()
+    }
+
+    fn resize_pane(&mut self, pane: usize, axis: layout_type, change: c_int, opposite: c_int) {
+        unsafe {
+            let id = (*self.pane(pane)).pane_id();
+            let mut owner = self.window.reference();
+            owner.resize_pane(
+                &crate::window::window_pane_find_by_id(id).expect("the layout pane exists"),
+                axis,
+                change,
+                opposite,
+            );
+        }
+    }
+
+    fn close(&mut self, pane: usize) {
+        unsafe {
+            let id = (*self.pane(pane)).pane_id();
+            let mut owner = self.window.reference();
+            owner.close_pane_layout(
+                &crate::window::window_pane_find_by_id(id).expect("the layout pane exists"),
+            );
+        }
+    }
+
+    fn spread_out(&mut self, pane: usize) {
+        unsafe {
+            let id = (*self.pane(pane)).pane_id();
+            let mut owner = self.window.reference();
+            owner.spread_pane_layout(
+                &crate::window::window_pane_find_by_id(id).expect("the layout pane exists"),
+            );
+        }
+    }
+
+    fn resize_pane_to(&mut self, pane: usize, axis: layout_type, size: u_int) {
+        unsafe {
+            let id = (*self.pane(pane)).pane_id();
+            let mut owner = self.window.reference();
+            owner.resize_pane_to(
+                &crate::window::window_pane_find_by_id(id).expect("the layout pane exists"),
+                axis,
+                size,
+            );
+        }
     }
 
     /// A pane in the window's list, not yet in the layout tree.
@@ -55,13 +163,23 @@ impl Layout {
     /// there was no room.
     fn split(&mut self, i: usize, type_0: layout_type, size: c_int, flags: c_int) -> Option<usize> {
         unsafe {
-            let wp = self.pane(i);
-            let lc = layout_split_pane(wp, type_0, size, flags);
-            if lc.is_null() {
+            let pane_id = (*self.pane(i)).pane_id();
+            let lc = (self.reference()).split_pane_layout(
+                &crate::window::window_pane_find_by_id(pane_id).expect("the layout pane exists"),
+                type_0,
+                size,
+                flags,
+            );
+            if lc.is_none() {
                 return None;
             }
             let j = self.add_pane(1, 1);
-            layout_assign_pane(lc, self.pane(j), 0);
+            (self.reference()).assign_pane_layout(
+                lc.as_ref().unwrap(),
+                &crate::window::window_pane_find_by_id((*self.pane(j)).pane_id())
+                    .expect("the layout pane exists"),
+                0,
+            );
             Some(j)
         }
     }
@@ -69,63 +187,72 @@ impl Layout {
     /// The tree as one line: each node is its type, size and offset, with
     /// its children in brackets.
     fn dump(&mut self) -> String {
-        unsafe { dump_cell((*self.w()).layout_root_ptr()) }
+        unsafe { dump_cell((*self.w()).layout_root.as_deref()) }
     }
 
     /// The sizes and offsets the panes themselves were given.
-    fn panes(&mut self) -> Vec<String> {
+    fn panes(&self) -> Vec<String> {
         unsafe {
-            let mut out = Vec::new();
-            let w = self.w();
-            let mut wp = window_panes_first(w);
-            while !wp.is_null() {
-                out.push(format!(
-                    "%{} {}x{}+{}+{}",
-                    (*wp).id,
-                    (*wp).sx,
-                    (*wp).sy,
-                    (*wp).xoff,
-                    (*wp).yoff
-                ));
-                wp = window_panes_next(w, wp);
-            }
-            out
+            self.window
+                .handle()
+                .as_window()
+                .panes
+                .iter()
+                .map(|pane| {
+                    let pane = pane.as_pane();
+                    let geometry = pane.geometry();
+                    format!(
+                        "%{} {}x{}+{}+{}",
+                        pane.pane_id(),
+                        geometry.width,
+                        geometry.height,
+                        geometry.x,
+                        geometry.y
+                    )
+                })
+                .collect()
         }
     }
 }
 
 impl Drop for Layout {
     fn drop(&mut self) {
-        unsafe { layout_free(self.window.ptr()) };
+        (self.window.reference()).free_layout();
     }
 }
 
-unsafe fn dump_cell(lc: *mut layout_cell) -> String {
-    unsafe {
-        if lc.is_null() {
-            return "-".to_string();
+fn dump_cell(lc: Option<&layout_cell>) -> String {
+    let Some(lc) = lc else {
+        return "-".to_string();
+    };
+    let here = format!("{}x{}+{}+{}", lc.sx, lc.sy, lc.xoff, lc.yoff);
+    let floating = if lc.flags & LAYOUT_CELL_FLOATING != 0 {
+        "*"
+    } else {
+        ""
+    };
+    match lc.type_0 {
+        LAYOUT_WINDOWPANE => format!(
+            "%{}{floating} {here}",
+            lc.wp_ref
+                .as_ref()
+                .map(|pane| pane.id())
+                .unwrap_or(u_int::MAX)
+        ),
+        LAYOUT_LEFTRIGHT | LAYOUT_TOPBOTTOM => {
+            let kids: Vec<String> = lc
+                .cells
+                .iter()
+                .map(|child| dump_cell(Some(child)))
+                .collect();
+            let name = if lc.type_0 == LAYOUT_LEFTRIGHT {
+                "LR"
+            } else {
+                "TB"
+            };
+            format!("{name}{floating} {here} [{}]", kids.join(" | "))
         }
-        let here = format!("{}x{}+{}+{}", (*lc).sx, (*lc).sy, (*lc).xoff, (*lc).yoff);
-        let floating = if (*lc).flags & LAYOUT_CELL_FLOATING != 0 {
-            "*"
-        } else {
-            ""
-        };
-        match (*lc).type_0 {
-            LAYOUT_WINDOWPANE => format!("%{}{floating} {here}", (*lc).wp_id.unwrap_or(u_int::MAX)),
-            LAYOUT_LEFTRIGHT | LAYOUT_TOPBOTTOM => {
-                let kids: Vec<String> = crate::list::foreach_owned(&raw mut (*lc).cells)
-                    .map(|child| dump_cell(child))
-                    .collect();
-                let name = if (*lc).type_0 == LAYOUT_LEFTRIGHT {
-                    "LR"
-                } else {
-                    "TB"
-                };
-                format!("{name}{floating} {here} [{}]", kids.join(" | "))
-            }
-            _ => format!("?{floating} {here}"),
-        }
+        _ => format!("?{floating} {here}"),
     }
 }
 
@@ -133,13 +260,10 @@ unsafe fn dump_cell(lc: *mut layout_cell) -> String {
 /// own options.
 fn with_status(l: &mut Layout, status: c_int, body: impl FnOnce(&mut Layout)) {
     unsafe {
-        options_set_number(
-            (*l.w()).options_ptr(),
-            c"pane-border-status".as_ptr(),
-            status as ::core::ffi::c_longlong,
-        );
+        (*(*l.w()).options_ref())
+            .set_number(c"pane-border-status", status as core::ffi::c_longlong);
         body(l);
-        options_set_number((*l.w()).options_ptr(), c"pane-border-status".as_ptr(), 0);
+        (*(*l.w()).options_ref()).set_number(c"pane-border-status", 0);
     }
 }
 
@@ -154,26 +278,37 @@ fn a_new_layout_is_one_cell_filling_the_window() {
     assert_eq!(l.dump(), "%1 80x24+0+0");
     assert_eq!(l.panes(), vec!["%1 80x24+0+0"]);
     unsafe {
-        assert_eq!(layout_count_cells((*l.w()).layout_root_ptr()), 1);
-        assert_eq!((*l.pane(0)).layout_cell, (*l.w()).layout_root_ptr());
+        assert_eq!(
+            layout_count_cells(&mut *(*l.w()).layout_root.as_deref_mut().unwrap()),
+            1
+        );
+        assert_eq!(
+            (*l.w())
+                .layout_root
+                .as_deref()
+                .unwrap()
+                .wp_ref
+                .as_ref()
+                .map(|pane| pane.id()),
+            Some((*l.pane(0)).pane_id())
+        );
     }
 }
 
 #[test]
 fn a_fresh_cell_starts_at_the_largest_size_there_is() {
     let _g = guard();
-    unsafe {
-        let lc = layout_create_cell(null_mut::<layout_cell>());
-        let lc = &raw const *lc as *mut layout_cell;
+    {
+        let mut lc = layout_create_cell(None);
         assert_eq!((*lc).type_0, LAYOUT_WINDOWPANE);
         assert_eq!((*lc).flags, 0);
-        assert!((*lc).parent.is_null());
+        assert!(!(*lc).has_parent);
         assert_eq!((*lc).sx, UINT_MAX as u_int);
         assert_eq!((*lc).sy, UINT_MAX as u_int);
         assert_eq!((*lc).xoff, INT_MAX);
         assert_eq!((*lc).yoff, INT_MAX);
-        assert!((*lc).wp_id.is_none());
-        layout_free_cell(null_mut(), None);
+        assert!((*lc).wp_ref.as_ref().map(|pane| pane.id()).is_none());
+        layout_free_cell(None);
     }
 }
 
@@ -241,7 +376,12 @@ fn a_third_split_of_the_same_kind_joins_the_same_node() {
         l.dump(),
         "LR 80x24+0+0 [%1 40x24+0+0 | %2 19x24+41+0 | %3 19x24+61+0]"
     );
-    unsafe { assert_eq!(layout_count_cells((*l.w()).layout_root_ptr()), 3) };
+    unsafe {
+        assert_eq!(
+            layout_count_cells(&mut *(*l.w()).layout_root.as_deref_mut().unwrap()),
+            3
+        )
+    };
 }
 
 #[test]
@@ -257,23 +397,74 @@ fn a_split_of_the_other_kind_nests_a_node() {
 }
 
 #[test]
+fn splitting_resolves_siblings_from_the_owned_tree() {
+    let _g = guard();
+    let mut layout = Layout::new(80, 24);
+    layout.split(0, LAYOUT_LEFTRIGHT, -1, 0);
+    let mut owner = layout.window.reference();
+    {
+        owner
+            .as_window_mut()
+            .layout_root
+            .as_deref_mut()
+            .unwrap()
+            .cells[1]
+            .has_parent = false;
+    }
+    layout.split(1, LAYOUT_LEFTRIGHT, -1, SPAWN_BEFORE);
+    assert_eq!(
+        layout.dump(),
+        "LR 80x24+0+0 [%1 40x24+0+0 | %3 19x24+41+0 | %2 19x24+61+0]"
+    );
+}
+
+#[test]
 fn closing_a_pane_gives_its_room_back_to_its_neighbour() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
-    unsafe { layout_close_pane(l.pane(1)) };
+    l.close(1);
     assert_eq!(l.dump(), "%1 80x24+0+0");
-    unsafe { assert!((*l.pane(1)).layout_cell.is_null()) };
+    {
+        assert!(l.cell(1).is_none())
+    };
 
-    unsafe { layout_close_pane(l.pane(1)) };
+    l.close(1);
     assert_eq!(l.dump(), "%1 80x24+0+0");
+}
+
+#[test]
+fn parent_presence_follows_splitting_and_root_promotion() {
+    use crate::layout_cell::LayoutCell;
+
+    let _g = guard();
+    let mut layout = Layout::new(80, 24);
+    layout.split(0, LAYOUT_LEFTRIGHT, -1, 0);
+    let owner = layout.window.reference();
+    {
+        let payload = owner.as_window();
+        let root = payload.layout_root.as_deref().unwrap();
+        assert!(!root.layout_cell_has_parent());
+        assert!(root.cells.iter().all(|cell| cell.layout_cell_has_parent()));
+    }
+    layout.close(1);
+    {
+        assert!(
+            !owner
+                .as_window()
+                .layout_root
+                .as_deref()
+                .unwrap()
+                .layout_cell_has_parent()
+        );
+    }
 }
 
 #[test]
 fn closing_the_only_pane_leaves_no_tree() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
-    unsafe { layout_close_pane(l.pane(0)) };
+    l.close(0);
     assert_eq!(l.dump(), "-");
 }
 
@@ -283,7 +474,7 @@ fn closing_one_of_three_leaves_the_node_in_place() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
-    unsafe { layout_close_pane(l.pane(1)) };
+    l.close(1);
     assert_eq!(l.dump(), "LR 80x24+0+0 [%1 60x24+0+0 | %3 19x24+61+0]");
 }
 
@@ -293,8 +484,29 @@ fn closing_a_nested_pane_folds_the_node_away() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
-    unsafe { layout_close_pane(l.pane(2)) };
+    l.close(2);
     assert_eq!(l.dump(), "LR 80x24+0+0 [%1 40x24+0+0 | %2 39x24+41+0]");
+}
+
+#[test]
+fn closing_resolves_parent_and_neighbor_from_the_owned_tree() {
+    let _g = guard();
+    let mut layout = Layout::new(80, 24);
+    layout.split(0, LAYOUT_LEFTRIGHT, -1, 0);
+    layout.split(1, LAYOUT_TOPBOTTOM, -1, 0);
+    let mut owner = layout.window.reference();
+    {
+        owner
+            .as_window_mut()
+            .layout_root
+            .as_deref_mut()
+            .unwrap()
+            .cells[1]
+            .cells[1]
+            .has_parent = false;
+        layout.close(2);
+    }
+    assert_eq!(layout.dump(), "LR 80x24+0+0 [%1 40x24+0+0 | %2 39x24+41+0]");
 }
 
 #[test]
@@ -302,9 +514,9 @@ fn resizing_the_window_shares_the_change_out() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
-    unsafe { layout_resize(l.w(), 100, 30) };
+    unsafe { (l.reference()).resize_layout(100, 30) };
     assert_eq!(l.dump(), "LR 100x30+0+0 [%1 50x30+0+0 | %2 49x30+51+0]");
-    unsafe { layout_resize(l.w(), 40, 12) };
+    unsafe { (l.reference()).resize_layout(40, 12) };
     assert_eq!(l.dump(), "LR 40x12+0+0 [%1 20x12+0+0 | %2 19x12+21+0]");
 }
 
@@ -314,7 +526,7 @@ fn a_window_cannot_shrink_past_what_its_panes_need() {
     let mut l = Layout::new(20, 10);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
-    unsafe { layout_resize(l.w(), 1, 1) };
+    unsafe { (l.reference()).resize_layout(1, 1) };
     assert_eq!(
         l.dump(),
         "LR 5x1+0+0 [%1 1x1+0+0 | %2 1x1+2+0 | %3 1x1+4+0]"
@@ -325,9 +537,9 @@ fn a_window_cannot_shrink_past_what_its_panes_need() {
 fn resizing_a_single_pane_window_only_grows_it() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
-    unsafe { layout_resize(l.w(), 100, 30) };
+    unsafe { (l.reference()).resize_layout(100, 30) };
     assert_eq!(l.dump(), "%1 100x30+0+0");
-    unsafe { layout_resize(l.w(), 40, 12) };
+    unsafe { (l.reference()).resize_layout(40, 12) };
     assert_eq!(l.dump(), "%1 40x12+0+0");
 }
 
@@ -336,9 +548,9 @@ fn a_pane_can_be_resized_by_hand_in_either_direction() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
-    unsafe { layout_resize_pane(l.pane(0), LAYOUT_LEFTRIGHT, 10, 1) };
+    l.resize_pane(0, LAYOUT_LEFTRIGHT, 10, 1);
     assert_eq!(l.dump(), "LR 80x24+0+0 [%1 50x24+0+0 | %2 29x24+51+0]");
-    unsafe { layout_resize_pane(l.pane(0), LAYOUT_LEFTRIGHT, -20, 1) };
+    l.resize_pane(0, LAYOUT_LEFTRIGHT, -20, 1);
     assert_eq!(l.dump(), "LR 80x24+0+0 [%1 30x24+0+0 | %2 49x24+31+0]");
 }
 
@@ -347,7 +559,7 @@ fn resizing_the_last_pane_moves_the_border_before_it() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
-    unsafe { layout_resize_pane(l.pane(1), LAYOUT_LEFTRIGHT, 10, 1) };
+    l.resize_pane(1, LAYOUT_LEFTRIGHT, 10, 1);
     assert_eq!(l.dump(), "LR 80x24+0+0 [%1 50x24+0+0 | %2 29x24+51+0]");
 }
 
@@ -357,9 +569,9 @@ fn resizing_across_a_kind_the_pane_is_not_in_does_nothing() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     let before = l.dump();
-    unsafe { layout_resize_pane(l.pane(0), LAYOUT_TOPBOTTOM, 5, 1) };
+    l.resize_pane(0, LAYOUT_TOPBOTTOM, 5, 1);
     assert_eq!(l.dump(), before);
-    unsafe { layout_resize_pane_to(l.pane(0), LAYOUT_TOPBOTTOM, 5) };
+    l.resize_pane_to(0, LAYOUT_TOPBOTTOM, 5);
     assert_eq!(l.dump(), before);
 }
 
@@ -368,9 +580,9 @@ fn a_pane_can_be_resized_to_a_size() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
-    unsafe { layout_resize_pane_to(l.pane(0), LAYOUT_LEFTRIGHT, 20) };
+    l.resize_pane_to(0, LAYOUT_LEFTRIGHT, 20);
     assert_eq!(l.dump(), "LR 80x24+0+0 [%1 20x24+0+0 | %2 59x24+21+0]");
-    unsafe { layout_resize_pane_to(l.pane(1), LAYOUT_LEFTRIGHT, 20) };
+    l.resize_pane_to(1, LAYOUT_LEFTRIGHT, 20);
     assert_eq!(l.dump(), "LR 80x24+0+0 [%1 59x24+0+0 | %2 20x24+60+0]");
 }
 
@@ -379,7 +591,7 @@ fn growing_without_the_opposite_side_stops_at_the_last_pane() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
-    unsafe { layout_resize_pane(l.pane(1), LAYOUT_LEFTRIGHT, 10, 0) };
+    l.resize_pane(1, LAYOUT_LEFTRIGHT, 10, 0);
     assert_eq!(l.dump(), "LR 80x24+0+0 [%1 50x24+0+0 | %2 29x24+51+0]");
 }
 
@@ -389,14 +601,37 @@ fn spreading_out_gives_every_pane_the_same_room() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
-    unsafe { layout_spread_out(l.pane(0)) };
+    l.spread_out(0);
     assert_eq!(
         l.dump(),
         "LR 80x24+0+0 [%1 26x24+0+0 | %2 26x24+27+0 | %3 26x24+54+0]"
     );
-    unsafe { layout_spread_out(l.pane(0)) };
+    l.spread_out(0);
     assert_eq!(
         l.dump(),
+        "LR 80x24+0+0 [%1 26x24+0+0 | %2 26x24+27+0 | %3 26x24+54+0]"
+    );
+}
+
+#[test]
+fn spreading_resolves_ancestors_from_the_owned_tree() {
+    let _g = guard();
+    let mut layout = Layout::new(80, 24);
+    layout.split(0, LAYOUT_LEFTRIGHT, -1, 0);
+    layout.split(1, LAYOUT_LEFTRIGHT, -1, 0);
+    let mut owner = layout.window.reference();
+    {
+        owner
+            .as_window_mut()
+            .layout_root
+            .as_deref_mut()
+            .unwrap()
+            .cells[0]
+            .has_parent = false;
+    }
+    layout.spread_out(0);
+    assert_eq!(
+        layout.dump(),
         "LR 80x24+0+0 [%1 26x24+0+0 | %2 26x24+27+0 | %3 26x24+54+0]"
     );
 }
@@ -405,7 +640,7 @@ fn spreading_out_gives_every_pane_the_same_room() {
 fn spreading_out_a_single_pane_does_nothing() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
-    unsafe { layout_spread_out(l.pane(0)) };
+    l.spread_out(0);
     assert_eq!(l.dump(), "%1 80x24+0+0");
 }
 
@@ -414,12 +649,18 @@ fn spreading_a_cell_that_cannot_be_shared_answers_no() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        assert_eq!(layout_spread_cell(l.w(), (*l.w()).layout_root_ptr()), 0);
+        assert_eq!(
+            (l.reference()).spread_layout_cell(&LayoutCellPath::root()),
+            0
+        );
     }
     let mut l = Layout::new(4, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        assert_eq!(layout_spread_cell(l.w(), (*l.w()).layout_root_ptr()), 0);
+        assert_eq!(
+            (l.reference()).spread_layout_cell(&LayoutCellPath::root()),
+            0
+        );
     }
 }
 
@@ -429,7 +670,7 @@ fn spreading_out_top_to_bottom_shares_the_rows() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
-    unsafe { layout_spread_out(l.pane(0)) };
+    l.spread_out(0);
     assert_eq!(
         l.dump(),
         "TB 80x24+0+0 [%1 80x8+0+0 | %2 80x7+0+9 | %3 80x7+0+17]"
@@ -442,13 +683,15 @@ fn the_border_search_finds_the_cell_a_click_is_next_to() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
-        assert_eq!(
-            layout_search_by_border(root, 40, 5),
-            (*l.pane(0)).layout_cell
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        assert!(
+            layout_search_by_border(&mut *root, 40, 5).is_some_and(|path| path
+                .get(&*root)
+                .is_some_and(|cell| cell.wp_ref.as_ref().map(|pane| pane.id())
+                    == Some((*l.pane(0)).pane_id())))
         );
-        assert!(layout_search_by_border(root, 0, 0).is_null());
-        assert!(layout_search_by_border(root, 79, 0).is_null());
+        assert!(layout_search_by_border(&mut *root, 0, 0).is_none());
+        assert!(layout_search_by_border(&mut *root, 79, 0).is_none());
     }
 }
 
@@ -458,22 +701,26 @@ fn the_border_search_works_top_to_bottom_and_through_nodes() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
-        assert_eq!(
-            layout_search_by_border(root, 5, 12),
-            (*l.pane(0)).layout_cell
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        assert!(
+            layout_search_by_border(&mut *root, 5, 12).is_some_and(|path| path
+                .get(&*root)
+                .is_some_and(|cell| cell.wp_ref.as_ref().map(|pane| pane.id())
+                    == Some((*l.pane(0)).pane_id())))
         );
-        assert!(layout_search_by_border(root, 5, 0).is_null());
+        assert!(layout_search_by_border(&mut *root, 5, 0).is_none());
     }
 
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
-        assert_eq!(
-            layout_search_by_border(root, 50, 12),
-            (*l.pane(1)).layout_cell
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        assert!(
+            layout_search_by_border(&mut *root, 50, 12).is_some_and(|path| path
+                .get(&*root)
+                .is_some_and(|cell| cell.wp_ref.as_ref().map(|pane| pane.id())
+                    == Some((*l.pane(1)).pane_id())))
         );
     }
 }
@@ -485,14 +732,14 @@ fn a_pane_border_status_line_takes_a_row_from_every_pane() {
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
         with_status(&mut l, PANE_STATUS_TOP, |l| {
-            layout_fix_panes(l.w(), null_mut::<window_pane>());
+            (l.reference()).fix_layout_panes(None);
             assert_eq!(l.panes(), vec!["%1 80x11+0+1", "%2 80x11+0+13"]);
         });
         with_status(&mut l, PANE_STATUS_BOTTOM, |l| {
-            layout_fix_panes(l.w(), null_mut::<window_pane>());
+            (l.reference()).fix_layout_panes(None);
             assert_eq!(l.panes(), vec!["%1 80x12+0+0", "%2 80x10+0+13"]);
         });
-        layout_fix_panes(l.w(), null_mut::<window_pane>());
+        (l.reference()).fix_layout_panes(None);
         assert_eq!(l.panes(), vec!["%1 80x12+0+0", "%2 80x11+0+13"]);
     }
 }
@@ -505,7 +752,11 @@ fn a_status_line_leaves_the_pane_it_is_told_to_skip_alone() {
     unsafe {
         let skip = l.pane(0);
         with_status(&mut l, PANE_STATUS_TOP, |l| {
-            layout_fix_panes(l.w(), skip);
+            (l.reference()).fix_layout_panes(
+                skip.as_ref()
+                    .and_then(|pane| crate::window::window_pane_ref_of(pane))
+                    .as_ref(),
+            );
             assert_eq!(l.panes(), vec!["%1 80x12+0+0", "%2 80x11+0+13"]);
         });
     }
@@ -529,16 +780,23 @@ fn a_scrollbar_takes_columns_off_the_pane() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        (*l.w()).sb = PANE_SCROLLBARS_ALWAYS;
-        (*l.pane(0)).scrollbar_style.width = 2;
-        (*l.pane(0)).scrollbar_style.pad = 1;
-        assert_eq!(window_pane_show_scrollbar(l.pane(0)), 1);
+        (*l.w()).set_scrollbar_settings(WindowScrollbarSettings {
+            mode: PANE_SCROLLBARS_ALWAYS,
+            position: PANE_SCROLLBARS_RIGHT,
+        });
+        set_scrollbar_dimensions(&mut *l.pane(0), 2, 1);
+        assert_eq!(
+            window_pane_show_scrollbar(&*l.pane(0), (*l.w()).scrollbar_settings().mode),
+            1
+        );
 
-        layout_fix_panes(l.w(), null_mut::<window_pane>());
+        (l.reference()).fix_layout_panes(None);
         assert_eq!(l.panes(), vec!["%1 77x24+0+0"]);
 
-        (*l.w()).sb_pos = PANE_SCROLLBARS_LEFT;
-        layout_fix_panes(l.w(), null_mut::<window_pane>());
+        let mut scrollbar = (*l.w()).scrollbar_settings();
+        scrollbar.position = PANE_SCROLLBARS_LEFT;
+        (*l.w()).set_scrollbar_settings(scrollbar);
+        (l.reference()).fix_layout_panes(None);
         assert_eq!(l.panes(), vec!["%1 77x24+3+0"]);
     }
 }
@@ -548,20 +806,23 @@ fn a_scrollbar_wider_than_the_pane_leaves_one_column() {
     let _g = guard();
     let mut l = Layout::new(4, 24);
     unsafe {
-        (*l.w()).sb = PANE_SCROLLBARS_ALWAYS;
-        (*l.pane(0)).scrollbar_style.width = 8;
-        (*l.pane(0)).scrollbar_style.pad = -1;
+        (*l.w()).set_scrollbar_settings(WindowScrollbarSettings {
+            mode: PANE_SCROLLBARS_ALWAYS,
+            position: PANE_SCROLLBARS_RIGHT,
+        });
+        set_scrollbar_dimensions(&mut *l.pane(0), 8, -1);
 
-        layout_fix_panes(l.w(), null_mut::<window_pane>());
+        (l.reference()).fix_layout_panes(None);
         assert_eq!(l.panes(), vec!["%1 1x24+0+0"]);
 
-        (*l.w()).sb_pos = PANE_SCROLLBARS_LEFT;
-        layout_fix_panes(l.w(), null_mut::<window_pane>());
+        let mut scrollbar = (*l.w()).scrollbar_settings();
+        scrollbar.position = PANE_SCROLLBARS_LEFT;
+        (*l.w()).set_scrollbar_settings(scrollbar);
+        (l.reference()).fix_layout_panes(None);
         assert_eq!(l.panes(), vec!["%1 1x24+3+0"]);
 
-        (*l.pane(0)).scrollbar_style.width = 0;
-        (*l.pane(0)).scrollbar_style.pad = 0;
-        layout_fix_panes(l.w(), null_mut::<window_pane>());
+        set_scrollbar_dimensions(&mut *l.pane(0), 0, 0);
+        (l.reference()).fix_layout_panes(None);
         assert_eq!(l.panes(), vec!["%1 3x24+1+0"]);
     }
 }
@@ -571,9 +832,11 @@ fn a_scrollbar_makes_a_side_by_side_split_need_more_room() {
     let _g = guard();
     let mut l = Layout::new(5, 24);
     unsafe {
-        (*l.w()).sb = PANE_SCROLLBARS_ALWAYS;
-        (*l.pane(0)).scrollbar_style.width = 3;
-        (*l.pane(0)).scrollbar_style.pad = 1;
+        (*l.w()).set_scrollbar_settings(WindowScrollbarSettings {
+            mode: PANE_SCROLLBARS_ALWAYS,
+            position: PANE_SCROLLBARS_RIGHT,
+        });
+        set_scrollbar_dimensions(&mut *l.pane(0), 3, 1);
     }
     assert_eq!(l.split(0, LAYOUT_LEFTRIGHT, -1, 0), None);
 }
@@ -584,14 +847,28 @@ fn a_scrollbar_is_kept_out_of_the_room_a_pane_can_give_up() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        (*l.w()).sb = PANE_SCROLLBARS_ALWAYS;
-        (*window_get_active(l.w())).scrollbar_style.width = 3;
-        (*window_get_active(l.w())).scrollbar_style.pad = 1;
-        let root = (*l.w()).layout_root_ptr();
-        assert_eq!(layout_resize_check(l.w(), root, LAYOUT_LEFTRIGHT), 69);
-        (*l.w()).sb = PANE_SCROLLBARS_OFF;
-        assert_eq!(layout_resize_check(l.w(), root, LAYOUT_LEFTRIGHT), 77);
-        assert_eq!(layout_resize_check(l.w(), root, LAYOUT_TOPBOTTOM), 23);
+        (*l.w()).set_scrollbar_settings(WindowScrollbarSettings {
+            mode: PANE_SCROLLBARS_ALWAYS,
+            position: PANE_SCROLLBARS_RIGHT,
+        });
+        let mut active = window_active_pane(&*l.w()).unwrap();
+        set_scrollbar_dimensions(active.as_pane_mut(), 3, 1);
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        assert_eq!(
+            (l.reference()).layout_resize_check(&mut *root, LAYOUT_LEFTRIGHT),
+            69
+        );
+        let mut scrollbar = (*l.w()).scrollbar_settings();
+        scrollbar.mode = PANE_SCROLLBARS_OFF;
+        (*l.w()).set_scrollbar_settings(scrollbar);
+        assert_eq!(
+            (l.reference()).layout_resize_check(&mut *root, LAYOUT_LEFTRIGHT),
+            77
+        );
+        assert_eq!(
+            (l.reference()).layout_resize_check(&mut *root, LAYOUT_TOPBOTTOM),
+            23
+        );
     }
 }
 
@@ -654,19 +931,43 @@ fn a_floating_cell_hangs_off_the_root_and_is_left_out_of_the_sums() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        let lc = layout_floating_pane(l.w(), 20, 10, 4, 2);
+        let lc = (l.reference()).float_pane_layout(20, 10, 4, 2);
         let j = l.add_pane(20, 10);
-        layout_assign_pane(lc, l.pane(j), 0);
+        (l.reference()).assign_pane_layout(
+            &lc,
+            &crate::window::window_pane_find_by_id((*l.pane(j)).pane_id())
+                .expect("the layout pane exists"),
+            0,
+        );
         assert_eq!(l.dump(), "TB 80x24+0+0 [%1 80x24+0+0 | %2* 20x10+4+2]");
-        assert_eq!(window_pane_is_floating(l.pane(1)), 1);
-        assert_eq!(window_pane_is_floating(l.pane(0)), 0);
+        assert_eq!(
+            window_pane_is_floating(
+                &*l.w(),
+                &{ crate::window::window_pane_ref_of(&(*l.pane(1))) }
+                    .expect("the pane allocation exists")
+            ),
+            1
+        );
+        assert_eq!(
+            window_pane_is_floating(
+                &*l.w(),
+                &{ crate::window::window_pane_ref_of(&(*l.pane(0))) }
+                    .expect("the pane allocation exists")
+            ),
+            0
+        );
 
-        layout_fix_offsets(l.w());
+        (l.reference()).fix_layout_offsets();
         assert_eq!(l.dump(), "TB 80x24+0+0 [%1 80x24+0+0 | %2* 20x10+4+2]");
 
-        let second = layout_floating_pane(l.w(), 10, 5, 1, 1);
+        let second = (l.reference()).float_pane_layout(10, 5, 1, 1);
         let k = l.add_pane(10, 5);
-        layout_assign_pane(second, l.pane(k), 1);
+        (l.reference()).assign_pane_layout(
+            &second,
+            &crate::window::window_pane_find_by_id((*l.pane(k)).pane_id())
+                .expect("the layout pane exists"),
+            1,
+        );
         assert_eq!(
             l.dump(),
             "TB 80x24+0+0 [%1 80x24+0+0 | %2* 20x10+4+2 | %3* 10x5+1+1]"
@@ -679,12 +980,12 @@ fn a_floating_root_is_left_out_of_resizing_and_offsets() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        (*(*l.w()).layout_root_ptr()).flags |= LAYOUT_CELL_FLOATING;
-        layout_resize(l.w(), 100, 30);
+        (*(*l.w()).layout_root.as_deref_mut().unwrap()).flags |= LAYOUT_CELL_FLOATING;
+        (l.reference()).resize_layout(100, 30);
         assert_eq!(l.dump(), "%1* 80x24+0+0");
-        layout_fix_offsets(l.w());
+        (l.reference()).fix_layout_offsets();
         assert_eq!(l.dump(), "%1* 80x24+0+0");
-        (*(*l.w()).layout_root_ptr()).flags &= !LAYOUT_CELL_FLOATING;
+        (*(*l.w()).layout_root.as_deref_mut().unwrap()).flags &= !LAYOUT_CELL_FLOATING;
     }
 }
 
@@ -693,10 +994,15 @@ fn closing_a_floating_pane_leaves_the_others_alone() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        let lc = layout_floating_pane(l.w(), 20, 10, 4, 2);
+        let lc = (l.reference()).float_pane_layout(20, 10, 4, 2);
         let j = l.add_pane(20, 10);
-        layout_assign_pane(lc, l.pane(j), 0);
-        layout_close_pane(l.pane(j));
+        (l.reference()).assign_pane_layout(
+            &lc,
+            &crate::window::window_pane_find_by_id((*l.pane(j)).pane_id())
+                .expect("the layout pane exists"),
+            0,
+        );
+        l.close(j);
         assert_eq!(l.dump(), "%1 80x24+0+0");
     }
 }
@@ -709,10 +1015,24 @@ fn the_z_index_follows_the_tree_from_left_to_right() {
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
         (*l.w()).z_index.clear();
-        layout_fix_zindexes(l.w(), (*l.w()).layout_root_ptr());
-        let order: Vec<u_int> = (*l.w()).z_index.clone();
+        (l.reference()).fix_layout_zindexes();
+        let order: Vec<u_int> = (*l.w())
+            .z_index
+            .iter()
+            .map(|pane| pane.id())
+            .collect::<Vec<_>>();
         assert_eq!(order, vec![1, 3, 2]);
-        layout_fix_zindexes(l.w(), null_mut::<layout_cell>());
+        let root = (*l.w()).layout_root.take();
+        (l.reference()).fix_layout_zindexes();
+        assert_eq!(
+            (*l.w())
+                .z_index
+                .iter()
+                .map(|pane| pane.id())
+                .collect::<Vec<_>>(),
+            order
+        );
+        (*l.w()).layout_root = root;
     }
 }
 
@@ -721,16 +1041,20 @@ fn a_cell_can_be_turned_into_a_node_and_back_into_a_leaf() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        let lc = layout_create_cell(null_mut::<layout_cell>());
-        let lc = &raw const *lc as *mut layout_cell;
-        layout_make_leaf(lc, l.pane(0));
-        assert_eq!((*l.pane(0)).layout_cell, lc);
-        layout_make_node(l.w(), lc, LAYOUT_TOPBOTTOM);
+        let mut lc = layout_create_cell(None);
+        layout_make_leaf(&mut *lc, &mut *l.pane(0));
+        assert_eq!(
+            (*lc).wp_ref.as_ref().map(|pane| pane.id()),
+            Some((*l.pane(0)).pane_id())
+        );
+        layout_make_node(&mut *lc, LAYOUT_TOPBOTTOM);
         assert_eq!((*lc).type_0, LAYOUT_TOPBOTTOM);
-        assert!((*lc).wp_id.is_none());
-        assert!((*l.pane(0)).layout_cell.is_null());
-        layout_make_node(l.w(), lc, LAYOUT_LEFTRIGHT);
-        layout_init(l.w(), l.pane(0));
+        assert!((*lc).wp_ref.as_ref().map(|pane| pane.id()).is_none());
+        layout_make_node(&mut *lc, LAYOUT_LEFTRIGHT);
+        (l.reference()).init_layout(
+            &crate::window::window_pane_find_by_id((*l.pane(0)).pane_id())
+                .expect("the layout pane exists"),
+        );
     }
 }
 
@@ -740,11 +1064,11 @@ fn printing_a_cell_walks_the_whole_tree() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        layout_print_cell((*l.w()).layout_root_ptr(), c"test".as_ptr(), 0);
-        layout_print_cell(null_mut::<layout_cell>(), c"test".as_ptr(), 0);
-        let mut lc = layout_create_cell(null_mut::<layout_cell>());
+        layout_print_cell((*l.w()).layout_root.as_deref(), c"test", 0);
+        layout_print_cell(None, c"test", 0);
+        let mut lc = layout_create_cell(None);
         lc.type_0 = 99;
-        layout_print_cell(&raw mut *lc, c"test".as_ptr(), 0);
+        layout_print_cell(Some(&lc), c"test", 0);
         lc.type_0 = LAYOUT_WINDOWPANE;
     }
 }
@@ -756,18 +1080,23 @@ fn a_tiled_cell_comes_from_the_split_arguments() {
     unsafe {
         let mut cause = CString::default();
         let mut item = Item::new().with_args(c"split-window -h");
-        let lc = layout_get_tiled_cell(
-            item.ptr(),
-            cmd_get_args(&*item.cmd()),
-            l.w(),
-            l.pane(0),
+        let lc = (l.window.reference()).tiled_layout_cell(
+            &*item.ptr(),
+            &*item.args(),
+            &crate::window::window_pane_find_by_id((*l.pane(0)).pane_id())
+                .expect("the layout pane exists"),
             0,
             &mut cause,
         );
-        assert!(!lc.is_null());
+        assert!(lc.is_some());
         assert!(cause.as_bytes().is_empty());
         let j = l.add_pane(1, 1);
-        layout_assign_pane(lc, l.pane(j), 0);
+        (l.reference()).assign_pane_layout(
+            lc.as_ref().unwrap(),
+            &crate::window::window_pane_find_by_id((*l.pane(j)).pane_id())
+                .expect("the layout pane exists"),
+            0,
+        );
         assert_eq!(l.dump(), "LR 80x24+0+0 [%1 40x24+0+0 | %2 39x24+41+0]");
     }
 }
@@ -801,17 +1130,22 @@ fn a_tiled_cell_reads_a_length_a_percentage_and_the_before_flag() {
         unsafe {
             let mut cause = CString::default();
             let mut item = Item::new().with_args(line);
-            let lc = layout_get_tiled_cell(
-                item.ptr(),
-                cmd_get_args(&*item.cmd()),
-                l.w(),
-                l.pane(0),
+            let lc = (l.window.reference()).tiled_layout_cell(
+                &*item.ptr(),
+                &*item.args(),
+                &crate::window::window_pane_find_by_id((*l.pane(0)).pane_id())
+                    .expect("the layout pane exists"),
                 0,
                 &mut cause,
             );
-            assert!(!lc.is_null(), "{line:?}");
+            assert!(lc.is_some(), "{line:?}");
             let j = l.add_pane(1, 1);
-            layout_assign_pane(lc, l.pane(j), 0);
+            (l.reference()).assign_pane_layout(
+                lc.as_ref().unwrap(),
+                &crate::window::window_pane_find_by_id((*l.pane(j)).pane_id())
+                    .expect("the layout pane exists"),
+                0,
+            );
             assert_eq!(l.dump(), want, "{line:?}");
         }
     }
@@ -825,30 +1159,32 @@ fn a_tiled_cell_says_what_is_wrong() {
         let mut cause = CString::default();
         let mut item = Item::new().with_args(c"split-window -h");
         assert!(
-            layout_get_tiled_cell(
-                item.ptr(),
-                cmd_get_args(&*item.cmd()),
-                l.w(),
-                l.pane(0),
-                0,
-                &mut cause
-            )
-            .is_null()
+            (l.window.reference())
+                .tiled_layout_cell(
+                    &*item.ptr(),
+                    &*item.args(),
+                    &crate::window::window_pane_find_by_id((*l.pane(0)).pane_id())
+                        .expect("the layout pane exists"),
+                    0,
+                    &mut cause
+                )
+                .is_none()
         );
         assert_eq!(cause.to_str().unwrap(), "no space for a new pane");
 
         let mut item = Item::new().with_args(c"split-window -l bad");
         let mut cause = CString::default();
         assert!(
-            layout_get_tiled_cell(
-                item.ptr(),
-                cmd_get_args(&*item.cmd()),
-                l.w(),
-                l.pane(0),
-                0,
-                &mut cause
-            )
-            .is_null()
+            (l.window.reference())
+                .tiled_layout_cell(
+                    &*item.ptr(),
+                    &*item.args(),
+                    &crate::window::window_pane_find_by_id((*l.pane(0)).pane_id())
+                        .expect("the layout pane exists"),
+                    0,
+                    &mut cause
+                )
+                .is_none()
         );
         assert_eq!(cause.to_str().unwrap(), "invalid tiled geometry");
     }
@@ -859,21 +1195,27 @@ fn a_floating_pane_cannot_be_split() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        let lc = layout_floating_pane(l.w(), 20, 10, 4, 2);
+        let lc = (l.reference()).float_pane_layout(20, 10, 4, 2);
         let j = l.add_pane(20, 10);
-        layout_assign_pane(lc, l.pane(j), 0);
+        (l.reference()).assign_pane_layout(
+            &lc,
+            &crate::window::window_pane_find_by_id((*l.pane(j)).pane_id())
+                .expect("the layout pane exists"),
+            0,
+        );
         let mut cause = CString::default();
         let mut item = Item::new().with_args(c"split-window -h");
         assert!(
-            layout_get_tiled_cell(
-                item.ptr(),
-                cmd_get_args(&*item.cmd()),
-                l.w(),
-                l.pane(j),
-                0,
-                &mut cause
-            )
-            .is_null()
+            (l.window.reference())
+                .tiled_layout_cell(
+                    &*item.ptr(),
+                    &*item.args(),
+                    &crate::window::window_pane_find_by_id((*l.pane(j)).pane_id())
+                        .expect("the layout pane exists"),
+                    0,
+                    &mut cause
+                )
+                .is_none()
         );
         assert_eq!(cause.to_str().unwrap(), "can't split a floating pane");
     }
@@ -886,16 +1228,16 @@ fn a_floating_cell_takes_its_size_and_place_from_the_arguments() {
     unsafe {
         let mut cause = None;
         let mut item = Item::new().with_args(c"new-pane -x 30 -y 8 -X 5 -Y 3");
-        let lc = layout_get_floating_cell(
-            item.ptr(),
-            cmd_get_args(&*item.cmd()),
-            l.w(),
-            l.pane(0),
-            &mut cause,
-        );
-        assert!(!lc.is_null());
+        let lc =
+            (l.window.reference()).floating_layout_cell(&*item.ptr(), &*item.args(), &mut cause);
+        assert!(lc.is_some());
         let j = l.add_pane(1, 1);
-        layout_assign_pane(lc, l.pane(j), 0);
+        (l.reference()).assign_pane_layout(
+            lc.as_ref().unwrap(),
+            &crate::window::window_pane_find_by_id((*l.pane(j)).pane_id())
+                .expect("the layout pane exists"),
+            0,
+        );
         assert_eq!(l.dump(), "TB 80x24+0+0 [%1 80x24+0+0 | %2* 30x8+5+3]");
     }
 }
@@ -907,35 +1249,27 @@ fn a_floating_cell_walks_along_when_it_is_not_told_where_to_go() {
     unsafe {
         let mut cause = None;
         let mut item = Item::new().with_args(c"new-pane");
-        let first = layout_get_floating_cell(
-            item.ptr(),
-            cmd_get_args(&*item.cmd()),
-            l.w(),
-            l.pane(0),
-            &mut cause,
-        );
+        let first =
+            (l.window.reference()).floating_layout_cell(&*item.ptr(), &*item.args(), &mut cause);
+        let first = first.unwrap();
+        let first = first.get((*l.w()).layout_root.as_deref().unwrap()).unwrap();
         assert_eq!(
             ((*first).sx, (*first).sy, (*first).xoff, (*first).yoff),
             (40, 6, 4, 2)
         );
-        let second = layout_get_floating_cell(
-            item.ptr(),
-            cmd_get_args(&*item.cmd()),
-            l.w(),
-            l.pane(0),
-            &mut cause,
-        );
+        let second =
+            (l.window.reference()).floating_layout_cell(&*item.ptr(), &*item.args(), &mut cause);
+        let second = second.unwrap();
+        let second = second
+            .get((*l.w()).layout_root.as_deref().unwrap())
+            .unwrap();
         assert_eq!(((*second).xoff, (*second).yoff), (8, 4));
 
-        (*l.w()).last_new_pane_x = 200;
-        (*l.w()).last_new_pane_y = 200;
-        let third = layout_get_floating_cell(
-            item.ptr(),
-            cmd_get_args(&*item.cmd()),
-            l.w(),
-            l.pane(0),
-            &mut cause,
-        );
+        (*l.w()).set_last_new_pane(crate::window_dimensions::WindowCellPosition { x: 200, y: 200 });
+        let third =
+            (l.window.reference()).floating_layout_cell(&*item.ptr(), &*item.args(), &mut cause);
+        let third = third.unwrap();
+        let third = third.get((*l.w()).layout_root.as_deref().unwrap()).unwrap();
         assert_eq!(((*third).xoff, (*third).yoff), (4, 2));
     }
 }
@@ -954,14 +1288,9 @@ fn a_floating_cell_stops_at_the_first_bad_argument() {
             let mut cause = None;
             let mut item = Item::new().with_args(line);
             assert!(
-                layout_get_floating_cell(
-                    item.ptr(),
-                    cmd_get_args(&*item.cmd()),
-                    l.w(),
-                    l.pane(0),
-                    &mut cause
-                )
-                .is_null(),
+                (l.window.reference())
+                    .floating_layout_cell(&*item.ptr(), &*item.args(), &mut cause)
+                    .is_none(),
                 "{line:?}"
             );
             assert!(cause.is_some(), "{line:?}");
@@ -974,16 +1303,16 @@ fn printing_a_cell_names_every_kind_of_node() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
-    unsafe { layout_print_cell((*l.w()).layout_root_ptr(), c"test".as_ptr(), 0) };
+    unsafe { layout_print_cell((*l.w()).layout_root.as_deref(), c"test", 0) };
 }
 
 #[test]
 fn a_cell_of_an_unknown_kind_is_freed_without_touching_children() {
     let _g = guard();
-    unsafe {
-        let mut lc = layout_create_cell(null_mut::<layout_cell>());
+    {
+        let mut lc = layout_create_cell(None);
         lc.type_0 = 99;
-        layout_free_cell(null_mut(), Some(lc));
+        layout_free_cell(Some(lc));
     }
 }
 
@@ -994,14 +1323,18 @@ fn the_border_search_walks_past_a_gap_that_is_not_the_one_clicked() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
-        assert_eq!(
-            layout_search_by_border(root, 60, 5),
-            (*l.pane(1)).layout_cell
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        assert!(
+            layout_search_by_border(&mut *root, 60, 5).is_some_and(|path| path
+                .get(&*root)
+                .is_some_and(|cell| cell.wp_ref.as_ref().map(|pane| pane.id())
+                    == Some((*l.pane(1)).pane_id())))
         );
-        assert_eq!(
-            layout_search_by_border(root, 40, 5),
-            (*l.pane(0)).layout_cell
+        assert!(
+            layout_search_by_border(&mut *root, 40, 5).is_some_and(|path| path
+                .get(&*root)
+                .is_some_and(|cell| cell.wp_ref.as_ref().map(|pane| pane.id())
+                    == Some((*l.pane(0)).pane_id())))
         );
     }
 
@@ -1009,10 +1342,12 @@ fn the_border_search_walks_past_a_gap_that_is_not_the_one_clicked() {
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
-        assert_eq!(
-            layout_search_by_border(root, 5, 18),
-            (*l.pane(1)).layout_cell
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        assert!(
+            layout_search_by_border(&mut *root, 5, 18).is_some_and(|path| path
+                .get(&*root)
+                .is_some_and(|cell| cell.wp_ref.as_ref().map(|pane| pane.id())
+                    == Some((*l.pane(1)).pane_id())))
         );
     }
 }
@@ -1023,9 +1358,9 @@ fn the_border_search_ignores_a_parent_of_an_unknown_kind() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
         (*root).type_0 = 99;
-        assert!(layout_search_by_border(root, 40, 5).is_null());
+        assert!(layout_search_by_border(&mut *root, 40, 5).is_none());
         (*root).type_0 = LAYOUT_LEFTRIGHT;
     }
 }
@@ -1037,7 +1372,7 @@ fn fixing_offsets_walks_into_a_node_under_a_left_right_one() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        layout_fix_offsets(l.w());
+        (l.reference()).fix_layout_offsets();
         assert_eq!(
             l.dump(),
             "LR 80x24+0+0 [%1 40x24+0+0 | TB 39x24+41+0 [%2 39x12+41+0 | %3 39x11+41+13]]"
@@ -1050,14 +1385,28 @@ fn a_cell_with_no_parent_that_is_not_the_root_is_neither_top_nor_bottom() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        let mut lc = layout_create_cell(null_mut::<layout_cell>());
+        let mut lc = layout_create_cell(None);
         let lc = &raw mut *lc;
-        assert_eq!(layout_add_horizontal_border(l.w(), lc, PANE_STATUS_TOP), 0);
         assert_eq!(
-            layout_add_horizontal_border(l.w(), lc, PANE_STATUS_BOTTOM),
+            layout_add_horizontal_border(
+                (*l.w()).layout_root.as_deref(),
+                &mut *lc,
+                PANE_STATUS_TOP
+            ),
             0
         );
-        assert_eq!(layout_add_horizontal_border(l.w(), lc, 0), 0);
+        assert_eq!(
+            layout_add_horizontal_border(
+                (*l.w()).layout_root.as_deref(),
+                &mut *lc,
+                PANE_STATUS_BOTTOM
+            ),
+            0
+        );
+        assert_eq!(
+            layout_add_horizontal_border((*l.w()).layout_root.as_deref(), &mut *lc, 0),
+            0
+        );
     }
 }
 
@@ -1068,43 +1417,20 @@ fn a_floating_cell_is_not_the_top_or_bottom_of_its_node() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
-    unsafe {
-        let first = (*l.pane(0)).layout_cell;
-        let second = (*l.pane(1)).layout_cell;
-        assert_eq!(
-            layout_add_horizontal_border(l.w(), first, PANE_STATUS_TOP),
-            1
-        );
-        assert_eq!(
-            layout_add_horizontal_border(l.w(), second, PANE_STATUS_TOP),
-            0
-        );
-        assert_eq!(
-            layout_add_horizontal_border(l.w(), second, PANE_STATUS_BOTTOM),
-            1
-        );
+    {
+        assert_eq!(l.border(0, PANE_STATUS_TOP), 1);
+        assert_eq!(l.border(1, PANE_STATUS_TOP), 0);
+        assert_eq!(l.border(1, PANE_STATUS_BOTTOM), 1);
 
-        (*first).flags |= LAYOUT_CELL_FLOATING;
-        assert_eq!(
-            layout_add_horizontal_border(l.w(), second, PANE_STATUS_TOP),
-            1
-        );
-        assert_eq!(
-            layout_add_horizontal_border(l.w(), first, PANE_STATUS_TOP),
-            0
-        );
-        (*first).flags &= !LAYOUT_CELL_FLOATING;
+        l.set_floating(0, true);
+        assert_eq!(l.border(1, PANE_STATUS_TOP), 1);
+        assert_eq!(l.border(0, PANE_STATUS_TOP), 0);
+        l.set_floating(0, false);
 
-        (*second).flags |= LAYOUT_CELL_FLOATING;
-        assert_eq!(
-            layout_add_horizontal_border(l.w(), first, PANE_STATUS_BOTTOM),
-            1
-        );
-        assert_eq!(
-            layout_add_horizontal_border(l.w(), second, PANE_STATUS_BOTTOM),
-            0
-        );
-        (*second).flags &= !LAYOUT_CELL_FLOATING;
+        l.set_floating(1, true);
+        assert_eq!(l.border(0, PANE_STATUS_BOTTOM), 1);
+        assert_eq!(l.border(1, PANE_STATUS_BOTTOM), 0);
+        l.set_floating(1, false);
     }
 }
 
@@ -1114,11 +1440,17 @@ fn a_status_line_is_kept_out_of_the_room_a_pane_can_give_up() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
-        assert_eq!(layout_resize_check(l.w(), root, LAYOUT_TOPBOTTOM), 21);
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        assert_eq!(
+            (l.reference()).layout_resize_check(&mut *root, LAYOUT_TOPBOTTOM),
+            21
+        );
         with_status(&mut l, PANE_STATUS_TOP, |l| {
-            let root = (*l.w()).layout_root_ptr();
-            assert_eq!(layout_resize_check(l.w(), root, LAYOUT_TOPBOTTOM), 20);
+            let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+            assert_eq!(
+                (l.reference()).layout_resize_check(&mut *root, LAYOUT_TOPBOTTOM),
+                20
+            );
         });
     }
 }
@@ -1128,10 +1460,10 @@ fn adjusting_a_cell_as_a_pane_only_changes_its_size() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
-        layout_resize_adjust(l.w(), root, LAYOUT_WINDOWPANE, 5);
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        layout_resize_adjust(&l.reference(), &mut *root, LAYOUT_WINDOWPANE, 5);
         assert_eq!(l.dump(), "%1 80x29+0+0");
-        layout_resize_adjust(l.w(), root, LAYOUT_WINDOWPANE, -5);
+        layout_resize_adjust(&l.reference(), &mut *root, LAYOUT_WINDOWPANE, -5);
     }
 }
 
@@ -1141,7 +1473,7 @@ fn closing_the_first_pane_gives_its_room_to_the_next() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
-    unsafe { layout_close_pane(l.pane(0)) };
+    l.close(0);
     assert_eq!(l.dump(), "LR 80x24+0+0 [%2 60x24+0+0 | %3 19x24+61+0]");
 }
 
@@ -1156,7 +1488,7 @@ fn a_node_that_folds_away_takes_its_place_among_its_siblings() {
         l.dump(),
         "LR 80x24+0+0 [%1 40x24+0+0 | TB 19x24+41+0 [%2 19x12+41+0 | %4 19x11+41+13] | %3 19x24+61+0]"
     );
-    unsafe { layout_close_pane(l.pane(3)) };
+    l.close(3);
     assert_eq!(
         l.dump(),
         "LR 80x24+0+0 [%1 40x24+0+0 | %2 19x24+41+0 | %3 19x24+61+0]"
@@ -1170,17 +1502,17 @@ fn a_window_with_no_room_left_is_only_ever_grown() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        layout_resize(l.w(), 1, 1);
+        (l.reference()).resize_layout(1, 1);
         assert_eq!(
             l.dump(),
             "LR 5x1+0+0 [%1 1x1+0+0 | %2 1x1+2+0 | %3 1x1+4+0]"
         );
-        layout_resize(l.w(), 1, 1);
+        (l.reference()).resize_layout(1, 1);
         assert_eq!(
             l.dump(),
             "LR 5x1+0+0 [%1 1x1+0+0 | %2 1x1+2+0 | %3 1x1+4+0]"
         );
-        layout_resize(l.w(), 8, 4);
+        (l.reference()).resize_layout(8, 4);
         assert_eq!(
             l.dump(),
             "LR 8x4+0+0 [%1 2x4+0+0 | %2 2x4+3+0 | %3 2x4+6+0]"
@@ -1195,17 +1527,17 @@ fn a_tall_window_shrinks_only_as_far_as_its_rows_allow() {
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        layout_resize(l.w(), 80, 1);
+        (l.reference()).resize_layout(80, 1);
         assert_eq!(
             l.dump(),
             "TB 80x5+0+0 [%1 80x1+0+0 | %2 80x1+0+2 | %3 80x1+0+4]"
         );
-        layout_resize(l.w(), 80, 1);
+        (l.reference()).resize_layout(80, 1);
         assert_eq!(
             l.dump(),
             "TB 80x5+0+0 [%1 80x1+0+0 | %2 80x1+0+2 | %3 80x1+0+4]"
         );
-        layout_resize(l.w(), 80, 8);
+        (l.reference()).resize_layout(80, 8);
         assert_eq!(
             l.dump(),
             "TB 80x8+0+0 [%1 80x2+0+0 | %2 80x2+0+3 | %3 80x2+0+6]"
@@ -1218,7 +1550,7 @@ fn a_pane_can_be_resized_to_a_size_top_to_bottom() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
-    unsafe { layout_resize_pane_to(l.pane(0), LAYOUT_TOPBOTTOM, 6) };
+    l.resize_pane_to(0, LAYOUT_TOPBOTTOM, 6);
     assert_eq!(l.dump(), "TB 80x24+0+0 [%1 80x6+0+0 | %2 80x17+0+7]");
 }
 
@@ -1229,17 +1561,17 @@ fn a_resize_that_can_take_nothing_stops_where_it_is() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        layout_resize(l.w(), 5, 24);
+        (l.reference()).resize_layout(5, 24);
         assert_eq!(
             l.dump(),
             "LR 5x24+0+0 [%1 1x24+0+0 | %2 1x24+2+0 | %3 1x24+4+0]"
         );
-        layout_resize_pane(l.pane(0), LAYOUT_LEFTRIGHT, 10, 1);
+        l.resize_pane(0, LAYOUT_LEFTRIGHT, 10, 1);
         assert_eq!(
             l.dump(),
             "LR 5x24+0+0 [%1 1x24+0+0 | %2 1x24+2+0 | %3 1x24+4+0]"
         );
-        layout_resize_pane(l.pane(0), LAYOUT_LEFTRIGHT, -10, 1);
+        l.resize_pane(0, LAYOUT_LEFTRIGHT, -10, 1);
         assert_eq!(
             l.dump(),
             "LR 5x24+0+0 [%1 1x24+0+0 | %2 1x24+2+0 | %3 1x24+4+0]"
@@ -1254,13 +1586,13 @@ fn growing_takes_room_from_behind_when_there_is_none_ahead() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        layout_resize_pane_to(l.pane(2), LAYOUT_LEFTRIGHT, 1);
+        l.resize_pane_to(2, LAYOUT_LEFTRIGHT, 1);
         assert_eq!(
             l.dump(),
             "LR 80x24+0+0 [%1 40x24+0+0 | %2 37x24+41+0 | %3 1x24+79+0]"
         );
-        let second = (*l.pane(1)).layout_cell;
-        layout_resize_layout(l.w(), second, LAYOUT_LEFTRIGHT, 5, 1);
+        let second = l.cell_path(1);
+        (l.reference()).resize_layout_cell(&second, LAYOUT_LEFTRIGHT, 5, 1);
         assert_eq!(
             l.dump(),
             "LR 80x24+0+0 [%1 35x24+0+0 | %2 42x24+36+0 | %3 1x24+79+0]"
@@ -1274,8 +1606,8 @@ fn shrinking_the_last_cell_of_a_node_has_nowhere_to_put_the_room() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let last = (*l.pane(1)).layout_cell;
-        layout_resize_layout(l.w(), last, LAYOUT_LEFTRIGHT, -5, 1);
+        let last = l.cell_path(1);
+        (l.reference()).resize_layout_cell(&last, LAYOUT_LEFTRIGHT, -5, 1);
         assert_eq!(l.dump(), "LR 80x24+0+0 [%1 40x24+0+0 | %2 39x24+41+0]");
     }
 }
@@ -1287,21 +1619,21 @@ fn a_new_pane_size_is_held_between_what_is_left_and_the_minimum() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
         assert_eq!(
-            layout_new_pane_size(l.w(), 80, root, LAYOUT_LEFTRIGHT, 80, 1, 30),
+            (l.reference()).layout_new_pane_size(80, &mut *root, LAYOUT_LEFTRIGHT, 80, 1, 30),
             30
         );
         assert_eq!(
-            layout_new_pane_size(l.w(), 80, root, LAYOUT_LEFTRIGHT, 80, 2, 40),
+            (l.reference()).layout_new_pane_size(80, &mut *root, LAYOUT_LEFTRIGHT, 80, 2, 40),
             35
         );
         assert_eq!(
-            layout_new_pane_size(l.w(), 80, root, LAYOUT_LEFTRIGHT, 8, 2, 40),
+            (l.reference()).layout_new_pane_size(80, &mut *root, LAYOUT_LEFTRIGHT, 8, 2, 40),
             8
         );
         assert_eq!(
-            layout_new_pane_size(l.w(), 80, root, LAYOUT_LEFTRIGHT, 1, 2, 40),
+            (l.reference()).layout_new_pane_size(80, &mut *root, LAYOUT_LEFTRIGHT, 1, 2, 40),
             1
         );
     }
@@ -1310,13 +1642,13 @@ fn a_new_pane_size_is_held_between_what_is_left_and_the_minimum() {
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
         assert_eq!(
-            layout_new_pane_size(l.w(), 24, root, LAYOUT_TOPBOTTOM, 24, 2, 12),
+            (l.reference()).layout_new_pane_size(24, &mut *root, LAYOUT_TOPBOTTOM, 24, 2, 12),
             7
         );
         assert_eq!(
-            layout_new_pane_size(l.w(), 24, root, LAYOUT_TOPBOTTOM, 2, 2, 12),
+            (l.reference()).layout_new_pane_size(24, &mut *root, LAYOUT_TOPBOTTOM, 2, 2, 12),
             2
         );
     }
@@ -1329,14 +1661,29 @@ fn a_size_check_turns_down_what_will_not_fit() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
-        assert_eq!(layout_set_size_check(l.w(), root, LAYOUT_LEFTRIGHT, 40), 1);
-        assert_eq!(layout_set_size_check(l.w(), root, LAYOUT_LEFTRIGHT, 4), 0);
-        assert_eq!(layout_set_size_check(l.w(), root, LAYOUT_LEFTRIGHT, 5), 1);
-        assert_eq!(layout_set_size_check(l.w(), root, LAYOUT_LEFTRIGHT, 0), 0);
-        assert_eq!(layout_set_size_check(l.w(), root, LAYOUT_TOPBOTTOM, 24), 1);
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
         assert_eq!(
-            layout_set_size_check(l.w(), (*l.pane(0)).layout_cell, LAYOUT_LEFTRIGHT, 0),
+            (l.reference()).layout_set_size_check(&mut *root, LAYOUT_LEFTRIGHT, 40),
+            1
+        );
+        assert_eq!(
+            (l.reference()).layout_set_size_check(&mut *root, LAYOUT_LEFTRIGHT, 4),
+            0
+        );
+        assert_eq!(
+            (l.reference()).layout_set_size_check(&mut *root, LAYOUT_LEFTRIGHT, 5),
+            1
+        );
+        assert_eq!(
+            (l.reference()).layout_set_size_check(&mut *root, LAYOUT_LEFTRIGHT, 0),
+            0
+        );
+        assert_eq!(
+            (l.reference()).layout_set_size_check(&mut *root, LAYOUT_TOPBOTTOM, 24),
+            1
+        );
+        assert_eq!(
+            (l.reference()).layout_set_size_check(&l.cell(0).unwrap(), LAYOUT_LEFTRIGHT, 0),
             0
         );
     }
@@ -1345,9 +1692,15 @@ fn a_size_check_turns_down_what_will_not_fit() {
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
-        assert_eq!(layout_set_size_check(l.w(), root, LAYOUT_TOPBOTTOM, 24), 1);
-        assert_eq!(layout_set_size_check(l.w(), root, LAYOUT_TOPBOTTOM, 4), 0);
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        assert_eq!(
+            (l.reference()).layout_set_size_check(&mut *root, LAYOUT_TOPBOTTOM, 24),
+            1
+        );
+        assert_eq!(
+            (l.reference()).layout_set_size_check(&mut *root, LAYOUT_TOPBOTTOM, 4),
+            0
+        );
     }
 }
 
@@ -1358,9 +1711,15 @@ fn a_size_check_walks_into_nodes_of_the_other_kind() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
-        assert_eq!(layout_set_size_check(l.w(), root, LAYOUT_TOPBOTTOM, 24), 1);
-        assert_eq!(layout_set_size_check(l.w(), root, LAYOUT_TOPBOTTOM, 2), 0);
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        assert_eq!(
+            (l.reference()).layout_set_size_check(&mut *root, LAYOUT_TOPBOTTOM, 24),
+            1
+        );
+        assert_eq!(
+            (l.reference()).layout_set_size_check(&mut *root, LAYOUT_TOPBOTTOM, 2),
+            0
+        );
     }
 }
 
@@ -1405,15 +1764,24 @@ fn spreading_a_node_of_an_unknown_kind_answers_no() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
         (*root).type_0 = 99;
-        assert_eq!(layout_spread_cell(l.w(), root), 0);
+        assert_eq!(
+            (l.reference()).spread_layout_cell(&LayoutCellPath::root()),
+            0
+        );
         (*root).type_0 = LAYOUT_LEFTRIGHT;
 
         (*root).sx = 1;
-        assert_eq!(layout_spread_cell(l.w(), root), 0);
+        assert_eq!(
+            (l.reference()).spread_layout_cell(&LayoutCellPath::root()),
+            0
+        );
         (*root).sx = 2;
-        assert_eq!(layout_spread_cell(l.w(), root), 0);
+        assert_eq!(
+            (l.reference()).spread_layout_cell(&LayoutCellPath::root()),
+            0
+        );
         (*root).sx = 80;
     }
 }
@@ -1424,8 +1792,11 @@ fn spreading_a_window_already_shared_out_changes_nothing() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        assert_eq!(layout_spread_cell(l.w(), (*l.w()).layout_root_ptr()), 0);
-        layout_spread_out(l.pane(0));
+        assert_eq!(
+            (l.reference()).spread_layout_cell(&LayoutCellPath::root()),
+            0
+        );
+        l.spread_out(0);
         assert_eq!(l.dump(), "LR 80x24+0+0 [%1 40x24+0+0 | %2 39x24+41+0]");
     }
 }
@@ -1436,9 +1807,9 @@ fn spreading_out_with_a_status_line_leaves_room_for_it() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
-    unsafe {
+    {
         with_status(&mut l, PANE_STATUS_TOP, |l| {
-            layout_spread_out(l.pane(0));
+            l.spread_out(0);
             assert_eq!(
                 l.dump(),
                 "TB 80x24+0+0 [%1 80x8+0+0 | %2 80x7+0+9 | %3 80x7+0+17]"
@@ -1454,7 +1825,7 @@ fn fixing_offsets_walks_into_a_node_under_a_top_to_bottom_one() {
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        layout_fix_offsets(l.w());
+        (l.reference()).fix_layout_offsets();
         assert_eq!(
             l.dump(),
             "TB 80x24+0+0 [%1 80x12+0+0 | LR 80x11+0+13 [%2 40x11+0+13 | %3 39x11+41+13]]"
@@ -1469,9 +1840,9 @@ fn a_new_pane_size_is_never_smaller_than_one_column() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
         assert_eq!(
-            layout_new_pane_size(l.w(), 80, root, LAYOUT_LEFTRIGHT, 0, 2, 40),
+            (l.reference()).layout_new_pane_size(80, &mut *root, LAYOUT_LEFTRIGHT, 0, 2, 40),
             1
         );
     }
@@ -1484,11 +1855,17 @@ fn spreading_a_node_with_no_room_for_its_borders_answers_no() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
         (*root).sx = 1;
-        assert_eq!(layout_spread_cell(l.w(), root), 0);
+        assert_eq!(
+            (l.reference()).spread_layout_cell(&LayoutCellPath::root()),
+            0
+        );
         (*root).sx = 3;
-        assert_eq!(layout_spread_cell(l.w(), root), 0);
+        assert_eq!(
+            (l.reference()).spread_layout_cell(&LayoutCellPath::root()),
+            0
+        );
         (*root).sx = 80;
     }
 }
@@ -1501,14 +1878,14 @@ fn growing_walks_back_past_every_cell_with_no_room_to_give() {
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(2, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        layout_resize_pane_to(l.pane(3), LAYOUT_LEFTRIGHT, 1);
-        layout_resize_pane_to(l.pane(1), LAYOUT_LEFTRIGHT, 1);
+        l.resize_pane_to(3, LAYOUT_LEFTRIGHT, 1);
+        l.resize_pane_to(1, LAYOUT_LEFTRIGHT, 1);
         assert_eq!(
             l.dump(),
             "LR 80x24+0+0 [%1 40x24+0+0 | %2 1x24+41+0 | %3 35x24+43+0 | %4 1x24+79+0]"
         );
-        let third = (*l.pane(2)).layout_cell;
-        layout_resize_layout(l.w(), third, LAYOUT_LEFTRIGHT, 5, 1);
+        let third = l.cell_path(2);
+        (l.reference()).resize_layout_cell(&third, LAYOUT_LEFTRIGHT, 5, 1);
         assert_eq!(
             l.dump(),
             "LR 80x24+0+0 [%1 35x24+0+0 | %2 1x24+36+0 | %3 40x24+38+0 | %4 1x24+79+0]"
@@ -1521,16 +1898,9 @@ fn a_cell_under_a_side_by_side_node_is_both_top_and_bottom() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
-    unsafe {
-        let first = (*l.pane(0)).layout_cell;
-        assert_eq!(
-            layout_add_horizontal_border(l.w(), first, PANE_STATUS_TOP),
-            1
-        );
-        assert_eq!(
-            layout_add_horizontal_border(l.w(), first, PANE_STATUS_BOTTOM),
-            1
-        );
+    {
+        assert_eq!(l.border(0, PANE_STATUS_TOP), 1);
+        assert_eq!(l.border(0, PANE_STATUS_BOTTOM), 1);
     }
 }
 
@@ -1541,13 +1911,13 @@ fn shrinking_walks_back_to_the_first_cell_with_room_to_give() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        layout_resize_pane_to(l.pane(1), LAYOUT_LEFTRIGHT, 1);
+        l.resize_pane_to(1, LAYOUT_LEFTRIGHT, 1);
         assert_eq!(
             l.dump(),
             "LR 80x24+0+0 [%1 40x24+0+0 | %2 1x24+41+0 | %3 37x24+43+0]"
         );
-        let second = (*l.pane(1)).layout_cell;
-        layout_resize_layout(l.w(), second, LAYOUT_LEFTRIGHT, -5, 1);
+        let second = l.cell_path(1);
+        (l.reference()).resize_layout_cell(&second, LAYOUT_LEFTRIGHT, -5, 1);
         assert_eq!(
             l.dump(),
             "LR 80x24+0+0 [%1 35x24+0+0 | %2 1x24+36+0 | %3 42x24+38+0]"
@@ -1561,10 +1931,15 @@ fn a_floating_cell_is_left_out_when_the_window_is_resized() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let lc = layout_floating_pane(l.w(), 20, 10, 4, 2);
+        let lc = (l.reference()).float_pane_layout(20, 10, 4, 2);
         let j = l.add_pane(20, 10);
-        layout_assign_pane(lc, l.pane(j), 0);
-        layout_resize(l.w(), 100, 30);
+        (l.reference()).assign_pane_layout(
+            &lc,
+            &crate::window::window_pane_find_by_id((*l.pane(j)).pane_id())
+                .expect("the layout pane exists"),
+            0,
+        );
+        (l.reference()).resize_layout(100, 30);
         assert_eq!(
             l.dump(),
             "TB 100x30+0+0 [%1 100x15+0+0 | %2 100x14+0+16 | %3* 20x10+4+2]"
@@ -1578,9 +1953,14 @@ fn a_full_size_split_leaves_a_floating_cell_where_it_is() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let lc = layout_floating_pane(l.w(), 20, 10, 4, 2);
+        let lc = (l.reference()).float_pane_layout(20, 10, 4, 2);
         let j = l.add_pane(20, 10);
-        layout_assign_pane(lc, l.pane(j), 0);
+        (l.reference()).assign_pane_layout(
+            &lc,
+            &crate::window::window_pane_find_by_id((*l.pane(j)).pane_id())
+                .expect("the layout pane exists"),
+            0,
+        );
     }
     assert_eq!(l.split(0, LAYOUT_TOPBOTTOM, -1, SPAWN_FULLSIZE), Some(3));
     assert_eq!(
@@ -1594,9 +1974,211 @@ fn a_cell_of_an_unknown_kind_prints_as_unknown() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        let root = (*l.w()).layout_root_ptr();
+        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
         (*root).type_0 = 99;
         assert_eq!(l.dump(), "? 80x24+0+0");
         (*root).type_0 = LAYOUT_WINDOWPANE;
     }
+}
+
+#[test]
+fn resizing_a_zoomed_layout_leaves_panes_in_the_saved_tree_unchanged() {
+    let _g = guard();
+    let mut layout = Layout::new(80, 24);
+    layout.split(0, LAYOUT_LEFTRIGHT, -1, 0);
+    unsafe {
+        let hidden = (*layout.pane(1)).geometry();
+        let id = (*layout.pane(0)).pane_id();
+        assert_eq!(
+            (layout.reference()).zoom(
+                &crate::window::window_pane_find_by_id(id).expect("the selected pane exists")
+            ),
+            0
+        );
+        (layout.reference()).resize_layout(100, 30);
+        let visible = (*layout.pane(0)).geometry();
+        assert_eq!((visible.width, visible.height), (100, 30));
+        assert_eq!((*layout.pane(1)).geometry(), hidden);
+        assert_eq!((layout.reference()).unzoom(0), 0);
+    }
+}
+
+#[test]
+fn border_edges_follow_tree_ownership_instead_of_parent_back_pointers() {
+    let _g = guard();
+    let fixture = Window::new(90, "edges", 80, 24);
+    let mut owner = fixture.reference();
+    {
+        let mut w = owner.as_window_mut();
+        let mut root = layout_create_cell(None);
+        root.type_0 = LAYOUT_LEFTRIGHT;
+        root.cells.push(layout_create_cell(None));
+        w.layout_root = Some(root);
+        let foreign = layout_create_cell(w.layout_root.as_deref_mut());
+        let child = &w.layout_root.as_deref().unwrap().cells[0];
+        assert_eq!(
+            layout_add_horizontal_border(w.layout_root.as_deref(), child, PANE_STATUS_TOP),
+            1
+        );
+        assert_eq!(
+            layout_add_horizontal_border(w.layout_root.as_deref(), child, PANE_STATUS_BOTTOM),
+            1
+        );
+        assert_eq!(
+            layout_add_horizontal_border(w.layout_root.as_deref(), &foreign, PANE_STATUS_TOP),
+            0
+        );
+        assert_eq!(
+            layout_add_horizontal_border(w.layout_root.as_deref(), &foreign, PANE_STATUS_BOTTOM),
+            0
+        );
+    }
+}
+
+#[test]
+fn growth_and_leaf_adjustments_work_before_a_pane_is_active() {
+    let _g = guard();
+    let mut w = Window::new(1, "unassigned", 10, 10);
+    let mut root = layout_cell::default();
+    root.type_0 = LAYOUT_LEFTRIGHT;
+    root.sx = 10;
+    for width in [4, 5] {
+        let mut child = Box::new(layout_cell::default());
+        child.type_0 = LAYOUT_WINDOWPANE;
+        child.sx = width;
+        root.cells.push(child);
+    }
+    unsafe {
+        assert!((*w.ptr()).active_pane_id().is_none());
+        layout_resize_adjust(w.handle(), &mut root, LAYOUT_LEFTRIGHT, 3);
+        assert_eq!(root.sx, 13);
+        assert_eq!((root.cells[0].sx, root.cells[1].sx), (6, 6));
+        layout_resize_adjust(w.handle(), &mut root.cells[0], LAYOUT_LEFTRIGHT, -1);
+        assert_eq!(root.cells[0].sx, 5);
+    }
+}
+
+#[test]
+fn unzoom_restores_geometry_from_the_owned_saved_tree() {
+    fn rebuild(cell: &layout_cell, parent: Option<&mut layout_cell>) -> Box<layout_cell> {
+        let mut copy = layout_create_cell(parent);
+        copy.type_0 = cell.type_0;
+        copy.flags = cell.flags;
+        copy.wp_ref = cell.wp_ref.clone();
+        (copy.sx, copy.sy, copy.xoff, copy.yoff) = (cell.sx, cell.sy, cell.xoff, cell.yoff);
+        for child in &cell.cells {
+            let child = rebuild(child, Some(&mut copy));
+            copy.cells.push(child);
+        }
+        copy
+    }
+    let _g = guard();
+    let mut layout = Layout::new(80, 24);
+    layout.split(0, LAYOUT_LEFTRIGHT, -1, 0);
+    let mut owner = layout.window.reference();
+    unsafe {
+        let id = owner.as_window().panes[0].pane_id();
+        assert_eq!(
+            owner.zoom(
+                &crate::window::window_pane_find_by_id(id).expect("the selected pane exists")
+            ),
+            0
+        );
+        let saved = owner.as_window_mut().saved_layout_root.take().unwrap();
+        owner.as_window_mut().saved_layout_root = Some(rebuild(&saved, None));
+        assert_eq!(owner.unzoom(0), 0);
+        let w = owner.as_window();
+        for pane in &w.panes {
+            let (cell, _) =
+                layout_cell_for_pane(w.layout_root.as_deref(), &pane.downgrade()).unwrap();
+            let geometry = pane.as_pane().geometry();
+            assert_eq!(
+                (geometry.width, geometry.height, geometry.x, geometry.y),
+                (cell.sx, cell.sy, cell.xoff, cell.yoff)
+            );
+        }
+    }
+}
+
+#[test]
+fn a_new_slot_survives_removing_a_pane_from_the_same_window() {
+    let _g = guard();
+    for count in [2, 3] {
+        for source in 0..count {
+            for target in 0..count {
+                if source == target {
+                    continue;
+                }
+                for axis in [LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM] {
+                    for flags in [
+                        0,
+                        SPAWN_BEFORE,
+                        SPAWN_FULLSIZE,
+                        SPAWN_FULLSIZE | SPAWN_BEFORE,
+                    ] {
+                        let mut l = Layout::new(100, 40);
+                        for _ in 1..count {
+                            l.split(0, LAYOUT_LEFTRIGHT, -1, 0).unwrap();
+                        }
+                        unsafe {
+                            let source_id = (*l.pane(source)).pane_id();
+                            let target_id = (*l.pane(target)).pane_id();
+                            let w = &mut *l.w();
+                            let mut slot = (l.reference())
+                                .split_pane_layout(
+                                    &crate::window::window_pane_find_by_id(target_id)
+                                        .expect("the layout pane exists"),
+                                    axis,
+                                    -1,
+                                    flags,
+                                )
+                                .unwrap();
+                            (l.reference()).layout_close_pane_with_slot(
+                                &crate::window::window_pane_find_by_id(source_id)
+                                    .expect("the layout pane exists"),
+                                Some(&mut slot),
+                            );
+                            assert!(
+                                slot.get(w.layout_root.as_deref().unwrap())
+                                    .unwrap()
+                                    .wp_ref
+                                    .as_ref()
+                                    .map(|pane| pane.id())
+                                    .is_none()
+                            );
+                            (l.reference()).assign_pane_layout(
+                                &slot,
+                                &crate::window::window_pane_find_by_id(source_id)
+                                    .expect("the layout pane exists"),
+                                0,
+                            );
+                            for pane in &w.panes {
+                                assert!(
+                                    layout_cell_for_pane(
+                                        w.layout_root.as_deref(),
+                                        &pane.downgrade()
+                                    )
+                                    .is_some()
+                                );
+                            }
+                            assert_eq!(
+                                layout_count_cells(w.layout_root.as_deref_mut().unwrap()),
+                                count as u_int
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Adds `change` to the size of `lc`, distributing it among its descendants.
+pub(crate) unsafe fn layout_resize_adjust(
+    w: &WindowRef,
+    lc: &mut layout_cell,
+    axis: layout_type,
+    change: c_int,
+) {
+    unsafe { LayoutResizeLimits::for_adjustment(w, lc, axis, change).adjust(lc, axis, change) }
 }

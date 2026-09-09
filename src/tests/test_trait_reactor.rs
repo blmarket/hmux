@@ -4,6 +4,7 @@
 //! has no method for. Everything after that goes through [`Reactor`], with
 //! [`Timer`] standing in for the work a turn is meant to dispatch.
 
+use ::std::ffi::CString;
 use ::std::rc::Rc;
 use ::std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -25,7 +26,7 @@ fn counting_timer() -> (TimerHandle, Rc<AtomicUsize>) {
 /// The loop says what it is, and says the same thing every time.
 #[test]
 fn the_loop_describes_itself() {
-    fn describe(reactor: &impl Reactor) -> String {
+    fn describe(reactor: &impl Reactor) -> CString {
         reactor.describe()
     }
 
@@ -49,7 +50,11 @@ fn a_deferred_call_waits_for_a_turn_and_then_runs_once() {
 
     let mut reactor = current();
     defer(&mut reactor, &calls);
-    assert_eq!(calls.load(Ordering::SeqCst), 0, "not where it was asked for");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "not where it was asked for"
+    );
 
     for _ in 0..4 {
         reactor.run_once();
@@ -80,7 +85,7 @@ fn every_deferred_call_runs() {
 /// rather than running within this one.
 #[test]
 fn a_call_deferred_from_a_deferred_call_waits_its_turn() {
-    let order = Rc::new(::std::cell::RefCell::new(Vec::new()));
+    let order = Rc::new(std::cell::RefCell::new(Vec::new()));
     let mut reactor = current();
 
     let outer = Rc::clone(&order);

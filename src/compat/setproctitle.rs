@@ -28,7 +28,7 @@ const NAME: usize = 16;
 /// and a title of one word leaves nothing behind but the program's name and
 /// its colon. A program whose own name fills the name has no space left to cut
 /// back to, and keeps the first fifteen bytes as they stand.
-fn thread_name(program: &[u8], title: &[u8]) -> [c_char; NAME] {
+fn thread_name(program: &[u8], title: &[u8]) -> [u8; NAME] {
     let mut whole = program.to_vec();
     whole.extend_from_slice(b": ");
     whole.extend_from_slice(title);
@@ -39,20 +39,21 @@ fn thread_name(program: &[u8], title: &[u8]) -> [c_char; NAME] {
     {
         whole.truncate(space);
     }
-    let mut name = [0 as c_char; NAME];
-    for (to, byte) in name.iter_mut().zip(&whole) {
-        *to = *byte as c_char;
-    }
+    let mut name = [0; NAME];
+    name[..whole.len()].copy_from_slice(&whole);
     name
 }
 
-pub unsafe fn setproctitle(fmt: *const c_char, args: &[FmtArg]) {
+pub unsafe fn setproctitle(fmt: &CStr, args: &[FmtArg]) {
     unsafe {
         let mut title = [0 as c_char; NAME];
-        format_into(title.as_mut_ptr(), NAME, fmt, args);
+        format_into(&mut title, fmt, args);
+        let title = title.map(|byte| byte as u8);
         let name = thread_name(
             getprogname().to_bytes(),
-            CStr::from_ptr(title.as_ptr()).to_bytes(),
+            CStr::from_bytes_until_nul(&title)
+                .expect("the title formatter writes a terminator")
+                .to_bytes(),
         );
         prctl(PR_SET_NAME, name.as_ptr());
     }

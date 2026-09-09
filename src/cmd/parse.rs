@@ -1,135 +1,27 @@
-use crate::arguments::args_free_value;
 use crate::cmd::cmd_get_alias;
+use crate::cmd::cmd_parse;
 use crate::cmd::find::{cmd_find_from_client, cmd_find_valid_state};
-use crate::cmd::queue::{CmdqStateRef, cmdq_append, cmdq_get_command, cmdq_print};
-use crate::cmd::{
-    cmd_list_append, cmd_list_append_all, cmd_list_move, cmd_list_new, cmd_list_print, cmd_parse,
+use crate::cmd::queue::{CmdqItemWeak, CmdqStateRef, cmdq_append};
+pub use crate::consts::{
+    CMD_PARSE_ERROR, CMD_PARSE_PARSEONLY, CMD_PARSE_SUCCESS, CMD_PARSE_VERBOSE, ENVIRON_HIDDEN,
+    FORMAT_NOJOBS, FORMAT_NONE, UINT_MAX,
 };
-use crate::environ::{environ_entry_value, environ_find, environ_put};
-use crate::ffi::{
-    __ctype_b_loc, getpwnam, getpwuid, getuid, sscanf, strchr, strcmp, strlen, wctomb,
-};
+use crate::environ::{EnvironmentStore, with_global_environment, with_global_environment_mut};
+use crate::ffi::{getuid, wctomb};
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::format::format_true;
 use crate::format::{format_create, format_defaults, format_expand};
-use crate::list::foreach_owned;
 use crate::log::{fatalx, log_debug};
-use crate::tmux::global_environ;
 pub use crate::types::*;
 use crate::xmalloc::xasprintf;
-pub type ctype_mask = ::core::ffi::c_uint;
-pub const _ISalnum: ctype_mask = 8;
-pub const _ISpunct: ctype_mask = 4;
-pub const _IScntrl: ctype_mask = 2;
-pub const _ISblank: ctype_mask = 1;
-pub const _ISgraph: ctype_mask = 32768;
-pub const _ISprint: ctype_mask = 16384;
-pub const _ISspace: ctype_mask = 8192;
-pub const _ISxdigit: ctype_mask = 4096;
-pub const _ISdigit: ctype_mask = 2048;
-pub const _ISalpha: ctype_mask = 1024;
-pub const _ISlower: ctype_mask = 512;
-pub const _ISupper: ctype_mask = 256;
-pub const MSG_READ_CANCEL: msgtype = 307;
-pub const MSG_WRITE_CLOSE: msgtype = 306;
-pub const MSG_WRITE_READY: msgtype = 305;
-pub const MSG_WRITE: msgtype = 304;
-pub const MSG_WRITE_OPEN: msgtype = 303;
-pub const MSG_READ_DONE: msgtype = 302;
-pub const MSG_READ: msgtype = 301;
-pub const MSG_READ_OPEN: msgtype = 300;
-pub const MSG_FLAGS: msgtype = 218;
-pub const MSG_EXEC: msgtype = 217;
-pub const MSG_WAKEUP: msgtype = 216;
-pub const MSG_UNLOCK: msgtype = 215;
-pub const MSG_SUSPEND: msgtype = 214;
-pub const MSG_OLDSTDOUT: msgtype = 213;
-pub const MSG_OLDSTDIN: msgtype = 212;
-pub const MSG_OLDSTDERR: msgtype = 211;
-pub const MSG_SHUTDOWN: msgtype = 210;
-pub const MSG_SHELL: msgtype = 209;
-pub const MSG_RESIZE: msgtype = 208;
-pub const MSG_READY: msgtype = 207;
-pub const MSG_LOCK: msgtype = 206;
-pub const MSG_EXITING: msgtype = 205;
-pub const MSG_EXITED: msgtype = 204;
-pub const MSG_EXIT: msgtype = 203;
-pub const MSG_DETACHKILL: msgtype = 202;
-pub const MSG_DETACH: msgtype = 201;
-pub const MSG_COMMAND: msgtype = 200;
-pub const MSG_IDENTIFY_TERMINFO: msgtype = 112;
-pub const MSG_IDENTIFY_LONGFLAGS: msgtype = 111;
-pub const MSG_IDENTIFY_STDOUT: msgtype = 110;
-pub const MSG_IDENTIFY_FEATURES: msgtype = 109;
-pub const MSG_IDENTIFY_CWD: msgtype = 108;
-pub const MSG_IDENTIFY_CLIENTPID: msgtype = 107;
-pub const MSG_IDENTIFY_DONE: msgtype = 106;
-pub const MSG_IDENTIFY_ENVIRON: msgtype = 105;
-pub const MSG_IDENTIFY_STDIN: msgtype = 104;
-pub const MSG_IDENTIFY_OLDCWD: msgtype = 103;
-pub const MSG_IDENTIFY_TTYNAME: msgtype = 102;
-pub const MSG_IDENTIFY_TERM: msgtype = 101;
-pub const MSG_IDENTIFY_FLAGS: msgtype = 100;
-pub const MSG_VERSION: msgtype = 12;
-pub const PANE_LINES_SPACES: pane_lines = 5;
-pub const PANE_LINES_NUMBER: pane_lines = 4;
-pub const PANE_LINES_SIMPLE: pane_lines = 3;
-pub const PANE_LINES_HEAVY: pane_lines = 2;
-pub const PANE_LINES_DOUBLE: pane_lines = 1;
-pub const PANE_LINES_SINGLE: pane_lines = 0;
-pub const PROGRESS_BAR_PAUSED: progress_bar_state = 4;
-pub const PROGRESS_BAR_INDETERMINATE: progress_bar_state = 3;
-pub const PROGRESS_BAR_ERROR: progress_bar_state = 2;
-pub const PROGRESS_BAR_NORMAL: progress_bar_state = 1;
-pub const PROGRESS_BAR_HIDDEN: progress_bar_state = 0;
-pub const SCREEN_CURSOR_BAR: screen_cursor_style = 3;
-pub const SCREEN_CURSOR_UNDERLINE: screen_cursor_style = 2;
-pub const SCREEN_CURSOR_BLOCK: screen_cursor_style = 1;
-pub const SCREEN_CURSOR_DEFAULT: screen_cursor_style = 0;
-pub const STYLE_DEFAULT_SET: style_default_type = 3;
-pub const STYLE_DEFAULT_POP: style_default_type = 2;
-pub const STYLE_DEFAULT_PUSH: style_default_type = 1;
-pub const STYLE_DEFAULT_BASE: style_default_type = 0;
-pub const STYLE_RANGE_CONTROL: style_range_type = 7;
-pub const STYLE_RANGE_USER: style_range_type = 6;
-pub const STYLE_RANGE_SESSION: style_range_type = 5;
-pub const STYLE_RANGE_WINDOW: style_range_type = 4;
-pub const STYLE_RANGE_PANE: style_range_type = 3;
-pub const STYLE_RANGE_RIGHT: style_range_type = 2;
-pub const STYLE_RANGE_LEFT: style_range_type = 1;
-pub const STYLE_RANGE_NONE: style_range_type = 0;
-pub const STYLE_LIST_RIGHT_MARKER: style_list = 4;
-pub const STYLE_LIST_LEFT_MARKER: style_list = 3;
-pub const STYLE_LIST_FOCUS: style_list = 2;
-pub const STYLE_LIST_ON: style_list = 1;
-pub const STYLE_LIST_OFF: style_list = 0;
-pub const STYLE_ALIGN_ABSOLUTE_CENTRE: style_align = 4;
-pub const STYLE_ALIGN_RIGHT: style_align = 3;
-pub const STYLE_ALIGN_CENTRE: style_align = 2;
-pub const STYLE_ALIGN_LEFT: style_align = 1;
-pub const STYLE_ALIGN_DEFAULT: style_align = 0;
-pub const THEME_DARK: client_theme = 2;
-pub const THEME_LIGHT: client_theme = 1;
-pub const THEME_UNKNOWN: client_theme = 0;
-pub const LAYOUT_WINDOWPANE: layout_type = 2;
-pub const LAYOUT_TOPBOTTOM: layout_type = 1;
-pub const LAYOUT_LEFTRIGHT: layout_type = 0;
-pub const PROMPT_TYPE_INVALID: prompt_type = 255;
-pub const PROMPT_TYPE_WINDOW_TARGET: prompt_type = 3;
-pub const PROMPT_TYPE_TARGET: prompt_type = 2;
-pub const PROMPT_TYPE_SEARCH: prompt_type = 1;
-pub const PROMPT_TYPE_COMMAND: prompt_type = 0;
-pub const PROMPT_COMMAND: client_prompt_mode = 1;
-pub const PROMPT_ENTRY: client_prompt_mode = 0;
-pub const CLIENT_EXIT_DETACH: client_exit_type = 2;
-pub const CLIENT_EXIT_SHUTDOWN: client_exit_type = 1;
-pub const CLIENT_EXIT_RETURN: client_exit_type = 0;
-pub const CMD_PARSE_SUCCESS: cmd_parse_status = 1;
-pub const CMD_PARSE_ERROR: cmd_parse_status = 0;
+use crate::{CommandParser, RustCommandParser};
+use crate::{UserAccount, UserAccountRecord};
+use ::core::ffi::CStr;
+
 /// The commands of one parse, in the order they were written. Each command
 /// belongs to the list.
-pub type cmd_parse_commands = ::std::vec::Vec<::std::boxed::Box<cmd_parse_command>>;
+pub type cmd_parse_commands = Vec<Box<cmd_parse_command>>;
 
 #[repr(C)]
 pub struct cmd_parse_command {
@@ -139,124 +31,102 @@ pub struct cmd_parse_command {
 
 /// The arguments of one command, in the order they were written, and owned by
 /// the command the same way.
-pub type cmd_parse_arguments = ::std::vec::Vec<::std::boxed::Box<cmd_parse_argument>>;
+pub type cmd_parse_arguments = Vec<Box<cmd_parse_argument>>;
 
 #[repr(C)]
 pub struct cmd_parse_argument {
     pub type_0: cmd_parse_argument_type,
-    pub string: Option<::std::ffi::CString>,
-    pub commands: Option<::std::boxed::Box<cmd_parse_commands>>,
+    pub string: Option<std::ffi::CString>,
+    pub commands: Option<Box<cmd_parse_commands>>,
     pub(crate) cmdlist: Option<CmdListRef>,
 }
 impl cmd_parse_argument {
     /// The list this argument carries, as the borrowed view the walks take,
     /// or null for an argument that carries none.
-    fn commands_ptr(&mut self) -> *mut cmd_parse_commands {
-        self.commands
-            .as_mut()
-            .map(|cmds| &raw mut **cmds)
-            .unwrap_or(::core::ptr::null_mut::<cmd_parse_commands>())
+    fn commands_ptr(&mut self) -> Option<&mut cmd_parse_commands> {
+        self.commands.as_deref_mut()
     }
 }
-pub type cmd_parse_argument_type = ::core::ffi::c_uint;
+pub type cmd_parse_argument_type = core::ffi::c_uint;
 pub const CMD_PARSE_PARSED_COMMANDS: cmd_parse_argument_type = 2;
 pub const CMD_PARSE_COMMANDS: cmd_parse_argument_type = 1;
 pub const CMD_PARSE_STRING: cmd_parse_argument_type = 0;
 /// The state of the parser. The default is a parser reading nothing: no
 /// input, no scope stack and no error.
-#[derive(Clone, Default)]
+#[derive(Default)]
 #[repr(C)]
-pub struct cmd_parse_state {
+pub struct cmd_parse_state<'a> {
     /// The bytes of a file being parsed, read as unsigned characters the way
-    /// `getc` did. A caller's buffer is held in `buf`/`len` instead.
+    /// `getc` did. A caller's buffer is borrowed for the duration of its
+    /// parser turn.
     pub f: Option<Vec<u8>>,
-    pub buf: *const ::core::ffi::c_char,
+    pub buf: Option<&'a [u8]>,
     pub len: size_t,
     pub off: size_t,
-    pub condition: ::core::ffi::c_int,
-    pub eol: ::core::ffi::c_int,
-    pub eof: ::core::ffi::c_int,
-    pub input: *mut cmd_parse_input,
+    pub condition: core::ffi::c_int,
+    pub eol: core::ffi::c_int,
+    pub eof: core::ffi::c_int,
+    pub input: Option<&'a mut cmd_parse_input>,
     pub escapes: u_int,
-    pub error: Option<::std::ffi::CString>,
+    pub error: Option<std::ffi::CString>,
 }
-pub type cmd_parse_token_state = ::core::ffi::c_uint;
+pub type cmd_parse_token_state = core::ffi::c_uint;
 pub const SINGLE_QUOTES: cmd_parse_token_state = 3;
 pub const DOUBLE_QUOTES: cmd_parse_token_state = 2;
 pub const NONE: cmd_parse_token_state = 1;
 pub const START: cmd_parse_token_state = 0;
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
-pub const EOF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
-pub const ENVIRON_HIDDEN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const CMD_PARSE_PARSEONLY: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const CMD_PARSE_NOALIAS: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const CMD_PARSE_VERBOSE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const CMD_PARSE_ONEGROUP: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const FORMAT_NOJOBS: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const FORMAT_NONE: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const CMD_PARSE_MAX_ENVIRON_LEN: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
-static mut parse_state: cmd_parse_state = cmd_parse_state {
-    f: None,
-    buf: ::core::ptr::null::<::core::ffi::c_char>(),
-    len: 0,
-    off: 0,
-    condition: 0,
-    eol: 0,
-    eof: 0,
-    input: ::core::ptr::null::<cmd_parse_input>() as *mut cmd_parse_input,
-    escapes: 0,
-    error: None,
-};
-unsafe fn cmd_parse_get_error(
-    file: Option<&::core::ffi::CStr>,
-    line: u_int,
-    error: *const ::core::ffi::c_char,
-) -> ::std::ffi::CString {
-    unsafe {
-        match file {
-            None => ::std::ffi::CStr::from_ptr(error).to_owned(),
-            Some(file) => xasprintf(c"%s:%u: %s".as_ptr(), fmt_args![file, line, error]),
-        }
+
+pub const EOF: core::ffi::c_int = -(1 as core::ffi::c_int);
+
+pub const CMD_PARSE_NOALIAS: core::ffi::c_int = 0x4 as core::ffi::c_int;
+
+pub const CMD_PARSE_ONEGROUP: core::ffi::c_int = 0x10 as core::ffi::c_int;
+
+pub const CMD_PARSE_MAX_ENVIRON_LEN: core::ffi::c_int = 16384 as core::ffi::c_int;
+impl cmd_parse_state<'_> {
+    fn input(&self) -> &cmd_parse_input {
+        self.input.as_deref().expect("active parser input")
     }
-}
-unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, cmdlist: &CmdListRef) {
-    unsafe {
-        if (*pi).item.is_null() || !(*pi).flags & CMD_PARSE_VERBOSE != 0 {
-            return;
-        }
-        let s = cmd_list_print(cmdlist, 0 as ::core::ffi::c_int);
-        if (*pi).file.is_some() {
-            cmdq_print(
-                (*pi).item,
-                c"%s:%u: %s".as_ptr(),
-                fmt_args![(*pi).file(), (*pi).line, s.as_ptr()],
-            );
-        } else {
-            cmdq_print(
-                (*pi).item,
-                c"%u: %s".as_ptr(),
-                fmt_args![(*pi).line, s.as_ptr()],
-            );
-        }
+
+    fn advance_line(&mut self) {
+        let input = self.input.as_deref_mut().expect("active parser input");
+        input.line = input.line.wrapping_add(1);
     }
-}
-/// The commands of `cmds`, in order, as the borrowed pointers the walks over
-/// a parse tree take, walked the way the C's `TAILQ_FOREACH` walked them.
-unsafe fn command_list(
-    cmds: *mut cmd_parse_commands,
-) -> impl Iterator<Item = *mut cmd_parse_command> {
-    unsafe { foreach_owned(cmds) }
 }
 
-/// The arguments of one command, the same way [`command_list`] gives its
-/// commands.
-unsafe fn argument_list(
-    args: *mut cmd_parse_arguments,
-) -> impl Iterator<Item = *mut cmd_parse_argument> {
-    unsafe { foreach_owned(args) }
+type SharedLexer<'a> = std::rc::Rc<std::cell::RefCell<cmd_parse_state<'a>>>;
+
+fn cmd_parse_get_error(file: Option<&CStr>, line: u_int, error: &CStr) -> std::ffi::CString {
+    match file {
+        None => error.to_owned(),
+        Some(file) => xasprintf(c"%s:%u: %s", fmt_args![file, line, error]),
+    }
+}
+unsafe fn cmd_parse_print_commands(pi: &cmd_parse_input, cmdlist: &CmdListRef) {
+    unsafe {
+        let Some(item) = pi.item.as_ref().and_then(CmdqItemWeak::upgrade) else {
+            return;
+        };
+        if !pi.flags & CMD_PARSE_VERBOSE != 0 {
+            return;
+        }
+        let s = cmdlist.print(0 as core::ffi::c_int);
+        if pi.file.is_some() {
+            (item.read()).print(c"%s:%u: %s", fmt_args![pi.file(), pi.line, s.as_c_str()]);
+        } else {
+            (item.read()).print(c"%u: %s", fmt_args![pi.line, s.as_c_str()]);
+        }
+    }
+}
+/// The commands of `cmds`, in their stored order, as scoped mutable borrows.
+fn command_list(cmds: &mut cmd_parse_commands) -> impl Iterator<Item = &mut cmd_parse_command> {
+    cmds.iter_mut().map(Box::as_mut)
+}
+
+/// The arguments of one command, in their stored order, as scoped mutable
+/// borrows.
+fn argument_list(args: &mut cmd_parse_arguments) -> impl Iterator<Item = &mut cmd_parse_argument> {
+    args.iter_mut().map(Box::as_mut)
 }
 
 fn cmd_parse_new_argument() -> Box<cmd_parse_argument> {
@@ -278,15 +148,12 @@ lalrpop_util::lalrpop_mod!(parse_grammar, "/cmd/parse_grammar.rs");
 
 /// A NUL-terminated token string owned by the parser.
 #[derive(Debug)]
-pub struct TokenText(::std::ffi::CString);
+pub struct TokenText(std::ffi::CString);
 impl TokenText {
-    fn from_cstring(text: ::std::ffi::CString) -> TokenText {
+    fn from_cstring(text: std::ffi::CString) -> TokenText {
         TokenText(text)
     }
-    pub fn as_ptr(&self) -> *const ::core::ffi::c_char {
-        self.0.as_ptr()
-    }
-    pub fn as_c_str(&self) -> &::core::ffi::CStr {
+    pub fn as_c_str(&self) -> &CStr {
         self.0.as_c_str()
     }
 }
@@ -309,7 +176,7 @@ pub enum Token {
     Elif,
     Endif,
     Format(TokenText),
-    Token(TokenText),
+    Word(TokenText),
     Equals(TokenText),
 }
 
@@ -378,21 +245,23 @@ pub fn prepend(a: ParseArgument, mut rest: Vec<ParseArgument>) -> Vec<ParseArgum
 ///
 /// `scope` is the innermost `%if`, `stack` the enclosing ones, innermost
 /// last.
-pub struct ParseState {
+pub struct ParseState<'a> {
+    lexer: SharedLexer<'a>,
     scope: Option<bool>,
     stack: Vec<bool>,
 }
 
-impl ParseState {
-    pub fn new() -> ParseState {
-        ParseState {
+impl<'a> ParseState<'a> {
+    pub fn new() -> Self {
+        Self {
+            lexer: Default::default(),
             scope: None,
             stack: Vec::new(),
         }
     }
 
     pub fn line(&self) -> u_int {
-        unsafe { (*parse_state.input).line }
+        self.lexer.borrow().input().line
     }
 
     fn scope_active(&self) -> bool {
@@ -436,27 +305,32 @@ impl ParseState {
     /// `expanded : format`.
     pub fn expand_format(&mut self, token: TokenText) -> TokenText {
         unsafe {
-            let pi: *mut cmd_parse_input = parse_state.input;
-            let c: *mut client = (*pi).client();
-            let mut fs = cmd_find_state::default();
-            let fsp: *mut cmd_find_state = if cmd_find_valid_state(&(*pi).fs) != 0 {
-                &raw mut (*pi).fs
-            } else {
-                cmd_find_from_client(&mut fs, c, 0 as ::core::ffi::c_int);
-                &raw mut fs
+            let (c, mut fs, item) = {
+                let lexer = self.lexer.borrow();
+                let pi = lexer.input();
+                (
+                    pi.client(),
+                    pi.fs.clone(),
+                    pi.item.as_ref().and_then(CmdqItemWeak::upgrade),
+                )
             };
-            let mut ft = format_create(
-                ::core::ptr::null_mut::<client>(),
-                (*pi).item,
-                FORMAT_NONE,
-                FORMAT_NOJOBS,
-            );
+            if cmd_find_valid_state(&fs) == 0 {
+                cmd_find_from_client(&mut fs, c.as_ref(), 0 as core::ffi::c_int);
+            }
+            let session = fs.session();
+            let link = fs.winlink_ref();
+            let pane = fs.pane_ref();
+            let mut ft = match item.as_ref() {
+                Some(item) => item
+                    .with_item(|item| format_create(None, Some(item), FORMAT_NONE, FORMAT_NOJOBS)),
+                None => format_create(None, None, FORMAT_NONE, FORMAT_NOJOBS),
+            };
             format_defaults(
                 &mut ft,
-                c,
-                (*fsp).session(),
-                (*fsp).winlink(),
-                (*fsp).pane(),
+                c.as_ref().map(|reference| reference.as_client()),
+                session.as_ref().map(|reference| reference.as_session()),
+                link.as_ref().and_then(|link| link.get()),
+                pane.as_ref().and_then(|pane| pane.get()),
             );
             let expanded = format_expand(&mut ft, token.as_c_str());
             TokenText::from_cstring(expanded)
@@ -465,34 +339,30 @@ impl ParseState {
 
     /// `assignment : EQUALS` and `hidden_assignment : HIDDEN EQUALS`.
     pub fn put_environ(&mut self, token: TokenText, hidden: bool) -> Result<(), LexError> {
-        unsafe {
-            let flags = (*parse_state.input).flags;
-            let flag = match self.scope {
-                None => true,
-                Some(scope) => scope && self.stack.iter().all(|scope| *scope),
-            };
-            if strlen(token.as_ptr()) > CMD_PARSE_MAX_ENVIRON_LEN as size_t {
-                yyerror(c"environment variable is too long".as_ptr(), fmt_args![]);
-                return Err(LexError);
-            }
-            if !flags & CMD_PARSE_PARSEONLY != 0 && flag {
-                environ_put(
-                    global_environ,
-                    token.as_ptr(),
-                    if hidden {
-                        ENVIRON_HIDDEN
-                    } else {
-                        0 as ::core::ffi::c_int
-                    },
-                );
-            }
-            Ok(())
+        let flags = self.lexer.borrow().input().flags;
+        let flag = match self.scope {
+            None => true,
+            Some(scope) => scope && self.stack.iter().all(|scope| *scope),
+        };
+        if token.as_c_str().to_bytes().len() > CMD_PARSE_MAX_ENVIRON_LEN as size_t {
+            yyerror(
+                &mut self.lexer.borrow_mut(),
+                c"environment variable is too long",
+                fmt_args![],
+            );
+            return Err(LexError);
         }
+        if !flags & CMD_PARSE_PARSEONLY != 0 && flag {
+            with_global_environment_mut(|env| {
+                env.put(token.as_c_str(), if hidden { ENVIRON_HIDDEN } else { 0 });
+            });
+        }
+        Ok(())
     }
 
     /// `if_open : IF expanded`.
     pub fn push_scope(&mut self, expanded: &TokenText) -> bool {
-        let flag = unsafe { format_true(Some(expanded.as_c_str())) != 0 };
+        let flag = format_true(Some(expanded.as_c_str())) != 0;
         if let Some(scope) = self.scope {
             self.stack.push(scope);
         }
@@ -507,7 +377,7 @@ impl ParseState {
 
     /// `if_elif : ELIF expanded`.
     pub fn replace_scope(&mut self, expanded: &TokenText) -> bool {
-        let flag = unsafe { format_true(Some(expanded.as_c_str())) != 0 };
+        let flag = format_true(Some(expanded.as_c_str())) != 0;
         self.scope = Some(flag);
         flag
     }
@@ -518,71 +388,70 @@ impl ParseState {
     }
 }
 
-impl Default for ParseState {
-    fn default() -> ParseState {
+impl Default for ParseState<'_> {
+    fn default() -> Self {
         ParseState::new()
     }
 }
 
-unsafe fn cmd_parse_build_arguments(args: *mut cmd_parse_arguments, arguments: Vec<ParseArgument>) {
-    unsafe {
-        (*args).clear();
-        for argument in arguments {
-            let mut arg = cmd_parse_new_argument();
-            match argument {
-                ParseArgument::String(string) => {
-                    arg.type_0 = CMD_PARSE_STRING;
-                    arg.string = Some(string.0);
-                }
-                ParseArgument::Commands(commands) => {
-                    arg.type_0 = CMD_PARSE_COMMANDS;
-                    arg.commands = Some(cmd_parse_build_list(commands));
-                }
+fn cmd_parse_build_arguments(args: &mut cmd_parse_arguments, arguments: Vec<ParseArgument>) {
+    args.clear();
+    for argument in arguments {
+        let mut arg = cmd_parse_new_argument();
+        match argument {
+            ParseArgument::String(string) => {
+                arg.type_0 = CMD_PARSE_STRING;
+                arg.string = Some(string.0);
             }
-            (*args).push(arg);
+            ParseArgument::Commands(commands) => {
+                arg.type_0 = CMD_PARSE_COMMANDS;
+                arg.commands = Some(cmd_parse_build_list(commands));
+            }
         }
+        args.push(arg);
     }
 }
 
 /// Moves an owned parse tree into the lists the command builder reads.
-unsafe fn cmd_parse_build_list(commands: Vec<ParseCommand>) -> Box<cmd_parse_commands> {
-    unsafe {
-        let mut cmds = Box::new(cmd_parse_commands::new());
-        for command in commands {
-            let mut cmd = cmd_parse_new_command(command.line);
-            cmd_parse_build_arguments(&raw mut cmd.arguments, command.arguments);
-            cmds.push(cmd);
-        }
-        cmds
+fn cmd_parse_build_list(commands: Vec<ParseCommand>) -> Box<cmd_parse_commands> {
+    let mut cmds = Box::new(cmd_parse_commands::new());
+    for command in commands {
+        let mut cmd = cmd_parse_new_command(command.line);
+        cmd_parse_build_arguments(&mut cmd.arguments, command.arguments);
+        cmds.push(cmd);
     }
+    cmds
 }
 
-unsafe fn cmd_parse_run_parser(
-    cause: &mut Option<::std::ffi::CString>,
+fn cmd_parse_run_parser(
+    lexer: SharedLexer<'_>,
+    cause: &mut Option<std::ffi::CString>,
 ) -> Option<Box<cmd_parse_commands>> {
-    unsafe {
-        let mut ps = ParseState::new();
-        let result = parse_grammar::LinesParser::new().parse(&mut ps, TokenStream);
-        match result {
-            Ok(commands) => Some(cmd_parse_build_list(commands)),
-            Err(_) => {
-                yyerror(c"syntax error".as_ptr(), fmt_args![]);
-                let ps: *mut cmd_parse_state = &raw mut parse_state;
-                *cause = (*ps).error.take();
-                None
-            }
+    let mut ps = ParseState {
+        lexer: lexer.clone(),
+        scope: None,
+        stack: Vec::new(),
+    };
+    let result = parse_grammar::LinesParser::new().parse(&mut ps, TokenStream(lexer.clone()));
+    match result {
+        Ok(commands) => Some(cmd_parse_build_list(commands)),
+        Err(_) => {
+            let mut lexer = lexer.borrow_mut();
+            yyerror(&mut lexer, c"syntax error", fmt_args![]);
+            *cause = lexer.error.take();
+            None
         }
     }
 }
 
 /// Pulls one token at a time out of `yylex`, the way `yyparse` did.
-struct TokenStream;
+struct TokenStream<'a>(SharedLexer<'a>);
 
-impl Iterator for TokenStream {
+impl Iterator for TokenStream<'_> {
     type Item = Result<(usize, Token, usize), LexError>;
 
     fn next(&mut self) -> Option<Result<(usize, Token, usize), LexError>> {
-        match yylex_next() {
+        match yylex_next(&mut self.0.borrow_mut()) {
             Ok(None) => None,
             Ok(Some(token)) => Some(Ok((0, token, 0))),
             Err(error) => Some(Err(error)),
@@ -590,88 +459,58 @@ impl Iterator for TokenStream {
     }
 }
 
-/// Puts the parser back the way it was once a parse has finished, so that a
-/// parse started from inside another one — a command line that parses one of
-/// its own arguments — leaves the outer parse where it was.
-struct ParserTurn;
-
-impl ParserTurn {
-    /// Starts a parse, saving whatever the parser was doing before.
-    unsafe fn start(pi: *mut cmd_parse_input) -> (ParserTurn, cmd_parse_state) {
-        unsafe {
-            let outer = ::core::mem::take(&mut parse_state);
-            parse_state.input = pi;
-            (ParserTurn, outer)
-        }
-    }
-
-    /// Gives the parser back to the parse that was under way.
-    unsafe fn finish(self, outer: cmd_parse_state) {
-        unsafe { parse_state = outer };
-    }
-}
-
-unsafe fn cmd_parse_do_file(
+fn cmd_parse_do_file(
     f: Vec<u8>,
-    mut pi: *mut cmd_parse_input,
-    cause: &mut Option<::std::ffi::CString>,
+    pi: &mut cmd_parse_input,
+    cause: &mut Option<std::ffi::CString>,
 ) -> Option<Box<cmd_parse_commands>> {
-    unsafe {
-        let (turn, outer) = ParserTurn::start(pi);
-        parse_state.f = Some(f);
-        let parsed = cmd_parse_run_parser(cause);
-        turn.finish(outer);
-        parsed
-    }
+    let lexer = cmd_parse_state {
+        f: Some(f),
+        input: Some(pi),
+        ..Default::default()
+    };
+    cmd_parse_run_parser(std::rc::Rc::new(std::cell::RefCell::new(lexer)), cause)
 }
-unsafe fn cmd_parse_do_buffer(
-    mut buf: *const ::core::ffi::c_char,
-    mut len: size_t,
-    mut pi: *mut cmd_parse_input,
-    cause: &mut Option<::std::ffi::CString>,
+fn cmd_parse_do_buffer(
+    buf: &[u8],
+    pi: &mut cmd_parse_input,
+    cause: &mut Option<std::ffi::CString>,
 ) -> Option<Box<cmd_parse_commands>> {
-    unsafe {
-        let (turn, outer) = ParserTurn::start(pi);
-        parse_state.buf = buf;
-        parse_state.len = len;
-        let parsed = cmd_parse_run_parser(cause);
-        turn.finish(outer);
-        parsed
-    }
+    let lexer = cmd_parse_state {
+        buf: Some(buf),
+        len: buf.len(),
+        input: Some(pi),
+        ..Default::default()
+    };
+    cmd_parse_run_parser(std::rc::Rc::new(std::cell::RefCell::new(lexer)), cause)
 }
-unsafe fn cmd_parse_log_commands(
-    mut cmds: *mut cmd_parse_commands,
-    mut prefix: *const ::core::ffi::c_char,
-) {
+unsafe fn cmd_parse_log_commands(cmds: &mut cmd_parse_commands, prefix: &CStr) {
     unsafe {
-        let mut i: u_int = 0;
-        let mut j: u_int = 0;
+        let mut i: u_int;
+        let mut j: u_int;
         i = 0 as u_int;
         for cmd in command_list(cmds) {
             j = 0 as u_int;
-            for arg in argument_list(&raw mut (*cmd).arguments) {
-                match (*arg).type_0 {
+            for arg in argument_list(&mut cmd.arguments) {
+                match arg.type_0 {
                     CMD_PARSE_STRING => {
                         log_debug(
-                            c"%s %u:%u: %s".as_ptr(),
-                            fmt_args![prefix, i, j, (*arg).string.as_ref().unwrap().as_ptr()],
+                            c"%s %u:%u: %s",
+                            fmt_args![prefix, i, j, arg.string.as_ref().unwrap().as_c_str()],
                         );
                     }
                     CMD_PARSE_COMMANDS => {
-                        let s = xasprintf(c"%s %u:%u".as_ptr(), fmt_args![prefix, i, j]);
-                        cmd_parse_log_commands((*arg).commands_ptr(), s.as_ptr());
+                        let s = xasprintf(c"%s %u:%u", fmt_args![prefix, i, j]);
+                        if let Some(commands) = arg.commands_ptr() {
+                            cmd_parse_log_commands(commands, &s);
+                        }
                     }
                     CMD_PARSE_PARSED_COMMANDS => {
-                        let s = (*arg)
+                        let s = arg
                             .cmdlist
                             .as_ref()
-                            .map_or_else(::std::ffi::CString::default, |list| {
-                                cmd_list_print(list, 0)
-                            });
-                        log_debug(
-                            c"%s %u:%u: %s".as_ptr(),
-                            fmt_args![prefix, i, j, s.as_ptr()],
-                        );
+                            .map_or_else(std::ffi::CString::default, |list| list.print(0));
+                        log_debug(c"%s %u:%u: %s", fmt_args![prefix, i, j, s.as_c_str()]);
                     }
                     _ => {}
                 }
@@ -682,234 +521,206 @@ unsafe fn cmd_parse_log_commands(
     }
 }
 unsafe fn cmd_parse_expand_alias(
-    mut cmd: *mut cmd_parse_command,
-    mut pi: *mut cmd_parse_input,
+    cmd: &mut cmd_parse_command,
+    pi: &mut cmd_parse_input,
     pr: &mut cmd_parse_result,
-) -> ::core::ffi::c_int {
+) -> core::ffi::c_int {
     unsafe {
-        let mut first: *mut cmd_parse_argument = ::core::ptr::null_mut::<cmd_parse_argument>();
-        let mut last: *mut cmd_parse_command = ::core::ptr::null_mut::<cmd_parse_command>();
-        let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
         let mut cause = None;
-        if (*pi).flags & CMD_PARSE_NOALIAS != 0 {
-            return 0 as ::core::ffi::c_int;
+        if pi.flags & CMD_PARSE_NOALIAS != 0 {
+            return 0 as core::ffi::c_int;
         }
         *pr = cmd_parse_result::default();
-        first = (*cmd)
-            .arguments
-            .first()
-            .map(|arg| &raw const **arg as *mut cmd_parse_argument)
-            .unwrap_or(::core::ptr::null_mut::<cmd_parse_argument>());
-        if first.is_null()
-            || (*first).type_0 as ::core::ffi::c_uint
-                != CMD_PARSE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
+        let Some(first) = cmd.arguments.first_mut() else {
             pr.status = CMD_PARSE_SUCCESS;
-            pr.cmdlist = Some(cmd_list_new());
-            return 1 as ::core::ffi::c_int;
+            pr.cmdlist = Some(CmdListRef::empty());
+            return 1 as core::ffi::c_int;
+        };
+        if first.type_0 != CMD_PARSE_STRING {
+            pr.status = CMD_PARSE_SUCCESS;
+            pr.cmdlist = Some(CmdListRef::empty());
+            return 1 as core::ffi::c_int;
         }
-        name = (*first).string.as_ref().unwrap().as_ptr() as *mut ::core::ffi::c_char;
+        let name = first.string.as_ref().unwrap();
         let Some(alias) = cmd_get_alias(name) else {
-            return 0 as ::core::ffi::c_int;
+            return 0 as core::ffi::c_int;
         };
         log_debug(
-            c"%s: %u alias %s = %s".as_ptr(),
+            c"%s: %u alias %s = %s",
             fmt_args![
-                c"cmd_parse_expand_alias".as_ptr(),
-                (*pi).line,
-                name,
-                alias.as_ptr()
+                c"cmd_parse_expand_alias",
+                pi.line,
+                name.as_c_str(),
+                alias.as_c_str()
             ],
         );
-        let Some(mut cmds) =
-            cmd_parse_do_buffer(alias.as_ptr(), alias.as_bytes().len(), pi, &mut cause)
-        else {
+        let Some(mut cmds) = cmd_parse_do_buffer(alias.as_bytes(), pi, &mut cause) else {
             pr.status = CMD_PARSE_ERROR;
             pr.error = cause;
-            return 1 as ::core::ffi::c_int;
+            return 1 as core::ffi::c_int;
         };
-        last = cmds
-            .last()
-            .map(|cmd| &raw const **cmd as *mut cmd_parse_command)
-            .unwrap_or(::core::ptr::null_mut::<cmd_parse_command>());
-        if last.is_null() {
+        let Some(last) = cmds.last_mut() else {
             pr.status = CMD_PARSE_SUCCESS;
-            pr.cmdlist = Some(cmd_list_new());
-            return 1 as ::core::ffi::c_int;
-        }
-        drop((*cmd).arguments.remove(0));
-        let moved = ::core::mem::take(&mut (*cmd).arguments);
-        (*last).arguments.extend(moved);
-        cmd_parse_log_commands(&raw mut *cmds, c"cmd_parse_expand_alias".as_ptr());
-        (*pi).flags |= CMD_PARSE_NOALIAS;
-        cmd_parse_build_commands(&raw mut *cmds, pi, pr);
-        (*pi).flags &= !CMD_PARSE_NOALIAS;
-        1 as ::core::ffi::c_int
+            pr.cmdlist = Some(CmdListRef::empty());
+            return 1 as core::ffi::c_int;
+        };
+        drop(cmd.arguments.remove(0));
+        let moved = core::mem::take(&mut cmd.arguments);
+        last.arguments.extend(moved);
+        cmd_parse_log_commands(&mut cmds, c"cmd_parse_expand_alias");
+        pi.flags |= CMD_PARSE_NOALIAS;
+        cmd_parse_build_commands(&mut cmds, pi, pr);
+        pi.flags &= !CMD_PARSE_NOALIAS;
+        1 as core::ffi::c_int
     }
 }
 unsafe fn cmd_parse_build_command(
-    mut cmd: *mut cmd_parse_command,
-    mut pi: *mut cmd_parse_input,
+    cmd: &mut cmd_parse_command,
+    pi: &mut cmd_parse_input,
     pr: &mut cmd_parse_result,
 ) {
     unsafe {
         let mut current_block: u64;
         let mut values = Vec::<args_value_t>::new();
-        let mut count: u_int = 0 as u_int;
-        let mut idx: u_int = 0;
         *pr = cmd_parse_result::default();
         if cmd_parse_expand_alias(cmd, pi, pr) != 0 {
             return;
         }
         current_block = 5143058163439228106;
-        for arg in argument_list(&raw mut (*cmd).arguments) {
+        for arg in argument_list(&mut cmd.arguments) {
             values.push(args_value_t::default());
             let value = values.last_mut().unwrap();
-            match (*arg).type_0 {
+            match arg.type_0 {
                 CMD_PARSE_STRING => {
-                    value.value = ArgsValue::String((*arg).string.as_ref().unwrap().clone());
+                    value.value = ArgsValue::String(arg.string.as_ref().unwrap().clone());
                 }
                 CMD_PARSE_COMMANDS => {
-                    cmd_parse_build_commands((*arg).commands_ptr(), pi, pr);
-                    if pr.status as ::core::ffi::c_uint
-                        != CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
+                    let commands = arg
+                        .commands_ptr()
+                        .expect("a commands argument carries commands");
+                    cmd_parse_build_commands(commands, pi, pr);
+                    if pr.status as core::ffi::c_uint
+                        != CMD_PARSE_SUCCESS as core::ffi::c_int as core::ffi::c_uint
                     {
                         current_block = 689484554684886290;
                         break;
                     }
                     value.value = ArgsValue::Commands {
                         cmdlist: pr.cmdlist.clone(),
-                        cached: None,
+                        cached: std::cell::OnceCell::new(),
                     };
                 }
                 CMD_PARSE_PARSED_COMMANDS => {
                     value.value = ArgsValue::Commands {
-                        cmdlist: (*arg).cmdlist.clone(),
-                        cached: None,
+                        cmdlist: arg.cmdlist.clone(),
+                        cached: std::cell::OnceCell::new(),
                     };
                 }
                 _ => {}
             }
-            count = count.wrapping_add(1);
         }
         if current_block == 5143058163439228106 {
-            match cmd_parse(
-                values.as_mut_ptr(),
-                count,
-                (*pi).file(),
-                (*pi).line,
-                (*pi).flags,
-            ) {
+            match cmd_parse(&values, pi.file(), pi.line, pi.flags) {
                 Ok(add) => {
                     pr.status = CMD_PARSE_SUCCESS;
-                    pr.cmdlist = Some(cmd_list_new());
-                    cmd_list_append(pr.cmdlist.as_ref().unwrap(), add);
+                    pr.cmdlist = Some(CmdListRef::empty());
+                    (pr.cmdlist.as_ref().unwrap()).append(add);
                 }
                 Err(cause) => {
                     pr.status = CMD_PARSE_ERROR;
-                    pr.error = Some(cmd_parse_get_error(
-                        (*pi).file(),
-                        (*pi).line,
-                        cause.as_ptr(),
-                    ));
+                    pr.error = Some(cmd_parse_get_error(pi.file(), pi.line, &cause));
                 }
             }
-        }
-        idx = 0 as u_int;
-        while idx < count {
-            args_free_value(values.as_mut_ptr().offset(idx as isize));
-            idx = idx.wrapping_add(1);
         }
     }
 }
 unsafe fn cmd_parse_build_commands(
-    mut cmds: *mut cmd_parse_commands,
-    mut pi: *mut cmd_parse_input,
+    cmds: &mut cmd_parse_commands,
+    pi: &mut cmd_parse_input,
     pr: &mut cmd_parse_result,
 ) {
     unsafe {
         let mut line: u_int = UINT_MAX;
         let mut current: Option<CmdListRef> = None;
-        let mut result: Option<CmdListRef> = None;
+        let mut result: Option<CmdListRef>;
         *pr = cmd_parse_result::default();
         if (*cmds).is_empty() {
             pr.status = CMD_PARSE_SUCCESS;
-            pr.cmdlist = Some(cmd_list_new());
+            pr.cmdlist = Some(CmdListRef::empty());
             return;
         }
-        cmd_parse_log_commands(cmds, c"cmd_parse_build_commands".as_ptr());
-        result = Some(cmd_list_new());
+        cmd_parse_log_commands(cmds, c"cmd_parse_build_commands");
+        result = Some(CmdListRef::empty());
         for cmd in command_list(cmds) {
-            if !(*pi).flags & CMD_PARSE_ONEGROUP != 0 && (*cmd).line != line {
+            if !pi.flags & CMD_PARSE_ONEGROUP != 0 && cmd.line != line {
                 if let Some(current_list) = current.as_ref() {
-                    cmd_parse_print_commands(pi, current_list);
-                    cmd_list_move(result.as_ref().unwrap(), current_list);
+                    cmd_parse_print_commands(&*pi, current_list);
+                    (result.as_ref().unwrap()).move_from(current_list);
                 }
-                current = Some(cmd_list_new());
+                current = Some(CmdListRef::empty());
             }
             if current.is_none() {
-                current = Some(cmd_list_new());
+                current = Some(CmdListRef::empty());
             }
-            (*pi).line = (*cmd).line;
-            line = (*pi).line;
+            pi.line = cmd.line;
+            line = pi.line;
             cmd_parse_build_command(cmd, pi, pr);
-            if pr.status as ::core::ffi::c_uint
-                != CMD_PARSE_SUCCESS as ::core::ffi::c_int as ::core::ffi::c_uint
+            if pr.status as core::ffi::c_uint
+                != CMD_PARSE_SUCCESS as core::ffi::c_int as core::ffi::c_uint
             {
                 return;
             }
-            cmd_list_append_all(current.as_ref().unwrap(), pr.cmdlist.as_ref().unwrap());
+            (current.as_ref().unwrap()).append_all(pr.cmdlist.as_ref().unwrap());
             let _ = pr.cmdlist.take();
         }
         if let Some(current_list) = current.as_ref() {
-            cmd_parse_print_commands(pi, current_list);
-            cmd_list_move(result.as_ref().unwrap(), current_list);
+            cmd_parse_print_commands(&*pi, current_list);
+            (result.as_ref().unwrap()).move_from(current_list);
         }
-        let s = cmd_list_print(result.as_ref().unwrap(), 0 as ::core::ffi::c_int);
+        let s = (result.as_ref().unwrap()).print(0 as core::ffi::c_int);
         log_debug(
-            c"%s: %s".as_ptr(),
-            fmt_args![c"cmd_parse_build_commands".as_ptr(), s.as_ptr()],
+            c"%s: %s",
+            fmt_args![c"cmd_parse_build_commands", s.as_c_str()],
         );
         pr.status = CMD_PARSE_SUCCESS;
         pr.cmdlist = result.take();
     }
 }
-pub unsafe fn cmd_parse_from_file(f: Vec<u8>, mut pi: *mut cmd_parse_input) -> cmd_parse_result {
+pub(crate) unsafe fn cmd_parse_from_file_impl(
+    f: Vec<u8>,
+    pi: Option<&mut cmd_parse_input>,
+) -> cmd_parse_result {
     unsafe {
         let mut input = cmd_parse_input::default();
         let mut cause = None;
-        if pi.is_null() {
-            pi = &raw mut input;
-        }
+        let pi = &mut *pi.unwrap_or(&mut input);
         let mut pr = cmd_parse_result::default();
-        let Some(mut cmds) = cmd_parse_do_file(f, pi, &mut cause) else {
+        let Some(mut cmds) = cmd_parse_do_file(f, &mut *pi, &mut cause) else {
             pr.status = CMD_PARSE_ERROR;
             pr.error = cause;
             return pr;
         };
-        cmd_parse_build_commands(&raw mut *cmds, pi, &mut pr);
+        cmd_parse_build_commands(&mut cmds, pi, &mut pr);
         pr
     }
 }
-pub unsafe fn cmd_parse_from_string(
-    mut s: *const ::core::ffi::c_char,
-    mut pi: *mut cmd_parse_input,
+pub(crate) unsafe fn cmd_parse_from_string_impl(
+    s: &CStr,
+    pi: Option<&mut cmd_parse_input>,
 ) -> cmd_parse_result {
     unsafe {
         let mut input = cmd_parse_input::default();
-        if pi.is_null() {
-            pi = &raw mut input;
-        }
-        (*pi).flags |= CMD_PARSE_ONEGROUP;
-        cmd_parse_from_buffer(s, strlen(s), pi)
+        let pi = &mut *pi.unwrap_or(&mut input);
+        pi.flags |= CMD_PARSE_ONEGROUP;
+        cmd_parse_from_buffer_impl(s.to_bytes(), Some(&mut *pi))
     }
 }
 pub(crate) unsafe fn cmd_parse_and_append(
-    mut s: *const ::core::ffi::c_char,
-    mut pi: *mut cmd_parse_input,
-    mut c: *mut client,
+    s: &CStr,
+    pi: Option<&mut cmd_parse_input>,
+    c: Option<&ClientRef>,
     state: &CmdqStateRef,
-    error: &mut Option<::std::ffi::CString>,
+    error: &mut Option<std::ffi::CString>,
 ) -> cmd_parse_status {
     unsafe {
         let mut pr = cmd_parse_from_string(s, pi);
@@ -919,257 +730,241 @@ pub(crate) unsafe fn cmd_parse_and_append(
             }
             CMD_PARSE_SUCCESS => {
                 let cmdlist = pr.cmdlist.take().unwrap();
-                cmdq_append(c, cmdq_get_command(&cmdlist, Some(state)));
+                cmdq_append(c, cmdlist.queue_items(Some(state)));
             }
             _ => {}
         }
         pr.status
     }
 }
-pub unsafe fn cmd_parse_from_buffer(
-    mut buf: *const ::core::ffi::c_char,
-    mut len: size_t,
-    mut pi: *mut cmd_parse_input,
+pub(crate) unsafe fn cmd_parse_from_buffer_impl(
+    buf: &[u8],
+    pi: Option<&mut cmd_parse_input>,
 ) -> cmd_parse_result {
     unsafe {
         let mut input = cmd_parse_input::default();
         let mut cause = None;
-        if pi.is_null() {
-            pi = &raw mut input;
-        }
+        let pi = &mut *pi.unwrap_or(&mut input);
         let mut pr = cmd_parse_result::default();
-        if len == 0 as size_t {
+        if buf.is_empty() {
             pr.status = CMD_PARSE_SUCCESS;
-            pr.cmdlist = Some(cmd_list_new());
+            pr.cmdlist = Some(CmdListRef::empty());
             return pr;
         }
-        let Some(mut cmds) = cmd_parse_do_buffer(buf, len, pi, &mut cause) else {
+        let Some(mut cmds) = cmd_parse_do_buffer(buf, &mut *pi, &mut cause) else {
             pr.status = CMD_PARSE_ERROR;
             pr.error = cause;
             return pr;
         };
-        cmd_parse_build_commands(&raw mut *cmds, pi, &mut pr);
+        cmd_parse_build_commands(&mut cmds, pi, &mut pr);
         pr
     }
 }
-pub unsafe fn cmd_parse_from_arguments(
-    mut values: *mut args_value_t,
-    mut count: u_int,
-    mut pi: *mut cmd_parse_input,
+pub(crate) unsafe fn cmd_parse_from_arguments_impl(
+    values: &[args_value_t],
+    pi: Option<&mut cmd_parse_input>,
 ) -> cmd_parse_result {
     unsafe {
         let mut input = cmd_parse_input::default();
         let mut cmd: Box<cmd_parse_command>;
-        let mut i: u_int = 0;
-        let mut end: ::core::ffi::c_int = 0;
-        if pi.is_null() {
-            pi = &raw mut input;
-        }
+        let mut end: core::ffi::c_int;
+        let pi = &mut *pi.unwrap_or(&mut input);
         let mut pr = cmd_parse_result::default();
         let mut cmds = Box::new(cmd_parse_commands::new());
-        cmd = cmd_parse_new_command((*pi).line);
-        i = 0 as u_int;
-        while i < count {
-            end = 0 as ::core::ffi::c_int;
-            if matches!(&(*values.offset(i as isize)).value, ArgsValue::String(_)) {
-                let mut copy = (*values.offset(i as isize))
-                    .value
-                    .string()
-                    .to_bytes()
-                    .to_vec();
+        cmd = cmd_parse_new_command(pi.line);
+        for val in values {
+            end = 0 as core::ffi::c_int;
+            if matches!(&val.value, ArgsValue::String(_)) {
+                let mut copy = val.value.string().to_bytes().to_vec();
                 let mut size = copy.len();
-                if size != 0 && copy[size - 1] as ::core::ffi::c_int == ';' as i32 {
+                if size != 0 && copy[size - 1] as core::ffi::c_int == ';' as i32 {
                     size -= 1;
                     copy.truncate(size);
-                    if size > 0 && copy[size - 1] as ::core::ffi::c_int == '\\' as i32 {
+                    if size > 0 && copy[size - 1] as core::ffi::c_int == '\\' as i32 {
                         copy[size - 1] = b';';
                     } else {
-                        end = 1 as ::core::ffi::c_int;
+                        end = 1 as core::ffi::c_int;
                     }
                 }
                 if end == 0 || size != 0 {
                     let mut arg = cmd_parse_new_argument();
                     arg.type_0 = CMD_PARSE_STRING;
                     arg.string =
-                        Some(::std::ffi::CString::new(copy).expect("command argument has no NUL"));
+                        Some(std::ffi::CString::new(copy).expect("command argument has no NUL"));
                     cmd.arguments.push(arg);
                 } else {
                     drop(copy);
                 }
-            } else if let ArgsValue::Commands { cmdlist, .. } = &(*values.offset(i as isize)).value
-            {
+            } else if let ArgsValue::Commands { cmdlist, .. } = &val.value {
                 let mut arg = cmd_parse_new_argument();
                 arg.type_0 = CMD_PARSE_PARSED_COMMANDS;
                 arg.cmdlist = cmdlist.clone();
                 cmd.arguments.push(arg);
             } else {
-                fatalx(c"unknown argument type".as_ptr(), fmt_args![]);
+                fatalx(c"unknown argument type", fmt_args![]);
             }
             if end != 0 {
                 cmds.push(cmd);
-                cmd = cmd_parse_new_command((*pi).line);
+                cmd = cmd_parse_new_command(pi.line);
             }
-            i = i.wrapping_add(1);
         }
         if !cmd.arguments.is_empty() {
             cmds.push(cmd);
         } else {
             drop(cmd);
         }
-        cmd_parse_build_commands(&raw mut *cmds, pi, &mut pr);
+        cmd_parse_build_commands(&mut cmds, pi, &mut pr);
         pr
     }
 }
-unsafe fn yyerror(mut fmt: *const ::core::ffi::c_char, args: &[FmtArg]) {
-    unsafe {
-        let mut ps: *mut cmd_parse_state = &raw mut parse_state;
-        let mut pi: *mut cmd_parse_input = (*ps).input;
-        if (*ps).error.is_some() {
-            return;
-        }
-        let error = format_alloc(fmt, args);
-        (*ps).error = Some(cmd_parse_get_error(
-            (*pi).file(),
-            (*pi).line,
-            error.as_ptr(),
-        ));
-    }
+
+pub unsafe fn cmd_parse_from_file(
+    file: Vec<u8>,
+    input: Option<&mut cmd_parse_input>,
+) -> cmd_parse_result {
+    unsafe { RustCommandParser.parse_file(file, input) }
 }
-fn yylex_is_var(mut ch: ::core::ffi::c_char, mut first: ::core::ffi::c_int) -> ::core::ffi::c_int {
+
+pub unsafe fn cmd_parse_from_buffer(
+    buffer: &[u8],
+    input: Option<&mut cmd_parse_input>,
+) -> cmd_parse_result {
+    unsafe { RustCommandParser.parse_buffer(buffer, input) }
+}
+
+pub unsafe fn cmd_parse_from_string(
+    string: &CStr,
+    input: Option<&mut cmd_parse_input>,
+) -> cmd_parse_result {
+    unsafe { RustCommandParser.parse_string(string, input) }
+}
+
+pub unsafe fn cmd_parse_from_arguments(
+    arguments: &[args_value_t],
+    input: Option<&mut cmd_parse_input>,
+) -> cmd_parse_result {
+    unsafe { RustCommandParser.parse_arguments(arguments, input) }
+}
+
+fn yyerror(ps: &mut cmd_parse_state<'_>, fmt: &CStr, args: &[FmtArg]) {
+    let pi = ps.input();
+    if ps.error.is_some() {
+        return;
+    }
+    let error = format_alloc(fmt, args);
+    ps.error = Some(cmd_parse_get_error(pi.file(), pi.line, &error));
+}
+fn yylex_is_var(ch: core::ffi::c_char, first: core::ffi::c_int) -> core::ffi::c_int {
+    let ch = ch as u8 as core::ffi::c_int;
     unsafe {
-        if ch as ::core::ffi::c_int == '=' as i32 {
-            return 0 as ::core::ffi::c_int;
-        }
-        if first != 0
-            && *(*__ctype_b_loc()).offset(ch as u_char as ::core::ffi::c_int as isize)
-                as ::core::ffi::c_int
-                & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                != 0
-        {
-            return 0 as ::core::ffi::c_int;
-        }
-        (*(*__ctype_b_loc()).offset(ch as u_char as ::core::ffi::c_int as isize)
-            as ::core::ffi::c_int
-            & _ISalnum as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-            != 0
-            || ch as ::core::ffi::c_int == '_' as i32) as ::core::ffi::c_int
+        (ch != b'=' as core::ffi::c_int
+            && (first == 0 || libc::isdigit(ch) == 0)
+            && (libc::isalnum(ch) != 0 || ch == b'_' as core::ffi::c_int))
+            as core::ffi::c_int
     }
 }
 /// The collected bytes as a C string, which ends at the first NUL the same
 /// way reading the lexer's NUL-terminated buffer did.
-fn yylex_cstring(mut buf: Vec<u8>) -> ::std::ffi::CString {
+fn yylex_cstring(mut buf: Vec<u8>) -> std::ffi::CString {
     if let Some(nul) = buf.iter().position(|&byte| byte == 0) {
         buf.truncate(nul);
     }
-    unsafe { ::std::ffi::CString::from_vec_unchecked(buf) }
+    std::ffi::CString::new(buf).expect("lexer bytes were truncated at the first NUL")
 }
-fn yylex_getc1() -> ::core::ffi::c_int {
-    unsafe {
-        let mut ps: *mut cmd_parse_state = &raw mut parse_state;
-        let mut ch: ::core::ffi::c_int = 0;
-        if let Some(file) = (*ps).f.as_ref() {
-            let off = (*ps).off;
-            if off == file.len() {
-                ch = EOF;
-            } else {
-                ch = file[off] as ::core::ffi::c_int;
-                (*ps).off = off.wrapping_add(1);
-            }
-        } else if (*ps).off == (*ps).len {
+fn yylex_getc1(ps: &mut cmd_parse_state<'_>) -> core::ffi::c_int {
+    let ch: core::ffi::c_int;
+    if let Some(file) = ps.f.as_ref() {
+        let off = ps.off;
+        if off == file.len() {
             ch = EOF;
         } else {
-            let fresh27 = (*ps).off;
-            (*ps).off = (*ps).off.wrapping_add(1);
-            ch = *(*ps).buf.add(fresh27) as ::core::ffi::c_int;
+            ch = file[off] as core::ffi::c_int;
+            ps.off = off.wrapping_add(1);
         }
-        ch
+    } else if ps.off == ps.len {
+        ch = EOF;
+    } else {
+        let fresh27 = ps.off;
+        ps.off = ps.off.wrapping_add(1);
+        ch = ps.buf.expect("buffer parser state")[fresh27] as core::ffi::c_int;
+    }
+    ch
+}
+fn yylex_ungetc(ps: &mut cmd_parse_state<'_>, ch: core::ffi::c_int) {
+    if ps.off > 0 as size_t && ch != EOF {
+        ps.off = ps.off.wrapping_sub(1);
     }
 }
-fn yylex_ungetc(mut ch: ::core::ffi::c_int) {
-    unsafe {
-        let mut ps: *mut cmd_parse_state = &raw mut parse_state;
-        if (*ps).off > 0 as size_t && ch != EOF {
-            (*ps).off = (*ps).off.wrapping_sub(1);
-        }
+fn yylex_getc(ps: &mut cmd_parse_state<'_>) -> core::ffi::c_int {
+    let mut ch: core::ffi::c_int;
+    if ps.escapes != 0 as u_int {
+        ps.escapes = ps.escapes.wrapping_sub(1);
+        return '\\' as i32;
     }
-}
-fn yylex_getc() -> ::core::ffi::c_int {
-    unsafe {
-        let mut ps: *mut cmd_parse_state = &raw mut parse_state;
-        let mut ch: ::core::ffi::c_int = 0;
-        if (*ps).escapes != 0 as u_int {
-            (*ps).escapes = (*ps).escapes.wrapping_sub(1);
-            return '\\' as i32;
-        }
-        loop {
-            ch = yylex_getc1();
-            if ch == '\\' as i32 {
-                (*ps).escapes = (*ps).escapes.wrapping_add(1);
-            } else if ch == '\n' as i32 && (*ps).escapes.wrapping_rem(2 as u_int) == 1 as u_int {
-                (*(*ps).input).line = (*(*ps).input).line.wrapping_add(1);
-                (*ps).escapes = (*ps).escapes.wrapping_sub(1);
-            } else {
-                if (*ps).escapes != 0 as u_int {
-                    yylex_ungetc(ch);
-                    (*ps).escapes = (*ps).escapes.wrapping_sub(1);
-                    return '\\' as i32;
-                }
-                return ch;
+    loop {
+        ch = yylex_getc1(ps);
+        if ch == '\\' as i32 {
+            ps.escapes = ps.escapes.wrapping_add(1);
+        } else if ch == '\n' as i32 && ps.escapes.wrapping_rem(2 as u_int) == 1 as u_int {
+            ps.advance_line();
+            ps.escapes = ps.escapes.wrapping_sub(1);
+        } else {
+            if ps.escapes != 0 as u_int {
+                yylex_ungetc(ps, ch);
+                ps.escapes = ps.escapes.wrapping_sub(1);
+                return '\\' as i32;
             }
+            return ch;
         }
     }
 }
-fn yylex_get_word(mut ch: ::core::ffi::c_int) -> ::std::ffi::CString {
+fn yylex_get_word(ps: &mut cmd_parse_state<'_>, mut ch: core::ffi::c_int) -> std::ffi::CString {
     unsafe {
         let mut buf: Vec<u8> = Vec::new();
         loop {
             buf.push(ch as u8);
-            ch = yylex_getc();
-            if !(ch != EOF && strchr(c" \t\n".as_ptr(), ch).is_null()) {
+            ch = yylex_getc(ps);
+            if !(ch != EOF && !c" \t\n".to_bytes_with_nul().contains(&(ch as u8))) {
                 break;
             }
         }
-        yylex_ungetc(ch);
+        yylex_ungetc(ps, ch);
         let word = yylex_cstring(buf);
-        log_debug(
-            c"%s: %s".as_ptr(),
-            fmt_args![c"yylex_get_word".as_ptr(), word.as_ptr()],
-        );
+        log_debug(c"%s: %s", fmt_args![c"yylex_get_word", word.as_c_str()]);
         word
     }
 }
-fn yylex_next() -> Result<Option<Token>, LexError> {
+fn yylex_next(ps: &mut cmd_parse_state<'_>) -> Result<Option<Token>, LexError> {
     unsafe {
-        let ps: *mut cmd_parse_state = &raw mut parse_state;
-        let mut ch: ::core::ffi::c_int;
-        let mut next: ::core::ffi::c_int;
-        if (*ps).eol != 0 {
-            (*(*ps).input).line = (*(*ps).input).line.wrapping_add(1);
+        let mut ch: core::ffi::c_int;
+        let mut next: core::ffi::c_int;
+        if ps.eol != 0 {
+            ps.advance_line();
         }
-        (*ps).eol = 0 as ::core::ffi::c_int;
-        let condition = (*ps).condition;
-        (*ps).condition = 0 as ::core::ffi::c_int;
+        ps.eol = 0 as core::ffi::c_int;
+        let condition = ps.condition;
+        ps.condition = 0 as core::ffi::c_int;
         loop {
-            ch = yylex_getc();
+            ch = yylex_getc(ps);
             if ch == EOF {
-                if (*ps).eof != 0 {
+                if ps.eof != 0 {
                     return Ok(None);
                 }
-                (*ps).eof = 1 as ::core::ffi::c_int;
+                ps.eof = 1 as core::ffi::c_int;
                 return Ok(Some(Token::Newline));
             }
             if ch == ' ' as i32 || ch == '\t' as i32 {
                 continue;
             }
             if ch == '\r' as i32 {
-                ch = yylex_getc();
+                ch = yylex_getc(ps);
                 if ch != '\n' as i32 {
-                    yylex_ungetc(ch);
+                    yylex_ungetc(ps, ch);
                     ch = '\r' as i32;
                 }
             }
             if ch == '\n' as i32 {
-                (*ps).eol = 1 as ::core::ffi::c_int;
+                ps.eol = 1 as core::ffi::c_int;
                 return Ok(Some(Token::Newline));
             }
             if ch == ';' as i32 {
@@ -1182,95 +977,74 @@ fn yylex_next() -> Result<Option<Token>, LexError> {
                 return Ok(Some(Token::CloseBrace));
             }
             if ch == '#' as i32 {
-                next = yylex_getc();
+                next = yylex_getc(ps);
                 if condition != 0 && next == '{' as i32 {
-                    let Some(token) = yylex_format() else {
+                    let Some(token) = yylex_format(ps) else {
                         return Err(LexError);
                     };
                     return Ok(Some(Token::Format(TokenText::from_cstring(token))));
                 }
                 while next != '\n' as i32 && next != EOF {
-                    next = yylex_getc();
+                    next = yylex_getc(ps);
                 }
                 if next == '\n' as i32 {
-                    (*(*ps).input).line = (*(*ps).input).line.wrapping_add(1);
+                    ps.advance_line();
                     return Ok(Some(Token::Newline));
                 }
                 continue;
             }
             if ch == '%' as i32 {
-                let word = TokenText::from_cstring(yylex_get_word('%' as i32));
-                let mut cp = word.as_ptr();
-                while *cp as ::core::ffi::c_int != '\0' as i32 {
-                    if *cp as ::core::ffi::c_int != '%' as i32
-                        && *(*__ctype_b_loc()).offset(*cp as u_char as ::core::ffi::c_int as isize)
-                            as ::core::ffi::c_int
-                            & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort
-                                as ::core::ffi::c_int
-                            == 0
-                    {
-                        break;
-                    }
-                    cp = cp.offset(1);
+                let word = TokenText::from_cstring(yylex_get_word(ps, '%' as i32));
+                if word
+                    .as_c_str()
+                    .to_bytes()
+                    .iter()
+                    .all(|&byte| byte == b'%' || libc::isdigit(byte as core::ffi::c_int) != 0)
+                {
+                    return Ok(Some(Token::Word(word)));
                 }
-                if *cp as ::core::ffi::c_int == '\0' as i32 {
-                    return Ok(Some(Token::Token(word)));
-                }
-                (*ps).condition = 1 as ::core::ffi::c_int;
-                if strcmp(word.as_ptr(), c"%hidden".as_ptr()) == 0 as ::core::ffi::c_int {
-                    return Ok(Some(Token::Hidden));
-                }
-                if strcmp(word.as_ptr(), c"%if".as_ptr()) == 0 as ::core::ffi::c_int {
-                    return Ok(Some(Token::If));
-                }
-                if strcmp(word.as_ptr(), c"%else".as_ptr()) == 0 as ::core::ffi::c_int {
-                    return Ok(Some(Token::Else));
-                }
-                if strcmp(word.as_ptr(), c"%elif".as_ptr()) == 0 as ::core::ffi::c_int {
-                    return Ok(Some(Token::Elif));
-                }
-                if strcmp(word.as_ptr(), c"%endif".as_ptr()) == 0 as ::core::ffi::c_int {
-                    return Ok(Some(Token::Endif));
-                }
-                return Err(LexError);
+                ps.condition = 1;
+                return match word.as_c_str().to_bytes() {
+                    b"%hidden" => Ok(Some(Token::Hidden)),
+                    b"%if" => Ok(Some(Token::If)),
+                    b"%else" => Ok(Some(Token::Else)),
+                    b"%elif" => Ok(Some(Token::Elif)),
+                    b"%endif" => Ok(Some(Token::Endif)),
+                    _ => Err(LexError),
+                };
             }
-            let Some(token) = yylex_token(ch) else {
+            let Some(token) = yylex_token(ps, ch) else {
                 return Err(LexError);
             };
             let token = TokenText::from_cstring(token);
-            if !strchr(token.as_ptr(), '=' as i32).is_null()
-                && yylex_is_var(*token.as_ptr(), 1 as ::core::ffi::c_int) != 0
+            let bytes = token.as_c_str().to_bytes();
+            if let Some(equals) = bytes.iter().position(|&byte| byte == b'=')
+                && equals != 0
+                && bytes[..equals].iter().enumerate().all(|(at, &byte)| {
+                    yylex_is_var(byte as core::ffi::c_char, (at == 0) as core::ffi::c_int) != 0
+                })
             {
-                let mut cp = token.as_ptr().offset(1 as ::core::ffi::c_int as isize);
-                while *cp as ::core::ffi::c_int != '=' as i32 {
-                    if yylex_is_var(*cp, 0 as ::core::ffi::c_int) == 0 {
-                        break;
-                    }
-                    cp = cp.offset(1);
-                }
-                if *cp as ::core::ffi::c_int == '=' as i32 {
-                    return Ok(Some(Token::Equals(token)));
-                }
+                return Ok(Some(Token::Equals(token)));
             }
-            return Ok(Some(Token::Token(token)));
+            return Ok(Some(Token::Word(token)));
         }
     }
 }
-fn yylex_format() -> Option<::std::ffi::CString> {
+fn yylex_format(ps: &mut cmd_parse_state<'_>) -> Option<std::ffi::CString> {
     unsafe {
-        let mut current_block: u64;
+        let current_block: u64;
         let mut buf: Vec<u8> = Vec::new();
-        let mut ch: ::core::ffi::c_int = 0;
-        let mut brackets: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+        let mut ch: core::ffi::c_int;
+        let mut brackets: core::ffi::c_int = 1 as core::ffi::c_int;
         buf.extend_from_slice(b"#{");
         loop {
-            ch = yylex_getc();
+            ch = yylex_getc(ps);
             if ch == EOF || ch == '\n' as i32 {
                 current_block = 13016994178946890092;
                 break;
             }
             if ch == '#' as i32 {
-                ch = yylex_getc();
+                ch = yylex_getc(ps);
                 if ch == EOF || ch == '\n' as i32 {
                     current_block = 13016994178946890092;
                     break;
@@ -1279,9 +1053,9 @@ fn yylex_format() -> Option<::std::ffi::CString> {
                     brackets += 1;
                 }
                 buf.push(b'#');
-            } else if ch == '}' as i32 && brackets != 0 as ::core::ffi::c_int && {
+            } else if ch == '}' as i32 && brackets != 0 as core::ffi::c_int && {
                 brackets -= 1;
-                brackets == 0 as ::core::ffi::c_int
+                brackets == 0 as core::ffi::c_int
             } {
                 buf.push(ch as u8);
                 current_block = 10048703153582371463;
@@ -1290,12 +1064,9 @@ fn yylex_format() -> Option<::std::ffi::CString> {
             buf.push(ch as u8);
         }
         match current_block {
-            10048703153582371463 if !(brackets != 0 as ::core::ffi::c_int) => {
+            10048703153582371463 if !(brackets != 0 as core::ffi::c_int) => {
                 let token = yylex_cstring(buf);
-                log_debug(
-                    c"%s: %s".as_ptr(),
-                    fmt_args![c"yylex_format".as_ptr(), token.as_ptr()],
-                );
+                log_debug(c"%s: %s", fmt_args![c"yylex_format", token.as_c_str()]);
                 return Some(token);
             }
             _ => {}
@@ -1303,41 +1074,40 @@ fn yylex_format() -> Option<::std::ffi::CString> {
         None
     }
 }
-unsafe fn yylex_token_escape(buf: &mut Vec<u8>) -> ::core::ffi::c_int {
+unsafe fn yylex_token_escape(ps: &mut cmd_parse_state<'_>, buf: &mut Vec<u8>) -> core::ffi::c_int {
     unsafe {
-        let mut current_block: u64;
-        let mut ch: ::core::ffi::c_int = 0;
-        let mut type_0: ::core::ffi::c_int = 0;
-        let mut o2: ::core::ffi::c_int = 0;
-        let mut o3: ::core::ffi::c_int = 0;
-        let mut mlen: ::core::ffi::c_int = 0;
+        let current_block: u64;
+        let mut ch: core::ffi::c_int;
+        let mut type_0: core::ffi::c_int = 0;
+        let o2: core::ffi::c_int;
+        let o3: core::ffi::c_int;
+        let mlen: core::ffi::c_int;
         let mut size: u_int = 0;
-        let mut i: u_int = 0;
+        let mut i: u_int;
         let mut tmp: u_int = 0;
-        let mut s: [::core::ffi::c_char; 9] = [0; 9];
-        let mut m: [::core::ffi::c_char; 16] = [0; 16];
-        ch = yylex_getc();
+        let mut m: [core::ffi::c_char; 16] = [0; 16];
+        ch = yylex_getc(ps);
         if ch >= '4' as i32 && ch <= '7' as i32 {
-            yyerror(c"invalid octal escape".as_ptr(), fmt_args![]);
-            return 0 as ::core::ffi::c_int;
+            yyerror(ps, c"invalid octal escape", fmt_args![]);
+            return 0 as core::ffi::c_int;
         }
         if ch >= '0' as i32 && ch <= '3' as i32 {
-            o2 = yylex_getc();
+            o2 = yylex_getc(ps);
             if o2 >= '0' as i32 && o2 <= '7' as i32 {
-                o3 = yylex_getc();
+                o3 = yylex_getc(ps);
                 if o3 >= '0' as i32 && o3 <= '7' as i32 {
-                    ch = 64 as ::core::ffi::c_int * (ch - '0' as i32)
-                        + 8 as ::core::ffi::c_int * (o2 - '0' as i32)
+                    ch = 64 as core::ffi::c_int * (ch - '0' as i32)
+                        + 8 as core::ffi::c_int * (o2 - '0' as i32)
                         + (o3 - '0' as i32);
                     buf.push(ch as u8);
-                    return 1 as ::core::ffi::c_int;
+                    return 1 as core::ffi::c_int;
                 }
             }
-            yyerror(c"invalid octal escape".as_ptr(), fmt_args![]);
-            return 0 as ::core::ffi::c_int;
+            yyerror(ps, c"invalid octal escape", fmt_args![]);
+            return 0 as core::ffi::c_int;
         }
         match ch {
-            EOF => return 0 as ::core::ffi::c_int,
+            EOF => return 0 as core::ffi::c_int,
             97 => {
                 ch = '\u{7}' as i32;
                 current_block = 17281240262373992796;
@@ -1392,248 +1162,199 @@ unsafe fn yylex_token_escape(buf: &mut Vec<u8>) -> ::core::ffi::c_int {
             17113274278584595704 => {
                 i = 0 as u_int;
                 while i < size {
-                    ch = yylex_getc();
+                    ch = yylex_getc(ps);
                     if ch == EOF || ch == '\n' as i32 {
-                        return 0 as ::core::ffi::c_int;
+                        return 0 as core::ffi::c_int;
                     }
-                    if *(*__ctype_b_loc()).offset(ch as u_char as ::core::ffi::c_int as isize)
-                        as ::core::ffi::c_int
-                        & _ISxdigit as ::core::ffi::c_int as ::core::ffi::c_ushort
-                            as ::core::ffi::c_int
-                        == 0
-                    {
-                        yyerror(c"invalid \\%c argument".as_ptr(), fmt_args![type_0]);
-                        return 0 as ::core::ffi::c_int;
-                    }
-                    s[i as usize] = ch as ::core::ffi::c_char;
+                    let Some(digit) = (ch as u8 as char).to_digit(16) else {
+                        yyerror(ps, c"invalid \\%c argument", fmt_args![type_0]);
+                        return 0;
+                    };
+                    tmp = (tmp << 4) | digit;
                     i = i.wrapping_add(1);
                 }
-                s[i as usize] = '\0' as i32 as ::core::ffi::c_char;
-                if size == 4 as u_int
-                    && sscanf(
-                        &raw mut s as *mut ::core::ffi::c_char,
-                        c"%4x".as_ptr(),
-                        &raw mut tmp,
-                    ) != 1 as ::core::ffi::c_int
-                    || size == 8 as u_int
-                        && sscanf(
-                            &raw mut s as *mut ::core::ffi::c_char,
-                            c"%8x".as_ptr(),
-                            &raw mut tmp,
-                        ) != 1 as ::core::ffi::c_int
+                mlen = wctomb(m.as_mut_ptr(), tmp as wchar_t);
+                if mlen <= 0 as core::ffi::c_int
+                    || mlen > size_of::<[core::ffi::c_char; 16]>() as core::ffi::c_int
                 {
-                    yyerror(c"invalid \\%c argument".as_ptr(), fmt_args![type_0]);
-                    return 0 as ::core::ffi::c_int;
-                }
-                mlen = wctomb(&raw mut m as *mut ::core::ffi::c_char, tmp as wchar_t);
-                if mlen <= 0 as ::core::ffi::c_int
-                    || mlen
-                        > ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as ::core::ffi::c_int
-                {
-                    yyerror(c"invalid \\%c argument".as_ptr(), fmt_args![type_0]);
-                    return 0 as ::core::ffi::c_int;
+                    yyerror(ps, c"invalid \\%c argument", fmt_args![type_0]);
+                    return 0 as core::ffi::c_int;
                 }
                 buf.extend(m[..mlen as usize].iter().map(|&byte| byte as u8));
-                1 as ::core::ffi::c_int
+                1 as core::ffi::c_int
             }
             _ => {
                 buf.push(ch as u8);
-                1 as ::core::ffi::c_int
+                1 as core::ffi::c_int
             }
         }
     }
 }
-unsafe fn yylex_token_variable(buf: &mut Vec<u8>) -> ::core::ffi::c_int {
+unsafe fn yylex_token_variable(
+    ps: &mut cmd_parse_state<'_>,
+    buf: &mut Vec<u8>,
+) -> core::ffi::c_int {
     unsafe {
-        let mut envent: Option<&environ_entry> = None;
-        let mut ch: ::core::ffi::c_int = 0;
-        let mut brackets: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        let mut name: [::core::ffi::c_char; 1024] = [0; 1024];
+        let mut ch: core::ffi::c_int;
+        let mut brackets: core::ffi::c_int = 0 as core::ffi::c_int;
+        let mut name: [u8; 1024] = [0; 1024];
         let mut namelen: size_t = 0 as size_t;
-        ch = yylex_getc();
+        ch = yylex_getc(ps);
         if ch == EOF {
-            return 0 as ::core::ffi::c_int;
+            return 0 as core::ffi::c_int;
         }
         if ch == '{' as i32 {
-            brackets = 1 as ::core::ffi::c_int;
+            brackets = 1 as core::ffi::c_int;
         } else {
-            if yylex_is_var(ch as ::core::ffi::c_char, 1 as ::core::ffi::c_int) == 0 {
+            if yylex_is_var(ch as core::ffi::c_char, 1 as core::ffi::c_int) == 0 {
                 buf.push(b'$');
-                yylex_ungetc(ch);
-                return 1 as ::core::ffi::c_int;
+                yylex_ungetc(ps, ch);
+                return 1 as core::ffi::c_int;
             }
             let fresh28 = namelen;
             namelen = namelen.wrapping_add(1);
-            name[fresh28 as usize] = ch as ::core::ffi::c_char;
+            name[fresh28 as usize] = ch as u8;
         }
         loop {
-            ch = yylex_getc();
+            ch = yylex_getc(ps);
             if brackets != 0 && ch == '}' as i32 {
                 break;
             }
-            if ch == EOF || yylex_is_var(ch as ::core::ffi::c_char, 0 as ::core::ffi::c_int) == 0 {
+            if ch == EOF || yylex_is_var(ch as core::ffi::c_char, 0 as core::ffi::c_int) == 0 {
                 if brackets == 0 {
-                    yylex_ungetc(ch);
+                    yylex_ungetc(ps, ch);
                     break;
                 } else {
-                    yyerror(c"invalid environment variable".as_ptr(), fmt_args![]);
-                    return 0 as ::core::ffi::c_int;
+                    yyerror(ps, c"invalid environment variable", fmt_args![]);
+                    return 0 as core::ffi::c_int;
                 }
             } else {
-                if namelen
-                    == (::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as usize)
-                        .wrapping_sub(2_usize)
-                {
-                    yyerror(c"environment variable is too long".as_ptr(), fmt_args![]);
-                    return 0 as ::core::ffi::c_int;
+                if namelen == name.len() - 2 {
+                    yyerror(ps, c"environment variable is too long", fmt_args![]);
+                    return 0 as core::ffi::c_int;
                 }
                 let fresh29 = namelen;
                 namelen = namelen.wrapping_add(1);
-                name[fresh29 as usize] = ch as ::core::ffi::c_char;
+                name[fresh29 as usize] = ch as u8;
             }
         }
-        name[namelen as usize] = '\0' as i32 as ::core::ffi::c_char;
-        envent = environ_find(&*global_environ, &raw mut name as *mut ::core::ffi::c_char);
-        if let Some(value) = envent.and_then(environ_entry_value) {
+        let name = CStr::from_bytes_with_nul(&name[..=namelen]).expect("terminated lexer name");
+        let value = with_global_environment(|env| {
+            env.find(name)
+                .and_then(|entry| entry.value.map(CStr::to_owned))
+        });
+        if let Some(value) = value {
             log_debug(
-                c"%s: %s -> %s".as_ptr(),
-                fmt_args![
-                    c"yylex_token_variable".as_ptr(),
-                    &raw mut name as *mut ::core::ffi::c_char,
-                    value
-                ],
+                c"%s: %s -> %s",
+                fmt_args![c"yylex_token_variable", name, value.as_c_str()],
             );
             buf.extend_from_slice(value.to_bytes());
         }
-        1 as ::core::ffi::c_int
+        1 as core::ffi::c_int
     }
 }
-unsafe fn yylex_token_tilde(buf: &mut Vec<u8>) -> ::core::ffi::c_int {
+unsafe fn yylex_token_tilde(ps: &mut cmd_parse_state<'_>, buf: &mut Vec<u8>) -> core::ffi::c_int {
     unsafe {
-        let mut envent: Option<&environ_entry> = None;
-        let mut ch: ::core::ffi::c_int = 0;
-        let mut name: [::core::ffi::c_char; 1024] = [0; 1024];
+        let mut ch: core::ffi::c_int;
+        let mut name: [u8; 1024] = [0; 1024];
         let mut namelen: size_t = 0 as size_t;
-        let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
-        let mut home: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         loop {
-            ch = yylex_getc();
-            if ch == EOF || !strchr(c"/ \t\n\"'".as_ptr(), ch).is_null() {
-                yylex_ungetc(ch);
+            ch = yylex_getc(ps);
+            if ch == EOF || c"/ \t\n\"'".to_bytes_with_nul().contains(&(ch as u8)) {
+                yylex_ungetc(ps, ch);
                 break;
             } else {
-                if namelen
-                    == (::core::mem::size_of::<[::core::ffi::c_char; 1024]>() as usize)
-                        .wrapping_sub(2_usize)
-                {
-                    yyerror(c"user name is too long".as_ptr(), fmt_args![]);
-                    return 0 as ::core::ffi::c_int;
+                if namelen == name.len() - 2 {
+                    yyerror(ps, c"user name is too long", fmt_args![]);
+                    return 0 as core::ffi::c_int;
                 }
                 let fresh30 = namelen;
                 namelen = namelen.wrapping_add(1);
-                name[fresh30 as usize] = ch as ::core::ffi::c_char;
+                name[fresh30 as usize] = ch as u8;
             }
         }
-        name[namelen as usize] = '\0' as i32 as ::core::ffi::c_char;
-        if *(&raw mut name as *mut ::core::ffi::c_char) as ::core::ffi::c_int == '\0' as i32 {
-            envent = environ_find(&*global_environ, c"HOME".as_ptr());
-            if let Some(value) = envent
-                .and_then(environ_entry_value)
-                .filter(|value| !value.is_empty())
-            {
-                home = value.as_ptr();
-            } else {
-                pw = getpwuid(getuid());
-                if !pw.is_null() {
-                    home = (*pw).pw_dir;
-                }
-            }
+        let name = CStr::from_bytes_with_nul(&name[..=namelen]).expect("terminated lexer name");
+        let global_home = if name.is_empty() {
+            with_global_environment(|env| {
+                env.find(c"HOME")
+                    .and_then(|entry| entry.value.map(CStr::to_owned))
+            })
         } else {
-            pw = getpwnam(&raw mut name as *mut ::core::ffi::c_char);
-            if !pw.is_null() {
-                home = (*pw).pw_dir;
-            }
-        }
-        if home.is_null() {
-            return 0 as ::core::ffi::c_int;
-        }
+            None
+        };
+        let home = if name.is_empty() {
+            global_home.filter(|value| !value.is_empty()).or_else(|| {
+                UserAccountRecord::lookup_uid(getuid())?
+                    .account_home()
+                    .map(CStr::to_owned)
+            })
+        } else {
+            UserAccountRecord::lookup_name(name)
+                .and_then(|account| account.account_home().map(CStr::to_owned))
+        };
+        let Some(home) = home else {
+            return 0 as core::ffi::c_int;
+        };
         log_debug(
-            c"%s: ~%s -> %s".as_ptr(),
-            fmt_args![
-                c"yylex_token_tilde".as_ptr(),
-                &raw mut name as *mut ::core::ffi::c_char,
-                home
-            ],
+            c"%s: ~%s -> %s",
+            fmt_args![c"yylex_token_tilde", name, home.as_c_str()],
         );
-        buf.extend_from_slice(::std::ffi::CStr::from_ptr(home).to_bytes());
-        1 as ::core::ffi::c_int
+        buf.extend_from_slice(home.to_bytes());
+        1 as core::ffi::c_int
     }
 }
-fn yylex_token(mut ch: ::core::ffi::c_int) -> Option<::std::ffi::CString> {
+fn yylex_token(
+    ps: &mut cmd_parse_state<'_>,
+    mut ch: core::ffi::c_int,
+) -> Option<std::ffi::CString> {
     unsafe {
         let mut current_block: u64;
-        let mut ps: *mut cmd_parse_state = &raw mut parse_state;
         let mut buf: Vec<u8> = Vec::new();
         let mut state: cmd_parse_token_state = NONE;
         let mut last: cmd_parse_token_state = START;
         loop {
             if ch == EOF {
-                log_debug(
-                    c"%s: end at EOF".as_ptr(),
-                    fmt_args![c"yylex_token".as_ptr()],
-                );
+                log_debug(c"%s: end at EOF", fmt_args![c"yylex_token"]);
                 current_block = 13321564401369230990;
                 break;
             } else {
-                if state as ::core::ffi::c_uint == NONE as ::core::ffi::c_int as ::core::ffi::c_uint
+                if state as core::ffi::c_uint == NONE as core::ffi::c_int as core::ffi::c_uint
                     && ch == '\r' as i32
                 {
-                    ch = yylex_getc();
+                    ch = yylex_getc(ps);
                     if ch != '\n' as i32 {
-                        yylex_ungetc(ch);
+                        yylex_ungetc(ps, ch);
                         ch = '\r' as i32;
                     }
                 }
                 if ch == '\n' as i32 {
-                    if state as ::core::ffi::c_uint
-                        == NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-                    {
-                        log_debug(
-                            c"%s: end at EOL".as_ptr(),
-                            fmt_args![c"yylex_token".as_ptr()],
-                        );
+                    if state as core::ffi::c_uint == NONE as core::ffi::c_int as core::ffi::c_uint {
+                        log_debug(c"%s: end at EOL", fmt_args![c"yylex_token"]);
                         current_block = 13321564401369230990;
                         break;
                     } else {
-                        (*(*ps).input).line = (*(*ps).input).line.wrapping_add(1);
+                        ps.advance_line();
                     }
                 }
-                if state as ::core::ffi::c_uint == NONE as ::core::ffi::c_int as ::core::ffi::c_uint
+                if state as core::ffi::c_uint == NONE as core::ffi::c_int as core::ffi::c_uint
                     && (ch == ' ' as i32 || ch == '\t' as i32)
                 {
-                    log_debug(
-                        c"%s: end at WS".as_ptr(),
-                        fmt_args![c"yylex_token".as_ptr()],
-                    );
+                    log_debug(c"%s: end at WS", fmt_args![c"yylex_token"]);
                     current_block = 13321564401369230990;
                     break;
-                } else if state as ::core::ffi::c_uint
-                    == NONE as ::core::ffi::c_int as ::core::ffi::c_uint
+                } else if state as core::ffi::c_uint
+                    == NONE as core::ffi::c_int as core::ffi::c_uint
                     && (ch == ';' as i32 || ch == '}' as i32)
                 {
-                    log_debug(
-                        c"%s: end at %c".as_ptr(),
-                        fmt_args![c"yylex_token".as_ptr(), ch],
-                    );
+                    log_debug(c"%s: end at %c", fmt_args![c"yylex_token", ch]);
                     current_block = 13321564401369230990;
                     break;
                 } else if ch == '\n' as i32
-                    && state as ::core::ffi::c_uint
-                        != NONE as ::core::ffi::c_int as ::core::ffi::c_uint
+                    && state as core::ffi::c_uint != NONE as core::ffi::c_int as core::ffi::c_uint
                 {
                     buf.push(b'\n');
                     loop {
-                        ch = yylex_getc();
+                        ch = yylex_getc(ps);
                         if !(ch == ' ' as i32 || ch == '\t' as i32) {
                             break;
                         }
@@ -1641,13 +1362,13 @@ fn yylex_token(mut ch: ::core::ffi::c_int) -> Option<::std::ffi::CString> {
                     if ch != '#' as i32 {
                         continue;
                     }
-                    ch = yylex_getc();
-                    if !strchr(c",#{}:".as_ptr(), ch).is_null() {
-                        yylex_ungetc(ch);
+                    ch = yylex_getc(ps);
+                    if c",#{}:".to_bytes_with_nul().contains(&(ch as u8)) {
+                        yylex_ungetc(ps, ch);
                         ch = '#' as i32;
                     } else {
                         loop {
-                            ch = yylex_getc();
+                            ch = yylex_getc(ps);
                             if !(ch != '\n' as i32 && ch != EOF) {
                                 break;
                             }
@@ -1655,49 +1376,49 @@ fn yylex_token(mut ch: ::core::ffi::c_int) -> Option<::std::ffi::CString> {
                     }
                 } else {
                     if ch == '\\' as i32
-                        && state as ::core::ffi::c_uint
-                            != SINGLE_QUOTES as ::core::ffi::c_int as ::core::ffi::c_uint
+                        && state as core::ffi::c_uint
+                            != SINGLE_QUOTES as core::ffi::c_int as core::ffi::c_uint
                     {
-                        if yylex_token_escape(&mut buf) == 0 {
+                        if yylex_token_escape(ps, &mut buf) == 0 {
                             current_block = 11768010348333939680;
                             break;
                         }
                         current_block = 9512337080773452662;
                     } else if ch == '~' as i32
-                        && last as ::core::ffi::c_uint != state as ::core::ffi::c_uint
-                        && state as ::core::ffi::c_uint
-                            != SINGLE_QUOTES as ::core::ffi::c_int as ::core::ffi::c_uint
+                        && last as core::ffi::c_uint != state as core::ffi::c_uint
+                        && state as core::ffi::c_uint
+                            != SINGLE_QUOTES as core::ffi::c_int as core::ffi::c_uint
                     {
-                        if yylex_token_tilde(&mut buf) == 0 {
+                        if yylex_token_tilde(ps, &mut buf) == 0 {
                             current_block = 11768010348333939680;
                             break;
                         }
                         current_block = 9512337080773452662;
                     } else if ch == '$' as i32
-                        && state as ::core::ffi::c_uint
-                            != SINGLE_QUOTES as ::core::ffi::c_int as ::core::ffi::c_uint
+                        && state as core::ffi::c_uint
+                            != SINGLE_QUOTES as core::ffi::c_int as core::ffi::c_uint
                     {
-                        if yylex_token_variable(&mut buf) == 0 {
+                        if yylex_token_variable(ps, &mut buf) == 0 {
                             current_block = 11768010348333939680;
                             break;
                         }
                         current_block = 9512337080773452662;
                     } else {
                         if ch == '}' as i32
-                            && state as ::core::ffi::c_uint
-                                == NONE as ::core::ffi::c_int as ::core::ffi::c_uint
+                            && state as core::ffi::c_uint
+                                == NONE as core::ffi::c_int as core::ffi::c_uint
                         {
                             current_block = 11768010348333939680;
                             break;
                         }
                         if ch == '\'' as i32 {
-                            if state as ::core::ffi::c_uint
-                                == NONE as ::core::ffi::c_int as ::core::ffi::c_uint
+                            if state as core::ffi::c_uint
+                                == NONE as core::ffi::c_int as core::ffi::c_uint
                             {
                                 state = SINGLE_QUOTES;
                                 current_block = 12867991516770085914;
-                            } else if state as ::core::ffi::c_uint
-                                == SINGLE_QUOTES as ::core::ffi::c_int as ::core::ffi::c_uint
+                            } else if state as core::ffi::c_uint
+                                == SINGLE_QUOTES as core::ffi::c_int as core::ffi::c_uint
                             {
                                 state = NONE;
                                 current_block = 12867991516770085914;
@@ -1711,14 +1432,13 @@ fn yylex_token(mut ch: ::core::ffi::c_int) -> Option<::std::ffi::CString> {
                             12867991516770085914 => {}
                             _ => {
                                 if ch == '"' as i32 {
-                                    if state as ::core::ffi::c_uint
-                                        == NONE as ::core::ffi::c_int as ::core::ffi::c_uint
+                                    if state as core::ffi::c_uint
+                                        == NONE as core::ffi::c_int as core::ffi::c_uint
                                     {
                                         state = DOUBLE_QUOTES;
                                         current_block = 12867991516770085914;
-                                    } else if state as ::core::ffi::c_uint
-                                        == DOUBLE_QUOTES as ::core::ffi::c_int
-                                            as ::core::ffi::c_uint
+                                    } else if state as core::ffi::c_uint
+                                        == DOUBLE_QUOTES as core::ffi::c_int as core::ffi::c_uint
                                     {
                                         state = NONE;
                                         current_block = 12867991516770085914;
@@ -1741,22 +1461,22 @@ fn yylex_token(mut ch: ::core::ffi::c_int) -> Option<::std::ffi::CString> {
                     if current_block == 9512337080773452662 {
                         last = state;
                     }
-                    ch = yylex_getc();
+                    ch = yylex_getc(ps);
                 }
             }
         }
         match current_block {
             11768010348333939680 => None,
             _ => {
-                yylex_ungetc(ch);
+                yylex_ungetc(ps, ch);
                 let token = yylex_cstring(buf);
-                log_debug(
-                    c"%s: %s".as_ptr(),
-                    fmt_args![c"yylex_token".as_ptr(), token.as_ptr()],
-                );
+                log_debug(c"%s: %s", fmt_args![c"yylex_token", token.as_c_str()]);
                 Some(token)
             }
         }
     }
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;
+
+#[cfg(test)]
+#[path = "../tests/test_cmd_parse_focused.rs"]
+mod focused_tests;

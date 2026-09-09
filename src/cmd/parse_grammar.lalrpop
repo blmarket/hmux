@@ -5,7 +5,7 @@ use crate::cmd::parse::{
     prepend,
 };
 
-grammar(ps: &mut ParseState);
+grammar<'a>(ps: &mut ParseState<'a>);
 
 extern {
     type Location = usize;
@@ -22,7 +22,7 @@ extern {
         "elif"   => Token::Elif,
         "endif"  => Token::Endif,
         "FORMAT" => Token::Format(<TokenText>),
-        "TOKEN"  => Token::Token(<TokenText>),
+        "TOKEN"  => Token::Word(<TokenText>),
         "EQUALS" => Token::Equals(<TokenText>),
     }
 }

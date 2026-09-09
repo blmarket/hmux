@@ -10,13 +10,11 @@
 //! Only options still holding their built-in default are replaced, and this
 //! runs before any configuration file is read, so `.tmux.conf` still wins.
 
+use crate::options::{OptionsEngine, OptionsRef, RustOptionsEngine};
 use std::ffi::{CStr, CString};
 
 use crate::fmt_args;
-use crate::options::{
-    options_default_to_string, options_get_only_ptr, options_set_string, options_table_entry,
-    options_to_string,
-};
+
 use crate::tmux::{global_options, global_s_options, global_w_options};
 
 /// The window status format this server draws.
@@ -68,25 +66,28 @@ pub(crate) fn server_apply_option_defaults(defaults: &[(&str, &str)]) {
 /// than an absent entry.
 unsafe fn set_if_default(name: &CStr, value: &CStr) {
     unsafe {
-        for oo in [global_options, global_s_options, global_w_options] {
-            if oo.is_null() {
+        for oo in [&global_options, &global_s_options, &global_w_options] {
+            if oo.is_none() {
                 continue;
             }
-            let o = options_get_only_ptr(oo, name.as_ptr());
-            if o.is_null() {
+            let is_default =
+                oo.as_ref()
+                    .expect("global options exist")
+                    .with_entry(name, true, |entry| {
+                        let Some(entry) = entry else { return false };
+                        let Some(definition) = RustOptionsEngine.definition(Some(entry)) else {
+                            return false;
+                        };
+                        RustOptionsEngine.display(entry, -1, 0)
+                            == RustOptionsEngine.default_text(definition)
+                    });
+            if !is_default {
                 continue;
             }
-            let Some(entry) = options_table_entry(o) else {
-                continue;
-            };
-            if options_to_string(o, -1, 0) != options_default_to_string(entry) {
-                continue;
-            }
-            options_set_string(
-                oo,
-                name.as_ptr(),
+            (oo.as_ref().expect("global options exist")).set_string(
+                name,
                 0,
-                c"%s".as_ptr(),
+                c"%s",
                 fmt_args![value.as_ptr()],
             );
         }

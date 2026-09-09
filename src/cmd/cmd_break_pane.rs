@@ -4,7 +4,7 @@
 //! The command has two halves, told apart by how many panes the source window
 //! holds. A window with nothing but the pane in it already *is* the window
 //! being asked for, so `server_link_window` relinks it into the destination
-//! and `server_unlink_window` takes it out of the source. Otherwise the pane
+//! and [`SessionRef::unlink_window`] takes it out of the source. Otherwise the pane
 //! is unlinked from its window's `panes` and `z_index` lists, `window_create`
 //! hands back an empty window, the pane becomes its only one, and after a
 //! layout and a name `session_attach` puts that window into the destination
@@ -12,66 +12,28 @@
 //! an index, and `-P` prints the result through `-F`'s format or
 //! [`BREAK_PANE_TEMPLATE`].
 //!
-//! Both pane lists are the windows' own intrusive TAILQs of the crate's
-//! `window_pane`, so the relinking stays raw-pointer work behind the
-//! [`remove`] and [`insert_only`] helpers, which spell out what the C's macros
-//! did and keep the order they produced.
-//!
-//! Two transpiled branches are provably unreachable and are gone with the
-//! conversion, each with its proof written where it sat: the `TAILQ_INSERT_HEAD`
-//! arm that relinks whatever was at the head (see [`insert_only`]), and the
-//! refusal when `winlink_find_by_window` finds no winlink for a window
-//! `server_link_window` has just attached (see [`cmd_break_pane_exec`]).
-//!
-//! Coverage exemptions: none.
-use crate::arguments::{args_get, args_has};
+//! Each window owns its panes. Breaking a pane transfers that owned value
+//! while retaining the source and destination owners. The index changes
+//! reported by insertion keep the source link current within one session.
+
+use crate::arguments::{args_get_str, args_has};
 use crate::cmd::cmd_get_args;
-use crate::cmd::find::cmd_find_from_session;
-use crate::cmd::queue::{
-    cmdq_error, cmdq_get_current, cmdq_get_source, cmdq_get_target, cmdq_get_target_client,
-    cmdq_print,
-};
+
 use crate::fmt_args;
-use crate::format::format_single;
-use crate::layout::{layout_close_pane, layout_init};
-use crate::names::default_window_name;
-use crate::options::{
-    options_get_number, options_load_pane_colours, options_set_number,
-    options_set_parent,
+use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};
+
+use crate::server::server_link_window;
+
+pub use crate::consts::{
+    CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
-use crate::server::server_client_remove_pane;
-use crate::server::{
-    server_link_window, server_redraw_session, server_status_session_group, server_unlink_window,
-    server_unzoom_window,
-};
-use crate::session::{session_attach, session_select};
-use crate::session::{session_get_curw, session_options};
 use crate::tmux::check_name;
 pub use crate::types::*;
-use crate::window::window_set_active;
-use crate::window::window_set_latest;
-use crate::window::{
-    window_count_panes, window_create, window_lost_pane, window_pane_set_window_ref,
-    window_pane_zindex_insert_head, window_pane_zindex_remove, window_panes_insert_head,
-    window_panes_take, window_ref_from_ptr, window_set_name, winlink_find_by_index,
-    winlink_find_by_window, winlink_shuffle_up,
-};
+use crate::window::WinlinkRef;
 use ::core::ffi::{c_char, c_int};
-use ::std::ffi::CString;
-pub const CMD_FIND_WINDOW: cmd_find_type = 1;
-pub const CMD_FIND_PANE: cmd_find_type = 0;
-pub const CMD_RETURN_NORMAL: cmd_retval = 0;
-pub const CMD_RETURN_ERROR: cmd_retval = -1;
-pub const PANE_CHANGED: c_int = 0x80;
-pub const PANE_STYLECHANGED: c_int = 0x1000;
-pub const PANE_THEMECHANGED: c_int = 0x2000;
-pub const CMD_FIND_WINDOW_INDEX: c_int = 0x4;
-pub const BREAK_PANE_TEMPLATE: [c_char; 46] = unsafe {
-    ::core::mem::transmute::<[u8; 46], [c_char; 46]>(
-        *b"#{session_name}:#{window_index}.#{pane_index}\0",
-    )
-};
-pub(crate) static cmd_break_pane_entry: cmd_entry = cmd_entry {
+
+pub const BREAK_PANE_TEMPLATE: &core::ffi::CStr = c"#{session_name}:#{window_index}.#{pane_index}";
+pub(crate) static cmd_break_pane_entry: RustCommandEntry = RustCommandEntry {
     name: c"break-pane",
     alias: Some(c"breakp"),
     args: args_parse_t {
@@ -100,143 +62,137 @@ pub(crate) static cmd_break_pane_entry: cmd_entry = cmd_entry {
 /// The single-pane half's look-up of the relinked window cannot fail, so the
 /// C's refusal when it does is not written out. A zero from
 /// `server_link_window` means its `session_attach` linked `w` into
-/// `dst_s->windows`; `server_unlink_window` then takes away only `wl`, which
-/// is a different winlink, because `server_link_window` refuses a destination
-/// index already holding `w` ("same index") and picks a free one otherwise.
-/// The `session_group_synchronize_from` inside the detach rewrites the
-/// winlinks of the *other* sessions in `src_s`'s group, and `dst_s` is not one
-/// of them: `server_link_window` refuses two different sessions that share a
-/// group, and `src_s == dst_s` is skipped by the synchronise itself. So a
-/// winlink for `w` is still in `dst_s->windows` when it is looked up.
-unsafe fn cmd_break_pane_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
-    unsafe {
-        let args = cmd_get_args(self_0);
-        let current = cmdq_get_current(item);
-        let target = cmdq_get_target(item);
-        let source = cmdq_get_source(item);
-        let tc = cmdq_get_target_client(&*item);
-        let src_s = (*source).session();
-        let dst_s = (*target).session();
-        let wp = (*source).pane();
-        let mut wl = (*source).winlink();
-        let mut w = (*wl).window();
-        let mut w_ref = window_ref_from_ptr(w);
-        let mut idx = (*target).idx;
-
-        let name = args_get(args, b'n');
-        if !name.is_null() && check_name(name) == 0 {
-            cmdq_error(item, c"invalid window name: %s".as_ptr(), fmt_args![name]);
+/// `dst_s->windows`. `SessionRef::unlink_window` removes the source link and
+/// may destroy the source group, but the destination link survives: linking
+/// refuses an index already holding `w` ("same index") and two different
+/// sessions sharing a group. Group synchronization skips the source itself.
+/// So a winlink for `w` remains in `dst_s->windows` when it is looked up.
+unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
+    let args = cmd_get_args(self_0);
+    let current_state_ref = item.state_ref();
+    let tc = item.target_client();
+    let mut source = item.source.session().expect("a break source has a session");
+    let mut destination = item
+        .target
+        .session()
+        .expect("a break destination has a session");
+    let mut source_index = item
+        .source
+        .wl_idx
+        .expect("a break source has a window link");
+    let source_pane = item.source.pane_ref().expect("a break source has a pane");
+    let mut window = item.source.window().expect("a break source has a window");
+    let mut index = item.target.idx;
+    let name = args_get_str(args, b'n');
+    if let Some(name) = name
+        && unsafe { check_name(Some(name)) == 0 }
+    {
+        unsafe { item.error(c"invalid window name: %s", fmt_args![name]) };
+        return CMD_RETURN_ERROR;
+    }
+    let before = args_has(args, b'b');
+    if args_has(args, b'a') != 0 || before != 0 {
+        let around = item
+            .target
+            .wl_idx
+            .filter(|index| unsafe { destination.link(*index).is_some() })
+            .or_else(|| unsafe { destination.current_index() });
+        let Some(shift) = (unsafe { destination.shuffle_windows(around, before) }) else {
             return CMD_RETURN_ERROR;
+        };
+        index = shift.index;
+        if source.ptr_eq(&destination) {
+            source_index = shift.remap(source_index);
         }
+    }
+    unsafe { window.unzoom_and_redraw() };
 
-        let before = args_has(args, b'b');
-        if args_has(args, b'a') != 0 || before != 0 {
-            idx = if !(*target).winlink().is_null() {
-                winlink_shuffle_up(dst_s, (*target).winlink(), before)
-            } else {
-                winlink_shuffle_up(dst_s, session_get_curw(dst_s), before)
-            };
-            if idx == -1 {
-                return CMD_RETURN_ERROR;
-            }
-        }
-        server_unzoom_window(w);
-
-        if window_count_panes(w, 1) == 1 {
-            let mut cause: Option<CString> = None;
-            if server_link_window(
-                src_s,
-                wl,
-                dst_s,
-                idx,
+    let destination_index;
+    if window.pane_count() == 1 {
+        let source_link = WinlinkRef::new(source.clone(), source_index)
+            .expect("the break source link is present");
+        let mut cause = None;
+        if unsafe {
+            server_link_window(
+                &source_link,
+                &mut destination,
+                index,
                 0,
                 (args_has(args, b'd') == 0) as c_int,
                 &mut cause,
             ) != 0
-            {
-                let cause = cause.unwrap();
-                cmdq_error(item, c"%s".as_ptr(), fmt_args![cause.as_ptr()]);
-                return CMD_RETURN_ERROR;
-            }
-            if !name.is_null() {
-                window_set_name(w, name, 0);
-                options_set_number((*w).options_ptr(), c"automatic-rename".as_ptr(), 0);
-            }
-            server_unlink_window(src_s, wl);
-            wl = winlink_find_by_window(&mut (*dst_s).windows, w);
+        } {
+            unsafe { item.error(c"%s", fmt_args![cause.as_deref()]) };
+            return CMD_RETURN_ERROR;
+        }
+        if let Some(name) = name {
+            unsafe { window.set_name(name, 0) };
+            unsafe { window.options().set_number(c"automatic-rename", 0) };
+        }
+        unsafe { source.unlink_window(source_index) };
+        destination_index = unsafe {
+            destination
+                .first_link_to(&window)
+                .expect("the moved window remains linked")
+                .index()
+        };
+    } else {
+        if unsafe { index != -1 && destination.link(index).is_some() } {
+            unsafe { item.error(c"index in use: %d", fmt_args![index]) };
+            return CMD_RETURN_ERROR;
+        }
+        window = unsafe { window.break_pane_into_window(&source_pane) };
+        unsafe { window.set_latest_client(tc.as_ref()) };
+        if let Some(name) = name {
+            unsafe { window.set_name(name, 0) };
+            unsafe { window.options().set_number(c"automatic-rename", 0) };
         } else {
-            if idx != -1 && !winlink_find_by_index(&mut (*dst_s).windows, idx).is_null() {
-                cmdq_error(item, c"index in use: %d".as_ptr(), fmt_args![idx]);
-                return CMD_RETURN_ERROR;
-            }
-
-            server_client_remove_pane(wp);
-            window_lost_pane(w, wp);
-            let pane = window_panes_take(w, wp).expect("the pane is its window's");
-            window_pane_zindex_remove(w, wp);
-            layout_close_pane(wp);
-
-            w_ref = Some(window_create((*w).sx, (*w).sy, (*w).xpixel, (*w).ypixel));
-            w = w_ref.as_ref().unwrap().as_ptr();
-            window_pane_set_window_ref(wp, w_ref.as_ref());
-            options_set_parent((*wp).options_ptr(), (*w).options_ptr());
-            (*wp).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
-            window_panes_insert_head(w, pane);
-            window_pane_zindex_insert_head(w, wp);
-            window_set_active(w, wp);
-            window_set_latest(w, tc);
-
-            if name.is_null() {
-                let newname = default_window_name(w);
-                window_set_name(w, newname.as_ptr(), 0);
-            } else {
-                window_set_name(w, name, 0);
-                options_set_number((*w).options_ptr(), c"automatic-rename".as_ptr(), 0);
-            }
-
-            layout_init(w, wp);
-            (*wp).flags |= PANE_CHANGED;
-            options_load_pane_colours((*wp).options_ptr(), Some(&mut (*wp).palette));
-
-            if idx == -1 {
-                idx = (-1 - options_get_number(session_options(dst_s), c"base-index".as_ptr()))
-                    as c_int;
-            }
-            let mut cause = None;
-            wl = session_attach(dst_s, w, idx, &mut cause);
-            if args_has(args, b'd') == 0 {
-                session_select(dst_s, (*wl).idx);
-                cmd_find_from_session(&mut *current, dst_s, 0);
-            }
-
-            server_redraw_session(src_s);
-            if src_s != dst_s {
-                server_redraw_session(dst_s);
-            }
-            server_status_session_group(src_s);
-            if src_s != dst_s {
-                server_status_session_group(dst_s);
-            }
+            let name = unsafe { window.default_name() };
+            unsafe { window.set_name(&name, 0) };
         }
-
-        if args_has(args, b'P') != 0 {
-            let mut template = args_get(args, b'F');
-            if template.is_null() {
-                template = BREAK_PANE_TEMPLATE.as_ptr();
-            }
-            let cp = format_single(
-                item,
-                ::core::ffi::CStr::from_ptr(template),
-                tc,
-                dst_s,
-                wl,
-                wp,
-            );
-            cmdq_print(item, c"%s".as_ptr(), fmt_args![cp.as_ptr()]);
+        unsafe { window.finish_broken_pane_layout(&source_pane) };
+        if index == -1 {
+            unsafe { index = (-1 - destination.options().number(c"base-index")) as c_int };
         }
-        CMD_RETURN_NORMAL
+        let mut cause = None;
+        unsafe {
+            destination_index = destination
+                .attach(window.clone(), index, &mut cause)
+                .expect("the destination index is available")
+        };
+        if args_has(args, b'd') == 0 {
+            unsafe { destination.select(destination_index) };
+            unsafe { current_state_ref.update_current_session(&destination, 0) };
+        }
+        unsafe { source.request_redraw() };
+        if !source.ptr_eq(&destination) {
+            unsafe { destination.request_redraw() };
+        }
+        unsafe { source.status_group() };
+        if !source.ptr_eq(&destination) {
+            unsafe { destination.status_group() };
+        }
     }
+
+    if args_has(args, b'P') != 0 {
+        let template = args_get_str(args, b'F').unwrap_or(BREAK_PANE_TEMPLATE);
+        let destination_link = unsafe { destination.link(destination_index) };
+        let cp = unsafe {
+            let mut ft = format_create_for_client(item.client().as_ref(), Some(item), 0, 0);
+            format_defaults_for_handles(
+                &mut ft,
+                tc.as_ref(),
+                Some(&destination),
+                destination_link.as_ref(),
+                Some(&source_pane),
+            );
+            format_expand(&mut ft, template)
+        };
+        unsafe { item.print(c"%s", fmt_args![cp.as_c_str()]) };
+    }
+    CMD_RETURN_NORMAL
 }
+
 #[cfg(test)]
 #[path = "../tests/test_cmd_break_pane.rs"]
 mod tests;

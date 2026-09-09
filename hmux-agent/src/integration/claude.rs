@@ -18,7 +18,8 @@
 //! Herdr's `osc_progress` idle rule has no analogue here: the detector reads
 //! only the screen tail and the window title, not OSC 9;4 progress reports.
 
-use std::ffi::OsStr;
+use std::ffi::{CString, OsStr};
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use super::{
@@ -49,7 +50,7 @@ impl AgentDetector for ClaudeDetector {
         transcript_dir(cwd)
     }
 
-    fn session_id_from_file_name(&self, name: &OsStr) -> Option<String> {
+    fn session_id_from_file_name(&self, name: &OsStr) -> Option<CString> {
         session_id_from_transcript_name(name)
     }
 
@@ -86,40 +87,49 @@ pub(crate) fn transcript_dir(cwd: &Path) -> Option<PathBuf> {
     Some(
         Path::new(&home)
             .join(".claude/projects")
-            .join(project_slug(cwd)),
+            .join(OsStr::from_bytes(project_slug(cwd).as_bytes())),
     )
 }
 
 /// Encode a working directory the way Claude Code names its project directory:
 /// every character that is not an ASCII letter or digit becomes `-`.
-fn project_slug(cwd: &Path) -> String {
-    cwd.to_string_lossy()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect()
+fn project_slug(cwd: &Path) -> CString {
+    let mut slug = Vec::new();
+    for character in cwd.to_string_lossy().chars() {
+        let character = if character.is_ascii_alphanumeric() {
+            character
+        } else {
+            '-'
+        };
+        let mut encoded = [0; 4];
+        slug.extend_from_slice(character.encode_utf8(&mut encoded).as_bytes());
+    }
+    CString::new(slug).expect("a project slug has no NUL")
 }
 
 /// A transcript file is `<session-id>.jsonl`; the stem is the session UUID.
-fn session_id_from_transcript_name(name: &OsStr) -> Option<String> {
+fn session_id_from_transcript_name(name: &OsStr) -> Option<CString> {
     let stem = name.to_str()?.strip_suffix(".jsonl")?;
-    is_uuid(stem).then(|| stem.to_ascii_lowercase())
+    is_uuid(stem).then(|| CString::new(stem.to_ascii_lowercase()).expect("a UUID has no NUL"))
 }
 
 fn detect(screen: &str, title: Option<&str>) -> Detection {
     // 1100 — a spinner in the title means a turn is in progress. Claude Code
     // animates it with half-circles (`◐ …`) as of 2.1.229 and with braille
     // (`⠹ …`) before that; both spell "working".
-    if let Some(title) = title {
-        if title_working_spinner(title) {
-            return Detection::State(AgentState::Working);
-        }
+    if let Some(title) = title
+        && title_working_spinner(title)
+    {
+        return Detection::State(AgentState::Working);
     }
 
     let lines = screen.lines().collect::<Vec<_>>();
     let lower = screen.to_lowercase();
 
     // 1000 — the detailed-transcript viewer is transient UI; keep prior state.
-    let bottom = bottom_non_empty_lines(&lines, 3).to_lowercase();
+    let bottom = bottom_non_empty_lines(&lines, 3)
+        .to_string_lossy()
+        .to_lowercase();
     if bottom.contains("showing detailed transcript")
         && (contains_all(&bottom, &["ctrl+o", "to toggle"])
             || contains_all(&bottom, &["ctrl+e", "show all"])
@@ -130,7 +140,9 @@ fn detect(screen: &str, title: Option<&str>) -> Detection {
         return Detection::KeepPrevious;
     }
 
-    let after_rule = after_last_horizontal_rule(&lines).to_lowercase();
+    let after_rule = after_last_horizontal_rule(&lines)
+        .to_string_lossy()
+        .to_lowercase();
 
     // 980 — a live selection form (arrow-key navigable, enter/esc) is blocking.
     if after_rule.contains("enter to select")
@@ -250,7 +262,7 @@ fn has_legacy_blocker(lower: &str, screen: &str) -> bool {
 
 /// The last `n` non-empty screen lines joined with newlines (Herdr's
 /// `bottom_non_empty_lines(n)` region).
-fn bottom_non_empty_lines(lines: &[&str], n: usize) -> String {
+fn bottom_non_empty_lines(lines: &[&str], n: usize) -> CString {
     let mut tail = lines
         .iter()
         .rev()
@@ -259,16 +271,17 @@ fn bottom_non_empty_lines(lines: &[&str], n: usize) -> String {
         .copied()
         .collect::<Vec<_>>();
     tail.reverse();
-    tail.join("\n")
+    CString::new(tail.join("\n")).expect("screen text has no NUL")
 }
 
 /// The text after the last horizontal-rule line (Herdr's
 /// `after_last_horizontal_rule` region), or the whole screen if there is none.
-fn after_last_horizontal_rule(lines: &[&str]) -> String {
-    match lines.iter().rposition(|line| is_horizontal_rule(line)) {
+fn after_last_horizontal_rule(lines: &[&str]) -> CString {
+    let text = match lines.iter().rposition(|line| is_horizontal_rule(line)) {
         Some(index) => lines[index + 1..].join("\n"),
         None => lines.join("\n"),
-    }
+    };
+    CString::new(text).expect("screen text has no NUL")
 }
 
 /// A box-drawing horizontal divider (e.g. Claude's `────` separators): a
@@ -577,15 +590,15 @@ Do you want to proceed? · Esc to cancel";
     fn project_slug_replaces_non_alphanumeric_with_dash() {
         assert_eq!(
             project_slug(Path::new("/home/hun/srv/hmux")),
-            "-home-hun-srv-hmux"
+            c"-home-hun-srv-hmux"
         );
         // A leading dot after a separator yields a double dash, matching Claude.
         assert_eq!(
             project_slug(Path::new("/home/hun/.claude")),
-            "-home-hun--claude"
+            c"-home-hun--claude"
         );
         // Case is preserved; only non-alphanumerics are rewritten.
-        assert_eq!(project_slug(Path::new("/home/hun/AAI")), "-home-hun-AAI");
+        assert_eq!(project_slug(Path::new("/home/hun/AAI")), c"-home-hun-AAI");
     }
 
     #[test]
@@ -595,7 +608,7 @@ Do you want to proceed? · Esc to cancel";
                 "713EE853-A358-4DC4-A306-90F1F2F4070D.jsonl"
             ))
             .as_deref(),
-            Some("713ee853-a358-4dc4-a306-90f1f2f4070d")
+            Some(c"713ee853-a358-4dc4-a306-90f1f2f4070d")
         );
         assert_eq!(
             session_id_from_transcript_name(OsStr::new("not-a-uuid.jsonl")),

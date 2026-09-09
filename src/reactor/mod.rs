@@ -10,7 +10,7 @@ pub mod registry;
 pub mod runtime;
 pub mod stream;
 
-pub use buffer::Buf;
+pub use buffer::ByteBuffer;
 pub use registry::{IoHandle, SignalHandle, TimerHandle};
 pub use runtime::{Base, current, shutdown};
 pub use stream::Stream;
@@ -18,10 +18,10 @@ pub use stream::Stream;
 /// What a [`Stream`] calls back when it has read something or drained what it
 /// was given. The closure carries whatever the callback works on, so nothing
 /// is handed back through an untyped pointer.
-pub type StreamCb = ::std::rc::Rc<dyn Fn(Stream)>;
+pub type StreamCb = std::rc::Rc<dyn Fn(Stream)>;
 
 /// What a [`Stream`] calls back when the connection fails or ends.
-pub type StreamErrorCb = ::std::rc::Rc<dyn Fn(Stream, c_short)>;
+pub type StreamErrorCb = std::rc::Rc<dyn Fn(Stream, c_short)>;
 
 /// What an [`IoWatch`] is waiting for.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -117,5 +117,5 @@ pub trait Reactor: Copy {
     fn defer(&mut self, callback: impl FnOnce() + 'static);
 
     /// What the loop is, for the log.
-    fn describe(&self) -> String;
+    fn describe(&self) -> std::ffi::CString;
 }

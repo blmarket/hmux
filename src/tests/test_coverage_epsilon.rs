@@ -11,31 +11,30 @@ use crate::tmux::{
     check_name, checkshell, clean_name, find_cwd, find_home, get_timer, getversion, setblocking,
     shell_argv0, sig2name,
 };
-use ::core::ffi::{CStr, c_char, c_int};
-use ::core::ptr::null;
+use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
 
 unsafe fn clean(s: &CStr, untrusted: c_int) -> Option<String> {
-    unsafe { clean_name(s.as_ptr(), untrusted) }.map(|p| p.to_string_lossy().into_owned())
+    unsafe { clean_name(s, untrusted) }.map(|p| p.to_string_lossy().into_owned())
 }
 
 #[test]
 fn checkshell_refuses_null_relative_and_missing_paths() {
     unsafe {
-        assert_eq!(checkshell(null::<c_char>()), 0);
-        assert_eq!(checkshell(c"".as_ptr()), 0);
-        assert_eq!(checkshell(c"relative/bin/sh".as_ptr()), 0);
-        assert_eq!(checkshell(c"/no/such/file/xyz".as_ptr()), 0);
+        assert_eq!(checkshell(None), 0);
+        assert_eq!(checkshell(Some(c"")), 0);
+        assert_eq!(checkshell(Some(c"relative/bin/sh")), 0);
+        assert_eq!(checkshell(Some(c"/no/such/file/xyz")), 0);
     }
 }
 
 #[test]
 fn checkshell_accepts_an_executable_absolute_path() {
     unsafe {
-        assert_eq!(checkshell(c"/bin/sh".as_ptr()), 1);
-        let has_bash = ::std::path::Path::new("/bin/bash").exists();
+        assert_eq!(checkshell(Some(c"/bin/sh")), 1);
+        let has_bash = std::path::Path::new("/bin/bash").exists();
         if has_bash {
-            assert_eq!(checkshell(c"/bin/bash".as_ptr()), 1);
+            assert_eq!(checkshell(Some(c"/bin/bash")), 1);
         }
     }
 }
@@ -50,18 +49,18 @@ fn checkshell_refuses_its_own_program() {
             .next()
             .unwrap_or(prog_bytes);
         let fake = CString::new(format!("/tmp/{}", String::from_utf8_lossy(prog_name))).unwrap();
-        assert_eq!(checkshell(fake.as_ptr()), 0);
+        assert_eq!(checkshell(Some(&fake)), 0);
     }
 }
 
 #[test]
 fn check_name_validates_utf8_only() {
     unsafe {
-        assert_eq!(check_name(c"hello".as_ptr()), 1);
-        assert_eq!(check_name(c"".as_ptr()), 1);
-        assert_eq!(check_name(c"hello world".as_ptr()), 1);
+        assert_eq!(check_name(Some(c"hello")), 1);
+        assert_eq!(check_name(Some(c"")), 1);
+        assert_eq!(check_name(Some(c"hello world")), 1);
         let bad = CString::new(b"\xff\xfe".as_slice()).unwrap();
-        assert_eq!(check_name(bad.as_ptr()), 0);
+        assert_eq!(check_name(Some(&bad)), 0);
     }
 }
 
@@ -108,38 +107,25 @@ fn clean_name_keeps_other_hash_uses() {
 #[test]
 fn shell_argv0_builds_login_and_plain_names() {
     unsafe {
-        assert_eq!(
-            shell_argv0(c"/bin/bash".as_ptr(), 0).to_str().unwrap(),
-            "bash"
-        );
-        assert_eq!(
-            shell_argv0(c"/bin/bash".as_ptr(), 1).to_str().unwrap(),
-            "-bash"
-        );
+        assert_eq!(shell_argv0(c"/bin/bash", 0).to_str().unwrap(), "bash");
+        assert_eq!(shell_argv0(c"/bin/bash", 1).to_str().unwrap(), "-bash");
 
-        assert_eq!(shell_argv0(c"bash".as_ptr(), 0).to_str().unwrap(), "bash");
-        assert_eq!(shell_argv0(c"bash".as_ptr(), 1).to_str().unwrap(), "-bash");
+        assert_eq!(shell_argv0(c"bash", 0).to_str().unwrap(), "bash");
+        assert_eq!(shell_argv0(c"bash", 1).to_str().unwrap(), "-bash");
 
         assert_eq!(
-            shell_argv0(c"/usr/local/bin/zsh".as_ptr(), 0)
-                .to_str()
-                .unwrap(),
+            shell_argv0(c"/usr/local/bin/zsh", 0).to_str().unwrap(),
             "zsh"
         );
         assert_eq!(
-            shell_argv0(c"/usr/local/bin/zsh".as_ptr(), 1)
-                .to_str()
-                .unwrap(),
+            shell_argv0(c"/usr/local/bin/zsh", 1).to_str().unwrap(),
             "-zsh"
         );
 
-        assert_eq!(shell_argv0(c"/bin/".as_ptr(), 0).to_str().unwrap(), "/bin/");
-        assert_eq!(
-            shell_argv0(c"/bin/".as_ptr(), 1).to_str().unwrap(),
-            "-/bin/"
-        );
+        assert_eq!(shell_argv0(c"/bin/", 0).to_str().unwrap(), "/bin/");
+        assert_eq!(shell_argv0(c"/bin/", 1).to_str().unwrap(), "-/bin/");
 
-        assert_eq!(shell_argv0(c"/".as_ptr(), 0).to_str().unwrap(), "/");
+        assert_eq!(shell_argv0(c"/", 0).to_str().unwrap(), "/");
     }
 }
 
@@ -161,7 +147,7 @@ fn find_cwd_returns_a_directory() {
     let p = find_cwd().expect("a working directory");
     let s = p.to_str().unwrap();
     assert!(s.starts_with('/'));
-    assert!(::std::path::Path::new(s).is_dir());
+    assert!(std::path::Path::new(s).is_dir());
     assert_eq!(find_cwd(), Some(p));
 }
 
@@ -175,7 +161,7 @@ fn find_home_returns_home_when_available() {
 fn get_timer_is_monotonic() {
     {
         let a = get_timer();
-        ::std::thread::sleep(::std::time::Duration::from_millis(5));
+        std::thread::sleep(std::time::Duration::from_millis(5));
         let b = get_timer();
         assert!(b >= a);
         assert!(b - a < 10_000);
@@ -186,29 +172,29 @@ fn get_timer_is_monotonic() {
 fn setblocking_toggles_nonblock() {
     unsafe {
         let mut fds = [-1 as c_int; 2];
-        assert_eq!(::libc::pipe(fds.as_mut_ptr()), 0);
+        assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
         let fd = fds[0];
-        let before = ::libc::fcntl(fd, ::libc::F_GETFL);
+        let before = libc::fcntl(fd, libc::F_GETFL);
         assert_ne!(before, -1);
         setblocking(fd, 0);
-        let nonblock = ::libc::fcntl(fd, ::libc::F_GETFL);
-        assert_ne!(nonblock & ::libc::O_NONBLOCK, 0);
+        let nonblock = libc::fcntl(fd, libc::F_GETFL);
+        assert_ne!(nonblock & libc::O_NONBLOCK, 0);
         setblocking(fd, 1);
-        let block = ::libc::fcntl(fd, ::libc::F_GETFL);
-        assert_eq!(block & ::libc::O_NONBLOCK, 0);
+        let block = libc::fcntl(fd, libc::F_GETFL);
+        assert_eq!(block & libc::O_NONBLOCK, 0);
         setblocking(-1, 0);
         setblocking(-1, 1);
-        ::libc::close(fds[0]);
-        ::libc::close(fds[1]);
+        libc::close(fds[0]);
+        libc::close(fds[1]);
     }
 }
 
 #[test]
 fn osdep_event_init_initialises_reactor_and_cleans_env() {
     unsafe {
-        ::std::env::remove_var("EVENT_NOEPOLL");
+        std::env::remove_var("EVENT_NOEPOLL");
         let _base = osdep_event_init();
-        assert!(::std::env::var_os("EVENT_NOEPOLL").is_none());
+        assert!(std::env::var_os("EVENT_NOEPOLL").is_none());
     }
 }
 
@@ -217,11 +203,11 @@ fn check_name_and_clean_name_agree_on_validity() {
     unsafe {
         let cases: &[&CStr] = &[c"ok", c"", c"with space", c"a#b"];
         for c in cases {
-            assert_eq!(check_name(c.as_ptr()), 1);
+            assert_eq!(check_name(Some(c)), 1);
             assert!(clean(c, 0).is_some());
         }
         let bad = CString::new(b"\x80bad".as_slice()).unwrap();
-        assert_eq!(check_name(bad.as_ptr()), 0);
+        assert_eq!(check_name(Some(&bad)), 0);
         assert!(clean(&bad, 0).is_none());
     }
 }

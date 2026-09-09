@@ -6,12 +6,9 @@
 //! What this module is, is the wiring: a 200 ms tick, a status hub read back
 //! by the six format variables of `PROTOCOL.md`, and the status-line redraw a
 //! changed pane asks for.
-//!
-//! `#{pane_state_emoji}` is the one variable with a half that is not about
-//! agents: a pane running no recognised agent still reports what it *is*
-//! doing, so a status format need never branch on whether an agent was found.
 
-use std::ffi::CStr;
+use crate::WindowPane;
+use std::ffi::CString;
 use std::time::Duration;
 
 use hmux_agent::integration::AgentObserver;
@@ -52,12 +49,6 @@ impl AgentPlugin {
     }
 
     /// The status published for a pane, if the observer found an agent in it.
-    ///
-    /// Read from the copy taken at the end of the last tick rather than from
-    /// the hub, because the hub only hands out whole snapshots and a status
-    /// line naming six variables across a dozen windows would copy the map
-    /// once per lookup. The observer writes the hub during a tick and nothing
-    /// else does, so between ticks the two hold the same thing.
     fn status(&self, pane: PaneId) -> Option<&AgentStatus> {
         self.published.get(&pane)
     }
@@ -100,22 +91,24 @@ impl Plugin for AgentPlugin {
         self.published = snapshot;
     }
 
-    fn resolve(&self, pane: PaneId, key: &str) -> Option<String> {
+    fn resolve(&self, pane: PaneId, key: &str) -> Option<CString> {
         let status = self.status(pane);
         // A pane the observer has nothing for reads as empty metadata in a
         // "none" state — the same answer a pane with no agent in it gives, so
         // a format need not tell the two apart.
         match key {
-            "pane_agent" => Some(status.map_or("", |status| status.agent).to_string()),
+            "pane_agent" => Some(
+                CString::new(status.map_or("", |status| status.agent))
+                    .expect("an agent name has no NUL"),
+            ),
             "pane_agent_state" => Some(
-                status
-                    .map_or("none", |status| status.state.wire_str())
-                    .to_string(),
+                CString::new(status.map_or("none", |status| status.state.wire_str()))
+                    .expect("an agent state has no NUL"),
             ),
             "pane_agent_pid" => Some(
                 status
                     .and_then(|status| status.pid)
-                    .map(|pid| pid.to_string())
+                    .map(|pid| CString::new(pid.to_string()).expect("a pid has no NUL"))
                     .unwrap_or_default(),
             ),
             "pane_agent_session_id" => Some(
@@ -141,56 +134,45 @@ impl Plugin for AgentPlugin {
 /// which half applies, not its emoji: the observer reports a state for every
 /// pane it watches — an ordinary shell that exits is `exited` just as an agent
 /// is — and only a pane that named an agent should be labelled as one.
-fn state_emoji(pane: PaneId, status: Option<&AgentStatus>) -> String {
+fn state_emoji(pane: PaneId, status: Option<&AgentStatus>) -> CString {
     if let Some(status) = status
         && !status.agent.is_empty()
         && !status.state.emoji().is_empty()
     {
-        return status.state.emoji().to_string();
+        return CString::new(status.state.emoji()).expect("an emoji has no NUL");
     }
-    let wp = window_pane_find_by_id(pane.0);
-    if wp.is_null() {
-        return PaneClass::Dead.emoji().to_string();
-    }
+    let Some(pane) = window_pane_find_by_id(pane.0) else {
+        return CString::new(PaneClass::Dead.emoji()).expect("an emoji has no NUL");
+    };
     unsafe {
-        let dead = (*wp).fd == -1 && (*wp).flags & PANE_STATUSREADY != 0;
-        let alternate_on = (*wp).base.saved_grid.is_some();
-        PaneClass::classify(pane_probe(wp).as_ref(), alternate_on, dead)
-            .emoji()
-            .to_string()
+        let wp = pane.as_pane();
+        let dead = *(*wp).fd() == -1 && *(*wp).flags() & PANE_STATUSREADY != 0;
+        let alternate_on = (*wp).base().is_alternate();
+        let emoji = PaneClass::classify(pane_probe(wp).as_ref(), alternate_on, dead).emoji();
+        CString::new(emoji).expect("an emoji has no NUL")
     }
 }
 
 /// What the pane's pty says about the process holding it: the foreground group
 /// and the session leader, with the pane's own command line as the fallback
 /// for a group whose leader has already exited.
-unsafe fn pane_probe(wp: *mut crate::types::window_pane) -> Option<PaneProcessProbe> {
-    unsafe {
-        let fd = (*wp).fd;
-        if fd == -1 {
-            return None;
-        }
-        let foreground = libc::tcgetpgrp(fd);
-        let session_leader = libc::tcgetsid(fd);
-        let argv: Vec<String> = (*wp)
-            .argv
-            .iter()
-            .map(|argument| argument.to_string_lossy().into_owned())
-            .collect();
-        let fallback = match argv.is_empty() {
-            true => (*wp)
-                .shell
-                .as_deref()
-                .map(CStr::to_string_lossy)
-                .map(|shell| shell.into_owned()),
-            false => Some(stringify_argv(&argv)),
-        };
-        Some(PaneProcessProbe::new(
-            (foreground > 0).then_some(foreground),
-            (session_leader > 0).then_some(session_leader),
-            fallback,
-        ))
+fn pane_probe(wp: &impl crate::WindowPane) -> Option<PaneProcessProbe> {
+    let fd = *wp.fd();
+    if fd == -1 {
+        return None;
     }
+    let foreground = unsafe { libc::tcgetpgrp(fd) };
+    let session_leader = unsafe { libc::tcgetsid(fd) };
+    let command = wp.pane_command();
+    let fallback = match command.argv.is_empty() {
+        true => command.shell,
+        false => Some(stringify_argv(&command.argv)),
+    };
+    Some(PaneProcessProbe::new(
+        (foreground > 0).then_some(foreground),
+        (session_leader > 0).then_some(session_leader),
+        fallback,
+    ))
 }
 
 #[cfg(test)]
@@ -200,7 +182,7 @@ mod tests {
     use hmux_agent::integration::AgentState;
 
     use crate::tests::test_fixtures::globals;
-    use crate::text::utf8_cstrwidth;
+    use crate::text::{RustUtf8VisModel, Utf8VisModel};
     use crate::types::u_int;
 
     /// Every glyph the status bar can put in a pane's slot has to occupy the
@@ -236,9 +218,9 @@ mod tests {
                 None,
                 "{emoji:?} is more than one codepoint"
             );
-            let owned = ::std::ffi::CString::new(*emoji).expect("a glyph has no NUL");
+            let owned = std::ffi::CString::new(*emoji).expect("a glyph has no NUL");
             assert_eq!(
-                unsafe { utf8_cstrwidth(owned.as_ptr()) },
+                RustUtf8VisModel.width(&owned),
                 2,
                 "{emoji:?} is not 2 columns"
             );
@@ -260,8 +242,10 @@ mod tests {
         let plugin = AgentPlugin::new();
 
         assert_eq!(
-            plugin.resolve(PaneId(u_int::MAX), "pane_state_emoji").as_deref(),
-            Some(PaneClass::Dead.emoji())
+            plugin
+                .resolve(PaneId(u_int::MAX), "pane_state_emoji")
+                .as_deref(),
+            Some(c"🛑")
         );
     }
 

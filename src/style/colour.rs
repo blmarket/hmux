@@ -3,29 +3,173 @@ use crate::ffi::sscanf;
 use crate::fmt_args;
 use crate::log::log_debug;
 use crate::types::{client_theme, u_char, u_int};
+use std::sync::Arc;
+
+/// The colour conversion and parsing operations used by tmux.
+pub trait ColourEngine {
+    /// The palette state owned by this implementation.
+    type Palette;
+
+    /// Find the nearest indexed colour for an RGB triple.
+    fn find_rgb(&self, red: u8, green: u8, blue: u8) -> core::ffi::c_int;
+    /// Join an RGB triple into tmux's packed colour representation.
+    fn join_rgb(&self, red: u8, green: u8, blue: u8) -> core::ffi::c_int;
+    /// Split a packed colour into its RGB components.
+    fn split_rgb(&self, colour: core::ffi::c_int) -> (u8, u8, u8);
+    /// Convert an indexed or basic colour to packed RGB, or return `-1`.
+    fn force_rgb(&self, colour: core::ffi::c_int) -> core::ffi::c_int;
+    /// Convert an indexed colour to its nearest basic colour.
+    fn indexed_to_basic(&self, colour: core::ffi::c_int) -> core::ffi::c_int;
+    /// Return tmux's canonical spelling for a colour.
+    fn to_string(&self, colour: core::ffi::c_int) -> std::ffi::CString;
+    /// Classify a colour as unknown, light, or dark.
+    fn to_theme(&self, colour: core::ffi::c_int) -> core::ffi::c_int;
+    /// Parse a tmux colour spelling.
+    #[allow(clippy::wrong_self_convention)]
+    fn from_string(&self, colour: &core::ffi::CStr) -> core::ffi::c_int;
+    /// Look up an X11 colour name.
+    fn by_name(&self, colour: &core::ffi::CStr) -> core::ffi::c_int;
+    /// Parse an X11 colour specification.
+    fn parse_x11(&self, colour: &core::ffi::CStr) -> core::ffi::c_int;
+    /// Make an initialized palette.
+    fn new_palette(&self) -> Self::Palette;
+    /// Initialize an existing palette.
+    fn init_palette(&self, palette: &mut Self::Palette);
+    /// Clear explicit entries while retaining palette defaults.
+    fn clear_palette(&self, palette: Option<&mut Self::Palette>);
+    /// Release explicit entries and palette defaults.
+    fn free_palette(&self, palette: Option<&mut Self::Palette>);
+    /// Resolve a colour through a palette.
+    fn get_palette(
+        &self,
+        palette: Option<&Self::Palette>,
+        colour: core::ffi::c_int,
+    ) -> core::ffi::c_int;
+    /// Set an indexed palette entry.
+    fn set_palette(
+        &self,
+        palette: Option<&mut Self::Palette>,
+        index: core::ffi::c_int,
+        colour: core::ffi::c_int,
+    ) -> core::ffi::c_int;
+    /// Replace a palette's default entries.
+    fn set_palette_defaults(
+        &self,
+        palette: Option<&mut Self::Palette>,
+        defaults: Option<&[core::ffi::c_int; 256]>,
+    );
+}
+
+/// The Rust implementation of tmux colour behavior.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RustColourEngine;
+
+impl ColourEngine for RustColourEngine {
+    type Palette = colour_palette;
+
+    fn find_rgb(&self, red: u8, green: u8, blue: u8) -> core::ffi::c_int {
+        colour_find_rgb(red, green, blue)
+    }
+
+    fn join_rgb(&self, red: u8, green: u8, blue: u8) -> core::ffi::c_int {
+        colour_join_rgb(red, green, blue)
+    }
+
+    fn split_rgb(&self, colour: core::ffi::c_int) -> (u8, u8, u8) {
+        colour_split_rgb(colour)
+    }
+
+    fn force_rgb(&self, colour: core::ffi::c_int) -> core::ffi::c_int {
+        colour_force_rgb(colour)
+    }
+
+    fn indexed_to_basic(&self, colour: core::ffi::c_int) -> core::ffi::c_int {
+        colour_256to16(colour)
+    }
+
+    fn to_string(&self, colour: core::ffi::c_int) -> std::ffi::CString {
+        colour_tostring(colour)
+    }
+
+    fn to_theme(&self, colour: core::ffi::c_int) -> core::ffi::c_int {
+        colour_totheme(colour) as core::ffi::c_int
+    }
+
+    fn from_string(&self, colour: &core::ffi::CStr) -> core::ffi::c_int {
+        unsafe { colour_fromstring(colour) }
+    }
+
+    fn by_name(&self, colour: &core::ffi::CStr) -> core::ffi::c_int {
+        colour_byname(colour)
+    }
+
+    fn parse_x11(&self, colour: &core::ffi::CStr) -> core::ffi::c_int {
+        colour_parseX11(colour)
+    }
+
+    fn new_palette(&self) -> Self::Palette {
+        let mut palette = colour_palette::default();
+        colour_palette_init(&mut palette);
+        palette
+    }
+
+    fn init_palette(&self, palette: &mut Self::Palette) {
+        colour_palette_init(palette);
+    }
+
+    fn clear_palette(&self, palette: Option<&mut Self::Palette>) {
+        colour_palette_clear(palette);
+    }
+
+    fn free_palette(&self, palette: Option<&mut Self::Palette>) {
+        colour_palette_free(palette);
+    }
+
+    fn get_palette(
+        &self,
+        palette: Option<&Self::Palette>,
+        colour: core::ffi::c_int,
+    ) -> core::ffi::c_int {
+        colour_palette_get(palette, colour)
+    }
+
+    fn set_palette(
+        &self,
+        palette: Option<&mut Self::Palette>,
+        index: core::ffi::c_int,
+        colour: core::ffi::c_int,
+    ) -> core::ffi::c_int {
+        colour_palette_set(palette, index, colour)
+    }
+
+    fn set_palette_defaults(
+        &self,
+        palette: Option<&mut Self::Palette>,
+        defaults: Option<&[core::ffi::c_int; 256]>,
+    ) {
+        colour_palette_from_defaults(palette, defaults);
+    }
+}
+
 /// A pane's colour palette: the two default colours and, when they have been
 /// set, the 256 entries of the palette itself and of the defaults the
 /// `pane-colours` option gave.
 #[derive(Clone, Default)]
 #[repr(C)]
 pub struct colour_palette {
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub palette: Option<Box<[::core::ffi::c_int; 256]>>,
-    pub default_palette: Option<Box<[::core::ffi::c_int; 256]>>,
+    pub fg: core::ffi::c_int,
+    pub bg: core::ffi::c_int,
+    pub palette: Option<Arc<[core::ffi::c_int; 256]>>,
+    pub default_palette: Option<Arc<[core::ffi::c_int; 256]>>,
 }
 
-pub const THEME_DARK: client_theme = 2;
-pub const THEME_LIGHT: client_theme = 1;
-pub const THEME_UNKNOWN: client_theme = 0;
-pub const COLOUR_FLAG_256: ::core::ffi::c_int = 0x1000000;
-pub const COLOUR_FLAG_RGB: ::core::ffi::c_int = 0x2000000;
+pub use crate::consts::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, THEME_DARK, THEME_LIGHT, THEME_UNKNOWN};
 
 /// The eight-bit value of each step along one axis of the 6x6x6 colour cube.
-const CUBE_STEPS: [::core::ffi::c_int; 6] = [0, 0x5f, 0x87, 0xaf, 0xd7, 0xff];
+const CUBE_STEPS: [core::ffi::c_int; 6] = [0, 0x5f, 0x87, 0xaf, 0xd7, 0xff];
 
 /// The RGB value of each of the 256 indexed colours.
-const RGB_OF_256: [::core::ffi::c_int; 256] = [
+const RGB_OF_256: [core::ffi::c_int; 256] = [
     0, 0x800000, 0x8000, 0x808000, 0x80, 0x800080, 0x8080, 0xc0c0c0, 0x808080, 0xff0000, 0xff00,
     0xffff00, 0xff, 0xff00ff, 0xffff, 0xffffff, 0, 0x5f, 0x87, 0xaf, 0xd7, 0xff, 0x5f00, 0x5f5f,
     0x5f87, 0x5faf, 0x5fd7, 0x5fff, 0x8700, 0x875f, 0x8787, 0x87af, 0x87d7, 0x87ff, 0xaf00, 0xaf5f,
@@ -56,7 +200,7 @@ const RGB_OF_256: [::core::ffi::c_int; 256] = [
 ];
 
 /// The nearest of the sixteen basic colours to each of the 256 indexed ones.
-const BASIC_OF_256: [::core::ffi::c_int; 256] = [
+const BASIC_OF_256: [core::ffi::c_int; 256] = [
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 4, 4, 4, 12, 12, 2, 6, 4, 4, 12, 12,
     2, 2, 6, 4, 12, 12, 2, 2, 2, 6, 12, 12, 10, 10, 10, 10, 14, 12, 10, 10, 10, 10, 10, 14, 1, 5,
     4, 4, 12, 12, 3, 8, 4, 4, 12, 12, 2, 2, 6, 4, 12, 12, 2, 2, 2, 6, 12, 12, 10, 10, 10, 10, 14,
@@ -70,7 +214,7 @@ const BASIC_OF_256: [::core::ffi::c_int; 256] = [
 ];
 
 /// The colours `colour_byname` accepts, in the order it searches them.
-const X11_COLOURS: [(&str, ::core::ffi::c_int); 578] = [
+const X11_COLOURS: [(&str, core::ffi::c_int); 578] = [
     ("AliceBlue", 0xf0f8ff),
     ("AntiqueWhite", 0xfaebd7),
     ("AntiqueWhite1", 0xffefdb),
@@ -653,7 +797,7 @@ const X11_COLOURS: [(&str, ::core::ffi::c_int); 578] = [
 
 /// The names `colour_fromstring` accepts for the basic colours, each with the
 /// number that is also accepted for it.
-const BASIC_NAMES: [(&::core::ffi::CStr, Option<&str>, ::core::ffi::c_int); 18] = [
+const BASIC_NAMES: [(&core::ffi::CStr, Option<&str>, core::ffi::c_int); 18] = [
     (c"default", None, 8),
     (c"terminal", None, 9),
     (c"black", Some("0"), 0),
@@ -676,18 +820,18 @@ const BASIC_NAMES: [(&::core::ffi::CStr, Option<&str>, ::core::ffi::c_int); 18] 
 
 /// Squared distance between two RGB triples.
 fn colour_dist_sq(
-    R: ::core::ffi::c_int,
-    G: ::core::ffi::c_int,
-    B: ::core::ffi::c_int,
-    r: ::core::ffi::c_int,
-    g: ::core::ffi::c_int,
-    b: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+    R: core::ffi::c_int,
+    G: core::ffi::c_int,
+    B: core::ffi::c_int,
+    r: core::ffi::c_int,
+    g: core::ffi::c_int,
+    b: core::ffi::c_int,
+) -> core::ffi::c_int {
     (R - r) * (R - r) + (G - g) * (G - g) + (B - b) * (B - b)
 }
 
 /// The colour cube axis step nearest to one eight-bit component.
-fn colour_to_6cube(v: ::core::ffi::c_int) -> ::core::ffi::c_int {
+fn colour_to_6cube(v: core::ffi::c_int) -> core::ffi::c_int {
     if v < 48 {
         return 0;
     }
@@ -699,11 +843,11 @@ fn colour_to_6cube(v: ::core::ffi::c_int) -> ::core::ffi::c_int {
 
 /// The indexed colour closest to an RGB triple: the cube entry it quantises to,
 /// unless a step of the grey ramp is nearer.
-fn find_rgb(r: u_char, g: u_char, b: u_char) -> ::core::ffi::c_int {
+fn find_rgb(r: u_char, g: u_char, b: u_char) -> core::ffi::c_int {
     let (r, g, b) = (
-        r as ::core::ffi::c_int,
-        g as ::core::ffi::c_int,
-        b as ::core::ffi::c_int,
+        r as core::ffi::c_int,
+        g as core::ffi::c_int,
+        b as core::ffi::c_int,
     );
     let qr = colour_to_6cube(r);
     let qg = colour_to_6cube(g);
@@ -730,14 +874,14 @@ fn find_rgb(r: u_char, g: u_char, b: u_char) -> ::core::ffi::c_int {
     idx | COLOUR_FLAG_256
 }
 
-fn join_rgb(r: u_char, g: u_char, b: u_char) -> ::core::ffi::c_int {
-    (r as ::core::ffi::c_int) << 16
-        | (g as ::core::ffi::c_int) << 8
-        | b as ::core::ffi::c_int
+fn join_rgb(r: u_char, g: u_char, b: u_char) -> core::ffi::c_int {
+    (r as core::ffi::c_int) << 16
+        | (g as core::ffi::c_int) << 8
+        | b as core::ffi::c_int
         | COLOUR_FLAG_RGB
 }
 
-fn split_rgb(c: ::core::ffi::c_int) -> (u_char, u_char, u_char) {
+fn split_rgb(c: core::ffi::c_int) -> (u_char, u_char, u_char) {
     (
         (c >> 16 & 0xff) as u_char,
         (c >> 8 & 0xff) as u_char,
@@ -745,12 +889,12 @@ fn split_rgb(c: ::core::ffi::c_int) -> (u_char, u_char, u_char) {
     )
 }
 
-fn rgb_of_256(c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+fn rgb_of_256(c: core::ffi::c_int) -> core::ffi::c_int {
     RGB_OF_256[(c & 0xff) as usize] | COLOUR_FLAG_RGB
 }
 
 /// The RGB value of a colour that has one, or -1.
-fn force_rgb(c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+fn force_rgb(c: core::ffi::c_int) -> core::ffi::c_int {
     if c & COLOUR_FLAG_RGB != 0 {
         return c;
     }
@@ -764,14 +908,13 @@ fn force_rgb(c: ::core::ffi::c_int) -> ::core::ffi::c_int {
 }
 
 /// Whether a colour reads as a light or a dark background.
-fn totheme(c: ::core::ffi::c_int) -> client_theme {
+fn totheme(c: core::ffi::c_int) -> client_theme {
     if c == -1 {
         return THEME_UNKNOWN;
     }
     if c & COLOUR_FLAG_RGB != 0 {
         let (r, g, b) = split_rgb(c);
-        let brightness =
-            r as ::core::ffi::c_int + g as ::core::ffi::c_int + b as ::core::ffi::c_int;
+        let brightness = r as core::ffi::c_int + g as core::ffi::c_int + b as core::ffi::c_int;
         return if brightness > 382 {
             THEME_LIGHT
         } else {
@@ -791,7 +934,7 @@ fn totheme(c: ::core::ffi::c_int) -> client_theme {
 }
 
 /// The fixed name of a colour, if it has one.
-fn name_of(c: ::core::ffi::c_int) -> Option<&'static ::core::ffi::CStr> {
+fn name_of(c: core::ffi::c_int) -> Option<&'static core::ffi::CStr> {
     BASIC_NAMES
         .iter()
         .find(|(_, _, value)| *value == c)
@@ -801,14 +944,14 @@ fn name_of(c: ::core::ffi::c_int) -> Option<&'static ::core::ffi::CStr> {
 /// `strtonum` applied to `s` from byte `skip` on, or `None` when what follows
 /// is not a whole number within `[0, max]`.
 fn suffix_number(
-    s: &::core::ffi::CStr,
+    s: &core::ffi::CStr,
     skip: usize,
-    max: ::core::ffi::c_longlong,
-) -> Option<::core::ffi::c_int> {
-    let tail = &s.to_bytes_with_nul()[skip..];
-    unsafe { strtonum(tail.as_ptr().cast::<::core::ffi::c_char>(), 0, max) }
+    max: core::ffi::c_longlong,
+) -> Option<core::ffi::c_int> {
+    let tail = core::ffi::CStr::from_bytes_with_nul(&s.to_bytes_with_nul()[skip..]).ok()?;
+    unsafe { strtonum(tail, 0, max) }
         .ok()
-        .map(|n| n as ::core::ffi::c_int)
+        .map(|n| n as core::ffi::c_int)
 }
 
 fn starts_with_ignore_case(s: &[u8], prefix: &[u8]) -> bool {
@@ -816,7 +959,7 @@ fn starts_with_ignore_case(s: &[u8], prefix: &[u8]) -> bool {
 }
 
 /// An X11 colour name, a `grey`/`gray` percentage, or -1.
-fn byname(name: &::core::ffi::CStr) -> ::core::ffi::c_int {
+fn byname(name: &core::ffi::CStr) -> core::ffi::c_int {
     let bytes = name.to_bytes();
     if starts_with_ignore_case(bytes, b"grey") || starts_with_ignore_case(bytes, b"gray") {
         if bytes.len() == 4 {
@@ -825,7 +968,7 @@ fn byname(name: &::core::ffi::CStr) -> ::core::ffi::c_int {
         let Some(percent) = suffix_number(name, 4, 100) else {
             return -1;
         };
-        let v = (2.55 * percent as ::core::ffi::c_double).round() as u_char;
+        let v = (2.55 * percent as core::ffi::c_double).round() as u_char;
         return join_rgb(v, v, v);
     }
     match X11_COLOURS
@@ -839,7 +982,7 @@ fn byname(name: &::core::ffi::CStr) -> ::core::ffi::c_int {
 
 /// A colour written as `#rrggbb`, `colourN`, a basic name or number, or an X11
 /// colour name; -1 when none of those fit.
-fn fromstring(s: &::core::ffi::CStr) -> ::core::ffi::c_int {
+fn fromstring(s: &core::ffi::CStr) -> core::ffi::c_int {
     let bytes = s.to_bytes();
     if bytes.len() == 7 && bytes[0] == b'#' {
         let digits = &bytes[1..];
@@ -870,35 +1013,35 @@ fn fromstring(s: &::core::ffi::CStr) -> ::core::ffi::c_int {
     byname(s)
 }
 
-pub fn colour_find_rgb(r: u_char, g: u_char, b: u_char) -> ::core::ffi::c_int {
+fn colour_find_rgb(r: u_char, g: u_char, b: u_char) -> core::ffi::c_int {
     find_rgb(r, g, b)
 }
 
-pub fn colour_join_rgb(r: u_char, g: u_char, b: u_char) -> ::core::ffi::c_int {
+fn colour_join_rgb(r: u_char, g: u_char, b: u_char) -> core::ffi::c_int {
     join_rgb(r, g, b)
 }
 
 /// The red, green and blue components of an RGB colour.
-pub fn colour_split_rgb(c: ::core::ffi::c_int) -> (u_char, u_char, u_char) {
+fn colour_split_rgb(c: core::ffi::c_int) -> (u_char, u_char, u_char) {
     split_rgb(c)
 }
 
-pub fn colour_force_rgb(c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+fn colour_force_rgb(c: core::ffi::c_int) -> core::ffi::c_int {
     force_rgb(c)
 }
 
 /// The name a colour goes by, as the caller's own string.
-pub fn colour_tostring(c: ::core::ffi::c_int) -> ::std::ffi::CString {
+fn colour_tostring(c: core::ffi::c_int) -> std::ffi::CString {
     if c == -1 {
         return c"none".to_owned();
     }
     if c & COLOUR_FLAG_RGB != 0 {
         let (r, g, b) = split_rgb(c);
-        return ::std::ffi::CString::new(format!("#{r:02x}{g:02x}{b:02x}"))
+        return std::ffi::CString::new(format!("#{r:02x}{g:02x}{b:02x}"))
             .expect("a colour name has no interior NUL");
     }
     if c & COLOUR_FLAG_256 != 0 {
-        return ::std::ffi::CString::new(format!("colour{}", c & 0xff))
+        return std::ffi::CString::new(format!("colour{}", c & 0xff))
             .expect("a colour name has no interior NUL");
     }
     match name_of(c) {
@@ -907,45 +1050,41 @@ pub fn colour_tostring(c: ::core::ffi::c_int) -> ::std::ffi::CString {
     }
 }
 
-pub fn colour_totheme(c: ::core::ffi::c_int) -> client_theme {
+fn colour_totheme(c: core::ffi::c_int) -> client_theme {
     totheme(c)
 }
 
-pub unsafe fn colour_fromstring(s: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
-    unsafe { fromstring(::core::ffi::CStr::from_ptr(s)) }
+unsafe fn colour_fromstring(s: &core::ffi::CStr) -> core::ffi::c_int {
+    unsafe { fromstring(core::ffi::CStr::from_ptr(s.as_ptr())) }
 }
 
-pub fn colour_256toRGB(c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    rgb_of_256(c)
-}
-
-pub fn colour_256to16(c: ::core::ffi::c_int) -> ::core::ffi::c_int {
+fn colour_256to16(c: core::ffi::c_int) -> core::ffi::c_int {
     BASIC_OF_256[(c & 0xff) as usize]
 }
 
-pub unsafe fn colour_byname(name: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
-    unsafe { byname(::core::ffi::CStr::from_ptr(name)) }
+fn colour_byname(name: &core::ffi::CStr) -> core::ffi::c_int {
+    byname(name)
 }
 
 /// Reads the X11 colour spellings tmux accepts. The numeric forms are matched
 /// with `sscanf` so the accepted syntax stays exactly C's, including what
 /// `%lf` takes for the CMYK components.
-pub unsafe fn colour_parseX11(p: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
+fn colour_parseX11(p: &core::ffi::CStr) -> core::ffi::c_int {
     unsafe {
-        let text = ::core::ffi::CStr::from_ptr(p).to_bytes();
+        let text = p.to_bytes();
         let len = text.len();
         let mut r: u_int = 0;
         let mut g: u_int = 0;
         let mut b: u_int = 0;
-        let mut c: ::core::ffi::c_double = 0.;
-        let mut m: ::core::ffi::c_double = 0.;
-        let mut y: ::core::ffi::c_double = 0.;
-        let mut k: ::core::ffi::c_double = 0.;
-        let mut logged = p;
+        let mut c: core::ffi::c_double = 0.;
+        let mut m: core::ffi::c_double = 0.;
+        let mut y: core::ffi::c_double = 0.;
+        let mut k: core::ffi::c_double = 0.;
+        let mut logged = p.as_ptr();
 
         let colour = if len == 12
             && sscanf(
-                p,
+                p.as_ptr(),
                 c"rgb:%02x/%02x/%02x".as_ptr(),
                 &raw mut r,
                 &raw mut g,
@@ -953,18 +1092,24 @@ pub unsafe fn colour_parseX11(p: *const ::core::ffi::c_char) -> ::core::ffi::c_i
             ) == 3
             || len == 7
                 && sscanf(
-                    p,
+                    p.as_ptr(),
                     c"#%02x%02x%02x".as_ptr(),
                     &raw mut r,
                     &raw mut g,
                     &raw mut b,
                 ) == 3
-            || sscanf(p, c"%d,%d,%d".as_ptr(), &raw mut r, &raw mut g, &raw mut b) == 3
+            || sscanf(
+                p.as_ptr(),
+                c"%d,%d,%d".as_ptr(),
+                &raw mut r,
+                &raw mut g,
+                &raw mut b,
+            ) == 3
         {
             join_rgb(r as u_char, g as u_char, b as u_char)
         } else if len == 18
             && sscanf(
-                p,
+                p.as_ptr(),
                 c"rgb:%04x/%04x/%04x".as_ptr(),
                 &raw mut r,
                 &raw mut g,
@@ -972,7 +1117,7 @@ pub unsafe fn colour_parseX11(p: *const ::core::ffi::c_char) -> ::core::ffi::c_i
             ) == 3
             || len == 13
                 && sscanf(
-                    p,
+                    p.as_ptr(),
                     c"#%04x%04x%04x".as_ptr(),
                     &raw mut r,
                     &raw mut g,
@@ -981,7 +1126,7 @@ pub unsafe fn colour_parseX11(p: *const ::core::ffi::c_char) -> ::core::ffi::c_i
         {
             join_rgb((r >> 8) as u_char, (g >> 8) as u_char, (b >> 8) as u_char)
         } else if (sscanf(
-            p,
+            p.as_ptr(),
             c"cmyk:%lf/%lf/%lf/%lf".as_ptr(),
             &raw mut c,
             &raw mut m,
@@ -989,7 +1134,7 @@ pub unsafe fn colour_parseX11(p: *const ::core::ffi::c_char) -> ::core::ffi::c_i
             &raw mut k,
         ) == 4
             || sscanf(
-                p,
+                p.as_ptr(),
                 c"cmy:%lf/%lf/%lf".as_ptr(),
                 &raw mut c,
                 &raw mut m,
@@ -1011,16 +1156,16 @@ pub unsafe fn colour_parseX11(p: *const ::core::ffi::c_char) -> ::core::ffi::c_i
                 .iter()
                 .rposition(|&b| b != b' ')
                 .map_or(start, |i| i + 1);
-            logged = p.add(start);
-            let trimmed: Vec<::core::ffi::c_char> = text[start..end]
+            logged = p.as_ptr().add(start);
+            let trimmed: Vec<core::ffi::c_char> = text[start..end]
                 .iter()
-                .map(|&b| b as ::core::ffi::c_char)
-                .chain(::core::iter::once(0))
+                .map(|&b| b as core::ffi::c_char)
+                .chain(core::iter::once(0))
                 .collect();
-            byname(::core::ffi::CStr::from_ptr(trimmed.as_ptr()))
+            byname(core::ffi::CStr::from_ptr(trimmed.as_ptr()))
         };
         log_debug(
-            c"%s: %s = %s".as_ptr(),
+            c"%s: %s = %s",
             fmt_args![
                 c"colour_parseX11".as_ptr(),
                 logged,
@@ -1031,14 +1176,14 @@ pub unsafe fn colour_parseX11(p: *const ::core::ffi::c_char) -> ::core::ffi::c_i
     }
 }
 
-pub fn colour_palette_init(p: &mut colour_palette) {
+fn colour_palette_init(p: &mut colour_palette) {
     p.fg = 8;
     p.bg = 8;
     p.palette = None;
     p.default_palette = None;
 }
 
-pub fn colour_palette_clear(p: Option<&mut colour_palette>) {
+fn colour_palette_clear(p: Option<&mut colour_palette>) {
     if let Some(p) = p {
         p.fg = 8;
         p.bg = 8;
@@ -1046,14 +1191,14 @@ pub fn colour_palette_clear(p: Option<&mut colour_palette>) {
     }
 }
 
-pub fn colour_palette_free(p: Option<&mut colour_palette>) {
+fn colour_palette_free(p: Option<&mut colour_palette>) {
     if let Some(p) = p {
         p.palette = None;
         p.default_palette = None;
     }
 }
 
-pub fn colour_palette_get(p: Option<&colour_palette>, n: ::core::ffi::c_int) -> ::core::ffi::c_int {
+fn colour_palette_get(p: Option<&colour_palette>, n: core::ffi::c_int) -> core::ffi::c_int {
     let Some(p) = p else {
         return -1;
     };
@@ -1082,11 +1227,11 @@ pub fn colour_palette_get(p: Option<&colour_palette>, n: ::core::ffi::c_int) -> 
     -1
 }
 
-pub fn colour_palette_set(
+fn colour_palette_set(
     p: Option<&mut colour_palette>,
-    n: ::core::ffi::c_int,
-    c: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
+    n: core::ffi::c_int,
+    c: core::ffi::c_int,
+) -> core::ffi::c_int {
     let Some(p) = p else {
         return 0;
     };
@@ -1096,16 +1241,16 @@ pub fn colour_palette_set(
     if c == -1 && p.palette.is_none() {
         return 0;
     }
-    let pal = p.palette.get_or_insert_with(|| Box::new([-1; 256]));
-    pal[n as usize] = c;
+    let pal = p.palette.get_or_insert_with(|| Arc::new([-1; 256]));
+    Arc::make_mut(pal)[n as usize] = c;
     1
 }
 
 /// Points the palette's default table at `defaults`, or drops the table when
 /// the caller has none to give.
-pub fn colour_palette_from_defaults(
+fn colour_palette_from_defaults(
     p: Option<&mut colour_palette>,
-    defaults: Option<&[::core::ffi::c_int; 256]>,
+    defaults: Option<&[core::ffi::c_int; 256]>,
 ) {
     let Some(p) = p else {
         return;
@@ -1113,7 +1258,8 @@ pub fn colour_palette_from_defaults(
     match defaults {
         None => p.default_palette = None,
         Some(defaults) => {
-            **p.default_palette.get_or_insert_with(|| Box::new([-1; 256])) = *defaults;
+            let table = p.default_palette.get_or_insert_with(|| Arc::new([-1; 256]));
+            *Arc::make_mut(table) = *defaults;
         }
     }
 }

@@ -1,21 +1,12 @@
-pub const GRID_ATTR_BRIGHT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const GRID_ATTR_DIM: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const GRID_ATTR_BLINK: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const GRID_ATTR_REVERSE: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const GRID_ATTR_HIDDEN: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const GRID_ATTR_ITALICS: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const GRID_ATTR_CHARSET: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const GRID_ATTR_STRIKETHROUGH: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_2: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_3: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_4: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_5: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
-pub const GRID_ATTR_OVERLINE: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-pub const GRID_ATTR_NOATTR: ::core::ffi::c_int = 0x4000 as ::core::ffi::c_int;
+pub use crate::consts::{
+    GRID_ATTR_BLINK, GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_ATTR_DIM, GRID_ATTR_HIDDEN,
+    GRID_ATTR_ITALICS, GRID_ATTR_NOATTR, GRID_ATTR_OVERLINE, GRID_ATTR_REVERSE,
+    GRID_ATTR_STRIKETHROUGH, GRID_ATTR_UNDERSCORE, GRID_ATTR_UNDERSCORE_2, GRID_ATTR_UNDERSCORE_3,
+    GRID_ATTR_UNDERSCORE_4, GRID_ATTR_UNDERSCORE_5,
+};
 
 /// Attribute bits in the order `attributes_tostring` prints them.
-const PRINTED: [(::core::ffi::c_int, &str); 15] = [
+const PRINTED: [(core::ffi::c_int, &str); 15] = [
     (GRID_ATTR_CHARSET, "acs"),
     (GRID_ATTR_BRIGHT, "bright"),
     (GRID_ATTR_DIM, "dim"),
@@ -34,7 +25,7 @@ const PRINTED: [(::core::ffi::c_int, &str); 15] = [
 ];
 
 /// Names `attributes_fromstring` accepts, and the bit each one sets.
-const PARSED: [(&str, ::core::ffi::c_int); 15] = [
+const PARSED: [(&str, core::ffi::c_int); 15] = [
     ("acs", GRID_ATTR_CHARSET),
     ("bright", GRID_ATTR_BRIGHT),
     ("bold", GRID_ATTR_BRIGHT),
@@ -60,22 +51,22 @@ fn is_delimiter(b: u8) -> bool {
 
 /// The comma-separated names of the attribute bits set in `attr`; empty when
 /// only unknown bits are set.
-fn describe(attr: ::core::ffi::c_int) -> String {
-    let mut out = String::new();
+fn describe(attr: core::ffi::c_int) -> std::ffi::CString {
+    let mut out = Vec::new();
     for (bit, name) in PRINTED {
         if attr & bit != 0 {
             if !out.is_empty() {
-                out.push(',');
+                out.push(b',');
             }
-            out.push_str(name);
+            out.extend_from_slice(name.as_bytes());
         }
     }
-    out
+    std::ffi::CString::new(out).expect("attribute names have no interior NUL")
 }
 
 /// Parse a list of attribute names separated by spaces, commas or bars into
 /// the bits they set, or `None` if any of it is not understood.
-fn parse(s: &[u8]) -> Option<::core::ffi::c_int> {
+fn parse(s: &[u8]) -> Option<core::ffi::c_int> {
     if s.is_empty() || is_delimiter(s[0]) || is_delimiter(s[s.len() - 1]) {
         return None;
     }
@@ -93,17 +84,43 @@ fn parse(s: &[u8]) -> Option<::core::ffi::c_int> {
 }
 
 /// The attributes a cell carries, named as the caller's own string.
-pub fn attributes_tostring(attr: ::core::ffi::c_int) -> ::std::ffi::CString {
+fn attributes_tostring(attr: core::ffi::c_int) -> std::ffi::CString {
     if attr == 0 {
         return c"none".to_owned();
     }
-    ::std::ffi::CString::new(describe(attr)).expect("an attribute name has no interior NUL")
+    describe(attr)
 }
 
-pub fn attributes_fromstring(s: &::core::ffi::CStr) -> ::core::ffi::c_int {
+fn attributes_fromstring(s: &core::ffi::CStr) -> core::ffi::c_int {
     parse(s.to_bytes()).unwrap_or(-1)
+}
+
+impl AttributeCodec for RustAttributeCodec {
+    fn to_string(&self, attributes: c_int) -> CString {
+        attributes_tostring(attributes)
+    }
+
+    fn from_string(&self, attributes: &CStr) -> c_int {
+        attributes_fromstring(attributes)
+    }
 }
 
 #[cfg(test)]
 #[path = "../tests/test_attributes.rs"]
 mod tests;
+use core::ffi::{CStr, c_int};
+use std::ffi::CString;
+
+/// A hermetic interface to tmux's style-attribute name codec.
+pub trait AttributeCodec {
+    /// Return tmux's canonical comma-separated representation of `attributes`.
+    fn to_string(&self, attributes: c_int) -> CString;
+
+    /// Parse tmux style-attribute names, returning `-1` for invalid input.
+    #[allow(clippy::wrong_self_convention)]
+    fn from_string(&self, attributes: &CStr) -> c_int;
+}
+
+/// The Rust implementation of tmux's style-attribute name codec.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RustAttributeCodec;

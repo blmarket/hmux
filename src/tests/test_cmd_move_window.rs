@@ -1,11 +1,10 @@
 use super::*;
 use crate::cmd::cmd_find_from_winlink;
-use crate::cmd::cmdq_get_current;
-use crate::session::session_get_curw;
+
 use crate::tests::test_fixtures::{
-    Item, Pane, Registry, Session, Window, ensure_reactor, globals, link, unlink,
+    Item, Pane, Registry, Session, Window, ensure_reactor, globals, link,
 };
-use crate::window::{winlink_count, winlink_find_by_index};
+use crate::window::{WinlinkRef, winlink_count};
 use ::core::ffi::c_int;
 
 /// Where the fixture windows' ids start, far above anything production
@@ -17,14 +16,12 @@ const PANE_ID_BASE: u_int = 910_000;
 
 /// One registered session holding registered windows, the way
 /// `cmd_find_target` walks them. Winlinks the fixture linked are unlinked
-/// again on the way out; a run that frees or makes winlinks hands the
-/// cleanup list back with [`Chain::tracking`].
+/// again on the way out by sweeping the session's current link collection.
 struct Chain {
     registry: Registry,
     session: Session,
     windows: Vec<Window>,
     panes: Vec<Pane>,
-    tracked: Vec<*mut winlink>,
 }
 
 impl Chain {
@@ -34,14 +31,12 @@ impl Chain {
             session: Session::new(0, name),
             windows: Vec::new(),
             panes: Vec::new(),
-            tracked: Vec::new(),
         };
-        let s = &raw mut c.session;
-        unsafe { c.registry.add_session(&mut *s) };
+        c.registry.add_session(&mut c.session);
         c
     }
 
-    fn add_window(&mut self, idx: c_int) -> (*mut winlink, *mut window) {
+    fn add_window(&mut self, idx: c_int) -> (WinlinkRef, WindowRef) {
         let mut w = Window::new(
             WINDOW_ID_BASE + self.windows.len() as u_int * 11,
             "chain",
@@ -51,30 +46,25 @@ impl Chain {
         let mut p = Pane::new(PANE_ID_BASE + self.panes.len() as u_int, 80, 24, 100);
         w.add_pane(&mut p);
         self.registry.add_window(&mut w);
-        self.registry.add_pane(&mut p);
-        let wptr = w.ptr();
-        let wl = link(&mut self.session, &mut w, idx);
-        self.tracked.push(wl);
+        let window = w.reference();
+        link(&mut self.session, &mut w, idx);
+        let wl = WinlinkRef::new(self.session.reference(), idx).unwrap();
         self.windows.push(w);
         self.panes.push(p);
-        (wl, wptr)
-    }
-
-    fn sptr(&mut self) -> *mut session {
-        self.session.ptr()
-    }
-
-    /// Replaces the cleanup list with exactly `winlinks`, for a run after
-    /// which the session's winlinks are not the ones the fixture linked.
-    fn tracking(&mut self, winlinks: &[*mut winlink]) {
-        self.tracked = winlinks.to_vec();
+        (wl, window)
     }
 }
 
 impl Drop for Chain {
     fn drop(&mut self) {
-        for wl in ::std::mem::take(&mut self.tracked).into_iter().rev() {
-            unlink(&mut self.session, wl);
+        let mut owner = self.session.handle().clone();
+        unsafe {
+            let session = owner.as_session_mut();
+            session.curw_idx = None;
+            session.lastw.clear();
+            while let Some(index) = session.windows.keys().next().copied() {
+                crate::window::winlink_remove(&mut session.windows, index);
+            }
         }
     }
 }
@@ -82,23 +72,20 @@ impl Drop for Chain {
 /// Runs the item's parsed command through its own entry's exec hook, the
 /// way the command queue would.
 fn run(item: &mut Item) -> cmd_retval {
-    unsafe {
-        let e = (*item.cmd()).entry;
-        (e.exec)(&*item.cmd(), item.ptr())
-    }
+    unsafe { item.with_command(|command, item| (command.entry.exec)(command, item)) }
 }
 
 /// Points the item's source and current states at `wl`, as a prepared
 /// item's resolved find states would be; the target state this hook builds
 /// for itself out of `-t`.
-unsafe fn aim(item: &mut Item, wl: *mut winlink) {
+unsafe fn aim(item: &mut Item, wl: &WinlinkRef) {
     unsafe {
-        let mut fs = *Box::new(cmd_find_state::default());
-        cmd_find_from_winlink(&mut fs, wl, 0);
-        let p = item.ptr();
-        (*p).source = fs.clone();
-        (*p).target = fs.clone();
-        *cmdq_get_current(p) = fs.clone();
+        let mut fs = cmd_find_state::default();
+        cmd_find_from_winlink(&mut fs, wl.get().unwrap(), 0);
+        let mut item = item.item_mut();
+        item.source = fs.clone();
+        item.target = fs.clone();
+        *item.current() = fs;
     }
 }
 
@@ -116,38 +103,48 @@ fn an_index_only_target_shuffles_up_from_the_sessions_current_window() {
 
     let mut item = Item::new().with_args(c"move-window -a -d -t 9");
     unsafe {
-        assert_eq!(
-            session_get_curw(chain.sptr()),
-            wl0,
+        assert!(
+            core::ptr::eq(
+                chain
+                    .session
+                    .handle()
+                    .curw()
+                    .unwrap()
+                    .get()
+                    .expect("the current link is live"),
+                wl0.get().unwrap()
+            ),
             "the first window is current"
         );
-        aim(&mut item, wl0);
+        aim(&mut item, &wl0);
 
         assert_eq!(run(&mut item), CMD_RETURN_NORMAL);
 
-        let s = chain.sptr();
-        let at_one = winlink_find_by_index(&mut (*s).windows, 1);
-        let at_two = winlink_find_by_index(&mut (*s).windows, 2);
-        chain.tracking(&[at_one, at_two]);
+        let s = chain.session.handle().as_session();
+        let at_one = s
+            .windows
+            .get(&1)
+            .map(Box::as_ref)
+            .expect("the indexed window is linked");
+        let at_two = s
+            .windows
+            .get(&2)
+            .map(Box::as_ref)
+            .expect("the indexed window is linked");
 
-        assert_eq!(winlink_count(&(*s).windows), 2);
+        assert_eq!(winlink_count(&s.windows), 2);
+        assert!(s.windows.get(&0).is_none(), "the source slot was given up");
+
         assert!(
-            winlink_find_by_index(&mut (*s).windows, 0).is_null(),
-            "the source slot was given up"
-        );
-        assert!(!at_one.is_null() && !at_two.is_null());
-        assert_eq!(
-            (*at_one).window(),
-            w0,
+            at_one.window_handle().unwrap().ptr_eq(&w0),
             "the moved window took the index freed above the current one"
         );
-        assert_eq!(
-            (*at_two).window(),
-            w1,
+        assert!(
+            at_two.window_handle().unwrap().ptr_eq(&w1),
             "which the window standing there shuffled up for"
         );
         assert!(
-            winlink_find_by_index(&mut (*s).windows, 9).is_null(),
+            s.windows.get(&9).is_none(),
             "the -t index itself was never used"
         );
     }
@@ -166,7 +163,7 @@ fn a_target_at_the_last_index_refuses_to_shuffle_up() {
 
     let mut item = Item::new().with_args(c"move-window -b -d -t 2147483647");
     unsafe {
-        aim(&mut item, wl0);
+        aim(&mut item, &wl0);
 
         assert_eq!(
             run(&mut item),
@@ -174,15 +171,29 @@ fn a_target_at_the_last_index_refuses_to_shuffle_up() {
             "there is no index above the last one to shuffle into"
         );
 
-        let s = chain.sptr();
-        assert_eq!(winlink_count(&(*s).windows), 2);
-        assert_eq!(winlink_find_by_index(&mut (*s).windows, 0), wl0);
-        assert_eq!((*wl0).window(), w0);
-        assert_eq!(
-            winlink_find_by_index(&mut (*s).windows, c_int::MAX),
-            wl_last
+        let s = chain.session.handle().as_session();
+        assert_eq!(winlink_count(&s.windows), 2);
+        assert!(
+            s.windows
+                .get(&0)
+                .map(Box::as_ref)
+                .is_some_and(|link| core::ptr::eq(link, wl0.get().unwrap()))
         );
-        assert_eq!((*wl_last).window(), w_last);
-        assert_eq!(session_get_curw(s), wl0);
+        assert!(wl0.get().unwrap().window_handle().unwrap().ptr_eq(&w0));
+        assert!(
+            s.windows
+                .get(&c_int::MAX)
+                .map(Box::as_ref)
+                .is_some_and(|link| core::ptr::eq(link, wl_last.get().unwrap()))
+        );
+        assert!(
+            wl_last
+                .get()
+                .unwrap()
+                .window_handle()
+                .unwrap()
+                .ptr_eq(&w_last)
+        );
+        assert!(core::ptr::eq(s.curw().unwrap(), wl0.get().unwrap()));
     }
 }

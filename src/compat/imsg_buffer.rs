@@ -1,61 +1,32 @@
-use crate::compat::htonll::htonll;
-use crate::compat::ntohll::ntohll;
-use crate::ffi::{__errno_location, abort, close, readv, recvmsg, sendmsg, strlcpy, writev};
+use crate::ffi::{__errno_location, abort, close, readv, writev};
 pub use crate::types::*;
-use ::core::ffi::{c_char, c_int, c_uchar, c_uint, c_void};
-use ::core::ptr::{copy_nonoverlapping, null_mut, write_bytes};
-use ::std::ffi::CString;
+use crate::{ControlMessage, ControlMessageHeader, ControlMessages, MessageHeader, SocketMessage};
+use ::core::ffi::{c_int, c_uint};
+#[cfg(test)]
+use ::core::ptr::null_mut;
+use ::core::ptr::write_bytes;
 use bytes::{Buf as BytesBuf, BufMut as BytesBufMut, BytesMut};
-pub type __caddr_t = *mut c_char;
-pub type caddr_t = __caddr_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct msghdr {
-    pub msg_name: *mut c_void,
-    pub msg_namelen: socklen_t,
-    pub msg_iov: *mut iovec,
-    pub msg_iovlen: size_t,
-    pub msg_control: *mut c_void,
-    pub msg_controllen: size_t,
-    pub msg_flags: c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmsghdr {
-    pub cmsg_len: size_t,
-    pub cmsg_level: c_int,
-    pub cmsg_type: c_int,
-    pub __cmsg_data: [c_uchar; 0],
-}
+use std::io::{IoSlice, IoSliceMut};
 pub type scm_type = c_uint;
 pub const SCM_RIGHTS: scm_type = 1;
 /// A queue of buffers waiting to be written or read, front to back. The
 /// queue owns them: whatever comes off it is the caller's to give up.
 pub struct ibufqueue {
-    pub bufs: ::std::collections::VecDeque<Box<ibuf>>,
+    pub bufs: std::collections::VecDeque<Box<ibuf>>,
 }
+pub type msgbuf_read_cb =
+    Option<std::rc::Rc<dyn Fn(&mut ibuf, Option<uint32_t>, &mut c_int) -> Option<Box<ibuf>>>>;
 #[repr(C)]
 pub struct msgbuf {
     pub bufs: ibufqueue,
     pub rbufs: ibufqueue,
-    pub rbuf: Option<Box<[c_char]>>,
+    pub rbuf: Option<Box<[u8]>>,
     /// The message being read in, held until the last of it has arrived.
     pub rpmsg: Option<Box<ibuf>>,
-    pub readhdr: Option<unsafe fn(*mut ibuf, *mut imsgbuf, *mut c_int) -> Option<Box<ibuf>>>,
-    pub rarg: *mut imsgbuf,
+    pub readhdr: msgbuf_read_cb,
+    pub read_limit: Option<uint32_t>,
     pub roff: size_t,
     pub hdrsize: size_t,
-}
-
-impl msgbuf {
-    /// Where the read buffer starts, or a null pointer when this is not a
-    /// reader and has none.
-    fn rbuf_ptr(&mut self) -> *mut c_char {
-        match &mut self.rbuf {
-            Some(rbuf) => rbuf.as_mut_ptr(),
-            None => null_mut(),
-        }
-    }
 }
 
 impl Drop for msgbuf {
@@ -65,89 +36,21 @@ impl Drop for msgbuf {
         }
     }
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
-pub union cmsgbuf_storage {
-    pub hdr: cmsghdr,
-    pub buf: [c_char; 24],
+#[derive(Default)]
+struct ControlStorage {
+    _alignment: [libc::cmsghdr; 0],
+    buf: [u8; 24],
 }
 
-/// How much room the control message the fd rides in takes.
-const CMSGBUF_SIZE: usize = 24;
-
-/// The expanded `CMSG_FIRSTHDR`: the first control message of `msg`, if the
-/// room set aside for one is big enough to hold a header.
-unsafe fn cmsg_firsthdr(msg: *const msghdr) -> *mut cmsghdr {
-    unsafe {
-        if (*msg).msg_controllen >= ::core::mem::size_of::<cmsghdr>() {
-            (*msg).msg_control as *mut cmsghdr
-        } else {
-            null_mut::<cmsghdr>()
-        }
-    }
-}
-
-/// The expanded `CMSG_ALIGN`: a length rounded up to a word.
-const fn cmsg_align(len: usize) -> usize {
-    let word = ::core::mem::size_of::<size_t>();
-    len.wrapping_add(word).wrapping_sub(1) & !word.wrapping_sub(1)
-}
-
-/// The expanded `CMSG_LEN`: the length a control message carrying `len` bytes
-/// of data declares.
-const fn cmsg_len(len: usize) -> usize {
-    cmsg_align(::core::mem::size_of::<cmsghdr>()).wrapping_add(len)
-}
-
-/// The bytes of a control message, which is where a passed descriptor sits.
-unsafe fn cmsg_data(cmsg: *mut cmsghdr) -> *mut c_int {
-    unsafe { &raw mut (*cmsg).__cmsg_data as *mut c_uchar as *mut c_int }
-}
-
-#[inline]
-unsafe fn __cmsg_nxthdr(mut __mhdr: *mut msghdr, mut __cmsg: *mut cmsghdr) -> *mut cmsghdr {
-    unsafe {
-        let mut __msg_control_ptr: *mut c_uchar = (*__mhdr).msg_control as *mut c_uchar;
-        let mut __cmsg_ptr: *mut c_uchar = __cmsg as *mut c_uchar;
-        let mut __size_needed: size_t = (::core::mem::size_of::<cmsghdr>() as size_t).wrapping_add(
-            (::core::mem::size_of::<size_t>() as size_t).wrapping_sub(
-                (*__cmsg).cmsg_len & (::core::mem::size_of::<size_t>() as size_t).wrapping_sub(1),
-            ) & (::core::mem::size_of::<size_t>() as size_t).wrapping_sub(1),
-        );
-        if (*__cmsg).cmsg_len < ::core::mem::size_of::<cmsghdr>() {
-            return null_mut::<cmsghdr>();
-        }
-        if (__msg_control_ptr
-            .add((*__mhdr).msg_controllen)
-            .offset_from(__cmsg_ptr) as ::core::ffi::c_long as size_t)
-            < __size_needed
-            || (__msg_control_ptr
-                .add((*__mhdr).msg_controllen)
-                .offset_from(__cmsg_ptr) as ::core::ffi::c_long as size_t)
-                .wrapping_sub(__size_needed)
-                < (*__cmsg).cmsg_len
-        {
-            return null_mut::<cmsghdr>();
-        }
-        __cmsg = (__cmsg as *mut c_uchar).add(cmsg_align((*__cmsg).cmsg_len)) as *mut cmsghdr;
-        __cmsg
-    }
-}
 pub const SOL_SOCKET: c_int = 1 as c_int;
 pub const __IOV_MAX: c_int = 1024 as c_int;
 pub const IOV_MAX: c_int = __IOV_MAX;
-pub const EINTR: c_int = 4 as c_int;
-pub const EAGAIN: c_int = 11 as c_int;
-pub const EINVAL: c_int = 22 as c_int;
-pub const ERANGE: c_int = 34 as c_int;
-pub const EBADMSG: c_int = 74 as c_int;
-pub const EOVERFLOW: c_int = 75 as c_int;
+pub use crate::consts::{EAGAIN, EBADMSG, EINTR, EINVAL, ERANGE, SIZE_MAX, UINT32_MAX};
+
 pub const EMSGSIZE: c_int = 90 as c_int;
 pub const ENOBUFS: c_int = 105 as c_int;
-pub const UINT8_MAX: c_int = 255 as c_int;
-pub const UINT16_MAX: c_int = 65535 as c_int;
-pub const UINT32_MAX: c_uint = 4294967295 as c_uint;
-pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
+
 pub const IBUF_READ_SIZE: c_int = 65535 as c_int;
 
 /// Sets the error number and answers the failure the caller hands back.
@@ -160,8 +63,8 @@ unsafe fn ibuf_fail<T>(errno: c_int, answer: T) -> T {
 
 /// Whether the buffer's bytes belong to somebody else, so that it may neither
 /// grow nor be freed nor be queued.
-unsafe fn ibuf_on_stack(buf: *const ibuf) -> bool {
-    unsafe { (*buf).borrowed }
+fn ibuf_on_stack(buf: &ibuf) -> bool {
+    buf.borrowed
 }
 
 /// An empty `ibuf`.
@@ -205,21 +108,20 @@ unsafe impl BytesBufMut for ibuf {
     fn chunk_mut(&mut self) -> &mut bytes::buf::UninitSlice {
         let remaining = self.remaining_mut();
         if remaining == 0 {
-            return unsafe {
-                bytes::buf::UninitSlice::from_raw_parts_mut(self.buf.as_mut_ptr(), 0)
-            };
+            return bytes::buf::UninitSlice::new(&mut []);
         }
         let needed = self.wpos + remaining.min(IBUF_BUF_MUT_CHUNK);
         if needed > self.buf.capacity() {
             self.buf.reserve(needed - self.buf.len());
         }
-        let available = remaining.min(self.buf.capacity() - self.wpos);
-        unsafe {
-            bytes::buf::UninitSlice::from_raw_parts_mut(
-                self.buf.as_mut_ptr().add(self.wpos),
-                available,
-            )
+        let initialized = self.buf.len();
+        if self.wpos < initialized {
+            let end = initialized.min(self.wpos + remaining);
+            return bytes::buf::UninitSlice::new(&mut self.buf[self.wpos..end]);
         }
+        let spare = &mut self.buf.spare_capacity_mut()[self.wpos - initialized..];
+        let available = remaining.min(spare.len());
+        bytes::buf::UninitSlice::uninit(&mut spare[..available])
     }
 }
 
@@ -251,52 +153,42 @@ pub fn ibuf_dynamic(len: size_t, max: size_t) -> Option<Box<ibuf>> {
     }
 }
 
-pub unsafe fn ibuf_reserve(buf: *mut ibuf, len: size_t) -> *mut c_uchar {
-    unsafe {
-        if len > (SIZE_MAX as size_t).wrapping_sub((*buf).wpos) {
-            return ibuf_fail(ERANGE, null_mut::<c_uchar>());
-        }
-        if ibuf_on_stack(buf) {
-            return ibuf_fail(EINVAL, null_mut::<c_uchar>());
-        }
-        let want = (*buf).wpos.wrapping_add(len);
-        if want > (*buf).size {
-            if want > (*buf).max {
-                return ibuf_fail(ERANGE, null_mut::<c_uchar>());
-            }
-            let len = want.wrapping_sub((*buf).size);
-            (*buf).buf.reserve(len);
-            write_bytes((*buf).buf.spare_capacity_mut().as_mut_ptr(), 0, len);
-            BytesBufMut::advance_mut(&mut (*buf).buf, len);
-            (*buf).size = want;
-        }
-        let b = (*buf).buf.as_mut_ptr().add((*buf).wpos);
-        (*buf).wpos = want;
-        b
+pub fn ibuf_reserve(buf: &mut ibuf, len: size_t) -> Option<&mut [u8]> {
+    if len > (SIZE_MAX as size_t).wrapping_sub(buf.wpos) {
+        return unsafe { ibuf_fail(ERANGE, None) };
     }
-}
-
-pub unsafe fn ibuf_add(buf: *mut ibuf, data: *const c_uchar, len: size_t) -> c_int {
-    unsafe {
-        if len == 0 as size_t {
-            return 0 as c_int;
-        }
-        let b = ibuf_reserve(buf, len);
-        if b.is_null() {
-            return -(1 as c_int);
-        }
-        copy_nonoverlapping(data, b, len);
-        0 as c_int
+    if buf.borrowed {
+        return unsafe { ibuf_fail(EINVAL, None) };
     }
+    let want = buf.wpos.wrapping_add(len);
+    if want > buf.size {
+        if want > buf.max {
+            return unsafe { ibuf_fail(ERANGE, None) };
+        }
+        let len = want.wrapping_sub(buf.size);
+        buf.buf.reserve(len);
+        unsafe { write_bytes(buf.buf.spare_capacity_mut().as_mut_ptr(), 0, len) };
+        unsafe { BytesBufMut::advance_mut(&mut buf.buf, len) };
+        buf.size = want;
+    }
+    let start = buf.wpos;
+    buf.wpos = want;
+    Some(&mut buf.buf[start..want])
 }
 
-pub unsafe fn ibuf_add_ibuf(buf: *mut ibuf, from: *const ibuf) -> c_int {
-    unsafe { ibuf_add(buf, ibuf_data(from), ibuf_size(from)) }
+pub unsafe fn ibuf_add(buf: &mut ibuf, data: &[u8]) -> c_int {
+    if data.is_empty() {
+        return 0 as c_int;
+    }
+    let Some(b) = ibuf_reserve(buf, data.len()) else {
+        return -(1 as c_int);
+    };
+    b.copy_from_slice(data);
+    0 as c_int
 }
 
-/// Puts the bytes of a number at the end of the buffer.
-unsafe fn ibuf_add_bytes(buf: *mut ibuf, bytes: &[u8]) -> c_int {
-    unsafe { ibuf_add(buf, bytes.as_ptr(), bytes.len()) }
+pub unsafe fn ibuf_add_ibuf(buf: &mut ibuf, from: &ibuf) -> c_int {
+    unsafe { ibuf_add(buf, ibuf_data(from)) }
 }
 
 /// Whether a number fits the width the buffer keeps for it. Upstream refuses
@@ -311,368 +203,99 @@ fn ibuf_too_wide(value: uint64_t, max: uint64_t) -> bool {
     }
 }
 
-pub unsafe fn ibuf_add_n8(buf: *mut ibuf, value: uint64_t) -> c_int {
-    unsafe {
-        if ibuf_too_wide(value, UINT8_MAX as uint64_t) {
-            return -(1 as c_int);
-        }
-        ibuf_add_bytes(buf, &(value as uint8_t).to_ne_bytes())
+pub unsafe fn ibuf_seek(buf: &mut ibuf, pos: size_t, len: size_t) -> Option<&mut [u8]> {
+    let size = buf.wpos.wrapping_sub(buf.rpos);
+    if size < pos || (SIZE_MAX as size_t).wrapping_sub(pos) < len || size < pos.wrapping_add(len) {
+        return unsafe { ibuf_fail(ERANGE, None) };
     }
+    let start = buf.rpos.wrapping_add(pos);
+    let end = start.wrapping_add(len);
+    Some(&mut buf.buf[start..end])
 }
 
-pub unsafe fn ibuf_add_n16(buf: *mut ibuf, value: uint64_t) -> c_int {
+pub fn ibuf_set(buf: &mut ibuf, pos: size_t, data: &[u8]) -> c_int {
     unsafe {
-        if ibuf_too_wide(value, UINT16_MAX as uint64_t) {
+        let Some(b) = ibuf_seek(buf, pos, data.len()) else {
             return -(1 as c_int);
-        }
-        ibuf_add_bytes(buf, &(value as uint16_t).swap_bytes().to_ne_bytes())
-    }
-}
-
-pub unsafe fn ibuf_add_n32(buf: *mut ibuf, value: uint64_t) -> c_int {
-    unsafe {
-        if ibuf_too_wide(value, UINT32_MAX as uint64_t) {
-            return -(1 as c_int);
-        }
-        ibuf_add_bytes(buf, &(value as uint32_t).swap_bytes().to_ne_bytes())
-    }
-}
-
-pub unsafe fn ibuf_add_n64(buf: *mut ibuf, value: uint64_t) -> c_int {
-    unsafe { ibuf_add_bytes(buf, &htonll(value).to_ne_bytes()) }
-}
-
-pub unsafe fn ibuf_add_h16(buf: *mut ibuf, value: uint64_t) -> c_int {
-    unsafe {
-        if ibuf_too_wide(value, UINT16_MAX as uint64_t) {
-            return -(1 as c_int);
-        }
-        ibuf_add_bytes(buf, &(value as uint16_t).to_ne_bytes())
-    }
-}
-
-pub unsafe fn ibuf_add_h32(buf: *mut ibuf, value: uint64_t) -> c_int {
-    unsafe {
-        if ibuf_too_wide(value, UINT32_MAX as uint64_t) {
-            return -(1 as c_int);
-        }
-        ibuf_add_bytes(buf, &(value as uint32_t).to_ne_bytes())
-    }
-}
-
-pub unsafe fn ibuf_add_h64(buf: *mut ibuf, value: uint64_t) -> c_int {
-    unsafe { ibuf_add_bytes(buf, &value.to_ne_bytes()) }
-}
-
-pub unsafe fn ibuf_add_zero(buf: *mut ibuf, len: size_t) -> c_int {
-    unsafe {
-        if len == 0 as size_t {
-            return 0 as c_int;
-        }
-        let b = ibuf_reserve(buf, len);
-        if b.is_null() {
-            return -(1 as c_int);
-        }
-        write_bytes(b, 0, len);
-        0 as c_int
-    }
-}
-
-pub unsafe fn ibuf_add_strbuf(buf: *mut ibuf, str: *const c_char, len: size_t) -> c_int {
-    unsafe {
-        let b = ibuf_reserve(buf, len) as *mut c_char;
-        if b.is_null() {
-            return -(1 as c_int);
-        }
-        let n = strlcpy(b, str, len) as size_t;
-        if n >= len {
-            return ibuf_fail(EOVERFLOW, -(1 as c_int));
-        }
-        write_bytes(b.add(n) as *mut u8, 0, len.wrapping_sub(n));
-        0 as c_int
-    }
-}
-
-pub unsafe fn ibuf_seek(buf: *mut ibuf, pos: size_t, len: size_t) -> *mut c_uchar {
-    unsafe {
-        if ibuf_size(buf) < pos
-            || (SIZE_MAX as size_t).wrapping_sub(pos) < len
-            || ibuf_size(buf) < pos.wrapping_add(len)
-        {
-            return ibuf_fail(ERANGE, null_mut::<c_uchar>());
-        }
-        (*buf).buf.as_ptr().add((*buf).rpos).add(pos) as *mut c_uchar
-    }
-}
-
-pub unsafe fn ibuf_set(buf: *mut ibuf, pos: size_t, data: *const c_uchar, len: size_t) -> c_int {
-    unsafe {
-        let b = ibuf_seek(buf, pos, len);
-        if b.is_null() {
-            return -(1 as c_int);
-        }
-        if len == 0 as size_t {
-            return 0 as c_int;
-        }
-        copy_nonoverlapping(data, b, len);
+        };
+        b.copy_from_slice(data);
         0 as c_int
     }
 }
 
 /// Writes the bytes of a number over a place already inside the buffer.
-unsafe fn ibuf_set_bytes(buf: *mut ibuf, pos: size_t, bytes: &[u8]) -> c_int {
-    unsafe { ibuf_set(buf, pos, bytes.as_ptr(), bytes.len()) }
+unsafe fn ibuf_set_bytes(buf: &mut ibuf, pos: size_t, bytes: &[u8]) -> c_int {
+    ibuf_set(buf, pos, bytes)
 }
 
-pub unsafe fn ibuf_set_n8(buf: *mut ibuf, pos: size_t, value: uint64_t) -> c_int {
-    unsafe {
-        if ibuf_too_wide(value, UINT8_MAX as uint64_t) {
-            return -(1 as c_int);
-        }
-        ibuf_set_bytes(buf, pos, &(value as uint8_t).to_ne_bytes())
+pub unsafe fn ibuf_set_h32(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
+    if ibuf_too_wide(value, UINT32_MAX as uint64_t) {
+        return -(1 as c_int);
     }
+    unsafe { ibuf_set_bytes(buf, pos, &(value as uint32_t).to_ne_bytes()) }
 }
 
-pub unsafe fn ibuf_set_n16(buf: *mut ibuf, pos: size_t, value: uint64_t) -> c_int {
-    unsafe {
-        if ibuf_too_wide(value, UINT16_MAX as uint64_t) {
-            return -(1 as c_int);
-        }
-        ibuf_set_bytes(buf, pos, &(value as uint16_t).swap_bytes().to_ne_bytes())
-    }
+pub fn ibuf_data(buf: &ibuf) -> &[u8] {
+    &buf.buf[buf.rpos..buf.wpos]
 }
 
-pub unsafe fn ibuf_set_n32(buf: *mut ibuf, pos: size_t, value: uint64_t) -> c_int {
-    unsafe {
-        if ibuf_too_wide(value, UINT32_MAX as uint64_t) {
-            return -(1 as c_int);
-        }
-        ibuf_set_bytes(buf, pos, &(value as uint32_t).swap_bytes().to_ne_bytes())
-    }
+pub unsafe fn ibuf_size(buf: &ibuf) -> size_t {
+    buf.wpos.wrapping_sub(buf.rpos)
 }
 
-pub unsafe fn ibuf_set_n64(buf: *mut ibuf, pos: size_t, value: uint64_t) -> c_int {
-    unsafe { ibuf_set_bytes(buf, pos, &htonll(value).to_ne_bytes()) }
-}
-
-pub unsafe fn ibuf_set_h16(buf: *mut ibuf, pos: size_t, value: uint64_t) -> c_int {
-    unsafe {
-        if ibuf_too_wide(value, UINT16_MAX as uint64_t) {
-            return -(1 as c_int);
-        }
-        ibuf_set_bytes(buf, pos, &(value as uint16_t).to_ne_bytes())
-    }
-}
-
-pub unsafe fn ibuf_set_h32(buf: *mut ibuf, pos: size_t, value: uint64_t) -> c_int {
-    unsafe {
-        if ibuf_too_wide(value, UINT32_MAX as uint64_t) {
-            return -(1 as c_int);
-        }
-        ibuf_set_bytes(buf, pos, &(value as uint32_t).to_ne_bytes())
-    }
-}
-
-pub unsafe fn ibuf_set_h64(buf: *mut ibuf, pos: size_t, value: uint64_t) -> c_int {
-    unsafe { ibuf_set_bytes(buf, pos, &value.to_ne_bytes()) }
-}
-
-pub unsafe fn ibuf_set_maxsize(buf: *mut ibuf, max: size_t) -> c_int {
-    unsafe {
-        if ibuf_on_stack(buf) {
-            return ibuf_fail(EINVAL, -(1 as c_int));
-        }
-        if max > (*buf).max {
-            return ibuf_fail(ERANGE, -(1 as c_int));
-        }
-        (*buf).max = max;
-        0 as c_int
-    }
-}
-
-pub unsafe fn ibuf_data(buf: *const ibuf) -> *mut c_uchar {
-    unsafe { (*buf).buf.as_ptr().add((*buf).rpos) as *mut c_uchar }
-}
-
-pub unsafe fn ibuf_size(buf: *const ibuf) -> size_t {
-    unsafe { (*buf).wpos.wrapping_sub((*buf).rpos) }
-}
-
-pub unsafe fn ibuf_left(buf: *const ibuf) -> size_t {
-    unsafe {
+pub unsafe fn ibuf_left(buf: &ibuf) -> size_t {
+    {
         if ibuf_on_stack(buf) {
             return 0 as size_t;
         }
-        (*buf).max.wrapping_sub((*buf).wpos)
+        buf.max.wrapping_sub(buf.wpos)
     }
 }
 
-pub unsafe fn ibuf_truncate(buf: *mut ibuf, len: size_t) -> c_int {
+pub unsafe fn ibuf_close(msgbuf: &mut msgbuf, buf: Box<ibuf>) {
     unsafe {
-        if ibuf_size(buf) >= len {
-            (*buf).wpos = (*buf).rpos.wrapping_add(len);
-            return 0 as c_int;
-        }
-        if ibuf_on_stack(buf) {
-            return ibuf_fail(ERANGE, -(1 as c_int));
-        }
-        ibuf_add_zero(buf, len.wrapping_sub(ibuf_size(buf)))
-    }
-}
-
-pub unsafe fn ibuf_rewind(buf: *mut ibuf) {
-    unsafe {
-        (*buf).rpos = 0 as size_t;
-    }
-}
-
-pub unsafe fn ibuf_close(msgbuf: *mut msgbuf, buf: Box<ibuf>) {
-    unsafe {
-        ibufq_push(&raw mut (*msgbuf).bufs, buf);
+        ibufq_push(&mut msgbuf.bufs, buf);
     }
 }
 
 /// Replaces `buf` with an owned copy of a temporary byte range.
-pub unsafe fn ibuf_from_buffer(buf: *mut ibuf, data: *mut c_uchar, len: size_t) {
-    unsafe {
-        let bytes = if len == 0 {
-            BytesMut::new()
-        } else {
-            BytesMut::from(::core::slice::from_raw_parts(data, len))
-        };
-        *buf = ibuf {
-            buf: bytes,
-            size: len,
-            wpos: len,
-            borrowed: true,
-            ..ibuf::default()
-        };
-    }
+pub unsafe fn ibuf_from_buffer(buf: &mut ibuf, data: &[u8]) {
+    let bytes = if data.is_empty() {
+        BytesMut::new()
+    } else {
+        BytesMut::from(data)
+    };
+    *buf = ibuf {
+        buf: bytes,
+        size: data.len(),
+        wpos: data.len(),
+        borrowed: true,
+        ..ibuf::default()
+    };
 }
 
-pub unsafe fn ibuf_from_ibuf(buf: *mut ibuf, from: *const ibuf) {
+pub unsafe fn ibuf_get(buf: &mut ibuf, data: &mut [u8]) -> c_int {
     unsafe {
-        ibuf_from_buffer(buf, ibuf_data(from), ibuf_size(from));
-    }
-}
-
-pub unsafe fn ibuf_get(buf: *mut ibuf, data: *mut c_uchar, len: size_t) -> c_int {
-    unsafe {
-        if ibuf_size(buf) < len {
+        if ibuf_size(buf) < data.len() {
             return ibuf_fail(EBADMSG, -(1 as c_int));
         }
-        copy_nonoverlapping(ibuf_data(buf), data, len);
-        (*buf).rpos = (*buf).rpos.wrapping_add(len);
+        data.copy_from_slice(&ibuf_data(buf)[..data.len()]);
+        buf.rpos = buf.rpos.wrapping_add(data.len());
         0 as c_int
     }
 }
 
-pub unsafe fn ibuf_get_ibuf(buf: *mut ibuf, len: size_t, new: *mut ibuf) -> c_int {
+pub unsafe fn ibuf_get_ibuf(buf: &mut ibuf, len: size_t) -> Option<ibuf> {
     unsafe {
         if ibuf_size(buf) < len {
-            return ibuf_fail(EBADMSG, -(1 as c_int));
-        }
-        ibuf_from_buffer(new, ibuf_data(buf), len);
-        (*buf).rpos = (*buf).rpos.wrapping_add(len);
-        0 as c_int
-    }
-}
-
-/// Takes a number out of the buffer as it lies there, without changing its
-/// byte order.
-unsafe fn ibuf_get_number<T>(buf: *mut ibuf, value: *mut T) -> c_int {
-    unsafe {
-        ibuf_get(
-            buf,
-            value as *mut c_uchar,
-            ::core::mem::size_of::<T>() as size_t,
-        )
-    }
-}
-
-pub unsafe fn ibuf_get_h16(buf: *mut ibuf, value: *mut uint16_t) -> c_int {
-    unsafe { ibuf_get_number(buf, value) }
-}
-
-pub unsafe fn ibuf_get_h32(buf: *mut ibuf, value: *mut uint32_t) -> c_int {
-    unsafe { ibuf_get_number(buf, value) }
-}
-
-pub unsafe fn ibuf_get_h64(buf: *mut ibuf, value: *mut uint64_t) -> c_int {
-    unsafe { ibuf_get_number(buf, value) }
-}
-
-pub unsafe fn ibuf_get_n8(buf: *mut ibuf, value: *mut uint8_t) -> c_int {
-    unsafe { ibuf_get_number(buf, value) }
-}
-
-pub unsafe fn ibuf_get_n16(buf: *mut ibuf, value: *mut uint16_t) -> c_int {
-    unsafe {
-        let rv = ibuf_get_number(buf, value);
-        // Upstream turns the bytes round whether or not there were any to read,
-        // so a failed read still writes over what the caller had.
-        *value = (*value).swap_bytes();
-        rv
-    }
-}
-
-pub unsafe fn ibuf_get_n32(buf: *mut ibuf, value: *mut uint32_t) -> c_int {
-    unsafe {
-        let rv = ibuf_get_number(buf, value);
-        *value = (*value).swap_bytes();
-        rv
-    }
-}
-
-pub unsafe fn ibuf_get_n64(buf: *mut ibuf, value: *mut uint64_t) -> c_int {
-    unsafe {
-        let rv = ibuf_get_number(buf, value);
-        *value = ntohll(*value);
-        rv
-    }
-}
-
-pub unsafe fn ibuf_get_string(buf: *mut ibuf, len: size_t) -> Option<CString> {
-    unsafe {
-        if ibuf_size(buf) < len {
-            ibuf_fail(EBADMSG, null_mut::<c_char>());
+            ibuf_fail(EBADMSG, -(1 as c_int));
             return None;
         }
-        let bytes = ::core::slice::from_raw_parts(ibuf_data(buf) as *const u8, len);
-        let end = bytes
-            .iter()
-            .position(|byte| *byte == 0)
-            .unwrap_or(bytes.len());
-        let string = CString::new(&bytes[..end]).expect("ibuf string has no NUL");
-        (*buf).rpos = (*buf).rpos.wrapping_add(len);
-        Some(string)
-    }
-}
-
-pub unsafe fn ibuf_get_strbuf(buf: *mut ibuf, str: *mut c_char, len: size_t) -> c_int {
-    unsafe {
-        if len == 0 as size_t {
-            return ibuf_fail(EINVAL, -(1 as c_int));
-        }
-        if ibuf_get(buf, str as *mut c_uchar, len) == -(1 as c_int) {
-            return -(1 as c_int);
-        }
-        let last = str.add(len.wrapping_sub(1));
-        if *last as c_int != '\0' as i32 {
-            *last = '\0' as i32 as c_char;
-            return ibuf_fail(EOVERFLOW, -(1 as c_int));
-        }
-        0 as c_int
-    }
-}
-
-pub unsafe fn ibuf_skip(buf: *mut ibuf, len: size_t) -> c_int {
-    unsafe {
-        if ibuf_size(buf) < len {
-            return ibuf_fail(EBADMSG, -(1 as c_int));
-        }
-        (*buf).rpos = (*buf).rpos.wrapping_add(len);
-        0 as c_int
+        let data = &ibuf_data(buf)[..len];
+        let mut new = ibuf::default();
+        ibuf_from_buffer(&mut new, data);
+        buf.rpos = buf.rpos.wrapping_add(len);
+        Some(new)
     }
 }
 
@@ -680,7 +303,7 @@ pub unsafe fn ibuf_skip(buf: *mut ibuf, len: size_t) -> c_int {
 pub unsafe fn ibuf_free(mut buf: Box<ibuf>) {
     unsafe {
         let save_errno = *__errno_location();
-        if ibuf_on_stack(&raw const *buf) {
+        if ibuf_on_stack(&buf) {
             abort();
         }
         if buf.fd >= 0 as c_int {
@@ -692,32 +315,30 @@ pub unsafe fn ibuf_free(mut buf: Box<ibuf>) {
     }
 }
 
-pub unsafe fn ibuf_fd_avail(buf: *mut ibuf) -> c_int {
-    unsafe { ((*buf).fd >= 0 as c_int) as c_int }
+pub fn ibuf_fd_avail(buf: &ibuf) -> c_int {
+    (buf.fd >= 0 as c_int) as c_int
 }
 
-pub unsafe fn ibuf_fd_get(buf: *mut ibuf) -> c_int {
-    unsafe {
-        if (*buf).fd < 0 as c_int {
-            return -(1 as c_int);
-        }
-        let fd = (*buf).fd;
-        (*buf).fd = -(1 as c_int);
-        fd
+pub fn ibuf_fd_get(buf: &mut ibuf) -> c_int {
+    if buf.fd < 0 as c_int {
+        return -(1 as c_int);
     }
+    let fd = buf.fd;
+    buf.fd = -(1 as c_int);
+    fd
 }
 
-pub unsafe fn ibuf_fd_set(buf: *mut ibuf, fd: c_int) {
+pub unsafe fn ibuf_fd_set(buf: &mut ibuf, fd: c_int) {
     unsafe {
-        if ibuf_on_stack(buf) {
+        if ibuf_on_stack(&*buf) {
             abort();
         }
-        if (*buf).fd >= 0 as c_int {
-            close((*buf).fd);
+        if buf.fd >= 0 as c_int {
+            close(buf.fd);
         }
-        (*buf).fd = -(1 as c_int);
+        buf.fd = -(1 as c_int);
         if fd >= 0 as c_int {
-            (*buf).fd = fd;
+            buf.fd = fd;
         }
     }
 }
@@ -725,15 +346,15 @@ pub unsafe fn ibuf_fd_set(buf: *mut ibuf, fd: c_int) {
 pub fn msgbuf_new() -> Box<msgbuf> {
     Box::new(msgbuf {
         bufs: ibufqueue {
-            bufs: ::std::collections::VecDeque::new(),
+            bufs: std::collections::VecDeque::new(),
         },
         rbufs: ibufqueue {
-            bufs: ::std::collections::VecDeque::new(),
+            bufs: std::collections::VecDeque::new(),
         },
         rbuf: None,
         rpmsg: None,
         readhdr: None,
-        rarg: null_mut(),
+        read_limit: None,
         roff: 0,
         hdrsize: 0,
     })
@@ -741,8 +362,8 @@ pub fn msgbuf_new() -> Box<msgbuf> {
 
 pub unsafe fn msgbuf_new_reader(
     hdrsz: size_t,
-    readhdr: Option<unsafe fn(*mut ibuf, *mut imsgbuf, *mut c_int) -> Option<Box<ibuf>>>,
-    arg: *mut imsgbuf,
+    readhdr: msgbuf_read_cb,
+    read_limit: Option<uint32_t>,
 ) -> Option<Box<msgbuf>> {
     unsafe {
         if hdrsz == 0 as size_t || hdrsz > (IBUF_READ_SIZE / 2 as c_int) as size_t {
@@ -752,78 +373,45 @@ pub unsafe fn msgbuf_new_reader(
         msgbuf.rbuf = Some(vec![0; IBUF_READ_SIZE as usize].into_boxed_slice());
         msgbuf.hdrsize = hdrsz;
         msgbuf.readhdr = readhdr;
-        msgbuf.rarg = arg;
+        msgbuf.read_limit = read_limit;
         Some(msgbuf)
     }
 }
 
-pub unsafe fn msgbuf_queuelen(msgbuf: *mut msgbuf) -> uint32_t {
-    unsafe { ibufq_queuelen(&raw mut (*msgbuf).bufs) }
+pub unsafe fn msgbuf_queuelen(msgbuf: &msgbuf) -> uint32_t {
+    unsafe { ibufq_queuelen(&msgbuf.bufs) }
 }
 
-pub unsafe fn msgbuf_clear(msgbuf: *mut msgbuf) {
+pub unsafe fn msgbuf_clear(msgbuf: &mut msgbuf) {
     unsafe {
-        ibufq_flush(&raw mut (*msgbuf).bufs);
-        ibufq_flush(&raw mut (*msgbuf).rbufs);
-        (*msgbuf).roff = 0 as size_t;
-        if let Some(rpmsg) = (*msgbuf).rpmsg.take() {
+        ibufq_flush(&mut msgbuf.bufs);
+        ibufq_flush(&mut msgbuf.rbufs);
+        msgbuf.roff = 0 as size_t;
+        if let Some(rpmsg) = msgbuf.rpmsg.take() {
             ibuf_free(rpmsg);
         }
     }
 }
 
-pub unsafe fn msgbuf_get(msgbuf: *mut msgbuf) -> Option<Box<ibuf>> {
-    unsafe { ibufq_pop(&raw mut (*msgbuf).rbufs) }
+pub unsafe fn msgbuf_get(msgbuf: &mut msgbuf) -> Option<Box<ibuf>> {
+    unsafe { ibufq_pop(&mut msgbuf.rbufs) }
 }
 
-pub unsafe fn msgbuf_concat(msgbuf: *mut msgbuf, from: *mut ibufqueue) {
-    unsafe {
-        ibufq_concat(&raw mut (*msgbuf).bufs, from);
-    }
-}
-
-/// Every buffer waiting in the queue, front to back.
-fn ibufq_iter(bufq: *const ibufqueue) -> impl Iterator<Item = *mut ibuf> {
-    let bufs: Vec<*mut ibuf> = unsafe {
-        (*bufq)
-            .bufs
-            .iter()
-            .map(|buf| &raw const **buf as *mut ibuf)
-            .collect()
-    };
-    bufs.into_iter()
-}
-
-/// What a write of the queue may hand the kernel in one call, and how much of
-/// the queue it covers. Upstream stops at the iovec limit either way; a
-/// message write also stops at the second buffer carrying a descriptor,
-/// because only one rides along.
-unsafe fn ibufq_iovecs(
-    bufq: *const ibufqueue,
-    iov: &mut [iovec; IOV_MAX as usize],
-    one_fd_only: bool,
-) -> (usize, *mut ibuf) {
-    unsafe {
-        let mut i = 0;
-        let mut with_fd = null_mut::<ibuf>();
-        for buf in ibufq_iter(bufq) {
-            if i >= IOV_MAX as usize {
-                break;
-            }
-            if one_fd_only && i > 0 && (*buf).fd != -(1 as c_int) {
-                break;
-            }
-            iov[i] = iovec {
-                iov_base: ibuf_data(buf) as *mut c_void,
-                iov_len: ibuf_size(buf),
-            };
-            i += 1;
-            if one_fd_only && (*buf).fd != -(1 as c_int) {
-                with_fd = buf;
-            }
+/// The borrowed ranges a write can hand the kernel, and the optional descriptor.
+/// A message write stops before any descriptor after the first buffer.
+fn ibufq_iovecs(bufq: &ibufqueue, one_fd_only: bool) -> (Vec<IoSlice<'_>>, Option<c_int>) {
+    let mut iov = Vec::with_capacity(bufq.bufs.len().min(IOV_MAX as usize));
+    let mut with_fd = None;
+    for buf in bufq.bufs.iter().take(IOV_MAX as usize) {
+        if one_fd_only && !iov.is_empty() && buf.fd != -1 {
+            break;
         }
-        (i, with_fd)
+        iov.push(IoSlice::new(ibuf_data(buf)));
+        if one_fd_only && buf.fd != -1 {
+            with_fd = Some(buf.fd);
+        }
     }
+    (iov, with_fd)
 }
 
 /// What a failed write should answer: `None` to try again, or the value to
@@ -851,18 +439,14 @@ fn ibuf_retry_read() -> Option<c_int> {
     }
 }
 
-pub unsafe fn ibuf_write(fd: c_int, msgbuf: *mut msgbuf) -> c_int {
+pub unsafe fn ibuf_write(fd: c_int, msgbuf: &mut msgbuf) -> c_int {
     unsafe {
-        let mut iov: [iovec; IOV_MAX as usize] = [iovec {
-            iov_base: null_mut::<c_void>(),
-            iov_len: 0,
-        }; IOV_MAX as usize];
-        let (i, _) = ibufq_iovecs(&raw const (*msgbuf).bufs, &mut iov, false);
-        if i == 0 {
+        let (iov, _) = ibufq_iovecs(&msgbuf.bufs, false);
+        if iov.is_empty() {
             return 0 as c_int;
         }
         let n = loop {
-            let n = writev(fd, iov.as_mut_ptr(), i as c_int);
+            let n = writev(fd, iov.as_ptr().cast(), iov.len() as c_int);
             if n != -(1 as c_int) as ssize_t {
                 break n;
             }
@@ -870,36 +454,37 @@ pub unsafe fn ibuf_write(fd: c_int, msgbuf: *mut msgbuf) -> c_int {
                 return answer;
             }
         };
+        drop(iov);
         msgbuf_drain(msgbuf, n as size_t);
         0 as c_int
     }
 }
 
-pub unsafe fn msgbuf_write(fd: c_int, msgbuf: *mut msgbuf) -> c_int {
+pub unsafe fn msgbuf_write(fd: c_int, msgbuf: &mut msgbuf) -> c_int {
     unsafe {
-        let mut iov: [iovec; IOV_MAX as usize] = [iovec {
-            iov_base: null_mut::<c_void>(),
-            iov_len: 0,
-        }; IOV_MAX as usize];
-        let mut cmsgbuf: cmsgbuf_storage = ::core::mem::zeroed();
-        let (i, buf0) = ibufq_iovecs(&raw const (*msgbuf).bufs, &mut iov, true);
-        if i == 0 {
+        let mut cmsgbuf = ControlStorage::default();
+        let (iov, with_fd) = ibufq_iovecs(&msgbuf.bufs, true);
+        if iov.is_empty() {
             return 0 as c_int;
         }
-        let mut msg: msghdr = ::core::mem::zeroed();
-        msg.msg_iov = iov.as_mut_ptr();
-        msg.msg_iovlen = i as size_t;
-        if !buf0.is_null() {
-            msg.msg_control = &raw mut cmsgbuf.buf as caddr_t as *mut c_void;
-            msg.msg_controllen = CMSGBUF_SIZE as size_t;
-            let cmsg = cmsg_firsthdr(&raw const msg);
-            (*cmsg).cmsg_len = cmsg_len(::core::mem::size_of::<c_int>()) as size_t;
-            (*cmsg).cmsg_level = SOL_SOCKET;
-            (*cmsg).cmsg_type = SCM_RIGHTS as c_int;
-            *cmsg_data(cmsg) = (*buf0).fd;
+        if let Some(fd) = with_fd {
+            let mut cmsg = ControlMessage::from_control_message_header(
+                &mut cmsgbuf.buf,
+                crate::CONTROL_MESSAGE_HEADER_SIZE + size_of::<c_int>(),
+                SOL_SOCKET,
+                SCM_RIGHTS as c_int,
+            )
+            .expect("storage for one descriptor");
+            cmsg.control_message_data_mut()
+                .copy_from_slice(&fd.to_ne_bytes());
         }
+        let control = if with_fd.is_some() {
+            &cmsgbuf.buf[..]
+        } else {
+            &[]
+        };
         let n = loop {
-            let n = sendmsg(fd, &raw const msg, 0 as c_int);
+            let n = crate::message_header::send_socket_message(fd, &iov, control, 0);
             if n != -(1 as c_int) as ssize_t {
                 break n;
             }
@@ -907,68 +492,78 @@ pub unsafe fn msgbuf_write(fd: c_int, msgbuf: *mut msgbuf) -> c_int {
                 return answer;
             }
         };
-        if !buf0.is_null() {
-            close((*buf0).fd);
-            (*buf0).fd = -(1 as c_int);
+        drop(iov);
+        if let Some(fd) = with_fd {
+            close(fd);
+            msgbuf
+                .bufs
+                .bufs
+                .front_mut()
+                .expect("the transmitted buffer")
+                .fd = -1;
         }
         msgbuf_drain(msgbuf, n as size_t);
         0 as c_int
     }
 }
 
-unsafe fn ibuf_read_process(msgbuf: *mut msgbuf, fd: c_int) -> c_int {
+unsafe fn ibuf_read_process(msgbuf: &mut msgbuf, fd: c_int) -> c_int {
     unsafe {
         let mut fd = fd;
         let mut rbuf: ibuf = ibuf_empty();
         let mut msg: ibuf = ibuf_empty();
-        ibuf_from_buffer(
-            &raw mut rbuf,
-            (*msgbuf).rbuf_ptr() as *mut c_uchar,
-            (*msgbuf).roff,
-        );
+        let rdata = if msgbuf.roff == 0 {
+            &[]
+        } else {
+            &msgbuf.rbuf.as_deref().expect("a reader has a buffer")[..msgbuf.roff]
+        };
+        ibuf_from_buffer(&mut rbuf, rdata);
         let taken = loop {
-            if (*msgbuf).rpmsg.is_none() {
-                if ibuf_size(&raw mut rbuf) < (*msgbuf).hdrsize {
+            if msgbuf.rpmsg.is_none() {
+                if ibuf_size(&rbuf) < msgbuf.hdrsize {
                     break true;
                 }
-                ibuf_from_buffer(&raw mut msg, ibuf_data(&raw mut rbuf), (*msgbuf).hdrsize);
-                (*msgbuf).rpmsg = (*msgbuf).readhdr.expect("non-null function pointer")(
-                    &raw mut msg,
-                    (*msgbuf).rarg,
-                    &raw mut fd,
-                );
-                if (*msgbuf).rpmsg.is_none() {
+                let hdata = if msgbuf.hdrsize == 0 {
+                    &[]
+                } else {
+                    &ibuf_data(&rbuf)[..msgbuf.hdrsize]
+                };
+                ibuf_from_buffer(&mut msg, hdata);
+                let readhdr = msgbuf
+                    .readhdr
+                    .clone()
+                    .expect("a message reader has a header callback");
+                msgbuf.rpmsg = readhdr(&mut msg, msgbuf.read_limit, &mut fd);
+                if msgbuf.rpmsg.is_none() {
                     break false;
                 }
             }
-            let rpmsg = (*msgbuf)
+            let rpmsg = msgbuf
                 .rpmsg
                 .as_deref_mut()
-                .map(|rpmsg| &raw mut *rpmsg)
                 .expect("a message being read into");
-            let sz = ibuf_left(rpmsg).min(ibuf_size(&raw mut rbuf));
-            if ibuf_get_ibuf(&raw mut rbuf, sz, &raw mut msg) == -(1 as c_int)
-                || ibuf_add_ibuf(rpmsg, &raw mut msg) == -(1 as c_int)
-            {
+            let sz = ibuf_left(rpmsg).min(ibuf_size(&rbuf));
+            let Some(new) = ibuf_get_ibuf(&mut rbuf, sz) else {
+                break false;
+            };
+            msg = new;
+            if ibuf_add_ibuf(rpmsg, &msg) == -(1 as c_int) {
                 break false;
             }
             if ibuf_left(rpmsg) == 0 as size_t {
-                let rpmsg = (*msgbuf).rpmsg.take().expect("the message just filled");
-                ibufq_push(&raw mut (*msgbuf).rbufs, rpmsg);
+                let rpmsg = msgbuf.rpmsg.take().expect("the message just filled");
+                ibufq_push(&mut msgbuf.rbufs, rpmsg);
             }
-            if ibuf_size(&raw mut rbuf) == 0 as size_t {
+            if ibuf_size(&rbuf) == 0 as size_t {
                 break true;
             }
         };
         if taken {
-            if ibuf_size(&raw mut rbuf) > 0 as size_t {
-                ::core::ptr::copy(
-                    ibuf_data(&raw mut rbuf) as *const u8,
-                    (*msgbuf).rbuf_ptr() as *mut u8,
-                    ibuf_size(&raw mut rbuf),
-                );
+            if ibuf_size(&rbuf) > 0 as size_t {
+                msgbuf.rbuf.as_deref_mut().expect("a reader has a buffer")[..ibuf_size(&rbuf)]
+                    .copy_from_slice(ibuf_data(&rbuf));
             }
-            (*msgbuf).roff = ibuf_size(&raw mut rbuf);
+            msgbuf.roff = ibuf_size(&rbuf);
         }
         if fd != -(1 as c_int) {
             close(fd);
@@ -978,23 +573,18 @@ unsafe fn ibuf_read_process(msgbuf: *mut msgbuf, fd: c_int) -> c_int {
 }
 
 /// Where the next read goes and how much room is left for it.
-unsafe fn msgbuf_room(msgbuf: *mut msgbuf) -> iovec {
-    unsafe {
-        iovec {
-            iov_base: (*msgbuf).rbuf_ptr().add((*msgbuf).roff) as *mut c_void,
-            iov_len: (IBUF_READ_SIZE as size_t).wrapping_sub((*msgbuf).roff),
-        }
-    }
+fn msgbuf_room(msgbuf: &mut msgbuf) -> &mut [u8] {
+    &mut msgbuf.rbuf.as_deref_mut().expect("a reader has a buffer")[msgbuf.roff..]
 }
 
-pub unsafe fn ibuf_read(fd: c_int, msgbuf: *mut msgbuf) -> c_int {
+pub unsafe fn ibuf_read(fd: c_int, msgbuf: &mut msgbuf) -> c_int {
     unsafe {
-        if (*msgbuf).rbuf.is_none() {
+        if msgbuf.rbuf.is_none() {
             return ibuf_fail(EINVAL, -(1 as c_int));
         }
-        let mut iov = msgbuf_room(msgbuf);
+        let mut iov = IoSliceMut::new(msgbuf_room(msgbuf));
         let n = loop {
-            let n = readv(fd, &raw mut iov, 1 as c_int);
+            let n = readv(fd, (&raw mut iov).cast(), 1 as c_int);
             if n != -(1 as c_int) as ssize_t {
                 break n;
             }
@@ -1005,25 +595,21 @@ pub unsafe fn ibuf_read(fd: c_int, msgbuf: *mut msgbuf) -> c_int {
         if n == 0 as ssize_t {
             return 0 as c_int;
         }
-        (*msgbuf).roff = (*msgbuf).roff.wrapping_add(n as size_t);
+        msgbuf.roff = msgbuf.roff.wrapping_add(n as size_t);
         ibuf_read_process(msgbuf, -(1 as c_int))
     }
 }
 
-pub unsafe fn msgbuf_read(fd: c_int, msgbuf: *mut msgbuf) -> c_int {
+pub unsafe fn msgbuf_read(fd: c_int, msgbuf: &mut msgbuf) -> c_int {
     unsafe {
-        if (*msgbuf).rbuf.is_none() {
+        if msgbuf.rbuf.is_none() {
             return ibuf_fail(EINVAL, -(1 as c_int));
         }
-        let mut cmsgbuf: cmsgbuf_storage = ::core::mem::zeroed();
-        let mut iov = msgbuf_room(msgbuf);
-        let mut msg: msghdr = ::core::mem::zeroed();
-        msg.msg_iov = &raw mut iov;
-        msg.msg_iovlen = 1 as size_t;
-        msg.msg_control = &raw mut cmsgbuf.buf as *mut c_void;
-        msg.msg_controllen = CMSGBUF_SIZE as size_t;
+        let mut cmsgbuf = ControlStorage::default();
+        let mut iov = [IoSliceMut::new(msgbuf_room(msgbuf))];
+        let mut msg = SocketMessage::from_message_header(None, &mut iov, &mut cmsgbuf.buf, 0);
         let n = loop {
-            let n = recvmsg(fd, &raw mut msg, 0 as c_int);
+            let n = msg.receive(fd, 0);
             if n != -(1 as c_int) as ssize_t {
                 break n;
             }
@@ -1036,100 +622,94 @@ pub unsafe fn msgbuf_read(fd: c_int, msgbuf: *mut msgbuf) -> c_int {
                 return answer;
             }
         };
+        let control_length = msg.message_control_length();
         if n == 0 as ssize_t {
             return 0 as c_int;
         }
-        (*msgbuf).roff = (*msgbuf).roff.wrapping_add(n as size_t);
+        msgbuf.roff = msgbuf.roff.wrapping_add(n as size_t);
         let mut fdpass = -(1 as c_int);
-        let mut cmsg = cmsg_firsthdr(&raw const msg);
-        while !cmsg.is_null() {
-            if (*cmsg).cmsg_level == SOL_SOCKET && (*cmsg).cmsg_type == SCM_RIGHTS as c_int {
-                let data = cmsg_data(cmsg);
-                let j = ((cmsg as *mut c_char)
-                    .add((*cmsg).cmsg_len)
-                    .offset_from(data as *mut c_char) as size_t)
-                    .wrapping_div(::core::mem::size_of::<c_int>()) as c_int;
-                // Only the first descriptor is kept; anything else that came with
-                // the message is closed.
-                for i in 0..j {
-                    let f = *data.offset(i as isize);
-                    if i == 0 as c_int {
+        for cmsg in ControlMessages::new(&mut cmsgbuf.buf[..control_length]) {
+            if cmsg.control_message_level() == SOL_SOCKET
+                && cmsg.control_message_kind() == SCM_RIGHTS as c_int
+            {
+                for (i, data) in cmsg
+                    .control_message_data()
+                    .as_chunks::<{ size_of::<c_int>() }>()
+                    .0
+                    .iter()
+                    .enumerate()
+                {
+                    let bytes: [u8; 4] = data[..].try_into().unwrap();
+                    let f = c_int::from_ne_bytes(bytes);
+                    if i == 0 {
                         fdpass = f;
                     } else {
                         close(f);
                     }
                 }
             }
-            cmsg = __cmsg_nxthdr(&raw mut msg, cmsg);
         }
         ibuf_read_process(msgbuf, fdpass)
     }
 }
 
-unsafe fn msgbuf_drain(msgbuf: *mut msgbuf, mut n: size_t) {
+unsafe fn msgbuf_drain(msgbuf: &mut msgbuf, mut n: size_t) {
     unsafe {
-        let bufq = &raw mut (*msgbuf).bufs;
+        let bufq = &mut msgbuf.bufs;
         loop {
-            let Some(buf) = (*bufq).bufs.front_mut() else {
+            let Some(buf) = bufq.bufs.front_mut() else {
                 return;
             };
-            let size = ibuf_size(&raw mut **buf);
+            let size = ibuf_size(buf);
             if n < size {
                 buf.rpos = buf.rpos.wrapping_add(n);
                 return;
             }
             n = n.wrapping_sub(size);
-            let buf = (*bufq).bufs.pop_front().expect("the buffer just looked at");
+            let buf = bufq.bufs.pop_front().expect("the buffer just looked at");
             ibuf_free(buf);
         }
     }
 }
 
-pub fn ibufq_new() -> Box<ibufqueue> {
-    Box::new(ibufqueue {
-        bufs: ::std::collections::VecDeque::new(),
-    })
+pub unsafe fn ibufq_pop(bufq: &mut ibufqueue) -> Option<Box<ibuf>> {
+    bufq.bufs.pop_front()
 }
 
-pub unsafe fn ibufq_free(mut bufq: Box<ibufqueue>) {
-    unsafe {
-        ibufq_flush(&raw mut *bufq);
-        drop(bufq);
+pub unsafe fn ibufq_push(bufq: &mut ibufqueue, buf: Box<ibuf>) {
+    if ibuf_on_stack(&buf) {
+        unsafe { abort() };
     }
+    bufq.bufs.push_back(buf);
 }
 
-pub unsafe fn ibufq_pop(bufq: *mut ibufqueue) -> Option<Box<ibuf>> {
-    unsafe { (*bufq).bufs.pop_front() }
+pub unsafe fn ibufq_queuelen(bufq: &ibufqueue) -> uint32_t {
+    bufq.bufs.len() as uint32_t
 }
 
-pub unsafe fn ibufq_push(bufq: *mut ibufqueue, buf: Box<ibuf>) {
-    unsafe {
-        if ibuf_on_stack(&raw const *buf) {
-            abort();
-        }
-        (*bufq).bufs.push_back(buf);
-    }
-}
-
-pub unsafe fn ibufq_queuelen(bufq: *mut ibufqueue) -> uint32_t {
-    unsafe { (*bufq).bufs.len() as uint32_t }
-}
-
-pub unsafe fn ibufq_concat(to: *mut ibufqueue, from: *mut ibufqueue) {
-    unsafe {
-        let moved = ::core::mem::take(&mut (*from).bufs);
-        (*to).bufs.extend(moved);
-    }
-}
-
-pub unsafe fn ibufq_flush(bufq: *mut ibufqueue) {
-    unsafe {
-        while let Some(buf) = (*bufq).bufs.pop_front() {
-            ibuf_free(buf);
-        }
+pub unsafe fn ibufq_flush(bufq: &mut ibufqueue) {
+    while let Some(buf) = bufq.bufs.pop_front() {
+        unsafe { ibuf_free(buf) };
     }
 }
 
 #[cfg(test)]
 #[path = "../tests/test_compat_imsg_buffer.rs"]
 mod tests;
+
+#[cfg(test)]
+pub(crate) use tests::{
+    ibuf_add_n8, ibuf_add_n16, ibuf_add_n32, ibuf_add_n64, ibuf_add_strbuf, ibuf_from_ibuf,
+    ibuf_get_n16, ibuf_get_n32, ibuf_get_n64, ibuf_get_strbuf, ibuf_truncate, ibufq_free,
+    ibufq_new,
+};
+
+#[cfg(test)]
+pub(crate) use tests::ibuf_rewind;
+
+#[cfg(test)]
+pub const EOVERFLOW: c_int = 75 as c_int;
+#[cfg(test)]
+pub const UINT8_MAX: c_int = 255 as c_int;
+#[cfg(test)]
+pub const UINT16_MAX: c_int = 65535 as c_int;

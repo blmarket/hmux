@@ -10,36 +10,19 @@
 //! `recalculate_sizes`, because a locked client stops counting towards the
 //! size of the windows it was showing, and all three answer
 //! `CMD_RETURN_NORMAL`.
-//!
-//! Coverage exemptions: none. The message-protocol, argument-parsing,
-//! target-finding and return-value constants below are not this module's own,
-//! but `test_coverage_cmd_lock_server` reads and pins them through it, so they
-//! stay where the transpiler put them.
+
 use crate::cmd::cmd_get_entry;
-use crate::cmd::queue::{cmdq_get_target, cmdq_get_target_client};
+
+pub use crate::consts::{
+    CMD_AFTERHOOK, CMD_CLIENT_TFLAG, CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_NORMAL,
+    CMD_TARGET_CLIENT_USAGE, CMD_TARGET_SESSION_USAGE,
+};
 use crate::resize::recalculate_sizes;
-use crate::server::{server_lock, server_lock_client, server_lock_session};
+use crate::server::server_lock;
 pub use crate::types::*;
-use ::core::ffi::{CStr, c_char, c_int};
-pub const MSG_UNLOCK: msgtype = 215;
-pub const MSG_LOCK: msgtype = 206;
-pub const MSG_VERSION: msgtype = 12;
-pub const ARGS_PARSE_COMMANDS: args_parse_type = 3;
-pub const ARGS_PARSE_COMMANDS_OR_STRING: args_parse_type = 2;
-pub const ARGS_PARSE_STRING: args_parse_type = 1;
-pub const ARGS_PARSE_INVALID: args_parse_type = 0;
-pub const CMD_FIND_SESSION: cmd_find_type = 2;
-pub const CMD_FIND_WINDOW: cmd_find_type = 1;
-pub const CMD_FIND_PANE: cmd_find_type = 0;
-pub const CMD_RETURN_STOP: cmd_retval = 2;
-pub const CMD_RETURN_WAIT: cmd_retval = 1;
-pub const CMD_RETURN_NORMAL: cmd_retval = 0;
-pub const CMD_RETURN_ERROR: cmd_retval = -1;
-pub const CMD_AFTERHOOK: c_int = 0x4;
-pub const CMD_CLIENT_TFLAG: c_int = 0x10;
-pub const CMD_TARGET_SESSION_USAGE: &CStr = c"[-t target-session]";
-pub const CMD_TARGET_CLIENT_USAGE: &CStr = c"[-t target-client]";
-pub(crate) static cmd_lock_server_entry: cmd_entry = cmd_entry {
+use ::core::ffi::c_char;
+
+pub(crate) static cmd_lock_server_entry: RustCommandEntry = RustCommandEntry {
     name: c"lock-server",
     alias: Some(c"lock"),
     args: args_parse_t {
@@ -62,7 +45,7 @@ pub(crate) static cmd_lock_server_entry: cmd_entry = cmd_entry {
     flags: CMD_AFTERHOOK,
     exec: cmd_lock_server_exec,
 };
-pub(crate) static cmd_lock_session_entry: cmd_entry = cmd_entry {
+pub(crate) static cmd_lock_session_entry: RustCommandEntry = RustCommandEntry {
     name: c"lock-session",
     alias: Some(c"locks"),
     args: args_parse_t {
@@ -85,7 +68,7 @@ pub(crate) static cmd_lock_session_entry: cmd_entry = cmd_entry {
     flags: CMD_AFTERHOOK,
     exec: cmd_lock_server_exec,
 };
-pub(crate) static cmd_lock_client_entry: cmd_entry = cmd_entry {
+pub(crate) static cmd_lock_client_entry: RustCommandEntry = RustCommandEntry {
     name: c"lock-client",
     alias: Some(c"lockc"),
     args: args_parse_t {
@@ -109,17 +92,18 @@ pub(crate) static cmd_lock_client_entry: cmd_entry = cmd_entry {
     exec: cmd_lock_server_exec,
 };
 
-unsafe fn cmd_lock_server_exec(self_0: &cmd, item: *mut cmdq_item) -> cmd_retval {
-    unsafe {
-        let entry = cmd_get_entry(self_0);
-        if ::core::ptr::eq(entry, &cmd_lock_server_entry) {
-            server_lock();
-        } else if ::core::ptr::eq(entry, &cmd_lock_session_entry) {
-            server_lock_session((*cmdq_get_target(item)).session());
-        } else {
-            server_lock_client(cmdq_get_target_client(&*item));
-        }
-        recalculate_sizes();
-        CMD_RETURN_NORMAL
+unsafe fn cmd_lock_server_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
+    let entry = cmd_get_entry(self_0);
+    if core::ptr::eq(entry, &cmd_lock_server_entry) {
+        server_lock();
+    } else if core::ptr::eq(entry, &cmd_lock_session_entry) {
+        if let Some(mut s) = item.target.session() {
+            unsafe { s.lock() };
+        };
+    } else {
+        let target_client = item.target_client();
+        unsafe { target_client.expect("lock-client target").lock() };
     }
+    recalculate_sizes();
+    CMD_RETURN_NORMAL
 }

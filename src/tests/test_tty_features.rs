@@ -1,9 +1,6 @@
 use super::*;
-use crate::tests::test_fixtures::{Tty, globals, seen};
-use crate::terminfo::{
-    TTYC_FSL, TTYC_KF1, TTYC_KMOUS, TTYC_MS, TTYC_SETRGBF, TTYC_SMOL, TTYC_TSL, tty_term_has,
-    tty_term_string,
-};
+use crate::terminfo::TerminalCapabilities;
+use crate::tests::test_fixtures::{Tty, globals};
 use ::core::ffi::{CStr, c_int};
 
 /// The bit `tty_add_features` sets for each feature name, in the order the
@@ -35,7 +32,7 @@ const NAMES: [&CStr; 21] = [
 /// The feature bits `s` adds to `start`, read with `separators`.
 fn add(start: c_int, s: &CStr, separators: &CStr) -> c_int {
     let mut feat = start;
-    unsafe { tty_add_features(&mut feat, s.as_ptr(), separators.as_ptr()) };
+    tty_add_features(&mut feat, s, separators);
     feat
 }
 
@@ -47,6 +44,12 @@ fn feat(s: &CStr) -> c_int {
 /// What `tty_get_features` names those bits.
 fn names(feat: c_int) -> String {
     tty_get_features(feat).to_string_lossy().into_owned()
+}
+
+fn code(t: &Tty, name: &CStr) -> tty_code_code {
+    t.term()
+        .find_capability(name)
+        .unwrap_or_else(|| panic!("terminal capability {name:?} exists"))
 }
 
 #[test]
@@ -114,86 +117,65 @@ fn the_named_features_come_back_in_table_order() {
 fn no_features_at_all_leave_the_terminal_alone() {
     let _guard = globals();
     let mut t = Tty::new();
-    assert_eq!(unsafe { tty_apply_features(&mut *t.term_ptr(), 0) }, 0);
-    unsafe {
-        assert_eq!(t.term().features, 0);
-        assert_eq!(t.term().flags, 0);
-    }
+    assert!(!t.term_mut().apply_features(0));
+    assert_eq!(t.term().flags(), 0);
 }
 
 #[test]
 fn applying_a_feature_adds_its_capabilities_and_flags() {
     let _guard = globals();
     let mut t = Tty::new();
-    assert_eq!(
-        unsafe { tty_apply_features(&mut *t.term_ptr(), feat(c"title")) },
-        1
-    );
-    unsafe {
-        assert_eq!(tty_term_has(t.term(), TTYC_TSL), 1);
-        assert_eq!(seen(tty_term_string(t.term(), TTYC_TSL)), "\u{1b}]0;");
-        assert_eq!(seen(tty_term_string(t.term(), TTYC_FSL)), "\u{7}");
-        assert_eq!(t.term().features, feat(c"title"));
-        assert_eq!(t.term().flags, 0);
-    }
+    assert!(t.term_mut().apply_features(feat(c"title")));
+    assert!(t.term().has(code(&t, c"tsl")));
+    assert_eq!(t.term().string(code(&t, c"tsl")), c"\u{1b}]0;");
+    assert_eq!(t.term().string(code(&t, c"fsl")), c"\u{7}");
+    assert!(!t.term_mut().apply_features(feat(c"title")));
+    assert_eq!(t.term().flags(), 0);
 }
 
 #[test]
 fn a_feature_carrying_terminal_flags_hands_them_to_the_terminal() {
     let _guard = globals();
     let mut t = Tty::new();
+    assert!(t.term_mut().apply_features(feat(c"RGB,sixel")));
     assert_eq!(
-        unsafe { tty_apply_features(&mut *t.term_ptr(), feat(c"RGB,sixel")) },
-        1
+        t.term().flags(),
+        TERM_256COLOURS | TERM_RGBCOLOURS | TERM_SIXEL
     );
-    unsafe {
-        assert_eq!(
-            t.term().flags,
-            TERM_256COLOURS | TERM_RGBCOLOURS | TERM_SIXEL
-        );
-        assert_eq!(tty_term_has(t.term(), TTYC_SETRGBF), 1);
-    }
+    assert!(t.term().has(code(&t, c"setrgbf")));
 }
 
 #[test]
 fn a_capability_ending_in_an_at_sign_takes_the_capability_away() {
     let _guard = globals();
     let mut t = Tty::new();
-    unsafe {
-        tty_apply_features(&mut *t.term_ptr(), feat(c"mouse"));
-        assert_eq!(tty_term_has(t.term(), TTYC_KMOUS), 1);
-        t.set_string(TTYC_KF1, c"kf1");
-        tty_apply_features(&mut *t.term_ptr(), feat(c"ignorefkeys"));
-        assert_eq!(tty_term_has(t.term(), TTYC_KF1), 0);
-    }
+    t.term_mut().apply_features(feat(c"mouse"));
+    assert!(t.term().has(code(&t, c"kmous")));
+    let kf1 = code(&t, c"kf1");
+    t.set_string(kf1, c"kf1");
+    t.term_mut().apply_features(feat(c"ignorefkeys"));
+    assert!(!t.term().has(kf1));
 }
 
 #[test]
 fn a_feature_the_terminal_already_has_is_not_applied_again() {
     let _guard = globals();
     let mut t = Tty::new();
-    assert_eq!(
-        unsafe { tty_apply_features(&mut *t.term_ptr(), feat(c"overline")) },
-        1
-    );
-    unsafe {
-        t.clear_code(TTYC_SMOL);
-        assert_eq!(tty_apply_features(&mut *t.term_ptr(), feat(c"overline")), 0);
-        assert_eq!(tty_term_has(t.term(), TTYC_SMOL), 0);
-        assert_eq!(
-            tty_apply_features(&mut *t.term_ptr(), feat(c"overline,clipboard")),
-            1
-        );
-        assert_eq!(tty_term_has(t.term(), TTYC_SMOL), 0);
-        assert_eq!(tty_term_has(t.term(), TTYC_MS), 1);
-    }
+    assert!(t.term_mut().apply_features(feat(c"overline")));
+    let smol = code(&t, c"Smol");
+    t.clear_code(smol);
+    assert!(!t.term_mut().apply_features(feat(c"overline")));
+    assert!(!t.term().has(smol));
+    assert!(t.term_mut().apply_features(feat(c"overline,clipboard")));
+    assert!(!t.term().has(smol));
+    assert!(t.term().has(code(&t, c"Ms")));
 }
 
 #[test]
 fn a_terminal_the_table_names_gets_the_features_listed_for_it() {
     let _guard = globals();
     let mut got = 0;
-    unsafe { tty_default_features(&mut got, c"tmux".as_ptr(), 0) };
+    tty_default_features(&mut got, c"tmux", 0);
     assert_eq!(
         names(got),
         "256,bpaste,ccolour,clipboard,hyperlinks,cstyle,extkeys,focus,mouse,overline,progressbar,RGB,strikethrough,title,usstyle"
@@ -212,7 +194,7 @@ fn every_terminal_in_the_table_names_features_that_exist() {
         c"XTerm",
     ] {
         let mut got = 0;
-        unsafe { tty_default_features(&mut got, name.as_ptr(), 1) };
+        tty_default_features(&mut got, name, 1);
         assert_ne!(got, 0, "{name:?}");
         assert_eq!(got & !((1 << NAMES.len()) - 1), 0, "{name:?}");
     }
@@ -221,8 +203,8 @@ fn every_terminal_in_the_table_names_features_that_exist() {
 #[test]
 fn a_terminal_the_table_does_not_name_gets_nothing() {
     let mut got = 0;
-    unsafe { tty_default_features(&mut got, c"dumb".as_ptr(), 0) };
+    tty_default_features(&mut got, c"dumb", 0);
     assert_eq!(got, 0);
-    unsafe { tty_default_features(&mut got, c"TMUX".as_ptr(), 0) };
+    tty_default_features(&mut got, c"TMUX", 0);
     assert_eq!(got, 0);
 }

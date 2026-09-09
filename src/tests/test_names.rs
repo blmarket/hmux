@@ -1,7 +1,9 @@
 use super::*;
-use crate::options::options_table;
-use crate::options::{options_create_boxed, options_default, options_set_number};
-use crate::tests::test_fixtures::{globals, zeroed_pane, zeroed_window};
+use crate::WindowPane;
+use crate::options::OptionsRef;
+use crate::pane_command::{PaneCommand, PaneCommandState};
+use crate::tests::test_fixtures::{Target, globals, zeroed_pane, zeroed_window};
+use crate::window_timestamps::WindowTimestampState;
 use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
 
@@ -92,7 +94,7 @@ fn invalid_utf8_falls_back_to_the_empty_name() {
 fn a_window_without_an_active_pane_has_an_empty_default_name() {
     let mut w = blank_window();
     unsafe {
-        let p = default_window_name(&raw mut *w);
+        let p = default_window_name(&WindowRef::new(*w));
         assert_eq!(p.as_bytes(), b"");
     }
 }
@@ -103,11 +105,15 @@ fn the_default_name_comes_from_the_active_pane_command() {
     let mut p = blank_pane();
     let arg0 = CString::new("/usr/bin/vi").unwrap();
     let arg1 = CString::new("file").unwrap();
-    p.argv = vec![arg0, arg1];
-    w.active_id = Some(p.id);
-    w.panes.push(p);
+    p.set_pane_command(&PaneCommand {
+        argv: vec![arg0, arg1],
+        ..Default::default()
+    });
+    let pane = RustWindowPaneRef::new(p);
+    w.active_pane = Some(pane.downgrade());
+    w.panes.push(pane);
     unsafe {
-        let name = default_window_name(&raw mut *w);
+        let name = default_window_name(&WindowRef::new(*w));
         assert_eq!(name.as_bytes(), b"vi");
     }
 }
@@ -117,20 +123,23 @@ fn the_default_name_falls_back_to_the_pane_shell() {
     let mut w = blank_window();
     let mut p = blank_pane();
     let shell = CString::new("/bin/bash").unwrap();
-    p.argv = Vec::new();
-    p.shell = Some(shell.to_owned());
-    w.active_id = Some(p.id);
-    w.panes.push(p);
+    p.set_pane_command(&PaneCommand {
+        shell: Some(shell.to_owned()),
+        ..Default::default()
+    });
+    let pane = RustWindowPaneRef::new(p);
+    w.active_pane = Some(pane.downgrade());
+    w.panes.push(pane);
     unsafe {
-        let name = default_window_name(&raw mut *w);
+        let name = default_window_name(&WindowRef::new(*w));
         assert_eq!(name.as_bytes(), b"bash");
     }
 }
 
 fn expired(name_time: timeval, now: timeval) -> c_int {
     let mut w = blank_window();
-    w.name_time = name_time;
-    name_time_expired(&w, now)
+    w.set_name_update_time(name_time);
+    (WindowRef::new(*w)).name_time_expired(now)
 }
 
 #[test]
@@ -225,56 +234,87 @@ fn the_name_timer_callback_only_logs() {
     let mut w = blank_window();
     w.id = 7;
     let w_ref = WindowRef::new(*w);
-    w_ref.mark_unmanaged();
-    name_time_callback(&w_ref);
+    w_ref.on_name_timer();
 }
 
 #[test]
 fn checking_a_window_without_an_active_pane_does_nothing() {
     let _guard = globals();
-    let mut w = blank_window();
-    unsafe { check_window_name(&raw mut *w) };
-}
-
-/// A standalone window options set holding just `automatic-rename`, taken
-/// straight from the options table so it has the right table entry.
-fn rename_options(value: ::core::ffi::c_longlong) -> *mut options {
+    let mut target = Target::new(20, 6);
     unsafe {
-        let oo = Box::into_raw(options_create_boxed(::core::ptr::null_mut::<options>()));
-        for oe in &options_table {
-            if oe.name == c"automatic-rename" {
-                options_default(oo, oe);
-                options_set_number(oo, oe.name.as_ptr(), value);
-                break;
-            }
-        }
-        oo
+        let mut window = target.state().window().unwrap();
+        window.as_window_mut().active_pane = None;
+        window.check_name();
+        assert_eq!(window.window_name().as_deref(), Some(c"target"));
+        assert!(!window.as_window().name_event.is_armed());
     }
 }
 
 #[test]
 fn checking_a_window_with_automatic_rename_off_does_nothing() {
     let _guard = globals();
-    let mut w = blank_window();
-    let p = blank_pane();
-    w.active_id = Some(p.id);
-    w.panes.push(p);
+    let mut target = Target::new(20, 6);
     unsafe {
-        w.options = Some(Box::from_raw(rename_options(0)));
-        check_window_name(&raw mut *w);
+        let state = target.state();
+        let window = state.window().unwrap();
+        let mut pane = state.pane_ref().unwrap();
+        *pane.get_mut().unwrap().flags_mut() |= PANE_CHANGED;
+        window.options().set_number(c"automatic-rename", 0);
+        window.check_name();
+        assert_eq!(window.window_name().as_deref(), Some(c"target"));
+        assert_ne!(*pane.get().unwrap().flags() & PANE_CHANGED, 0);
+        assert!(!window.as_window().name_event.is_armed());
     }
 }
 
 #[test]
 fn checking_an_unchanged_active_pane_does_nothing() {
     let _guard = globals();
-    let mut w = blank_window();
-    let mut p = blank_pane();
-    p.flags = 0;
-    w.active_id = Some(p.id);
-    w.panes.push(p);
+    let mut target = Target::new(20, 6);
     unsafe {
-        w.options = Some(Box::from_raw(rename_options(1)));
-        check_window_name(&raw mut *w);
+        let state = target.state();
+        let window = state.window().unwrap();
+        *state.pane_ref().unwrap().get_mut().unwrap().flags_mut() &= !PANE_CHANGED;
+        window.options().set_number(c"automatic-rename", 1);
+        window.check_name();
+        assert_eq!(window.window_name().as_deref(), Some(c"target"));
+        assert!(!window.as_window().name_event.is_armed());
+    }
+}
+
+#[test]
+fn automatic_rename_formats_the_active_pane_and_defers_the_next_change() {
+    let _guard = globals();
+    let mut target = Target::new(20, 6);
+    unsafe {
+        let state = target.state();
+        let mut window = state.window().unwrap();
+        let mut pane = state.pane_ref().unwrap();
+        let options = window.options();
+        options.set_number(c"automatic-rename", 1);
+        options.set_string(
+            c"automatic-rename-format",
+            0,
+            c"pane-#{pane_id}",
+            fmt_args![],
+        );
+        *pane.get_mut().unwrap().flags_mut() |= PANE_CHANGED;
+        window.set_name_update_time(timeval::default());
+        window.check_name();
+        assert_eq!(window.window_name().as_deref(), Some(c"pane-%0"));
+        assert_eq!(*pane.get().unwrap().flags() & PANE_CHANGED, 0);
+        options.set_string(c"automatic-rename-format", 0, c"deferred", fmt_args![]);
+        let now = timeval::now();
+        window.set_name_update_time(now);
+        *pane.get_mut().unwrap().flags_mut() |= PANE_CHANGED;
+        window.check_name();
+        assert!(window.as_window().name_event.is_armed());
+        assert_eq!(window.window_name().as_deref(), Some(c"pane-%0"));
+        assert_ne!(*pane.get().unwrap().flags() & PANE_CHANGED, 0);
+        window.set_name_update_time(timeval::default());
+        window.check_name();
+        assert!(!window.as_window().name_event.is_armed());
+        assert_eq!(window.window_name().as_deref(), Some(c"deferred"));
+        assert_eq!(*pane.get().unwrap().flags() & PANE_CHANGED, 0);
     }
 }

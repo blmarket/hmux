@@ -19,7 +19,7 @@
 //! cannot read a model out of it — `#{pane_agent_model}` stays empty for agy
 //! panes.
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::{CString, OsStr, OsString};
 use std::path::Path;
 
 use super::{AgentDetector, AgentState, Detection, SessionIdSource, is_braille, is_uuid};
@@ -55,7 +55,7 @@ impl AgentDetector for AgyDetector {
         Some(SessionIdSource::ProcessTreeOpenFiles)
     }
 
-    fn session_id_from_open_file(&self, path: &Path) -> Option<String> {
+    fn session_id_from_open_file(&self, path: &Path) -> Option<CString> {
         session_id_from_conversation_path(path)
     }
 
@@ -68,7 +68,7 @@ impl AgentDetector for AgyDetector {
 /// open for the life of the conversation, and names it after the conversation
 /// id. Nothing is open before the first prompt, so a freshly started pane
 /// reports no session until then.
-fn session_id_from_conversation_path(path: &Path) -> Option<String> {
+fn session_id_from_conversation_path(path: &Path) -> Option<CString> {
     let name = path.file_name()?.to_str()?;
     let stem = ["-shm", "-wal", ""]
         .iter()
@@ -79,7 +79,7 @@ fn session_id_from_conversation_path(path: &Path) -> Option<String> {
     {
         return None;
     }
-    is_uuid(stem).then(|| stem.to_ascii_lowercase())
+    is_uuid(stem).then(|| CString::new(stem.to_ascii_lowercase()).expect("a UUID has no NUL"))
 }
 
 fn detect(screen: &str) -> Detection {
@@ -400,7 +400,7 @@ mod tests {
             assert_eq!(
                 session_id_from_conversation_path(&Path::new(base).join(format!("{id}{suffix}")))
                     .as_deref(),
-                Some("019f9757-7c53-7898-a7d1-c8c780212888")
+                Some(c"019f9757-7c53-7898-a7d1-c8c780212888")
             );
         }
         assert_eq!(

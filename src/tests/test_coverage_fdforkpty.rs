@@ -1,7 +1,7 @@
 //! Unit tests for [`crate::compat`].
 //!
 //! This compat module carries the Linux translation of OpenBSD's
-//! pseudo-terminal-master plumbing: [`getptmfd`](crate::compat::getptmfd)
+//! pseudo-terminal-master plumbing: [`getptmfd`](getptmfd)
 //! stands in for the system call that hands back a descriptor for the
 //! ptm device, and `fdforkpty`
 //! ([`fdforkpty`](crate::compat::fdforkpty)) wraps libc's
@@ -9,33 +9,19 @@
 //! no use for. Alongside them live the C limits `INT_MAX` and `__INT_MAX__`.
 //!
 //! Everything here is safe and deterministic to exercise except one branch:
-//! calling `fdforkpty` itself would drive the real `forkpty(3)` — open a fresh
-//! pseudo-terminal under `/dev/ptmx`, set it up, and split the process into
-//! parent and child, leaving an orphaned child running the test binary that no
-//! harness can reap or reason about. No unit test may take that step, so the
-//! wrapper is pinned instead at compile time: a function-pointer coercion in
-//! [`fdforkpty_matches_the_forkpty_wrapper_shape`] proves its exact signature,
-//! while the delegation inside the body (drop `_ptmfd` on the floor, forward
-//! the four `forkpty` arguments unchanged, cast the `c_int` result to
-//! `pid_t`) is verified by inspection and recorded here as a limitation:
-//! any runtime assertion about what `fdforkpty` returns would require
-//! forking and is out of reach for this suite by design.
+//! calling `fdforkpty` itself would drive the real `forkpty(3)` and split the
+//! process into parent and child. No unit test may take that step, so the
+//! wrapper is pinned instead at compile time by a function-pointer coercion.
 //!
 //! `getptmfd` reads no state and touches none of the process-wide statics the
 //! server keeps, so — like the pure-arithmetic suites — these tests hold no
 //! turn at the [`crate::tests::test_fixtures::globals`] mutex.
 
-use crate::compat::{__INT_MAX__, INT_MAX, fdforkpty, getptmfd};
+use crate::compat::{__INT_MAX__, FdForkptyResult, INT_MAX, fdforkpty, getptmfd};
 use crate::types::*;
-use ::core::ffi::{c_char, c_int};
+use ::core::ffi::c_int;
 
-/// The shape `fdforkpty` must expose to its callers: the libc `forkpty`
-/// argument list (`master`, `name`, `termp`, `winp`) preceded by the ignored
-/// `_ptmfd` slot, answering a `pid_t` — which on this platform is the same
-/// `c_int` `forkpty` itself returns, so the wrapper's trailing cast is a
-/// change of name only.
-type ForkptyWrapper =
-    unsafe fn(c_int, *mut c_int, *mut c_char, *mut termios, *mut winsize) -> pid_t;
+type ForkptyWrapper = unsafe fn(c_int, Option<&termios>, Option<&winsize>) -> FdForkptyResult;
 
 #[test]
 fn int_max_constants_hold_the_c_limit() {

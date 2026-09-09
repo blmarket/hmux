@@ -1,58 +1,70 @@
-use crate::alerts::alerts_queue;
-use crate::cmd::{CmdqItemWeak, cmdq_continue, cmdq_get_client, cmdq_item_weak_from_ptr};
-use crate::compat::strtonum;
-use crate::control::control_write_output;
-use crate::ffi::{
-    __ctype_b_loc, close, fnmatch, gethostname, getpid, gettimeofday, ioctl, kill, regcomp,
-    regexec, regfree, strcasecmp, utempter_remove_record,
+use crate::entity_id::next_entity_id;
+use crate::options::{OptionsEngine, RustOptionsEngine};
+use crate::pane_activity::PaneActivityState;
+use crate::window_alert_queue::RustWindowAlertQueueState;
+use crate::window_dimensions::{
+    RustWindowDimensionsState, WindowDimensions, WindowDimensionsState, WindowPixelSize,
 };
-use crate::file::{file_cancel, file_read};
+use crate::window_fill_character::{RustWindowFillCharacterState, WindowFillCharacterState};
+use crate::window_layout_selection::RustWindowLayoutSelectionState;
+use crate::window_name::{RustWindowNameState, WindowNameState};
+use crate::window_saved_layout::{RustWindowSavedLayoutState, WindowSavedLayoutState};
+use crate::window_scrollbar::{RustWindowScrollbarState, WindowScrollbarState};
+use crate::window_timestamps::{RustWindowTimestampState, WindowTimestampState};
+use crate::window_trait::Window as _;
+
+use crate::cmd::{CmdqItemWeak, cmdq_item_ref_of};
+use crate::compat::{cstr_eq_ignore_case, strtonum};
+use crate::control::control_write_output;
+use crate::ffi::{close, fnmatch, gethostname, getpid, ioctl, kill, utempter_remove_record};
+use crate::file::file_read;
 use crate::fmt_args;
 use crate::grid::grid_view_string_cells;
 use crate::grid::{grid_cells_look_equal, grid_default_cell};
 use crate::input::InputOwner;
 use crate::input::input_key_pane;
-use crate::input::{input_free_box, input_init, input_parse_buffer, input_parse_pane};
-use crate::layout::{layout_fix_panes, layout_free, layout_free_cell, layout_init};
-use crate::log::{fatal, fatalx, log_debug};
+use crate::input::{input_parse_buffer, input_parse_pane};
+use crate::layout::layout_free_cell;
+use crate::log::{fatal, fatalx, log_debug, log_get_level};
 use crate::notify::{notify_pane, notify_window};
-use crate::options::{
-    options_create_boxed, options_free, options_get_number, options_get_string,
-    options_load_pane_colours,
-};
+
+use crate::handle_registry::{HandleRegistration, HandleRegistry};
+use crate::pane_command::PaneCommandState;
+use crate::pane_geometry::PaneGeometryState;
+use crate::pane_identity::PaneIdentity;
+use crate::pane_output::{PaneOutputOffset, RustPaneOutputOffset};
+use crate::pane_resize::{PaneResizeQueue, PaneSize};
+use crate::pane_scrollbar_style::PaneScrollbarStyleState;
+use crate::pane_search::PaneSearchState;
+use crate::pane_style_cache::PaneStyleCache;
+#[cfg(test)]
+use crate::pane_style_cache::PaneStyleCells;
+#[cfg(test)]
+use crate::pane_theme::PaneThemeState;
 use crate::reactor::{Interest, Timer};
-use crate::screen::screen_write_stop_sync;
-use crate::screen::{
-    screen_free, screen_grid, screen_grid_ptr, screen_init, screen_resize,
-    screen_set_default_cursor, screen_set_title,
-};
-use crate::server::client_ref_from_ptr;
-use crate::server::client_walk;
+use crate::screen::Screen;
+use crate::screen::{MODE_SYNC, screen_resize};
+use crate::server::client_ref_of;
 use crate::server::marked_pane;
+use crate::server::{client_walk, with_clients};
 use crate::server::{server_check_marked, server_clear_marked};
-use crate::server::{
-    server_destroy_pane, server_redraw_window, server_redraw_window_borders, server_status_session,
-    server_status_window,
-};
-use crate::session::session_has;
-use crate::session::session_ref_from_ptr;
-use crate::session::winlink_of;
-use crate::session::{session_attached, session_get_curw};
-use crate::style::style_set_scrollbar_style_from_option;
-use crate::style::{colour_palette_free, colour_palette_get, colour_palette_init, colour_totheme};
-use crate::style::{style_default, style_ranges_free, style_ranges_get_range, style_ranges_init};
-use crate::text::{utf8_fromcstr, utf8_isvalid};
+use crate::server::{server_destroy_pane, server_status_session};
+
+use crate::style::pane_scrollbar_style_from_option;
+use crate::style::{ColourEngine, RustColourEngine};
+use crate::style::{style_ranges_free, style_ranges_get_range};
+use crate::text::{RustUtf8VisModel, Utf8VisModel, utf8_fromcstr};
 use crate::tmux::{clean_name, setblocking};
 use crate::tmux::{global_options, global_w_options};
-use crate::tree::GlobalTree;
-use crate::tty::{tty_default_colours, tty_update_window_offset};
+use crate::tty::tty_default_colours;
 pub use crate::types::*;
 use crate::xmalloc::xasprintf;
 use ::core::cell::Cell;
+use ::core::ffi::CStr;
 use ::core::ops::Bound;
 use ::std::ffi::CString;
 use ::std::thread::LocalKey;
-pub type ctype_mask = ::core::ffi::c_uint;
+pub type ctype_mask = core::ffi::c_uint;
 pub const _ISalnum: ctype_mask = 8;
 pub const _ISpunct: ctype_mask = 4;
 pub const _IScntrl: ctype_mask = 2;
@@ -65,2068 +77,686 @@ pub const _ISdigit: ctype_mask = 2048;
 pub const _ISalpha: ctype_mask = 1024;
 pub const _ISlower: ctype_mask = 512;
 pub const _ISupper: ctype_mask = 256;
-pub const MSG_READ_CANCEL: msgtype = 307;
-pub const MSG_WRITE_CLOSE: msgtype = 306;
-pub const MSG_WRITE_READY: msgtype = 305;
-pub const MSG_WRITE: msgtype = 304;
-pub const MSG_WRITE_OPEN: msgtype = 303;
-pub const MSG_READ_DONE: msgtype = 302;
-pub const MSG_READ: msgtype = 301;
-pub const MSG_READ_OPEN: msgtype = 300;
-pub const MSG_FLAGS: msgtype = 218;
-pub const MSG_EXEC: msgtype = 217;
-pub const MSG_WAKEUP: msgtype = 216;
-pub const MSG_UNLOCK: msgtype = 215;
-pub const MSG_SUSPEND: msgtype = 214;
-pub const MSG_OLDSTDOUT: msgtype = 213;
-pub const MSG_OLDSTDIN: msgtype = 212;
-pub const MSG_OLDSTDERR: msgtype = 211;
-pub const MSG_SHUTDOWN: msgtype = 210;
-pub const MSG_SHELL: msgtype = 209;
-pub const MSG_RESIZE: msgtype = 208;
-pub const MSG_READY: msgtype = 207;
-pub const MSG_LOCK: msgtype = 206;
-pub const MSG_EXITING: msgtype = 205;
-pub const MSG_EXITED: msgtype = 204;
-pub const MSG_EXIT: msgtype = 203;
-pub const MSG_DETACHKILL: msgtype = 202;
-pub const MSG_DETACH: msgtype = 201;
-pub const MSG_COMMAND: msgtype = 200;
-pub const MSG_IDENTIFY_TERMINFO: msgtype = 112;
-pub const MSG_IDENTIFY_LONGFLAGS: msgtype = 111;
-pub const MSG_IDENTIFY_STDOUT: msgtype = 110;
-pub const MSG_IDENTIFY_FEATURES: msgtype = 109;
-pub const MSG_IDENTIFY_CWD: msgtype = 108;
-pub const MSG_IDENTIFY_CLIENTPID: msgtype = 107;
-pub const MSG_IDENTIFY_DONE: msgtype = 106;
-pub const MSG_IDENTIFY_ENVIRON: msgtype = 105;
-pub const MSG_IDENTIFY_STDIN: msgtype = 104;
-pub const MSG_IDENTIFY_OLDCWD: msgtype = 103;
-pub const MSG_IDENTIFY_TTYNAME: msgtype = 102;
-pub const MSG_IDENTIFY_TERM: msgtype = 101;
-pub const MSG_IDENTIFY_FLAGS: msgtype = 100;
-pub const MSG_VERSION: msgtype = 12;
-pub const PANE_LINES_SPACES: pane_lines = 5;
-pub const PANE_LINES_NUMBER: pane_lines = 4;
-pub const PANE_LINES_SIMPLE: pane_lines = 3;
-pub const PANE_LINES_HEAVY: pane_lines = 2;
-pub const PANE_LINES_DOUBLE: pane_lines = 1;
-pub const PANE_LINES_SINGLE: pane_lines = 0;
-pub const PROGRESS_BAR_PAUSED: progress_bar_state = 4;
-pub const PROGRESS_BAR_INDETERMINATE: progress_bar_state = 3;
-pub const PROGRESS_BAR_ERROR: progress_bar_state = 2;
-pub const PROGRESS_BAR_NORMAL: progress_bar_state = 1;
-pub const PROGRESS_BAR_HIDDEN: progress_bar_state = 0;
-pub const SCREEN_CURSOR_BAR: screen_cursor_style = 3;
-pub const SCREEN_CURSOR_UNDERLINE: screen_cursor_style = 2;
-pub const SCREEN_CURSOR_BLOCK: screen_cursor_style = 1;
-pub const SCREEN_CURSOR_DEFAULT: screen_cursor_style = 0;
-pub const STYLE_DEFAULT_SET: style_default_type = 3;
-pub const STYLE_DEFAULT_POP: style_default_type = 2;
-pub const STYLE_DEFAULT_PUSH: style_default_type = 1;
-pub const STYLE_DEFAULT_BASE: style_default_type = 0;
-pub const STYLE_RANGE_CONTROL: style_range_type = 7;
-pub const STYLE_RANGE_USER: style_range_type = 6;
-pub const STYLE_RANGE_SESSION: style_range_type = 5;
-pub const STYLE_RANGE_WINDOW: style_range_type = 4;
-pub const STYLE_RANGE_PANE: style_range_type = 3;
-pub const STYLE_RANGE_RIGHT: style_range_type = 2;
-pub const STYLE_RANGE_LEFT: style_range_type = 1;
-pub const STYLE_RANGE_NONE: style_range_type = 0;
-pub const STYLE_LIST_RIGHT_MARKER: style_list = 4;
-pub const STYLE_LIST_LEFT_MARKER: style_list = 3;
-pub const STYLE_LIST_FOCUS: style_list = 2;
-pub const STYLE_LIST_ON: style_list = 1;
-pub const STYLE_LIST_OFF: style_list = 0;
-pub const STYLE_ALIGN_ABSOLUTE_CENTRE: style_align = 4;
-pub const STYLE_ALIGN_RIGHT: style_align = 3;
-pub const STYLE_ALIGN_CENTRE: style_align = 2;
-pub const STYLE_ALIGN_LEFT: style_align = 1;
-pub const STYLE_ALIGN_DEFAULT: style_align = 0;
-pub const THEME_DARK: client_theme = 2;
-pub const THEME_LIGHT: client_theme = 1;
-pub const THEME_UNKNOWN: client_theme = 0;
-pub const LAYOUT_WINDOWPANE: layout_type = 2;
-pub const LAYOUT_TOPBOTTOM: layout_type = 1;
-pub const LAYOUT_LEFTRIGHT: layout_type = 0;
-pub const PROMPT_TYPE_INVALID: prompt_type = 255;
-pub const PROMPT_TYPE_WINDOW_TARGET: prompt_type = 3;
-pub const PROMPT_TYPE_TARGET: prompt_type = 2;
-pub const PROMPT_TYPE_SEARCH: prompt_type = 1;
-pub const PROMPT_TYPE_COMMAND: prompt_type = 0;
-pub const PROMPT_COMMAND: client_prompt_mode = 1;
-pub const PROMPT_ENTRY: client_prompt_mode = 0;
-pub const CLIENT_EXIT_DETACH: client_exit_type = 2;
-pub const CLIENT_EXIT_SHUTDOWN: client_exit_type = 1;
-pub const CLIENT_EXIT_RETURN: client_exit_type = 0;
-pub const KEYC_TYPE_NOTYPE: key_code_type = 13;
-pub const KEYC_TYPE_TRIPLECLICK: key_code_type = 12;
-pub const KEYC_TYPE_DOUBLECLICK: key_code_type = 11;
-pub const KEYC_TYPE_SECONDCLICK: key_code_type = 10;
-pub const KEYC_TYPE_WHEELUP: key_code_type = 9;
-pub const KEYC_TYPE_WHEELDOWN: key_code_type = 8;
-pub const KEYC_TYPE_MOUSEDRAGEND: key_code_type = 7;
-pub const KEYC_TYPE_MOUSEDRAG: key_code_type = 6;
-pub const KEYC_TYPE_MOUSEUP: key_code_type = 5;
-pub const KEYC_TYPE_MOUSEDOWN: key_code_type = 4;
-pub const KEYC_TYPE_MOUSEMOVE: key_code_type = 3;
-pub const KEYC_TYPE_FUNCTION: key_code_type = 2;
-pub const KEYC_TYPE_USER: key_code_type = 1;
-pub const KEYC_TYPE_UNICODE: key_code_type = 0;
-pub type keyc = ::core::ffi::c_ulong;
-pub const KEYC_TRIPLECLICK11_CONTROL9: keyc = 51539610386;
-pub const KEYC_TRIPLECLICK10_CONTROL9: keyc = 51539610130;
-pub const KEYC_TRIPLECLICK9_CONTROL9: keyc = 51539609874;
-pub const KEYC_TRIPLECLICK8_CONTROL9: keyc = 51539609618;
-pub const KEYC_TRIPLECLICK7_CONTROL9: keyc = 51539609362;
-pub const KEYC_TRIPLECLICK6_CONTROL9: keyc = 51539609106;
-pub const KEYC_TRIPLECLICK3_CONTROL9: keyc = 51539608338;
-pub const KEYC_TRIPLECLICK2_CONTROL9: keyc = 51539608082;
-pub const KEYC_TRIPLECLICK1_CONTROL9: keyc = 51539607826;
-pub const KEYC_TRIPLECLICK_CONTROL9: keyc = 51539607570;
-pub const KEYC_TRIPLECLICK11_CONTROL8: keyc = 51539610385;
-pub const KEYC_TRIPLECLICK10_CONTROL8: keyc = 51539610129;
-pub const KEYC_TRIPLECLICK9_CONTROL8: keyc = 51539609873;
-pub const KEYC_TRIPLECLICK8_CONTROL8: keyc = 51539609617;
-pub const KEYC_TRIPLECLICK7_CONTROL8: keyc = 51539609361;
-pub const KEYC_TRIPLECLICK6_CONTROL8: keyc = 51539609105;
-pub const KEYC_TRIPLECLICK3_CONTROL8: keyc = 51539608337;
-pub const KEYC_TRIPLECLICK2_CONTROL8: keyc = 51539608081;
-pub const KEYC_TRIPLECLICK1_CONTROL8: keyc = 51539607825;
-pub const KEYC_TRIPLECLICK_CONTROL8: keyc = 51539607569;
-pub const KEYC_TRIPLECLICK11_CONTROL7: keyc = 51539610384;
-pub const KEYC_TRIPLECLICK10_CONTROL7: keyc = 51539610128;
-pub const KEYC_TRIPLECLICK9_CONTROL7: keyc = 51539609872;
-pub const KEYC_TRIPLECLICK8_CONTROL7: keyc = 51539609616;
-pub const KEYC_TRIPLECLICK7_CONTROL7: keyc = 51539609360;
-pub const KEYC_TRIPLECLICK6_CONTROL7: keyc = 51539609104;
-pub const KEYC_TRIPLECLICK3_CONTROL7: keyc = 51539608336;
-pub const KEYC_TRIPLECLICK2_CONTROL7: keyc = 51539608080;
-pub const KEYC_TRIPLECLICK1_CONTROL7: keyc = 51539607824;
-pub const KEYC_TRIPLECLICK_CONTROL7: keyc = 51539607568;
-pub const KEYC_TRIPLECLICK11_CONTROL6: keyc = 51539610383;
-pub const KEYC_TRIPLECLICK10_CONTROL6: keyc = 51539610127;
-pub const KEYC_TRIPLECLICK9_CONTROL6: keyc = 51539609871;
-pub const KEYC_TRIPLECLICK8_CONTROL6: keyc = 51539609615;
-pub const KEYC_TRIPLECLICK7_CONTROL6: keyc = 51539609359;
-pub const KEYC_TRIPLECLICK6_CONTROL6: keyc = 51539609103;
-pub const KEYC_TRIPLECLICK3_CONTROL6: keyc = 51539608335;
-pub const KEYC_TRIPLECLICK2_CONTROL6: keyc = 51539608079;
-pub const KEYC_TRIPLECLICK1_CONTROL6: keyc = 51539607823;
-pub const KEYC_TRIPLECLICK_CONTROL6: keyc = 51539607567;
-pub const KEYC_TRIPLECLICK11_CONTROL5: keyc = 51539610382;
-pub const KEYC_TRIPLECLICK10_CONTROL5: keyc = 51539610126;
-pub const KEYC_TRIPLECLICK9_CONTROL5: keyc = 51539609870;
-pub const KEYC_TRIPLECLICK8_CONTROL5: keyc = 51539609614;
-pub const KEYC_TRIPLECLICK7_CONTROL5: keyc = 51539609358;
-pub const KEYC_TRIPLECLICK6_CONTROL5: keyc = 51539609102;
-pub const KEYC_TRIPLECLICK3_CONTROL5: keyc = 51539608334;
-pub const KEYC_TRIPLECLICK2_CONTROL5: keyc = 51539608078;
-pub const KEYC_TRIPLECLICK1_CONTROL5: keyc = 51539607822;
-pub const KEYC_TRIPLECLICK_CONTROL5: keyc = 51539607566;
-pub const KEYC_TRIPLECLICK11_CONTROL4: keyc = 51539610381;
-pub const KEYC_TRIPLECLICK10_CONTROL4: keyc = 51539610125;
-pub const KEYC_TRIPLECLICK9_CONTROL4: keyc = 51539609869;
-pub const KEYC_TRIPLECLICK8_CONTROL4: keyc = 51539609613;
-pub const KEYC_TRIPLECLICK7_CONTROL4: keyc = 51539609357;
-pub const KEYC_TRIPLECLICK6_CONTROL4: keyc = 51539609101;
-pub const KEYC_TRIPLECLICK3_CONTROL4: keyc = 51539608333;
-pub const KEYC_TRIPLECLICK2_CONTROL4: keyc = 51539608077;
-pub const KEYC_TRIPLECLICK1_CONTROL4: keyc = 51539607821;
-pub const KEYC_TRIPLECLICK_CONTROL4: keyc = 51539607565;
-pub const KEYC_TRIPLECLICK11_CONTROL3: keyc = 51539610380;
-pub const KEYC_TRIPLECLICK10_CONTROL3: keyc = 51539610124;
-pub const KEYC_TRIPLECLICK9_CONTROL3: keyc = 51539609868;
-pub const KEYC_TRIPLECLICK8_CONTROL3: keyc = 51539609612;
-pub const KEYC_TRIPLECLICK7_CONTROL3: keyc = 51539609356;
-pub const KEYC_TRIPLECLICK6_CONTROL3: keyc = 51539609100;
-pub const KEYC_TRIPLECLICK3_CONTROL3: keyc = 51539608332;
-pub const KEYC_TRIPLECLICK2_CONTROL3: keyc = 51539608076;
-pub const KEYC_TRIPLECLICK1_CONTROL3: keyc = 51539607820;
-pub const KEYC_TRIPLECLICK_CONTROL3: keyc = 51539607564;
-pub const KEYC_TRIPLECLICK11_CONTROL2: keyc = 51539610379;
-pub const KEYC_TRIPLECLICK10_CONTROL2: keyc = 51539610123;
-pub const KEYC_TRIPLECLICK9_CONTROL2: keyc = 51539609867;
-pub const KEYC_TRIPLECLICK8_CONTROL2: keyc = 51539609611;
-pub const KEYC_TRIPLECLICK7_CONTROL2: keyc = 51539609355;
-pub const KEYC_TRIPLECLICK6_CONTROL2: keyc = 51539609099;
-pub const KEYC_TRIPLECLICK3_CONTROL2: keyc = 51539608331;
-pub const KEYC_TRIPLECLICK2_CONTROL2: keyc = 51539608075;
-pub const KEYC_TRIPLECLICK1_CONTROL2: keyc = 51539607819;
-pub const KEYC_TRIPLECLICK_CONTROL2: keyc = 51539607563;
-pub const KEYC_TRIPLECLICK11_CONTROL1: keyc = 51539610378;
-pub const KEYC_TRIPLECLICK10_CONTROL1: keyc = 51539610122;
-pub const KEYC_TRIPLECLICK9_CONTROL1: keyc = 51539609866;
-pub const KEYC_TRIPLECLICK8_CONTROL1: keyc = 51539609610;
-pub const KEYC_TRIPLECLICK7_CONTROL1: keyc = 51539609354;
-pub const KEYC_TRIPLECLICK6_CONTROL1: keyc = 51539609098;
-pub const KEYC_TRIPLECLICK3_CONTROL1: keyc = 51539608330;
-pub const KEYC_TRIPLECLICK2_CONTROL1: keyc = 51539608074;
-pub const KEYC_TRIPLECLICK1_CONTROL1: keyc = 51539607818;
-pub const KEYC_TRIPLECLICK_CONTROL1: keyc = 51539607562;
-pub const KEYC_TRIPLECLICK11_CONTROL0: keyc = 51539610377;
-pub const KEYC_TRIPLECLICK10_CONTROL0: keyc = 51539610121;
-pub const KEYC_TRIPLECLICK9_CONTROL0: keyc = 51539609865;
-pub const KEYC_TRIPLECLICK8_CONTROL0: keyc = 51539609609;
-pub const KEYC_TRIPLECLICK7_CONTROL0: keyc = 51539609353;
-pub const KEYC_TRIPLECLICK6_CONTROL0: keyc = 51539609097;
-pub const KEYC_TRIPLECLICK3_CONTROL0: keyc = 51539608329;
-pub const KEYC_TRIPLECLICK2_CONTROL0: keyc = 51539608073;
-pub const KEYC_TRIPLECLICK1_CONTROL0: keyc = 51539607817;
-pub const KEYC_TRIPLECLICK_CONTROL0: keyc = 51539607561;
-pub const KEYC_TRIPLECLICK11_SCROLLBAR_DOWN: keyc = 51539610376;
-pub const KEYC_TRIPLECLICK10_SCROLLBAR_DOWN: keyc = 51539610120;
-pub const KEYC_TRIPLECLICK9_SCROLLBAR_DOWN: keyc = 51539609864;
-pub const KEYC_TRIPLECLICK8_SCROLLBAR_DOWN: keyc = 51539609608;
-pub const KEYC_TRIPLECLICK7_SCROLLBAR_DOWN: keyc = 51539609352;
-pub const KEYC_TRIPLECLICK6_SCROLLBAR_DOWN: keyc = 51539609096;
-pub const KEYC_TRIPLECLICK3_SCROLLBAR_DOWN: keyc = 51539608328;
-pub const KEYC_TRIPLECLICK2_SCROLLBAR_DOWN: keyc = 51539608072;
-pub const KEYC_TRIPLECLICK1_SCROLLBAR_DOWN: keyc = 51539607816;
-pub const KEYC_TRIPLECLICK_SCROLLBAR_DOWN: keyc = 51539607560;
-pub const KEYC_TRIPLECLICK11_SCROLLBAR_SLIDER: keyc = 51539610375;
-pub const KEYC_TRIPLECLICK10_SCROLLBAR_SLIDER: keyc = 51539610119;
-pub const KEYC_TRIPLECLICK9_SCROLLBAR_SLIDER: keyc = 51539609863;
-pub const KEYC_TRIPLECLICK8_SCROLLBAR_SLIDER: keyc = 51539609607;
-pub const KEYC_TRIPLECLICK7_SCROLLBAR_SLIDER: keyc = 51539609351;
-pub const KEYC_TRIPLECLICK6_SCROLLBAR_SLIDER: keyc = 51539609095;
-pub const KEYC_TRIPLECLICK3_SCROLLBAR_SLIDER: keyc = 51539608327;
-pub const KEYC_TRIPLECLICK2_SCROLLBAR_SLIDER: keyc = 51539608071;
-pub const KEYC_TRIPLECLICK1_SCROLLBAR_SLIDER: keyc = 51539607815;
-pub const KEYC_TRIPLECLICK_SCROLLBAR_SLIDER: keyc = 51539607559;
-pub const KEYC_TRIPLECLICK11_SCROLLBAR_UP: keyc = 51539610374;
-pub const KEYC_TRIPLECLICK10_SCROLLBAR_UP: keyc = 51539610118;
-pub const KEYC_TRIPLECLICK9_SCROLLBAR_UP: keyc = 51539609862;
-pub const KEYC_TRIPLECLICK8_SCROLLBAR_UP: keyc = 51539609606;
-pub const KEYC_TRIPLECLICK7_SCROLLBAR_UP: keyc = 51539609350;
-pub const KEYC_TRIPLECLICK6_SCROLLBAR_UP: keyc = 51539609094;
-pub const KEYC_TRIPLECLICK3_SCROLLBAR_UP: keyc = 51539608326;
-pub const KEYC_TRIPLECLICK2_SCROLLBAR_UP: keyc = 51539608070;
-pub const KEYC_TRIPLECLICK1_SCROLLBAR_UP: keyc = 51539607814;
-pub const KEYC_TRIPLECLICK_SCROLLBAR_UP: keyc = 51539607558;
-pub const KEYC_TRIPLECLICK11_BORDER: keyc = 51539610373;
-pub const KEYC_TRIPLECLICK10_BORDER: keyc = 51539610117;
-pub const KEYC_TRIPLECLICK9_BORDER: keyc = 51539609861;
-pub const KEYC_TRIPLECLICK8_BORDER: keyc = 51539609605;
-pub const KEYC_TRIPLECLICK7_BORDER: keyc = 51539609349;
-pub const KEYC_TRIPLECLICK6_BORDER: keyc = 51539609093;
-pub const KEYC_TRIPLECLICK3_BORDER: keyc = 51539608325;
-pub const KEYC_TRIPLECLICK2_BORDER: keyc = 51539608069;
-pub const KEYC_TRIPLECLICK1_BORDER: keyc = 51539607813;
-pub const KEYC_TRIPLECLICK_BORDER: keyc = 51539607557;
-pub const KEYC_TRIPLECLICK11_STATUS_DEFAULT: keyc = 51539610372;
-pub const KEYC_TRIPLECLICK10_STATUS_DEFAULT: keyc = 51539610116;
-pub const KEYC_TRIPLECLICK9_STATUS_DEFAULT: keyc = 51539609860;
-pub const KEYC_TRIPLECLICK8_STATUS_DEFAULT: keyc = 51539609604;
-pub const KEYC_TRIPLECLICK7_STATUS_DEFAULT: keyc = 51539609348;
-pub const KEYC_TRIPLECLICK6_STATUS_DEFAULT: keyc = 51539609092;
-pub const KEYC_TRIPLECLICK3_STATUS_DEFAULT: keyc = 51539608324;
-pub const KEYC_TRIPLECLICK2_STATUS_DEFAULT: keyc = 51539608068;
-pub const KEYC_TRIPLECLICK1_STATUS_DEFAULT: keyc = 51539607812;
-pub const KEYC_TRIPLECLICK_STATUS_DEFAULT: keyc = 51539607556;
-pub const KEYC_TRIPLECLICK11_STATUS_RIGHT: keyc = 51539610371;
-pub const KEYC_TRIPLECLICK10_STATUS_RIGHT: keyc = 51539610115;
-pub const KEYC_TRIPLECLICK9_STATUS_RIGHT: keyc = 51539609859;
-pub const KEYC_TRIPLECLICK8_STATUS_RIGHT: keyc = 51539609603;
-pub const KEYC_TRIPLECLICK7_STATUS_RIGHT: keyc = 51539609347;
-pub const KEYC_TRIPLECLICK6_STATUS_RIGHT: keyc = 51539609091;
-pub const KEYC_TRIPLECLICK3_STATUS_RIGHT: keyc = 51539608323;
-pub const KEYC_TRIPLECLICK2_STATUS_RIGHT: keyc = 51539608067;
-pub const KEYC_TRIPLECLICK1_STATUS_RIGHT: keyc = 51539607811;
-pub const KEYC_TRIPLECLICK_STATUS_RIGHT: keyc = 51539607555;
-pub const KEYC_TRIPLECLICK11_STATUS_LEFT: keyc = 51539610370;
-pub const KEYC_TRIPLECLICK10_STATUS_LEFT: keyc = 51539610114;
-pub const KEYC_TRIPLECLICK9_STATUS_LEFT: keyc = 51539609858;
-pub const KEYC_TRIPLECLICK8_STATUS_LEFT: keyc = 51539609602;
-pub const KEYC_TRIPLECLICK7_STATUS_LEFT: keyc = 51539609346;
-pub const KEYC_TRIPLECLICK6_STATUS_LEFT: keyc = 51539609090;
-pub const KEYC_TRIPLECLICK3_STATUS_LEFT: keyc = 51539608322;
-pub const KEYC_TRIPLECLICK2_STATUS_LEFT: keyc = 51539608066;
-pub const KEYC_TRIPLECLICK1_STATUS_LEFT: keyc = 51539607810;
-pub const KEYC_TRIPLECLICK_STATUS_LEFT: keyc = 51539607554;
-pub const KEYC_TRIPLECLICK11_STATUS: keyc = 51539610369;
-pub const KEYC_TRIPLECLICK10_STATUS: keyc = 51539610113;
-pub const KEYC_TRIPLECLICK9_STATUS: keyc = 51539609857;
-pub const KEYC_TRIPLECLICK8_STATUS: keyc = 51539609601;
-pub const KEYC_TRIPLECLICK7_STATUS: keyc = 51539609345;
-pub const KEYC_TRIPLECLICK6_STATUS: keyc = 51539609089;
-pub const KEYC_TRIPLECLICK3_STATUS: keyc = 51539608321;
-pub const KEYC_TRIPLECLICK2_STATUS: keyc = 51539608065;
-pub const KEYC_TRIPLECLICK1_STATUS: keyc = 51539607809;
-pub const KEYC_TRIPLECLICK_STATUS: keyc = 51539607553;
-pub const KEYC_TRIPLECLICK11_PANE: keyc = 51539610368;
-pub const KEYC_TRIPLECLICK10_PANE: keyc = 51539610112;
-pub const KEYC_TRIPLECLICK9_PANE: keyc = 51539609856;
-pub const KEYC_TRIPLECLICK8_PANE: keyc = 51539609600;
-pub const KEYC_TRIPLECLICK7_PANE: keyc = 51539609344;
-pub const KEYC_TRIPLECLICK6_PANE: keyc = 51539609088;
-pub const KEYC_TRIPLECLICK3_PANE: keyc = 51539608320;
-pub const KEYC_TRIPLECLICK2_PANE: keyc = 51539608064;
-pub const KEYC_TRIPLECLICK1_PANE: keyc = 51539607808;
-pub const KEYC_TRIPLECLICK_PANE: keyc = 51539607552;
-pub const KEYC_DOUBLECLICK11_CONTROL9: keyc = 47244643090;
-pub const KEYC_DOUBLECLICK10_CONTROL9: keyc = 47244642834;
-pub const KEYC_DOUBLECLICK9_CONTROL9: keyc = 47244642578;
-pub const KEYC_DOUBLECLICK8_CONTROL9: keyc = 47244642322;
-pub const KEYC_DOUBLECLICK7_CONTROL9: keyc = 47244642066;
-pub const KEYC_DOUBLECLICK6_CONTROL9: keyc = 47244641810;
-pub const KEYC_DOUBLECLICK3_CONTROL9: keyc = 47244641042;
-pub const KEYC_DOUBLECLICK2_CONTROL9: keyc = 47244640786;
-pub const KEYC_DOUBLECLICK1_CONTROL9: keyc = 47244640530;
-pub const KEYC_DOUBLECLICK_CONTROL9: keyc = 47244640274;
-pub const KEYC_DOUBLECLICK11_CONTROL8: keyc = 47244643089;
-pub const KEYC_DOUBLECLICK10_CONTROL8: keyc = 47244642833;
-pub const KEYC_DOUBLECLICK9_CONTROL8: keyc = 47244642577;
-pub const KEYC_DOUBLECLICK8_CONTROL8: keyc = 47244642321;
-pub const KEYC_DOUBLECLICK7_CONTROL8: keyc = 47244642065;
-pub const KEYC_DOUBLECLICK6_CONTROL8: keyc = 47244641809;
-pub const KEYC_DOUBLECLICK3_CONTROL8: keyc = 47244641041;
-pub const KEYC_DOUBLECLICK2_CONTROL8: keyc = 47244640785;
-pub const KEYC_DOUBLECLICK1_CONTROL8: keyc = 47244640529;
-pub const KEYC_DOUBLECLICK_CONTROL8: keyc = 47244640273;
-pub const KEYC_DOUBLECLICK11_CONTROL7: keyc = 47244643088;
-pub const KEYC_DOUBLECLICK10_CONTROL7: keyc = 47244642832;
-pub const KEYC_DOUBLECLICK9_CONTROL7: keyc = 47244642576;
-pub const KEYC_DOUBLECLICK8_CONTROL7: keyc = 47244642320;
-pub const KEYC_DOUBLECLICK7_CONTROL7: keyc = 47244642064;
-pub const KEYC_DOUBLECLICK6_CONTROL7: keyc = 47244641808;
-pub const KEYC_DOUBLECLICK3_CONTROL7: keyc = 47244641040;
-pub const KEYC_DOUBLECLICK2_CONTROL7: keyc = 47244640784;
-pub const KEYC_DOUBLECLICK1_CONTROL7: keyc = 47244640528;
-pub const KEYC_DOUBLECLICK_CONTROL7: keyc = 47244640272;
-pub const KEYC_DOUBLECLICK11_CONTROL6: keyc = 47244643087;
-pub const KEYC_DOUBLECLICK10_CONTROL6: keyc = 47244642831;
-pub const KEYC_DOUBLECLICK9_CONTROL6: keyc = 47244642575;
-pub const KEYC_DOUBLECLICK8_CONTROL6: keyc = 47244642319;
-pub const KEYC_DOUBLECLICK7_CONTROL6: keyc = 47244642063;
-pub const KEYC_DOUBLECLICK6_CONTROL6: keyc = 47244641807;
-pub const KEYC_DOUBLECLICK3_CONTROL6: keyc = 47244641039;
-pub const KEYC_DOUBLECLICK2_CONTROL6: keyc = 47244640783;
-pub const KEYC_DOUBLECLICK1_CONTROL6: keyc = 47244640527;
-pub const KEYC_DOUBLECLICK_CONTROL6: keyc = 47244640271;
-pub const KEYC_DOUBLECLICK11_CONTROL5: keyc = 47244643086;
-pub const KEYC_DOUBLECLICK10_CONTROL5: keyc = 47244642830;
-pub const KEYC_DOUBLECLICK9_CONTROL5: keyc = 47244642574;
-pub const KEYC_DOUBLECLICK8_CONTROL5: keyc = 47244642318;
-pub const KEYC_DOUBLECLICK7_CONTROL5: keyc = 47244642062;
-pub const KEYC_DOUBLECLICK6_CONTROL5: keyc = 47244641806;
-pub const KEYC_DOUBLECLICK3_CONTROL5: keyc = 47244641038;
-pub const KEYC_DOUBLECLICK2_CONTROL5: keyc = 47244640782;
-pub const KEYC_DOUBLECLICK1_CONTROL5: keyc = 47244640526;
-pub const KEYC_DOUBLECLICK_CONTROL5: keyc = 47244640270;
-pub const KEYC_DOUBLECLICK11_CONTROL4: keyc = 47244643085;
-pub const KEYC_DOUBLECLICK10_CONTROL4: keyc = 47244642829;
-pub const KEYC_DOUBLECLICK9_CONTROL4: keyc = 47244642573;
-pub const KEYC_DOUBLECLICK8_CONTROL4: keyc = 47244642317;
-pub const KEYC_DOUBLECLICK7_CONTROL4: keyc = 47244642061;
-pub const KEYC_DOUBLECLICK6_CONTROL4: keyc = 47244641805;
-pub const KEYC_DOUBLECLICK3_CONTROL4: keyc = 47244641037;
-pub const KEYC_DOUBLECLICK2_CONTROL4: keyc = 47244640781;
-pub const KEYC_DOUBLECLICK1_CONTROL4: keyc = 47244640525;
-pub const KEYC_DOUBLECLICK_CONTROL4: keyc = 47244640269;
-pub const KEYC_DOUBLECLICK11_CONTROL3: keyc = 47244643084;
-pub const KEYC_DOUBLECLICK10_CONTROL3: keyc = 47244642828;
-pub const KEYC_DOUBLECLICK9_CONTROL3: keyc = 47244642572;
-pub const KEYC_DOUBLECLICK8_CONTROL3: keyc = 47244642316;
-pub const KEYC_DOUBLECLICK7_CONTROL3: keyc = 47244642060;
-pub const KEYC_DOUBLECLICK6_CONTROL3: keyc = 47244641804;
-pub const KEYC_DOUBLECLICK3_CONTROL3: keyc = 47244641036;
-pub const KEYC_DOUBLECLICK2_CONTROL3: keyc = 47244640780;
-pub const KEYC_DOUBLECLICK1_CONTROL3: keyc = 47244640524;
-pub const KEYC_DOUBLECLICK_CONTROL3: keyc = 47244640268;
-pub const KEYC_DOUBLECLICK11_CONTROL2: keyc = 47244643083;
-pub const KEYC_DOUBLECLICK10_CONTROL2: keyc = 47244642827;
-pub const KEYC_DOUBLECLICK9_CONTROL2: keyc = 47244642571;
-pub const KEYC_DOUBLECLICK8_CONTROL2: keyc = 47244642315;
-pub const KEYC_DOUBLECLICK7_CONTROL2: keyc = 47244642059;
-pub const KEYC_DOUBLECLICK6_CONTROL2: keyc = 47244641803;
-pub const KEYC_DOUBLECLICK3_CONTROL2: keyc = 47244641035;
-pub const KEYC_DOUBLECLICK2_CONTROL2: keyc = 47244640779;
-pub const KEYC_DOUBLECLICK1_CONTROL2: keyc = 47244640523;
-pub const KEYC_DOUBLECLICK_CONTROL2: keyc = 47244640267;
-pub const KEYC_DOUBLECLICK11_CONTROL1: keyc = 47244643082;
-pub const KEYC_DOUBLECLICK10_CONTROL1: keyc = 47244642826;
-pub const KEYC_DOUBLECLICK9_CONTROL1: keyc = 47244642570;
-pub const KEYC_DOUBLECLICK8_CONTROL1: keyc = 47244642314;
-pub const KEYC_DOUBLECLICK7_CONTROL1: keyc = 47244642058;
-pub const KEYC_DOUBLECLICK6_CONTROL1: keyc = 47244641802;
-pub const KEYC_DOUBLECLICK3_CONTROL1: keyc = 47244641034;
-pub const KEYC_DOUBLECLICK2_CONTROL1: keyc = 47244640778;
-pub const KEYC_DOUBLECLICK1_CONTROL1: keyc = 47244640522;
-pub const KEYC_DOUBLECLICK_CONTROL1: keyc = 47244640266;
-pub const KEYC_DOUBLECLICK11_CONTROL0: keyc = 47244643081;
-pub const KEYC_DOUBLECLICK10_CONTROL0: keyc = 47244642825;
-pub const KEYC_DOUBLECLICK9_CONTROL0: keyc = 47244642569;
-pub const KEYC_DOUBLECLICK8_CONTROL0: keyc = 47244642313;
-pub const KEYC_DOUBLECLICK7_CONTROL0: keyc = 47244642057;
-pub const KEYC_DOUBLECLICK6_CONTROL0: keyc = 47244641801;
-pub const KEYC_DOUBLECLICK3_CONTROL0: keyc = 47244641033;
-pub const KEYC_DOUBLECLICK2_CONTROL0: keyc = 47244640777;
-pub const KEYC_DOUBLECLICK1_CONTROL0: keyc = 47244640521;
-pub const KEYC_DOUBLECLICK_CONTROL0: keyc = 47244640265;
-pub const KEYC_DOUBLECLICK11_SCROLLBAR_DOWN: keyc = 47244643080;
-pub const KEYC_DOUBLECLICK10_SCROLLBAR_DOWN: keyc = 47244642824;
-pub const KEYC_DOUBLECLICK9_SCROLLBAR_DOWN: keyc = 47244642568;
-pub const KEYC_DOUBLECLICK8_SCROLLBAR_DOWN: keyc = 47244642312;
-pub const KEYC_DOUBLECLICK7_SCROLLBAR_DOWN: keyc = 47244642056;
-pub const KEYC_DOUBLECLICK6_SCROLLBAR_DOWN: keyc = 47244641800;
-pub const KEYC_DOUBLECLICK3_SCROLLBAR_DOWN: keyc = 47244641032;
-pub const KEYC_DOUBLECLICK2_SCROLLBAR_DOWN: keyc = 47244640776;
-pub const KEYC_DOUBLECLICK1_SCROLLBAR_DOWN: keyc = 47244640520;
-pub const KEYC_DOUBLECLICK_SCROLLBAR_DOWN: keyc = 47244640264;
-pub const KEYC_DOUBLECLICK11_SCROLLBAR_SLIDER: keyc = 47244643079;
-pub const KEYC_DOUBLECLICK10_SCROLLBAR_SLIDER: keyc = 47244642823;
-pub const KEYC_DOUBLECLICK9_SCROLLBAR_SLIDER: keyc = 47244642567;
-pub const KEYC_DOUBLECLICK8_SCROLLBAR_SLIDER: keyc = 47244642311;
-pub const KEYC_DOUBLECLICK7_SCROLLBAR_SLIDER: keyc = 47244642055;
-pub const KEYC_DOUBLECLICK6_SCROLLBAR_SLIDER: keyc = 47244641799;
-pub const KEYC_DOUBLECLICK3_SCROLLBAR_SLIDER: keyc = 47244641031;
-pub const KEYC_DOUBLECLICK2_SCROLLBAR_SLIDER: keyc = 47244640775;
-pub const KEYC_DOUBLECLICK1_SCROLLBAR_SLIDER: keyc = 47244640519;
-pub const KEYC_DOUBLECLICK_SCROLLBAR_SLIDER: keyc = 47244640263;
-pub const KEYC_DOUBLECLICK11_SCROLLBAR_UP: keyc = 47244643078;
-pub const KEYC_DOUBLECLICK10_SCROLLBAR_UP: keyc = 47244642822;
-pub const KEYC_DOUBLECLICK9_SCROLLBAR_UP: keyc = 47244642566;
-pub const KEYC_DOUBLECLICK8_SCROLLBAR_UP: keyc = 47244642310;
-pub const KEYC_DOUBLECLICK7_SCROLLBAR_UP: keyc = 47244642054;
-pub const KEYC_DOUBLECLICK6_SCROLLBAR_UP: keyc = 47244641798;
-pub const KEYC_DOUBLECLICK3_SCROLLBAR_UP: keyc = 47244641030;
-pub const KEYC_DOUBLECLICK2_SCROLLBAR_UP: keyc = 47244640774;
-pub const KEYC_DOUBLECLICK1_SCROLLBAR_UP: keyc = 47244640518;
-pub const KEYC_DOUBLECLICK_SCROLLBAR_UP: keyc = 47244640262;
-pub const KEYC_DOUBLECLICK11_BORDER: keyc = 47244643077;
-pub const KEYC_DOUBLECLICK10_BORDER: keyc = 47244642821;
-pub const KEYC_DOUBLECLICK9_BORDER: keyc = 47244642565;
-pub const KEYC_DOUBLECLICK8_BORDER: keyc = 47244642309;
-pub const KEYC_DOUBLECLICK7_BORDER: keyc = 47244642053;
-pub const KEYC_DOUBLECLICK6_BORDER: keyc = 47244641797;
-pub const KEYC_DOUBLECLICK3_BORDER: keyc = 47244641029;
-pub const KEYC_DOUBLECLICK2_BORDER: keyc = 47244640773;
-pub const KEYC_DOUBLECLICK1_BORDER: keyc = 47244640517;
-pub const KEYC_DOUBLECLICK_BORDER: keyc = 47244640261;
-pub const KEYC_DOUBLECLICK11_STATUS_DEFAULT: keyc = 47244643076;
-pub const KEYC_DOUBLECLICK10_STATUS_DEFAULT: keyc = 47244642820;
-pub const KEYC_DOUBLECLICK9_STATUS_DEFAULT: keyc = 47244642564;
-pub const KEYC_DOUBLECLICK8_STATUS_DEFAULT: keyc = 47244642308;
-pub const KEYC_DOUBLECLICK7_STATUS_DEFAULT: keyc = 47244642052;
-pub const KEYC_DOUBLECLICK6_STATUS_DEFAULT: keyc = 47244641796;
-pub const KEYC_DOUBLECLICK3_STATUS_DEFAULT: keyc = 47244641028;
-pub const KEYC_DOUBLECLICK2_STATUS_DEFAULT: keyc = 47244640772;
-pub const KEYC_DOUBLECLICK1_STATUS_DEFAULT: keyc = 47244640516;
-pub const KEYC_DOUBLECLICK_STATUS_DEFAULT: keyc = 47244640260;
-pub const KEYC_DOUBLECLICK11_STATUS_RIGHT: keyc = 47244643075;
-pub const KEYC_DOUBLECLICK10_STATUS_RIGHT: keyc = 47244642819;
-pub const KEYC_DOUBLECLICK9_STATUS_RIGHT: keyc = 47244642563;
-pub const KEYC_DOUBLECLICK8_STATUS_RIGHT: keyc = 47244642307;
-pub const KEYC_DOUBLECLICK7_STATUS_RIGHT: keyc = 47244642051;
-pub const KEYC_DOUBLECLICK6_STATUS_RIGHT: keyc = 47244641795;
-pub const KEYC_DOUBLECLICK3_STATUS_RIGHT: keyc = 47244641027;
-pub const KEYC_DOUBLECLICK2_STATUS_RIGHT: keyc = 47244640771;
-pub const KEYC_DOUBLECLICK1_STATUS_RIGHT: keyc = 47244640515;
-pub const KEYC_DOUBLECLICK_STATUS_RIGHT: keyc = 47244640259;
-pub const KEYC_DOUBLECLICK11_STATUS_LEFT: keyc = 47244643074;
-pub const KEYC_DOUBLECLICK10_STATUS_LEFT: keyc = 47244642818;
-pub const KEYC_DOUBLECLICK9_STATUS_LEFT: keyc = 47244642562;
-pub const KEYC_DOUBLECLICK8_STATUS_LEFT: keyc = 47244642306;
-pub const KEYC_DOUBLECLICK7_STATUS_LEFT: keyc = 47244642050;
-pub const KEYC_DOUBLECLICK6_STATUS_LEFT: keyc = 47244641794;
-pub const KEYC_DOUBLECLICK3_STATUS_LEFT: keyc = 47244641026;
-pub const KEYC_DOUBLECLICK2_STATUS_LEFT: keyc = 47244640770;
-pub const KEYC_DOUBLECLICK1_STATUS_LEFT: keyc = 47244640514;
-pub const KEYC_DOUBLECLICK_STATUS_LEFT: keyc = 47244640258;
-pub const KEYC_DOUBLECLICK11_STATUS: keyc = 47244643073;
-pub const KEYC_DOUBLECLICK10_STATUS: keyc = 47244642817;
-pub const KEYC_DOUBLECLICK9_STATUS: keyc = 47244642561;
-pub const KEYC_DOUBLECLICK8_STATUS: keyc = 47244642305;
-pub const KEYC_DOUBLECLICK7_STATUS: keyc = 47244642049;
-pub const KEYC_DOUBLECLICK6_STATUS: keyc = 47244641793;
-pub const KEYC_DOUBLECLICK3_STATUS: keyc = 47244641025;
-pub const KEYC_DOUBLECLICK2_STATUS: keyc = 47244640769;
-pub const KEYC_DOUBLECLICK1_STATUS: keyc = 47244640513;
-pub const KEYC_DOUBLECLICK_STATUS: keyc = 47244640257;
-pub const KEYC_DOUBLECLICK11_PANE: keyc = 47244643072;
-pub const KEYC_DOUBLECLICK10_PANE: keyc = 47244642816;
-pub const KEYC_DOUBLECLICK9_PANE: keyc = 47244642560;
-pub const KEYC_DOUBLECLICK8_PANE: keyc = 47244642304;
-pub const KEYC_DOUBLECLICK7_PANE: keyc = 47244642048;
-pub const KEYC_DOUBLECLICK6_PANE: keyc = 47244641792;
-pub const KEYC_DOUBLECLICK3_PANE: keyc = 47244641024;
-pub const KEYC_DOUBLECLICK2_PANE: keyc = 47244640768;
-pub const KEYC_DOUBLECLICK1_PANE: keyc = 47244640512;
-pub const KEYC_DOUBLECLICK_PANE: keyc = 47244640256;
-pub const KEYC_SECONDCLICK11_CONTROL9: keyc = 42949675794;
-pub const KEYC_SECONDCLICK10_CONTROL9: keyc = 42949675538;
-pub const KEYC_SECONDCLICK9_CONTROL9: keyc = 42949675282;
-pub const KEYC_SECONDCLICK8_CONTROL9: keyc = 42949675026;
-pub const KEYC_SECONDCLICK7_CONTROL9: keyc = 42949674770;
-pub const KEYC_SECONDCLICK6_CONTROL9: keyc = 42949674514;
-pub const KEYC_SECONDCLICK3_CONTROL9: keyc = 42949673746;
-pub const KEYC_SECONDCLICK2_CONTROL9: keyc = 42949673490;
-pub const KEYC_SECONDCLICK1_CONTROL9: keyc = 42949673234;
-pub const KEYC_SECONDCLICK_CONTROL9: keyc = 42949672978;
-pub const KEYC_SECONDCLICK11_CONTROL8: keyc = 42949675793;
-pub const KEYC_SECONDCLICK10_CONTROL8: keyc = 42949675537;
-pub const KEYC_SECONDCLICK9_CONTROL8: keyc = 42949675281;
-pub const KEYC_SECONDCLICK8_CONTROL8: keyc = 42949675025;
-pub const KEYC_SECONDCLICK7_CONTROL8: keyc = 42949674769;
-pub const KEYC_SECONDCLICK6_CONTROL8: keyc = 42949674513;
-pub const KEYC_SECONDCLICK3_CONTROL8: keyc = 42949673745;
-pub const KEYC_SECONDCLICK2_CONTROL8: keyc = 42949673489;
-pub const KEYC_SECONDCLICK1_CONTROL8: keyc = 42949673233;
-pub const KEYC_SECONDCLICK_CONTROL8: keyc = 42949672977;
-pub const KEYC_SECONDCLICK11_CONTROL7: keyc = 42949675792;
-pub const KEYC_SECONDCLICK10_CONTROL7: keyc = 42949675536;
-pub const KEYC_SECONDCLICK9_CONTROL7: keyc = 42949675280;
-pub const KEYC_SECONDCLICK8_CONTROL7: keyc = 42949675024;
-pub const KEYC_SECONDCLICK7_CONTROL7: keyc = 42949674768;
-pub const KEYC_SECONDCLICK6_CONTROL7: keyc = 42949674512;
-pub const KEYC_SECONDCLICK3_CONTROL7: keyc = 42949673744;
-pub const KEYC_SECONDCLICK2_CONTROL7: keyc = 42949673488;
-pub const KEYC_SECONDCLICK1_CONTROL7: keyc = 42949673232;
-pub const KEYC_SECONDCLICK_CONTROL7: keyc = 42949672976;
-pub const KEYC_SECONDCLICK11_CONTROL6: keyc = 42949675791;
-pub const KEYC_SECONDCLICK10_CONTROL6: keyc = 42949675535;
-pub const KEYC_SECONDCLICK9_CONTROL6: keyc = 42949675279;
-pub const KEYC_SECONDCLICK8_CONTROL6: keyc = 42949675023;
-pub const KEYC_SECONDCLICK7_CONTROL6: keyc = 42949674767;
-pub const KEYC_SECONDCLICK6_CONTROL6: keyc = 42949674511;
-pub const KEYC_SECONDCLICK3_CONTROL6: keyc = 42949673743;
-pub const KEYC_SECONDCLICK2_CONTROL6: keyc = 42949673487;
-pub const KEYC_SECONDCLICK1_CONTROL6: keyc = 42949673231;
-pub const KEYC_SECONDCLICK_CONTROL6: keyc = 42949672975;
-pub const KEYC_SECONDCLICK11_CONTROL5: keyc = 42949675790;
-pub const KEYC_SECONDCLICK10_CONTROL5: keyc = 42949675534;
-pub const KEYC_SECONDCLICK9_CONTROL5: keyc = 42949675278;
-pub const KEYC_SECONDCLICK8_CONTROL5: keyc = 42949675022;
-pub const KEYC_SECONDCLICK7_CONTROL5: keyc = 42949674766;
-pub const KEYC_SECONDCLICK6_CONTROL5: keyc = 42949674510;
-pub const KEYC_SECONDCLICK3_CONTROL5: keyc = 42949673742;
-pub const KEYC_SECONDCLICK2_CONTROL5: keyc = 42949673486;
-pub const KEYC_SECONDCLICK1_CONTROL5: keyc = 42949673230;
-pub const KEYC_SECONDCLICK_CONTROL5: keyc = 42949672974;
-pub const KEYC_SECONDCLICK11_CONTROL4: keyc = 42949675789;
-pub const KEYC_SECONDCLICK10_CONTROL4: keyc = 42949675533;
-pub const KEYC_SECONDCLICK9_CONTROL4: keyc = 42949675277;
-pub const KEYC_SECONDCLICK8_CONTROL4: keyc = 42949675021;
-pub const KEYC_SECONDCLICK7_CONTROL4: keyc = 42949674765;
-pub const KEYC_SECONDCLICK6_CONTROL4: keyc = 42949674509;
-pub const KEYC_SECONDCLICK3_CONTROL4: keyc = 42949673741;
-pub const KEYC_SECONDCLICK2_CONTROL4: keyc = 42949673485;
-pub const KEYC_SECONDCLICK1_CONTROL4: keyc = 42949673229;
-pub const KEYC_SECONDCLICK_CONTROL4: keyc = 42949672973;
-pub const KEYC_SECONDCLICK11_CONTROL3: keyc = 42949675788;
-pub const KEYC_SECONDCLICK10_CONTROL3: keyc = 42949675532;
-pub const KEYC_SECONDCLICK9_CONTROL3: keyc = 42949675276;
-pub const KEYC_SECONDCLICK8_CONTROL3: keyc = 42949675020;
-pub const KEYC_SECONDCLICK7_CONTROL3: keyc = 42949674764;
-pub const KEYC_SECONDCLICK6_CONTROL3: keyc = 42949674508;
-pub const KEYC_SECONDCLICK3_CONTROL3: keyc = 42949673740;
-pub const KEYC_SECONDCLICK2_CONTROL3: keyc = 42949673484;
-pub const KEYC_SECONDCLICK1_CONTROL3: keyc = 42949673228;
-pub const KEYC_SECONDCLICK_CONTROL3: keyc = 42949672972;
-pub const KEYC_SECONDCLICK11_CONTROL2: keyc = 42949675787;
-pub const KEYC_SECONDCLICK10_CONTROL2: keyc = 42949675531;
-pub const KEYC_SECONDCLICK9_CONTROL2: keyc = 42949675275;
-pub const KEYC_SECONDCLICK8_CONTROL2: keyc = 42949675019;
-pub const KEYC_SECONDCLICK7_CONTROL2: keyc = 42949674763;
-pub const KEYC_SECONDCLICK6_CONTROL2: keyc = 42949674507;
-pub const KEYC_SECONDCLICK3_CONTROL2: keyc = 42949673739;
-pub const KEYC_SECONDCLICK2_CONTROL2: keyc = 42949673483;
-pub const KEYC_SECONDCLICK1_CONTROL2: keyc = 42949673227;
-pub const KEYC_SECONDCLICK_CONTROL2: keyc = 42949672971;
-pub const KEYC_SECONDCLICK11_CONTROL1: keyc = 42949675786;
-pub const KEYC_SECONDCLICK10_CONTROL1: keyc = 42949675530;
-pub const KEYC_SECONDCLICK9_CONTROL1: keyc = 42949675274;
-pub const KEYC_SECONDCLICK8_CONTROL1: keyc = 42949675018;
-pub const KEYC_SECONDCLICK7_CONTROL1: keyc = 42949674762;
-pub const KEYC_SECONDCLICK6_CONTROL1: keyc = 42949674506;
-pub const KEYC_SECONDCLICK3_CONTROL1: keyc = 42949673738;
-pub const KEYC_SECONDCLICK2_CONTROL1: keyc = 42949673482;
-pub const KEYC_SECONDCLICK1_CONTROL1: keyc = 42949673226;
-pub const KEYC_SECONDCLICK_CONTROL1: keyc = 42949672970;
-pub const KEYC_SECONDCLICK11_CONTROL0: keyc = 42949675785;
-pub const KEYC_SECONDCLICK10_CONTROL0: keyc = 42949675529;
-pub const KEYC_SECONDCLICK9_CONTROL0: keyc = 42949675273;
-pub const KEYC_SECONDCLICK8_CONTROL0: keyc = 42949675017;
-pub const KEYC_SECONDCLICK7_CONTROL0: keyc = 42949674761;
-pub const KEYC_SECONDCLICK6_CONTROL0: keyc = 42949674505;
-pub const KEYC_SECONDCLICK3_CONTROL0: keyc = 42949673737;
-pub const KEYC_SECONDCLICK2_CONTROL0: keyc = 42949673481;
-pub const KEYC_SECONDCLICK1_CONTROL0: keyc = 42949673225;
-pub const KEYC_SECONDCLICK_CONTROL0: keyc = 42949672969;
-pub const KEYC_SECONDCLICK11_SCROLLBAR_DOWN: keyc = 42949675784;
-pub const KEYC_SECONDCLICK10_SCROLLBAR_DOWN: keyc = 42949675528;
-pub const KEYC_SECONDCLICK9_SCROLLBAR_DOWN: keyc = 42949675272;
-pub const KEYC_SECONDCLICK8_SCROLLBAR_DOWN: keyc = 42949675016;
-pub const KEYC_SECONDCLICK7_SCROLLBAR_DOWN: keyc = 42949674760;
-pub const KEYC_SECONDCLICK6_SCROLLBAR_DOWN: keyc = 42949674504;
-pub const KEYC_SECONDCLICK3_SCROLLBAR_DOWN: keyc = 42949673736;
-pub const KEYC_SECONDCLICK2_SCROLLBAR_DOWN: keyc = 42949673480;
-pub const KEYC_SECONDCLICK1_SCROLLBAR_DOWN: keyc = 42949673224;
-pub const KEYC_SECONDCLICK_SCROLLBAR_DOWN: keyc = 42949672968;
-pub const KEYC_SECONDCLICK11_SCROLLBAR_SLIDER: keyc = 42949675783;
-pub const KEYC_SECONDCLICK10_SCROLLBAR_SLIDER: keyc = 42949675527;
-pub const KEYC_SECONDCLICK9_SCROLLBAR_SLIDER: keyc = 42949675271;
-pub const KEYC_SECONDCLICK8_SCROLLBAR_SLIDER: keyc = 42949675015;
-pub const KEYC_SECONDCLICK7_SCROLLBAR_SLIDER: keyc = 42949674759;
-pub const KEYC_SECONDCLICK6_SCROLLBAR_SLIDER: keyc = 42949674503;
-pub const KEYC_SECONDCLICK3_SCROLLBAR_SLIDER: keyc = 42949673735;
-pub const KEYC_SECONDCLICK2_SCROLLBAR_SLIDER: keyc = 42949673479;
-pub const KEYC_SECONDCLICK1_SCROLLBAR_SLIDER: keyc = 42949673223;
-pub const KEYC_SECONDCLICK_SCROLLBAR_SLIDER: keyc = 42949672967;
-pub const KEYC_SECONDCLICK11_SCROLLBAR_UP: keyc = 42949675782;
-pub const KEYC_SECONDCLICK10_SCROLLBAR_UP: keyc = 42949675526;
-pub const KEYC_SECONDCLICK9_SCROLLBAR_UP: keyc = 42949675270;
-pub const KEYC_SECONDCLICK8_SCROLLBAR_UP: keyc = 42949675014;
-pub const KEYC_SECONDCLICK7_SCROLLBAR_UP: keyc = 42949674758;
-pub const KEYC_SECONDCLICK6_SCROLLBAR_UP: keyc = 42949674502;
-pub const KEYC_SECONDCLICK3_SCROLLBAR_UP: keyc = 42949673734;
-pub const KEYC_SECONDCLICK2_SCROLLBAR_UP: keyc = 42949673478;
-pub const KEYC_SECONDCLICK1_SCROLLBAR_UP: keyc = 42949673222;
-pub const KEYC_SECONDCLICK_SCROLLBAR_UP: keyc = 42949672966;
-pub const KEYC_SECONDCLICK11_BORDER: keyc = 42949675781;
-pub const KEYC_SECONDCLICK10_BORDER: keyc = 42949675525;
-pub const KEYC_SECONDCLICK9_BORDER: keyc = 42949675269;
-pub const KEYC_SECONDCLICK8_BORDER: keyc = 42949675013;
-pub const KEYC_SECONDCLICK7_BORDER: keyc = 42949674757;
-pub const KEYC_SECONDCLICK6_BORDER: keyc = 42949674501;
-pub const KEYC_SECONDCLICK3_BORDER: keyc = 42949673733;
-pub const KEYC_SECONDCLICK2_BORDER: keyc = 42949673477;
-pub const KEYC_SECONDCLICK1_BORDER: keyc = 42949673221;
-pub const KEYC_SECONDCLICK_BORDER: keyc = 42949672965;
-pub const KEYC_SECONDCLICK11_STATUS_DEFAULT: keyc = 42949675780;
-pub const KEYC_SECONDCLICK10_STATUS_DEFAULT: keyc = 42949675524;
-pub const KEYC_SECONDCLICK9_STATUS_DEFAULT: keyc = 42949675268;
-pub const KEYC_SECONDCLICK8_STATUS_DEFAULT: keyc = 42949675012;
-pub const KEYC_SECONDCLICK7_STATUS_DEFAULT: keyc = 42949674756;
-pub const KEYC_SECONDCLICK6_STATUS_DEFAULT: keyc = 42949674500;
-pub const KEYC_SECONDCLICK3_STATUS_DEFAULT: keyc = 42949673732;
-pub const KEYC_SECONDCLICK2_STATUS_DEFAULT: keyc = 42949673476;
-pub const KEYC_SECONDCLICK1_STATUS_DEFAULT: keyc = 42949673220;
-pub const KEYC_SECONDCLICK_STATUS_DEFAULT: keyc = 42949672964;
-pub const KEYC_SECONDCLICK11_STATUS_RIGHT: keyc = 42949675779;
-pub const KEYC_SECONDCLICK10_STATUS_RIGHT: keyc = 42949675523;
-pub const KEYC_SECONDCLICK9_STATUS_RIGHT: keyc = 42949675267;
-pub const KEYC_SECONDCLICK8_STATUS_RIGHT: keyc = 42949675011;
-pub const KEYC_SECONDCLICK7_STATUS_RIGHT: keyc = 42949674755;
-pub const KEYC_SECONDCLICK6_STATUS_RIGHT: keyc = 42949674499;
-pub const KEYC_SECONDCLICK3_STATUS_RIGHT: keyc = 42949673731;
-pub const KEYC_SECONDCLICK2_STATUS_RIGHT: keyc = 42949673475;
-pub const KEYC_SECONDCLICK1_STATUS_RIGHT: keyc = 42949673219;
-pub const KEYC_SECONDCLICK_STATUS_RIGHT: keyc = 42949672963;
-pub const KEYC_SECONDCLICK11_STATUS_LEFT: keyc = 42949675778;
-pub const KEYC_SECONDCLICK10_STATUS_LEFT: keyc = 42949675522;
-pub const KEYC_SECONDCLICK9_STATUS_LEFT: keyc = 42949675266;
-pub const KEYC_SECONDCLICK8_STATUS_LEFT: keyc = 42949675010;
-pub const KEYC_SECONDCLICK7_STATUS_LEFT: keyc = 42949674754;
-pub const KEYC_SECONDCLICK6_STATUS_LEFT: keyc = 42949674498;
-pub const KEYC_SECONDCLICK3_STATUS_LEFT: keyc = 42949673730;
-pub const KEYC_SECONDCLICK2_STATUS_LEFT: keyc = 42949673474;
-pub const KEYC_SECONDCLICK1_STATUS_LEFT: keyc = 42949673218;
-pub const KEYC_SECONDCLICK_STATUS_LEFT: keyc = 42949672962;
-pub const KEYC_SECONDCLICK11_STATUS: keyc = 42949675777;
-pub const KEYC_SECONDCLICK10_STATUS: keyc = 42949675521;
-pub const KEYC_SECONDCLICK9_STATUS: keyc = 42949675265;
-pub const KEYC_SECONDCLICK8_STATUS: keyc = 42949675009;
-pub const KEYC_SECONDCLICK7_STATUS: keyc = 42949674753;
-pub const KEYC_SECONDCLICK6_STATUS: keyc = 42949674497;
-pub const KEYC_SECONDCLICK3_STATUS: keyc = 42949673729;
-pub const KEYC_SECONDCLICK2_STATUS: keyc = 42949673473;
-pub const KEYC_SECONDCLICK1_STATUS: keyc = 42949673217;
-pub const KEYC_SECONDCLICK_STATUS: keyc = 42949672961;
-pub const KEYC_SECONDCLICK11_PANE: keyc = 42949675776;
-pub const KEYC_SECONDCLICK10_PANE: keyc = 42949675520;
-pub const KEYC_SECONDCLICK9_PANE: keyc = 42949675264;
-pub const KEYC_SECONDCLICK8_PANE: keyc = 42949675008;
-pub const KEYC_SECONDCLICK7_PANE: keyc = 42949674752;
-pub const KEYC_SECONDCLICK6_PANE: keyc = 42949674496;
-pub const KEYC_SECONDCLICK3_PANE: keyc = 42949673728;
-pub const KEYC_SECONDCLICK2_PANE: keyc = 42949673472;
-pub const KEYC_SECONDCLICK1_PANE: keyc = 42949673216;
-pub const KEYC_SECONDCLICK_PANE: keyc = 42949672960;
-pub const KEYC_MOUSEDRAGEND11_CONTROL9: keyc = 30064773906;
-pub const KEYC_MOUSEDRAGEND10_CONTROL9: keyc = 30064773650;
-pub const KEYC_MOUSEDRAGEND9_CONTROL9: keyc = 30064773394;
-pub const KEYC_MOUSEDRAGEND8_CONTROL9: keyc = 30064773138;
-pub const KEYC_MOUSEDRAGEND7_CONTROL9: keyc = 30064772882;
-pub const KEYC_MOUSEDRAGEND6_CONTROL9: keyc = 30064772626;
-pub const KEYC_MOUSEDRAGEND3_CONTROL9: keyc = 30064771858;
-pub const KEYC_MOUSEDRAGEND2_CONTROL9: keyc = 30064771602;
-pub const KEYC_MOUSEDRAGEND1_CONTROL9: keyc = 30064771346;
-pub const KEYC_MOUSEDRAGEND_CONTROL9: keyc = 30064771090;
-pub const KEYC_MOUSEDRAGEND11_CONTROL8: keyc = 30064773905;
-pub const KEYC_MOUSEDRAGEND10_CONTROL8: keyc = 30064773649;
-pub const KEYC_MOUSEDRAGEND9_CONTROL8: keyc = 30064773393;
-pub const KEYC_MOUSEDRAGEND8_CONTROL8: keyc = 30064773137;
-pub const KEYC_MOUSEDRAGEND7_CONTROL8: keyc = 30064772881;
-pub const KEYC_MOUSEDRAGEND6_CONTROL8: keyc = 30064772625;
-pub const KEYC_MOUSEDRAGEND3_CONTROL8: keyc = 30064771857;
-pub const KEYC_MOUSEDRAGEND2_CONTROL8: keyc = 30064771601;
-pub const KEYC_MOUSEDRAGEND1_CONTROL8: keyc = 30064771345;
-pub const KEYC_MOUSEDRAGEND_CONTROL8: keyc = 30064771089;
-pub const KEYC_MOUSEDRAGEND11_CONTROL7: keyc = 30064773904;
-pub const KEYC_MOUSEDRAGEND10_CONTROL7: keyc = 30064773648;
-pub const KEYC_MOUSEDRAGEND9_CONTROL7: keyc = 30064773392;
-pub const KEYC_MOUSEDRAGEND8_CONTROL7: keyc = 30064773136;
-pub const KEYC_MOUSEDRAGEND7_CONTROL7: keyc = 30064772880;
-pub const KEYC_MOUSEDRAGEND6_CONTROL7: keyc = 30064772624;
-pub const KEYC_MOUSEDRAGEND3_CONTROL7: keyc = 30064771856;
-pub const KEYC_MOUSEDRAGEND2_CONTROL7: keyc = 30064771600;
-pub const KEYC_MOUSEDRAGEND1_CONTROL7: keyc = 30064771344;
-pub const KEYC_MOUSEDRAGEND_CONTROL7: keyc = 30064771088;
-pub const KEYC_MOUSEDRAGEND11_CONTROL6: keyc = 30064773903;
-pub const KEYC_MOUSEDRAGEND10_CONTROL6: keyc = 30064773647;
-pub const KEYC_MOUSEDRAGEND9_CONTROL6: keyc = 30064773391;
-pub const KEYC_MOUSEDRAGEND8_CONTROL6: keyc = 30064773135;
-pub const KEYC_MOUSEDRAGEND7_CONTROL6: keyc = 30064772879;
-pub const KEYC_MOUSEDRAGEND6_CONTROL6: keyc = 30064772623;
-pub const KEYC_MOUSEDRAGEND3_CONTROL6: keyc = 30064771855;
-pub const KEYC_MOUSEDRAGEND2_CONTROL6: keyc = 30064771599;
-pub const KEYC_MOUSEDRAGEND1_CONTROL6: keyc = 30064771343;
-pub const KEYC_MOUSEDRAGEND_CONTROL6: keyc = 30064771087;
-pub const KEYC_MOUSEDRAGEND11_CONTROL5: keyc = 30064773902;
-pub const KEYC_MOUSEDRAGEND10_CONTROL5: keyc = 30064773646;
-pub const KEYC_MOUSEDRAGEND9_CONTROL5: keyc = 30064773390;
-pub const KEYC_MOUSEDRAGEND8_CONTROL5: keyc = 30064773134;
-pub const KEYC_MOUSEDRAGEND7_CONTROL5: keyc = 30064772878;
-pub const KEYC_MOUSEDRAGEND6_CONTROL5: keyc = 30064772622;
-pub const KEYC_MOUSEDRAGEND3_CONTROL5: keyc = 30064771854;
-pub const KEYC_MOUSEDRAGEND2_CONTROL5: keyc = 30064771598;
-pub const KEYC_MOUSEDRAGEND1_CONTROL5: keyc = 30064771342;
-pub const KEYC_MOUSEDRAGEND_CONTROL5: keyc = 30064771086;
-pub const KEYC_MOUSEDRAGEND11_CONTROL4: keyc = 30064773901;
-pub const KEYC_MOUSEDRAGEND10_CONTROL4: keyc = 30064773645;
-pub const KEYC_MOUSEDRAGEND9_CONTROL4: keyc = 30064773389;
-pub const KEYC_MOUSEDRAGEND8_CONTROL4: keyc = 30064773133;
-pub const KEYC_MOUSEDRAGEND7_CONTROL4: keyc = 30064772877;
-pub const KEYC_MOUSEDRAGEND6_CONTROL4: keyc = 30064772621;
-pub const KEYC_MOUSEDRAGEND3_CONTROL4: keyc = 30064771853;
-pub const KEYC_MOUSEDRAGEND2_CONTROL4: keyc = 30064771597;
-pub const KEYC_MOUSEDRAGEND1_CONTROL4: keyc = 30064771341;
-pub const KEYC_MOUSEDRAGEND_CONTROL4: keyc = 30064771085;
-pub const KEYC_MOUSEDRAGEND11_CONTROL3: keyc = 30064773900;
-pub const KEYC_MOUSEDRAGEND10_CONTROL3: keyc = 30064773644;
-pub const KEYC_MOUSEDRAGEND9_CONTROL3: keyc = 30064773388;
-pub const KEYC_MOUSEDRAGEND8_CONTROL3: keyc = 30064773132;
-pub const KEYC_MOUSEDRAGEND7_CONTROL3: keyc = 30064772876;
-pub const KEYC_MOUSEDRAGEND6_CONTROL3: keyc = 30064772620;
-pub const KEYC_MOUSEDRAGEND3_CONTROL3: keyc = 30064771852;
-pub const KEYC_MOUSEDRAGEND2_CONTROL3: keyc = 30064771596;
-pub const KEYC_MOUSEDRAGEND1_CONTROL3: keyc = 30064771340;
-pub const KEYC_MOUSEDRAGEND_CONTROL3: keyc = 30064771084;
-pub const KEYC_MOUSEDRAGEND11_CONTROL2: keyc = 30064773899;
-pub const KEYC_MOUSEDRAGEND10_CONTROL2: keyc = 30064773643;
-pub const KEYC_MOUSEDRAGEND9_CONTROL2: keyc = 30064773387;
-pub const KEYC_MOUSEDRAGEND8_CONTROL2: keyc = 30064773131;
-pub const KEYC_MOUSEDRAGEND7_CONTROL2: keyc = 30064772875;
-pub const KEYC_MOUSEDRAGEND6_CONTROL2: keyc = 30064772619;
-pub const KEYC_MOUSEDRAGEND3_CONTROL2: keyc = 30064771851;
-pub const KEYC_MOUSEDRAGEND2_CONTROL2: keyc = 30064771595;
-pub const KEYC_MOUSEDRAGEND1_CONTROL2: keyc = 30064771339;
-pub const KEYC_MOUSEDRAGEND_CONTROL2: keyc = 30064771083;
-pub const KEYC_MOUSEDRAGEND11_CONTROL1: keyc = 30064773898;
-pub const KEYC_MOUSEDRAGEND10_CONTROL1: keyc = 30064773642;
-pub const KEYC_MOUSEDRAGEND9_CONTROL1: keyc = 30064773386;
-pub const KEYC_MOUSEDRAGEND8_CONTROL1: keyc = 30064773130;
-pub const KEYC_MOUSEDRAGEND7_CONTROL1: keyc = 30064772874;
-pub const KEYC_MOUSEDRAGEND6_CONTROL1: keyc = 30064772618;
-pub const KEYC_MOUSEDRAGEND3_CONTROL1: keyc = 30064771850;
-pub const KEYC_MOUSEDRAGEND2_CONTROL1: keyc = 30064771594;
-pub const KEYC_MOUSEDRAGEND1_CONTROL1: keyc = 30064771338;
-pub const KEYC_MOUSEDRAGEND_CONTROL1: keyc = 30064771082;
-pub const KEYC_MOUSEDRAGEND11_CONTROL0: keyc = 30064773897;
-pub const KEYC_MOUSEDRAGEND10_CONTROL0: keyc = 30064773641;
-pub const KEYC_MOUSEDRAGEND9_CONTROL0: keyc = 30064773385;
-pub const KEYC_MOUSEDRAGEND8_CONTROL0: keyc = 30064773129;
-pub const KEYC_MOUSEDRAGEND7_CONTROL0: keyc = 30064772873;
-pub const KEYC_MOUSEDRAGEND6_CONTROL0: keyc = 30064772617;
-pub const KEYC_MOUSEDRAGEND3_CONTROL0: keyc = 30064771849;
-pub const KEYC_MOUSEDRAGEND2_CONTROL0: keyc = 30064771593;
-pub const KEYC_MOUSEDRAGEND1_CONTROL0: keyc = 30064771337;
-pub const KEYC_MOUSEDRAGEND_CONTROL0: keyc = 30064771081;
-pub const KEYC_MOUSEDRAGEND11_SCROLLBAR_DOWN: keyc = 30064773896;
-pub const KEYC_MOUSEDRAGEND10_SCROLLBAR_DOWN: keyc = 30064773640;
-pub const KEYC_MOUSEDRAGEND9_SCROLLBAR_DOWN: keyc = 30064773384;
-pub const KEYC_MOUSEDRAGEND8_SCROLLBAR_DOWN: keyc = 30064773128;
-pub const KEYC_MOUSEDRAGEND7_SCROLLBAR_DOWN: keyc = 30064772872;
-pub const KEYC_MOUSEDRAGEND6_SCROLLBAR_DOWN: keyc = 30064772616;
-pub const KEYC_MOUSEDRAGEND3_SCROLLBAR_DOWN: keyc = 30064771848;
-pub const KEYC_MOUSEDRAGEND2_SCROLLBAR_DOWN: keyc = 30064771592;
-pub const KEYC_MOUSEDRAGEND1_SCROLLBAR_DOWN: keyc = 30064771336;
-pub const KEYC_MOUSEDRAGEND_SCROLLBAR_DOWN: keyc = 30064771080;
-pub const KEYC_MOUSEDRAGEND11_SCROLLBAR_SLIDER: keyc = 30064773895;
-pub const KEYC_MOUSEDRAGEND10_SCROLLBAR_SLIDER: keyc = 30064773639;
-pub const KEYC_MOUSEDRAGEND9_SCROLLBAR_SLIDER: keyc = 30064773383;
-pub const KEYC_MOUSEDRAGEND8_SCROLLBAR_SLIDER: keyc = 30064773127;
-pub const KEYC_MOUSEDRAGEND7_SCROLLBAR_SLIDER: keyc = 30064772871;
-pub const KEYC_MOUSEDRAGEND6_SCROLLBAR_SLIDER: keyc = 30064772615;
-pub const KEYC_MOUSEDRAGEND3_SCROLLBAR_SLIDER: keyc = 30064771847;
-pub const KEYC_MOUSEDRAGEND2_SCROLLBAR_SLIDER: keyc = 30064771591;
-pub const KEYC_MOUSEDRAGEND1_SCROLLBAR_SLIDER: keyc = 30064771335;
-pub const KEYC_MOUSEDRAGEND_SCROLLBAR_SLIDER: keyc = 30064771079;
-pub const KEYC_MOUSEDRAGEND11_SCROLLBAR_UP: keyc = 30064773894;
-pub const KEYC_MOUSEDRAGEND10_SCROLLBAR_UP: keyc = 30064773638;
-pub const KEYC_MOUSEDRAGEND9_SCROLLBAR_UP: keyc = 30064773382;
-pub const KEYC_MOUSEDRAGEND8_SCROLLBAR_UP: keyc = 30064773126;
-pub const KEYC_MOUSEDRAGEND7_SCROLLBAR_UP: keyc = 30064772870;
-pub const KEYC_MOUSEDRAGEND6_SCROLLBAR_UP: keyc = 30064772614;
-pub const KEYC_MOUSEDRAGEND3_SCROLLBAR_UP: keyc = 30064771846;
-pub const KEYC_MOUSEDRAGEND2_SCROLLBAR_UP: keyc = 30064771590;
-pub const KEYC_MOUSEDRAGEND1_SCROLLBAR_UP: keyc = 30064771334;
-pub const KEYC_MOUSEDRAGEND_SCROLLBAR_UP: keyc = 30064771078;
-pub const KEYC_MOUSEDRAGEND11_BORDER: keyc = 30064773893;
-pub const KEYC_MOUSEDRAGEND10_BORDER: keyc = 30064773637;
-pub const KEYC_MOUSEDRAGEND9_BORDER: keyc = 30064773381;
-pub const KEYC_MOUSEDRAGEND8_BORDER: keyc = 30064773125;
-pub const KEYC_MOUSEDRAGEND7_BORDER: keyc = 30064772869;
-pub const KEYC_MOUSEDRAGEND6_BORDER: keyc = 30064772613;
-pub const KEYC_MOUSEDRAGEND3_BORDER: keyc = 30064771845;
-pub const KEYC_MOUSEDRAGEND2_BORDER: keyc = 30064771589;
-pub const KEYC_MOUSEDRAGEND1_BORDER: keyc = 30064771333;
-pub const KEYC_MOUSEDRAGEND_BORDER: keyc = 30064771077;
-pub const KEYC_MOUSEDRAGEND11_STATUS_DEFAULT: keyc = 30064773892;
-pub const KEYC_MOUSEDRAGEND10_STATUS_DEFAULT: keyc = 30064773636;
-pub const KEYC_MOUSEDRAGEND9_STATUS_DEFAULT: keyc = 30064773380;
-pub const KEYC_MOUSEDRAGEND8_STATUS_DEFAULT: keyc = 30064773124;
-pub const KEYC_MOUSEDRAGEND7_STATUS_DEFAULT: keyc = 30064772868;
-pub const KEYC_MOUSEDRAGEND6_STATUS_DEFAULT: keyc = 30064772612;
-pub const KEYC_MOUSEDRAGEND3_STATUS_DEFAULT: keyc = 30064771844;
-pub const KEYC_MOUSEDRAGEND2_STATUS_DEFAULT: keyc = 30064771588;
-pub const KEYC_MOUSEDRAGEND1_STATUS_DEFAULT: keyc = 30064771332;
-pub const KEYC_MOUSEDRAGEND_STATUS_DEFAULT: keyc = 30064771076;
-pub const KEYC_MOUSEDRAGEND11_STATUS_RIGHT: keyc = 30064773891;
-pub const KEYC_MOUSEDRAGEND10_STATUS_RIGHT: keyc = 30064773635;
-pub const KEYC_MOUSEDRAGEND9_STATUS_RIGHT: keyc = 30064773379;
-pub const KEYC_MOUSEDRAGEND8_STATUS_RIGHT: keyc = 30064773123;
-pub const KEYC_MOUSEDRAGEND7_STATUS_RIGHT: keyc = 30064772867;
-pub const KEYC_MOUSEDRAGEND6_STATUS_RIGHT: keyc = 30064772611;
-pub const KEYC_MOUSEDRAGEND3_STATUS_RIGHT: keyc = 30064771843;
-pub const KEYC_MOUSEDRAGEND2_STATUS_RIGHT: keyc = 30064771587;
-pub const KEYC_MOUSEDRAGEND1_STATUS_RIGHT: keyc = 30064771331;
-pub const KEYC_MOUSEDRAGEND_STATUS_RIGHT: keyc = 30064771075;
-pub const KEYC_MOUSEDRAGEND11_STATUS_LEFT: keyc = 30064773890;
-pub const KEYC_MOUSEDRAGEND10_STATUS_LEFT: keyc = 30064773634;
-pub const KEYC_MOUSEDRAGEND9_STATUS_LEFT: keyc = 30064773378;
-pub const KEYC_MOUSEDRAGEND8_STATUS_LEFT: keyc = 30064773122;
-pub const KEYC_MOUSEDRAGEND7_STATUS_LEFT: keyc = 30064772866;
-pub const KEYC_MOUSEDRAGEND6_STATUS_LEFT: keyc = 30064772610;
-pub const KEYC_MOUSEDRAGEND3_STATUS_LEFT: keyc = 30064771842;
-pub const KEYC_MOUSEDRAGEND2_STATUS_LEFT: keyc = 30064771586;
-pub const KEYC_MOUSEDRAGEND1_STATUS_LEFT: keyc = 30064771330;
-pub const KEYC_MOUSEDRAGEND_STATUS_LEFT: keyc = 30064771074;
-pub const KEYC_MOUSEDRAGEND11_STATUS: keyc = 30064773889;
-pub const KEYC_MOUSEDRAGEND10_STATUS: keyc = 30064773633;
-pub const KEYC_MOUSEDRAGEND9_STATUS: keyc = 30064773377;
-pub const KEYC_MOUSEDRAGEND8_STATUS: keyc = 30064773121;
-pub const KEYC_MOUSEDRAGEND7_STATUS: keyc = 30064772865;
-pub const KEYC_MOUSEDRAGEND6_STATUS: keyc = 30064772609;
-pub const KEYC_MOUSEDRAGEND3_STATUS: keyc = 30064771841;
-pub const KEYC_MOUSEDRAGEND2_STATUS: keyc = 30064771585;
-pub const KEYC_MOUSEDRAGEND1_STATUS: keyc = 30064771329;
-pub const KEYC_MOUSEDRAGEND_STATUS: keyc = 30064771073;
-pub const KEYC_MOUSEDRAGEND11_PANE: keyc = 30064773888;
-pub const KEYC_MOUSEDRAGEND10_PANE: keyc = 30064773632;
-pub const KEYC_MOUSEDRAGEND9_PANE: keyc = 30064773376;
-pub const KEYC_MOUSEDRAGEND8_PANE: keyc = 30064773120;
-pub const KEYC_MOUSEDRAGEND7_PANE: keyc = 30064772864;
-pub const KEYC_MOUSEDRAGEND6_PANE: keyc = 30064772608;
-pub const KEYC_MOUSEDRAGEND3_PANE: keyc = 30064771840;
-pub const KEYC_MOUSEDRAGEND2_PANE: keyc = 30064771584;
-pub const KEYC_MOUSEDRAGEND1_PANE: keyc = 30064771328;
-pub const KEYC_MOUSEDRAGEND_PANE: keyc = 30064771072;
-pub const KEYC_MOUSEDRAG11_CONTROL9: keyc = 25769806610;
-pub const KEYC_MOUSEDRAG10_CONTROL9: keyc = 25769806354;
-pub const KEYC_MOUSEDRAG9_CONTROL9: keyc = 25769806098;
-pub const KEYC_MOUSEDRAG8_CONTROL9: keyc = 25769805842;
-pub const KEYC_MOUSEDRAG7_CONTROL9: keyc = 25769805586;
-pub const KEYC_MOUSEDRAG6_CONTROL9: keyc = 25769805330;
-pub const KEYC_MOUSEDRAG3_CONTROL9: keyc = 25769804562;
-pub const KEYC_MOUSEDRAG2_CONTROL9: keyc = 25769804306;
-pub const KEYC_MOUSEDRAG1_CONTROL9: keyc = 25769804050;
-pub const KEYC_MOUSEDRAG_CONTROL9: keyc = 25769803794;
-pub const KEYC_MOUSEDRAG11_CONTROL8: keyc = 25769806609;
-pub const KEYC_MOUSEDRAG10_CONTROL8: keyc = 25769806353;
-pub const KEYC_MOUSEDRAG9_CONTROL8: keyc = 25769806097;
-pub const KEYC_MOUSEDRAG8_CONTROL8: keyc = 25769805841;
-pub const KEYC_MOUSEDRAG7_CONTROL8: keyc = 25769805585;
-pub const KEYC_MOUSEDRAG6_CONTROL8: keyc = 25769805329;
-pub const KEYC_MOUSEDRAG3_CONTROL8: keyc = 25769804561;
-pub const KEYC_MOUSEDRAG2_CONTROL8: keyc = 25769804305;
-pub const KEYC_MOUSEDRAG1_CONTROL8: keyc = 25769804049;
-pub const KEYC_MOUSEDRAG_CONTROL8: keyc = 25769803793;
-pub const KEYC_MOUSEDRAG11_CONTROL7: keyc = 25769806608;
-pub const KEYC_MOUSEDRAG10_CONTROL7: keyc = 25769806352;
-pub const KEYC_MOUSEDRAG9_CONTROL7: keyc = 25769806096;
-pub const KEYC_MOUSEDRAG8_CONTROL7: keyc = 25769805840;
-pub const KEYC_MOUSEDRAG7_CONTROL7: keyc = 25769805584;
-pub const KEYC_MOUSEDRAG6_CONTROL7: keyc = 25769805328;
-pub const KEYC_MOUSEDRAG3_CONTROL7: keyc = 25769804560;
-pub const KEYC_MOUSEDRAG2_CONTROL7: keyc = 25769804304;
-pub const KEYC_MOUSEDRAG1_CONTROL7: keyc = 25769804048;
-pub const KEYC_MOUSEDRAG_CONTROL7: keyc = 25769803792;
-pub const KEYC_MOUSEDRAG11_CONTROL6: keyc = 25769806607;
-pub const KEYC_MOUSEDRAG10_CONTROL6: keyc = 25769806351;
-pub const KEYC_MOUSEDRAG9_CONTROL6: keyc = 25769806095;
-pub const KEYC_MOUSEDRAG8_CONTROL6: keyc = 25769805839;
-pub const KEYC_MOUSEDRAG7_CONTROL6: keyc = 25769805583;
-pub const KEYC_MOUSEDRAG6_CONTROL6: keyc = 25769805327;
-pub const KEYC_MOUSEDRAG3_CONTROL6: keyc = 25769804559;
-pub const KEYC_MOUSEDRAG2_CONTROL6: keyc = 25769804303;
-pub const KEYC_MOUSEDRAG1_CONTROL6: keyc = 25769804047;
-pub const KEYC_MOUSEDRAG_CONTROL6: keyc = 25769803791;
-pub const KEYC_MOUSEDRAG11_CONTROL5: keyc = 25769806606;
-pub const KEYC_MOUSEDRAG10_CONTROL5: keyc = 25769806350;
-pub const KEYC_MOUSEDRAG9_CONTROL5: keyc = 25769806094;
-pub const KEYC_MOUSEDRAG8_CONTROL5: keyc = 25769805838;
-pub const KEYC_MOUSEDRAG7_CONTROL5: keyc = 25769805582;
-pub const KEYC_MOUSEDRAG6_CONTROL5: keyc = 25769805326;
-pub const KEYC_MOUSEDRAG3_CONTROL5: keyc = 25769804558;
-pub const KEYC_MOUSEDRAG2_CONTROL5: keyc = 25769804302;
-pub const KEYC_MOUSEDRAG1_CONTROL5: keyc = 25769804046;
-pub const KEYC_MOUSEDRAG_CONTROL5: keyc = 25769803790;
-pub const KEYC_MOUSEDRAG11_CONTROL4: keyc = 25769806605;
-pub const KEYC_MOUSEDRAG10_CONTROL4: keyc = 25769806349;
-pub const KEYC_MOUSEDRAG9_CONTROL4: keyc = 25769806093;
-pub const KEYC_MOUSEDRAG8_CONTROL4: keyc = 25769805837;
-pub const KEYC_MOUSEDRAG7_CONTROL4: keyc = 25769805581;
-pub const KEYC_MOUSEDRAG6_CONTROL4: keyc = 25769805325;
-pub const KEYC_MOUSEDRAG3_CONTROL4: keyc = 25769804557;
-pub const KEYC_MOUSEDRAG2_CONTROL4: keyc = 25769804301;
-pub const KEYC_MOUSEDRAG1_CONTROL4: keyc = 25769804045;
-pub const KEYC_MOUSEDRAG_CONTROL4: keyc = 25769803789;
-pub const KEYC_MOUSEDRAG11_CONTROL3: keyc = 25769806604;
-pub const KEYC_MOUSEDRAG10_CONTROL3: keyc = 25769806348;
-pub const KEYC_MOUSEDRAG9_CONTROL3: keyc = 25769806092;
-pub const KEYC_MOUSEDRAG8_CONTROL3: keyc = 25769805836;
-pub const KEYC_MOUSEDRAG7_CONTROL3: keyc = 25769805580;
-pub const KEYC_MOUSEDRAG6_CONTROL3: keyc = 25769805324;
-pub const KEYC_MOUSEDRAG3_CONTROL3: keyc = 25769804556;
-pub const KEYC_MOUSEDRAG2_CONTROL3: keyc = 25769804300;
-pub const KEYC_MOUSEDRAG1_CONTROL3: keyc = 25769804044;
-pub const KEYC_MOUSEDRAG_CONTROL3: keyc = 25769803788;
-pub const KEYC_MOUSEDRAG11_CONTROL2: keyc = 25769806603;
-pub const KEYC_MOUSEDRAG10_CONTROL2: keyc = 25769806347;
-pub const KEYC_MOUSEDRAG9_CONTROL2: keyc = 25769806091;
-pub const KEYC_MOUSEDRAG8_CONTROL2: keyc = 25769805835;
-pub const KEYC_MOUSEDRAG7_CONTROL2: keyc = 25769805579;
-pub const KEYC_MOUSEDRAG6_CONTROL2: keyc = 25769805323;
-pub const KEYC_MOUSEDRAG3_CONTROL2: keyc = 25769804555;
-pub const KEYC_MOUSEDRAG2_CONTROL2: keyc = 25769804299;
-pub const KEYC_MOUSEDRAG1_CONTROL2: keyc = 25769804043;
-pub const KEYC_MOUSEDRAG_CONTROL2: keyc = 25769803787;
-pub const KEYC_MOUSEDRAG11_CONTROL1: keyc = 25769806602;
-pub const KEYC_MOUSEDRAG10_CONTROL1: keyc = 25769806346;
-pub const KEYC_MOUSEDRAG9_CONTROL1: keyc = 25769806090;
-pub const KEYC_MOUSEDRAG8_CONTROL1: keyc = 25769805834;
-pub const KEYC_MOUSEDRAG7_CONTROL1: keyc = 25769805578;
-pub const KEYC_MOUSEDRAG6_CONTROL1: keyc = 25769805322;
-pub const KEYC_MOUSEDRAG3_CONTROL1: keyc = 25769804554;
-pub const KEYC_MOUSEDRAG2_CONTROL1: keyc = 25769804298;
-pub const KEYC_MOUSEDRAG1_CONTROL1: keyc = 25769804042;
-pub const KEYC_MOUSEDRAG_CONTROL1: keyc = 25769803786;
-pub const KEYC_MOUSEDRAG11_CONTROL0: keyc = 25769806601;
-pub const KEYC_MOUSEDRAG10_CONTROL0: keyc = 25769806345;
-pub const KEYC_MOUSEDRAG9_CONTROL0: keyc = 25769806089;
-pub const KEYC_MOUSEDRAG8_CONTROL0: keyc = 25769805833;
-pub const KEYC_MOUSEDRAG7_CONTROL0: keyc = 25769805577;
-pub const KEYC_MOUSEDRAG6_CONTROL0: keyc = 25769805321;
-pub const KEYC_MOUSEDRAG3_CONTROL0: keyc = 25769804553;
-pub const KEYC_MOUSEDRAG2_CONTROL0: keyc = 25769804297;
-pub const KEYC_MOUSEDRAG1_CONTROL0: keyc = 25769804041;
-pub const KEYC_MOUSEDRAG_CONTROL0: keyc = 25769803785;
-pub const KEYC_MOUSEDRAG11_SCROLLBAR_DOWN: keyc = 25769806600;
-pub const KEYC_MOUSEDRAG10_SCROLLBAR_DOWN: keyc = 25769806344;
-pub const KEYC_MOUSEDRAG9_SCROLLBAR_DOWN: keyc = 25769806088;
-pub const KEYC_MOUSEDRAG8_SCROLLBAR_DOWN: keyc = 25769805832;
-pub const KEYC_MOUSEDRAG7_SCROLLBAR_DOWN: keyc = 25769805576;
-pub const KEYC_MOUSEDRAG6_SCROLLBAR_DOWN: keyc = 25769805320;
-pub const KEYC_MOUSEDRAG3_SCROLLBAR_DOWN: keyc = 25769804552;
-pub const KEYC_MOUSEDRAG2_SCROLLBAR_DOWN: keyc = 25769804296;
-pub const KEYC_MOUSEDRAG1_SCROLLBAR_DOWN: keyc = 25769804040;
-pub const KEYC_MOUSEDRAG_SCROLLBAR_DOWN: keyc = 25769803784;
-pub const KEYC_MOUSEDRAG11_SCROLLBAR_SLIDER: keyc = 25769806599;
-pub const KEYC_MOUSEDRAG10_SCROLLBAR_SLIDER: keyc = 25769806343;
-pub const KEYC_MOUSEDRAG9_SCROLLBAR_SLIDER: keyc = 25769806087;
-pub const KEYC_MOUSEDRAG8_SCROLLBAR_SLIDER: keyc = 25769805831;
-pub const KEYC_MOUSEDRAG7_SCROLLBAR_SLIDER: keyc = 25769805575;
-pub const KEYC_MOUSEDRAG6_SCROLLBAR_SLIDER: keyc = 25769805319;
-pub const KEYC_MOUSEDRAG3_SCROLLBAR_SLIDER: keyc = 25769804551;
-pub const KEYC_MOUSEDRAG2_SCROLLBAR_SLIDER: keyc = 25769804295;
-pub const KEYC_MOUSEDRAG1_SCROLLBAR_SLIDER: keyc = 25769804039;
-pub const KEYC_MOUSEDRAG_SCROLLBAR_SLIDER: keyc = 25769803783;
-pub const KEYC_MOUSEDRAG11_SCROLLBAR_UP: keyc = 25769806598;
-pub const KEYC_MOUSEDRAG10_SCROLLBAR_UP: keyc = 25769806342;
-pub const KEYC_MOUSEDRAG9_SCROLLBAR_UP: keyc = 25769806086;
-pub const KEYC_MOUSEDRAG8_SCROLLBAR_UP: keyc = 25769805830;
-pub const KEYC_MOUSEDRAG7_SCROLLBAR_UP: keyc = 25769805574;
-pub const KEYC_MOUSEDRAG6_SCROLLBAR_UP: keyc = 25769805318;
-pub const KEYC_MOUSEDRAG3_SCROLLBAR_UP: keyc = 25769804550;
-pub const KEYC_MOUSEDRAG2_SCROLLBAR_UP: keyc = 25769804294;
-pub const KEYC_MOUSEDRAG1_SCROLLBAR_UP: keyc = 25769804038;
-pub const KEYC_MOUSEDRAG_SCROLLBAR_UP: keyc = 25769803782;
-pub const KEYC_MOUSEDRAG11_BORDER: keyc = 25769806597;
-pub const KEYC_MOUSEDRAG10_BORDER: keyc = 25769806341;
-pub const KEYC_MOUSEDRAG9_BORDER: keyc = 25769806085;
-pub const KEYC_MOUSEDRAG8_BORDER: keyc = 25769805829;
-pub const KEYC_MOUSEDRAG7_BORDER: keyc = 25769805573;
-pub const KEYC_MOUSEDRAG6_BORDER: keyc = 25769805317;
-pub const KEYC_MOUSEDRAG3_BORDER: keyc = 25769804549;
-pub const KEYC_MOUSEDRAG2_BORDER: keyc = 25769804293;
-pub const KEYC_MOUSEDRAG1_BORDER: keyc = 25769804037;
-pub const KEYC_MOUSEDRAG_BORDER: keyc = 25769803781;
-pub const KEYC_MOUSEDRAG11_STATUS_DEFAULT: keyc = 25769806596;
-pub const KEYC_MOUSEDRAG10_STATUS_DEFAULT: keyc = 25769806340;
-pub const KEYC_MOUSEDRAG9_STATUS_DEFAULT: keyc = 25769806084;
-pub const KEYC_MOUSEDRAG8_STATUS_DEFAULT: keyc = 25769805828;
-pub const KEYC_MOUSEDRAG7_STATUS_DEFAULT: keyc = 25769805572;
-pub const KEYC_MOUSEDRAG6_STATUS_DEFAULT: keyc = 25769805316;
-pub const KEYC_MOUSEDRAG3_STATUS_DEFAULT: keyc = 25769804548;
-pub const KEYC_MOUSEDRAG2_STATUS_DEFAULT: keyc = 25769804292;
-pub const KEYC_MOUSEDRAG1_STATUS_DEFAULT: keyc = 25769804036;
-pub const KEYC_MOUSEDRAG_STATUS_DEFAULT: keyc = 25769803780;
-pub const KEYC_MOUSEDRAG11_STATUS_RIGHT: keyc = 25769806595;
-pub const KEYC_MOUSEDRAG10_STATUS_RIGHT: keyc = 25769806339;
-pub const KEYC_MOUSEDRAG9_STATUS_RIGHT: keyc = 25769806083;
-pub const KEYC_MOUSEDRAG8_STATUS_RIGHT: keyc = 25769805827;
-pub const KEYC_MOUSEDRAG7_STATUS_RIGHT: keyc = 25769805571;
-pub const KEYC_MOUSEDRAG6_STATUS_RIGHT: keyc = 25769805315;
-pub const KEYC_MOUSEDRAG3_STATUS_RIGHT: keyc = 25769804547;
-pub const KEYC_MOUSEDRAG2_STATUS_RIGHT: keyc = 25769804291;
-pub const KEYC_MOUSEDRAG1_STATUS_RIGHT: keyc = 25769804035;
-pub const KEYC_MOUSEDRAG_STATUS_RIGHT: keyc = 25769803779;
-pub const KEYC_MOUSEDRAG11_STATUS_LEFT: keyc = 25769806594;
-pub const KEYC_MOUSEDRAG10_STATUS_LEFT: keyc = 25769806338;
-pub const KEYC_MOUSEDRAG9_STATUS_LEFT: keyc = 25769806082;
-pub const KEYC_MOUSEDRAG8_STATUS_LEFT: keyc = 25769805826;
-pub const KEYC_MOUSEDRAG7_STATUS_LEFT: keyc = 25769805570;
-pub const KEYC_MOUSEDRAG6_STATUS_LEFT: keyc = 25769805314;
-pub const KEYC_MOUSEDRAG3_STATUS_LEFT: keyc = 25769804546;
-pub const KEYC_MOUSEDRAG2_STATUS_LEFT: keyc = 25769804290;
-pub const KEYC_MOUSEDRAG1_STATUS_LEFT: keyc = 25769804034;
-pub const KEYC_MOUSEDRAG_STATUS_LEFT: keyc = 25769803778;
-pub const KEYC_MOUSEDRAG11_STATUS: keyc = 25769806593;
-pub const KEYC_MOUSEDRAG10_STATUS: keyc = 25769806337;
-pub const KEYC_MOUSEDRAG9_STATUS: keyc = 25769806081;
-pub const KEYC_MOUSEDRAG8_STATUS: keyc = 25769805825;
-pub const KEYC_MOUSEDRAG7_STATUS: keyc = 25769805569;
-pub const KEYC_MOUSEDRAG6_STATUS: keyc = 25769805313;
-pub const KEYC_MOUSEDRAG3_STATUS: keyc = 25769804545;
-pub const KEYC_MOUSEDRAG2_STATUS: keyc = 25769804289;
-pub const KEYC_MOUSEDRAG1_STATUS: keyc = 25769804033;
-pub const KEYC_MOUSEDRAG_STATUS: keyc = 25769803777;
-pub const KEYC_MOUSEDRAG11_PANE: keyc = 25769806592;
-pub const KEYC_MOUSEDRAG10_PANE: keyc = 25769806336;
-pub const KEYC_MOUSEDRAG9_PANE: keyc = 25769806080;
-pub const KEYC_MOUSEDRAG8_PANE: keyc = 25769805824;
-pub const KEYC_MOUSEDRAG7_PANE: keyc = 25769805568;
-pub const KEYC_MOUSEDRAG6_PANE: keyc = 25769805312;
-pub const KEYC_MOUSEDRAG3_PANE: keyc = 25769804544;
-pub const KEYC_MOUSEDRAG2_PANE: keyc = 25769804288;
-pub const KEYC_MOUSEDRAG1_PANE: keyc = 25769804032;
-pub const KEYC_MOUSEDRAG_PANE: keyc = 25769803776;
-pub const KEYC_MOUSEUP11_CONTROL9: keyc = 21474839314;
-pub const KEYC_MOUSEUP10_CONTROL9: keyc = 21474839058;
-pub const KEYC_MOUSEUP9_CONTROL9: keyc = 21474838802;
-pub const KEYC_MOUSEUP8_CONTROL9: keyc = 21474838546;
-pub const KEYC_MOUSEUP7_CONTROL9: keyc = 21474838290;
-pub const KEYC_MOUSEUP6_CONTROL9: keyc = 21474838034;
-pub const KEYC_MOUSEUP3_CONTROL9: keyc = 21474837266;
-pub const KEYC_MOUSEUP2_CONTROL9: keyc = 21474837010;
-pub const KEYC_MOUSEUP1_CONTROL9: keyc = 21474836754;
-pub const KEYC_MOUSEUP_CONTROL9: keyc = 21474836498;
-pub const KEYC_MOUSEUP11_CONTROL8: keyc = 21474839313;
-pub const KEYC_MOUSEUP10_CONTROL8: keyc = 21474839057;
-pub const KEYC_MOUSEUP9_CONTROL8: keyc = 21474838801;
-pub const KEYC_MOUSEUP8_CONTROL8: keyc = 21474838545;
-pub const KEYC_MOUSEUP7_CONTROL8: keyc = 21474838289;
-pub const KEYC_MOUSEUP6_CONTROL8: keyc = 21474838033;
-pub const KEYC_MOUSEUP3_CONTROL8: keyc = 21474837265;
-pub const KEYC_MOUSEUP2_CONTROL8: keyc = 21474837009;
-pub const KEYC_MOUSEUP1_CONTROL8: keyc = 21474836753;
-pub const KEYC_MOUSEUP_CONTROL8: keyc = 21474836497;
-pub const KEYC_MOUSEUP11_CONTROL7: keyc = 21474839312;
-pub const KEYC_MOUSEUP10_CONTROL7: keyc = 21474839056;
-pub const KEYC_MOUSEUP9_CONTROL7: keyc = 21474838800;
-pub const KEYC_MOUSEUP8_CONTROL7: keyc = 21474838544;
-pub const KEYC_MOUSEUP7_CONTROL7: keyc = 21474838288;
-pub const KEYC_MOUSEUP6_CONTROL7: keyc = 21474838032;
-pub const KEYC_MOUSEUP3_CONTROL7: keyc = 21474837264;
-pub const KEYC_MOUSEUP2_CONTROL7: keyc = 21474837008;
-pub const KEYC_MOUSEUP1_CONTROL7: keyc = 21474836752;
-pub const KEYC_MOUSEUP_CONTROL7: keyc = 21474836496;
-pub const KEYC_MOUSEUP11_CONTROL6: keyc = 21474839311;
-pub const KEYC_MOUSEUP10_CONTROL6: keyc = 21474839055;
-pub const KEYC_MOUSEUP9_CONTROL6: keyc = 21474838799;
-pub const KEYC_MOUSEUP8_CONTROL6: keyc = 21474838543;
-pub const KEYC_MOUSEUP7_CONTROL6: keyc = 21474838287;
-pub const KEYC_MOUSEUP6_CONTROL6: keyc = 21474838031;
-pub const KEYC_MOUSEUP3_CONTROL6: keyc = 21474837263;
-pub const KEYC_MOUSEUP2_CONTROL6: keyc = 21474837007;
-pub const KEYC_MOUSEUP1_CONTROL6: keyc = 21474836751;
-pub const KEYC_MOUSEUP_CONTROL6: keyc = 21474836495;
-pub const KEYC_MOUSEUP11_CONTROL5: keyc = 21474839310;
-pub const KEYC_MOUSEUP10_CONTROL5: keyc = 21474839054;
-pub const KEYC_MOUSEUP9_CONTROL5: keyc = 21474838798;
-pub const KEYC_MOUSEUP8_CONTROL5: keyc = 21474838542;
-pub const KEYC_MOUSEUP7_CONTROL5: keyc = 21474838286;
-pub const KEYC_MOUSEUP6_CONTROL5: keyc = 21474838030;
-pub const KEYC_MOUSEUP3_CONTROL5: keyc = 21474837262;
-pub const KEYC_MOUSEUP2_CONTROL5: keyc = 21474837006;
-pub const KEYC_MOUSEUP1_CONTROL5: keyc = 21474836750;
-pub const KEYC_MOUSEUP_CONTROL5: keyc = 21474836494;
-pub const KEYC_MOUSEUP11_CONTROL4: keyc = 21474839309;
-pub const KEYC_MOUSEUP10_CONTROL4: keyc = 21474839053;
-pub const KEYC_MOUSEUP9_CONTROL4: keyc = 21474838797;
-pub const KEYC_MOUSEUP8_CONTROL4: keyc = 21474838541;
-pub const KEYC_MOUSEUP7_CONTROL4: keyc = 21474838285;
-pub const KEYC_MOUSEUP6_CONTROL4: keyc = 21474838029;
-pub const KEYC_MOUSEUP3_CONTROL4: keyc = 21474837261;
-pub const KEYC_MOUSEUP2_CONTROL4: keyc = 21474837005;
-pub const KEYC_MOUSEUP1_CONTROL4: keyc = 21474836749;
-pub const KEYC_MOUSEUP_CONTROL4: keyc = 21474836493;
-pub const KEYC_MOUSEUP11_CONTROL3: keyc = 21474839308;
-pub const KEYC_MOUSEUP10_CONTROL3: keyc = 21474839052;
-pub const KEYC_MOUSEUP9_CONTROL3: keyc = 21474838796;
-pub const KEYC_MOUSEUP8_CONTROL3: keyc = 21474838540;
-pub const KEYC_MOUSEUP7_CONTROL3: keyc = 21474838284;
-pub const KEYC_MOUSEUP6_CONTROL3: keyc = 21474838028;
-pub const KEYC_MOUSEUP3_CONTROL3: keyc = 21474837260;
-pub const KEYC_MOUSEUP2_CONTROL3: keyc = 21474837004;
-pub const KEYC_MOUSEUP1_CONTROL3: keyc = 21474836748;
-pub const KEYC_MOUSEUP_CONTROL3: keyc = 21474836492;
-pub const KEYC_MOUSEUP11_CONTROL2: keyc = 21474839307;
-pub const KEYC_MOUSEUP10_CONTROL2: keyc = 21474839051;
-pub const KEYC_MOUSEUP9_CONTROL2: keyc = 21474838795;
-pub const KEYC_MOUSEUP8_CONTROL2: keyc = 21474838539;
-pub const KEYC_MOUSEUP7_CONTROL2: keyc = 21474838283;
-pub const KEYC_MOUSEUP6_CONTROL2: keyc = 21474838027;
-pub const KEYC_MOUSEUP3_CONTROL2: keyc = 21474837259;
-pub const KEYC_MOUSEUP2_CONTROL2: keyc = 21474837003;
-pub const KEYC_MOUSEUP1_CONTROL2: keyc = 21474836747;
-pub const KEYC_MOUSEUP_CONTROL2: keyc = 21474836491;
-pub const KEYC_MOUSEUP11_CONTROL1: keyc = 21474839306;
-pub const KEYC_MOUSEUP10_CONTROL1: keyc = 21474839050;
-pub const KEYC_MOUSEUP9_CONTROL1: keyc = 21474838794;
-pub const KEYC_MOUSEUP8_CONTROL1: keyc = 21474838538;
-pub const KEYC_MOUSEUP7_CONTROL1: keyc = 21474838282;
-pub const KEYC_MOUSEUP6_CONTROL1: keyc = 21474838026;
-pub const KEYC_MOUSEUP3_CONTROL1: keyc = 21474837258;
-pub const KEYC_MOUSEUP2_CONTROL1: keyc = 21474837002;
-pub const KEYC_MOUSEUP1_CONTROL1: keyc = 21474836746;
-pub const KEYC_MOUSEUP_CONTROL1: keyc = 21474836490;
-pub const KEYC_MOUSEUP11_CONTROL0: keyc = 21474839305;
-pub const KEYC_MOUSEUP10_CONTROL0: keyc = 21474839049;
-pub const KEYC_MOUSEUP9_CONTROL0: keyc = 21474838793;
-pub const KEYC_MOUSEUP8_CONTROL0: keyc = 21474838537;
-pub const KEYC_MOUSEUP7_CONTROL0: keyc = 21474838281;
-pub const KEYC_MOUSEUP6_CONTROL0: keyc = 21474838025;
-pub const KEYC_MOUSEUP3_CONTROL0: keyc = 21474837257;
-pub const KEYC_MOUSEUP2_CONTROL0: keyc = 21474837001;
-pub const KEYC_MOUSEUP1_CONTROL0: keyc = 21474836745;
-pub const KEYC_MOUSEUP_CONTROL0: keyc = 21474836489;
-pub const KEYC_MOUSEUP11_SCROLLBAR_DOWN: keyc = 21474839304;
-pub const KEYC_MOUSEUP10_SCROLLBAR_DOWN: keyc = 21474839048;
-pub const KEYC_MOUSEUP9_SCROLLBAR_DOWN: keyc = 21474838792;
-pub const KEYC_MOUSEUP8_SCROLLBAR_DOWN: keyc = 21474838536;
-pub const KEYC_MOUSEUP7_SCROLLBAR_DOWN: keyc = 21474838280;
-pub const KEYC_MOUSEUP6_SCROLLBAR_DOWN: keyc = 21474838024;
-pub const KEYC_MOUSEUP3_SCROLLBAR_DOWN: keyc = 21474837256;
-pub const KEYC_MOUSEUP2_SCROLLBAR_DOWN: keyc = 21474837000;
-pub const KEYC_MOUSEUP1_SCROLLBAR_DOWN: keyc = 21474836744;
-pub const KEYC_MOUSEUP_SCROLLBAR_DOWN: keyc = 21474836488;
-pub const KEYC_MOUSEUP11_SCROLLBAR_SLIDER: keyc = 21474839303;
-pub const KEYC_MOUSEUP10_SCROLLBAR_SLIDER: keyc = 21474839047;
-pub const KEYC_MOUSEUP9_SCROLLBAR_SLIDER: keyc = 21474838791;
-pub const KEYC_MOUSEUP8_SCROLLBAR_SLIDER: keyc = 21474838535;
-pub const KEYC_MOUSEUP7_SCROLLBAR_SLIDER: keyc = 21474838279;
-pub const KEYC_MOUSEUP6_SCROLLBAR_SLIDER: keyc = 21474838023;
-pub const KEYC_MOUSEUP3_SCROLLBAR_SLIDER: keyc = 21474837255;
-pub const KEYC_MOUSEUP2_SCROLLBAR_SLIDER: keyc = 21474836999;
-pub const KEYC_MOUSEUP1_SCROLLBAR_SLIDER: keyc = 21474836743;
-pub const KEYC_MOUSEUP_SCROLLBAR_SLIDER: keyc = 21474836487;
-pub const KEYC_MOUSEUP11_SCROLLBAR_UP: keyc = 21474839302;
-pub const KEYC_MOUSEUP10_SCROLLBAR_UP: keyc = 21474839046;
-pub const KEYC_MOUSEUP9_SCROLLBAR_UP: keyc = 21474838790;
-pub const KEYC_MOUSEUP8_SCROLLBAR_UP: keyc = 21474838534;
-pub const KEYC_MOUSEUP7_SCROLLBAR_UP: keyc = 21474838278;
-pub const KEYC_MOUSEUP6_SCROLLBAR_UP: keyc = 21474838022;
-pub const KEYC_MOUSEUP3_SCROLLBAR_UP: keyc = 21474837254;
-pub const KEYC_MOUSEUP2_SCROLLBAR_UP: keyc = 21474836998;
-pub const KEYC_MOUSEUP1_SCROLLBAR_UP: keyc = 21474836742;
-pub const KEYC_MOUSEUP_SCROLLBAR_UP: keyc = 21474836486;
-pub const KEYC_MOUSEUP11_BORDER: keyc = 21474839301;
-pub const KEYC_MOUSEUP10_BORDER: keyc = 21474839045;
-pub const KEYC_MOUSEUP9_BORDER: keyc = 21474838789;
-pub const KEYC_MOUSEUP8_BORDER: keyc = 21474838533;
-pub const KEYC_MOUSEUP7_BORDER: keyc = 21474838277;
-pub const KEYC_MOUSEUP6_BORDER: keyc = 21474838021;
-pub const KEYC_MOUSEUP3_BORDER: keyc = 21474837253;
-pub const KEYC_MOUSEUP2_BORDER: keyc = 21474836997;
-pub const KEYC_MOUSEUP1_BORDER: keyc = 21474836741;
-pub const KEYC_MOUSEUP_BORDER: keyc = 21474836485;
-pub const KEYC_MOUSEUP11_STATUS_DEFAULT: keyc = 21474839300;
-pub const KEYC_MOUSEUP10_STATUS_DEFAULT: keyc = 21474839044;
-pub const KEYC_MOUSEUP9_STATUS_DEFAULT: keyc = 21474838788;
-pub const KEYC_MOUSEUP8_STATUS_DEFAULT: keyc = 21474838532;
-pub const KEYC_MOUSEUP7_STATUS_DEFAULT: keyc = 21474838276;
-pub const KEYC_MOUSEUP6_STATUS_DEFAULT: keyc = 21474838020;
-pub const KEYC_MOUSEUP3_STATUS_DEFAULT: keyc = 21474837252;
-pub const KEYC_MOUSEUP2_STATUS_DEFAULT: keyc = 21474836996;
-pub const KEYC_MOUSEUP1_STATUS_DEFAULT: keyc = 21474836740;
-pub const KEYC_MOUSEUP_STATUS_DEFAULT: keyc = 21474836484;
-pub const KEYC_MOUSEUP11_STATUS_RIGHT: keyc = 21474839299;
-pub const KEYC_MOUSEUP10_STATUS_RIGHT: keyc = 21474839043;
-pub const KEYC_MOUSEUP9_STATUS_RIGHT: keyc = 21474838787;
-pub const KEYC_MOUSEUP8_STATUS_RIGHT: keyc = 21474838531;
-pub const KEYC_MOUSEUP7_STATUS_RIGHT: keyc = 21474838275;
-pub const KEYC_MOUSEUP6_STATUS_RIGHT: keyc = 21474838019;
-pub const KEYC_MOUSEUP3_STATUS_RIGHT: keyc = 21474837251;
-pub const KEYC_MOUSEUP2_STATUS_RIGHT: keyc = 21474836995;
-pub const KEYC_MOUSEUP1_STATUS_RIGHT: keyc = 21474836739;
-pub const KEYC_MOUSEUP_STATUS_RIGHT: keyc = 21474836483;
-pub const KEYC_MOUSEUP11_STATUS_LEFT: keyc = 21474839298;
-pub const KEYC_MOUSEUP10_STATUS_LEFT: keyc = 21474839042;
-pub const KEYC_MOUSEUP9_STATUS_LEFT: keyc = 21474838786;
-pub const KEYC_MOUSEUP8_STATUS_LEFT: keyc = 21474838530;
-pub const KEYC_MOUSEUP7_STATUS_LEFT: keyc = 21474838274;
-pub const KEYC_MOUSEUP6_STATUS_LEFT: keyc = 21474838018;
-pub const KEYC_MOUSEUP3_STATUS_LEFT: keyc = 21474837250;
-pub const KEYC_MOUSEUP2_STATUS_LEFT: keyc = 21474836994;
-pub const KEYC_MOUSEUP1_STATUS_LEFT: keyc = 21474836738;
-pub const KEYC_MOUSEUP_STATUS_LEFT: keyc = 21474836482;
-pub const KEYC_MOUSEUP11_STATUS: keyc = 21474839297;
-pub const KEYC_MOUSEUP10_STATUS: keyc = 21474839041;
-pub const KEYC_MOUSEUP9_STATUS: keyc = 21474838785;
-pub const KEYC_MOUSEUP8_STATUS: keyc = 21474838529;
-pub const KEYC_MOUSEUP7_STATUS: keyc = 21474838273;
-pub const KEYC_MOUSEUP6_STATUS: keyc = 21474838017;
-pub const KEYC_MOUSEUP3_STATUS: keyc = 21474837249;
-pub const KEYC_MOUSEUP2_STATUS: keyc = 21474836993;
-pub const KEYC_MOUSEUP1_STATUS: keyc = 21474836737;
-pub const KEYC_MOUSEUP_STATUS: keyc = 21474836481;
-pub const KEYC_MOUSEUP11_PANE: keyc = 21474839296;
-pub const KEYC_MOUSEUP10_PANE: keyc = 21474839040;
-pub const KEYC_MOUSEUP9_PANE: keyc = 21474838784;
-pub const KEYC_MOUSEUP8_PANE: keyc = 21474838528;
-pub const KEYC_MOUSEUP7_PANE: keyc = 21474838272;
-pub const KEYC_MOUSEUP6_PANE: keyc = 21474838016;
-pub const KEYC_MOUSEUP3_PANE: keyc = 21474837248;
-pub const KEYC_MOUSEUP2_PANE: keyc = 21474836992;
-pub const KEYC_MOUSEUP1_PANE: keyc = 21474836736;
-pub const KEYC_MOUSEUP_PANE: keyc = 21474836480;
-pub const KEYC_MOUSEDOWN11_CONTROL9: keyc = 17179872018;
-pub const KEYC_MOUSEDOWN10_CONTROL9: keyc = 17179871762;
-pub const KEYC_MOUSEDOWN9_CONTROL9: keyc = 17179871506;
-pub const KEYC_MOUSEDOWN8_CONTROL9: keyc = 17179871250;
-pub const KEYC_MOUSEDOWN7_CONTROL9: keyc = 17179870994;
-pub const KEYC_MOUSEDOWN6_CONTROL9: keyc = 17179870738;
-pub const KEYC_MOUSEDOWN3_CONTROL9: keyc = 17179869970;
-pub const KEYC_MOUSEDOWN2_CONTROL9: keyc = 17179869714;
-pub const KEYC_MOUSEDOWN1_CONTROL9: keyc = 17179869458;
-pub const KEYC_MOUSEDOWN_CONTROL9: keyc = 17179869202;
-pub const KEYC_MOUSEDOWN11_CONTROL8: keyc = 17179872017;
-pub const KEYC_MOUSEDOWN10_CONTROL8: keyc = 17179871761;
-pub const KEYC_MOUSEDOWN9_CONTROL8: keyc = 17179871505;
-pub const KEYC_MOUSEDOWN8_CONTROL8: keyc = 17179871249;
-pub const KEYC_MOUSEDOWN7_CONTROL8: keyc = 17179870993;
-pub const KEYC_MOUSEDOWN6_CONTROL8: keyc = 17179870737;
-pub const KEYC_MOUSEDOWN3_CONTROL8: keyc = 17179869969;
-pub const KEYC_MOUSEDOWN2_CONTROL8: keyc = 17179869713;
-pub const KEYC_MOUSEDOWN1_CONTROL8: keyc = 17179869457;
-pub const KEYC_MOUSEDOWN_CONTROL8: keyc = 17179869201;
-pub const KEYC_MOUSEDOWN11_CONTROL7: keyc = 17179872016;
-pub const KEYC_MOUSEDOWN10_CONTROL7: keyc = 17179871760;
-pub const KEYC_MOUSEDOWN9_CONTROL7: keyc = 17179871504;
-pub const KEYC_MOUSEDOWN8_CONTROL7: keyc = 17179871248;
-pub const KEYC_MOUSEDOWN7_CONTROL7: keyc = 17179870992;
-pub const KEYC_MOUSEDOWN6_CONTROL7: keyc = 17179870736;
-pub const KEYC_MOUSEDOWN3_CONTROL7: keyc = 17179869968;
-pub const KEYC_MOUSEDOWN2_CONTROL7: keyc = 17179869712;
-pub const KEYC_MOUSEDOWN1_CONTROL7: keyc = 17179869456;
-pub const KEYC_MOUSEDOWN_CONTROL7: keyc = 17179869200;
-pub const KEYC_MOUSEDOWN11_CONTROL6: keyc = 17179872015;
-pub const KEYC_MOUSEDOWN10_CONTROL6: keyc = 17179871759;
-pub const KEYC_MOUSEDOWN9_CONTROL6: keyc = 17179871503;
-pub const KEYC_MOUSEDOWN8_CONTROL6: keyc = 17179871247;
-pub const KEYC_MOUSEDOWN7_CONTROL6: keyc = 17179870991;
-pub const KEYC_MOUSEDOWN6_CONTROL6: keyc = 17179870735;
-pub const KEYC_MOUSEDOWN3_CONTROL6: keyc = 17179869967;
-pub const KEYC_MOUSEDOWN2_CONTROL6: keyc = 17179869711;
-pub const KEYC_MOUSEDOWN1_CONTROL6: keyc = 17179869455;
-pub const KEYC_MOUSEDOWN_CONTROL6: keyc = 17179869199;
-pub const KEYC_MOUSEDOWN11_CONTROL5: keyc = 17179872014;
-pub const KEYC_MOUSEDOWN10_CONTROL5: keyc = 17179871758;
-pub const KEYC_MOUSEDOWN9_CONTROL5: keyc = 17179871502;
-pub const KEYC_MOUSEDOWN8_CONTROL5: keyc = 17179871246;
-pub const KEYC_MOUSEDOWN7_CONTROL5: keyc = 17179870990;
-pub const KEYC_MOUSEDOWN6_CONTROL5: keyc = 17179870734;
-pub const KEYC_MOUSEDOWN3_CONTROL5: keyc = 17179869966;
-pub const KEYC_MOUSEDOWN2_CONTROL5: keyc = 17179869710;
-pub const KEYC_MOUSEDOWN1_CONTROL5: keyc = 17179869454;
-pub const KEYC_MOUSEDOWN_CONTROL5: keyc = 17179869198;
-pub const KEYC_MOUSEDOWN11_CONTROL4: keyc = 17179872013;
-pub const KEYC_MOUSEDOWN10_CONTROL4: keyc = 17179871757;
-pub const KEYC_MOUSEDOWN9_CONTROL4: keyc = 17179871501;
-pub const KEYC_MOUSEDOWN8_CONTROL4: keyc = 17179871245;
-pub const KEYC_MOUSEDOWN7_CONTROL4: keyc = 17179870989;
-pub const KEYC_MOUSEDOWN6_CONTROL4: keyc = 17179870733;
-pub const KEYC_MOUSEDOWN3_CONTROL4: keyc = 17179869965;
-pub const KEYC_MOUSEDOWN2_CONTROL4: keyc = 17179869709;
-pub const KEYC_MOUSEDOWN1_CONTROL4: keyc = 17179869453;
-pub const KEYC_MOUSEDOWN_CONTROL4: keyc = 17179869197;
-pub const KEYC_MOUSEDOWN11_CONTROL3: keyc = 17179872012;
-pub const KEYC_MOUSEDOWN10_CONTROL3: keyc = 17179871756;
-pub const KEYC_MOUSEDOWN9_CONTROL3: keyc = 17179871500;
-pub const KEYC_MOUSEDOWN8_CONTROL3: keyc = 17179871244;
-pub const KEYC_MOUSEDOWN7_CONTROL3: keyc = 17179870988;
-pub const KEYC_MOUSEDOWN6_CONTROL3: keyc = 17179870732;
-pub const KEYC_MOUSEDOWN3_CONTROL3: keyc = 17179869964;
-pub const KEYC_MOUSEDOWN2_CONTROL3: keyc = 17179869708;
-pub const KEYC_MOUSEDOWN1_CONTROL3: keyc = 17179869452;
-pub const KEYC_MOUSEDOWN_CONTROL3: keyc = 17179869196;
-pub const KEYC_MOUSEDOWN11_CONTROL2: keyc = 17179872011;
-pub const KEYC_MOUSEDOWN10_CONTROL2: keyc = 17179871755;
-pub const KEYC_MOUSEDOWN9_CONTROL2: keyc = 17179871499;
-pub const KEYC_MOUSEDOWN8_CONTROL2: keyc = 17179871243;
-pub const KEYC_MOUSEDOWN7_CONTROL2: keyc = 17179870987;
-pub const KEYC_MOUSEDOWN6_CONTROL2: keyc = 17179870731;
-pub const KEYC_MOUSEDOWN3_CONTROL2: keyc = 17179869963;
-pub const KEYC_MOUSEDOWN2_CONTROL2: keyc = 17179869707;
-pub const KEYC_MOUSEDOWN1_CONTROL2: keyc = 17179869451;
-pub const KEYC_MOUSEDOWN_CONTROL2: keyc = 17179869195;
-pub const KEYC_MOUSEDOWN11_CONTROL1: keyc = 17179872010;
-pub const KEYC_MOUSEDOWN10_CONTROL1: keyc = 17179871754;
-pub const KEYC_MOUSEDOWN9_CONTROL1: keyc = 17179871498;
-pub const KEYC_MOUSEDOWN8_CONTROL1: keyc = 17179871242;
-pub const KEYC_MOUSEDOWN7_CONTROL1: keyc = 17179870986;
-pub const KEYC_MOUSEDOWN6_CONTROL1: keyc = 17179870730;
-pub const KEYC_MOUSEDOWN3_CONTROL1: keyc = 17179869962;
-pub const KEYC_MOUSEDOWN2_CONTROL1: keyc = 17179869706;
-pub const KEYC_MOUSEDOWN1_CONTROL1: keyc = 17179869450;
-pub const KEYC_MOUSEDOWN_CONTROL1: keyc = 17179869194;
-pub const KEYC_MOUSEDOWN11_CONTROL0: keyc = 17179872009;
-pub const KEYC_MOUSEDOWN10_CONTROL0: keyc = 17179871753;
-pub const KEYC_MOUSEDOWN9_CONTROL0: keyc = 17179871497;
-pub const KEYC_MOUSEDOWN8_CONTROL0: keyc = 17179871241;
-pub const KEYC_MOUSEDOWN7_CONTROL0: keyc = 17179870985;
-pub const KEYC_MOUSEDOWN6_CONTROL0: keyc = 17179870729;
-pub const KEYC_MOUSEDOWN3_CONTROL0: keyc = 17179869961;
-pub const KEYC_MOUSEDOWN2_CONTROL0: keyc = 17179869705;
-pub const KEYC_MOUSEDOWN1_CONTROL0: keyc = 17179869449;
-pub const KEYC_MOUSEDOWN_CONTROL0: keyc = 17179869193;
-pub const KEYC_MOUSEDOWN11_SCROLLBAR_DOWN: keyc = 17179872008;
-pub const KEYC_MOUSEDOWN10_SCROLLBAR_DOWN: keyc = 17179871752;
-pub const KEYC_MOUSEDOWN9_SCROLLBAR_DOWN: keyc = 17179871496;
-pub const KEYC_MOUSEDOWN8_SCROLLBAR_DOWN: keyc = 17179871240;
-pub const KEYC_MOUSEDOWN7_SCROLLBAR_DOWN: keyc = 17179870984;
-pub const KEYC_MOUSEDOWN6_SCROLLBAR_DOWN: keyc = 17179870728;
-pub const KEYC_MOUSEDOWN3_SCROLLBAR_DOWN: keyc = 17179869960;
-pub const KEYC_MOUSEDOWN2_SCROLLBAR_DOWN: keyc = 17179869704;
-pub const KEYC_MOUSEDOWN1_SCROLLBAR_DOWN: keyc = 17179869448;
-pub const KEYC_MOUSEDOWN_SCROLLBAR_DOWN: keyc = 17179869192;
-pub const KEYC_MOUSEDOWN11_SCROLLBAR_SLIDER: keyc = 17179872007;
-pub const KEYC_MOUSEDOWN10_SCROLLBAR_SLIDER: keyc = 17179871751;
-pub const KEYC_MOUSEDOWN9_SCROLLBAR_SLIDER: keyc = 17179871495;
-pub const KEYC_MOUSEDOWN8_SCROLLBAR_SLIDER: keyc = 17179871239;
-pub const KEYC_MOUSEDOWN7_SCROLLBAR_SLIDER: keyc = 17179870983;
-pub const KEYC_MOUSEDOWN6_SCROLLBAR_SLIDER: keyc = 17179870727;
-pub const KEYC_MOUSEDOWN3_SCROLLBAR_SLIDER: keyc = 17179869959;
-pub const KEYC_MOUSEDOWN2_SCROLLBAR_SLIDER: keyc = 17179869703;
-pub const KEYC_MOUSEDOWN1_SCROLLBAR_SLIDER: keyc = 17179869447;
-pub const KEYC_MOUSEDOWN_SCROLLBAR_SLIDER: keyc = 17179869191;
-pub const KEYC_MOUSEDOWN11_SCROLLBAR_UP: keyc = 17179872006;
-pub const KEYC_MOUSEDOWN10_SCROLLBAR_UP: keyc = 17179871750;
-pub const KEYC_MOUSEDOWN9_SCROLLBAR_UP: keyc = 17179871494;
-pub const KEYC_MOUSEDOWN8_SCROLLBAR_UP: keyc = 17179871238;
-pub const KEYC_MOUSEDOWN7_SCROLLBAR_UP: keyc = 17179870982;
-pub const KEYC_MOUSEDOWN6_SCROLLBAR_UP: keyc = 17179870726;
-pub const KEYC_MOUSEDOWN3_SCROLLBAR_UP: keyc = 17179869958;
-pub const KEYC_MOUSEDOWN2_SCROLLBAR_UP: keyc = 17179869702;
-pub const KEYC_MOUSEDOWN1_SCROLLBAR_UP: keyc = 17179869446;
-pub const KEYC_MOUSEDOWN_SCROLLBAR_UP: keyc = 17179869190;
-pub const KEYC_MOUSEDOWN11_BORDER: keyc = 17179872005;
-pub const KEYC_MOUSEDOWN10_BORDER: keyc = 17179871749;
-pub const KEYC_MOUSEDOWN9_BORDER: keyc = 17179871493;
-pub const KEYC_MOUSEDOWN8_BORDER: keyc = 17179871237;
-pub const KEYC_MOUSEDOWN7_BORDER: keyc = 17179870981;
-pub const KEYC_MOUSEDOWN6_BORDER: keyc = 17179870725;
-pub const KEYC_MOUSEDOWN3_BORDER: keyc = 17179869957;
-pub const KEYC_MOUSEDOWN2_BORDER: keyc = 17179869701;
-pub const KEYC_MOUSEDOWN1_BORDER: keyc = 17179869445;
-pub const KEYC_MOUSEDOWN_BORDER: keyc = 17179869189;
-pub const KEYC_MOUSEDOWN11_STATUS_DEFAULT: keyc = 17179872004;
-pub const KEYC_MOUSEDOWN10_STATUS_DEFAULT: keyc = 17179871748;
-pub const KEYC_MOUSEDOWN9_STATUS_DEFAULT: keyc = 17179871492;
-pub const KEYC_MOUSEDOWN8_STATUS_DEFAULT: keyc = 17179871236;
-pub const KEYC_MOUSEDOWN7_STATUS_DEFAULT: keyc = 17179870980;
-pub const KEYC_MOUSEDOWN6_STATUS_DEFAULT: keyc = 17179870724;
-pub const KEYC_MOUSEDOWN3_STATUS_DEFAULT: keyc = 17179869956;
-pub const KEYC_MOUSEDOWN2_STATUS_DEFAULT: keyc = 17179869700;
-pub const KEYC_MOUSEDOWN1_STATUS_DEFAULT: keyc = 17179869444;
-pub const KEYC_MOUSEDOWN_STATUS_DEFAULT: keyc = 17179869188;
-pub const KEYC_MOUSEDOWN11_STATUS_RIGHT: keyc = 17179872003;
-pub const KEYC_MOUSEDOWN10_STATUS_RIGHT: keyc = 17179871747;
-pub const KEYC_MOUSEDOWN9_STATUS_RIGHT: keyc = 17179871491;
-pub const KEYC_MOUSEDOWN8_STATUS_RIGHT: keyc = 17179871235;
-pub const KEYC_MOUSEDOWN7_STATUS_RIGHT: keyc = 17179870979;
-pub const KEYC_MOUSEDOWN6_STATUS_RIGHT: keyc = 17179870723;
-pub const KEYC_MOUSEDOWN3_STATUS_RIGHT: keyc = 17179869955;
-pub const KEYC_MOUSEDOWN2_STATUS_RIGHT: keyc = 17179869699;
-pub const KEYC_MOUSEDOWN1_STATUS_RIGHT: keyc = 17179869443;
-pub const KEYC_MOUSEDOWN_STATUS_RIGHT: keyc = 17179869187;
-pub const KEYC_MOUSEDOWN11_STATUS_LEFT: keyc = 17179872002;
-pub const KEYC_MOUSEDOWN10_STATUS_LEFT: keyc = 17179871746;
-pub const KEYC_MOUSEDOWN9_STATUS_LEFT: keyc = 17179871490;
-pub const KEYC_MOUSEDOWN8_STATUS_LEFT: keyc = 17179871234;
-pub const KEYC_MOUSEDOWN7_STATUS_LEFT: keyc = 17179870978;
-pub const KEYC_MOUSEDOWN6_STATUS_LEFT: keyc = 17179870722;
-pub const KEYC_MOUSEDOWN3_STATUS_LEFT: keyc = 17179869954;
-pub const KEYC_MOUSEDOWN2_STATUS_LEFT: keyc = 17179869698;
-pub const KEYC_MOUSEDOWN1_STATUS_LEFT: keyc = 17179869442;
-pub const KEYC_MOUSEDOWN_STATUS_LEFT: keyc = 17179869186;
-pub const KEYC_MOUSEDOWN11_STATUS: keyc = 17179872001;
-pub const KEYC_MOUSEDOWN10_STATUS: keyc = 17179871745;
-pub const KEYC_MOUSEDOWN9_STATUS: keyc = 17179871489;
-pub const KEYC_MOUSEDOWN8_STATUS: keyc = 17179871233;
-pub const KEYC_MOUSEDOWN7_STATUS: keyc = 17179870977;
-pub const KEYC_MOUSEDOWN6_STATUS: keyc = 17179870721;
-pub const KEYC_MOUSEDOWN3_STATUS: keyc = 17179869953;
-pub const KEYC_MOUSEDOWN2_STATUS: keyc = 17179869697;
-pub const KEYC_MOUSEDOWN1_STATUS: keyc = 17179869441;
-pub const KEYC_MOUSEDOWN_STATUS: keyc = 17179869185;
-pub const KEYC_MOUSEDOWN11_PANE: keyc = 17179872000;
-pub const KEYC_MOUSEDOWN10_PANE: keyc = 17179871744;
-pub const KEYC_MOUSEDOWN9_PANE: keyc = 17179871488;
-pub const KEYC_MOUSEDOWN8_PANE: keyc = 17179871232;
-pub const KEYC_MOUSEDOWN7_PANE: keyc = 17179870976;
-pub const KEYC_MOUSEDOWN6_PANE: keyc = 17179870720;
-pub const KEYC_MOUSEDOWN3_PANE: keyc = 17179869952;
-pub const KEYC_MOUSEDOWN2_PANE: keyc = 17179869696;
-pub const KEYC_MOUSEDOWN1_PANE: keyc = 17179869440;
-pub const KEYC_MOUSEDOWN_PANE: keyc = 17179869184;
-pub const KEYC_WHEELUP11_CONTROL9: keyc = 38654708498;
-pub const KEYC_WHEELUP10_CONTROL9: keyc = 38654708242;
-pub const KEYC_WHEELUP9_CONTROL9: keyc = 38654707986;
-pub const KEYC_WHEELUP8_CONTROL9: keyc = 38654707730;
-pub const KEYC_WHEELUP7_CONTROL9: keyc = 38654707474;
-pub const KEYC_WHEELUP6_CONTROL9: keyc = 38654707218;
-pub const KEYC_WHEELUP3_CONTROL9: keyc = 38654706450;
-pub const KEYC_WHEELUP2_CONTROL9: keyc = 38654706194;
-pub const KEYC_WHEELUP1_CONTROL9: keyc = 38654705938;
-pub const KEYC_WHEELUP_CONTROL9: keyc = 38654705682;
-pub const KEYC_WHEELUP11_CONTROL8: keyc = 38654708497;
-pub const KEYC_WHEELUP10_CONTROL8: keyc = 38654708241;
-pub const KEYC_WHEELUP9_CONTROL8: keyc = 38654707985;
-pub const KEYC_WHEELUP8_CONTROL8: keyc = 38654707729;
-pub const KEYC_WHEELUP7_CONTROL8: keyc = 38654707473;
-pub const KEYC_WHEELUP6_CONTROL8: keyc = 38654707217;
-pub const KEYC_WHEELUP3_CONTROL8: keyc = 38654706449;
-pub const KEYC_WHEELUP2_CONTROL8: keyc = 38654706193;
-pub const KEYC_WHEELUP1_CONTROL8: keyc = 38654705937;
-pub const KEYC_WHEELUP_CONTROL8: keyc = 38654705681;
-pub const KEYC_WHEELUP11_CONTROL7: keyc = 38654708496;
-pub const KEYC_WHEELUP10_CONTROL7: keyc = 38654708240;
-pub const KEYC_WHEELUP9_CONTROL7: keyc = 38654707984;
-pub const KEYC_WHEELUP8_CONTROL7: keyc = 38654707728;
-pub const KEYC_WHEELUP7_CONTROL7: keyc = 38654707472;
-pub const KEYC_WHEELUP6_CONTROL7: keyc = 38654707216;
-pub const KEYC_WHEELUP3_CONTROL7: keyc = 38654706448;
-pub const KEYC_WHEELUP2_CONTROL7: keyc = 38654706192;
-pub const KEYC_WHEELUP1_CONTROL7: keyc = 38654705936;
-pub const KEYC_WHEELUP_CONTROL7: keyc = 38654705680;
-pub const KEYC_WHEELUP11_CONTROL6: keyc = 38654708495;
-pub const KEYC_WHEELUP10_CONTROL6: keyc = 38654708239;
-pub const KEYC_WHEELUP9_CONTROL6: keyc = 38654707983;
-pub const KEYC_WHEELUP8_CONTROL6: keyc = 38654707727;
-pub const KEYC_WHEELUP7_CONTROL6: keyc = 38654707471;
-pub const KEYC_WHEELUP6_CONTROL6: keyc = 38654707215;
-pub const KEYC_WHEELUP3_CONTROL6: keyc = 38654706447;
-pub const KEYC_WHEELUP2_CONTROL6: keyc = 38654706191;
-pub const KEYC_WHEELUP1_CONTROL6: keyc = 38654705935;
-pub const KEYC_WHEELUP_CONTROL6: keyc = 38654705679;
-pub const KEYC_WHEELUP11_CONTROL5: keyc = 38654708494;
-pub const KEYC_WHEELUP10_CONTROL5: keyc = 38654708238;
-pub const KEYC_WHEELUP9_CONTROL5: keyc = 38654707982;
-pub const KEYC_WHEELUP8_CONTROL5: keyc = 38654707726;
-pub const KEYC_WHEELUP7_CONTROL5: keyc = 38654707470;
-pub const KEYC_WHEELUP6_CONTROL5: keyc = 38654707214;
-pub const KEYC_WHEELUP3_CONTROL5: keyc = 38654706446;
-pub const KEYC_WHEELUP2_CONTROL5: keyc = 38654706190;
-pub const KEYC_WHEELUP1_CONTROL5: keyc = 38654705934;
-pub const KEYC_WHEELUP_CONTROL5: keyc = 38654705678;
-pub const KEYC_WHEELUP11_CONTROL4: keyc = 38654708493;
-pub const KEYC_WHEELUP10_CONTROL4: keyc = 38654708237;
-pub const KEYC_WHEELUP9_CONTROL4: keyc = 38654707981;
-pub const KEYC_WHEELUP8_CONTROL4: keyc = 38654707725;
-pub const KEYC_WHEELUP7_CONTROL4: keyc = 38654707469;
-pub const KEYC_WHEELUP6_CONTROL4: keyc = 38654707213;
-pub const KEYC_WHEELUP3_CONTROL4: keyc = 38654706445;
-pub const KEYC_WHEELUP2_CONTROL4: keyc = 38654706189;
-pub const KEYC_WHEELUP1_CONTROL4: keyc = 38654705933;
-pub const KEYC_WHEELUP_CONTROL4: keyc = 38654705677;
-pub const KEYC_WHEELUP11_CONTROL3: keyc = 38654708492;
-pub const KEYC_WHEELUP10_CONTROL3: keyc = 38654708236;
-pub const KEYC_WHEELUP9_CONTROL3: keyc = 38654707980;
-pub const KEYC_WHEELUP8_CONTROL3: keyc = 38654707724;
-pub const KEYC_WHEELUP7_CONTROL3: keyc = 38654707468;
-pub const KEYC_WHEELUP6_CONTROL3: keyc = 38654707212;
-pub const KEYC_WHEELUP3_CONTROL3: keyc = 38654706444;
-pub const KEYC_WHEELUP2_CONTROL3: keyc = 38654706188;
-pub const KEYC_WHEELUP1_CONTROL3: keyc = 38654705932;
-pub const KEYC_WHEELUP_CONTROL3: keyc = 38654705676;
-pub const KEYC_WHEELUP11_CONTROL2: keyc = 38654708491;
-pub const KEYC_WHEELUP10_CONTROL2: keyc = 38654708235;
-pub const KEYC_WHEELUP9_CONTROL2: keyc = 38654707979;
-pub const KEYC_WHEELUP8_CONTROL2: keyc = 38654707723;
-pub const KEYC_WHEELUP7_CONTROL2: keyc = 38654707467;
-pub const KEYC_WHEELUP6_CONTROL2: keyc = 38654707211;
-pub const KEYC_WHEELUP3_CONTROL2: keyc = 38654706443;
-pub const KEYC_WHEELUP2_CONTROL2: keyc = 38654706187;
-pub const KEYC_WHEELUP1_CONTROL2: keyc = 38654705931;
-pub const KEYC_WHEELUP_CONTROL2: keyc = 38654705675;
-pub const KEYC_WHEELUP11_CONTROL1: keyc = 38654708490;
-pub const KEYC_WHEELUP10_CONTROL1: keyc = 38654708234;
-pub const KEYC_WHEELUP9_CONTROL1: keyc = 38654707978;
-pub const KEYC_WHEELUP8_CONTROL1: keyc = 38654707722;
-pub const KEYC_WHEELUP7_CONTROL1: keyc = 38654707466;
-pub const KEYC_WHEELUP6_CONTROL1: keyc = 38654707210;
-pub const KEYC_WHEELUP3_CONTROL1: keyc = 38654706442;
-pub const KEYC_WHEELUP2_CONTROL1: keyc = 38654706186;
-pub const KEYC_WHEELUP1_CONTROL1: keyc = 38654705930;
-pub const KEYC_WHEELUP_CONTROL1: keyc = 38654705674;
-pub const KEYC_WHEELUP11_CONTROL0: keyc = 38654708489;
-pub const KEYC_WHEELUP10_CONTROL0: keyc = 38654708233;
-pub const KEYC_WHEELUP9_CONTROL0: keyc = 38654707977;
-pub const KEYC_WHEELUP8_CONTROL0: keyc = 38654707721;
-pub const KEYC_WHEELUP7_CONTROL0: keyc = 38654707465;
-pub const KEYC_WHEELUP6_CONTROL0: keyc = 38654707209;
-pub const KEYC_WHEELUP3_CONTROL0: keyc = 38654706441;
-pub const KEYC_WHEELUP2_CONTROL0: keyc = 38654706185;
-pub const KEYC_WHEELUP1_CONTROL0: keyc = 38654705929;
-pub const KEYC_WHEELUP_CONTROL0: keyc = 38654705673;
-pub const KEYC_WHEELUP11_SCROLLBAR_DOWN: keyc = 38654708488;
-pub const KEYC_WHEELUP10_SCROLLBAR_DOWN: keyc = 38654708232;
-pub const KEYC_WHEELUP9_SCROLLBAR_DOWN: keyc = 38654707976;
-pub const KEYC_WHEELUP8_SCROLLBAR_DOWN: keyc = 38654707720;
-pub const KEYC_WHEELUP7_SCROLLBAR_DOWN: keyc = 38654707464;
-pub const KEYC_WHEELUP6_SCROLLBAR_DOWN: keyc = 38654707208;
-pub const KEYC_WHEELUP3_SCROLLBAR_DOWN: keyc = 38654706440;
-pub const KEYC_WHEELUP2_SCROLLBAR_DOWN: keyc = 38654706184;
-pub const KEYC_WHEELUP1_SCROLLBAR_DOWN: keyc = 38654705928;
-pub const KEYC_WHEELUP_SCROLLBAR_DOWN: keyc = 38654705672;
-pub const KEYC_WHEELUP11_SCROLLBAR_SLIDER: keyc = 38654708487;
-pub const KEYC_WHEELUP10_SCROLLBAR_SLIDER: keyc = 38654708231;
-pub const KEYC_WHEELUP9_SCROLLBAR_SLIDER: keyc = 38654707975;
-pub const KEYC_WHEELUP8_SCROLLBAR_SLIDER: keyc = 38654707719;
-pub const KEYC_WHEELUP7_SCROLLBAR_SLIDER: keyc = 38654707463;
-pub const KEYC_WHEELUP6_SCROLLBAR_SLIDER: keyc = 38654707207;
-pub const KEYC_WHEELUP3_SCROLLBAR_SLIDER: keyc = 38654706439;
-pub const KEYC_WHEELUP2_SCROLLBAR_SLIDER: keyc = 38654706183;
-pub const KEYC_WHEELUP1_SCROLLBAR_SLIDER: keyc = 38654705927;
-pub const KEYC_WHEELUP_SCROLLBAR_SLIDER: keyc = 38654705671;
-pub const KEYC_WHEELUP11_SCROLLBAR_UP: keyc = 38654708486;
-pub const KEYC_WHEELUP10_SCROLLBAR_UP: keyc = 38654708230;
-pub const KEYC_WHEELUP9_SCROLLBAR_UP: keyc = 38654707974;
-pub const KEYC_WHEELUP8_SCROLLBAR_UP: keyc = 38654707718;
-pub const KEYC_WHEELUP7_SCROLLBAR_UP: keyc = 38654707462;
-pub const KEYC_WHEELUP6_SCROLLBAR_UP: keyc = 38654707206;
-pub const KEYC_WHEELUP3_SCROLLBAR_UP: keyc = 38654706438;
-pub const KEYC_WHEELUP2_SCROLLBAR_UP: keyc = 38654706182;
-pub const KEYC_WHEELUP1_SCROLLBAR_UP: keyc = 38654705926;
-pub const KEYC_WHEELUP_SCROLLBAR_UP: keyc = 38654705670;
-pub const KEYC_WHEELUP11_BORDER: keyc = 38654708485;
-pub const KEYC_WHEELUP10_BORDER: keyc = 38654708229;
-pub const KEYC_WHEELUP9_BORDER: keyc = 38654707973;
-pub const KEYC_WHEELUP8_BORDER: keyc = 38654707717;
-pub const KEYC_WHEELUP7_BORDER: keyc = 38654707461;
-pub const KEYC_WHEELUP6_BORDER: keyc = 38654707205;
-pub const KEYC_WHEELUP3_BORDER: keyc = 38654706437;
-pub const KEYC_WHEELUP2_BORDER: keyc = 38654706181;
-pub const KEYC_WHEELUP1_BORDER: keyc = 38654705925;
-pub const KEYC_WHEELUP_BORDER: keyc = 38654705669;
-pub const KEYC_WHEELUP11_STATUS_DEFAULT: keyc = 38654708484;
-pub const KEYC_WHEELUP10_STATUS_DEFAULT: keyc = 38654708228;
-pub const KEYC_WHEELUP9_STATUS_DEFAULT: keyc = 38654707972;
-pub const KEYC_WHEELUP8_STATUS_DEFAULT: keyc = 38654707716;
-pub const KEYC_WHEELUP7_STATUS_DEFAULT: keyc = 38654707460;
-pub const KEYC_WHEELUP6_STATUS_DEFAULT: keyc = 38654707204;
-pub const KEYC_WHEELUP3_STATUS_DEFAULT: keyc = 38654706436;
-pub const KEYC_WHEELUP2_STATUS_DEFAULT: keyc = 38654706180;
-pub const KEYC_WHEELUP1_STATUS_DEFAULT: keyc = 38654705924;
-pub const KEYC_WHEELUP_STATUS_DEFAULT: keyc = 38654705668;
-pub const KEYC_WHEELUP11_STATUS_RIGHT: keyc = 38654708483;
-pub const KEYC_WHEELUP10_STATUS_RIGHT: keyc = 38654708227;
-pub const KEYC_WHEELUP9_STATUS_RIGHT: keyc = 38654707971;
-pub const KEYC_WHEELUP8_STATUS_RIGHT: keyc = 38654707715;
-pub const KEYC_WHEELUP7_STATUS_RIGHT: keyc = 38654707459;
-pub const KEYC_WHEELUP6_STATUS_RIGHT: keyc = 38654707203;
-pub const KEYC_WHEELUP3_STATUS_RIGHT: keyc = 38654706435;
-pub const KEYC_WHEELUP2_STATUS_RIGHT: keyc = 38654706179;
-pub const KEYC_WHEELUP1_STATUS_RIGHT: keyc = 38654705923;
-pub const KEYC_WHEELUP_STATUS_RIGHT: keyc = 38654705667;
-pub const KEYC_WHEELUP11_STATUS_LEFT: keyc = 38654708482;
-pub const KEYC_WHEELUP10_STATUS_LEFT: keyc = 38654708226;
-pub const KEYC_WHEELUP9_STATUS_LEFT: keyc = 38654707970;
-pub const KEYC_WHEELUP8_STATUS_LEFT: keyc = 38654707714;
-pub const KEYC_WHEELUP7_STATUS_LEFT: keyc = 38654707458;
-pub const KEYC_WHEELUP6_STATUS_LEFT: keyc = 38654707202;
-pub const KEYC_WHEELUP3_STATUS_LEFT: keyc = 38654706434;
-pub const KEYC_WHEELUP2_STATUS_LEFT: keyc = 38654706178;
-pub const KEYC_WHEELUP1_STATUS_LEFT: keyc = 38654705922;
-pub const KEYC_WHEELUP_STATUS_LEFT: keyc = 38654705666;
-pub const KEYC_WHEELUP11_STATUS: keyc = 38654708481;
-pub const KEYC_WHEELUP10_STATUS: keyc = 38654708225;
-pub const KEYC_WHEELUP9_STATUS: keyc = 38654707969;
-pub const KEYC_WHEELUP8_STATUS: keyc = 38654707713;
-pub const KEYC_WHEELUP7_STATUS: keyc = 38654707457;
-pub const KEYC_WHEELUP6_STATUS: keyc = 38654707201;
-pub const KEYC_WHEELUP3_STATUS: keyc = 38654706433;
-pub const KEYC_WHEELUP2_STATUS: keyc = 38654706177;
-pub const KEYC_WHEELUP1_STATUS: keyc = 38654705921;
-pub const KEYC_WHEELUP_STATUS: keyc = 38654705665;
-pub const KEYC_WHEELUP11_PANE: keyc = 38654708480;
-pub const KEYC_WHEELUP10_PANE: keyc = 38654708224;
-pub const KEYC_WHEELUP9_PANE: keyc = 38654707968;
-pub const KEYC_WHEELUP8_PANE: keyc = 38654707712;
-pub const KEYC_WHEELUP7_PANE: keyc = 38654707456;
-pub const KEYC_WHEELUP6_PANE: keyc = 38654707200;
-pub const KEYC_WHEELUP3_PANE: keyc = 38654706432;
-pub const KEYC_WHEELUP2_PANE: keyc = 38654706176;
-pub const KEYC_WHEELUP1_PANE: keyc = 38654705920;
-pub const KEYC_WHEELUP_PANE: keyc = 38654705664;
-pub const KEYC_WHEELDOWN11_CONTROL9: keyc = 34359741202;
-pub const KEYC_WHEELDOWN10_CONTROL9: keyc = 34359740946;
-pub const KEYC_WHEELDOWN9_CONTROL9: keyc = 34359740690;
-pub const KEYC_WHEELDOWN8_CONTROL9: keyc = 34359740434;
-pub const KEYC_WHEELDOWN7_CONTROL9: keyc = 34359740178;
-pub const KEYC_WHEELDOWN6_CONTROL9: keyc = 34359739922;
-pub const KEYC_WHEELDOWN3_CONTROL9: keyc = 34359739154;
-pub const KEYC_WHEELDOWN2_CONTROL9: keyc = 34359738898;
-pub const KEYC_WHEELDOWN1_CONTROL9: keyc = 34359738642;
-pub const KEYC_WHEELDOWN_CONTROL9: keyc = 34359738386;
-pub const KEYC_WHEELDOWN11_CONTROL8: keyc = 34359741201;
-pub const KEYC_WHEELDOWN10_CONTROL8: keyc = 34359740945;
-pub const KEYC_WHEELDOWN9_CONTROL8: keyc = 34359740689;
-pub const KEYC_WHEELDOWN8_CONTROL8: keyc = 34359740433;
-pub const KEYC_WHEELDOWN7_CONTROL8: keyc = 34359740177;
-pub const KEYC_WHEELDOWN6_CONTROL8: keyc = 34359739921;
-pub const KEYC_WHEELDOWN3_CONTROL8: keyc = 34359739153;
-pub const KEYC_WHEELDOWN2_CONTROL8: keyc = 34359738897;
-pub const KEYC_WHEELDOWN1_CONTROL8: keyc = 34359738641;
-pub const KEYC_WHEELDOWN_CONTROL8: keyc = 34359738385;
-pub const KEYC_WHEELDOWN11_CONTROL7: keyc = 34359741200;
-pub const KEYC_WHEELDOWN10_CONTROL7: keyc = 34359740944;
-pub const KEYC_WHEELDOWN9_CONTROL7: keyc = 34359740688;
-pub const KEYC_WHEELDOWN8_CONTROL7: keyc = 34359740432;
-pub const KEYC_WHEELDOWN7_CONTROL7: keyc = 34359740176;
-pub const KEYC_WHEELDOWN6_CONTROL7: keyc = 34359739920;
-pub const KEYC_WHEELDOWN3_CONTROL7: keyc = 34359739152;
-pub const KEYC_WHEELDOWN2_CONTROL7: keyc = 34359738896;
-pub const KEYC_WHEELDOWN1_CONTROL7: keyc = 34359738640;
-pub const KEYC_WHEELDOWN_CONTROL7: keyc = 34359738384;
-pub const KEYC_WHEELDOWN11_CONTROL6: keyc = 34359741199;
-pub const KEYC_WHEELDOWN10_CONTROL6: keyc = 34359740943;
-pub const KEYC_WHEELDOWN9_CONTROL6: keyc = 34359740687;
-pub const KEYC_WHEELDOWN8_CONTROL6: keyc = 34359740431;
-pub const KEYC_WHEELDOWN7_CONTROL6: keyc = 34359740175;
-pub const KEYC_WHEELDOWN6_CONTROL6: keyc = 34359739919;
-pub const KEYC_WHEELDOWN3_CONTROL6: keyc = 34359739151;
-pub const KEYC_WHEELDOWN2_CONTROL6: keyc = 34359738895;
-pub const KEYC_WHEELDOWN1_CONTROL6: keyc = 34359738639;
-pub const KEYC_WHEELDOWN_CONTROL6: keyc = 34359738383;
-pub const KEYC_WHEELDOWN11_CONTROL5: keyc = 34359741198;
-pub const KEYC_WHEELDOWN10_CONTROL5: keyc = 34359740942;
-pub const KEYC_WHEELDOWN9_CONTROL5: keyc = 34359740686;
-pub const KEYC_WHEELDOWN8_CONTROL5: keyc = 34359740430;
-pub const KEYC_WHEELDOWN7_CONTROL5: keyc = 34359740174;
-pub const KEYC_WHEELDOWN6_CONTROL5: keyc = 34359739918;
-pub const KEYC_WHEELDOWN3_CONTROL5: keyc = 34359739150;
-pub const KEYC_WHEELDOWN2_CONTROL5: keyc = 34359738894;
-pub const KEYC_WHEELDOWN1_CONTROL5: keyc = 34359738638;
-pub const KEYC_WHEELDOWN_CONTROL5: keyc = 34359738382;
-pub const KEYC_WHEELDOWN11_CONTROL4: keyc = 34359741197;
-pub const KEYC_WHEELDOWN10_CONTROL4: keyc = 34359740941;
-pub const KEYC_WHEELDOWN9_CONTROL4: keyc = 34359740685;
-pub const KEYC_WHEELDOWN8_CONTROL4: keyc = 34359740429;
-pub const KEYC_WHEELDOWN7_CONTROL4: keyc = 34359740173;
-pub const KEYC_WHEELDOWN6_CONTROL4: keyc = 34359739917;
-pub const KEYC_WHEELDOWN3_CONTROL4: keyc = 34359739149;
-pub const KEYC_WHEELDOWN2_CONTROL4: keyc = 34359738893;
-pub const KEYC_WHEELDOWN1_CONTROL4: keyc = 34359738637;
-pub const KEYC_WHEELDOWN_CONTROL4: keyc = 34359738381;
-pub const KEYC_WHEELDOWN11_CONTROL3: keyc = 34359741196;
-pub const KEYC_WHEELDOWN10_CONTROL3: keyc = 34359740940;
-pub const KEYC_WHEELDOWN9_CONTROL3: keyc = 34359740684;
-pub const KEYC_WHEELDOWN8_CONTROL3: keyc = 34359740428;
-pub const KEYC_WHEELDOWN7_CONTROL3: keyc = 34359740172;
-pub const KEYC_WHEELDOWN6_CONTROL3: keyc = 34359739916;
-pub const KEYC_WHEELDOWN3_CONTROL3: keyc = 34359739148;
-pub const KEYC_WHEELDOWN2_CONTROL3: keyc = 34359738892;
-pub const KEYC_WHEELDOWN1_CONTROL3: keyc = 34359738636;
-pub const KEYC_WHEELDOWN_CONTROL3: keyc = 34359738380;
-pub const KEYC_WHEELDOWN11_CONTROL2: keyc = 34359741195;
-pub const KEYC_WHEELDOWN10_CONTROL2: keyc = 34359740939;
-pub const KEYC_WHEELDOWN9_CONTROL2: keyc = 34359740683;
-pub const KEYC_WHEELDOWN8_CONTROL2: keyc = 34359740427;
-pub const KEYC_WHEELDOWN7_CONTROL2: keyc = 34359740171;
-pub const KEYC_WHEELDOWN6_CONTROL2: keyc = 34359739915;
-pub const KEYC_WHEELDOWN3_CONTROL2: keyc = 34359739147;
-pub const KEYC_WHEELDOWN2_CONTROL2: keyc = 34359738891;
-pub const KEYC_WHEELDOWN1_CONTROL2: keyc = 34359738635;
-pub const KEYC_WHEELDOWN_CONTROL2: keyc = 34359738379;
-pub const KEYC_WHEELDOWN11_CONTROL1: keyc = 34359741194;
-pub const KEYC_WHEELDOWN10_CONTROL1: keyc = 34359740938;
-pub const KEYC_WHEELDOWN9_CONTROL1: keyc = 34359740682;
-pub const KEYC_WHEELDOWN8_CONTROL1: keyc = 34359740426;
-pub const KEYC_WHEELDOWN7_CONTROL1: keyc = 34359740170;
-pub const KEYC_WHEELDOWN6_CONTROL1: keyc = 34359739914;
-pub const KEYC_WHEELDOWN3_CONTROL1: keyc = 34359739146;
-pub const KEYC_WHEELDOWN2_CONTROL1: keyc = 34359738890;
-pub const KEYC_WHEELDOWN1_CONTROL1: keyc = 34359738634;
-pub const KEYC_WHEELDOWN_CONTROL1: keyc = 34359738378;
-pub const KEYC_WHEELDOWN11_CONTROL0: keyc = 34359741193;
-pub const KEYC_WHEELDOWN10_CONTROL0: keyc = 34359740937;
-pub const KEYC_WHEELDOWN9_CONTROL0: keyc = 34359740681;
-pub const KEYC_WHEELDOWN8_CONTROL0: keyc = 34359740425;
-pub const KEYC_WHEELDOWN7_CONTROL0: keyc = 34359740169;
-pub const KEYC_WHEELDOWN6_CONTROL0: keyc = 34359739913;
-pub const KEYC_WHEELDOWN3_CONTROL0: keyc = 34359739145;
-pub const KEYC_WHEELDOWN2_CONTROL0: keyc = 34359738889;
-pub const KEYC_WHEELDOWN1_CONTROL0: keyc = 34359738633;
-pub const KEYC_WHEELDOWN_CONTROL0: keyc = 34359738377;
-pub const KEYC_WHEELDOWN11_SCROLLBAR_DOWN: keyc = 34359741192;
-pub const KEYC_WHEELDOWN10_SCROLLBAR_DOWN: keyc = 34359740936;
-pub const KEYC_WHEELDOWN9_SCROLLBAR_DOWN: keyc = 34359740680;
-pub const KEYC_WHEELDOWN8_SCROLLBAR_DOWN: keyc = 34359740424;
-pub const KEYC_WHEELDOWN7_SCROLLBAR_DOWN: keyc = 34359740168;
-pub const KEYC_WHEELDOWN6_SCROLLBAR_DOWN: keyc = 34359739912;
-pub const KEYC_WHEELDOWN3_SCROLLBAR_DOWN: keyc = 34359739144;
-pub const KEYC_WHEELDOWN2_SCROLLBAR_DOWN: keyc = 34359738888;
-pub const KEYC_WHEELDOWN1_SCROLLBAR_DOWN: keyc = 34359738632;
-pub const KEYC_WHEELDOWN_SCROLLBAR_DOWN: keyc = 34359738376;
-pub const KEYC_WHEELDOWN11_SCROLLBAR_SLIDER: keyc = 34359741191;
-pub const KEYC_WHEELDOWN10_SCROLLBAR_SLIDER: keyc = 34359740935;
-pub const KEYC_WHEELDOWN9_SCROLLBAR_SLIDER: keyc = 34359740679;
-pub const KEYC_WHEELDOWN8_SCROLLBAR_SLIDER: keyc = 34359740423;
-pub const KEYC_WHEELDOWN7_SCROLLBAR_SLIDER: keyc = 34359740167;
-pub const KEYC_WHEELDOWN6_SCROLLBAR_SLIDER: keyc = 34359739911;
-pub const KEYC_WHEELDOWN3_SCROLLBAR_SLIDER: keyc = 34359739143;
-pub const KEYC_WHEELDOWN2_SCROLLBAR_SLIDER: keyc = 34359738887;
-pub const KEYC_WHEELDOWN1_SCROLLBAR_SLIDER: keyc = 34359738631;
-pub const KEYC_WHEELDOWN_SCROLLBAR_SLIDER: keyc = 34359738375;
-pub const KEYC_WHEELDOWN11_SCROLLBAR_UP: keyc = 34359741190;
-pub const KEYC_WHEELDOWN10_SCROLLBAR_UP: keyc = 34359740934;
-pub const KEYC_WHEELDOWN9_SCROLLBAR_UP: keyc = 34359740678;
-pub const KEYC_WHEELDOWN8_SCROLLBAR_UP: keyc = 34359740422;
-pub const KEYC_WHEELDOWN7_SCROLLBAR_UP: keyc = 34359740166;
-pub const KEYC_WHEELDOWN6_SCROLLBAR_UP: keyc = 34359739910;
-pub const KEYC_WHEELDOWN3_SCROLLBAR_UP: keyc = 34359739142;
-pub const KEYC_WHEELDOWN2_SCROLLBAR_UP: keyc = 34359738886;
-pub const KEYC_WHEELDOWN1_SCROLLBAR_UP: keyc = 34359738630;
-pub const KEYC_WHEELDOWN_SCROLLBAR_UP: keyc = 34359738374;
-pub const KEYC_WHEELDOWN11_BORDER: keyc = 34359741189;
-pub const KEYC_WHEELDOWN10_BORDER: keyc = 34359740933;
-pub const KEYC_WHEELDOWN9_BORDER: keyc = 34359740677;
-pub const KEYC_WHEELDOWN8_BORDER: keyc = 34359740421;
-pub const KEYC_WHEELDOWN7_BORDER: keyc = 34359740165;
-pub const KEYC_WHEELDOWN6_BORDER: keyc = 34359739909;
-pub const KEYC_WHEELDOWN3_BORDER: keyc = 34359739141;
-pub const KEYC_WHEELDOWN2_BORDER: keyc = 34359738885;
-pub const KEYC_WHEELDOWN1_BORDER: keyc = 34359738629;
-pub const KEYC_WHEELDOWN_BORDER: keyc = 34359738373;
-pub const KEYC_WHEELDOWN11_STATUS_DEFAULT: keyc = 34359741188;
-pub const KEYC_WHEELDOWN10_STATUS_DEFAULT: keyc = 34359740932;
-pub const KEYC_WHEELDOWN9_STATUS_DEFAULT: keyc = 34359740676;
-pub const KEYC_WHEELDOWN8_STATUS_DEFAULT: keyc = 34359740420;
-pub const KEYC_WHEELDOWN7_STATUS_DEFAULT: keyc = 34359740164;
-pub const KEYC_WHEELDOWN6_STATUS_DEFAULT: keyc = 34359739908;
-pub const KEYC_WHEELDOWN3_STATUS_DEFAULT: keyc = 34359739140;
-pub const KEYC_WHEELDOWN2_STATUS_DEFAULT: keyc = 34359738884;
-pub const KEYC_WHEELDOWN1_STATUS_DEFAULT: keyc = 34359738628;
-pub const KEYC_WHEELDOWN_STATUS_DEFAULT: keyc = 34359738372;
-pub const KEYC_WHEELDOWN11_STATUS_RIGHT: keyc = 34359741187;
-pub const KEYC_WHEELDOWN10_STATUS_RIGHT: keyc = 34359740931;
-pub const KEYC_WHEELDOWN9_STATUS_RIGHT: keyc = 34359740675;
-pub const KEYC_WHEELDOWN8_STATUS_RIGHT: keyc = 34359740419;
-pub const KEYC_WHEELDOWN7_STATUS_RIGHT: keyc = 34359740163;
-pub const KEYC_WHEELDOWN6_STATUS_RIGHT: keyc = 34359739907;
-pub const KEYC_WHEELDOWN3_STATUS_RIGHT: keyc = 34359739139;
-pub const KEYC_WHEELDOWN2_STATUS_RIGHT: keyc = 34359738883;
-pub const KEYC_WHEELDOWN1_STATUS_RIGHT: keyc = 34359738627;
-pub const KEYC_WHEELDOWN_STATUS_RIGHT: keyc = 34359738371;
-pub const KEYC_WHEELDOWN11_STATUS_LEFT: keyc = 34359741186;
-pub const KEYC_WHEELDOWN10_STATUS_LEFT: keyc = 34359740930;
-pub const KEYC_WHEELDOWN9_STATUS_LEFT: keyc = 34359740674;
-pub const KEYC_WHEELDOWN8_STATUS_LEFT: keyc = 34359740418;
-pub const KEYC_WHEELDOWN7_STATUS_LEFT: keyc = 34359740162;
-pub const KEYC_WHEELDOWN6_STATUS_LEFT: keyc = 34359739906;
-pub const KEYC_WHEELDOWN3_STATUS_LEFT: keyc = 34359739138;
-pub const KEYC_WHEELDOWN2_STATUS_LEFT: keyc = 34359738882;
-pub const KEYC_WHEELDOWN1_STATUS_LEFT: keyc = 34359738626;
-pub const KEYC_WHEELDOWN_STATUS_LEFT: keyc = 34359738370;
-pub const KEYC_WHEELDOWN11_STATUS: keyc = 34359741185;
-pub const KEYC_WHEELDOWN10_STATUS: keyc = 34359740929;
-pub const KEYC_WHEELDOWN9_STATUS: keyc = 34359740673;
-pub const KEYC_WHEELDOWN8_STATUS: keyc = 34359740417;
-pub const KEYC_WHEELDOWN7_STATUS: keyc = 34359740161;
-pub const KEYC_WHEELDOWN6_STATUS: keyc = 34359739905;
-pub const KEYC_WHEELDOWN3_STATUS: keyc = 34359739137;
-pub const KEYC_WHEELDOWN2_STATUS: keyc = 34359738881;
-pub const KEYC_WHEELDOWN1_STATUS: keyc = 34359738625;
-pub const KEYC_WHEELDOWN_STATUS: keyc = 34359738369;
-pub const KEYC_WHEELDOWN11_PANE: keyc = 34359741184;
-pub const KEYC_WHEELDOWN10_PANE: keyc = 34359740928;
-pub const KEYC_WHEELDOWN9_PANE: keyc = 34359740672;
-pub const KEYC_WHEELDOWN8_PANE: keyc = 34359740416;
-pub const KEYC_WHEELDOWN7_PANE: keyc = 34359740160;
-pub const KEYC_WHEELDOWN6_PANE: keyc = 34359739904;
-pub const KEYC_WHEELDOWN3_PANE: keyc = 34359739136;
-pub const KEYC_WHEELDOWN2_PANE: keyc = 34359738880;
-pub const KEYC_WHEELDOWN1_PANE: keyc = 34359738624;
-pub const KEYC_WHEELDOWN_PANE: keyc = 34359738368;
-pub const KEYC_MOUSEMOVE11_CONTROL9: keyc = 12884904722;
-pub const KEYC_MOUSEMOVE10_CONTROL9: keyc = 12884904466;
-pub const KEYC_MOUSEMOVE9_CONTROL9: keyc = 12884904210;
-pub const KEYC_MOUSEMOVE8_CONTROL9: keyc = 12884903954;
-pub const KEYC_MOUSEMOVE7_CONTROL9: keyc = 12884903698;
-pub const KEYC_MOUSEMOVE6_CONTROL9: keyc = 12884903442;
-pub const KEYC_MOUSEMOVE3_CONTROL9: keyc = 12884902674;
-pub const KEYC_MOUSEMOVE2_CONTROL9: keyc = 12884902418;
-pub const KEYC_MOUSEMOVE1_CONTROL9: keyc = 12884902162;
-pub const KEYC_MOUSEMOVE_CONTROL9: keyc = 12884901906;
-pub const KEYC_MOUSEMOVE11_CONTROL8: keyc = 12884904721;
-pub const KEYC_MOUSEMOVE10_CONTROL8: keyc = 12884904465;
-pub const KEYC_MOUSEMOVE9_CONTROL8: keyc = 12884904209;
-pub const KEYC_MOUSEMOVE8_CONTROL8: keyc = 12884903953;
-pub const KEYC_MOUSEMOVE7_CONTROL8: keyc = 12884903697;
-pub const KEYC_MOUSEMOVE6_CONTROL8: keyc = 12884903441;
-pub const KEYC_MOUSEMOVE3_CONTROL8: keyc = 12884902673;
-pub const KEYC_MOUSEMOVE2_CONTROL8: keyc = 12884902417;
-pub const KEYC_MOUSEMOVE1_CONTROL8: keyc = 12884902161;
-pub const KEYC_MOUSEMOVE_CONTROL8: keyc = 12884901905;
-pub const KEYC_MOUSEMOVE11_CONTROL7: keyc = 12884904720;
-pub const KEYC_MOUSEMOVE10_CONTROL7: keyc = 12884904464;
-pub const KEYC_MOUSEMOVE9_CONTROL7: keyc = 12884904208;
-pub const KEYC_MOUSEMOVE8_CONTROL7: keyc = 12884903952;
-pub const KEYC_MOUSEMOVE7_CONTROL7: keyc = 12884903696;
-pub const KEYC_MOUSEMOVE6_CONTROL7: keyc = 12884903440;
-pub const KEYC_MOUSEMOVE3_CONTROL7: keyc = 12884902672;
-pub const KEYC_MOUSEMOVE2_CONTROL7: keyc = 12884902416;
-pub const KEYC_MOUSEMOVE1_CONTROL7: keyc = 12884902160;
-pub const KEYC_MOUSEMOVE_CONTROL7: keyc = 12884901904;
-pub const KEYC_MOUSEMOVE11_CONTROL6: keyc = 12884904719;
-pub const KEYC_MOUSEMOVE10_CONTROL6: keyc = 12884904463;
-pub const KEYC_MOUSEMOVE9_CONTROL6: keyc = 12884904207;
-pub const KEYC_MOUSEMOVE8_CONTROL6: keyc = 12884903951;
-pub const KEYC_MOUSEMOVE7_CONTROL6: keyc = 12884903695;
-pub const KEYC_MOUSEMOVE6_CONTROL6: keyc = 12884903439;
-pub const KEYC_MOUSEMOVE3_CONTROL6: keyc = 12884902671;
-pub const KEYC_MOUSEMOVE2_CONTROL6: keyc = 12884902415;
-pub const KEYC_MOUSEMOVE1_CONTROL6: keyc = 12884902159;
-pub const KEYC_MOUSEMOVE_CONTROL6: keyc = 12884901903;
-pub const KEYC_MOUSEMOVE11_CONTROL5: keyc = 12884904718;
-pub const KEYC_MOUSEMOVE10_CONTROL5: keyc = 12884904462;
-pub const KEYC_MOUSEMOVE9_CONTROL5: keyc = 12884904206;
-pub const KEYC_MOUSEMOVE8_CONTROL5: keyc = 12884903950;
-pub const KEYC_MOUSEMOVE7_CONTROL5: keyc = 12884903694;
-pub const KEYC_MOUSEMOVE6_CONTROL5: keyc = 12884903438;
-pub const KEYC_MOUSEMOVE3_CONTROL5: keyc = 12884902670;
-pub const KEYC_MOUSEMOVE2_CONTROL5: keyc = 12884902414;
-pub const KEYC_MOUSEMOVE1_CONTROL5: keyc = 12884902158;
-pub const KEYC_MOUSEMOVE_CONTROL5: keyc = 12884901902;
-pub const KEYC_MOUSEMOVE11_CONTROL4: keyc = 12884904717;
-pub const KEYC_MOUSEMOVE10_CONTROL4: keyc = 12884904461;
-pub const KEYC_MOUSEMOVE9_CONTROL4: keyc = 12884904205;
-pub const KEYC_MOUSEMOVE8_CONTROL4: keyc = 12884903949;
-pub const KEYC_MOUSEMOVE7_CONTROL4: keyc = 12884903693;
-pub const KEYC_MOUSEMOVE6_CONTROL4: keyc = 12884903437;
-pub const KEYC_MOUSEMOVE3_CONTROL4: keyc = 12884902669;
-pub const KEYC_MOUSEMOVE2_CONTROL4: keyc = 12884902413;
-pub const KEYC_MOUSEMOVE1_CONTROL4: keyc = 12884902157;
-pub const KEYC_MOUSEMOVE_CONTROL4: keyc = 12884901901;
-pub const KEYC_MOUSEMOVE11_CONTROL3: keyc = 12884904716;
-pub const KEYC_MOUSEMOVE10_CONTROL3: keyc = 12884904460;
-pub const KEYC_MOUSEMOVE9_CONTROL3: keyc = 12884904204;
-pub const KEYC_MOUSEMOVE8_CONTROL3: keyc = 12884903948;
-pub const KEYC_MOUSEMOVE7_CONTROL3: keyc = 12884903692;
-pub const KEYC_MOUSEMOVE6_CONTROL3: keyc = 12884903436;
-pub const KEYC_MOUSEMOVE3_CONTROL3: keyc = 12884902668;
-pub const KEYC_MOUSEMOVE2_CONTROL3: keyc = 12884902412;
-pub const KEYC_MOUSEMOVE1_CONTROL3: keyc = 12884902156;
-pub const KEYC_MOUSEMOVE_CONTROL3: keyc = 12884901900;
-pub const KEYC_MOUSEMOVE11_CONTROL2: keyc = 12884904715;
-pub const KEYC_MOUSEMOVE10_CONTROL2: keyc = 12884904459;
-pub const KEYC_MOUSEMOVE9_CONTROL2: keyc = 12884904203;
-pub const KEYC_MOUSEMOVE8_CONTROL2: keyc = 12884903947;
-pub const KEYC_MOUSEMOVE7_CONTROL2: keyc = 12884903691;
-pub const KEYC_MOUSEMOVE6_CONTROL2: keyc = 12884903435;
-pub const KEYC_MOUSEMOVE3_CONTROL2: keyc = 12884902667;
-pub const KEYC_MOUSEMOVE2_CONTROL2: keyc = 12884902411;
-pub const KEYC_MOUSEMOVE1_CONTROL2: keyc = 12884902155;
-pub const KEYC_MOUSEMOVE_CONTROL2: keyc = 12884901899;
-pub const KEYC_MOUSEMOVE11_CONTROL1: keyc = 12884904714;
-pub const KEYC_MOUSEMOVE10_CONTROL1: keyc = 12884904458;
-pub const KEYC_MOUSEMOVE9_CONTROL1: keyc = 12884904202;
-pub const KEYC_MOUSEMOVE8_CONTROL1: keyc = 12884903946;
-pub const KEYC_MOUSEMOVE7_CONTROL1: keyc = 12884903690;
-pub const KEYC_MOUSEMOVE6_CONTROL1: keyc = 12884903434;
-pub const KEYC_MOUSEMOVE3_CONTROL1: keyc = 12884902666;
-pub const KEYC_MOUSEMOVE2_CONTROL1: keyc = 12884902410;
-pub const KEYC_MOUSEMOVE1_CONTROL1: keyc = 12884902154;
-pub const KEYC_MOUSEMOVE_CONTROL1: keyc = 12884901898;
-pub const KEYC_MOUSEMOVE11_CONTROL0: keyc = 12884904713;
-pub const KEYC_MOUSEMOVE10_CONTROL0: keyc = 12884904457;
-pub const KEYC_MOUSEMOVE9_CONTROL0: keyc = 12884904201;
-pub const KEYC_MOUSEMOVE8_CONTROL0: keyc = 12884903945;
-pub const KEYC_MOUSEMOVE7_CONTROL0: keyc = 12884903689;
-pub const KEYC_MOUSEMOVE6_CONTROL0: keyc = 12884903433;
-pub const KEYC_MOUSEMOVE3_CONTROL0: keyc = 12884902665;
-pub const KEYC_MOUSEMOVE2_CONTROL0: keyc = 12884902409;
-pub const KEYC_MOUSEMOVE1_CONTROL0: keyc = 12884902153;
-pub const KEYC_MOUSEMOVE_CONTROL0: keyc = 12884901897;
-pub const KEYC_MOUSEMOVE11_SCROLLBAR_DOWN: keyc = 12884904712;
-pub const KEYC_MOUSEMOVE10_SCROLLBAR_DOWN: keyc = 12884904456;
-pub const KEYC_MOUSEMOVE9_SCROLLBAR_DOWN: keyc = 12884904200;
-pub const KEYC_MOUSEMOVE8_SCROLLBAR_DOWN: keyc = 12884903944;
-pub const KEYC_MOUSEMOVE7_SCROLLBAR_DOWN: keyc = 12884903688;
-pub const KEYC_MOUSEMOVE6_SCROLLBAR_DOWN: keyc = 12884903432;
-pub const KEYC_MOUSEMOVE3_SCROLLBAR_DOWN: keyc = 12884902664;
-pub const KEYC_MOUSEMOVE2_SCROLLBAR_DOWN: keyc = 12884902408;
-pub const KEYC_MOUSEMOVE1_SCROLLBAR_DOWN: keyc = 12884902152;
-pub const KEYC_MOUSEMOVE_SCROLLBAR_DOWN: keyc = 12884901896;
-pub const KEYC_MOUSEMOVE11_SCROLLBAR_SLIDER: keyc = 12884904711;
-pub const KEYC_MOUSEMOVE10_SCROLLBAR_SLIDER: keyc = 12884904455;
-pub const KEYC_MOUSEMOVE9_SCROLLBAR_SLIDER: keyc = 12884904199;
-pub const KEYC_MOUSEMOVE8_SCROLLBAR_SLIDER: keyc = 12884903943;
-pub const KEYC_MOUSEMOVE7_SCROLLBAR_SLIDER: keyc = 12884903687;
-pub const KEYC_MOUSEMOVE6_SCROLLBAR_SLIDER: keyc = 12884903431;
-pub const KEYC_MOUSEMOVE3_SCROLLBAR_SLIDER: keyc = 12884902663;
-pub const KEYC_MOUSEMOVE2_SCROLLBAR_SLIDER: keyc = 12884902407;
-pub const KEYC_MOUSEMOVE1_SCROLLBAR_SLIDER: keyc = 12884902151;
-pub const KEYC_MOUSEMOVE_SCROLLBAR_SLIDER: keyc = 12884901895;
-pub const KEYC_MOUSEMOVE11_SCROLLBAR_UP: keyc = 12884904710;
-pub const KEYC_MOUSEMOVE10_SCROLLBAR_UP: keyc = 12884904454;
-pub const KEYC_MOUSEMOVE9_SCROLLBAR_UP: keyc = 12884904198;
-pub const KEYC_MOUSEMOVE8_SCROLLBAR_UP: keyc = 12884903942;
-pub const KEYC_MOUSEMOVE7_SCROLLBAR_UP: keyc = 12884903686;
-pub const KEYC_MOUSEMOVE6_SCROLLBAR_UP: keyc = 12884903430;
-pub const KEYC_MOUSEMOVE3_SCROLLBAR_UP: keyc = 12884902662;
-pub const KEYC_MOUSEMOVE2_SCROLLBAR_UP: keyc = 12884902406;
-pub const KEYC_MOUSEMOVE1_SCROLLBAR_UP: keyc = 12884902150;
-pub const KEYC_MOUSEMOVE_SCROLLBAR_UP: keyc = 12884901894;
-pub const KEYC_MOUSEMOVE11_BORDER: keyc = 12884904709;
-pub const KEYC_MOUSEMOVE10_BORDER: keyc = 12884904453;
-pub const KEYC_MOUSEMOVE9_BORDER: keyc = 12884904197;
-pub const KEYC_MOUSEMOVE8_BORDER: keyc = 12884903941;
-pub const KEYC_MOUSEMOVE7_BORDER: keyc = 12884903685;
-pub const KEYC_MOUSEMOVE6_BORDER: keyc = 12884903429;
-pub const KEYC_MOUSEMOVE3_BORDER: keyc = 12884902661;
-pub const KEYC_MOUSEMOVE2_BORDER: keyc = 12884902405;
-pub const KEYC_MOUSEMOVE1_BORDER: keyc = 12884902149;
-pub const KEYC_MOUSEMOVE_BORDER: keyc = 12884901893;
-pub const KEYC_MOUSEMOVE11_STATUS_DEFAULT: keyc = 12884904708;
-pub const KEYC_MOUSEMOVE10_STATUS_DEFAULT: keyc = 12884904452;
-pub const KEYC_MOUSEMOVE9_STATUS_DEFAULT: keyc = 12884904196;
-pub const KEYC_MOUSEMOVE8_STATUS_DEFAULT: keyc = 12884903940;
-pub const KEYC_MOUSEMOVE7_STATUS_DEFAULT: keyc = 12884903684;
-pub const KEYC_MOUSEMOVE6_STATUS_DEFAULT: keyc = 12884903428;
-pub const KEYC_MOUSEMOVE3_STATUS_DEFAULT: keyc = 12884902660;
-pub const KEYC_MOUSEMOVE2_STATUS_DEFAULT: keyc = 12884902404;
-pub const KEYC_MOUSEMOVE1_STATUS_DEFAULT: keyc = 12884902148;
-pub const KEYC_MOUSEMOVE_STATUS_DEFAULT: keyc = 12884901892;
-pub const KEYC_MOUSEMOVE11_STATUS_RIGHT: keyc = 12884904707;
-pub const KEYC_MOUSEMOVE10_STATUS_RIGHT: keyc = 12884904451;
-pub const KEYC_MOUSEMOVE9_STATUS_RIGHT: keyc = 12884904195;
-pub const KEYC_MOUSEMOVE8_STATUS_RIGHT: keyc = 12884903939;
-pub const KEYC_MOUSEMOVE7_STATUS_RIGHT: keyc = 12884903683;
-pub const KEYC_MOUSEMOVE6_STATUS_RIGHT: keyc = 12884903427;
-pub const KEYC_MOUSEMOVE3_STATUS_RIGHT: keyc = 12884902659;
-pub const KEYC_MOUSEMOVE2_STATUS_RIGHT: keyc = 12884902403;
-pub const KEYC_MOUSEMOVE1_STATUS_RIGHT: keyc = 12884902147;
-pub const KEYC_MOUSEMOVE_STATUS_RIGHT: keyc = 12884901891;
-pub const KEYC_MOUSEMOVE11_STATUS_LEFT: keyc = 12884904706;
-pub const KEYC_MOUSEMOVE10_STATUS_LEFT: keyc = 12884904450;
-pub const KEYC_MOUSEMOVE9_STATUS_LEFT: keyc = 12884904194;
-pub const KEYC_MOUSEMOVE8_STATUS_LEFT: keyc = 12884903938;
-pub const KEYC_MOUSEMOVE7_STATUS_LEFT: keyc = 12884903682;
-pub const KEYC_MOUSEMOVE6_STATUS_LEFT: keyc = 12884903426;
-pub const KEYC_MOUSEMOVE3_STATUS_LEFT: keyc = 12884902658;
-pub const KEYC_MOUSEMOVE2_STATUS_LEFT: keyc = 12884902402;
-pub const KEYC_MOUSEMOVE1_STATUS_LEFT: keyc = 12884902146;
-pub const KEYC_MOUSEMOVE_STATUS_LEFT: keyc = 12884901890;
-pub const KEYC_MOUSEMOVE11_STATUS: keyc = 12884904705;
-pub const KEYC_MOUSEMOVE10_STATUS: keyc = 12884904449;
-pub const KEYC_MOUSEMOVE9_STATUS: keyc = 12884904193;
-pub const KEYC_MOUSEMOVE8_STATUS: keyc = 12884903937;
-pub const KEYC_MOUSEMOVE7_STATUS: keyc = 12884903681;
-pub const KEYC_MOUSEMOVE6_STATUS: keyc = 12884903425;
-pub const KEYC_MOUSEMOVE3_STATUS: keyc = 12884902657;
-pub const KEYC_MOUSEMOVE2_STATUS: keyc = 12884902401;
-pub const KEYC_MOUSEMOVE1_STATUS: keyc = 12884902145;
-pub const KEYC_MOUSEMOVE_STATUS: keyc = 12884901889;
-pub const KEYC_MOUSEMOVE11_PANE: keyc = 12884904704;
-pub const KEYC_MOUSEMOVE10_PANE: keyc = 12884904448;
-pub const KEYC_MOUSEMOVE9_PANE: keyc = 12884904192;
-pub const KEYC_MOUSEMOVE8_PANE: keyc = 12884903936;
-pub const KEYC_MOUSEMOVE7_PANE: keyc = 12884903680;
-pub const KEYC_MOUSEMOVE6_PANE: keyc = 12884903424;
-pub const KEYC_MOUSEMOVE3_PANE: keyc = 12884902656;
-pub const KEYC_MOUSEMOVE2_PANE: keyc = 12884902400;
-pub const KEYC_MOUSEMOVE1_PANE: keyc = 12884902144;
-pub const KEYC_MOUSEMOVE_PANE: keyc = 12884901888;
-pub const KEYC_DOUBLECLICK: keyc = 8589934643;
-pub const KEYC_DRAGGING: keyc = 8589934642;
-pub const KEYC_MOUSE: keyc = 8589934641;
-pub const KEYC_REPORT_LIGHT_THEME: keyc = 8589934640;
-pub const KEYC_REPORT_DARK_THEME: keyc = 8589934639;
-pub const KEYC_KP_PERIOD: keyc = 8589934638;
-pub const KEYC_KP_ZERO: keyc = 8589934637;
-pub const KEYC_KP_ENTER: keyc = 8589934636;
-pub const KEYC_KP_THREE: keyc = 8589934635;
-pub const KEYC_KP_TWO: keyc = 8589934634;
-pub const KEYC_KP_ONE: keyc = 8589934633;
-pub const KEYC_KP_SIX: keyc = 8589934632;
-pub const KEYC_KP_FIVE: keyc = 8589934631;
-pub const KEYC_KP_FOUR: keyc = 8589934630;
-pub const KEYC_KP_PLUS: keyc = 8589934629;
-pub const KEYC_KP_NINE: keyc = 8589934628;
-pub const KEYC_KP_EIGHT: keyc = 8589934627;
-pub const KEYC_KP_SEVEN: keyc = 8589934626;
-pub const KEYC_KP_MINUS: keyc = 8589934625;
-pub const KEYC_KP_STAR: keyc = 8589934624;
-pub const KEYC_KP_SLASH: keyc = 8589934623;
-pub const KEYC_RIGHT: keyc = 8589934622;
-pub const KEYC_LEFT: keyc = 8589934621;
-pub const KEYC_DOWN: keyc = 8589934620;
-pub const KEYC_UP: keyc = 8589934619;
-pub const KEYC_BTAB: keyc = 8589934618;
-pub const KEYC_PPAGE: keyc = 8589934617;
-pub const KEYC_NPAGE: keyc = 8589934616;
-pub const KEYC_END: keyc = 8589934615;
-pub const KEYC_HOME: keyc = 8589934614;
-pub const KEYC_DC: keyc = 8589934613;
-pub const KEYC_IC: keyc = 8589934612;
-pub const KEYC_F12: keyc = 8589934611;
-pub const KEYC_F11: keyc = 8589934610;
-pub const KEYC_F10: keyc = 8589934609;
-pub const KEYC_F9: keyc = 8589934608;
-pub const KEYC_F8: keyc = 8589934607;
-pub const KEYC_F7: keyc = 8589934606;
-pub const KEYC_F6: keyc = 8589934605;
-pub const KEYC_F5: keyc = 8589934604;
-pub const KEYC_F4: keyc = 8589934603;
-pub const KEYC_F3: keyc = 8589934602;
-pub const KEYC_F2: keyc = 8589934601;
-pub const KEYC_F1: keyc = 8589934600;
-pub const KEYC_BSPACE: keyc = 8589934599;
-pub const KEYC_PASTE_END: keyc = 8589934598;
-pub const KEYC_PASTE_START: keyc = 8589934597;
-pub const KEYC_ANY: keyc = 8589934596;
-pub const KEYC_FOCUS_OUT: keyc = 8589934595;
-pub const KEYC_FOCUS_IN: keyc = 8589934594;
-pub const KEYC_UNKNOWN: keyc = 8589934593;
-pub const KEYC_NONE: keyc = 8589934592;
-pub const KEYC_USER: keyc = 4294967296;
+pub use crate::consts::{
+    __INT_MAX__, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_EXIT, CLIENT_EXIT_DETACH, CLIENT_EXIT_RETURN,
+    CLIENT_EXIT_SHUTDOWN, CLIENT_EXITED, CLIENT_FOCUSED, CLIENT_SUSPENDED, CLIENT_UNATTACHEDFLAGS,
+    FNM_CASEFOLD, INT_MAX, KEYC_ANY, KEYC_BSPACE, KEYC_BTAB, KEYC_DC, KEYC_DOUBLECLICK,
+    KEYC_DOUBLECLICK_BORDER, KEYC_DOUBLECLICK_CONTROL0, KEYC_DOUBLECLICK_CONTROL1,
+    KEYC_DOUBLECLICK_CONTROL2, KEYC_DOUBLECLICK_CONTROL3, KEYC_DOUBLECLICK_CONTROL4,
+    KEYC_DOUBLECLICK_CONTROL5, KEYC_DOUBLECLICK_CONTROL6, KEYC_DOUBLECLICK_CONTROL7,
+    KEYC_DOUBLECLICK_CONTROL8, KEYC_DOUBLECLICK_CONTROL9, KEYC_DOUBLECLICK_PANE,
+    KEYC_DOUBLECLICK_SCROLLBAR_DOWN, KEYC_DOUBLECLICK_SCROLLBAR_SLIDER,
+    KEYC_DOUBLECLICK_SCROLLBAR_UP, KEYC_DOUBLECLICK_STATUS, KEYC_DOUBLECLICK_STATUS_DEFAULT,
+    KEYC_DOUBLECLICK_STATUS_LEFT, KEYC_DOUBLECLICK_STATUS_RIGHT, KEYC_DOUBLECLICK1_BORDER,
+    KEYC_DOUBLECLICK1_CONTROL0, KEYC_DOUBLECLICK1_CONTROL1, KEYC_DOUBLECLICK1_CONTROL2,
+    KEYC_DOUBLECLICK1_CONTROL3, KEYC_DOUBLECLICK1_CONTROL4, KEYC_DOUBLECLICK1_CONTROL5,
+    KEYC_DOUBLECLICK1_CONTROL6, KEYC_DOUBLECLICK1_CONTROL7, KEYC_DOUBLECLICK1_CONTROL8,
+    KEYC_DOUBLECLICK1_CONTROL9, KEYC_DOUBLECLICK1_PANE, KEYC_DOUBLECLICK1_SCROLLBAR_DOWN,
+    KEYC_DOUBLECLICK1_SCROLLBAR_SLIDER, KEYC_DOUBLECLICK1_SCROLLBAR_UP, KEYC_DOUBLECLICK1_STATUS,
+    KEYC_DOUBLECLICK1_STATUS_DEFAULT, KEYC_DOUBLECLICK1_STATUS_LEFT,
+    KEYC_DOUBLECLICK1_STATUS_RIGHT, KEYC_DOUBLECLICK2_BORDER, KEYC_DOUBLECLICK2_CONTROL0,
+    KEYC_DOUBLECLICK2_CONTROL1, KEYC_DOUBLECLICK2_CONTROL2, KEYC_DOUBLECLICK2_CONTROL3,
+    KEYC_DOUBLECLICK2_CONTROL4, KEYC_DOUBLECLICK2_CONTROL5, KEYC_DOUBLECLICK2_CONTROL6,
+    KEYC_DOUBLECLICK2_CONTROL7, KEYC_DOUBLECLICK2_CONTROL8, KEYC_DOUBLECLICK2_CONTROL9,
+    KEYC_DOUBLECLICK2_PANE, KEYC_DOUBLECLICK2_SCROLLBAR_DOWN, KEYC_DOUBLECLICK2_SCROLLBAR_SLIDER,
+    KEYC_DOUBLECLICK2_SCROLLBAR_UP, KEYC_DOUBLECLICK2_STATUS, KEYC_DOUBLECLICK2_STATUS_DEFAULT,
+    KEYC_DOUBLECLICK2_STATUS_LEFT, KEYC_DOUBLECLICK2_STATUS_RIGHT, KEYC_DOUBLECLICK3_BORDER,
+    KEYC_DOUBLECLICK3_CONTROL0, KEYC_DOUBLECLICK3_CONTROL1, KEYC_DOUBLECLICK3_CONTROL2,
+    KEYC_DOUBLECLICK3_CONTROL3, KEYC_DOUBLECLICK3_CONTROL4, KEYC_DOUBLECLICK3_CONTROL5,
+    KEYC_DOUBLECLICK3_CONTROL6, KEYC_DOUBLECLICK3_CONTROL7, KEYC_DOUBLECLICK3_CONTROL8,
+    KEYC_DOUBLECLICK3_CONTROL9, KEYC_DOUBLECLICK3_PANE, KEYC_DOUBLECLICK3_SCROLLBAR_DOWN,
+    KEYC_DOUBLECLICK3_SCROLLBAR_SLIDER, KEYC_DOUBLECLICK3_SCROLLBAR_UP, KEYC_DOUBLECLICK3_STATUS,
+    KEYC_DOUBLECLICK3_STATUS_DEFAULT, KEYC_DOUBLECLICK3_STATUS_LEFT,
+    KEYC_DOUBLECLICK3_STATUS_RIGHT, KEYC_DOUBLECLICK6_BORDER, KEYC_DOUBLECLICK6_CONTROL0,
+    KEYC_DOUBLECLICK6_CONTROL1, KEYC_DOUBLECLICK6_CONTROL2, KEYC_DOUBLECLICK6_CONTROL3,
+    KEYC_DOUBLECLICK6_CONTROL4, KEYC_DOUBLECLICK6_CONTROL5, KEYC_DOUBLECLICK6_CONTROL6,
+    KEYC_DOUBLECLICK6_CONTROL7, KEYC_DOUBLECLICK6_CONTROL8, KEYC_DOUBLECLICK6_CONTROL9,
+    KEYC_DOUBLECLICK6_PANE, KEYC_DOUBLECLICK6_SCROLLBAR_DOWN, KEYC_DOUBLECLICK6_SCROLLBAR_SLIDER,
+    KEYC_DOUBLECLICK6_SCROLLBAR_UP, KEYC_DOUBLECLICK6_STATUS, KEYC_DOUBLECLICK6_STATUS_DEFAULT,
+    KEYC_DOUBLECLICK6_STATUS_LEFT, KEYC_DOUBLECLICK6_STATUS_RIGHT, KEYC_DOUBLECLICK7_BORDER,
+    KEYC_DOUBLECLICK7_CONTROL0, KEYC_DOUBLECLICK7_CONTROL1, KEYC_DOUBLECLICK7_CONTROL2,
+    KEYC_DOUBLECLICK7_CONTROL3, KEYC_DOUBLECLICK7_CONTROL4, KEYC_DOUBLECLICK7_CONTROL5,
+    KEYC_DOUBLECLICK7_CONTROL6, KEYC_DOUBLECLICK7_CONTROL7, KEYC_DOUBLECLICK7_CONTROL8,
+    KEYC_DOUBLECLICK7_CONTROL9, KEYC_DOUBLECLICK7_PANE, KEYC_DOUBLECLICK7_SCROLLBAR_DOWN,
+    KEYC_DOUBLECLICK7_SCROLLBAR_SLIDER, KEYC_DOUBLECLICK7_SCROLLBAR_UP, KEYC_DOUBLECLICK7_STATUS,
+    KEYC_DOUBLECLICK7_STATUS_DEFAULT, KEYC_DOUBLECLICK7_STATUS_LEFT,
+    KEYC_DOUBLECLICK7_STATUS_RIGHT, KEYC_DOUBLECLICK8_BORDER, KEYC_DOUBLECLICK8_CONTROL0,
+    KEYC_DOUBLECLICK8_CONTROL1, KEYC_DOUBLECLICK8_CONTROL2, KEYC_DOUBLECLICK8_CONTROL3,
+    KEYC_DOUBLECLICK8_CONTROL4, KEYC_DOUBLECLICK8_CONTROL5, KEYC_DOUBLECLICK8_CONTROL6,
+    KEYC_DOUBLECLICK8_CONTROL7, KEYC_DOUBLECLICK8_CONTROL8, KEYC_DOUBLECLICK8_CONTROL9,
+    KEYC_DOUBLECLICK8_PANE, KEYC_DOUBLECLICK8_SCROLLBAR_DOWN, KEYC_DOUBLECLICK8_SCROLLBAR_SLIDER,
+    KEYC_DOUBLECLICK8_SCROLLBAR_UP, KEYC_DOUBLECLICK8_STATUS, KEYC_DOUBLECLICK8_STATUS_DEFAULT,
+    KEYC_DOUBLECLICK8_STATUS_LEFT, KEYC_DOUBLECLICK8_STATUS_RIGHT, KEYC_DOUBLECLICK9_BORDER,
+    KEYC_DOUBLECLICK9_CONTROL0, KEYC_DOUBLECLICK9_CONTROL1, KEYC_DOUBLECLICK9_CONTROL2,
+    KEYC_DOUBLECLICK9_CONTROL3, KEYC_DOUBLECLICK9_CONTROL4, KEYC_DOUBLECLICK9_CONTROL5,
+    KEYC_DOUBLECLICK9_CONTROL6, KEYC_DOUBLECLICK9_CONTROL7, KEYC_DOUBLECLICK9_CONTROL8,
+    KEYC_DOUBLECLICK9_CONTROL9, KEYC_DOUBLECLICK9_PANE, KEYC_DOUBLECLICK9_SCROLLBAR_DOWN,
+    KEYC_DOUBLECLICK9_SCROLLBAR_SLIDER, KEYC_DOUBLECLICK9_SCROLLBAR_UP, KEYC_DOUBLECLICK9_STATUS,
+    KEYC_DOUBLECLICK9_STATUS_DEFAULT, KEYC_DOUBLECLICK9_STATUS_LEFT,
+    KEYC_DOUBLECLICK9_STATUS_RIGHT, KEYC_DOUBLECLICK10_BORDER, KEYC_DOUBLECLICK10_CONTROL0,
+    KEYC_DOUBLECLICK10_CONTROL1, KEYC_DOUBLECLICK10_CONTROL2, KEYC_DOUBLECLICK10_CONTROL3,
+    KEYC_DOUBLECLICK10_CONTROL4, KEYC_DOUBLECLICK10_CONTROL5, KEYC_DOUBLECLICK10_CONTROL6,
+    KEYC_DOUBLECLICK10_CONTROL7, KEYC_DOUBLECLICK10_CONTROL8, KEYC_DOUBLECLICK10_CONTROL9,
+    KEYC_DOUBLECLICK10_PANE, KEYC_DOUBLECLICK10_SCROLLBAR_DOWN,
+    KEYC_DOUBLECLICK10_SCROLLBAR_SLIDER, KEYC_DOUBLECLICK10_SCROLLBAR_UP,
+    KEYC_DOUBLECLICK10_STATUS, KEYC_DOUBLECLICK10_STATUS_DEFAULT, KEYC_DOUBLECLICK10_STATUS_LEFT,
+    KEYC_DOUBLECLICK10_STATUS_RIGHT, KEYC_DOUBLECLICK11_BORDER, KEYC_DOUBLECLICK11_CONTROL0,
+    KEYC_DOUBLECLICK11_CONTROL1, KEYC_DOUBLECLICK11_CONTROL2, KEYC_DOUBLECLICK11_CONTROL3,
+    KEYC_DOUBLECLICK11_CONTROL4, KEYC_DOUBLECLICK11_CONTROL5, KEYC_DOUBLECLICK11_CONTROL6,
+    KEYC_DOUBLECLICK11_CONTROL7, KEYC_DOUBLECLICK11_CONTROL8, KEYC_DOUBLECLICK11_CONTROL9,
+    KEYC_DOUBLECLICK11_PANE, KEYC_DOUBLECLICK11_SCROLLBAR_DOWN,
+    KEYC_DOUBLECLICK11_SCROLLBAR_SLIDER, KEYC_DOUBLECLICK11_SCROLLBAR_UP,
+    KEYC_DOUBLECLICK11_STATUS, KEYC_DOUBLECLICK11_STATUS_DEFAULT, KEYC_DOUBLECLICK11_STATUS_LEFT,
+    KEYC_DOUBLECLICK11_STATUS_RIGHT, KEYC_DOWN, KEYC_DRAGGING, KEYC_END, KEYC_F1, KEYC_F2, KEYC_F3,
+    KEYC_F4, KEYC_F5, KEYC_F6, KEYC_F7, KEYC_F8, KEYC_F9, KEYC_F10, KEYC_F11, KEYC_F12,
+    KEYC_FOCUS_IN, KEYC_FOCUS_OUT, KEYC_HOME, KEYC_IC, KEYC_KP_EIGHT, KEYC_KP_ENTER, KEYC_KP_FIVE,
+    KEYC_KP_FOUR, KEYC_KP_MINUS, KEYC_KP_NINE, KEYC_KP_ONE, KEYC_KP_PERIOD, KEYC_KP_PLUS,
+    KEYC_KP_SEVEN, KEYC_KP_SIX, KEYC_KP_SLASH, KEYC_KP_STAR, KEYC_KP_THREE, KEYC_KP_TWO,
+    KEYC_KP_ZERO, KEYC_LEFT, KEYC_MASK_FLAGS, KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE,
+    KEYC_MOUSEDOWN_BORDER, KEYC_MOUSEDOWN_CONTROL0, KEYC_MOUSEDOWN_CONTROL1,
+    KEYC_MOUSEDOWN_CONTROL2, KEYC_MOUSEDOWN_CONTROL3, KEYC_MOUSEDOWN_CONTROL4,
+    KEYC_MOUSEDOWN_CONTROL5, KEYC_MOUSEDOWN_CONTROL6, KEYC_MOUSEDOWN_CONTROL7,
+    KEYC_MOUSEDOWN_CONTROL8, KEYC_MOUSEDOWN_CONTROL9, KEYC_MOUSEDOWN_PANE,
+    KEYC_MOUSEDOWN_SCROLLBAR_DOWN, KEYC_MOUSEDOWN_SCROLLBAR_SLIDER, KEYC_MOUSEDOWN_SCROLLBAR_UP,
+    KEYC_MOUSEDOWN_STATUS, KEYC_MOUSEDOWN_STATUS_DEFAULT, KEYC_MOUSEDOWN_STATUS_LEFT,
+    KEYC_MOUSEDOWN_STATUS_RIGHT, KEYC_MOUSEDOWN1_BORDER, KEYC_MOUSEDOWN1_CONTROL0,
+    KEYC_MOUSEDOWN1_CONTROL1, KEYC_MOUSEDOWN1_CONTROL2, KEYC_MOUSEDOWN1_CONTROL3,
+    KEYC_MOUSEDOWN1_CONTROL4, KEYC_MOUSEDOWN1_CONTROL5, KEYC_MOUSEDOWN1_CONTROL6,
+    KEYC_MOUSEDOWN1_CONTROL7, KEYC_MOUSEDOWN1_CONTROL8, KEYC_MOUSEDOWN1_CONTROL9,
+    KEYC_MOUSEDOWN1_PANE, KEYC_MOUSEDOWN1_SCROLLBAR_DOWN, KEYC_MOUSEDOWN1_SCROLLBAR_SLIDER,
+    KEYC_MOUSEDOWN1_SCROLLBAR_UP, KEYC_MOUSEDOWN1_STATUS, KEYC_MOUSEDOWN1_STATUS_DEFAULT,
+    KEYC_MOUSEDOWN1_STATUS_LEFT, KEYC_MOUSEDOWN1_STATUS_RIGHT, KEYC_MOUSEDOWN2_BORDER,
+    KEYC_MOUSEDOWN2_CONTROL0, KEYC_MOUSEDOWN2_CONTROL1, KEYC_MOUSEDOWN2_CONTROL2,
+    KEYC_MOUSEDOWN2_CONTROL3, KEYC_MOUSEDOWN2_CONTROL4, KEYC_MOUSEDOWN2_CONTROL5,
+    KEYC_MOUSEDOWN2_CONTROL6, KEYC_MOUSEDOWN2_CONTROL7, KEYC_MOUSEDOWN2_CONTROL8,
+    KEYC_MOUSEDOWN2_CONTROL9, KEYC_MOUSEDOWN2_PANE, KEYC_MOUSEDOWN2_SCROLLBAR_DOWN,
+    KEYC_MOUSEDOWN2_SCROLLBAR_SLIDER, KEYC_MOUSEDOWN2_SCROLLBAR_UP, KEYC_MOUSEDOWN2_STATUS,
+    KEYC_MOUSEDOWN2_STATUS_DEFAULT, KEYC_MOUSEDOWN2_STATUS_LEFT, KEYC_MOUSEDOWN2_STATUS_RIGHT,
+    KEYC_MOUSEDOWN3_BORDER, KEYC_MOUSEDOWN3_CONTROL0, KEYC_MOUSEDOWN3_CONTROL1,
+    KEYC_MOUSEDOWN3_CONTROL2, KEYC_MOUSEDOWN3_CONTROL3, KEYC_MOUSEDOWN3_CONTROL4,
+    KEYC_MOUSEDOWN3_CONTROL5, KEYC_MOUSEDOWN3_CONTROL6, KEYC_MOUSEDOWN3_CONTROL7,
+    KEYC_MOUSEDOWN3_CONTROL8, KEYC_MOUSEDOWN3_CONTROL9, KEYC_MOUSEDOWN3_PANE,
+    KEYC_MOUSEDOWN3_SCROLLBAR_DOWN, KEYC_MOUSEDOWN3_SCROLLBAR_SLIDER, KEYC_MOUSEDOWN3_SCROLLBAR_UP,
+    KEYC_MOUSEDOWN3_STATUS, KEYC_MOUSEDOWN3_STATUS_DEFAULT, KEYC_MOUSEDOWN3_STATUS_LEFT,
+    KEYC_MOUSEDOWN3_STATUS_RIGHT, KEYC_MOUSEDOWN6_BORDER, KEYC_MOUSEDOWN6_CONTROL0,
+    KEYC_MOUSEDOWN6_CONTROL1, KEYC_MOUSEDOWN6_CONTROL2, KEYC_MOUSEDOWN6_CONTROL3,
+    KEYC_MOUSEDOWN6_CONTROL4, KEYC_MOUSEDOWN6_CONTROL5, KEYC_MOUSEDOWN6_CONTROL6,
+    KEYC_MOUSEDOWN6_CONTROL7, KEYC_MOUSEDOWN6_CONTROL8, KEYC_MOUSEDOWN6_CONTROL9,
+    KEYC_MOUSEDOWN6_PANE, KEYC_MOUSEDOWN6_SCROLLBAR_DOWN, KEYC_MOUSEDOWN6_SCROLLBAR_SLIDER,
+    KEYC_MOUSEDOWN6_SCROLLBAR_UP, KEYC_MOUSEDOWN6_STATUS, KEYC_MOUSEDOWN6_STATUS_DEFAULT,
+    KEYC_MOUSEDOWN6_STATUS_LEFT, KEYC_MOUSEDOWN6_STATUS_RIGHT, KEYC_MOUSEDOWN7_BORDER,
+    KEYC_MOUSEDOWN7_CONTROL0, KEYC_MOUSEDOWN7_CONTROL1, KEYC_MOUSEDOWN7_CONTROL2,
+    KEYC_MOUSEDOWN7_CONTROL3, KEYC_MOUSEDOWN7_CONTROL4, KEYC_MOUSEDOWN7_CONTROL5,
+    KEYC_MOUSEDOWN7_CONTROL6, KEYC_MOUSEDOWN7_CONTROL7, KEYC_MOUSEDOWN7_CONTROL8,
+    KEYC_MOUSEDOWN7_CONTROL9, KEYC_MOUSEDOWN7_PANE, KEYC_MOUSEDOWN7_SCROLLBAR_DOWN,
+    KEYC_MOUSEDOWN7_SCROLLBAR_SLIDER, KEYC_MOUSEDOWN7_SCROLLBAR_UP, KEYC_MOUSEDOWN7_STATUS,
+    KEYC_MOUSEDOWN7_STATUS_DEFAULT, KEYC_MOUSEDOWN7_STATUS_LEFT, KEYC_MOUSEDOWN7_STATUS_RIGHT,
+    KEYC_MOUSEDOWN8_BORDER, KEYC_MOUSEDOWN8_CONTROL0, KEYC_MOUSEDOWN8_CONTROL1,
+    KEYC_MOUSEDOWN8_CONTROL2, KEYC_MOUSEDOWN8_CONTROL3, KEYC_MOUSEDOWN8_CONTROL4,
+    KEYC_MOUSEDOWN8_CONTROL5, KEYC_MOUSEDOWN8_CONTROL6, KEYC_MOUSEDOWN8_CONTROL7,
+    KEYC_MOUSEDOWN8_CONTROL8, KEYC_MOUSEDOWN8_CONTROL9, KEYC_MOUSEDOWN8_PANE,
+    KEYC_MOUSEDOWN8_SCROLLBAR_DOWN, KEYC_MOUSEDOWN8_SCROLLBAR_SLIDER, KEYC_MOUSEDOWN8_SCROLLBAR_UP,
+    KEYC_MOUSEDOWN8_STATUS, KEYC_MOUSEDOWN8_STATUS_DEFAULT, KEYC_MOUSEDOWN8_STATUS_LEFT,
+    KEYC_MOUSEDOWN8_STATUS_RIGHT, KEYC_MOUSEDOWN9_BORDER, KEYC_MOUSEDOWN9_CONTROL0,
+    KEYC_MOUSEDOWN9_CONTROL1, KEYC_MOUSEDOWN9_CONTROL2, KEYC_MOUSEDOWN9_CONTROL3,
+    KEYC_MOUSEDOWN9_CONTROL4, KEYC_MOUSEDOWN9_CONTROL5, KEYC_MOUSEDOWN9_CONTROL6,
+    KEYC_MOUSEDOWN9_CONTROL7, KEYC_MOUSEDOWN9_CONTROL8, KEYC_MOUSEDOWN9_CONTROL9,
+    KEYC_MOUSEDOWN9_PANE, KEYC_MOUSEDOWN9_SCROLLBAR_DOWN, KEYC_MOUSEDOWN9_SCROLLBAR_SLIDER,
+    KEYC_MOUSEDOWN9_SCROLLBAR_UP, KEYC_MOUSEDOWN9_STATUS, KEYC_MOUSEDOWN9_STATUS_DEFAULT,
+    KEYC_MOUSEDOWN9_STATUS_LEFT, KEYC_MOUSEDOWN9_STATUS_RIGHT, KEYC_MOUSEDOWN10_BORDER,
+    KEYC_MOUSEDOWN10_CONTROL0, KEYC_MOUSEDOWN10_CONTROL1, KEYC_MOUSEDOWN10_CONTROL2,
+    KEYC_MOUSEDOWN10_CONTROL3, KEYC_MOUSEDOWN10_CONTROL4, KEYC_MOUSEDOWN10_CONTROL5,
+    KEYC_MOUSEDOWN10_CONTROL6, KEYC_MOUSEDOWN10_CONTROL7, KEYC_MOUSEDOWN10_CONTROL8,
+    KEYC_MOUSEDOWN10_CONTROL9, KEYC_MOUSEDOWN10_PANE, KEYC_MOUSEDOWN10_SCROLLBAR_DOWN,
+    KEYC_MOUSEDOWN10_SCROLLBAR_SLIDER, KEYC_MOUSEDOWN10_SCROLLBAR_UP, KEYC_MOUSEDOWN10_STATUS,
+    KEYC_MOUSEDOWN10_STATUS_DEFAULT, KEYC_MOUSEDOWN10_STATUS_LEFT, KEYC_MOUSEDOWN10_STATUS_RIGHT,
+    KEYC_MOUSEDOWN11_BORDER, KEYC_MOUSEDOWN11_CONTROL0, KEYC_MOUSEDOWN11_CONTROL1,
+    KEYC_MOUSEDOWN11_CONTROL2, KEYC_MOUSEDOWN11_CONTROL3, KEYC_MOUSEDOWN11_CONTROL4,
+    KEYC_MOUSEDOWN11_CONTROL5, KEYC_MOUSEDOWN11_CONTROL6, KEYC_MOUSEDOWN11_CONTROL7,
+    KEYC_MOUSEDOWN11_CONTROL8, KEYC_MOUSEDOWN11_CONTROL9, KEYC_MOUSEDOWN11_PANE,
+    KEYC_MOUSEDOWN11_SCROLLBAR_DOWN, KEYC_MOUSEDOWN11_SCROLLBAR_SLIDER,
+    KEYC_MOUSEDOWN11_SCROLLBAR_UP, KEYC_MOUSEDOWN11_STATUS, KEYC_MOUSEDOWN11_STATUS_DEFAULT,
+    KEYC_MOUSEDOWN11_STATUS_LEFT, KEYC_MOUSEDOWN11_STATUS_RIGHT, KEYC_MOUSEDRAG_BORDER,
+    KEYC_MOUSEDRAG_CONTROL0, KEYC_MOUSEDRAG_CONTROL1, KEYC_MOUSEDRAG_CONTROL2,
+    KEYC_MOUSEDRAG_CONTROL3, KEYC_MOUSEDRAG_CONTROL4, KEYC_MOUSEDRAG_CONTROL5,
+    KEYC_MOUSEDRAG_CONTROL6, KEYC_MOUSEDRAG_CONTROL7, KEYC_MOUSEDRAG_CONTROL8,
+    KEYC_MOUSEDRAG_CONTROL9, KEYC_MOUSEDRAG_PANE, KEYC_MOUSEDRAG_SCROLLBAR_DOWN,
+    KEYC_MOUSEDRAG_SCROLLBAR_SLIDER, KEYC_MOUSEDRAG_SCROLLBAR_UP, KEYC_MOUSEDRAG_STATUS,
+    KEYC_MOUSEDRAG_STATUS_DEFAULT, KEYC_MOUSEDRAG_STATUS_LEFT, KEYC_MOUSEDRAG_STATUS_RIGHT,
+    KEYC_MOUSEDRAG1_BORDER, KEYC_MOUSEDRAG1_CONTROL0, KEYC_MOUSEDRAG1_CONTROL1,
+    KEYC_MOUSEDRAG1_CONTROL2, KEYC_MOUSEDRAG1_CONTROL3, KEYC_MOUSEDRAG1_CONTROL4,
+    KEYC_MOUSEDRAG1_CONTROL5, KEYC_MOUSEDRAG1_CONTROL6, KEYC_MOUSEDRAG1_CONTROL7,
+    KEYC_MOUSEDRAG1_CONTROL8, KEYC_MOUSEDRAG1_CONTROL9, KEYC_MOUSEDRAG1_PANE,
+    KEYC_MOUSEDRAG1_SCROLLBAR_DOWN, KEYC_MOUSEDRAG1_SCROLLBAR_SLIDER, KEYC_MOUSEDRAG1_SCROLLBAR_UP,
+    KEYC_MOUSEDRAG1_STATUS, KEYC_MOUSEDRAG1_STATUS_DEFAULT, KEYC_MOUSEDRAG1_STATUS_LEFT,
+    KEYC_MOUSEDRAG1_STATUS_RIGHT, KEYC_MOUSEDRAG2_BORDER, KEYC_MOUSEDRAG2_CONTROL0,
+    KEYC_MOUSEDRAG2_CONTROL1, KEYC_MOUSEDRAG2_CONTROL2, KEYC_MOUSEDRAG2_CONTROL3,
+    KEYC_MOUSEDRAG2_CONTROL4, KEYC_MOUSEDRAG2_CONTROL5, KEYC_MOUSEDRAG2_CONTROL6,
+    KEYC_MOUSEDRAG2_CONTROL7, KEYC_MOUSEDRAG2_CONTROL8, KEYC_MOUSEDRAG2_CONTROL9,
+    KEYC_MOUSEDRAG2_PANE, KEYC_MOUSEDRAG2_SCROLLBAR_DOWN, KEYC_MOUSEDRAG2_SCROLLBAR_SLIDER,
+    KEYC_MOUSEDRAG2_SCROLLBAR_UP, KEYC_MOUSEDRAG2_STATUS, KEYC_MOUSEDRAG2_STATUS_DEFAULT,
+    KEYC_MOUSEDRAG2_STATUS_LEFT, KEYC_MOUSEDRAG2_STATUS_RIGHT, KEYC_MOUSEDRAG3_BORDER,
+    KEYC_MOUSEDRAG3_CONTROL0, KEYC_MOUSEDRAG3_CONTROL1, KEYC_MOUSEDRAG3_CONTROL2,
+    KEYC_MOUSEDRAG3_CONTROL3, KEYC_MOUSEDRAG3_CONTROL4, KEYC_MOUSEDRAG3_CONTROL5,
+    KEYC_MOUSEDRAG3_CONTROL6, KEYC_MOUSEDRAG3_CONTROL7, KEYC_MOUSEDRAG3_CONTROL8,
+    KEYC_MOUSEDRAG3_CONTROL9, KEYC_MOUSEDRAG3_PANE, KEYC_MOUSEDRAG3_SCROLLBAR_DOWN,
+    KEYC_MOUSEDRAG3_SCROLLBAR_SLIDER, KEYC_MOUSEDRAG3_SCROLLBAR_UP, KEYC_MOUSEDRAG3_STATUS,
+    KEYC_MOUSEDRAG3_STATUS_DEFAULT, KEYC_MOUSEDRAG3_STATUS_LEFT, KEYC_MOUSEDRAG3_STATUS_RIGHT,
+    KEYC_MOUSEDRAG6_BORDER, KEYC_MOUSEDRAG6_CONTROL0, KEYC_MOUSEDRAG6_CONTROL1,
+    KEYC_MOUSEDRAG6_CONTROL2, KEYC_MOUSEDRAG6_CONTROL3, KEYC_MOUSEDRAG6_CONTROL4,
+    KEYC_MOUSEDRAG6_CONTROL5, KEYC_MOUSEDRAG6_CONTROL6, KEYC_MOUSEDRAG6_CONTROL7,
+    KEYC_MOUSEDRAG6_CONTROL8, KEYC_MOUSEDRAG6_CONTROL9, KEYC_MOUSEDRAG6_PANE,
+    KEYC_MOUSEDRAG6_SCROLLBAR_DOWN, KEYC_MOUSEDRAG6_SCROLLBAR_SLIDER, KEYC_MOUSEDRAG6_SCROLLBAR_UP,
+    KEYC_MOUSEDRAG6_STATUS, KEYC_MOUSEDRAG6_STATUS_DEFAULT, KEYC_MOUSEDRAG6_STATUS_LEFT,
+    KEYC_MOUSEDRAG6_STATUS_RIGHT, KEYC_MOUSEDRAG7_BORDER, KEYC_MOUSEDRAG7_CONTROL0,
+    KEYC_MOUSEDRAG7_CONTROL1, KEYC_MOUSEDRAG7_CONTROL2, KEYC_MOUSEDRAG7_CONTROL3,
+    KEYC_MOUSEDRAG7_CONTROL4, KEYC_MOUSEDRAG7_CONTROL5, KEYC_MOUSEDRAG7_CONTROL6,
+    KEYC_MOUSEDRAG7_CONTROL7, KEYC_MOUSEDRAG7_CONTROL8, KEYC_MOUSEDRAG7_CONTROL9,
+    KEYC_MOUSEDRAG7_PANE, KEYC_MOUSEDRAG7_SCROLLBAR_DOWN, KEYC_MOUSEDRAG7_SCROLLBAR_SLIDER,
+    KEYC_MOUSEDRAG7_SCROLLBAR_UP, KEYC_MOUSEDRAG7_STATUS, KEYC_MOUSEDRAG7_STATUS_DEFAULT,
+    KEYC_MOUSEDRAG7_STATUS_LEFT, KEYC_MOUSEDRAG7_STATUS_RIGHT, KEYC_MOUSEDRAG8_BORDER,
+    KEYC_MOUSEDRAG8_CONTROL0, KEYC_MOUSEDRAG8_CONTROL1, KEYC_MOUSEDRAG8_CONTROL2,
+    KEYC_MOUSEDRAG8_CONTROL3, KEYC_MOUSEDRAG8_CONTROL4, KEYC_MOUSEDRAG8_CONTROL5,
+    KEYC_MOUSEDRAG8_CONTROL6, KEYC_MOUSEDRAG8_CONTROL7, KEYC_MOUSEDRAG8_CONTROL8,
+    KEYC_MOUSEDRAG8_CONTROL9, KEYC_MOUSEDRAG8_PANE, KEYC_MOUSEDRAG8_SCROLLBAR_DOWN,
+    KEYC_MOUSEDRAG8_SCROLLBAR_SLIDER, KEYC_MOUSEDRAG8_SCROLLBAR_UP, KEYC_MOUSEDRAG8_STATUS,
+    KEYC_MOUSEDRAG8_STATUS_DEFAULT, KEYC_MOUSEDRAG8_STATUS_LEFT, KEYC_MOUSEDRAG8_STATUS_RIGHT,
+    KEYC_MOUSEDRAG9_BORDER, KEYC_MOUSEDRAG9_CONTROL0, KEYC_MOUSEDRAG9_CONTROL1,
+    KEYC_MOUSEDRAG9_CONTROL2, KEYC_MOUSEDRAG9_CONTROL3, KEYC_MOUSEDRAG9_CONTROL4,
+    KEYC_MOUSEDRAG9_CONTROL5, KEYC_MOUSEDRAG9_CONTROL6, KEYC_MOUSEDRAG9_CONTROL7,
+    KEYC_MOUSEDRAG9_CONTROL8, KEYC_MOUSEDRAG9_CONTROL9, KEYC_MOUSEDRAG9_PANE,
+    KEYC_MOUSEDRAG9_SCROLLBAR_DOWN, KEYC_MOUSEDRAG9_SCROLLBAR_SLIDER, KEYC_MOUSEDRAG9_SCROLLBAR_UP,
+    KEYC_MOUSEDRAG9_STATUS, KEYC_MOUSEDRAG9_STATUS_DEFAULT, KEYC_MOUSEDRAG9_STATUS_LEFT,
+    KEYC_MOUSEDRAG9_STATUS_RIGHT, KEYC_MOUSEDRAG10_BORDER, KEYC_MOUSEDRAG10_CONTROL0,
+    KEYC_MOUSEDRAG10_CONTROL1, KEYC_MOUSEDRAG10_CONTROL2, KEYC_MOUSEDRAG10_CONTROL3,
+    KEYC_MOUSEDRAG10_CONTROL4, KEYC_MOUSEDRAG10_CONTROL5, KEYC_MOUSEDRAG10_CONTROL6,
+    KEYC_MOUSEDRAG10_CONTROL7, KEYC_MOUSEDRAG10_CONTROL8, KEYC_MOUSEDRAG10_CONTROL9,
+    KEYC_MOUSEDRAG10_PANE, KEYC_MOUSEDRAG10_SCROLLBAR_DOWN, KEYC_MOUSEDRAG10_SCROLLBAR_SLIDER,
+    KEYC_MOUSEDRAG10_SCROLLBAR_UP, KEYC_MOUSEDRAG10_STATUS, KEYC_MOUSEDRAG10_STATUS_DEFAULT,
+    KEYC_MOUSEDRAG10_STATUS_LEFT, KEYC_MOUSEDRAG10_STATUS_RIGHT, KEYC_MOUSEDRAG11_BORDER,
+    KEYC_MOUSEDRAG11_CONTROL0, KEYC_MOUSEDRAG11_CONTROL1, KEYC_MOUSEDRAG11_CONTROL2,
+    KEYC_MOUSEDRAG11_CONTROL3, KEYC_MOUSEDRAG11_CONTROL4, KEYC_MOUSEDRAG11_CONTROL5,
+    KEYC_MOUSEDRAG11_CONTROL6, KEYC_MOUSEDRAG11_CONTROL7, KEYC_MOUSEDRAG11_CONTROL8,
+    KEYC_MOUSEDRAG11_CONTROL9, KEYC_MOUSEDRAG11_PANE, KEYC_MOUSEDRAG11_SCROLLBAR_DOWN,
+    KEYC_MOUSEDRAG11_SCROLLBAR_SLIDER, KEYC_MOUSEDRAG11_SCROLLBAR_UP, KEYC_MOUSEDRAG11_STATUS,
+    KEYC_MOUSEDRAG11_STATUS_DEFAULT, KEYC_MOUSEDRAG11_STATUS_LEFT, KEYC_MOUSEDRAG11_STATUS_RIGHT,
+    KEYC_MOUSEDRAGEND_BORDER, KEYC_MOUSEDRAGEND_CONTROL0, KEYC_MOUSEDRAGEND_CONTROL1,
+    KEYC_MOUSEDRAGEND_CONTROL2, KEYC_MOUSEDRAGEND_CONTROL3, KEYC_MOUSEDRAGEND_CONTROL4,
+    KEYC_MOUSEDRAGEND_CONTROL5, KEYC_MOUSEDRAGEND_CONTROL6, KEYC_MOUSEDRAGEND_CONTROL7,
+    KEYC_MOUSEDRAGEND_CONTROL8, KEYC_MOUSEDRAGEND_CONTROL9, KEYC_MOUSEDRAGEND_PANE,
+    KEYC_MOUSEDRAGEND_SCROLLBAR_DOWN, KEYC_MOUSEDRAGEND_SCROLLBAR_SLIDER,
+    KEYC_MOUSEDRAGEND_SCROLLBAR_UP, KEYC_MOUSEDRAGEND_STATUS, KEYC_MOUSEDRAGEND_STATUS_DEFAULT,
+    KEYC_MOUSEDRAGEND_STATUS_LEFT, KEYC_MOUSEDRAGEND_STATUS_RIGHT, KEYC_MOUSEDRAGEND1_BORDER,
+    KEYC_MOUSEDRAGEND1_CONTROL0, KEYC_MOUSEDRAGEND1_CONTROL1, KEYC_MOUSEDRAGEND1_CONTROL2,
+    KEYC_MOUSEDRAGEND1_CONTROL3, KEYC_MOUSEDRAGEND1_CONTROL4, KEYC_MOUSEDRAGEND1_CONTROL5,
+    KEYC_MOUSEDRAGEND1_CONTROL6, KEYC_MOUSEDRAGEND1_CONTROL7, KEYC_MOUSEDRAGEND1_CONTROL8,
+    KEYC_MOUSEDRAGEND1_CONTROL9, KEYC_MOUSEDRAGEND1_PANE, KEYC_MOUSEDRAGEND1_SCROLLBAR_DOWN,
+    KEYC_MOUSEDRAGEND1_SCROLLBAR_SLIDER, KEYC_MOUSEDRAGEND1_SCROLLBAR_UP,
+    KEYC_MOUSEDRAGEND1_STATUS, KEYC_MOUSEDRAGEND1_STATUS_DEFAULT, KEYC_MOUSEDRAGEND1_STATUS_LEFT,
+    KEYC_MOUSEDRAGEND1_STATUS_RIGHT, KEYC_MOUSEDRAGEND2_BORDER, KEYC_MOUSEDRAGEND2_CONTROL0,
+    KEYC_MOUSEDRAGEND2_CONTROL1, KEYC_MOUSEDRAGEND2_CONTROL2, KEYC_MOUSEDRAGEND2_CONTROL3,
+    KEYC_MOUSEDRAGEND2_CONTROL4, KEYC_MOUSEDRAGEND2_CONTROL5, KEYC_MOUSEDRAGEND2_CONTROL6,
+    KEYC_MOUSEDRAGEND2_CONTROL7, KEYC_MOUSEDRAGEND2_CONTROL8, KEYC_MOUSEDRAGEND2_CONTROL9,
+    KEYC_MOUSEDRAGEND2_PANE, KEYC_MOUSEDRAGEND2_SCROLLBAR_DOWN,
+    KEYC_MOUSEDRAGEND2_SCROLLBAR_SLIDER, KEYC_MOUSEDRAGEND2_SCROLLBAR_UP,
+    KEYC_MOUSEDRAGEND2_STATUS, KEYC_MOUSEDRAGEND2_STATUS_DEFAULT, KEYC_MOUSEDRAGEND2_STATUS_LEFT,
+    KEYC_MOUSEDRAGEND2_STATUS_RIGHT, KEYC_MOUSEDRAGEND3_BORDER, KEYC_MOUSEDRAGEND3_CONTROL0,
+    KEYC_MOUSEDRAGEND3_CONTROL1, KEYC_MOUSEDRAGEND3_CONTROL2, KEYC_MOUSEDRAGEND3_CONTROL3,
+    KEYC_MOUSEDRAGEND3_CONTROL4, KEYC_MOUSEDRAGEND3_CONTROL5, KEYC_MOUSEDRAGEND3_CONTROL6,
+    KEYC_MOUSEDRAGEND3_CONTROL7, KEYC_MOUSEDRAGEND3_CONTROL8, KEYC_MOUSEDRAGEND3_CONTROL9,
+    KEYC_MOUSEDRAGEND3_PANE, KEYC_MOUSEDRAGEND3_SCROLLBAR_DOWN,
+    KEYC_MOUSEDRAGEND3_SCROLLBAR_SLIDER, KEYC_MOUSEDRAGEND3_SCROLLBAR_UP,
+    KEYC_MOUSEDRAGEND3_STATUS, KEYC_MOUSEDRAGEND3_STATUS_DEFAULT, KEYC_MOUSEDRAGEND3_STATUS_LEFT,
+    KEYC_MOUSEDRAGEND3_STATUS_RIGHT, KEYC_MOUSEDRAGEND6_BORDER, KEYC_MOUSEDRAGEND6_CONTROL0,
+    KEYC_MOUSEDRAGEND6_CONTROL1, KEYC_MOUSEDRAGEND6_CONTROL2, KEYC_MOUSEDRAGEND6_CONTROL3,
+    KEYC_MOUSEDRAGEND6_CONTROL4, KEYC_MOUSEDRAGEND6_CONTROL5, KEYC_MOUSEDRAGEND6_CONTROL6,
+    KEYC_MOUSEDRAGEND6_CONTROL7, KEYC_MOUSEDRAGEND6_CONTROL8, KEYC_MOUSEDRAGEND6_CONTROL9,
+    KEYC_MOUSEDRAGEND6_PANE, KEYC_MOUSEDRAGEND6_SCROLLBAR_DOWN,
+    KEYC_MOUSEDRAGEND6_SCROLLBAR_SLIDER, KEYC_MOUSEDRAGEND6_SCROLLBAR_UP,
+    KEYC_MOUSEDRAGEND6_STATUS, KEYC_MOUSEDRAGEND6_STATUS_DEFAULT, KEYC_MOUSEDRAGEND6_STATUS_LEFT,
+    KEYC_MOUSEDRAGEND6_STATUS_RIGHT, KEYC_MOUSEDRAGEND7_BORDER, KEYC_MOUSEDRAGEND7_CONTROL0,
+    KEYC_MOUSEDRAGEND7_CONTROL1, KEYC_MOUSEDRAGEND7_CONTROL2, KEYC_MOUSEDRAGEND7_CONTROL3,
+    KEYC_MOUSEDRAGEND7_CONTROL4, KEYC_MOUSEDRAGEND7_CONTROL5, KEYC_MOUSEDRAGEND7_CONTROL6,
+    KEYC_MOUSEDRAGEND7_CONTROL7, KEYC_MOUSEDRAGEND7_CONTROL8, KEYC_MOUSEDRAGEND7_CONTROL9,
+    KEYC_MOUSEDRAGEND7_PANE, KEYC_MOUSEDRAGEND7_SCROLLBAR_DOWN,
+    KEYC_MOUSEDRAGEND7_SCROLLBAR_SLIDER, KEYC_MOUSEDRAGEND7_SCROLLBAR_UP,
+    KEYC_MOUSEDRAGEND7_STATUS, KEYC_MOUSEDRAGEND7_STATUS_DEFAULT, KEYC_MOUSEDRAGEND7_STATUS_LEFT,
+    KEYC_MOUSEDRAGEND7_STATUS_RIGHT, KEYC_MOUSEDRAGEND8_BORDER, KEYC_MOUSEDRAGEND8_CONTROL0,
+    KEYC_MOUSEDRAGEND8_CONTROL1, KEYC_MOUSEDRAGEND8_CONTROL2, KEYC_MOUSEDRAGEND8_CONTROL3,
+    KEYC_MOUSEDRAGEND8_CONTROL4, KEYC_MOUSEDRAGEND8_CONTROL5, KEYC_MOUSEDRAGEND8_CONTROL6,
+    KEYC_MOUSEDRAGEND8_CONTROL7, KEYC_MOUSEDRAGEND8_CONTROL8, KEYC_MOUSEDRAGEND8_CONTROL9,
+    KEYC_MOUSEDRAGEND8_PANE, KEYC_MOUSEDRAGEND8_SCROLLBAR_DOWN,
+    KEYC_MOUSEDRAGEND8_SCROLLBAR_SLIDER, KEYC_MOUSEDRAGEND8_SCROLLBAR_UP,
+    KEYC_MOUSEDRAGEND8_STATUS, KEYC_MOUSEDRAGEND8_STATUS_DEFAULT, KEYC_MOUSEDRAGEND8_STATUS_LEFT,
+    KEYC_MOUSEDRAGEND8_STATUS_RIGHT, KEYC_MOUSEDRAGEND9_BORDER, KEYC_MOUSEDRAGEND9_CONTROL0,
+    KEYC_MOUSEDRAGEND9_CONTROL1, KEYC_MOUSEDRAGEND9_CONTROL2, KEYC_MOUSEDRAGEND9_CONTROL3,
+    KEYC_MOUSEDRAGEND9_CONTROL4, KEYC_MOUSEDRAGEND9_CONTROL5, KEYC_MOUSEDRAGEND9_CONTROL6,
+    KEYC_MOUSEDRAGEND9_CONTROL7, KEYC_MOUSEDRAGEND9_CONTROL8, KEYC_MOUSEDRAGEND9_CONTROL9,
+    KEYC_MOUSEDRAGEND9_PANE, KEYC_MOUSEDRAGEND9_SCROLLBAR_DOWN,
+    KEYC_MOUSEDRAGEND9_SCROLLBAR_SLIDER, KEYC_MOUSEDRAGEND9_SCROLLBAR_UP,
+    KEYC_MOUSEDRAGEND9_STATUS, KEYC_MOUSEDRAGEND9_STATUS_DEFAULT, KEYC_MOUSEDRAGEND9_STATUS_LEFT,
+    KEYC_MOUSEDRAGEND9_STATUS_RIGHT, KEYC_MOUSEDRAGEND10_BORDER, KEYC_MOUSEDRAGEND10_CONTROL0,
+    KEYC_MOUSEDRAGEND10_CONTROL1, KEYC_MOUSEDRAGEND10_CONTROL2, KEYC_MOUSEDRAGEND10_CONTROL3,
+    KEYC_MOUSEDRAGEND10_CONTROL4, KEYC_MOUSEDRAGEND10_CONTROL5, KEYC_MOUSEDRAGEND10_CONTROL6,
+    KEYC_MOUSEDRAGEND10_CONTROL7, KEYC_MOUSEDRAGEND10_CONTROL8, KEYC_MOUSEDRAGEND10_CONTROL9,
+    KEYC_MOUSEDRAGEND10_PANE, KEYC_MOUSEDRAGEND10_SCROLLBAR_DOWN,
+    KEYC_MOUSEDRAGEND10_SCROLLBAR_SLIDER, KEYC_MOUSEDRAGEND10_SCROLLBAR_UP,
+    KEYC_MOUSEDRAGEND10_STATUS, KEYC_MOUSEDRAGEND10_STATUS_DEFAULT,
+    KEYC_MOUSEDRAGEND10_STATUS_LEFT, KEYC_MOUSEDRAGEND10_STATUS_RIGHT, KEYC_MOUSEDRAGEND11_BORDER,
+    KEYC_MOUSEDRAGEND11_CONTROL0, KEYC_MOUSEDRAGEND11_CONTROL1, KEYC_MOUSEDRAGEND11_CONTROL2,
+    KEYC_MOUSEDRAGEND11_CONTROL3, KEYC_MOUSEDRAGEND11_CONTROL4, KEYC_MOUSEDRAGEND11_CONTROL5,
+    KEYC_MOUSEDRAGEND11_CONTROL6, KEYC_MOUSEDRAGEND11_CONTROL7, KEYC_MOUSEDRAGEND11_CONTROL8,
+    KEYC_MOUSEDRAGEND11_CONTROL9, KEYC_MOUSEDRAGEND11_PANE, KEYC_MOUSEDRAGEND11_SCROLLBAR_DOWN,
+    KEYC_MOUSEDRAGEND11_SCROLLBAR_SLIDER, KEYC_MOUSEDRAGEND11_SCROLLBAR_UP,
+    KEYC_MOUSEDRAGEND11_STATUS, KEYC_MOUSEDRAGEND11_STATUS_DEFAULT,
+    KEYC_MOUSEDRAGEND11_STATUS_LEFT, KEYC_MOUSEDRAGEND11_STATUS_RIGHT, KEYC_MOUSEMOVE_BORDER,
+    KEYC_MOUSEMOVE_CONTROL0, KEYC_MOUSEMOVE_CONTROL1, KEYC_MOUSEMOVE_CONTROL2,
+    KEYC_MOUSEMOVE_CONTROL3, KEYC_MOUSEMOVE_CONTROL4, KEYC_MOUSEMOVE_CONTROL5,
+    KEYC_MOUSEMOVE_CONTROL6, KEYC_MOUSEMOVE_CONTROL7, KEYC_MOUSEMOVE_CONTROL8,
+    KEYC_MOUSEMOVE_CONTROL9, KEYC_MOUSEMOVE_PANE, KEYC_MOUSEMOVE_SCROLLBAR_DOWN,
+    KEYC_MOUSEMOVE_SCROLLBAR_SLIDER, KEYC_MOUSEMOVE_SCROLLBAR_UP, KEYC_MOUSEMOVE_STATUS,
+    KEYC_MOUSEMOVE_STATUS_DEFAULT, KEYC_MOUSEMOVE_STATUS_LEFT, KEYC_MOUSEMOVE_STATUS_RIGHT,
+    KEYC_MOUSEMOVE1_BORDER, KEYC_MOUSEMOVE1_CONTROL0, KEYC_MOUSEMOVE1_CONTROL1,
+    KEYC_MOUSEMOVE1_CONTROL2, KEYC_MOUSEMOVE1_CONTROL3, KEYC_MOUSEMOVE1_CONTROL4,
+    KEYC_MOUSEMOVE1_CONTROL5, KEYC_MOUSEMOVE1_CONTROL6, KEYC_MOUSEMOVE1_CONTROL7,
+    KEYC_MOUSEMOVE1_CONTROL8, KEYC_MOUSEMOVE1_CONTROL9, KEYC_MOUSEMOVE1_PANE,
+    KEYC_MOUSEMOVE1_SCROLLBAR_DOWN, KEYC_MOUSEMOVE1_SCROLLBAR_SLIDER, KEYC_MOUSEMOVE1_SCROLLBAR_UP,
+    KEYC_MOUSEMOVE1_STATUS, KEYC_MOUSEMOVE1_STATUS_DEFAULT, KEYC_MOUSEMOVE1_STATUS_LEFT,
+    KEYC_MOUSEMOVE1_STATUS_RIGHT, KEYC_MOUSEMOVE2_BORDER, KEYC_MOUSEMOVE2_CONTROL0,
+    KEYC_MOUSEMOVE2_CONTROL1, KEYC_MOUSEMOVE2_CONTROL2, KEYC_MOUSEMOVE2_CONTROL3,
+    KEYC_MOUSEMOVE2_CONTROL4, KEYC_MOUSEMOVE2_CONTROL5, KEYC_MOUSEMOVE2_CONTROL6,
+    KEYC_MOUSEMOVE2_CONTROL7, KEYC_MOUSEMOVE2_CONTROL8, KEYC_MOUSEMOVE2_CONTROL9,
+    KEYC_MOUSEMOVE2_PANE, KEYC_MOUSEMOVE2_SCROLLBAR_DOWN, KEYC_MOUSEMOVE2_SCROLLBAR_SLIDER,
+    KEYC_MOUSEMOVE2_SCROLLBAR_UP, KEYC_MOUSEMOVE2_STATUS, KEYC_MOUSEMOVE2_STATUS_DEFAULT,
+    KEYC_MOUSEMOVE2_STATUS_LEFT, KEYC_MOUSEMOVE2_STATUS_RIGHT, KEYC_MOUSEMOVE3_BORDER,
+    KEYC_MOUSEMOVE3_CONTROL0, KEYC_MOUSEMOVE3_CONTROL1, KEYC_MOUSEMOVE3_CONTROL2,
+    KEYC_MOUSEMOVE3_CONTROL3, KEYC_MOUSEMOVE3_CONTROL4, KEYC_MOUSEMOVE3_CONTROL5,
+    KEYC_MOUSEMOVE3_CONTROL6, KEYC_MOUSEMOVE3_CONTROL7, KEYC_MOUSEMOVE3_CONTROL8,
+    KEYC_MOUSEMOVE3_CONTROL9, KEYC_MOUSEMOVE3_PANE, KEYC_MOUSEMOVE3_SCROLLBAR_DOWN,
+    KEYC_MOUSEMOVE3_SCROLLBAR_SLIDER, KEYC_MOUSEMOVE3_SCROLLBAR_UP, KEYC_MOUSEMOVE3_STATUS,
+    KEYC_MOUSEMOVE3_STATUS_DEFAULT, KEYC_MOUSEMOVE3_STATUS_LEFT, KEYC_MOUSEMOVE3_STATUS_RIGHT,
+    KEYC_MOUSEMOVE6_BORDER, KEYC_MOUSEMOVE6_CONTROL0, KEYC_MOUSEMOVE6_CONTROL1,
+    KEYC_MOUSEMOVE6_CONTROL2, KEYC_MOUSEMOVE6_CONTROL3, KEYC_MOUSEMOVE6_CONTROL4,
+    KEYC_MOUSEMOVE6_CONTROL5, KEYC_MOUSEMOVE6_CONTROL6, KEYC_MOUSEMOVE6_CONTROL7,
+    KEYC_MOUSEMOVE6_CONTROL8, KEYC_MOUSEMOVE6_CONTROL9, KEYC_MOUSEMOVE6_PANE,
+    KEYC_MOUSEMOVE6_SCROLLBAR_DOWN, KEYC_MOUSEMOVE6_SCROLLBAR_SLIDER, KEYC_MOUSEMOVE6_SCROLLBAR_UP,
+    KEYC_MOUSEMOVE6_STATUS, KEYC_MOUSEMOVE6_STATUS_DEFAULT, KEYC_MOUSEMOVE6_STATUS_LEFT,
+    KEYC_MOUSEMOVE6_STATUS_RIGHT, KEYC_MOUSEMOVE7_BORDER, KEYC_MOUSEMOVE7_CONTROL0,
+    KEYC_MOUSEMOVE7_CONTROL1, KEYC_MOUSEMOVE7_CONTROL2, KEYC_MOUSEMOVE7_CONTROL3,
+    KEYC_MOUSEMOVE7_CONTROL4, KEYC_MOUSEMOVE7_CONTROL5, KEYC_MOUSEMOVE7_CONTROL6,
+    KEYC_MOUSEMOVE7_CONTROL7, KEYC_MOUSEMOVE7_CONTROL8, KEYC_MOUSEMOVE7_CONTROL9,
+    KEYC_MOUSEMOVE7_PANE, KEYC_MOUSEMOVE7_SCROLLBAR_DOWN, KEYC_MOUSEMOVE7_SCROLLBAR_SLIDER,
+    KEYC_MOUSEMOVE7_SCROLLBAR_UP, KEYC_MOUSEMOVE7_STATUS, KEYC_MOUSEMOVE7_STATUS_DEFAULT,
+    KEYC_MOUSEMOVE7_STATUS_LEFT, KEYC_MOUSEMOVE7_STATUS_RIGHT, KEYC_MOUSEMOVE8_BORDER,
+    KEYC_MOUSEMOVE8_CONTROL0, KEYC_MOUSEMOVE8_CONTROL1, KEYC_MOUSEMOVE8_CONTROL2,
+    KEYC_MOUSEMOVE8_CONTROL3, KEYC_MOUSEMOVE8_CONTROL4, KEYC_MOUSEMOVE8_CONTROL5,
+    KEYC_MOUSEMOVE8_CONTROL6, KEYC_MOUSEMOVE8_CONTROL7, KEYC_MOUSEMOVE8_CONTROL8,
+    KEYC_MOUSEMOVE8_CONTROL9, KEYC_MOUSEMOVE8_PANE, KEYC_MOUSEMOVE8_SCROLLBAR_DOWN,
+    KEYC_MOUSEMOVE8_SCROLLBAR_SLIDER, KEYC_MOUSEMOVE8_SCROLLBAR_UP, KEYC_MOUSEMOVE8_STATUS,
+    KEYC_MOUSEMOVE8_STATUS_DEFAULT, KEYC_MOUSEMOVE8_STATUS_LEFT, KEYC_MOUSEMOVE8_STATUS_RIGHT,
+    KEYC_MOUSEMOVE9_BORDER, KEYC_MOUSEMOVE9_CONTROL0, KEYC_MOUSEMOVE9_CONTROL1,
+    KEYC_MOUSEMOVE9_CONTROL2, KEYC_MOUSEMOVE9_CONTROL3, KEYC_MOUSEMOVE9_CONTROL4,
+    KEYC_MOUSEMOVE9_CONTROL5, KEYC_MOUSEMOVE9_CONTROL6, KEYC_MOUSEMOVE9_CONTROL7,
+    KEYC_MOUSEMOVE9_CONTROL8, KEYC_MOUSEMOVE9_CONTROL9, KEYC_MOUSEMOVE9_PANE,
+    KEYC_MOUSEMOVE9_SCROLLBAR_DOWN, KEYC_MOUSEMOVE9_SCROLLBAR_SLIDER, KEYC_MOUSEMOVE9_SCROLLBAR_UP,
+    KEYC_MOUSEMOVE9_STATUS, KEYC_MOUSEMOVE9_STATUS_DEFAULT, KEYC_MOUSEMOVE9_STATUS_LEFT,
+    KEYC_MOUSEMOVE9_STATUS_RIGHT, KEYC_MOUSEMOVE10_BORDER, KEYC_MOUSEMOVE10_CONTROL0,
+    KEYC_MOUSEMOVE10_CONTROL1, KEYC_MOUSEMOVE10_CONTROL2, KEYC_MOUSEMOVE10_CONTROL3,
+    KEYC_MOUSEMOVE10_CONTROL4, KEYC_MOUSEMOVE10_CONTROL5, KEYC_MOUSEMOVE10_CONTROL6,
+    KEYC_MOUSEMOVE10_CONTROL7, KEYC_MOUSEMOVE10_CONTROL8, KEYC_MOUSEMOVE10_CONTROL9,
+    KEYC_MOUSEMOVE10_PANE, KEYC_MOUSEMOVE10_SCROLLBAR_DOWN, KEYC_MOUSEMOVE10_SCROLLBAR_SLIDER,
+    KEYC_MOUSEMOVE10_SCROLLBAR_UP, KEYC_MOUSEMOVE10_STATUS, KEYC_MOUSEMOVE10_STATUS_DEFAULT,
+    KEYC_MOUSEMOVE10_STATUS_LEFT, KEYC_MOUSEMOVE10_STATUS_RIGHT, KEYC_MOUSEMOVE11_BORDER,
+    KEYC_MOUSEMOVE11_CONTROL0, KEYC_MOUSEMOVE11_CONTROL1, KEYC_MOUSEMOVE11_CONTROL2,
+    KEYC_MOUSEMOVE11_CONTROL3, KEYC_MOUSEMOVE11_CONTROL4, KEYC_MOUSEMOVE11_CONTROL5,
+    KEYC_MOUSEMOVE11_CONTROL6, KEYC_MOUSEMOVE11_CONTROL7, KEYC_MOUSEMOVE11_CONTROL8,
+    KEYC_MOUSEMOVE11_CONTROL9, KEYC_MOUSEMOVE11_PANE, KEYC_MOUSEMOVE11_SCROLLBAR_DOWN,
+    KEYC_MOUSEMOVE11_SCROLLBAR_SLIDER, KEYC_MOUSEMOVE11_SCROLLBAR_UP, KEYC_MOUSEMOVE11_STATUS,
+    KEYC_MOUSEMOVE11_STATUS_DEFAULT, KEYC_MOUSEMOVE11_STATUS_LEFT, KEYC_MOUSEMOVE11_STATUS_RIGHT,
+    KEYC_MOUSEUP_BORDER, KEYC_MOUSEUP_CONTROL0, KEYC_MOUSEUP_CONTROL1, KEYC_MOUSEUP_CONTROL2,
+    KEYC_MOUSEUP_CONTROL3, KEYC_MOUSEUP_CONTROL4, KEYC_MOUSEUP_CONTROL5, KEYC_MOUSEUP_CONTROL6,
+    KEYC_MOUSEUP_CONTROL7, KEYC_MOUSEUP_CONTROL8, KEYC_MOUSEUP_CONTROL9, KEYC_MOUSEUP_PANE,
+    KEYC_MOUSEUP_SCROLLBAR_DOWN, KEYC_MOUSEUP_SCROLLBAR_SLIDER, KEYC_MOUSEUP_SCROLLBAR_UP,
+    KEYC_MOUSEUP_STATUS, KEYC_MOUSEUP_STATUS_DEFAULT, KEYC_MOUSEUP_STATUS_LEFT,
+    KEYC_MOUSEUP_STATUS_RIGHT, KEYC_MOUSEUP1_BORDER, KEYC_MOUSEUP1_CONTROL0,
+    KEYC_MOUSEUP1_CONTROL1, KEYC_MOUSEUP1_CONTROL2, KEYC_MOUSEUP1_CONTROL3, KEYC_MOUSEUP1_CONTROL4,
+    KEYC_MOUSEUP1_CONTROL5, KEYC_MOUSEUP1_CONTROL6, KEYC_MOUSEUP1_CONTROL7, KEYC_MOUSEUP1_CONTROL8,
+    KEYC_MOUSEUP1_CONTROL9, KEYC_MOUSEUP1_PANE, KEYC_MOUSEUP1_SCROLLBAR_DOWN,
+    KEYC_MOUSEUP1_SCROLLBAR_SLIDER, KEYC_MOUSEUP1_SCROLLBAR_UP, KEYC_MOUSEUP1_STATUS,
+    KEYC_MOUSEUP1_STATUS_DEFAULT, KEYC_MOUSEUP1_STATUS_LEFT, KEYC_MOUSEUP1_STATUS_RIGHT,
+    KEYC_MOUSEUP2_BORDER, KEYC_MOUSEUP2_CONTROL0, KEYC_MOUSEUP2_CONTROL1, KEYC_MOUSEUP2_CONTROL2,
+    KEYC_MOUSEUP2_CONTROL3, KEYC_MOUSEUP2_CONTROL4, KEYC_MOUSEUP2_CONTROL5, KEYC_MOUSEUP2_CONTROL6,
+    KEYC_MOUSEUP2_CONTROL7, KEYC_MOUSEUP2_CONTROL8, KEYC_MOUSEUP2_CONTROL9, KEYC_MOUSEUP2_PANE,
+    KEYC_MOUSEUP2_SCROLLBAR_DOWN, KEYC_MOUSEUP2_SCROLLBAR_SLIDER, KEYC_MOUSEUP2_SCROLLBAR_UP,
+    KEYC_MOUSEUP2_STATUS, KEYC_MOUSEUP2_STATUS_DEFAULT, KEYC_MOUSEUP2_STATUS_LEFT,
+    KEYC_MOUSEUP2_STATUS_RIGHT, KEYC_MOUSEUP3_BORDER, KEYC_MOUSEUP3_CONTROL0,
+    KEYC_MOUSEUP3_CONTROL1, KEYC_MOUSEUP3_CONTROL2, KEYC_MOUSEUP3_CONTROL3, KEYC_MOUSEUP3_CONTROL4,
+    KEYC_MOUSEUP3_CONTROL5, KEYC_MOUSEUP3_CONTROL6, KEYC_MOUSEUP3_CONTROL7, KEYC_MOUSEUP3_CONTROL8,
+    KEYC_MOUSEUP3_CONTROL9, KEYC_MOUSEUP3_PANE, KEYC_MOUSEUP3_SCROLLBAR_DOWN,
+    KEYC_MOUSEUP3_SCROLLBAR_SLIDER, KEYC_MOUSEUP3_SCROLLBAR_UP, KEYC_MOUSEUP3_STATUS,
+    KEYC_MOUSEUP3_STATUS_DEFAULT, KEYC_MOUSEUP3_STATUS_LEFT, KEYC_MOUSEUP3_STATUS_RIGHT,
+    KEYC_MOUSEUP6_BORDER, KEYC_MOUSEUP6_CONTROL0, KEYC_MOUSEUP6_CONTROL1, KEYC_MOUSEUP6_CONTROL2,
+    KEYC_MOUSEUP6_CONTROL3, KEYC_MOUSEUP6_CONTROL4, KEYC_MOUSEUP6_CONTROL5, KEYC_MOUSEUP6_CONTROL6,
+    KEYC_MOUSEUP6_CONTROL7, KEYC_MOUSEUP6_CONTROL8, KEYC_MOUSEUP6_CONTROL9, KEYC_MOUSEUP6_PANE,
+    KEYC_MOUSEUP6_SCROLLBAR_DOWN, KEYC_MOUSEUP6_SCROLLBAR_SLIDER, KEYC_MOUSEUP6_SCROLLBAR_UP,
+    KEYC_MOUSEUP6_STATUS, KEYC_MOUSEUP6_STATUS_DEFAULT, KEYC_MOUSEUP6_STATUS_LEFT,
+    KEYC_MOUSEUP6_STATUS_RIGHT, KEYC_MOUSEUP7_BORDER, KEYC_MOUSEUP7_CONTROL0,
+    KEYC_MOUSEUP7_CONTROL1, KEYC_MOUSEUP7_CONTROL2, KEYC_MOUSEUP7_CONTROL3, KEYC_MOUSEUP7_CONTROL4,
+    KEYC_MOUSEUP7_CONTROL5, KEYC_MOUSEUP7_CONTROL6, KEYC_MOUSEUP7_CONTROL7, KEYC_MOUSEUP7_CONTROL8,
+    KEYC_MOUSEUP7_CONTROL9, KEYC_MOUSEUP7_PANE, KEYC_MOUSEUP7_SCROLLBAR_DOWN,
+    KEYC_MOUSEUP7_SCROLLBAR_SLIDER, KEYC_MOUSEUP7_SCROLLBAR_UP, KEYC_MOUSEUP7_STATUS,
+    KEYC_MOUSEUP7_STATUS_DEFAULT, KEYC_MOUSEUP7_STATUS_LEFT, KEYC_MOUSEUP7_STATUS_RIGHT,
+    KEYC_MOUSEUP8_BORDER, KEYC_MOUSEUP8_CONTROL0, KEYC_MOUSEUP8_CONTROL1, KEYC_MOUSEUP8_CONTROL2,
+    KEYC_MOUSEUP8_CONTROL3, KEYC_MOUSEUP8_CONTROL4, KEYC_MOUSEUP8_CONTROL5, KEYC_MOUSEUP8_CONTROL6,
+    KEYC_MOUSEUP8_CONTROL7, KEYC_MOUSEUP8_CONTROL8, KEYC_MOUSEUP8_CONTROL9, KEYC_MOUSEUP8_PANE,
+    KEYC_MOUSEUP8_SCROLLBAR_DOWN, KEYC_MOUSEUP8_SCROLLBAR_SLIDER, KEYC_MOUSEUP8_SCROLLBAR_UP,
+    KEYC_MOUSEUP8_STATUS, KEYC_MOUSEUP8_STATUS_DEFAULT, KEYC_MOUSEUP8_STATUS_LEFT,
+    KEYC_MOUSEUP8_STATUS_RIGHT, KEYC_MOUSEUP9_BORDER, KEYC_MOUSEUP9_CONTROL0,
+    KEYC_MOUSEUP9_CONTROL1, KEYC_MOUSEUP9_CONTROL2, KEYC_MOUSEUP9_CONTROL3, KEYC_MOUSEUP9_CONTROL4,
+    KEYC_MOUSEUP9_CONTROL5, KEYC_MOUSEUP9_CONTROL6, KEYC_MOUSEUP9_CONTROL7, KEYC_MOUSEUP9_CONTROL8,
+    KEYC_MOUSEUP9_CONTROL9, KEYC_MOUSEUP9_PANE, KEYC_MOUSEUP9_SCROLLBAR_DOWN,
+    KEYC_MOUSEUP9_SCROLLBAR_SLIDER, KEYC_MOUSEUP9_SCROLLBAR_UP, KEYC_MOUSEUP9_STATUS,
+    KEYC_MOUSEUP9_STATUS_DEFAULT, KEYC_MOUSEUP9_STATUS_LEFT, KEYC_MOUSEUP9_STATUS_RIGHT,
+    KEYC_MOUSEUP10_BORDER, KEYC_MOUSEUP10_CONTROL0, KEYC_MOUSEUP10_CONTROL1,
+    KEYC_MOUSEUP10_CONTROL2, KEYC_MOUSEUP10_CONTROL3, KEYC_MOUSEUP10_CONTROL4,
+    KEYC_MOUSEUP10_CONTROL5, KEYC_MOUSEUP10_CONTROL6, KEYC_MOUSEUP10_CONTROL7,
+    KEYC_MOUSEUP10_CONTROL8, KEYC_MOUSEUP10_CONTROL9, KEYC_MOUSEUP10_PANE,
+    KEYC_MOUSEUP10_SCROLLBAR_DOWN, KEYC_MOUSEUP10_SCROLLBAR_SLIDER, KEYC_MOUSEUP10_SCROLLBAR_UP,
+    KEYC_MOUSEUP10_STATUS, KEYC_MOUSEUP10_STATUS_DEFAULT, KEYC_MOUSEUP10_STATUS_LEFT,
+    KEYC_MOUSEUP10_STATUS_RIGHT, KEYC_MOUSEUP11_BORDER, KEYC_MOUSEUP11_CONTROL0,
+    KEYC_MOUSEUP11_CONTROL1, KEYC_MOUSEUP11_CONTROL2, KEYC_MOUSEUP11_CONTROL3,
+    KEYC_MOUSEUP11_CONTROL4, KEYC_MOUSEUP11_CONTROL5, KEYC_MOUSEUP11_CONTROL6,
+    KEYC_MOUSEUP11_CONTROL7, KEYC_MOUSEUP11_CONTROL8, KEYC_MOUSEUP11_CONTROL9, KEYC_MOUSEUP11_PANE,
+    KEYC_MOUSEUP11_SCROLLBAR_DOWN, KEYC_MOUSEUP11_SCROLLBAR_SLIDER, KEYC_MOUSEUP11_SCROLLBAR_UP,
+    KEYC_MOUSEUP11_STATUS, KEYC_MOUSEUP11_STATUS_DEFAULT, KEYC_MOUSEUP11_STATUS_LEFT,
+    KEYC_MOUSEUP11_STATUS_RIGHT, KEYC_NONE, KEYC_NPAGE, KEYC_PASTE_END, KEYC_PASTE_START,
+    KEYC_PPAGE, KEYC_REPORT_DARK_THEME, KEYC_REPORT_LIGHT_THEME, KEYC_RIGHT,
+    KEYC_SECONDCLICK_BORDER, KEYC_SECONDCLICK_CONTROL0, KEYC_SECONDCLICK_CONTROL1,
+    KEYC_SECONDCLICK_CONTROL2, KEYC_SECONDCLICK_CONTROL3, KEYC_SECONDCLICK_CONTROL4,
+    KEYC_SECONDCLICK_CONTROL5, KEYC_SECONDCLICK_CONTROL6, KEYC_SECONDCLICK_CONTROL7,
+    KEYC_SECONDCLICK_CONTROL8, KEYC_SECONDCLICK_CONTROL9, KEYC_SECONDCLICK_PANE,
+    KEYC_SECONDCLICK_SCROLLBAR_DOWN, KEYC_SECONDCLICK_SCROLLBAR_SLIDER,
+    KEYC_SECONDCLICK_SCROLLBAR_UP, KEYC_SECONDCLICK_STATUS, KEYC_SECONDCLICK_STATUS_DEFAULT,
+    KEYC_SECONDCLICK_STATUS_LEFT, KEYC_SECONDCLICK_STATUS_RIGHT, KEYC_SECONDCLICK1_BORDER,
+    KEYC_SECONDCLICK1_CONTROL0, KEYC_SECONDCLICK1_CONTROL1, KEYC_SECONDCLICK1_CONTROL2,
+    KEYC_SECONDCLICK1_CONTROL3, KEYC_SECONDCLICK1_CONTROL4, KEYC_SECONDCLICK1_CONTROL5,
+    KEYC_SECONDCLICK1_CONTROL6, KEYC_SECONDCLICK1_CONTROL7, KEYC_SECONDCLICK1_CONTROL8,
+    KEYC_SECONDCLICK1_CONTROL9, KEYC_SECONDCLICK1_PANE, KEYC_SECONDCLICK1_SCROLLBAR_DOWN,
+    KEYC_SECONDCLICK1_SCROLLBAR_SLIDER, KEYC_SECONDCLICK1_SCROLLBAR_UP, KEYC_SECONDCLICK1_STATUS,
+    KEYC_SECONDCLICK1_STATUS_DEFAULT, KEYC_SECONDCLICK1_STATUS_LEFT,
+    KEYC_SECONDCLICK1_STATUS_RIGHT, KEYC_SECONDCLICK2_BORDER, KEYC_SECONDCLICK2_CONTROL0,
+    KEYC_SECONDCLICK2_CONTROL1, KEYC_SECONDCLICK2_CONTROL2, KEYC_SECONDCLICK2_CONTROL3,
+    KEYC_SECONDCLICK2_CONTROL4, KEYC_SECONDCLICK2_CONTROL5, KEYC_SECONDCLICK2_CONTROL6,
+    KEYC_SECONDCLICK2_CONTROL7, KEYC_SECONDCLICK2_CONTROL8, KEYC_SECONDCLICK2_CONTROL9,
+    KEYC_SECONDCLICK2_PANE, KEYC_SECONDCLICK2_SCROLLBAR_DOWN, KEYC_SECONDCLICK2_SCROLLBAR_SLIDER,
+    KEYC_SECONDCLICK2_SCROLLBAR_UP, KEYC_SECONDCLICK2_STATUS, KEYC_SECONDCLICK2_STATUS_DEFAULT,
+    KEYC_SECONDCLICK2_STATUS_LEFT, KEYC_SECONDCLICK2_STATUS_RIGHT, KEYC_SECONDCLICK3_BORDER,
+    KEYC_SECONDCLICK3_CONTROL0, KEYC_SECONDCLICK3_CONTROL1, KEYC_SECONDCLICK3_CONTROL2,
+    KEYC_SECONDCLICK3_CONTROL3, KEYC_SECONDCLICK3_CONTROL4, KEYC_SECONDCLICK3_CONTROL5,
+    KEYC_SECONDCLICK3_CONTROL6, KEYC_SECONDCLICK3_CONTROL7, KEYC_SECONDCLICK3_CONTROL8,
+    KEYC_SECONDCLICK3_CONTROL9, KEYC_SECONDCLICK3_PANE, KEYC_SECONDCLICK3_SCROLLBAR_DOWN,
+    KEYC_SECONDCLICK3_SCROLLBAR_SLIDER, KEYC_SECONDCLICK3_SCROLLBAR_UP, KEYC_SECONDCLICK3_STATUS,
+    KEYC_SECONDCLICK3_STATUS_DEFAULT, KEYC_SECONDCLICK3_STATUS_LEFT,
+    KEYC_SECONDCLICK3_STATUS_RIGHT, KEYC_SECONDCLICK6_BORDER, KEYC_SECONDCLICK6_CONTROL0,
+    KEYC_SECONDCLICK6_CONTROL1, KEYC_SECONDCLICK6_CONTROL2, KEYC_SECONDCLICK6_CONTROL3,
+    KEYC_SECONDCLICK6_CONTROL4, KEYC_SECONDCLICK6_CONTROL5, KEYC_SECONDCLICK6_CONTROL6,
+    KEYC_SECONDCLICK6_CONTROL7, KEYC_SECONDCLICK6_CONTROL8, KEYC_SECONDCLICK6_CONTROL9,
+    KEYC_SECONDCLICK6_PANE, KEYC_SECONDCLICK6_SCROLLBAR_DOWN, KEYC_SECONDCLICK6_SCROLLBAR_SLIDER,
+    KEYC_SECONDCLICK6_SCROLLBAR_UP, KEYC_SECONDCLICK6_STATUS, KEYC_SECONDCLICK6_STATUS_DEFAULT,
+    KEYC_SECONDCLICK6_STATUS_LEFT, KEYC_SECONDCLICK6_STATUS_RIGHT, KEYC_SECONDCLICK7_BORDER,
+    KEYC_SECONDCLICK7_CONTROL0, KEYC_SECONDCLICK7_CONTROL1, KEYC_SECONDCLICK7_CONTROL2,
+    KEYC_SECONDCLICK7_CONTROL3, KEYC_SECONDCLICK7_CONTROL4, KEYC_SECONDCLICK7_CONTROL5,
+    KEYC_SECONDCLICK7_CONTROL6, KEYC_SECONDCLICK7_CONTROL7, KEYC_SECONDCLICK7_CONTROL8,
+    KEYC_SECONDCLICK7_CONTROL9, KEYC_SECONDCLICK7_PANE, KEYC_SECONDCLICK7_SCROLLBAR_DOWN,
+    KEYC_SECONDCLICK7_SCROLLBAR_SLIDER, KEYC_SECONDCLICK7_SCROLLBAR_UP, KEYC_SECONDCLICK7_STATUS,
+    KEYC_SECONDCLICK7_STATUS_DEFAULT, KEYC_SECONDCLICK7_STATUS_LEFT,
+    KEYC_SECONDCLICK7_STATUS_RIGHT, KEYC_SECONDCLICK8_BORDER, KEYC_SECONDCLICK8_CONTROL0,
+    KEYC_SECONDCLICK8_CONTROL1, KEYC_SECONDCLICK8_CONTROL2, KEYC_SECONDCLICK8_CONTROL3,
+    KEYC_SECONDCLICK8_CONTROL4, KEYC_SECONDCLICK8_CONTROL5, KEYC_SECONDCLICK8_CONTROL6,
+    KEYC_SECONDCLICK8_CONTROL7, KEYC_SECONDCLICK8_CONTROL8, KEYC_SECONDCLICK8_CONTROL9,
+    KEYC_SECONDCLICK8_PANE, KEYC_SECONDCLICK8_SCROLLBAR_DOWN, KEYC_SECONDCLICK8_SCROLLBAR_SLIDER,
+    KEYC_SECONDCLICK8_SCROLLBAR_UP, KEYC_SECONDCLICK8_STATUS, KEYC_SECONDCLICK8_STATUS_DEFAULT,
+    KEYC_SECONDCLICK8_STATUS_LEFT, KEYC_SECONDCLICK8_STATUS_RIGHT, KEYC_SECONDCLICK9_BORDER,
+    KEYC_SECONDCLICK9_CONTROL0, KEYC_SECONDCLICK9_CONTROL1, KEYC_SECONDCLICK9_CONTROL2,
+    KEYC_SECONDCLICK9_CONTROL3, KEYC_SECONDCLICK9_CONTROL4, KEYC_SECONDCLICK9_CONTROL5,
+    KEYC_SECONDCLICK9_CONTROL6, KEYC_SECONDCLICK9_CONTROL7, KEYC_SECONDCLICK9_CONTROL8,
+    KEYC_SECONDCLICK9_CONTROL9, KEYC_SECONDCLICK9_PANE, KEYC_SECONDCLICK9_SCROLLBAR_DOWN,
+    KEYC_SECONDCLICK9_SCROLLBAR_SLIDER, KEYC_SECONDCLICK9_SCROLLBAR_UP, KEYC_SECONDCLICK9_STATUS,
+    KEYC_SECONDCLICK9_STATUS_DEFAULT, KEYC_SECONDCLICK9_STATUS_LEFT,
+    KEYC_SECONDCLICK9_STATUS_RIGHT, KEYC_SECONDCLICK10_BORDER, KEYC_SECONDCLICK10_CONTROL0,
+    KEYC_SECONDCLICK10_CONTROL1, KEYC_SECONDCLICK10_CONTROL2, KEYC_SECONDCLICK10_CONTROL3,
+    KEYC_SECONDCLICK10_CONTROL4, KEYC_SECONDCLICK10_CONTROL5, KEYC_SECONDCLICK10_CONTROL6,
+    KEYC_SECONDCLICK10_CONTROL7, KEYC_SECONDCLICK10_CONTROL8, KEYC_SECONDCLICK10_CONTROL9,
+    KEYC_SECONDCLICK10_PANE, KEYC_SECONDCLICK10_SCROLLBAR_DOWN,
+    KEYC_SECONDCLICK10_SCROLLBAR_SLIDER, KEYC_SECONDCLICK10_SCROLLBAR_UP,
+    KEYC_SECONDCLICK10_STATUS, KEYC_SECONDCLICK10_STATUS_DEFAULT, KEYC_SECONDCLICK10_STATUS_LEFT,
+    KEYC_SECONDCLICK10_STATUS_RIGHT, KEYC_SECONDCLICK11_BORDER, KEYC_SECONDCLICK11_CONTROL0,
+    KEYC_SECONDCLICK11_CONTROL1, KEYC_SECONDCLICK11_CONTROL2, KEYC_SECONDCLICK11_CONTROL3,
+    KEYC_SECONDCLICK11_CONTROL4, KEYC_SECONDCLICK11_CONTROL5, KEYC_SECONDCLICK11_CONTROL6,
+    KEYC_SECONDCLICK11_CONTROL7, KEYC_SECONDCLICK11_CONTROL8, KEYC_SECONDCLICK11_CONTROL9,
+    KEYC_SECONDCLICK11_PANE, KEYC_SECONDCLICK11_SCROLLBAR_DOWN,
+    KEYC_SECONDCLICK11_SCROLLBAR_SLIDER, KEYC_SECONDCLICK11_SCROLLBAR_UP,
+    KEYC_SECONDCLICK11_STATUS, KEYC_SECONDCLICK11_STATUS_DEFAULT, KEYC_SECONDCLICK11_STATUS_LEFT,
+    KEYC_SECONDCLICK11_STATUS_RIGHT, KEYC_TRIPLECLICK_BORDER, KEYC_TRIPLECLICK_CONTROL0,
+    KEYC_TRIPLECLICK_CONTROL1, KEYC_TRIPLECLICK_CONTROL2, KEYC_TRIPLECLICK_CONTROL3,
+    KEYC_TRIPLECLICK_CONTROL4, KEYC_TRIPLECLICK_CONTROL5, KEYC_TRIPLECLICK_CONTROL6,
+    KEYC_TRIPLECLICK_CONTROL7, KEYC_TRIPLECLICK_CONTROL8, KEYC_TRIPLECLICK_CONTROL9,
+    KEYC_TRIPLECLICK_PANE, KEYC_TRIPLECLICK_SCROLLBAR_DOWN, KEYC_TRIPLECLICK_SCROLLBAR_SLIDER,
+    KEYC_TRIPLECLICK_SCROLLBAR_UP, KEYC_TRIPLECLICK_STATUS, KEYC_TRIPLECLICK_STATUS_DEFAULT,
+    KEYC_TRIPLECLICK_STATUS_LEFT, KEYC_TRIPLECLICK_STATUS_RIGHT, KEYC_TRIPLECLICK1_BORDER,
+    KEYC_TRIPLECLICK1_CONTROL0, KEYC_TRIPLECLICK1_CONTROL1, KEYC_TRIPLECLICK1_CONTROL2,
+    KEYC_TRIPLECLICK1_CONTROL3, KEYC_TRIPLECLICK1_CONTROL4, KEYC_TRIPLECLICK1_CONTROL5,
+    KEYC_TRIPLECLICK1_CONTROL6, KEYC_TRIPLECLICK1_CONTROL7, KEYC_TRIPLECLICK1_CONTROL8,
+    KEYC_TRIPLECLICK1_CONTROL9, KEYC_TRIPLECLICK1_PANE, KEYC_TRIPLECLICK1_SCROLLBAR_DOWN,
+    KEYC_TRIPLECLICK1_SCROLLBAR_SLIDER, KEYC_TRIPLECLICK1_SCROLLBAR_UP, KEYC_TRIPLECLICK1_STATUS,
+    KEYC_TRIPLECLICK1_STATUS_DEFAULT, KEYC_TRIPLECLICK1_STATUS_LEFT,
+    KEYC_TRIPLECLICK1_STATUS_RIGHT, KEYC_TRIPLECLICK2_BORDER, KEYC_TRIPLECLICK2_CONTROL0,
+    KEYC_TRIPLECLICK2_CONTROL1, KEYC_TRIPLECLICK2_CONTROL2, KEYC_TRIPLECLICK2_CONTROL3,
+    KEYC_TRIPLECLICK2_CONTROL4, KEYC_TRIPLECLICK2_CONTROL5, KEYC_TRIPLECLICK2_CONTROL6,
+    KEYC_TRIPLECLICK2_CONTROL7, KEYC_TRIPLECLICK2_CONTROL8, KEYC_TRIPLECLICK2_CONTROL9,
+    KEYC_TRIPLECLICK2_PANE, KEYC_TRIPLECLICK2_SCROLLBAR_DOWN, KEYC_TRIPLECLICK2_SCROLLBAR_SLIDER,
+    KEYC_TRIPLECLICK2_SCROLLBAR_UP, KEYC_TRIPLECLICK2_STATUS, KEYC_TRIPLECLICK2_STATUS_DEFAULT,
+    KEYC_TRIPLECLICK2_STATUS_LEFT, KEYC_TRIPLECLICK2_STATUS_RIGHT, KEYC_TRIPLECLICK3_BORDER,
+    KEYC_TRIPLECLICK3_CONTROL0, KEYC_TRIPLECLICK3_CONTROL1, KEYC_TRIPLECLICK3_CONTROL2,
+    KEYC_TRIPLECLICK3_CONTROL3, KEYC_TRIPLECLICK3_CONTROL4, KEYC_TRIPLECLICK3_CONTROL5,
+    KEYC_TRIPLECLICK3_CONTROL6, KEYC_TRIPLECLICK3_CONTROL7, KEYC_TRIPLECLICK3_CONTROL8,
+    KEYC_TRIPLECLICK3_CONTROL9, KEYC_TRIPLECLICK3_PANE, KEYC_TRIPLECLICK3_SCROLLBAR_DOWN,
+    KEYC_TRIPLECLICK3_SCROLLBAR_SLIDER, KEYC_TRIPLECLICK3_SCROLLBAR_UP, KEYC_TRIPLECLICK3_STATUS,
+    KEYC_TRIPLECLICK3_STATUS_DEFAULT, KEYC_TRIPLECLICK3_STATUS_LEFT,
+    KEYC_TRIPLECLICK3_STATUS_RIGHT, KEYC_TRIPLECLICK6_BORDER, KEYC_TRIPLECLICK6_CONTROL0,
+    KEYC_TRIPLECLICK6_CONTROL1, KEYC_TRIPLECLICK6_CONTROL2, KEYC_TRIPLECLICK6_CONTROL3,
+    KEYC_TRIPLECLICK6_CONTROL4, KEYC_TRIPLECLICK6_CONTROL5, KEYC_TRIPLECLICK6_CONTROL6,
+    KEYC_TRIPLECLICK6_CONTROL7, KEYC_TRIPLECLICK6_CONTROL8, KEYC_TRIPLECLICK6_CONTROL9,
+    KEYC_TRIPLECLICK6_PANE, KEYC_TRIPLECLICK6_SCROLLBAR_DOWN, KEYC_TRIPLECLICK6_SCROLLBAR_SLIDER,
+    KEYC_TRIPLECLICK6_SCROLLBAR_UP, KEYC_TRIPLECLICK6_STATUS, KEYC_TRIPLECLICK6_STATUS_DEFAULT,
+    KEYC_TRIPLECLICK6_STATUS_LEFT, KEYC_TRIPLECLICK6_STATUS_RIGHT, KEYC_TRIPLECLICK7_BORDER,
+    KEYC_TRIPLECLICK7_CONTROL0, KEYC_TRIPLECLICK7_CONTROL1, KEYC_TRIPLECLICK7_CONTROL2,
+    KEYC_TRIPLECLICK7_CONTROL3, KEYC_TRIPLECLICK7_CONTROL4, KEYC_TRIPLECLICK7_CONTROL5,
+    KEYC_TRIPLECLICK7_CONTROL6, KEYC_TRIPLECLICK7_CONTROL7, KEYC_TRIPLECLICK7_CONTROL8,
+    KEYC_TRIPLECLICK7_CONTROL9, KEYC_TRIPLECLICK7_PANE, KEYC_TRIPLECLICK7_SCROLLBAR_DOWN,
+    KEYC_TRIPLECLICK7_SCROLLBAR_SLIDER, KEYC_TRIPLECLICK7_SCROLLBAR_UP, KEYC_TRIPLECLICK7_STATUS,
+    KEYC_TRIPLECLICK7_STATUS_DEFAULT, KEYC_TRIPLECLICK7_STATUS_LEFT,
+    KEYC_TRIPLECLICK7_STATUS_RIGHT, KEYC_TRIPLECLICK8_BORDER, KEYC_TRIPLECLICK8_CONTROL0,
+    KEYC_TRIPLECLICK8_CONTROL1, KEYC_TRIPLECLICK8_CONTROL2, KEYC_TRIPLECLICK8_CONTROL3,
+    KEYC_TRIPLECLICK8_CONTROL4, KEYC_TRIPLECLICK8_CONTROL5, KEYC_TRIPLECLICK8_CONTROL6,
+    KEYC_TRIPLECLICK8_CONTROL7, KEYC_TRIPLECLICK8_CONTROL8, KEYC_TRIPLECLICK8_CONTROL9,
+    KEYC_TRIPLECLICK8_PANE, KEYC_TRIPLECLICK8_SCROLLBAR_DOWN, KEYC_TRIPLECLICK8_SCROLLBAR_SLIDER,
+    KEYC_TRIPLECLICK8_SCROLLBAR_UP, KEYC_TRIPLECLICK8_STATUS, KEYC_TRIPLECLICK8_STATUS_DEFAULT,
+    KEYC_TRIPLECLICK8_STATUS_LEFT, KEYC_TRIPLECLICK8_STATUS_RIGHT, KEYC_TRIPLECLICK9_BORDER,
+    KEYC_TRIPLECLICK9_CONTROL0, KEYC_TRIPLECLICK9_CONTROL1, KEYC_TRIPLECLICK9_CONTROL2,
+    KEYC_TRIPLECLICK9_CONTROL3, KEYC_TRIPLECLICK9_CONTROL4, KEYC_TRIPLECLICK9_CONTROL5,
+    KEYC_TRIPLECLICK9_CONTROL6, KEYC_TRIPLECLICK9_CONTROL7, KEYC_TRIPLECLICK9_CONTROL8,
+    KEYC_TRIPLECLICK9_CONTROL9, KEYC_TRIPLECLICK9_PANE, KEYC_TRIPLECLICK9_SCROLLBAR_DOWN,
+    KEYC_TRIPLECLICK9_SCROLLBAR_SLIDER, KEYC_TRIPLECLICK9_SCROLLBAR_UP, KEYC_TRIPLECLICK9_STATUS,
+    KEYC_TRIPLECLICK9_STATUS_DEFAULT, KEYC_TRIPLECLICK9_STATUS_LEFT,
+    KEYC_TRIPLECLICK9_STATUS_RIGHT, KEYC_TRIPLECLICK10_BORDER, KEYC_TRIPLECLICK10_CONTROL0,
+    KEYC_TRIPLECLICK10_CONTROL1, KEYC_TRIPLECLICK10_CONTROL2, KEYC_TRIPLECLICK10_CONTROL3,
+    KEYC_TRIPLECLICK10_CONTROL4, KEYC_TRIPLECLICK10_CONTROL5, KEYC_TRIPLECLICK10_CONTROL6,
+    KEYC_TRIPLECLICK10_CONTROL7, KEYC_TRIPLECLICK10_CONTROL8, KEYC_TRIPLECLICK10_CONTROL9,
+    KEYC_TRIPLECLICK10_PANE, KEYC_TRIPLECLICK10_SCROLLBAR_DOWN,
+    KEYC_TRIPLECLICK10_SCROLLBAR_SLIDER, KEYC_TRIPLECLICK10_SCROLLBAR_UP,
+    KEYC_TRIPLECLICK10_STATUS, KEYC_TRIPLECLICK10_STATUS_DEFAULT, KEYC_TRIPLECLICK10_STATUS_LEFT,
+    KEYC_TRIPLECLICK10_STATUS_RIGHT, KEYC_TRIPLECLICK11_BORDER, KEYC_TRIPLECLICK11_CONTROL0,
+    KEYC_TRIPLECLICK11_CONTROL1, KEYC_TRIPLECLICK11_CONTROL2, KEYC_TRIPLECLICK11_CONTROL3,
+    KEYC_TRIPLECLICK11_CONTROL4, KEYC_TRIPLECLICK11_CONTROL5, KEYC_TRIPLECLICK11_CONTROL6,
+    KEYC_TRIPLECLICK11_CONTROL7, KEYC_TRIPLECLICK11_CONTROL8, KEYC_TRIPLECLICK11_CONTROL9,
+    KEYC_TRIPLECLICK11_PANE, KEYC_TRIPLECLICK11_SCROLLBAR_DOWN,
+    KEYC_TRIPLECLICK11_SCROLLBAR_SLIDER, KEYC_TRIPLECLICK11_SCROLLBAR_UP,
+    KEYC_TRIPLECLICK11_STATUS, KEYC_TRIPLECLICK11_STATUS_DEFAULT, KEYC_TRIPLECLICK11_STATUS_LEFT,
+    KEYC_TRIPLECLICK11_STATUS_RIGHT, KEYC_TYPE_DOUBLECLICK, KEYC_TYPE_FUNCTION,
+    KEYC_TYPE_MOUSEDOWN, KEYC_TYPE_MOUSEDRAG, KEYC_TYPE_MOUSEDRAGEND, KEYC_TYPE_MOUSEMOVE,
+    KEYC_TYPE_MOUSEUP, KEYC_TYPE_NOTYPE, KEYC_TYPE_SECONDCLICK, KEYC_TYPE_TRIPLECLICK,
+    KEYC_TYPE_UNICODE, KEYC_TYPE_USER, KEYC_TYPE_WHEELDOWN, KEYC_TYPE_WHEELUP, KEYC_UNKNOWN,
+    KEYC_UP, KEYC_USER, KEYC_WHEELDOWN_BORDER, KEYC_WHEELDOWN_CONTROL0, KEYC_WHEELDOWN_CONTROL1,
+    KEYC_WHEELDOWN_CONTROL2, KEYC_WHEELDOWN_CONTROL3, KEYC_WHEELDOWN_CONTROL4,
+    KEYC_WHEELDOWN_CONTROL5, KEYC_WHEELDOWN_CONTROL6, KEYC_WHEELDOWN_CONTROL7,
+    KEYC_WHEELDOWN_CONTROL8, KEYC_WHEELDOWN_CONTROL9, KEYC_WHEELDOWN_PANE,
+    KEYC_WHEELDOWN_SCROLLBAR_DOWN, KEYC_WHEELDOWN_SCROLLBAR_SLIDER, KEYC_WHEELDOWN_SCROLLBAR_UP,
+    KEYC_WHEELDOWN_STATUS, KEYC_WHEELDOWN_STATUS_DEFAULT, KEYC_WHEELDOWN_STATUS_LEFT,
+    KEYC_WHEELDOWN_STATUS_RIGHT, KEYC_WHEELDOWN1_BORDER, KEYC_WHEELDOWN1_CONTROL0,
+    KEYC_WHEELDOWN1_CONTROL1, KEYC_WHEELDOWN1_CONTROL2, KEYC_WHEELDOWN1_CONTROL3,
+    KEYC_WHEELDOWN1_CONTROL4, KEYC_WHEELDOWN1_CONTROL5, KEYC_WHEELDOWN1_CONTROL6,
+    KEYC_WHEELDOWN1_CONTROL7, KEYC_WHEELDOWN1_CONTROL8, KEYC_WHEELDOWN1_CONTROL9,
+    KEYC_WHEELDOWN1_PANE, KEYC_WHEELDOWN1_SCROLLBAR_DOWN, KEYC_WHEELDOWN1_SCROLLBAR_SLIDER,
+    KEYC_WHEELDOWN1_SCROLLBAR_UP, KEYC_WHEELDOWN1_STATUS, KEYC_WHEELDOWN1_STATUS_DEFAULT,
+    KEYC_WHEELDOWN1_STATUS_LEFT, KEYC_WHEELDOWN1_STATUS_RIGHT, KEYC_WHEELDOWN2_BORDER,
+    KEYC_WHEELDOWN2_CONTROL0, KEYC_WHEELDOWN2_CONTROL1, KEYC_WHEELDOWN2_CONTROL2,
+    KEYC_WHEELDOWN2_CONTROL3, KEYC_WHEELDOWN2_CONTROL4, KEYC_WHEELDOWN2_CONTROL5,
+    KEYC_WHEELDOWN2_CONTROL6, KEYC_WHEELDOWN2_CONTROL7, KEYC_WHEELDOWN2_CONTROL8,
+    KEYC_WHEELDOWN2_CONTROL9, KEYC_WHEELDOWN2_PANE, KEYC_WHEELDOWN2_SCROLLBAR_DOWN,
+    KEYC_WHEELDOWN2_SCROLLBAR_SLIDER, KEYC_WHEELDOWN2_SCROLLBAR_UP, KEYC_WHEELDOWN2_STATUS,
+    KEYC_WHEELDOWN2_STATUS_DEFAULT, KEYC_WHEELDOWN2_STATUS_LEFT, KEYC_WHEELDOWN2_STATUS_RIGHT,
+    KEYC_WHEELDOWN3_BORDER, KEYC_WHEELDOWN3_CONTROL0, KEYC_WHEELDOWN3_CONTROL1,
+    KEYC_WHEELDOWN3_CONTROL2, KEYC_WHEELDOWN3_CONTROL3, KEYC_WHEELDOWN3_CONTROL4,
+    KEYC_WHEELDOWN3_CONTROL5, KEYC_WHEELDOWN3_CONTROL6, KEYC_WHEELDOWN3_CONTROL7,
+    KEYC_WHEELDOWN3_CONTROL8, KEYC_WHEELDOWN3_CONTROL9, KEYC_WHEELDOWN3_PANE,
+    KEYC_WHEELDOWN3_SCROLLBAR_DOWN, KEYC_WHEELDOWN3_SCROLLBAR_SLIDER, KEYC_WHEELDOWN3_SCROLLBAR_UP,
+    KEYC_WHEELDOWN3_STATUS, KEYC_WHEELDOWN3_STATUS_DEFAULT, KEYC_WHEELDOWN3_STATUS_LEFT,
+    KEYC_WHEELDOWN3_STATUS_RIGHT, KEYC_WHEELDOWN6_BORDER, KEYC_WHEELDOWN6_CONTROL0,
+    KEYC_WHEELDOWN6_CONTROL1, KEYC_WHEELDOWN6_CONTROL2, KEYC_WHEELDOWN6_CONTROL3,
+    KEYC_WHEELDOWN6_CONTROL4, KEYC_WHEELDOWN6_CONTROL5, KEYC_WHEELDOWN6_CONTROL6,
+    KEYC_WHEELDOWN6_CONTROL7, KEYC_WHEELDOWN6_CONTROL8, KEYC_WHEELDOWN6_CONTROL9,
+    KEYC_WHEELDOWN6_PANE, KEYC_WHEELDOWN6_SCROLLBAR_DOWN, KEYC_WHEELDOWN6_SCROLLBAR_SLIDER,
+    KEYC_WHEELDOWN6_SCROLLBAR_UP, KEYC_WHEELDOWN6_STATUS, KEYC_WHEELDOWN6_STATUS_DEFAULT,
+    KEYC_WHEELDOWN6_STATUS_LEFT, KEYC_WHEELDOWN6_STATUS_RIGHT, KEYC_WHEELDOWN7_BORDER,
+    KEYC_WHEELDOWN7_CONTROL0, KEYC_WHEELDOWN7_CONTROL1, KEYC_WHEELDOWN7_CONTROL2,
+    KEYC_WHEELDOWN7_CONTROL3, KEYC_WHEELDOWN7_CONTROL4, KEYC_WHEELDOWN7_CONTROL5,
+    KEYC_WHEELDOWN7_CONTROL6, KEYC_WHEELDOWN7_CONTROL7, KEYC_WHEELDOWN7_CONTROL8,
+    KEYC_WHEELDOWN7_CONTROL9, KEYC_WHEELDOWN7_PANE, KEYC_WHEELDOWN7_SCROLLBAR_DOWN,
+    KEYC_WHEELDOWN7_SCROLLBAR_SLIDER, KEYC_WHEELDOWN7_SCROLLBAR_UP, KEYC_WHEELDOWN7_STATUS,
+    KEYC_WHEELDOWN7_STATUS_DEFAULT, KEYC_WHEELDOWN7_STATUS_LEFT, KEYC_WHEELDOWN7_STATUS_RIGHT,
+    KEYC_WHEELDOWN8_BORDER, KEYC_WHEELDOWN8_CONTROL0, KEYC_WHEELDOWN8_CONTROL1,
+    KEYC_WHEELDOWN8_CONTROL2, KEYC_WHEELDOWN8_CONTROL3, KEYC_WHEELDOWN8_CONTROL4,
+    KEYC_WHEELDOWN8_CONTROL5, KEYC_WHEELDOWN8_CONTROL6, KEYC_WHEELDOWN8_CONTROL7,
+    KEYC_WHEELDOWN8_CONTROL8, KEYC_WHEELDOWN8_CONTROL9, KEYC_WHEELDOWN8_PANE,
+    KEYC_WHEELDOWN8_SCROLLBAR_DOWN, KEYC_WHEELDOWN8_SCROLLBAR_SLIDER, KEYC_WHEELDOWN8_SCROLLBAR_UP,
+    KEYC_WHEELDOWN8_STATUS, KEYC_WHEELDOWN8_STATUS_DEFAULT, KEYC_WHEELDOWN8_STATUS_LEFT,
+    KEYC_WHEELDOWN8_STATUS_RIGHT, KEYC_WHEELDOWN9_BORDER, KEYC_WHEELDOWN9_CONTROL0,
+    KEYC_WHEELDOWN9_CONTROL1, KEYC_WHEELDOWN9_CONTROL2, KEYC_WHEELDOWN9_CONTROL3,
+    KEYC_WHEELDOWN9_CONTROL4, KEYC_WHEELDOWN9_CONTROL5, KEYC_WHEELDOWN9_CONTROL6,
+    KEYC_WHEELDOWN9_CONTROL7, KEYC_WHEELDOWN9_CONTROL8, KEYC_WHEELDOWN9_CONTROL9,
+    KEYC_WHEELDOWN9_PANE, KEYC_WHEELDOWN9_SCROLLBAR_DOWN, KEYC_WHEELDOWN9_SCROLLBAR_SLIDER,
+    KEYC_WHEELDOWN9_SCROLLBAR_UP, KEYC_WHEELDOWN9_STATUS, KEYC_WHEELDOWN9_STATUS_DEFAULT,
+    KEYC_WHEELDOWN9_STATUS_LEFT, KEYC_WHEELDOWN9_STATUS_RIGHT, KEYC_WHEELDOWN10_BORDER,
+    KEYC_WHEELDOWN10_CONTROL0, KEYC_WHEELDOWN10_CONTROL1, KEYC_WHEELDOWN10_CONTROL2,
+    KEYC_WHEELDOWN10_CONTROL3, KEYC_WHEELDOWN10_CONTROL4, KEYC_WHEELDOWN10_CONTROL5,
+    KEYC_WHEELDOWN10_CONTROL6, KEYC_WHEELDOWN10_CONTROL7, KEYC_WHEELDOWN10_CONTROL8,
+    KEYC_WHEELDOWN10_CONTROL9, KEYC_WHEELDOWN10_PANE, KEYC_WHEELDOWN10_SCROLLBAR_DOWN,
+    KEYC_WHEELDOWN10_SCROLLBAR_SLIDER, KEYC_WHEELDOWN10_SCROLLBAR_UP, KEYC_WHEELDOWN10_STATUS,
+    KEYC_WHEELDOWN10_STATUS_DEFAULT, KEYC_WHEELDOWN10_STATUS_LEFT, KEYC_WHEELDOWN10_STATUS_RIGHT,
+    KEYC_WHEELDOWN11_BORDER, KEYC_WHEELDOWN11_CONTROL0, KEYC_WHEELDOWN11_CONTROL1,
+    KEYC_WHEELDOWN11_CONTROL2, KEYC_WHEELDOWN11_CONTROL3, KEYC_WHEELDOWN11_CONTROL4,
+    KEYC_WHEELDOWN11_CONTROL5, KEYC_WHEELDOWN11_CONTROL6, KEYC_WHEELDOWN11_CONTROL7,
+    KEYC_WHEELDOWN11_CONTROL8, KEYC_WHEELDOWN11_CONTROL9, KEYC_WHEELDOWN11_PANE,
+    KEYC_WHEELDOWN11_SCROLLBAR_DOWN, KEYC_WHEELDOWN11_SCROLLBAR_SLIDER,
+    KEYC_WHEELDOWN11_SCROLLBAR_UP, KEYC_WHEELDOWN11_STATUS, KEYC_WHEELDOWN11_STATUS_DEFAULT,
+    KEYC_WHEELDOWN11_STATUS_LEFT, KEYC_WHEELDOWN11_STATUS_RIGHT, KEYC_WHEELUP_BORDER,
+    KEYC_WHEELUP_CONTROL0, KEYC_WHEELUP_CONTROL1, KEYC_WHEELUP_CONTROL2, KEYC_WHEELUP_CONTROL3,
+    KEYC_WHEELUP_CONTROL4, KEYC_WHEELUP_CONTROL5, KEYC_WHEELUP_CONTROL6, KEYC_WHEELUP_CONTROL7,
+    KEYC_WHEELUP_CONTROL8, KEYC_WHEELUP_CONTROL9, KEYC_WHEELUP_PANE, KEYC_WHEELUP_SCROLLBAR_DOWN,
+    KEYC_WHEELUP_SCROLLBAR_SLIDER, KEYC_WHEELUP_SCROLLBAR_UP, KEYC_WHEELUP_STATUS,
+    KEYC_WHEELUP_STATUS_DEFAULT, KEYC_WHEELUP_STATUS_LEFT, KEYC_WHEELUP_STATUS_RIGHT,
+    KEYC_WHEELUP1_BORDER, KEYC_WHEELUP1_CONTROL0, KEYC_WHEELUP1_CONTROL1, KEYC_WHEELUP1_CONTROL2,
+    KEYC_WHEELUP1_CONTROL3, KEYC_WHEELUP1_CONTROL4, KEYC_WHEELUP1_CONTROL5, KEYC_WHEELUP1_CONTROL6,
+    KEYC_WHEELUP1_CONTROL7, KEYC_WHEELUP1_CONTROL8, KEYC_WHEELUP1_CONTROL9, KEYC_WHEELUP1_PANE,
+    KEYC_WHEELUP1_SCROLLBAR_DOWN, KEYC_WHEELUP1_SCROLLBAR_SLIDER, KEYC_WHEELUP1_SCROLLBAR_UP,
+    KEYC_WHEELUP1_STATUS, KEYC_WHEELUP1_STATUS_DEFAULT, KEYC_WHEELUP1_STATUS_LEFT,
+    KEYC_WHEELUP1_STATUS_RIGHT, KEYC_WHEELUP2_BORDER, KEYC_WHEELUP2_CONTROL0,
+    KEYC_WHEELUP2_CONTROL1, KEYC_WHEELUP2_CONTROL2, KEYC_WHEELUP2_CONTROL3, KEYC_WHEELUP2_CONTROL4,
+    KEYC_WHEELUP2_CONTROL5, KEYC_WHEELUP2_CONTROL6, KEYC_WHEELUP2_CONTROL7, KEYC_WHEELUP2_CONTROL8,
+    KEYC_WHEELUP2_CONTROL9, KEYC_WHEELUP2_PANE, KEYC_WHEELUP2_SCROLLBAR_DOWN,
+    KEYC_WHEELUP2_SCROLLBAR_SLIDER, KEYC_WHEELUP2_SCROLLBAR_UP, KEYC_WHEELUP2_STATUS,
+    KEYC_WHEELUP2_STATUS_DEFAULT, KEYC_WHEELUP2_STATUS_LEFT, KEYC_WHEELUP2_STATUS_RIGHT,
+    KEYC_WHEELUP3_BORDER, KEYC_WHEELUP3_CONTROL0, KEYC_WHEELUP3_CONTROL1, KEYC_WHEELUP3_CONTROL2,
+    KEYC_WHEELUP3_CONTROL3, KEYC_WHEELUP3_CONTROL4, KEYC_WHEELUP3_CONTROL5, KEYC_WHEELUP3_CONTROL6,
+    KEYC_WHEELUP3_CONTROL7, KEYC_WHEELUP3_CONTROL8, KEYC_WHEELUP3_CONTROL9, KEYC_WHEELUP3_PANE,
+    KEYC_WHEELUP3_SCROLLBAR_DOWN, KEYC_WHEELUP3_SCROLLBAR_SLIDER, KEYC_WHEELUP3_SCROLLBAR_UP,
+    KEYC_WHEELUP3_STATUS, KEYC_WHEELUP3_STATUS_DEFAULT, KEYC_WHEELUP3_STATUS_LEFT,
+    KEYC_WHEELUP3_STATUS_RIGHT, KEYC_WHEELUP6_BORDER, KEYC_WHEELUP6_CONTROL0,
+    KEYC_WHEELUP6_CONTROL1, KEYC_WHEELUP6_CONTROL2, KEYC_WHEELUP6_CONTROL3, KEYC_WHEELUP6_CONTROL4,
+    KEYC_WHEELUP6_CONTROL5, KEYC_WHEELUP6_CONTROL6, KEYC_WHEELUP6_CONTROL7, KEYC_WHEELUP6_CONTROL8,
+    KEYC_WHEELUP6_CONTROL9, KEYC_WHEELUP6_PANE, KEYC_WHEELUP6_SCROLLBAR_DOWN,
+    KEYC_WHEELUP6_SCROLLBAR_SLIDER, KEYC_WHEELUP6_SCROLLBAR_UP, KEYC_WHEELUP6_STATUS,
+    KEYC_WHEELUP6_STATUS_DEFAULT, KEYC_WHEELUP6_STATUS_LEFT, KEYC_WHEELUP6_STATUS_RIGHT,
+    KEYC_WHEELUP7_BORDER, KEYC_WHEELUP7_CONTROL0, KEYC_WHEELUP7_CONTROL1, KEYC_WHEELUP7_CONTROL2,
+    KEYC_WHEELUP7_CONTROL3, KEYC_WHEELUP7_CONTROL4, KEYC_WHEELUP7_CONTROL5, KEYC_WHEELUP7_CONTROL6,
+    KEYC_WHEELUP7_CONTROL7, KEYC_WHEELUP7_CONTROL8, KEYC_WHEELUP7_CONTROL9, KEYC_WHEELUP7_PANE,
+    KEYC_WHEELUP7_SCROLLBAR_DOWN, KEYC_WHEELUP7_SCROLLBAR_SLIDER, KEYC_WHEELUP7_SCROLLBAR_UP,
+    KEYC_WHEELUP7_STATUS, KEYC_WHEELUP7_STATUS_DEFAULT, KEYC_WHEELUP7_STATUS_LEFT,
+    KEYC_WHEELUP7_STATUS_RIGHT, KEYC_WHEELUP8_BORDER, KEYC_WHEELUP8_CONTROL0,
+    KEYC_WHEELUP8_CONTROL1, KEYC_WHEELUP8_CONTROL2, KEYC_WHEELUP8_CONTROL3, KEYC_WHEELUP8_CONTROL4,
+    KEYC_WHEELUP8_CONTROL5, KEYC_WHEELUP8_CONTROL6, KEYC_WHEELUP8_CONTROL7, KEYC_WHEELUP8_CONTROL8,
+    KEYC_WHEELUP8_CONTROL9, KEYC_WHEELUP8_PANE, KEYC_WHEELUP8_SCROLLBAR_DOWN,
+    KEYC_WHEELUP8_SCROLLBAR_SLIDER, KEYC_WHEELUP8_SCROLLBAR_UP, KEYC_WHEELUP8_STATUS,
+    KEYC_WHEELUP8_STATUS_DEFAULT, KEYC_WHEELUP8_STATUS_LEFT, KEYC_WHEELUP8_STATUS_RIGHT,
+    KEYC_WHEELUP9_BORDER, KEYC_WHEELUP9_CONTROL0, KEYC_WHEELUP9_CONTROL1, KEYC_WHEELUP9_CONTROL2,
+    KEYC_WHEELUP9_CONTROL3, KEYC_WHEELUP9_CONTROL4, KEYC_WHEELUP9_CONTROL5, KEYC_WHEELUP9_CONTROL6,
+    KEYC_WHEELUP9_CONTROL7, KEYC_WHEELUP9_CONTROL8, KEYC_WHEELUP9_CONTROL9, KEYC_WHEELUP9_PANE,
+    KEYC_WHEELUP9_SCROLLBAR_DOWN, KEYC_WHEELUP9_SCROLLBAR_SLIDER, KEYC_WHEELUP9_SCROLLBAR_UP,
+    KEYC_WHEELUP9_STATUS, KEYC_WHEELUP9_STATUS_DEFAULT, KEYC_WHEELUP9_STATUS_LEFT,
+    KEYC_WHEELUP9_STATUS_RIGHT, KEYC_WHEELUP10_BORDER, KEYC_WHEELUP10_CONTROL0,
+    KEYC_WHEELUP10_CONTROL1, KEYC_WHEELUP10_CONTROL2, KEYC_WHEELUP10_CONTROL3,
+    KEYC_WHEELUP10_CONTROL4, KEYC_WHEELUP10_CONTROL5, KEYC_WHEELUP10_CONTROL6,
+    KEYC_WHEELUP10_CONTROL7, KEYC_WHEELUP10_CONTROL8, KEYC_WHEELUP10_CONTROL9, KEYC_WHEELUP10_PANE,
+    KEYC_WHEELUP10_SCROLLBAR_DOWN, KEYC_WHEELUP10_SCROLLBAR_SLIDER, KEYC_WHEELUP10_SCROLLBAR_UP,
+    KEYC_WHEELUP10_STATUS, KEYC_WHEELUP10_STATUS_DEFAULT, KEYC_WHEELUP10_STATUS_LEFT,
+    KEYC_WHEELUP10_STATUS_RIGHT, KEYC_WHEELUP11_BORDER, KEYC_WHEELUP11_CONTROL0,
+    KEYC_WHEELUP11_CONTROL1, KEYC_WHEELUP11_CONTROL2, KEYC_WHEELUP11_CONTROL3,
+    KEYC_WHEELUP11_CONTROL4, KEYC_WHEELUP11_CONTROL5, KEYC_WHEELUP11_CONTROL6,
+    KEYC_WHEELUP11_CONTROL7, KEYC_WHEELUP11_CONTROL8, KEYC_WHEELUP11_CONTROL9, KEYC_WHEELUP11_PANE,
+    KEYC_WHEELUP11_SCROLLBAR_DOWN, KEYC_WHEELUP11_SCROLLBAR_SLIDER, KEYC_WHEELUP11_SCROLLBAR_UP,
+    KEYC_WHEELUP11_STATUS, KEYC_WHEELUP11_STATUS_DEFAULT, KEYC_WHEELUP11_STATUS_LEFT,
+    KEYC_WHEELUP11_STATUS_RIGHT, LAYOUT_CELL_FLOATING, LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM,
+    LAYOUT_WINDOWPANE, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_THEME_UPDATES, MSG_COMMAND,
+    MSG_DETACH, MSG_DETACHKILL, MSG_EXEC, MSG_EXIT, MSG_EXITED, MSG_EXITING, MSG_FLAGS,
+    MSG_IDENTIFY_CLIENTPID, MSG_IDENTIFY_CWD, MSG_IDENTIFY_DONE, MSG_IDENTIFY_ENVIRON,
+    MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_FLAGS, MSG_IDENTIFY_LONGFLAGS, MSG_IDENTIFY_OLDCWD,
+    MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT, MSG_IDENTIFY_TERM, MSG_IDENTIFY_TERMINFO,
+    MSG_IDENTIFY_TTYNAME, MSG_LOCK, MSG_OLDSTDERR, MSG_OLDSTDIN, MSG_OLDSTDOUT, MSG_READ,
+    MSG_READ_CANCEL, MSG_READ_DONE, MSG_READ_OPEN, MSG_READY, MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN,
+    MSG_SUSPEND, MSG_UNLOCK, MSG_VERSION, MSG_WAKEUP, MSG_WRITE, MSG_WRITE_CLOSE, MSG_WRITE_OPEN,
+    MSG_WRITE_READY, PANE_CHANGED, PANE_EMPTY, PANE_EXITED, PANE_INPUTOFF, PANE_LINES_DOUBLE,
+    PANE_LINES_HEAVY, PANE_LINES_NUMBER, PANE_LINES_SIMPLE, PANE_LINES_SINGLE, PANE_LINES_SPACES,
+    PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
+    PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STYLECHANGED, PANE_THEMECHANGED,
+    PANE_UNSEENCHANGES, PANE_ZOOMED, PROGRESS_BAR_ERROR, PROGRESS_BAR_HIDDEN,
+    PROGRESS_BAR_INDETERMINATE, PROGRESS_BAR_NORMAL, PROGRESS_BAR_PAUSED, PROMPT_COMMAND,
+    PROMPT_ENTRY, PROMPT_TYPE_COMMAND, PROMPT_TYPE_INVALID, PROMPT_TYPE_SEARCH, PROMPT_TYPE_TARGET,
+    PROMPT_TYPE_WINDOW_TARGET, RB_BLACK, RB_INF, RB_NEGINF, RB_RED, REG_EXTENDED, REG_ICASE,
+    SCREEN_CURSOR_BAR, SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_DEFAULT, SCREEN_CURSOR_UNDERLINE,
+    SIGCHLD, SPAWN_BEFORE, SPAWN_FLOATING, SPAWN_FULLSIZE, STYLE_ALIGN_ABSOLUTE_CENTRE,
+    STYLE_ALIGN_CENTRE, STYLE_ALIGN_DEFAULT, STYLE_ALIGN_LEFT, STYLE_ALIGN_RIGHT,
+    STYLE_DEFAULT_BASE, STYLE_DEFAULT_POP, STYLE_DEFAULT_PUSH, STYLE_DEFAULT_SET, STYLE_LIST_FOCUS,
+    STYLE_LIST_LEFT_MARKER, STYLE_LIST_OFF, STYLE_LIST_ON, STYLE_LIST_RIGHT_MARKER,
+    STYLE_RANGE_CONTROL, STYLE_RANGE_LEFT, STYLE_RANGE_NONE, STYLE_RANGE_PANE, STYLE_RANGE_RIGHT,
+    STYLE_RANGE_SESSION, STYLE_RANGE_USER, STYLE_RANGE_WINDOW, THEME_DARK, THEME_LIGHT,
+    THEME_UNKNOWN, TIOCSWINSZ, UINT_MAX, WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_BELL,
+    WINDOW_PANE_NO_MODE, WINDOW_SILENCE, WINDOW_ZOOMED, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS,
+    WINLINK_BELL, WINLINK_SILENCE, WINLINK_VISITED,
+};
+
+pub type keyc = core::ffi::c_ulong;
+
 #[repr(C)]
 pub struct window_pane_input_data {
     pub(crate) item: Option<CmdqItemWeak>,
@@ -2134,87 +764,88 @@ pub struct window_pane_input_data {
     pub(crate) client_ref: Option<ClientRef>,
     pub(crate) file: Option<ClientFileRef>,
 }
-pub const TIOCSWINSZ: ::core::ffi::c_int = 0x5414 as ::core::ffi::c_int;
-pub const FIONREAD: ::core::ffi::c_int = 0x541b as ::core::ffi::c_int;
-pub const SIGCHLD: ::core::ffi::c_int = 17 as ::core::ffi::c_int;
-pub const FNM_CASEFOLD: ::core::ffi::c_int = (1 as ::core::ffi::c_int) << 4 as ::core::ffi::c_int;
-pub const REG_EXTENDED: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const REG_ICASE: ::core::ffi::c_int = (1 as ::core::ffi::c_int) << 1 as ::core::ffi::c_int;
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
-pub const RB_BLACK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const RB_RED: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const RB_NEGINF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-pub const RB_INF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const EV_READ: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const EV_WRITE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const DEFAULT_XPIXEL: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
-pub const DEFAULT_YPIXEL: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
-pub const KEYC_MASK_TYPE: ::core::ffi::c_ulonglong = 0xff00000000 as ::core::ffi::c_ulonglong;
-pub const KEYC_MASK_FLAGS: ::core::ffi::c_ulonglong = 0xff000000000000 as ::core::ffi::c_ulonglong;
-pub const KEYC_MASK_KEY: ::core::ffi::c_ulonglong = 0xffffffffff as ::core::ffi::c_ulonglong;
-pub const MODE_BRACKETPASTE: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
-pub const MODE_FOCUSON: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
-pub const MODE_THEME_UPDATES: ::core::ffi::c_int = 0x80000 as ::core::ffi::c_int;
-pub const WINDOW_PANE_NO_MODE: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const WINDOW_PANE_COPY_MODE: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const WINDOW_PANE_VIEW_MODE: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const PANE_REDRAW: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const PANE_FOCUSED: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const PANE_VISITED: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const PANE_ZOOMED: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const PANE_INPUTOFF: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const PANE_CHANGED: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const PANE_EXITED: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const PANE_EMPTY: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
-pub const PANE_STYLECHANGED: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
-pub const PANE_THEMECHANGED: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-pub const PANE_UNSEENCHANGES: ::core::ffi::c_int = 0x4000 as ::core::ffi::c_int;
-pub const PANE_REDRAWSCROLLBAR: ::core::ffi::c_int = 0x8000 as ::core::ffi::c_int;
-pub const WINDOW_BELL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const WINDOW_ACTIVITY: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const WINDOW_SILENCE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const WINDOW_ZOOMED: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const WINDOW_WASZOOMED: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const WINDOW_ALERTFLAGS: ::core::ffi::c_int = WINDOW_BELL | WINDOW_ACTIVITY | WINDOW_SILENCE;
-pub const WINLINK_BELL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const WINLINK_ACTIVITY: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const WINLINK_SILENCE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const WINLINK_ALERTFLAGS: ::core::ffi::c_int =
-    WINLINK_BELL | WINLINK_ACTIVITY | WINLINK_SILENCE;
-pub const WINLINK_VISITED: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const PANE_STATUS_OFF: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const PANE_STATUS_TOP: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const PANE_STATUS_BOTTOM: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const PANE_SCROLLBARS_MODAL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const PANE_SCROLLBARS_ALWAYS: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const PANE_SCROLLBARS_LEFT: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const LAYOUT_CELL_FLOATING: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const CLIENT_EXIT: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const CLIENT_SUSPENDED: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const CLIENT_EXITED: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const CLIENT_DEAD: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
-pub const CLIENT_CONTROL: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-pub const CLIENT_FOCUSED: ::core::ffi::c_int = 0x8000 as ::core::ffi::c_int;
-pub const CLIENT_UNATTACHEDFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_SUSPENDED | CLIENT_EXIT;
-pub const SPAWN_BEFORE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const SPAWN_FULLSIZE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const SPAWN_FLOATING: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-/// Every window the server has, by id.
-pub(crate) static windows: GlobalTree<u_int, WindowWeak> = GlobalTree::new();
 
-static WINDOW_HANDLES: GlobalTree<usize, WindowWeak> = GlobalTree::new();
+pub const FIONREAD: core::ffi::c_int = 0x541b as core::ffi::c_int;
 
-/// Every pane the server has, by id. A pane is reached through its id and
-/// nothing else, so [`window_pane_find_by_id`] is the only way in.
-static all_window_panes: GlobalTree<u_int, *mut window_pane> = GlobalTree::new();
+pub use crate::consts::EV_READ;
+pub use crate::consts::EV_WRITE;
+pub const DEFAULT_XPIXEL: core::ffi::c_int = 16 as core::ffi::c_int;
+pub const DEFAULT_YPIXEL: core::ffi::c_int = 32 as core::ffi::c_int;
+
+pub const WINDOW_PANE_COPY_MODE: core::ffi::c_int = 1 as core::ffi::c_int;
+pub const WINDOW_PANE_VIEW_MODE: core::ffi::c_int = 2 as core::ffi::c_int;
+
+pub const PANE_FOCUSED: core::ffi::c_int = 0x4 as core::ffi::c_int;
+pub const PANE_VISITED: core::ffi::c_int = 0x8 as core::ffi::c_int;
+
+pub const WINDOW_WASZOOMED: core::ffi::c_int = 0x10 as core::ffi::c_int;
+
+pub const PANE_SCROLLBARS_ALWAYS: core::ffi::c_int = 2 as core::ffi::c_int;
+
 thread_local! {
+    pub(crate) static WINDOWS: HandleRegistry<WindowWeak> = HandleRegistry::new();
+}
+
+pub(crate) fn register_window_id(reference: &WindowRef) -> HandleRegistration<WindowWeak> {
+    let id = reference.window_id();
+    WINDOWS.with(|windows| windows.register(id as usize, reference.downgrade()))
+}
+
+#[cfg(test)]
+pub(crate) fn window_ids() -> Vec<u_int> {
+    WINDOWS.with(|windows| windows.keys().into_iter().map(|id| id as u_int).collect())
+}
+
+trait PaneIndex {
+    fn find(&self, id: u_int) -> Option<RustWindowPaneWeak>;
+    fn ids(&self) -> Vec<u_int>;
+}
+
+struct GlobalPaneIndex {
+    panes: HandleRegistry<RustWindowPaneWeak>,
+}
+
+impl PaneIndex for GlobalPaneIndex {
+    fn find(&self, id: u_int) -> Option<RustWindowPaneWeak> {
+        self.panes
+            .get(id as usize)
+            .filter(RustWindowPaneWeak::is_alive)
+    }
+
+    fn ids(&self) -> Vec<u_int> {
+        self.panes
+            .keys()
+            .into_iter()
+            .map(|id| id as u_int)
+            .collect()
+    }
+}
+
+impl GlobalPaneIndex {
+    fn register(&self, pane: Box<window_pane>) -> RustWindowPaneRef {
+        let reference = RustWindowPaneRef::from_pane(pane);
+        let registration = self
+            .panes
+            .register(reference.pane_id() as usize, reference.downgrade());
+        reference.register(registration);
+        reference
+    }
+}
+
+impl RustWindowPaneRef {
+    pub(crate) fn new(pane: Box<window_pane>) -> Self {
+        GLOBAL_PANE_INDEX.with(|index| index.register(pane))
+    }
+}
+
+thread_local! {
+    static GLOBAL_PANE_INDEX: GlobalPaneIndex = GlobalPaneIndex {
+        panes: HandleRegistry::new(),
+    };
     /// The id the next pane made is handed, never reused and never wound back.
-    static next_window_pane_id: Cell<u_int> = const { Cell::new(0) };
+    static next_window_pane_id: Cell<Option<u_int>> = const { Cell::new(Some(0)) };
     /// The id the next window made is handed.
-    static next_window_id: Cell<u_int> = const { Cell::new(0) };
+    static next_window_id: Cell<Option<u_int>> = const { Cell::new(Some(0)) };
     /// The stamp the next pane to become active is marked with, which is what
     /// orders the panes by how recently they were used.
     static next_active_point: Cell<u_int> = const { Cell::new(0) };
@@ -2226,1481 +857,954 @@ fn next_id(counter: &'static LocalKey<Cell<u_int>>) -> u_int {
     counter.replace(counter.get().wrapping_add(1))
 }
 
-pub(crate) fn register_window_handle(reference: &WindowRef) {
-    WINDOW_HANDLES
-        .map()
-        .insert(reference.as_ptr() as usize, reference.downgrade());
-}
-
-fn unregister_window_handle(w: *mut window) {
-    WINDOW_HANDLES.map().remove(&(w as usize));
-}
-
-pub(crate) fn window_ref_from_ptr(w: *mut window) -> Option<WindowRef> {
-    if w.is_null() {
-        return None;
-    }
-    let key = w as usize;
-    let reference = WINDOW_HANDLES.map().get(&key).and_then(WindowWeak::upgrade);
-    match reference {
-        Some(reference) if reference.as_ptr() == w => Some(reference),
-        _ => {
-            WINDOW_HANDLES.map().remove(&key);
-            None
-        }
-    }
+/// Upgrades the payload's owner without borrowing its storage.
+pub(crate) fn window_ref_of(value: &window) -> Option<WindowRef> {
+    value
+        .owner
+        .as_ref()?
+        .upgrade()
+        .filter(|owner| core::ptr::eq(owner.as_ptr(), value))
 }
 
 impl Drop for WindowStorage {
     fn drop(&mut self) {
         unsafe {
             let w = &raw mut self.value;
-            if self.managed {
-                log_debug(c"window @%u destroyed".as_ptr(), fmt_args![(*w).id]);
-                window_unzoom(w, 0 as ::core::ffi::c_int);
-                if windows
-                    .map()
-                    .get(&(*w).id)
-                    .and_then(WindowWeak::upgrade)
-                    .is_some_and(|reference| reference.as_ptr() == w)
-                {
-                    windows.map().remove(&(*w).id);
-                }
-                layout_free_cell(w, (*w).layout_root.take());
-                layout_free_cell(w, (*w).saved_layout_root.take());
-                (*w).old_layout = None;
-                window_destroy_panes(w);
+            log_debug(c"window @%u destroyed", fmt_args![(*w).window_id()]);
+            if window_restore_layout(&mut *w) {
+                crate::layout::layout_fix_panes_on_drop(
+                    (*w).layout_root.as_deref(),
+                    (*w).scrollbar_settings(),
+                    &(*w).panes,
+                    (*w).options_ref().number(c"pane-border-status") as core::ffi::c_int,
+                );
+            }
+            drop(self.id_registration.take());
+            layout_free_cell((*w).layout_root.take());
+            layout_free_cell((*w).saved_layout_root.take());
+            (*w).set_saved_layout(None);
+            for pane in window_panes_take_all(&mut *w) {
+                window_pane_destroy(pane, (*w).options.clone(), None);
             }
             (*w).name_event.disarm();
             (*w).alerts_timer.disarm();
             (*w).offset_timer.disarm();
             if let Some(oo) = (*w).options.take() {
-                options_free(oo);
+                RustOptionsEngine.destroy(oo);
             }
-            (*w).fill_character = None;
-            (*w).name = None;
-            unregister_window_handle(w);
+            (*w).set_fill_character(None);
+            (*w).set_window_name(None);
         }
     }
 }
-/// The first window linked into `wwl`, in index order.
-pub unsafe fn winlinks_first(wwl: &mut winlinks) -> *mut winlink {
-    wwl.values_mut()
-        .next()
-        .map(|wl| &raw mut **wl)
-        .unwrap_or(::core::ptr::null_mut::<winlink>())
+/// A snapshot of `s`'s link indices, retaining the session and skipping links
+/// removed before the walk reaches them. New indices wait for the next walk.
+pub(crate) fn winlinks_in(s: &SessionRef) -> impl Iterator<Item = WinlinkRef> + use<> {
+    let indices: Vec<_> = unsafe { s.as_session() }.windows.keys().copied().collect();
+    let session = s.clone();
+    indices
+        .into_iter()
+        .filter_map(move |index| WinlinkRef::new(session.clone(), index))
 }
 
-/// The last window linked into `wwl`.
-pub unsafe fn winlinks_last(wwl: &mut winlinks) -> *mut winlink {
-    wwl.values_mut()
-        .next_back()
-        .map(|wl| &raw mut **wl)
-        .unwrap_or(::core::ptr::null_mut::<winlink>())
-}
-
-/// The window after `wl` in `wwl`, or null when it is the last.
-pub unsafe fn winlinks_next(wwl: &mut winlinks, wl: *mut winlink) -> *mut winlink {
-    unsafe {
-        wwl.range_mut((Bound::Excluded((*wl).idx), Bound::Unbounded))
-            .next()
-            .map(|(_, wl)| &raw mut **wl)
-            .unwrap_or(::core::ptr::null_mut::<winlink>())
-    }
-}
-
-/// The window before `wl` in `wwl`, or null when it is the first.
-pub unsafe fn winlinks_prev(wwl: &mut winlinks, wl: *mut winlink) -> *mut winlink {
-    unsafe {
-        wwl.range_mut((Bound::Unbounded, Bound::Excluded((*wl).idx)))
-            .next_back()
-            .map(|(_, wl)| &raw mut **wl)
-            .unwrap_or(::core::ptr::null_mut::<winlink>())
-    }
-}
-
-/// The window after `wl` in the session it is linked into.
-pub unsafe fn winlinks_after(wl: *mut winlink) -> *mut winlink {
-    unsafe { winlinks_next(&mut (*(*wl).session()).windows, wl) }
-}
-
-/// The window before `wl` in the session it is linked into.
-pub unsafe fn winlinks_before(wl: *mut winlink) -> *mut winlink {
-    unsafe { winlinks_prev(&mut (*(*wl).session()).windows, wl) }
-}
-
-/// The winlinks of `s`, in index order, each one read from the tree only when
-/// the walk reaches it.
-pub(crate) unsafe fn winlinks_in(s: *mut session) -> impl Iterator<Item = *mut winlink> {
-    let mut current = ::core::ptr::null_mut::<winlink>();
-    let mut started = false;
-    ::core::iter::from_fn(move || unsafe {
-        current = if started {
-            winlinks_after(current)
-        } else {
-            started = true;
-            winlinks_first(&mut (*s).windows)
-        };
-        (!current.is_null()).then_some(current)
+pub fn winlink_find_by_window<'a>(wwl: &'a winlinks, w: &window) -> Option<&'a winlink> {
+    wwl.values().map(Box::as_ref).find(|link| {
+        link.window_handle()
+            .is_some_and(|owner| core::ptr::eq(owner.as_ptr(), w))
     })
 }
-
-pub unsafe fn winlink_find_by_window(wwl: &mut winlinks, w: *mut window) -> *mut winlink {
-    wwl.values_mut()
-        .find(|wl| wl.window() == w)
-        .map(|wl| &raw mut **wl)
-        .unwrap_or(::core::ptr::null_mut::<winlink>())
-}
-pub unsafe fn winlink_find_by_index(wwl: &mut winlinks, idx: ::core::ffi::c_int) -> *mut winlink {
-    unsafe {
-        if idx < 0 as ::core::ffi::c_int {
-            fatalx(c"bad index".as_ptr(), fmt_args![]);
-        }
-        wwl.get_mut(&idx)
-            .map(|wl| &raw mut **wl)
-            .unwrap_or(::core::ptr::null_mut::<winlink>())
+pub unsafe fn winlink_find_by_window_id(wwl: &winlinks, id: u_int) -> Option<&winlink> {
+    {
+        wwl.values()
+            .find(|link| {
+                link.window_handle()
+                    .is_some_and(|window| window.window_id() == id)
+            })
+            .map(Box::as_ref)
     }
 }
-pub unsafe fn winlink_find_by_window_id(wwl: &mut winlinks, id: u_int) -> *mut winlink {
-    unsafe {
-        wwl.values_mut()
-            .find(|wl| (*wl.window()).id == id)
-            .map(|wl| &raw mut **wl)
-            .unwrap_or(::core::ptr::null_mut::<winlink>())
-    }
-}
-unsafe fn winlink_next_index(wwl: &mut winlinks, idx: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    unsafe {
-        let mut i: ::core::ffi::c_int = 0;
-        i = idx;
-        loop {
-            if winlink_find_by_index(wwl, i).is_null() {
-                return i;
-            }
-            if i == INT_MAX {
-                i = 0 as ::core::ffi::c_int;
-            } else {
-                i += 1;
-            }
-            if !(i != idx) {
-                break;
-            }
+fn winlink_next_index(links: &winlinks, start: core::ffi::c_int) -> Option<core::ffi::c_int> {
+    let mut index = start;
+    loop {
+        if !links.contains_key(&index) {
+            return Some(index);
         }
-        -(1 as ::core::ffi::c_int)
+        index = if index == INT_MAX { 0 } else { index + 1 };
+        if index == start {
+            return None;
+        }
     }
 }
 pub unsafe fn winlink_count(wwl: &winlinks) -> u_int {
     wwl.len() as u_int
 }
-pub unsafe fn winlink_add(wwl: &mut winlinks, mut idx: ::core::ffi::c_int) -> *mut winlink {
-    unsafe {
-        let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-        if idx < 0 as ::core::ffi::c_int {
-            idx = winlink_next_index(wwl, -idx - 1 as ::core::ffi::c_int);
-            if idx == -(1 as ::core::ffi::c_int) {
-                return ::core::ptr::null_mut::<winlink>();
-            }
-        } else if !winlink_find_by_index(wwl, idx).is_null() {
-            return ::core::ptr::null_mut::<winlink>();
-        }
-        let mut wl_box = Box::new(winlink {
-            idx,
-            session_ref: None,
-            window_ref: None,
-            flags: 0,
-        });
-        wl = &raw mut *wl_box;
-        wwl.insert(idx, wl_box);
-        wl
-    }
-}
-
-/// How a window names one of the links into it: the session that holds the
-/// link, and the index it holds it at.
-pub(crate) unsafe fn winlink_key(wl: *mut winlink) -> Option<(SessionWeak, ::core::ffi::c_int)> {
-    unsafe { session_ref_from_ptr((*wl).session()).map(|s| (s.downgrade(), (*wl).idx)) }
+pub(crate) fn winlink_insert(
+    links: &mut winlinks,
+    index: core::ffi::c_int,
+) -> Option<&mut winlink> {
+    let index = if index < 0 {
+        winlink_next_index(links, -(index + 1))?
+    } else {
+        index
+    };
+    let std::collections::btree_map::Entry::Vacant(entry) = links.entry(index) else {
+        return None;
+    };
+    Some(
+        entry
+            .insert(Box::new(winlink {
+                idx: index,
+                session_ref: None,
+                window_ref: None,
+                flags: 0,
+            }))
+            .as_mut(),
+    )
 }
 
 /// Whether `held` names `wl`.
-pub(crate) unsafe fn winlink_is(
-    held: &(SessionWeak, ::core::ffi::c_int),
-    wl: *mut winlink,
-) -> bool {
-    unsafe {
-        held.1 == (*wl).idx
-            && held
-                .0
-                .upgrade()
-                .is_some_and(|s| s.as_ptr() == (*wl).session())
+pub(crate) fn winlink_is(held: &(SessionWeak, core::ffi::c_int), wl: &winlink) -> bool {
+    held.1 == wl.idx
+        && held
+            .0
+            .upgrade()
+            .is_some_and(|session| wl.session().is_some_and(|owner| owner.ptr_eq(&session)))
+}
+
+#[derive(Clone)]
+pub(crate) struct WinlinkRef {
+    session: SessionRef,
+    index: core::ffi::c_int,
+}
+
+impl WinlinkRef {
+    /// Clones the linked window if this session still holds the index.
+    pub(crate) fn window(&self) -> Option<WindowRef> {
+        self.get()?.window_handle().cloned()
+    }
+
+    pub(crate) fn new(session: SessionRef, index: core::ffi::c_int) -> Option<Self> {
+        if !unsafe { session.as_session() }.windows.contains_key(&index) {
+            return None;
+        }
+        Some(Self { session, index })
+    }
+
+    pub(crate) fn get(&self) -> Option<&winlink> {
+        unsafe { self.session.as_session() }
+            .windows
+            .get(&self.index)
+            .map(Box::as_ref)
+    }
+
+    pub(crate) fn session(&self) -> &SessionRef {
+        &self.session
+    }
+
+    pub(crate) fn index(&self) -> core::ffi::c_int {
+        self.index
+    }
+
+    /// # Safety
+    /// No other borrow of this link or its owning session may be live.
+    pub(crate) unsafe fn get_mut(&mut self) -> Option<&mut winlink> {
+        unsafe { self.session.as_session_mut() }
+            .windows
+            .get_mut(&self.index)
+            .map(Box::as_mut)
     }
 }
 
 /// The links into `w`, in the order they were made. Each one is read out of
 /// the session that holds it, so a link already given up is not walked into.
-pub(crate) unsafe fn winlinks_into(w: *mut window) -> impl Iterator<Item = *mut winlink> {
-    unsafe {
-        let all: Vec<*mut winlink> = (*w)
-            .winlinks
-            .iter()
-            .filter_map(|(s, idx)| s.upgrade().map(|s| winlink_of(s.as_ptr(), Some(*idx))))
-            .filter(|wl| !wl.is_null())
-            .collect();
-        all.into_iter()
-    }
+pub(crate) fn winlinks_into(w: &window) -> impl Iterator<Item = WinlinkRef> + use<> {
+    w.winlinks
+        .iter()
+        .filter_map(|(session, index)| WinlinkRef::new(session.upgrade()?, *index))
+        .collect::<Vec<_>>()
+        .into_iter()
 }
 
-unsafe fn winlink_detach_window(wl: *mut winlink) -> Option<WindowRef> {
-    unsafe {
-        let old = (*wl).window_ref.take();
-        if let Some(reference) = old.as_ref() {
-            (*reference.as_ptr())
-                .winlinks
-                .retain(|held| !winlink_is(held, wl));
-        }
-        old
-    }
+pub unsafe fn winlink_remove(links: &mut winlinks, index: core::ffi::c_int) -> bool {
+    let Some(mut link) = links.remove(&index) else {
+        return false;
+    };
+    let window = unsafe { link.detach_window() };
+    drop(link);
+    drop(window);
+    true
 }
 
-pub(crate) unsafe fn winlink_set_window_ref(wl: *mut winlink, w_ref: WindowRef) {
-    unsafe {
-        let old = winlink_detach_window(wl);
-        drop(old);
-        let w = w_ref.as_ptr();
-        if let Some(key) = winlink_key(wl) {
-            (*w).winlinks.push(key);
-        }
-        (*wl).window_ref = Some(w_ref);
+/// Walks next links by count, wrapping at the session boundary.
+pub fn winlink_next_by_number<'a>(
+    mut wl: &'a winlink,
+    s: &'a session,
+    n: core::ffi::c_int,
+) -> Option<&'a winlink> {
+    for _ in 0..n {
+        wl = s
+            .windows
+            .range((Bound::Excluded(wl.idx), Bound::Unbounded))
+            .next()
+            .or_else(|| s.windows.first_key_value())
+            .map(|(_, link)| link.as_ref())?;
     }
+    Some(wl)
 }
-
-pub unsafe fn winlink_set_window(mut wl: *mut winlink, mut w: *mut window) {
+/// Walks previous links by count, wrapping at the session boundary.
+pub fn winlink_previous_by_number<'a>(
+    mut wl: &'a winlink,
+    s: &'a session,
+    n: core::ffi::c_int,
+) -> Option<&'a winlink> {
+    for _ in 0..n {
+        wl = s
+            .windows
+            .range((Bound::Unbounded, Bound::Excluded(wl.idx)))
+            .next_back()
+            .or_else(|| s.windows.last_key_value())
+            .map(|(_, link)| link.as_ref())?;
+    }
+    Some(wl)
+}
+pub unsafe fn winlink_stack_push(stack: &mut winlink_stack, wl: Option<&mut winlink>) {
     unsafe {
-        if w.is_null() {
-            let old = winlink_detach_window(wl);
-            drop(old);
+        let Some(wl) = wl else {
             return;
-        }
-        if let Some(w_ref) = window_ref_from_ptr(w) {
-            winlink_set_window_ref(wl, w_ref);
-        } else {
-            let old = winlink_detach_window(wl);
-            drop(old);
-        }
-    }
-}
-pub unsafe fn winlink_remove(wwl: &mut winlinks, wl: *mut winlink) {
-    unsafe {
-        let old = winlink_detach_window(wl);
-        let _ = wwl.remove(&(*wl).idx);
-        drop(old);
-    }
-}
-pub unsafe fn winlink_next_by_number(
-    mut wl: *mut winlink,
-    mut s: *mut session,
-    mut n: ::core::ffi::c_int,
-) -> *mut winlink {
-    unsafe {
-        while n > 0 as ::core::ffi::c_int {
-            wl = winlinks_next(&mut (*s).windows, wl);
-            if wl.is_null() {
-                wl = winlinks_first(&mut (*s).windows);
-            }
-            n -= 1;
-        }
-        wl
-    }
-}
-pub unsafe fn winlink_previous_by_number(
-    mut wl: *mut winlink,
-    mut s: *mut session,
-    mut n: ::core::ffi::c_int,
-) -> *mut winlink {
-    unsafe {
-        while n > 0 as ::core::ffi::c_int {
-            wl = winlinks_prev(&mut (*s).windows, wl);
-            if wl.is_null() {
-                wl = winlinks_last(&mut (*s).windows);
-            }
-            n -= 1;
-        }
-        wl
-    }
-}
-pub unsafe fn winlink_stack_push(stack: &mut winlink_stack, wl: *mut winlink) {
-    unsafe {
-        if wl.is_null() {
-            return;
-        }
-        winlink_stack_remove(stack, wl);
-        stack.insert(0, (*wl).idx);
-        (*wl).flags |= WINLINK_VISITED;
-    }
-}
-pub unsafe fn winlink_stack_remove(stack: &mut winlink_stack, wl: *mut winlink) {
-    unsafe {
-        if !wl.is_null() && (*wl).flags & WINLINK_VISITED != 0 {
-            let idx = (*wl).idx;
-            stack.retain(|&visited| visited != idx);
-            (*wl).flags &= !WINLINK_VISITED;
-        }
-    }
-}
-pub unsafe fn window_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *mut window {
-    unsafe {
-        if *s as ::core::ffi::c_int != '@' as i32 {
-            return ::core::ptr::null_mut::<window>();
-        }
-        let Ok(id) = strtonum(
-            s.offset(1 as ::core::ffi::c_int as isize),
-            0 as ::core::ffi::c_longlong,
-            UINT_MAX as ::core::ffi::c_longlong,
-        ) else {
-            return ::core::ptr::null_mut::<window>();
         };
-        window_find_by_id(id as u_int)
+        let idx = wl.idx;
+        winlink_stack_remove(stack, Some(wl));
+        stack.insert(0, idx);
+        wl.flags |= WINLINK_VISITED;
     }
 }
-pub(crate) fn window_find_by_id_ref(id: u_int) -> Option<WindowRef> {
-    let reference = windows.map().get(&id).and_then(WindowWeak::upgrade);
-    match reference {
-        Some(reference) if unsafe { (*reference.as_ptr()).id == id } => Some(reference),
-        _ => {
-            windows.map().remove(&id);
-            None
-        }
+pub unsafe fn winlink_stack_remove(stack: &mut winlink_stack, wl: Option<&mut winlink>) {
+    if let Some(wl) = wl
+        && wl.flags & WINLINK_VISITED != 0
+    {
+        let idx = wl.idx;
+        wl.flags &= !WINLINK_VISITED;
+        stack.retain(|&visited| visited != idx);
     }
 }
 
-pub fn window_find_by_id(id: u_int) -> *mut window {
-    window_find_by_id_ref(id)
-        .map(|reference| reference.as_ptr())
-        .unwrap_or(::core::ptr::null_mut::<window>())
+pub unsafe fn window_pane_destroy_ready(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+    unsafe {
+        let mut n: core::ffi::c_int = 0;
+        if *wp.pipe_fd() != -(1 as core::ffi::c_int) && wp.pipe_event().output_len() != 0 as size_t
+        {
+            return 0 as core::ffi::c_int;
+        }
+        if ioctl(*wp.fd(), FIONREAD as core::ffi::c_ulong, &raw mut n) != -(1 as core::ffi::c_int)
+            && n > 0 as core::ffi::c_int
+        {
+            return 0 as core::ffi::c_int;
+        }
+        if !*wp.flags() & PANE_EXITED != 0 {
+            return 0 as core::ffi::c_int;
+        }
+        1 as core::ffi::c_int
+    }
 }
 
-pub(crate) fn window_refs() -> Vec<WindowRef> {
-    let ids: Vec<u_int> = windows.map().keys().copied().collect();
-    ids.into_iter().filter_map(window_find_by_id_ref).collect()
-}
-
-pub unsafe fn window_update_activity(mut w: *mut window) {
-    unsafe {
-        gettimeofday(&raw mut (*w).activity_time, ::core::ptr::null_mut());
-        alerts_queue(w, WINDOW_ACTIVITY);
-    }
-}
-pub(crate) fn window_create(
-    mut sx: u_int,
-    mut sy: u_int,
-    mut xpixel: u_int,
-    mut ypixel: u_int,
-) -> WindowRef {
-    unsafe {
-        if xpixel == 0 as u_int {
-            xpixel = DEFAULT_XPIXEL as u_int;
-        }
-        if ypixel == 0 as u_int {
-            ypixel = DEFAULT_YPIXEL as u_int;
-        }
-        let fresh0 = next_id(&next_window_id);
-        let mut value = window {
-            id: fresh0,
-            latest: None,
-            name: Some(c"".to_owned()),
-            name_event: TimerHandle::ZERO,
-            name_time: timeval::default(),
-            alerts_timer: TimerHandle::ZERO,
-            offset_timer: TimerHandle::ZERO,
-            activity_time: timeval::default(),
-            creation_time: timeval::default(),
-            active_id: None,
-            last_panes: Vec::new(),
-            z_index: Vec::new(),
-            panes: Vec::new(),
-            lastlayout: -(1 as ::core::ffi::c_int),
-            layout_root: None,
-            saved_layout_root: None,
-            old_layout: None,
-            sx,
-            sy,
-            manual_sx: sx,
-            manual_sy: sy,
-            xpixel,
-            ypixel,
-            new_sx: 0,
-            new_sy: 0,
-            new_xpixel: 0,
-            new_ypixel: 0,
-            last_new_pane_x: 0,
-            last_new_pane_y: 0,
-            sb: 0,
-            sb_pos: 0,
-            fill_character: None,
-            flags: 0,
-            alerts_queued: 0,
-            options: Some(options_create_boxed(global_w_options)),
-            winlinks: window_winlinks::new(),
-        };
-        let reference = WindowRef::new(value);
-        let w = reference.as_ptr();
-        windows.map().insert((*w).id, reference.downgrade());
-        window_set_fill_character(w);
-        if gettimeofday(&raw mut (*w).creation_time, ::core::ptr::null_mut())
-            != 0 as ::core::ffi::c_int
-        {
-            fatal(c"gettimeofday failed".as_ptr(), fmt_args![]);
-        }
-        window_update_activity(w);
-        log_debug(
-            c"%s: @%u create %ux%u (%ux%u)".as_ptr(),
-            fmt_args![
-                c"window_create".as_ptr(),
-                (*w).id,
-                sx,
-                sy,
-                (*w).xpixel,
-                (*w).ypixel
-            ],
-        );
-        reference
-    }
-}
-pub unsafe fn window_pane_destroy_ready(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    unsafe {
-        let mut n: ::core::ffi::c_int = 0;
-        if (*wp).pipe_fd != -(1 as ::core::ffi::c_int)
-            && (*wp).pipe_event.output_len() != 0 as size_t
-        {
-            return 0 as ::core::ffi::c_int;
-        }
-        if ioctl((*wp).fd, FIONREAD as ::core::ffi::c_ulong, &raw mut n)
-            != -(1 as ::core::ffi::c_int)
-            && n > 0 as ::core::ffi::c_int
-        {
-            return 0 as ::core::ffi::c_int;
-        }
-        if !(*wp).flags & PANE_EXITED != 0 {
-            return 0 as ::core::ffi::c_int;
-        }
-        1 as ::core::ffi::c_int
-    }
-}
-pub unsafe fn window_set_name(
-    mut w: *mut window,
-    mut new_name: *const ::core::ffi::c_char,
-    mut untrusted: ::core::ffi::c_int,
-) {
-    unsafe {
-        if let Some(name) = clean_name(new_name, untrusted) {
-            (*w).name = Some(name);
-            notify_window(c"window-renamed".as_ptr(), w);
-        }
-    }
-}
-pub unsafe fn window_resize(
-    mut w: *mut window,
-    mut sx: u_int,
-    mut sy: u_int,
-    mut xpixel: ::core::ffi::c_int,
-    mut ypixel: ::core::ffi::c_int,
-) {
-    unsafe {
-        if xpixel == 0 as ::core::ffi::c_int {
-            xpixel = DEFAULT_XPIXEL;
-        }
-        if ypixel == 0 as ::core::ffi::c_int {
-            ypixel = DEFAULT_YPIXEL;
-        }
-        log_debug(
-            c"%s: @%u resize %ux%u (%ux%u)".as_ptr(),
-            fmt_args![
-                c"window_resize".as_ptr(),
-                (*w).id,
-                sx,
-                sy,
-                if xpixel == -(1 as ::core::ffi::c_int) {
-                    (*w).xpixel
-                } else {
-                    xpixel as u_int
-                },
-                if ypixel == -(1 as ::core::ffi::c_int) {
-                    (*w).ypixel
-                } else {
-                    ypixel as u_int
-                }
-            ],
-        );
-        (*w).sx = sx;
-        (*w).sy = sy;
-        if xpixel != -(1 as ::core::ffi::c_int) {
-            (*w).xpixel = xpixel as u_int;
-        }
-        if ypixel != -(1 as ::core::ffi::c_int) {
-            (*w).ypixel = ypixel as u_int;
-        }
-    }
-}
-pub unsafe fn window_pane_send_resize(mut wp: *mut window_pane, mut sx: u_int, mut sy: u_int) {
-    unsafe {
-        let mut w: *mut window = (*wp).window;
-        let mut ws = winsize::default();
-        if (*wp).fd == -(1 as ::core::ffi::c_int) {
-            return;
-        }
-        log_debug(
-            c"%s: %%%u resize to %u,%u".as_ptr(),
-            fmt_args![c"window_pane_send_resize".as_ptr(), (*wp).id, sx, sy],
-        );
-        ws.ws_col = sx as ::core::ffi::c_ushort;
-        ws.ws_row = sy as ::core::ffi::c_ushort;
-        ws.ws_xpixel = (*w).xpixel.wrapping_mul(ws.ws_col as u_int) as ::core::ffi::c_ushort;
-        ws.ws_ypixel = (*w).ypixel.wrapping_mul(ws.ws_row as u_int) as ::core::ffi::c_ushort;
-        if ioctl((*wp).fd, TIOCSWINSZ as ::core::ffi::c_ulong, &raw mut ws)
-            == -(1 as ::core::ffi::c_int)
-        {
-            fatal(c"ioctl failed".as_ptr(), fmt_args![]);
-        }
-    }
-}
-pub unsafe fn window_has_floating_panes(mut w: *mut window) -> ::core::ffi::c_int {
-    unsafe {
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        wp = window_panes_first(w);
-        while !wp.is_null() {
-            if window_pane_is_floating(wp) != 0 {
-                return 1 as ::core::ffi::c_int;
+impl WindowRef {
+    /// Updates the window dimensions without rearranging its layout or panes.
+    /// Zero pixel dimensions select the defaults; minus one preserves the old value.
+    pub fn resize(
+        &self,
+        sx: u_int,
+        sy: u_int,
+        mut xpixel: core::ffi::c_int,
+        mut ypixel: core::ffi::c_int,
+    ) {
+        unsafe {
+            let mut payload = self.as_window_mut();
+            let w = &mut *payload;
+            if xpixel == 0 as core::ffi::c_int {
+                xpixel = DEFAULT_XPIXEL;
             }
-            wp = window_panes_next(w, wp);
-        }
-        0 as ::core::ffi::c_int
-    }
-}
-pub unsafe fn window_has_pane(mut w: *mut window, mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    unsafe {
-        let mut wp1: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        wp1 = window_panes_first(w);
-        while !wp1.is_null() {
-            if wp1 == wp {
-                return 1 as ::core::ffi::c_int;
+            if ypixel == 0 as core::ffi::c_int {
+                ypixel = DEFAULT_YPIXEL;
             }
-            wp1 = window_panes_next(w, wp1);
-        }
-        0 as ::core::ffi::c_int
-    }
-}
-pub unsafe fn window_update_focus(mut w: *mut window) {
-    unsafe {
-        if !w.is_null() {
             log_debug(
-                c"%s: @%u".as_ptr(),
-                fmt_args![c"window_update_focus".as_ptr(), (*w).id],
-            );
-            window_pane_update_focus(window_get_active(w));
-        }
-    }
-}
-pub unsafe fn window_pane_update_focus(mut wp: *mut window_pane) {
-    unsafe {
-        let mut focused: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        if !wp.is_null() && !(*wp).flags & PANE_EXITED != 0 {
-            if wp != window_get_active((*wp).window) {
-                focused = 0 as ::core::ffi::c_int;
-            } else {
-                for c in client_walk() {
-                    if !(*c).session.is_null()
-                        && session_attached((*c).session) != 0 as u_int
-                        && (*c).flags & CLIENT_FOCUSED as uint64_t != 0
-                        && (*session_get_curw((*c).session)).window() == (*wp).window
-                        && (*c).overlay().is_none()
-                    {
-                        focused = 1 as ::core::ffi::c_int;
-                        break;
+                c"%s: @%u resize %ux%u (%ux%u)",
+                fmt_args![
+                    c"window_resize".as_ptr(),
+                    w.window_id(),
+                    sx,
+                    sy,
+                    if xpixel == -(1 as core::ffi::c_int) {
+                        w.dimensions().pixels.width
+                    } else {
+                        xpixel as u_int
+                    },
+                    if ypixel == -(1 as core::ffi::c_int) {
+                        w.dimensions().pixels.height
+                    } else {
+                        ypixel as u_int
                     }
-                }
+                ],
+            );
+            w.set_size(PaneSize {
+                width: sx,
+                height: sy,
+            });
+            let mut pixels = w.dimensions().pixels;
+            if xpixel != -(1 as core::ffi::c_int) {
+                pixels.width = xpixel as u_int;
             }
-            if focused == 0 && (*wp).flags & PANE_FOCUSED != 0 {
-                log_debug(
-                    c"%s: %%%u focus out".as_ptr(),
-                    fmt_args![c"window_pane_update_focus".as_ptr(), (*wp).id],
-                );
-                if (*wp).base.mode & MODE_FOCUSON != 0 {
-                    (*wp).event.write(b"\x1B[O\0".as_ptr(), 3 as size_t);
-                }
-                notify_pane(c"pane-focus-out".as_ptr(), wp);
-                (*wp).flags &= !PANE_FOCUSED;
-            } else if focused != 0 && !(*wp).flags & PANE_FOCUSED != 0 {
-                log_debug(
-                    c"%s: %%%u focus in".as_ptr(),
-                    fmt_args![c"window_pane_update_focus".as_ptr(), (*wp).id],
-                );
-                if (*wp).base.mode & MODE_FOCUSON != 0 {
-                    (*wp).event.write(b"\x1B[I\0".as_ptr(), 3 as size_t);
-                }
-                notify_pane(c"pane-focus-in".as_ptr(), wp);
-                (*wp).flags |= PANE_FOCUSED;
-            } else {
-                log_debug(
-                    c"%s: %%%u focus unchanged".as_ptr(),
-                    fmt_args![c"window_pane_update_focus".as_ptr(), (*wp).id],
-                );
+            if ypixel != -(1 as core::ffi::c_int) {
+                pixels.height = ypixel as u_int;
             }
+            w.set_pixels(pixels);
         }
     }
 }
-/// The pane the window is showing as its active one, or null while it has
-/// none. The id is looked up among the window's own panes, so one that has
-/// been taken out of the window is not answered with.
-pub unsafe fn window_get_active(w: *mut window) -> *mut window_pane {
+pub unsafe fn window_pane_send_resize(pane: &RustWindowPaneWeak, sx: u_int, sy: u_int) {
     unsafe {
-        let Some(id) = (*w).active_id else {
-            return ::core::ptr::null_mut();
-        };
-        (*w).panes
-            .iter()
-            .find(|wp| wp.id == id)
-            .map(|wp| &raw const **wp as *mut window_pane)
-            .unwrap_or(::core::ptr::null_mut())
-    }
-}
-
-/// Makes `wp` the window's active pane, or gives up having one when it is
-/// null.
-pub unsafe fn window_set_active(w: *mut window, wp: *mut window_pane) {
-    unsafe {
-        (*w).active_id = wp.as_ref().map(|wp| wp.id);
-    }
-}
-
-pub unsafe fn window_set_active_pane(
-    mut w: *mut window,
-    mut wp: *mut window_pane,
-    mut notify: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    unsafe {
-        let mut lastwp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        log_debug(
-            c"%s: pane %%%u".as_ptr(),
-            fmt_args![c"window_set_active_pane".as_ptr(), (*wp).id],
-        );
-        if wp == window_get_active(w) {
-            return 0 as ::core::ffi::c_int;
-        }
-        if (*w).flags & WINDOW_ZOOMED != 0 {
-            window_unzoom(w, 1 as ::core::ffi::c_int);
-        }
-        lastwp = window_get_active(w);
-        window_pane_stack_remove(w, PaneStack::LastUsed, wp);
-        window_pane_stack_push(w, PaneStack::LastUsed, lastwp);
-        window_set_active(w, wp);
-        let fresh1 = next_id(&next_active_point);
-        (*window_get_active(w)).active_point = fresh1;
-        (*window_get_active(w)).flags |= PANE_CHANGED;
-        if options_get_number(global_options, c"focus-events".as_ptr()) != 0 {
-            window_pane_update_focus(lastwp);
-            window_pane_update_focus(window_get_active(w));
-        }
-        tty_update_window_offset(w);
-        server_redraw_window(w);
-        if notify != 0 {
-            notify_window(c"window-pane-changed".as_ptr(), w);
-        }
-        1 as ::core::ffi::c_int
-    }
-}
-unsafe fn window_pane_get_palette(
-    mut wp: *mut window_pane,
-    mut c: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    unsafe {
-        if wp.is_null() {
-            return -(1 as ::core::ffi::c_int);
-        }
-        colour_palette_get(Some(&(*wp).palette), c)
-    }
-}
-pub unsafe fn window_redraw_active_switch(mut w: *mut window, mut wp: *mut window_pane) {
-    unsafe {
-        let mut c1: ::core::ffi::c_int = 0;
-        let mut c2: ::core::ffi::c_int = 0;
-        if wp == window_get_active(w) {
+        let Some(wp) = pane.get() else { return };
+        let mut ws = winsize::default();
+        if *wp.fd() == -(1 as core::ffi::c_int) {
             return;
         }
-        loop {
-            let gc1 = &mut (*wp).cached_gc;
-            let gc2 = &mut (*wp).cached_active_gc;
-            if grid_cells_look_equal(gc1, gc2) == 0 {
-                (*wp).flags |= PANE_REDRAW;
+        let Some(window) = pane.window() else { return };
+        let w = window.as_window();
+        log_debug(
+            c"%s: %%%u resize to %u,%u",
+            fmt_args![c"window_pane_send_resize", wp.pane_id(), sx, sy],
+        );
+        ws.ws_col = sx as core::ffi::c_ushort;
+        ws.ws_row = sy as core::ffi::c_ushort;
+        ws.ws_xpixel =
+            w.dimensions().pixels.width.wrapping_mul(ws.ws_col as u_int) as core::ffi::c_ushort;
+        ws.ws_ypixel = w
+            .dimensions()
+            .pixels
+            .height
+            .wrapping_mul(ws.ws_row as u_int) as core::ffi::c_ushort;
+        if ioctl(*wp.fd(), TIOCSWINSZ as core::ffi::c_ulong, &raw mut ws)
+            == -(1 as core::ffi::c_int)
+        {
+            fatal(c"ioctl failed", fmt_args![]);
+        }
+    }
+}
+
+pub unsafe fn window_update_focus(window: Option<&WindowRef>) {
+    if let Some(window) = window {
+        unsafe { window.update_focus() };
+    }
+}
+
+/// Observes the active pane from the window's own list, including panes
+/// without registered membership.
+pub(crate) fn window_active_pane(w: &window) -> Option<RustWindowPaneWeak> {
+    w.active_pane
+        .as_ref()
+        .filter(|pane| pane.is_alive())
+        .cloned()
+}
+
+unsafe fn window_pane_get_palette(
+    wp: Option<&impl crate::WindowPane>,
+    c: core::ffi::c_int,
+) -> core::ffi::c_int {
+    let Some(wp) = wp else {
+        return -(1 as core::ffi::c_int);
+    };
+    RustColourEngine.get_palette(Some(wp.palette()), c)
+}
+pub unsafe fn window_redraw_active_switch(w: &mut window, selected: &RustWindowPaneWeak) {
+    unsafe {
+        if w.active_pane.as_ref() == Some(selected)
+            || !w.panes.iter().any(|pane| pane.downgrade().ptr_eq(selected))
+        {
+            return;
+        }
+        for mut reference in [Some(selected.clone()), w.active_pane.clone()]
+            .into_iter()
+            .flatten()
+        {
+            let raise = reference.ptr_eq(selected)
+                && crate::layout::layout_cell_for_pane(w.layout_root.as_deref(), &reference)
+                    .is_some_and(|(cell, _)| cell.flags & LAYOUT_CELL_FLOATING != 0);
+            let Some(pane) = reference.get_mut() else {
+                continue;
+            };
+            let styles = pane.styles();
+            let normal = &styles.normal;
+            let active = &styles.active;
+            if grid_cells_look_equal(normal, active) == 0
+                || window_pane_get_palette(Some(pane), normal.fg)
+                    != window_pane_get_palette(Some(pane), active.fg)
+                || window_pane_get_palette(Some(pane), normal.bg)
+                    != window_pane_get_palette(Some(pane), active.bg)
+                || raise
+            {
+                *pane.flags_mut() |= PANE_REDRAW;
+            }
+            if raise {
+                w.z_index.retain(|pane| !pane.ptr_eq(&reference));
+                w.z_index.insert(0, reference);
+            }
+        }
+    }
+}
+pub unsafe fn window_get_active_at(w: &window, x: u_int, y: u_int) -> Option<RustWindowPaneWeak> {
+    unsafe {
+        let status = w.options_ref().number(c"pane-border-status") as core::ffi::c_int;
+        let panes = || {
+            w.z_index
+                .iter()
+                .take_while(|pane| pane.is_alive())
+                .filter(|pane| {
+                    w.flags & WINDOW_ZOOMED == 0 || w.active_pane.as_ref() == Some(*pane)
+                })
+                .map(|pane| {
+                    let floating =
+                        crate::layout::layout_cell_for_pane(w.layout_root.as_deref(), pane)
+                            .is_some_and(|(cell, _)| cell.flags & LAYOUT_CELL_FLOATING != 0);
+                    (
+                        pane.clone(),
+                        floating,
+                        window_pane_full_size_offset(w, pane.as_pane()),
+                    )
+                })
+        };
+        if status == PANE_STATUS_TOP {
+            for (id, floating, (xoff, yoff, sx, _)) in panes() {
+                if !floating
+                    && x as core::ffi::c_int >= xoff
+                    && x <= (xoff as u_int).wrapping_add(sx)
+                    && y as core::ffi::c_int == yoff - 1
+                {
+                    return Some(id);
+                }
+            }
+        }
+        for (id, floating, (xoff, yoff, sx, sy)) in panes() {
+            let left = if floating { xoff - 1 } else { xoff };
+            let top = if floating || status == PANE_STATUS_TOP {
+                yoff - 1
             } else {
-                c1 = window_pane_get_palette(wp, (*gc1).fg);
-                c2 = window_pane_get_palette(wp, (*gc2).fg);
-                if c1 != c2 {
-                    (*wp).flags |= PANE_REDRAW;
-                } else {
-                    c1 = window_pane_get_palette(wp, (*gc1).bg);
-                    c2 = window_pane_get_palette(wp, (*gc2).bg);
-                    if c1 != c2 {
-                        (*wp).flags |= PANE_REDRAW;
-                    }
-                }
-            }
-            if wp == window_get_active(w) {
-                break;
-            }
-            if window_pane_is_floating(wp) != 0 {
-                window_pane_zindex_remove(w, wp);
-                window_pane_zindex_insert_head(w, wp);
-                (*wp).flags |= PANE_REDRAW;
-            }
-            wp = window_get_active(w);
-            if wp.is_null() {
-                break;
+                yoff
+            };
+            if x as core::ffi::c_int >= left
+                && x <= (xoff as u_int).wrapping_add(sx)
+                && y as core::ffi::c_int >= top
+                && y <= (yoff as u_int).wrapping_add(sy)
+            {
+                return Some(id);
             }
         }
+        None
     }
 }
-pub unsafe fn window_get_active_at(
-    mut w: *mut window,
-    mut x: u_int,
-    mut y: u_int,
-) -> *mut window_pane {
+pub unsafe fn window_find_string(w: &window, s: &CStr) -> Option<RustWindowPaneWeak> {
     unsafe {
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut pane_status: ::core::ffi::c_int = 0;
-        let mut xoff: ::core::ffi::c_int = 0;
-        let mut yoff: ::core::ffi::c_int = 0;
-        let mut sx: u_int = 0;
-        let mut sy: u_int = 0;
-        pane_status = options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr())
-            as ::core::ffi::c_int;
-        if pane_status == PANE_STATUS_TOP {
-            wp = window_pane_stack_first(w, PaneStack::ZIndex);
-            while !wp.is_null() {
-                if !(window_pane_visible(wp) == 0 || window_pane_is_floating(wp) != 0) {
-                    (xoff, yoff, sx, sy) = window_pane_full_size_offset(wp);
-                    if !((x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx))
-                        && y as ::core::ffi::c_int == yoff - 1 as ::core::ffi::c_int
-                    {
-                        return wp;
-                    }
-                }
-                wp = window_pane_stack_next(w, PaneStack::ZIndex, wp);
-            }
-        }
-        let mut current_block_10: u64;
-        wp = window_pane_stack_first(w, PaneStack::ZIndex);
-        while !wp.is_null() {
-            if !(window_pane_visible(wp) == 0) {
-                (xoff, yoff, sx, sy) = window_pane_full_size_offset(wp);
-                if window_pane_is_floating(wp) == 0 {
-                    if (x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx) {
-                        current_block_10 = 13536709405535804910;
-                    } else if pane_status == PANE_STATUS_TOP {
-                        if (y as ::core::ffi::c_int) < yoff - 1 as ::core::ffi::c_int
-                            || y > (yoff as u_int).wrapping_add(sy)
-                        {
-                            current_block_10 = 13536709405535804910;
-                        } else {
-                            current_block_10 = 14401909646449704462;
-                        }
-                    } else if (y as ::core::ffi::c_int) < yoff
-                        || y > (yoff as u_int).wrapping_add(sy)
-                    {
-                        current_block_10 = 13536709405535804910;
-                    } else {
-                        current_block_10 = 14401909646449704462;
-                    }
-                } else if (x as ::core::ffi::c_int) < xoff - 1 as ::core::ffi::c_int
-                    || x > (xoff as u_int).wrapping_add(sx)
-                {
-                    current_block_10 = 13536709405535804910;
-                } else if (y as ::core::ffi::c_int) < yoff - 1 as ::core::ffi::c_int
-                    || y > (yoff as u_int).wrapping_add(sy)
-                {
-                    current_block_10 = 13536709405535804910;
-                } else {
-                    current_block_10 = 14401909646449704462;
-                }
-                match current_block_10 {
-                    13536709405535804910 => {}
-                    _ => return wp,
-                }
-            }
-            wp = window_pane_stack_next(w, PaneStack::ZIndex, wp);
-        }
-        ::core::ptr::null_mut::<window_pane>()
-    }
-}
-pub unsafe fn window_find_string(
-    mut w: *mut window,
-    mut s: *const ::core::ffi::c_char,
-) -> *mut window_pane {
-    unsafe {
-        let mut x: u_int = 0;
-        let mut y: u_int = 0;
+        let mut x: u_int;
+        let mut y: u_int;
         let mut top: u_int = 0 as u_int;
-        let mut bottom: u_int = (*w).sy.wrapping_sub(1 as u_int);
-        let mut status: ::core::ffi::c_int = 0;
-        x = (*w).sx.wrapping_div(2 as u_int);
-        y = (*w).sy.wrapping_div(2 as u_int);
-        status = options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr())
-            as ::core::ffi::c_int;
+        let mut bottom: u_int = w.dimensions().size.height.wrapping_sub(1 as u_int);
+
+        x = w.dimensions().size.width.wrapping_div(2 as u_int);
+        y = w.dimensions().size.height.wrapping_div(2 as u_int);
+        let status: core::ffi::c_int =
+            (w.options_ref()).number(c"pane-border-status") as core::ffi::c_int;
         if status == PANE_STATUS_TOP {
             top = top.wrapping_add(1);
         } else if status == PANE_STATUS_BOTTOM {
             bottom = bottom.wrapping_sub(1);
         }
-        if strcasecmp(s, c"top".as_ptr()) == 0 as ::core::ffi::c_int {
+        if cstr_eq_ignore_case(s, c"top") {
             y = top;
-        } else if strcasecmp(s, c"bottom".as_ptr()) == 0 as ::core::ffi::c_int {
+        } else if cstr_eq_ignore_case(s, c"bottom") {
             y = bottom;
-        } else if strcasecmp(s, c"left".as_ptr()) == 0 as ::core::ffi::c_int {
+        } else if cstr_eq_ignore_case(s, c"left") {
             x = 0 as u_int;
-        } else if strcasecmp(s, c"right".as_ptr()) == 0 as ::core::ffi::c_int {
-            x = (*w).sx.wrapping_sub(1 as u_int);
-        } else if strcasecmp(s, c"top-left".as_ptr()) == 0 as ::core::ffi::c_int {
+        } else if cstr_eq_ignore_case(s, c"right") {
+            x = w.dimensions().size.width.wrapping_sub(1 as u_int);
+        } else if cstr_eq_ignore_case(s, c"top-left") {
             x = 0 as u_int;
             y = top;
-        } else if strcasecmp(s, c"top-right".as_ptr()) == 0 as ::core::ffi::c_int {
-            x = (*w).sx.wrapping_sub(1 as u_int);
+        } else if cstr_eq_ignore_case(s, c"top-right") {
+            x = w.dimensions().size.width.wrapping_sub(1 as u_int);
             y = top;
-        } else if strcasecmp(s, c"bottom-left".as_ptr()) == 0 as ::core::ffi::c_int {
+        } else if cstr_eq_ignore_case(s, c"bottom-left") {
             x = 0 as u_int;
             y = bottom;
-        } else if strcasecmp(s, c"bottom-right".as_ptr()) == 0 as ::core::ffi::c_int {
-            x = (*w).sx.wrapping_sub(1 as u_int);
+        } else if cstr_eq_ignore_case(s, c"bottom-right") {
+            x = w.dimensions().size.width.wrapping_sub(1 as u_int);
             y = bottom;
         } else {
-            return ::core::ptr::null_mut::<window_pane>();
+            return None;
         }
         window_get_active_at(w, x, y)
     }
 }
-pub unsafe fn window_zoom(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+
+unsafe fn window_restore_layout(w: &mut window) -> bool {
     unsafe {
-        let mut w: *mut window = (*wp).window;
-        let mut wp1: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        if (*w).flags & WINDOW_ZOOMED != 0 {
-            return -(1 as ::core::ffi::c_int);
+        if w.flags & WINDOW_ZOOMED == 0 {
+            return false;
         }
-        if window_count_panes(w, 1 as ::core::ffi::c_int) == 1 as u_int {
-            return -(1 as ::core::ffi::c_int);
+        w.flags &= !WINDOW_ZOOMED;
+        layout_free_cell(w.layout_root.take());
+        w.layout_root = w.saved_layout_root.take();
+        for pane in &mut w.panes {
+            let pane = pane.as_pane_mut();
+            *pane.flags_mut() &= !PANE_ZOOMED;
         }
-        if window_get_active(w) != wp {
-            window_set_active_pane(w, wp, 1 as ::core::ffi::c_int);
-        }
-        (*wp).flags |= PANE_ZOOMED;
-        wp1 = window_panes_first(w);
-        while !wp1.is_null() {
-            (*wp1).saved_layout_cell = (*wp1).layout_cell;
-            (*wp1).layout_cell = ::core::ptr::null_mut::<layout_cell>();
-            wp1 = window_panes_next(w, wp1);
-        }
-        (*w).saved_layout_root = (*w).layout_root.take();
-        layout_init(w, wp);
-        (*w).flags |= WINDOW_ZOOMED;
-        notify_window(c"window-layout-changed".as_ptr(), w);
-        0 as ::core::ffi::c_int
+        true
     }
 }
-pub unsafe fn window_unzoom(
-    mut w: *mut window,
-    mut notify: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    unsafe {
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        if (*w).flags & WINDOW_ZOOMED == 0 {
-            return -(1 as ::core::ffi::c_int);
-        }
-        (*w).flags &= !WINDOW_ZOOMED;
-        layout_free(w);
-        (*w).layout_root = (*w).saved_layout_root.take();
-        wp = window_panes_first(w);
-        while !wp.is_null() {
-            (*wp).layout_cell = (*wp).saved_layout_cell;
-            (*wp).saved_layout_cell = ::core::ptr::null_mut::<layout_cell>();
-            (*wp).flags &= !PANE_ZOOMED;
-            wp = window_panes_next(w, wp);
-        }
-        layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-        if notify != 0 {
-            notify_window(c"window-layout-changed".as_ptr(), w);
-        }
-        0 as ::core::ffi::c_int
-    }
-}
-pub unsafe fn window_push_zoom(
-    mut w: *mut window,
-    mut always: ::core::ffi::c_int,
-    mut flag: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    unsafe {
-        log_debug(
-            c"%s: @%u %d".as_ptr(),
-            fmt_args![
-                c"window_push_zoom".as_ptr(),
-                (*w).id,
-                (flag != 0 && (*w).flags & WINDOW_ZOOMED != 0) as ::core::ffi::c_int
-            ],
-        );
-        if flag != 0 && (always != 0 || (*w).flags & WINDOW_ZOOMED != 0) {
-            (*w).flags |= WINDOW_WASZOOMED;
-        } else {
-            (*w).flags &= !WINDOW_WASZOOMED;
-        }
-        (window_unzoom(w, 1 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int
-    }
-}
-pub unsafe fn window_pop_zoom(mut w: *mut window) -> ::core::ffi::c_int {
-    unsafe {
-        log_debug(
-            c"%s: @%u %d".as_ptr(),
-            fmt_args![
-                c"window_pop_zoom".as_ptr(),
-                (*w).id,
-                ((*w).flags & WINDOW_WASZOOMED != 0) as ::core::ffi::c_int
-            ],
-        );
-        if (*w).flags & WINDOW_WASZOOMED != 0 {
-            return (window_zoom(window_get_active(w)) == 0 as ::core::ffi::c_int)
-                as ::core::ffi::c_int;
-        }
-        0 as ::core::ffi::c_int
-    }
-}
+
 pub unsafe fn window_add_pane(
-    mut w: *mut window,
-    mut other: *mut window_pane,
-    mut hlimit: u_int,
-    mut flags: ::core::ffi::c_int,
-) -> *mut window_pane {
+    w: &mut window,
+    other: Option<&RustWindowPaneWeak>,
+    hlimit: u_int,
+    flags: core::ffi::c_int,
+) -> RustWindowPaneWeak {
     unsafe {
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        if other.is_null() {
-            other = window_get_active(w);
-        }
-        let wp_box = window_pane_create(w, (*w).sx, (*w).sy, hlimit);
-        let id = wp_box.id;
-        if (*w).panes.is_empty() {
+        let other = other.cloned().or_else(|| w.active_pane.clone());
+        let wp_box = window_pane_create(
+            w,
+            (*w).dimensions().size.width,
+            (*w).dimensions().size.height,
+            hlimit,
+        );
+        let id = wp_box.pane_id();
+        let pane = wp_box.downgrade();
+        if w.panes.is_empty() {
             log_debug(
-                c"%s: @%u at start".as_ptr(),
-                fmt_args![c"window_add_pane".as_ptr(), (*w).id],
+                c"%s: @%u at start",
+                fmt_args![c"window_add_pane".as_ptr(), (*w).window_id()],
             );
-            wp = window_panes_insert_head(w, wp_box);
+            window_panes_insert_head(&mut *w, wp_box)
         } else if flags & SPAWN_BEFORE != 0 {
             log_debug(
-                c"%s: @%u before %%%u".as_ptr(),
-                fmt_args![c"window_add_pane".as_ptr(), (*w).id, id],
+                c"%s: @%u before %%%u",
+                fmt_args![c"window_add_pane".as_ptr(), (*w).window_id(), id],
             );
             if flags & SPAWN_FULLSIZE != 0 {
-                wp = window_panes_insert_head(w, wp_box);
+                window_panes_insert_head(&mut *w, wp_box)
             } else {
-                wp = window_panes_insert_before(w, other, wp_box);
+                window_panes_insert_before(&mut *w, other.as_ref(), wp_box)
             }
         } else {
             log_debug(
-                c"%s: @%u after %%%u".as_ptr(),
-                fmt_args![c"window_add_pane".as_ptr(), (*w).id, id],
+                c"%s: @%u after %%%u",
+                fmt_args![c"window_add_pane".as_ptr(), (*w).window_id(), id],
             );
             if flags & (SPAWN_FULLSIZE | SPAWN_FLOATING) != 0 {
-                wp = window_panes_insert_tail(w, wp_box);
+                window_panes_insert_tail(&mut *w, wp_box)
             } else {
-                wp = window_panes_insert_after(w, other, wp_box);
+                window_panes_insert_after(&mut *w, other.as_ref(), wp_box)
             }
-        }
+        };
         if !flags & SPAWN_FLOATING != 0 {
-            window_pane_zindex_insert_tail(w, wp);
+            w.z_index.push(pane.clone());
         } else {
-            window_pane_zindex_insert_head(w, wp);
+            w.z_index.insert(0, pane.clone());
         }
-        wp
+        pane
     }
 }
-/// Gives up `wp`: takes it off the most-recently-used stack and, when it was
-/// the active pane, hands that over to the pane the window falls back on.
-///
-/// `wp` must still be one of `w`'s panes, since the fallback is the pane in
-/// front of it or, failing that, the one behind it. The C read those two out
-/// of the pane's own list links, which a `TAILQ_REMOVE` leaves pointing at the
-/// old neighbours, so it could be called either side of the removal; here the
-/// window is asked instead, and it must still know the pane.
-pub unsafe fn window_lost_pane(mut w: *mut window, mut wp: *mut window_pane) {
-    unsafe {
-        log_debug(
-            c"%s: @%u pane %%%u".as_ptr(),
-            fmt_args![c"window_lost_pane".as_ptr(), (*w).id, (*wp).id],
-        );
-        if wp == marked_pane.pane() {
-            server_clear_marked();
+
+pub fn window_pane_at_index(w: &window, idx: u_int) -> Option<RustWindowPaneWeak> {
+    let mut n = unsafe { w.options_ref().number(c"pane-base-index") } as u_int;
+    for pane in &w.panes {
+        if n == idx {
+            return Some(pane.downgrade());
         }
-        window_pane_stack_remove(w, PaneStack::LastUsed, wp);
-        if wp == window_get_active(w) {
-            window_set_active(w, window_pane_stack_first(w, PaneStack::LastUsed));
-            if window_get_active(w).is_null() {
-                window_set_active(w, window_panes_prev(w, wp));
-                if window_get_active(w).is_null() {
-                    window_set_active(w, window_panes_next(w, wp));
-                }
-            }
-            if !window_get_active(w).is_null() {
-                window_pane_stack_remove(w, PaneStack::LastUsed, window_get_active(w));
-                (*window_get_active(w)).flags |= PANE_CHANGED;
-                notify_window(c"window-pane-changed".as_ptr(), w);
-                window_update_focus(w);
-            }
-        }
+        n = n.wrapping_add(1);
     }
+    None
 }
-pub unsafe fn window_remove_pane(mut w: *mut window, mut wp: *mut window_pane) {
-    unsafe {
-        window_lost_pane(w, wp);
-        window_pane_zindex_remove(w, wp);
-        if let Some(pane) = window_panes_take(w, wp) {
-            window_pane_destroy(pane);
-        }
+pub fn window_pane_next_by_number(
+    w: &window,
+    pane: Option<&RustWindowPaneWeak>,
+    n: u_int,
+) -> Option<RustWindowPaneWeak> {
+    let mut pane = pane.cloned();
+    for _ in 0..n {
+        let at = pane.as_ref().and_then(|pane| {
+            w.panes
+                .iter()
+                .position(|candidate| candidate.downgrade().ptr_eq(pane))
+        });
+        pane = at
+            .and_then(|at| at.checked_add(1))
+            .and_then(|at| w.panes.get(at))
+            .or_else(|| w.panes.first())
+            .map(RustWindowPaneRef::downgrade);
     }
+    pane
 }
-pub unsafe fn window_pane_at_index(mut w: *mut window, mut idx: u_int) -> *mut window_pane {
-    unsafe {
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut n: u_int = 0;
-        n = options_get_number((*w).options_ptr(), c"pane-base-index".as_ptr()) as u_int;
-        wp = window_panes_first(w);
-        while !wp.is_null() {
-            if n == idx {
-                return wp;
-            }
-            n = n.wrapping_add(1);
-            wp = window_panes_next(w, wp);
-        }
-        ::core::ptr::null_mut::<window_pane>()
+pub fn window_pane_previous_by_number(
+    w: &window,
+    pane: Option<&RustWindowPaneWeak>,
+    n: u_int,
+) -> Option<RustWindowPaneWeak> {
+    let mut pane = pane.cloned();
+    for _ in 0..n {
+        let at = pane.as_ref().and_then(|pane| {
+            w.panes
+                .iter()
+                .position(|candidate| candidate.downgrade().ptr_eq(pane))
+        });
+        pane = at
+            .and_then(|at| at.checked_sub(1))
+            .and_then(|at| w.panes.get(at))
+            .or_else(|| w.panes.last())
+            .map(RustWindowPaneRef::downgrade);
     }
-}
-pub unsafe fn window_pane_next_by_number(
-    mut w: *mut window,
-    mut wp: *mut window_pane,
-    mut n: u_int,
-) -> *mut window_pane {
-    unsafe {
-        while n > 0 as u_int {
-            wp = window_panes_next(w, wp);
-            if wp.is_null() {
-                wp = window_panes_first(w);
-            }
-            n = n.wrapping_sub(1);
-        }
-        wp
-    }
-}
-pub unsafe fn window_pane_previous_by_number(
-    mut w: *mut window,
-    mut wp: *mut window_pane,
-    mut n: u_int,
-) -> *mut window_pane {
-    unsafe {
-        while n > 0 as u_int {
-            wp = window_panes_prev(w, wp);
-            if wp.is_null() {
-                wp = window_panes_last(w);
-            }
-            n = n.wrapping_sub(1);
-        }
-        wp
-    }
+    pane
 }
 /// The pane's index in its window, counting from `pane-base-index`, and
 /// whether the walk found it there at all.
-pub unsafe fn window_pane_index(mut wp: *mut window_pane) -> (::core::ffi::c_int, u_int) {
+pub unsafe fn window_pane_index(
+    w: &window,
+    wp: &impl crate::WindowPane,
+) -> (core::ffi::c_int, u_int) {
     unsafe {
-        let mut w: *mut window = (*wp).window;
-        let mut wq: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut i = options_get_number((*w).options_ptr(), c"pane-base-index".as_ptr()) as u_int;
-        wq = window_panes_first(w);
-        while !wq.is_null() {
-            if wp == wq {
-                return (0 as ::core::ffi::c_int, i);
+        let mut i = (w.options_ref()).number(c"pane-base-index") as u_int;
+        for pane in &w.panes {
+            if pane
+                .get()
+                .is_some_and(|candidate| core::ptr::addr_eq(wp, candidate))
+            {
+                return (0, i);
             }
             i = i.wrapping_add(1);
-            wq = window_panes_next(w, wq);
         }
-        (-(1 as ::core::ffi::c_int), i)
+        (-1, i)
     }
 }
 /// How many floating panes sit over this one, and whether the z-order holds
 /// it at all.
-pub unsafe fn window_pane_zindex(mut wp: *mut window_pane) -> (::core::ffi::c_int, u_int) {
-    unsafe {
-        let mut w: *mut window = (*wp).window;
-        let mut wq: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut i = 0 as u_int;
-        wq = window_pane_stack_first(w, PaneStack::ZIndex);
-        while !wq.is_null() {
-            if wq == wp {
-                if window_pane_is_floating(wp) == 0 {
+pub unsafe fn window_pane_zindex(target: &RustWindowPaneWeak) -> (core::ffi::c_int, u_int) {
+    {
+        let Some(window) = target.window() else {
+            return (-1, 0);
+        };
+        let w = window.as_window();
+        let mut i: u_int = 0;
+        for pane in w.z_index.iter().take_while(|pane| pane.is_alive()) {
+            if pane.ptr_eq(target) {
+                if window_pane_is_floating(&w, target) == 0 {
                     i = i.wrapping_add(1);
                 }
-                return (0 as ::core::ffi::c_int, i);
+                return (0, i);
             }
-            if window_pane_is_floating(wq) != 0 {
+            if window_pane_is_floating(&w, pane) != 0 {
                 i = i.wrapping_add(1);
             }
-            wq = window_pane_stack_next(w, PaneStack::ZIndex, wq);
         }
-        (-(1 as ::core::ffi::c_int), i)
+        (-1, i)
     }
 }
-pub unsafe fn window_count_panes(
-    mut w: *mut window,
-    mut with_floating: ::core::ffi::c_int,
-) -> u_int {
-    unsafe {
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut n: u_int = 0 as u_int;
-        wp = window_panes_first(w);
-        while !wp.is_null() {
-            if with_floating != 0 || window_pane_is_floating(wp) == 0 {
-                n = n.wrapping_add(1);
-            }
-            wp = window_panes_next(w, wp);
-        }
-        n
-    }
+pub fn window_count_panes(w: &window, with_floating: core::ffi::c_int) -> u_int {
+    w.panes
+        .iter()
+        .filter(|pane| with_floating != 0 || window_pane_is_floating(w, &pane.downgrade()) == 0)
+        .count() as u_int
 }
-/// Tears down every pane the window holds. This is reached from
-/// `WindowStorage`'s drop, where `w` derives from `&mut self`: the panes are
-/// taken out of the window in one move first, so nothing writes back into the
-/// window while they go.
-pub unsafe fn window_destroy_panes(mut w: *mut window) {
+
+unsafe fn window_panes_take_all(w: &mut window) -> Vec<RustWindowPaneRef> {
     unsafe {
-        for id in ::core::mem::take(&mut (*w).last_panes) {
-            let lastwp = pane_of(w, Some(id));
-            if !lastwp.is_null() {
-                (*lastwp).flags &= !PANE_VISITED;
+        for mut pane in core::mem::take(&mut w.last_panes) {
+            if let Some(pane) = pane.get_mut() {
+                *pane.flags_mut() &= !PANE_VISITED;
             }
         }
-        (*w).z_index.clear();
-        for pane in ::core::mem::take(&mut (*w).panes) {
-            window_pane_destroy(pane);
-        }
+        w.z_index.clear();
+        core::mem::take(&mut w.panes)
     }
 }
 /// The client that used the window most recently, if it is still alive.
-pub unsafe fn window_get_latest(w: *mut window) -> *mut client {
-    unsafe {
-        (*w).latest
-            .as_ref()
-            .and_then(ClientWeak::upgrade)
-            .map_or(::core::ptr::null_mut(), |c| c.as_ptr())
-    }
+pub fn window_get_latest(w: &window) -> Option<ClientRef> {
+    w.latest.as_ref().and_then(ClientWeak::upgrade)
 }
 
 /// Records `c` as the client that used the window most recently.
-pub unsafe fn window_set_latest(w: *mut window, c: *mut client) {
-    unsafe {
-        (*w).latest = client_ref_from_ptr(c).map(|c| c.downgrade());
-    }
+pub unsafe fn window_set_latest(w: &mut window, c: Option<&client>) {
+    w.latest = c.and_then(client_ref_of).map(|c| c.downgrade());
 }
 
-pub unsafe fn window_printable_flags(
-    mut wl: *mut winlink,
-    mut escape: ::core::ffi::c_int,
-) -> CString {
+pub unsafe fn window_printable_flags(wl: &winlink, escape: core::ffi::c_int) -> CString {
     unsafe {
-        let mut s: *mut session = (*wl).session();
+        let session = wl.session().expect("a window link has a session");
+        let s = session.as_session();
         let mut flags: Vec<u8> = Vec::new();
-        if (*wl).flags & WINLINK_ACTIVITY != 0 {
+        if wl.flags & WINLINK_ACTIVITY != 0 {
             flags.push(b'#');
             if escape != 0 {
                 flags.push(b'#');
             }
         }
-        if (*wl).flags & WINLINK_BELL != 0 {
+        if wl.flags & WINLINK_BELL != 0 {
             flags.push(b'!');
         }
-        if (*wl).flags & WINLINK_SILENCE != 0 {
+        if wl.flags & WINLINK_SILENCE != 0 {
             flags.push(b'~');
         }
-        if wl == session_get_curw(s) {
+        if s.curw().is_some_and(|current| core::ptr::eq(wl, current)) {
             flags.push(b'*');
         }
-        if (*s).lastw.first() == Some(&(*wl).idx) {
+        if s.lastw.first() == Some(&wl.idx) {
             flags.push(b'-');
         }
-        if server_check_marked() != 0 && wl == marked_pane.winlink() {
+        if server_check_marked() != 0
+            && marked_pane
+                .winlink_ref()
+                .is_some_and(|marked| marked.get().is_some_and(|marked| core::ptr::eq(wl, marked)))
+        {
             flags.push(b'M');
         }
-        if (*(*wl).window()).flags & WINDOW_ZOOMED != 0 {
+        if wl
+            .window_handle()
+            .expect("a window link owns its window")
+            .as_window()
+            .flags
+            & WINDOW_ZOOMED
+            != 0
+        {
             flags.push(b'Z');
         }
         CString::new(flags).unwrap()
     }
 }
-pub unsafe fn window_pane_printable_flags(mut wp: *mut window_pane) -> CString {
+pub unsafe fn window_pane_printable_flags(pane: &RustWindowPaneWeak) -> Option<CString> {
     unsafe {
-        let mut w: *mut window = (*wp).window;
-        let mut flags: Vec<u8> = Vec::new();
-        if wp == window_get_active(w) {
+        let window = pane.window()?;
+        let w = window.as_window();
+        let wp = pane.get()?;
+        let matches = |id: Option<u_int>| {
+            id.and_then(|id| w.panes.iter().find(|pane| pane.id() == id))
+                .is_some_and(|candidate| candidate.downgrade().ptr_eq(pane))
+        };
+        let mut flags = Vec::new();
+        if matches(w.active_pane_id()) {
             flags.push(b'*');
         }
-        if wp == window_pane_stack_first(w, PaneStack::LastUsed) {
+        if matches(w.last_panes.first().map(|pane| pane.id())) {
             flags.push(b'-');
         }
-        if (*wp).flags & PANE_ZOOMED != 0 {
+        if *wp.flags() & PANE_ZOOMED != 0 {
             flags.push(b'Z');
         }
-        if window_pane_is_floating(wp) != 0 {
+        if window_pane_is_floating(&w, pane) != 0 {
             flags.push(b'F');
         }
-        CString::new(flags).unwrap()
+        Some(CString::new(flags).unwrap())
     }
 }
-pub unsafe fn window_pane_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *mut window_pane {
-    unsafe {
-        if *s as ::core::ffi::c_int != '%' as i32 {
-            return ::core::ptr::null_mut::<window_pane>();
+fn window_pane_id_from_str(s: &CStr) -> Option<u_int> {
+    if s.to_bytes().first() != Some(&b'%') {
+        return None;
+    }
+    let id = CStr::from_bytes_with_nul(&s.to_bytes_with_nul()[1..])
+        .expect("the tail of a C string ends at the same NUL");
+    unsafe { strtonum(id, 0, UINT_MAX as core::ffi::c_longlong) }
+        .ok()
+        .map(|id| id as u_int)
+}
+
+pub fn window_pane_find_by_id_str(s: &CStr) -> Option<RustWindowPaneWeak> {
+    window_pane_find_by_id(window_pane_id_from_str(s)?)
+}
+
+/// Observes the server's current panes in order, skipping panes destroyed during the walk.
+pub(crate) fn pane_walk() -> impl Iterator<Item = RustWindowPaneWeak> {
+    let panes = GLOBAL_PANE_INDEX.with(|index| {
+        index
+            .ids()
+            .into_iter()
+            .filter_map(|id| index.find(id))
+            .collect::<Vec<_>>()
+    });
+    panes.into_iter().filter(|pane| pane.is_alive())
+}
+
+/// Observes a registered pane directly, without traversing its owning window.
+pub fn window_pane_find_by_id(id: u_int) -> Option<RustWindowPaneWeak> {
+    GLOBAL_PANE_INDEX.with(|index| index.find(id))
+}
+
+/// Observes the supplied pane allocation without substituting another pane with the same ID.
+pub(crate) unsafe fn window_pane_ref_of(
+    pane: &impl crate::WindowPane,
+) -> Option<RustWindowPaneWeak> {
+    {
+        if let Some(reference) = window_pane_find_by_id(pane.pane_id())
+            && core::ptr::addr_eq(reference.as_ptr(), pane)
+        {
+            return Some(reference);
         }
-        let Ok(id) = strtonum(
-            s.offset(1 as ::core::ffi::c_int as isize),
-            0 as ::core::ffi::c_longlong,
-            UINT_MAX as ::core::ffi::c_longlong,
-        ) else {
-            return ::core::ptr::null_mut::<window_pane>();
-        };
-        window_pane_find_by_id(id as u_int)
-    }
-}
-/// Every pane the server holds, in id order. Each step reads the pane out of
-/// the tree again by id, so a pane destroyed while the walk runs is not
-/// walked into.
-pub(crate) fn pane_walk() -> impl Iterator<Item = *mut window_pane> {
-    let ids: Vec<u_int> = all_window_panes.map().keys().copied().collect();
-    ids.into_iter()
-        .map(window_pane_find_by_id)
-        .filter(|wp| !wp.is_null())
-}
-
-/// Makes `wp` reachable by its id, which is how every pane the server holds
-/// is reached.
-pub(crate) unsafe fn pane_registry_add(wp: *mut window_pane) {
-    unsafe { all_window_panes.map().insert((*wp).id, wp) };
-}
-
-/// Gives up every pane the server holds without destroying any of them, which
-/// is what a server starting over wants.
-pub(crate) fn pane_registry_clear() {
-    all_window_panes.map().clear();
-}
-
-pub fn window_pane_find_by_id(id: u_int) -> *mut window_pane {
-    all_window_panes
-        .map()
-        .get(&id)
-        .copied()
-        .unwrap_or(::core::ptr::null_mut::<window_pane>())
-}
-
-pub(crate) unsafe fn window_pane_set_window_ref(wp: *mut window_pane, w_ref: Option<&WindowRef>) {
-    unsafe {
-        (*wp).window = w_ref
-            .map(|reference| reference.as_ptr())
-            .unwrap_or(::core::ptr::null_mut::<window>());
+        let owner = pane.window_context()?;
+        owner
+            .as_window()
+            .panes
+            .iter()
+            .find(|candidate| core::ptr::addr_eq(candidate.as_ptr(), pane))
+            .map(|candidate| candidate.downgrade())
     }
 }
 
-pub(crate) unsafe fn window_pane_set_window(wp: *mut window_pane, w: *mut window) {
+pub(crate) unsafe fn window_pane_set_window_ref(
+    wp: &mut impl crate::WindowPane,
+    w_ref: Option<&WindowRef>,
+) {
+    wp.set_window_context(w_ref);
+}
+
+pub(crate) unsafe fn window_pane_set_window(wp: &mut impl crate::WindowPane, w: Option<&window>) {
     unsafe {
-        let w_ref = window_ref_from_ptr(w);
+        let w_ref = w.and_then(window_ref_of);
         window_pane_set_window_ref(wp, w_ref.as_ref());
     }
 }
 
 unsafe fn window_pane_create(
-    mut w: *mut window,
-    mut sx: u_int,
-    mut sy: u_int,
-    mut hlimit: u_int,
-) -> Box<window_pane> {
+    w: &mut window,
+    sx: u_int,
+    sy: u_int,
+    hlimit: u_int,
+) -> RustWindowPaneRef {
     unsafe {
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut host: [::core::ffi::c_char; 65] = [0; 65];
-        let mut wp_box = Box::new(window_pane {
-            id: 0,
-            active_point: 0,
-            window: ::core::ptr::null_mut(),
-            options: None,
-            layout_cell: ::core::ptr::null_mut(),
-            saved_layout_cell: ::core::ptr::null_mut(),
-            sx: 0,
-            sy: 0,
-            xoff: 0,
-            yoff: 0,
-            flags: 0,
-            sb_slider_y: 0,
-            sb_slider_h: 0,
-            argv: Vec::new(),
-            shell: None,
-            cwd: None,
-            pid: 0,
-            tty: [0; 32],
-            status: 0,
-            dead_time: timeval::default(),
-            fd: -1,
-            event: Stream::NONE,
-            offset: window_pane_offset::default(),
-            base_offset: 0,
-            resize_queue: window_pane_resizes::new(),
-            resize_timer: TimerHandle(0),
-            sync_timer: TimerHandle(0),
-            ictx: None,
-            cached_gc: grid_default_cell,
-            cached_active_gc: grid_default_cell,
-            palette: colour_palette {
-                fg: 8,
-                bg: 8,
-                palette: None,
-                default_palette: None,
-            },
-            last_theme: 0,
-            border_status_line: style_line_entry::default(),
-            pipe_fd: -1,
-            pipe_pid: 0,
-            pipe_event: Stream::NONE,
-            pipe_offset: window_pane_offset::default(),
-            shown: PaneScreen::Base,
-            base: screen::default(),
-            status_screen: screen::default(),
-            status_size: 0,
-            modes: window_modes::new(),
-            searchstr: None,
-            searchregex: 0,
-            border_gc_set: 0,
-            border_gc: grid_default_cell,
-            active_border_gc_set: 0,
-            active_border_gc: grid_default_cell,
-            control_bg: -1,
-            control_fg: -1,
-            scrollbar_style: style_default,
-            r: visible_ranges::default(),
+        let fresh2 = next_entity_id(&next_window_pane_id);
+        let mut host: [core::ffi::c_char; 65] = [0; 65];
+        let mut wp_box = Box::new(window_pane::new());
+        let wp = &raw mut *wp_box;
+        window_pane_set_window(&mut *wp, Some(w));
+        *(*wp).options_mut() = Some(RustOptionsEngine.create(Some((*w).options_ref())));
+        *(*wp).flags_mut() = PANE_STYLECHANGED;
+        (*wp).set_pane_id(fresh2);
+        *(*wp).fd_mut() = -(1 as core::ffi::c_int);
+        (*wp).set_size(PaneSize {
+            width: sx,
+            height: sy,
         });
-        wp = &mut *wp_box;
-        window_pane_set_window(wp, w);
-        (*wp).options = Some(options_create_boxed((*w).options_ptr()));
-        (*wp).flags = PANE_STYLECHANGED;
-        let fresh2 = next_id(&next_window_pane_id);
-        (*wp).id = fresh2;
-        pane_registry_add(wp);
-        (*wp).fd = -(1 as ::core::ffi::c_int);
-        (*wp).sx = sx;
-        (*wp).sy = sy;
-        (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
-        (*wp).control_bg = -(1 as ::core::ffi::c_int);
-        (*wp).control_fg = -(1 as ::core::ffi::c_int);
-        style_set_scrollbar_style_from_option(&mut (*wp).scrollbar_style, (*wp).options_ptr());
-        colour_palette_init(&mut (*wp).palette);
-        options_load_pane_colours((*wp).options_ptr(), Some(&mut (*wp).palette));
-        screen_init(&mut (*wp).base, sx, sy, hlimit);
-        (*wp).shown = PaneScreen::Base;
-        window_pane_default_cursor(wp);
-        screen_init(
-            &mut (*wp).status_screen,
-            1 as u_int,
-            1 as u_int,
-            0 as u_int,
-        );
-        style_ranges_init(&raw mut (*wp).border_status_line.ranges);
+        *(*wp).pipe_fd_mut() = -(1 as core::ffi::c_int);
+        let scrollbar_style = pane_scrollbar_style_from_option((*wp).options_ref());
+        (*wp).set_scrollbar_style(scrollbar_style);
+        RustColourEngine.init_palette((*wp).palette_mut());
+        ((*wp).options_ref()).load_pane_colours(Some((*wp).palette_mut()));
+        *(*wp).base_mut() = RustScreen::new_with_server_options(sx, sy, hlimit);
+        *(*wp).shown_mut() = PaneScreen::Base;
+        window_pane_default_cursor(&mut *wp);
+        *(*wp).status_screen_mut() =
+            RustScreen::new_with_server_options(1 as u_int, 1 as u_int, 0 as u_int);
         if gethostname(
-            &raw mut host as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 65]>() as size_t,
-        ) == 0 as ::core::ffi::c_int
+            &raw mut host as *mut core::ffi::c_char,
+            size_of::<[core::ffi::c_char; 65]>() as size_t,
+        ) == 0 as core::ffi::c_int
         {
-            screen_set_title(
-                &mut (*wp).base,
-                &raw mut host as *mut ::core::ffi::c_char,
-                0 as ::core::ffi::c_int,
-            );
+            (*wp)
+                .base_mut()
+                .set_title(CStr::from_ptr(host.as_ptr()), 0 as core::ffi::c_int);
         }
-        wp_box
+        RustWindowPaneRef::new(wp_box)
     }
 }
-/// Tears down a pane its window has already given up, and frees it.
-unsafe fn window_pane_destroy(mut pane: Box<window_pane>) {
+/// Tears down and frees the pane at the end of destruction. Observers do not
+/// postpone resource or allocation release.
+unsafe fn window_pane_destroy(
+    pane: RustWindowPaneRef,
+    options: Option<RustOptionsRef>,
+    window: Option<WindowWeak>,
+) {
     unsafe {
-        let wp: *mut window_pane = &raw mut *pane;
-        window_pane_reset_mode_all(wp);
-        (*wp).searchstr = None;
-        if (*wp).fd != -(1 as ::core::ffi::c_int) {
-            utempter_remove_record((*wp).fd);
-            kill(getpid(), SIGCHLD);
-            (*wp).event.free();
-            close((*wp).fd);
-        }
-        if let Some(ictx) = (*wp).ictx.take() {
-            input_free_box(ictx);
-        }
-        screen_free(&mut (*wp).status_screen);
-        screen_free(&mut (*wp).base);
-        (*wp).r.ranges.clear();
-        if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-            (*wp).pipe_event.free();
-            close((*wp).pipe_fd);
-        }
-        (*wp).resize_timer.disarm();
-        (*wp).sync_timer.disarm();
-        (*wp).resize_queue.clear();
-        all_window_panes.map().remove(&(*wp).id);
-        if let Some(oo) = (*wp).options.take() {
-            options_free(oo);
-        }
-        (*wp).cwd = None;
-        (*wp).shell = None;
-        colour_palette_free(Some(&mut (*wp).palette));
-        style_ranges_free(&mut (*wp).border_status_line.ranges);
-        (*wp).border_status_line.expanded = None;
-        drop(pane);
-    }
-}
-unsafe fn window_pane_read_callback(mut wp: *mut window_pane) {
-    unsafe {
-        let size = (*wp).event.input_len();
-        let mut new_data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-        let mut new_size: size_t = 0;
-        if (*wp).pipe_fd != -(1 as ::core::ffi::c_int) {
-            let taken = window_pane_get_new_data(wp, &(*wp).pipe_offset);
-            new_data = taken.0 as *mut ::core::ffi::c_char;
-            new_size = taken.1;
-            if new_size > 0 as size_t {
-                (*wp).pipe_event.write(new_data as *const u8, new_size);
-                window_pane_update_used_data(wp, &mut (*wp).pipe_offset, new_size);
+        let wp = &mut *pane.as_mut_ptr();
+        for entry in wp.modes_mut() {
+            if let WindowModeState::Copy(data) | WindowModeState::View(data) = &mut entry.state {
+                data.teardown_options = options.clone();
+                data.teardown_window = window.clone();
             }
         }
-        log_debug(c"%%%u has %zu bytes".as_ptr(), fmt_args![(*wp).id, size]);
-        for c in client_walk() {
-            if !(*c).session.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-                control_write_output(c, wp);
+        window_pane_reset_mode_all(&mut *wp);
+        PaneSearchState::clear(wp);
+        if *wp.fd() != -(1 as core::ffi::c_int) {
+            utempter_remove_record(*wp.fd());
+            kill(getpid(), SIGCHLD);
+            wp.event().free();
+            close(*wp.fd());
+            *wp.fd_mut() = -1;
+        }
+        if let Some(ictx) = wp.ictx_mut().take() {
+            ictx.close();
+        }
+        wp.r_mut().ranges.clear();
+        if *wp.pipe_fd() != -(1 as core::ffi::c_int) {
+            wp.pipe_event().free();
+            close(*wp.pipe_fd());
+            *wp.pipe_fd_mut() = -1;
+        }
+        wp.resize_timer_mut().disarm();
+        wp.sync_timer_mut().disarm();
+        PaneResizeQueue::clear(wp);
+        pane.unregister();
+        if let Some(oo) = wp.options_mut().take() {
+            RustOptionsEngine.destroy(oo);
+        }
+        wp.clear_pane_command();
+        RustColourEngine.free_palette(Some(wp.palette_mut()));
+        style_ranges_free(&mut wp.border_status_line_mut().ranges);
+        wp.border_status_line_mut().expanded = None;
+        window_pane_set_window_ref(wp, None);
+        drop(pane.into_pane());
+    }
+}
+fn window_pane_read_callback(wp: &mut impl crate::WindowPane) {
+    unsafe {
+        let size = wp.event().input_len();
+        let new_size: size_t;
+        if *wp.pipe_fd() != -(1 as core::ffi::c_int) {
+            let mut new_data = window_pane_get_new_data(wp, wp.pipe_offset());
+            new_size = new_data.len();
+            if new_size > 0 as size_t {
+                wp.pipe_event().write_buffer(&mut new_data);
+                let mut pipe_offset = *wp.pipe_offset();
+                window_pane_update_used_data(wp, &mut pipe_offset, new_size);
+                *wp.pipe_offset_mut() = pipe_offset;
+            }
+        }
+        log_debug(c"%%%u has %zu bytes", fmt_args![wp.pane_id(), size]);
+        for mut c in client_walk() {
+            if !c.attached_session().is_none() && c.flags() & CLIENT_CONTROL as uint64_t != 0 {
+                control_write_output(c.as_client_mut(), wp);
             }
         }
         input_parse_pane(wp);
-        (*wp).event.disable(Interest::Read);
+        wp.event().disable(Interest::Read);
     }
 }
-unsafe fn window_pane_error_callback(mut wp: *mut window_pane) {
+fn window_pane_error_callback(wp: &mut impl crate::WindowPane) {
     unsafe {
-        log_debug(c"%%%u error".as_ptr(), fmt_args![(*wp).id]);
-        (*wp).flags |= PANE_EXITED;
+        log_debug(c"%%%u error", fmt_args![wp.pane_id()]);
+        *wp.flags_mut() |= PANE_EXITED;
         if window_pane_destroy_ready(wp) != 0 {
-            server_destroy_pane(wp, 1 as ::core::ffi::c_int);
+            server_destroy_pane(
+                &crate::window::window_pane_ref_of(wp).expect("the pane is owned"),
+                1 as core::ffi::c_int,
+            );
         }
     }
 }
-/// A stream callback that runs `body` on the pane it was made for, found
-/// again by id so that a pane destroyed first is not reached at all.
+/// A stream callback that weakly observes its pane and skips removed or
+/// temporarily detached panes without retaining their allocation.
 pub(crate) fn on_pane(
     id: u_int,
-    body: unsafe fn(*mut window_pane),
-) -> ::std::rc::Rc<dyn Fn(Stream)> {
-    ::std::rc::Rc::new(move |_stream| {
-        let wp = window_pane_find_by_id(id);
-        if !wp.is_null() {
-            unsafe { body(wp) };
+    body: impl Fn(&mut crate::types::window_pane) + 'static,
+) -> std::rc::Rc<dyn Fn(Stream)> {
+    let observed = window_pane_find_by_id(id);
+    std::rc::Rc::new(move |_stream| unsafe {
+        if let Some(mut pane) = observed.clone()
+            && pane.window().is_some()
+            && let Some(wp) = pane.get_mut()
+        {
+            body(wp);
         }
     })
 }
@@ -3708,773 +1812,749 @@ pub(crate) fn on_pane(
 /// The same, for the callback a failed stream makes.
 pub(crate) fn on_pane_error(
     id: u_int,
-    body: unsafe fn(*mut window_pane),
-) -> ::std::rc::Rc<dyn Fn(Stream, ::core::ffi::c_short)> {
-    ::std::rc::Rc::new(move |_stream, _what| {
-        let wp = window_pane_find_by_id(id);
-        if !wp.is_null() {
-            unsafe { body(wp) };
+    body: impl Fn(&mut crate::types::window_pane) + 'static,
+) -> std::rc::Rc<dyn Fn(Stream, core::ffi::c_short)> {
+    let observed = window_pane_find_by_id(id);
+    std::rc::Rc::new(move |_stream, _what| unsafe {
+        if let Some(mut pane) = observed.clone()
+            && pane.window().is_some()
+            && let Some(wp) = pane.get_mut()
+        {
+            body(wp);
         }
     })
 }
 
-pub unsafe fn window_pane_set_event(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_set_event(wp: &mut impl crate::WindowPane) {
     unsafe {
-        setblocking((*wp).fd, 0 as ::core::ffi::c_int);
-        let id = (*wp).id;
-        (*wp).event = Stream::new(
-            (*wp).fd,
-            Some(on_pane(id, |wp| window_pane_read_callback(wp))),
+        setblocking(*wp.fd(), 0 as core::ffi::c_int);
+        let id = wp.pane_id();
+        *wp.event_mut() = Stream::new(
+            *wp.fd(),
+            Some(on_pane(id, window_pane_read_callback)),
             None,
-            Some(on_pane_error(id, |wp| window_pane_error_callback(wp))),
+            Some(on_pane_error(id, window_pane_error_callback)),
         );
-        if (*wp).event.is_none() {
-            fatalx(c"out of memory".as_ptr(), fmt_args![]);
+        if wp.event().is_none() {
+            fatalx(c"out of memory", fmt_args![]);
         }
-        (*wp).ictx = Some(input_init(InputOwner::Pane((*wp).id), (*wp).event));
-        (*wp).event.enable(Interest::ReadWrite);
+        *wp.ictx_mut() = Some(InputCtxRef::create(
+            InputOwner::Pane(wp.pane_id()),
+            *wp.event(),
+        ));
+        wp.event().enable(Interest::ReadWrite);
     }
 }
-pub unsafe fn window_pane_resize(mut wp: *mut window_pane, mut sx: u_int, mut sy: u_int) {
+unsafe fn screen_write_sync_callback(wp: &mut impl crate::WindowPane) {
     unsafe {
-        let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-        if sx == (*wp).sx && sy == (*wp).sy {
+        log_debug(
+            c"%s: %%%u sync timer expired",
+            fmt_args![c"screen_write_sync_callback".as_ptr(), wp.pane_id()],
+        );
+        wp.sync_timer_mut().disarm();
+        if wp.base().mode() & MODE_SYNC != 0 {
+            let pane_screen_mode = wp.base().mode() & !MODE_SYNC;
+            wp.base_mut().set_mode(pane_screen_mode);
+            *wp.flags_mut() |= PANE_REDRAW;
+        }
+    }
+}
+
+pub(crate) unsafe fn screen_write_start_sync(wp: Option<&mut impl crate::WindowPane>) {
+    unsafe {
+        let tv = timeval::from_secs(1 as __time_t);
+        let Some(wp) = wp else {
+            return;
+        };
+        let pane_screen_mode = wp.base().mode() | MODE_SYNC;
+        wp.base_mut().set_mode(pane_screen_mode);
+        if !wp.sync_timer().is_set() {
+            let pane = window_pane_ref_of(wp).expect("a syncing pane is owned");
+            wp.sync_timer_mut().set_callback(move || {
+                if let Some(wp) = pane.clone().get_mut() {
+                    screen_write_sync_callback(wp);
+                }
+            });
+        }
+        wp.sync_timer_mut().arm(tv);
+        log_debug(
+            c"%s: %%%u started sync mode",
+            fmt_args![c"screen_write_start_sync".as_ptr(), wp.pane_id()],
+        );
+    }
+}
+pub(crate) unsafe fn screen_write_stop_sync(wp: Option<&mut impl crate::WindowPane>) {
+    unsafe {
+        let Some(wp) = wp else {
+            return;
+        };
+        wp.sync_timer_mut().disarm();
+        let pane_screen_mode = wp.base().mode() & !MODE_SYNC;
+        wp.base_mut().set_mode(pane_screen_mode);
+        log_debug(
+            c"%s: %%%u stopped sync mode",
+            fmt_args![c"screen_write_stop_sync".as_ptr(), wp.pane_id()],
+        );
+    }
+}
+pub unsafe fn window_pane_resize(wp: &mut impl crate::WindowPane, sx: u_int, sy: u_int) {
+    unsafe {
+        let geometry = wp.geometry();
+        if sx == geometry.width && sy == geometry.height {
             return;
         }
-        screen_write_stop_sync(wp);
-        (*wp).resize_queue.push_back(window_pane_resize_t {
-            sx,
-            sy,
-            osx: (*wp).sx,
-            osy: (*wp).sy,
+        screen_write_stop_sync(Some(wp));
+        wp.record(
+            PaneSize {
+                width: geometry.width,
+                height: geometry.height,
+            },
+            PaneSize {
+                width: sx,
+                height: sy,
+            },
+        );
+        wp.set_size(PaneSize {
+            width: sx,
+            height: sy,
         });
-        (*wp).sx = sx;
-        (*wp).sy = sy;
         log_debug(
-            c"%s: %%%u resize %ux%u".as_ptr(),
-            fmt_args![c"window_pane_resize".as_ptr(), (*wp).id, sx, sy],
+            c"%s: %%%u resize %ux%u",
+            fmt_args![c"window_pane_resize".as_ptr(), wp.pane_id(), sx, sy],
         );
+        let base_has_no_saved_grid = !wp.base().is_alternate();
         screen_resize(
-            &mut (*wp).base,
+            wp.base_mut(),
             sx,
             sy,
-            ((*wp).base.saved_grid.is_none()) as ::core::ffi::c_int,
+            base_has_no_saved_grid as core::ffi::c_int,
         );
-        wme = window_pane_current_mode(wp);
-        if !wme.is_null() {
-            (*wme).mode().resize(wme, sx, sy);
+        if let Some(wme) = window_pane_current_mode_mut(wp) {
+            wme.mode().resize(wme, sx, sy);
         }
     }
 }
 pub unsafe fn window_pane_set_mode(
-    mut wp: *mut window_pane,
-    mut swp: *mut window_pane,
-    mut mode: WindowMode,
-    mut fs: *mut cmd_find_state,
+    wp: &mut impl crate::WindowPane,
+    source_pane: Option<RustWindowPaneWeak>,
+    mode: WindowMode,
+    fs: Option<&cmd_find_state>,
     args: Option<&args>,
-) -> ::core::ffi::c_int {
+) -> core::ffi::c_int {
     unsafe {
-        let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-        let mut w: *mut window = (*wp).window;
-        if !(*wp).modes.is_empty() && (*window_pane_current_mode(wp)).mode() == mode {
-            return 1 as ::core::ffi::c_int;
+        if wp
+            .modes()
+            .first()
+            .is_some_and(|current| current.mode() == mode)
+        {
+            return 1 as core::ffi::c_int;
         }
-        let already = (*wp).modes.iter().position(|open| open.mode() == mode);
+        let window = wp
+            .window_context()
+            .expect("a pane mode has a window context");
+        let already = wp.modes().iter().position(|open| open.mode() == mode);
         if let Some(at) = already {
-            let open = (*wp).modes.remove(at);
-            (*wp).modes.insert(0, open);
-            wme = window_pane_current_mode(wp);
+            let open = wp.modes_mut().remove(at);
+            wp.modes_mut().insert(0, open);
         } else {
-            (*wp).modes.insert(
-                0,
-                Box::new(window_mode_entry {
-                    wp,
-                    swp,
-                    state: WindowModeState::None,
-                    screen: ::core::ptr::null_mut(),
-                    prefix: 1,
-                    mode_tree_ref: None,
-                }),
-            );
-            wme = window_pane_current_mode(wp);
-            (*wme).screen = mode.init(&mut *wme, fs, args);
+            let pane = window_pane_ref_of(wp).expect("a mode opens on an owned pane");
+            let entry = Box::new(window_mode_entry {
+                pane_weak: Some(pane.clone()),
+                source_pane,
+                state: WindowModeState::None,
+                screen_ready: false,
+                prefix: 1,
+                mode_tree_ref: None,
+            });
+            wp.modes_mut().insert(0, entry);
+            let wme = window_pane_current_mode_mut(wp).expect("mode was just inserted");
+            mode.init(wme, pane, fs, args);
         }
-        (*wp).shown = PaneScreen::Mode;
-        (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
-        layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-        server_redraw_window_borders((*wp).window);
-        server_status_window((*wp).window);
-        notify_pane(c"pane-mode-changed".as_ptr(), wp);
-        0 as ::core::ffi::c_int
+        *wp.shown_mut() = PaneScreen::Mode;
+        *wp.flags_mut() |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
+        window.fix_layout_panes(None);
+        window.redraw_borders();
+        window.redraw_status();
+        notify_pane(c"pane-mode-changed", Some(wp));
+        0 as core::ffi::c_int
     }
 }
-pub unsafe fn window_pane_reset_mode(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_reset_mode(wp: &mut impl crate::WindowPane) {
     unsafe {
-        let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-        let mut next: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-        let mut w: *mut window = (*wp).window;
-        if (*wp).modes.is_empty() {
+        if wp.modes().is_empty() {
             return;
         }
-        let open = (*wp).modes.remove(0);
-        wme = &raw const *open as *mut window_mode_entry;
-        (*wme).mode().free(wme);
+        let window = wp.window_context();
+        let mut open = wp.modes_mut().remove(0);
+        open.mode().free(&mut open);
         drop(open);
-        next = window_pane_current_mode(wp);
-        if next.is_null() {
-            (*wp).flags &= !PANE_UNSEENCHANGES;
+        let geometry = wp.geometry();
+        *wp.shown_mut() = if wp.modes().is_empty() {
+            PaneScreen::Base
+        } else {
+            PaneScreen::Mode
+        };
+        if let Some(next) = window_pane_current_mode_mut(wp) {
             log_debug(
-                c"%s: no next mode".as_ptr(),
+                c"%s: next mode is %s",
+                fmt_args![c"window_pane_reset_mode".as_ptr(), next.mode().name()],
+            );
+            next.mode().resize(next, geometry.width, geometry.height);
+        } else {
+            *wp.flags_mut() &= !PANE_UNSEENCHANGES;
+            log_debug(
+                c"%s: no next mode",
                 fmt_args![c"window_pane_reset_mode".as_ptr()],
             );
-            (*wp).shown = PaneScreen::Base;
-        } else {
-            log_debug(
-                c"%s: next mode is %s".as_ptr(),
-                fmt_args![c"window_pane_reset_mode".as_ptr(), (*next).mode().name()],
-            );
-            (*wp).shown = PaneScreen::Mode;
-            (*next).mode().resize(next, (*wp).sx, (*wp).sy);
         }
-        (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
-        layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-        server_redraw_window_borders((*wp).window);
-        server_status_window((*wp).window);
-        notify_pane(c"pane-mode-changed".as_ptr(), wp);
+        *wp.flags_mut() |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
+        if let Some(window) = window {
+            window.fix_layout_panes(None);
+            window.redraw_borders();
+            window.redraw_status();
+        }
+        notify_pane(c"pane-mode-changed", Some(wp));
     }
 }
-pub unsafe fn window_pane_reset_mode_all(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_reset_mode_all(wp: &mut impl crate::WindowPane) {
     unsafe {
-        while !(*wp).modes.is_empty() {
-            window_pane_reset_mode(wp);
+        while !wp.modes().is_empty() {
+            window_pane_reset_mode(&mut *wp);
         }
     }
 }
-unsafe fn window_pane_copy_paste(
-    mut wp: *mut window_pane,
-    mut buf: *mut ::core::ffi::c_char,
-    mut len: size_t,
-) {
+unsafe fn window_pane_copy_paste(wp: &impl crate::WindowPane, buf: ByteBuffer) {
     unsafe {
-        let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let w: *mut window = (*wp).window;
-        loop_0 = window_panes_first(w);
-        while !loop_0.is_null() {
-            if loop_0 != wp
-                && (*loop_0).modes.is_empty()
-                && (*loop_0).fd != -(1 as ::core::ffi::c_int)
-                && !(*loop_0).flags & PANE_INPUTOFF != 0
-                && window_pane_visible(loop_0) != 0
-                && options_get_number((*loop_0).options_ptr(), c"synchronize-panes".as_ptr()) != 0
-            {
-                log_debug(
-                    c"%s: %.*s".as_ptr(),
-                    fmt_args![
-                        c"window_pane_copy_paste".as_ptr(),
-                        len as ::core::ffi::c_int,
-                        buf
-                    ],
-                );
-                (*loop_0).event.write(buf as *const u8, len);
+        let Some(window) = wp.window_context() else {
+            return;
+        };
+        let panes = window.panes();
+        for pane in panes {
+            if pane.id() == wp.pane_id() {
+                continue;
             }
-            loop_0 = window_panes_next(w, loop_0);
-        }
-    }
-}
-unsafe fn window_pane_copy_key(mut wp: *mut window_pane, mut key: key_code) {
-    unsafe {
-        let mut loop_0: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let w: *mut window = (*wp).window;
-        loop_0 = window_panes_first(w);
-        while !loop_0.is_null() {
-            if loop_0 != wp
-                && (*loop_0).modes.is_empty()
-                && (*loop_0).fd != -(1 as ::core::ffi::c_int)
-                && !(*loop_0).flags & PANE_INPUTOFF != 0
-                && window_pane_visible(loop_0) != 0
-                && options_get_number((*loop_0).options_ptr(), c"synchronize-panes".as_ptr()) != 0
+            let Some(target) = pane.get() else { continue };
+            if target.modes().is_empty()
+                && *target.fd() != -1
+                && *target.flags() & PANE_INPUTOFF == 0
+                && window_pane_visible(&window.as_window(), target) != 0
+                && target.options_ref().number(c"synchronize-panes") != 0
             {
-                input_key_pane(loop_0, key, None);
+                if log_get_level() != 0 {
+                    let mut b = buf.clone();
+                    let data = b.as_slice();
+                    log_debug(
+                        c"%s: %.*s",
+                        fmt_args![
+                            c"window_pane_copy_paste",
+                            data.len() as core::ffi::c_int,
+                            data
+                        ],
+                    );
+                }
+                target.event().write_buffer(&mut buf.clone());
             }
-            loop_0 = window_panes_next(w, loop_0);
         }
     }
 }
-pub unsafe fn window_pane_paste(
-    mut wp: *mut window_pane,
-    mut key: key_code,
-    mut buf: *mut ::core::ffi::c_char,
-    mut len: size_t,
-) {
+unsafe fn window_pane_copy_key(wp: &impl crate::WindowPane, key: key_code) {
     unsafe {
-        if !(*wp).modes.is_empty() {
+        let Some(window) = wp.window_context() else {
+            return;
+        };
+        let panes = window.panes();
+        for pane in panes {
+            if pane.id() == wp.pane_id() {
+                continue;
+            }
+            let Some(target) = pane.get() else { continue };
+            if target.modes().is_empty()
+                && *target.fd() != -1
+                && *target.flags() & PANE_INPUTOFF == 0
+                && window_pane_visible(&window.as_window(), target) != 0
+                && target.options_ref().number(c"synchronize-panes") != 0
+            {
+                input_key_pane(target, key, None);
+            }
+        }
+    }
+}
+pub unsafe fn window_pane_paste(wp: &impl crate::WindowPane, key: key_code, mut buf: ByteBuffer) {
+    unsafe {
+        if !wp.modes().is_empty() {
             return;
         }
-        if (*wp).fd == -(1 as ::core::ffi::c_int) || (*wp).flags & PANE_INPUTOFF != 0 {
+        if *wp.fd() == -(1 as core::ffi::c_int) || *wp.flags() & PANE_INPUTOFF != 0 {
             return;
         }
-        if key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-            == (KEYC_TYPE_FUNCTION as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                << 32 as ::core::ffi::c_int
-            && (key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
-                == KEYC_PASTE_START as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-                || key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
-                    == KEYC_PASTE_END as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong)
-            && !(*(*wp).screen()).mode & MODE_BRACKETPASTE != 0
+        if key as core::ffi::c_ulonglong & KEYC_MASK_TYPE
+            == (KEYC_TYPE_FUNCTION as core::ffi::c_int as core::ffi::c_ulonglong)
+                << 32 as core::ffi::c_int
+            && (key as core::ffi::c_ulonglong & KEYC_MASK_KEY
+                == KEYC_PASTE_START as core::ffi::c_ulong as core::ffi::c_ulonglong
+                || key as core::ffi::c_ulonglong & KEYC_MASK_KEY
+                    == KEYC_PASTE_END as core::ffi::c_ulong as core::ffi::c_ulonglong)
+            && !wp.screen_ref().mode() & MODE_BRACKETPASTE != 0
         {
             return;
         }
-        log_debug(
-            c"%s: %.*s".as_ptr(),
-            fmt_args![
-                c"window_pane_paste".as_ptr(),
-                len as ::core::ffi::c_int,
-                buf
-            ],
-        );
-        (*wp).event.write(buf as *const u8, len);
-        if options_get_number((*wp).options_ptr(), c"synchronize-panes".as_ptr()) != 0 {
-            window_pane_copy_paste(wp, buf, len);
+        if log_get_level() != 0 {
+            let mut b = buf.clone();
+            let data = b.as_slice();
+            log_debug(
+                c"%s: %.*s",
+                fmt_args![c"window_pane_paste", data.len() as core::ffi::c_int, data],
+            );
         }
+        if (wp.options_ref()).number(c"synchronize-panes") != 0 {
+            window_pane_copy_paste(wp, buf.clone());
+        }
+        wp.event().write_buffer(&mut buf);
     }
 }
 pub unsafe fn window_pane_key(
-    mut wp: *mut window_pane,
-    mut c: *mut client,
-    mut s: *mut session,
-    mut wl: *mut winlink,
+    pane: RustWindowPaneWeak,
+    c: Option<&mut client>,
     mut key: key_code,
-    mut m: *mut mouse_event,
-) -> ::core::ffi::c_int {
+    m: Option<&mouse_event>,
+) -> core::ffi::c_int {
     unsafe {
-        let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-        if (key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
-            == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-            || key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                    << 32 as ::core::ffi::c_int
-                && key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                    <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                        << 32 as ::core::ffi::c_int)
-            && m.is_null()
+        if (key as core::ffi::c_ulonglong & KEYC_MASK_KEY
+            == KEYC_MOUSE as core::ffi::c_ulong as core::ffi::c_ulonglong
+            || key as core::ffi::c_ulonglong & KEYC_MASK_TYPE
+                >= (KEYC_TYPE_MOUSEMOVE as core::ffi::c_int as core::ffi::c_ulonglong)
+                    << 32 as core::ffi::c_int
+                && key as core::ffi::c_ulonglong & KEYC_MASK_TYPE
+                    <= (KEYC_TYPE_TRIPLECLICK as core::ffi::c_int as core::ffi::c_ulonglong)
+                        << 32 as core::ffi::c_int)
+            && m.is_none()
         {
-            return -(1 as ::core::ffi::c_int);
+            return -(1 as core::ffi::c_int);
         }
-        wme = window_pane_current_mode(wp);
-        if !wme.is_null() {
-            if (*wme).mode().has_key() && !c.is_null() {
+        let target = {
+            let Some(pane) = pane.get() else {
+                return -1;
+            };
+            window_pane_current_mode(pane).map(window_mode_entry::key_target)
+        };
+        if let Some(target) = target {
+            if let Some(target) = target
+                && let Some(c) = c
+            {
                 key &= !KEYC_MASK_FLAGS;
-                (*wme).mode().key(wme, c, s, wl, key, m);
+                target.dispatch(c, key, m);
             }
-            return 0 as ::core::ffi::c_int;
+            return 0 as core::ffi::c_int;
         }
-        if (*wp).fd == -(1 as ::core::ffi::c_int) || (*wp).flags & PANE_INPUTOFF != 0 {
-            return 0 as ::core::ffi::c_int;
+        let Some(wp) = pane.get() else {
+            return -1;
+        };
+        if *wp.fd() == -(1 as core::ffi::c_int) || *wp.flags() & PANE_INPUTOFF != 0 {
+            return 0 as core::ffi::c_int;
         }
-        if input_key_pane(wp, key, m.as_ref()) != 0 as ::core::ffi::c_int {
-            return -(1 as ::core::ffi::c_int);
+        if input_key_pane(wp, key, m) != 0 as core::ffi::c_int {
+            return -(1 as core::ffi::c_int);
         }
-        if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
-            == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-            || key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                    << 32 as ::core::ffi::c_int
-                && key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                    <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                        << 32 as ::core::ffi::c_int
+        if key as core::ffi::c_ulonglong & KEYC_MASK_KEY
+            == KEYC_MOUSE as core::ffi::c_ulong as core::ffi::c_ulonglong
+            || key as core::ffi::c_ulonglong & KEYC_MASK_TYPE
+                >= (KEYC_TYPE_MOUSEMOVE as core::ffi::c_int as core::ffi::c_ulonglong)
+                    << 32 as core::ffi::c_int
+                && key as core::ffi::c_ulonglong & KEYC_MASK_TYPE
+                    <= (KEYC_TYPE_TRIPLECLICK as core::ffi::c_int as core::ffi::c_ulonglong)
+                        << 32 as core::ffi::c_int
         {
-            return 0 as ::core::ffi::c_int;
+            return 0 as core::ffi::c_int;
         }
-        if options_get_number((*wp).options_ptr(), c"synchronize-panes".as_ptr()) != 0 {
+        if (wp.options_ref()).number(c"synchronize-panes") != 0 {
             window_pane_copy_key(wp, key);
         }
-        0 as ::core::ffi::c_int
+        0 as core::ffi::c_int
     }
 }
-pub unsafe fn window_pane_visible(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+pub unsafe fn window_pane_visible(w: &window, wp: &impl crate::WindowPane) -> core::ffi::c_int {
     unsafe {
-        if !(*(*wp).window).flags & WINDOW_ZOOMED != 0 {
-            return 1 as ::core::ffi::c_int;
+        if w.flags & WINDOW_ZOOMED == 0 {
+            return 1;
         }
-        (wp == window_get_active((*wp).window)) as ::core::ffi::c_int
+        w.active_pane_id()
+            .and_then(|id| w.panes.iter().find(|pane| pane.pane_id() == id))
+            .is_some_and(|active| {
+                active
+                    .get()
+                    .is_some_and(|active| core::ptr::addr_eq(active, wp))
+            }) as core::ffi::c_int
     }
 }
-pub unsafe fn window_pane_exited(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    unsafe {
-        ((*wp).fd == -(1 as ::core::ffi::c_int) || (*wp).flags & PANE_EXITED != 0)
-            as ::core::ffi::c_int
-    }
+
+pub unsafe fn window_pane_exited(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+    (*wp.fd() == -(1 as core::ffi::c_int) || *wp.flags() & PANE_EXITED != 0) as core::ffi::c_int
 }
 pub unsafe fn window_pane_search(
-    mut wp: *mut window_pane,
-    mut term: *const ::core::ffi::c_char,
-    mut regex: ::core::ffi::c_int,
-    mut ignore: ::core::ffi::c_int,
+    wp: &impl crate::WindowPane,
+    term: &CStr,
+    regex: core::ffi::c_int,
+    ignore: core::ffi::c_int,
 ) -> u_int {
     unsafe {
-        let mut s: *mut screen = &raw mut (*wp).base;
-        let mut r: regex_t = regex_t::default();
-        let mut new: Option<CString> = None;
-        let mut i: u_int = 0;
-        let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        let mut found: ::core::ffi::c_int = 0;
-        if regex == 0 {
-            if ignore != 0 {
-                flags |= FNM_CASEFOLD;
-            }
-            let pattern = xasprintf(c"*%s*".as_ptr(), fmt_args![term]);
-            new = Some(pattern);
+        let grid = RustScreen::grid(wp.base());
+        let compiled = if regex != 0 {
+            let flags = REG_EXTENDED | if ignore != 0 { REG_ICASE } else { 0 };
+            let Some(compiled) = crate::CompiledRegex::compile(term, flags) else {
+                return 0;
+            };
+            Some(compiled)
         } else {
-            if ignore != 0 {
-                flags |= REG_ICASE;
-            }
-            if regcomp(&raw mut r, term, flags | REG_EXTENDED) != 0 as ::core::ffi::c_int {
-                return 0 as u_int;
-            }
-        }
-        i = 0 as u_int;
-        while i < (*screen_grid_ptr(&mut *s)).sy {
-            let mut bytes =
-                grid_view_string_cells(screen_grid(&*s), 0 as u_int, i, (*screen_grid_ptr(&mut *s)).sx)
-                    .into_bytes();
-            while let Some(&last) = bytes.last() {
-                if *(*__ctype_b_loc()).offset(last as ::core::ffi::c_int as isize)
-                    as ::core::ffi::c_int
-                    & _ISspace as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-                    == 0
-                {
-                    break;
-                }
+            None
+        };
+        let glob = (regex == 0).then(|| xasprintf(c"*%s*", fmt_args![term]));
+        let flags = if ignore != 0 { FNM_CASEFOLD } else { 0 };
+        for i in 0..grid.sy {
+            let mut bytes = grid_view_string_cells(grid, 0, i, grid.sx).into_bytes();
+            while bytes
+                .last()
+                .is_some_and(|&last| libc::isspace(last.into()) != 0)
+            {
                 bytes.pop();
             }
             let line = CString::new(bytes).expect("grid text cannot contain NUL");
-            log_debug(
-                c"%s: %s".as_ptr(),
-                fmt_args![c"window_pane_search".as_ptr(), line.as_ptr()],
-            );
-            if regex == 0 {
-                found = (fnmatch(cstr_ptr(&new), line.as_ptr(), flags) == 0 as ::core::ffi::c_int)
-                    as ::core::ffi::c_int;
+            log_debug(c"%s: %s", fmt_args![c"window_pane_search", line.as_c_str()]);
+            let found = if let Some(compiled) = &compiled {
+                compiled.captures::<0>(&line, 0, 0).is_some()
             } else {
-                found = (regexec(
-                    &raw mut r,
+                fnmatch(
+                    glob.as_ref().expect("a literal search pattern").as_ptr(),
                     line.as_ptr(),
-                    0 as size_t,
-                    ::core::ptr::null_mut::<regmatch_t>(),
-                    0 as ::core::ffi::c_int,
-                ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
+                    flags,
+                ) == 0
+            };
+            if found {
+                return i.wrapping_add(1);
             }
-            if found != 0 {
-                break;
-            }
-            i = i.wrapping_add(1);
         }
-        if regex != 0 {
-            regfree(&raw mut r);
-        }
-        if i == (*screen_grid_ptr(&mut *s)).sy {
-            return 0 as u_int;
-        }
-        i.wrapping_add(1 as u_int)
+        0
     }
 }
-unsafe fn window_pane_choose_best(list: &[*mut window_pane]) -> *mut window_pane {
+unsafe fn window_pane_choose_best(list: &[&RustWindowPaneRef]) -> Option<RustWindowPaneWeak> {
     unsafe {
-        let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut best: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut i: usize = 0;
-        if list.is_empty() {
-            return ::core::ptr::null_mut::<window_pane>();
-        }
-        best = list[0];
-        i = 1;
-        while i < list.len() {
-            next = list[i];
-            if (*next).active_point > (*best).active_point {
-                best = next;
-            }
-            i = i.wrapping_add(1);
-        }
-        best
+        list.iter()
+            .copied()
+            .reduce(|best, next| {
+                if next.as_pane().activity_point() > best.as_pane().activity_point() {
+                    next
+                } else {
+                    best
+                }
+            })
+            .map(RustWindowPaneRef::downgrade)
     }
 }
 /// Where a pane sits and how big it is with its scrollbar counted in, as
 /// `(xoff, yoff, sx, sy)`.
 unsafe fn window_pane_full_size_offset(
-    mut wp: *mut window_pane,
-) -> (::core::ffi::c_int, ::core::ffi::c_int, u_int, u_int) {
-    unsafe {
-        let mut w: *mut window = (*wp).window;
-        let mut sb_w: u_int = 0;
-        if window_pane_show_scrollbar(wp) != 0 {
-            sb_w = ((*wp).scrollbar_style.width + (*wp).scrollbar_style.pad) as u_int;
+    w: &window,
+    wp: &impl crate::WindowPane,
+) -> (core::ffi::c_int, core::ffi::c_int, u_int, u_int) {
+    {
+        let sb_w: u_int = if window_pane_show_scrollbar(wp, w.scrollbar_settings().mode) != 0 {
+            (wp.scrollbar_style().width + wp.scrollbar_style().padding) as u_int
         } else {
-            sb_w = 0 as u_int;
-        }
-        let xoff = if (*w).sb_pos == PANE_SCROLLBARS_LEFT {
-            ((*wp).xoff as u_int).wrapping_sub(sb_w) as ::core::ffi::c_int
-        } else {
-            (*wp).xoff
+            0 as u_int
         };
-        (xoff, (*wp).yoff, (*wp).sx.wrapping_add(sb_w), (*wp).sy)
+        let xoff = if w.scrollbar_settings().position == PANE_SCROLLBARS_LEFT {
+            (wp.geometry().x as u_int).wrapping_sub(sb_w) as core::ffi::c_int
+        } else {
+            wp.geometry().x
+        };
+        (
+            xoff,
+            wp.geometry().y,
+            wp.geometry().width.wrapping_add(sb_w),
+            wp.geometry().height,
+        )
     }
 }
-pub unsafe fn window_pane_find_up(mut wp: *mut window_pane) -> *mut window_pane {
+pub unsafe fn window_pane_find_up(
+    wp: Option<&impl crate::WindowPane>,
+) -> Option<RustWindowPaneWeak> {
     unsafe {
-        let mut w: *mut window = ::core::ptr::null_mut::<window>();
-        let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut best: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut list: Vec<*mut window_pane> = Vec::new();
-        let mut edge: ::core::ffi::c_int = 0;
-        let mut left: ::core::ffi::c_int = 0;
-        let mut right: ::core::ffi::c_int = 0;
-        let mut end: ::core::ffi::c_int = 0;
-        let mut status: ::core::ffi::c_int = 0;
-        let mut found: ::core::ffi::c_int = 0;
-        let mut xoff: ::core::ffi::c_int = 0;
-        let mut yoff: ::core::ffi::c_int = 0;
-        let mut sx: u_int = 0;
-        let mut sy: u_int = 0;
-        if wp.is_null() {
-            return ::core::ptr::null_mut::<window_pane>();
-        }
-        w = (*wp).window;
-        status = options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr())
-            as ::core::ffi::c_int;
-        (xoff, yoff, sx, sy) = window_pane_full_size_offset(wp);
+        let mut list: Vec<&RustWindowPaneRef> = Vec::new();
+        let mut edge: core::ffi::c_int;
+
+        let mut end: core::ffi::c_int;
+
+        let mut found: core::ffi::c_int;
+        let mut xoff: core::ffi::c_int;
+        let mut yoff: core::ffi::c_int;
+        let mut sx: u_int;
+        let mut sy: u_int;
+        let wp = wp?;
+        let window = wp.window_context()?;
+        let w = window.as_window();
+        let status: core::ffi::c_int =
+            (w.options_ref()).number(c"pane-border-status") as core::ffi::c_int;
+        (xoff, yoff, sx, _) = window_pane_full_size_offset(&w, wp);
         edge = yoff;
         if status == PANE_STATUS_TOP {
-            if edge == 1 as ::core::ffi::c_int {
-                edge = (*w).sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
+            if edge == 1 as core::ffi::c_int {
+                edge = w.dimensions().size.height as core::ffi::c_int + 1 as core::ffi::c_int;
             }
         } else if status == PANE_STATUS_BOTTOM {
-            if edge == 0 as ::core::ffi::c_int {
-                edge = (*w).sy as ::core::ffi::c_int;
+            if edge == 0 as core::ffi::c_int {
+                edge = w.dimensions().size.height as core::ffi::c_int;
             }
-        } else if edge == 0 as ::core::ffi::c_int {
-            edge = (*w).sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
+        } else if edge == 0 as core::ffi::c_int {
+            edge = w.dimensions().size.height as core::ffi::c_int + 1 as core::ffi::c_int;
         }
-        left = xoff;
-        right = xoff + sx as ::core::ffi::c_int;
-        next = window_panes_first(w);
-        while !next.is_null() {
-            (xoff, yoff, sx, sy) = window_pane_full_size_offset(next);
-            if !(next == wp) && !(yoff + sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int != edge)
+        let left: core::ffi::c_int = xoff;
+        let right: core::ffi::c_int = xoff + sx as core::ffi::c_int;
+        for next in &w.panes {
+            let Some(next_pane) = next.get() else {
+                continue;
+            };
+            (xoff, yoff, sx, sy) = window_pane_full_size_offset(&w, next_pane);
+            if next.id() != wp.pane_id()
+                && !(yoff + sy as core::ffi::c_int + 1 as core::ffi::c_int != edge)
             {
-                end = xoff + sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-                found = 0 as ::core::ffi::c_int;
-                if xoff < left && end > right {
-                    found = 1 as ::core::ffi::c_int;
-                } else if xoff >= left && xoff <= right {
-                    found = 1 as ::core::ffi::c_int;
-                } else if end >= left && end <= right {
-                    found = 1 as ::core::ffi::c_int;
+                end = xoff + sx as core::ffi::c_int - 1 as core::ffi::c_int;
+                found = 0 as core::ffi::c_int;
+                if (xoff < left && end > right)
+                    || (xoff >= left && xoff <= right)
+                    || (end >= left && end <= right)
+                {
+                    found = 1 as core::ffi::c_int;
                 }
                 if !(found == 0) {
                     list.push(next);
                 }
             }
-            next = window_panes_next(w, next);
         }
-        best = window_pane_choose_best(&list);
-        best
+        window_pane_choose_best(&list)
     }
 }
-pub unsafe fn window_pane_find_down(mut wp: *mut window_pane) -> *mut window_pane {
+pub unsafe fn window_pane_find_down(
+    wp: Option<&impl crate::WindowPane>,
+) -> Option<RustWindowPaneWeak> {
     unsafe {
-        let mut w: *mut window = ::core::ptr::null_mut::<window>();
-        let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut best: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut list: Vec<*mut window_pane> = Vec::new();
-        let mut edge: ::core::ffi::c_int = 0;
-        let mut left: ::core::ffi::c_int = 0;
-        let mut right: ::core::ffi::c_int = 0;
-        let mut end: ::core::ffi::c_int = 0;
-        let mut status: ::core::ffi::c_int = 0;
-        let mut found: ::core::ffi::c_int = 0;
-        let mut xoff: ::core::ffi::c_int = 0;
-        let mut yoff: ::core::ffi::c_int = 0;
-        let mut sx: u_int = 0;
-        let mut sy: u_int = 0;
-        if wp.is_null() {
-            return ::core::ptr::null_mut::<window_pane>();
-        }
-        w = (*wp).window;
-        status = options_get_number((*w).options_ptr(), c"pane-border-status".as_ptr())
-            as ::core::ffi::c_int;
-        (xoff, yoff, sx, sy) = window_pane_full_size_offset(wp);
-        edge = yoff + sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
+        let mut list: Vec<&RustWindowPaneRef> = Vec::new();
+        let mut edge: core::ffi::c_int;
+
+        let mut end: core::ffi::c_int;
+
+        let mut found: core::ffi::c_int;
+        let mut xoff: core::ffi::c_int;
+        let mut yoff: core::ffi::c_int;
+        let mut sx: u_int;
+        let sy: u_int;
+        let wp = wp?;
+        let window = wp.window_context()?;
+        let w = window.as_window();
+        let status: core::ffi::c_int =
+            (w.options_ref()).number(c"pane-border-status") as core::ffi::c_int;
+        (_, yoff, _, sy) = window_pane_full_size_offset(&w, wp);
+        edge = yoff + sy as core::ffi::c_int + 1 as core::ffi::c_int;
         if status == PANE_STATUS_TOP {
-            if edge >= (*w).sy as ::core::ffi::c_int {
-                edge = 1 as ::core::ffi::c_int;
+            if edge >= w.dimensions().size.height as core::ffi::c_int {
+                edge = 1 as core::ffi::c_int;
             }
         } else if status == PANE_STATUS_BOTTOM {
-            if edge >= (*w).sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int {
-                edge = 0 as ::core::ffi::c_int;
+            if edge >= w.dimensions().size.height as core::ffi::c_int - 1 as core::ffi::c_int {
+                edge = 0 as core::ffi::c_int;
             }
-        } else if edge >= (*w).sy as ::core::ffi::c_int {
-            edge = 0 as ::core::ffi::c_int;
+        } else if edge >= w.dimensions().size.height as core::ffi::c_int {
+            edge = 0 as core::ffi::c_int;
         }
-        left = (*wp).xoff;
-        right = (*wp).xoff + (*wp).sx as ::core::ffi::c_int;
-        next = window_panes_first(w);
-        while !next.is_null() {
-            (xoff, yoff, sx, sy) = window_pane_full_size_offset(next);
-            if !(next == wp) && !(yoff != edge) {
-                end = xoff + sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-                found = 0 as ::core::ffi::c_int;
-                if xoff < left && end > right {
-                    found = 1 as ::core::ffi::c_int;
-                } else if xoff >= left && xoff <= right {
-                    found = 1 as ::core::ffi::c_int;
-                } else if end >= left && end <= right {
-                    found = 1 as ::core::ffi::c_int;
+        let left: core::ffi::c_int = wp.geometry().x;
+        let right: core::ffi::c_int = wp.geometry().x + wp.geometry().width as core::ffi::c_int;
+        for next in &w.panes {
+            let Some(next_pane) = next.get() else {
+                continue;
+            };
+            (xoff, yoff, sx, _) = window_pane_full_size_offset(&w, next_pane);
+            if next.id() != wp.pane_id() && !(yoff != edge) {
+                end = xoff + sx as core::ffi::c_int - 1 as core::ffi::c_int;
+                found = 0 as core::ffi::c_int;
+                if (xoff < left && end > right)
+                    || (xoff >= left && xoff <= right)
+                    || (end >= left && end <= right)
+                {
+                    found = 1 as core::ffi::c_int;
                 }
                 if !(found == 0) {
                     list.push(next);
                 }
             }
-            next = window_panes_next(w, next);
         }
-        best = window_pane_choose_best(&list);
-        best
+        window_pane_choose_best(&list)
     }
 }
-pub unsafe fn window_pane_find_left(mut wp: *mut window_pane) -> *mut window_pane {
+pub unsafe fn window_pane_find_left(
+    wp: Option<&impl crate::WindowPane>,
+) -> Option<RustWindowPaneWeak> {
     unsafe {
-        let mut w: *mut window = ::core::ptr::null_mut::<window>();
-        let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut best: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut list: Vec<*mut window_pane> = Vec::new();
-        let mut edge: ::core::ffi::c_int = 0;
-        let mut top: ::core::ffi::c_int = 0;
-        let mut bottom: ::core::ffi::c_int = 0;
-        let mut end: ::core::ffi::c_int = 0;
-        let mut found: ::core::ffi::c_int = 0;
-        let mut xoff: ::core::ffi::c_int = 0;
-        let mut yoff: ::core::ffi::c_int = 0;
-        let mut sx: u_int = 0;
-        let mut sy: u_int = 0;
-        if wp.is_null() {
-            return ::core::ptr::null_mut::<window_pane>();
-        }
-        w = (*wp).window;
-        (xoff, yoff, sx, sy) = window_pane_full_size_offset(wp);
+        let mut list: Vec<&RustWindowPaneRef> = Vec::new();
+        let mut edge: core::ffi::c_int;
+
+        let mut end: core::ffi::c_int;
+        let mut found: core::ffi::c_int;
+        let mut xoff: core::ffi::c_int;
+        let mut yoff: core::ffi::c_int;
+        let mut sx: u_int;
+        let mut sy: u_int;
+        let wp = wp?;
+        let window = wp.window_context()?;
+        let w = window.as_window();
+        (xoff, yoff, _, sy) = window_pane_full_size_offset(&w, wp);
         edge = xoff;
-        if edge == 0 as ::core::ffi::c_int {
-            edge = (*w).sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
+        if edge == 0 as core::ffi::c_int {
+            edge = w.dimensions().size.width as core::ffi::c_int + 1 as core::ffi::c_int;
         }
-        top = yoff;
-        bottom = yoff + sy as ::core::ffi::c_int;
-        next = window_panes_first(w);
-        while !next.is_null() {
-            (xoff, yoff, sx, sy) = window_pane_full_size_offset(next);
-            if !(next == wp) && !(xoff + sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int != edge)
+        let top: core::ffi::c_int = yoff;
+        let bottom: core::ffi::c_int = yoff + sy as core::ffi::c_int;
+        for next in &w.panes {
+            let Some(next_pane) = next.get() else {
+                continue;
+            };
+            (xoff, yoff, sx, sy) = window_pane_full_size_offset(&w, next_pane);
+            if next.id() != wp.pane_id()
+                && !(xoff + sx as core::ffi::c_int + 1 as core::ffi::c_int != edge)
             {
-                end = yoff + sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-                found = 0 as ::core::ffi::c_int;
-                if yoff < top && end > bottom {
-                    found = 1 as ::core::ffi::c_int;
-                } else if yoff >= top && yoff <= bottom {
-                    found = 1 as ::core::ffi::c_int;
-                } else if end >= top && end <= bottom {
-                    found = 1 as ::core::ffi::c_int;
+                end = yoff + sy as core::ffi::c_int - 1 as core::ffi::c_int;
+                found = 0 as core::ffi::c_int;
+                if (yoff < top && end > bottom)
+                    || (yoff >= top && yoff <= bottom)
+                    || (end >= top && end <= bottom)
+                {
+                    found = 1 as core::ffi::c_int;
                 }
                 if !(found == 0) {
                     list.push(next);
                 }
             }
-            next = window_panes_next(w, next);
         }
-        best = window_pane_choose_best(&list);
-        best
+        window_pane_choose_best(&list)
     }
 }
-pub unsafe fn window_pane_find_right(mut wp: *mut window_pane) -> *mut window_pane {
+pub unsafe fn window_pane_find_right(
+    wp: Option<&impl crate::WindowPane>,
+) -> Option<RustWindowPaneWeak> {
     unsafe {
-        let mut w: *mut window = ::core::ptr::null_mut::<window>();
-        let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut best: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut list: Vec<*mut window_pane> = Vec::new();
-        let mut edge: ::core::ffi::c_int = 0;
-        let mut top: ::core::ffi::c_int = 0;
-        let mut bottom: ::core::ffi::c_int = 0;
-        let mut end: ::core::ffi::c_int = 0;
-        let mut found: ::core::ffi::c_int = 0;
-        let mut xoff: ::core::ffi::c_int = 0;
-        let mut yoff: ::core::ffi::c_int = 0;
-        let mut sx: u_int = 0;
-        let mut sy: u_int = 0;
-        if wp.is_null() {
-            return ::core::ptr::null_mut::<window_pane>();
+        let mut list: Vec<&RustWindowPaneRef> = Vec::new();
+        let mut edge: core::ffi::c_int;
+
+        let mut end: core::ffi::c_int;
+        let mut found: core::ffi::c_int;
+        let mut xoff: core::ffi::c_int;
+        let mut yoff: core::ffi::c_int;
+        let sx: u_int;
+        let mut sy: u_int;
+        let wp = wp?;
+        let window = wp.window_context()?;
+        let w = window.as_window();
+        (xoff, _, sx, _) = window_pane_full_size_offset(&w, wp);
+        edge = xoff + sx as core::ffi::c_int + 1 as core::ffi::c_int;
+        if edge >= w.dimensions().size.width as core::ffi::c_int {
+            edge = 0 as core::ffi::c_int;
         }
-        w = (*wp).window;
-        (xoff, yoff, sx, sy) = window_pane_full_size_offset(wp);
-        edge = xoff + sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
-        if edge >= (*w).sx as ::core::ffi::c_int {
-            edge = 0 as ::core::ffi::c_int;
-        }
-        top = (*wp).yoff;
-        bottom = (*wp).yoff + (*wp).sy as ::core::ffi::c_int;
-        next = window_panes_first(w);
-        while !next.is_null() {
-            (xoff, yoff, sx, sy) = window_pane_full_size_offset(next);
-            if !(next == wp) && !(xoff != edge) {
-                end = yoff + sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-                found = 0 as ::core::ffi::c_int;
-                if yoff < top && end > bottom {
-                    found = 1 as ::core::ffi::c_int;
-                } else if yoff >= top && yoff <= bottom {
-                    found = 1 as ::core::ffi::c_int;
-                } else if end >= top && end <= bottom {
-                    found = 1 as ::core::ffi::c_int;
+        let top: core::ffi::c_int = wp.geometry().y;
+        let bottom: core::ffi::c_int = wp.geometry().y + wp.geometry().height as core::ffi::c_int;
+        for next in &w.panes {
+            let Some(next_pane) = next.get() else {
+                continue;
+            };
+            (xoff, yoff, _, sy) = window_pane_full_size_offset(&w, next_pane);
+            if next.id() != wp.pane_id() && !(xoff != edge) {
+                end = yoff + sy as core::ffi::c_int - 1 as core::ffi::c_int;
+                found = 0 as core::ffi::c_int;
+                if (yoff < top && end > bottom)
+                    || (yoff >= top && yoff <= bottom)
+                    || (end >= top && end <= bottom)
+                {
+                    found = 1 as core::ffi::c_int;
                 }
                 if !(found == 0) {
                     list.push(next);
                 }
             }
-            next = window_panes_next(w, next);
         }
-        best = window_pane_choose_best(&list);
-        best
+        window_pane_choose_best(&list)
     }
 }
-/// Where `wp` sits among `w`'s panes, or `None` when the window does not hold
-/// it.
-pub unsafe fn window_panes_position(w: *mut window, wp: *mut window_pane) -> Option<usize> {
-    unsafe {
-        (*w).panes
-            .iter()
-            .position(|pane| (&raw const **pane).cast_mut() == wp)
-    }
-}
-/// The pane `w` holds at `at`, or null when it holds fewer than that.
-unsafe fn window_panes_at(w: *mut window, at: usize) -> *mut window_pane {
-    unsafe {
-        match (*w).panes.get_mut(at) {
-            Some(pane) => &raw mut **pane,
-            None => ::core::ptr::null_mut::<window_pane>(),
-        }
-    }
-}
-/// The first of `w`'s panes in pane-index order, or null when it has none.
-pub unsafe fn window_panes_first(w: *mut window) -> *mut window_pane {
-    unsafe { window_panes_at(w, 0) }
-}
-/// The last of `w`'s panes in pane-index order, or null when it has none.
-pub unsafe fn window_panes_last(w: *mut window) -> *mut window_pane {
-    unsafe {
-        match (*w).panes.len() {
-            0 => ::core::ptr::null_mut::<window_pane>(),
-            len => window_panes_at(w, len - 1),
-        }
-    }
-}
-/// The pane after `wp`, or null when it is the last one or not `w`'s.
-pub unsafe fn window_panes_next(w: *mut window, wp: *mut window_pane) -> *mut window_pane {
-    unsafe {
-        match window_panes_position(w, wp) {
-            Some(at) => window_panes_at(w, at + 1),
-            None => ::core::ptr::null_mut::<window_pane>(),
-        }
-    }
-}
-/// The pane before `wp`, or null when it is the first one or not `w`'s.
-pub unsafe fn window_panes_prev(w: *mut window, wp: *mut window_pane) -> *mut window_pane {
-    unsafe {
-        match window_panes_position(w, wp) {
-            Some(at) if at > 0 => window_panes_at(w, at - 1),
-            _ => ::core::ptr::null_mut::<window_pane>(),
-        }
-    }
-}
-unsafe fn window_panes_insert_at(
-    w: *mut window,
+
+fn window_panes_insert_at(
+    w: &mut window,
     at: usize,
-    wp: Box<window_pane>,
-) -> *mut window_pane {
-    unsafe {
-        (*w).panes.insert(at, wp);
-        window_panes_at(w, at)
-    }
+    mut wp: RustWindowPaneRef,
+) -> RustWindowPaneWeak {
+    let pane = wp.downgrade();
+    let window = window_ref_of(w);
+    wp.register_window(window.as_ref().map(WindowRef::downgrade));
+    unsafe { window_pane_set_window_ref(wp.as_pane_mut(), window.as_ref()) };
+    w.panes.insert(at, wp);
+    pane
 }
 /// Hands `wp` to `w` as its first pane.
-pub unsafe fn window_panes_insert_head(w: *mut window, wp: Box<window_pane>) -> *mut window_pane {
-    unsafe { window_panes_insert_at(w, 0, wp) }
+pub(crate) fn window_panes_insert_head(
+    w: &mut window,
+    wp: RustWindowPaneRef,
+) -> RustWindowPaneWeak {
+    window_panes_insert_at(w, 0, wp)
 }
 /// Hands `wp` to `w` as its last pane.
-pub unsafe fn window_panes_insert_tail(w: *mut window, wp: Box<window_pane>) -> *mut window_pane {
-    unsafe {
-        let at = (*w).panes.len();
-        window_panes_insert_at(w, at, wp)
-    }
+pub(crate) fn window_panes_insert_tail(
+    w: &mut window,
+    wp: RustWindowPaneRef,
+) -> RustWindowPaneWeak {
+    let at = w.panes.len();
+    window_panes_insert_at(w, at, wp)
 }
 /// Hands `wp` to `w` in front of `other`, or as its first pane when `other` is
 /// not one of them.
-pub unsafe fn window_panes_insert_before(
-    w: *mut window,
-    other: *mut window_pane,
-    wp: Box<window_pane>,
-) -> *mut window_pane {
-    unsafe {
-        let at = window_panes_position(w, other).unwrap_or(0);
-        window_panes_insert_at(w, at, wp)
-    }
+pub(crate) fn window_panes_insert_before(
+    w: &mut window,
+    other: Option<&RustWindowPaneWeak>,
+    wp: RustWindowPaneRef,
+) -> RustWindowPaneWeak {
+    let at = other
+        .and_then(|other| {
+            w.panes
+                .iter()
+                .position(|pane| pane.downgrade().ptr_eq(other))
+        })
+        .unwrap_or(0);
+    window_panes_insert_at(w, at, wp)
 }
 /// Hands `wp` to `w` behind `other`, or as its last pane when `other` is not
 /// one of them.
-pub unsafe fn window_panes_insert_after(
-    w: *mut window,
-    other: *mut window_pane,
-    wp: Box<window_pane>,
-) -> *mut window_pane {
-    unsafe {
-        let at = window_panes_position(w, other)
-            .map(|at| at + 1)
-            .unwrap_or((*w).panes.len());
-        window_panes_insert_at(w, at, wp)
-    }
+pub(crate) fn window_panes_insert_after(
+    w: &mut window,
+    other: Option<&RustWindowPaneWeak>,
+    wp: RustWindowPaneRef,
+) -> RustWindowPaneWeak {
+    let at = other
+        .and_then(|other| {
+            w.panes
+                .iter()
+                .position(|pane| pane.downgrade().ptr_eq(other))
+        })
+        .map(|at| at + 1)
+        .unwrap_or(w.panes.len());
+    window_panes_insert_at(w, at, wp)
 }
-/// Takes `wp` away from `w`, handing back the pane itself. The caller owns it
-/// from here: it either goes to another window or is destroyed.
-pub unsafe fn window_panes_take(w: *mut window, wp: *mut window_pane) -> Option<Box<window_pane>> {
-    unsafe { window_panes_position(w, wp).map(|at| (*w).panes.remove(at)) }
-}
-/// Exchanges the places `src_wp` and `dst_wp` hold, which may be in the one
-/// window or in two different ones. Each pane ends up where the other was.
-pub unsafe fn window_panes_swap(
-    src_w: *mut window,
-    src_wp: *mut window_pane,
-    dst_w: *mut window,
-    dst_wp: *mut window_pane,
-) {
-    unsafe {
-        let src_at = window_panes_position(src_w, src_wp).expect("the pane is its window's");
-        let dst_at = window_panes_position(dst_w, dst_wp).expect("the pane is its window's");
-        if src_w == dst_w {
-            (*src_w).panes.swap(src_at, dst_at);
-        } else {
-            let src_pane = (*src_w).panes.remove(src_at);
-            let dst_pane = (*dst_w).panes.remove(dst_at);
-            (*src_w).panes.insert(src_at, dst_pane);
-            (*dst_w).panes.insert(dst_at, src_pane);
-        }
-    }
-}
-/// Gives up the pane `id` names, which is what a window a test built by hand
-/// does for each of its panes when the test has finished with it.
-#[cfg(test)]
-pub(crate) fn pane_registry_remove(id: u_int) {
-    all_window_panes.map().remove(&id);
-}
-
-/// Keeps `id` out of the ids the server hands out, so a pane a test builds
-/// by hand is never given the same id as one the server makes.
-#[cfg(test)]
-pub(crate) fn window_pane_reserve_id(id: u_int) {
-    if next_window_pane_id.get() <= id {
-        next_window_pane_id.set(id.wrapping_add(1));
-    }
+/// Takes the window's sole ownership of `pane` and clears its membership.
+/// The caller transfers it to another window or explicitly tears the pane down.
+pub(crate) fn window_panes_take(
+    w: &mut window,
+    pane: &RustWindowPaneWeak,
+) -> Option<RustWindowPaneRef> {
+    w.panes
+        .iter()
+        .position(|candidate| candidate.downgrade().ptr_eq(pane))
+        .map(|at| {
+            let pane = w.panes.remove(at);
+            pane.register_window(None);
+            pane
+        })
 }
 
 /// Which of a window's two pane orders a call works on: the one that records
@@ -4485,387 +2565,313 @@ pub enum PaneStack {
     ZIndex,
 }
 
-/// The order itself, which the window holds as pane ids.
+/// The order itself, which observes the panes directly.
 #[allow(clippy::mut_from_ref)]
-pub(crate) unsafe fn pane_stack(w: *mut window, which: PaneStack) -> &'static mut Vec<u_int> {
-    unsafe {
-        match which {
-            PaneStack::LastUsed => &mut (*w).last_panes,
-            PaneStack::ZIndex => &mut (*w).z_index,
-        }
+pub(crate) fn pane_stack(w: &mut window, which: PaneStack) -> &mut Vec<RustWindowPaneWeak> {
+    match which {
+        PaneStack::LastUsed => &mut w.last_panes,
+        PaneStack::ZIndex => &mut w.z_index,
     }
 }
 
-/// The pane `id` names among `w`'s own panes, or null when it holds none.
-pub fn window_pane_of_id(w: *mut window, id: u_int) -> *mut window_pane {
-    pane_of(w, Some(id))
-}
-
-/// The same, for an id the caller may not have.
-fn pane_of(w: *mut window, id: Option<u_int>) -> *mut window_pane {
-    unsafe {
-        let Some(id) = id else {
-            return ::core::ptr::null_mut();
-        };
-        (*w).panes
-            .iter()
-            .find(|wp| wp.id == id)
-            .map(|wp| &raw const **wp as *mut window_pane)
-            .unwrap_or(::core::ptr::null_mut())
-    }
-}
-
-pub unsafe fn window_pane_stack_push(w: *mut window, which: PaneStack, wp: *mut window_pane) {
-    unsafe {
-        if !wp.is_null() {
-            window_pane_stack_remove(w, which, wp);
-            pane_stack(w, which).insert(0, (*wp).id);
-            (*wp).flags |= PANE_VISITED;
-        }
-    }
-}
-pub unsafe fn window_pane_stack_remove(w: *mut window, which: PaneStack, wp: *mut window_pane) {
-    unsafe {
-        if !wp.is_null() && (*wp).flags & PANE_VISITED != 0 {
-            let id = (*wp).id;
-            pane_stack(w, which).retain(|entry| *entry != id);
-            (*wp).flags &= !PANE_VISITED;
-        }
-    }
-}
-/// The most recently used pane on the order, or null when it is empty. On the
-/// stacking order this is the topmost pane.
-pub unsafe fn window_pane_stack_first(w: *mut window, which: PaneStack) -> *mut window_pane {
-    unsafe { pane_of(w, pane_stack(w, which).first().copied()) }
-}
-/// The last pane on the order, or null when it is empty. On the stacking
-/// order this is the bottommost pane.
-pub unsafe fn window_pane_stack_last(w: *mut window, which: PaneStack) -> *mut window_pane {
-    unsafe { pane_of(w, pane_stack(w, which).last().copied()) }
-}
-/// The pane after `wp` on the order, or null when `wp` is the last or absent.
-pub unsafe fn window_pane_stack_next(
-    w: *mut window,
+pub unsafe fn window_pane_stack_push(
+    w: &mut window,
     which: PaneStack,
-    wp: *mut window_pane,
-) -> *mut window_pane {
+    wp: Option<&mut impl crate::WindowPane>,
+) {
     unsafe {
-        if wp.is_null() {
-            return ::core::ptr::null_mut();
+        if let Some(wp) = wp {
+            window_pane_stack_remove(&mut *w, which, Some(&mut *wp));
+            let pane = window_pane_ref_of(wp).expect("a stacked pane is owned");
+            pane_stack(&mut *w, which).insert(0, pane);
+            *wp.flags_mut() |= PANE_VISITED;
         }
-        let id = (*wp).id;
-        let stack = pane_stack(w, which);
-        let next = stack
-            .iter()
-            .position(|entry| *entry == id)
-            .and_then(|at| stack.get(at + 1))
-            .copied();
-        pane_of(w, next)
     }
 }
-/// The pane before `wp` on the order, or null when `wp` is the first or
-/// absent.
-pub unsafe fn window_pane_stack_prev(
-    w: *mut window,
+pub unsafe fn window_pane_stack_remove(
+    w: &mut window,
     which: PaneStack,
-    wp: *mut window_pane,
-) -> *mut window_pane {
-    unsafe {
-        if wp.is_null() {
-            return ::core::ptr::null_mut();
-        }
-        let id = (*wp).id;
+    wp: Option<&mut impl crate::WindowPane>,
+) {
+    if let Some(wp) = wp {
         let stack = pane_stack(w, which);
-        let prev = match stack.iter().position(|entry| *entry == id) {
-            Some(at) if at > 0 => Some(stack[at - 1]),
-            _ => None,
-        };
-        pane_of(w, prev)
+        let previous_len = stack.len();
+        stack.retain(|pane| !core::ptr::addr_eq(pane.as_ptr(), wp));
+        if stack.len() != previous_len {
+            *wp.flags_mut() &= !PANE_VISITED;
+        }
     }
 }
 /// Takes `wp` off a stacking order. Unlike [`window_pane_stack_remove`] this
 /// carries no membership flag: a pane not on the order is left alone.
-pub unsafe fn window_pane_zindex_remove(w: *mut window, wp: *mut window_pane) {
-    unsafe {
-        let id = (*wp).id;
-        pane_stack(w, PaneStack::ZIndex).retain(|entry| *entry != id);
-    }
+pub unsafe fn window_pane_zindex_remove(w: &mut window, wp: &impl crate::WindowPane) {
+    pane_stack(&mut *w, PaneStack::ZIndex).retain(|pane| !core::ptr::addr_eq(pane.as_ptr(), wp));
 }
-/// Puts `wp` on top of a stacking order.
-pub unsafe fn window_pane_zindex_insert_head(w: *mut window, wp: *mut window_pane) {
-    unsafe {
-        pane_stack(w, PaneStack::ZIndex).insert(0, (*wp).id);
-    }
-}
+
 /// Puts `wp` at the bottom of a stacking order.
-pub unsafe fn window_pane_zindex_insert_tail(w: *mut window, wp: *mut window_pane) {
-    unsafe {
-        pane_stack(w, PaneStack::ZIndex).push((*wp).id);
-    }
+pub unsafe fn window_pane_zindex_insert_tail(w: &mut window, wp: &impl crate::WindowPane) {
+    let pane = unsafe { window_pane_ref_of(wp) }.expect("a stacked pane is owned");
+    pane_stack(&mut *w, PaneStack::ZIndex).push(pane);
 }
 /// Puts `wp` directly below `other` on a stacking order, or at the bottom
 /// when `other` is not on it.
-pub unsafe fn window_pane_zindex_insert_after(
-    w: *mut window,
-    other: *mut window_pane,
-    wp: *mut window_pane,
+pub fn window_pane_zindex_insert_after(
+    w: &mut window,
+    other: &RustWindowPaneWeak,
+    pane: &RustWindowPaneWeak,
 ) {
-    unsafe {
-        let other = (*other).id;
-        let stack = pane_stack(w, PaneStack::ZIndex);
-        let at = stack
-            .iter()
-            .position(|entry| *entry == other)
-            .map(|at| at + 1)
-            .unwrap_or(stack.len());
-        stack.insert(at, (*wp).id);
-    }
+    let stack = pane_stack(&mut *w, PaneStack::ZIndex);
+    let at = stack
+        .iter()
+        .position(|entry| entry.ptr_eq(other))
+        .map(|at| at + 1)
+        .unwrap_or(stack.len());
+    stack.insert(at, pane.clone());
 }
-pub unsafe fn winlink_clear_flags(mut wl: *mut winlink) {
-    unsafe {
-        (*(*wl).window()).flags &= !WINDOW_ALERTFLAGS;
-        for loop_0 in winlinks_into((*wl).window()) {
-            if (*loop_0).flags & WINLINK_ALERTFLAGS != 0 as ::core::ffi::c_int {
-                (*loop_0).flags &= !WINLINK_ALERTFLAGS;
-                server_status_session((*loop_0).session());
-            }
-        }
-    }
+
+/// The slot opened by a shuffle and the original indices moved above it.
+pub(crate) struct WinlinkShuffle {
+    pub(crate) index: core::ffi::c_int,
+    moved: core::ops::Range<core::ffi::c_int>,
 }
-/// Follows a link that has just been given a new index in the list its
-/// window keeps.
-unsafe fn winlink_renamed(
-    s: *mut session,
-    w: *mut window,
-    from: ::core::ffi::c_int,
-    to: ::core::ffi::c_int,
-) {
-    unsafe {
-        if w.is_null() {
-            return;
-        }
-        for held in &mut (*w).winlinks {
-            if held.1 == from && held.0.upgrade().is_some_and(|held| held.as_ptr() == s) {
-                held.1 = to;
-                return;
-            }
-        }
+
+impl WinlinkShuffle {
+    pub(crate) fn remap(&self, index: core::ffi::c_int) -> core::ffi::c_int {
+        index + core::ffi::c_int::from(self.moved.contains(&index))
     }
 }
 
-pub unsafe fn winlink_shuffle_up(
-    mut s: *mut session,
-    mut wl: *mut winlink,
-    mut before: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    unsafe {
-        let mut idx: ::core::ffi::c_int = 0;
-        let mut last: ::core::ffi::c_int = 0;
-        if wl.is_null() {
-            return -(1 as ::core::ffi::c_int);
-        }
-        if before != 0 {
-            idx = (*wl).idx;
+pub(crate) unsafe fn winlink_shuffle_up(
+    s: &mut session,
+    around: Option<core::ffi::c_int>,
+    before: core::ffi::c_int,
+) -> Option<WinlinkShuffle> {
+    {
+        let around = around?;
+        let index = if before != 0 {
+            around
         } else {
-            idx = (*wl).idx + 1 as ::core::ffi::c_int;
+            around.checked_add(1)?
+        };
+        if index < 0 {
+            return None;
         }
-        last = idx;
-        while last < INT_MAX {
-            if winlink_find_by_index(&mut (*s).windows, last).is_null() {
-                break;
-            }
+        let mut last = index;
+        while last < INT_MAX && s.windows.contains_key(&last) {
             last += 1;
         }
         if last == INT_MAX {
-            return -(1 as ::core::ffi::c_int);
+            return None;
         }
-        let moved = idx..last;
-        while last > idx {
-            let old_idx = last - 1 as ::core::ffi::c_int;
-            let mut wl_box = (*s)
+        let shift = WinlinkShuffle {
+            index,
+            moved: index..last,
+        };
+        let session_owner = crate::session::session_ref_of(s);
+        while last > index {
+            let old_index = last - 1;
+            let mut link = s
                 .windows
-                .remove(&old_idx)
+                .remove(&old_index)
                 .expect("winlink at the shuffle index");
-            wl_box.idx += 1;
-            let moved_to = wl_box.idx;
-            let w = wl_box.window();
-            (*s).windows.insert(moved_to, wl_box);
-            winlink_renamed(s, w, old_idx, moved_to);
+            link.idx += 1;
+            let new_index = link.idx;
+            let window = link.window_handle().cloned();
+            s.windows.insert(new_index, link);
+            if let (Some(window), Some(session)) = (window, session_owner.as_ref()) {
+                for held in &mut window.as_window_mut().winlinks {
+                    if held.1 == old_index
+                        && held.0.upgrade().is_some_and(|owner| owner.ptr_eq(session))
+                    {
+                        held.1 = new_index;
+                        break;
+                    }
+                }
+            }
             last -= 1;
         }
-        // Every link the shuffle moved keeps its window, so what the session
-        // holds by index moves with it.
-        if let Some(current) = (*s).curw_idx
-            && moved.contains(&current)
-        {
-            (*s).curw_idx = Some(current + 1);
+        s.curw_idx = s.curw_idx.map(|current| shift.remap(current));
+        for held in &mut s.lastw {
+            *held = shift.remap(*held);
         }
-        for held in &mut (*s).lastw {
-            if moved.contains(held) {
-                *held += 1;
-            }
-        }
-        idx
-    }
-}
-unsafe fn window_pane_input_callback(
-    mut c: *mut client,
-    _path: *const ::core::ffi::c_char,
-    mut error: ::core::ffi::c_int,
-    mut closed: ::core::ffi::c_int,
-    mut buffer: *mut Buf,
-    mut data: ClientFileData,
-) {
-    unsafe {
-        let cdata_ref = match data {
-            ClientFileData::PaneInput(cdata) => cdata,
-            _ => panic!("pane-input callback data is not pane-input data"),
-        };
-        let cdata: *mut window_pane_input_data = cdata_ref.as_ptr();
-        let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        let mut buf: *mut u_char = (*buffer).as_slice().as_ptr() as *mut u_char;
-        let len: size_t = (*buffer).len();
-        wp = window_pane_find_by_id((*cdata).wp);
-        if (*cdata).file.is_some() && (wp.is_null() || (*c).flags & CLIENT_DEAD as uint64_t != 0) {
-            if wp.is_null() {
-                (*c).retval = 1 as ::core::ffi::c_int;
-                (*c).flags |= CLIENT_EXIT as uint64_t;
-            }
-            file_cancel((*cdata).file.take().unwrap());
-        } else if (*cdata).file.is_none() || closed != 0 || error != 0 as ::core::ffi::c_int {
-            if let Some(item) = (*cdata).item.as_ref().and_then(CmdqItemWeak::upgrade) {
-                cmdq_continue(&item);
-            }
-            drop((*cdata).file.take());
-        } else {
-            input_parse_buffer(wp, buf, len);
-        }
-        (*buffer).drain(len);
-    }
-}
-pub unsafe fn window_pane_start_input(
-    mut wp: *mut window_pane,
-    mut item: *mut cmdq_item,
-) -> Result<::core::ffi::c_int, CString> {
-    unsafe {
-        let mut c: *mut client = cmdq_get_client(&*item);
-        if !(*wp).flags & PANE_EMPTY != 0 {
-            return Err(c"pane is not empty".to_owned());
-        }
-        if (*c).flags & (CLIENT_DEAD | CLIENT_EXITED) as uint64_t != 0 {
-            return Ok(1 as ::core::ffi::c_int);
-        }
-        if !(*c).session.is_null() {
-            return Ok(1 as ::core::ffi::c_int);
-        }
-        let cdata = PaneInputRef::new(window_pane_input_data {
-            item: cmdq_item_weak_from_ptr(item),
-            wp: (*wp).id,
-            client_ref: client_ref_from_ptr(c),
-            file: None,
-        });
-        (*cdata.as_ptr()).file = file_read(
-            c,
-            c"-".as_ptr(),
-            Some(window_pane_input_callback),
-            ClientFileData::PaneInput(cdata.clone()),
-        );
-        Ok(0 as ::core::ffi::c_int)
-    }
-}
-/// The bytes a reader at `wpo` has not taken yet, and how many there are.
-pub unsafe fn window_pane_get_new_data(
-    mut wp: *mut window_pane,
-    wpo: &window_pane_offset,
-) -> (*const u_char, size_t) {
-    unsafe {
-        let mut used: size_t = wpo.used.wrapping_sub((*wp).base_offset);
-        let size = (*wp).event.input_len().wrapping_sub(used);
-        let data = (*wp)
-            .event
-            .with_input(|buffer| buffer.as_slice().as_ptr().add(used) as *const u_char)
-            .unwrap_or(::core::ptr::null::<u_char>());
-        (data, size)
-    }
-}
-pub unsafe fn window_pane_update_used_data(
-    mut wp: *mut window_pane,
-    wpo: &mut window_pane_offset,
-    mut size: size_t,
-) {
-    unsafe {
-        let mut used: size_t = wpo.used.wrapping_sub((*wp).base_offset);
-        if size > (*wp).event.input_len().wrapping_sub(used) {
-            size = (*wp).event.input_len().wrapping_sub(used);
-        }
-        wpo.used = wpo.used.wrapping_add(size);
-    }
-}
-pub unsafe fn window_set_fill_character(mut w: *mut window) {
-    unsafe {
-        (*w).fill_character = None;
-        let value = options_get_string((*w).options_ptr(), c"fill-character".as_ptr());
-        if *value as ::core::ffi::c_int != '\0' as i32 && utf8_isvalid(value) != 0 {
-            let ud = utf8_fromcstr(value);
-            if let Some(first) = ud.first()
-                && first.width == 1
-            {
-                (*w).fill_character = Some(Box::new(*first));
-            }
-        }
-    }
-}
-pub unsafe fn window_pane_default_cursor(mut wp: *mut window_pane) {
-    unsafe {
-        screen_set_default_cursor((*wp).screen(), (*wp).options_ptr());
-    }
-}
-/// The mode the pane is showing, or null when it is on its own screen.
-pub unsafe fn window_pane_current_mode(wp: *mut window_pane) -> *mut window_mode_entry {
-    unsafe {
-        (*wp)
-            .modes
-            .first()
-            .map(|wme| &raw const **wme as *mut window_mode_entry)
-            .unwrap_or(::core::ptr::null_mut::<window_mode_entry>())
+        Some(shift)
     }
 }
 
-pub unsafe fn window_pane_mode(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+fn window_pane_input_callback(event: ClientFileEvent<'_>) {
     unsafe {
-        if !(*wp).modes.is_empty() {
-            if (*window_pane_current_mode(wp)).mode() == WindowMode::Copy {
-                return 1 as ::core::ffi::c_int;
+        match event {
+            ClientFileEvent::Read {
+                client,
+                error,
+                buffer,
+                data,
+                ..
+            } => {
+                let mut c = client.expect("pane input has a client").clone();
+                let cdata = match data {
+                    ClientFileData::PaneInput(cdata) => cdata.clone(),
+                    _ => panic!("pane-input callback data is not pane-input data"),
+                };
+                cdata.on_event(c.as_client_mut(), error, false, buffer);
             }
-            if (*window_pane_current_mode(wp)).mode() == WindowMode::View {
-                return 2 as ::core::ffi::c_int;
+            ClientFileEvent::Done {
+                client,
+                error,
+                mut buffer,
+                data,
+                ..
+            } => {
+                let mut c = client.expect("pane input has a client");
+                let cdata = match data {
+                    ClientFileData::PaneInput(cdata) => cdata,
+                    _ => panic!("pane-input callback data is not pane-input data"),
+                };
+                cdata.on_event(c.as_client_mut(), error, true, &mut buffer);
             }
+            ClientFileEvent::CheckExit => {}
         }
-        0 as ::core::ffi::c_int
     }
 }
-pub unsafe fn window_pane_show_scrollbar(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+pub unsafe fn window_pane_start_input(
+    wp: &impl crate::WindowPane,
+    item: &cmdq_item,
+) -> Result<core::ffi::c_int, CString> {
     unsafe {
-        let mut w: *mut window = (*wp).window;
-        if (*wp).base.saved_grid.is_some() {
-            return 0 as ::core::ffi::c_int;
+        if !*wp.flags() & PANE_EMPTY != 0 {
+            return Err(c"pane is not empty".to_owned());
         }
-        if (*w).sb == PANE_SCROLLBARS_ALWAYS
-            || (*w).sb == PANE_SCROLLBARS_MODAL && window_pane_mode(wp) != WINDOW_PANE_NO_MODE
-        {
-            return 1 as ::core::ffi::c_int;
+        let Some(mut cmdq_client) = item.client() else {
+            return Ok(1 as core::ffi::c_int);
+        };
+        if cmdq_client.flags() & (CLIENT_DEAD | CLIENT_EXITED) as uint64_t != 0 {
+            return Ok(1 as core::ffi::c_int);
         }
-        0 as ::core::ffi::c_int
+        if !cmdq_client.attached_session().is_none() {
+            return Ok(1 as core::ffi::c_int);
+        }
+        let cdata = PaneInputRef::new(window_pane_input_data {
+            item: cmdq_item_ref_of(item).map(|item| item.downgrade()),
+            wp: wp.pane_id(),
+            client_ref: Some(cmdq_client.clone()),
+            file: None,
+        });
+        let file = file_read(
+            Some(cmdq_client.as_client_mut()),
+            c"-",
+            Some(std::rc::Rc::new(window_pane_input_callback)),
+            ClientFileData::PaneInput(cdata.clone()),
+        );
+        cdata.with_mut(|cdata| cdata.file = file);
+        Ok(0 as core::ffi::c_int)
     }
 }
-pub unsafe fn window_pane_get_bg(mut wp: *mut window_pane) -> ::core::ffi::c_int {
+/// How many bytes a reader at `wpo` has not taken yet.
+pub fn window_pane_get_new_size(wp: &impl crate::WindowPane, wpo: &RustPaneOutputOffset) -> size_t {
+    let used = wpo.position().wrapping_sub(wp.output_base());
+    wp.event().input_len().wrapping_sub(used)
+}
+/// An owned view of the bytes a reader at `wpo` has not taken yet.
+pub fn window_pane_get_new_data(
+    wp: &impl crate::WindowPane,
+    wpo: &RustPaneOutputOffset,
+) -> ByteBuffer {
+    let used = wpo.position().wrapping_sub(wp.output_base());
+    let size = window_pane_get_new_size(wp, wpo);
+    wp.event()
+        .with_input(|buffer| buffer.slice(used, size))
+        .unwrap_or_default()
+}
+pub unsafe fn window_pane_update_used_data(
+    wp: &impl crate::WindowPane,
+    wpo: &mut RustPaneOutputOffset,
+    mut size: size_t,
+) {
+    let used: size_t = wpo.position().wrapping_sub(wp.output_base());
+    if size > wp.event().input_len().wrapping_sub(used) {
+        size = wp.event().input_len().wrapping_sub(used);
+    }
+    wpo.advance(size);
+}
+pub unsafe fn window_set_fill_character(w: &mut window) {
+    {
+        w.set_fill_character(None);
+        let value = w.options_ref().string_ref(c"fill-character");
+        if !value.to_bytes().is_empty() && RustUtf8VisModel.is_valid(&value) {
+            let ud = utf8_fromcstr(&value);
+            if let Some(first) = ud.first()
+                && first.width == 1
+            {
+                w.set_fill_character(Some(*first));
+            }
+        }
+    }
+}
+pub unsafe fn window_pane_default_cursor(wp: &mut impl crate::WindowPane) {
     unsafe {
-        let mut c: ::core::ffi::c_int = 0;
+        let options = wp.options_ref().clone();
+        if matches!(*wp.shown(), PaneScreen::Base) || wp.modes().is_empty() {
+            wp.base_mut().set_default_cursor(&options);
+            return;
+        }
+        let mode = wp
+            .modes_mut()
+            .first_mut()
+            .expect("the shown mode is present");
+        match &mut mode.state {
+            WindowModeState::Clock(data) => data.screen.set_default_cursor(&options),
+            WindowModeState::Copy(data) | WindowModeState::View(data) => {
+                data.screen.borrow_mut().set_default_cursor(&options);
+            }
+            WindowModeState::Buffer(_)
+            | WindowModeState::Client(_)
+            | WindowModeState::Tree(_)
+            | WindowModeState::Customize(_) => {
+                mode.mode_tree_ref
+                    .as_ref()
+                    .expect("the shown mode has a tree")
+                    .set_default_cursor(&options);
+            }
+            WindowModeState::None => panic!("the shown mode has no screen"),
+        }
+    }
+}
+/// The mode the pane is showing, or `None` when it is on its own screen.
+pub fn window_pane_current_mode(wp: &impl crate::WindowPane) -> Option<&window_mode_entry> {
+    wp.modes().first().map(Box::as_ref)
+}
+
+/// Mutably borrows the mode the pane is showing, if any.
+pub fn window_pane_current_mode_mut(
+    wp: &mut impl crate::WindowPane,
+) -> Option<&mut window_mode_entry> {
+    wp.modes_mut().first_mut().map(Box::as_mut)
+}
+
+pub fn window_pane_mode(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+    match wp.modes().first().map(|current| current.mode()) {
+        Some(WindowMode::Copy) => 1,
+        Some(WindowMode::View) => 2,
+        _ => 0,
+    }
+}
+pub fn window_pane_show_scrollbar(
+    wp: &impl crate::WindowPane,
+    mode: core::ffi::c_int,
+) -> core::ffi::c_int {
+    (!wp.base().is_alternate()
+        && (mode == PANE_SCROLLBARS_ALWAYS
+            || mode == PANE_SCROLLBARS_MODAL && window_pane_mode(wp) != WINDOW_PANE_NO_MODE))
+        as core::ffi::c_int
+}
+pub unsafe fn window_pane_get_bg(wp: &mut impl crate::WindowPane) -> core::ffi::c_int {
+    unsafe {
+        let mut c: core::ffi::c_int;
         let mut defaults = grid_default_cell;
         c = window_pane_get_bg_control_client(wp);
-        if c == -(1 as ::core::ffi::c_int) {
+        if c == -(1 as core::ffi::c_int) {
             tty_default_colours(&mut defaults, wp);
-            if defaults.bg == 8 as ::core::ffi::c_int || defaults.bg == 9 as ::core::ffi::c_int {
+            if defaults.bg == 8 as core::ffi::c_int || defaults.bg == 9 as core::ffi::c_int {
                 c = window_get_bg_client(wp);
             } else {
                 c = defaults.bg;
@@ -4874,137 +2880,134 @@ pub unsafe fn window_pane_get_bg(mut wp: *mut window_pane) -> ::core::ffi::c_int
         c
     }
 }
-pub unsafe fn window_get_bg_client(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    unsafe {
-        let mut w: *mut window = (*wp).window;
-        for loop_0 in client_walk() {
-            if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0)
-                && !((*loop_0).session.is_null() || session_has((*loop_0).session, w) == 0)
-                && !((*loop_0).tty.bg == -(1 as ::core::ffi::c_int))
-            {
-                return (*loop_0).tty.bg;
+
+pub unsafe fn window_get_bg_client(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+    with_clients(|clients| unsafe {
+        let Some(window) = wp.window_context() else {
+            return -1;
+        };
+        for owner in clients {
+            let client = owner.as_client();
+            if window.has_attached_client(client) && client.tty.bg != -1 {
+                return client.tty.bg;
             }
         }
-        -(1 as ::core::ffi::c_int)
-    }
+        -1
+    })
 }
-pub unsafe fn window_pane_get_bg_control_client(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    unsafe {
-        if (*wp).control_bg == -(1 as ::core::ffi::c_int) {
-            return -(1 as ::core::ffi::c_int);
-        }
-        for c in client_walk() {
-            if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-                return (*wp).control_bg;
+
+pub fn window_pane_get_bg_control_client(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+    with_clients(|clients| {
+        let Some(background) = wp.colours().background else {
+            return -(1 as core::ffi::c_int);
+        };
+        for owner in clients {
+            let c = unsafe { owner.as_client() };
+            if c.flags & CLIENT_CONTROL as uint64_t != 0 {
+                return background;
             }
         }
-        -(1 as ::core::ffi::c_int)
-    }
+        -(1 as core::ffi::c_int)
+    })
 }
-pub unsafe fn window_pane_get_fg(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    unsafe {
-        let mut w: *mut window = (*wp).window;
-        for loop_0 in client_walk() {
-            if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0)
-                && !((*loop_0).session.is_null() || session_has((*loop_0).session, w) == 0)
-                && !((*loop_0).tty.fg == -(1 as ::core::ffi::c_int))
-            {
-                return (*loop_0).tty.fg;
+pub unsafe fn window_pane_get_fg(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+    with_clients(|clients| unsafe {
+        let Some(window) = wp.window_context() else {
+            return -1;
+        };
+        for owner in clients {
+            let client = owner.as_client();
+            if window.has_attached_client(client) && client.tty.fg != -1 {
+                return client.tty.fg;
             }
         }
-        -(1 as ::core::ffi::c_int)
-    }
+        -1
+    })
 }
-pub unsafe fn window_pane_get_fg_control_client(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    unsafe {
-        if (*wp).control_fg == -(1 as ::core::ffi::c_int) {
-            return -(1 as ::core::ffi::c_int);
-        }
-        for c in client_walk() {
-            if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-                return (*wp).control_fg;
+
+pub fn window_pane_get_fg_control_client(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+    with_clients(|clients| {
+        let Some(foreground) = wp.colours().foreground else {
+            return -(1 as core::ffi::c_int);
+        };
+        for owner in clients {
+            let c = unsafe { owner.as_client() };
+            if c.flags & CLIENT_CONTROL as uint64_t != 0 {
+                return foreground;
             }
         }
-        -(1 as ::core::ffi::c_int)
-    }
+        -(1 as core::ffi::c_int)
+    })
 }
-pub unsafe fn window_pane_get_theme(mut wp: *mut window_pane) -> client_theme {
-    unsafe {
-        let mut w: *mut window = ::core::ptr::null_mut::<window>();
-        let mut theme: client_theme = THEME_UNKNOWN;
-        let mut found_light: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        let mut found_dark: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        if wp.is_null() {
+pub unsafe fn window_pane_get_theme(wp: Option<&mut impl crate::WindowPane>) -> client_theme {
+    with_clients(|clients| unsafe {
+        let Some(wp) = wp else {
             return THEME_UNKNOWN;
-        }
-        w = (*wp).window;
-        theme = colour_totheme(window_pane_get_bg(wp));
-        if theme as ::core::ffi::c_uint
-            != THEME_UNKNOWN as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
+        };
+        let theme = RustColourEngine.to_theme(window_pane_get_bg(wp)) as client_theme;
+        if theme != THEME_UNKNOWN {
             return theme;
         }
-        for loop_0 in client_walk() {
-            if !((*loop_0).flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0)
-                && !((*loop_0).session.is_null() || session_has((*loop_0).session, w) == 0)
-            {
-                match (*loop_0).theme {
-                    THEME_LIGHT => {
-                        found_light = 1 as ::core::ffi::c_int;
-                    }
-                    THEME_DARK => {
-                        found_dark = 1 as ::core::ffi::c_int;
-                    }
+        let Some(window) = wp.window_context() else {
+            return THEME_UNKNOWN;
+        };
+        let mut found_light = false;
+        let mut found_dark = false;
+        for owner in clients {
+            let client = owner.as_client();
+            if window.has_attached_client(client) {
+                match client.theme {
+                    THEME_LIGHT => found_light = true,
+                    THEME_DARK => found_dark = true,
                     _ => {}
                 }
             }
         }
-        if found_dark != 0 && found_light == 0 {
-            return THEME_DARK;
+        match (found_light, found_dark) {
+            (true, false) => THEME_LIGHT,
+            (false, true) => THEME_DARK,
+            _ => THEME_UNKNOWN,
         }
-        if found_light != 0 && found_dark == 0 {
-            return THEME_LIGHT;
-        }
-        THEME_UNKNOWN
-    }
+    })
 }
-pub unsafe fn window_pane_send_theme_update(mut wp: *mut window_pane) {
+pub unsafe fn window_pane_send_theme_update(wp: Option<&mut impl crate::WindowPane>) {
     unsafe {
-        let mut theme: client_theme = THEME_UNKNOWN;
-        if wp.is_null() || window_pane_exited(wp) != 0 {
+        let Some(wp) = wp else {
+            return;
+        };
+        if window_pane_exited(wp) != 0 {
             return;
         }
-        if !(*wp).flags & PANE_THEMECHANGED != 0 {
+        if *wp.flags() & PANE_THEMECHANGED == 0 {
             return;
         }
-        if !(*(*wp).screen()).mode & MODE_THEME_UPDATES != 0 {
+        if wp.screen_ref().mode() & MODE_THEME_UPDATES == 0 {
             return;
         }
-        theme = window_pane_get_theme(wp);
-        if theme as ::core::ffi::c_uint == (*wp).last_theme as ::core::ffi::c_uint {
+        let theme = window_pane_get_theme(Some(wp));
+        if !wp.replace(theme) {
             return;
         }
-        (*wp).last_theme = theme;
-        (*wp).flags &= !PANE_THEMECHANGED;
+        *wp.flags_mut() &= !PANE_THEMECHANGED;
         match theme {
             THEME_LIGHT => {
                 log_debug(
-                    c"%s: %%%u light theme".as_ptr(),
-                    fmt_args![c"window_pane_send_theme_update".as_ptr(), (*wp).id],
+                    c"%s: %%%u light theme",
+                    fmt_args![c"window_pane_send_theme_update", wp.pane_id()],
                 );
-                (*wp).event.write(b"\x1B[?997;2n\0".as_ptr(), 9 as size_t);
+                wp.event().write(b"\x1B[?997;2n");
             }
             THEME_DARK => {
                 log_debug(
-                    c"%s: %%%u dark theme".as_ptr(),
-                    fmt_args![c"window_pane_send_theme_update".as_ptr(), (*wp).id],
+                    c"%s: %%%u dark theme",
+                    fmt_args![c"window_pane_send_theme_update", wp.pane_id()],
                 );
-                (*wp).event.write(b"\x1B[?997;1n\0".as_ptr(), 9 as size_t);
+                wp.event().write(b"\x1B[?997;1n");
             }
             THEME_UNKNOWN => {
                 log_debug(
-                    c"%s: %%%u unknown theme".as_ptr(),
-                    fmt_args![c"window_pane_send_theme_update".as_ptr(), (*wp).id],
+                    c"%s: %%%u unknown theme",
+                    fmt_args![c"window_pane_send_theme_update", wp.pane_id()],
                 );
             }
             _ => {}
@@ -5012,48 +3015,1458 @@ pub unsafe fn window_pane_send_theme_update(mut wp: *mut window_pane) {
     }
 }
 pub unsafe fn window_pane_border_status_get_range(
-    mut wp: *mut window_pane,
-    mut x: u_int,
-    mut y: u_int,
-) -> *mut style_range {
+    wp: Option<&impl crate::WindowPane>,
+    x: u_int,
+    y: u_int,
+) -> Option<style_range> {
     unsafe {
-        let mut srs: *mut style_ranges = ::core::ptr::null_mut::<style_ranges>();
-        let mut w: *mut window = ::core::ptr::null_mut::<window>();
-        let mut wo: *mut options = ::core::ptr::null_mut::<options>();
         let mut line: u_int = 0;
-        let mut pane_status: ::core::ffi::c_int = 0;
-        if wp.is_null() {
-            return ::core::ptr::null_mut::<style_range>();
-        }
-        w = (*wp).window;
-        wo = (*w).options_ptr();
-        srs = &raw mut (*wp).border_status_line.ranges;
-        pane_status = options_get_number(wo, c"pane-border-status".as_ptr()) as ::core::ffi::c_int;
+
+        let wp = wp?;
+        let window = wp.window_context()?;
+        let wo = window.options();
+        let srs = &wp.border_status_line().ranges;
+        let pane_status: core::ffi::c_int = (wo).number(c"pane-border-status") as core::ffi::c_int;
         if pane_status == PANE_STATUS_TOP {
-            line = ((*wp).yoff - 1 as ::core::ffi::c_int) as u_int;
+            line = (wp.geometry().y - 1 as core::ffi::c_int) as u_int;
         } else if pane_status == PANE_STATUS_BOTTOM {
-            line = ((*wp).yoff as u_int).wrapping_add((*wp).sy);
+            line = (wp.geometry().y as u_int).wrapping_add(wp.geometry().height);
         }
         if pane_status == PANE_STATUS_OFF || line != y {
-            return ::core::ptr::null_mut::<style_range>();
+            return None;
         }
         style_ranges_get_range(
-            &mut *srs,
-            x.wrapping_sub((*wp).xoff as u_int).wrapping_sub(2 as u_int),
+            srs,
+            x.wrapping_sub(wp.geometry().x as u_int)
+                .wrapping_sub(2 as u_int),
         )
     }
 }
-pub unsafe fn window_pane_is_floating(mut wp: *mut window_pane) -> ::core::ffi::c_int {
-    unsafe {
-        let mut lc: *mut layout_cell = (*wp).layout_cell;
-        if lc.is_null() || (*lc).flags & LAYOUT_CELL_FLOATING == 0 as ::core::ffi::c_int {
-            return 0 as ::core::ffi::c_int;
-        }
-        1 as ::core::ffi::c_int
-    }
+pub fn window_pane_is_floating(w: &window, pane: &RustWindowPaneWeak) -> core::ffi::c_int {
+    crate::layout::layout_cell_for_pane(w.layout_root.as_deref(), pane)
+        .is_some_and(|(cell, _)| cell.flags & LAYOUT_CELL_FLOATING != 0) as core::ffi::c_int
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;
 
+#[cfg(test)]
+#[path = "tests/test_window_focused.rs"]
+mod focused_tests;
 #[cfg(test)]
 #[path = "tests/test_window.rs"]
 mod tests;
+use crate::screen::RustScreen;
+
+#[cfg(test)]
+pub(crate) use tests::{
+    screen_write_sync_callback_for_test, window_has_floating_panes, window_pane_reserve_id,
+    window_pane_zindex_insert_head, window_panes_position, window_registry_clear,
+    window_set_active,
+};
+
+impl WindowRef {
+    pub(crate) fn clear_alert_flags(&self) {
+        self.as_window_mut().flags &= !WINDOW_ALERTFLAGS;
+    }
+
+    /// Records the latest client by allocation identity, retaining the existing
+    /// weak client relationship and accepting an absent client to clear it.
+    ///
+    /// # Safety
+    /// Exclude conflicting window and client access during this call.
+    pub(crate) unsafe fn set_latest_client(&self, client: Option<&ClientRef>) {
+        unsafe {
+            window_set_latest(
+                &mut self.as_window_mut(),
+                client.map(|client| client.as_client()),
+            )
+        };
+    }
+}
+
+impl WindowRef {
+    pub(crate) fn saved_layout(&self) -> Option<CString> {
+        self.as_window().saved_layout().map(CStr::to_owned)
+    }
+
+    pub(crate) fn dump_layout(&self) -> Option<CString> {
+        let window = self.as_window();
+        self.dump_layout_cell(window.layout_root.as_deref())
+    }
+
+    pub(crate) fn set_manual_size(&self, size: crate::pane_resize::PaneSize) {
+        self.as_window_mut().set_manual_size(size);
+    }
+
+    pub(crate) unsafe fn default_size(
+        &self,
+        session: &SessionRef,
+        policy: core::ffi::c_int,
+    ) -> (u_int, u_int, u_int, u_int) {
+        unsafe {
+            crate::resize::default_window_size(None, session.as_session(), Some(self), policy)
+        }
+    }
+
+    pub(crate) unsafe fn notify(&self, name: &CStr) {
+        unsafe { notify_window(name, Some(self)) };
+    }
+
+    pub(crate) unsafe fn pane_index(
+        &self,
+        pane: &impl crate::WindowPane,
+    ) -> (core::ffi::c_int, u_int) {
+        unsafe { window_pane_index(&self.as_window(), pane) }
+    }
+
+    pub(crate) unsafe fn pane_visible(&self, pane: &impl crate::WindowPane) -> bool {
+        unsafe { window_pane_visible(&self.as_window(), pane) != 0 }
+    }
+
+    pub(crate) fn pane_at_index(&self, index: u_int) -> Option<RustWindowPaneWeak> {
+        window_pane_at_index(&self.as_window(), index)
+    }
+}
+
+impl WindowRef {
+    pub(crate) fn last_pane(&self) -> Option<RustWindowPaneWeak> {
+        self.as_window()
+            .last_panes
+            .first()
+            .filter(|pane| pane.is_alive())
+            .cloned()
+    }
+
+    pub(crate) fn adjacent_pane(&self, pane: &RustWindowPaneWeak) -> Option<RustWindowPaneWeak> {
+        let window = self.as_window();
+        let at = window
+            .panes
+            .iter()
+            .position(|candidate| candidate.downgrade().ptr_eq(pane))?;
+        at.checked_sub(1)
+            .and_then(|at| window.panes.get(at))
+            .or_else(|| window.panes.get(at + 1))
+            .map(RustWindowPaneRef::downgrade)
+    }
+
+    pub(crate) unsafe fn redraw_active_switch(&self, selected: &RustWindowPaneWeak) {
+        unsafe { window_redraw_active_switch(&mut self.as_window_mut(), selected) };
+    }
+
+    pub(crate) fn pane_is_floating(&self, pane: &RustWindowPaneWeak) -> bool {
+        window_pane_is_floating(&self.as_window(), pane) != 0
+    }
+}
+
+impl WindowRef {
+    /// Splits the destination and transfers the existing pane allocation into it.
+    ///
+    /// Reuses tiled argument geometry, including before/full-size placement, but
+    /// inserts after the destination in both pane lists regardless of placement.
+    /// Errors leave source membership untouched; split failure keeps the existing
+    /// zoom-stack effects. After a successful split the transfer is infallible.
+    /// Same-window removal tracks the new cell through layout-tree collapse.
+    /// Client pane state is cleared and source active/marked/history state is
+    /// updated before relinking; options, appearance flags and colours follow the
+    /// new owner. Registration and pane identity are preserved. Closing the source
+    /// layout queues its existing notification. Destination selection, redraw, size
+    /// recalculation and empty-window destruction remain the caller's policy.
+    ///
+    /// # Safety
+    /// Both panes must be distinct, live members of their supplied windows,
+    /// resolved immediately before this call. Both windows must be unzoomed.
+    /// Run on the server thread without conflicting window, pane, option, client
+    /// or TTY payload access. Geometry expansion can invoke format callbacks;
+    /// these must not remove or move either target. No payload borrow is retained
+    /// across expansion. The subsequent transfer does not dispatch queue hooks.
+    pub(crate) unsafe fn join_pane(
+        &self,
+        source: &WindowRef,
+        source_pane: &RustWindowPaneWeak,
+        destination_pane: &RustWindowPaneWeak,
+        item: &cmdq_item,
+        args: &args,
+    ) -> Result<(), CString> {
+        unsafe {
+            let mut cause = CString::default();
+            let slot = self.tiled_layout_cell(item, args, destination_pane, 0, &mut cause);
+            if !cause.as_bytes().is_empty() {
+                return Err(cause);
+            }
+            let mut slot = slot.expect("the split succeeded without an error");
+            let tracked_slot = source.ptr_eq(self).then_some(&mut slot);
+            source.layout_close_pane_with_slot(source_pane, tracked_slot);
+            crate::server::server_client_remove_pane(source_pane.as_pane());
+            let mut pane = source
+                .release_pane(source_pane)
+                .expect("the source pane belongs to its window");
+            let parent_options = self.options();
+            window_pane_set_window_ref(pane.as_pane_mut(), Some(self));
+            pane.as_pane()
+                .options_ref()
+                .set_parent(Some(&parent_options));
+            *pane.as_pane_mut().flags_mut() |= PANE_STYLECHANGED | PANE_THEMECHANGED;
+            self.insert_pane_after(destination_pane, pane);
+            self.assign_pane_layout(&slot, source_pane, 0);
+            let mut moved = source_pane.clone();
+            let pane = moved.get_mut().expect("the moved pane is still present");
+            let options = pane.options_ref().clone();
+            options.load_pane_colours(Some(pane.palette_mut()));
+            Ok(())
+        }
+    }
+
+    /// Transfers a pane from a multi-pane window into a fresh, unlinked window.
+    ///
+    /// Clears client pane state, releases source active/marked/history and list
+    /// membership, then closes the source layout in that order. The new window
+    /// inherits the source dimensions and owns the same registered pane allocation
+    /// as its sole active pane, with matching z-order and option inheritance.
+    /// Style/theme changes are marked. Source layout notifications retain their
+    /// existing order; no queue hooks are dispatched inline.
+    ///
+    /// The caller may set the latest client and choose a name using the active
+    /// pane before calling `finish_broken_pane_layout`, then attach the window.
+    /// Index validation, unzoom, selection, redraw and output remain caller policy.
+    /// There is no recoverable failure after transfer starts.
+    ///
+    /// # Safety
+    /// The pane must be a live member of this unzoomed window, which must have
+    /// more than one pane. Resolve it immediately before the call. Run on the
+    /// server thread without conflicting window, pane, option, client or TTY
+    /// payload access. Keep the returned owner and pane identity intact until
+    /// layout completion; do not dispatch callbacks or expose it to layout users
+    /// between these stages. No payload borrow escapes this operation.
+    pub(crate) unsafe fn break_pane_into_window(&self, pane: &RustWindowPaneWeak) -> Self {
+        unsafe {
+            crate::server::server_client_remove_pane(pane.as_pane());
+            let mut held = self
+                .release_pane(pane)
+                .expect("the source pane belongs to its window");
+            self.close_pane_layout(pane);
+            let dimensions = self.dimensions();
+            let window = Self::create(
+                dimensions.size.width,
+                dimensions.size.height,
+                dimensions.pixels.width,
+                dimensions.pixels.height,
+            );
+            let options = window.options();
+            window_pane_set_window_ref(held.as_pane_mut(), Some(&window));
+            held.as_pane().options_ref().set_parent(Some(&options));
+            *held.as_pane_mut().flags_mut() |= PANE_STYLECHANGED | PANE_THEMECHANGED;
+            window.insert_first_pane(held);
+            window
+        }
+    }
+
+    /// Completes a transferred sole pane's layout and appearance before attachment.
+    ///
+    /// Initializes the existing layout engine, marks the pane changed, and loads
+    /// colours through its inherited options. Naming can precede this operation
+    /// without exposing pane storage to the caller. No queue hooks run inline.
+    ///
+    /// # Safety
+    /// This must be the unlinked window returned by `break_pane_into_window`,
+    /// with the same sole pane and no intervening layout initialization or target
+    /// mutation. Run on the server thread without conflicting window, pane,
+    /// option, client or TTY payload access.
+    pub(crate) unsafe fn finish_broken_pane_layout(&self, pane: &RustWindowPaneWeak) {
+        unsafe {
+            self.init_layout(pane);
+            let mut moved = pane.clone();
+            let pane = moved.get_mut().expect("the moved pane is present");
+            *pane.flags_mut() |= PANE_CHANGED;
+            let options = pane.options_ref().clone();
+            options.load_pane_colours(Some(pane.palette_mut()));
+        }
+    }
+
+    /// Exchanges two distinct panes' ownership, layout membership and geometry.
+    ///
+    /// Returns their pre-exchange active states for caller selection policy.
+    /// Floating panes are rejected before client cleanup or mutation. Both layout
+    /// paths must exist. Pane and z-order positions, option parents and appearance
+    /// flags follow the destination; registration and allocation identity survive.
+    /// Client cleanup and source-then-destination resizing retain their order.
+    /// The caller applies selection, then uses `finish_pane_exchange` for a
+    /// cross-window exchange before layout repair, redraw and notification.
+    ///
+    /// # Safety
+    /// Panes must be distinct live members of the supplied unzoomed windows,
+    /// resolved immediately before this call. Run on the server thread without
+    /// conflicting pane, window, option, client or TTY payload access. Resizing
+    /// invokes existing pane-mode callbacks; those must not move or remove either
+    /// target. No window borrow crosses those callbacks. Do not dispatch queue
+    /// hooks or unrelated callbacks before selection and exchange completion.
+    pub(crate) unsafe fn exchange_pane_geometry(
+        &self,
+        source_pane: &RustWindowPaneWeak,
+        destination: &Self,
+        destination_pane: &RustWindowPaneWeak,
+    ) -> Result<(bool, bool), &'static CStr> {
+        let src_path = self
+            .pane_layout_path(source_pane)
+            .expect("the source has a cell");
+        let dst_path = destination
+            .pane_layout_path(destination_pane)
+            .expect("the destination has a cell");
+        if self.pane_is_floating(source_pane) || destination.pane_is_floating(destination_pane) {
+            return Err(c"cannot swap floating panes");
+        }
+        let src_was_active = self.active_pane().as_ref() == Some(source_pane);
+        let dst_was_active = destination.active_pane().as_ref() == Some(destination_pane);
+        unsafe { crate::server::server_client_remove_pane(source_pane.as_pane()) };
+        unsafe { crate::server::server_client_remove_pane(destination_pane.as_pane()) };
+        let src_geometry = unsafe { source_pane.get().unwrap().geometry() };
+        let dst_geometry = unsafe { destination_pane.get().unwrap().geometry() };
+        unsafe {
+            self.clone()
+                .swap_panes(source_pane, &mut destination.clone(), destination_pane)
+        };
+        self.swap_pane_z_order(source_pane, destination, destination_pane);
+        self.bind_layout_pane(Some(&src_path), destination_pane);
+        destination.bind_layout_pane(Some(&dst_path), source_pane);
+
+        let mut source_observation = source_pane.clone();
+        let mut destination_observation = destination_pane.clone();
+        let src_options = { self.options() };
+        let dst_options = { destination.options() };
+        {
+            let pane = unsafe { source_observation.get_mut().unwrap() };
+            unsafe { window_pane_set_window_ref(pane, Some(destination)) };
+            pane.options_ref().set_parent(Some(&dst_options));
+            *pane.flags_mut() |= PANE_STYLECHANGED | PANE_THEMECHANGED;
+        }
+        {
+            let pane = unsafe { destination_observation.get_mut().unwrap() };
+            unsafe { window_pane_set_window_ref(pane, Some(self)) };
+            pane.options_ref().set_parent(Some(&src_options));
+            *pane.flags_mut() |= PANE_STYLECHANGED | PANE_THEMECHANGED;
+        }
+        {
+            let pane = unsafe { source_observation.get_mut().unwrap() };
+            pane.set_position(dst_geometry.x, dst_geometry.y);
+            unsafe { window_pane_resize(pane, dst_geometry.width, dst_geometry.height) };
+        }
+        {
+            let pane = unsafe { destination_observation.get_mut().unwrap() };
+            pane.set_position(src_geometry.x, src_geometry.y);
+            unsafe { window_pane_resize(pane, src_geometry.width, src_geometry.height) };
+        }
+        Ok((src_was_active, dst_was_active))
+    }
+
+    /// Removes departed panes from history and reloads colours after selection.
+    ///
+    /// Source history precedes destination history; both precede colour loading
+    /// in source-pane then destination-pane order. This does not repair geometry,
+    /// redraw or dispatch queue hooks.
+    ///
+    /// # Safety
+    /// Complete a successful cross-window `exchange_pane_geometry` with the same
+    /// windows and pane identities after applying selection policy. The panes
+    /// must still belong to their exchanged owners. Run on the server thread
+    /// without conflicting pane, window or option payload access.
+    pub(crate) unsafe fn finish_pane_exchange(
+        &self,
+        source_pane: &RustWindowPaneWeak,
+        destination: &Self,
+        destination_pane: &RustWindowPaneWeak,
+    ) {
+        unsafe {
+            self.forget_last_pane(source_pane);
+            destination.forget_last_pane(destination_pane);
+            for mut observed in [source_pane.clone(), destination_pane.clone()] {
+                let pane = observed.get_mut().expect("the exchanged pane is present");
+                let options = pane.options_ref().clone();
+                options.load_pane_colours(Some(pane.palette_mut()));
+            }
+        }
+    }
+
+    pub(crate) unsafe fn release_pane(
+        &self,
+        pane: &RustWindowPaneWeak,
+    ) -> Option<RustWindowPaneRef> {
+        unsafe {
+            self.lost_pane(pane);
+            let mut window = self.as_window_mut();
+            let held = window_panes_take(&mut window, pane)?;
+            window_pane_zindex_remove(&mut window, held.as_pane());
+            Some(held)
+        }
+    }
+
+    pub(crate) fn insert_first_pane(&self, pane: RustWindowPaneRef) {
+        let mut window = self.as_window_mut();
+        let pane = window_panes_insert_head(&mut window, pane);
+        window.z_index.insert(0, pane.clone());
+        window.active_pane = Some(pane);
+    }
+
+    pub(crate) fn insert_pane_after(&self, other: &RustWindowPaneWeak, pane: RustWindowPaneRef) {
+        let mut window = self.as_window_mut();
+        let pane = window_panes_insert_after(&mut window, Some(other), pane);
+        window_pane_zindex_insert_after(&mut window, other, &pane);
+    }
+
+    pub(crate) unsafe fn default_name(&self) -> CString {
+        unsafe { crate::names::default_window_name(self) }
+    }
+
+    pub(crate) fn remove_winlink(&self, link: &winlink) {
+        self.as_window_mut()
+            .winlinks
+            .retain(|held| !winlink_is(held, link));
+    }
+
+    pub(crate) fn add_winlink(&self, link: &winlink) {
+        if let Some(key) = link.key() {
+            self.as_window_mut().winlinks.push(key);
+        }
+    }
+}
+
+impl WindowRef {
+    pub(crate) fn pane_layout_path(
+        &self,
+        pane: &RustWindowPaneWeak,
+    ) -> Option<crate::layout::LayoutCellPath> {
+        self.as_window()
+            .layout_root
+            .as_deref()
+            .and_then(|root| crate::layout::LayoutCellPath::for_pane(root, pane))
+    }
+
+    pub(crate) fn bind_layout_pane(
+        &self,
+        path: Option<&crate::layout::LayoutCellPath>,
+        pane: &RustWindowPaneWeak,
+    ) {
+        crate::layout::layout_bind_pane(self, path, pane);
+    }
+
+    pub(crate) fn swap_pane_z_order(
+        &self,
+        pane: &RustWindowPaneWeak,
+        other: &Self,
+        other_pane: &RustWindowPaneWeak,
+    ) {
+        let at = self
+            .as_window()
+            .z_index
+            .iter()
+            .position(|candidate| candidate.ptr_eq(pane))
+            .unwrap();
+        let other_at = other
+            .as_window()
+            .z_index
+            .iter()
+            .position(|candidate| candidate.ptr_eq(other_pane))
+            .unwrap();
+        self.as_window_mut().z_index[at] = other_pane.clone();
+        other.as_window_mut().z_index[other_at] = pane.clone();
+    }
+
+    pub(crate) unsafe fn forget_last_pane(&self, pane: &RustWindowPaneWeak) {
+        let mut pane = pane.clone();
+        unsafe {
+            window_pane_stack_remove(
+                &mut self.as_window_mut(),
+                PaneStack::LastUsed,
+                pane.get_mut(),
+            )
+        };
+    }
+
+    pub(crate) fn rotate_pane_order(&self, down: bool) {
+        let mut window = self.as_window_mut();
+        if down {
+            window.panes.rotate_right(1);
+        } else {
+            window.panes.rotate_left(1);
+        }
+    }
+}
+
+impl WindowRef {
+    pub(crate) fn is_zoomed(&self) -> bool {
+        self.as_window().flags & WINDOW_ZOOMED != 0
+    }
+
+    pub(crate) fn layout_cell_geometry(
+        &self,
+        path: &crate::layout::LayoutCellPath,
+    ) -> Option<crate::pane_geometry::PaneGeometry> {
+        let window = self.as_window();
+        let cell = path.get(window.layout_root.as_deref()?)?;
+        Some(crate::pane_geometry::PaneGeometry {
+            x: cell.xoff,
+            y: cell.yoff,
+            width: cell.sx,
+            height: cell.sy,
+        })
+    }
+
+    pub(crate) unsafe fn set_layout_cell_geometry(
+        &self,
+        path: &crate::layout::LayoutCellPath,
+        geometry: crate::pane_geometry::PaneGeometry,
+    ) {
+        let mut window = self.as_window_mut();
+        let cell = window
+            .layout_root
+            .as_deref_mut()
+            .and_then(|root| path.get_mut(root))
+            .expect("the resized cell path is unchanged");
+        unsafe {
+            crate::layout::layout_set_size(
+                cell,
+                geometry.width,
+                geometry.height,
+                geometry.x,
+                geometry.y,
+            )
+        };
+    }
+
+    pub(crate) fn layout_border_at(
+        &self,
+        x: u_int,
+        y: u_int,
+    ) -> Option<crate::layout::LayoutCellPath> {
+        self.as_window()
+            .layout_root
+            .as_deref()
+            .and_then(|root| crate::layout::layout_search_by_border(root, x, y))
+    }
+
+    pub(crate) fn layout_parent_type(
+        &self,
+        path: &crate::layout::LayoutCellPath,
+    ) -> Option<layout_type> {
+        let window = self.as_window();
+        Some(path.parent()?.get(window.layout_root.as_deref()?)?.type_0)
+    }
+}
+
+unsafe fn window_find_best_session(fs: &mut cmd_find_state, w: &WindowRef) -> core::ffi::c_int {
+    unsafe {
+        let mut slist: Vec<SessionRef> = Vec::new();
+        log_debug(
+            c"%s: window is @%u",
+            fmt_args![c"cmd_find_best_session_with_window".as_ptr(), w.window_id()],
+        );
+        for s_loop in crate::session::SESSIONS.read().values() {
+            if s_loop.has(w) {
+                slist.push(s_loop.clone());
+            }
+        }
+        if !slist.is_empty() {
+            (*fs).set_session_ref(crate::cmd::cmd_find_best_session(&slist, fs.flags).as_ref());
+            if !(*fs).session().is_none() {
+                return window_find_best_winlink(fs, w);
+            }
+        }
+        -(1 as core::ffi::c_int)
+    }
+}
+unsafe fn window_find_best_winlink(fs: &mut cmd_find_state, w: &WindowRef) -> core::ffi::c_int {
+    unsafe {
+        let Some(window) = fs.window() else {
+            return -1;
+        };
+        log_debug(
+            c"%s: window is @%u",
+            fmt_args![c"cmd_find_best_winlink_with_window", w.window_id()],
+        );
+        let session = fs.session().expect("the state names a session");
+        let s = session.as_session();
+        let matches = |link: &winlink| {
+            link.window_handle()
+                .is_some_and(|linked| linked.ptr_eq(&window))
+        };
+        let link = s.curw().filter(|link| matches(link)).or_else(|| {
+            s.windows
+                .values()
+                .map(Box::as_ref)
+                .find(|link| matches(link))
+        });
+        let Some(link) = link else {
+            return -1;
+        };
+        fs.set_winlink(Some(link));
+        fs.idx = link.idx;
+        0
+    }
+}
+/// Builds session notification target state while retaining its window handle.
+pub(crate) unsafe fn window_find_from_session(
+    fs: &mut cmd_find_state,
+    s: &session,
+    w: &WindowRef,
+    flags: core::ffi::c_int,
+) -> core::ffi::c_int {
+    unsafe {
+        crate::cmd::cmd_find_clear_state(fs, flags);
+        (*fs).set_session(Some(s));
+        (*fs).set_window_ref(Some(w));
+        if window_find_best_winlink(fs, w) != 0 as core::ffi::c_int {
+            crate::cmd::cmd_find_clear_state(fs, flags);
+            return -(1 as core::ffi::c_int);
+        }
+        fs.wp_ref = w.active_pane();
+        crate::cmd::cmd_find_log_state_with_window(
+            c"cmd_find_from_session_window",
+            fs,
+            Some((w.window_id(), w.window_name())),
+        );
+        0 as core::ffi::c_int
+    }
+}
+/// Builds notification target state while retaining its window handle.
+pub(crate) unsafe fn window_find_from_window(
+    fs: &mut cmd_find_state,
+    w: &WindowRef,
+    flags: core::ffi::c_int,
+) -> core::ffi::c_int {
+    unsafe {
+        crate::cmd::cmd_find_clear_state(fs, flags);
+        (*fs).set_window_ref(Some(w));
+        if window_find_best_session(fs, w) != 0 as core::ffi::c_int {
+            crate::cmd::cmd_find_clear_state(fs, flags);
+            return -(1 as core::ffi::c_int);
+        }
+        if window_find_best_winlink(fs, w) != 0 as core::ffi::c_int {
+            crate::cmd::cmd_find_clear_state(fs, flags);
+            return -(1 as core::ffi::c_int);
+        }
+        fs.wp_ref = w.active_pane();
+        crate::cmd::cmd_find_log_state_with_window(
+            c"cmd_find_from_window",
+            fs,
+            Some((w.window_id(), w.window_name())),
+        );
+        0 as core::ffi::c_int
+    }
+}
+
+impl WindowRef {
+    pub(crate) unsafe fn find_best_session(&self, fs: &mut cmd_find_state) -> core::ffi::c_int {
+        unsafe { window_find_best_session(fs, self) }
+    }
+
+    pub(crate) unsafe fn find_best_winlink(&self, fs: &mut cmd_find_state) -> core::ffi::c_int {
+        unsafe { window_find_best_winlink(fs, self) }
+    }
+
+    pub(crate) unsafe fn find_from_session(
+        &self,
+        fs: &mut cmd_find_state,
+        session: &session,
+        flags: core::ffi::c_int,
+    ) -> core::ffi::c_int {
+        unsafe { window_find_from_session(fs, session, self, flags) }
+    }
+
+    pub(crate) unsafe fn find_from_window(
+        &self,
+        fs: &mut cmd_find_state,
+        flags: core::ffi::c_int,
+    ) -> core::ffi::c_int {
+        unsafe { window_find_from_window(fs, self, flags) }
+    }
+
+    pub(crate) fn next_pane_by_number(
+        &self,
+        pane: Option<&RustWindowPaneWeak>,
+        count: u_int,
+    ) -> Option<RustWindowPaneWeak> {
+        window_pane_next_by_number(&self.as_window(), pane, count)
+    }
+
+    pub(crate) fn previous_pane_by_number(
+        &self,
+        pane: Option<&RustWindowPaneWeak>,
+        count: u_int,
+    ) -> Option<RustWindowPaneWeak> {
+        window_pane_previous_by_number(&self.as_window(), pane, count)
+    }
+
+    pub(crate) unsafe fn find_pane_string(&self, name: &CStr) -> Option<RustWindowPaneWeak> {
+        unsafe { window_find_string(&self.as_window(), name) }
+    }
+}
+
+#[cfg(test)]
+impl WindowRef {
+    pub(crate) fn set_pane_history_for_test(&self, history: Vec<RustWindowPaneWeak>) {
+        self.as_window_mut().last_panes = history;
+    }
+
+    pub(crate) fn clear_pane_membership_for_test(&self, pane: &RustWindowPaneWeak) {
+        let mut window = self.as_window_mut();
+        let pane = window_panes_take(&mut window, pane).expect("the pane exists");
+        window.panes.push(pane);
+    }
+
+    pub(crate) fn set_active_pane_id_for_test(&self, id: u_int) {
+        let mut window = self.as_window_mut();
+        window.active_pane = window
+            .panes
+            .iter()
+            .find(|pane| pane.pane_id() == id)
+            .map(RustWindowPaneRef::downgrade);
+    }
+}
+
+impl PaneInputRef {
+    unsafe fn on_event(
+        self,
+        c: &mut client,
+        error: core::ffi::c_int,
+        closed: bool,
+        buffer: &mut ByteBuffer,
+    ) {
+        let cdata_ref = self;
+
+        unsafe {
+            let len: size_t = buffer.len();
+            let (wp_id, has_file) = cdata_ref.with(|cdata| (cdata.wp, cdata.file.is_some()));
+            let mut pane = window_pane_find_by_id(wp_id);
+            if has_file && (pane.is_none() || c.flags & CLIENT_DEAD as uint64_t != 0) {
+                if pane.is_none() {
+                    c.retval = 1 as core::ffi::c_int;
+                    c.flags |= CLIENT_EXIT as uint64_t;
+                }
+                let file = cdata_ref.with_mut(|cdata| cdata.file.take().unwrap());
+                file.cancel();
+            } else if !has_file || closed || error != 0 as core::ffi::c_int {
+                let (item, file) = cdata_ref.with_mut(|cdata| {
+                    (
+                        cdata.item.as_ref().and_then(CmdqItemWeak::upgrade),
+                        cdata.file.take(),
+                    )
+                });
+                if let Some(item) = item {
+                    item.resume();
+                }
+                drop(file);
+            } else {
+                let wp = pane
+                    .as_mut()
+                    .and_then(|pane| pane.get_mut())
+                    .expect("input pane");
+                input_parse_buffer(wp, core::mem::take(buffer));
+            }
+            buffer.drain(len);
+        }
+    }
+}
+
+impl WindowRef {
+    pub fn find_by_id_str(s: &CStr) -> Option<WindowRef> {
+        unsafe {
+            if s.to_bytes().first() != Some(&b'@') {
+                return None;
+            }
+            let id = CStr::from_bytes_with_nul(&s.to_bytes_with_nul()[1..])
+                .expect("the tail of a C string ends at the same NUL");
+            let Ok(id) = strtonum(
+                id,
+                0 as core::ffi::c_longlong,
+                UINT_MAX as core::ffi::c_longlong,
+            ) else {
+                return None;
+            };
+            WindowRef::find_by_id(id as u_int)
+        }
+    }
+    pub(crate) fn find_by_id(id: u_int) -> Option<WindowRef> {
+        let reference = WINDOWS
+            .with(|windows| windows.get(id as usize))
+            .and_then(|reference| reference.upgrade());
+        match reference {
+            Some(reference) => Some(reference),
+            _ => {
+                WINDOWS.with(|windows| windows.remove(id as usize));
+                None
+            }
+        }
+    }
+    pub unsafe fn update_activity(&self) {
+        let w = self;
+
+        unsafe {
+            let activity = timeval::now();
+            w.set_activity_time(activity);
+            w.raise_alerts(WINDOW_ACTIVITY);
+        }
+    }
+    pub(crate) fn create(sx: u_int, sy: u_int, mut xpixel: u_int, mut ypixel: u_int) -> WindowRef {
+        unsafe {
+            if xpixel == 0 as u_int {
+                xpixel = DEFAULT_XPIXEL as u_int;
+            }
+            if ypixel == 0 as u_int {
+                ypixel = DEFAULT_YPIXEL as u_int;
+            }
+            let fresh0 = next_entity_id(&next_window_id);
+            let value = window {
+                owner: None,
+                id: fresh0,
+                latest: None,
+                name_state: {
+                    let mut state = RustWindowNameState::default();
+                    state.set_window_name(Some(c""));
+                    state
+                },
+                name_event: TimerHandle::ZERO,
+                timestamps: RustWindowTimestampState::default(),
+                alerts_timer: TimerHandle::ZERO,
+                offset_timer: TimerHandle::ZERO,
+                active_pane: None,
+                last_panes: Vec::new(),
+                z_index: Vec::new(),
+                panes: Vec::new(),
+                layout_selection: RustWindowLayoutSelectionState::default(),
+                layout_root: None,
+                saved_layout_root: None,
+                saved_layout_state: RustWindowSavedLayoutState::default(),
+                dimensions: {
+                    let mut dimensions = RustWindowDimensionsState::default();
+                    dimensions.set_dimensions(WindowDimensions {
+                        size: PaneSize {
+                            width: sx,
+                            height: sy,
+                        },
+                        manual_size: PaneSize {
+                            width: sx,
+                            height: sy,
+                        },
+                        pixels: WindowPixelSize {
+                            width: xpixel,
+                            height: ypixel,
+                        },
+                        ..Default::default()
+                    });
+                    dimensions
+                },
+                scrollbar: RustWindowScrollbarState::default(),
+                fill_character_state: RustWindowFillCharacterState::default(),
+                flags: 0,
+                alert_queue: RustWindowAlertQueueState::default(),
+                options: Some(RustOptionsEngine.create(global_w_options.as_ref())),
+                winlinks: window_winlinks::new(),
+            };
+            let reference = WindowRef::new(value);
+            reference.register_id();
+            let mut w = reference.as_window_mut();
+            window_set_fill_character(&mut w);
+            let creation = timeval::now();
+            w.set_creation_time(creation);
+            drop(w);
+            reference.update_activity();
+            let w = reference.as_window();
+            log_debug(
+                c"%s: @%u create %ux%u (%ux%u)",
+                fmt_args![
+                    c"window_create".as_ptr(),
+                    w.window_id(),
+                    sx,
+                    sy,
+                    w.dimensions().pixels.width,
+                    w.dimensions().pixels.height
+                ],
+            );
+            drop(w);
+            reference
+        }
+    }
+    pub unsafe fn set_name(&self, new_name: &CStr, untrusted: core::ffi::c_int) {
+        let w = self;
+
+        unsafe {
+            if let Some(name) = clean_name(new_name, untrusted) {
+                w.set_window_name(Some(&name));
+                notify_window(c"window-renamed", Some(w));
+            }
+        }
+    }
+    pub unsafe fn update_pane_focus(&self, mut pane: RustWindowPaneWeak) {
+        let w = self;
+
+        unsafe {
+            let Some(wp) = pane.get() else {
+                return;
+            };
+            if *wp.flags() & PANE_EXITED != 0 {
+                return;
+            }
+            let focused = w.active_pane_id() == Some(pane.id())
+                && with_clients(|clients| {
+                    clients.iter().any(|client| {
+                        let Some(session) = client.attached_session() else {
+                            return false;
+                        };
+                        session.attached() != 0
+                            && client.flags() & CLIENT_FOCUSED as uint64_t != 0
+                            && session
+                                .curw()
+                                .and_then(|link| link.window())
+                                .is_some_and(|current| current.ptr_eq(w))
+                            && client.overlay().is_none()
+                    })
+                });
+            if focused == (*wp.flags() & PANE_FOCUSED != 0) {
+                log_debug(
+                    c"%s: %%%u focus unchanged",
+                    fmt_args![c"window_pane_update_focus", pane.id()],
+                );
+                return;
+            }
+            let (description, event, sequence): (&CStr, &CStr, &[u8]) = if focused {
+                (c"focus in", c"pane-focus-in", b"\x1B[I")
+            } else {
+                (c"focus out", c"pane-focus-out", b"\x1B[O")
+            };
+            log_debug(
+                c"%s: %%%u %s",
+                fmt_args![c"window_pane_update_focus", pane.id(), description],
+            );
+            if wp.base().mode() & MODE_FOCUSON != 0 {
+                wp.event().write(sequence);
+            }
+            crate::notify::notify_pane_in_window(event, wp, w);
+            if let Some(wp) = pane.get_mut() {
+                if focused {
+                    *wp.flags_mut() |= PANE_FOCUSED;
+                } else {
+                    *wp.flags_mut() &= !PANE_FOCUSED;
+                }
+            }
+        }
+    }
+    pub unsafe fn set_active_pane(
+        &self,
+        pane: &RustWindowPaneWeak,
+        notify: core::ffi::c_int,
+    ) -> core::ffi::c_int {
+        let owner = self;
+
+        unsafe {
+            let payload = owner.as_window();
+            let w = &*payload;
+            if !w
+                .panes
+                .iter()
+                .any(|candidate| candidate.downgrade().ptr_eq(pane))
+            {
+                return 0;
+            }
+            log_debug(
+                c"%s: pane %%%u",
+                fmt_args![c"window_set_active_pane", pane.id()],
+            );
+            if w.active_pane.as_ref() == Some(pane) {
+                return 0;
+            }
+            let zoomed = w.flags & WINDOW_ZOOMED != 0;
+            drop(payload);
+            if zoomed {
+                owner.unzoom(1);
+            }
+            let mut payload = owner.as_window_mut();
+            let w = &mut *payload;
+            let previous = w.active_pane.clone();
+            let mut selected = pane.clone();
+            window_pane_stack_remove(w, PaneStack::LastUsed, selected.get_mut());
+            if let Some(mut last) = previous.clone() {
+                window_pane_stack_push(w, PaneStack::LastUsed, last.get_mut());
+            }
+            w.active_pane = Some(pane.clone());
+            let selected = selected
+                .get_mut()
+                .expect("the window owns the selected pane");
+            selected.mark_active_at(next_id(&next_active_point));
+            *selected.flags_mut() |= PANE_CHANGED;
+            drop(payload);
+            if global_options
+                .as_ref()
+                .expect("global options are initialized")
+                .number(c"focus-events")
+                != 0
+            {
+                for pane in [previous, Some(pane.clone())].into_iter().flatten() {
+                    owner.update_pane_focus(pane);
+                }
+            }
+            owner.update_client_offsets();
+            owner.redraw();
+            if notify != 0 {
+                notify_window(c"window-pane-changed", Some(owner));
+            }
+            1
+        }
+    }
+    pub unsafe fn zoom(&self, pane: &RustWindowPaneWeak) -> core::ffi::c_int {
+        let owner = self;
+
+        unsafe {
+            let payload = owner.as_window();
+            let w = &*payload;
+            if w.flags & WINDOW_ZOOMED != 0
+                || !w
+                    .panes
+                    .iter()
+                    .any(|candidate| candidate.downgrade().ptr_eq(pane))
+            {
+                return -1;
+            }
+            if window_count_panes(w, 1) == 1 {
+                return -1;
+            }
+            let activate = w.active_pane.as_ref() != Some(pane);
+            drop(payload);
+            if activate {
+                owner.set_active_pane(pane, 1);
+            }
+            if let Some(payload) = pane.clone().get_mut() {
+                *payload.flags_mut() |= PANE_ZOOMED;
+            }
+            let mut payload = owner.as_window_mut();
+            let w = &mut *payload;
+            w.saved_layout_root = w.layout_root.take();
+            drop(payload);
+            owner.init_layout(
+                &crate::window::window_pane_find_by_id(pane.id()).expect("the layout pane exists"),
+            );
+            owner.as_window_mut().flags |= WINDOW_ZOOMED;
+            notify_window(c"window-layout-changed", Some(owner));
+            0
+        }
+    }
+    pub unsafe fn unzoom(&self, notify: core::ffi::c_int) -> core::ffi::c_int {
+        let owner = self;
+
+        unsafe {
+            let mut payload = owner.as_window_mut();
+            if !window_restore_layout(&mut payload) {
+                return -1;
+            }
+            drop(payload);
+            owner.fix_layout_panes(None);
+            if notify != 0 {
+                notify_window(c"window-layout-changed", Some(owner));
+            }
+            0
+        }
+    }
+    pub unsafe fn push_zoom(
+        &self,
+        always: core::ffi::c_int,
+        flag: core::ffi::c_int,
+    ) -> core::ffi::c_int {
+        let owner = self;
+
+        unsafe {
+            let mut payload = owner.as_window_mut();
+            let w = &mut *payload;
+            log_debug(
+                c"%s: @%u %d",
+                fmt_args![
+                    c"window_push_zoom".as_ptr(),
+                    w.window_id(),
+                    (flag != 0 && w.flags & WINDOW_ZOOMED != 0) as core::ffi::c_int
+                ],
+            );
+            if flag != 0 && (always != 0 || w.flags & WINDOW_ZOOMED != 0) {
+                w.flags |= WINDOW_WASZOOMED;
+            } else {
+                w.flags &= !WINDOW_WASZOOMED;
+            }
+            drop(payload);
+            (owner.unzoom(1 as core::ffi::c_int) == 0 as core::ffi::c_int) as core::ffi::c_int
+        }
+    }
+    pub unsafe fn pop_zoom(&self) -> core::ffi::c_int {
+        let owner = self;
+
+        unsafe {
+            let mut payload = owner.as_window_mut();
+            let w = &mut *payload;
+            log_debug(
+                c"%s: @%u %d",
+                fmt_args![
+                    c"window_pop_zoom".as_ptr(),
+                    w.window_id(),
+                    (w.flags & WINDOW_WASZOOMED != 0) as core::ffi::c_int
+                ],
+            );
+            if w.flags & WINDOW_WASZOOMED != 0 {
+                let Some(active_id) = w.active_pane_id() else {
+                    return 0 as core::ffi::c_int;
+                };
+                drop(payload);
+                return (owner.zoom(
+                    &crate::window::window_pane_find_by_id(active_id)
+                        .expect("the selected pane exists"),
+                ) == 0 as core::ffi::c_int) as core::ffi::c_int;
+            }
+            0 as core::ffi::c_int
+        }
+    }
+    /// Gives up `wp`: takes it off the most-recently-used stack and, when it was
+    /// the active pane, hands that over to the pane the window falls back on.
+    ///
+    /// `pane` must still identify one of `w`'s panes, since the fallback is the pane in
+    /// front of it or, failing that, the one behind it. The C read those two out
+    /// of the pane's own list links, which a `TAILQ_REMOVE` leaves pointing at the
+    /// old neighbours, so it could be called either side of the removal; here the
+    /// window is asked instead, and it must still know the pane.
+    pub unsafe fn lost_pane(&self, pane: &RustWindowPaneWeak) {
+        let owner = self;
+
+        unsafe {
+            let mut payload = owner.as_window_mut();
+            let w = &mut *payload;
+            let Some(index) = w
+                .panes
+                .iter()
+                .position(|candidate| candidate.downgrade().ptr_eq(pane))
+            else {
+                return;
+            };
+            log_debug(
+                c"%s: @%u pane %%%u",
+                fmt_args![c"window_lost_pane", w.window_id(), pane.id()],
+            );
+            if marked_pane
+                .pane_ref()
+                .is_some_and(|marked| marked.ptr_eq(pane))
+            {
+                server_clear_marked();
+            }
+            let mut lost = pane.clone();
+            let lost_payload = lost.get_mut().expect("the window owns the lost pane");
+            if *lost_payload.flags() & PANE_VISITED != 0 {
+                *lost_payload.flags_mut() &= !PANE_VISITED;
+                w.last_panes.retain(|candidate| !candidate.ptr_eq(pane));
+            }
+            if w.active_pane
+                .as_ref()
+                .is_some_and(|active| active.ptr_eq(pane))
+            {
+                let previous = w.last_panes.first().filter(|pane| pane.is_alive()).cloned();
+                w.active_pane = previous
+                    .or_else(|| index.checked_sub(1).map(|index| w.panes[index].downgrade()))
+                    .or_else(|| w.panes.get(index + 1).map(|pane| pane.downgrade()));
+                if let Some(mut selected) = w.active_pane.clone() {
+                    let selected_ref = selected.clone();
+                    let active = selected.get_mut().expect("the replacement pane exists");
+                    if *active.flags() & PANE_VISITED != 0 {
+                        *active.flags_mut() &= !PANE_VISITED;
+                        w.last_panes.retain(|pane| !pane.ptr_eq(&selected_ref));
+                    }
+                    *active.flags_mut() |= PANE_CHANGED;
+                    drop(payload);
+                    notify_window(c"window-pane-changed", Some(owner));
+                    (owner).update_focus();
+                }
+            }
+        }
+    }
+    pub unsafe fn remove_pane(&self, pane: &RustWindowPaneWeak) {
+        let owner = self;
+
+        unsafe {
+            owner.lost_pane(pane);
+            let mut w = owner.as_window_mut();
+            w.z_index.retain(|candidate| !candidate.ptr_eq(pane));
+            let pane = window_panes_take(&mut w, pane);
+            let options = w.options.clone();
+            drop(w);
+            if let Some(pane) = pane {
+                window_pane_destroy(pane, options, Some(owner.downgrade()));
+            }
+        }
+    }
+    /// Tears down every pane after releasing the window payload borrow.
+    pub unsafe fn destroy_panes(&self) {
+        let owner = self;
+
+        unsafe {
+            let mut w = owner.as_window_mut();
+            let panes = window_panes_take_all(&mut w);
+            let options = w.options.clone();
+            drop(w);
+            for pane in panes {
+                window_pane_destroy(pane, options.clone(), Some(owner.downgrade()));
+            }
+        }
+    }
+    /// Exchanges the places `src_wp` and `dst_wp` hold, which may be in the one
+    /// window or in two different ones. Each pane ends up where the other was.
+    pub unsafe fn swap_panes(
+        &mut self,
+        src_pane: &RustWindowPaneWeak,
+        dst: &mut WindowRef,
+        dst_pane: &RustWindowPaneWeak,
+    ) {
+        let src = self;
+
+        unsafe {
+            let src_at = src
+                .as_window()
+                .panes
+                .iter()
+                .position(|pane| pane.downgrade().ptr_eq(src_pane))
+                .expect("the source pane belongs to its window");
+            let dst_at = dst
+                .as_window()
+                .panes
+                .iter()
+                .position(|pane| pane.downgrade().ptr_eq(dst_pane))
+                .expect("the destination pane belongs to its window");
+            if src.ptr_eq(dst) {
+                src.as_window_mut().panes.swap(src_at, dst_at);
+            } else {
+                let src_weak = src.downgrade();
+                let dst_weak = dst.downgrade();
+                let src_context = src.clone();
+                let dst_context = dst.clone();
+                let mut src_w = src.as_window_mut();
+                let mut dst_w = dst.as_window_mut();
+                core::mem::swap(&mut src_w.panes[src_at], &mut dst_w.panes[dst_at]);
+                src_w.panes[src_at].register_window(Some(src_weak));
+                window_pane_set_window_ref(src_w.panes[src_at].as_pane_mut(), Some(&src_context));
+                dst_w.panes[dst_at].register_window(Some(dst_weak));
+                window_pane_set_window_ref(dst_w.panes[dst_at].as_pane_mut(), Some(&dst_context));
+            }
+        }
+    }
+    pub(crate) unsafe fn clear_alerts(self) {
+        let window = self;
+
+        unsafe {
+            window.as_window_mut().flags &= !WINDOW_ALERTFLAGS;
+            for mut held in window.winlinks() {
+                let changed = held.get_mut().is_some_and(|link| {
+                    if link.flags & WINLINK_ALERTFLAGS == 0 {
+                        return false;
+                    }
+                    link.flags &= !WINLINK_ALERTFLAGS;
+                    true
+                });
+                if changed {
+                    server_status_session(held.session().clone().as_session_mut());
+                }
+            }
+        }
+    }
+    unsafe fn has_attached_client(&self, client: &client) -> bool {
+        let window = self;
+
+        {
+            if client.flags & CLIENT_UNATTACHEDFLAGS as uint64_t != 0 {
+                return false;
+            }
+            let Some(session) = client.attached_session() else {
+                return false;
+            };
+            session.has(window)
+        }
+    }
+}
+
+impl WindowRef {
+    pub unsafe fn update_focus(&self) {
+        unsafe {
+            let w = self;
+            log_debug(c"%s: @%u", fmt_args![c"window_update_focus", w.window_id()]);
+            if let Some(pane) = w.active_pane() {
+                w.update_pane_focus(pane);
+            }
+        }
+    }
+}
+
+impl winlink {
+    /// How a window names one of the links into it: the session that holds the
+    /// link, and the index it holds it at.
+    pub(crate) fn key(&self) -> Option<(SessionWeak, core::ffi::c_int)> {
+        let wl = self;
+
+        wl.session().map(|session| (session.downgrade(), wl.idx))
+    }
+    unsafe fn detach_window(&mut self) -> Option<WindowRef> {
+        let wl = self;
+
+        let mut old = wl.window_ref.take();
+        if let Some(window) = old.as_mut() {
+            { window.as_window_mut() }
+                .winlinks
+                .retain(|held| !winlink_is(held, wl));
+        }
+        old
+    }
+    pub(crate) unsafe fn set_window(&mut self, window: WindowRef) {
+        let wl = self;
+
+        unsafe {
+            let old = wl.detach_window();
+            drop(old);
+            if let Some(key) = wl.key() {
+                window.as_window_mut().winlinks.push(key);
+            }
+            wl.window_ref = Some(window);
+        }
+    }
+}
+
+impl WinlinkRef {
+    #[cfg(test)]
+    pub(crate) fn key(&self) -> Option<(SessionWeak, core::ffi::c_int)> {
+        self.get()?.key()
+    }
+    /// # Safety
+    /// No other borrow of this link or its owning session may be live.
+    #[cfg(test)]
+    pub(crate) unsafe fn set_window(&mut self, window: WindowRef) -> Option<()> {
+        unsafe { self.get_mut()?.set_window(window) };
+        Some(())
+    }
+}
+
+impl ClientRef {
+    /// # Safety
+    /// Exclude conflicting client access, including reentrant callbacks, during this operation.
+    pub(crate) unsafe fn send_key_to_pane(
+        pane: RustWindowPaneWeak,
+        c: Option<&mut Self>,
+        key: key_code,
+        m: Option<&mouse_event>,
+    ) -> core::ffi::c_int {
+        unsafe { window_pane_key(pane, c.map(|c| c.as_client_mut()), key, m) }
+    }
+}
+
+impl WindowRef {
+    /// Removes client references, optionally closes tiled layout, then destroys
+    /// the pane through the existing owner operation, preserving notification order.
+    ///
+    /// # Safety
+    /// The pane must be a live member of this window. Run on the server thread
+    /// without conflicting pane, window, client, TTY or layout access. Existing
+    /// teardown/mode callbacks must not invalidate the owner or other active targets.
+    pub(crate) unsafe fn discard_pane(&self, pane: &RustWindowPaneWeak, close_layout: bool) {
+        unsafe {
+            pane.remove_from_clients();
+            if close_layout {
+                self.close_pane_layout(pane);
+            }
+            self.remove_pane(pane);
+        }
+    }
+
+    /// Rotates pane membership through the existing layout slots and geometries.
+    /// Returns the rotated identities for immediate caller selection policy.
+    /// Empty windows return an empty list without mutation. Z-order is unchanged.
+    ///
+    /// # Safety
+    /// The window must be unzoomed, with stable live pane membership. Exclude
+    /// conflicting pane/window/layout/TTY access on the server thread. Existing
+    /// resize mode callbacks must not move or remove any pane during rotation.
+    /// No window borrow crosses those callbacks; hooks and selection are deferred
+    /// to the caller. The geometry snapshot is required across list mutation.
+    pub(crate) unsafe fn rotate_pane_geometry(&self, down: bool) -> Vec<RustWindowPaneWeak> {
+        unsafe {
+            let slots: Vec<_> = self
+                .panes()
+                .iter()
+                .map(|pane| (self.pane_layout_path(pane), pane.as_pane().geometry()))
+                .collect();
+            let count = slots.len();
+            if count == 0 {
+                return Vec::new();
+            }
+            self.rotate_pane_order(down);
+            let panes = self.panes();
+            for offset in 0..count {
+                let index = if down { offset } else { count - offset - 1 };
+                let (path, geometry) = &slots[index];
+                let mut pane = panes[index].clone();
+                self.bind_layout_pane(path.as_ref(), &pane);
+                let payload = pane.as_pane_mut();
+                payload.set_position(geometry.x, geometry.y);
+                window_pane_resize(payload, geometry.width, geometry.height);
+            }
+            panes
+        }
+    }
+}
+
+impl WindowRef {
+    /// Tests visibility of a live pane in this window without exposing its payload.
+    ///
+    /// # Safety
+    /// The pane must belong to this window. Exclude mutation of pane geometry,
+    /// layout or window state during the query.
+    pub(crate) unsafe fn contains_visible_pane(&self, pane: &RustWindowPaneWeak) -> bool {
+        unsafe { pane.get().is_some_and(|pane| self.pane_visible(pane)) }
+    }
+}
+
+impl WinlinkRef {
+    /// Exchanges the windows at two live links and updates both windows' reverse
+    /// membership before remapping a mark that names the source link. Other marked
+    /// fields intentionally retain their existing identity, including invalid marks.
+    /// Selection, group synchronization, redraw and size recalculation are caller policy.
+    ///
+    /// # Safety
+    /// Both links must be present with distinct windows, resolved immediately before
+    /// this call. Run on the server thread without conflicting session/window/link
+    /// or marked-target access. No callbacks run during the membership transition.
+    pub(crate) unsafe fn exchange_linked_windows(&self, target: &Self) {
+        unsafe {
+            let source_window = self.window().expect("swap source window");
+            let target_window = target.window().expect("swap target window");
+            target_window.remove_winlink(target.get().expect("swap target link"));
+            source_window.remove_winlink(self.get().expect("swap source link"));
+            target
+                .clone()
+                .get_mut()
+                .expect("swap target link")
+                .window_ref = Some(source_window.clone());
+            self.clone().get_mut().expect("swap source link").window_ref =
+                Some(target_window.clone());
+            source_window.add_winlink(target.get().expect("swap target link"));
+            target_window.add_winlink(self.get().expect("swap source link"));
+            if marked_pane.wl_idx == Some(self.index())
+                && marked_pane
+                    .session()
+                    .is_some_and(|owner| owner.ptr_eq(self.session()))
+            {
+                marked_pane.set_winlink(target.get());
+            }
+        }
+    }
+}
+
+impl WindowRef {
+    /// Enables or disables pane input and refreshes this window's border/status.
+    ///
+    /// # Safety
+    /// The pane must be a live member of this window. Exclude conflicting pane,
+    /// window and client/TTY access on the server thread. No callbacks run inline.
+    pub(crate) unsafe fn set_pane_input_enabled(&self, pane: &RustWindowPaneWeak, enabled: bool) {
+        unsafe {
+            if enabled {
+                pane.remove_flags(PANE_INPUTOFF);
+            } else {
+                pane.add_flags(PANE_INPUTOFF);
+            }
+            self.redraw_borders();
+            self.redraw_status();
+        }
+    }
+}

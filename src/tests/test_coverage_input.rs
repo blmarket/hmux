@@ -3,7 +3,7 @@
 //! coverage stay out of each other's way.
 //!
 //! A [`Parser`] stands up a server-free window and pane, gives the pane a real
-//! input context with [`input_init`] and feeds bytes the way the pty would,
+//! input context with [`InputCtxRef::create`] and feeds bytes the way the pty would,
 //! through [`input_parse_buffer`]; assertions read the pane's screen — its
 //! grid, cursor, mode flags, title and palette. One variant hands the parser a
 //! socket-pair buffer event so that replies to device queries land where
@@ -21,6 +21,9 @@
 //! colours with [`COLOUR_FLAG_256`] and direct colours with
 //! [`COLOUR_FLAG_RGB`].
 
+use crate::WindowPane;
+use crate::pane_identity::PaneIdentity;
+use crate::screen::{RustScreen, Screen};
 use crate::types::*;
 
 use crate::alerts::WINDOW_BELL;
@@ -33,23 +36,16 @@ use crate::grid::{
     grid_get_line, grid_string_cells,
 };
 use crate::input::{
-    GRID_LINE_START_OUTPUT, GRID_LINE_START_PROMPT, MODE_FOCUSON, input_init, input_parse_buffer,
-    input_pending, input_reset, input_set_buffer_size,
+    GRID_LINE_START_OUTPUT, GRID_LINE_START_PROMPT, MODE_FOCUSON, input_parse_buffer,
+    input_set_buffer_size,
 };
-use crate::options::options_set_number;
-use crate::paste::{paste_buffer_data, paste_free, paste_get_top};
+
+use crate::paste::{PasteBufferStore, with_paste_buffers, with_paste_buffers_mut};
 use crate::reactor::Stream;
-use crate::screen::screen_grid_mut;
-use crate::screen::screen_grid_ptr;
-use crate::style::{
-    COLOUR_FLAG_256, COLOUR_FLAG_RGB, colour_palette_free, colour_palette_get, colour_palette_init,
-    colour_parseX11,
-};
+use crate::style::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, ColourEngine, RustColourEngine};
 use crate::tests::test_fixtures::{Pane, StreamBuffer, Window, ensure_reactor, globals};
 use crate::tmux::global_options;
-use ::core::ffi::{CStr, c_int};
-use ::core::ptr::null_mut;
-use ::std::ffi::CString;
+use ::core::ffi::c_int;
 
 /// A window and pane carrying a live input parser over the pane's own base
 /// screen. Nothing here touches the server's trees; the optional buffer event
@@ -57,9 +53,9 @@ use ::std::ffi::CString;
 struct Parser {
     window: Window,
     pane: Pane,
-    ictx: *mut crate::input::input_ctx,
+    ictx: InputCtxRef,
     _bev: Option<StreamBuffer>,
-    _globals: ::std::sync::MutexGuard<'static, ()>,
+    _globals: std::sync::MutexGuard<'static, ()>,
 }
 
 impl Parser {
@@ -86,12 +82,12 @@ impl Parser {
         window.add_pane(&mut pane);
         let wp = pane.ptr();
         let ictx = unsafe {
-            colour_palette_init(&mut (*wp).palette);
-            (*wp).ictx = Some(input_init(
-                crate::input::InputOwner::Pane((*wp).id),
+            RustColourEngine.init_palette((*wp).palette_mut());
+            *(*wp).ictx_mut() = Some(InputCtxRef::create(
+                crate::input::InputOwner::Pane((*wp).pane_id()),
                 bev.as_ref().map_or(Stream::NONE, |b| b.ptr()),
             ));
-            crate::input::ictx_opt(&(*wp).ictx).unwrap_or(null_mut())
+            crate::input::ictx_opt((*wp).ictx()).unwrap()
         };
         Parser {
             window,
@@ -106,12 +102,17 @@ impl Parser {
         self.pane.ptr()
     }
 
-    fn s(&mut self) -> *mut screen {
-        self.pane.screen()
+    fn s(&mut self) -> &mut RustScreen {
+        self.pane.base_mut()
     }
 
     fn feed(&mut self, seq: &[u8]) {
-        unsafe { input_parse_buffer(self.wp(), seq.as_ptr(), seq.len() as size_t) };
+        unsafe {
+            input_parse_buffer(
+                &mut *self.wp(),
+                ByteBuffer::from(bytes::Bytes::copy_from_slice(seq)),
+            )
+        };
     }
 
     fn feed_str(&mut self, seq: &str) {
@@ -119,28 +120,29 @@ impl Parser {
     }
 
     fn cursor(&mut self) -> (u_int, u_int) {
-        unsafe { ((*self.s()).cx, (*self.s()).cy) }
+        (*self.s()).cursor()
     }
 
     fn mode(&mut self) -> c_int {
-        unsafe { (*self.s()).mode }
+        (*self.s()).mode()
     }
 
     fn title(&mut self) -> String {
-        unsafe {
-            CStr::from_ptr((*self.s()).title_ptr())
+        {
+            (*self.s())
+                .title()
+                .expect("the input screen has a title")
                 .to_string_lossy()
                 .into_owned()
         }
     }
 
     fn lines(&mut self) -> Vec<String> {
-        let gd = unsafe { screen_grid_ptr(&mut *self.s()) };
-        unsafe {
+        let gd = { RustScreen::grid_mut(&mut *self.s()) };
+        {
             (0..(*gd).sy)
                 .map(|y| {
-                    let p =
-                        grid_string_cells(&*gd, 0, (*gd).hsize + y, (*gd).sx, None, 0, null_mut());
+                    let p = grid_string_cells(&*gd, 0, (*gd).hsize + y, (*gd).sx, None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -148,9 +150,9 @@ impl Parser {
     }
 
     fn cell(&mut self, px: u_int, py: u_int) -> grid_cell {
-        let gd = unsafe { screen_grid_ptr(&mut *self.s()) };
-        let mut gc = unsafe { grid_default_cell };
-        unsafe { gc = grid_get_cell(&*gd, px, py) };
+        let gd = { RustScreen::grid_mut(&mut *self.s()) };
+        let mut gc = { grid_default_cell };
+        gc = grid_get_cell(&*gd, px, py);
         gc
     }
 
@@ -170,10 +172,10 @@ impl Parser {
 impl Drop for Parser {
     fn drop(&mut self) {
         unsafe {
-            if let Some(ictx) = (*self.wp()).ictx.take() {
-                crate::input::input_free_box(ictx);
+            if let Some(ictx) = (*self.wp()).ictx_mut().take() {
+                ictx.close();
             }
-            colour_palette_free(Some(&mut (*self.wp()).palette));
+            RustColourEngine.free_palette(Some((*self.wp()).palette_mut()));
         }
     }
 }
@@ -227,7 +229,7 @@ fn tab_over_blank_space_writes_a_single_tab_cell() {
 #[test]
 fn bell_sets_the_window_alert_flag() {
     let mut p = Parser::new();
-    unsafe { options_set_number((*p.window.ptr()).options_ptr(), c"monitor-bell".as_ptr(), 0) };
+    unsafe { (*(*p.window.ptr()).options_ref()).set_number(c"monitor-bell", 0) };
     p.feed_str("\x07");
     assert_ne!(unsafe { (*p.window.ptr()).flags } & WINDOW_BELL, 0);
 }
@@ -238,9 +240,9 @@ fn linefeeds_eventually_scroll_lines_into_history() {
     for i in 0..23 {
         p.feed_str(&format!("{i}\r\n"));
     }
-    assert_eq!(unsafe { (*screen_grid_ptr(&mut *p.s())).hsize }, 0);
+    assert_eq!({ RustScreen::grid(&*p.s()).hsize }, 0);
     p.feed_str("23\n");
-    assert_eq!(unsafe { (*screen_grid_ptr(&mut *p.s())).hsize }, 1);
+    assert_eq!({ RustScreen::grid(&*p.s()).hsize }, 1);
     assert_eq!(p.lines()[0], "1");
     assert_eq!(p.lines()[21], "22");
     assert_eq!(p.lines()[22], "23");
@@ -274,13 +276,13 @@ fn save_and_restore_cursor_keeps_attributes_and_position() {
 #[test]
 fn full_reset_empties_the_screen_and_the_palette() {
     let mut p = Parser::new();
-    let red = unsafe { colour_parseX11(c"red".as_ptr()) };
+    let red = RustColourEngine.parse_x11(c"red");
     p.feed_str("junk\x1b]10;red\x07");
-    assert_eq!(unsafe { (*p.wp()).palette.fg }, red);
+    assert_eq!(unsafe { (*p.wp()).palette().fg }, red);
     p.feed_str("\x1bc");
     assert_eq!(p.lines()[0], "");
     assert_eq!(p.cursor(), (0, 0));
-    assert_eq!(unsafe { (*p.wp()).palette.fg }, 8);
+    assert_eq!(unsafe { (*p.wp()).palette().fg }, 8);
 }
 
 #[test]
@@ -384,7 +386,7 @@ fn erase_display_and_erase_line_cover_every_variant() {
     p.feed_str("\x1b[J");
     assert_eq!(p.lines()[0], "zzzz");
     p.feed_str("\x1b[3J");
-    assert_eq!(unsafe { (*screen_grid_ptr(&mut *p.s())).hsize }, 0);
+    assert_eq!({ RustScreen::grid(&*p.s()).hsize }, 0);
 }
 
 #[test]
@@ -423,15 +425,15 @@ fn scroll_region_limits_where_scrolling_happens() {
     let mut p = Parser::new();
     p.feed_str("top\r\nsecond\r\nthird\r\nfourth");
     p.feed_str("\x1b[2;3r");
-    assert_eq!(unsafe { (*p.s()).rupper }, 1);
-    assert_eq!(unsafe { (*p.s()).rlower }, 2);
+    assert_eq!({ (*p.s()).region().0 }, 1);
+    assert_eq!({ (*p.s()).region().1 }, 2);
     p.feed_str("\x1b[3;1H\n");
     assert_eq!(p.lines()[1], "third");
     assert_eq!(p.lines()[2], "");
     assert_eq!(p.lines()[3], "fourth");
     p.feed_str("\x1b[r");
-    assert_eq!(unsafe { (*p.s()).rupper }, 0);
-    assert_eq!(unsafe { (*p.s()).rlower }, 23);
+    assert_eq!({ (*p.s()).region().0 }, 0);
+    assert_eq!({ (*p.s()).region().1 }, 23);
 }
 
 #[test]
@@ -597,23 +599,23 @@ fn osc_colour_queries_report_black_with_no_client_attached() {
 #[test]
 fn osc_colour_settings_land_in_the_pane_palette() {
     let mut p = Parser::new();
-    let red = unsafe { colour_parseX11(c"red".as_ptr()) };
-    let blue = unsafe { colour_parseX11(c"blue".as_ptr()) };
+    let red = RustColourEngine.parse_x11(c"red");
+    let blue = RustColourEngine.parse_x11(c"blue");
     p.feed_str("\x1b]10;red\x07\x1b]11;blue\x07");
-    assert_eq!(unsafe { (*p.wp()).palette.fg }, red);
-    assert_eq!(unsafe { (*p.wp()).palette.bg }, blue);
+    assert_eq!(unsafe { (*p.wp()).palette().fg }, red);
+    assert_eq!(unsafe { (*p.wp()).palette().bg }, blue);
     p.feed_str("\x1b]110;\x07\x1b]111;\x07");
-    assert_eq!(unsafe { (*p.wp()).palette.fg }, 8);
-    assert_eq!(unsafe { (*p.wp()).palette.bg }, 8);
+    assert_eq!(unsafe { (*p.wp()).palette().fg }, 8);
+    assert_eq!(unsafe { (*p.wp()).palette().bg }, 8);
 }
 
 #[test]
 fn osc_palette_entries_are_settable_queryable_and_resettable() {
     let mut p = Parser::answering();
-    let red = unsafe { colour_parseX11(c"red".as_ptr()) };
+    let red = RustColourEngine.parse_x11(c"red");
     p.feed_str("\x1b]4;1;red\x07");
     assert_eq!(
-        unsafe { colour_palette_get(Some(&(*p.wp()).palette), COLOUR_FLAG_256 | 1) },
+        unsafe { RustColourEngine.get_palette(Some((*p.wp()).palette()), COLOUR_FLAG_256 | 1) },
         red
     );
     p.feed_str("\x1b]4;1;?\x1b\\");
@@ -622,7 +624,7 @@ fn osc_palette_entries_are_settable_queryable_and_resettable() {
     assert_eq!(p.replies(), b"");
     p.feed_str("\x1b]104;1\x07");
     assert_eq!(
-        unsafe { colour_palette_get(Some(&(*p.wp()).palette), COLOUR_FLAG_256 | 1) },
+        unsafe { RustColourEngine.get_palette(Some((*p.wp()).palette()), COLOUR_FLAG_256 | 1) },
         -1
     );
 }
@@ -631,7 +633,7 @@ fn osc_palette_entries_are_settable_queryable_and_resettable() {
 fn osc_prompt_marks_tag_the_lines_they_arrive_on() {
     let mut p = Parser::new();
     p.feed_str("$ \x1b]133;A\x07output\x1b]133;C\x07");
-    let flags = unsafe { grid_get_line(screen_grid_mut(&mut *p.s()), 0).flags };
+    let flags = { grid_get_line(RustScreen::grid_mut(&mut *p.s()), 0).flags };
     assert_ne!(flags & GRID_LINE_START_PROMPT, 0);
     assert_ne!(flags & GRID_LINE_START_OUTPUT, 0);
 }
@@ -639,21 +641,32 @@ fn osc_prompt_marks_tag_the_lines_they_arrive_on() {
 #[test]
 fn osc_clipboard_write_stores_a_paste_buffer_when_allowed() {
     let mut p = Parser::new();
-    unsafe { options_set_number(global_options, c"set-clipboard".as_ptr(), 2) };
-    p.feed_str("\x1b]52;c;aGVsbG8=\x07");
-    let mut name: Option<CString> = None;
-    let top = unsafe { paste_get_top(Some(&mut name)) };
-    assert!(!top.is_null());
     unsafe {
-        assert_eq!(paste_buffer_data(&*top), b"hello");
-        paste_free(top);
+        (global_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .set_number(c"set-clipboard", 2)
     };
+    p.feed_str("\x1b]52;c;aGVsbG8=\x07");
+    let top = with_paste_buffers(|buffers| {
+        buffers
+            .top()
+            .map(|buffer| (buffer.name.to_owned(), buffer.data.to_vec()))
+    })
+    .expect("no top buffer");
+    assert_eq!(top.1, b"hello");
+    with_paste_buffers_mut(|buffers| buffers.remove(top.0.as_c_str()));
 }
 
 #[test]
 fn an_osc_52_query_is_refused_while_set_clipboard_is_off() {
     let mut p = Parser::answering();
-    unsafe { options_set_number(global_options, c"set-clipboard".as_ptr(), 0) };
+    unsafe {
+        (global_options
+            .as_ref()
+            .expect("global options are initialized"))
+        .set_number(c"set-clipboard", 0)
+    };
     p.feed_str("\x1b]52;c;?\x07");
     assert_eq!(p.replies(), b"");
 }
@@ -693,17 +706,29 @@ fn control_bytes_interrupt_a_partial_utf8_sequence() {
 fn an_unterminated_sequence_is_held_until_it_completes() {
     let mut p = Parser::new();
     p.feed_str("\x1b[");
-    assert_eq!(unsafe { (*input_pending(&mut *p.ictx)).len() }, 2);
+    assert_eq!({ p.ictx.pending().unwrap().len() }, 2);
     p.feed_str("4mx");
-    assert_eq!(unsafe { (*input_pending(&mut *p.ictx)).len() }, 0);
+    assert_eq!({ p.ictx.pending().unwrap().len() }, 0);
     assert_eq!(p.lines()[0], "x");
+}
+
+#[test]
+fn an_unterminated_sequence_keeps_the_owned_input_segment() {
+    let mut p = Parser::new();
+    let input = bytes::Bytes::from_static(b"\x1b[");
+    let input_ptr = input.as_ptr();
+    unsafe { input_parse_buffer(&mut *p.wp(), ByteBuffer::from(input)) };
+    let mut ictx = p.ictx.borrow_mut();
+    let pending = ictx.pending().unwrap();
+    assert_eq!(pending.as_slice(), b"\x1b[");
+    assert_eq!(pending.as_slice().as_ptr(), input_ptr);
 }
 
 #[test]
 fn resetting_the_parser_clears_the_screen_when_asked() {
     let mut p = Parser::new();
     p.feed_str("junk");
-    unsafe { input_reset(&mut *p.ictx, 1) };
+    unsafe { p.ictx.reset(1) };
     assert_eq!(p.lines()[0], "");
     assert_eq!(p.cursor(), (0, 0));
 }

@@ -1,7 +1,13 @@
+use crate::options::OptionsRef;
+use crate::pane_identity::PaneIdentity;
+use crate::window_dimensions::WindowDimensionsState;
+use crate::window_layout_selection::WindowLayoutSelectionState;
+
+use crate::pane_geometry::PaneGeometryState;
+
 use super::*;
 use crate::fmt_args;
-use crate::layout::LAYOUT_CELL_FLOATING;
-use crate::options::{options_set_number, options_set_string};
+
 use crate::tests::test_fixtures::{Layout, globals};
 use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
@@ -21,8 +27,8 @@ fn set(l: &mut Layout, name: &CStr) -> String {
     unsafe {
         let i = layout_set_lookup(name);
         assert!(i >= 0, "{name:?} is a layout");
-        assert_eq!(layout_set_select(l.w(), i as u_int), i as u_int);
-        assert_eq!((*l.w()).lastlayout, i);
+        assert_eq!((l.reference()).select_layout(i as u_int), i as u_int);
+        assert_eq!((*l.w()).previous_layout(), Some(i));
     }
     l.dump()
 }
@@ -31,13 +37,7 @@ fn set(l: &mut Layout, name: &CStr) -> String {
 fn option(l: &mut Layout, name: &CStr, value: &str) {
     let value = CString::new(value).expect("no NUL");
     unsafe {
-        options_set_string(
-            (*l.w()).options_ptr(),
-            name.as_ptr(),
-            0,
-            c"%s".as_ptr(),
-            fmt_args![value.as_ptr()],
-        );
+        (*(*l.w()).options_ref()).set_string(name, 0, c"%s", fmt_args![value.as_ptr()]);
     }
 }
 
@@ -78,8 +78,8 @@ fn an_index_past_the_last_layout_is_the_last_layout() {
     let _guard = globals();
     let mut l = build(2, 80, 24);
     unsafe {
-        assert_eq!(layout_set_select(l.w(), 99), 6);
-        assert_eq!((*l.w()).lastlayout, 6);
+        assert_eq!((l.reference()).select_layout(99), 6);
+        assert_eq!((*l.w()).previous_layout(), Some(6));
     }
 }
 
@@ -88,15 +88,15 @@ fn the_layouts_are_stepped_through_in_a_ring() {
     let _guard = globals();
     let mut l = build(2, 80, 24);
     unsafe {
-        assert_eq!((*l.w()).lastlayout, -1);
-        assert_eq!(layout_set_next(l.w()), 0);
-        assert_eq!(layout_set_next(l.w()), 1);
-        (*l.w()).lastlayout = 6;
-        assert_eq!(layout_set_next(l.w()), 0);
-        assert_eq!(layout_set_previous(l.w()), 6);
-        assert_eq!(layout_set_previous(l.w()), 5);
-        (*l.w()).lastlayout = -1;
-        assert_eq!(layout_set_previous(l.w()), 6);
+        assert_eq!((*l.w()).previous_layout(), None);
+        assert_eq!((l.reference()).select_next_layout(), 0);
+        assert_eq!((l.reference()).select_next_layout(), 1);
+        (*l.w()).remember_layout(6);
+        assert_eq!((l.reference()).select_next_layout(), 0);
+        assert_eq!((l.reference()).select_previous_layout(), 6);
+        assert_eq!((l.reference()).select_previous_layout(), 5);
+        (*l.w()).clear_previous_layout();
+        assert_eq!((l.reference()).select_previous_layout(), 6);
     }
 }
 
@@ -147,13 +147,13 @@ fn an_even_layout_grows_a_window_that_is_too_small() {
         set(&mut l, c"even-horizontal"),
         "LR 5x24+0+0 [%1 1x24+0+0 | %2 1x24+2+0 | %3 1x24+4+0]"
     );
-    assert_eq!(unsafe { (*l.w()).sx }, 5);
+    assert_eq!(unsafe { (*l.w()).dimensions().size.width }, 5);
     let mut l = build(3, 80, 4);
     assert_eq!(
         set(&mut l, c"even-vertical"),
         "TB 80x5+0+0 [%1 80x1+0+0 | %2 80x1+0+2 | %3 80x1+0+4]"
     );
-    assert_eq!(unsafe { (*l.w()).sy }, 5);
+    assert_eq!(unsafe { (*l.w()).dimensions().size.height }, 5);
 }
 
 #[test]
@@ -210,7 +210,13 @@ fn a_mirrored_main_layout_puts_the_others_first() {
 /// The size of the pane the layout is built around: the same whichever
 /// way round the layout is written.
 fn main_pane(l: &mut Layout) -> String {
-    unsafe { format!("{}x{}", (*l.pane(0)).sx, (*l.pane(0)).sy) }
+    unsafe {
+        format!(
+            "{}x{}",
+            (*l.pane(0)).geometry().width,
+            (*l.pane(0)).geometry().height
+        )
+    }
 }
 
 /// The main pane's size comes from `main-pane-height`, and the rest from
@@ -338,7 +344,15 @@ fn a_tiled_layout_grows_a_window_that_is_too_small() {
         set(&mut l, c"tiled"),
         "TB 3x3+0+0 [LR 2x1+0+0 [%1 1x1+0+0 | %2 1x1+2+0] | %3 2x1+0+2]"
     );
-    assert_eq!(unsafe { ((*l.w()).sx, (*l.w()).sy) }, (3, 3));
+    assert_eq!(
+        unsafe {
+            (
+                (*l.w()).dimensions().size.width,
+                (*l.w()).dimensions().size.height,
+            )
+        },
+        (3, 3)
+    );
 }
 
 #[test]
@@ -346,25 +360,13 @@ fn a_tiled_layout_keeps_to_the_column_limit() {
     let _guard = globals();
     let mut l = build(5, 80, 24);
     option(&mut l, c"main-pane-height", "24");
-    unsafe {
-        options_set_number(
-            (*l.w()).options_ptr(),
-            c"tiled-layout-max-columns".as_ptr(),
-            2,
-        )
-    };
+    unsafe { (*(*l.w()).options_ref()).set_number(c"tiled-layout-max-columns", 2) };
     assert_eq!(
         set(&mut l, c"tiled"),
         "TB 80x24+0+0 [LR 80x7+0+0 [%1 39x7+0+0 | %2 40x7+40+0] | LR 80x7+0+8 [%3 39x7+0+8 | %4 40x7+40+8] | %5 80x8+0+16]"
     );
     let mut l = build(3, 80, 24);
-    unsafe {
-        options_set_number(
-            (*l.w()).options_ptr(),
-            c"tiled-layout-max-columns".as_ptr(),
-            1,
-        )
-    };
+    unsafe { (*(*l.w()).options_ref()).set_number(c"tiled-layout-max-columns", 1) };
     assert_eq!(
         set(&mut l, c"tiled"),
         "TB 80x24+0+0 [%1 80x7+0+0 | %2 80x7+0+8 | %3 80x8+0+16]"
@@ -381,8 +383,10 @@ fn a_floating_pane_is_counted_out_but_laid_out_anyway() {
     let _guard = globals();
     let mut l = build(3, 80, 24);
     set(&mut l, c"even-horizontal");
-    unsafe { (*(*l.pane(1)).layout_cell).flags |= LAYOUT_CELL_FLOATING };
-    assert_eq!(unsafe { crate::window::window_count_panes(l.w(), 0) }, 2);
+    unsafe {
+        crate::tests::test_fixtures::set_pane_floating(&mut *l.w(), (*l.pane(1)).pane_id(), true)
+    };
+    assert_eq!(unsafe { window_count_panes(&mut *l.w(), 0) }, 2);
     assert_eq!(
         set(&mut l, c"even-horizontal"),
         "LR 80x24+0+0 [%1 26x24+0+0 | %2 26x24+27+0 | %3 26x24+54+0]"

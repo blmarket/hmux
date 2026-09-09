@@ -19,7 +19,6 @@ default-filter = '''
 not (
     test(=colour::tests::an_empty_pane_colours_option_leaves_no_default_table)
     + test(=colour::tests::pane_colours_fill_the_default_table_by_index)
-    + test(=compat::recallocarray::tests::zero_sized_old_block_takes_the_reallocation_path)
     + test(=grid::tests::an_emptied_line_keeps_no_cells_unless_the_background_is_set)
     + test(=grid::tests::grids_compare_by_size_and_by_every_cell_of_the_screen)
     + test(=layout_custom::tests::a_dump_that_does_not_fit_answers_nothing)

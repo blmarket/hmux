@@ -37,7 +37,7 @@ pub(crate) use copy::{
     WINDOW_COPY_LINE_NUMBERS_HYBRID, WINDOW_COPY_LINE_NUMBERS_OFF,
     WINDOW_COPY_LINE_NUMBERS_RELATIVE, WINDOW_COPY_OFF, WINDOW_COPY_SEARCH_ALL_TIMEOUT,
     WINDOW_COPY_SEARCH_MAX_LINE, WINDOW_COPY_SEARCH_TIMEOUT, WINDOW_COPY_SEARCHDOWN,
-    WINDOW_COPY_SEARCHUP, window_copy_backing,
+    WINDOW_COPY_SEARCHUP,
 };
 #[cfg(test)]
 pub(crate) use customize::{
@@ -47,7 +47,6 @@ pub(crate) use customize::{
     WINDOW_CUSTOMIZE_SESSION, WINDOW_CUSTOMIZE_UNSET, WINDOW_CUSTOMIZE_WINDOW,
 };
 pub(crate) use customize::{
-    window_customize_change_current_callback, window_customize_change_tagged_callback,
     window_customize_set_command_callback, window_customize_set_note_callback,
     window_customize_set_option_callback,
 };
@@ -56,10 +55,3 @@ pub(crate) use tree::{
     WINDOW_TREE_DEFAULT_COMMAND, WINDOW_TREE_DEFAULT_FORMAT, WINDOW_TREE_DEFAULT_KEY_FORMAT,
     WINDOW_TREE_NONE, WINDOW_TREE_PANE, WINDOW_TREE_SESSION, WINDOW_TREE_WINDOW,
 };
-pub(crate) use tree::{
-    window_tree_command_callback, window_tree_kill_current_callback,
-    window_tree_kill_tagged_callback,
-};
-#[cfg(test)]
-pub(crate) use widget::{mode_tree_expand_current, mode_tree_get_current};
-pub(crate) use widget::{mode_tree_filter_callback, mode_tree_search_callback};

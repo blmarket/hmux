@@ -3,10 +3,9 @@ use super::store::{
     grid_move_lines, grid_scroll_history, grid_scroll_history_region, grid_set_cell,
     grid_set_cells, grid_set_padding, grid_string_cells,
 };
+pub use crate::consts::GRID_HISTORY;
 pub use crate::types::*;
-use ::core::ptr::null_mut;
 use ::std::ffi::CString;
-pub const GRID_HISTORY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
 /*
  * The screen sits below the history, so every position the screen names is
@@ -189,7 +188,7 @@ pub fn grid_view_delete_cells(gd: &mut grid, px: u_int, py: u_int, nx: u_int, bg
 
 /// The text of `nx` cells of one screen line.
 pub fn grid_view_string_cells(gd: &grid, px: u_int, py: u_int, nx: u_int) -> CString {
-    grid_string_cells(gd, px, view_y(gd, py), nx, None, 0, null_mut())
+    grid_string_cells(gd, px, view_y(gd, py), nx, None, 0, None)
 }
 
 #[cfg(test)]

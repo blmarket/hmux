@@ -1,46 +1,73 @@
 # hmux
 
-This product tree was renamed from `tmux-c2rs/` to `hmux/`; the Rust package
-and its source-level `tmux-c2rs` provenance names remain unchanged for now.
+The Rust package and executable are named `hmux`. The library target retains
+its `tmux_c2rs` name for the transpilation's existing consumers.
 
-A whole-program [c2rust](https://github.com/immunant/c2rust) transpilation of
-the pinned tmux 3.7b source. Every C translation unit is a Rust module in one
-crate, and the crate builds an `hmux` binary that behaves like the C one.
-
-This is the bulk-transpile counterpart to `../tmux-rs`, which migrates tmux one
-externally visible C function at a time. The two are independent routes from the
-same pinned reference and share nothing.
+The implementation began as a whole-program
+[c2rust](https://github.com/immunant/c2rust) transpilation of tmux 3.7b. It now
+combines translated command behavior with Rust-owned engine components and the
+`hmux-rt` runtime. The end-user compatibility contract is the tmux-compatible
+command line, wire protocol, and observable server behavior, with the deliberate
+differences documented below.
 
 ## What the source is
 
-`src/` was produced by `c2rust transpile` and is now the source of record: the
-transpiling pipeline has been retired, so the crate is edited directly and no
-longer sits under a `generated/` output directory. It
-still reads the way c2rust emits — unsafe, unidiomatic Rust mirroring the C
-control flow, with raw pointers, `goto`-shaped `current_block` loops, and C
-globals throughout. It is 154 modules and roughly 340k lines from 150
-translation units, builds on edition 2024, and compiles with about 1450
-warnings, mostly duplicate `extern` function declarations that each module
-repeats.
+`src/` is the source of record and is edited directly; the transpiling pipeline
+has been retired. Command, server, screen, grid, input, and other subsystems have
+their own module directories. Shared entity and compatibility types remain in
+`src/types.rs`, with session state in `src/session.rs`. External C declarations
+are centralized in `src/ffi.rs`; Rust subsystem calls use their actual Rust
+signatures.
 
-The type declarations c2rust duplicated the same way were collapsed into
-`src/types.rs`, so a name like `grid_cell` is one Rust type
-crate-wide rather than one per module. What stayed behind is what could not
-be proven identical: the anonymous `C2RustUnnamed_NN` structs, whose numbering
-is per translation unit and so means different things in different modules,
-and every named type that reaches one — which is most of tmux's own core,
-`client`, `session`, `window` and `grid` among them.
+Ownership migration is ongoing. Options and several callback-state families use
+`Rc<RefCell<_>>` handles and checked borrow guards. Session, window, and client
+owners no longer implicitly dereference to payload references; compatibility
+access requires an explicit unsafe call. Each pane's window holds
+a strong `RustWindowPaneRef`, moved between windows during transfer.
+`RustWindowPaneWeak` is the non-owning observation used by command targets,
+modes, callbacks, and lookup results. Cloning an observation does not extend
+the pane's lifetime; explicitly upgrading it produces a strong reference.
+The global pane index stores weak observations without traversing a window's pane list.
+Pane moves and swaps preserve allocation identity and update a weak window
+back-reference. Stream callbacks use weak pane observations and skip removed
+or temporarily detached panes.
 
-The declarations c2rust duplicated for *functions* are being resolved a
-different way. Where the crate already defines the function, the module's
-`extern "C"` declaration of it is replaced by a `use` of the definition: the
-call reaches the same `#[no_mangle]` symbol the linker was resolving it to
-anyway, but rustc now checks it against the real signature instead of against
-a per-module restatement. 820 of the 4,288 declaration sites convert on those
-terms today. The rest name a type that is still per-module — `client` and
-friends above — so the declared and defined signatures are different Rust
-types even where they are the same C prototype, and they stay as they are
-until the anonymous types are renamed.
+Pane destruction unregisters the pane at the equivalent point to tmux 3.7b's
+`RB_REMOVE`, tears down its resources, and consumes its sole strong owner at the
+equivalent point to `free(wp)`. Outstanding observations then return `None`;
+there is no separate live flag or retained pane payload. Destruction rejects
+extra strong owners instead of silently postponing the free. Detached panes
+remain registered during transfer, and membership-specific lookup checks their
+current weak window reference. Pane IDs are never reused during a server's
+lifetime.
+
+Borrowed pane interfaces use `&dyn WindowPane` and `&mut dyn WindowPane`.
+The payload's fields are private to its owning module; consumers use the trait
+and its state capabilities for process, I/O, screen, mode, and window-context
+access. `RustWindowPaneWeak::get` and `get_mut` expose these trait borrows and
+return `None` after destruction. Both calls remain unsafe: the caller must
+exclude conflicting access and teardown for the borrow's lifetime. Concrete
+pane storage implements `Default`; the borrowed capability traits do not
+require construction support.
+
+Some registries and server state remain process globals. Global collection
+wrappers bind to their first accessing thread and reject other threads before
+touching their contents. A mode entry's parent-pane pointer is used only before
+mode teardown. Mode trees can outlive their modes; they resolve pane IDs and
+detach on mode closure. Shared pane payload mutation uses `UnsafeCell` with
+explicit unsafe accessors, as window and session compatibility access does.
+Callers must exclude conflicting borrows and reentrant teardown; reference
+counting alone does not enforce those rules. These are transitional boundaries,
+not a completed memory-safety audit.
+
+Copy mode observes its source pane by ID. Its cloned screen survives source
+pane destruction, and `refresh-from-pane` then leaves that snapshot unchanged.
+The translated C path retained the source address and could access freed memory
+when refreshing after the source disappeared.
+
+Public Rust structs and functions are implementation surfaces. Existing public
+traits are versioned compatibility contracts; changes to their signatures or
+semantics require human signoff.
 
 The 27 expansions of the BSD `tree.h` `RB_GENERATE` macros the transpile
 carried — every `*_RB_INSERT`, `*_RB_REMOVE`, `*_RB_FIND` and their colour
@@ -67,19 +94,136 @@ result this crate produces: `--enable-utf8proc` alone decides whether
 `utf8_towc` goes through utf8proc or libc `mbrtowc`, which changes both the
 width tables and the errno left behind on invalid input.
 
+## Trait pointer migration
+
+The raw string convenience methods on `Arguments` and `SessionNameState` have
+been removed. Their `Option<&CStr>` accessors cover scoped reads; a caller that
+retains a name can use `session_name_owned` or copy the borrowed string.
+
+`OptionsEngine::array_get` and `array_value` now borrow values from their entry
+or item. `array_indices` replaces the raw `array_first`/`array_next` cursor pair
+with an ordered index snapshot, allowing each subsequent read or mutation to
+have its own borrow. Hook consumers clone command handles through `value_command`
+before queueing them. `OptionsRef::string_ref` replaces the raw string accessor
+with an immutable `Rc<CStr>` snapshot retained independently of the store. Status,
+copy mode, rendering, and command consumers borrow that snapshot while reading it.
+`OptionsRef::style_value` replaces the cached style pointer
+with an independent copy, which remains valid after an option changes.
+
+`OptionsRef::with_entry` retains the owning store and borrows the entry only for
+its callback. Scalar reads, option formatting, and option listing use this path.
+`local_names` replaces the raw store cursor pair with a name snapshot. Parsing
+and prefix matching return owned names before scoped lookup; scalar setters no
+longer return entry pointers. `OptionsEngine` has no raw-pointer-returning methods.
+`with_entry_mut` holds an exclusive scoped borrow for array edits; the native
+adapter also tracks these borrows and rejects conflicting access through clones.
+Hook queues retain cloned command handles, and status rendering retains array
+strings through `value_string_ref` before releasing the entry borrow.
+Removal and reset take a store and name after any entry borrow ends. Initializers
+return no entry pointer; subsequent reads and edits use scoped callbacks.
+The Rust store also initializes defaults without raw entry pointers and parses
+styles from retained text. Format expansion runs outside the store borrow;
+cache writes check that the option still holds that text after expansion.
+
+`LongOption` descriptors retain a lifetime-bound flag borrow. Shared and mutable
+flag accessors replace the raw flag pointer, and long-option parsing uses a
+bounded descriptor slice. The native adapter retains the same borrow lifetime.
+
+`VariadicArguments` borrows initialized backing regions as slices with shared
+and exclusive accessors. `VariadicCursor` replaces the unused raw ABI cursor
+record; the native adapter keeps the supplied region lengths and borrow lifetime.
+
+`SystemdJobWatch` owns its optional path and returns a scoped string borrow. The
+bus reply is copied when the watch is armed; the native adapter also retains an
+owned path through replacement and clearing.
+
+`TerminalCommandData` and `TerminalCommandSelection` borrow complete byte slices
+and clipboard names. Drawing contexts carry those lifetimes through synchronous
+output, including cloned contexts, without copying the payload. Native adapters
+retain the same lifetime and expose scoped slice and string borrows.
+
+`UserAccount` returns borrowed strings from owned account snapshots. Name and
+UID lookups use the reentrant libc routines with caller-owned storage, and
+server access, tilde expansion, user formats, and startup defaults retain those
+snapshots while reading their fields. The native adapter owns its strings too.
+
+`CalendarTime` retains its optional timezone in `Rc<CStr>` and returns a string
+borrow. Clock drawing and time formats use owned local-time results; nested
+format state clones retain the timezone handle. Raw calendar records exist only
+for the duration of libc calls.
+
+`SystemdBusError` owns snapshot strings and returns scoped borrows. Its recorded
+ownership marker is metadata; native error cleanup belongs to the private guard
+that captures the snapshot, independently of later changes to that metadata.
+
+`ImsgMessage` borrows its original body range from the owned message buffer,
+independently of the reader cursor. Shared and exclusive slice access replace
+the stored raw data pointer. Client, server, and file dispatch decode bounded
+bytes and strings; the native adapter owns the body behind its borrowed view.
+Header encoding and decoding use fixed byte arrays instead of struct-pointer
+casts, retaining imsg native byte order. Header readers receive the current
+size limit as a value refreshed before each read, rather than retaining a raw
+pointer to the transport owner. Initialized readers can move without leaving a
+callback tied to their former address.
+
+`IoVector` retains initialized storage through `IoSliceMut` and exposes shared
+and exclusive slice access. Queued writes use `IoSlice` borrows and reads use
+`IoSliceMut` borrows through the syscall. Descriptor bookkeeping uses the queue
+owner after those borrows end; native adapters retain the same slice lifetime.
+The buffer adapter borrows initialized bytes and spare capacity through
+`BytesMut`'s separate slice interfaces.
+
+`ControlMessageHeader` borrows a complete initialized ancillary buffer. Its
+payload accessors return bounded shared or exclusive slices, and length updates
+must fit that buffer. Received ancillary messages are decoded through disjoint,
+validated byte ranges instead of header-pointer arithmetic. Native comparisons
+cover the platform header encoding, including storage without header alignment.
+
+`MessageHeader` retains exclusive borrows of its optional address, I/O vector
+array, and initialized ancillary storage. Its accessors return scoped slices and
+its setters retain the replacement buffers. Socket receive calls keep those
+borrows through `recvmsg`; the send path borrows immutable regions through
+`sendmsg`. Native adapters retain the same buffer lifetimes and enforce storage
+bounds on length changes. Raw libc socket headers are local to syscall adapters;
+the exported header copies and the ancillary-storage union are removed.
+
+`RegexBuffer` compiles owned libc patterns and returns match offsets for bounded
+borrowed strings. The automaton and lookup-table pointers are no longer exposed:
+callers use matching operations instead of inspecting opaque libc storage.
+Substitutions, format matching, pane search, and copy-mode search share the same
+owned guard, so cleanup follows scope and early returns. The chosen POSIX engine
+and its per-context matching flags are preserved.
+
+`GlobResult` owns its path slots and safely borrows individual names. Expansion
+uses a private libc result, copies names into shared `Rc<CStr>` storage, and
+releases the native allocation before returning. `source-file` moves those names
+into its work queue and clones their handles for asynchronous reads. The raw
+path-vector constructor and public native glob record are removed; libc remains
+the pathname-expansion engine.
+
+This migration removes forty-four raw-returning trait signatures. The audited
+traits no longer return raw pointers. Unsafe mutation and native ABI operations still carry
+caller obligations; this does not make those operations safe. The tmux command and wire behavior is unchanged by these migrations.
+
 ## Layout
 
-- `src/` — one module per translation unit, reached through `src/lib.rs`.
-  `src/tmux.rs` is tmux.c and owns the entry point; `src/main.rs` is a thin
-  binary that calls into it, because a second copy would define every one of
-  tmux.c's `#[no_mangle]` globals twice. `src/types.rs` is not a translation
-  unit: it holds the type declarations shared by all of them, and every module
-  glob-imports it. `src/fmt_engine.rs` is not one either: it is the crate's own
-  printf(3) engine, which every one of the format-taking functions
-  (`log_debug`, `xasprintf`, `cmdq_print`, `format_add`, …) expands its C
-  format string with. Those functions take their arguments as a `&[FmtArg]`
-  slice rather than as C varargs, which is why no Rust function definition in
-  the tree carries a C calling convention any more.
+- `src/main.rs` forwards command-line arguments to the library entry point in
+  `src/tmux.rs`.
+- `src/cmd/` and `src/server/` implement command dispatch and server lifecycle.
+- `src/screen/`, `src/grid/`, `src/input/`, and `src/tty/` handle terminal state,
+  input parsing, and attached-client drawing; `src/control/` handles control mode.
+- `src/options/` owns option storage and inheritance. `src/types.rs` retains shared
+  entity types and transitional compatibility exports.
+- `src/reactor/` adapts the `hmux-rt/` runtime to daemon callbacks and I/O.
+- `src/fmt_engine.rs` implements C-style formatting using `FmtArg` slices in place
+  of C varargs. Format strings and output storage use slice access, and borrowed
+  C-string and byte-slice arguments retain their lifetimes through formatting.
+  Byte strings stop at their slice boundary, NUL, or precision limit. Raw-pointer
+  string arguments remain for callers awaiting migration.
+  `src/ffi.rs` declares external C functions.
+- `src/tests/` and subsystem-local test modules cover engine behavior. The parent
+  repository supplies the tmux conformance harness and validation gates.
+- `hmux-agent/` contains the shared agent-classification implementation.
 
 ## Run
 
@@ -92,6 +236,38 @@ make check-tmux # refuse a reference tmux that is not 3.7b
 `make clean` runs `cargo clean`.
 
 ## Event loop
+
+Hyperlink sets share an eviction registry within their server thread. Each set
+retains the registry owner through cleanup, including thread exit; separate
+threads have independent registries and ID counters. Exhausted hyperlink ID
+counters fail explicitly rather than recycling identities that grid cells or
+queued eviction entries may still reference.
+
+Key tables, named wait channels, and paste buffers also use checked thread-local
+registries. Queue wakeups, client updates after table removal, and paste-buffer
+notifications run after their registry borrows end, so observers can revisit the
+committed state. The starting environment uses checked thread-local storage;
+command output and expansion callbacks consume owned snapshots after its borrows
+end. Other server collections are still being migrated.
+
+UTF-8 width overrides and temporary width suppression are confined to the
+calling thread. Packed character IDs use a shared, synchronized intern store so
+encoded grid characters retain their meaning across callers and threads.
+
+Pane, window, and session IDs are never recycled within a server thread. After issuing
+the final 32-bit ID, subsequent creation panics instead of wrapping to zero and
+allowing a stale observation to address a replacement entity. This differs from
+the reference at ID exhaustion; pane activity-order stamps retain their existing
+wrapping behavior. The `next_session_id` format is empty once session IDs are
+exhausted.
+
+Job IDs also never wrap. Once exhausted, starting a job returns failure with
+`EOVERFLOW` before opening descriptors or forking; callback data is released.
+Failed startup attempts consume their reserved ID.
+
+Collected screen items use a shared, synchronized pool with FIFO reuse. Released
+items remain readable until reuse; allocation panics before an index could
+become the reserved sentinel or wrap to an existing item.
 
 The daemon uses the repository's `hmux-rt` runtime and its mio readiness
 backend. Timers, descriptor watches, signals, deferred callbacks, and buffered
@@ -259,51 +435,44 @@ configuration file is read, so `.tmux.conf` still wins.
 
 ## Testing
 
-The build is a whole `hmux` binary that reports `tmux 3.7b` and speaks the
-pinned client's wire protocol, so it is tested from the outside rather than
-function by function: put `target/debug/hmux` where a suite expects
-its tmux and compare the run against the pinned binary. `make test-c2rs` at
-the repository root puts this binary on `PATH` as the oracle and runs the
-conformance suite against it; the hmux-conformance harness picks its reference
-tmux off `PATH`, version-checked against 3.7b.
+The `hmux` executable reports `tmux 3.7b` and speaks the pinned client's wire
+protocol. Unit tests exercise Rust components, and the parent repository's
+conformance harness compares hmux against the reference `tmux` found on `PATH`.
+The reference must report exactly `tmux 3.7b`.
 
-### Valgrind and AddressSanitizer
+From the parent repository, `make unit`, `make test`, `make lint`, `make asan`, and `make leak`
+default to the active hmux implementation. `make test` runs unit tests and the
+main conformance suite. Per-command, hook, queue, notification, and VT corpus
+suites have separate Makefile targets. The hmux conformance profile also runs
+ignored cases, with a small explicit exclusion backlog in the parent nextest
+configuration. Passing `SUT=hmux0` selects the retired daemon's gates.
 
-`nix develop` carries both. Valgrind runs the unit test binary as it is, which
-`cargo test --lib --no-run` builds and names:
+The main conformance suite also runs the release hmux client through basic
+start, attach, shell-exit, and detach lifecycles against the tmux oracle.
+`make test-client` runs these cases alone. The gate builds the optimized client
+and passes its path as `HMUX_CLIENT_BIN`; server conformance continues to use
+the selected server build.
 
-    valgrind --error-exitcode=99 <the binary it named> --test-threads=1
+The unit gate runs each test in its own process with nextest, then runs doctests
+through `cargo test --doc`. Global collection thread bindings last for the
+process lifetime, so tests that use process globals require these isolated
+gates. The leak gate also uses separate test processes; neither leak detection
+nor conformance establishes aliasing soundness. The ASan gate checks address
+safety with leak detection left to the separate leak gate. Resolver linkage
+explicitly retains `libresolv` because ASan supplies base64 interceptor symbols
+that otherwise let the linker discard the real implementation. Socket receives
+use full address storage before copying a bounded prefix to the caller, so
+ASan's receive interceptor can check the returned address length.
 
-AddressSanitizer wants the nightly flag, an explicit target so the build script
-is left uninstrumented, and a target directory of its own so an instrumented
-build does not displace the plain one:
+From this directory, `make check-buffer-memory` runs the segmented-buffer tests
+under AddressSanitizer on nightly Rust for `x86_64-unknown-linux-gnu`. The suite
+includes deterministic operation sequences compared with a contiguous byte
+model, and checks oversized trait copies without changing the inherent method's
+clamping behavior. This focused gate does not cover other daemon components or
+replace the full conformance and leak gates. Miri is not required by this target.
 
-    RUSTFLAGS=-Zsanitizer=address cargo test --lib \
-      --target x86_64-unknown-linux-gnu --target-dir target/asan
-
-LeakSanitizer comes with it and reports on the way out; what both tools count
-as still allocated at exit is mostly the globals a server keeps for its whole
-run. Neither sees a read that runs past what a `Vec` holds while staying inside
-what it allocated -- only one that runs past the allocation itself.
-
-## Reference source
-
-The transpiled source is stock tmux 3.7b, the same the rest of the tree pins. It
-is the unpatched upstream tarball: the patches in `hmux/nix/tmux.nix` -- and
-`nix/tmux.nix` here, kept identical to it -- are applied when building the
-conformance oracle, not here, so a conformance comparison against the oracle
-inherits that difference.
-
-Eleven of those patches go the other way: they are leaks 3.7b has, which this
-crate now fixes and the oracle carries the same fix for, all but the last
-submitted upstream. `window_pane_destroy` freeing neither
-`border_status_line.expanded` nor `r.ranges`, `server_client_lost` freeing
-neither `c->path` nor the exit strings, tree mode's preview leaking a format
-tree per drawn window or pane, `set-buffer` leaking the `-b` name,
-`format_draw` dropping its collected items on an unterminated style,
-`screen_write_free_list` dropping the ones a line still holds, `if-shell -F` --
-with `args_make_commands_now` behind it -- never freeing the command list it
-queues, and `environ_push` orphaning the fresh `environ` array the first
-`setenv` replaces. A leak is not observable through the command line, the wire
-protocol or server behavior, so none of these was ever a conformance difference
--- only a difference from the transpiled source, and now not that either.
+`make check-collection-memory` runs the global-collection tests under
+ThreadSanitizer. It uses the production collection module directly through a
+small standalone test manifest and rebuilds the standard library with matching
+instrumentation. This target requires nightly Rust, `rust-src`, and
+`x86_64-unknown-linux-gnu`; it covers the collection thread boundary.

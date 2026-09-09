@@ -2,15 +2,15 @@ use super::*;
 use ::core::ffi::CStr;
 
 struct Outcome {
-    value: ::core::ffi::c_longlong,
+    value: core::ffi::c_longlong,
     errstr: Option<String>,
-    errno: ::core::ffi::c_int,
+    errno: core::ffi::c_int,
 }
 
-fn call(numstr: &CStr, minval: i64, maxval: i64, preset: ::core::ffi::c_int) -> Outcome {
+fn call(numstr: &CStr, minval: i64, maxval: i64, preset: core::ffi::c_int) -> Outcome {
     unsafe {
         *__errno_location() = preset;
-        let result = strtonum(numstr.as_ptr(), minval, maxval);
+        let result = strtonum(numstr, minval, maxval);
         Outcome {
             value: result.unwrap_or(0),
             errstr: result
@@ -109,9 +109,9 @@ fn the_exact_range_limits_parse_without_error() {
 fn a_discarded_message_still_leaves_errno_set() {
     unsafe {
         *__errno_location() = 7;
-        assert_eq!(strtonum(c"42".as_ptr(), 0, 100).unwrap_or(0), 42);
+        assert_eq!(strtonum(c"42", 0, 100).unwrap_or(0), 42);
         assert_eq!(*__errno_location(), 7);
-        assert_eq!(strtonum(c"nope".as_ptr(), 0, 100).unwrap_or(0), 0);
+        assert_eq!(strtonum(c"nope", 0, 100).unwrap_or(0), 0);
         assert_eq!(*__errno_location(), EINVAL);
     }
 }

@@ -1,13 +1,16 @@
+use crate::options::OptionsRef;
+use crate::pane_geometry::PaneGeometryState;
+
 use super::*;
-use crate::cmd::CmdqType;
-use crate::options::options_set_number;
-use crate::reactor::Buf;
-use crate::session::session_options;
-use crate::terminfo::{TTYC_CUP, TtyCode};
+use crate::cmd::{CmdqListOps, cmdq_next};
+
+use crate::reactor::ByteBuffer;
+use crate::server::client_ref_of;
+
+use crate::terminfo::TerminalCapabilities;
 use crate::tests::test_fixtures::{Pane, Target, globals, zeroed, zeroed_client, zeroed_term};
 use crate::window::WINDOW_ZOOMED;
 use ::core::ffi::{CStr, c_int, c_longlong};
-use ::core::ptr::null_mut;
 use ::std::ffi::CString;
 
 /// The only capability the fixture terminal has: a cursor move, written so
@@ -30,7 +33,7 @@ struct Overlay {
     extra: Vec<Pane>,
     t: Target,
     c: ClientRef,
-    _guard: ::std::sync::MutexGuard<'static, ()>,
+    _guard: std::sync::MutexGuard<'static, ()>,
 }
 
 impl Overlay {
@@ -38,15 +41,16 @@ impl Overlay {
         let guard = globals();
         let mut t = Target::new(sx, sy);
         let mut term = zeroed_term();
-        term.codes[TTYC_CUP as usize] = TtyCode::String(CUP.to_owned());
+        term.borrow_mut().apply_overrides(c"cup=<%p1%d,%p2%d>");
         let mut c = zeroed_client();
-        c.name = Some(c"draw-fixture".to_owned());
-        c.session = t.session();
-        c.tty.sx = sx;
-        c.tty.sy = sy;
-        c.tty.term = Some(term);
-        c.tty.out = Some(Box::new(Buf::new()));
-        c.tty.owner = crate::server::client_ref_from_ptr(&raw mut *c).map(|c| c.downgrade());
+        (unsafe { c.as_client_mut() }).name = Some(c"draw-fixture".to_owned());
+        unsafe { c.set_attached_session(Some(t.session_handle())) };
+        unsafe { c.as_tty_mut() }.sx = sx;
+        unsafe { c.as_tty_mut() }.sy = sy;
+        unsafe { c.as_tty_mut() }.term = Some(term);
+        unsafe { c.as_tty_mut() }.out = Some(Box::new(ByteBuffer::new()));
+        unsafe { c.as_tty_mut() }.owner =
+            crate::server::client_ref_of(&*(unsafe { c.as_client() })).map(|c| c.downgrade());
         Overlay {
             extra: Vec::new(),
             t,
@@ -56,7 +60,7 @@ impl Overlay {
     }
 
     fn client(&mut self) -> *mut client {
-        &raw mut *self.c
+        unsafe { self.c.as_client_mut() }
     }
 
     fn pane(&mut self) -> *mut window_pane {
@@ -74,39 +78,40 @@ impl Overlay {
 
     /// Numbers the window's panes from `base`, as `pane-base-index` does.
     fn base_index(&mut self, base: c_longlong) {
-        let wo = unsafe { (*self.t.window(0)).options_ptr() };
-        unsafe { options_set_number(wo, c"pane-base-index".as_ptr(), base) };
+        let wo = unsafe { (*self.t.window(0)).options_ref() };
+        unsafe { (*wo).set_number(c"pane-base-index", base) };
     }
 
     /// A redraw context covering the whole terminal, which a test moves and
     /// shrinks to put the panes outside it.
     fn ctx(&mut self) -> Box<screen_redraw_ctx> {
         let mut ctx = Box::new(screen_redraw_ctx::default());
-        ctx.c = &raw mut *self.c;
-        ctx.sx = self.c.tty.sx;
-        ctx.sy = self.c.tty.sy;
+        ctx.c = client_ref_of(unsafe { self.c.as_client() });
+        ctx.sx = unsafe { self.c.as_tty() }.sx;
+        ctx.sy = unsafe { self.c.as_tty() }.sy;
         ctx
     }
 
     /// Runs the overlay draw callback over `ctx`, exactly as the redraw
     /// code calls it.
     fn draw(&mut self, ctx: &mut screen_redraw_ctx) {
-        let c = &raw mut *self.c;
-        unsafe { cmd_display_panes_draw(c, null_mut::<cmd_display_panes_data>(), ctx) };
+        let c = { &mut *(unsafe { self.c.as_client_mut() }) };
+        unsafe { cmd_display_panes_draw(&mut crate::server::client_ref_of(c).unwrap(), ctx) };
     }
 
     /// Everything the terminal has been handed so far: the cursor moves
     /// [`CUP`] expands to and the cells that were put.
     fn written(&self) -> String {
-        let mut out = self.c.tty.out.as_ref().unwrap().clone();
+        let mut out = unsafe { self.c.as_tty() }.out.as_ref().unwrap().clone();
         String::from_utf8(out.as_slice().to_vec()).expect("the fixture terminal is given ASCII")
     }
 }
 
 /// The colour a session option names, as the draw code reads it.
 fn colour_option(f: &mut Overlay, name: &CStr) -> c_int {
-    let oo = unsafe { session_options(f.c.session) };
-    unsafe { options_get_number(oo, name.as_ptr()) as c_int }
+    let session = { f.c.attached_session() }.unwrap();
+    let oo = { session.options() };
+    unsafe { oo.number(name) as c_int }
 }
 
 /// A window filling its terminal draws its one pane's number as clock cells
@@ -190,8 +195,7 @@ fn a_pane_larger_than_the_context_is_drawn_at_the_context_size() {
 fn a_pane_running_off_the_right_and_bottom_keeps_its_own_size() {
     let mut f = Overlay::new(80, 24);
     unsafe {
-        (*f.pane()).xoff = 10;
-        (*f.pane()).yoff = 4;
+        (*f.pane()).set_position(10, 4);
     }
     let mut ctx = f.ctx();
     ctx.sx = 40;
@@ -326,26 +330,31 @@ fn a_template_that_will_not_parse_queues_its_error_on_the_client() {
     let mut cdata = zeroed::<cmd_display_panes_data>();
     let mut event = key_event::default();
     unsafe {
-        let queue = &raw mut **f.c.queue.insert(crate::cmd::cmdq_new());
+        let queue =
+            f.c.as_client_mut()
+                .queue
+                .insert(CmdqListRef::empty())
+                .clone();
         state.cmd = Some(CString::new("not-a-command").unwrap());
         cdata.state = Some(state);
         event.key = '0' as i32 as key_code;
 
-        let c = &raw mut *f.c;
-        assert_eq!(cmd_display_panes_key(c, &raw mut *cdata, &raw mut event), 1);
+        assert_eq!((DisplayPanesRef::new(*cdata)).key(&f.c, &event), 1);
 
-        assert!(!(*queue).list.is_empty(), "the error was not queued");
-        let head = (*queue).list[0].as_ptr();
-        assert_eq!(crate::cmd::cmdq_get_client(&*head), c);
-        let CmdqType::Callback {
-            data: CmdqCallbackData::String(error),
-            ..
-        } = &(*head).type_0
-        else {
-            panic!("expected String callback data");
-        };
-        assert_eq!(error.to_str().unwrap(), "unknown command: not-a-command");
+        assert!(!queue.is_empty(), "the error was not queued");
+        let head = queue.item_at(0).unwrap().as_ptr();
+        assert!((*head).client().is_some_and(|client| client.ptr_eq(&f.c)));
+        assert_eq!(cmdq_next(Some(&f.c)), 1);
+        assert_eq!(
+            f.c.as_client()
+                .message_string
+                .as_deref()
+                .expect("client text")
+                .to_string_lossy()
+                .into_owned(),
+            "Unknown command: not-a-command"
+        );
 
-        f.c.queue = None;
+        f.c.as_client_mut().queue = None;
     }
 }

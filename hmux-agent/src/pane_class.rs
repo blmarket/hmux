@@ -5,7 +5,8 @@
 //! single codepoint two columns wide. A host builds a [`PaneProcessProbe`]
 //! from its own pty descriptor and asks [`PaneClass::classify`] what to draw.
 
-use std::path::Path;
+use std::ffi::{CStr, CString};
+use std::os::unix::ffi::OsStrExt;
 
 use crate::platform::{CurrentPlatform, Platform};
 
@@ -19,7 +20,7 @@ use crate::platform::{CurrentPlatform, Platform};
 pub struct PaneProcessProbe {
     foreground: Option<libc::pid_t>,
     session_leader: Option<libc::pid_t>,
-    fallback_command: Option<String>,
+    fallback_command: Option<CString>,
 }
 
 impl PaneProcessProbe {
@@ -30,7 +31,7 @@ impl PaneProcessProbe {
     pub fn new(
         foreground: Option<libc::pid_t>,
         session_leader: Option<libc::pid_t>,
-        fallback_command: Option<String>,
+        fallback_command: Option<CString>,
     ) -> Self {
         PaneProcessProbe {
             foreground,
@@ -46,12 +47,12 @@ impl PaneProcessProbe {
     /// back to the session leader — the group id is only a pid while the
     /// group's leader lives, and a shell pipeline whose first member exited
     /// leaves a group that names no process.
-    pub fn current_path(&self) -> Option<String> {
+    pub fn current_path(&self) -> Option<CString> {
         [self.foreground, self.session_leader]
             .into_iter()
             .flatten()
             .find_map(|pid| CurrentPlatform::process_cwd(pid as u32))
-            .map(|path| path.to_string_lossy().into_owned())
+            .and_then(|path| CString::new(path.as_os_str().as_bytes()).ok())
     }
 
     /// The program occupying the pane's foreground process group
@@ -60,7 +61,7 @@ impl PaneProcessProbe {
     /// Mirrors tmux's `format_cb_current_command`, which tries the foreground
     /// group's `argv[0]` and then falls back to the pane's own command line —
     /// the fallback is what answers for a leaderless group.
-    pub fn current_command(&self) -> Option<String> {
+    pub fn current_command(&self) -> Option<CString> {
         // tmux's Linux osdep_get_name reads argv[0] from /proc/PID/cmdline.
         // Keep the executable-name candidates as a fallback for platforms or
         // processes where the argument vector is unavailable.
@@ -76,13 +77,13 @@ impl PaneProcessProbe {
                             .next()
                     })
             })
-            .map(|program| program.to_string_lossy().into_owned());
+            .and_then(|program| CString::new(program.as_bytes()).ok());
 
         foreground
             .filter(|program| !program.is_empty())
             .or_else(|| self.fallback_command.clone())
             .map(|command| parse_window_name(&command))
-            .filter(|name| !name.is_empty())
+            .filter(|name| !name.to_bytes().is_empty())
     }
 
     /// Whether the shell holding the terminal is sitting at a prompt with
@@ -176,10 +177,10 @@ fn invoked_with_command_string<'a>(arguments: impl Iterator<Item = &'a str>) -> 
 /// Used only to decide whether a pane holding its own terminal is at a prompt.
 /// An unlisted shell reads as a foreground program instead, which is the same
 /// answer the pane would give while running anything else.
-fn is_shell(command: &str) -> bool {
-    const SHELLS: [&str; 13] = [
-        "sh", "bash", "zsh", "fish", "dash", "ash", "ksh", "mksh", "csh", "tcsh", "elvish", "nu",
-        "xonsh",
+fn is_shell(command: &CStr) -> bool {
+    const SHELLS: [&CStr; 13] = [
+        c"sh", c"bash", c"zsh", c"fish", c"dash", c"ash", c"ksh", c"mksh", c"csh", c"tcsh",
+        c"elvish", c"nu", c"xonsh",
     ];
     SHELLS.contains(&command)
 }
@@ -258,8 +259,15 @@ impl PaneClass {
 /// what the caller sees. `parse_window_name` cuts at the first space, and it
 /// does so after resolving quotes, so both a quoted and an unquoted argument
 /// reduce to the same leading word either way.
-pub fn stringify_argv<S: AsRef<str>>(argv: &[S]) -> String {
-    argv.iter().map(AsRef::as_ref).collect::<Vec<_>>().join(" ")
+pub fn stringify_argv<S: AsRef<CStr>>(argv: &[S]) -> CString {
+    let mut out = Vec::new();
+    for argument in argv {
+        if !out.is_empty() {
+            out.push(b' ');
+        }
+        out.extend_from_slice(argument.as_ref().to_bytes());
+    }
+    CString::new(out).expect("arguments have no interior NUL")
 }
 
 /// Reduce a command line to the program name tmux displays for it, following
@@ -272,26 +280,34 @@ pub fn stringify_argv<S: AsRef<str>>(argv: &[S]) -> String {
 /// non-printable bytes for display. That step is not reproduced: every name
 /// reaching this function is a program name, and the trailing-byte trim below
 /// already removes the control characters `clean_name` would have escaped.
-pub fn parse_window_name(input: &str) -> String {
-    let mut name = input.strip_prefix('"').unwrap_or(input);
-    if let Some(quote) = name.find('"') {
+pub fn parse_window_name(input: &CStr) -> CString {
+    let input = input.to_bytes();
+    let mut name = input.strip_prefix(b"\"").unwrap_or(input);
+    if let Some(quote) = name.iter().position(|&byte| byte == b'"') {
         name = &name[..quote];
     }
-    name = name.strip_prefix("exec ").unwrap_or(name);
-    name = name.trim_start_matches([' ', '-']);
-    if let Some(space) = name.find(' ') {
+    name = name.strip_prefix(b"exec ").unwrap_or(name);
+    while matches!(name.first(), Some(b' ' | b'-')) {
+        name = &name[1..];
+    }
+    if let Some(space) = name.iter().position(|&byte| byte == b' ') {
         name = &name[..space];
     }
     // tmux keeps trailing bytes only while they are alphanumeric or
     // punctuation, which together are exactly the printable ASCII characters.
-    let trimmed = name.trim_end_matches(|ch: char| !ch.is_ascii_graphic());
-    if trimmed.starts_with('/') {
-        return Path::new(trimmed).file_name().map_or_else(
-            || trimmed.to_string(),
-            |base| base.to_string_lossy().into_owned(),
-        );
+    let trimmed = name
+        .iter()
+        .rposition(|byte| byte.is_ascii_graphic())
+        .map_or(&[][..], |last| &name[..=last]);
+    if trimmed.starts_with(b"/") {
+        name = trimmed
+            .rsplit(|&byte| byte == b'/')
+            .next()
+            .unwrap_or(trimmed);
+    } else {
+        name = trimmed;
     }
-    trimmed.to_string()
+    CString::new(name).expect("a command name has no interior NUL")
 }
 
 #[cfg(test)]
@@ -315,7 +331,7 @@ mod tests {
         let probe = |foreground, session_leader, command: &str| PaneProcessProbe {
             foreground,
             session_leader,
-            fallback_command: Some(command.to_string()),
+            fallback_command: Some(CString::new(command).expect("command")),
         };
 
         // The shell still owns the terminal: nothing runs in front of it.
@@ -379,41 +395,44 @@ mod tests {
     fn a_login_shells_argv0_still_reads_as_a_shell() {
         // A login shell is spelled `-bash`, and an absolute path is common in
         // `default-shell`; both reduce to the bare program name.
-        assert!(is_shell(&parse_window_name("-bash")));
-        assert!(is_shell(&parse_window_name("/usr/bin/zsh")));
-        assert!(is_shell(&parse_window_name("fish")));
-        assert!(!is_shell(&parse_window_name("/usr/bin/tail -f log")));
-        assert!(!is_shell(&parse_window_name("htop")));
+        assert!(is_shell(&parse_window_name(c"-bash")));
+        assert!(is_shell(&parse_window_name(c"/usr/bin/zsh")));
+        assert!(is_shell(&parse_window_name(c"fish")));
+        assert!(!is_shell(&parse_window_name(c"/usr/bin/tail -f log")));
+        assert!(!is_shell(&parse_window_name(c"htop")));
     }
 
     #[test]
     fn parse_window_name_reduces_a_command_line_to_its_program() {
         // The plain cases: a bare name survives, an absolute path loses its
         // directories, and arguments are dropped.
-        assert_eq!(parse_window_name("bash"), "bash");
-        assert_eq!(parse_window_name("/usr/bin/sleep"), "sleep");
-        assert_eq!(parse_window_name("sleep 30"), "sleep");
+        assert_eq!(parse_window_name(c"bash"), c"bash");
+        assert_eq!(parse_window_name(c"/usr/bin/sleep"), c"sleep");
+        assert_eq!(parse_window_name(c"sleep 30"), c"sleep");
         // A relative path keeps its directories; tmux only takes the basename
         // of a name that starts at the root.
-        assert_eq!(parse_window_name("bin/sleep"), "bin/sleep");
+        assert_eq!(parse_window_name(c"bin/sleep"), c"bin/sleep");
         // A login shell announces itself with a leading dash.
-        assert_eq!(parse_window_name("-zsh"), "zsh");
-        assert_eq!(parse_window_name("exec vim file"), "vim");
+        assert_eq!(parse_window_name(c"-zsh"), c"zsh");
+        assert_eq!(parse_window_name(c"exec vim file"), c"vim");
         // The stringified argv of the leaderless-pipeline fixture.
-        assert_eq!(parse_window_name(r#"bash -mc "echo x | sleep 30""#), "bash");
+        assert_eq!(
+            parse_window_name(cr#"bash -mc "echo x | sleep 30""#),
+            c"bash"
+        );
         // Quotes are resolved before the cut at the first space, so a quoted
         // argv[0] containing one is still cut there.
-        assert_eq!(parse_window_name(r#""my program" -x"#), "my");
-        assert_eq!(parse_window_name("sleep\r\n"), "sleep");
-        assert_eq!(parse_window_name(""), "");
+        assert_eq!(parse_window_name(cr#""my program" -x"#), c"my");
+        assert_eq!(parse_window_name(c"sleep\r\n"), c"sleep");
+        assert_eq!(parse_window_name(c""), c"");
     }
 
     #[test]
     fn stringify_argv_reduces_to_the_program_the_pane_was_given() {
-        let argv = ["bash", "-mc", "echo x | sleep 30"].map(String::from);
-        assert_eq!(parse_window_name(&stringify_argv(&argv)), "bash");
+        let argv = [c"bash", c"-mc", c"echo x | sleep 30"];
+        assert_eq!(parse_window_name(&stringify_argv(&argv)), c"bash");
         // A pane spawned with no command carries just the shell.
-        let shell = ["/bin/zsh"].map(String::from);
-        assert_eq!(parse_window_name(&stringify_argv(&shell)), "zsh");
+        let shell = [c"/bin/zsh"];
+        assert_eq!(parse_window_name(&stringify_argv(&shell)), c"zsh");
     }
 }

@@ -4,6 +4,7 @@
 //! All helpers are deterministic, avoid fatal/daemon paths and use
 //! [`globals`] when touching globals or option trees.
 
+use crate::WindowPane;
 use crate::modes::{
     CURSORDRAG_ENDSEL, CURSORDRAG_NONE, CURSORDRAG_SEL, LINE_SEL_LEFT_RIGHT, LINE_SEL_NONE,
     LINE_SEL_RIGHT_LEFT, RECENTRE_BOTTOM, RECENTRE_MIDDLE, RECENTRE_TOP, SEL_CHAR, SEL_LINE,
@@ -17,14 +18,17 @@ use crate::modes::{
     WINDOW_COPY_SEARCH_MAX_LINE, WINDOW_COPY_SEARCH_TIMEOUT, WINDOW_COPY_SEARCHDOWN,
     WINDOW_COPY_SEARCHUP, window_copy_get_current_offset,
 };
+use crate::options::OptionsRef;
+use crate::pane_identity::PaneIdentity;
 use crate::tests::test_fixtures::{Pane, Target, Window, globals, zeroed};
 use crate::types::WindowMode;
-use crate::window::window_get_active;
+use crate::types::WindowRef;
+use crate::window::window_active_pane;
 use crate::window::{
-    window_count_panes, window_find_by_id, window_has_pane, window_pane_exited,
-    window_pane_find_by_id, window_pane_index, window_pane_visible, winlink_count,
-    winlink_find_by_index,
+    window_count_panes, window_pane_exited, window_pane_find_by_id, window_pane_index,
+    window_pane_visible, window_panes_position, winlink_count,
 };
+use crate::window_trait::Window as _;
 
 // ---------------------------------------------------------------------------
 // window_copy constants
@@ -82,13 +86,11 @@ fn window_copy_search_and_line_number_constants() {
 
 #[test]
 fn window_copy_mode_names_match_expected() {
-    unsafe {
-        let n1 = WindowMode::Copy.name();
-        let n2 = WindowMode::View.name();
-        assert_eq!(n1, c"copy-mode");
-        assert_eq!(n2, c"view-mode");
-        assert_ne!(n1.as_ptr(), n2.as_ptr());
-    }
+    let n1 = WindowMode::Copy.name();
+    let n2 = WindowMode::View.name();
+    assert_eq!(n1, c"copy-mode");
+    assert_eq!(n2, c"view-mode");
+    assert_ne!(n1.as_ptr(), n2.as_ptr());
 }
 
 // ---------------------------------------------------------------------------
@@ -103,17 +105,20 @@ fn window_helpers_count_and_has_pane() {
     let mut p2 = Pane::new(102, 80, 24, 100);
     let mut outsider = Pane::new(999, 80, 24, 100);
     unsafe {
-        assert_eq!(window_count_panes(w.ptr(), 1), 0);
-        assert_eq!(window_count_panes(w.ptr(), 0), 0);
+        assert_eq!(window_count_panes(&mut *w.ptr(), 1), 0);
+        assert_eq!(window_count_panes(&mut *w.ptr(), 0), 0);
         w.add_pane(&mut p1);
-        assert_eq!(window_count_panes(w.ptr(), 1), 1);
-        assert_eq!(window_has_pane(w.ptr(), p1.ptr()), 1);
-        assert_eq!(window_has_pane(w.ptr(), outsider.ptr()), 0);
+        assert_eq!(window_count_panes(&mut *w.ptr(), 1), 1);
+        assert!(window_panes_position(&*w.ptr(), p1.ptr().as_ref()).is_some());
+        assert!(window_panes_position(&*w.ptr(), outsider.ptr().as_ref()).is_none());
         w.add_pane(&mut p2);
-        assert_eq!(window_count_panes(w.ptr(), 1), 2);
-        assert_eq!(window_has_pane(w.ptr(), p2.ptr()), 1);
+        assert_eq!(window_count_panes(&mut *w.ptr(), 1), 2);
+        assert!(window_panes_position(&*w.ptr(), p2.ptr().as_ref()).is_some());
         // first pane is active
-        assert_eq!(window_get_active(w.ptr()), p1.ptr());
+        assert!(window_active_pane(&*w.ptr()).is_some_and(|pane| {
+            pane.get()
+                .is_some_and(|active| core::ptr::addr_eq(active, p1.ptr()))
+        }));
     }
 }
 
@@ -125,25 +130,25 @@ fn window_pane_visible_and_exited_with_fixtures() {
     w.add_pane(&mut p);
     unsafe {
         // no zoom -> visible
-        assert_eq!(window_pane_visible(p.ptr()), 1);
+        assert_eq!(window_pane_visible(&*w.ptr(), &*p.ptr()), 1);
         // fd == -1 means exited (no process)
-        assert_eq!(window_pane_exited(p.ptr()), 1);
+        assert_eq!(window_pane_exited(&*p.ptr()), 1);
         // give it a fake fd -> not exited unless PANE_EXITED flag
-        (*p.ptr()).fd = 5;
-        assert_eq!(window_pane_exited(p.ptr()), 0);
-        (*p.ptr()).flags |= crate::window::PANE_EXITED;
-        assert_eq!(window_pane_exited(p.ptr()), 1);
-        (*p.ptr()).flags &= !crate::window::PANE_EXITED;
-        (*p.ptr()).fd = -1;
+        *(*p.ptr()).fd_mut() = 5;
+        assert_eq!(window_pane_exited(&*p.ptr()), 0);
+        *(*p.ptr()).flags_mut() |= crate::window::PANE_EXITED;
+        assert_eq!(window_pane_exited(&*p.ptr()), 1);
+        *(*p.ptr()).flags_mut() &= !crate::window::PANE_EXITED;
+        *(*p.ptr()).fd_mut() = -1;
 
         // zoomed: only active pane visible
         (*w.ptr()).flags |= crate::window::WINDOW_ZOOMED;
-        assert_eq!(window_pane_visible(p.ptr()), 1);
+        assert_eq!(window_pane_visible(&*w.ptr(), &*p.ptr()), 1);
         let mut p2 = Pane::new(202, 80, 24, 100);
         w.add_pane(&mut p2);
         // p2 is not active, so not visible when zoomed
-        assert_eq!(window_pane_visible(p2.ptr()), 0);
-        assert_eq!(window_pane_visible(p.ptr()), 1);
+        assert_eq!(window_pane_visible(&*w.ptr(), &*p2.ptr()), 0);
+        assert_eq!(window_pane_visible(&*w.ptr(), &*p.ptr()), 1);
         (*w.ptr()).flags &= !crate::window::WINDOW_ZOOMED;
     }
 }
@@ -158,17 +163,13 @@ fn window_pane_index_respects_pane_base_index() {
     w.add_pane(&mut p2);
     unsafe {
         // default pane-base-index is 0
-        assert_eq!(window_pane_index(p1.ptr()), (0, 0));
-        assert_eq!(window_pane_index(p2.ptr()), (0, 1));
+        assert_eq!(window_pane_index(&*w.ptr(), &*p1.ptr()), (0, 0));
+        assert_eq!(window_pane_index(&*w.ptr(), &*p2.ptr()), (0, 1));
 
         // change base to 1
-        crate::options::options_set_number(
-            (*w.ptr()).options_ptr(),
-            c"pane-base-index".as_ptr(),
-            1,
-        );
-        assert_eq!(window_pane_index(p1.ptr()), (0, 1));
-        assert_eq!(window_pane_index(p2.ptr()), (0, 2));
+        (*(*w.ptr()).options_ref()).set_number(c"pane-base-index", 1);
+        assert_eq!(window_pane_index(&*w.ptr(), &*p1.ptr()), (0, 1));
+        assert_eq!(window_pane_index(&*w.ptr(), &*p2.ptr()), (0, 2));
     }
 }
 
@@ -182,15 +183,27 @@ fn winlink_and_window_find_via_target() {
         // winlink_count for session's window list
         let s = target.session();
         assert_eq!(winlink_count(&(*s).windows), 1);
-        let found = winlink_find_by_index(&mut (*s).windows, 0);
-        assert_eq!(found, wl);
-        assert!(winlink_find_by_index(&mut (*s).windows, 99).is_null());
+        let found = (*s)
+            .windows
+            .get(&0)
+            .map(Box::as_ref)
+            .expect("the indexed window is linked");
+        assert!(core::ptr::eq(found, wl));
+        assert!((*s).windows.get(&99).is_none());
 
-        // window_find_by_id uses global window tree (Registry)
-        assert_eq!(window_find_by_id((*w).id), w);
-        assert!(window_find_by_id(99999).is_null());
-        assert_eq!(window_pane_find_by_id((*target.pane(0)).id), target.pane(0));
-        assert!(window_pane_find_by_id(99999).is_null());
+        // window_find_by_id_ref uses global window tree (Registry)
+        assert!(
+            WindowRef::find_by_id((*w).window_id())
+                .is_some_and(|owner| core::ptr::eq(owner.as_ptr(), w))
+        );
+        assert!(WindowRef::find_by_id(99999).is_none());
+        assert_eq!(
+            window_pane_find_by_id((*target.pane(0)).pane_id())
+                .unwrap()
+                .as_mut_ptr(),
+            target.pane(0)
+        );
+        assert!(window_pane_find_by_id(99999).is_none());
     }
 }
 
@@ -203,14 +216,14 @@ fn window_copy_get_current_offset_returns_zero_without_copy_mode() {
     unsafe {
         // pane with a wme whose data is null -> returns 0 (null-data guard)
         (*p.ptr())
-            .modes
+            .modes_mut()
             .push(zeroed::<crate::types::window_mode_entry>());
         // state is None by zeroed
         assert!(matches!(
-            (*p.ptr()).modes[0].state,
+            (*(*p.ptr()).modes())[0].state,
             crate::types::WindowModeState::None
         ));
-        assert!(window_copy_get_current_offset(p.ptr()).is_none());
-        (*p.ptr()).modes.clear();
+        assert!(window_copy_get_current_offset(&mut *p.ptr()).is_none());
+        (*p.ptr()).modes_mut().clear();
     }
 }

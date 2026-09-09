@@ -23,7 +23,7 @@ macro_rules! libc_format {
 macro_rules! same {
     ($fmt:expr $(, $arg:expr)*) => {{
         let (want, want_len) = libc_format!($fmt $(, $arg)*);
-        let got = unsafe { format_bytes($fmt.as_ptr(), fmt_args![$($arg),*]) };
+        let got = format_bytes($fmt, fmt_args![$($arg),*]);
         assert_eq!(
             String::from_utf8_lossy(&got),
             String::from_utf8_lossy(&want),
@@ -125,11 +125,36 @@ fn strings_match_libc() {
             c"a".as_ptr(),
             c"hello".as_ptr(),
             c"a longer piece of text".as_ptr(),
-            ::core::ptr::null(),
+            core::ptr::null(),
         ] {
             same!(fmt, s);
         }
     }
+}
+
+#[test]
+fn borrowed_strings_match_libc_with_width_precision_and_missing_values() {
+    let owner = CString::new([b'a', 0xfe, b'b', b'c']).unwrap();
+    for value in [None, Some(c""), Some(c"hello"), Some(owner.as_c_str())] {
+        let pointer = value.map_or(core::ptr::null(), CStr::as_ptr);
+        for fmt in STRINGS {
+            let (expected, _) = libc_format!(fmt, pointer);
+            assert_eq!(format_bytes(fmt, fmt_args![value]), expected);
+        }
+        for precision in [-1, 0, 1, 5, 6, 9] {
+            let (expected, _) = libc_format!(c"[%*.*s]", -12, precision, pointer);
+            assert_eq!(
+                format_bytes(c"[%*.*s]", fmt_args![-12, precision, value]),
+                expected
+            );
+        }
+        let (expected, _) = libc_format!(c"%p", pointer);
+        assert_eq!(format_bytes(c"%p", fmt_args![value]), expected);
+    }
+    assert_eq!(
+        format_bytes(c"%.2s", fmt_args![owner.as_c_str()]),
+        [b'a', 0xfe]
+    );
 }
 
 #[test]
@@ -151,7 +176,7 @@ fn chars_match_libc() {
 fn pointers_match_libc() {
     let x = 42u32;
     for p in [
-        ::core::ptr::null::<u8>(),
+        core::ptr::null::<u8>(),
         &x as *const u32 as *const u8,
         std::ptr::dangling::<u8>(),
         usize::MAX as *const u8,
@@ -211,7 +236,7 @@ fn star_width_and_precision_match_libc() {
     }
     same!(c"%*.*s", 10i32, 3i32, c"abcdefgh".as_ptr());
     for p in 0i32..9 {
-        same!(c"%.*s", p, ::core::ptr::null::<c_char>());
+        same!(c"%.*s", p, core::ptr::null::<c_char>());
     }
 }
 
@@ -347,7 +372,7 @@ fn fuzzed_string_and_char_specifiers_match_libc() {
         c"a".as_ptr(),
         c"pane".as_ptr(),
         c"a longer piece of text".as_ptr(),
-        ::core::ptr::null(),
+        core::ptr::null(),
     ];
     for _ in 0..2000 {
         let (spec, _) = random_spec(&mut rng, &[""], b"s");
@@ -390,50 +415,80 @@ fn fuzzed_float_specifiers_match_libc() {
 #[test]
 fn string_reading_stops_at_precision_without_nul() {
     let raw = b"abcdef";
-    let got = unsafe { format_bytes(c"%.3s".as_ptr(), fmt_args![raw.as_ptr()]) };
+    let got = format_bytes(c"%.3s", fmt_args![raw.as_ptr()]);
     assert_eq!(got, b"abc");
 }
 
 #[test]
+fn byte_string_borrows_bound_reads_and_stop_at_nul() {
+    for bytes in [&b"abc\0ignored"[..], &b"\xfe\xffx"[..], &b""[..]] {
+        for precision in [-1, 0, 1, 3, 20] {
+            let mut terminated = bytes.to_vec();
+            terminated.push(0);
+            let (expected, _) = libc_format!(c"[%*.*s]", 8, precision, terminated.as_ptr());
+            assert_eq!(
+                format_bytes(c"[%*.*s]", fmt_args![8, precision, bytes]),
+                expected
+            );
+        }
+    }
+    assert_eq!(
+        format_bytes(c"%s", fmt_args![b"no terminator"]),
+        b"no terminator"
+    );
+}
+
+#[test]
+fn incomplete_conversions_preserve_the_borrowed_suffix() {
+    for fmt in [c"prefix %", c"%#", c"%.", c"%.12", c"%hh", c"%ll", c"%L"] {
+        assert_eq!(format_bytes(fmt, &[]), fmt.to_bytes());
+    }
+}
+
+#[test]
 fn format_into_truncates_like_snprintf() {
-    let mut buf = [0x7fu8; 16];
-    let n = unsafe {
+    let mut buf = [0x7f as c_char; 16];
+    let n = {
         format_into(
-            buf.as_mut_ptr() as *mut c_char,
-            8,
-            c"%s-%u".as_ptr(),
+            &mut buf[..8],
+            c"%s-%u",
             fmt_args![c"abcdef".as_ptr(), 12u32],
         )
     };
     assert_eq!(n, 9);
-    assert_eq!(&buf[..8], b"abcdef-\0");
+    assert_eq!(
+        &buf[..8],
+        &[
+            b'a' as c_char,
+            b'b' as c_char,
+            b'c' as c_char,
+            b'd' as c_char,
+            b'e' as c_char,
+            b'f' as c_char,
+            b'-' as c_char,
+            0
+        ]
+    );
     assert_eq!(buf[8], 0x7f);
 
-    let n = unsafe {
-        format_into(
-            ::core::ptr::null_mut(),
-            0,
-            c"%u".as_ptr(),
-            fmt_args![1000u32],
-        )
-    };
+    let n = format_into(&mut [], c"%u", fmt_args![1000u32]);
     assert_eq!(n, 4);
 }
 
 #[test]
 fn format_alloc_returns_an_owned_string() {
-    let s = unsafe { format_alloc(c"%s/%d".as_ptr(), fmt_args![c"path".as_ptr(), 7i32]) };
+    let s = format_alloc(c"%s/%d", fmt_args![c"path".as_ptr(), 7i32]);
     assert_eq!(s.as_bytes().len(), 6);
     assert_eq!(s.as_c_str(), c"path/7");
 }
 
 #[test]
 fn format_len_measures_without_writing() {
-    let n = unsafe {
-        format_len(
-            c"%s %s".as_ptr(),
-            fmt_args![c"ab".as_ptr(), c"cde".as_ptr()],
-        )
-    };
+    let n = { format_len(c"%s %s", fmt_args![c"ab".as_ptr(), c"cde".as_ptr()]) };
     assert_eq!(n, 6);
+}
+
+/// The length `fmt` expands to, the answer `vsnprintf(NULL, 0, ...)` gives.
+pub(crate) fn format_len(fmt: &CStr, args: &[FmtArg]) -> usize {
+    format_bytes(fmt, args).len()
 }

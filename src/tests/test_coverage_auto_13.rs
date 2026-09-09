@@ -1,35 +1,32 @@
 //! Coverage for [`crate::style`] — pure string helpers.
 //!
-//! `colour.rs` is dominated by table lookups and `strtonum`/`sscanf` parsing
-//! that needs no live server. These tests exercise the deterministic string
-//! surface — `colour_tostring`, `colour_fromstring`, `colour_byname` and
-//! `colour_parseX11` — pinning hex formatting, case-insensitivity, delimiter
-//! handling and grey-percentage rounding without touching the option trees.
+//! The colour implementation is dominated by table lookups and
+//! `strtonum`/`sscanf` parsing that needs no live server. These tests exercise
+//! the deterministic trait surface, pinning hex formatting,
+//! case-insensitivity, delimiter handling and grey-percentage rounding
+//! without touching the option trees.
 
-use crate::style::{
-    COLOUR_FLAG_256, COLOUR_FLAG_RGB, colour_byname, colour_fromstring, colour_parseX11,
-    colour_tostring,
-};
+use crate::style::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, ColourEngine, RustColourEngine};
 use ::core::ffi::CStr;
 
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 
-fn tostring(c: ::core::ffi::c_int) -> String {
-    colour_tostring(c).to_str().unwrap().to_owned()
+fn tostring(c: core::ffi::c_int) -> String {
+    RustColourEngine.to_string(c).to_str().unwrap().to_owned()
 }
 
-fn fromstring(s: &CStr) -> ::core::ffi::c_int {
-    unsafe { colour_fromstring(s.as_ptr()) }
+fn fromstring(s: &CStr) -> core::ffi::c_int {
+    RustColourEngine.from_string(s)
 }
 
-fn byname(s: &CStr) -> ::core::ffi::c_int {
-    unsafe { colour_byname(s.as_ptr()) }
+fn byname(s: &CStr) -> core::ffi::c_int {
+    RustColourEngine.by_name(s)
 }
 
-fn parse_x11(s: &CStr) -> ::core::ffi::c_int {
-    unsafe { colour_parseX11(s.as_ptr()) }
+fn parse_x11(s: &CStr) -> core::ffi::c_int {
+    RustColourEngine.parse_x11(s)
 }
 
 // ---------------------------------------------------------------------------

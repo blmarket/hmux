@@ -19,28 +19,40 @@
 //! `int` prints one byte, as it does in C.
 
 use ::core::ffi::{c_char, c_int};
-use ::std::ffi::CString;
+use ::std::ffi::{CStr, CString};
 
 use crate::ffi::snprintf;
-use crate::reactor::Buf;
+use crate::reactor::ByteBuffer;
 
 /// One argument to a conversion.
 ///
-/// The variants are the four shapes a C vararg reaches printf in, not the
-/// Rust types the call site holds: an integer conversion accepts any of the
-/// integral variants and truncates per its length modifier, and `%s` and `%p`
-/// both read [`FmtArg::Ptr`].
+/// String arguments retain their borrow through formatting. Raw pointer
+/// arguments support callers that have not yet migrated to borrowed strings.
+/// Integer conversions truncate per their length modifier.
+///
+/// ```compile_fail
+/// use std::ffi::CString;
+/// use tmux_c2rs::fmt_engine::{FmtArg, format_bytes};
+/// let argument;
+/// {
+///     let owner = CString::new("temporary").unwrap();
+///     argument = FmtArg::from(owner.as_c_str());
+/// }
+/// format_bytes(c"%s", &[argument]);
+/// ```
 #[derive(Clone, Copy, Debug)]
-pub enum FmtArg {
+pub enum FmtArg<'a> {
     Int(i64),
     UInt(u64),
     Ptr(*const u8),
+    Str(Option<&'a CStr>),
+    Bytes(&'a [u8]),
     Flt(f64),
 }
 
 macro_rules! fmt_arg_from_signed {
     ($($t:ty),*) => {$(
-        impl From<$t> for FmtArg {
+        impl From<$t> for FmtArg<'_> {
             fn from(v: $t) -> Self {
                 FmtArg::Int(v as i64)
             }
@@ -50,7 +62,7 @@ macro_rules! fmt_arg_from_signed {
 
 macro_rules! fmt_arg_from_unsigned {
     ($($t:ty),*) => {$(
-        impl From<$t> for FmtArg {
+        impl From<$t> for FmtArg<'_> {
             fn from(v: $t) -> Self {
                 FmtArg::UInt(v as u64)
             }
@@ -60,7 +72,7 @@ macro_rules! fmt_arg_from_unsigned {
 
 macro_rules! fmt_arg_from_float {
     ($($t:ty),*) => {$(
-        impl From<$t> for FmtArg {
+        impl From<$t> for FmtArg<'_> {
             fn from(v: $t) -> Self {
                 FmtArg::Flt(v as f64)
             }
@@ -72,36 +84,50 @@ fmt_arg_from_signed!(i8, i16, i32, i64, isize);
 fmt_arg_from_unsigned!(u8, u16, u32, u64, usize);
 fmt_arg_from_float!(f32, f64);
 
-impl<T> From<*const T> for FmtArg {
+impl<T> From<*const T> for FmtArg<'_> {
     fn from(v: *const T) -> Self {
         FmtArg::Ptr(v as *const u8)
     }
 }
 
-impl<T> From<*mut T> for FmtArg {
+impl<T> From<*mut T> for FmtArg<'_> {
     fn from(v: *mut T) -> Self {
         FmtArg::Ptr(v as *const u8)
     }
 }
 
 /// A borrowed C string prints as the `%s` it already is.
-impl From<&::core::ffi::CStr> for FmtArg {
-    fn from(v: &::core::ffi::CStr) -> Self {
-        FmtArg::Ptr(v.as_ptr() as *const u8)
+impl<'a> From<&'a CStr> for FmtArg<'a> {
+    fn from(v: &'a CStr) -> Self {
+        FmtArg::Str(Some(v))
     }
 }
 
 /// A missing C string prints as the null `%s` the C call would have passed.
-impl From<Option<&::core::ffi::CStr>> for FmtArg {
-    fn from(v: Option<&::core::ffi::CStr>) -> Self {
-        FmtArg::Ptr(v.map_or(::core::ptr::null(), |s| s.as_ptr() as *const u8))
+impl<'a> From<Option<&'a CStr>> for FmtArg<'a> {
+    fn from(v: Option<&'a CStr>) -> Self {
+        FmtArg::Str(v)
+    }
+}
+
+/// A byte slice supplies a bounded string, with an optional NUL terminator.
+impl<'a> From<&'a [u8]> for FmtArg<'a> {
+    fn from(v: &'a [u8]) -> Self {
+        FmtArg::Bytes(v)
+    }
+}
+
+/// A byte array retains its storage borrow when used as a string argument.
+impl<'a, const N: usize> From<&'a [u8; N]> for FmtArg<'a> {
+    fn from(v: &'a [u8; N]) -> Self {
+        FmtArg::Bytes(v)
     }
 }
 
 /// Builds the argument slice a format-taking function wants.
 ///
 /// ```ignore
-/// cmdq_print(item, c"%s: %u".as_ptr(), fmt_args![name, count]);
+/// item.print(c"%s: %u", fmt_args![name, count]);
 /// ```
 #[macro_export]
 macro_rules! fmt_args {
@@ -144,7 +170,7 @@ struct Spec {
 ///
 /// Running out is a call-site bug, not something a format string can do, so
 /// tests trip an assertion on it while a release build formats what it can.
-fn next(args: &[FmtArg], at: &mut usize) -> Option<FmtArg> {
+fn next<'a>(args: &[FmtArg<'a>], at: &mut usize) -> Option<FmtArg<'a>> {
     let arg = args.get(*at).copied();
     debug_assert!(
         arg.is_some(),
@@ -159,6 +185,8 @@ fn next_signed(args: &[FmtArg], at: &mut usize) -> i64 {
         Some(FmtArg::Int(v)) => v,
         Some(FmtArg::UInt(v)) => v as i64,
         Some(FmtArg::Ptr(v)) => v as i64,
+        Some(FmtArg::Bytes(v)) => v.as_ptr() as i64,
+        Some(FmtArg::Str(v)) => v.map_or(core::ptr::null(), CStr::as_ptr) as i64,
         Some(FmtArg::Flt(v)) => v as i64,
         None => 0,
     }
@@ -169,17 +197,21 @@ fn next_unsigned(args: &[FmtArg], at: &mut usize) -> u64 {
         Some(FmtArg::Int(v)) => v as u64,
         Some(FmtArg::UInt(v)) => v,
         Some(FmtArg::Ptr(v)) => v as u64,
+        Some(FmtArg::Bytes(v)) => v.as_ptr() as u64,
+        Some(FmtArg::Str(v)) => v.map_or(core::ptr::null(), CStr::as_ptr) as u64,
         Some(FmtArg::Flt(v)) => v as u64,
         None => 0,
     }
 }
 
-fn next_pointer(args: &[FmtArg], at: &mut usize) -> *const u8 {
-    match next(args, at) {
+fn argument_pointer(arg: Option<FmtArg<'_>>) -> *const u8 {
+    match arg {
         Some(FmtArg::Ptr(v)) => v,
+        Some(FmtArg::Bytes(v)) => v.as_ptr(),
+        Some(FmtArg::Str(v)) => v.map_or(core::ptr::null(), |v| v.as_ptr().cast()),
         Some(FmtArg::Int(v)) => v as *const u8,
         Some(FmtArg::UInt(v)) => v as *const u8,
-        Some(FmtArg::Flt(_)) | None => ::core::ptr::null(),
+        Some(FmtArg::Flt(_)) | None => core::ptr::null(),
     }
 }
 
@@ -188,7 +220,7 @@ fn next_float(args: &[FmtArg], at: &mut usize) -> f64 {
         Some(FmtArg::Flt(v)) => v,
         Some(FmtArg::Int(v)) => v as f64,
         Some(FmtArg::UInt(v)) => v as f64,
-        Some(FmtArg::Ptr(_)) | None => 0.0,
+        Some(FmtArg::Ptr(_) | FmtArg::Str(_) | FmtArg::Bytes(_)) | None => 0.0,
     }
 }
 
@@ -242,25 +274,25 @@ fn emit_number(out: &mut Vec<u8>, spec: &Spec, sign: &[u8], prefix: &[u8], body:
     };
 
     if !spec.minus {
-        out.extend(::core::iter::repeat_n(b' ', space_pad));
+        out.extend(core::iter::repeat_n(b' ', space_pad));
     }
     out.extend_from_slice(sign);
     out.extend_from_slice(prefix);
-    out.extend(::core::iter::repeat_n(b'0', zero_pad + zeros));
+    out.extend(core::iter::repeat_n(b'0', zero_pad + zeros));
     out.extend_from_slice(body);
     if spec.minus {
-        out.extend(::core::iter::repeat_n(b' ', space_pad));
+        out.extend(core::iter::repeat_n(b' ', space_pad));
     }
 }
 
 fn emit_string(out: &mut Vec<u8>, spec: &Spec, body: &[u8]) {
     let pad = spec.width.saturating_sub(body.len());
     if !spec.minus {
-        out.extend(::core::iter::repeat_n(b' ', pad));
+        out.extend(core::iter::repeat_n(b' ', pad));
     }
     out.extend_from_slice(body);
     if spec.minus {
-        out.extend(::core::iter::repeat_n(b' ', pad));
+        out.extend(core::iter::repeat_n(b' ', pad));
     }
 }
 
@@ -307,6 +339,25 @@ fn emit_unsigned(out: &mut Vec<u8>, spec: &Spec, v: u64) {
         b""
     };
     emit_number(out, spec, b"", prefix, &body);
+}
+
+fn bounded_string(bytes: &[u8], prec: Option<usize>) -> &[u8] {
+    let bytes = &bytes[..prec.unwrap_or(bytes.len()).min(bytes.len())];
+    &bytes[..bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len())]
+}
+
+fn borrowed_string(value: Option<&CStr>, prec: Option<usize>) -> &[u8] {
+    match value {
+        Some(value) => {
+            let bytes = value.to_bytes();
+            &bytes[..prec.unwrap_or(bytes.len()).min(bytes.len())]
+        }
+        None if prec.is_none_or(|n| n >= b"(null)".len()) => b"(null)",
+        None => b"",
+    }
 }
 
 /// The bytes `p` points at, stopping at a NUL or at `prec` bytes, whichever
@@ -363,7 +414,7 @@ fn emit_float(out: &mut Vec<u8>, spec: &Spec, v: f64) {
 
     unsafe {
         let fmt = c_spec.as_ptr() as *const c_char;
-        let n = snprintf(::core::ptr::null_mut(), 0, fmt, v);
+        let n = snprintf(core::ptr::null_mut(), 0, fmt, v);
         if n <= 0 {
             return;
         }
@@ -374,212 +425,198 @@ fn emit_float(out: &mut Vec<u8>, spec: &Spec, v: f64) {
 }
 
 /// Appends `fmt` expanded over `args` to `out`.
-pub unsafe fn format_append(out: &mut Vec<u8>, fmt: *const c_char, args: &[FmtArg]) {
-    let mut p = fmt as *const u8;
+pub fn format_append(out: &mut Vec<u8>, fmt: &CStr, args: &[FmtArg]) {
+    let bytes = fmt.to_bytes_with_nul();
+    let mut p = 0usize;
     let mut at = 0usize;
 
-    unsafe {
+    loop {
+        let c = bytes[p];
+        if c == 0 {
+            break;
+        }
+        if c != b'%' {
+            out.push(c);
+            p += 1;
+            continue;
+        }
+
+        let start = p;
+        p += 1;
+        let mut spec = Spec::default();
+
         loop {
-            let c = *p;
-            if c == 0 {
-                break;
+            match bytes[p] {
+                b'-' => spec.minus = true,
+                b'+' => spec.plus = true,
+                b' ' => spec.space = true,
+                b'#' => spec.hash = true,
+                b'0' => spec.zero = true,
+                _ => break,
             }
-            if c != b'%' {
-                out.push(c);
-                p = p.add(1);
-                continue;
-            }
+            p += 1;
+        }
 
-            let start = p;
-            p = p.add(1);
-            let mut spec = Spec::default();
-
-            loop {
-                match *p {
-                    b'-' => spec.minus = true,
-                    b'+' => spec.plus = true,
-                    b' ' => spec.space = true,
-                    b'#' => spec.hash = true,
-                    b'0' => spec.zero = true,
-                    _ => break,
-                }
-                p = p.add(1);
-            }
-
-            if *p == b'*' {
-                p = p.add(1);
-                let w = next_signed(args, &mut at) as i32;
-                if w < 0 {
-                    spec.minus = true;
-                    spec.width = w.unsigned_abs() as usize;
-                } else {
-                    spec.width = w as usize;
-                }
+        if bytes[p] == b'*' {
+            p += 1;
+            let w = next_signed(args, &mut at) as i32;
+            if w < 0 {
+                spec.minus = true;
+                spec.width = w.unsigned_abs() as usize;
             } else {
-                while (*p).is_ascii_digit() {
-                    spec.width = spec.width * 10 + (*p - b'0') as usize;
-                    p = p.add(1);
-                }
+                spec.width = w as usize;
             }
+        } else {
+            while bytes[p].is_ascii_digit() {
+                spec.width = spec.width * 10 + (bytes[p] - b'0') as usize;
+                p += 1;
+            }
+        }
 
-            if *p == b'.' {
-                p = p.add(1);
-                if *p == b'*' {
-                    p = p.add(1);
-                    let n = next_signed(args, &mut at) as i32;
-                    spec.prec = if n < 0 { None } else { Some(n as usize) };
+        if bytes[p] == b'.' {
+            p += 1;
+            if bytes[p] == b'*' {
+                p += 1;
+                let n = next_signed(args, &mut at) as i32;
+                spec.prec = if n < 0 { None } else { Some(n as usize) };
+            } else {
+                let mut n = 0usize;
+                while bytes[p].is_ascii_digit() {
+                    n = n * 10 + (bytes[p] - b'0') as usize;
+                    p += 1;
+                }
+                spec.prec = Some(n);
+            }
+        }
+
+        spec.len = match bytes[p] {
+            b'h' => {
+                p += 1;
+                if bytes[p] == b'h' {
+                    p += 1;
+                    Len::Char
                 } else {
-                    let mut n = 0usize;
-                    while (*p).is_ascii_digit() {
-                        n = n * 10 + (*p - b'0') as usize;
-                        p = p.add(1);
-                    }
-                    spec.prec = Some(n);
+                    Len::Short
                 }
             }
-
-            spec.len = match *p {
-                b'h' => {
-                    p = p.add(1);
-                    if *p == b'h' {
-                        p = p.add(1);
-                        Len::Char
-                    } else {
-                        Len::Short
-                    }
+            b'l' => {
+                p += 1;
+                if bytes[p] == b'l' {
+                    p += 1;
+                    Len::LongLong
+                } else {
+                    Len::Long
                 }
-                b'l' => {
-                    p = p.add(1);
-                    if *p == b'l' {
-                        p = p.add(1);
-                        Len::LongLong
-                    } else {
-                        Len::Long
-                    }
-                }
-                b'z' => {
-                    p = p.add(1);
-                    Len::Size
-                }
-                b'j' => {
-                    p = p.add(1);
-                    Len::IntMax
-                }
-                b't' => {
-                    p = p.add(1);
-                    Len::PtrDiff
-                }
-                b'L' => {
-                    p = p.add(1);
-                    Len::LongDouble
-                }
-                _ => Len::Default,
-            };
-
-            spec.conv = *p;
-            if spec.conv == 0 {
-                out.extend_from_slice(::core::slice::from_raw_parts(
-                    start,
-                    p.offset_from(start) as usize,
-                ));
-                break;
             }
-            p = p.add(1);
+            b'z' => {
+                p += 1;
+                Len::Size
+            }
+            b'j' => {
+                p += 1;
+                Len::IntMax
+            }
+            b't' => {
+                p += 1;
+                Len::PtrDiff
+            }
+            b'L' => {
+                p += 1;
+                Len::LongDouble
+            }
+            _ => Len::Default,
+        };
 
-            match spec.conv {
-                b'%' => out.push(b'%'),
-                b'd' | b'i' => {
-                    let v = next_signed(args, &mut at);
-                    emit_signed(out, &spec, v);
-                }
-                b'u' | b'o' | b'x' | b'X' => {
-                    let v = next_unsigned(args, &mut at);
-                    emit_unsigned(out, &spec, v);
-                }
-                b'c' => {
-                    let v = next_signed(args, &mut at);
-                    emit_string(out, &spec, &[v as u8]);
-                }
-                b's' => {
-                    let v = next_pointer(args, &mut at);
-                    let body = read_string(v, spec.prec);
-                    let spec = Spec { prec: None, ..spec };
-                    emit_string(out, &spec, &body);
-                }
-                b'p' => {
-                    let v = next_pointer(args, &mut at);
-                    let body = if v.is_null() {
-                        b"(nil)".to_vec()
-                    } else {
-                        let mut body = b"0x".to_vec();
-                        body.extend(digits(v as u64, 16, false));
-                        body
-                    };
-                    let spec = Spec {
-                        prec: None,
-                        zero: false,
-                        ..spec
-                    };
-                    emit_string(out, &spec, &body);
-                }
-                b'e' | b'E' | b'f' | b'F' | b'g' | b'G' | b'a' | b'A' => {
-                    let v = next_float(args, &mut at);
-                    emit_float(out, &spec, v);
-                }
-                _ => {
-                    debug_assert!(false, "unsupported printf conversion");
-                    out.extend_from_slice(::core::slice::from_raw_parts(
-                        start,
-                        p.offset_from(start) as usize,
-                    ));
-                }
+        spec.conv = bytes[p];
+        if spec.conv == 0 {
+            out.extend_from_slice(&bytes[start..p]);
+            break;
+        }
+        p += 1;
+
+        match spec.conv {
+            b'%' => out.push(b'%'),
+            b'd' | b'i' => {
+                let v = next_signed(args, &mut at);
+                emit_signed(out, &spec, v);
+            }
+            b'u' | b'o' | b'x' | b'X' => {
+                let v = next_unsigned(args, &mut at);
+                emit_unsigned(out, &spec, v);
+            }
+            b'c' => {
+                let v = next_signed(args, &mut at);
+                emit_string(out, &spec, &[v as u8]);
+            }
+            b's' => {
+                let body = match next(args, &mut at) {
+                    Some(FmtArg::Str(value)) => borrowed_string(value, spec.prec).to_vec(),
+                    Some(FmtArg::Bytes(value)) => bounded_string(value, spec.prec).to_vec(),
+                    arg => unsafe { read_string(argument_pointer(arg), spec.prec) },
+                };
+                let spec = Spec { prec: None, ..spec };
+                emit_string(out, &spec, &body);
+            }
+            b'p' => {
+                let v = argument_pointer(next(args, &mut at));
+                let body = if v.is_null() {
+                    b"(nil)".to_vec()
+                } else {
+                    let mut body = b"0x".to_vec();
+                    body.extend(digits(v as u64, 16, false));
+                    body
+                };
+                let spec = Spec {
+                    prec: None,
+                    zero: false,
+                    ..spec
+                };
+                emit_string(out, &spec, &body);
+            }
+            b'e' | b'E' | b'f' | b'F' | b'g' | b'G' | b'a' | b'A' => {
+                let v = next_float(args, &mut at);
+                emit_float(out, &spec, v);
+            }
+            _ => {
+                debug_assert!(false, "unsupported printf conversion");
+                out.extend_from_slice(&bytes[start..p]);
             }
         }
     }
 }
 
 /// `fmt` expanded over `args`, with no trailing NUL.
-pub unsafe fn format_bytes(fmt: *const c_char, args: &[FmtArg]) -> Vec<u8> {
+pub fn format_bytes(fmt: &CStr, args: &[FmtArg]) -> Vec<u8> {
     let mut out = Vec::new();
-    unsafe { format_append(&mut out, fmt, args) };
+    format_append(&mut out, fmt, args);
     out
 }
 
-/// The length `fmt` expands to, the answer `vsnprintf(NULL, 0, ...)` gives.
-pub unsafe fn format_len(fmt: *const c_char, args: &[FmtArg]) -> usize {
-    unsafe { format_bytes(fmt, args).len() }
-}
-
-/// Writes into `str` under `snprintf` rules: at most `len` bytes including the
+/// Writes into `str` under `snprintf` rules: at most `str.len()` bytes including the
 /// NUL, and the length the whole expansion would have had is returned.
-pub unsafe fn format_into(
-    str: *mut c_char,
-    len: usize,
-    fmt: *const c_char,
-    args: &[FmtArg],
-) -> c_int {
-    let body = unsafe { format_bytes(fmt, args) };
-    if len != 0 {
-        let n = body.len().min(len - 1);
-        unsafe {
-            ::core::ptr::copy_nonoverlapping(body.as_ptr(), str as *mut u8, n);
-            *str.add(n) = 0;
+pub fn format_into(str: &mut [c_char], fmt: &CStr, args: &[FmtArg]) -> c_int {
+    let body = format_bytes(fmt, args);
+    if !str.is_empty() {
+        let n = body.len().min(str.len() - 1);
+        for (dest, byte) in str[..n].iter_mut().zip(&body[..n]) {
+            *dest = *byte as c_char;
         }
+        str[n] = 0;
     }
     body.len() as c_int
 }
 
 /// Appends the expansion to a byte buffer.
-pub unsafe fn format_buf(buffer: &mut Buf, fmt: *const c_char, args: &[FmtArg]) -> c_int {
-    let body = unsafe { format_bytes(fmt, args) };
+pub fn format_buf(buffer: &mut ByteBuffer, fmt: &CStr, args: &[FmtArg]) -> c_int {
+    let body = format_bytes(fmt, args);
     buffer.append(&body);
     0
 }
 
 /// A freshly allocated NUL-terminated expansion, as `vasprintf` leaves behind:
 /// the caller owns it and frees it with libc `free`.
-pub unsafe fn format_alloc(fmt: *const c_char, args: &[FmtArg]) -> CString {
-    let body = unsafe { format_bytes(fmt, args) };
+pub fn format_alloc(fmt: &CStr, args: &[FmtArg]) -> CString {
+    let body = format_bytes(fmt, args);
     CString::new(body).expect("a formatted string carries no NUL")
 }
 

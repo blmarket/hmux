@@ -1,8 +1,8 @@
 use super::*;
-use crate::options::options_set_string;
+use crate::options::OptionsRef;
+
 use crate::tests::test_fixtures::{Options, globals, seen};
 use ::core::ffi::{CStr, c_char, c_int};
-use ::core::ptr::null_mut;
 
 /// A style holding the module's defaults, as `style_set` makes one.
 fn blank() -> Box<style> {
@@ -14,7 +14,7 @@ fn blank() -> Box<style> {
 /// A base cell with colours and attributes of its own, so that `default`
 /// and a colour of `default` can be told apart from the style's own.
 fn base() -> grid_cell {
-    let mut gc = unsafe { grid_default_cell };
+    let mut gc = { grid_default_cell };
     gc.fg = 1;
     gc.bg = 2;
     gc.us = 3;
@@ -183,6 +183,13 @@ fn a_range_argument_is_cut_to_the_room_the_style_keeps_for_it() {
 }
 
 #[test]
+fn a_user_range_keeps_non_utf8_bytes_when_printed() {
+    let input = CString::new(b"range=user|\xff".as_slice()).unwrap();
+    let sy = parsed(&input);
+    assert_eq!(unsafe { style_tostring(&sy) }.as_bytes(), input.as_bytes());
+}
+
+#[test]
 fn a_range_is_refused_when_its_argument_does_not_fit_its_kind() {
     refused(c"range=left|1");
     refused(c"range=right|1");
@@ -276,7 +283,7 @@ fn words_are_separated_by_spaces_commas_and_newlines() {
 
 #[test]
 fn a_word_too_long_for_the_buffer_is_refused() {
-    let long = ::std::ffi::CString::new("x".repeat(256)).unwrap();
+    let long = CString::new("x".repeat(256)).unwrap();
     let (sy, retval) = parse(&long);
     assert_eq!(retval, -1);
     assert_eq!(tostring(&sy), "default");
@@ -354,24 +361,23 @@ fn a_range_of_control_prints_under_whatever_name_came_before_it() {
 #[test]
 fn a_style_option_adds_its_colours_and_attributes_to_a_cell() {
     let _guard = globals();
-    let oo = Options::empty(null_mut());
+    let oo = Options::empty(None);
     unsafe {
-        options_set_string(
-            oo.ptr(),
-            c"@c2rs-style".as_ptr(),
+        oo.set_string(
+            c"@c2rs-style",
             0,
-            c"%s".as_ptr(),
-            fmt_args![c"fg=red,bg=blue,us=green,bright".as_ptr()],
+            c"%s",
+            fmt_args![c"fg=red,bg=blue,us=green,bright"],
         );
         let mut gc = grid_default_cell;
         gc.fg = 9;
-        style_add(&mut gc, oo.ptr(), c"@c2rs-style".as_ptr(), None);
+        style_add(&mut gc, &*oo, c"@c2rs-style", None);
         assert_eq!((gc.fg, gc.bg, gc.us), (1, 4, 2));
         assert_eq!(gc.attr, 0x1);
 
         let mut gc = grid_default_cell;
         gc.attr = 0x8;
-        style_apply(&mut gc, oo.ptr(), c"@c2rs-style".as_ptr(), None);
+        style_apply(&mut gc, &*oo, c"@c2rs-style", None);
         assert_eq!((gc.fg, gc.bg), (1, 4));
         assert_eq!(gc.attr, 0x1);
     }
@@ -380,11 +386,11 @@ fn a_style_option_adds_its_colours_and_attributes_to_a_cell() {
 #[test]
 fn a_style_option_that_is_missing_leaves_the_cell_alone() {
     let _guard = globals();
-    let oo = Options::empty(null_mut());
+    let oo = Options::empty(None);
     unsafe {
         let mut gc = grid_default_cell;
         gc.fg = 9;
-        style_add(&mut gc, oo.ptr(), c"@c2rs-missing".as_ptr(), None);
+        style_add(&mut gc, &*oo, c"@c2rs-missing", None);
         assert_eq!((gc.fg, gc.bg, gc.us), (9, 8, 0));
         assert_eq!(gc.attr, 0);
     }
@@ -393,17 +399,11 @@ fn a_style_option_that_is_missing_leaves_the_cell_alone() {
 #[test]
 fn a_style_option_holding_a_format_is_expanded_before_it_is_parsed() {
     let _guard = globals();
-    let oo = Options::empty(null_mut());
+    let oo = Options::empty(None);
     unsafe {
-        options_set_string(
-            oo.ptr(),
-            c"@c2rs-format".as_ptr(),
-            0,
-            c"%s".as_ptr(),
-            fmt_args![c"fg=#{?1,red,blue}".as_ptr()],
-        );
+        oo.set_string(c"@c2rs-format", 0, c"%s", fmt_args![c"fg=#{?1,red,blue}"]);
         let mut gc = grid_default_cell;
-        style_add(&mut gc, oo.ptr(), c"@c2rs-format".as_ptr(), None);
+        style_add(&mut gc, &*oo, c"@c2rs-format", None);
         assert_eq!(gc.fg, 4);
     }
 }
@@ -411,10 +411,10 @@ fn a_style_option_holding_a_format_is_expanded_before_it_is_parsed() {
 #[test]
 fn the_scrollbar_style_falls_back_to_a_one_wide_unpadded_space() {
     let _guard = globals();
-    let empty = Options::empty(null_mut());
+    let empty = Options::empty(None);
     let mut sb = Box::new(style::default());
     unsafe {
-        style_set_scrollbar_style_from_option(&mut sb, empty.ptr());
+        style_set_scrollbar_style_from_option(&mut sb, &*empty);
         assert_eq!(sb.width, PANE_SCROLLBARS_DEFAULT_WIDTH);
         assert_eq!(sb.pad, PANE_SCROLLBARS_DEFAULT_PADDING);
         assert_eq!(sb.gc.data.data[0], b' ');
@@ -428,26 +428,19 @@ fn the_scrollbar_style_takes_the_option_and_floors_its_width_and_padding() {
     let oo = Options::window();
     let mut sb = Box::new(style::default());
     unsafe {
-        options_set_string(
-            oo.ptr(),
-            c"pane-scrollbars-style".as_ptr(),
+        oo.set_string(
+            c"pane-scrollbars-style",
             0,
-            c"%s".as_ptr(),
-            fmt_args![c"bg=red,width=3,pad=2".as_ptr()],
+            c"%s",
+            fmt_args![c"bg=red,width=3,pad=2"],
         );
-        style_set_scrollbar_style_from_option(&mut sb, oo.ptr());
+        style_set_scrollbar_style_from_option(&mut sb, &*oo);
         assert_eq!((sb.width, sb.pad), (3, 2));
         assert_eq!(sb.gc.bg, 1);
         assert_eq!(sb.gc.data.data[0], b' ');
 
-        options_set_string(
-            oo.ptr(),
-            c"pane-scrollbars-style".as_ptr(),
-            0,
-            c"%s".as_ptr(),
-            fmt_args![c"bg=red".as_ptr()],
-        );
-        style_set_scrollbar_style_from_option(&mut sb, oo.ptr());
+        oo.set_string(c"pane-scrollbars-style", 0, c"%s", fmt_args![c"bg=red"]);
+        style_set_scrollbar_style_from_option(&mut sb, &*oo);
         assert_eq!(
             (sb.width, sb.pad),
             (
@@ -460,31 +453,25 @@ fn the_scrollbar_style_takes_the_option_and_floors_its_width_and_padding() {
 
 #[test]
 fn a_range_list_is_walked_by_column_and_freed_whole() {
-    let mut srs = ::core::mem::MaybeUninit::<style_ranges>::uninit();
-    unsafe {
-        style_ranges_init(srs.as_mut_ptr());
-        let srs = srs.assume_init_mut();
-        assert!(srs.is_empty());
-        assert!(style_ranges_get_range(srs, 0).is_null());
+    let mut srs = style_ranges::new();
+    assert!(srs.is_empty());
+    assert!(style_ranges_get_range(&srs, 0).is_none());
 
-        for (start, end) in [(0, 4), (4, 10)] {
-            srs.push(style_range {
-                type_0: STYLE_RANGE_NONE as style_range_type,
-                argument: 0,
-                string: [0; 16],
-                start,
-                end,
-            });
-        }
-        let added = [&raw mut srs[0], &raw mut srs[1]];
-
-        assert_eq!(style_ranges_get_range(srs, 0), added[0]);
-        assert_eq!(style_ranges_get_range(srs, 3), added[0]);
-        assert_eq!(style_ranges_get_range(srs, 4), added[1]);
-        assert_eq!(style_ranges_get_range(srs, 9), added[1]);
-        assert!(style_ranges_get_range(srs, 10).is_null());
-
-        style_ranges_free(srs);
-        assert!(srs.is_empty());
+    for (start, end) in [(0, 4), (4, 10)] {
+        srs.push(style_range {
+            type_0: STYLE_RANGE_NONE as style_range_type,
+            argument: 0,
+            string: [0; 16],
+            start,
+            end,
+        });
     }
+    assert_eq!(style_ranges_get_range(&srs, 0).unwrap().start, 0);
+    assert_eq!(style_ranges_get_range(&srs, 3).unwrap().start, 0);
+    assert_eq!(style_ranges_get_range(&srs, 4).unwrap().start, 4);
+    assert_eq!(style_ranges_get_range(&srs, 9).unwrap().start, 4);
+    assert!(style_ranges_get_range(&srs, 10).is_none());
+
+    style_ranges_free(&mut srs);
+    assert!(srs.is_empty());
 }

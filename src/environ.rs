@@ -1,211 +1,223 @@
-use crate::ffi::{environ, fnmatch, getpid, setenv};
+use crate::ffi::{environ, fnmatch, getenv, getpid, setenv};
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::log::log_debug;
-use crate::options::options_get_ptr;
-use crate::options::{
-    options_array_first, options_array_item_value, options_array_next, options_get_string,
-};
-use crate::session::{session_environ, session_id};
+use crate::options::{OptionsEngine, RustOptionsEngine};
+
 use crate::tmux::getversion;
-use crate::tmux::{global_environ, global_options, socket_path};
+use crate::tmux::{global_options, socket_path};
 pub use crate::types::*;
 use ::core::ffi::{CStr, c_char, c_int};
 use ::std::ffi::CString;
-/// One environment variable: the name it is filed under, the value it carries
-/// if it has been given one, and whether it is hidden.
-///
-/// The fields are the entry's own. Outside this module an entry is read with
-/// `environ_entry_name`, `environ_entry_value` and `environ_entry_flags`, and
-/// changed only through `environ_set`, `environ_clear` and the rest, which is
-/// what keeps an entry's name and the key it is filed under the same string.
-#[repr(C)]
-pub struct environ_entry {
+
+/// A borrowed observation of one environment entry.
+#[derive(Clone, Copy)]
+pub struct EnvironmentEntryRef<'a> {
+    pub name: &'a CStr,
+    pub value: Option<&'a CStr>,
+    pub flags: c_int,
+}
+
+/// A tmux environment store.
+pub trait EnvironmentStore: Sized {
+    /// Creates an independent empty store whose later mutations are private.
+    fn empty() -> Self;
+    /// Returns entries in bytewise ascending name order, as `strcmp` does.
+    fn entries(&self) -> impl Iterator<Item = EnvironmentEntryRef<'_>>;
+    /// Finds the entry filed under `name`.
+    fn find(&self, name: &CStr) -> Option<EnvironmentEntryRef<'_>>;
+    /// Sets an exact value and replaces both value and flags on an existing entry.
+    fn set(&mut self, name: &CStr, flags: c_int, value: &CStr);
+    /// Leaves a named entry with no value, preserving existing flags or using zero for a new entry.
+    fn clear(&mut self, name: &CStr);
+    /// Parses the first `NAME=VALUE` split, retaining later `=` bytes, or does nothing without `=`.
+    fn put(&mut self, assignment: &CStr, flags: c_int);
+    /// Removes the named entry if it exists.
+    fn unset(&mut self, name: &CStr);
+    /// Overlays source entries without removing unrelated destination entries; valueless entries clear the destination.
+    fn copy_from(&mut self, source: &Self);
+}
+
+struct RustEnvironmentEntry {
     name: CString,
     value: Option<CString>,
     flags: c_int,
 }
 
-/// The entries of one environment, by name. Names order byte by byte, as
-/// `strcmp` ordered them. An entry lives in the map, so a pointer to one
-/// lasts only until the same environment is added to again.
-pub type environ_t = ::std::collections::BTreeMap<CString, environ_entry>;
-pub const RB_BLACK: c_int = 0 as c_int;
-pub const RB_RED: c_int = 1 as c_int;
-pub const RB_NEGINF: c_int = -(1 as c_int);
-pub const ENVIRON_HIDDEN: c_int = 0x1 as c_int;
-
-/// The name the entry is filed under.
-pub fn environ_entry_name(envent: &environ_entry) -> &CStr {
-    envent.name.as_c_str()
+/// The Rust-owned implementation of the tmux environment store.
+pub struct RustEnvironment {
+    entries: std::collections::BTreeMap<CString, RustEnvironmentEntry>,
 }
 
-/// The value the entry carries, or null when it has been set to none, which
-/// is how an entry says the variable is to be taken out of a child's
-/// environment rather than given to it.
-pub fn environ_entry_value(envent: &environ_entry) -> Option<&CStr> {
-    envent.value.as_deref()
+std::thread_local! {
+    static GLOBAL_ENVIRONMENT: std::cell::RefCell<RustEnvironment> =
+        std::cell::RefCell::new(RustEnvironment::empty());
 }
 
-/// The entry's flags, of which `ENVIRON_HIDDEN` is the only one.
-pub fn environ_entry_flags(envent: &environ_entry) -> c_int {
-    envent.flags
+pub(crate) fn with_global_environment<R>(read: impl FnOnce(&RustEnvironment) -> R) -> R {
+    GLOBAL_ENVIRONMENT.with(|env| read(&env.borrow()))
 }
 
-/// The entry `name` is filed under, put into the tree with no value yet and
-/// the flags given when the set does not hold one already.
-fn environ_add<'a>(env: &'a mut environ_t, name: &CStr, flags: c_int) -> &'a mut environ_entry {
-    env.entry(name.to_owned())
-        .or_insert_with_key(|name| environ_entry {
-            name: name.clone(),
-            value: None,
-            flags,
+pub(crate) fn with_global_environment_mut<R>(write: impl FnOnce(&mut RustEnvironment) -> R) -> R {
+    GLOBAL_ENVIRONMENT.with(|env| write(&mut env.borrow_mut()))
+}
+
+pub(crate) fn reset_global_environment() {
+    with_global_environment_mut(|env| *env = RustEnvironment::empty());
+}
+
+pub use crate::consts::{ENVIRON_HIDDEN, RB_BLACK, RB_NEGINF, RB_RED};
+
+impl EnvironmentStore for RustEnvironment {
+    fn empty() -> Self {
+        Self {
+            entries: std::collections::BTreeMap::new(),
+        }
+    }
+
+    fn entries(&self) -> impl Iterator<Item = EnvironmentEntryRef<'_>> {
+        self.entries.values().map(|entry| EnvironmentEntryRef {
+            name: entry.name.as_c_str(),
+            value: entry.value.as_deref(),
+            flags: entry.flags,
         })
-}
-
-/// The environment a struct carries, or null if it carries none.
-pub fn environ_ptr(env: &Option<Box<environ_t>>) -> *mut environ_t {
-    match env {
-        Some(env) => &raw const **env as *mut environ_t,
-        None => ::core::ptr::null_mut::<environ_t>(),
     }
-}
 
-pub fn environ_create_box() -> Box<environ_t> {
-    Box::new(environ_t::new())
-}
-
-pub unsafe fn environ_free(env: *mut environ_t) {
-    unsafe {
-        if env.is_null() {
-            return;
-        }
-        drop(Box::from_raw(env));
+    fn find(&self, name: &CStr) -> Option<EnvironmentEntryRef<'_>> {
+        self.entries.get(name).map(|entry| EnvironmentEntryRef {
+            name: entry.name.as_c_str(),
+            value: entry.value.as_deref(),
+            flags: entry.flags,
+        })
     }
-}
 
-/// The entries a set holds, in name order. The walk borrows the set, since
-/// adding to it while walking would move the entries about.
-/// The process environment as the C library holds it, one `NAME=value` string
-/// at a time. The walk ends at the array's null terminator.
-pub fn environ_process() -> impl Iterator<Item = &'static CStr> {
-    (0..).map_while(|i| unsafe {
-        let var = *environ.add(i);
-        (!var.is_null()).then(|| CStr::from_ptr(var))
-    })
-}
-
-pub fn environ_entries(env: &environ_t) -> impl Iterator<Item = &environ_entry> {
-    env.values()
-}
-
-pub unsafe fn environ_copy(srcenv: *mut environ_t, dstenv: *mut environ_t) {
-    unsafe {
-        for envent in environ_entries(&*srcenv) {
-            match &envent.value {
-                None => environ_clear(dstenv, envent.name.as_ptr()),
-                Some(value) => environ_set(
-                    dstenv,
-                    envent.name.as_ptr(),
-                    envent.flags,
-                    c"%s".as_ptr(),
-                    fmt_args![value.as_ptr()],
-                ),
-            }
-        }
+    fn set(&mut self, name: &CStr, flags: c_int, value: &CStr) {
+        let entry = self
+            .entries
+            .entry(name.to_owned())
+            .or_insert_with_key(|name| RustEnvironmentEntry {
+                name: name.clone(),
+                value: None,
+                flags,
+            });
+        entry.flags = flags;
+        entry.value = Some(value.to_owned());
     }
-}
 
-/// The entry a set holds for `name`, if it holds one.
-pub unsafe fn environ_find(env: &environ_t, name: *const c_char) -> Option<&environ_entry> {
-    unsafe { env.get(CStr::from_ptr(name)) }
-}
-
-pub unsafe fn environ_set(
-    env: *mut environ_t,
-    name: *const c_char,
-    flags: c_int,
-    fmt: *const c_char,
-    args: &[FmtArg],
-) {
-    unsafe {
-        let envent = environ_add(&mut *env, CStr::from_ptr(name), flags);
-        envent.flags = flags;
-        envent.value = Some(format_alloc(fmt, args));
+    fn clear(&mut self, name: &CStr) {
+        let entry = self
+            .entries
+            .entry(name.to_owned())
+            .or_insert_with_key(|name| RustEnvironmentEntry {
+                name: name.clone(),
+                value: None,
+                flags: 0,
+            });
+        entry.value = None;
     }
-}
 
-pub unsafe fn environ_clear(env: *mut environ_t, name: *const c_char) {
-    unsafe {
-        environ_add(&mut *env, CStr::from_ptr(name), 0 as c_int).value = None;
-    }
-}
-
-pub unsafe fn environ_put(env: *mut environ_t, var: *const c_char, flags: c_int) {
-    unsafe {
-        let var = CStr::from_ptr(var).to_bytes();
-        let Some(split) = var.iter().position(|&b| b == b'=') else {
+    fn put(&mut self, assignment: &CStr, flags: c_int) {
+        let bytes = assignment.to_bytes();
+        let Some(split) = bytes.iter().position(|&byte| byte == b'=') else {
             return;
         };
-        let name = CString::new(&var[..split]).expect("a C string holds no NUL");
-        let value = CString::new(&var[split + 1..]).expect("a C string holds no NUL");
-        environ_set(
-            env,
-            name.as_ptr(),
-            flags,
-            c"%s".as_ptr(),
-            fmt_args![value.as_ptr()],
-        );
+        let name = CString::new(&bytes[..split]).expect("a C string holds no NUL");
+        let value = CString::new(&bytes[split + 1..]).expect("a C string holds no NUL");
+        self.set(&name, flags, &value);
     }
-}
 
-pub unsafe fn environ_unset(env: *mut environ_t, name: *const c_char) {
-    unsafe {
-        (*env).remove(CStr::from_ptr(name));
+    fn unset(&mut self, name: &CStr) {
+        self.entries.remove(name);
     }
-}
 
-pub unsafe fn environ_update(oo: *mut options, src: *mut environ_t, dst: *mut environ_t) {
-    unsafe {
-        let o = options_get_ptr(oo, c"update-environment".as_ptr());
-        if o.is_null() {
-            return;
+    fn copy_from(&mut self, source: &Self) {
+        for entry in source.entries() {
+            match entry.value {
+                Some(value) => self.set(entry.name, entry.flags, value),
+                None => self.clear(entry.name),
+            }
         }
-        let mut a = options_array_first(o);
-        while !a.is_null() {
-            let ov = options_array_item_value(a);
-            let mut found = false;
-            for envent in environ_entries(&*src) {
-                if fnmatch((*ov).string().as_ptr(), envent.name.as_ptr(), 0 as c_int) == 0 as c_int
-                {
-                    environ_set(
-                        dst,
+    }
+}
+
+pub(crate) fn new_environment_box() -> Box<RustEnvironment> {
+    Box::new(RustEnvironment::empty())
+}
+
+/// Copies one process environment value, preserving empty values and raw bytes.
+///
+/// # Safety
+/// The process environment must not change while the value is copied.
+pub(crate) unsafe fn process_environment_value(name: &CStr) -> Option<CString> {
+    unsafe {
+        let value = getenv(name.as_ptr());
+        (!value.is_null()).then(|| CStr::from_ptr(value).to_owned())
+    }
+}
+
+/// Copies the C library's process environment before returning its iterator.
+///
+/// # Safety
+/// The process environment must not change while the snapshot is copied.
+pub(crate) unsafe fn process_environment() -> impl Iterator<Item = CString> {
+    let mut vars = Vec::new();
+    unsafe {
+        let mut next = environ;
+        while !next.is_null() {
+            let var = *next;
+            if var.is_null() {
+                break;
+            }
+            vars.push(CStr::from_ptr(var).to_owned());
+            next = next.add(1);
+        }
+    }
+    vars.into_iter()
+}
+
+pub(crate) unsafe fn update_environment(
+    oo: &RustOptionsRef,
+    src: &RustEnvironment,
+    dst: &mut RustEnvironment,
+) {
+    unsafe {
+        oo.with_entry(c"update-environment", false, |entry| {
+            let Some(entry) = entry else { return };
+            for array_index in RustOptionsEngine.array_indices(entry) {
+                let ov = RustOptionsEngine.array_get(entry, array_index).unwrap();
+                let mut found = false;
+                for envent in src.entries() {
+                    if fnmatch(
+                        RustOptionsEngine.value_string(ov).as_ptr(),
                         envent.name.as_ptr(),
                         0 as c_int,
-                        c"%s".as_ptr(),
-                        fmt_args![envent.value.as_deref()],
-                    );
-                    found = true;
+                    ) == 0 as c_int
+                    {
+                        match envent.value {
+                            Some(value) => dst.set(envent.name, 0, value),
+                            None => dst.clear(envent.name),
+                        }
+                        found = true;
+                    }
+                }
+                if !found {
+                    dst.clear(RustOptionsEngine.value_string(ov));
                 }
             }
-            if !found {
-                environ_clear(dst, (*ov).string().as_ptr());
-            }
-            a = options_array_next(o, a);
-        }
+        });
     }
 }
 
-pub unsafe fn environ_push(env: &environ_t) {
+pub(crate) unsafe fn push_environment_to_process(env: &RustEnvironment) {
     // The empty environment the first `setenv` grows from. The C library
     // allocates its own array the moment it has an entry to store, so this one
     // is never handed back and never has to be freed.
-    static mut EMPTY_ENVIRON: [*mut c_char; 1] = [::core::ptr::null_mut()];
+    static mut EMPTY_ENVIRON: [*mut c_char; 1] = [core::ptr::null_mut()];
     unsafe {
         environ = (&raw mut EMPTY_ENVIRON).cast::<*mut c_char>();
-        for envent in environ_entries(env) {
-            if let Some(value) = &envent.value
-                && !environ_entry_name(envent).is_empty()
+        for envent in env.entries() {
+            if let Some(value) = envent.value
+                && !envent.name.to_bytes().is_empty()
                 && envent.flags & ENVIRON_HIDDEN == 0
             {
                 setenv(envent.name.as_ptr(), value.as_ptr(), 1 as c_int);
@@ -214,75 +226,50 @@ pub unsafe fn environ_push(env: &environ_t) {
     }
 }
 
-pub unsafe fn environ_log(env: &environ_t, fmt: *const c_char, args: &[FmtArg]) {
+pub(crate) unsafe fn log_environment(env: &RustEnvironment, fmt: &CStr, args: &[FmtArg]) {
     unsafe {
         let prefix = format_alloc(fmt, args);
-        for envent in environ_entries(env) {
-            if let Some(value) = &envent.value
-                && !environ_entry_name(envent).is_empty()
+        for envent in env.entries() {
+            if let Some(value) = envent.value
+                && !envent.name.to_bytes().is_empty()
             {
-                log_debug(
-                    c"%s%s=%s".as_ptr(),
-                    fmt_args![prefix.as_ptr(), envent.name.as_ptr(), value.as_ptr()],
-                );
+                log_debug(c"%s%s=%s", fmt_args![prefix.as_c_str(), envent.name, value]);
             }
         }
     }
 }
 
-pub unsafe fn environ_for_session(s: *mut session, no_TERM: c_int) -> Box<environ_t> {
+pub(crate) unsafe fn environment_for_session(
+    s: Option<&session>,
+    no_TERM: c_int,
+) -> Box<RustEnvironment> {
     unsafe {
-        let mut env = environ_create_box();
-        environ_copy(global_environ, &mut *env);
-        if !s.is_null() {
-            environ_copy(session_environ(s), &mut *env);
+        let mut env = new_environment_box();
+        with_global_environment(|global| env.copy_from(global));
+        let idx = s.map_or(-(1 as c_int), |s| {
+            crate::SessionIdentity::session_id(s) as c_int
+        });
+        if let Some(s) = s {
+            env.copy_from(s.environ_ref());
         }
         if no_TERM == 0 {
-            let value = options_get_string(global_options, c"default-terminal".as_ptr());
-            environ_set(
-                &mut *env,
-                c"TERM".as_ptr(),
-                0 as c_int,
-                c"%s".as_ptr(),
-                fmt_args![value],
-            );
-            environ_set(
-                &mut *env,
-                c"TERM_PROGRAM".as_ptr(),
-                0 as c_int,
-                c"%s".as_ptr(),
-                fmt_args![c"tmux".as_ptr()],
-            );
-            environ_set(
-                &mut *env,
-                c"TERM_PROGRAM_VERSION".as_ptr(),
-                0 as c_int,
-                c"%s".as_ptr(),
-                fmt_args![getversion()],
-            );
-            environ_set(
-                &mut *env,
-                c"COLORTERM".as_ptr(),
-                0 as c_int,
-                c"%s".as_ptr(),
-                fmt_args![c"truecolor".as_ptr()],
-            );
+            let value = (global_options
+                .as_ref()
+                .expect("global options are initialized"))
+            .string_ref(c"default-terminal");
+            env.set(c"TERM", 0, &value);
+            env.set(c"TERM_PROGRAM", 0, c"tmux");
+            env.set(c"TERM_PROGRAM_VERSION", 0, getversion());
+            env.set(c"COLORTERM", 0, c"truecolor");
         }
-        environ_clear(&mut *env, c"LISTEN_PID".as_ptr());
-        environ_clear(&mut *env, c"LISTEN_FDS".as_ptr());
-        environ_clear(&mut *env, c"LISTEN_FDNAMES".as_ptr());
-        let idx = if s.is_null() {
-            -(1 as c_int)
-        } else {
-            session_id(s) as c_int
-        };
-        environ_set(
-            &mut *env,
-            c"TMUX".as_ptr(),
-            0 as c_int,
-            c"%s,%ld,%d".as_ptr(),
-            fmt_args![socket_path.as_deref(), getpid() as ::core::ffi::c_long, idx],
+        env.clear(c"LISTEN_PID");
+        env.clear(c"LISTEN_FDS");
+        env.clear(c"LISTEN_FDNAMES");
+        let tmux = format_alloc(
+            c"%s,%ld,%d",
+            fmt_args![socket_path.as_deref(), getpid() as core::ffi::c_long, idx],
         );
+        env.set(c"TMUX", 0, &tmux);
         env
     }
 }

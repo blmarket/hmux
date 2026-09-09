@@ -24,12 +24,12 @@ const SETTLE: usize = 2;
 
 /// A real-time signal nothing else in the process uses. Each test passes an
 /// offset of its own so two running at once never share a disposition.
-fn signal(offset: ::core::ffi::c_int) -> ::core::ffi::c_int {
+fn signal(offset: core::ffi::c_int) -> core::ffi::c_int {
     libc::SIGRTMIN() + offset
 }
 
 /// A watch on `signo` whose callback counts the times it runs, and the count.
-fn counting(signo: ::core::ffi::c_int) -> (SignalHandle, Rc<AtomicUsize>) {
+fn counting(signo: core::ffi::c_int) -> (SignalHandle, Rc<AtomicUsize>) {
     let calls = Rc::new(AtomicUsize::new(0));
     let counted = Rc::clone(&calls);
     let mut watch = SignalHandle::ZERO;
@@ -40,7 +40,7 @@ fn counting(signo: ::core::ffi::c_int) -> (SignalHandle, Rc<AtomicUsize>) {
 }
 
 /// Raises `signo` on this thread, which is where the watch is.
-fn raise(signo: ::core::ffi::c_int) {
+fn raise(signo: core::ffi::c_int) {
     assert_eq!(unsafe { libc::raise(signo) }, 0, "raise");
 }
 

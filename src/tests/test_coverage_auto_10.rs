@@ -14,7 +14,6 @@ use crate::cfg::{
 };
 use crate::fmt_args;
 use crate::tests::test_fixtures::{Item, globals};
-use ::core::ptr::null_mut;
 use ::std::ffi::CString;
 
 // ---------------------------------------------------------------------------
@@ -24,7 +23,7 @@ use ::std::ffi::CString;
 unsafe fn drain_causes() {
     unsafe {
         let mut item = Item::new();
-        cfg_print_causes(item.ptr());
+        cfg_print_causes(&*item.ptr());
     }
 }
 
@@ -66,12 +65,12 @@ fn cfg_add_cause_single_and_print_clears() {
     let _guard = globals();
     unsafe {
         drain_causes();
-        cfg_add_cause(c"single-cause".as_ptr(), fmt_args![]);
+        cfg_add_cause(c"single-cause", fmt_args![]);
         let mut item = Item::new();
-        cfg_print_causes(item.ptr());
+        cfg_print_causes(&*item.ptr());
         // second drain is a no-op and must not crash
         let mut item2 = Item::new();
-        cfg_print_causes(item2.ptr());
+        cfg_print_causes(&*item2.ptr());
         drain_causes();
     }
 }
@@ -82,16 +81,16 @@ fn cfg_add_cause_multiple_formatted_accumulates_and_drains() {
     unsafe {
         drain_causes();
         cfg_add_cause(
-            c"cause %s %d".as_ptr(),
-            fmt_args![c"alpha".as_ptr(), 7 as ::core::ffi::c_int],
+            c"cause %s %d",
+            fmt_args![c"alpha".as_ptr(), 7 as core::ffi::c_int],
         );
-        cfg_add_cause(c"second".as_ptr(), fmt_args![]);
-        cfg_add_cause(c"third %s".as_ptr(), fmt_args![c"beta".as_ptr()]);
+        cfg_add_cause(c"second", fmt_args![]);
+        cfg_add_cause(c"third %s", fmt_args![c"beta".as_ptr()]);
         let mut item = Item::new();
-        cfg_print_causes(item.ptr());
+        cfg_print_causes(&*item.ptr());
         // after draining, another call is harmless
         let mut item2 = Item::new();
-        cfg_print_causes(item2.ptr());
+        cfg_print_causes(&*item2.ptr());
         drain_causes();
     }
 }
@@ -103,9 +102,9 @@ fn cfg_add_cause_with_path_format_adds_cause() {
         drain_causes();
         let path = c"/tmp/fake.conf".as_ptr();
         let err = c"No such file".as_ptr();
-        cfg_add_cause(c"%s: %s".as_ptr(), fmt_args![path, err]);
+        cfg_add_cause(c"%s: %s", fmt_args![path, err]);
         let mut item = Item::new();
-        cfg_print_causes(item.ptr());
+        cfg_print_causes(&*item.ptr());
         drain_causes();
     }
 }
@@ -116,12 +115,12 @@ fn cfg_add_cause_with_percent_format_and_drain_via_client_item() {
     unsafe {
         drain_causes();
         cfg_add_cause(
-            c"error at %s:%d".as_ptr(),
-            fmt_args![c"my.conf".as_ptr(), 42 as ::core::ffi::c_int],
+            c"error at %s:%d",
+            fmt_args![c"my.conf".as_ptr(), 42 as core::ffi::c_int],
         );
         let mut item = Item::new();
         assert!(!item.ptr().is_null());
-        cfg_print_causes(item.ptr());
+        cfg_print_causes(&*item.ptr());
         drain_causes();
     }
 }
@@ -132,9 +131,9 @@ fn cfg_print_causes_on_empty_list_is_noop() {
     unsafe {
         drain_causes();
         let mut item = Item::new();
-        cfg_print_causes(item.ptr());
+        cfg_print_causes(&*item.ptr());
         let mut item2 = Item::with_client();
-        cfg_print_causes(item2.ptr());
+        cfg_print_causes(&*item2.ptr());
     }
 }
 
@@ -147,17 +146,17 @@ fn load_cfg_nonexistent_with_quiet_returns_zero_no_cause() {
     let _guard = globals();
     unsafe {
         drain_causes();
-        let mut new_item: *mut crate::types::cmdq_item = null_mut();
+        let mut new_item = None;
         let rc = load_cfg(
-            c"/tmp/tmux-c2rs-auto10-missing-quiet-1".as_ptr(),
-            null_mut(),
-            null_mut(),
-            null_mut(),
+            c"/tmp/tmux-c2rs-auto10-missing-quiet-1",
+            None,
+            None,
+            None,
             CMD_PARSE_QUIET,
             Some(&mut new_item),
         );
         assert_eq!(rc, 0);
-        assert!(new_item.is_null());
+        assert!(new_item.is_none());
         // no cause was added, draining is still safe
         drain_causes();
     }
@@ -168,17 +167,17 @@ fn load_cfg_nonexistent_without_quiet_returns_error_and_adds_cause() {
     let _guard = globals();
     unsafe {
         drain_causes();
-        let mut new_item: *mut crate::types::cmdq_item = null_mut();
+        let mut new_item = None;
         let rc = load_cfg(
-            c"/tmp/tmux-c2rs-auto10-missing-nonquiet-1".as_ptr(),
-            null_mut(),
-            null_mut(),
-            null_mut(),
+            c"/tmp/tmux-c2rs-auto10-missing-nonquiet-1",
+            None,
+            None,
+            None,
             0,
             Some(&mut new_item),
         );
         assert_eq!(rc, -1);
-        assert!(new_item.is_null());
+        assert!(new_item.is_none());
         // cause was added; drain it
         drain_causes();
         // second drain leaves list empty
@@ -196,17 +195,10 @@ fn load_cfg_valid_temp_file_returns_success_and_new_item() {
     let c_path = CString::new(path).unwrap();
     unsafe {
         drain_causes();
-        let mut new_item: *mut crate::types::cmdq_item = null_mut();
-        let rc = load_cfg(
-            c_path.as_ptr(),
-            null_mut(),
-            null_mut(),
-            null_mut(),
-            0,
-            Some(&mut new_item),
-        );
+        let mut new_item = None;
+        let rc = load_cfg(&c_path, None, None, None, 0, Some(&mut new_item));
         assert_eq!(rc, 0);
-        assert!(!new_item.is_null(), "valid config should queue commands");
+        assert!(new_item.is_some(), "valid config should queue commands");
         drain_causes();
     }
     let _ = std::fs::remove_file(path);
@@ -221,17 +213,17 @@ fn load_cfg_valid_temp_file_with_parseonly_parses_but_queues_nothing() {
     let c_path = CString::new(path).unwrap();
     unsafe {
         drain_causes();
-        let mut new_item: *mut crate::types::cmdq_item = null_mut();
+        let mut new_item = None;
         let rc = load_cfg(
-            c_path.as_ptr(),
-            null_mut(),
-            null_mut(),
-            null_mut(),
+            &c_path,
+            None,
+            None,
+            None,
             CMD_PARSE_PARSEONLY,
             Some(&mut new_item),
         );
         assert_eq!(rc, 0);
-        assert!(new_item.is_null(), "parseonly must not queue");
+        assert!(new_item.is_none(), "parseonly must not queue");
         drain_causes();
     }
     let _ = std::fs::remove_file(path);

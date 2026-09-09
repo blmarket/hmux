@@ -36,7 +36,7 @@ fn peer_of(s: c_int) -> Option<(uid_t, gid_t)> {
         uid: 0,
         gid: 0,
     };
-    let mut len = ::core::mem::size_of::<ucred>() as c_int;
+    let mut len = size_of::<ucred>() as c_int;
     let asked = unsafe {
         getsockopt(
             s,

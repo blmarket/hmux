@@ -10,6 +10,7 @@
 /// This module is versioned so future contracts can be added without changing
 /// the public traits defined here.
 pub mod v1 {
+    use std::ffi::CString;
     use std::io;
     use std::rc::Rc;
 
@@ -33,7 +34,7 @@ pub mod v1 {
         pub revision: u64,
         /// Up to the requested number of rows from the live bottom of the
         /// terminal buffer, independent of any client's scroll position.
-        pub text: String,
+        pub text: CString,
         /// Whether the terminal's hardware cursor is currently visible
         /// (DEC private mode 25, DECTCEM).
         pub cursor_visible: bool,
@@ -113,12 +114,13 @@ pub mod v1 {
         /// Some agents (e.g. Codex) report live status — working, idle, or an
         /// approval request — in the window title rather than only on screen, so
         /// this is a distinct detection signal from [`last_lines`](Self::last_lines).
-        fn title(&self) -> io::Result<Option<String>>;
+        fn title(&self) -> io::Result<Option<CString>>;
     }
 
     #[cfg(test)]
     mod tests {
         use std::cell::RefCell;
+        use std::ffi::CString;
         use std::io;
 
         use super::{
@@ -158,7 +160,7 @@ pub mod v1 {
                 self.asked.borrow_mut().push((source, lines));
                 Ok(ScreenTail {
                     revision: 1,
-                    text: format!("{source:?}/{lines}"),
+                    text: CString::new(format!("{source:?}/{lines}")).expect("screen tail"),
                     cursor_visible: true,
                     cursor_shape: 0,
                 })
@@ -168,7 +170,7 @@ pub mod v1 {
                 Ok(0)
             }
 
-            fn title(&self) -> io::Result<Option<String>> {
+            fn title(&self) -> io::Result<Option<CString>> {
                 Ok(None)
             }
         }
@@ -199,7 +201,10 @@ pub mod v1 {
             let pane = RecordingPane::default();
             let erased: &dyn PaneObservability = &pane;
 
-            assert_eq!(erased.last_lines(3).expect("last_lines").text, "Recent/3");
+            assert_eq!(
+                erased.last_lines(3).expect("last_lines").text.as_c_str(),
+                c"Recent/3"
+            );
         }
     }
 }

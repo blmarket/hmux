@@ -6,7 +6,7 @@
 //! heuristics: live approval prompts, current status markers identifying work,
 //! and a current `›` prompt identifying idle Codex.
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::{CString, OsStr, OsString};
 use std::path::Path;
 
 use super::{
@@ -34,7 +34,7 @@ impl AgentDetector for CodexDetector {
         Some(SessionIdSource::ProcessTreeOpenFiles)
     }
 
-    fn session_id_from_open_file(&self, path: &Path) -> Option<String> {
+    fn session_id_from_open_file(&self, path: &Path) -> Option<CString> {
         session_id_from_rollout_path(path)
     }
 
@@ -54,11 +54,12 @@ impl AgentDetector for CodexDetector {
 
 /// Codex keeps the active rollout open for the lifetime of a thread. Its
 /// filename ends in the thread UUID, including when the thread was resumed.
-fn session_id_from_rollout_path(path: &Path) -> Option<String> {
+fn session_id_from_rollout_path(path: &Path) -> Option<CString> {
     let name = path.file_name()?.to_str()?;
     let stem = name.strip_prefix("rollout-")?.strip_suffix(".jsonl")?;
     let session_id = stem.get(stem.len().checked_sub(36)?..)?;
-    is_uuid(session_id).then(|| session_id.to_ascii_lowercase())
+    is_uuid(session_id)
+        .then(|| CString::new(session_id.to_ascii_lowercase()).expect("a UUID has no NUL"))
 }
 
 fn detect(screen: &str, title: Option<&str>, cursor: Option<CursorEvidence>) -> Detection {
@@ -111,10 +112,10 @@ fn detect(screen: &str, title: Option<&str>, cursor: Option<CursorEvidence>) -> 
     // Lowest-priority title signal (Herdr `osc_title_idle`): a non-empty title
     // that is neither a spinner nor an approval request means Codex is sitting
     // at its prompt, even when the screen tail carries no other evidence.
-    if let Some(title) = title {
-        if title_indicates_idle(title) {
-            return Detection::State(AgentState::Idle);
-        }
+    if let Some(title) = title
+        && title_indicates_idle(title)
+    {
+        return Detection::State(AgentState::Idle);
     }
     if has_codex_signature(&lower) {
         return Detection::State(AgentState::Idle);
@@ -419,7 +420,7 @@ mod tests {
         );
         assert_eq!(
             session_id_from_rollout_path(path).as_deref(),
-            Some("019f7147-8f68-7f11-8eca-fa67874bfefd")
+            Some(c"019f7147-8f68-7f11-8eca-fa67874bfefd")
         );
         assert_eq!(
             session_id_from_rollout_path(Path::new("state_5.sqlite")),

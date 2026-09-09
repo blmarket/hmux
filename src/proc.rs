@@ -5,6 +5,19 @@ use crate::compat::{
     imsgbuf_queuelen, imsgbuf_read, imsgbuf_write,
 };
 use crate::compat::{imsg_free, imsg_get};
+pub use crate::consts::{
+    AF_UNIX, MSG_COMMAND, MSG_DETACH, MSG_DETACHKILL, MSG_EXEC, MSG_EXIT, MSG_EXITED, MSG_EXITING,
+    MSG_FLAGS, MSG_IDENTIFY_CLIENTPID, MSG_IDENTIFY_CWD, MSG_IDENTIFY_DONE, MSG_IDENTIFY_ENVIRON,
+    MSG_IDENTIFY_FEATURES, MSG_IDENTIFY_FLAGS, MSG_IDENTIFY_LONGFLAGS, MSG_IDENTIFY_OLDCWD,
+    MSG_IDENTIFY_STDIN, MSG_IDENTIFY_STDOUT, MSG_IDENTIFY_TERM, MSG_IDENTIFY_TERMINFO,
+    MSG_IDENTIFY_TTYNAME, MSG_LOCK, MSG_OLDSTDERR, MSG_OLDSTDIN, MSG_OLDSTDOUT, MSG_READ,
+    MSG_READ_CANCEL, MSG_READ_DONE, MSG_READ_OPEN, MSG_READY, MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN,
+    MSG_SUSPEND, MSG_UNLOCK, MSG_VERSION, MSG_WAKEUP, MSG_WRITE, MSG_WRITE_CLOSE, MSG_WRITE_OPEN,
+    MSG_WRITE_READY, PF_LOCAL, PF_UNIX, PF_UNSPEC, PROTOCOL_VERSION, SA_RESTART, SIG_DFL, SIGCHLD,
+    SIGCONT, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU, SIGUSR1, SIGUSR2, SIGWINCH,
+    SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM, SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM,
+    SOCK_SEQPACKET, SOCK_STREAM,
+};
 use crate::ffi::{
     close, daemon, fork, getpid, sigaction, sigemptyset, socketpair, uname, utf8proc_version,
 };
@@ -14,79 +27,48 @@ use crate::reactor;
 use crate::reactor::{Interest, IoWatch, Reactor, SignalWatch, WatchMode};
 use crate::tmux::getversion;
 use crate::tmux::socket_path;
-use crate::tree::GlobalQueue;
 pub use crate::types::*;
 use ::core::ffi::CStr;
-pub const SOCK_NONBLOCK: __socket_type = 2048;
-pub const SOCK_CLOEXEC: __socket_type = 524288;
-pub const SOCK_PACKET: __socket_type = 10;
-pub const SOCK_DCCP: __socket_type = 6;
-pub const SOCK_SEQPACKET: __socket_type = 5;
-pub const SOCK_RDM: __socket_type = 4;
-pub const SOCK_RAW: __socket_type = 3;
-pub const SOCK_DGRAM: __socket_type = 2;
-pub const SOCK_STREAM: __socket_type = 1;
-pub const MSG_READ_CANCEL: msgtype = 307;
-pub const MSG_WRITE_CLOSE: msgtype = 306;
-pub const MSG_WRITE_READY: msgtype = 305;
-pub const MSG_WRITE: msgtype = 304;
-pub const MSG_WRITE_OPEN: msgtype = 303;
-pub const MSG_READ_DONE: msgtype = 302;
-pub const MSG_READ: msgtype = 301;
-pub const MSG_READ_OPEN: msgtype = 300;
-pub const MSG_FLAGS: msgtype = 218;
-pub const MSG_EXEC: msgtype = 217;
-pub const MSG_WAKEUP: msgtype = 216;
-pub const MSG_UNLOCK: msgtype = 215;
-pub const MSG_SUSPEND: msgtype = 214;
-pub const MSG_OLDSTDOUT: msgtype = 213;
-pub const MSG_OLDSTDIN: msgtype = 212;
-pub const MSG_OLDSTDERR: msgtype = 211;
-pub const MSG_SHUTDOWN: msgtype = 210;
-pub const MSG_SHELL: msgtype = 209;
-pub const MSG_RESIZE: msgtype = 208;
-pub const MSG_READY: msgtype = 207;
-pub const MSG_LOCK: msgtype = 206;
-pub const MSG_EXITING: msgtype = 205;
-pub const MSG_EXITED: msgtype = 204;
-pub const MSG_EXIT: msgtype = 203;
-pub const MSG_DETACHKILL: msgtype = 202;
-pub const MSG_DETACH: msgtype = 201;
-pub const MSG_COMMAND: msgtype = 200;
-pub const MSG_IDENTIFY_TERMINFO: msgtype = 112;
-pub const MSG_IDENTIFY_LONGFLAGS: msgtype = 111;
-pub const MSG_IDENTIFY_STDOUT: msgtype = 110;
-pub const MSG_IDENTIFY_FEATURES: msgtype = 109;
-pub const MSG_IDENTIFY_CWD: msgtype = 108;
-pub const MSG_IDENTIFY_CLIENTPID: msgtype = 107;
-pub const MSG_IDENTIFY_DONE: msgtype = 106;
-pub const MSG_IDENTIFY_ENVIRON: msgtype = 105;
-pub const MSG_IDENTIFY_STDIN: msgtype = 104;
-pub const MSG_IDENTIFY_OLDCWD: msgtype = 103;
-pub const MSG_IDENTIFY_TTYNAME: msgtype = 102;
-pub const MSG_IDENTIFY_TERM: msgtype = 101;
-pub const MSG_IDENTIFY_FLAGS: msgtype = 100;
-pub const MSG_VERSION: msgtype = 12;
+
+pub type PeerDispatch = dyn for<'a> Fn(Option<&'a mut imsg>);
+pub type ProcSignalCallback = dyn Fn(core::ffi::c_int);
+pub type ProcessRef = std::rc::Rc<std::cell::RefCell<tmuxproc>>;
+#[derive(Clone)]
+pub struct PeerRef(std::rc::Rc<std::cell::RefCell<tmuxpeer>>);
+
+impl PeerRef {
+    pub fn new(mut peer: tmuxpeer) -> Self {
+        Self(std::rc::Rc::new_cyclic(|owner| {
+            peer.owner = Some(owner.clone());
+            std::cell::RefCell::new(peer)
+        }))
+    }
+
+    pub fn borrow(&self) -> std::cell::Ref<'_, tmuxpeer> {
+        self.0.borrow()
+    }
+
+    pub fn borrow_mut(&self) -> std::cell::RefMut<'_, tmuxpeer> {
+        self.0.borrow_mut()
+    }
+}
+
 #[repr(C)]
 pub struct tmuxpeer {
-    pub parent: *mut tmuxproc,
+    owner: Option<std::rc::Weak<std::cell::RefCell<tmuxpeer>>>,
     pub ibuf: imsgbuf,
     pub event: IoHandle,
     pub uid: uid_t,
-    pub flags: ::core::ffi::c_int,
-    pub dispatchcb: Option<unsafe fn(*mut imsg, *mut client) -> ()>,
-    /// The client this peer speaks for, observed rather than held: a
-    /// dispatch that loses the client drops the peer with it, so the
-    /// callback stays a plain function pointer and the client is upgraded
-    /// for the length of one call.
-    pub owner: Option<ClientWeak>,
+    pub flags: core::ffi::c_int,
+    /// Retained separately while it runs because dispatch may drop this peer.
+    pub dispatchcb: Option<std::rc::Rc<PeerDispatch>>,
 }
 #[derive(Default)]
 #[repr(C)]
 pub struct tmuxproc {
-    pub name: Option<::std::ffi::CString>,
-    pub exit: ::core::ffi::c_int,
-    pub signalcb: Option<unsafe fn(::core::ffi::c_int) -> ()>,
+    pub name: Option<std::ffi::CString>,
+    pub exit: core::ffi::c_int,
+    pub signalcb: Option<std::rc::Rc<ProcSignalCallback>>,
     pub ev_sigint: SignalHandle,
     pub ev_sighup: SignalHandle,
     pub ev_sigchld: SignalHandle,
@@ -96,523 +78,648 @@ pub struct tmuxproc {
     pub ev_sigusr2: SignalHandle,
     pub ev_sigwinch: SignalHandle,
 }
-impl tmuxproc {
-    /// The name the process logs under.
-    pub(crate) fn name_ptr(&self) -> *mut ::core::ffi::c_char {
-        cstr_ptr(&self.name)
-    }
-}
-pub const PF_UNSPEC: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const PF_LOCAL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const PF_UNIX: ::core::ffi::c_int = PF_LOCAL;
-pub const AF_UNIX: ::core::ffi::c_int = PF_UNIX;
-pub const SIG_DFL: __sighandler_t = None;
-pub const SIGINT: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const SIGTERM: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
-pub const SIGHUP: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
-pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
-pub const SIGTSTP: ::core::ffi::c_int = 20 as ::core::ffi::c_int;
-pub const SIGCONT: ::core::ffi::c_int = 18 as ::core::ffi::c_int;
-pub const SIGCHLD: ::core::ffi::c_int = 17 as ::core::ffi::c_int;
-pub const SIGTTIN: ::core::ffi::c_int = 21 as ::core::ffi::c_int;
-pub const SIGTTOU: ::core::ffi::c_int = 22 as ::core::ffi::c_int;
-pub const SIGUSR1: ::core::ffi::c_int = 10 as ::core::ffi::c_int;
-pub const SIGUSR2: ::core::ffi::c_int = 12 as ::core::ffi::c_int;
-pub const SIGWINCH: ::core::ffi::c_int = 28 as ::core::ffi::c_int;
-pub const SA_RESTART: ::core::ffi::c_int = 0x10000000 as ::core::ffi::c_int;
-pub const NCURSES_VERSION_PATCH: ::core::ffi::c_int = 20251230 as ::core::ffi::c_int;
-pub const NCURSES_VERSION: [::core::ffi::c_char; 4] =
-    unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"6.6\0") };
-pub const EVLOOP_ONCE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const EV_READ: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const EV_WRITE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const EV_SIGNAL: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const EV_PERSIST: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
-pub const PEER_BAD: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-/// The client a peer speaks for, upgraded for as long as the caller holds
-/// the result. `None` means the peer never had one; a peer whose client has
-/// gone is dropped along with it.
-unsafe fn peer_owner(peer: *mut tmuxpeer) -> Option<ClientRef> {
-    unsafe { (*peer).owner.as_ref().and_then(ClientWeak::upgrade) }
-}
 
-unsafe fn peer_owner_ptr(peer: *mut tmuxpeer) -> *mut client {
-    unsafe { peer_owner(peer).map_or(::core::ptr::null_mut::<client>(), |owner| owner.as_ptr()) }
-}
+pub const SIGQUIT: core::ffi::c_int = 3 as core::ffi::c_int;
+pub const SIGPIPE: core::ffi::c_int = 13 as core::ffi::c_int;
 
-unsafe fn proc_event_cb(mut events: ::core::ffi::c_short, peer: *mut tmuxpeer) {
-    unsafe {
-        let mut n: ssize_t = 0;
-        let mut imsg = imsg::default();
-        let owner = peer_owner(peer);
-        let arg = owner
-            .as_ref()
-            .map_or(::core::ptr::null_mut::<client>(), ClientRef::as_ptr);
-        if (*peer).flags & PEER_BAD == 0 && events as ::core::ffi::c_int & EV_READ != 0 {
-            if imsgbuf_read(&mut (*peer).ibuf) != 1 as ::core::ffi::c_int {
-                (*peer).dispatchcb.expect("non-null function pointer")(
-                    ::core::ptr::null_mut::<imsg>(),
-                    arg,
-                );
-                return;
-            }
-            loop {
-                n = imsg_get(&mut (*peer).ibuf, &raw mut imsg);
-                if n == -(1 as ::core::ffi::c_int) as ssize_t {
-                    (*peer).dispatchcb.expect("non-null function pointer")(
-                        ::core::ptr::null_mut::<imsg>(),
-                        arg,
-                    );
-                    return;
-                }
-                if n == 0 as ssize_t {
-                    break;
-                }
-                log_debug(
-                    c"peer %p message %d".as_ptr(),
-                    fmt_args![peer, imsg.hdr.type_0],
-                );
-                if peer_check_version(peer, &raw mut imsg) != 0 as ::core::ffi::c_int {
-                    imsg_free(&raw mut imsg);
-                    break;
-                } else {
-                    (*peer).dispatchcb.expect("non-null function pointer")(&raw mut imsg, arg);
-                    imsg_free(&raw mut imsg);
-                }
-            }
-        }
-        if events as ::core::ffi::c_int & EV_WRITE != 0
-            && imsgbuf_write(&mut (*peer).ibuf) == -(1 as ::core::ffi::c_int)
-        {
-            (*peer).dispatchcb.expect("non-null function pointer")(
-                ::core::ptr::null_mut::<imsg>(),
-                arg,
-            );
-            return;
-        }
-        if (*peer).flags & PEER_BAD != 0 && imsgbuf_queuelen(&mut (*peer).ibuf) == 0 as uint32_t {
-            (*peer).dispatchcb.expect("non-null function pointer")(
-                ::core::ptr::null_mut::<imsg>(),
-                arg,
-            );
-            return;
-        }
-        proc_update_event(peer);
-    }
-}
-unsafe fn proc_signal_cb(mut signo: ::core::ffi::c_int, tp: *mut tmuxproc) {
-    unsafe {
-        (*tp).signalcb.expect("non-null function pointer")(signo);
-    }
-}
-unsafe fn peer_check_version(mut peer: *mut tmuxpeer, mut imsg: *mut imsg) -> ::core::ffi::c_int {
-    unsafe {
-        let mut version: ::core::ffi::c_int = 0;
-        version = ((*imsg).hdr.peerid & 0xff as uint32_t) as ::core::ffi::c_int;
-        if (*imsg).hdr.type_0 != MSG_VERSION as ::core::ffi::c_int as uint32_t
-            && version != PROTOCOL_VERSION
-        {
-            log_debug(c"peer %p bad version %d".as_ptr(), fmt_args![peer, version]);
-            proc_send(
-                peer,
-                MSG_VERSION,
-                -(1 as ::core::ffi::c_int),
-                ::core::ptr::null::<u8>(),
-                0 as size_t,
-            );
-            (*peer).flags |= PEER_BAD;
-            return -(1 as ::core::ffi::c_int);
-        }
-        0 as ::core::ffi::c_int
-    }
-}
-unsafe fn proc_update_event(mut peer: *mut tmuxpeer) {
-    unsafe {
-        let mut interest: Interest = Interest::Read;
-        (*peer).event.disable();
-        if imsgbuf_queuelen(&mut (*peer).ibuf) > 0 as uint32_t {
-            interest = Interest::ReadWrite;
-        }
-        (*peer).event.set_callback(
-            (*peer).ibuf.fd,
-            interest,
-            WatchMode::Once,
-            move |_, events| proc_event_cb(events, peer),
-        );
-        (*peer).event.enable();
-    }
-}
-pub unsafe fn proc_send(
-    mut peer: *mut tmuxpeer,
-    mut type_0: msgtype,
-    mut fd: ::core::ffi::c_int,
-    mut buf: *const u8,
-    mut len: size_t,
-) -> ::core::ffi::c_int {
-    unsafe {
-        let mut ibuf: *mut imsgbuf = &mut (*peer).ibuf;
-        let mut retval: ::core::ffi::c_int = 0;
-        if (*peer).flags & PEER_BAD != 0 {
-            return -(1 as ::core::ffi::c_int);
-        }
-        log_debug(
-            c"sending message %d to peer %p (%zu bytes)".as_ptr(),
-            fmt_args![type_0 as ::core::ffi::c_uint, peer, len],
-        );
-        retval = imsg_compose(
-            &mut *ibuf,
-            type_0 as uint32_t,
-            PROTOCOL_VERSION as uint32_t,
-            -(1 as pid_t),
-            fd,
-            buf,
-            len,
-        );
-        if retval != 1 as ::core::ffi::c_int {
-            return -(1 as ::core::ffi::c_int);
-        }
-        proc_update_event(peer);
-        0 as ::core::ffi::c_int
-    }
-}
-/// Every process description this program has started. `proc_start` hands
-/// out a view into the box it parks here; the process outlives them all.
-static procs: GlobalQueue<Box<tmuxproc>> = GlobalQueue::new();
+pub const NCURSES_VERSION_PATCH: core::ffi::c_int = 20251230 as core::ffi::c_int;
+pub const NCURSES_VERSION: [core::ffi::c_char; 4] =
+    unsafe { core::mem::transmute::<[u8; 4], [core::ffi::c_char; 4]>(*b"6.6\0") };
+pub const EVLOOP_ONCE: core::ffi::c_int = 0x1 as core::ffi::c_int;
+pub use crate::consts::EV_READ;
+pub use crate::consts::EV_WRITE;
+pub const EV_SIGNAL: core::ffi::c_int = 0x8 as core::ffi::c_int;
+pub const EV_PERSIST: core::ffi::c_int = 0x10 as core::ffi::c_int;
 
-pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> *mut tmuxproc {
+pub const PEER_BAD: core::ffi::c_int = 0x1 as core::ffi::c_int;
+
+pub unsafe fn proc_start(name: &CStr) -> ProcessRef {
     unsafe {
-        let mut tp: *mut tmuxproc = ::core::ptr::null_mut::<tmuxproc>();
-        let mut u: utsname = ::core::mem::zeroed();
+        let mut u: utsname = core::mem::zeroed();
         log_open(name);
-        setproctitle(c"%s (%s)".as_ptr(), fmt_args![name, socket_path.as_deref()]);
-        if uname(&raw mut u) < 0 as ::core::ffi::c_int {
-            u = ::core::mem::zeroed();
+        setproctitle(c"%s (%s)", fmt_args![name, socket_path.as_deref()]);
+        if uname(&raw mut u) < 0 as core::ffi::c_int {
+            u = core::mem::zeroed();
         }
         log_debug(
-            c"%s started (%ld): version %s, socket %s, protocol %d".as_ptr(),
+            c"%s started (%ld): version %s, socket %s, protocol %d",
             fmt_args![
                 name,
-                getpid() as ::core::ffi::c_long,
+                getpid() as core::ffi::c_long,
                 getversion(),
                 socket_path.as_deref(),
                 PROTOCOL_VERSION
             ],
         );
         log_debug(
-            c"on %s %s %s".as_ptr(),
+            c"on %s %s %s",
             fmt_args![
-                &raw mut u.sysname as *mut ::core::ffi::c_char,
-                &raw mut u.release as *mut ::core::ffi::c_char,
-                &raw mut u.version as *mut ::core::ffi::c_char
+                &raw mut u.sysname as *mut core::ffi::c_char,
+                &raw mut u.release as *mut core::ffi::c_char,
+                &raw mut u.version as *mut core::ffi::c_char
             ],
         );
-        let reactor = ::std::ffi::CString::new(reactor::current().describe())
-            .expect("a reactor description without a NUL");
-        log_debug(c"using %s".as_ptr(), fmt_args![reactor.as_ptr()]);
-        log_debug(c"using utf8proc %s".as_ptr(), fmt_args![utf8proc_version()]);
+        let reactor = reactor::current().describe();
+        log_debug(c"using %s", fmt_args![reactor.as_ptr()]);
+        log_debug(c"using utf8proc %s", fmt_args![utf8proc_version()]);
         log_debug(
-            c"using ncurses %s %06u".as_ptr(),
+            c"using ncurses %s %06u",
             fmt_args![NCURSES_VERSION.as_ptr(), NCURSES_VERSION_PATCH],
         );
-        let mut tp_box = Box::new(tmuxproc {
-            name: Some(CStr::from_ptr(name).to_owned()),
+        std::rc::Rc::new(std::cell::RefCell::new(tmuxproc {
+            name: Some(name.to_owned()),
             ..tmuxproc::default()
-        });
-        tp = &raw mut *tp_box;
-        procs.queue().push_back(tp_box);
-        tp
+        }))
     }
 }
-pub unsafe fn proc_loop(
-    mut tp: *mut tmuxproc,
-    mut loopcb: Option<unsafe fn() -> ::core::ffi::c_int>,
-) {
+/// Dispatches callbacks between checked borrows of the retained process.
+pub unsafe fn proc_loop(tp: &ProcessRef, mut should_exit: impl FnMut() -> bool) {
     unsafe {
-        log_debug(c"%s loop enter".as_ptr(), fmt_args![(*tp).name.as_deref()]);
+        log_debug(c"%s loop enter", fmt_args![tp.borrow().name.as_deref()]);
         loop {
             reactor::current().run_once();
-            if !((*tp).exit == 0
-                && (loopcb.is_none() || loopcb.expect("non-null function pointer")() == 0))
-            {
+            let exited = tp.borrow().exit != 0;
+            if exited || should_exit() {
                 break;
             }
         }
-        log_debug(c"%s loop exit".as_ptr(), fmt_args![(*tp).name.as_deref()]);
+        log_debug(c"%s loop exit", fmt_args![tp.borrow().name.as_deref()]);
     }
 }
 /// Asks the loop to stop. Whoever owns a peer flushes it first; the process
 /// keeps no list of them.
-pub unsafe fn proc_exit(mut tp: *mut tmuxproc) {
-    unsafe {
-        (*tp).exit = 1 as ::core::ffi::c_int;
+pub unsafe fn proc_exit(tp: &mut tmuxproc) {
+    {
+        tp.exit = 1 as core::ffi::c_int;
     }
 }
-pub unsafe fn proc_set_signals(
-    mut tp: *mut tmuxproc,
-    mut signalcb: Option<unsafe fn(::core::ffi::c_int) -> ()>,
-) {
+pub unsafe fn proc_set_signals(tp: &mut tmuxproc, signalcb: impl Fn(core::ffi::c_int) + 'static) {
     unsafe {
-        let mut sa: libc::sigaction = ::core::mem::zeroed();
-        (*tp).signalcb = signalcb;
+        let mut sa: libc::sigaction = core::mem::zeroed();
+        tp.signalcb = Some(std::rc::Rc::new(signalcb));
         sigemptyset(&raw mut sa.sa_mask);
         sa.sa_flags = SA_RESTART;
-        sa.sa_sigaction = ::libc::SIG_IGN;
+        sa.sa_sigaction = libc::SIG_IGN;
         sigaction(
             SIGPIPE,
             &raw mut sa,
-            ::core::ptr::null_mut::<libc::sigaction>(),
+            core::ptr::null_mut::<libc::sigaction>(),
         );
         sigaction(
             SIGTSTP,
             &raw mut sa,
-            ::core::ptr::null_mut::<libc::sigaction>(),
+            core::ptr::null_mut::<libc::sigaction>(),
         );
         sigaction(
             SIGTTIN,
             &raw mut sa,
-            ::core::ptr::null_mut::<libc::sigaction>(),
+            core::ptr::null_mut::<libc::sigaction>(),
         );
         sigaction(
             SIGTTOU,
             &raw mut sa,
-            ::core::ptr::null_mut::<libc::sigaction>(),
+            core::ptr::null_mut::<libc::sigaction>(),
         );
         sigaction(
             SIGQUIT,
             &raw mut sa,
-            ::core::ptr::null_mut::<libc::sigaction>(),
+            core::ptr::null_mut::<libc::sigaction>(),
         );
-        (*tp)
-            .ev_sigint
-            .set_callback(2 as ::core::ffi::c_int, move |signo, _| {
-                proc_signal_cb(signo, tp)
+        for (watch, signo) in [
+            (&mut tp.ev_sigint, SIGINT),
+            (&mut tp.ev_sighup, SIGHUP),
+            (&mut tp.ev_sigchld, SIGCHLD),
+            (&mut tp.ev_sigcont, SIGCONT),
+            (&mut tp.ev_sigterm, SIGTERM),
+            (&mut tp.ev_sigusr1, SIGUSR1),
+            (&mut tp.ev_sigusr2, SIGUSR2),
+            (&mut tp.ev_sigwinch, SIGWINCH),
+        ] {
+            let callback =
+                std::rc::Rc::downgrade(tp.signalcb.as_ref().expect("the signal callback was set"));
+            watch.set_callback(signo, move |signo, _| {
+                if let Some(callback) = callback.upgrade() {
+                    callback(signo);
+                }
             });
-        (*tp)
-            .ev_sighup
-            .set_callback(1 as ::core::ffi::c_int, move |signo, _| {
-                proc_signal_cb(signo, tp)
-            });
-        (*tp)
-            .ev_sigchld
-            .set_callback(17 as ::core::ffi::c_int, move |signo, _| {
-                proc_signal_cb(signo, tp)
-            });
-        (*tp)
-            .ev_sigcont
-            .set_callback(18 as ::core::ffi::c_int, move |signo, _| {
-                proc_signal_cb(signo, tp)
-            });
-        (*tp)
-            .ev_sigterm
-            .set_callback(15 as ::core::ffi::c_int, move |signo, _| {
-                proc_signal_cb(signo, tp)
-            });
-        (*tp)
-            .ev_sigusr1
-            .set_callback(10 as ::core::ffi::c_int, move |signo, _| {
-                proc_signal_cb(signo, tp)
-            });
-        (*tp)
-            .ev_sigusr2
-            .set_callback(12 as ::core::ffi::c_int, move |signo, _| {
-                proc_signal_cb(signo, tp)
-            });
-        (*tp)
-            .ev_sigwinch
-            .set_callback(28 as ::core::ffi::c_int, move |signo, _| {
-                proc_signal_cb(signo, tp)
-            });
+        }
     }
 }
-pub unsafe fn proc_clear_signals(mut tp: *mut tmuxproc, mut defaults: ::core::ffi::c_int) {
+pub unsafe fn proc_clear_signals(tp: &mut tmuxproc, defaults: core::ffi::c_int) {
     unsafe {
-        let mut sa: libc::sigaction = ::core::mem::zeroed();
+        let mut sa: libc::sigaction = core::mem::zeroed();
         sigemptyset(&raw mut sa.sa_mask);
         sa.sa_flags = SA_RESTART;
-        sa.sa_sigaction = ::libc::SIG_DFL;
+        sa.sa_sigaction = libc::SIG_DFL;
         sigaction(
             SIGPIPE,
             &raw mut sa,
-            ::core::ptr::null_mut::<libc::sigaction>(),
+            core::ptr::null_mut::<libc::sigaction>(),
         );
         sigaction(
             SIGTSTP,
             &raw mut sa,
-            ::core::ptr::null_mut::<libc::sigaction>(),
+            core::ptr::null_mut::<libc::sigaction>(),
         );
-        (*tp).ev_sigint.unwatch();
-        (*tp).ev_sighup.unwatch();
-        (*tp).ev_sigchld.unwatch();
-        (*tp).ev_sigcont.unwatch();
-        (*tp).ev_sigterm.unwatch();
-        (*tp).ev_sigusr1.unwatch();
-        (*tp).ev_sigusr2.unwatch();
-        (*tp).ev_sigwinch.unwatch();
+        tp.ev_sigint.unwatch();
+        tp.ev_sighup.unwatch();
+        tp.ev_sigchld.unwatch();
+        tp.ev_sigcont.unwatch();
+        tp.ev_sigterm.unwatch();
+        tp.ev_sigusr1.unwatch();
+        tp.ev_sigusr2.unwatch();
+        tp.ev_sigwinch.unwatch();
         if defaults != 0 {
             sigaction(
                 SIGINT,
                 &raw mut sa,
-                ::core::ptr::null_mut::<libc::sigaction>(),
+                core::ptr::null_mut::<libc::sigaction>(),
             );
             sigaction(
                 SIGQUIT,
                 &raw mut sa,
-                ::core::ptr::null_mut::<libc::sigaction>(),
+                core::ptr::null_mut::<libc::sigaction>(),
             );
             sigaction(
                 SIGHUP,
                 &raw mut sa,
-                ::core::ptr::null_mut::<libc::sigaction>(),
+                core::ptr::null_mut::<libc::sigaction>(),
             );
             sigaction(
                 SIGCHLD,
                 &raw mut sa,
-                ::core::ptr::null_mut::<libc::sigaction>(),
+                core::ptr::null_mut::<libc::sigaction>(),
             );
             sigaction(
                 SIGCONT,
                 &raw mut sa,
-                ::core::ptr::null_mut::<libc::sigaction>(),
+                core::ptr::null_mut::<libc::sigaction>(),
             );
             sigaction(
                 SIGTERM,
                 &raw mut sa,
-                ::core::ptr::null_mut::<libc::sigaction>(),
+                core::ptr::null_mut::<libc::sigaction>(),
             );
             sigaction(
                 SIGUSR1,
                 &raw mut sa,
-                ::core::ptr::null_mut::<libc::sigaction>(),
+                core::ptr::null_mut::<libc::sigaction>(),
             );
             sigaction(
                 SIGUSR2,
                 &raw mut sa,
-                ::core::ptr::null_mut::<libc::sigaction>(),
+                core::ptr::null_mut::<libc::sigaction>(),
             );
             sigaction(
                 SIGWINCH,
                 &raw mut sa,
-                ::core::ptr::null_mut::<libc::sigaction>(),
+                core::ptr::null_mut::<libc::sigaction>(),
             );
         }
     }
 }
-pub unsafe fn proc_add_peer(
-    mut tp: *mut tmuxproc,
-    mut fd: ::core::ffi::c_int,
-    mut dispatchcb: Option<unsafe fn(*mut imsg, *mut client) -> ()>,
-    owner: Option<ClientWeak>,
-) -> Box<tmuxpeer> {
+
+pub unsafe fn proc_toggle_log(tp: &mut tmuxproc) {
     unsafe {
-        let mut gid: gid_t = 0;
-        let mut peer_box = Box::new(tmuxpeer {
-            parent: tp,
-            ibuf: imsgbuf {
-                w: None,
-                pid: 0,
-                maxsize: 0,
-                fd: -1,
-                flags: 0,
-            },
-            event: IoHandle(0),
-            uid: 0,
-            flags: 0,
-            dispatchcb,
-            owner,
-        });
-        let peer = &raw mut *peer_box;
-        if imsgbuf_init(&mut (*peer).ibuf, fd) == -(1 as ::core::ffi::c_int) {
-            fatal(c"imsgbuf_init".as_ptr(), fmt_args![]);
-        }
-        imsgbuf_allow_fdpass(&mut (*peer).ibuf);
-        (*peer)
-            .event
-            .set_callback(fd, Interest::Read, WatchMode::Once, move |_, events| {
-                proc_event_cb(events, peer)
-            });
-        if getpeereid(fd, &mut (*peer).uid, &mut gid) != 0 as ::core::ffi::c_int {
-            (*peer).uid = -(1 as ::core::ffi::c_int) as uid_t;
-        }
-        log_debug(
-            c"add peer %p: %d (%p)".as_ptr(),
-            fmt_args![peer, fd, peer_owner_ptr(peer)],
-        );
-        proc_update_event(peer);
-        peer_box
-    }
-}
-/// The peer a client holds, as the borrowed view the message calls take, or
-/// null for a client that has none.
-pub fn peer_ptr(value: &Option<Box<tmuxpeer>>) -> *mut tmuxpeer {
-    value
-        .as_ref()
-        .map(|peer| &raw const **peer as *mut tmuxpeer)
-        .unwrap_or(::core::ptr::null_mut::<tmuxpeer>())
-}
-pub unsafe fn proc_remove_peer(mut peer: Box<tmuxpeer>) {
-    unsafe {
-        let peer_ptr = &raw mut *peer;
-        log_debug(c"remove peer %p".as_ptr(), fmt_args![peer_ptr]);
-        (*peer_ptr).event.disable();
-        imsgbuf_clear(&mut (*peer_ptr).ibuf);
-        close((*peer_ptr).ibuf.fd);
-        drop(peer);
-    }
-}
-pub unsafe fn proc_kill_peer(mut peer: *mut tmuxpeer) {
-    unsafe {
-        (*peer).flags |= PEER_BAD;
-    }
-}
-pub unsafe fn proc_flush_peer(mut peer: *mut tmuxpeer) {
-    unsafe {
-        imsgbuf_flush(&mut (*peer).ibuf);
-    }
-}
-pub unsafe fn proc_toggle_log(mut tp: *mut tmuxproc) {
-    unsafe {
-        log_toggle((*tp).name_ptr());
+        log_toggle(tp.name.as_deref().expect("a process retains its log name"));
     }
 }
 /// Forks a daemon, answering the child's process id and this end of the
 /// socket pair the two halves talk over.
-pub unsafe fn proc_fork_and_daemon() -> (pid_t, ::core::ffi::c_int) {
+pub unsafe fn proc_fork_and_daemon() -> (pid_t, core::ffi::c_int) {
     unsafe {
-        let mut pid: pid_t = 0;
-        let mut pair: [::core::ffi::c_int; 2] = [0; 2];
+        let mut pair: [core::ffi::c_int; 2] = [0; 2];
         if socketpair(
             AF_UNIX,
-            SOCK_STREAM as ::core::ffi::c_int,
+            SOCK_STREAM as core::ffi::c_int,
             PF_UNSPEC,
-            &raw mut pair as *mut ::core::ffi::c_int,
-        ) != 0 as ::core::ffi::c_int
+            &raw mut pair as *mut core::ffi::c_int,
+        ) != 0 as core::ffi::c_int
         {
-            fatal(c"socketpair failed".as_ptr(), fmt_args![]);
+            fatal(c"socketpair failed", fmt_args![]);
         }
-        pid = fork() as pid_t;
+        let pid: pid_t = fork() as pid_t;
         match pid {
             -1 => {
-                fatal(c"fork failed".as_ptr(), fmt_args![]);
+                fatal(c"fork failed", fmt_args![]);
             }
             0 => {
-                close(pair[0 as ::core::ffi::c_int as usize]);
-                let fd = pair[1 as ::core::ffi::c_int as usize];
-                if daemon(1 as ::core::ffi::c_int, 0 as ::core::ffi::c_int)
-                    != 0 as ::core::ffi::c_int
-                {
-                    fatal(c"daemon failed".as_ptr(), fmt_args![]);
+                close(pair[0 as core::ffi::c_int as usize]);
+                let fd = pair[1 as core::ffi::c_int as usize];
+                if daemon(1 as core::ffi::c_int, 0 as core::ffi::c_int) != 0 as core::ffi::c_int {
+                    fatal(c"daemon failed", fmt_args![]);
                 }
                 (0 as pid_t, fd)
             }
             _ => {
-                close(pair[1 as ::core::ffi::c_int as usize]);
-                (pid, pair[0 as ::core::ffi::c_int as usize])
+                close(pair[1 as core::ffi::c_int as usize]);
+                (pid, pair[0 as core::ffi::c_int as usize])
             }
         }
     }
 }
-pub unsafe fn proc_get_peer_uid(mut peer: *mut tmuxpeer) -> uid_t {
-    unsafe { (*peer).uid }
+
+#[cfg(test)]
+mod signal_tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    #[test]
+    fn process_loop_releases_borrows_before_reactor_callbacks() {
+        let _guard = crate::tests::test_fixtures::globals();
+        crate::tests::test_fixtures::ensure_reactor();
+        let process = ProcessRef::default();
+        let weak = Rc::downgrade(&process);
+        let callback_process = process.clone();
+        reactor::current().defer(move || unsafe {
+            proc_exit(&mut callback_process.borrow_mut());
+        });
+        unsafe {
+            proc_loop(&process, || panic!("the process already requested exit"));
+        }
+        assert_eq!(process.borrow().exit, 1);
+        drop(process);
+        assert!(weak.upgrade().is_none());
+    }
+
+    #[test]
+    fn process_loop_releases_borrows_before_exit_predicate() {
+        let _guard = crate::tests::test_fixtures::globals();
+        crate::tests::test_fixtures::ensure_reactor();
+        let process = ProcessRef::default();
+        let mut calls = 0;
+        unsafe {
+            proc_loop(&process, || {
+                calls += 1;
+                proc_exit(&mut process.borrow_mut());
+                false
+            });
+        }
+        assert_eq!(calls, 1);
+        assert_eq!(process.borrow().exit, 1);
+    }
+
+    #[test]
+    fn peer_dispatch_can_send_and_remove_its_own_peer() {
+        let _guard = crate::tests::test_fixtures::globals();
+        crate::tests::test_fixtures::ensure_reactor();
+        unsafe {
+            let mut fds = [-1; 2];
+            assert_eq!(
+                libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr()),
+                0
+            );
+            let peer = PeerRef::from_fd(fds[0], None);
+            let sender = PeerRef::from_fd(fds[1], None);
+            let weak = Rc::downgrade(&peer.0);
+            let callback_peer = weak.clone();
+            let calls = Rc::new(Cell::new(0));
+            let observed = calls.clone();
+            peer.borrow_mut().dispatchcb = Some(Rc::new(move |message| {
+                assert!(message.is_some());
+                observed.set(observed.get() + 1);
+                let peer = PeerRef(callback_peer.upgrade().unwrap());
+                assert_eq!(peer.send(MSG_READY, -1, &[]), 0);
+                peer.close();
+            }));
+            assert_eq!(sender.send(MSG_COMMAND, -1, &[]), 0);
+            assert_eq!(sender.send(MSG_COMMAND, -1, &[]), 0);
+            sender.flush();
+            sender.borrow_mut().event.disable();
+            for _ in 0..8 {
+                reactor::current().run_once();
+                if calls.get() == 1 {
+                    break;
+                }
+            }
+            assert_eq!(calls.get(), 1);
+            assert_eq!(peer.borrow().ibuf.fd, -1);
+            assert_eq!(peer.send(MSG_READY, -1, &[]), -1);
+            peer.on_event(EV_READ as _);
+            assert_eq!(calls.get(), 1);
+            sender.close();
+            drop(peer);
+            assert!(weak.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn file_transfer_retains_a_closed_peer_until_its_last_owner_is_dropped() {
+        let _guard = crate::tests::test_fixtures::globals();
+        crate::tests::test_fixtures::ensure_reactor();
+        unsafe {
+            let mut fds = [-1; 2];
+            assert_eq!(
+                libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr()),
+                0
+            );
+            let peer = PeerRef::from_fd(fds[0], None);
+            let weak = Rc::downgrade(&peer.0);
+            let files = Rc::new(std::cell::RefCell::new(client_files_t::new()));
+            let file = ClientFileRef::create_with_peer(
+                Some(peer.clone()),
+                &FileOwner::Shared(Rc::downgrade(&files)),
+                1,
+                None,
+                ClientFileData::None,
+            );
+            peer.close();
+            assert!(weak.upgrade().is_some());
+            {
+                let file = file.borrow();
+                let peer = file.peer.as_ref().unwrap();
+                assert_eq!(peer.borrow().ibuf.fd, -1);
+                assert_eq!(peer.send(MSG_READ, -1, &[]), -1);
+            }
+            file.close();
+            assert!(weak.upgrade().is_none());
+            close(fds[1]);
+        }
+    }
+
+    fn deliver(calls: &Cell<usize>, expected: usize) {
+        for _ in 0..2 {
+            reactor::current().run_once();
+        }
+        assert_eq!(unsafe { libc::raise(SIGUSR1) }, 0);
+        for _ in 0..8 {
+            reactor::current().run_once();
+            if calls.get() == expected {
+                return;
+            }
+        }
+        assert_eq!(calls.get(), expected);
+    }
+
+    #[test]
+    fn signal_watches_follow_callback_ownership_across_process_moves_and_replacement() {
+        let _guard = crate::tests::test_fixtures::globals();
+        crate::tests::test_fixtures::ensure_reactor();
+        let mut process = Box::new(tmuxproc::default());
+        let old_calls = Rc::new(Cell::new(0));
+        let observed = old_calls.clone();
+        unsafe {
+            proc_set_signals(&mut process, move |signo| {
+                if signo == SIGUSR1 {
+                    observed.set(observed.get() + 1);
+                }
+            })
+        };
+        let old_callback = Rc::downgrade(process.signalcb.as_ref().unwrap());
+        let mut moved = *process;
+        deliver(&old_calls, 1);
+        let calls = Rc::new(Cell::new(0));
+        let observed = calls.clone();
+        unsafe {
+            proc_set_signals(&mut moved, move |signo| {
+                if signo == SIGUSR1 {
+                    observed.set(observed.get() + 1);
+                }
+            })
+        };
+        assert!(old_callback.upgrade().is_none());
+        deliver(&calls, 1);
+        assert_eq!(old_calls.get(), 1);
+        let callback = Rc::downgrade(moved.signalcb.as_ref().unwrap());
+        let mut watches = [
+            moved.ev_sigint,
+            moved.ev_sighup,
+            moved.ev_sigchld,
+            moved.ev_sigcont,
+            moved.ev_sigterm,
+            moved.ev_sigusr1,
+            moved.ev_sigusr2,
+            moved.ev_sigwinch,
+        ];
+        drop(moved);
+        assert!(callback.upgrade().is_none());
+        assert_eq!(unsafe { libc::raise(SIGUSR1) }, 0);
+        for _ in 0..2 {
+            reactor::current().run_once();
+        }
+        assert_eq!(calls.get(), 1);
+        for watch in &mut watches {
+            watch.unwatch();
+        }
+    }
+}
+
+impl tmuxpeer {
+    unsafe fn check_version(&mut self, imsg: &imsg) -> core::ffi::c_int {
+        let peer = self;
+        unsafe {
+            let version: core::ffi::c_int =
+                (imsg.hdr.peerid & 0xff as uint32_t) as core::ffi::c_int;
+            if imsg.hdr.type_0 != MSG_VERSION as core::ffi::c_int as uint32_t
+                && version != PROTOCOL_VERSION
+            {
+                log_debug(
+                    c"peer %p bad version %d",
+                    fmt_args![peer as *mut tmuxpeer, version],
+                );
+                peer.send(MSG_VERSION, -(1 as core::ffi::c_int), &[]);
+                peer.flags |= PEER_BAD;
+                return -(1 as core::ffi::c_int);
+            }
+            0 as core::ffi::c_int
+        }
+    }
+    unsafe fn update_event(&mut self) {
+        let peer = self;
+        unsafe {
+            let mut interest: Interest = Interest::Read;
+            peer.event.disable();
+            if imsgbuf_queuelen(&peer.ibuf) > 0 as uint32_t {
+                interest = Interest::ReadWrite;
+            }
+            let owner = peer.owner.as_ref().expect("a peer has an owner").clone();
+            peer.event
+                .set_callback(peer.ibuf.fd, interest, WatchMode::Once, move |_, events| {
+                    if let Some(owner) = owner.upgrade() {
+                        (PeerRef(owner)).on_event(events);
+                    }
+                });
+            peer.event.enable();
+        }
+    }
+    pub unsafe fn send(
+        &mut self,
+        type_0: msgtype,
+        fd: core::ffi::c_int,
+        buf: &[u8],
+    ) -> core::ffi::c_int {
+        let peer = self;
+        unsafe {
+            let peer_ptr = peer as *mut tmuxpeer;
+            let ibuf: &mut imsgbuf = &mut peer.ibuf;
+
+            if peer.flags & PEER_BAD != 0 {
+                return -(1 as core::ffi::c_int);
+            }
+            log_debug(
+                c"sending message %d to peer %p (%zu bytes)",
+                fmt_args![type_0 as core::ffi::c_uint, peer_ptr, buf.len()],
+            );
+            let retval: core::ffi::c_int = imsg_compose(
+                &mut *ibuf,
+                type_0 as uint32_t,
+                PROTOCOL_VERSION as uint32_t,
+                -(1 as pid_t),
+                fd,
+                buf,
+            );
+            if retval != 1 as core::ffi::c_int {
+                return -(1 as core::ffi::c_int);
+            }
+            peer.update_event();
+            0 as core::ffi::c_int
+        }
+    }
+    pub unsafe fn mark_bad(&mut self) {
+        let peer = self;
+        {
+            peer.flags |= PEER_BAD;
+        }
+    }
+    pub unsafe fn flush(&mut self) {
+        let peer = self;
+        unsafe {
+            imsgbuf_flush(&mut peer.ibuf);
+        }
+    }
+    pub fn uid(&self) -> uid_t {
+        let peer = self;
+        peer.uid
+    }
+}
+impl PeerRef {
+    unsafe fn on_event(&self, events: core::ffi::c_short) {
+        let owner = self;
+        unsafe {
+            let dispatch = owner.borrow().dispatchcb.clone();
+            let mut peer = owner.borrow_mut();
+            if peer.ibuf.fd == -1 {
+                return;
+            }
+            if peer.flags & PEER_BAD == 0 && events as core::ffi::c_int & EV_READ != 0 {
+                if imsgbuf_read(&mut peer.ibuf) != 1 {
+                    drop(peer);
+                    dispatch.as_ref().expect("non-null dispatch callback")(None);
+                    return;
+                }
+                loop {
+                    let mut message = match imsg_get(&mut peer.ibuf) {
+                        Ok(Some(message)) => message.0,
+                        Ok(None) => break,
+                        Err(_) => {
+                            drop(peer);
+                            dispatch.as_ref().expect("non-null dispatch callback")(None);
+                            return;
+                        }
+                    };
+                    log_debug(
+                        c"peer %p message %d",
+                        fmt_args![core::ptr::from_ref(&*peer), message.hdr.type_0],
+                    );
+                    if peer.check_version(&message) != 0 {
+                        imsg_free(message);
+                        break;
+                    }
+                    drop(peer);
+                    dispatch.as_ref().expect("non-null dispatch callback")(Some(&mut message));
+                    imsg_free(message);
+                    peer = owner.borrow_mut();
+                    if peer.ibuf.fd == -1 {
+                        return;
+                    }
+                }
+            }
+            if events as core::ffi::c_int & EV_WRITE != 0 && imsgbuf_write(&mut peer.ibuf) == -1 {
+                drop(peer);
+                dispatch.as_ref().expect("non-null dispatch callback")(None);
+                return;
+            }
+            if peer.flags & PEER_BAD != 0 && imsgbuf_queuelen(&peer.ibuf) == 0 {
+                drop(peer);
+                dispatch.as_ref().expect("non-null dispatch callback")(None);
+                return;
+            }
+            peer.update_event();
+        }
+    }
+    pub unsafe fn from_fd(
+        fd: core::ffi::c_int,
+        dispatchcb: Option<std::rc::Rc<PeerDispatch>>,
+    ) -> PeerRef {
+        unsafe {
+            let mut gid: gid_t = 0;
+            let owner = PeerRef::new(tmuxpeer {
+                owner: None,
+                ibuf: imsgbuf {
+                    w: None,
+                    pid: 0,
+                    maxsize: 0,
+                    fd: -1,
+                    flags: 0,
+                },
+                event: IoHandle(0),
+                uid: 0,
+                flags: 0,
+                dispatchcb,
+            });
+            let mut peer = owner.borrow_mut();
+            if imsgbuf_init(&mut peer.ibuf, fd) == -(1 as core::ffi::c_int) {
+                fatal(c"imsgbuf_init", fmt_args![]);
+            }
+            imsgbuf_allow_fdpass(&mut peer.ibuf);
+            if getpeereid(fd, &mut peer.uid, &mut gid) != 0 as core::ffi::c_int {
+                peer.uid = -(1 as core::ffi::c_int) as uid_t;
+            }
+            log_debug(
+                c"add peer %p: %d",
+                fmt_args![core::ptr::from_ref(&*peer), fd],
+            );
+            peer.update_event();
+            drop(peer);
+            owner
+        }
+    }
+    pub unsafe fn close(self) {
+        let owner = self;
+        unsafe {
+            let mut peer = owner.borrow_mut();
+            let peer_ptr = core::ptr::from_ref(&*peer);
+            log_debug(c"remove peer %p", fmt_args![peer_ptr]);
+            peer.event.disable();
+            imsgbuf_clear(&mut peer.ibuf);
+            close(peer.ibuf.fd);
+            peer.ibuf.fd = -1;
+            peer.flags |= PEER_BAD;
+        }
+    }
+    /// Sends a protocol message through the peer.
+    ///
+    /// # Safety
+    /// A nonnegative descriptor must be valid for the message's descriptor transfer.
+    pub unsafe fn send(
+        &self,
+        message: msgtype,
+        fd: core::ffi::c_int,
+        bytes: &[u8],
+    ) -> core::ffi::c_int {
+        unsafe { self.borrow_mut().send(message, fd, bytes) }
+    }
+
+    pub unsafe fn mark_bad(&self) {
+        unsafe { self.borrow_mut().mark_bad() };
+    }
+
+    pub unsafe fn flush(&self) {
+        unsafe { self.borrow_mut().flush() };
+    }
+
+    pub fn uid(&self) -> uid_t {
+        self.borrow().uid()
+    }
 }

@@ -1,22 +1,15 @@
 use super::cells::{
-    LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, LAYOUT_WINDOWPANE, layout_count_cells, layout_create_cell,
-    layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_fix_zindexes,
-    layout_free_cell, layout_make_leaf, layout_print_cell, layout_root_ptr,
+    LAYOUT_CELL_FLOATING, LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, LAYOUT_WINDOWPANE, LayoutCellPath,
+    layout_cell_for_pane, layout_count_cells, layout_create_cell, layout_free_cell,
+    layout_make_leaf, layout_print_cell,
 };
-use crate::ffi::sscanf;
 use crate::fmt_args;
-use crate::list::foreach_owned;
 use crate::notify::notify_window;
 use crate::resize::recalculate_sizes;
 pub use crate::types::*;
-use crate::window::PaneStack;
-use crate::window::{
-    window_count_panes, window_pane_is_floating, window_pane_stack_first, window_pane_stack_next,
-    window_panes_first, window_panes_next, window_resize,
-};
+use crate::window::window_count_panes;
 use crate::xmalloc::xasprintf;
 use ::core::ffi::{CStr, c_char, c_int};
-use ::core::ptr::null_mut;
 use ::std::ffi::CString;
 
 /// How much of `layout_dump`'s buffer one cell may need.
@@ -29,13 +22,18 @@ fn digit(b: c_char) -> bool {
 
 /// The bottom-right leaf under `lc`, which is the one a layout with more cells
 /// than panes drops first.
-unsafe fn layout_find_bottomright(lc: *mut layout_cell) -> *mut layout_cell {
-    unsafe {
-        if (*lc).type_0 == LAYOUT_WINDOWPANE {
-            return lc;
-        }
-        layout_find_bottomright(super::cells::last(lc))
+fn layout_find_bottomright(mut cell: &layout_cell) -> LayoutCellPath {
+    let mut path = LayoutCellPath::root();
+    while cell.type_0 != LAYOUT_WINDOWPANE {
+        let index = cell
+            .cells
+            .len()
+            .checked_sub(1)
+            .expect("a layout node has children");
+        path = path.child(index);
+        cell = &cell.cells[index];
     }
+    path
 }
 
 /// The checksum tmux writes in front of a layout: a sixteen-bit value rotated
@@ -50,51 +48,6 @@ fn layout_checksum(layout: &CStr) -> u_short {
     csum
 }
 
-/// The layout of `root` as the string `select-layout` takes, or `None` when it
-/// does not fit in the eight kilobytes this writes into. Any floating panes
-/// follow the tree inside angle brackets — and are written twice, since the
-/// tree they hang in carries them too.
-pub unsafe fn layout_dump(w: *mut window, root: *mut layout_cell) -> Option<CString> {
-    unsafe {
-        const LIMIT: usize = 8192;
-        let mut buf: Vec<u8> = Vec::new();
-        let mut bracket = false;
-
-        if layout_append(root, &mut buf, LIMIT) != 0 {
-            return None;
-        }
-
-        let mut wp = window_pane_stack_first(w, PaneStack::ZIndex);
-        while !wp.is_null() {
-            if window_pane_is_floating(wp) == 0 {
-                break;
-            }
-            if !bracket {
-                if buf.len() + 1 < LIMIT {
-                    buf.push(b'<');
-                }
-                bracket = true;
-            }
-            if layout_append((*wp).layout_cell, &mut buf, LIMIT) != 0 {
-                return None;
-            }
-            if buf.len() + 1 < LIMIT {
-                buf.push(b',');
-            }
-            wp = window_pane_stack_next(w, PaneStack::ZIndex, wp);
-        }
-        if bracket && let Some(last) = buf.last_mut() {
-            *last = b'>';
-        }
-
-        let text = CString::new(buf).expect("a layout has no NUL");
-        Some(xasprintf(
-            c"%04hx,%s".as_ptr(),
-            fmt_args![layout_checksum(&text) as c_int, text.as_ptr()],
-        ))
-    }
-}
-
 /// Writes `lc` and everything under it onto the end of `buf`, answering -1 if
 /// what it holds plus what is written would reach `len` bytes counting the
 /// terminator, which is where the C's `strlcat` gave up.
@@ -102,216 +55,175 @@ pub unsafe fn layout_dump(w: *mut window, root: *mut layout_cell) -> Option<CStr
 /// The "one cell did not fit its own sixty-four bytes" guard is kept as the C
 /// wrote it, but no test reaches it: the widest numbers a cell can carry still
 /// spell out well short of that.
-unsafe fn layout_append(lc: *mut layout_cell, buf: &mut Vec<u8>, len: usize) -> c_int {
-    unsafe {
-        if len == 0 {
-            return -1;
-        }
-        if lc.is_null() {
-            return 0;
-        }
+fn layout_append(lc: Option<&layout_cell>, buf: &mut Vec<u8>, len: usize) -> c_int {
+    if len == 0 {
+        return -1;
+    }
+    let Some(lc) = lc else {
+        return 0;
+    };
 
-        let tmp = if let Some(id) = (*lc).wp_id {
-            xasprintf(
-                c"%ux%u,%d,%d,%u".as_ptr(),
-                fmt_args![(*lc).sx, (*lc).sy, (*lc).xoff, (*lc).yoff, id],
-            )
-        } else {
-            xasprintf(
-                c"%ux%u,%d,%d".as_ptr(),
-                fmt_args![(*lc).sx, (*lc).sy, (*lc).xoff, (*lc).yoff],
-            )
-        };
-        if tmp.as_bytes().len() > CELL_MAX - 1 {
-            return -1;
-        }
-        if buf.len() + tmp.as_bytes().len() >= len {
-            return -1;
-        }
-        buf.extend_from_slice(tmp.as_bytes());
+    let tmp = if let Some(pane) = lc.wp_ref.as_ref() {
+        format!("{}x{},{},{},{}", lc.sx, lc.sy, lc.xoff, lc.yoff, pane.id())
+    } else {
+        format!("{}x{},{},{}", lc.sx, lc.sy, lc.xoff, lc.yoff)
+    };
+    if tmp.len() > CELL_MAX - 1 {
+        return -1;
+    }
+    if buf.len() + tmp.len() >= len {
+        return -1;
+    }
+    buf.extend_from_slice(tmp.as_bytes());
 
-        let brackets: &[u8; 2] = match (*lc).type_0 {
-            LAYOUT_LEFTRIGHT => b"}{",
-            LAYOUT_TOPBOTTOM => b"][",
-            _ => return 0,
-        };
+    let brackets: &[u8; 2] = match lc.type_0 {
+        LAYOUT_LEFTRIGHT => b"}{",
+        LAYOUT_TOPBOTTOM => b"][",
+        _ => return 0,
+    };
+    if buf.len() + 1 >= len {
+        return -1;
+    }
+    buf.push(brackets[1]);
+    for lcchild in lc.cells.iter().map(Box::as_ref) {
+        if layout_append(Some(lcchild), buf, len) != 0 {
+            return -1;
+        }
         if buf.len() + 1 >= len {
             return -1;
         }
-        buf.push(brackets[1]);
-        for lcchild in foreach_owned(&raw mut (*lc).cells) {
-            if layout_append(lcchild, buf, len) != 0 {
-                return -1;
-            }
-            if buf.len() + 1 >= len {
-                return -1;
-            }
-            buf.push(b',');
-        }
-        *buf.last_mut().expect("a cell wrote its own text") = brackets[0];
-        0
+        buf.push(b',');
     }
+    *buf.last_mut().expect("a cell wrote its own text") = brackets[0];
+    0
 }
 
 /// Whether every node's children add up to the size the node itself has.
-unsafe fn layout_check(lc: *mut layout_cell) -> c_int {
-    unsafe {
-        let leftright = match (*lc).type_0 {
-            LAYOUT_LEFTRIGHT => true,
-            LAYOUT_TOPBOTTOM => false,
-            _ => return 1,
-        };
-        let mut n: u_int = 0;
-        for lcchild in foreach_owned(&raw mut (*lc).cells) {
-            if leftright {
-                if (*lcchild).sy != (*lc).sy {
-                    return 0;
-                }
-            } else if (*lcchild).sx != (*lc).sx {
+fn layout_check(lc: &layout_cell) -> c_int {
+    let leftright = match lc.type_0 {
+        LAYOUT_LEFTRIGHT => true,
+        LAYOUT_TOPBOTTOM => false,
+        _ => return 1,
+    };
+    let mut n: u_int = 0;
+    for lcchild in lc.cells.iter().map(Box::as_ref) {
+        if leftright {
+            if lcchild.sy != lc.sy {
                 return 0;
             }
-            if layout_check(lcchild) == 0 {
-                return 0;
-            }
-            n = n.wrapping_add(
-                if leftright {
-                    (*lcchild).sx
-                } else {
-                    (*lcchild).sy
-                }
-                .wrapping_add(1),
-            );
+        } else if lcchild.sx != lc.sx {
+            return 0;
         }
-        let total = if leftright { (*lc).sx } else { (*lc).sy };
-        (n.wrapping_sub(1) == total) as c_int
+        if layout_check(lcchild) == 0 {
+            return 0;
+        }
+        n = n.wrapping_add(if leftright { lcchild.sx } else { lcchild.sy }.wrapping_add(1));
+    }
+    let total = if leftright { lc.sx } else { lc.sy };
+    (n.wrapping_sub(1) == total) as c_int
+}
+
+fn layout_parse_checksum(layout: &CStr) -> Option<u_short> {
+    let prefix = layout.to_bytes().get(..5)?;
+    if prefix[4] != b',' {
+        return None;
+    }
+    let mut digits = &prefix[..4];
+    while digits
+        .first()
+        .is_some_and(|&byte| unsafe { libc::isspace(byte as c_int) != 0 })
+    {
+        digits = &digits[1..];
+    }
+    let negative = digits.first() == Some(&b'-');
+    if matches!(digits.first(), Some(b'+' | b'-')) {
+        digits = &digits[1..];
+    }
+    if digits.starts_with(b"0x") || digits.starts_with(b"0X") {
+        digits = &digits[2..];
+    }
+    if digits.is_empty() {
+        return None;
+    }
+    let value = digits.iter().try_fold(0_u16, |value, &byte| {
+        (byte as char)
+            .to_digit(16)
+            .map(|digit| (value << 4) | digit as u16)
+    })?;
+    Some(if negative {
+        value.wrapping_neg()
+    } else {
+        value
+    })
+}
+
+struct LayoutCursor<'a> {
+    bytes: &'a [u8],
+    position: usize,
+}
+
+impl<'a> LayoutCursor<'a> {
+    fn new(layout: &'a CStr, position: usize) -> Self {
+        Self {
+            bytes: layout.to_bytes_with_nul(),
+            position,
+        }
+    }
+
+    fn current(&self) -> u8 {
+        self.bytes[self.position]
+    }
+
+    fn advance(&mut self) {
+        self.position += 1;
+    }
+
+    fn decimal(&mut self) -> Option<u64> {
+        let start = self.position;
+        let mut value = 0_u64;
+        while self.current().is_ascii_digit() {
+            value = value
+                .saturating_mul(10)
+                .saturating_add((self.current() - b'0') as u64);
+            self.advance();
+        }
+        (self.position != start).then_some(value)
+    }
+
+    fn consume(&mut self, byte: u8) -> Option<()> {
+        if self.current() != byte {
+            return None;
+        }
+        self.advance();
+        Some(())
+    }
+
+    fn as_cstr(&self) -> &CStr {
+        CStr::from_bytes_with_nul(&self.bytes[self.position..]).unwrap()
     }
 }
 
-/// Reads `layout` into the window, answering -1 and a reason through `cause`
-/// when it will not do.
-pub unsafe fn layout_parse(w: *mut window, mut layout: *const c_char) -> Result<(), CString> {
-    unsafe {
-        let mut csum: u_short = 0;
-        let mut n: c_int = 0;
-        if sscanf(layout, c"%hx,%n".as_ptr(), &raw mut csum, &raw mut n) != 1 || n != 5 {
-            return Err(c"invalid layout".to_owned());
-        }
-        layout = layout.offset(n as isize);
-        if csum != layout_checksum(CStr::from_ptr(layout)) {
-            return Err(c"invalid layout".to_owned());
-        }
-
-        let Some(tiled_lc) = layout_construct(null_mut::<layout_cell>(), &mut layout) else {
-            return Err(c"invalid layout".to_owned());
-        };
-
-        layout_apply(w, tiled_lc, layout)
-    }
-}
-
-/// Puts the tree `tiled_lc` in the window, dropping the cells it has no pane
-/// for. The tree is the caller's until this answers `Ok`.
-unsafe fn layout_apply(
-    w: *mut window,
-    tree: Box<layout_cell>,
-    layout: *const c_char,
-) -> Result<(), CString> {
-    unsafe {
-        if *layout != 0 {
-            return Err(c"invalid layout".to_owned());
-        }
-
-        let mut tree = Some(tree);
-        let mut tiled_lc = layout_root_ptr(&tree);
-        let npanes = window_count_panes(w, 1);
-        loop {
-            let ncells = layout_count_cells(tiled_lc);
-            if npanes > ncells {
-                return Err(xasprintf(
-                    c"have %u panes but need %u".as_ptr(),
-                    fmt_args![npanes, ncells],
-                ));
-            }
-            if npanes == ncells {
-                break;
-            }
-            let lcchild = layout_find_bottomright(tiled_lc);
-            layout_destroy_cell(w, lcchild, &mut tree);
-            tiled_lc = layout_root_ptr(&tree);
-            if tiled_lc.is_null() {
-                return Err(c"invalid layout".to_owned());
-            }
-        }
-
-        let mut sx: u_int = 0;
-        let mut sy: u_int = 0;
-        match (*tiled_lc).type_0 {
-            LAYOUT_LEFTRIGHT => {
-                for lcchild in foreach_owned(&raw mut (*tiled_lc).cells) {
-                    sy = (*lcchild).sy.wrapping_add(1);
-                    sx = sx.wrapping_add((*lcchild).sx.wrapping_add(1));
-                }
-            }
-            LAYOUT_TOPBOTTOM => {
-                for lcchild in foreach_owned(&raw mut (*tiled_lc).cells) {
-                    sx = (*lcchild).sx.wrapping_add(1);
-                    sy = sy.wrapping_add((*lcchild).sy.wrapping_add(1));
-                }
-            }
-            _ => {}
-        }
-        if (*tiled_lc).type_0 != LAYOUT_WINDOWPANE && ((*tiled_lc).sx != sx || (*tiled_lc).sy != sy)
-        {
-            layout_print_cell(tiled_lc, c"layout_parse".as_ptr(), 0);
-            (*tiled_lc).sx = sx.wrapping_sub(1);
-            (*tiled_lc).sy = sy.wrapping_sub(1);
-        }
-
-        if layout_check(tiled_lc) == 0 {
-            return Err(c"size mismatch after applying layout".to_owned());
-        }
-
-        if sx != 0 && sy != 0 {
-            window_resize(w, (*tiled_lc).sx, (*tiled_lc).sy, -1, -1);
-        }
-        layout_free_cell(w, (*w).layout_root.take());
-        (*w).layout_root = tree.take();
-
-        let mut wp = window_panes_first(w);
-        layout_assign(w, &mut wp, tiled_lc, 0);
-
-        (*w).z_index.clear();
-        layout_fix_zindexes(w, tiled_lc);
-        layout_fix_offsets(w);
-        layout_fix_panes(w, null_mut::<window_pane>());
-        recalculate_sizes();
-        layout_print_cell(tiled_lc, c"layout_parse".as_ptr(), 0);
-        notify_window(c"window-layout-changed".as_ptr(), w);
-        Ok(())
-    }
-}
-
-/// Hands the window's panes to the leaves of `lc` in order, `wp` walking the
-/// window's pane list as it goes.
+/// Hands the remaining panes to the leaves of `lc` in order.
 unsafe fn layout_assign(
-    w: *mut window,
-    wp: &mut *mut window_pane,
-    lc: *mut layout_cell,
+    panes: &mut std::slice::IterMut<'_, RustWindowPaneRef>,
+    lc: Option<&mut layout_cell>,
     flags: c_int,
 ) {
     unsafe {
-        if lc.is_null() {
+        let Some(lc) = lc else {
             return;
-        }
-        match (*lc).type_0 {
+        };
+        match lc.type_0 {
             LAYOUT_WINDOWPANE => {
-                layout_make_leaf(lc, *wp);
-                (*lc).flags |= flags;
-                *wp = window_panes_next(w, *wp);
+                let Some(wp) = panes.next() else {
+                    return;
+                };
+                layout_make_leaf(lc, wp.as_pane_mut());
+                lc.flags |= flags;
             }
             LAYOUT_LEFTRIGHT | LAYOUT_TOPBOTTOM => {
-                for lcchild in foreach_owned(&raw mut (*lc).cells) {
-                    layout_assign(w, wp, lcchild, flags);
+                for lcchild in lc.cells.iter_mut().map(Box::as_mut) {
+                    layout_assign(panes, Some(lcchild), flags);
                 }
             }
             _ => {}
@@ -319,77 +231,38 @@ unsafe fn layout_assign(
     }
 }
 
-/// Reads one cell's size and place off the front of `layout`, leaving the
-/// pointer on whatever follows. A trailing pane id is read too, unless what
-/// follows it looks like another cell's size — which is how a node with
-/// children is told from a leaf.
-///
-/// The "the size was not followed by an x" guard is kept as the C wrote it,
-/// but no test reaches it: the `sscanf` above has already matched that same
-/// literal `x`.
-unsafe fn layout_construct_cell(
-    lcparent: *mut layout_cell,
-    layout: &mut *const c_char,
+/// Reads one cell's geometry and optional pane ID, leaving the cursor at
+/// its children or the next cell. A comma followed by another cell's width
+/// remains unread so the enclosing node can consume it.
+fn layout_construct_cell(
+    lcparent: Option<&mut layout_cell>,
+    layout: &mut LayoutCursor<'_>,
 ) -> Option<Box<layout_cell>> {
-    unsafe {
-        let mut sx: u_int = 0;
-        let mut sy: u_int = 0;
-        let mut xoff: c_int = 0;
-        let mut yoff: c_int = 0;
+    let sx = layout.decimal()? as u_int;
+    layout.consume(b'x')?;
+    let sy = layout.decimal()? as u_int;
+    layout.consume(b',')?;
+    let xoff = layout.decimal()?.min(i64::MAX as u64) as c_int;
+    layout.consume(b',')?;
+    let yoff = layout.decimal()?.min(i64::MAX as u64) as c_int;
 
-        if !digit(**layout) {
-            return None;
+    if layout.current() == b',' {
+        let saved = layout.position;
+        layout.advance();
+        while digit(layout.current() as c_char) {
+            layout.advance();
         }
-        if sscanf(
-            *layout,
-            c"%ux%u,%d,%d".as_ptr(),
-            &raw mut sx,
-            &raw mut sy,
-            &raw mut xoff,
-            &raw mut yoff,
-        ) != 4
-        {
-            return None;
+        if layout.current() == b'x' {
+            layout.position = saved;
         }
-
-        while digit(**layout) {
-            *layout = (*layout).offset(1);
-        }
-        if **layout != b'x' as c_char {
-            return None;
-        }
-        *layout = (*layout).offset(1);
-        for _ in 0..2 {
-            while digit(**layout) {
-                *layout = (*layout).offset(1);
-            }
-            if **layout != b',' as c_char {
-                return None;
-            }
-            *layout = (*layout).offset(1);
-        }
-        while digit(**layout) {
-            *layout = (*layout).offset(1);
-        }
-
-        if **layout == b',' as c_char {
-            let saved = *layout;
-            *layout = (*layout).offset(1);
-            while digit(**layout) {
-                *layout = (*layout).offset(1);
-            }
-            if **layout == b'x' as c_char {
-                *layout = saved;
-            }
-        }
-
-        let mut lc = layout_create_cell(lcparent);
-        lc.sx = sx;
-        lc.sy = sy;
-        lc.xoff = xoff;
-        lc.yoff = yoff;
-        Some(lc)
     }
+
+    let mut lc = layout_create_cell(lcparent);
+    lc.sx = sx;
+    lc.sy = sy;
+    lc.xoff = xoff;
+    lc.yoff = yoff;
+    Some(lc)
 }
 
 /// Reads one cell and, if it opens a bracket, everything under it.
@@ -401,13 +274,12 @@ unsafe fn layout_construct_cell(
 /// server on such a layout, so this is a documented divergence matching the
 /// patched oracle and tmux master (commit 97472e37).
 unsafe fn layout_construct(
-    lcparent: *mut layout_cell,
-    layout: &mut *const c_char,
+    lcparent: Option<&mut layout_cell>,
+    layout: &mut LayoutCursor<'_>,
 ) -> Option<Box<layout_cell>> {
     unsafe {
         let mut lc = layout_construct_cell(lcparent, layout)?;
-        let lc_ptr = &raw mut *lc;
-        let close = match **layout as u8 {
+        let close = match layout.current() {
             b',' | b'}' | b']' | b'>' | b'\0' => return Some(lc),
             b'{' => {
                 lc.type_0 = LAYOUT_LEFTRIGHT;
@@ -421,18 +293,18 @@ unsafe fn layout_construct(
         };
 
         loop {
-            *layout = (*layout).offset(1);
-            let lcchild = layout_construct(lc_ptr, layout)?;
+            layout.advance();
+            let lcchild = layout_construct(Some(&mut *lc), layout)?;
             lc.cells.push(lcchild);
-            if **layout != b',' as c_char {
+            if layout.current() != b',' {
                 break;
             }
         }
 
-        if **layout != close as c_char {
+        if layout.current() != close {
             return None;
         }
-        *layout = (*layout).offset(1);
+        layout.advance();
         Some(lc)
     }
 }
@@ -440,3 +312,163 @@ unsafe fn layout_construct(
 #[cfg(test)]
 #[path = "../tests/test_layout_custom.rs"]
 mod tests;
+
+impl WindowRef {
+    /// The layout of `root` as the string `select-layout` takes, or `None` when it
+    /// does not fit in the eight kilobytes this writes into. Any floating panes
+    /// follow the tree inside angle brackets — and are written twice, since the
+    /// tree they hang in carries them too.
+    pub fn dump_layout_cell(&self, root: Option<&layout_cell>) -> Option<CString> {
+        let owner = self;
+
+        let payload = owner.as_window();
+        let w = &*payload;
+        const LIMIT: usize = 8192;
+        let mut buf: Vec<u8> = Vec::new();
+        let mut bracket = false;
+
+        if layout_append(root, &mut buf, LIMIT) != 0 {
+            return None;
+        }
+
+        for pane in &w.z_index {
+            let _id = pane.id();
+            if !pane.is_alive() {
+                break;
+            }
+            let Some((cell, _)) = layout_cell_for_pane(w.layout_root.as_deref(), pane) else {
+                break;
+            };
+            if cell.flags & LAYOUT_CELL_FLOATING == 0 {
+                break;
+            }
+            if !bracket {
+                if buf.len() + 1 < LIMIT {
+                    buf.push(b'<');
+                }
+                bracket = true;
+            }
+            if layout_append(Some(cell), &mut buf, LIMIT) != 0 {
+                return None;
+            }
+            if buf.len() + 1 < LIMIT {
+                buf.push(b',');
+            }
+        }
+        if bracket && let Some(last) = buf.last_mut() {
+            *last = b'>';
+        }
+
+        let text = CString::new(buf).expect("a layout has no NUL");
+        let mut result = format!("{:04x},", layout_checksum(&text)).into_bytes();
+        result.extend_from_slice(text.to_bytes());
+        Some(CString::new(result).expect("a layout has no NUL"))
+    }
+    /// Reads `layout` into the window, answering -1 and a reason through `cause`
+    /// when it will not do.
+    pub unsafe fn parse_layout(&self, layout: &CStr) -> Result<(), CString> {
+        let owner = self;
+
+        unsafe {
+            let csum = layout_parse_checksum(layout).ok_or_else(|| c"invalid layout".to_owned())?;
+            let mut layout = LayoutCursor::new(layout, 5);
+            if csum != layout_checksum(layout.as_cstr()) {
+                return Err(c"invalid layout".to_owned());
+            }
+
+            let Some(tiled_lc) = layout_construct(None, &mut layout) else {
+                return Err(c"invalid layout".to_owned());
+            };
+
+            owner.layout_apply(tiled_lc, layout.as_cstr())
+        }
+    }
+    /// Puts the tree `tiled_lc` in the window, dropping the cells it has no pane
+    /// for. The tree is the caller's until this answers `Ok`.
+    unsafe fn layout_apply(&self, tree: Box<layout_cell>, layout: &CStr) -> Result<(), CString> {
+        let owner = self;
+
+        unsafe {
+            let payload = owner.as_window();
+            let w = &*payload;
+            if !layout.is_empty() {
+                return Err(c"invalid layout".to_owned());
+            }
+
+            let mut tree = Some(tree);
+            let npanes = window_count_panes(w, 1);
+            drop(payload);
+            loop {
+                let tiled_lc = tree
+                    .as_deref_mut()
+                    .ok_or_else(|| c"invalid layout".to_owned())?;
+                let ncells = layout_count_cells(tiled_lc);
+                if npanes > ncells {
+                    return Err(xasprintf(
+                        c"have %u panes but need %u",
+                        fmt_args![npanes, ncells],
+                    ));
+                }
+                if npanes == ncells {
+                    break;
+                }
+                let lcchild = layout_find_bottomright(tiled_lc);
+                owner.destroy_layout_cell(&mut tree, &lcchild);
+            }
+
+            let tiled_lc = tree
+                .as_deref_mut()
+                .ok_or_else(|| c"invalid layout".to_owned())?;
+            let mut sx: u_int = 0;
+            let mut sy: u_int = 0;
+            match tiled_lc.type_0 {
+                LAYOUT_LEFTRIGHT => {
+                    for lcchild in tiled_lc.cells.iter().map(Box::as_ref) {
+                        sy = lcchild.sy.wrapping_add(1);
+                        sx = sx.wrapping_add(lcchild.sx.wrapping_add(1));
+                    }
+                }
+                LAYOUT_TOPBOTTOM => {
+                    for lcchild in tiled_lc.cells.iter().map(Box::as_ref) {
+                        sx = lcchild.sx.wrapping_add(1);
+                        sy = sy.wrapping_add(lcchild.sy.wrapping_add(1));
+                    }
+                }
+                _ => {}
+            }
+            if tiled_lc.type_0 != LAYOUT_WINDOWPANE && (tiled_lc.sx != sx || tiled_lc.sy != sy) {
+                layout_print_cell(Some(tiled_lc), c"layout_parse", 0);
+                tiled_lc.sx = sx.wrapping_sub(1);
+                tiled_lc.sy = sy.wrapping_sub(1);
+            }
+
+            if layout_check(tiled_lc) == 0 {
+                return Err(c"size mismatch after applying layout".to_owned());
+            }
+
+            if sx != 0 && sy != 0 {
+                owner.resize(tiled_lc.sx, tiled_lc.sy, -1, -1);
+            }
+            let mut payload = owner.as_window_mut();
+            let w = &mut *payload;
+            let root = w.layout_root.take();
+            layout_free_cell(root);
+            w.layout_root = tree.take();
+
+            layout_assign(&mut w.panes.iter_mut(), w.layout_root.as_deref_mut(), 0);
+
+            w.z_index.clear();
+            drop(payload);
+            owner.fix_layout_zindexes();
+            owner.fix_layout_offsets();
+            owner.fix_layout_panes(None);
+            recalculate_sizes();
+            let payload = owner.as_window();
+            let w = &*payload;
+            layout_print_cell(w.layout_root.as_deref(), c"layout_parse", 0);
+            drop(payload);
+            notify_window(c"window-layout-changed", Some(owner));
+            Ok(())
+        }
+    }
+}

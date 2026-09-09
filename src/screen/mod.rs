@@ -4,43 +4,14 @@
 //! Everything below this module is private. What the rest of the crate may
 //! use is exactly what is re-exported here.
 
+mod draw;
 mod redraw;
 mod state;
 mod write;
+mod writer;
 
-pub use redraw::{
-    screen_redraw_get_visible_ranges, screen_redraw_is_visible, screen_redraw_pane,
-    screen_redraw_screen,
-};
-pub use state::{
-    MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, SCREEN_CURSOR_BAR,
-    SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE, screen_clear_selection, screen_free,
-    screen_hide_selection, screen_init, screen_mode_to_string, screen_pop_title, screen_push_title,
-    screen_reinit, screen_reset_hyperlinks, screen_resize, screen_resize_cursor, screen_sel,
-    screen_select_cell, screen_set_cursor_colour, screen_set_cursor_style,
-    screen_set_default_cursor, screen_set_path, screen_set_progress_bar, screen_set_selection,
-    screen_set_title, screen_titles,
-};
-pub use write::{
-    CItem, screen_write_alignmenttest, screen_write_alternateoff, screen_write_alternateon,
-    screen_write_backspace, screen_write_box, screen_write_carriagereturn, screen_write_cell,
-    screen_write_citem, screen_write_clearcharacter, screen_write_clearendofline,
-    screen_write_clearendofscreen, screen_write_clearhistory, screen_write_clearline,
-    screen_write_clearscreen, screen_write_clearstartofline, screen_write_clearstartofscreen,
-    screen_write_cline, screen_write_collect_add, screen_write_collect_end,
-    screen_write_cursordown, screen_write_cursorleft, screen_write_cursormove,
-    screen_write_cursorright, screen_write_cursorup, screen_write_deletecharacter,
-    screen_write_deleteline, screen_write_fast_copy, screen_write_fullredraw, screen_write_hline,
-    screen_write_insertcharacter, screen_write_insertline, screen_write_linefeed,
-    screen_write_menu, screen_write_mode_clear, screen_write_mode_set, screen_write_nputs,
-    screen_write_preview, screen_write_putc, screen_write_puts, screen_write_rawstring,
-    screen_write_reset, screen_write_reverseindex, screen_write_scrolldown,
-    screen_write_scrollregion, screen_write_scrollup, screen_write_setselection,
-    screen_write_start, screen_write_start_callback, screen_write_start_pane,
-    screen_write_start_sync, screen_write_stop, screen_write_stop_sync, screen_write_strlen,
-    screen_write_text, screen_write_vline, screen_write_vnputs,
-};
-
+pub use draw::{format_trim_left, format_trim_right, format_width};
+pub(crate) use draw::{format_trim_left_impl, format_trim_right_impl, format_width_impl};
 #[cfg(test)]
 pub(crate) use redraw::{
     BORDER_MARKERS, CELL_BORDERS, CELL_BOTTOMJOIN, CELL_BOTTOMLEFT, CELL_BOTTOMRIGHT, CELL_INSIDE,
@@ -55,18 +26,31 @@ pub(crate) use redraw::{
     PANE_STATUS_TOP, SCREEN_REDRAW_BORDER_BOTTOM, SCREEN_REDRAW_BORDER_LEFT,
     SCREEN_REDRAW_BORDER_RIGHT, SCREEN_REDRAW_BORDER_TOP, SCREEN_REDRAW_INSIDE,
     SCREEN_REDRAW_OUTSIDE, SIMPLE_BORDERS, START_ISOLATE, screen_redraw_border_set,
-    screen_redraw_cell_border, screen_redraw_check_is, screen_redraw_clip_visible_ranges,
-    screen_redraw_pane_border, screen_redraw_two_panes, screen_redraw_type_of_cell,
+    screen_redraw_cell_border, screen_redraw_check_is, screen_redraw_pane_border,
+    screen_redraw_two_panes, screen_redraw_type_of_cell,
 };
+pub(crate) use redraw::{screen_redraw_is_visible, screen_redraw_pane, screen_redraw_screen};
 #[cfg(test)]
+pub(crate) use state::{GRID_HISTORY, MODE_WRAP, SCREEN_CURSOR_DEFAULT};
+pub use state::{
+    MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, SCREEN_CURSOR_BAR,
+    SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE, Screen, ScreenModeState, screen_sel,
+    screen_titles,
+};
 pub(crate) use state::{
-    GRID_HISTORY, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_WRAP, SCREEN_CURSOR_DEFAULT,
+    MODE_SYNC, screen_mode_to_string, screen_reinit, screen_resize, screen_resize_cursor,
 };
-pub(crate) use state::{screen_grid, screen_grid_mut, screen_grid_ptr, screen_saved_grid_ptr};
+pub(crate) use write::screen_write_init_ctx;
+pub use write::{CItem, screen_write_citem, screen_write_cline};
 #[cfg(test)]
-pub(crate) use write::{
-    GRID_FLAG_PADDING, GRID_FLAG_SELECTED, GRID_LINE_WRAPPED, MODE_SYNC, PANE_REDRAW,
-    PANE_REDRAWSCROLLBAR, SCREEN_WRITE_CHECKED_IF_OBSCURED, TTY_CTX_INVISIBLE_PANES,
-    TTY_CTX_PANE_OBSCURED, TTY_CTX_SYNC, TTY_CTX_WINDOW_BIGGER, citem, screen_write_ctx,
-    test_hooks,
+pub(crate) use write::{GRID_LINE_WRAPPED, TTY_CTX_PANE_OBSCURED, citem_snapshot};
+pub(crate) use writer::{
+    RustScreenWriteCtx, ScreenWriteCtx, screen_write_ctx_on_pane, screen_write_ctx_on_pane_base,
+    screen_write_ctx_on_screen, screen_write_strlen,
 };
+
+use state::screen;
+
+/// The Rust screen implementation used by hmux.
+#[derive(Default)]
+pub struct RustScreen(screen);

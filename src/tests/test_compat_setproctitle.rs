@@ -8,44 +8,43 @@
 use super::*;
 
 use crate::fmt_args;
-use ::core::ffi::{CStr, c_char};
+use ::core::ffi::CStr;
 use ::std::sync::MutexGuard;
 
-pub const PR_GET_NAME: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
+pub const PR_GET_NAME: c_int = 16 as c_int;
 
 /// A turn at the name of the thread the tests run on, which is what the
 /// title is written to and which is put back afterwards. Cargo runs the
 /// tests on parallel threads; the name belongs to whichever thread asks,
 /// so this is really a turn at asking about it.
 struct Name {
-    was: [c_char; 16],
+    was: [u8; 16],
     _guard: MutexGuard<'static, ()>,
 }
 
 impl Name {
     fn new() -> Name {
-        static NAME: ::std::sync::Mutex<()> = ::std::sync::Mutex::new(());
+        static NAME: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let guard = NAME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let mut was = [0 as c_char; 16];
-        unsafe { prctl(PR_GET_NAME, &raw mut was as *mut c_char) };
+        let mut was = [0; 16];
+        unsafe { prctl(PR_GET_NAME, was.as_mut_ptr()) };
         Name { was, _guard: guard }
     }
 
     /// What the thread is called now.
     fn now(&self) -> String {
-        let mut buf = [0 as c_char; 16];
-        unsafe {
-            prctl(PR_GET_NAME, &raw mut buf as *mut c_char);
-            CStr::from_ptr(&raw const buf as *const c_char)
-                .to_string_lossy()
-                .into_owned()
-        }
+        let mut buf = [0; 16];
+        unsafe { prctl(PR_GET_NAME, buf.as_mut_ptr()) };
+        CStr::from_bytes_until_nul(&buf)
+            .expect("the thread name has a terminator")
+            .to_string_lossy()
+            .into_owned()
     }
 }
 
 impl Drop for Name {
     fn drop(&mut self) {
-        unsafe { prctl(PR_SET_NAME, &raw mut self.was as *mut c_char) };
+        unsafe { prctl(PR_SET_NAME, self.was.as_ptr()) };
     }
 }
 
@@ -55,7 +54,7 @@ impl Drop for Name {
 fn a_title_is_written_behind_the_name_of_the_program() {
     let name = Name::new();
     unsafe {
-        setproctitle(c"%s".as_ptr(), fmt_args![c"a-title".as_ptr()]);
+        setproctitle(c"%s", fmt_args![c"a-title"]);
     }
     let expected: String = format!("{}: a-title", getprogname().to_string_lossy())
         .chars()
@@ -71,13 +70,7 @@ fn a_title_is_written_behind_the_name_of_the_program() {
 fn a_long_title_is_cut_down_twice() {
     let name = Name::new();
     unsafe {
-        setproctitle(
-            c"%s-%d".as_ptr(),
-            fmt_args![
-                c"a-very-long-title-indeed".as_ptr(),
-                7 as ::core::ffi::c_int
-            ],
-        );
+        setproctitle(c"%s-%d", fmt_args![c"a-very-long-title-indeed", 7 as c_int]);
     }
     let expected: String = format!("{}: a-very-long-tit", getprogname().to_string_lossy())
         .chars()
@@ -101,11 +94,11 @@ const CHILD: &str = "TMUX_C2RS_SETPROCTITLE_TEST_CHILD";
 /// selected and one thread to run it on.
 fn in_a_child_called(called: &str, test: &str) -> bool {
     use ::std::os::unix::process::CommandExt;
-    if ::std::env::var_os(CHILD).is_some() {
+    if std::env::var_os(CHILD).is_some() {
         return false;
     }
-    let exe = ::std::env::current_exe().expect("the test binary");
-    let out = ::std::process::Command::new(exe)
+    let exe = std::env::current_exe().expect("the test binary");
+    let out = std::process::Command::new(exe)
         .arg0(called)
         .args(["--exact", test, "--test-threads=1", "--nocapture"])
         .env(CHILD, "1")
@@ -138,8 +131,8 @@ fn a_name_that_did_not_fit_is_cut_back_to_its_last_space() {
         b"sp",
         "the child is not called what it was started as"
     );
-    unsafe { setproctitle(c"%s".as_ptr(), fmt_args![c"a-long-title".as_ptr()]) };
+    unsafe { setproctitle(c"%s", fmt_args![c"a-long-title"]) };
     assert_eq!(name.now(), "sp:");
-    unsafe { setproctitle(c"%s".as_ptr(), fmt_args![c"one two three four".as_ptr()]) };
+    unsafe { setproctitle(c"%s", fmt_args![c"one two three four"]) };
     assert_eq!(name.now(), "sp: one two");
 }
