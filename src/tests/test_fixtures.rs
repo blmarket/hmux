@@ -198,6 +198,17 @@ pub(crate) fn globals_ready() {
     });
 }
 
+static GLOBALS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static GLOBALS_OWNER: std::sync::Mutex<Option<std::thread::ThreadId>> = std::sync::Mutex::new(None);
+
+/// Whether this thread currently holds the fixture lock. The owner alone is
+/// insufficient: it remains recorded after the returned guard is dropped.
+pub(crate) fn globals_held() -> bool {
+    let owner = GLOBALS_OWNER.lock().unwrap();
+    *owner == Some(std::thread::current().id())
+        && matches!(GLOBALS.try_lock(), Err(std::sync::TryLockError::WouldBlock))
+}
+
 /// [`globals_ready`], plus a turn at the process-wide state the server keeps
 /// in statics that a test goes on to *change*: the session, window and pane
 /// trees, the option trees, the command parser's own globals, the
@@ -205,10 +216,10 @@ pub(crate) fn globals_ready() {
 /// tests on parallel threads, so a test that mutates any of that holds the
 /// guard this returns for as long as it is looking.
 pub(crate) fn globals() -> MutexGuard<'static, ()> {
-    static GLOBALS: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let guard = GLOBALS
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *GLOBALS_OWNER.lock().unwrap() = Some(std::thread::current().id());
     globals_ready();
     guard
 }

@@ -3,6 +3,30 @@ use crate::tests::test_fixtures::{globals, zeroed_client};
 use std::os::unix::fs::FileTypeExt;
 
 #[test]
+fn socket_bind_failure_restores_the_process_umask() {
+    let _guard = globals();
+    unsafe {
+        let saved_path = socket_path.take();
+        // /dev/null is a file, so binding a socket beneath it must fail.
+        socket_path = Some(c"/dev/null/hmux.sock".to_owned());
+        let original_mask = umask(0o022);
+        for flags in [0, CLIENT_DEFAULTSOCKET as u64] {
+            let mut cause = None;
+            let fd = server_create_socket(flags, &mut cause);
+            let restored_mask = umask(original_mask);
+            socket_path = saved_path.clone();
+            assert_eq!(fd, -1);
+            assert!(cause.is_some());
+            assert_eq!(restored_mask, 0o022);
+            socket_path = Some(c"/dev/null/hmux.sock".to_owned());
+            umask(0o022);
+        }
+        umask(original_mask);
+        socket_path = saved_path;
+    }
+}
+
+#[test]
 fn socket_creation_reports_long_paths_and_builds_both_permission_modes() {
     let _guard = globals();
     unsafe {

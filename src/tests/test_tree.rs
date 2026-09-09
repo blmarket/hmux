@@ -121,3 +121,32 @@ fn collection_thread_ownership_is_claimed_on_first_access() {
     fresh.map().insert(2, 20);
     assert_eq!(*fresh.map(), BTreeMap::from([(2, 20)]));
 }
+
+#[test]
+fn fixture_lock_allows_collection_access_on_successive_test_threads() {
+    use crate::tests::test_fixtures::{globals, globals_held};
+
+    let tree = GlobalTree::<i32, i32>::new();
+    let queue = GlobalQueue::<i32>::new();
+    std::thread::scope(|scope| {
+        for value in [1, 2] {
+            let tree = &tree;
+            let queue = &queue;
+            scope
+                .spawn(move || {
+                    assert!(!globals_held());
+                    let guard = globals();
+                    assert!(globals_held());
+                    tree.map().insert(value, value * 10);
+                    queue.queue().push_back(value);
+                    drop(guard);
+                    assert!(!globals_held());
+                })
+                .join()
+                .unwrap();
+        }
+    });
+    let _guard = globals();
+    assert_eq!(*tree.read(), BTreeMap::from([(1, 10), (2, 20)]));
+    assert_eq!(*queue.queue(), VecDeque::from([1, 2]));
+}

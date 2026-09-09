@@ -133,6 +133,8 @@ mod tests {
 
     #[test]
     fn libc_expansion_owns_sorted_non_utf8_paths_and_reports_no_match() {
+        // Socket creation temporarily changes the process-wide umask.
+        let _guard = crate::tests::test_fixtures::globals();
         use std::os::unix::ffi::OsStrExt;
         struct TempDir(std::path::PathBuf);
         impl Drop for TempDir {

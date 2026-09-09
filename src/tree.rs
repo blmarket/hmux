@@ -11,6 +11,12 @@ impl CollectionThread {
     }
 
     fn check(&self) {
+        // Unit tests hand the server's global state between worker threads
+        // under the fixture lock. Production still has a single owner.
+        #[cfg(test)]
+        if crate::tests::test_fixtures::globals_held() {
+            return;
+        }
         let current = std::thread::current().id();
         assert_eq!(
             *self.0.get_or_init(|| current),

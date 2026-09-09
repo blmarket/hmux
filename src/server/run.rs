@@ -248,6 +248,7 @@ pub unsafe fn server_create_socket(
                 ) == -(1 as core::ffi::c_int)
                 {
                     saved_errno = *__errno_location();
+                    umask(mask as __mode_t);
                     close(fd);
                     *__errno_location() = saved_errno;
                 } else {

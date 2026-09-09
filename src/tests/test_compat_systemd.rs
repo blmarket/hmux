@@ -16,7 +16,7 @@ fn test_job_removed_handler_null_path() {
 
 #[test]
 fn test_systemd_create_socket_fallback_when_no_listen_fds() {
-    crate::tests::test_fixtures::globals_ready();
+    let _guard = crate::tests::test_fixtures::globals();
     unsafe {
         let mut cause = None;
         let fd = systemd_create_socket(0, &mut cause);
