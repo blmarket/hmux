@@ -27,7 +27,7 @@
 use crate::arguments::{args_get_str, args_has};
 use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
 use crate::cmd::cmd_get_args;
-use crate::cmd::find::cmd_find_target;
+use crate::cmdq::cmd_find_target;
 
 use crate::ffi::getuid;
 use crate::fmt_args;
@@ -237,7 +237,7 @@ unsafe fn cmd_attach_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_attach_session.rs"]
+#[path = "../../tests/test_cmd_attach_session.rs"]
 mod tests;
 
 #[cfg(test)]

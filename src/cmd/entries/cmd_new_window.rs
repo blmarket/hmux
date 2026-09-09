@@ -229,7 +229,7 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
 
     let mut fs = cmd_find_state::default();
-    unsafe { crate::cmd::find::cmd_find_from_link_ref(&mut fs, &new_wl, None, 0) };
+    unsafe { crate::cmdq::cmd_find_from_link_ref(&mut fs, &new_wl, None, 0) };
     unsafe {
         (crate::cmdq::cmdq_item_ref_of(item).expect("the command has an owner"))
             .insert_session_hook(Some(&session), Some(&fs), c"after-new-window", fmt_args![])
@@ -240,5 +240,5 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_new_window.rs"]
+#[path = "../../tests/test_cmd_new_window.rs"]
 mod tests;

@@ -86,7 +86,7 @@ pub fn prompt_answers_clear() {
 }
 
 use crate::cmdq::CmdqListOps;
-use crate::cmd::cmd_find_from_winlink;
+use crate::cmdq::cmd_find_from_winlink;
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
 use crate::cmdq::{CmdqStateRef, CmdqType};
 use crate::environ::{RustEnvironment, new_environment_box};

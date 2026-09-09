@@ -135,5 +135,5 @@ unsafe fn cmd_paste_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_paste_buffer.rs"]
+#[path = "../../tests/test_cmd_paste_buffer.rs"]
 mod tests;

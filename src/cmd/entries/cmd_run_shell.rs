@@ -3,7 +3,7 @@ use crate::arguments::{
     args_string_str,
 };
 use crate::cmd::cmd_get_args;
-use crate::cmd::find::cmd_find_from_nothing;
+use crate::cmdq::cmd_find_from_nothing;
 use crate::cmdq::{CmdqItemWeak, cmdq_append, cmdq_item_weak_of};
 use crate::compat::toupper;
 pub use crate::consts::{

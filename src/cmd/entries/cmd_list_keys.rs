@@ -315,5 +315,5 @@ unsafe fn cmd_list_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_list_keys.rs"]
+#[path = "../../tests/test_cmd_list_keys.rs"]
 mod tests;

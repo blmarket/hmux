@@ -198,5 +198,5 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_break_pane.rs"]
+#[path = "../../tests/test_cmd_break_pane.rs"]
 mod tests;

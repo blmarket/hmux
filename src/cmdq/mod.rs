@@ -1,12 +1,28 @@
+mod find;
+
+pub use find::{
+    cmd_find_clear_state, cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_client,
+    cmd_find_from_mouse, cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session,
+    cmd_find_from_session_window, cmd_find_from_window, cmd_find_from_winlink,
+    cmd_find_from_winlink_pane, cmd_find_valid_state,
+};
+#[cfg(test)]
+pub(crate) use find::cmd_find_best_client;
+pub(crate) use find::{
+    cmd_find_client, cmd_find_target, cmd_find_from_session_ref, cmd_find_from_link_ref,
+};
+#[cfg(test)]
+pub(crate) use find::CMD_FIND_QUIET;
+pub(crate) use find::{
+    cmd_find_best_client_for_session, cmd_find_best_session, cmd_find_log_state_with_window,
+};
+pub use find::cmd_find_type;
+
 use crate::arguments::{
     args_count, args_flags, args_get_str, args_print, args_string_str, args_value_list,
 };
 use crate::cfg::cfg_add_cause;
 use crate::cfg::cfg_finished;
-use crate::cmd::{
-    cmd_find_clear_state, cmd_find_client, cmd_find_copy_state, cmd_find_from_client,
-    cmd_find_target, cmd_find_valid_state,
-};
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print};
 use crate::cmd::{CommandEntry, RustCommandContext};
 use crate::compat::toupper;
@@ -651,7 +667,7 @@ mod focused_boundary_tests {
         let target_flag = cmd_entry_flag {
             flag: b't' as _,
             type_0: CMD_FIND_PANE,
-            flags: crate::cmd::CMD_FIND_QUIET,
+            flags: crate::cmdq::CMD_FIND_QUIET,
         };
         unsafe {
             let (result, source) = cmdq_find_flag(&item.read(), &source_flag);
@@ -1487,7 +1503,7 @@ impl CmdqStateRef {
         flags: core::ffi::c_int,
     ) {
         unsafe {
-            crate::cmd::cmd_find_from_session_ref(&mut self.state().current, session, flags)
+            crate::cmdq::cmd_find_from_session_ref(&mut self.state().current, session, flags)
         };
     }
 
@@ -1503,7 +1519,7 @@ impl CmdqStateRef {
         flags: core::ffi::c_int,
     ) {
         unsafe {
-            crate::cmd::cmd_find_from_link_ref(&mut self.state().current, link, pane, flags)
+            crate::cmdq::cmd_find_from_link_ref(&mut self.state().current, link, pane, flags)
         };
     }
 

@@ -1,6 +1,6 @@
 use super::*;
 use crate::WindowPane;
-use crate::cmd::cmd_find_from_winlink;
+use crate::cmdq::cmd_find_from_winlink;
 use crate::layout::LAYOUT_TOPBOTTOM;
 use crate::tests::test_fixtures::{
     Item, Pane, Registry, Session, Window, ensure_reactor, globals, link, unlink_all,

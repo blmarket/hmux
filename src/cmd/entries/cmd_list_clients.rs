@@ -120,7 +120,7 @@ unsafe fn cmd_list_clients_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_list_clients.rs"]
+#[path = "../../tests/test_cmd_list_clients.rs"]
 mod tests;
 
 #[cfg(test)]

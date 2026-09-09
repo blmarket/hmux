@@ -188,7 +188,7 @@ unsafe fn cmd_list_panes_window(self_0: &cmd, link: &WinlinkRef, item: &cmdq_ite
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_list_panes.rs"]
+#[path = "../../tests/test_cmd_list_panes.rs"]
 mod tests;
 
 #[cfg(test)]

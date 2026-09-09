@@ -21,7 +21,7 @@ use crate::cfg::{cfg_client, cfg_finished};
 
 use crate::cmd::cmd_parse_from_arguments;
 use crate::cmdq::{CmdqItemRef, cmdq_append};
-use crate::cmd::{cmd_find_from_client, cmd_find_from_mouse};
+use crate::cmdq::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::compat::imsg_get_fd;
 use crate::control::{
     control_all_done, control_discard, control_pane_offset, control_pane_offset_mut, control_ready,

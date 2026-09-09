@@ -3,7 +3,7 @@ use super::widget::{ModeTreeItemRef, mode_tree_run_command};
 use crate::WindowPane;
 use crate::arguments::{args_get_str, args_has, args_string_str};
 use crate::cmdq::{CmdqItemRef, cmdq_append};
-use crate::cmd::{cmd_find_clear_state, cmd_find_from_winlink_pane};
+use crate::cmdq::{cmd_find_clear_state, cmd_find_from_winlink_pane};
 use crate::compat::tolower;
 use crate::fmt_args;
 use crate::format::format_true;

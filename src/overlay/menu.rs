@@ -1,7 +1,7 @@
 use crate::cmdq::cmdq_item;
 use crate::cmdq::CmdqItemRef;
 use crate::cmdq::CmdqStateRef;
-use crate::cmd::cmd_find_copy_state;
+use crate::cmdq::cmd_find_copy_state;
 use crate::cmd::cmd_parse_and_append;
 use crate::cmdq::{CmdqItemWeak, cmdq_append};
 use crate::fmt_args;

@@ -97,5 +97,5 @@ unsafe fn cmd_kill_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_kill_session.rs"]
+#[path = "../../tests/test_cmd_kill_session.rs"]
 mod tests;

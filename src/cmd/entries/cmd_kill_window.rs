@@ -117,5 +117,5 @@ unsafe fn cmd_kill_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_kill_window.rs"]
+#[path = "../../tests/test_cmd_kill_window.rs"]
 mod tests;

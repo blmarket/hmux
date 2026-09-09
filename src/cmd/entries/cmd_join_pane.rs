@@ -128,5 +128,5 @@ unsafe fn cmd_join_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_join_pane.rs"]
+#[path = "../../tests/test_cmd_join_pane.rs"]
 mod tests;

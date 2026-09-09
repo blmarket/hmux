@@ -37,7 +37,7 @@
 
 use crate::arguments::{args_count, args_get_str, args_has, args_string_str, args_strtonum};
 use crate::cmd::cmd_get_args;
-use crate::cmd::find::cmd_find_best_client_for_session;
+use crate::cmdq::cmd_find_best_client_for_session;
 
 use crate::fmt_args;
 use crate::fmt_engine::format_buf;

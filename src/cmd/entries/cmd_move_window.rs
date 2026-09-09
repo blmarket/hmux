@@ -19,7 +19,7 @@
 //! asked for.
 
 use crate::arguments::{args_get_str, args_has};
-use crate::cmd::find::cmd_find_target;
+use crate::cmdq::cmd_find_target;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -31,7 +31,8 @@ pub use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_QUIET, CMD_FIND_SESSION, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX,
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
-pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_find_type, cmd_retval};
+pub use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+pub use crate::cmdq::cmd_find_type;
 pub use crate::cmdq::cmdq_item;
 pub use crate::types::{OptionsRef, SessionRef, args_parse_t, cmd_find_state};
 #[cfg(test)]
@@ -190,5 +191,5 @@ unsafe fn cmd_move_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_move_window.rs"]
+#[path = "../../tests/test_cmd_move_window.rs"]
 mod tests;

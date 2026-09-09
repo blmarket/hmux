@@ -122,7 +122,7 @@ unsafe fn cmd_list_windows_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_list_windows.rs"]
+#[path = "../../tests/test_cmd_list_windows.rs"]
 mod tests;
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 use crate::arguments::args_has;
-use crate::cmd::find::cmd_find_from_session_ref;
+use crate::cmdq::cmd_find_from_session_ref;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;

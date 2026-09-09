@@ -235,7 +235,7 @@ fn row_and_key_formats_use_the_resolved_target_and_drop_invalid_context() {
         target.add_window(7, 40, 12);
         let mut pane = window_pane_find_by_id(1).unwrap();
         let mut fs = cmd_find_state::default();
-        crate::cmd::cmd_find_from_pane(&mut fs, pane.get().unwrap(), 0);
+        crate::cmdq::cmd_find_from_pane(&mut fs, pane.get().unwrap(), 0);
         with_paste_buffers_mut(|buffers| buffers.set_named(c"context", b"text".to_vec())).unwrap();
         assert_eq!(
             crate::window::window_pane_set_mode(

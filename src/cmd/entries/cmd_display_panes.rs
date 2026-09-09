@@ -203,7 +203,7 @@ unsafe fn cmd_display_panes_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_display_panes.rs"]
+#[path = "../../tests/test_cmd_display_panes.rs"]
 mod tests;
 
 impl DisplayPanesRef {

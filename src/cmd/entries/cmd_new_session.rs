@@ -1,8 +1,8 @@
 use crate::arguments::args_get_str;
 use crate::arguments::{args_count, args_has, args_to_vector, args_value_list};
 use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
-use crate::cmd::cmd_attach_session::cmd_attach_session;
-use crate::cmd::find::cmd_find_from_session_ref;
+use crate::cmd::entries::cmd_attach_session::cmd_attach_session;
+use crate::cmdq::cmd_find_from_session_ref;
 use crate::cmdq::cmdq_item_weak_of;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};

@@ -3563,7 +3563,7 @@ unsafe fn window_find_best_session(fs: &mut cmd_find_state, w: &WindowRef) -> co
             }
         }
         if !slist.is_empty() {
-            (*fs).set_session_ref(crate::cmd::cmd_find_best_session(&slist, fs.flags).as_ref());
+            (*fs).set_session_ref(crate::cmdq::cmd_find_best_session(&slist, fs.flags).as_ref());
             if !(*fs).session().is_none() {
                 return window_find_best_winlink(fs, w);
             }
@@ -3608,15 +3608,15 @@ pub(crate) unsafe fn window_find_from_session(
     flags: core::ffi::c_int,
 ) -> core::ffi::c_int {
     unsafe {
-        crate::cmd::cmd_find_clear_state(fs, flags);
+        crate::cmdq::cmd_find_clear_state(fs, flags);
         (*fs).set_session(Some(s));
         (*fs).set_window_ref(Some(w));
         if window_find_best_winlink(fs, w) != 0 as core::ffi::c_int {
-            crate::cmd::cmd_find_clear_state(fs, flags);
+            crate::cmdq::cmd_find_clear_state(fs, flags);
             return -(1 as core::ffi::c_int);
         }
         fs.wp_ref = w.active_pane();
-        crate::cmd::cmd_find_log_state_with_window(
+        crate::cmdq::cmd_find_log_state_with_window(
             c"cmd_find_from_session_window",
             fs,
             Some((w.window_id(), w.window_name())),
@@ -3631,18 +3631,18 @@ pub(crate) unsafe fn window_find_from_window(
     flags: core::ffi::c_int,
 ) -> core::ffi::c_int {
     unsafe {
-        crate::cmd::cmd_find_clear_state(fs, flags);
+        crate::cmdq::cmd_find_clear_state(fs, flags);
         (*fs).set_window_ref(Some(w));
         if window_find_best_session(fs, w) != 0 as core::ffi::c_int {
-            crate::cmd::cmd_find_clear_state(fs, flags);
+            crate::cmdq::cmd_find_clear_state(fs, flags);
             return -(1 as core::ffi::c_int);
         }
         if window_find_best_winlink(fs, w) != 0 as core::ffi::c_int {
-            crate::cmd::cmd_find_clear_state(fs, flags);
+            crate::cmdq::cmd_find_clear_state(fs, flags);
             return -(1 as core::ffi::c_int);
         }
         fs.wp_ref = w.active_pane();
-        crate::cmd::cmd_find_log_state_with_window(
+        crate::cmdq::cmd_find_log_state_with_window(
             c"cmd_find_from_window",
             fs,
             Some((w.window_id(), w.window_name())),

@@ -3,7 +3,7 @@ use crate::cmdq::cmdq_item;
 use crate::cmd::CMD_RETURN_NORMAL;
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
 use crate::cmdq::{CmdqItemRef, CmdqStateRef, cmdq_append, cmdq_item_ref_of, cmdq_running};
-use crate::cmd::{
+use crate::cmdq::{
     cmd_find_clear_state, cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_client,
     cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session, cmd_find_from_winlink,
     cmd_find_valid_state,
@@ -515,7 +515,7 @@ pub(crate) unsafe fn notify_pane_in_window(
         let mut fs = cmd_find_state::default();
         if crate::window::window_find_from_window(&mut fs, window, 0) == 0 {
             fs.set_pane(Some(wp));
-            crate::cmd::cmd_find_log_state_with_window(
+            crate::cmdq::cmd_find_log_state_with_window(
                 c"cmd_find_from_pane",
                 &fs,
                 Some((window.window_id(), window.window_name())),

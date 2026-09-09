@@ -239,7 +239,7 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { item.print(c"%s", fmt_args![cp.as_c_str()]) };
     }
     unsafe {
-        crate::cmd::find::cmd_find_from_link_ref(
+        crate::cmdq::cmd_find_from_link_ref(
             &mut fs,
             &link,
             Some(&new_pane),

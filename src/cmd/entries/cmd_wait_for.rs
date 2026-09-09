@@ -229,5 +229,5 @@ pub fn cmd_wait_for_flush() {
 }
 
 #[cfg(test)]
-#[path = "../tests/test_cmd_wait_for.rs"]
+#[path = "../../tests/test_cmd_wait_for.rs"]
 mod tests;

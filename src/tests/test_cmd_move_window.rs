@@ -1,5 +1,5 @@
 use super::*;
-use crate::cmd::cmd_find_from_winlink;
+use crate::cmdq::cmd_find_from_winlink;
 
 use crate::tests::test_fixtures::{
     Item, Pane, Registry, Session, Window, ensure_reactor, globals, link,
