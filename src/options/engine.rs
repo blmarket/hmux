@@ -272,7 +272,11 @@ impl OptionsEngine for RustOptionsEngine {
         oo: &mut Option<RustOptionsRef>,
         cause: &mut Option<CString>,
     ) -> c_int {
-        unsafe { store::options_scope_from_name(args, window, name, fs, oo, cause) }
+        unsafe {
+            store::options_scope_from_name(
+                crate::RustArguments::from_ref(args), window, name, fs, oo, cause,
+            )
+        }
     }
     unsafe fn scope_from_flags(
         &self,
@@ -282,7 +286,11 @@ impl OptionsEngine for RustOptionsEngine {
         oo: &mut Option<RustOptionsRef>,
         cause: &mut Option<CString>,
     ) -> c_int {
-        unsafe { store::options_scope_from_flags(args, window, fs, oo, cause) }
+        unsafe {
+            store::options_scope_from_flags(
+                crate::RustArguments::from_ref(args), window, fs, oo, cause,
+            )
+        }
     }
 
     unsafe fn find_choice(

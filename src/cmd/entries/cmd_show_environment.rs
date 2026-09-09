@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
 
@@ -15,7 +16,7 @@ use crate::fmt_args;
 use crate::fmt_engine::format_alloc;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{args, args_parse_t, u_char};
+use crate::types::{args_parse_t, u_char};
 
 pub(crate) static cmd_show_environment_entry: RustCommandEntry = {
     RustCommandEntry {
@@ -55,7 +56,7 @@ fn cmd_show_environment_escape(value: &CStr) -> CString {
     CString::new(out).expect("environment value cannot contain NUL")
 }
 fn cmd_show_environment_line(
-    args: &args,
+    args: &RustArguments,
     envent: &crate::environ::EnvironmentEntryRef<'_>,
 ) -> Option<CString> {
     let hidden = args_has(args, b'h') != 0;
@@ -84,7 +85,7 @@ fn cmd_show_environment_line(
 
 fn cmd_show_environment_lines(
     env: &RustEnvironment,
-    args: &args,
+    args: &RustArguments,
     name: Option<&CStr>,
 ) -> Option<Vec<CString>> {
     if let Some(name) = name {
@@ -104,7 +105,7 @@ fn cmd_show_environment_lines(
 }
 
 unsafe fn cmd_show_environment_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let target = &item.target;
     let name = unsafe { args_string_str(args, 0) };
     let tflag = args_get_str(args, 't' as i32 as u_char);

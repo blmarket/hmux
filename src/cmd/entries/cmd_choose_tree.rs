@@ -25,6 +25,7 @@
 //!   `O`, so the check can never fire for it: the parser turns the flag down
 //!   first and `args_has` is what guards the refusal.
 
+use crate::args::RustArguments;
 use crate::args::{args_get_str, args_has};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -185,7 +186,7 @@ fn cmd_choose_tree_mode(self_0: &cmd) -> Option<WindowMode> {
 /// Whether the `-O` the command carries names an order. A command with no `-O`
 /// is fine whatever the parse answered, which is what keeps `customize-mode`,
 /// whose template has no `O` at all, out of the refusal.
-fn cmd_choose_tree_order_is_known(args: &args) -> bool {
+fn cmd_choose_tree_order_is_known(args: &RustArguments) -> bool {
     RustSortCriteria::parse_order(args_get_str(args, b'O')) != SORT_END || args_has(args, b'O') == 0
 }
 

@@ -103,7 +103,7 @@ fn spec_cb_template(template: &'static CStr, cb: args_parse_cb) -> args_parse_t 
 }
 
 /// The arguments a value array parses to, or the cause it failed with.
-fn parse_values(spec: &args_parse_t, values: &mut Values) -> Result<Box<args>, String> {
+fn parse_values(spec: &args_parse_t, values: &mut Values) -> Result<Box<RustArguments>, String> {
     unsafe {
         let mut cause = None;
         let Some(args) = args_parse(spec, values.as_slice(), &mut cause) else {
@@ -316,6 +316,27 @@ fn the_callback_says_what_each_argument_must_be() {
     assert_eq!(
         parse_spec(&spec_cb(Some(refuse)), &[c"cmd", c"x"]),
         Err("no argument 0".to_owned())
+    );
+}
+
+#[test]
+fn the_callback_observes_flags_and_preceding_arguments() {
+    unsafe fn inspect(arguments: &args, index: u_int, _cause: &mut Option<CString>) -> args_parse_type {
+        let arguments = RustArguments::from_ref(arguments);
+        assert_eq!(arguments.argument_flag_string(b'f'), Some(c"value"));
+        assert_eq!(arguments.argument_count(), index);
+        if index == 1 {
+            assert_eq!(arguments.argument_string(0), Some(c"first"));
+        }
+        ARGS_PARSE_STRING
+    }
+
+    assert_eq!(
+        parse_spec(
+            &spec_cb_template(c"f:", Some(inspect)),
+            &[c"cmd", c"-f", c"value", c"first", c"second"],
+        ),
+        Ok("-f value first second".to_owned()),
     );
 }
 
@@ -1050,7 +1071,7 @@ pub(crate) fn args_free_values(values: &mut [args_value_t]) {
     }
 }
 
-pub(crate) fn args_free(args: Box<args>) {
+pub(crate) fn args_free(args: Box<RustArguments>) {
     drop(args);
 }
 
@@ -1087,7 +1108,7 @@ fn rust_arguments_borrows_existing_state_in_place() {
         assert!(!arguments.set_argument_string(1, c"missing"));
         arguments.set_argument_flag(b'x', None, 0);
     }
-    assert_eq!(args_has(&raw, b'x'), 1);
+    assert_eq!(crate::Arguments::argument_flag_count(&raw, b'x'), 1);
     let arguments = RustArguments::from_ref(&raw);
     assert_eq!(arguments.argument_string(0), Some(c"after"));
     assert_eq!(arguments.argument_count(), 1);

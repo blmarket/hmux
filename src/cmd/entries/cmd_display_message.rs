@@ -35,6 +35,7 @@
 //!   without checking that a client asked for anything, and `-p` reads the
 //!   item's own client rather than the target one.
 
+use crate::args::RustArguments;
 use crate::args::{args_count, args_get_str, args_has, args_string_str, args_strtonum};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmd_find_best_client_for_session;
@@ -48,7 +49,7 @@ use crate::server::client_print_buffer;
 use crate::status::status_message_for_client;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{ByteBuffer, ClientRef, RustWindowPaneWeak, args, args_parse_t, uint64_t};
+use crate::types::{ByteBuffer, ClientRef, RustWindowPaneWeak, args_parse_t, uint64_t};
 use ::core::ffi::{CStr, c_char, c_int, c_longlong};
 
 use crate::consts::{
@@ -120,7 +121,7 @@ unsafe fn cmd_display_message_input(
 /// The accepted range is a `long long` up to `UINT_MAX`, and the answer is an
 /// `int`, so the top half of that range wraps negative exactly as upstream's
 /// does.
-fn cmd_display_message_delay(args: &args) -> Result<c_int, std::ffi::CString> {
+fn cmd_display_message_delay(args: &RustArguments) -> Result<c_int, std::ffi::CString> {
     if args_has(args, b'd') == 0 {
         return Ok(-1);
     }
@@ -142,7 +143,7 @@ fn cmd_display_message_delay(args: &args) -> Result<c_int, std::ffi::CString> {
 unsafe fn cmd_display_message_show(
     item: &cmdq_item,
     tc: Option<&mut ClientRef>,
-    args: &args,
+    args: &RustArguments,
     msg: &CStr,
     delay: c_int,
 ) {

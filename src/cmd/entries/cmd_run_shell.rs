@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{
     args_count, args_get_str, args_has, args_make_commands, args_make_commands_prepare,
     args_string_str,
@@ -82,6 +83,7 @@ fn cmd_run_shell_args_parse(
     _idx: u_int,
     _cause: &mut Option<CString>,
 ) -> args_parse_type {
+    let args = RustArguments::from_ref(args);
     if args_has(args, 'C' as i32 as u_char) != 0 {
         return ARGS_PARSE_COMMANDS_OR_STRING;
     }
@@ -109,7 +111,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, msg: &CStr) {
     }
 }
 unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let mut cdata = Box::new(cmd_run_shell_data {
         client_ref: None,
         cmd: None,

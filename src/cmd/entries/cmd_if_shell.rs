@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::args_make_commands_now;
 use crate::args::{
     args_count, args_has, args_make_commands, args_make_commands_prepare, args_string_str,
@@ -73,7 +74,7 @@ fn cmd_if_shell_args_parse(
     ARGS_PARSE_STRING
 }
 unsafe fn cmd_if_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let mut cdata = Box::<cmd_if_shell_data>::default();
     let target_client = item.target_client();
     let target_session = item.target.session();

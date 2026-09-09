@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::cmd::CmdListRef;
 use crate::window_scrollbar::WindowScrollbarState;
 
@@ -806,7 +807,7 @@ pub(super) unsafe fn options_set_command(
 /// The set a window option is to be read from or written to, which the
 /// `-g` flag, the target and the current window between them decide.
 unsafe fn options_window_scope(
-    args: &args,
+    args: &RustArguments,
     fs: &cmd_find_state,
     oo: &mut Option<RustOptionsRef>,
     cause: &mut Option<CString>,
@@ -845,7 +846,7 @@ unsafe fn options_window_scope(
 /// Every option in the table is of the server, session, window, or window and
 /// pane scope, so the C's arm for any other is gone.
 pub(super) unsafe fn options_scope_from_name(
-    args: &args,
+    args: &RustArguments,
     window: c_int,
     name: &CStr,
     fs: &cmd_find_state,
@@ -908,7 +909,7 @@ pub(super) unsafe fn options_scope_from_name(
 
 /// The set a user option belongs to, worked out from the command flags alone.
 pub(super) unsafe fn options_scope_from_flags(
-    args: &args,
+    args: &RustArguments,
     window: c_int,
     fs: &cmd_find_state,
     oo: &mut Option<RustOptionsRef>,

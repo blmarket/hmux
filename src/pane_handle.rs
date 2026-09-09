@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 #[cfg(test)]
 use crate::PaneCommandState;
 use crate::grid::Grid;
@@ -84,7 +85,7 @@ impl RustWindowPaneWeak {
         source: Option<RustWindowPaneWeak>,
         mode: WindowMode,
         target: Option<&cmd_find_state>,
-        args: Option<&args>,
+        args: Option<&RustArguments>,
     ) -> Option<core::ffi::c_int> {
         let mut observed = self.clone();
         let pane = unsafe { observed.get_mut()? };

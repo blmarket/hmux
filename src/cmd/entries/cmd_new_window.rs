@@ -23,6 +23,7 @@
 //! below it, which needs one, then does nothing and hands back the target's
 //! own index. The conversion nulls that variable where the C's loop left it.
 
+use crate::args::RustArguments;
 use crate::args::args_get_str;
 use crate::args::{args_has, args_to_vector, args_value_list};
 use crate::cmd::cmd_get_args;
@@ -42,7 +43,7 @@ use crate::spawn::spawn_window;
 use crate::tmux::{check_name, clean_name};
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{ClientRef, SessionRef, args, args_parse_t, cmd_find_state, spawn_context};
+use crate::types::{ClientRef, SessionRef, args_parse_t, cmd_find_state, spawn_context};
 #[cfg(test)]
 use crate::types::{tmuxpeer, winlink};
 use ::core::ffi::{CStr, c_int};
@@ -96,7 +97,7 @@ unsafe fn select_found_window(session: &SessionRef, idx: c_int, c: Option<&Clien
 
 /// The environment the spawn is given, which is a set of its own carrying
 /// whatever `-e` asked for, even when nothing did.
-fn spawn_environ(args: &args) -> Box<RustEnvironment> {
+fn spawn_environ(args: &RustArguments) -> Box<RustEnvironment> {
     let mut env = new_environment_box();
     for av in args_value_list(args, b'e') {
         env.put(av.value.string(), 0);

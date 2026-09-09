@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::args_string_str;
 use crate::cmd::cmd_get_args;
 
@@ -10,7 +11,7 @@ use crate::consts::{
 use crate::tmux::{check_name, clean_name};
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{SessionRef, args, args_parse_t};
+use crate::types::{SessionRef, args_parse_t};
 
 pub(crate) static cmd_rename_session_entry: RustCommandEntry = {
     RustCommandEntry {
@@ -38,7 +39,7 @@ pub(crate) static cmd_rename_session_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_rename_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let target = &item.target;
     let session = target.session().expect("the target retains its session");
     let tmp = unsafe {

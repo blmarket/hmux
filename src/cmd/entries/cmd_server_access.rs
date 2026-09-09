@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{args_count, args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
@@ -13,7 +14,7 @@ use crate::server::{
 };
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{__uid_t, args, args_parse_t, u_char, u_int, uid_t};
+use crate::types::{__uid_t, args_parse_t, u_char, u_int, uid_t};
 use crate::{UserAccount, UserAccountRecord};
 
 pub(crate) static cmd_server_access_entry: RustCommandEntry = {
@@ -59,7 +60,7 @@ unsafe fn cmd_server_access_deny(item: &cmdq_item, pw: &UserAccountRecord) -> cm
     }
 }
 unsafe fn cmd_server_access_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let c = item.target_client();
     if args_has(args, 'l' as i32 as u_char) != 0 {
         unsafe { server_acl_display(item) };

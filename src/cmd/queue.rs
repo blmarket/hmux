@@ -28,7 +28,7 @@ use crate::tmux::global_s_options;
 use crate::tree::GlobalQueue;
 pub use crate::cmd::{CmdListRef, cmd, cmd_entry_flag, cmd_retval};
 pub use crate::types::{
-    ByteBuffer, ClientRef, ClientWeak, OptionsRef, RustWindowPaneWeak, SessionRef, args,
+    ByteBuffer, ClientRef, ClientWeak, OptionsRef, RustWindowPaneWeak, SessionRef,
     cmd_find_state, format_tree, key_code, key_event, mouse_event, session, time_t, u_char, u_int,
     uid_t, uint64_t,
 };
@@ -1046,7 +1046,7 @@ impl CmdqItemRef {
             let cmd = list
                 .command(at)
                 .expect("the hook parent command is in its list");
-            let args_0: &args = cmd_get_args(&cmd);
+            let args_0: &RustArguments = cmd_get_args(&cmd);
             let mut i: u_int;
             let event = state.state().event.clone();
             let new_state = CmdqStateRef::create(current, Some(&event), CMDQ_STATE_NOHOOKS);
@@ -1083,7 +1083,7 @@ impl CmdqItemRef {
             new_state.add_format(c"hook", c"%s", fmt_args![name.as_c_str()]);
             let arguments = args_print(args_0);
             new_state.add_format(c"hook_arguments", c"%s", fmt_args![arguments.as_c_str()]);
-            let arguments = RustArguments::from_ref(args_0);
+            let arguments = args_0;
             i = 0 as u_int;
             while i < arguments.argument_count() {
                 let tmp = xasprintf(c"hook_argument_%d", fmt_args![i]);

@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{args_get_str, args_has, args_string_str};
 use crate::cmd::cmdq_item_weak_of;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -13,7 +14,7 @@ use crate::paste::{PasteBufferStore, with_paste_buffers};
 use crate::types::ClientFileEvent;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{ByteBuffer, ClientFileData, args, args_parse_t, u_char, uint64_t};
+use crate::types::{ByteBuffer, ClientFileData, args_parse_t, u_char, uint64_t};
 use ::std::ffi::CString;
 
 pub(crate) static cmd_save_buffer_entry: RustCommandEntry = {
@@ -91,7 +92,7 @@ fn cmd_save_buffer_done(event: ClientFileEvent<'_>) {
     }
 }
 unsafe fn cmd_save_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let c = item.client();
     let bufdata = if let Some(bufname) = args_get_str(args, 'b' as i32 as u_char) {
         let data =

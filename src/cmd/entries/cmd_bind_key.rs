@@ -13,6 +13,7 @@
 //! creates a table that is not there yet and what owns every binding in it;
 //! nothing here reaches into those trees.
 
+use crate::args::RustArguments;
 use crate::args::{args_count, args_get_str, args_has, args_string_str, args_value};
 use crate::cmd::cmd_get_args;
 use crate::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
@@ -78,7 +79,7 @@ impl Binding {
 }
 
 /// The key table the binding goes into.
-fn table_name(args: &args) -> &CStr {
+fn table_name(args: &RustArguments) -> &CStr {
     if let Some(name) = args_get_str(args, b'T') {
         name
     } else if args_has(args, b'n') != 0 {
@@ -91,7 +92,7 @@ fn table_name(args: &args) -> &CStr {
 /// Reads what the line binds to the key, answering the parser's error message
 /// — which the caller gives back — when the words after the key are not a
 /// command.
-unsafe fn binding_of(args: &args, count: u_int) -> Result<Binding, CString> {
+unsafe fn binding_of(args: &RustArguments, count: u_int) -> Result<Binding, CString> {
     unsafe {
         if count == 1 {
             return Ok(Binding::Keep);
@@ -108,7 +109,7 @@ unsafe fn binding_of(args: &args, count: u_int) -> Result<Binding, CString> {
                 None,
             )
         } else {
-            cmd_parse_from_arguments(&crate::RustArguments::from_ref(args).argument_values()[1..], None)
+            cmd_parse_from_arguments(&args.argument_values()[1..], None)
         };
         if pr.status == CMD_PARSE_ERROR {
             return Err(pr.error.take().unwrap());

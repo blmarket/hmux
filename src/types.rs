@@ -6,6 +6,7 @@
 //! this module, and the few modules that hold a private definition of a
 //! type that is opaque here keep their own copy, which shadows the glob.
 
+use crate::args::RustArguments;
 use crate::cmd::{
     CmdListRef, DisplayPanesRef, SourceFileRef, cmd_command_prompt_cdata, cmd_confirm_before_data,
     cmd_load_buffer_data,
@@ -74,14 +75,14 @@ pub(crate) type window_mode_init = unsafe fn(
     &mut window_mode_entry,
     crate::window::RustWindowPaneWeak,
     Option<&cmd_find_state>,
-    Option<&args>,
+    Option<&RustArguments>,
 );
 pub type window_mode_command = unsafe fn(
     &mut window_mode_entry,
     Option<&mut client>,
     Option<&session>,
     Option<&winlink>,
-    &args,
+    &RustArguments,
     Option<&mut mouse_event>,
 ) -> ();
 pub type __clock_t = core::ffi::c_long;

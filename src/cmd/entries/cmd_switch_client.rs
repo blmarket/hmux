@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{args_get_str, args_has};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmd_find_target;
@@ -15,7 +16,7 @@ use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmd_find_type;
 use crate::cmd::cmdq_item;
 use crate::types::{
-    args, args_parse_t, cmd_find_state, sort_criteria_t, u_char, uid_t, uint64_t,
+    args_parse_t, cmd_find_state, sort_criteria_t, u_char, uid_t, uint64_t,
 };
 
 pub(crate) static cmd_switch_client_entry: RustCommandEntry = {
@@ -44,7 +45,7 @@ pub(crate) static cmd_switch_client_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let current_state_ref = item.state_ref();
     let mut target = cmd_find_state::default();
     let tflag = args_get_str(args, 't' as i32 as u_char);

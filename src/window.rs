@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::cmd::cmdq_item;
 use crate::entity_id::next_entity_id;
 use crate::options::{OptionsEngine, RustOptionsEngine};
@@ -1940,7 +1941,7 @@ pub unsafe fn window_pane_set_mode(
     source_pane: Option<RustWindowPaneWeak>,
     mode: WindowMode,
     fs: Option<&cmd_find_state>,
-    args: Option<&args>,
+    args: Option<&RustArguments>,
 ) -> core::ffi::c_int {
     unsafe {
         if wp
@@ -3184,7 +3185,7 @@ impl WindowRef {
         source_pane: &RustWindowPaneWeak,
         destination_pane: &RustWindowPaneWeak,
         item: &cmdq_item,
-        args: &args,
+        args: &RustArguments,
     ) -> Result<(), CString> {
         unsafe {
             let mut cause = CString::default();

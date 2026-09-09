@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{args_count, args_has, args_string_str, args_strtonum_and_expand};
 use crate::cmd::{CmdqItemRef, cmdq_item_ref_of};
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
@@ -15,7 +16,7 @@ use crate::text::{utf8_from_data, utf8_fromcstr};
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
 use crate::types::{
-    ClientRef, OptionsRef, args, args_parse_t, key_code, key_event, mouse_event, u_char, u_int,
+    ClientRef, OptionsRef, args_parse_t, key_code, key_event, mouse_event, u_char, u_int,
     uint64_t,
 };
 
@@ -72,7 +73,7 @@ pub(crate) static cmd_send_prefix_entry: RustCommandEntry = {
 unsafe fn cmd_send_keys_inject_key(
     item: &CmdqItemRef,
     mut after: Option<CmdqItemRef>,
-    args: &args,
+    args: &RustArguments,
     key: key_code,
 ) -> Option<CmdqItemRef> {
     unsafe {
@@ -118,7 +119,7 @@ unsafe fn cmd_send_keys_inject_key(
 unsafe fn cmd_send_keys_inject_string(
     item: &CmdqItemRef,
     mut after: Option<CmdqItemRef>,
-    args: &args,
+    args: &RustArguments,
     i: core::ffi::c_int,
 ) -> Option<CmdqItemRef> {
     unsafe {
@@ -167,7 +168,7 @@ unsafe fn cmd_send_keys_inject_string(
     }
 }
 unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let mut tc = item.target_client();
     let session = item.target.session();
     let link = item.target.winlink_ref();

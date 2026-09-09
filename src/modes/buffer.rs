@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use super::widget::mode_tree_run_command;
 use crate::WindowPane;
 use crate::args::{args_get_str, args_string_str};
@@ -245,7 +246,7 @@ pub(crate) unsafe fn window_buffer_init(
     wme: &mut window_mode_entry,
     mut pane: crate::window::RustWindowPaneWeak,
     fs: Option<&cmd_find_state>,
-    args: Option<&args>,
+    args: Option<&RustArguments>,
 ) {
     unsafe {
         let mut state = cmd_find_state::default();

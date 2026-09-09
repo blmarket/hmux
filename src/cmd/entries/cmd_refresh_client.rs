@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{args_count, args_get_str, args_has, args_string_str, args_value_list};
 use crate::cmd::cmd_get_args;
 
@@ -14,7 +15,7 @@ use crate::consts::{
 };
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{ClientRef, args, args_parse_t, control_sub_type, u_char, u_int};
+use crate::types::{ClientRef, args_parse_t, control_sub_type, u_char, u_int};
 use crate::window::window_pane_find_by_id;
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
@@ -79,7 +80,7 @@ unsafe fn cmd_refresh_client_update_subscription(tc: &mut ClientRef, value: &CSt
 }
 unsafe fn cmd_refresh_client_control_client_size(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     unsafe {
-        let args: &args = cmd_get_args(self_0);
+        let args: &RustArguments = cmd_get_args(self_0);
         let mut tc = item
             .target_client()
             .expect("the command has a target client");
@@ -196,7 +197,7 @@ unsafe fn cmd_refresh_report(tc: &mut ClientRef, value: &CStr) {
     }
 }
 unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let mut tc = item
         .target_client()
         .expect("the command has a target client");

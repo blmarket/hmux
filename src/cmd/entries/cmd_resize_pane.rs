@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{args_count, args_has, args_percentage, args_string_str};
 
 use crate::cmd::{cmd_get_args, cmd_mouse_pane};
@@ -9,7 +10,7 @@ use crate::consts::{
 use crate::fmt_args;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{OptionsRef, args, args_parse_t, u_char, u_int};
+use crate::types::{OptionsRef, args_parse_t, u_char, u_int};
 
 pub(crate) static cmd_resize_pane_entry: RustCommandEntry = {
     RustCommandEntry {
@@ -37,7 +38,7 @@ pub(crate) static cmd_resize_pane_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let target = &item.target;
     let reference = target.pane_ref().expect("resize target has a pane");
     let owner = target.window().expect("resize target has a window");

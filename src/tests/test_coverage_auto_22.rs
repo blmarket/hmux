@@ -243,7 +243,7 @@ fn args_has_get_and_print_roundtrip() {
 fn args_print_with_positional_and_multiple_flags() {
     unsafe {
         let args = Box::into_raw(Box::new(
-            crate::RustArguments::from_strings(&[c"pos"]).into_args(),
+            crate::RustArguments::from_strings(&[c"pos"]),
         ));
         let printed = args_print(&*args).to_string_lossy().into_owned();
         assert!(printed.contains("pos"), "got {printed:?}");

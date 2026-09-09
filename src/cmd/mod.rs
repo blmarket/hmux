@@ -6,6 +6,7 @@
 //! are private. Command behavior is tested through the conformance suites.
 //! What else the rest of the crate may use is re-exported here.
 
+use crate::args::RustArguments;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use core::fmt;
 use std::cell::RefCell;
@@ -200,7 +201,7 @@ pub type cmds = Vec<Box<cmd>>;
 #[repr(C)]
 pub struct cmd {
     pub entry: &'static RustCommandEntry,
-    pub args: Option<Box<args>>,
+    pub args: Option<Box<RustArguments>>,
     pub group: u_int,
     pub file: Option<CString>,
     pub line: u_int,
@@ -242,7 +243,7 @@ impl crate::CommandParseFlagsState for cmd {
 }
 
 impl crate::Command for cmd {
-    type Arguments = args;
+    type Arguments = RustArguments;
     type Entry = RustCommandEntry;
 
     fn command_entry(&self) -> &'static RustCommandEntry {
@@ -485,12 +486,12 @@ pub fn cmd_get_entry(cmd: &cmd) -> &'static RustCommandEntry {
     crate::Command::command_entry(cmd)
 }
 
-pub fn cmd_get_args(cmd: &cmd) -> &args {
+pub fn cmd_get_args(cmd: &cmd) -> &RustArguments {
     crate::Command::command_arguments(cmd).expect("the command carries arguments")
 }
 
 /// The same, for a caller that means to change what the command carries.
-pub fn cmd_get_args_mut(cmd: &mut cmd) -> &mut args {
+pub fn cmd_get_args_mut(cmd: &mut cmd) -> &mut RustArguments {
     crate::Command::command_arguments_mut(cmd).expect("the command carries arguments")
 }
 

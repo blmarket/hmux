@@ -12,6 +12,7 @@
 //! Rendering is owned by the overlay subsystem; this command chooses delay,
 //! key handling and whether the queue waits for selection.
 
+use crate::args::RustArguments;
 use crate::args::{args_has, args_make_commands, args_make_commands_prepare, args_strtonum};
 use crate::cmd::CmdqItemRef;
 use crate::cmd::cmd_get_args;
@@ -135,7 +136,7 @@ fn cmd_display_panes_index(key: key_code) -> Option<u_int> {
 /// How long the numbers stay up: what `-d` says, or `display-panes-time`. An
 /// unusable `-d` is the command's own error.
 unsafe fn cmd_display_panes_delay(
-    args: &args,
+    args: &RustArguments,
     item: &cmdq_item,
     s: Option<&SessionRef>,
 ) -> Option<u_int> {

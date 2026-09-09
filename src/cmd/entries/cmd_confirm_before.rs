@@ -35,6 +35,7 @@
 //! and not printable. The rewrite reads the length off the string instead,
 //! which gives that same refusal without the overread.
 
+use crate::args::RustArguments;
 use crate::args::{args_get_str, args_has, args_make_commands_now};
 use crate::cmd::CmdqItemWeak;
 use crate::cmd::{cmdq_append, cmdq_item_weak_of};
@@ -107,7 +108,7 @@ fn cmd_confirm_before_args_parse(
 /// Printable here is 32 through 126: the C reads the byte as a signed `char`,
 /// so anything from 128 up is negative and fails the lower bound, which is the
 /// same set an unsigned byte fails the upper bound on.
-fn cmd_confirm_before_key(args: &args) -> Option<u_char> {
+fn cmd_confirm_before_key(args: &RustArguments) -> Option<u_char> {
     let Some(confirm_key) = args_get_str(args, b'c') else {
         return Some(b'y');
     };
@@ -121,7 +122,7 @@ fn cmd_confirm_before_key(args: &args) -> Option<u_char> {
 /// the name of the first command in the list with the key that confirms it.
 /// Both end in the same space, which is where the two `xasprintf` formats
 /// agree.
-fn cmd_confirm_before_prompt(args: &args, cdata: &cmd_confirm_before_data) -> Vec<u8> {
+fn cmd_confirm_before_prompt(args: &RustArguments, cdata: &cmd_confirm_before_data) -> Vec<u8> {
     let mut prompt = Vec::new();
     if let Some(given) = args_get_str(args, b'p') {
         prompt.extend_from_slice(given.to_bytes());

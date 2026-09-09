@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::WindowPane;
 use crate::screen::Screen;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -189,7 +190,7 @@ pub(crate) unsafe fn window_clock_init(
     wme: &mut window_mode_entry,
     pane: crate::window::RustWindowPaneWeak,
     _fs: Option<&cmd_find_state>,
-    _args: Option<&args>,
+    _args: Option<&RustArguments>,
 ) {
     unsafe {
         let (sx, sy) = pane

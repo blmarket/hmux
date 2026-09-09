@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{args_get_str, args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 use crate::cmd::{CmdqItemWeak, cmdq_item_weak_of};
@@ -13,7 +14,7 @@ use crate::paste::{PasteBufferStore, paste_buffer_limit, with_paste_buffers_mut}
 use crate::types::ClientFileEvent;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{ClientFileData, ClientRef, args, args_parse_t, size_t, u_char, uint64_t};
+use crate::types::{ClientFileData, ClientRef, args_parse_t, size_t, u_char, uint64_t};
 use ::core::ffi::CStr;
 
 #[derive(Clone, Default)]
@@ -112,7 +113,7 @@ pub(crate) fn cmd_load_buffer_done(event: ClientFileEvent<'_>) {
     }
 }
 unsafe fn cmd_load_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let target_client = item.target_client();
     let mut cdata = Box::<cmd_load_buffer_data>::default();
     cdata.item = cmdq_item_weak_of(item);

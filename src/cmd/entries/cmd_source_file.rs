@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::GlobPaths;
 use crate::args::{args_count, args_has, args_string_str};
 use crate::cfg::cfg_print_causes;
@@ -19,7 +20,7 @@ use crate::types::ClientFileEvent;
 use crate::cmd::{RustCommandEntry, SourceFileRef, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
 use crate::types::{
-    ClientFileData, ClientRef, args, args_parse_t, size_t, u_char, u_int, uint64_t,
+    ClientFileData, ClientRef, args_parse_t, size_t, u_char, u_int, uint64_t,
 };
 use crate::xmalloc::xasprintf;
 use ::core::ffi::CStr;
@@ -181,7 +182,7 @@ fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     CString::new(quoted).expect("glob quoting does not introduce NUL")
 }
 unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let mut c = item.client();
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
     let parse_flags: core::ffi::c_int;

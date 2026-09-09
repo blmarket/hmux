@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::args_get_str;
 use crate::args::{args_count, args_has, args_string_str, args_to_vector, args_value_list};
 use crate::cmd::cmdq_item_weak_of;
@@ -16,7 +17,7 @@ use crate::spawn::spawn_pane;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
 use crate::types::{
-    OptionsRef, args, args_parse_t, cmd_find_state, spawn_context, u_char, u_int,
+    OptionsRef, args_parse_t, cmd_find_state, spawn_context, u_char, u_int,
 };
 use crate::window::WinlinkRef;
 use ::std::ffi::CString;
@@ -74,7 +75,7 @@ pub(crate) static cmd_split_window_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let current_state_ref = item.state_ref();
     let mut sc = spawn_context::default();
     let tc = item.target_client();

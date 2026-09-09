@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{args_count, args_get_str, args_has, args_string_str};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -11,7 +12,7 @@ use crate::paste::{
 };
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{args, args_parse_t, u_int};
+use crate::types::{args_parse_t, u_int};
 use ::std::ffi::CStr;
 
 pub(crate) static cmd_set_buffer_entry: RustCommandEntry = {
@@ -65,7 +66,7 @@ pub(crate) static cmd_delete_buffer_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_set_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let mut tc = item.target_client();
     let mut bufname = args_get_str(args, b'b').map(CStr::to_owned);
     let mut bufdata: Vec<u8> = Vec::new();

@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use super::widget::ModeTreeItemRef;
 use crate::WindowPane;
 use crate::args::{args_get_str, args_has};
@@ -851,7 +852,7 @@ pub(crate) unsafe fn window_customize_init(
     wme: &mut window_mode_entry,
     mut pane: crate::window::RustWindowPaneWeak,
     fs: Option<&cmd_find_state>,
-    args: Option<&args>,
+    args: Option<&RustArguments>,
 ) {
     unsafe {
         let data_ref = WindowCustomizeModeDataRef::new(window_customize_modedata {

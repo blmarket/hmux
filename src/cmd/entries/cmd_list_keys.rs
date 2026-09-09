@@ -31,6 +31,7 @@
 //! left sitting in the front slot — the binding that was first before the
 //! filter ran.
 
+use crate::args::RustArguments;
 use crate::args::{args_get_str, args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
@@ -56,7 +57,7 @@ use crate::tmux::global_session_options;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
 use crate::types::{
-    OptionsRef, args, args_parse_t, format_tree, key_code, sort_criteria_t, u_int,
+    OptionsRef, args_parse_t, format_tree, key_code, sort_criteria_t, u_int,
 };
 use ::core::ffi::c_int;
 use ::std::ffi::{CStr, CString};
@@ -89,7 +90,7 @@ pub(crate) static cmd_list_keys_entry: RustCommandEntry = RustCommandEntry {
 /// The string every `-N` line starts with: the `-P` argument as given, the
 /// name of the `prefix` key, or nothing at all when there is no prefix key.
 /// The answer is freshly allocated and owned by the caller.
-unsafe fn cmd_list_keys_get_prefix(args: &args) -> CString {
+unsafe fn cmd_list_keys_get_prefix(args: &RustArguments) -> CString {
     unsafe {
         if let Some(given) = args_get_str(args, b'P') {
             return given.to_owned();

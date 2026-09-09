@@ -14,13 +14,14 @@
 //! Both destruction walks retain ordered session handles before mutation,
 //! since destruction removes sessions from the registry and their groups.
 
+use crate::args::RustArguments;
 use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 use crate::consts::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_NORMAL};
 use crate::session::SESSIONS;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{SessionRef, args, args_parse_t};
+use crate::types::{SessionRef, args_parse_t};
 #[cfg(test)]
 use crate::types::session;
 use ::core::ffi::c_char;
@@ -53,7 +54,7 @@ pub(crate) static cmd_kill_session_entry: RustCommandEntry = RustCommandEntry {
 /// when the target belongs to no group, which is what makes `-g` fall through
 /// to the plain kill.
 fn asked_group(
-    args: &args,
+    args: &RustArguments,
     session: &SessionRef,
 ) -> Option<impl Iterator<Item = SessionRef> + use<>> {
     (args_has(args, b'g') != 0)

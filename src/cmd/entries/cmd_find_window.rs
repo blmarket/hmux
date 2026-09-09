@@ -24,11 +24,12 @@
 //!   when [`window_pane_set_mode`] is going to refuse them because the pane is
 //!   already in that mode.
 
+use crate::args::RustArguments;
 use crate::args::{args_create, args_has, args_set, args_string_str};
 use crate::cmd::cmd_get_args;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{ArgsValue, WindowMode, args, args_parse_t, args_value_t};
+use crate::types::{ArgsValue, WindowMode, args_parse_t, args_value_t};
 use ::core::ffi::c_char;
 use ::std::ffi::CString;
 
@@ -75,7 +76,7 @@ pub(crate) static cmd_find_window_entry: RustCommandEntry = RustCommandEntry {
 /// template makes mandatory — `lower` and `upper` are both one — so the
 /// parser has refused the command before exec runs if it is missing, and
 /// there is no null to guard here.
-unsafe fn cmd_find_window_filter(args: &args) -> Vec<u8> {
+unsafe fn cmd_find_window_filter(args: &RustArguments) -> Vec<u8> {
     unsafe {
         let s = args_string_str(args, 0)
             .expect("argument count checked")

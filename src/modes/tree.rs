@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::cmd::cmd_retval;
 use super::widget::{ModeTreeItemRef, mode_tree_run_command};
 use crate::WindowPane;
@@ -1035,7 +1036,7 @@ pub(crate) unsafe fn window_tree_init(
     wme: &mut window_mode_entry,
     mut pane: crate::window::RustWindowPaneWeak,
     fs: Option<&cmd_find_state>,
-    args: Option<&args>,
+    args: Option<&RustArguments>,
 ) {
     unsafe {
         let data_ref = WindowTreeModeDataRef::new(window_tree_modedata::default());

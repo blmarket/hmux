@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{args_count, args_has, args_string_str};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -13,7 +14,7 @@ use crate::consts::{
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
 use crate::types::{
-    OptionsRef, RustOptionsRef, args, args_parse_t, options_entry, u_char, u_int,
+    OptionsRef, RustOptionsRef, args_parse_t, options_entry, u_char, u_int,
 };
 use crate::xmalloc::xasprintf;
 use ::std::ffi::CString;
@@ -95,7 +96,7 @@ pub(crate) static cmd_show_hooks_entry: RustCommandEntry = {
 };
 unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let current_block: u64;
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let target = item.target.clone();
     let mut oo: Option<RustOptionsRef> = None;
     let mut cause: Option<CString> = None;
@@ -107,7 +108,7 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         core::ptr::eq(cmd_get_entry(self_0), &cmd_show_window_options_entry) as core::ffi::c_int;
     if args_count(args) == 0 as u_int {
         unsafe {
-            scope = RustOptionsEngine.scope_from_flags(args, window, &target, &mut oo, &mut cause)
+            scope = RustOptionsEngine.scope_from_flags(args.as_args(), window, &target, &mut oo, &mut cause)
         };
         if scope == OPTIONS_TABLE_NONE {
             if args_has(args, 'q' as i32 as u_char) != 0 {
@@ -151,7 +152,7 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         };
         unsafe {
             scope =
-                RustOptionsEngine.scope_from_name(args, window, &name, &target, &mut oo, &mut cause)
+                RustOptionsEngine.scope_from_name(args.as_args(), window, &name, &target, &mut oo, &mut cause)
         };
         if scope == OPTIONS_TABLE_NONE {
             if args_has(args, 'q' as i32 as u_char) != 0 {

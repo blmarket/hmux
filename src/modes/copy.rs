@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::CompiledRegex;
 use crate::WindowPane;
 use crate::args::{args_count, args_has, args_parse, args_string_str};
@@ -137,8 +138,8 @@ pub struct window_copy_cmd_state<'a> {
     /// The mode entry the command is running against, borrowed for as long
     /// as the command runs.
     pub wme: &'a mut window_mode_entry,
-    pub args: &'a args,
-    pub wargs: &'a args,
+    pub args: &'a RustArguments,
+    pub wargs: &'a RustArguments,
     pub m: Option<&'a mouse_event>,
     pub c: Option<&'a mut client>,
     pub s: Option<&'a session>,
@@ -352,7 +353,7 @@ pub(crate) unsafe fn window_copy_init(
     wme: &mut window_mode_entry,
     pane: crate::window::RustWindowPaneWeak,
     _fs: Option<&cmd_find_state>,
-    args: Option<&args>,
+    args: Option<&RustArguments>,
 ) {
     unsafe {
         let source = wme.source_pane_ref().expect("copy mode has a source pane");
@@ -444,7 +445,7 @@ pub(crate) unsafe fn window_copy_view_init(
     wme: &mut window_mode_entry,
     pane: crate::window::RustWindowPaneWeak,
     _fs: Option<&cmd_find_state>,
-    _args: Option<&args>,
+    _args: Option<&RustArguments>,
 ) {
     unsafe {
         let (sx, sy) = pane
@@ -4763,7 +4764,7 @@ pub(crate) unsafe fn window_copy_command(
     mut c: Option<&mut client>,
     s: Option<&session>,
     wl: Option<&winlink>,
-    args: &args,
+    args: &RustArguments,
     m: Option<&mut mouse_event>,
 ) {
     unsafe {
@@ -4812,7 +4813,7 @@ pub(crate) unsafe fn window_copy_command(
                 }
                 let Some(wargs) = args_parse(
                     &window_copy_cmd_table[i as usize].args,
-                    crate::RustArguments::from_ref(args).argument_values(),
+                    args.argument_values(),
                     &mut error,
                 ) else {
                     break;

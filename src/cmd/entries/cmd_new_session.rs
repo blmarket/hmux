@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::args_get_str;
 use crate::args::{args_count, args_has, args_to_vector, args_value_list};
 use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
@@ -28,7 +29,7 @@ use crate::tmux::{check_name, clean_name};
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
 use crate::types::{
-    ClientRef, OptionsRef, SessionRef, args, args_parse_t, cmd_find_state, spawn_context, termios,
+    ClientRef, OptionsRef, SessionRef, args_parse_t, cmd_find_state, spawn_context, termios,
     u_char, u_int, uint64_t,
 };
 use ::std::ffi::{CStr, CString};
@@ -105,7 +106,7 @@ unsafe fn join_session_group(
 
 unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut current_block: u64;
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let current_state_ref = item.state_ref();
     let cmdq_client = item.client();
     let mut c = cmdq_client.clone();

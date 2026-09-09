@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{args_count, args_has, args_string_str};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -11,7 +12,7 @@ use crate::consts::{
 };
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{args, args_parse_t, u_char, u_int};
+use crate::types::{args_parse_t, u_char, u_int};
 
 pub const CMD_TARGET_WINDOW_USAGE: &core::ffi::CStr = c"[-t target-window]";
 pub(crate) static cmd_select_layout_entry: RustCommandEntry = {
@@ -91,7 +92,7 @@ pub(crate) static cmd_previous_layout_entry: RustCommandEntry = {
 };
 unsafe fn cmd_select_layout_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let current_block: u64;
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let owner = item.target.window().expect("a layout target has a window");
     let pane = item.target.pane_ref();
 

@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use super::widget::mode_tree_run_command;
 use crate::WindowPane;
 use crate::args::{args_get_str, args_string_str};
@@ -237,7 +238,7 @@ pub(crate) unsafe fn window_client_init(
     wme: &mut window_mode_entry,
     mut pane: crate::window::RustWindowPaneWeak,
     _fs: Option<&cmd_find_state>,
-    args: Option<&args>,
+    args: Option<&RustArguments>,
 ) {
     unsafe {
         let format = match args.and_then(|args| args_get_str(args, b'F')) {

@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{args_count, args_has, args_string_str, args_strtonum};
 use crate::cmd::cmd_get_args;
 
@@ -10,7 +11,7 @@ use crate::consts::{
 };
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{OptionsRef, args, args_parse_t, u_char, u_int};
+use crate::types::{OptionsRef, args_parse_t, u_char, u_int};
 
 pub const WINDOW_SIZE_SMALLEST: core::ffi::c_int = 1 as core::ffi::c_int;
 
@@ -40,7 +41,7 @@ pub(crate) static cmd_resize_window_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_resize_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let target = item
         .target
         .winlink_ref()

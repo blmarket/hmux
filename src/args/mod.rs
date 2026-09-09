@@ -88,7 +88,7 @@ impl RustArguments {
     }
 
     pub fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<args_value_t>>, flags: c_int) {
-        unsafe { args_set(&mut self.0, flag, value, flags) }
+        unsafe { args_set(self, flag, value, flags) }
     }
 
     pub fn argument_flag_string(&self, flag: u_char) -> Option<&CStr> {
@@ -285,14 +285,14 @@ fn value_at(values: &[args_value_t], i: usize) -> Option<&args_value_t> {
 }
 
 /// The entry a flag has in the arguments, if it has one.
-fn args_find(args: &args, flag: u_char) -> Option<&args_entry> {
-    args.tree.get(&flag).map(|entry| entry.as_ref())
+fn args_find(args: &RustArguments, flag: u_char) -> Option<&args_entry> {
+    args.0.tree.get(&flag).map(|entry| entry.as_ref())
 }
 
 /// The string of the last value given for a flag, when there is one and it is
 /// a string.
-fn args_last_string(args: &args, flag: u_char) -> Option<&CStr> {
-    RustArguments::from_ref(args).argument_flag_string(flag)
+fn args_last_string(args: &RustArguments, flag: u_char) -> Option<&CStr> {
+    args.argument_flag_string(flag)
 }
 
 /// Whether `b` is `isalnum` under the process's current locale, which is what
@@ -336,7 +336,7 @@ unsafe fn args_value_as_string(value: &args_value_t) -> &CStr {
     }
 }
 
-pub fn args_create() -> Box<args> {
+pub fn args_create() -> Box<RustArguments> {
     Box::default()
 }
 
@@ -373,7 +373,7 @@ enum Flags {
 unsafe fn args_parse_flag_argument(
     values: &[args_value_t],
     i: &mut usize,
-    args: &mut args,
+    args: &mut RustArguments,
     cause: &mut Option<CString>,
     rest: &CStr,
     flag: u_char,
@@ -434,7 +434,7 @@ unsafe fn args_parse_flags(
     parse: &args_parse_t,
     values: &[args_value_t],
     i: &mut usize,
-    args: &mut args,
+    args: &mut RustArguments,
     cause: &mut Option<CString>,
 ) -> Flags {
     unsafe {
@@ -503,7 +503,7 @@ pub unsafe fn args_parse(
     parse: &args_parse_t,
     values: &[args_value_t],
     cause: &mut Option<CString>,
-) -> Option<Box<args>> {
+) -> Option<Box<RustArguments>> {
     unsafe {
         if values.is_empty() {
             return Some(args_create());
@@ -534,7 +534,7 @@ pub unsafe fn args_parse(
             );
             let type_0 = match parse.cb {
                 Some(cb) => {
-                    let type_0 = cb(&args, args.count, cause);
+                    let type_0 = cb(args.as_args(), args.0.count, cause);
                     if type_0 == ARGS_PARSE_INVALID {
                         return None;
                     }
@@ -542,16 +542,16 @@ pub unsafe fn args_parse(
                 }
                 None => ARGS_PARSE_STRING,
             };
-            args.values.push(args_value_t::default());
-            let new = args.values.last_mut().unwrap();
-            args.count += 1;
+            args.0.values.push(args_value_t::default());
+            let new = args.0.values.last_mut().unwrap();
+            args.0.count += 1;
             match type_0 {
                 ARGS_PARSE_INVALID => fatalx(c"unexpected argument type", fmt_args![]),
                 ARGS_PARSE_STRING => {
                     if !matches!(&value.value, ArgsValue::String(_)) {
                         *cause = Some(xasprintf(
                             c"argument %u must be \"string\"",
-                            fmt_args![args.count],
+                            fmt_args![args.0.count],
                         ));
                         return None;
                     }
@@ -562,7 +562,7 @@ pub unsafe fn args_parse(
                     if !matches!(&value.value, ArgsValue::Commands { .. }) {
                         *cause = Some(xasprintf(
                             c"argument %u must be { commands }",
-                            fmt_args![args.count],
+                            fmt_args![args.0.count],
                         ));
                         return None;
                     }
@@ -572,14 +572,14 @@ pub unsafe fn args_parse(
             }
             i += 1;
         }
-        if parse.lower != -1 && args.count < parse.lower as u_int {
+        if parse.lower != -1 && args.0.count < parse.lower as u_int {
             *cause = Some(xasprintf(
                 c"too few arguments (need at least %u)",
                 fmt_args![parse.lower],
             ));
             return None;
         }
-        if parse.upper != -1 && args.count > parse.upper as u_int {
+        if parse.upper != -1 && args.0.count > parse.upper as u_int {
             *cause = Some(xasprintf(
                 c"too many arguments (need at most %u)",
                 fmt_args![parse.upper],
@@ -610,11 +610,11 @@ unsafe fn args_copy_copy_value(to: &mut args_value_t, from: &args_value_t, argv:
     }
 }
 
-pub unsafe fn args_copy(args: &args, argv: &[CString]) -> Box<args> {
+pub unsafe fn args_copy(args: &RustArguments, argv: &[CString]) -> Box<RustArguments> {
     unsafe {
         cmd_log_argv(argv, c"%s", fmt_args![c"args_copy".as_ptr()]);
         let mut new_args = args_create();
-        for entry in args.tree.values() {
+        for entry in args.0.tree.values() {
             if entry.values.is_empty() {
                 for _ in 0..entry.count {
                     args_set(&mut new_args, entry.flag, None, 0);
@@ -627,24 +627,24 @@ pub unsafe fn args_copy(args: &args, argv: &[CString]) -> Box<args> {
                 args_set(&mut new_args, entry.flag, Some(new_value), 0);
             }
         }
-        if args.count == 0 {
+        if args.0.count == 0 {
             return new_args;
         }
-        new_args.count = args.count;
-        new_args.values.reserve(args.values.len());
-        for value in args.values.iter() {
+        new_args.0.count = args.0.count;
+        new_args.0.values.reserve(args.0.values.len());
+        for value in args.0.values.iter() {
             let mut new_value = args_value_t::default();
             args_copy_copy_value(&mut new_value, value, argv);
-            new_args.values.push(new_value);
+            new_args.0.values.push(new_value);
         }
         new_args
     }
 }
 
-pub unsafe fn args_to_vector(args: &args) -> Vec<CString> {
+pub unsafe fn args_to_vector(args: &RustArguments) -> Vec<CString> {
     unsafe {
         let mut argv = Vec::new();
-        for value in args.values.iter() {
+        for value in args.0.values.iter() {
             match &value.value {
                 ArgsValue::String(string) => argv.push(string.clone()),
                 ArgsValue::Commands { cmdlist, .. } => {
@@ -698,10 +698,10 @@ unsafe fn args_print_add_value(out: &mut Vec<u8>, value: &args_value_t) {
     }
 }
 
-pub unsafe fn args_print(args: &args) -> CString {
+pub unsafe fn args_print(args: &RustArguments) -> CString {
     unsafe {
         let mut out: Vec<u8> = Vec::new();
-        for entry in args.tree.values() {
+        for entry in args.0.tree.values() {
             if entry.flags & ARGS_ENTRY_OPTIONAL_VALUE != 0 || !entry.values.is_empty() {
                 continue;
             }
@@ -713,7 +713,7 @@ pub unsafe fn args_print(args: &args) -> CString {
             }
         }
         let mut last: Option<&args_entry> = None;
-        for entry in args.tree.values() {
+        for entry in args.0.tree.values() {
             let flag = |out: &mut Vec<u8>| {
                 if !out.is_empty() {
                     out.push(b' ');
@@ -735,7 +735,7 @@ pub unsafe fn args_print(args: &args) -> CString {
         if last.is_some_and(|last| last.flags & ARGS_ENTRY_OPTIONAL_VALUE != 0) {
             out.extend_from_slice(b" --");
         }
-        for value in args.values.iter() {
+        for value in args.0.values.iter() {
             args_print_add_value(&mut out, value);
         }
         copy_of(&out)
@@ -805,17 +805,17 @@ pub(crate) fn args_escape_impl(s: &CStr) -> CString {
     }
 }
 
-pub fn args_has(args: &args, flag: u_char) -> core::ffi::c_int {
-    RustArguments::from_ref(args).argument_flag_count(flag)
+pub fn args_has(args: &RustArguments, flag: u_char) -> core::ffi::c_int {
+    args.argument_flag_count(flag)
 }
 
 pub unsafe fn args_set(
-    args: &mut args,
+    args: &mut RustArguments,
     flag: u_char,
     value: Option<Box<args_value_t>>,
     flags: core::ffi::c_int,
 ) {
-    let entry = args.tree.entry(flag).or_insert_with(|| {
+    let entry = args.0.tree.entry(flag).or_insert_with(|| {
         Box::new(args_entry {
             flag,
             values: Vec::new(),
@@ -834,28 +834,28 @@ pub unsafe fn args_set(
 }
 
 /// The last string value given for `flag`, borrowed from the arguments.
-pub fn args_get_str(args: &args, flag: u_char) -> Option<&CStr> {
-    RustArguments::from_ref(args).argument_flag_string(flag)
+pub fn args_get_str(args: &RustArguments, flag: u_char) -> Option<&CStr> {
+    args.argument_flag_string(flag)
 }
 
 /// The flags the arguments carry, in flag order. This is the walk the C's
 /// `args_first` and `args_next` pair did through a cursor entry the caller
 /// held for them.
-pub fn args_flags(args: &args) -> impl Iterator<Item = u_char> + '_ {
-    RustArguments::from_ref(args).argument_flags_iter()
+pub fn args_flags(args: &RustArguments) -> impl Iterator<Item = u_char> + '_ {
+    args.argument_flags_iter()
 }
 
-pub fn args_count(args: &args) -> u_int {
-    RustArguments::from_ref(args).argument_count()
+pub fn args_count(args: &RustArguments) -> u_int {
+    args.argument_count()
 }
 
-pub fn args_value(args: &args, idx: u_int) -> Option<&args_value_t> {
-    RustArguments::from_ref(args).argument_value(idx)
+pub fn args_value(args: &RustArguments, idx: u_int) -> Option<&args_value_t> {
+    args.argument_value(idx)
 }
 
 /// Borrows the `idx`th argument as a string, or returns `None` when absent.
-pub unsafe fn args_string_str(args: &args, idx: u_int) -> Option<&CStr> {
-    RustArguments::from_ref(args).argument_string(idx)
+pub unsafe fn args_string_str(args: &RustArguments, idx: u_int) -> Option<&CStr> {
+    args.argument_string(idx)
 }
 
 pub(crate) unsafe fn args_make_commands_now(
@@ -1006,8 +1006,8 @@ pub unsafe fn args_make_commands_get_command(state: &args_command_state) -> CStr
 }
 
 /// Every value given for a flag, in the order they were given.
-pub fn args_value_list(args: &args, flag: u_char) -> Vec<&args_value_t> {
-    RustArguments::from_ref(args).argument_flag_values(flag)
+pub fn args_value_list(args: &RustArguments, flag: u_char) -> Vec<&args_value_t> {
+    args.argument_flag_values(flag)
 }
 
 /// The number a string holds, or the `strtonum` message saying why it is not
@@ -1027,7 +1027,7 @@ fn no_number(cause: &mut Option<CString>, errstr: &CStr) -> core::ffi::c_longlon
 }
 
 pub fn args_strtonum(
-    args: &args,
+    args: &RustArguments,
     flag: u_char,
     minval: core::ffi::c_longlong,
     maxval: core::ffi::c_longlong,
@@ -1046,7 +1046,7 @@ pub fn args_strtonum(
 }
 
 pub unsafe fn args_strtonum_and_expand(
-    args: &args,
+    args: &RustArguments,
     flag: u_char,
     minval: core::ffi::c_longlong,
     maxval: core::ffi::c_longlong,
@@ -1070,7 +1070,7 @@ pub unsafe fn args_strtonum_and_expand(
 }
 
 pub unsafe fn args_percentage(
-    args: &args,
+    args: &RustArguments,
     flag: u_char,
     minval: core::ffi::c_longlong,
     maxval: core::ffi::c_longlong,
@@ -1196,7 +1196,7 @@ pub unsafe fn args_string_percentage_and_expand(
 }
 
 pub unsafe fn args_percentage_and_expand(
-    args: &args,
+    args: &RustArguments,
     flag: u_char,
     minval: core::ffi::c_longlong,
     maxval: core::ffi::c_longlong,

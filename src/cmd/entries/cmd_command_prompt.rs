@@ -30,6 +30,7 @@
 //! already been built, which is why the refusal frees the command's state by
 //! hand.
 
+use crate::args::RustArguments;
 use crate::args::{
     args_count, args_get_str, args_has, args_make_commands, args_make_commands_get_command,
     args_make_commands_prepare,
@@ -143,7 +144,7 @@ fn split_prompts(
 
 /// The mode bit the flags ask for, at most one of them: the C tests these five
 /// in order and stops at the first that is there.
-fn mode_flag(args: &args) -> c_int {
+fn mode_flag(args: &RustArguments) -> c_int {
     for (flag, bit) in [
         (b'1', PROMPT_SINGLE),
         (b'N', PROMPT_NUMERIC),

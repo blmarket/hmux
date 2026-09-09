@@ -506,7 +506,7 @@ impl Args {
     }
 
     /// Borrows the parsed arguments through their command-list owner.
-    pub(crate) fn borrow(&self) -> std::cell::Ref<'_, args> {
+    pub(crate) fn borrow(&self) -> std::cell::Ref<'_, crate::RustArguments> {
         std::cell::Ref::map(
             self.cmdlist.command(0).expect("the parsed command"),
             |command| command.args.as_deref().expect("the parsed arguments"),
@@ -656,7 +656,7 @@ impl Item {
     }
 
     /// The command arguments under a shared borrow of their list.
-    pub(crate) fn args(&self) -> std::cell::Ref<'_, args> {
+    pub(crate) fn args(&self) -> std::cell::Ref<'_, crate::RustArguments> {
         std::cell::Ref::map(
             self.cmdlist.command(0).expect("the fixture command"),
             |command| command.args.as_deref().expect("the fixture arguments"),

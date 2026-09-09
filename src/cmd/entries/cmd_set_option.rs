@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{args_has, args_string_str};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -105,7 +106,7 @@ fn cmd_set_option_args_parse(
 }
 unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut current_block: u64;
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let append: core::ffi::c_int = args_has(args, 'a' as i32 as u_char);
     let target = item.target.clone();
     let mut oo: Option<RustOptionsRef> = None;
@@ -159,7 +160,7 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
         unsafe {
             scope =
-                RustOptionsEngine.scope_from_name(args, window, &name, &target, &mut oo, &mut cause)
+                RustOptionsEngine.scope_from_name(args.as_args(), window, &name, &target, &mut oo, &mut cause)
         };
         if scope == OPTIONS_TABLE_NONE {
             if args_has(args, 'q' as i32 as u_char) != 0 {

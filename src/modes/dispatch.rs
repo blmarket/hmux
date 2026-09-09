@@ -10,6 +10,7 @@
 //! sites use, so a slot the mode left empty reads as nothing to do rather than
 //! as a null check at every caller.
 
+use crate::args::RustArguments;
 use super::buffer::{
     WINDOW_BUFFER_DEFAULT_FORMAT, window_buffer_free, window_buffer_init, window_buffer_resize,
 };
@@ -258,7 +259,7 @@ impl WindowMode {
         wme: &mut window_mode_entry,
         pane: crate::window::RustWindowPaneWeak,
         fs: Option<&cmd_find_state>,
-        args: Option<&args>,
+        args: Option<&RustArguments>,
     ) {
         wme.screen_ready = false;
         unsafe { (self.table().init)(wme, pane, fs, args) };
@@ -304,7 +305,7 @@ impl WindowMode {
         c: Option<&mut client>,
         s: Option<&session>,
         wl: Option<&winlink>,
-        args: &args,
+        args: &RustArguments,
         m: Option<&mut mouse_event>,
     ) {
         unsafe {
@@ -476,7 +477,7 @@ impl RustWindowPaneWeak {
         client: Option<&mut ClientRef>,
         session: Option<&SessionRef>,
         link: Option<&crate::window::WinlinkRef>,
-        args: &args,
+        args: &RustArguments,
         mouse: Option<&mut mouse_event>,
     ) -> bool {
         unsafe {

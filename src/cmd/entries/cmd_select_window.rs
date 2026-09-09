@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::args_has;
 use crate::cmd::cmd_find_from_session_ref;
 
@@ -11,7 +12,7 @@ use crate::consts::{
 };
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{args, args_parse_t, u_char};
+use crate::types::{args_parse_t, u_char};
 
 pub(crate) static cmd_select_window_entry: RustCommandEntry = {
     RustCommandEntry {
@@ -114,7 +115,7 @@ pub(crate) static cmd_last_window_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_select_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let c = item.client();
     let current_state_ref = item.state_ref();
     let mut current = current_state_ref.current_snapshot();

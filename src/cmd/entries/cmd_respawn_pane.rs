@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::args_get_str;
 use crate::args::{args_has, args_to_vector, args_value_list};
 use crate::cmd::cmd_get_args;
@@ -13,7 +14,7 @@ use crate::consts::{
 use crate::spawn::spawn_pane;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{args, args_parse_t, spawn_context, u_char};
+use crate::types::{args_parse_t, spawn_context, u_char};
 use ::std::ffi::CString;
 
 pub(crate) static cmd_respawn_pane_entry: RustCommandEntry = {
@@ -42,7 +43,7 @@ pub(crate) static cmd_respawn_pane_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_respawn_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let mut sc = spawn_context::default();
     let mut cause: Option<CString> = None;
     sc.item = cmdq_item_weak_of(item);

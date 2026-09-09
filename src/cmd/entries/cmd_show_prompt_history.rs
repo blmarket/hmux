@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::args_get_str;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -8,7 +9,7 @@ use crate::prompt_history::{
 };
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{args, args_parse_t, u_char, u_int};
+use crate::types::{args_parse_t, u_char, u_int};
 use core::ffi::CStr;
 
 pub(crate) static cmd_show_prompt_history_entry: RustCommandEntry = {
@@ -62,7 +63,7 @@ pub(crate) static cmd_clear_prompt_history_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_show_prompt_history_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let typestr = args_get_str(args, 'T' as i32 as u_char);
     let kind = match typestr.map(PromptHistoryType::parse) {
         Some(None) => {

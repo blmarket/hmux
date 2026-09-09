@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::WindowPane;
 use crate::args::{args_get_str, args_has};
 use crate::cmd::CmdqStateRef;
@@ -908,7 +909,7 @@ impl ModeTreeDataRef {
     #[allow(clippy::too_many_arguments)]
     pub(crate) unsafe fn start(
         wp: &mut impl crate::WindowPane,
-        args: Option<&args>,
+        args: Option<&RustArguments>,
         buildcb: mode_tree_build_cb,
         drawcb: mode_tree_draw_cb,
         searchcb: mode_tree_search_cb,
@@ -981,7 +982,7 @@ impl ModeTreeDataRef {
             )
         }
     }
-    pub unsafe fn zoom(&self, args: Option<&args>) {
+    pub unsafe fn zoom(&self, args: Option<&RustArguments>) {
         let mtd = self;
 
         unsafe {

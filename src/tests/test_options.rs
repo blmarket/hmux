@@ -1356,7 +1356,7 @@ fn the_scope_of_an_option_is_worked_out_from_its_name() {
         let mut cause = None;
         let scope =
             |name: &CStr, oo: &mut Option<RustOptionsRef>, cause: &mut Option<CString>| {
-                RustOptionsEngine.scope_from_name(&*args.borrow(), 0, name, &*fs, oo, cause)
+                RustOptionsEngine.scope_from_name(args.borrow().as_args(), 0, name, &*fs, oo, cause)
             };
         assert_eq!(
             scope(c"copy-command", &mut oo, &mut cause),
@@ -1397,7 +1397,7 @@ fn the_scope_of_an_option_with_no_target_is_named_in_the_reason() {
         ] {
             assert_eq!(
                 RustOptionsEngine.scope_from_name(
-                    &*args.borrow(),
+                    args.borrow().as_args(),
                     0,
                     c"status-left",
                     &*fs,
@@ -1414,7 +1414,7 @@ fn the_scope_of_an_option_with_no_target_is_named_in_the_reason() {
         ] {
             assert_eq!(
                 RustOptionsEngine.scope_from_name(
-                    &*args.borrow(),
+                    args.borrow().as_args(),
                     0,
                     c"mode-keys",
                     &*fs,
@@ -1444,7 +1444,7 @@ fn the_scope_of_a_pane_option_follows_the_pane_flag() {
         let mut cause = None;
         assert_eq!(
             RustOptionsEngine.scope_from_name(
-                &*args.borrow(),
+                args.borrow().as_args(),
                 0,
                 c"remain-on-exit",
                 &*fs,
@@ -1456,7 +1456,7 @@ fn the_scope_of_a_pane_option_follows_the_pane_flag() {
         assert_eq!(cause.take().unwrap().to_str().unwrap(), "no current pane");
         assert_eq!(
             RustOptionsEngine.scope_from_name(
-                &*targeted.borrow(),
+                targeted.borrow().as_args(),
                 0,
                 c"remain-on-exit",
                 &*fs,
@@ -1472,7 +1472,7 @@ fn the_scope_of_a_pane_option_follows_the_pane_flag() {
         fs.set_pane(pane.ptr().as_ref());
         assert_eq!(
             RustOptionsEngine.scope_from_name(
-                &*args.borrow(),
+                args.borrow().as_args(),
                 0,
                 c"remain-on-exit",
                 &*fs,
@@ -1484,7 +1484,7 @@ fn the_scope_of_a_pane_option_follows_the_pane_flag() {
         assert_eq!(oo, Some(pane.options()));
         assert_eq!(
             RustOptionsEngine.scope_from_name(
-                &*bare.borrow(),
+                bare.borrow().as_args(),
                 0,
                 c"remain-on-exit",
                 &*fs,
@@ -1507,7 +1507,7 @@ fn a_global_flag_names_the_global_option_set() {
         let mut cause = None;
         assert_eq!(
             RustOptionsEngine.scope_from_name(
-                &*args.borrow(),
+                args.borrow().as_args(),
                 0,
                 c"status-left",
                 &*fs,
@@ -1519,7 +1519,7 @@ fn a_global_flag_names_the_global_option_set() {
         assert_eq!(oo, global_s_options);
         assert_eq!(
             RustOptionsEngine.scope_from_name(
-                &*args.borrow(),
+                args.borrow().as_args(),
                 0,
                 c"mode-keys",
                 &*fs,
@@ -1595,7 +1595,7 @@ fn the_scope_of_a_user_option_is_worked_out_from_the_flags() {
             let args = Args::parse(line);
             assert_eq!(
                 RustOptionsEngine.scope_from_name(
-                    &*args.borrow(),
+                    args.borrow().as_args(),
                     window_flag,
                     c"@u",
                     &*fs,
@@ -1629,7 +1629,7 @@ fn a_user_option_with_no_target_is_turned_down() {
             let args = Args::parse(line);
             assert_eq!(
                 RustOptionsEngine.scope_from_flags(
-                    &*args.borrow(),
+                    args.borrow().as_args(),
                     window_flag,
                     &*fs,
                     &mut oo,
@@ -1812,7 +1812,7 @@ fn pane_option_scopes_retain_physical_pane_options_and_reject_removed_targets() 
         let mut cause = None;
         assert_eq!(
             RustOptionsEngine.scope_from_name(
-                &args.borrow(),
+                args.borrow().as_args(),
                 0,
                 c"remain-on-exit",
                 &state,
@@ -1824,7 +1824,7 @@ fn pane_option_scopes_retain_physical_pane_options_and_reject_removed_targets() 
         assert!(selected.as_ref().unwrap().ptr_eq(&options));
         assert_eq!(
             RustOptionsEngine.scope_from_flags(
-                &args.borrow(),
+                args.borrow().as_args(),
                 0,
                 &state,
                 &mut selected,
@@ -1839,7 +1839,7 @@ fn pane_option_scopes_retain_physical_pane_options_and_reject_removed_targets() 
         assert!(pane.get().is_none());
         assert_eq!(
             RustOptionsEngine.scope_from_name(
-                &args.borrow(),
+                args.borrow().as_args(),
                 0,
                 c"remain-on-exit",
                 &state,
@@ -1851,7 +1851,7 @@ fn pane_option_scopes_retain_physical_pane_options_and_reject_removed_targets() 
         assert_eq!(cause.take().unwrap(), c"no current pane");
         assert_eq!(
             RustOptionsEngine.scope_from_flags(
-                &args.borrow(),
+                args.borrow().as_args(),
                 0,
                 &state,
                 &mut selected,

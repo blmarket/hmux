@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::{args_get_str, args_has, args_string_str};
 use crate::cmd::cmd_get_args;
 
@@ -10,7 +11,7 @@ use crate::key_bindings::{key_bindings_remove, key_bindings_remove_table};
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{args, args_parse_t, key_code, u_char};
+use crate::types::{args_parse_t, key_code, u_char};
 
 pub(crate) static cmd_unbind_key_entry: RustCommandEntry = {
     RustCommandEntry {
@@ -38,7 +39,7 @@ pub(crate) static cmd_unbind_key_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_unbind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
 
     let keystr = unsafe { args_string_str(args, 0) };
     let quiet: core::ffi::c_int = args_has(args, 'q' as i32 as u_char);

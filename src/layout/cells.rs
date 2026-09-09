@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::cmd::cmdq_item;
 use crate::WindowPane;
 use crate::window_scrollbar::WindowScrollbarState;
@@ -1704,7 +1705,7 @@ impl WindowRef {
     pub unsafe fn tiled_layout_cell(
         &self,
         item: &cmdq_item,
-        args: &args,
+        args: &RustArguments,
         pane: &RustWindowPaneWeak,
         mut flags: c_int,
         cause: &mut CString,
@@ -1798,7 +1799,7 @@ impl WindowRef {
     pub unsafe fn floating_layout_cell(
         &self,
         item: &cmdq_item,
-        args: &args,
+        args: &RustArguments,
         cause: &mut Option<CString>,
     ) -> Option<LayoutCellPath> {
         let owner = self;

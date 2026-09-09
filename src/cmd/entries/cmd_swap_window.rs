@@ -1,3 +1,4 @@
+use crate::args::RustArguments;
 use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
@@ -9,7 +10,7 @@ use crate::consts::{
 };
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{args, args_parse_t};
+use crate::types::{args_parse_t};
 use crate::window::WinlinkRef;
 
 pub(crate) static cmd_swap_window_entry: RustCommandEntry = {
@@ -38,7 +39,7 @@ pub(crate) static cmd_swap_window_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_swap_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &args = cmd_get_args(self_0);
+    let args: &RustArguments = cmd_get_args(self_0);
     let src = item.source.session().expect("swap source session");
     let dst = item.target.session().expect("swap target session");
     let same_session = src.ptr_eq(&dst);
