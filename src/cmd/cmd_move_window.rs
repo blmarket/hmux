@@ -31,7 +31,12 @@ pub use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_QUIET, CMD_FIND_SESSION, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX,
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
-pub use crate::types::*;
+pub use crate::types::{
+    OptionsRef, RustCommandEntry, SessionRef, args_parse_t, cmd, cmd_entry_flag, cmd_find_state,
+    cmd_find_type, cmd_retval, cmdq_item,
+};
+#[cfg(test)]
+use crate::types::{WindowRef, u_int};
 use crate::window::{WinlinkRef, WinlinkShuffle};
 use ::core::ffi::{CStr, c_char, c_int};
 

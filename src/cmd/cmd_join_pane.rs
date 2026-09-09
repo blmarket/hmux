@@ -16,7 +16,11 @@ use crate::resize::recalculate_sizes;
 pub use crate::consts::{
     CMD_FIND_DEFAULT_MARKED, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
-pub use crate::types::*;
+pub use crate::types::{
+    RustCommandEntry, args_parse_t, cmd, cmd_entry_flag, cmd_retval, cmdq_item,
+};
+#[cfg(test)]
+use crate::types::{RustWindowPaneWeak, WindowRef, cmd_find_state, u_int};
 use ::core::ffi::c_char;
 
 pub(crate) static cmd_join_pane_entry: RustCommandEntry = RustCommandEntry {

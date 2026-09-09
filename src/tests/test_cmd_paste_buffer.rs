@@ -1,5 +1,6 @@
 use super::*;
 use crate::WindowPane;
+use crate::pane_handle::send_line;
 use crate::tests::test_fixtures::{Args, Item, Paste, StreamBuffer, Target, globals};
 
 /// A pane the exec routine will write to: not exited, with its writes
@@ -70,7 +71,7 @@ fn a_run_of_newlines_sends_a_separator_for_each_of_the_empty_lines() {
         store.add(c"gappy", "a\n\n\nb");
         attach(t.pane(0), &bev);
 
-        let mut it = Item::new()
+        let it = Item::new()
             .with_args(c"paste-buffer -b gappy")
             .targeting(&mut t);
         let run = cmd_paste_buffer_entry.exec;
@@ -98,7 +99,7 @@ fn a_buffer_ending_in_a_newline_sends_nothing_after_its_last_separator() {
         store.add(c"closed", "ab\n");
         attach(t.pane(0), &bev);
 
-        let mut it = Item::new()
+        let it = Item::new()
             .with_args(c"paste-buffer -b closed")
             .targeting(&mut t);
         let run = cmd_paste_buffer_entry.exec;

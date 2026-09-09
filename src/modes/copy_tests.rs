@@ -600,7 +600,7 @@ fn drag_scroll_timers_leave_covering_modes_and_their_state_untouched() {
         let mut source_window = Window::new(100, "source", 18, 6);
         let mut source_pane = Pane::new(100, 18, 6, 100);
         source_window.add_pane(&mut source_pane);
-        let mut source = source_window.reference().pane_by_id(100).unwrap();
+        let source = source_window.reference().pane_by_id(100).unwrap();
         for (under, over) in [
             (WindowMode::Copy, WindowMode::Clock),
             (WindowMode::Copy, WindowMode::View),
@@ -1237,7 +1237,7 @@ fn copy_search_and_word_motion_follow_the_panes_current_window() {
     unsafe {
         let mut target = Target::new(18, 6);
         let mut pane = target.state().pane_ref().unwrap();
-        let mut original = pane.window().unwrap();
+        let original = pane.window().unwrap();
         original
             .options()
             .set_number(c"mode-keys", MODEKEY_EMACS as i64);
@@ -1245,7 +1245,7 @@ fn copy_search_and_word_motion_follow_the_panes_current_window() {
         replace_copy_text(entry, &[b"alpha beta"]);
         assert_eq!(window_copy_key_table(entry), c"copy-mode");
         let destination = Window::new(100, "destination", 18, 6);
-        let mut destination_owner = destination.reference();
+        let destination_owner = destination.reference();
         let mut owned = crate::window::window_panes_take(
             &mut original.as_window_mut(),
             &crate::window::window_pane_find_by_id(pane.id()).expect("the pane exists"),
@@ -1320,7 +1320,7 @@ fn retire_covered_copy_mode(all: bool) {
             c"#{copy_cursor_x}:#{window_name}",
             fmt_args![],
         );
-        let mut window_owner = window.reference();
+        let window_owner = window.reference();
         if all {
             window_owner.destroy_panes();
         } else {

@@ -19,7 +19,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(sx: u_int, sy: u_int) -> Self {
-        let mut target = Target::new(sx, sy);
+        let target = Target::new(sx, sy);
         let mut client = zeroed_client();
         unsafe { client.as_tty_mut() }.sx = sx;
         unsafe { client.as_tty_mut() }.sy = sy;

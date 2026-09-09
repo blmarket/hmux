@@ -25,7 +25,13 @@ pub use crate::consts::{
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_WAIT, KEYC_MASK_KEY, KEYC_MASK_MODIFIERS,
     UINT_MAX,
 };
-pub use crate::types::*;
+pub use crate::types::{
+    ClientRef, OptionsRef, Overlay, OverlayState, RustCommandEntry, SessionRef, args,
+    args_command_state, args_parse_t, args_parse_type, cmd, cmd_entry_flag, cmd_retval, cmdq_item,
+    key_code, key_event, u_int,
+};
+#[cfg(test)]
+use crate::types::{CmdqListRef, client, screen_redraw_ctx, window_pane};
 use crate::xmalloc::xasprintf;
 use ::core::ffi::{c_int, c_longlong, c_ulonglong};
 use ::std::ffi::CString;

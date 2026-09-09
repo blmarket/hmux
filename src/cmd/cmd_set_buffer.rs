@@ -9,7 +9,9 @@ use crate::fmt_args;
 use crate::paste::{
     PasteBufferStore, paste_buffer_limit, with_paste_buffers, with_paste_buffers_mut,
 };
-pub use crate::types::*;
+pub use crate::types::{
+    RustCommandEntry, args, args_parse_t, cmd, cmd_entry_flag, cmd_retval, cmdq_item, u_int,
+};
 use ::std::ffi::CStr;
 
 pub(crate) static cmd_set_buffer_entry: RustCommandEntry = {

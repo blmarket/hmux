@@ -85,7 +85,7 @@ fn adding_a_channel_puts_it_in_the_tree_under_its_own_copy_of_the_name() {
 #[test]
 fn a_channel_is_only_removed_once_it_is_woken_free_and_unwaited() {
     let _guard = exclusive();
-    let mut item = waiting_item();
+    let item = waiting_item();
     channel_for(c"chan", |_| ());
 
     remove_if_idle(c"chan");

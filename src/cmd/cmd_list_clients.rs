@@ -26,7 +26,12 @@ use crate::format::{
     format_add, format_create_for_client, format_defaults_for_handles, format_expand, format_true,
 };
 use crate::sort::{RustSortCriteria, SortCriteria, sort_get_clients};
-pub use crate::types::*;
+pub use crate::types::{
+    ClientRef, RustCommandEntry, args_parse_t, cmd, cmd_entry_flag, cmd_retval, cmdq_item,
+    format_tree, sort_criteria_t, u_int,
+};
+#[cfg(test)]
+use crate::types::uint64_t;
 use ::core::ffi::{CStr, c_char};
 
 pub const LIST_CLIENTS_TEMPLATE: &CStr = c"#{client_name}: #{session_name} [#{client_width}x#{client_height} #{client_termname}] #{?#{!=:#{client_uid},#{uid}},[user #{?client_user,#{client_user},#{client_uid},}] ,}#{?client_flags,(,}#{client_flags}#{?client_flags,),}";

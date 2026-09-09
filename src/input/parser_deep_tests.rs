@@ -169,9 +169,9 @@ fn palette_access_observes_immediate_pane_destruction() {
 #[test]
 fn parser_window_observation_follows_moves_and_preserves_transfer_context() {
     let parser = Parser::new();
-    let mut original = parser._window.reference();
+    let original = parser._window.reference();
     let destination = Window::new(483, "destination", 80, 24);
-    let mut destination = destination.reference();
+    let destination = destination.reference();
     unsafe {
         let id = parser.ictx.borrow().pane_ref().unwrap().id();
         parser

@@ -5125,7 +5125,7 @@ mod focused_tests {
 
     #[test]
     fn parameter_helpers_cover_missing_numbers_strings_limits_and_reset() {
-        let mut ctx = ParserCtx::new();
+        let ctx = ParserCtx::new();
         unsafe {
             let ictx = &mut ctx.ictx.borrow_mut();
             ictx.param_buf[..14].copy_from_slice(b";0;12;3:4;999\0");

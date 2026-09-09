@@ -313,10 +313,6 @@ mod tests {
             Written { screen }
         }
 
-        fn ptr(&mut self) -> *mut RustScreen {
-            &raw mut *self.screen
-        }
-
         fn text(&self, source: ScreenSource, lines: usize) -> CString {
             screen_text(RustScreen::grid(&self.screen), source, lines)
         }

@@ -18,7 +18,11 @@ use crate::arguments::args_has;
 use crate::cmd::cmd_get_args;
 pub use crate::consts::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_NORMAL};
 use crate::session::SESSIONS;
-pub use crate::types::*;
+pub use crate::types::{
+    RustCommandEntry, SessionRef, args, args_parse_t, cmd, cmd_entry_flag, cmd_retval, cmdq_item,
+};
+#[cfg(test)]
+use crate::types::session;
 use ::core::ffi::c_char;
 
 pub(crate) static cmd_kill_session_entry: RustCommandEntry = RustCommandEntry {

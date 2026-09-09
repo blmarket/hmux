@@ -34,7 +34,12 @@ use crate::fmt_args;
 use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};
 use crate::server::client_walk;
 use crate::session::sessions_empty;
-pub use crate::types::*;
+pub use crate::types::{
+    ClientRef, RustCommandEntry, SessionRef, args_parse_t, cmd, cmd_entry_flag, cmd_find_state,
+    cmd_retval, cmdq_item, msgtype, uint64_t,
+};
+#[cfg(test)]
+use crate::types::{client, tmuxpeer};
 
 pub use crate::consts::{
     CLIENT_READONLY, CMD_FIND_PANE, CMD_FIND_PREFER_UNATTACHED, CMD_FIND_SESSION, CMD_READONLY,

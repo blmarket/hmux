@@ -27,7 +27,13 @@ use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::text::{RustUtf8VisModel, Utf8VisModel};
 use crate::tmux::global_s_options;
 use crate::tree::GlobalQueue;
-pub use crate::types::*;
+pub use crate::types::{
+    ByteBuffer, ClientRef, ClientWeak, CmdListRef, OptionsRef, RustWindowPaneWeak, SessionRef,
+    args, cmd, cmd_entry_flag, cmd_find_state, cmd_retval, format_tree, key_code, key_event,
+    mouse_event, session, time_t, u_char, u_int, uid_t, uint64_t,
+};
+#[cfg(test)]
+use crate::types::client;
 use crate::xmalloc::xasprintf;
 use crate::{UserAccount, UserAccountRecord};
 use ::std::cell::{RefCell, RefMut};

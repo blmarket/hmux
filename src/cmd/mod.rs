@@ -231,7 +231,10 @@ pub use crate::consts::{
     THEME_UNKNOWN,
 };
 use crate::tmux::global_options;
-pub use crate::types::*;
+pub use crate::types::{
+    ArgsValue, CmdListRef, OptionsRef, RustCommandEntry, RustWindowPaneWeak, SessionRef,
+    WindowPane, WindowRef, args, args_value_t, cmd_list, mouse_event, u_int,
+};
 use crate::window::WinlinkRef;
 use crate::xmalloc::xasprintf;
 use crate::{ArgumentTextCodec, RustArgumentTextCodec};

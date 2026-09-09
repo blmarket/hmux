@@ -147,7 +147,7 @@ fn scope_tree_and_text_map_to_the_target_owners() {
 fn item_allocation_tags_and_validity_are_deterministic() {
     let _guard = globals();
     let mut target = Target::new(80, 24);
-    let mut data = data(&mut target);
+    let data = data(&mut target);
     unsafe {
         let item = window_customize_add_item(
             &mut data.borrow_mut(),
@@ -362,7 +362,7 @@ fn full_mode_rebuilds_with_filters_and_hide_global_toggles() {
 fn confirmation_callbacks_ignore_empty_and_negative_answers() {
     let _guard = globals();
     let mut target = Target::new(80, 24);
-    let mut mode_data = data(&mut target);
+    let mode_data = data(&mut target);
     let mut client = zeroed_client();
     unsafe {
         assert_eq!(mode_data.change_current(client.as_client_mut(), None, 0), 0);
@@ -588,7 +588,7 @@ fn key_selection_and_expansion_survive_inserting_earlier_tables_and_bindings() {
             .state
             .customize()
             .unwrap();
-        let mut tree = data.borrow().tree_ref();
+        let tree = data.borrow().tree_ref();
         let (group_tag, binding_tag, note_tag) = {
             let tree_state = tree.borrow();
             let group = tree_state

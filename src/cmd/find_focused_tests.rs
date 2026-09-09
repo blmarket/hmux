@@ -171,7 +171,7 @@ fn last_pane_target_only_resolves_the_first_history_reference() {
     unsafe {
         let mut fs = target.state();
         let pane = fs.pane_ref().unwrap();
-        let mut window = fs.window().unwrap();
+        let window = fs.window().unwrap();
         window.set_pane_history_for_test(vec![pane.clone()]);
         assert_eq!(cmd_find_get_pane_with_window(&mut fs, c"!"), 0);
         assert!(fs.pane_ref().unwrap().ptr_eq(&pane));
