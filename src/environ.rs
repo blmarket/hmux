@@ -227,7 +227,7 @@ pub(crate) unsafe fn push_environment_to_process(env: &RustEnvironment) {
 }
 
 pub(crate) unsafe fn log_environment(env: &RustEnvironment, fmt: &CStr, args: &[FmtArg]) {
-    unsafe {
+    {
         let prefix = format_alloc(fmt, args);
         for envent in env.entries() {
             if let Some(value) = envent.value

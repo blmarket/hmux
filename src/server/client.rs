@@ -1993,7 +1993,7 @@ unsafe fn server_client_check_window_resize(w_ref: &WindowRef) {
     }
 }
 unsafe fn server_client_resize_timer(wp: &mut impl crate::WindowPane) {
-    unsafe {
+    {
         log_debug(
             c"%s: %%%u resize timer expired",
             fmt_args![c"server_client_resize_timer", wp.pane_id()],
@@ -2349,7 +2349,7 @@ unsafe fn server_client_check_exit(c: &mut client) {
     }
 }
 unsafe fn server_client_redraw_timer() {
-    unsafe {
+    {
         log_debug(c"redraw timer fired", fmt_args![]);
     }
 }

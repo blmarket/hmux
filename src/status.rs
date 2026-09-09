@@ -788,7 +788,7 @@ fn status_prompt_add_typed_history(line: &[u8]) {
     status_prompt_record_history(&entry, kind);
 }
 pub fn status_prompt_load_history() {
-    unsafe {
+    {
         let Some(history_file) = status_prompt_find_history_file() else {
             return;
         };
@@ -815,7 +815,7 @@ pub fn status_prompt_load_history() {
     }
 }
 pub fn status_prompt_save_history() {
-    unsafe {
+    {
         let Some(history_file) = status_prompt_find_history_file() else {
             return;
         };

@@ -1368,7 +1368,7 @@ pub(crate) unsafe fn tty_term_apply_overrides(term: &mut tty_term) {
 }
 
 fn tty_term_refresh_derived(term: &mut tty_term) {
-    unsafe {
+    {
         log_debug(
             c"SIXEL flag is %d",
             fmt_args![(term.flags & TERM_SIXEL != 0) as core::ffi::c_int],
@@ -1560,7 +1560,7 @@ pub(crate) fn tty_term_opt_mut(
     value.as_ref().map(|term| term.borrow_mut())
 }
 pub(crate) unsafe fn tty_term_free(term: TerminalRef) {
-    unsafe {
+    {
         log_debug(
             c"removing term %s",
             fmt_args![term.borrow().name.as_deref()],

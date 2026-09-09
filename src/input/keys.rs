@@ -237,7 +237,7 @@ fn keys() -> &'static BTreeMap<key_code, CString> {
                     .or_insert_with(|| CString::new(bytes).expect("no NUL inside"));
             }
         }
-        unsafe {
+        {
             for (key, data) in &keys {
                 let key_name = RustKeyStringCodec.format_key(*key, true);
                 log_debug(
@@ -304,7 +304,7 @@ pub unsafe fn input_key_pane(
 
 /// Hands `data` to the terminal.
 fn input_key_write(from: &CStr, output: &mut Vec<u8>, data: &[u8]) {
-    unsafe {
+    {
         log_debug(
             c"%s: %.*s",
             fmt_args![from.as_ptr(), data.len() as c_int, data.as_ptr()],
@@ -368,7 +368,7 @@ static standard_map: [&[u8]; 2] = [
 ];
 
 fn input_key_vt10x(output: &mut Vec<u8>, mut key: key_code) -> c_int {
-    unsafe {
+    {
         log_debug(
             c"%s: key in %llx",
             fmt_args![c"input_key_vt10x".as_ptr(), key],
@@ -417,7 +417,7 @@ fn input_key_vt10x(output: &mut Vec<u8>, mut key: key_code) -> c_int {
 /// The first extended-key mode: only the keys a one-byte form cannot carry are
 /// written in the extended form, and the rest as themselves.
 fn input_key_mode1(output: &mut Vec<u8>, key: key_code) -> c_int {
-    unsafe {
+    {
         log_debug(
             c"%s: key in %llx",
             fmt_args![c"input_key_mode1".as_ptr(), key],
@@ -448,7 +448,7 @@ fn input_key_encode_impl(
     extended_keys_format: c_int,
 ) -> KeyEncoding {
     let mut output = Vec::new();
-    unsafe {
+    {
         if is_mouse_key(key) {
             return KeyEncoding::Ignored;
         }

@@ -69,7 +69,7 @@ fn channel_for_in<'a>(
     match channels.entry(name.to_owned()) {
         Entry::Occupied(entry) => entry.into_mut(),
         Entry::Vacant(entry) => {
-            unsafe { log_debug(c"add wait channel %s", fmt_args![name]) };
+            log_debug(c"add wait channel %s", fmt_args![name]);
             entry.insert(WaitChannel {
                 locked: false,
                 woken: false,
@@ -88,7 +88,7 @@ fn remove_if_idle(name: &CStr) {
             .get(name)
             .is_some_and(|wc| !wc.locked && wc.waiters.is_empty() && wc.woken)
         {
-            unsafe { log_debug(c"remove wait channel %s", fmt_args![name]) };
+            log_debug(c"remove wait channel %s", fmt_args![name]);
             all.remove(name);
         }
     });
@@ -110,7 +110,7 @@ unsafe fn cmd_wait_for_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 
 unsafe fn cmd_wait_for_signal(name: &CStr) -> cmd_retval {
-    unsafe {
+    {
         let waiters = with_channels(|all| {
             let wc = channel_for_in(all, name);
             if wc.waiters.is_empty() && !wc.woken {
@@ -215,7 +215,7 @@ unsafe fn cmd_wait_for_unlock(item: &cmdq_item, name: &CStr) -> cmd_retval {
 /// unwaited, which is exactly the state in which a channel stops being kept,
 /// so a flush always empties the whole set.
 pub fn cmd_wait_for_flush() {
-    unsafe {
+    {
         let channels = with_channels(core::mem::take);
         for (name, wc) in channels {
             for item in wc.waiters.into_iter().chain(wc.lockers) {

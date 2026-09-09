@@ -424,7 +424,7 @@ pub(crate) unsafe fn file_read(
 }
 
 pub(crate) fn file_write_left(files: &client_files_t) -> core::ffi::c_int {
-    unsafe {
+    {
         let mut left: size_t;
         let mut waiting: core::ffi::c_int = 0 as core::ffi::c_int;
         for cf in files.values() {
@@ -994,7 +994,7 @@ impl ClientFileRef {
 
         let callback = {
             let mut cf = cf_ref.borrow_mut();
-            unsafe { log_debug(c"write error file %d", fmt_args![cf.stream]) };
+            log_debug(c"write error file %d", fmt_args![cf.stream]);
             file_release_io(&mut cf);
             cf.cb.clone()
         };
@@ -1007,7 +1007,7 @@ impl ClientFileRef {
 
         let callback = {
             let cf = cf_ref.borrow();
-            unsafe { log_debug(c"write check file %d", fmt_args![cf.stream]) };
+            log_debug(c"write check file %d", fmt_args![cf.stream]);
             cf.cb.clone()
         };
         if let Some(callback) = callback {

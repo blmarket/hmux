@@ -313,10 +313,7 @@ unsafe fn cmd_display_menu_get_pos(
         } else {
             format_add(&mut ft, c"popup_pane_right", c"%ld", fmt_args![n]);
         }
-        let xp = match {
-            let flag = 'x' as i32 as u_char;
-            args.argument_flag_string(flag)
-        } {
+        let xp = match args.argument_flag_string(b'x') {
             None => c"#{popup_centre_x}",
             Some(given) => match given.to_bytes() {
                 b"C" => c"#{popup_centre_x}",
@@ -343,10 +340,7 @@ unsafe fn cmd_display_menu_get_pos(
             c"%s: -x: %s = %s = %u (-w %u)",
             fmt_args![c"cmd_display_menu_get_pos", xp, p.as_c_str(), px, w],
         );
-        let yp = match {
-            let flag = 'y' as i32 as u_char;
-            args.argument_flag_string(flag)
-        } {
+        let yp = match args.argument_flag_string(b'y') {
             None => c"#{popup_centre_y}",
             Some(given) => match given.to_bytes() {
                 b"C" => c"#{popup_centre_y}",
@@ -455,10 +449,7 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             let flag = 'T' as i32 as u_char;
             args.argument_flag_count(flag)
         }) != 0 {
-            match {
-                let flag = 'T' as i32 as u_char;
-                args.argument_flag_string(flag)
-            } {
+            match args.argument_flag_string(b'T') {
                 Some(given) => unsafe { format_single_from_target(item, given) },
                 None => c"".to_owned(),
             }

@@ -56,10 +56,7 @@ unsafe fn cmd_unbind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             }
             return CMD_RETURN_ERROR;
         }
-        let tablename = match {
-            let flag = 'T' as i32 as u_char;
-            args.argument_flag_string(flag)
-        } {
+        let tablename = match args.argument_flag_string(b'T') {
             Some(given) => given,
             None if ({
                 let flag = 'n' as i32 as u_char;

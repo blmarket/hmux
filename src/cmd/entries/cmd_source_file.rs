@@ -190,12 +190,10 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             return CMD_RETURN_ERROR;
         }
         c.enter_source_file();
-        unsafe {
-            log_debug(
-                c"%s: depth now %u",
-                fmt_args![c"cmd_source_file_exec", c.source_file_depth()],
-            )
-        };
+        log_debug(
+            c"%s: depth now %u",
+            fmt_args![c"cmd_source_file_exec", c.source_file_depth()],
+        );
     } else {
         let Ok(previous) =
             CMD_SOURCE_FILE_DEPTH.try_update(Ordering::Relaxed, Ordering::Relaxed, |depth| {
@@ -205,12 +203,10 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             unsafe { item.error(c"too many nested files", fmt_args![]) };
             return CMD_RETURN_ERROR;
         };
-        unsafe {
-            log_debug(
-                c"%s: depth now %u",
-                fmt_args![c"cmd_source_file_exec", previous + 1],
-            )
-        };
+        log_debug(
+            c"%s: depth now %u",
+            fmt_args![c"cmd_source_file_exec", previous + 1],
+        );
     }
     let mut flags: core::ffi::c_int = 0;
     if ({
@@ -262,12 +258,10 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         } else {
             xasprintf(c"%s/%s", fmt_args![cwd.as_c_str(), path])
         };
-        unsafe {
-            log_debug(
-                c"%s: %s",
-                fmt_args![c"cmd_source_file_exec", pattern.as_c_str()],
-            )
-        };
+        log_debug(
+            c"%s: %s",
+            fmt_args![c"cmd_source_file_exec", pattern.as_c_str()],
+        );
         match GlobPaths::expand(&pattern) {
             Ok(paths) => {
                 for path in paths.into_paths() {
@@ -337,7 +331,7 @@ impl SourceFileRef {
     unsafe fn add(&self, path: Rc<CStr>) {
         let cdata = self;
 
-        unsafe {
+        {
             log_debug(c"%s: %s", fmt_args![c"cmd_source_file_add", path.as_ref()]);
             cdata.with_mut(|cdata| cdata.files.push(path));
         }

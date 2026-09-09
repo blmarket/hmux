@@ -927,7 +927,7 @@ impl CmdqListRef {
         name: &CStr,
         items: cmdq_items,
     ) -> Option<CmdqItemRef> {
-        unsafe {
+        {
             let queue = self;
             for item in items {
                 item.item().client = held.clone();

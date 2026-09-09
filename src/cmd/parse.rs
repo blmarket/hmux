@@ -925,7 +925,7 @@ fn yylex_getc(ps: &mut cmd_parse_state<'_>) -> core::ffi::c_int {
     }
 }
 fn yylex_get_word(ps: &mut cmd_parse_state<'_>, mut ch: core::ffi::c_int) -> std::ffi::CString {
-    unsafe {
+    {
         let mut buf: Vec<u8> = Vec::new();
         loop {
             buf.push(ch as u8);
@@ -1037,7 +1037,7 @@ fn yylex_next(ps: &mut cmd_parse_state<'_>) -> Result<Option<Token>, LexError> {
     }
 }
 fn yylex_format(ps: &mut cmd_parse_state<'_>) -> Option<std::ffi::CString> {
-    unsafe {
+    {
         let current_block: u64;
         let mut buf: Vec<u8> = Vec::new();
         let mut ch: core::ffi::c_int;
@@ -1200,7 +1200,7 @@ unsafe fn yylex_token_variable(
     ps: &mut cmd_parse_state<'_>,
     buf: &mut Vec<u8>,
 ) -> core::ffi::c_int {
-    unsafe {
+    {
         let mut ch: core::ffi::c_int;
         let mut brackets: core::ffi::c_int = 0 as core::ffi::c_int;
         let mut name: [u8; 1024] = [0; 1024];

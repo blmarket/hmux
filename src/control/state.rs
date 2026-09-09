@@ -269,7 +269,7 @@ pub unsafe fn control_pause_pane(c: &mut client, wp: &impl crate::WindowPane) {
     }
 }
 unsafe fn control_vwrite(c: &mut client, fmt: &CStr, args: &[FmtArg]) {
-    unsafe {
+    {
         let cs = c
             .control_state
             .as_deref_mut()
@@ -538,7 +538,7 @@ pub fn control_all_done(c: &client) -> core::ffi::c_int {
     (cs.all_blocks.is_empty() && cs.write_event.output_len() == 0) as core::ffi::c_int
 }
 unsafe fn control_flush_all_blocks(c: &mut client) {
-    unsafe {
+    {
         let cs = c
             .control_state
             .as_deref_mut()
@@ -618,7 +618,7 @@ unsafe fn control_append_data(
     }
 }
 unsafe fn control_write_data(c: &mut client, mut message: Box<ByteBuffer>) {
-    unsafe {
+    {
         let cs = c
             .control_state
             .as_deref_mut()

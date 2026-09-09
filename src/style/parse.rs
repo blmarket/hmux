@@ -331,7 +331,7 @@ fn style_parse_word(sy: &mut style, base: &grid_cell, w: &[u8]) -> Result<(), ()
 }
 
 unsafe fn style_parse_impl(sy: &mut style, base: &grid_cell, input: &[u8]) -> c_int {
-    unsafe {
+    {
         if input.is_empty() {
             return 0 as c_int;
         }

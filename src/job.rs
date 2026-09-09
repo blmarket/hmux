@@ -372,7 +372,7 @@ pub unsafe fn job_run(
 /// Hands the job's file descriptor and process id to the caller and takes the
 /// job off the list, copying its tty name into `tty` when one is given.
 pub unsafe fn job_transfer(id: u_int, tty: Option<&mut [u8]>) -> Option<(core::ffi::c_int, pid_t)> {
-    unsafe {
+    {
         let mut job = take_job(id)?;
         let fd: core::ffi::c_int = job.fd;
         log_debug(c"transfer job %u: %s", fmt_args![id, job.cmd.as_deref()]);
@@ -463,7 +463,7 @@ fn job_write_callback(id: u_int) {
         return;
     };
     let len = job.event.output_len();
-    unsafe {
+    {
         log_debug(
             c"job write %u: %s, pid %ld, output left %zu",
             fmt_args![id, job.cmd.as_deref(), job.pid as core::ffi::c_long, len],
@@ -481,7 +481,7 @@ fn job_error_callback(id: u_int) {
         let Some(job) = jobs.iter_mut().find(|job| job.id == id) else {
             return;
         };
-        unsafe {
+        {
             log_debug(
                 c"job error %u: %s, pid %ld",
                 fmt_args![id, job.cmd.as_deref(), job.pid as core::ffi::c_long],
@@ -513,7 +513,7 @@ pub fn job_check_died(pid: pid_t, status: core::ffi::c_int) {
             unsafe { killpg(job.pid, SIGCONT) };
             return;
         }
-        unsafe {
+        {
             log_debug(
                 c"job died %u: %s, pid %ld",
                 fmt_args![job.id, job.cmd.as_deref(), job.pid as core::ffi::c_long],

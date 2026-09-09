@@ -1119,7 +1119,7 @@ impl WindowRef {
         mut xpixel: core::ffi::c_int,
         mut ypixel: core::ffi::c_int,
     ) {
-        unsafe {
+        {
             let mut payload = self.as_window_mut();
             let w = &mut *payload;
             if xpixel == 0 as core::ffi::c_int {
@@ -1848,7 +1848,7 @@ pub unsafe fn window_pane_set_event(wp: &mut impl crate::WindowPane) {
     }
 }
 unsafe fn screen_write_sync_callback(wp: &mut impl crate::WindowPane) {
-    unsafe {
+    {
         log_debug(
             c"%s: %%%u sync timer expired",
             fmt_args![c"screen_write_sync_callback".as_ptr(), wp.pane_id()],
@@ -1886,7 +1886,7 @@ pub(crate) unsafe fn screen_write_start_sync(wp: Option<&mut impl crate::WindowP
     }
 }
 pub(crate) unsafe fn screen_write_stop_sync(wp: Option<&mut impl crate::WindowPane>) {
-    unsafe {
+    {
         let Some(wp) = wp else {
             return;
         };

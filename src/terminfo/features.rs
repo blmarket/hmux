@@ -197,7 +197,7 @@ static tty_features: [tty_feature; 21] = [
 /// does, and a client sending an unknown feature name loses the rest of its
 /// list the same way.
 fn tty_add_features_impl(feat: &mut c_int, s: &CStr, separators: &CStr) {
-    unsafe {
+    {
         log_debug(c"adding terminal features %s", fmt_args![s.as_ptr()]);
         let separators = separators.to_bytes();
         for next in s.to_bytes().split(|byte| separators.contains(byte)) {
@@ -244,7 +244,7 @@ fn tty_get_features_impl(feat: c_int) -> std::ffi::CString {
 /// Every feature in the table names at least one capability, so the C's check
 /// for a feature with none is gone.
 pub(crate) unsafe fn tty_apply_features(term: &mut tty_term, feat: c_int) -> c_int {
-    unsafe {
+    {
         if feat == 0 {
             return 0;
         }

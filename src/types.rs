@@ -3565,7 +3565,7 @@ impl ClientRef {
     /// Logs a wait-channel observation using the existing client pointer label.
     /// The pointer is formatted here and is not exposed to the command.
     pub(crate) fn log_wait_channel(&self, name: &core::ffi::CStr, woken: bool) {
-        unsafe {
+        {
             crate::log::log_debug(
                 if woken {
                     c"wait channel %s already woken (%p)"

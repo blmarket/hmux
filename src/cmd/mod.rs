@@ -393,7 +393,7 @@ fn list_commands_mut(list: &mut cmds) -> impl Iterator<Item = &mut cmd> + '_ {
 }
 
 pub unsafe fn cmd_log_argv(argv: &[CString], fmt: &CStr, args: &[FmtArg]) {
-    unsafe {
+    {
         let prefix = format_alloc(fmt, args);
         for (i, arg) in argv.iter().enumerate() {
             log_debug(
@@ -463,7 +463,7 @@ pub(crate) fn cmd_stringify_argv_impl(argv: &[CString]) -> CString {
     let mut out = Vec::<u8>::new();
     for (i, arg) in argv.iter().enumerate() {
         let escaped = RustArgumentTextCodec.escape(arg.as_c_str());
-        unsafe {
+        {
             log_debug(
                 c"%s: %u %s = %s",
                 fmt_args![
@@ -607,7 +607,7 @@ pub fn cmd_mouse_at(
     } else {
         (m.x.wrapping_add(m.ox), m.y.wrapping_add(m.oy))
     };
-    unsafe {
+    {
         log_debug(
             c"%s: x=%u, y=%u%s",
             fmt_args![

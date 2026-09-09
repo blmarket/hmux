@@ -240,7 +240,7 @@ pub unsafe fn key_bindings_remove(name: &CStr, key: key_code) {
             table.key_bindings.is_empty() && !table.has_defaults(),
         )
     };
-    unsafe {
+    {
         let key_name = RustKeyStringCodec.format_key(removed.key, true);
         log_debug(
             c"%s: %#llx %s",

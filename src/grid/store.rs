@@ -408,7 +408,7 @@ fn grid_clear_cell(gd: &mut grid, px: u_int, py: u_int, bg: u_int, moved: bool) 
 
 /// Whether `py` is a line of this grid, logging the caller if it is not.
 fn grid_check_y(gd: &grid, from: &CStr, py: u_int) -> bool {
-    unsafe {
+    {
         if py >= gd.hsize + gd.sy {
             log_debug(c"%s: y out of range: %u", fmt_args![from.as_ptr(), py]);
             return false;

@@ -2171,7 +2171,7 @@ unsafe fn input_get(
     }
 }
 unsafe fn input_send_reply(ictx: &mut input_ctx, reply: &CStr) {
-    unsafe {
+    {
         if !ictx.event.is_none() {
             log_debug(
                 c"%s: %s",
@@ -3859,7 +3859,7 @@ unsafe fn input_csi_dispatch_sgr(ictx: &mut input_ctx) {
     }
 }
 unsafe fn input_end_bel(ictx: &mut input_ctx) -> core::ffi::c_int {
-    unsafe {
+    {
         log_debug(c"%s", fmt_args![c"input_end_bel".as_ptr()]);
         ictx.input_end = INPUT_END_BEL;
         0 as core::ffi::c_int

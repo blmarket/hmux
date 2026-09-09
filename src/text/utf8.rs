@@ -405,7 +405,7 @@ fn utf8_find_in_width_cache(wc: wchar_t) -> Option<u_int> {
 }
 
 fn utf8_insert_width_cache(wc: wchar_t, width: u_int) {
-    unsafe {
+    {
         log_debug(
             c"Unicode width cache: %08X=%u",
             fmt_args![wc as u_int, width],
@@ -513,7 +513,7 @@ pub fn utf8_update_width_cache(specs: impl IntoIterator<Item = CString>) {
 /// The index the trees keep a character under, adding it if it is new, or
 /// `None` once every index has been handed out.
 unsafe fn utf8_put_item(data: &[u8]) -> Option<u_int> {
-    unsafe {
+    {
         let stored = utf8_stored_of(data);
         let (index, inserted) = UTF8_STORE
             .lock()
@@ -584,7 +584,7 @@ pub unsafe fn utf8_from_data(ud: &utf8_data) -> (utf8_state, utf8_char) {
 }
 
 pub fn utf8_to_data(uc: utf8_char, ud: &mut utf8_data) {
-    unsafe {
+    {
         *ud = utf8_data::default();
         ud.have = (uc >> 24 & 0x1f) as u_char;
         ud.size = ud.have;

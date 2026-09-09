@@ -346,7 +346,7 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                     &raw mut tio,
                                 ) != 0 as core::ffi::c_int
                             } {
-                                unsafe { fatal(c"tcgetattr failed", fmt_args![]) };
+                                fatal(c"tcgetattr failed", fmt_args![]);
                             }
                             tiop = Some(&tio);
                             current_block = 6545907279487748450;
