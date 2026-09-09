@@ -5,7 +5,6 @@ use crate::window_scrollbar::WindowScrollbarState;
 use super::table::{options_other_names, options_table};
 use crate::WindowPane;
 use crate::alerts::alerts_reset_all;
-use crate::args::args_has;
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
 use crate::compat::strtonum;
 use crate::ffi::fnmatch;
@@ -813,7 +812,7 @@ unsafe fn options_window_scope(
     cause: &mut Option<CString>,
 ) -> c_int {
     unsafe {
-        if args_has(args, b'g') != 0 {
+        if args.argument_flag_count(b'g') != 0 {
             *oo = global_w_options.clone();
             return OPTIONS_TABLE_WINDOW;
         }
@@ -869,7 +868,7 @@ pub(super) unsafe fn options_scope_from_name(
                 OPTIONS_TABLE_SERVER
             }
             OPTIONS_TABLE_SESSION => {
-                if args_has(args, b'g') != 0 {
+                if args.argument_flag_count(b'g') != 0 {
                     *oo = global_s_options.clone();
                     return OPTIONS_TABLE_SESSION;
                 }
@@ -886,7 +885,7 @@ pub(super) unsafe fn options_scope_from_name(
             }
             scope
                 if scope == OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE
-                    && args_has(args, b'p') != 0 =>
+                    && args.argument_flag_count(b'p') != 0 =>
             {
                 let Some(options) = fs
                     .pane_list_ref()
@@ -917,11 +916,11 @@ pub(super) unsafe fn options_scope_from_flags(
 ) -> c_int {
     unsafe {
         let target = args.argument_flag_string(b't');
-        if args_has(args, b's') != 0 {
+        if args.argument_flag_count(b's') != 0 {
             *oo = global_options.clone();
             return OPTIONS_TABLE_SERVER;
         }
-        if args_has(args, b'p') != 0 {
+        if args.argument_flag_count(b'p') != 0 {
             let Some(options) = fs
                 .pane_list_ref()
                 .and_then(|pane| pane.get().map(|pane| pane.options_ref().clone()))
@@ -936,10 +935,10 @@ pub(super) unsafe fn options_scope_from_flags(
             *oo = Some(options);
             return OPTIONS_TABLE_PANE;
         }
-        if window != 0 || args_has(args, b'w') != 0 {
+        if window != 0 || args.argument_flag_count(b'w') != 0 {
             return options_window_scope(args, fs, oo, cause);
         }
-        if args_has(args, b'g') != 0 {
+        if args.argument_flag_count(b'g') != 0 {
             *oo = global_s_options.clone();
             return OPTIONS_TABLE_SESSION;
         }

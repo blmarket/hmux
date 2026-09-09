@@ -1,6 +1,6 @@
 use crate::args::RustArguments;
 use crate::args::args_make_commands_now;
-use crate::args::{args_has, args_make_commands, args_make_commands_prepare, args_string_str};
+use crate::args::{args_make_commands, args_make_commands_prepare, args_string_str};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -78,14 +78,20 @@ unsafe fn cmd_if_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let target_session = item.target.session();
     let cmdlist: Option<CmdListRef>;
     let count: u_int = args.argument_count();
-    let wait: core::ffi::c_int = (args_has(args, 'b' as i32 as u_char) == 0) as core::ffi::c_int;
+    let wait: core::ffi::c_int = (({
+        let flag = 'b' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) == 0) as core::ffi::c_int;
     let shellcmd = unsafe {
         format_single_from_target(
             item,
             args_string_str(args, 0).expect("argument count checked"),
         )
     };
-    if args_has(args, 'F' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'F' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         if shellcmd
             .as_bytes()
             .first()

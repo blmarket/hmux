@@ -8,7 +8,6 @@
 //! defaults, and with `-f` the filter is expanded first and the line printed
 //! only when it is true.
 
-use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
@@ -81,11 +80,11 @@ unsafe fn cmd_list_buffers_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         RustSortCriteria::parse_order(args.argument_flag_string(b'O')),
         false,
     );
-    if sort_crit.order() == SORT_END && args_has(args, b'O') != 0 {
+    if sort_crit.order() == SORT_END && args.argument_flag_count(b'O') != 0 {
         unsafe { item.error(c"invalid sort order", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
-    sort_crit.set_reversed(args_has(args, b'r') != 0);
+    sort_crit.set_reversed(args.argument_flag_count(b'r') != 0);
 
     for pb in sorted_buffers(&mut sort_crit) {
         let mut ft = format_create_for_client(item.client().as_ref(), Some(item), FORMAT_NONE, 0);

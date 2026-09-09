@@ -5,7 +5,7 @@ use crate::window_scrollbar::WindowScrollbarState;
 
 use crate::window_dimensions::WindowDimensionsState;
 
-use crate::args::{args_has, args_percentage_and_expand, args_strtonum_and_expand};
+use crate::args::{args_percentage_and_expand, args_strtonum_and_expand};
 use crate::fmt_args;
 use crate::log::{fatalx, log_debug};
 use crate::notify::notify_window;
@@ -1732,15 +1732,15 @@ impl WindowRef {
                 *cause = c"pane no longer exists".to_owned();
                 return None;
             };
-            let type_0 = if args_has(args, b'h') != 0 {
+            let type_0 = if args.argument_flag_count(b'h') != 0 {
                 LAYOUT_LEFTRIGHT
             } else {
                 LAYOUT_TOPBOTTOM
             };
 
             let mut curval: u_int = 0;
-            if args_has(args, b'l') != 0 || args_has(args, b'p') != 0 {
-                curval = if args_has(args, b'f') != 0 {
+            if args.argument_flag_count(b'l') != 0 || args.argument_flag_count(b'p') != 0 {
+                curval = if args.argument_flag_count(b'f') != 0 {
                     if type_0 == LAYOUT_TOPBOTTOM {
                         w.dimensions().size.height
                     } else {
@@ -1756,7 +1756,7 @@ impl WindowRef {
             drop(payload);
             let mut size = -1;
             let mut parser_cause = None;
-            if args_has(args, b'l') != 0 {
+            if args.argument_flag_count(b'l') != 0 {
                 size = args_percentage_and_expand(
                     args,
                     b'l',
@@ -1766,7 +1766,7 @@ impl WindowRef {
                     item,
                     &mut parser_cause,
                 ) as c_int;
-            } else if args_has(args, b'p') != 0 {
+            } else if args.argument_flag_count(b'p') != 0 {
                 size =
                     args_strtonum_and_expand(args, b'p', 0, 100, item, &mut parser_cause) as c_int;
                 if parser_cause.is_none() {
@@ -1778,14 +1778,14 @@ impl WindowRef {
                 return None;
             }
 
-            if args_has(args, b'b') != 0 {
+            if args.argument_flag_count(b'b') != 0 {
                 flags |= SPAWN_BEFORE;
             }
-            if args_has(args, b'f') != 0 {
+            if args.argument_flag_count(b'f') != 0 {
                 flags |= SPAWN_FULLSIZE;
             }
 
-            owner.push_zoom(1, args_has(args, b'Z'));
+            owner.push_zoom(1, args.argument_flag_count(b'Z'));
             let lc = owner.split_pane_layout(pane, type_0, size, flags);
             if lc.is_none() {
                 *cause = c"no space for a new pane".to_owned();
@@ -1811,7 +1811,7 @@ impl WindowRef {
             let mut ox = INT_MAX;
             let mut oy = INT_MAX;
 
-            if args_has(args, b'x') != 0 {
+            if args.argument_flag_count(b'x') != 0 {
                 sx = args_percentage_and_expand(
                     args,
                     b'x',
@@ -1825,7 +1825,7 @@ impl WindowRef {
                     return None;
                 }
             }
-            if args_has(args, b'y') != 0 {
+            if args.argument_flag_count(b'y') != 0 {
                 sy = args_percentage_and_expand(
                     args,
                     b'y',
@@ -1839,7 +1839,7 @@ impl WindowRef {
                     return None;
                 }
             }
-            if args_has(args, b'X') != 0 {
+            if args.argument_flag_count(b'X') != 0 {
                 ox = args_percentage_and_expand(
                     args,
                     b'X',
@@ -1853,7 +1853,7 @@ impl WindowRef {
                     return None;
                 }
             }
-            if args_has(args, b'Y') != 0 {
+            if args.argument_flag_count(b'Y') != 0 {
                 oy = args_percentage_and_expand(
                     args,
                     b'Y',

@@ -21,7 +21,6 @@
 //! the template null; the three walks pass one of exactly three values, which
 //! [`Level`] now says outright, so that arm is gone with the conversion.
 
-use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
@@ -118,14 +117,14 @@ unsafe fn cmd_list_panes_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
 
     let order = RustSortCriteria::parse_order(args.argument_flag_string(b'O'));
-    if order == SORT_END && args_has(args, b'O') != 0 {
+    if order == SORT_END && args.argument_flag_count(b'O') != 0 {
         unsafe { item.error(c"invalid sort order", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
 
-    if args_has(args, b'a') != 0 {
+    if args.argument_flag_count(b'a') != 0 {
         unsafe { cmd_list_panes_server(self_0, item) };
-    } else if args_has(args, b's') != 0 {
+    } else if args.argument_flag_count(b's') != 0 {
         let session = item.target.session().expect("the state names a session");
         unsafe { cmd_list_panes_session(self_0, &session, item, Level::Session) };
     } else {
@@ -164,7 +163,7 @@ unsafe fn cmd_list_panes_window(self_0: &cmd, link: &WinlinkRef, item: &cmdq_ite
 
         let sort_crit = RustSortCriteria::new(
             RustSortCriteria::parse_order(args.argument_flag_string(b'O')),
-            args_has(args, b'r') != 0,
+            args.argument_flag_count(b'r') != 0,
         );
 
         let Some(window) = link.window() else {

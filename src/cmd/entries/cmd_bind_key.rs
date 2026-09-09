@@ -14,7 +14,7 @@
 //! nothing here reaches into those trees.
 
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str, args_value};
+use crate::args::{args_string_str, args_value};
 use crate::cmd::cmd_get_args;
 use crate::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 
@@ -82,7 +82,7 @@ impl Binding {
 fn table_name(args: &RustArguments) -> &CStr {
     if let Some(name) = args.argument_flag_string(b'T') {
         name
-    } else if args_has(args, b'n') != 0 {
+    } else if args.argument_flag_count(b'n') != 0 {
         c"root"
     } else {
         c"prefix"
@@ -139,7 +139,7 @@ unsafe fn cmd_bind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
 
     let tablename = table_name(args);
-    let repeat = args_has(args, b'r');
+    let repeat = args.argument_flag_count(b'r');
 
     let binding = match unsafe { binding_of(args, count) } {
         Ok(binding) => binding,

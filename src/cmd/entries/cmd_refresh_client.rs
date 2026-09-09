@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str, args_value_list};
+use crate::args::{args_string_str, args_value_list};
 use crate::cmd::cmd_get_args;
 
 use crate::compat::strtonum;
@@ -206,11 +206,26 @@ unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
         .expect("the command has a target client");
 
     let adjust: u_int;
-    if args_has(args, 'c' as i32 as u_char) != 0
-        || args_has(args, 'L' as i32 as u_char) != 0
-        || args_has(args, 'R' as i32 as u_char) != 0
-        || args_has(args, 'U' as i32 as u_char) != 0
-        || args_has(args, 'D' as i32 as u_char) != 0
+    if ({
+        let flag = 'c' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0
+        || ({
+            let flag = 'L' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0
+        || ({
+            let flag = 'R' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0
+        || ({
+            let flag = 'U' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0
+        || ({
+            let flag = 'D' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0
     {
         if args.argument_count() == 0 as u_int {
             adjust = 1 as u_int;
@@ -229,7 +244,10 @@ unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
                 }
             }
         }
-        if args_has(args, 'c' as i32 as u_char) != 0 {
+        if ({
+            let flag = 'c' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 {
             unsafe { tc.reset_window_pan() };
         } else {
             let session = { tc.attached_session() };
@@ -241,11 +259,20 @@ unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
                 unsafe { item.error(c"no current window", fmt_args![]) };
                 return CMD_RETURN_ERROR;
             };
-            let direction = if args_has(args, 'L' as i32 as u_char) != 0 {
+            let direction = if ({
+                let flag = 'L' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) != 0 {
                 ClientPanDirection::Left
-            } else if args_has(args, 'R' as i32 as u_char) != 0 {
+            } else if ({
+                let flag = 'R' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) != 0 {
                 ClientPanDirection::Right
-            } else if args_has(args, 'U' as i32 as u_char) != 0 {
+            } else if ({
+                let flag = 'U' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) != 0 {
                 ClientPanDirection::Up
             } else {
                 ClientPanDirection::Down
@@ -254,11 +281,17 @@ unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
         }
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'l' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'l' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe { tc.query_clipboard() };
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'F' as i32 as u_char) != 0
+    if ({
+        let flag = 'F' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0
         && let Some(flags) = {
             let flag = 'F' as i32 as u_char;
             args.argument_flag_string(flag)
@@ -266,7 +299,10 @@ unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     {
         unsafe { tc.apply_flags(flags) };
     }
-    if args_has(args, 'f' as i32 as u_char) != 0
+    if ({
+        let flag = 'f' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0
         && let Some(flags) = {
             let flag = 'f' as i32 as u_char;
             args.argument_flag_string(flag)
@@ -280,26 +316,38 @@ unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     } {
         unsafe { cmd_refresh_report(&mut tc, report) };
     }
-    if args_has(args, 'A' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'A' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         if unsafe { tc.is_control() } {
             for av in args_value_list(args, 'A' as i32 as u_char) {
                 unsafe { cmd_refresh_client_update_offset(&mut tc, av.value.string()) };
             }
             return CMD_RETURN_NORMAL;
         }
-    } else if args_has(args, 'B' as i32 as u_char) != 0 {
+    } else if ({
+        let flag = 'B' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         if unsafe { tc.is_control() } {
             for av in args_value_list(args, 'B' as i32 as u_char) {
                 unsafe { cmd_refresh_client_update_subscription(&mut tc, av.value.string()) };
             }
             return CMD_RETURN_NORMAL;
         }
-    } else if args_has(args, 'C' as i32 as u_char) != 0 {
+    } else if ({
+        let flag = 'C' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         if unsafe { tc.is_control() } {
             return unsafe { cmd_refresh_client_control_client_size(self_0, item) };
         }
     } else {
-        unsafe { tc.refresh_display(args_has(args, 'S' as i32 as u_char) != 0) };
+        unsafe { tc.refresh_display(({
+            let flag = 'S' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0) };
         return CMD_RETURN_NORMAL;
     }
     unsafe { item.error(c"not a control client", fmt_args![]) };

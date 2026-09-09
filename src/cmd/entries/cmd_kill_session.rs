@@ -15,7 +15,6 @@
 //! since destruction removes sessions from the registry and their groups.
 
 use crate::args::RustArguments;
-use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 use crate::consts::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_NORMAL};
 use crate::session::SESSIONS;
@@ -57,7 +56,7 @@ fn asked_group(
     args: &RustArguments,
     session: &SessionRef,
 ) -> Option<impl Iterator<Item = SessionRef> + use<>> {
-    (args_has(args, b'g') != 0)
+    (args.argument_flag_count(b'g') != 0)
         .then(|| session.group_walk_safe())
         .flatten()
 }
@@ -80,10 +79,10 @@ unsafe fn cmd_kill_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
     let mut session = item.target.session().expect("kill target session");
 
-    if args_has(args, b'C') != 0 {
+    if args.argument_flag_count(b'C') != 0 {
         unsafe { session.clear_alert_flags() };
         unsafe { session.request_redraw() };
-    } else if args_has(args, b'a') != 0 {
+    } else if args.argument_flag_count(b'a') != 0 {
         for mut sloop in SESSIONS.walk_safe().filter(|sloop| !sloop.ptr_eq(&session)) {
             unsafe { destroy(&mut sloop) };
         }

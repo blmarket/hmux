@@ -1,6 +1,6 @@
 use crate::args::RustArguments;
 use crate::args::args_get_str;
-use crate::args::{args_has, args_string_str, args_to_vector, args_value_list};
+use crate::args::{args_string_str, args_to_vector, args_value_list};
 use crate::cmd::cmdq_item_weak_of;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -94,7 +94,10 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut floating_cause = None;
     let count: u_int = args.argument_count();
     let is_floating: core::ffi::c_int = if cmd_get_entry(self_0).name == cmd_new_pane_entry.name {
-        (args_has(args, 'L' as i32 as u_char) == 0) as core::ffi::c_int
+        (({
+            let flag = 'L' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) == 0) as core::ffi::c_int
     } else {
         0 as core::ffi::c_int
     };
@@ -103,17 +106,29 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     } else {
         0 as core::ffi::c_int
     };
-    if args_has(args, 'b' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'b' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         flags |= SPAWN_BEFORE;
     }
-    if args_has(args, 'f' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'f' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         flags |= SPAWN_FULLSIZE;
     }
-    input = args_has(args, 'I' as i32 as u_char);
+    input = {
+        let flag = 'I' as i32 as u_char;
+        args.argument_flag_count(flag)
+    };
     let empty: core::ffi::c_int = if input != 0 {
         1 as core::ffi::c_int
     } else {
-        args_has(args, 'E' as i32 as u_char)
+        {
+            let flag = 'E' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }
     };
     if unsafe {
         empty != 0
@@ -161,10 +176,16 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         args.argument_flag_string(flag)
     };
     sc.flags = flags;
-    if args_has(args, 'd' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'd' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         sc.flags |= SPAWN_DETACHED;
     }
-    if args_has(args, 'Z' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'Z' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         sc.flags |= SPAWN_ZOOM;
     }
     let Some(new_pane) = (unsafe { spawn_pane(&mut sc, lc.as_ref(), &mut cause) }) else {
@@ -184,9 +205,18 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         if let Some(style) = args.argument_flag_string(b'R') {
             unsafe { options.set_string(c"pane-border-style", 0, c"%s", fmt_args![style]) };
         }
-        if args_has(args, 'k' as i32 as u_char) != 0 || args_has(args, 'm' as i32 as u_char) != 0 {
+        if ({
+            let flag = 'k' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 || ({
+            let flag = 'm' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 {
             unsafe { (options).set_number(c"remain-on-exit", 3 as core::ffi::c_longlong) };
-            if args_has(args, 'm' as i32 as u_char) != 0 {
+            if ({
+                let flag = 'm' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) != 0 {
                 unsafe {
                     (options).set_string(
                         c"remain-on-exit-format",
@@ -215,7 +245,10 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             _ => {}
         }
     }
-    if args_has(args, 'd' as i32 as u_char) == 0 {
+    if ({
+        let flag = 'd' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) == 0 {
         unsafe {
             current_state_ref.update_current_link(&link, Some(&new_pane), 0 as core::ffi::c_int)
         };
@@ -225,7 +258,10 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { owner.redraw() };
     }
     unsafe { session.request_redraw() };
-    if args_has(args, 'P' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'P' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         let template = {
             let flag = 'F' as i32 as u_char;
             args.argument_flag_string(flag)

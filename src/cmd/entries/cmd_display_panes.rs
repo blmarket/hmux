@@ -13,7 +13,7 @@
 //! key handling and whether the queue waits for selection.
 
 use crate::args::RustArguments;
-use crate::args::{args_has, args_make_commands, args_make_commands_prepare, args_strtonum};
+use crate::args::{args_make_commands, args_make_commands_prepare, args_strtonum};
 use crate::cmd::CmdqItemRef;
 use crate::cmd::cmd_get_args;
 use crate::cmd::{CmdqItemWeak, cmdq_append, cmdq_item_weak_of};
@@ -141,7 +141,7 @@ unsafe fn cmd_display_panes_delay(
     s: Option<&SessionRef>,
 ) -> Option<u_int> {
     unsafe {
-        if args_has(args, b'd') == 0 {
+        if args.argument_flag_count(b'd') == 0 {
             let s = s?;
             return Some(s.options().number(c"display-panes-time") as u_int);
         }
@@ -161,7 +161,7 @@ unsafe fn cmd_display_panes_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         .target_client()
         .expect("the command has a target client");
 
-    let wait = args_has(args, b'b') == 0;
+    let wait = args.argument_flag_count(b'b') == 0;
 
     if tc.overlay().is_some() {
         return CMD_RETURN_NORMAL;
@@ -186,7 +186,7 @@ unsafe fn cmd_display_panes_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     ));
 
     let overlay = Overlay::DisplayPanes {
-        keys: args_has(args, b'N') == 0,
+        keys: args.argument_flag_count(b'N') == 0,
     };
     unsafe {
         client_set_overlay(

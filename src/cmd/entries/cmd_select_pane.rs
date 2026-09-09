@@ -1,4 +1,3 @@
-use crate::args::args_has;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -85,7 +84,7 @@ unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let window = link.window().expect("the target has a window");
     let mut pane = item.target.pane_ref().expect("the target has a pane");
     let options = unsafe { pane.options().expect("the target pane is present") };
-    if core::ptr::eq(entry, &cmd_last_pane_entry) || args_has(args, b'l') != 0 {
+    if core::ptr::eq(entry, &cmd_last_pane_entry) || args.argument_flag_count(b'l') != 0 {
         let mut last = window.last_pane();
         if last.is_none() && window.pane_count() == 2 {
             last = window
@@ -96,12 +95,12 @@ unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             unsafe { item.error(c"no last pane", fmt_args![]) };
             return CMD_RETURN_ERROR;
         };
-        if args_has(args, b'e') != 0 {
+        if args.argument_flag_count(b'e') != 0 {
             unsafe { window.set_pane_input_enabled(&last, true) };
-        } else if args_has(args, b'd') != 0 {
+        } else if args.argument_flag_count(b'd') != 0 {
             unsafe { window.set_pane_input_enabled(&last, false) };
         } else {
-            if unsafe { window.push_zoom(0, args_has(args, b'Z')) != 0 } {
+            if unsafe { window.push_zoom(0, args.argument_flag_count(b'Z')) != 0 } {
                 unsafe { window.redraw() };
             }
             unsafe {
@@ -126,12 +125,12 @@ unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, b'm') != 0 || args_has(args, b'M') != 0 {
-        if unsafe { args_has(args, b'm') != 0 && !window.contains_visible_pane(&pane) } {
+    if args.argument_flag_count(b'm') != 0 || args.argument_flag_count(b'M') != 0 {
+        if unsafe { args.argument_flag_count(b'm') != 0 && !window.contains_visible_pane(&pane) } {
             return CMD_RETURN_NORMAL;
         }
         unsafe {
-            crate::server::server_toggle_marked_pane(&link, &pane, args_has(args, b'M') != 0)
+            crate::server::server_toggle_marked_pane(&link, &pane, args.argument_flag_count(b'M') != 0)
         };
         if window.pane_is_floating(&pane) {
             unsafe {
@@ -153,7 +152,7 @@ unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if let Some(style) = args.argument_flag_string(b'P') {
         unsafe { pane.set_window_style(style) };
     }
-    if args_has(args, b'g') != 0 {
+    if args.argument_flag_count(b'g') != 0 {
         unsafe {
             item.print(
                 c"%s",
@@ -162,13 +161,13 @@ unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         };
         return CMD_RETURN_NORMAL;
     }
-    let direction = if args_has(args, b'L') != 0 {
+    let direction = if args.argument_flag_count(b'L') != 0 {
         Some(crate::pane_handle::PaneDirection::Left)
-    } else if args_has(args, b'R') != 0 {
+    } else if args.argument_flag_count(b'R') != 0 {
         Some(crate::pane_handle::PaneDirection::Right)
-    } else if args_has(args, b'U') != 0 {
+    } else if args.argument_flag_count(b'U') != 0 {
         Some(crate::pane_handle::PaneDirection::Up)
-    } else if args_has(args, b'D') != 0 {
+    } else if args.argument_flag_count(b'D') != 0 {
         Some(crate::pane_handle::PaneDirection::Down)
     } else {
         None
@@ -182,11 +181,11 @@ unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         };
         pane = selected;
     }
-    if args_has(args, b'e') != 0 {
+    if args.argument_flag_count(b'e') != 0 {
         unsafe { window.set_pane_input_enabled(&pane, true) };
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, b'd') != 0 {
+    if args.argument_flag_count(b'd') != 0 {
         unsafe { window.set_pane_input_enabled(&pane, false) };
         return CMD_RETURN_NORMAL;
     }
@@ -216,7 +215,7 @@ unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if Some(pane.id()) == active_id {
         return CMD_RETURN_NORMAL;
     }
-    if unsafe { window.push_zoom(0, args_has(args, b'Z')) != 0 } {
+    if unsafe { window.push_zoom(0, args.argument_flag_count(b'Z')) != 0 } {
         unsafe { window.redraw() };
     }
     unsafe {

@@ -1,7 +1,6 @@
 use super::widget::ModeTreeItemRef;
 use crate::WindowPane;
 use crate::args::RustArguments;
-use crate::args::args_has;
 
 use crate::cmd::cmd_parse_from_string;
 use crate::cmd::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_valid_state};
@@ -879,7 +878,7 @@ pub(crate) unsafe fn window_customize_init(
                 None => WINDOW_CUSTOMIZE_DEFAULT_FORMAT.to_owned(),
             },
         );
-        if args.is_some_and(|args| args_has(args, b'y') != 0) {
+        if args.is_some_and(|args| args.argument_flag_count(b'y') != 0) {
             data.prompt_flags = PROMPT_ACCEPT;
         }
         drop(data_guard);

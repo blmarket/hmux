@@ -15,7 +15,6 @@
 //! detaches every winlink of that window from every session and so rewrites
 //! the tree being walked.
 
-use crate::args::args_has;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL};
@@ -89,7 +88,7 @@ unsafe fn cmd_kill_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let index = item.target.wl_idx.expect("a kill-window target has a link");
 
     if cmd_get_entry(self_0).name == cmd_unlink_window_entry.name {
-        if args_has(args, b'k') == 0 && !session.is_linked(&window) {
+        if args.argument_flag_count(b'k') == 0 && !session.is_linked(&window) {
             unsafe { item.error(c"window only linked to one session", fmt_args![]) };
             return CMD_RETURN_ERROR;
         }
@@ -98,7 +97,7 @@ unsafe fn cmd_kill_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         return CMD_RETURN_NORMAL;
     }
 
-    if args_has(args, b'a') != 0 {
+    if args.argument_flag_count(b'a') != 0 {
         if unsafe { session.window_count() == 1 } {
             return CMD_RETURN_NORMAL;
         }

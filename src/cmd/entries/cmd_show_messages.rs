@@ -1,5 +1,4 @@
 use crate::args::RustArguments;
-use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::consts::{
@@ -50,7 +49,7 @@ unsafe fn cmd_show_messages_terminals(
         let target_client = item.target_client();
         let mut n: u_int;
         n = 0 as u_int;
-        let target = (args_has(args, b't') != 0)
+        let target = (args.argument_flag_count(b't') != 0)
             .then_some(target_client.as_ref())
             .flatten();
         for terminal in tty_term_snapshots_for_client(target) {
@@ -81,11 +80,17 @@ unsafe fn cmd_show_messages_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut blank: core::ffi::c_int;
     blank = 0 as core::ffi::c_int;
     done = blank;
-    if args_has(args, 'T' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'T' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe { blank = cmd_show_messages_terminals(self_0, item, blank) };
         done = 1 as core::ffi::c_int;
     }
-    if args_has(args, 'J' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'J' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe { job_print_summary(item, blank) };
         done = 1 as core::ffi::c_int;
     }

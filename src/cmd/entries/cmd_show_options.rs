@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str};
+use crate::args::{args_string_str};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -115,7 +115,10 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             )
         };
         if scope == OPTIONS_TABLE_NONE {
-            if args_has(args, 'q' as i32 as u_char) != 0 {
+            if ({
+                let flag = 'q' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) != 0 {
                 return CMD_RETURN_NORMAL;
             }
             let cause = cause.unwrap();
@@ -139,7 +142,10 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     };
     let name = RustOptionsEngine.match_name(&argument, &mut idx, &mut ambiguous);
     if name.is_none() {
-        if args_has(args, 'q' as i32 as u_char) != 0 {
+        if ({
+            let flag = 'q' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 {
             current_block = 14351605340212681318;
         } else {
             if ambiguous != 0 {
@@ -165,7 +171,10 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             )
         };
         if scope == OPTIONS_TABLE_NONE {
-            if args_has(args, 'q' as i32 as u_char) != 0 {
+            if ({
+                let flag = 'q' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) != 0 {
                 current_block = 14351605340212681318;
             } else {
                 let cause = cause.unwrap();
@@ -174,7 +183,7 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             }
         } else {
             let oo = oo.as_ref().expect("option scope was resolved");
-            let shown = oo.with_entry(&name, args_has(args, b'A') == 0, |entry| {
+            let shown = oo.with_entry(&name, args.argument_flag_count(b'A') == 0, |entry| {
                 let Some(entry) = entry else {
                     return false;
                 };
@@ -186,7 +195,10 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             if shown {
                 current_block = 14351605340212681318;
             } else if name.to_bytes().first() == Some(&b'@') {
-                if args_has(args, 'q' as i32 as u_char) != 0 {
+                if ({
+                    let flag = 'q' as i32 as u_char;
+                    args.argument_flag_count(flag)
+                }) != 0 {
                     current_block = 14351605340212681318;
                 } else {
                     unsafe { item.error(c"invalid option: %s", fmt_args![argument.as_c_str()]) };
@@ -214,7 +226,7 @@ unsafe fn cmd_show_options_print(
         let name = RustOptionsEngine.name(entry);
         if index == -1 && RustOptionsEngine.is_array(entry) != 0 {
             let indices = RustOptionsEngine.array_indices(entry);
-            if indices.is_empty() && args_has(args, b'v') == 0 {
+            if indices.is_empty() && args.argument_flag_count(b'v') == 0 {
                 item.print(c"%s", fmt_args![name]);
             }
             for index in indices {
@@ -225,7 +237,7 @@ unsafe fn cmd_show_options_print(
         let indexed_name = (index != -1).then(|| xasprintf(c"%s[%d]", fmt_args![name, index]));
         let name = indexed_name.as_deref().unwrap_or(name);
         let value = RustOptionsEngine.display(entry, index, 0);
-        if args_has(args, b'v') != 0 {
+        if args.argument_flag_count(b'v') != 0 {
             item.print(c"%s", fmt_args![value.as_c_str()]);
         } else if RustOptionsEngine.is_string(entry) != 0 {
             let escaped = RustArgumentTextCodec.escape(&value);
@@ -266,10 +278,10 @@ unsafe fn cmd_show_options_all(
                 continue;
             }
             let is_hook = definition.flags & OPTIONS_TABLE_IS_HOOK != 0;
-            if (hooks && !is_hook) || (!hooks && args_has(args, b'H') == 0 && is_hook) {
+            if (hooks && !is_hook) || (!hooks && args.argument_flag_count(b'H') == 0 && is_hook) {
                 continue;
             }
-            oo.with_entry(definition.name, args_has(args, b'A') == 0, |entry| {
+            oo.with_entry(definition.name, args.argument_flag_count(b'A') == 0, |entry| {
                 let Some(entry) = entry else {
                     return;
                 };
@@ -279,7 +291,7 @@ unsafe fn cmd_show_options_all(
                     return;
                 }
                 let indices = RustOptionsEngine.array_indices(entry);
-                if indices.is_empty() && args_has(args, b'v') == 0 {
+                if indices.is_empty() && args.argument_flag_count(b'v') == 0 {
                     let name = RustOptionsEngine.name(entry);
                     if parent != 0 {
                         item.print(c"%s*", fmt_args![name]);

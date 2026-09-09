@@ -1,6 +1,5 @@
 use crate::WindowPane;
 use crate::args::RustArguments;
-use crate::args::args_has;
 use crate::cmd::CmdqStateRef;
 use crate::cmd::cmd_mouse_at;
 use crate::cmd::cmd_parse_and_append;
@@ -921,9 +920,9 @@ impl ModeTreeDataRef {
         menu: &'static [menu_item<'static>],
     ) -> ModeTreeDataRef {
         unsafe {
-            let preview = if args.is_some_and(|args| args_has(args, b'N') > 1) {
+            let preview = if args.is_some_and(|args| args.argument_flag_count(b'N') > 1) {
                 MODE_TREE_PREVIEW_BIG as core::ffi::c_int
-            } else if args.is_some_and(|args| args_has(args, b'N') != 0) {
+            } else if args.is_some_and(|args| args.argument_flag_count(b'N') != 0) {
                 MODE_TREE_PREVIEW_OFF as core::ffi::c_int
             } else {
                 MODE_TREE_PREVIEW_NORMAL as core::ffi::c_int
@@ -932,7 +931,7 @@ impl ModeTreeDataRef {
                 args.map_or(SORT_NAME, |args| {
                     RustSortCriteria::parse_order(args.argument_flag_string(b'O'))
                 }),
-                args.is_some_and(|args| args_has(args, b'r') != 0),
+                args.is_some_and(|args| args.argument_flag_count(b'r') != 0),
             );
             let filter = args
                 .and_then(|args| args.argument_flag_string(b'f'))
@@ -988,7 +987,7 @@ impl ModeTreeDataRef {
             let Some(pane) = owner.borrow().pane() else {
                 return;
             };
-            if args.is_some_and(|args| args_has(args, b'Z') != 0) {
+            if args.is_some_and(|args| args.argument_flag_count(b'Z') != 0) {
                 let window = pane.window().expect("a live attached pane has a window");
                 let zoomed = window.as_window().flags & WINDOW_ZOOMED;
                 owner.borrow_mut().zoomed = zoomed;

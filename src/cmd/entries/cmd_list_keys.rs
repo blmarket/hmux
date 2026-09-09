@@ -32,7 +32,7 @@
 //! filter ran.
 
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str};
+use crate::args::{args_string_str};
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
@@ -223,11 +223,11 @@ unsafe fn cmd_list_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         RustSortCriteria::parse_order(args.argument_flag_string(b'O')),
         false,
     );
-    if sort_crit.order() == SORT_END && args_has(args, b'O') != 0 {
+    if sort_crit.order() == SORT_END && args.argument_flag_count(b'O') != 0 {
         unsafe { item.error(c"invalid sort order", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
-    sort_crit.set_reversed(args_has(args, b'r') != 0);
+    sort_crit.set_reversed(args.argument_flag_count(b'r') != 0);
 
     let tablename = args.argument_flag_string(b'T');
     if let Some(tablename) = tablename {
@@ -239,8 +239,8 @@ unsafe fn cmd_list_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
 
     let prefix = unsafe { cmd_list_keys_get_prefix(args) };
-    let single = args_has(args, b'1');
-    let notes_only = args_has(args, b'N');
+    let single = args.argument_flag_count(b'1');
+    let notes_only = args.argument_flag_count(b'N');
 
     let template = args
         .argument_flag_string(b'F')
@@ -254,7 +254,7 @@ unsafe fn cmd_list_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { sort_get_key_bindings(&sort_crit) }
     };
 
-    let filter_notes = (notes_only != 0 && args_has(args, b'a') == 0) as c_int;
+    let filter_notes = (notes_only != 0 && args.argument_flag_count(b'a') == 0) as c_int;
     let filter_key = (only != KEYC_UNKNOWN) as c_int;
     let mut n = if filter_notes != 0 || filter_key != 0 {
         cmd_list_keys_filter_key_list(filter_notes, filter_key, only, &mut l)

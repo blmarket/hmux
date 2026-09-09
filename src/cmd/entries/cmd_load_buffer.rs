@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str};
+use crate::args::{args_string_str};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdqItemWeak, cmdq_item_weak_of};
@@ -122,7 +122,10 @@ unsafe fn cmd_load_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         args.argument_flag_string(flag)
     }
     .map(CStr::to_owned);
-    if args_has(args, 'w' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'w' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         cdata.client_ref = target_client;
     }
     let path = unsafe {

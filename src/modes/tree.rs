@@ -1,7 +1,7 @@
 use super::widget::{ModeTreeItemRef, mode_tree_run_command};
 use crate::WindowPane;
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str};
+use crate::args::{args_string_str};
 use crate::cmd::cmd_retval;
 use crate::cmd::{CmdqItemRef, cmdq_append};
 use crate::cmd::{cmd_find_clear_state, cmd_find_from_winlink_pane};
@@ -1044,9 +1044,9 @@ pub(crate) unsafe fn window_tree_init(
         let data = &mut *data_guard;
         data.wp_ref = Some(pane.clone());
         wme.state = WindowModeState::Tree(data_ref.clone());
-        if args.is_some_and(|args| args_has(args, b's') != 0) {
+        if args.is_some_and(|args| args.argument_flag_count(b's') != 0) {
             data.type_0 = WINDOW_TREE_SESSION;
-        } else if args.is_some_and(|args| args_has(args, b'w') != 0) {
+        } else if args.is_some_and(|args| args.argument_flag_count(b'w') != 0) {
             data.type_0 = WINDOW_TREE_WINDOW;
         } else {
             data.type_0 = WINDOW_TREE_PANE;
@@ -1069,8 +1069,8 @@ pub(crate) unsafe fn window_tree_init(
             None => WINDOW_TREE_DEFAULT_COMMAND.to_owned(),
         });
         data.squash_groups =
-            !args.is_some_and(|args| args_has(args, b'G') != 0) as core::ffi::c_int;
-        if args.is_some_and(|args| args_has(args, b'y') != 0) {
+            !args.is_some_and(|args| args.argument_flag_count(b'G') != 0) as core::ffi::c_int;
+        if args.is_some_and(|args| args.argument_flag_count(b'y') != 0) {
             data.prompt_flags = PROMPT_ACCEPT;
         }
         drop(data_guard);

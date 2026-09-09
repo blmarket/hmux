@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_percentage, args_string_str};
+use crate::args::{args_percentage, args_string_str};
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -47,14 +47,23 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let x: core::ffi::c_int;
     let mut y: core::ffi::c_int;
     let status: core::ffi::c_int;
-    if args_has(args, 'T' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'T' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe { reference.trim_unused_screen() };
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'M' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'M' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         return unsafe { cmd_resize_pane_mouse_update(self_0, item) };
     }
-    if args_has(args, 'Z' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'Z' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         if owner.is_zoomed() {
             unsafe { owner.unzoom(1 as core::ffi::c_int) };
         } else {
@@ -81,7 +90,10 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             }
         }
     }
-    if args_has(args, 'x' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'x' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe {
             x = args_percentage(
                 args,
@@ -98,7 +110,10 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
         unsafe { owner.resize_pane_to(&reference, LAYOUT_LEFTRIGHT, x as u_int) };
     }
-    if args_has(args, 'y' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'y' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe {
             y = args_percentage(
                 args,
@@ -134,7 +149,10 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
         unsafe { owner.resize_pane_to(&reference, LAYOUT_TOPBOTTOM, y as u_int) };
     }
-    if args_has(args, 'L' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'L' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe {
             owner.resize_pane(
                 &reference,
@@ -143,7 +161,10 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 1 as core::ffi::c_int,
             )
         };
-    } else if args_has(args, 'R' as i32 as u_char) != 0 {
+    } else if ({
+        let flag = 'R' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe {
             owner.resize_pane(
                 &reference,
@@ -152,7 +173,10 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 1 as core::ffi::c_int,
             )
         };
-    } else if args_has(args, 'U' as i32 as u_char) != 0 {
+    } else if ({
+        let flag = 'U' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe {
             owner.resize_pane(
                 &reference,
@@ -161,7 +185,10 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 1 as core::ffi::c_int,
             )
         };
-    } else if args_has(args, 'D' as i32 as u_char) != 0 {
+    } else if ({
+        let flag = 'D' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe {
             owner.resize_pane(
                 &reference,

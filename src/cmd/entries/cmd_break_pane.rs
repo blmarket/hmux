@@ -16,7 +16,6 @@
 //! while retaining the source and destination owners. The index changes
 //! reported by insertion keep the source link current within one session.
 
-use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
@@ -94,8 +93,8 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { item.error(c"invalid window name: %s", fmt_args![name]) };
         return CMD_RETURN_ERROR;
     }
-    let before = args_has(args, b'b');
-    if args_has(args, b'a') != 0 || before != 0 {
+    let before = args.argument_flag_count(b'b');
+    if args.argument_flag_count(b'a') != 0 || before != 0 {
         let around = item
             .target
             .wl_idx
@@ -122,7 +121,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 &mut destination,
                 index,
                 0,
-                (args_has(args, b'd') == 0) as c_int,
+                (args.argument_flag_count(b'd') == 0) as c_int,
                 &mut cause,
             ) != 0
         } {
@@ -164,7 +163,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 .attach(window.clone(), index, &mut cause)
                 .expect("the destination index is available")
         };
-        if args_has(args, b'd') == 0 {
+        if args.argument_flag_count(b'd') == 0 {
             unsafe { destination.select(destination_index) };
             unsafe { current_state_ref.update_current_session(&destination, 0) };
         }
@@ -178,7 +177,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
     }
 
-    if args_has(args, b'P') != 0 {
+    if args.argument_flag_count(b'P') != 0 {
         let template = args
             .argument_flag_string(b'F')
             .unwrap_or(BREAK_PANE_TEMPLATE);

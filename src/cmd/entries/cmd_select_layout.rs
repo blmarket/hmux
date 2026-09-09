@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str};
+use crate::args::{args_string_str};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -101,11 +101,17 @@ unsafe fn cmd_select_layout_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let layout: core::ffi::c_int;
     unsafe { owner.unzoom_and_redraw() };
     next = core::ptr::eq(cmd_get_entry(self_0), &cmd_next_layout_entry) as core::ffi::c_int;
-    if args_has(args, 'n' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'n' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         next = 1 as core::ffi::c_int;
     }
     previous = core::ptr::eq(cmd_get_entry(self_0), &cmd_previous_layout_entry) as core::ffi::c_int;
-    if args_has(args, 'p' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'p' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         previous = 1 as core::ffi::c_int;
     }
     let oldlayout: Option<std::ffi::CString> = owner.saved_layout();
@@ -117,19 +123,28 @@ unsafe fn cmd_select_layout_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         } else {
             unsafe { owner.select_previous_layout() };
         }
-    } else if args_has(args, 'E' as i32 as u_char) != 0 {
+    } else if ({
+        let flag = 'E' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         if let Some(pane) = pane {
             unsafe { owner.spread_pane_layout(&pane) };
         }
     } else {
         let layoutname = if args.argument_count() != 0 as u_int {
             unsafe { args_string_str(args, 0) }
-        } else if args_has(args, 'o' as i32 as u_char) != 0 {
+        } else if ({
+            let flag = 'o' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 {
             oldlayout.as_deref()
         } else {
             None
         };
-        if args_has(args, 'o' as i32 as u_char) == 0 {
+        if ({
+            let flag = 'o' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) == 0 {
             if let Some(layoutname) = layoutname {
                 layout = layout_set_lookup(layoutname);
             } else {

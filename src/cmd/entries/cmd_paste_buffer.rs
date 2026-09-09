@@ -24,7 +24,6 @@
 //! observable behaviour depends on.
 
 use crate::args::RustArguments;
-use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
@@ -67,7 +66,7 @@ pub(crate) static cmd_paste_buffer_entry: RustCommandEntry = RustCommandEntry {
 fn separator(args: &RustArguments) -> &CStr {
     if let Some(sepstr) = args.argument_flag_string(b's') {
         sepstr
-    } else if args_has(args, b'r') != 0 {
+    } else if args.argument_flag_count(b'r') != 0 {
         c"\n"
     } else {
         c"\r"
@@ -81,7 +80,7 @@ unsafe fn wanted_buffer(
     args: &RustArguments,
     item: &cmdq_item,
 ) -> Result<Option<(CString, Vec<u8>)>, ()> {
-    let bufname = if args_has(args, b'b') != 0 {
+    let bufname = if args.argument_flag_count(b'b') != 0 {
         args.argument_flag_string(b'b')
     } else {
         None
@@ -108,7 +107,7 @@ unsafe fn cmd_paste_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         .target
         .pane_ref()
         .expect("the command target has a pane");
-    let bracket = args_has(args, b'p') != 0;
+    let bracket = args.argument_flag_count(b'p') != 0;
 
     if unsafe { pane.has_exited() != Some(false) } {
         unsafe { item.error(c"target pane has exited", fmt_args![]) };
@@ -124,14 +123,14 @@ unsafe fn cmd_paste_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             pane.paste_buffer(
                 bytes,
                 separator(args).to_bytes(),
-                args_has(args, b'S') != 0,
+                args.argument_flag_count(b'S') != 0,
                 bracket,
             )
         };
     }
 
     if let Some((name, _)) = buffer
-        && args_has(args, b'd') != 0
+        && args.argument_flag_count(b'd') != 0
     {
         with_paste_buffers_mut(|buffers| buffers.remove(name.as_c_str()));
     }

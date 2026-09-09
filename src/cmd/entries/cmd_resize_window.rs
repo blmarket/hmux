@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str, args_strtonum};
+use crate::args::{args_string_str, args_strtonum};
 use crate::cmd::cmd_get_args;
 
 use crate::compat::strtonum;
@@ -69,7 +69,10 @@ unsafe fn cmd_resize_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let size = { window.dimensions().size };
     let mut sx = size.width;
     let mut sy = size.height;
-    if args_has(args, 'x' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'x' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         sx = args_strtonum(
             args,
             'x' as i32 as u_char,
@@ -82,7 +85,10 @@ unsafe fn cmd_resize_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             return CMD_RETURN_ERROR;
         }
     }
-    if args_has(args, 'y' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'y' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         sy = args_strtonum(
             args,
             'y' as i32 as u_char,
@@ -95,22 +101,40 @@ unsafe fn cmd_resize_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             return CMD_RETURN_ERROR;
         }
     }
-    if args_has(args, 'L' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'L' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         if sx >= adjust {
             sx = sx.wrapping_sub(adjust);
         }
-    } else if args_has(args, 'R' as i32 as u_char) != 0 {
+    } else if ({
+        let flag = 'R' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         sx = sx.wrapping_add(adjust);
-    } else if args_has(args, 'U' as i32 as u_char) != 0 {
+    } else if ({
+        let flag = 'U' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         if sy >= adjust {
             sy = sy.wrapping_sub(adjust);
         }
-    } else if args_has(args, 'D' as i32 as u_char) != 0 {
+    } else if ({
+        let flag = 'D' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         sy = sy.wrapping_add(adjust);
     }
-    if args_has(args, 'A' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'A' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe { (sx, sy, _, _) = window.default_size(target.session(), WINDOW_SIZE_LARGEST) };
-    } else if args_has(args, 'a' as i32 as u_char) != 0 {
+    } else if ({
+        let flag = 'a' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe { (sx, sy, _, _) = window.default_size(target.session(), WINDOW_SIZE_SMALLEST) };
     }
     unsafe {

@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_to_vector, args_value_list};
+use crate::args::{args_to_vector, args_value_list};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item_weak_of;
 
@@ -64,7 +64,10 @@ unsafe fn cmd_respawn_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
         args.argument_flag_string(flag)
     };
     sc.flags = SPAWN_RESPAWN;
-    if args_has(args, 'k' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'k' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         sc.flags |= SPAWN_KILL;
     }
     let Some(link) = (unsafe { spawn_window(&mut sc, &mut cause) }) else {

@@ -14,7 +14,6 @@
 //! index of the window being printed, so every line of one run carries the
 //! same value — where `list-sessions` and `list-clients` count from zero.
 
-use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
@@ -87,13 +86,13 @@ unsafe fn cmd_list_windows_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         RustSortCriteria::parse_order(args.argument_flag_string(b'O')),
         false,
     );
-    if sort_crit.order() == SORT_END && args_has(args, b'O') != 0 {
+    if sort_crit.order() == SORT_END && args.argument_flag_count(b'O') != 0 {
         unsafe { item.error(c"invalid sort order", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
-    sort_crit.set_reversed(args_has(args, b'r') != 0);
+    sort_crit.set_reversed(args.argument_flag_count(b'r') != 0);
 
-    let (winlinks, fallback) = if args_has(args, b'a') != 0 {
+    let (winlinks, fallback) = if args.argument_flag_count(b'a') != 0 {
         (
             sort_get_winlinks(&sort_crit),
             LIST_WINDOWS_WITH_SESSION_TEMPLATE,

@@ -23,7 +23,6 @@
 //! line numbers are set on both halves of the "was it already open" branch,
 //! only the drag start being conditional.
 
-use crate::args::args_has;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::consts::{
@@ -99,12 +98,12 @@ unsafe fn cmd_copy_mode_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut c = item.client();
     let mut pane = item.target.pane_ref().expect("copy target has a pane");
 
-    if args_has(args, b'q') != 0 {
+    if args.argument_flag_count(b'q') != 0 {
         unsafe { pane.reset_modes() };
         return CMD_RETURN_NORMAL;
     }
 
-    if args_has(args, b'M') != 0 {
+    if args.argument_flag_count(b'M') != 0 {
         let Some((s, _, mouse_wp)) = (unsafe { cmd_mouse_pane(&event.m) }) else {
             return CMD_RETURN_NORMAL;
         };
@@ -118,7 +117,7 @@ unsafe fn cmd_copy_mode_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
     }
 
-    let source_pane = if args_has(args, b's') != 0 {
+    let source_pane = if args.argument_flag_count(b's') != 0 {
         item.source.pane_ref()
     } else {
         Some(pane.clone())
@@ -138,19 +137,19 @@ unsafe fn cmd_copy_mode_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             == 0
     };
     unsafe { pane.copy_line_numbers(line_numbers) };
-    if opened && args_has(args, b'M') != 0 {
+    if opened && args.argument_flag_count(b'M') != 0 {
         unsafe { ClientRef::start_copy_drag(c.as_mut(), &event.m) };
     }
 
-    if args_has(args, b'u') != 0 {
+    if args.argument_flag_count(b'u') != 0 {
         unsafe { pane.copy_page_up(0) };
     }
-    if args_has(args, b'd') != 0 {
-        unsafe { pane.copy_page_down(0, args_has(args, b'e')) };
+    if args.argument_flag_count(b'd') != 0 {
+        unsafe { pane.copy_page_down(0, args.argument_flag_count(b'e')) };
     }
-    if args_has(args, b'S') != 0 {
+    if args.argument_flag_count(b'S') != 0 {
         let c = c.as_ref().expect("the command has a client");
-        unsafe { c.scroll_copy_pane(&pane, event.m.y, args_has(args, b'e')) };
+        unsafe { c.scroll_copy_pane(&pane, event.m.y, args.argument_flag_count(b'e')) };
         return CMD_RETURN_NORMAL;
     }
 

@@ -6,7 +6,6 @@
 //! inherited appearance. The command chooses unzoom, selection, redraw and
 //! empty-source-window policy around that transition.
 
-use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
@@ -109,7 +108,7 @@ unsafe fn cmd_join_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     recalculate_sizes();
     unsafe { src_owner.redraw() };
     unsafe { dst_owner.redraw() };
-    if args_has(args, b'd') == 0 {
+    if args.argument_flag_count(b'd') == 0 {
         unsafe { dst_owner.set_active_pane(&source_pane, 1) };
         unsafe { dst_session.select(dst_idx) };
         unsafe { current_state_ref.update_current_session(&dst_session, 0) };

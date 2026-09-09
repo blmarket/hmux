@@ -1,4 +1,3 @@
-use crate::args::args_has;
 use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
 use crate::cmd::cmd_find_target;
 use crate::cmd::cmd_get_args;
@@ -196,11 +195,11 @@ unsafe fn cmd_attach_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
         cmd_attach_session(
             item,
             args.argument_flag_string(b't'),
-            args_has(args, b'd'),
-            args_has(args, b'x'),
-            args_has(args, b'r'),
+            args.argument_flag_count(b'd'),
+            args.argument_flag_count(b'x'),
+            args.argument_flag_count(b'r'),
             args.argument_flag_string(b'c'),
-            args_has(args, b'E'),
+            args.argument_flag_count(b'E'),
             args.argument_flag_string(b'f'),
         )
     }

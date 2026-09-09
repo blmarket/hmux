@@ -18,7 +18,6 @@
 //! `-s` named the source, since the destination is already where the caller
 //! asked for.
 
-use crate::args::args_has;
 use crate::cmd::cmd_find_target;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -127,7 +126,7 @@ unsafe fn room_for(
 unsafe fn cmd_move_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
     let tflag = args.argument_flag_string(b't');
-    if args_has(args, b'r') != 0 {
+    if args.argument_flag_count(b'r') != 0 {
         let Some(target) = (unsafe { resolve(item, tflag, CMD_FIND_SESSION, CMD_FIND_QUIET) })
         else {
             return CMD_RETURN_ERROR;
@@ -150,11 +149,11 @@ unsafe fn cmd_move_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     };
     let mut destination = target.session().expect("a move destination has a session");
     let mut index = target.idx;
-    let kflag = args_has(args, b'k');
-    let dflag = args_has(args, b'd');
-    let sflag = args_has(args, b's');
-    let before = args_has(args, b'b');
-    if args_has(args, b'a') != 0 || before != 0 {
+    let kflag = args.argument_flag_count(b'k');
+    let dflag = args.argument_flag_count(b'd');
+    let sflag = args.argument_flag_count(b's');
+    let before = args.argument_flag_count(b'b');
+    if args.argument_flag_count(b'a') != 0 || before != 0 {
         let Some(shift) = (unsafe { room_for(&mut destination, &target, before) }) else {
             return CMD_RETURN_ERROR;
         };

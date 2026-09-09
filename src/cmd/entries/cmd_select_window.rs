@@ -1,5 +1,4 @@
 use crate::args::RustArguments;
-use crate::args::args_has;
 use crate::cmd::cmd_find_from_session_ref;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -129,19 +128,31 @@ unsafe fn cmd_select_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut last: core::ffi::c_int;
     let activity: core::ffi::c_int;
     next = core::ptr::eq(cmd_get_entry(self_0), &cmd_next_window_entry) as core::ffi::c_int;
-    if args_has(args, 'n' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'n' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         next = 1 as core::ffi::c_int;
     }
     previous = core::ptr::eq(cmd_get_entry(self_0), &cmd_previous_window_entry) as core::ffi::c_int;
-    if args_has(args, 'p' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'p' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         previous = 1 as core::ffi::c_int;
     }
     last = core::ptr::eq(cmd_get_entry(self_0), &cmd_last_window_entry) as core::ffi::c_int;
-    if args_has(args, 'l' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'l' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         last = 1 as core::ffi::c_int;
     }
     if next != 0 || previous != 0 || last != 0 {
-        activity = args_has(args, 'a' as i32 as u_char);
+        activity = {
+            let flag = 'a' as i32 as u_char;
+            args.argument_flag_count(flag)
+        };
         if next != 0 {
             if unsafe { session.next(activity) != 0 as core::ffi::c_int } {
                 unsafe { item.error(c"no next window", fmt_args![]) };
@@ -159,7 +170,10 @@ unsafe fn cmd_select_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { cmd_find_from_session_ref(&mut current, &session, 0 as core::ffi::c_int) };
         unsafe { session.request_redraw() };
     } else {
-        if args_has(args, 'T' as i32 as u_char) != 0
+        if ({
+            let flag = 'T' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0
             && target_index == session.curw().map(|link| link.index())
         {
             if unsafe { session.last() != 0 as core::ffi::c_int } {

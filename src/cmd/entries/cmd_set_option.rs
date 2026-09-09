@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str};
+use crate::args::{args_string_str};
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -107,7 +107,10 @@ fn cmd_set_option_args_parse(
 unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut current_block: u64;
     let args: &RustArguments = cmd_get_args(self_0);
-    let append: core::ffi::c_int = args_has(args, 'a' as i32 as u_char);
+    let append: core::ffi::c_int = {
+        let flag = 'a' as i32 as u_char;
+        args.argument_flag_count(flag)
+    };
     let target = item.target.clone();
     let mut oo: Option<RustOptionsRef> = None;
     let expanded: Option<CString>;
@@ -129,14 +132,20 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         )
     };
     if core::ptr::eq(cmd_get_entry(self_0), &cmd_set_hook_entry)
-        && args_has(args, 'R' as i32 as u_char) != 0
+        && ({
+            let flag = 'R' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0
     {
         unsafe { notify_hook(item, &argument) };
         return CMD_RETURN_NORMAL;
     }
     let name = RustOptionsEngine.match_name(&argument, &mut idx, &mut ambiguous);
     if name.is_none() {
-        if args_has(args, 'q' as i32 as u_char) != 0 {
+        if ({
+            let flag = 'q' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 {
             current_block = 11153144165560816752;
         } else {
             if ambiguous != 0 {
@@ -153,7 +162,10 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         };
         let mut value = unsafe { args_string_str(args, 1) };
         if let Some(raw) = value
-            && args_has(args, 'F' as i32 as u_char) != 0
+            && ({
+                let flag = 'F' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) != 0
         {
             unsafe { expanded = Some(format_single_from_target(item, raw)) };
             value = expanded.as_deref();
@@ -163,7 +175,10 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 RustOptionsEngine.scope_from_name(args.as_args(), window, &name, &target, &mut oo, &mut cause)
         };
         if scope == OPTIONS_TABLE_NONE {
-            if args_has(args, 'q' as i32 as u_char) != 0 {
+            if ({
+                let flag = 'q' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) != 0 {
                 current_block = 11153144165560816752;
             } else {
                 let cause = cause.unwrap();
@@ -185,8 +200,14 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 unsafe { item.error(c"not an array: %s", fmt_args![argument.as_c_str()]) };
                 current_block = 16446286653754202049;
             } else {
-                if args_has(args, 'u' as i32 as u_char) == 0
-                    && args_has(args, 'o' as i32 as u_char) != 0
+                if ({
+                    let flag = 'u' as i32 as u_char;
+                    args.argument_flag_count(flag)
+                }) == 0
+                    && ({
+                        let flag = 'o' as i32 as u_char;
+                        args.argument_flag_count(flag)
+                    }) != 0
                 {
                     if idx == -(1 as core::ffi::c_int) {
                         already = has_local as core::ffi::c_int;
@@ -200,7 +221,10 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                         }) as core::ffi::c_int;
                     }
                     if already != 0 {
-                        if args_has(args, 'q' as i32 as u_char) != 0 {
+                        if ({
+                            let flag = 'q' as i32 as u_char;
+                            args.argument_flag_count(flag)
+                        }) != 0 {
                             current_block = 11153144165560816752;
                         } else {
                             unsafe {
@@ -218,7 +242,10 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                     11153144165560816752 => {}
                     16446286653754202049 => {}
                     _ => {
-                        if args_has(args, 'U' as i32 as u_char) != 0
+                        if ({
+                            let flag = 'U' as i32 as u_char;
+                            args.argument_flag_count(flag)
+                        }) != 0
                             && scope == OPTIONS_TABLE_WINDOW
                         {
                             let window = target.window().expect("window option scope has a window");
@@ -255,8 +282,14 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                         match current_block {
                             16446286653754202049 => {}
                             _ => {
-                                if args_has(args, 'u' as i32 as u_char) != 0
-                                    || args_has(args, 'U' as i32 as u_char) != 0
+                                if ({
+                                    let flag = 'u' as i32 as u_char;
+                                    args.argument_flag_count(flag)
+                                }) != 0
+                                    || ({
+                                        let flag = 'U' as i32 as u_char;
+                                        args.argument_flag_count(flag)
+                                    }) != 0
                                 {
                                     if !has_local {
                                         current_block = 11153144165560816752;
@@ -296,7 +329,10 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                 parent_entry,
                                                 parent_entry.unwrap().name,
                                                 value,
-                                                args_has(args, 'a' as i32 as u_char),
+                                                {
+                                                    let flag = 'a' as i32 as u_char;
+                                                    args.argument_flag_count(flag)
+                                                },
                                                 &mut option_cause,
                                             )
                                     };

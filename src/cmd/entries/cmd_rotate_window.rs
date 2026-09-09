@@ -1,4 +1,3 @@
-use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::consts::{CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_NORMAL};
@@ -45,8 +44,8 @@ unsafe fn cmd_rotate_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     )
     .expect("the rotation target is linked");
     let owner = link.window().expect("the rotation window is present");
-    unsafe { owner.push_zoom(0, args_has(args, b'Z')) };
-    let down = args_has(args, b'D') != 0;
+    unsafe { owner.push_zoom(0, args.argument_flag_count(b'Z')) };
+    let down = args.argument_flag_count(b'D') != 0;
     let panes = unsafe { owner.rotate_pane_geometry(down) };
     let count = panes.len();
     if count == 0 {

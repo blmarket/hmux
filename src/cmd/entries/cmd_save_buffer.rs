@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str};
+use crate::args::args_string_str;
 use crate::cmd::cmdq_item;
 use crate::cmd::cmdq_item_weak_of;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -132,7 +132,11 @@ unsafe fn cmd_save_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             )
         }
     };
-    let flags = if args_has(args, 'a' as i32 as u_char) != 0 {
+    let flags = if ({
+        let flag = 'a' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0
+    {
         O_APPEND
     } else {
         O_TRUNC

@@ -15,7 +15,6 @@
 //! The `-a` walk snapshots pane identities before removing any of them, so
 //! no pane borrow survives the operation that frees its storage.
 
-use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
@@ -61,7 +60,7 @@ unsafe fn cmd_kill_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
     let owner = item.target.window().expect("a kill target has a window");
     let target = item.target.pane_ref();
-    if args_has(args, b'a') != 0 {
+    if args.argument_flag_count(b'a') != 0 {
         unsafe { owner.unzoom_and_redraw() };
         let ids = owner.panes();
         for pane in ids.into_iter().filter(|pane| Some(pane) != target.as_ref()) {

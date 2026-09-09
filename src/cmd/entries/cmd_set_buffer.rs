@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str};
+use crate::args::{args_string_str};
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -95,7 +95,7 @@ unsafe fn cmd_set_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         with_paste_buffers_mut(|buffers| buffers.remove(name.as_c_str()));
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, b'n') != 0 {
+    if args.argument_flag_count(b'n') != 0 {
         if existing.is_none() && bufname.is_none() {
             existing = with_paste_buffers(|buffers| {
                 buffers
@@ -129,13 +129,13 @@ unsafe fn cmd_set_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if value.is_empty() {
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, b'a') != 0
+    if args.argument_flag_count(b'a') != 0
         && let Some((_, data)) = existing
     {
         bufdata.extend_from_slice(&data);
     }
     bufdata.extend_from_slice(value.to_bytes());
-    let selection = match args_has(args, b'w') != 0 && tc.is_some() {
+    let selection = match args.argument_flag_count(b'w') != 0 && tc.is_some() {
         true => Some(bufdata.clone()),
         false => None,
     };

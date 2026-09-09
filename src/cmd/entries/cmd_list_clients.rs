@@ -14,7 +14,6 @@
 //! of lines printed so far, so a client that is skipped leaves a gap in the
 //! numbering of the ones after it.
 
-use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
@@ -79,7 +78,7 @@ fn sorted_clients(sort_crit: &mut sort_criteria_t) -> Vec<ClientRef> {
 
 unsafe fn cmd_list_clients_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
-    let session = if args_has(args, b't') != 0 {
+    let session = if args.argument_flag_count(b't') != 0 {
         item.target.session()
     } else {
         None
@@ -94,11 +93,11 @@ unsafe fn cmd_list_clients_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         RustSortCriteria::parse_order(args.argument_flag_string(b'O')),
         false,
     );
-    if sort_crit.order() == SORT_END && args_has(args, b'O') != 0 {
+    if sort_crit.order() == SORT_END && args.argument_flag_count(b'O') != 0 {
         unsafe { item.error(c"invalid sort order", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
-    sort_crit.set_reversed(args_has(args, b'r') != 0);
+    sort_crit.set_reversed(args.argument_flag_count(b'r') != 0);
 
     for (i, c) in sorted_clients(&mut sort_crit).iter().enumerate() {
         let Some(attached) = ({ c.attached_session() }) else {

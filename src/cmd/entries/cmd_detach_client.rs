@@ -11,7 +11,6 @@
 //!
 //! Multi-client operations walk the live client list while recording deferred exits.
 
-use crate::args::args_has;
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -98,8 +97,8 @@ unsafe fn cmd_detach_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 
     if unsafe {
         c.as_ref().expect("the command has a client").flags() & CLIENT_READONLY as uint64_t != 0
-            && (args_has(args, b's') != 0
-                || args_has(args, b'a') != 0
+            && (args.argument_flag_count(b's') != 0
+                || args.argument_flag_count(b'a') != 0
                 || match (&c, &tc) {
                     (Some(c), Some(tc)) => !c.ptr_eq(tc),
                     (None, None) => false,
@@ -110,13 +109,13 @@ unsafe fn cmd_detach_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         return CMD_RETURN_ERROR;
     }
 
-    let msgtype = if args_has(args, b'P') != 0 {
+    let msgtype = if args.argument_flag_count(b'P') != 0 {
         MSG_DETACHKILL
     } else {
         MSG_DETACH
     };
 
-    if args_has(args, b's') != 0 {
+    if args.argument_flag_count(b's') != 0 {
         let Some(s_ref) = source.session() else {
             return CMD_RETURN_NORMAL;
         };
@@ -131,7 +130,7 @@ unsafe fn cmd_detach_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         return CMD_RETURN_STOP;
     }
 
-    if args_has(args, b'a') != 0 {
+    if args.argument_flag_count(b'a') != 0 {
         for mut loop_0 in client_walk() {
             if {
                 !loop_0.attached_session().is_none()

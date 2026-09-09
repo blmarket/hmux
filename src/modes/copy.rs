@@ -1,7 +1,7 @@
 use crate::CompiledRegex;
 use crate::WindowPane;
 use crate::args::RustArguments;
-use crate::args::{args_has, args_parse, args_string_str};
+use crate::args::{args_parse, args_string_str};
 use crate::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::compat::strtonum;
 use crate::compat::{cstr_eq_ignore_case, tolower};
@@ -397,8 +397,8 @@ pub(crate) unsafe fn window_copy_init(
             );
             data.oy = 0 as u_int;
         }
-        data.scroll_exit = args.map_or(0, |args| args_has(args, b'e'));
-        data.hide_position = args.map_or(0, |args| args_has(args, b'H'));
+        data.scroll_exit = args.map_or(0, |args| args.argument_flag_count(b'e'));
+        data.hide_position = args.map_or(0, |args| args.argument_flag_count(b'H'));
         wme.state = WindowModeState::Copy(data);
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let cx_offset =
@@ -1262,7 +1262,10 @@ unsafe fn window_copy_expand_search_string(cs: &mut window_copy_cmd_state<'_>) -
             Some(ss) if !ss.to_bytes().is_empty() => ss,
             _ => return 0 as core::ffi::c_int,
         };
-        let search = if args_has(cs.args, b'F') != 0 {
+        let search = if ({
+            let args: &RustArguments = cs.args;
+            args.argument_flag_count(b'F')
+        }) != 0 {
             let pane = wme.pane_ref().expect("mode has a pane");
             let expanded = format_single(None, ss, None, None, None, pane.get());
             if expanded.as_bytes().is_empty() {
@@ -1391,9 +1394,17 @@ unsafe fn window_copy_do_copy_end_of_line(
         let arg0 = args_string_str(cs.wargs, 0 as u_int);
         let arg1 = args_string_str(cs.wargs, 1 as u_int);
         let set_paste: core::ffi::c_int =
-            (args_has(cs.wargs, 'P' as i32 as u_char) == 0) as core::ffi::c_int;
+            (({
+                let args: &RustArguments = cs.wargs;
+                let flag = 'P' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) == 0) as core::ffi::c_int;
         let set_clip: core::ffi::c_int =
-            (args_has(cs.wargs, 'C' as i32 as u_char) == 0) as core::ffi::c_int;
+            (({
+                let args: &RustArguments = cs.wargs;
+                let flag = 'C' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) == 0) as core::ffi::c_int;
         if pipe != 0 {
             if let Some(arg1) = arg1.filter(|_| count == 2 as u_int) {
                 prefix = Some(format_single(None, arg1, c.as_deref(), s, wl, pane.get()));
@@ -1484,9 +1495,17 @@ unsafe fn window_copy_do_copy_line(
         let arg0 = args_string_str(cs.wargs, 0 as u_int);
         let arg1 = args_string_str(cs.wargs, 1 as u_int);
         let set_paste: core::ffi::c_int =
-            (args_has(cs.wargs, 'P' as i32 as u_char) == 0) as core::ffi::c_int;
+            (({
+                let args: &RustArguments = cs.wargs;
+                let flag = 'P' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) == 0) as core::ffi::c_int;
         let set_clip: core::ffi::c_int =
-            (args_has(cs.wargs, 'C' as i32 as u_char) == 0) as core::ffi::c_int;
+            (({
+                let args: &RustArguments = cs.wargs;
+                let flag = 'C' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) == 0) as core::ffi::c_int;
         if pipe != 0 {
             if let Some(arg1) = arg1.filter(|_| count == 2 as u_int) {
                 prefix = Some(format_single(None, arg1, c.as_deref(), s, wl, pane.get()));
@@ -1567,9 +1586,17 @@ unsafe fn window_copy_cmd_copy_selection_no_clear(
         let mut prefix: Option<CString> = None;
         let arg0 = args_string_str(cs.wargs, 0 as u_int);
         let set_paste: core::ffi::c_int =
-            (args_has(cs.wargs, 'P' as i32 as u_char) == 0) as core::ffi::c_int;
+            (({
+                let args: &RustArguments = cs.wargs;
+                let flag = 'P' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) == 0) as core::ffi::c_int;
         let set_clip: core::ffi::c_int =
-            (args_has(cs.wargs, 'C' as i32 as u_char) == 0) as core::ffi::c_int;
+            (({
+                let args: &RustArguments = cs.wargs;
+                let flag = 'C' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) == 0) as core::ffi::c_int;
         if let Some(arg0) = arg0 {
             prefix = Some(format_single(None, arg0, c.as_deref(), s, wl, pane.get()));
         }
@@ -1736,7 +1763,11 @@ unsafe fn window_copy_cmd_scroll_to_mouse(
             cs.c.as_deref_mut()
                 .expect("the scroll command has a client");
         let m = cs.m.expect("the scroll command has a mouse event");
-        let scroll_exit: core::ffi::c_int = args_has(cs.wargs, 'e' as i32 as u_char);
+        let scroll_exit: core::ffi::c_int = {
+            let args: &RustArguments = cs.wargs;
+            let flag = 'e' as i32 as u_char;
+            args.argument_flag_count(flag)
+        };
         let (_bigger, _tty_ox, tty_oy, _tty_sx, _tty_sy) = tty_window_offset(&c.tty);
         window_copy_scroll(&mut *wp, c.tty.mouse_slider_mpos, m.y, tty_oy, scroll_exit);
         WINDOW_COPY_CMD_NOTHING
@@ -2884,9 +2915,17 @@ unsafe fn window_copy_cmd_copy_pipe_no_clear(
         let arg0 = args_string_str(cs.wargs, 0 as u_int);
         let arg1 = args_string_str(cs.wargs, 1 as u_int);
         let set_paste: core::ffi::c_int =
-            (args_has(cs.wargs, 'P' as i32 as u_char) == 0) as core::ffi::c_int;
+            (({
+                let args: &RustArguments = cs.wargs;
+                let flag = 'P' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) == 0) as core::ffi::c_int;
         let set_clip: core::ffi::c_int =
-            (args_has(cs.wargs, 'C' as i32 as u_char) == 0) as core::ffi::c_int;
+            (({
+                let args: &RustArguments = cs.wargs;
+                let flag = 'C' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) == 0) as core::ffi::c_int;
         if let Some(arg1) = arg1 {
             prefix = Some(format_single(None, arg1, c.as_deref(), s, wl, pane.get()));
         }
@@ -3066,7 +3105,11 @@ unsafe fn window_copy_cmd_next_prompt(
         window_copy_cursor_prompt(
             &mut *wme,
             1 as core::ffi::c_int,
-            args_has(cs.wargs, 'o' as i32 as u_char),
+            {
+                let args: &RustArguments = cs.wargs;
+                let flag = 'o' as i32 as u_char;
+                args.argument_flag_count(flag)
+            },
         );
         WINDOW_COPY_CMD_NOTHING
     }
@@ -3079,7 +3122,11 @@ unsafe fn window_copy_cmd_previous_prompt(
         window_copy_cursor_prompt(
             &mut *wme,
             0 as core::ffi::c_int,
-            args_has(cs.wargs, 'o' as i32 as u_char),
+            {
+                let args: &RustArguments = cs.wargs;
+                let flag = 'o' as i32 as u_char;
+                args.argument_flag_count(flag)
+            },
         );
         WINDOW_COPY_CMD_NOTHING
     }

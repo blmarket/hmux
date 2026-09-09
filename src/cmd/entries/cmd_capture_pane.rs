@@ -24,7 +24,7 @@
 //! and `-p` reads the client's flags without checking that there is a client.
 
 use crate::args::RustArguments;
-use crate::args::{args_has, args_strtonum_and_expand};
+use crate::args::{args_strtonum_and_expand};
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -121,8 +121,8 @@ unsafe fn cmd_capture_pane_history(
     pane: &RustWindowPaneWeak,
 ) -> Option<Vec<u8>> {
     unsafe {
-        if args_has(args, b'a') != 0 && !pane.has_saved_screen()? {
-            if args_has(args, b'q') == 0 {
+        if args.argument_flag_count(b'a') != 0 && !pane.has_saved_screen()? {
+            if args.argument_flag_count(b'q') == 0 {
                 item.error(c"no alternate screen", fmt_args![]);
                 return None;
             }
@@ -133,20 +133,20 @@ unsafe fn cmd_capture_pane_history(
         let capture = PaneCapture {
             start,
             end,
-            alternate: args_has(args, b'a') != 0,
-            mode: args_has(args, b'M') != 0,
-            join_lines: args_has(args, b'J') != 0,
-            sequences: args_has(args, b'e') != 0,
-            escape: args_has(args, b'C') != 0,
-            empty_cells: args_has(args, b'T') == 0,
-            trim_spaces: args_has(args, b'N') == 0,
-            number_lines: args_has(args, b'L') != 0,
-            show_flags: args_has(args, b'F') != 0,
-            hyperlinks: args_has(args, b'H') != 0,
+            alternate: args.argument_flag_count(b'a') != 0,
+            mode: args.argument_flag_count(b'M') != 0,
+            join_lines: args.argument_flag_count(b'J') != 0,
+            sequences: args.argument_flag_count(b'e') != 0,
+            escape: args.argument_flag_count(b'C') != 0,
+            empty_cells: args.argument_flag_count(b'T') == 0,
+            trim_spaces: args.argument_flag_count(b'N') == 0,
+            number_lines: args.argument_flag_count(b'L') != 0,
+            show_flags: args.argument_flag_count(b'F') != 0,
+            hyperlinks: args.argument_flag_count(b'H') != 0,
         };
         match pane.capture_history(capture)? {
             Ok(bytes) => Some(bytes),
-            Err(()) if args_has(args, b'q') != 0 => Some(Vec::new()),
+            Err(()) if args.argument_flag_count(b'q') != 0 => Some(Vec::new()),
             Err(()) => {
                 item.error(c"no alternate screen", fmt_args![]);
                 None
@@ -163,12 +163,12 @@ unsafe fn cmd_capture_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         .pane_ref()
         .expect("the command target has a pane");
     if core::ptr::eq(cmd_get_entry(self_0), &cmd_clear_history_entry) {
-        unsafe { pane.clear_history(args_has(args, b'H') != 0) };
+        unsafe { pane.clear_history(args.argument_flag_count(b'H') != 0) };
         return CMD_RETURN_NORMAL;
     }
-    let bytes = if args_has(args, b'P') != 0 && args_has(args, b'H') == 0 {
+    let bytes = if args.argument_flag_count(b'P') != 0 && args.argument_flag_count(b'H') == 0 {
         unsafe {
-            pane.capture_pending(args_has(args, b'C') != 0)
+            pane.capture_pending(args.argument_flag_count(b'C') != 0)
                 .expect("the target pane is live")
         }
     } else {
@@ -177,7 +177,7 @@ unsafe fn cmd_capture_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             None => return CMD_RETURN_ERROR,
         }
     };
-    if args_has(args, b'p') != 0 {
+    if args.argument_flag_count(b'p') != 0 {
         let c = c.as_mut().expect("the command has a client");
         let mut len = bytes.len() as size_t;
         if len > 0 && bytes[len.wrapping_sub(1)] == b'\n' {
@@ -188,7 +188,7 @@ unsafe fn cmd_capture_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             return CMD_RETURN_ERROR;
         }
     } else {
-        let bufname = if args_has(args, b'b') != 0 {
+        let bufname = if args.argument_flag_count(b'b') != 0 {
             args.argument_flag_string(b'b')
         } else {
             None

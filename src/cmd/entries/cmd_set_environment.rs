@@ -1,4 +1,4 @@
-use crate::args::{args_has, args_string_str};
+use crate::args::{args_string_str};
 use crate::cmd::cmd_get_args;
 
 use crate::environ::EnvironmentStore;
@@ -77,13 +77,13 @@ unsafe fn cmd_set_environment_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval
     } else {
         Some(unsafe { args_string_str(args, 1) }.expect("argument count checked"))
     };
-    let expanded = if args_has(args, b'F') != 0 {
+    let expanded = if args.argument_flag_count(b'F') != 0 {
         value.map(|value| unsafe { format_single_from_target(item, value) })
     } else {
         None
     };
     let value = expanded.as_deref().or(value);
-    let global = args_has(args, b'g') != 0;
+    let global = args.argument_flag_count(b'g') != 0;
     if !global && target_session.is_none() {
         if let Some(target) = args.argument_flag_string(b't') {
             unsafe { item.error(c"no such session: %s", fmt_args![target]) };
@@ -92,20 +92,20 @@ unsafe fn cmd_set_environment_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval
         }
         return CMD_RETURN_ERROR;
     }
-    let change = if args_has(args, b'u') != 0 {
+    let change = if args.argument_flag_count(b'u') != 0 {
         if value.is_some() {
             unsafe { item.error(c"can't specify a value with -u", fmt_args![]) };
             return CMD_RETURN_ERROR;
         }
         EnvironmentChange::Unset
-    } else if args_has(args, b'r') != 0 {
+    } else if args.argument_flag_count(b'r') != 0 {
         if value.is_some() {
             unsafe { item.error(c"can't specify a value with -r", fmt_args![]) };
             return CMD_RETURN_ERROR;
         }
         EnvironmentChange::Clear
     } else if let Some(value) = value {
-        let flags = if args_has(args, b'h') != 0 {
+        let flags = if args.argument_flag_count(b'h') != 0 {
             ENVIRON_HIDDEN
         } else {
             0

@@ -36,7 +36,7 @@
 //!   item's own client rather than the target one.
 
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str, args_strtonum};
+use crate::args::{args_string_str, args_strtonum};
 use crate::cmd::cmd_find_best_client_for_session;
 use crate::cmd::cmd_get_args;
 
@@ -122,7 +122,7 @@ unsafe fn cmd_display_message_input(
 /// `int`, so the top half of that range wraps negative exactly as upstream's
 /// does.
 fn cmd_display_message_delay(args: &RustArguments) -> Result<c_int, std::ffi::CString> {
-    if args_has(args, b'd') == 0 {
+    if args.argument_flag_count(b'd') == 0 {
         return Ok(-1);
     }
     let mut cause = None;
@@ -150,7 +150,7 @@ unsafe fn cmd_display_message_show(
     unsafe {
         if item.client().is_none() {
             item.error(c"%s", fmt_args![msg]);
-        } else if args_has(args, b'p') != 0 {
+        } else if args.argument_flag_count(b'p') != 0 {
             item.print(c"%s", fmt_args![msg]);
         } else if tc
             .as_deref()
@@ -164,8 +164,8 @@ unsafe fn cmd_display_message_show(
                 Some(tc),
                 delay,
                 0,
-                args_has(args, b'N'),
-                args_has(args, b'C'),
+                args.argument_flag_count(b'N'),
+                args.argument_flag_count(b'C'),
                 c"%s",
                 fmt_args![msg],
             );
@@ -182,10 +182,10 @@ unsafe fn cmd_display_message_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval
     let pane = item.target.pane_ref();
     let count = args.argument_count();
 
-    if args_has(args, b'I') != 0 {
+    if args.argument_flag_count(b'I') != 0 {
         return unsafe { cmd_display_message_input(pane.as_ref(), item) };
     }
-    if args_has(args, b'F') != 0 && count != 0 {
+    if args.argument_flag_count(b'F') != 0 && count != 0 {
         unsafe { item.error(c"only one of -F or argument must be given", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
@@ -218,7 +218,7 @@ unsafe fn cmd_display_message_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval
             .and_then(|session| unsafe { cmd_find_best_client_for_session(session) })
     };
 
-    let flags = match args_has(args, b'v') {
+    let flags = match args.argument_flag_count(b'v') {
         0 => 0,
         _ => FORMAT_VERBOSE,
     };
@@ -233,7 +233,7 @@ unsafe fn cmd_display_message_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval
         )
     };
 
-    if args_has(args, b'a') != 0 {
+    if args.argument_flag_count(b'a') != 0 {
         unsafe {
             format_each(&mut ft, |key, value| {
                 (*item).print(c"%s=%s", fmt_args![key, value]);
@@ -242,7 +242,7 @@ unsafe fn cmd_display_message_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval
         return CMD_RETURN_NORMAL;
     }
 
-    let msg = match args_has(args, b'l') {
+    let msg = match args.argument_flag_count(b'l') {
         0 => unsafe { format_expand_time(&mut ft, template) },
         _ => template.to_owned(),
     };

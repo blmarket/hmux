@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_make_commands, args_make_commands_prepare, args_string_str};
+use crate::args::{args_make_commands, args_make_commands_prepare, args_string_str};
 use crate::cmd::cmd_find_from_nothing;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
@@ -81,7 +81,10 @@ fn cmd_run_shell_args_parse(
     _cause: &mut Option<CString>,
 ) -> args_parse_type {
     let args = RustArguments::from_ref(args);
-    if args_has(args, 'C' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'C' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         return ARGS_PARSE_COMMANDS_OR_STRING;
     }
     ARGS_PARSE_STRING
@@ -128,7 +131,10 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut d: core::ffi::c_double = 0.;
     let mut tv = timeval::default();
     let mut i: u_int;
-    let wait: core::ffi::c_int = (args_has(args, 'b' as i32 as u_char) == 0) as core::ffi::c_int;
+    let wait: core::ffi::c_int = (({
+        let flag = 'b' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) == 0) as core::ffi::c_int;
     let delay = {
         let flag = 'd' as i32 as u_char;
         args.argument_flag_string(flag)
@@ -142,7 +148,10 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     } else if args.argument_count() == 0 as u_int {
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'C' as i32 as u_char) == 0 {
+    if ({
+        let flag = 'C' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) == 0 {
         let cmd = unsafe { args_string_str(args, 0) };
         if let Some(cmd) = cmd {
             let mut ft = unsafe { format_create_from_target(item) };
@@ -171,7 +180,10 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             |cmd| unsafe { crate::format::format_single_from_target(item, cmd) },
         ));
     }
-    if args_has(args, 't' as i32 as u_char) != 0 {
+    if ({
+        let flag = 't' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         cdata.wp_id = target_pane_id.map_or(-1, |id| id as core::ffi::c_int);
     } else {
         cdata.wp_id = -(1 as core::ffi::c_int);
@@ -196,7 +208,10 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             ))
         };
     }
-    if args_has(args, 'E' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'E' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         cdata.flags |= JOB_SHOWSTDERR;
     }
     cdata.session_ref = target_session;

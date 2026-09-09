@@ -1,6 +1,6 @@
 use crate::GlobPaths;
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str};
+use crate::args::{args_string_str};
 use crate::cfg::cfg_print_causes;
 use crate::cfg::{configuration_finished, load_cfg_buffer_for_client};
 use crate::cmd::cmdq_item;
@@ -213,10 +213,16 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         };
     }
     let mut flags: core::ffi::c_int = 0;
-    if args_has(args, 'q' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'q' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         flags |= CMD_PARSE_QUIET;
     }
-    if args_has(args, 'n' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'n' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         flags |= CMD_PARSE_PARSEONLY;
     }
     if unsafe {
@@ -224,7 +230,10 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             .is_none_or(|c| !c.flags() & CLIENT_CONTROL as uint64_t != 0)
     } {
         parse_flags = cmd_get_parse_flags(self_0);
-        if args_has(args, 'v' as i32 as u_char) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
+        if ({
+            let flag = 'v' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
             flags |= CMD_PARSE_VERBOSE;
         }
     }
@@ -241,7 +250,7 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     };
     for i in 0..args.argument_count() {
         let argument = unsafe { args_string_str(args, i).expect("argument index checked") };
-        let expanded = (args_has(args, b'F') != 0)
+        let expanded = (args.argument_flag_count(b'F') != 0)
             .then(|| unsafe { format_single_from_target(item, argument) });
         let path = expanded.as_deref().unwrap_or(argument);
         if path == c"-" {

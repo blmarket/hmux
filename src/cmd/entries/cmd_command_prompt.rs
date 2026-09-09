@@ -32,7 +32,7 @@
 
 use crate::args::RustArguments;
 use crate::args::{
-    args_has, args_make_commands, args_make_commands_get_command, args_make_commands_prepare,
+    args_make_commands, args_make_commands_get_command, args_make_commands_prepare,
 };
 use crate::cmd::CmdqItemRef;
 use crate::cmd::CmdqItemWeak;
@@ -151,7 +151,7 @@ fn mode_flag(args: &RustArguments) -> c_int {
         (b'k', PROMPT_KEY),
         (b'e', PROMPT_BSPACE_EXIT),
     ] {
-        if args_has(args, flag) != 0 {
+        if args.argument_flag_count(flag) != 0 {
             return bit;
         }
     }
@@ -167,7 +167,7 @@ unsafe fn cmd_command_prompt_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     if tc.has_prompt_text() {
         return CMD_RETURN_NORMAL;
     }
-    let wait = (args_has(args, b'b') == 0 && args_has(args, b'i') == 0) as c_int;
+    let wait = (args.argument_flag_count(b'b') == 0 && args.argument_flag_count(b'i') == 0) as c_int;
 
     let mut cdata = unsafe {
         Box::new(cmd_command_prompt_cdata {
@@ -182,7 +182,7 @@ unsafe fn cmd_command_prompt_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
                 Some(c"%1"),
                 wait,
                 |cmd| {
-                    if args_has(args, b'F') != 0 {
+                    if args.argument_flag_count(b'F') != 0 {
                         crate::format::format_single_from_target(item, cmd)
                     } else {
                         cmd.to_owned()
@@ -212,7 +212,7 @@ unsafe fn cmd_command_prompt_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     };
     let inputs = args.argument_flag_string(b'I').map(|s| s.to_owned());
 
-    if args_has(args, b'l') != 0 {
+    if args.argument_flag_count(b'l') != 0 {
         cdata.prompts.push(cmd_command_prompt_prompt {
             prompt: prompts,
             input: inputs,
@@ -233,7 +233,7 @@ unsafe fn cmd_command_prompt_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     }
 
     cdata.flags |= mode_flag(args);
-    if args_has(args, b'C') != 0 {
+    if args.argument_flag_count(b'C') != 0 {
         cdata.flags |= PROMPT_NOFREEZE;
     }
     let first = &(&cdata.prompts)[0];

@@ -1,5 +1,4 @@
 use crate::args::RustArguments;
-use crate::args::args_has;
 use crate::cmd::cmd_find_target;
 use crate::cmd::cmd_get_args;
 
@@ -78,7 +77,10 @@ unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         .expect("a resolved switch target has a session");
     let link = target.winlink_ref();
     let pane = target.pane_list_ref();
-    if args_has(args, 'r' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'r' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         if unsafe {
             tc.as_ref().expect("the command has a client").flags() & CLIENT_READONLY as uint64_t
                 != 0
@@ -117,13 +119,19 @@ unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         args.argument_flag_string(flag)
     }));
     if sort_crit.order() as core::ffi::c_uint == SORT_END as core::ffi::c_int as core::ffi::c_uint
-        && args_has(args, 'O' as i32 as u_char) != 0
+        && ({
+            let flag = 'O' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0
     {
         unsafe { item.error(c"invalid sort order", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
-    sort_crit.set_reversed(args_has(args, 'r' as i32 as u_char) != 0);
-    if args_has(args, b'n') != 0 {
+    sort_crit.set_reversed(({
+        let flag = 'r' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0);
+    if args.argument_flag_count(b'n') != 0 {
         let current = {
             tc.as_ref()
                 .expect("the command has a client")
@@ -137,7 +145,7 @@ unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             return CMD_RETURN_ERROR;
         };
         selected_session = found;
-    } else if args_has(args, b'p') != 0 {
+    } else if args.argument_flag_count(b'p') != 0 {
         let current = {
             tc.as_ref()
                 .expect("the command has a client")
@@ -151,7 +159,7 @@ unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             return CMD_RETURN_ERROR;
         };
         selected_session = found;
-    } else if args_has(args, b'l') != 0 {
+    } else if args.argument_flag_count(b'l') != 0 {
         let Some(last) = (unsafe {
             tc.as_ref()
                 .expect("the command has a client")
@@ -174,7 +182,7 @@ unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                     .is_none_or(|active| !active.ptr_eq(pane))
             }
         {
-            if unsafe { window.push_zoom(0, args_has(args, b'Z')) != 0 } {
+            if unsafe { window.push_zoom(0, args.argument_flag_count(b'Z')) != 0 } {
                 unsafe { window.redraw() };
             }
             unsafe {
@@ -199,7 +207,10 @@ unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             unsafe { current_state_ref.update_current_session(&selected_session, 0) };
         }
     }
-    if args_has(args, 'E' as i32 as u_char) == 0 {
+    if ({
+        let flag = 'E' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) == 0 {
         unsafe {
             selected_session.update_environment_from(tc.as_ref().expect("the command has a client"))
         };

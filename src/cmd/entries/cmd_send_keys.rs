@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str, args_strtonum_and_expand};
+use crate::args::{args_string_str, args_strtonum_and_expand};
 use crate::cmd::{CmdqItemRef, cmdq_item_ref_of};
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::ffi::strtol;
@@ -78,7 +78,10 @@ unsafe fn cmd_send_keys_inject_key(
     unsafe {
         let (mut tc, target) = (item.target_client(), item.target());
 
-        if args_has(args, 'K' as i32 as u_char) != 0 {
+        if ({
+            let flag = 'K' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 {
             if tc.is_none() {
                 return Some(item.clone());
             }
@@ -127,7 +130,10 @@ unsafe fn cmd_send_keys_inject_string(
         let mut endptr: *mut core::ffi::c_char = core::ptr::null_mut::<core::ffi::c_char>();
         let n: core::ffi::c_long;
         let mut literal: core::ffi::c_int;
-        if args_has(args, 'H' as i32 as u_char) != 0 {
+        if ({
+            let flag = 'H' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 {
             n = strtol(s.as_ptr(), &raw mut endptr, 16 as core::ffi::c_int);
             if s.to_bytes().is_empty()
                 || n < 0 as core::ffi::c_long
@@ -138,7 +144,10 @@ unsafe fn cmd_send_keys_inject_string(
             }
             return cmd_send_keys_inject_key(item, after, args, KEYC_LITERAL | n as key_code);
         }
-        literal = args_has(args, 'l' as i32 as u_char);
+        literal = {
+            let flag = 'l' as i32 as u_char;
+            args.argument_flag_count(flag)
+        };
         if literal == 0 {
             key = RustKeyStringCodec.parse_key(s);
             if key != KEYC_NONE as core::ffi::c_ulong as key_code
@@ -184,12 +193,18 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         tc.is_some()
             && tc.as_ref().expect("the command has a client").flags() & CLIENT_READONLY as uint64_t
                 != 0
-            && args_has(args, 'X' as i32 as u_char) == 0
+            && ({
+                let flag = 'X' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) == 0
     } {
         unsafe { item.error(c"client is read-only", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'N' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'N' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe {
             np = args_strtonum_and_expand(
                 args,
@@ -204,7 +219,7 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             unsafe { item.error(c"repeat count %s", fmt_args![cause.as_c_str()]) };
             return CMD_RETURN_ERROR;
         }
-        if (args_has(args, b'X') != 0 || count == 0)
+        if (args.argument_flag_count(b'X') != 0 || count == 0)
             && pane
                 .as_ref()
                 .and_then(|pane| unsafe { pane.set_mode_prefix(np) })
@@ -214,7 +229,7 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             return CMD_RETURN_ERROR;
         }
     }
-    if args_has(args, b'X') != 0 {
+    if args.argument_flag_count(b'X') != 0 {
         let dispatched = event_state_ref.with_mouse_event(|mouse| {
             let mouse = if mouse.valid == 0 { None } else { Some(mouse) };
             pane.as_ref().is_some_and(|pane| unsafe {
@@ -227,7 +242,10 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'M' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'M' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         return event_state_ref.with_mouse_event(|m| {
             let Some((_, _, mouse_wp)) = (unsafe { cmd_mouse_pane(m) }) else {
                 unsafe { item.error(c"no mouse target", fmt_args![]) };
@@ -241,7 +259,10 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         let session = session
             .as_ref()
             .expect("a send-prefix target has a session");
-        if args_has(args, '2' as i32 as u_char) != 0 {
+        if ({
+            let flag = '2' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 {
             unsafe { key = session.options().number(c"prefix2") as key_code };
         } else {
             unsafe { key = session.options().number(c"prefix") as key_code };
@@ -249,13 +270,19 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { cmd_send_keys_inject_key(&item_ref, Some(item_ref.clone()), args, key) };
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, b'R') != 0
+    if args.argument_flag_count(b'R') != 0
         && let Some(pane) = pane.as_ref()
     {
         unsafe { pane.reset_terminal() };
     }
     if count == 0 as u_int {
-        if args_has(args, 'N' as i32 as u_char) != 0 || args_has(args, 'R' as i32 as u_char) != 0 {
+        if ({
+            let flag = 'N' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 || ({
+            let flag = 'R' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 {
             return CMD_RETURN_NORMAL;
         }
         let event_key = event_state_ref.event_snapshot().key;

@@ -24,7 +24,7 @@
 //! own index. The conversion nulls that variable where the C's loop left it.
 
 use crate::args::RustArguments;
-use crate::args::{args_has, args_to_vector, args_value_list};
+use crate::args::{args_to_vector, args_value_list};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item_weak_of;
 
@@ -140,7 +140,7 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
         unsafe { wname = clean_name(&expanded, 0) };
     }
-    if args_has(args, b'S') != 0
+    if args.argument_flag_count(b'S') != 0
         && let Some(wname) = wname.as_ref()
         && target_idx == -1
     {
@@ -159,7 +159,7 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             }
         };
         if let Some(found_idx) = found_idx {
-            if args_has(args, b'd') != 0 {
+            if args.argument_flag_count(b'd') != 0 {
                 return CMD_RETURN_NORMAL;
             }
             unsafe { select_found_window(&session, found_idx, c.as_ref()) };
@@ -167,8 +167,8 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
     }
 
-    let before = args_has(args, b'b');
-    if args_has(args, b'a') != 0 || before != 0 {
+    let before = args.argument_flag_count(b'b');
+    if args.argument_flag_count(b'a') != 0 || before != 0 {
         unsafe {
             idx = session
                 .shuffle_windows(around, before)
@@ -188,10 +188,10 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     sc.idx = idx;
     sc.cwd = args.argument_flag_string(b'c');
     sc.flags = 0;
-    if args_has(args, b'd') != 0 {
+    if args.argument_flag_count(b'd') != 0 {
         sc.flags |= SPAWN_DETACHED;
     }
-    if args_has(args, b'k') != 0 {
+    if args.argument_flag_count(b'k') != 0 {
         sc.flags |= SPAWN_KILL;
     }
 
@@ -203,14 +203,14 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         return CMD_RETURN_ERROR;
     };
 
-    if unsafe { args_has(args, b'd') == 0 || session.current_index() == Some(new_wl.index()) } {
+    if unsafe { args.argument_flag_count(b'd') == 0 || session.current_index() == Some(new_wl.index()) } {
         unsafe { current_state_ref.update_current_link(&new_wl, None, 0) };
         unsafe { session.redraw_group() };
     } else {
         unsafe { session.status_group() };
     }
 
-    if args_has(args, b'P') != 0 {
+    if args.argument_flag_count(b'P') != 0 {
         let template = args
             .argument_flag_string(b'F')
             .unwrap_or(NEW_WINDOW_TEMPLATE);

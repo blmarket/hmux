@@ -1,6 +1,6 @@
 use crate::args::RustArguments;
 use crate::args::{
-    args_has, args_percentage, args_string_str, args_strtonum, args_to_vector, args_value_list,
+    args_percentage, args_string_str, args_strtonum, args_to_vector, args_value_list,
 };
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item_ref_of;
@@ -423,7 +423,10 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if tc.overlay().is_some() {
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'C' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'C' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         if ({
             let flag = 'C' as i32 as u_char;
             args.argument_flag_string(flag)
@@ -450,7 +453,10 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         current_block = 4166486009154926805;
     }
     if current_block == 4166486009154926805 {
-        let title = if args_has(args, 'T' as i32 as u_char) != 0 {
+        let title = if ({
+            let flag = 'T' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 {
             match {
                 let flag = 'T' as i32 as u_char;
                 args.argument_flag_string(flag)
@@ -549,10 +555,16 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                     match current_block {
                         17781493482496987363 => {}
                         _ => {
-                            if args_has(args, 'O' as i32 as u_char) != 0 {
+                            if ({
+                                let flag = 'O' as i32 as u_char;
+                                args.argument_flag_count(flag)
+                            }) != 0 {
                                 flags |= MENU_STAYOPEN;
                             }
-                            if event.m.valid == 0 && args_has(args, 'M' as i32 as u_char) == 0 {
+                            if event.m.valid == 0 && ({
+                                let flag = 'M' as i32 as u_char;
+                                args.argument_flag_count(flag)
+                            }) == 0 {
                                 flags |= MENU_NOMOUSE;
                             }
                             if unsafe {
@@ -628,7 +640,10 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             .expect("the popup session has a current window")
             .options()
     };
-    if args_has(args, 'C' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'C' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe { client_clear_overlay(&mut tc) };
         return CMD_RETURN_NORMAL;
     }
@@ -637,7 +652,10 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
     if modify == 0 {
         h = sy.wrapping_div(2 as u_int);
-        if args_has(args, 'h' as i32 as u_char) != 0 {
+        if ({
+            let flag = 'h' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 {
             unsafe {
                 h = args_percentage(
                     args,
@@ -661,7 +679,10 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             5914453722638945560 => {}
             _ => {
                 w = sx.wrapping_div(2 as u_int);
-                if args_has(args, 'w' as i32 as u_char) != 0 {
+                if ({
+                    let flag = 'w' as i32 as u_char;
+                    args.argument_flag_count(flag)
+                }) != 0 {
                     unsafe {
                         w = args_percentage(
                             args,
@@ -732,7 +753,10 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                             } else {
                                 unsafe { argv = args_to_vector(args) };
                             }
-                            if args_has(args, 'e' as i32 as u_char) >= 1 as core::ffi::c_int {
+                            if ({
+                                let flag = 'e' as i32 as u_char;
+                                args.argument_flag_count(flag)
+                            }) >= 1 as core::ffi::c_int {
                                 let mut e = new_environment_box();
                                 for av in args_value_list(args, 'e' as i32 as u_char) {
                                     e.put(av.value.string(), 0);
@@ -753,7 +777,10 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             let flag = 'b' as i32 as u_char;
             args.argument_flag_string(flag)
         };
-        if args_has(args, 'B' as i32 as u_char) != 0 {
+        if ({
+            let flag = 'B' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0 {
             lines = BOX_LINES_NONE;
             current_block = 12556861819962772176;
         } else if let Some(value) = value {
@@ -777,7 +804,10 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         match current_block {
             5914453722638945560 => {}
             _ => {
-                if args_has(args, 'T' as i32 as u_char) != 0 {
+                if ({
+                    let flag = 'T' as i32 as u_char;
+                    args.argument_flag_count(flag)
+                }) != 0 {
                     unsafe {
                         title = Some(format_single_from_target(
                             item,
@@ -791,21 +821,33 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 } else {
                     title = Some(c"".to_owned());
                 }
-                if args_has(args, 'N' as i32 as u_char) != 0 || modify == 0 {
+                if ({
+                    let flag = 'N' as i32 as u_char;
+                    args.argument_flag_count(flag)
+                }) != 0 || modify == 0 {
                     flags = 0 as core::ffi::c_int;
                 }
-                if args_has(args, 'E' as i32 as u_char) > 1 as core::ffi::c_int {
+                if ({
+                    let flag = 'E' as i32 as u_char;
+                    args.argument_flag_count(flag)
+                }) > 1 as core::ffi::c_int {
                     if flags == -(1 as core::ffi::c_int) {
                         flags = 0 as core::ffi::c_int;
                     }
                     flags |= POPUP_CLOSEEXITZERO;
-                } else if args_has(args, 'E' as i32 as u_char) != 0 {
+                } else if ({
+                    let flag = 'E' as i32 as u_char;
+                    args.argument_flag_count(flag)
+                }) != 0 {
                     if flags == -(1 as core::ffi::c_int) {
                         flags = 0 as core::ffi::c_int;
                     }
                     flags |= POPUP_CLOSEEXIT;
                 }
-                if args_has(args, 'k' as i32 as u_char) != 0 {
+                if ({
+                    let flag = 'k' as i32 as u_char;
+                    args.argument_flag_count(flag)
+                }) != 0 {
                     if flags == -(1 as core::ffi::c_int) {
                         flags = 0 as core::ffi::c_int;
                     }

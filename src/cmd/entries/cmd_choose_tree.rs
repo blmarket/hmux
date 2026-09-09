@@ -26,7 +26,6 @@
 //!   first and `args_has` is what guards the refusal.
 
 use crate::args::RustArguments;
-use crate::args::args_has;
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -188,7 +187,7 @@ fn cmd_choose_tree_mode(self_0: &cmd) -> Option<WindowMode> {
 /// whose template has no `O` at all, out of the refusal.
 fn cmd_choose_tree_order_is_known(args: &RustArguments) -> bool {
     RustSortCriteria::parse_order(args.argument_flag_string(b'O')) != SORT_END
-        || args_has(args, b'O') == 0
+        || args.argument_flag_count(b'O') == 0
 }
 
 unsafe fn cmd_choose_tree_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {

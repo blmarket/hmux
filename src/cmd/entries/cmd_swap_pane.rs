@@ -1,4 +1,3 @@
-use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
@@ -47,11 +46,11 @@ unsafe fn cmd_swap_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         .expect("a swap destination has a pane");
     let mut src_owner = item.source.window().expect("a swap source has a window");
     let mut src_pane = item.source.pane_ref().expect("a swap source has a pane");
-    if unsafe { dst_owner.push_zoom(0, args_has(args, b'Z')) != 0 } {
+    if unsafe { dst_owner.push_zoom(0, args.argument_flag_count(b'Z')) != 0 } {
         unsafe { dst_owner.redraw() };
     }
-    let down = args_has(args, b'D') != 0;
-    if down || args_has(args, b'U') != 0 {
+    let down = args.argument_flag_count(b'D') != 0;
+    if down || args.argument_flag_count(b'U') != 0 {
         src_owner = dst_owner.clone();
         let panes = dst_owner.panes();
         let index = panes
@@ -66,7 +65,7 @@ unsafe fn cmd_swap_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         src_pane = panes[index].clone();
     }
     let same_window = src_owner.ptr_eq(&dst_owner);
-    if unsafe { !same_window && src_owner.push_zoom(0, args_has(args, b'Z')) != 0 } {
+    if unsafe { !same_window && src_owner.push_zoom(0, args.argument_flag_count(b'Z')) != 0 } {
         unsafe { src_owner.redraw() };
     }
     if src_pane != dst_pane {
@@ -78,7 +77,7 @@ unsafe fn cmd_swap_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                     return CMD_RETURN_ERROR;
                 }
             };
-        if args_has(args, b'd') == 0 {
+        if args.argument_flag_count(b'd') == 0 {
             unsafe { src_owner.set_active_pane(&dst_pane, 1) };
             if !same_window {
                 unsafe { dst_owner.set_active_pane(&src_pane, 1) };

@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str};
+use crate::args::{args_string_str};
 use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
@@ -42,8 +42,14 @@ unsafe fn cmd_unbind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args: &RustArguments = cmd_get_args(self_0);
 
     let keystr = unsafe { args_string_str(args, 0) };
-    let quiet: core::ffi::c_int = args_has(args, 'q' as i32 as u_char);
-    if args_has(args, 'a' as i32 as u_char) != 0 {
+    let quiet: core::ffi::c_int = {
+        let flag = 'q' as i32 as u_char;
+        args.argument_flag_count(flag)
+    };
+    if ({
+        let flag = 'a' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         if keystr.is_some() {
             if quiet == 0 {
                 unsafe { item.error(c"key given with -a", fmt_args![]) };
@@ -55,7 +61,10 @@ unsafe fn cmd_unbind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             args.argument_flag_string(flag)
         } {
             Some(given) => given,
-            None if args_has(args, 'n' as i32 as u_char) != 0 => c"root",
+            None if ({
+                let flag = 'n' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) != 0 => c"root",
             None => c"prefix",
         };
         if key_bindings_get_table(tablename, 0 as core::ffi::c_int).is_none() {
@@ -93,7 +102,10 @@ unsafe fn cmd_unbind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             return CMD_RETURN_ERROR;
         }
         given
-    } else if args_has(args, 'n' as i32 as u_char) != 0 {
+    } else if ({
+        let flag = 'n' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         c"root"
     } else {
         c"prefix"

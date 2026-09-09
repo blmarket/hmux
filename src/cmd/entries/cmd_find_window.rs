@@ -25,10 +25,10 @@
 //!   already in that mode.
 
 use crate::args::RustArguments;
-use crate::args::{args_create, args_has, args_set, args_string_str};
+use crate::args::{args_create, args_set, args_string_str};
 use crate::cmd::cmd_get_args;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::types::{ArgsValue, WindowMode, args_parse_t, args_value_t};
 use ::core::ffi::c_char;
 use ::std::ffi::CString;
@@ -81,8 +81,8 @@ unsafe fn cmd_find_window_filter(args: &RustArguments) -> Vec<u8> {
         let s = args_string_str(args, 0)
             .expect("argument count checked")
             .to_bytes();
-        let regex = args_has(args, b'r') != 0;
-        let ignore_case = args_has(args, b'i') != 0;
+        let regex = args.argument_flag_count(b'r') != 0;
+        let ignore_case = args.argument_flag_count(b'i') != 0;
         let star: &[u8] = match regex {
             true => b"",
             false => b"*",
@@ -94,9 +94,9 @@ unsafe fn cmd_find_window_filter(args: &RustArguments) -> Vec<u8> {
             (false, false) => b"",
         };
 
-        let mut content = args_has(args, b'C') != 0;
-        let mut name = args_has(args, b'N') != 0;
-        let mut title = args_has(args, b'T') != 0;
+        let mut content = args.argument_flag_count(b'C') != 0;
+        let mut name = args.argument_flag_count(b'N') != 0;
+        let mut title = args.argument_flag_count(b'T') != 0;
         if !content && !name && !title {
             content = true;
             name = true;
@@ -135,7 +135,7 @@ unsafe fn cmd_find_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         ArgsValue::String(CString::new(text).expect("window filter contains no NUL bytes"));
 
     let mut new_args = args_create();
-    if args_has(args, b'Z') != 0 {
+    if args.argument_flag_count(b'Z') != 0 {
         unsafe { args_set(&mut new_args, b'Z', None, 0) };
     }
     unsafe { args_set(&mut new_args, b'f', Some(filter), 0) };

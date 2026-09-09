@@ -1,4 +1,4 @@
-use crate::args::{args_has, args_string_str};
+use crate::args::{args_string_str};
 use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
@@ -56,11 +56,11 @@ unsafe fn cmd_pipe_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         {
             return CMD_RETURN_NORMAL;
         }
-        if args_has(args, b'o') != 0 && closed.was_open {
+        if args.argument_flag_count(b'o') != 0 && closed.was_open {
             return CMD_RETURN_NORMAL;
         }
-        let (input, output) = if args_has(args, b'I') != 0 {
-            (1, args_has(args, b'O'))
+        let (input, output) = if args.argument_flag_count(b'I') != 0 {
+            (1, args.argument_flag_count(b'O'))
         } else {
             (0, 1)
         };

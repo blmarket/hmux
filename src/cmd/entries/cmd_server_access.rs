@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_has, args_string_str};
+use crate::args::{args_string_str};
 use crate::cmd::cmd_get_args;
 
 use crate::ffi::getuid;
@@ -62,7 +62,10 @@ unsafe fn cmd_server_access_deny(item: &cmdq_item, pw: &UserAccountRecord) -> cm
 unsafe fn cmd_server_access_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args: &RustArguments = cmd_get_args(self_0);
     let c = item.target_client();
-    if args_has(args, 'l' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'l' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe { server_acl_display(item) };
         return CMD_RETURN_NORMAL;
     }
@@ -96,30 +99,57 @@ unsafe fn cmd_server_access_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         };
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'd' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'a' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 && ({
+        let flag = 'd' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe { item.error(c"-a and -d cannot be used together", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'w' as i32 as u_char) != 0 && args_has(args, 'r' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'w' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 && ({
+        let flag = 'r' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         unsafe { item.error(c"-r and -w cannot be used together", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
-    if args_has(args, 'd' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'd' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         return unsafe { cmd_server_access_deny(item, &pw) };
     }
-    if args_has(args, 'a' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'a' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         if with_server_acl(|acl| acl.find(pw.account_user_id() as uid_t)).is_some() {
             unsafe { item.error(c"user %s is already added", fmt_args![pw.account_name()]) };
             return CMD_RETURN_ERROR;
         }
         with_server_acl_mut(|acl| acl.allow(pw.account_user_id() as uid_t));
-    } else if (args_has(args, 'r' as i32 as u_char) != 0
-        || args_has(args, 'w' as i32 as u_char) != 0)
+    } else if (({
+        let flag = 'r' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0
+        || ({
+            let flag = 'w' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0)
         && with_server_acl(|acl| acl.find(pw.account_user_id() as uid_t)).is_none()
     {
         with_server_acl_mut(|acl| acl.allow(pw.account_user_id() as uid_t));
     }
-    if args_has(args, 'w' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'w' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         let uid = pw.account_user_id() as uid_t;
         if with_server_acl(|acl| acl.find(uid)).is_none() {
             unsafe { item.error(c"user %s not found", fmt_args![pw.account_name()]) };
@@ -129,7 +159,10 @@ unsafe fn cmd_server_access_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         server_acl_update_clients(uid, ServerAclAccess::ReadWrite);
         return CMD_RETURN_NORMAL;
     }
-    if args_has(args, 'r' as i32 as u_char) != 0 {
+    if ({
+        let flag = 'r' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         let uid = pw.account_user_id() as uid_t;
         if with_server_acl(|acl| acl.find(uid)).is_none() {
             unsafe { item.error(c"user %s not found", fmt_args![pw.account_name()]) };

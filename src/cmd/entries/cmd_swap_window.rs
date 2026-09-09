@@ -1,5 +1,4 @@
 use crate::args::RustArguments;
-use crate::args::args_has;
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
@@ -57,7 +56,7 @@ unsafe fn cmd_swap_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         return CMD_RETURN_NORMAL;
     }
     unsafe { source.exchange_linked_windows(&target) };
-    if args_has(args, b'd') != 0 {
+    if args.argument_flag_count(b'd') != 0 {
         unsafe { dst.select(target.index()) };
         if !same_session {
             unsafe { src.select(source.index()) };

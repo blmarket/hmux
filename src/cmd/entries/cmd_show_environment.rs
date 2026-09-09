@@ -2,7 +2,7 @@ use crate::args::RustArguments;
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
 
-use crate::args::{args_has, args_string_str};
+use crate::args::{args_string_str};
 use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
@@ -59,13 +59,13 @@ fn cmd_show_environment_line(
     args: &RustArguments,
     envent: &crate::environ::EnvironmentEntryRef<'_>,
 ) -> Option<CString> {
-    let hidden = args_has(args, b'h') != 0;
+    let hidden = args.argument_flag_count(b'h') != 0;
     if hidden != (envent.flags & ENVIRON_HIDDEN != 0) {
         return None;
     }
     let name = envent.name;
     let value = envent.value;
-    let line = if args_has(args, b's') == 0 {
+    let line = if args.argument_flag_count(b's') == 0 {
         if let Some(value) = value {
             format_alloc(c"%s=%s", fmt_args![name, value])
         } else {
@@ -118,7 +118,10 @@ unsafe fn cmd_show_environment_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retva
         unsafe { item.error(c"no such session: %s", fmt_args![tflag]) };
         return CMD_RETURN_ERROR;
     }
-    let lines = if args_has(args, 'g' as i32 as u_char) != 0 {
+    let lines = if ({
+        let flag = 'g' as i32 as u_char;
+        args.argument_flag_count(flag)
+    }) != 0 {
         with_global_environment(|env| cmd_show_environment_lines(env, args, name))
     } else {
         if (*target).session().is_none() {
