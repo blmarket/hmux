@@ -1858,7 +1858,7 @@ mod tests {
         let _guard = globals();
         let args = Args::parse(c"wait-for -S chan");
         unsafe {
-            assert_eq!(crate::args::args_has(&*args.borrow(), b'S'), 1);
+            assert_eq!(args.borrow().argument_flag_count(b'S'), 1);
             assert_eq!(
                 seen_str(crate::args::args_string_str(&*args.borrow(), 0)),
                 "chan"

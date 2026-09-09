@@ -23,7 +23,7 @@
 //!   that there is nothing to choose.
 //! * `customize-mode` shares the `-O` check although its own template has no
 //!   `O`, so the check can never fire for it: the parser turns the flag down
-//!   first and `args_has` is what guards the refusal.
+//!   first and `argument_flag_count` is what guards the refusal.
 
 use crate::args::RustArguments;
 

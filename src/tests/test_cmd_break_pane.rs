@@ -1,5 +1,5 @@
 use super::*;
-use crate::args::{args_get_str, args_has};
+use crate::args::args_get_str;
 use crate::cmd::cmd_find_from_winlink;
 use crate::options::OptionsRef;
 use crate::pane_command::PaneCommandState;
@@ -359,7 +359,7 @@ fn p_takes_the_format_from_f_instead_of_the_default_template() {
     let mut item = Item::new().with_args(c"break-pane -d -P -F '#{window_name}'");
     unsafe {
         let args = item.args();
-        assert_eq!(args_has(&args, b'P'), 1);
+        assert_eq!(args.argument_flag_count(b'P'), 1);
         assert_eq!(args_get_str(&args, b'F'), Some(c"#{window_name}"));
         drop(args);
         aim(&mut item, fs_of(wl0, -1), fs_of(wl0, -1));

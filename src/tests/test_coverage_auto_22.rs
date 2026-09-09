@@ -6,9 +6,7 @@
 //! server or the command table, so no [`globals`] guard is needed except where
 //! noted.
 
-use crate::args::{
-    args_create, args_escape, args_free, args_get_str, args_has, args_print, args_set,
-};
+use crate::args::{args_create, args_escape, args_free, args_get_str, args_print, args_set};
 use crate::cmd::{cmd_pack_argv, cmd_stringify_argv, cmd_template_replace, cmd_unpack_argv};
 use crate::tests::test_fixtures::seen;
 use crate::tests::test_fixtures::seen_str;
@@ -215,12 +213,12 @@ fn args_has_get_and_print_roundtrip() {
     unsafe {
         let args = Box::into_raw(args_create());
         assert!(!args.is_null());
-        assert_eq!(args_has(&*args, b'a'), 0);
+        assert_eq!((*args).argument_flag_count(b'a'), 0);
         assert!(args_get_str(&*args, b'a').is_none());
         assert_eq!(args_print(&*args).to_string_lossy(), "");
         // set flag -a without value
         args_set(&mut *args, b'a', None, 0);
-        assert_eq!(args_has(&*args, b'a'), 1);
+        assert_eq!((*args).argument_flag_count(b'a'), 1);
         assert!(args_get_str(&*args, b'a').is_none());
         let printed1 = args_print(&*args).to_string_lossy().into_owned();
         assert_eq!(printed1, "-a");
@@ -228,7 +226,7 @@ fn args_has_get_and_print_roundtrip() {
         let mut v = Box::new(crate::types::args_value_t::default());
         v.value = crate::types::ArgsValue::String(CString::new("val").unwrap());
         args_set(&mut *args, b'b', Some(v), 0);
-        assert_eq!(args_has(&*args, b'b'), 1);
+        assert_eq!((*args).argument_flag_count(b'b'), 1);
         assert_eq!(seen_str(args_get_str(&*args, b'b')), "val");
         let printed2 = args_print(&*args).to_string_lossy().into_owned();
         assert!(printed2.contains("-b"), "got {printed2:?}");

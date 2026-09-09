@@ -445,12 +445,12 @@ fn the_type_names_are_what_the_log_prints() {
 fn a_flag_is_counted_every_time_it_is_given() {
     unsafe {
         let args = Box::into_raw(args_create());
-        assert_eq!(args_has(&*args, b'a'), 0);
+        assert_eq!((*args).argument_flag_count(b'a'), 0);
         args_set(&mut *args, b'a', None, 0);
-        assert_eq!(args_has(&*args, b'a'), 1);
+        assert_eq!((*args).argument_flag_count(b'a'), 1);
         args_set(&mut *args, b'a', None, 0);
-        assert_eq!(args_has(&*args, b'a'), 2);
-        assert_eq!(args_has(&*args, b'b'), 0);
+        assert_eq!((*args).argument_flag_count(b'a'), 2);
+        assert_eq!((*args).argument_flag_count(b'b'), 0);
         args_free(Box::from_raw(args));
     }
 }
@@ -503,7 +503,7 @@ fn a_value_of_no_type_is_thrown_away_by_args_set() {
         let args = Box::into_raw(args_create());
         let value = Box::new(args_value_t::default());
         args_set(&mut *args, b'a', Some(value), 0);
-        assert_eq!(args_has(&*args, b'a'), 1);
+        assert_eq!((*args).argument_flag_count(b'a'), 1);
         assert!(args_value_list(&*args, b'a').is_empty());
         args_free(Box::from_raw(args));
     }
@@ -611,7 +611,7 @@ fn copying_keeps_the_flags_and_their_values() {
         args_set(&mut *args, b'a', None, 0);
         args_set(&mut *args, b'b', string_value(c"one"), 0);
         let copy = args_copy(&*args, &[]);
-        assert_eq!(args_has(&copy, b'a'), 2);
+        assert_eq!(copy.argument_flag_count(b'a'), 2);
         assert_eq!(seen_str(args_get_str(&copy, b'b')), "one");
         assert_eq!(args_print(&copy).to_string_lossy(), "-aa -b one");
         args_free(Box::from_raw(args));

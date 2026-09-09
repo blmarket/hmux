@@ -813,10 +813,6 @@ pub(crate) fn args_escape_impl(s: &CStr) -> CString {
     }
 }
 
-pub fn args_has(args: &RustArguments, flag: u_char) -> core::ffi::c_int {
-    args.argument_flag_count(flag)
-}
-
 pub unsafe fn args_set(
     args: &mut RustArguments,
     flag: u_char,
