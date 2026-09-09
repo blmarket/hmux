@@ -631,7 +631,7 @@ fn default_colours_follow_active_pane_identity_and_per_colour_fallbacks() {
     let mut window = Window::new(900, "colours", 20, 6);
     window.add_pane(&mut first);
     window.add_pane(&mut second);
-    let mut owner = window.handle().clone();
+    let owner = window.handle().clone();
     unsafe {
         let mut panes = owner.panes();
         for pane in &mut panes {

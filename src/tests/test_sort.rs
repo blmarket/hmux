@@ -157,15 +157,15 @@ fn the_window_tree_never_swaps_by_index_and_swaps_by_a_name_that_differs() {
     let wl1 = link(&mut session, &mut first, 1);
     let wl2 = link(&mut session, &mut second, 2);
     unsafe {
-        let mut c = crit(SORT_INDEX, 0);
+        let c = crit(SORT_INDEX, 0);
         assert_eq!(sort_would_window_tree_swap(&c, &*wl1, &*wl2), 0);
         assert_eq!(sort_would_window_tree_swap(&c, &*wl2, &*wl1), 0);
 
-        let mut c = crit(SORT_NAME, 0);
+        let c = crit(SORT_NAME, 0);
         assert_eq!(sort_would_window_tree_swap(&c, &*wl1, &*wl2), 1);
         assert_eq!(sort_would_window_tree_swap(&c, &*wl1, &*wl1), 0);
 
-        let mut c = crit(SORT_NAME, 1);
+        let c = crit(SORT_NAME, 1);
         assert_eq!(sort_would_window_tree_swap(&c, &*wl1, &*wl2), 1);
         assert_eq!(sort_would_window_tree_swap(&c, &*wl1, &*wl1), 0);
     }
@@ -308,7 +308,7 @@ fn an_empty_store_hands_back_nothing() {
 /// The names of the clients the server hands back under `order`.
 fn clients_named(order: sort_order, reversed: c_int) -> Vec<String> {
     unsafe {
-        let mut c = crit(order, reversed);
+        let c = crit(order, reversed);
         let l = sort_get_clients(&c);
         l.iter()
             .map(|c| {
@@ -413,7 +413,7 @@ fn no_clients_at_all_hand_back_nothing() {
 /// The names of the sessions the server hands back under `order`.
 fn sessions_named(order: sort_order, reversed: c_int) -> Vec<String> {
     {
-        let mut c = crit(order, reversed);
+        let c = crit(order, reversed);
         let l = sort_get_sessions(&c);
         l.iter()
             .map(|s| {
@@ -537,7 +537,7 @@ fn panes_sort_by_id_by_size_and_by_title() {
     window.add_pane(&mut second);
     window.add_pane(&mut third);
     unsafe {
-        let mut w = window.reference();
+        let w = window.reference();
         assert_eq!(window_panes(&w, SORT_CREATION, 0), ["aaa", "bbb", "ccc"]);
         assert_eq!(window_panes(&w, SORT_CREATION, 1), ["ccc", "bbb", "aaa"]);
         assert_eq!(window_panes(&w, SORT_SIZE, 0), ["bbb", "aaa", "ccc"]);
@@ -563,7 +563,7 @@ fn panes_sort_by_where_they_are_in_the_window_and_by_when_they_were_last_active(
     window.add_pane(&mut second);
     window.add_pane(&mut third);
     unsafe {
-        let mut w = window.reference();
+        let w = window.reference();
         assert_eq!(
             window_panes(&w, SORT_INDEX, 0),
             ["first", "second", "third"]
@@ -591,7 +591,7 @@ fn panes_share_a_z_index_until_one_of_them_floats() {
     window.add_pane(&mut first);
     window.add_pane(&mut second);
     unsafe {
-        let mut w = window.reference();
+        let w = window.reference();
         assert_eq!(window_panes(&w, SORT_Z, 0), ["aaa", "bbb"]);
         crate::tests::test_fixtures::set_pane_floating(
             &mut w.as_window_mut(),
@@ -611,7 +611,7 @@ fn panes_share_a_z_index_until_one_of_them_floats() {
 #[test]
 fn a_window_with_no_panes_hands_back_nothing() {
     let _guard = sorting();
-    let mut window = Window::new(1, "w", 80, 24);
+    let window = Window::new(1, "w", 80, 24);
     unsafe {
         assert!(window_panes(window.handle(), SORT_NAME, 0).is_empty());
     }
@@ -653,11 +653,11 @@ fn a_session_hands_back_the_panes_of_every_window_linked_into_it() {
     let wl1 = link(&mut session, &mut first, 1);
     let wl2 = link(&mut session, &mut second, 2);
     unsafe {
-        let mut c = crit(SORT_NAME, 0);
+        let c = crit(SORT_NAME, 0);
         let l = sort_get_panes_session(&mut *session.ptr(), &c);
         assert_eq!(titles(&l), ["one", "three", "two"]);
 
-        let mut c = crit(SORT_END, 0);
+        let c = crit(SORT_END, 0);
         let l = sort_get_panes_session(&mut *session.ptr(), &c);
         assert_eq!(titles(&l), ["one", "two", "three"]);
     }
@@ -681,7 +681,7 @@ fn a_window_linked_into_two_sessions_has_its_panes_listed_twice() {
     registry.add_session(&mut first);
     registry.add_session(&mut second);
     unsafe {
-        let mut c = crit(SORT_END, 0);
+        let c = crit(SORT_END, 0);
         let l = sort_get_panes(&c);
         assert_eq!(titles(&l), ["only", "only"]);
     }
@@ -694,7 +694,7 @@ fn no_sessions_at_all_hand_back_no_panes() {
     let _guard = sorting();
     let _registry = Registry::new();
     unsafe {
-        let mut c = crit(SORT_NAME, 0);
+        let c = crit(SORT_NAME, 0);
         let l = sort_get_panes(&c);
         assert_eq!(titles(&l), Vec::<String>::new());
     }
@@ -720,7 +720,7 @@ unsafe fn linked(l: &[WinlinkRef]) -> Vec<String> {
 /// The winlinks of `s`, by window name, under `order`.
 unsafe fn session_winlinks(s: &SessionRef, order: sort_order, reversed: c_int) -> Vec<String> {
     unsafe {
-        let mut c = crit(order, reversed);
+        let c = crit(order, reversed);
         let l = s.sorted_winlinks(&c);
         linked(&l)
     }
@@ -807,11 +807,11 @@ fn every_session_hands_over_its_winlinks() {
     registry.add_session(&mut first);
     registry.add_session(&mut second);
     unsafe {
-        let mut c = crit(SORT_END, 0);
+        let c = crit(SORT_END, 0);
         let l = sort_get_winlinks(&c);
         assert_eq!(linked(&l), ["one", "two", "three"]);
 
-        let mut c = crit(SORT_NAME, 0);
+        let c = crit(SORT_NAME, 0);
         let l = sort_get_winlinks(&c);
         assert_eq!(linked(&l), ["one", "three", "two"]);
     }
@@ -823,7 +823,7 @@ fn every_session_hands_over_its_winlinks() {
 #[test]
 fn a_session_with_no_windows_hands_back_no_winlinks() {
     let _guard = sorting();
-    let mut session = Session::new(1, "s");
+    let session = Session::new(1, "s");
     unsafe {
         assert!(session_winlinks(session.handle(), SORT_INDEX, 0).is_empty());
     }
@@ -879,7 +879,7 @@ impl Drop for Table {
 fn tables() -> (MutexGuard<'static, ()>, MutexGuard<'static, ()>) {
     let guards = sorting();
     unsafe {
-        let mut c = crit(SORT_END, 0);
+        let c = crit(SORT_END, 0);
         let l = sort_get_key_bindings(&c);
         assert_eq!(l.len(), 0, "the key tables already hold bindings");
     }
@@ -894,7 +894,7 @@ fn keys(l: &[key_binding]) -> Vec<key_code> {
 /// The bindings of `table` under `order`, by key.
 unsafe fn table_keys(table: &KeyTableRef, order: sort_order, reversed: c_int) -> Vec<key_code> {
     unsafe {
-        let mut c = crit(order, reversed);
+        let c = crit(order, reversed);
         let l = sort_get_key_bindings_table(&mut table.borrow_mut(), &c);
         keys(&l)
     }
@@ -1007,7 +1007,7 @@ fn each_table_keeps_its_place_when_its_own_run_is_turned_round() {
         second.add(key as key_code);
     }
     unsafe {
-        let mut c = crit(SORT_NAME, 0);
+        let c = crit(SORT_NAME, 0);
         let l = sort_get_key_bindings(&c);
         assert_eq!(
             keys(&l),
@@ -1042,14 +1042,14 @@ fn every_table_hands_over_its_bindings() {
     second.add(b'a' as key_code);
     second.add(b'b' as key_code);
     unsafe {
-        let mut c = crit(SORT_END, 0);
+        let c = crit(SORT_END, 0);
         let l = sort_get_key_bindings(&c);
         assert_eq!(
             keys(&l),
             [b'c' as key_code, b'a' as key_code, b'b' as key_code]
         );
 
-        let mut c = crit(SORT_INDEX, 0);
+        let c = crit(SORT_INDEX, 0);
         let l = sort_get_key_bindings(&c);
         assert_eq!(
             keys(&l),
@@ -1069,7 +1069,7 @@ fn two_bindings_of_different_tables_compare_the_same() {
     first.add(b'b' as key_code);
     second.add(b'a' as key_code);
     unsafe {
-        let mut c = crit(SORT_NAME, 0);
+        let c = crit(SORT_NAME, 0);
         let l = sort_get_key_bindings(&c);
         assert_eq!(keys(&l), [b'b' as key_code, b'a' as key_code]);
     }
@@ -1079,7 +1079,7 @@ fn two_bindings_of_different_tables_compare_the_same() {
 fn no_key_tables_at_all_hand_back_nothing() {
     let _guards = tables();
     unsafe {
-        let mut c = crit(SORT_INDEX, 0);
+        let c = crit(SORT_INDEX, 0);
         let l = sort_get_key_bindings(&c);
         assert_eq!(keys(&l), Vec::<key_code>::new());
     }
@@ -1251,7 +1251,7 @@ fn a_pane_comparison_answers_everything_a_pane_is_sorted_by() {
     window.add_pane(&mut first);
     window.add_pane(&mut second);
     unsafe {
-        let mut owner = window.reference();
+        let owner = window.reference();
         let mut aaa = owner.as_window().panes[0].downgrade();
         let mut bbb = owner.as_window().panes[1].downgrade();
         aaa.as_pane_mut().mark_active_at(5);
@@ -1339,7 +1339,7 @@ fn a_key_binding_comparison_answers_one_for_two_bindings_of_a_table() {
     table.add(b'a' as key_code);
     table.add(b'b' as key_code | KEYC_CTRL);
     unsafe {
-        let mut c = crit(SORT_END, 0);
+        let c = crit(SORT_END, 0);
         let l = sort_get_key_bindings(&c);
         let aaa = &l[0];
         let bbb = &l[1];

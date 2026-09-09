@@ -644,7 +644,7 @@ fn appending_a_node_stops_when_the_bracket_will_not_fit() {
 #[test]
 fn a_tree_too_long_for_the_buffer_dumps_nothing() {
     let _g = guard();
-    let mut l = Layout::new(80, 24);
+    let l = Layout::new(80, 24);
     unsafe {
         let mut node = layout_create_cell(None);
         let node_ptr = &raw mut *node;

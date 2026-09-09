@@ -39,20 +39,6 @@ use crate::window::{
     window_pane_reset_mode_all, window_panes_insert_tail, window_ref_of, winlink_insert,
 };
 
-impl cmd_parse_result {
-    /// The message a failed parse left, taken out of the result so the test
-    /// can match on it. Panics when the parse did not fail.
-    pub(crate) fn take_error(&mut self) -> String {
-        String::from_utf8_lossy(
-            self.error
-                .take()
-                .expect("parse result has no error")
-                .as_bytes(),
-        )
-        .into_owned()
-    }
-}
-
 /// Every call a [`Prompt::Recorder`] prompt made to its input callback, as the
 /// answer it carried and whether it was the final one. A test holds
 /// [`globals`], so the list is only ever touched by one of them at a time.
@@ -90,7 +76,6 @@ use crate::cmd::cmd_find_from_winlink;
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
 use crate::cmd::{CmdqStateRef, CmdqType};
 use crate::environ::{RustEnvironment, new_environment_box};
-use crate::ffi::free;
 use crate::file::CLIENT_DEAD;
 use crate::format::{
     FORMAT_NONE, format_create, format_defaults, format_expand, format_expand_time,
@@ -113,7 +98,7 @@ use crate::reactor::{IoWatch, Reactor, Timer};
 use crate::status::status_free;
 use crate::terminfo::tty_term_of;
 use crate::terminfo::{RustTerminalCapabilities, TerminalCapabilities};
-use ::core::ffi::{CStr, c_char, c_int, c_void};
+use ::core::ffi::{CStr, c_char, c_int};
 use ::core::ptr::null_mut;
 use ::std::ffi::CString;
 use ::std::sync::MutexGuard;
@@ -152,24 +137,6 @@ pub(crate) fn message_log_count() -> usize {
 
 pub(crate) fn reset_message_log() {
     with_message_log_mut(|log| *log = RustMessageLog::new());
-}
-
-pub(crate) struct MessageLogGuard {
-    saved: Option<RustMessageLog>,
-}
-
-impl MessageLogGuard {
-    pub(crate) fn take() -> Self {
-        let saved = with_message_log_mut(core::mem::take);
-        Self { saved: Some(saved) }
-    }
-}
-
-impl Drop for MessageLogGuard {
-    fn drop(&mut self) {
-        let saved = self.saved.take().expect("message log guard owns a store");
-        with_message_log_mut(|log| *log = saved);
-    }
 }
 
 /// The globals `main` sets up that the modules' tests need — the environment,
@@ -417,9 +384,7 @@ impl Grid {
     }
 
     pub(crate) fn cell(&self, px: u_int, py: u_int) -> grid_cell {
-        let mut gc = { grid_default_cell };
-        gc = grid_get_cell(&*self, px, py);
-        gc
+        grid_get_cell(&*self, px, py)
     }
 }
 
@@ -614,7 +579,7 @@ impl Item {
     }
 
     /// Where the command came from, which is what `cmdq_error` reports.
-    pub(crate) fn with_file(mut self, file: &'static CStr, line: u_int) -> Item {
+    pub(crate) fn with_file(self, file: &'static CStr, line: u_int) -> Item {
         {
             let mut command = self.cmdlist.command_mut(0).expect("the fixture command");
             command.file = Some(file.to_owned());
@@ -623,14 +588,10 @@ impl Item {
         self
     }
 
-    pub(crate) fn from_file(self, file: &'static CStr, line: u_int) -> Item {
-        self.with_file(file, line)
-    }
-
     /// Runs the command line `s` through the parser and points the item's
     /// command at the arguments it produced.
     pub(crate) fn with_args(mut self, s: &CStr) -> Item {
-        let mut args = Args::parse(s);
+        let args = Args::parse(s);
         {
             let mut source = args.cmdlist.command_mut(0).expect("the parsed command");
             let mut target = self.cmdlist.command_mut(0).expect("the fixture command");
@@ -688,10 +649,6 @@ impl Item {
         self.cmdlist.command(0).expect("the fixture command")
     }
 
-    pub(crate) fn command_mut(&self) -> std::cell::RefMut<'_, cmd> {
-        self.cmdlist.command_mut(0).expect("the fixture command")
-    }
-
     pub(crate) fn with_command<R>(&self, operation: impl FnOnce(&cmd, &cmdq_item) -> R) -> R {
         let command = self.cmdlist.command(0).expect("the fixture command");
         let item = self.handle();
@@ -703,14 +660,6 @@ impl Item {
         std::cell::Ref::map(
             self.cmdlist.command(0).expect("the fixture command"),
             |command| command.args.as_deref().expect("the fixture arguments"),
-        )
-    }
-
-    /// The command arguments under an exclusive borrow of their list.
-    pub(crate) fn args_mut(&self) -> std::cell::RefMut<'_, args> {
-        std::cell::RefMut::map(
-            self.cmdlist.command_mut(0).expect("the fixture command"),
-            |command| command.args.as_deref_mut().expect("the fixture arguments"),
         )
     }
 
@@ -747,7 +696,6 @@ impl Drop for Item {
 /// server, not this.
 pub(crate) struct Session {
     session: SessionRef,
-    name: CString,
 }
 
 impl Session {
@@ -755,12 +703,12 @@ impl Session {
         let name = CString::new(name).expect("a session name has no NUL");
         let session = session_new_detached(
             id,
-            name.clone(),
+            name,
             CString::new("/").expect("no NUL"),
             Options::session().owned(),
             new_environment_box(),
         );
-        let mut s = Session { session, name };
+        let s = Session { session };
         unsafe { (*s.session.as_ptr()).lastw.clear() };
         s
     }
@@ -1172,7 +1120,7 @@ impl Tty {
             tty: zeroed_tty(),
             client: zeroed_client(),
         };
-        let mut term = zeroed_term();
+        let term = zeroed_term();
         t.tty.term = Some(term);
         t.tty.owner = Some(t.client.downgrade());
         t
@@ -1582,28 +1530,6 @@ impl Format {
         Format(format_create(None, None, FORMAT_NONE, 0))
     }
 
-    /// A tree carrying the defaults for whichever of a client, session,
-    /// winlink and pane are given, the way `format_create_defaults` builds one
-    /// for a command.
-    pub(crate) fn defaults(
-        c: *mut client,
-        s: *mut session,
-        wl: *mut winlink,
-        wp: *mut window_pane,
-    ) -> Format {
-        let ft = Format::new();
-        unsafe {
-            format_defaults(
-                &mut *ft.ptr(),
-                c.as_ref(),
-                s.as_ref(),
-                wl.as_ref(),
-                wp.as_ref(),
-            )
-        };
-        ft
-    }
-
     /// A tree carrying the defaults of `target`'s current winlink, with no
     /// client.
     pub(crate) fn from_target(target: &mut Target) -> Format {
@@ -1631,10 +1557,6 @@ impl Format {
     /// The tree itself, to hand to the calls that borrow it.
     pub(crate) fn tree(&mut self) -> &mut format_tree {
         &mut self.0
-    }
-
-    pub(crate) fn into_box(self) -> Box<format_tree> {
-        self.0
     }
 
     /// What `fmt` expands to.
@@ -1744,15 +1666,6 @@ impl Drop for Paste {
     }
 }
 
-/// The contents of a C string the caller now owns, freeing it.
-pub(crate) unsafe fn taken(p: *mut c_char) -> String {
-    unsafe {
-        let s = String::from_utf8_lossy(CStr::from_ptr(p).to_bytes()).into_owned();
-        free(p as *mut c_void);
-        s
-    }
-}
-
 /// The contents of a C string somebody else still owns.
 pub(crate) unsafe fn seen(p: *const c_char) -> String {
     unsafe {
@@ -1815,7 +1728,7 @@ mod tests {
     #[test]
     fn a_retained_command_survives_replacing_its_queue_item() {
         let _guard = globals();
-        let mut fixture = Item::new().with_file(c"retained.conf", 17);
+        let fixture = Item::new().with_file(c"retained.conf", 17);
         let mut item = fixture.item_mut();
         let (list, at) = item.command_location().unwrap();
         let list = list.clone();

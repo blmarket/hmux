@@ -436,7 +436,7 @@ fn key_bindings_remove_table_rebinds_attached_clients() {
     let mut ts = Tables::new();
     unsafe {
         let home = c"kb-client-home";
-        let mut s = Session::new(1, "kb-session");
+        let s = Session::new(1, "kb-session");
         s.options()
             .set_string(c"key-table", 0, c"%s", fmt_args![home.as_ptr()]);
 

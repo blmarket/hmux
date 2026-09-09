@@ -241,7 +241,7 @@ fn key_lookup_and_prompt_callbacks_reject_stale_items() {
     let _guard = globals();
     let mut table = KeyTable::new("customize-focused");
     table.bind(b'x' as key_code, c"display-message x", Some(c"note"));
-    let mut target = Target::new(80, 24);
+    let target = Target::new(80, 24);
     let mut client = zeroed_client();
     unsafe { client.set_attached_session(Some(target.session_handle())) };
     let mut item = window_customize_itemdata {

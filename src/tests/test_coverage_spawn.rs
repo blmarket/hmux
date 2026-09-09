@@ -338,7 +338,7 @@ fn the_shell_search_path_and_system_constants_are_the_upstream_ones() {
 #[test]
 fn respawning_a_window_with_an_attached_pane_refuses_without_touching_it() {
     let _guard = globals();
-    let mut rig = Rig::new(0);
+    let rig = Rig::new(0);
     let mut item = Item::new();
     let mut sc = context(&mut item, &rig, Some(&rig.p), SPAWN_RESPAWN, -1);
     unsafe {
@@ -408,7 +408,7 @@ fn respawning_a_window_with_an_attached_pane_refuses_without_touching_it() {
 #[test]
 fn an_explicit_index_already_in_use_refuses_the_window_spawn() {
     let _guard = globals();
-    let mut rig = Rig::new(0);
+    let rig = Rig::new(0);
     let mut item = Item::new();
     let mut sc = context(&mut item, &rig, None, SPAWN_DETACHED, 0);
     unsafe {
@@ -471,7 +471,7 @@ fn an_explicit_index_already_in_use_refuses_the_window_spawn() {
 #[test]
 fn respawning_a_pane_that_is_still_attached_refuses_before_any_descriptor_work() {
     let _guard = globals();
-    let mut rig = Rig::new(0);
+    let rig = Rig::new(0);
     let mut item = Item::new();
     let mut sc = context(&mut item, &rig, Some(&rig.p), SPAWN_RESPAWN, -1);
     unsafe {

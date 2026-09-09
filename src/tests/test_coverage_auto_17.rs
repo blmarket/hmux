@@ -3,13 +3,12 @@
 //! `utf8_padcstr`/`utf8_rpadcstr` and the width cache populated by
 //! `utf8_update_width_cache` and the `codepoint-widths` option.
 
-use crate::ffi::free;
 use crate::options::{OptionsEngine, OptionsRef, RustOptionsEngine};
 
 use crate::tests::test_fixtures::globals;
 use crate::text::{RustUtf8VisModel, Utf8VisModel, utf8_update_width_cache};
 use crate::tmux::global_options;
-use ::core::ffi::{CStr, c_char, c_int, c_void};
+use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
 
 fn utf8_isvalid(input: &CStr) -> c_int {
@@ -30,18 +29,6 @@ fn utf8_padcstr(input: &CStr, width: u32) -> CString {
 
 fn utf8_rpadcstr(input: &CStr, width: u32) -> CString {
     RustUtf8VisModel.pad_left(input, width)
-}
-
-unsafe fn taken(p: *mut c_char) -> Vec<u8> {
-    unsafe {
-        let v = CStr::from_ptr(p).to_bytes().to_vec();
-        free(p as *mut c_void);
-        v
-    }
-}
-
-fn c(s: &CStr) -> *const c_char {
-    s.as_ptr()
 }
 
 // ---------------------------------------------------------------------------

@@ -388,7 +388,7 @@ fn format_search_rechecks_its_pane_after_expanding_the_search_text() {
     unsafe fn remove_search_pane(ft: &format_tree) -> Option<CString> {
         unsafe {
             let pane = ft.pane_handle()?;
-            let mut window = pane.window().unwrap();
+            let window = pane.window().unwrap();
             window.remove_pane(
                 &crate::window::window_pane_find_by_id(pane.id()).expect("the pane exists"),
             );
@@ -423,7 +423,7 @@ fn format_search_rechecks_its_pane_after_expanding_the_search_text() {
 #[test]
 fn window_name_search_observes_changes_made_by_its_expansion_callback() {
     unsafe fn rename_window(ft: &format_tree) -> Option<CString> {
-        let mut window = ft.window()?;
+        let window = ft.window()?;
         window.set_window_name(Some(c"renamed"));
         Some(c"renamed".to_owned())
     }
@@ -486,7 +486,7 @@ fn retained_format_panes_preserve_their_reference_across_window_changes() {
     unsafe {
         ft.tree().set_pane(Some(&*target.pane(0)));
         let pane = ft.tree().pane_handle().unwrap();
-        let mut window = pane.window().unwrap();
+        let window = pane.window().unwrap();
         ft.tree().set_window(Some(&window));
         assert_eq!(pane.get().unwrap().pane_id(), pane.id());
         window.as_window_mut().last_panes.insert(0, pane.clone());

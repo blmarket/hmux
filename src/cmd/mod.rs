@@ -39,6 +39,8 @@ pub use queue::{
     cmdq_state,
 };
 pub(crate) use queue::{cmdq_item_ref_of, cmdq_item_weak_of};
+#[cfg(test)]
+pub(crate) use queue::{CmdqListOps, CmdqType};
 
 pub use parse::{
     CMD_PARSE_COMMANDS, CMD_PARSE_STRING, CMD_PARSE_SUCCESS, cmd_parse_argument, cmd_parse_command,

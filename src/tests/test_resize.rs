@@ -126,19 +126,11 @@ unsafe fn calculate(
     w: *mut window,
 ) -> (c_int, u_int, u_int, u_int, u_int) {
     unsafe {
-        let mut sx = 0;
-        let mut sy = 0;
-        let mut xpixel = 0;
-        let mut ypixel = 0;
         let w = w.as_ref().and_then(crate::window::window_ref_of);
         let size = clients_calculate_size(type_0, c.as_ref(), w.as_ref(), |client| {
             default_window_size_skip_client(client, s.as_ref(), w.as_ref())
         });
-        sx = size.sx;
-        sy = size.sy;
-        xpixel = size.xpixel;
-        ypixel = size.ypixel;
-        (size.found as c_int, sx, sy, xpixel, ypixel)
+        (size.found as c_int, size.sx, size.sy, size.xpixel, size.ypixel)
     }
 }
 
@@ -219,7 +211,7 @@ fn a_zoomed_window_is_unzoomed_and_zoomed_again_around_the_resize() {
 #[test]
 fn a_client_with_no_session_or_on_its_way_out_is_ignored() {
     let _guard = globals();
-    let mut s = Session::new(1, "ignore");
+    let s = Session::new(1, "ignore");
     let mut list = Clients::new();
     let c = list.add("c", 80, 24);
     assert_eq!(unsafe { ignores(c) }, 1);
@@ -236,7 +228,7 @@ fn a_client_with_no_session_or_on_its_way_out_is_ignored() {
 #[test]
 fn a_client_ignoring_size_gives_way_to_one_that_does_not() {
     let _guard = globals();
-    let mut s = Session::new(1, "ignore");
+    let s = Session::new(1, "ignore");
     let mut list = Clients::new();
     let first = list.add("first", 80, 24);
     unsafe {
@@ -258,7 +250,7 @@ fn a_client_ignoring_size_gives_way_to_one_that_does_not() {
 #[test]
 fn a_control_client_is_ignored_until_it_reports_a_size() {
     let _guard = globals();
-    let mut s = Session::new(1, "control");
+    let s = Session::new(1, "control");
     let mut list = Clients::new();
     let c = list.add("c", 80, 24);
     unsafe {

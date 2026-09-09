@@ -1,15 +1,16 @@
 use super::*;
 use crate::compat::{VIS_CSTYLE, VIS_NL, VIS_OCTAL};
-use crate::ffi::free;
 use crate::options::{OptionsEngine, OptionsRef, RustOptionsEngine};
 
 use crate::tests::test_fixtures::globals;
 use crate::tmux::global_options;
-use ::core::ffi::{CStr, c_char, c_int, c_void};
+use ::core::ffi::{CStr, c_int};
 
 /// Serializes tests that reset the shared character store and process options.
 /// Each test also starts and ends with an empty thread-local width cache.
-struct Globals(std::sync::MutexGuard<'static, ()>);
+struct Globals {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
 
 impl Drop for Globals {
     fn drop(&mut self) {
@@ -20,7 +21,7 @@ impl Drop for Globals {
 fn exclusive() -> Globals {
     let guard = globals();
     forget_everything();
-    Globals(guard)
+    Globals { _guard: guard }
 }
 
 /// Resets the shared character store and width cache between isolated tests.
@@ -60,15 +61,6 @@ fn open_append(bytes: &[u8]) -> (utf8_state, utf8_data) {
             state = utf8_append(&mut ud, b);
         }
         (state, ud)
-    }
-}
-
-/// The contents of a C string the module allocated, freeing it.
-unsafe fn taken(p: *mut c_char) -> Vec<u8> {
-    unsafe {
-        let s = CStr::from_ptr(p).to_bytes().to_vec();
-        free(p as *mut c_void);
-        s
     }
 }
 
@@ -200,7 +192,7 @@ fn a_codepoint_that_has_no_character_or_no_width_is_an_error() {
 fn a_cached_width_is_used_in_place_of_the_measured_one() {
     let _guard = exclusive();
     unsafe {
-        let mut ud = filled("é".as_bytes(), 0);
+        let ud = filled("é".as_bytes(), 0);
         assert_eq!(utf8_width(&ud), Ok(1));
 
         utf8_insert_width_cache(0xe9, 2);
@@ -209,7 +201,7 @@ fn a_cached_width_is_used_in_place_of_the_measured_one() {
         utf8_insert_width_cache(0xe9, 0);
         assert_eq!(utf8_width(&ud), Ok(0));
 
-        let mut bad = filled(b"\xff", 0);
+        let bad = filled(b"\xff", 0);
         assert_eq!(utf8_width(&bad), Err(UTF8_ERROR));
     }
 }

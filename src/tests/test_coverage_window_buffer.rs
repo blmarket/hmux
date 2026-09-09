@@ -43,7 +43,7 @@ fn test_window_buffer_mode_lifecycle_and_keys() {
 
         let wp = t.pane(0);
 
-        let mut item = Item::with_client()
+        let item = Item::with_client()
             .with_file(FILE, 1)
             .with_args(c"choose-buffer")
             .targeting(&mut t);
@@ -123,7 +123,7 @@ fn a_filter_prompt_outliving_buffer_mode_answers_without_the_tree() {
         status_init(&mut *c1);
 
         let wp = t.pane(0);
-        let mut item = Item::with_client()
+        let item = Item::with_client()
             .with_file(FILE, 1)
             .with_args(c"choose-buffer")
             .targeting(&mut t);
@@ -192,7 +192,7 @@ fn test_window_buffer_custom_format_and_sort() {
 
         let wp = t.pane(0);
 
-        let mut item = Item::with_client()
+        let item = Item::with_client()
             .with_file(FILE, 1)
             .with_args(c"choose-buffer -F \"#{buffer_name}\" -K \"#{buffer_name}\" -r -O name")
             .targeting(&mut t);

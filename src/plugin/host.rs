@@ -325,7 +325,7 @@ mod tests {
     #[test]
     fn the_recent_tail_ends_at_the_last_row_with_text() {
         let _guard = globals();
-        let mut written = Written::new(20, 6, &["first", "second", "third"]);
+        let written = Written::new(20, 6, &["first", "second", "third"]);
 
         assert_eq!(
             written.text(ScreenSource::Recent, 64),
@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn a_row_keeps_its_text_and_loses_its_padding() {
         let _guard = globals();
-        let mut written = Written::new(20, 6, &["left   ", "", "after the gap"]);
+        let written = Written::new(20, 6, &["left   ", "", "after the gap"]);
 
         assert_eq!(
             written.text(ScreenSource::Recent, 64),
@@ -353,7 +353,7 @@ mod tests {
     #[test]
     fn an_untouched_screen_reads_as_nothing() {
         let _guard = globals();
-        let mut written = Written::new(20, 6, &[]);
+        let written = Written::new(20, 6, &[]);
 
         assert_eq!(written.text(ScreenSource::Recent, 64), c"");
         assert_eq!(written.text(ScreenSource::Visible, 64), c"");
@@ -365,7 +365,7 @@ mod tests {
     fn history_belongs_to_the_recent_slice_and_not_the_visible_one() {
         let _guard = globals();
         let rows = ["one", "two", "three", "four", "five", "six", "seven"];
-        let mut written = Written::new(20, 3, &rows);
+        let written = Written::new(20, 3, &rows);
 
         assert_eq!(
             written.text(ScreenSource::Recent, 64),

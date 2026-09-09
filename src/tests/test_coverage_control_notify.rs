@@ -231,7 +231,7 @@ fn layout_changes_are_skipped_until_a_laid_out_window_is_held_by_ones_own_sessio
     let mut l = Layout::new(80, 24);
     let mut bare = Window::new(20, "unlaid", 80, 24);
     let mut holding = Session::new(2, "holding");
-    let mut elsewhere = Session::new(3, "elsewhere");
+    let elsewhere = Session::new(3, "elsewhere");
     let mut list = Clients::new();
     let watcher = list.add("watcher", 80, 24);
     let out = ControlOut::new(unsafe { &mut *watcher });
@@ -307,7 +307,7 @@ fn pane_changes_need_an_active_pane_and_then_name_window_and_pane() {
 fn add_close_and_rename_lines_follow_each_clients_own_session() {
     let _guard = globals();
     let mut home = Session::new(4, "home");
-    let mut away = Session::new(5, "away");
+    let away = Session::new(5, "away");
     let mut w = Window::new(4, "shared", 80, 24);
     let mut list = Clients::new();
     let watcher = list.add("watcher", 80, 24);
@@ -354,7 +354,7 @@ fn add_close_and_rename_lines_follow_each_clients_own_session() {
 #[test]
 fn session_changes_speak_to_the_moved_client_differently_from_the_rest() {
     let _guard = globals();
-    let mut moved_to = Session::new(6, "six");
+    let moved_to = Session::new(6, "six");
     let mut list = Clients::new();
     let mover = list.add("mover", 80, 24);
     let watcher = list.add("watcher", 80, 24);

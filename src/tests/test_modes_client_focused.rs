@@ -59,7 +59,7 @@ fn build_selects_attached_clients_and_applies_filters() {
         let build_data = data.downgrade();
         let menu_data = data.downgrade();
         let key_data = data.downgrade();
-        let mut tree = ModeTreeDataRef::start(
+        let tree = ModeTreeDataRef::start(
             &mut *pane.ptr(),
             None,
             Some(std::rc::Rc::new(move |sort, tag, filter| {
@@ -90,7 +90,7 @@ fn build_selects_attached_clients_and_applies_filters() {
         );
         data.borrow_mut().data = Some(tree.downgrade());
 
-        let mut session = Session::new(902, "client-mode");
+        let session = Session::new(902, "client-mode");
         let mut clients = Clients::new();
         let first = clients.add("alpha", 80, 24);
         (*first).set_attached_session(Some(session.handle()));
@@ -252,7 +252,7 @@ fn preview_uses_the_clients_current_window_and_skips_missing_active_panes() {
                 expected
             );
         }
-        let mut window = session.curw().unwrap().window().unwrap().clone();
+        let window = session.curw().unwrap().window().unwrap().clone();
         window.as_window_mut().active_pane = None;
         for current in [Some(7), None] {
             session.as_session_mut().curw_idx = current;

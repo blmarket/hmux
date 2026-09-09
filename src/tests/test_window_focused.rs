@@ -154,7 +154,7 @@ fn window_cleanup_works_during_thread_local_teardown() {
     }
     std::thread::spawn(|| {
         LAST_WINDOW.with_borrow_mut(|last| {
-            let mut reference = WindowRef::new(window::default());
+            let reference = WindowRef::new(window::default());
             reference.register_id();
             {
                 window_panes_insert_tail(
@@ -636,8 +636,8 @@ fn pane_owner_transfer_preserves_address_and_expires_deferred_observers() {
     let calls = std::rc::Rc::new(std::cell::Cell::new(0));
     let observed = calls.clone();
     let callback = on_pane(id, move |_| observed.set(observed.get() + 1));
-    let mut source = WindowRef::new(window::default());
-    let mut destination = WindowRef::new(window::default());
+    let source = WindowRef::new(window::default());
+    let destination = WindowRef::new(window::default());
     unsafe {
         window_panes_insert_tail(&mut source.as_window_mut(), owner);
         let mut transferred = window_panes_take(
@@ -738,8 +738,8 @@ fn pane_lookup_follows_swapped_owners_after_exclusive_borrows() {
 #[test]
 fn moving_an_old_pane_cannot_rebind_a_replacement_registration() {
     let _guard = globals();
-    let mut source = WindowRef::new(window::default());
-    let mut destination = WindowRef::new(window::default());
+    let source = WindowRef::new(window::default());
+    let destination = WindowRef::new(window::default());
     {
         let old = RustWindowPaneRef::new(detached_pane());
         let id = old.pane_id();
@@ -795,7 +795,7 @@ fn losing_the_active_pane_uses_history_then_owned_neighbors() {
         for pane in &mut panes {
             fixture.add_pane(pane);
         }
-        let mut owner = fixture.reference();
+        let owner = fixture.reference();
         unsafe {
             let mut w = owner.as_window_mut();
             w.active_pane = w
@@ -864,7 +864,7 @@ fn pane_removal_tears_down_resources_before_the_last_reference_drops() {
     use std::os::unix::net::UnixStream;
 
     let _guard = globals();
-    let mut owner = WindowRef::create(20, 8, 0, 0);
+    let owner = WindowRef::create(20, 8, 0, 0);
     unsafe {
         let id = window_add_pane(&mut owner.as_window_mut(), None, 0, 0).id();
         let mut retained = window_pane_find_by_id(id).unwrap();
@@ -906,7 +906,7 @@ fn pane_removal_tears_down_resources_before_the_last_reference_drops() {
 #[test]
 fn retained_pane_does_not_keep_its_window_alive_or_delay_window_teardown() {
     let _guard = globals();
-    let mut owner = WindowRef::create(20, 8, 0, 0);
+    let owner = WindowRef::create(20, 8, 0, 0);
     let weak_window = owner.downgrade();
     let id = unsafe { window_add_pane(&mut owner.as_window_mut(), None, 0, 0).id() };
     let mut pane = window_pane_find_by_id(id).unwrap();
@@ -1075,8 +1075,8 @@ fn detached_pane() -> Box<window_pane> {
 #[test]
 fn window_pane_lookup_tracks_membership_without_borrowing_the_window_payload() {
     let _guard = globals();
-    let mut source = WindowRef::new(window::default());
-    let mut destination = WindowRef::new(window::default());
+    let source = WindowRef::new(window::default());
+    let destination = WindowRef::new(window::default());
     let pane = RustWindowPaneRef::new(detached_pane());
     let id = pane.pane_id();
     unsafe {
@@ -1124,7 +1124,7 @@ fn window_pane_lookup_tracks_membership_without_borrowing_the_window_payload() {
 #[test]
 fn registry_lookup_requires_registration_and_recorded_membership() {
     let _guard = globals();
-    let mut owner = WindowRef::new(window::default());
+    let owner = WindowRef::new(window::default());
     let unregistered = RustWindowPaneRef::from_pane(detached_pane());
     let id = unregistered.pane_id();
     let pointer = unregistered.as_mut_ptr();
@@ -1590,7 +1590,7 @@ fn pane_stacking_and_flags_follow_physical_owners_and_skip_retired_targets() {
     let _guard = globals();
     let mut target = Target::new(40, 12);
     let pane = target.state().pane_ref().unwrap();
-    let mut window = pane.window().unwrap();
+    let window = pane.window().unwrap();
     unsafe {
         let mut payload = Box::new(window_pane::default());
         payload.set_pane_id(99);
@@ -1599,7 +1599,7 @@ fn pane_stacking_and_flags_follow_physical_owners_and_skip_retired_targets() {
         let listed = RustWindowPaneRef::from_pane(payload);
         let observed = listed.downgrade();
         window_panes_insert_tail(&mut window.as_window_mut(), listed);
-        let mut listed = observed;
+        let listed = observed;
         window.as_window_mut().layout_root = Some(Box::new(layout_cell {
             wp_ref: Some(pane.clone()),
             flags: LAYOUT_CELL_FLOATING,
@@ -1654,9 +1654,9 @@ fn terminal_resize_uses_the_panes_current_window_pixels_and_skips_missing_owners
     let mut target = Target::new(40, 12);
     target.add_window(1, 40, 12);
     let mut pane = target.state().pane_ref().unwrap();
-    let mut original = pane.window().unwrap();
+    let original = pane.window().unwrap();
     unsafe {
-        let mut destination = window_ref_of(&*target.window(1)).unwrap();
+        let destination = window_ref_of(&*target.window(1)).unwrap();
         original.set_pixels(WindowPixelSize {
             width: 8,
             height: 16,
@@ -1721,7 +1721,7 @@ fn pane_indices_read_the_supplied_list_and_options_without_rebinding_duplicate_i
     let _guard = globals();
     let mut target = Target::new(40, 12);
     let pane = target.state().pane_ref().unwrap();
-    let mut original = pane.window().unwrap();
+    let original = pane.window().unwrap();
     unsafe {
         let options = original.options();
         let mut supplied = window::default();
@@ -1814,13 +1814,13 @@ fn a_recorded_window_context_expires_when_its_last_owner_drops() {
 #[test]
 fn a_stream_error_callback_does_not_delay_pane_destruction() {
     let _guard = globals();
-    let mut window = WindowRef::create(20, 8, 0, 0);
+    let window = WindowRef::create(20, 8, 0, 0);
     unsafe {
         let id = window_add_pane(&mut window.as_window_mut(), None, 0, 0).id();
         let observed = window_pane_find_by_id(id).unwrap();
         let callback_window = window.clone();
         let callback = on_pane_error(id, move |pane| {
-            let mut window = callback_window.clone();
+            let window = callback_window.clone();
             window.remove_pane(
                 &crate::window::window_pane_find_by_id(pane.pane_id()).expect("the pane exists"),
             );

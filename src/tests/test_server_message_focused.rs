@@ -22,7 +22,7 @@ fn session_redraw_status_and_lock_skip_unrelated_control_and_suspended_clients()
     let _guard = globals();
     let mut clients = Clients::new();
     let mut selected = Session::new(801, "selected");
-    let mut other = Session::new(802, "other");
+    let other = Session::new(802, "other");
     let selected_client = clients.add("selected-client", 80, 24);
     let other_client = clients.add("other-client", 80, 24);
     unsafe {

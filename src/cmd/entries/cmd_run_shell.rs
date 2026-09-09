@@ -395,6 +395,7 @@ mod tests {
     use crate::cfg::WindowMode;
     use crate::format::format_grid_line;
     use crate::pane_identity::PaneIdentity;
+    use crate::window_pane_trait::WindowPane;
     use crate::tests::test_fixtures::{Target, globals};
 
     fn output_state(pane_id: core::ffi::c_int) -> cmd_run_shell_data {

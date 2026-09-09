@@ -13,13 +13,6 @@ use crate::window::WINDOW_ZOOMED;
 use ::core::ffi::{CStr, c_int, c_longlong};
 use ::std::ffi::CString;
 
-/// The only capability the fixture terminal has: a cursor move, written so
-/// that the row and the column it was asked for can be read straight back
-/// out of the output. Everything else — colours, attributes, clearing —
-/// stays missing, so the bytes the terminal is handed are the cursor moves
-/// and the cells this module puts, and nothing else.
-const CUP: &CStr = c"<%p1%d,%p2%d>";
-
 /// A client with a terminal whose bytes land in a buffer, looking at the
 /// current window of a registered session. Everything the draw and the key
 /// callbacks reach is here: `c->session->curw->window` and its panes, the
@@ -39,8 +32,8 @@ struct Overlay {
 impl Overlay {
     fn new(sx: u_int, sy: u_int) -> Overlay {
         let guard = globals();
-        let mut t = Target::new(sx, sy);
-        let mut term = zeroed_term();
+        let t = Target::new(sx, sy);
+        let term = zeroed_term();
         term.borrow_mut().apply_overrides(c"cup=<%p1%d,%p2%d>");
         let mut c = zeroed_client();
         (unsafe { c.as_client_mut() }).name = Some(c"draw-fixture".to_owned());

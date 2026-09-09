@@ -37,7 +37,7 @@ fn split(l: &mut Layout, i: usize, ty: u32) -> usize {
 fn layout_create_cell_defaults_and_free_null_is_safe() {
     let _g = globals();
     {
-        let mut lc = layout_create_cell(None);
+        let lc = layout_create_cell(None);
         assert_eq!((*lc).type_0, LAYOUT_WINDOWPANE);
         assert_eq!((*lc).flags, 0);
         assert!(!(*lc).has_parent);

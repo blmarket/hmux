@@ -139,7 +139,7 @@ fn input_init_creates_pending_buffer_and_free_releases_it() {
 
 #[test]
 fn input_reset_clears_intermediate_and_flags_without_touching_screen() {
-    let mut ctx = Ctx::new();
+    let ctx = Ctx::new();
     unsafe {
         // seed some state that input_reset must clear
         ctx.ictx.borrow_mut().interm_len = 2;

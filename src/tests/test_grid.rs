@@ -20,9 +20,7 @@ impl Grid {
     }
 
     fn cell(&self, px: u_int, py: u_int) -> grid_cell {
-        let mut gc = grid_cell::default();
-        gc = grid_get_cell(&*self, px, py);
-        gc
+        grid_get_cell(&*self, px, py)
     }
 
     /// Writes `s` one ASCII cell per byte from (px, py).
@@ -196,7 +194,7 @@ fn the_256_colour_flags_live_in_the_entry_flags() {
 fn each_reason_for_an_extended_cell() {
     let _guard = globals();
     let plain = ascii(b'a');
-    let mut extended = |change: &dyn Fn(&mut grid_cell)| {
+    let extended = |change: &dyn Fn(&mut grid_cell)| {
         let mut g = Grid::new(10, 1, 0);
         let mut gc = ascii(b'a');
         change(&mut gc);
@@ -1397,21 +1395,19 @@ fn wrapped_lines_add_up_to_one_position() {
         g.linedata[1].flags |= GRID_LINE_WRAPPED;
     }
 
-    let (mut wx, mut wy) = (0, 0);
-    (wx, wy) = grid_wrap_position(&*g, 1, 2);
+    let (wx, wy) = grid_wrap_position(&*g, 1, 2);
     assert_eq!((wx, wy), (9, 0), "five and three cells came before it");
 
-    (wx, wy) = grid_wrap_position(&*g, 5, 2);
+    let (wx, _) = grid_wrap_position(&*g, 5, 2);
     assert_eq!(wx, UINT_MAX, "past the end of the line");
 
-    let (mut px, mut py) = (0, 0);
-    (px, py) = grid_unwrap_position(&*g, 9, 0);
+    let (px, py) = grid_unwrap_position(&*g, 9, 0);
     assert_eq!((px, py), (1, 2));
 
-    (px, py) = grid_unwrap_position(&*g, UINT_MAX, 0);
+    let (px, py) = grid_unwrap_position(&*g, UINT_MAX, 0);
     assert_eq!((px, py), (2, 2), "the end of the wrapped run");
 
-    (px, py) = grid_unwrap_position(&*g, 3, 0);
+    let (px, py) = grid_unwrap_position(&*g, 3, 0);
     assert_eq!((px, py), (3, 0), "still on the first line of the run");
 }
 
@@ -1423,12 +1419,10 @@ fn an_unwrapped_line_is_its_own_position() {
     g.write(0, 1, "def");
     g.write(0, 2, "ghi");
 
-    let (mut wx, mut wy) = (0, 0);
-    (wx, wy) = grid_wrap_position(&*g, 2, 2);
+    let (wx, wy) = grid_wrap_position(&*g, 2, 2);
     assert_eq!((wx, wy), (2, 2));
 
-    let (mut px, mut py) = (0, 0);
-    (px, py) = grid_unwrap_position(&*g, 2, 2);
+    let (px, py) = grid_unwrap_position(&*g, 2, 2);
     assert_eq!((px, py), (2, 2));
 }
 

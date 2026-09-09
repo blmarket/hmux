@@ -162,7 +162,7 @@ fn ibuf_from_buffer_and_from_ibuf_copy_their_input() {
         assert_eq!(bytes_of(outer), b"ef");
 
         // copying raw bytes directly
-        let mut raw = [0xAAu8, 0xBB, 0xCC];
+        let raw = [0xAAu8, 0xBB, 0xCC];
         let mut wrapped = Box::new(crate::types::ibuf::default());
         ibuf_from_buffer(&mut wrapped, &raw);
         assert!(wrapped.borrowed);

@@ -641,7 +641,7 @@ mod focused_boundary_tests {
         use crate::tests::test_fixtures::{Item, Target, globals};
         let _guard = globals();
         let mut target = Target::new(80, 24);
-        let mut item = Item::new()
+        let item = Item::new()
             .with_args(c"move-pane -s %0 -t missing:")
             .targeting(&mut target);
         let source_flag = cmd_entry_flag {
@@ -682,7 +682,7 @@ mod focused_boundary_tests {
 
     #[test]
     fn queue_boundary_owns_inspects_inserts_removes_and_transitions() {
-        let mut queue = CmdqListRef::empty();
+        let queue = CmdqListRef::empty();
         let first = CmdqItemRef::callback_items(c"first", callback).remove(0);
         let second = CmdqItemRef::callback_items(c"second", callback).remove(0);
         let third = CmdqItemRef::callback_items(c"third", callback).remove(0);

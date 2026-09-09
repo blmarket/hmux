@@ -153,7 +153,7 @@ impl Harness {
                 assert_eq!(rv, 1, "imsgbuf_read answered {rv}");
             }
             loop {
-                let (mut m, _len) = match imsg_get(&mut self.far) {
+                let (m, _len) = match imsg_get(&mut self.far) {
                     Ok(Some(message)) => message,
                     Ok(None) => break,
                     Err(_) => panic!("imsg_get failed"),
@@ -706,7 +706,7 @@ fn a_reported_loss_does_not_overwrite_an_earlier_reason() {
     let _t = turn();
     unsafe {
         reset();
-        let mut h = Harness::new();
+        let h = Harness::new();
         client_exitflag = 1;
         client_exitreason = CLIENT_EXIT_MESSAGE_PROVIDED;
 
@@ -779,7 +779,7 @@ fn an_empty_msg_exit_ends_the_wait() {
     let _t = turn();
     unsafe {
         reset();
-        let mut h = Harness::new();
+        let h = Harness::new();
 
         deliver(MSG_EXIT as uint32_t, b"");
 
@@ -799,7 +799,7 @@ fn a_msg_exit_with_text_records_both_before_finishing() {
     let _t = turn();
     unsafe {
         reset();
-        let mut h = Harness::new();
+        let h = Harness::new();
         let payload = exit_payload(3, b"shutting down\0");
 
         deliver(MSG_EXIT as uint32_t, &payload);
@@ -826,7 +826,7 @@ fn msg_shutdown_walks_the_same_wait_path_as_msg_exit() {
     let _t = turn();
     unsafe {
         reset();
-        let mut h = Harness::new();
+        let h = Harness::new();
 
         deliver(MSG_SHUTDOWN as uint32_t, &exit_payload(2, b""));
 
@@ -845,7 +845,7 @@ fn msg_exited_from_the_server_ends_the_process() {
     let _t = turn();
     unsafe {
         reset();
-        let mut h = Harness::new();
+        let h = Harness::new();
 
         deliver(MSG_EXITED as uint32_t, b"");
 
@@ -862,7 +862,7 @@ fn a_protocol_mismatch_is_fatal_to_the_wait_state() {
     let _t = turn();
     unsafe {
         reset();
-        let mut h = Harness::new();
+        let h = Harness::new();
 
         let mut m = incoming(MSG_VERSION as uint32_t, b"");
         m.hdr.peerid = 0x0109;
@@ -880,7 +880,7 @@ fn an_old_server_stream_is_refused_without_touching_the_exit_value() {
     let _t = turn();
     unsafe {
         reset();
-        let mut h = Harness::new();
+        let h = Harness::new();
 
         deliver(211, b"");
 
@@ -1034,7 +1034,7 @@ fn msg_exited_while_attached_ends_the_process() {
     let _t = turn();
     unsafe {
         reset();
-        let mut h = Harness::new();
+        let h = Harness::new();
         client_attached = 1;
 
         deliver(MSG_EXITED as uint32_t, b"");
@@ -1086,7 +1086,7 @@ fn an_unattached_client_ends_on_sigterm_and_sighup() {
     let _t = turn();
     unsafe {
         reset();
-        let mut h = Harness::new();
+        let h = Harness::new();
 
         client_signal(crate::client::SIGTERM);
         assert_eq!(h.pr.borrow().exit, 1);
@@ -1204,7 +1204,7 @@ fn client_exit_ends_the_process_when_no_files_are_pending() {
     let _t = turn();
     unsafe {
         reset();
-        let mut h = Harness::new();
+        let h = Harness::new();
 
         assert_eq!(h.pr.borrow().exit, 0);
         client_exit();
@@ -1220,7 +1220,7 @@ fn the_file_callback_defers_to_pending_transfers_until_asked_to_exit() {
     let _t = turn();
     unsafe {
         reset();
-        let mut h = Harness::new();
+        let h = Harness::new();
 
         client_file_check_cb(ClientFileEvent::CheckExit);
         assert_eq!(h.pr.borrow().exit, 0);

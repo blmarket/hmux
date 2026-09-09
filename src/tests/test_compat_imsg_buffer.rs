@@ -197,7 +197,7 @@ impl Drop for Pair {
 
 #[test]
 fn an_open_buffer_is_sized_once_and_for_all() {
-    let mut buf = Buf::open(8);
+    let buf = Buf::open(8);
     assert_eq!(buf.size, 8);
     assert_eq!(buf.max, 8);
     assert_eq!(buf.wpos, 0);
@@ -206,19 +206,19 @@ fn an_open_buffer_is_sized_once_and_for_all() {
     assert_eq!(unsafe { ibuf_left(&buf) }, 8);
     assert_eq!(buf.bytes(), []);
 
-    let mut empty = Buf::open(0);
+    let empty = Buf::open(0);
     assert_eq!(empty.buf.capacity(), 0);
     assert_eq!(empty.size, 0);
 }
 
 #[test]
 fn a_dynamic_buffer_grows_up_to_its_limit() {
-    let mut buf = Buf::dynamic(0, 8);
+    let buf = Buf::dynamic(0, 8);
     assert_eq!(buf.size, 0);
     assert_eq!(buf.max, 8);
     assert_eq!(buf.buf.capacity(), 0);
 
-    let mut started = Buf::dynamic(4, 8);
+    let started = Buf::dynamic(4, 8);
     assert_eq!(started.size, 4);
     assert_eq!(started.max, 8);
     assert!(started.buf.capacity() >= 4);
@@ -303,7 +303,7 @@ fn reserving_more_than_the_buffer_may_hold_is_refused() {
 
 #[test]
 fn a_buffer_over_somebody_elses_bytes_is_never_reserved_into() {
-    let mut data = *b"abcd";
+    let data = *b"abcd";
     let mut buf = empty_ibuf();
     unsafe {
         ibuf_from_buffer(&mut buf, &data);
@@ -681,8 +681,8 @@ fn a_queue_takes_buffers_at_the_end_and_hands_them_back_from_the_front() {
         assert_eq!(ibufq_queuelen(&bufq), 0);
         assert!(ibufq_pop(&mut bufq).is_none());
 
-        let mut first = Buf::open(1).leak();
-        let mut second = Buf::open(2).leak();
+        let first = Buf::open(1).leak();
+        let second = Buf::open(2).leak();
         let (first_at, second_at) = (&raw const *first, &raw const *second);
         ibufq_push(&mut bufq, first);
         ibufq_push(&mut bufq, second);
@@ -707,8 +707,8 @@ fn one_queue_is_joined_onto_the_end_of_another() {
     unsafe {
         let mut to = ibufq_new();
         let mut from = ibufq_new();
-        let mut first = Buf::open(1).leak();
-        let mut second = Buf::open(2).leak();
+        let first = Buf::open(1).leak();
+        let second = Buf::open(2).leak();
         let (first_at, second_at) = (&raw const *first, &raw const *second);
         ibufq_push(&mut to, first);
         ibufq_push(&mut from, second);
@@ -774,7 +774,7 @@ fn a_reader_needs_a_header_size_that_fits_in_half_its_buffer() {
         );
         assert_eq!(errno(), EINVAL);
 
-        let mut msgbuf = Msgbuf::reader();
+        let msgbuf = Msgbuf::reader();
         assert!(msgbuf.rbuf.is_some());
         assert_eq!(msgbuf.hdrsize, 4);
     }

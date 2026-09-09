@@ -2,9 +2,6 @@ use crate::options::{OptionsEngine, RustOptionsEngine};
 use ::core::ffi::CStr;
 use ::std::fmt::Write as _;
 
-const OPTIONS_TABLE_LEN: usize = 221;
-const OPTIONS_OTHER_NAMES_LEN: usize = 6;
-
 fn text(s: Option<&CStr>) -> String {
     match s {
         None => String::from("<null>"),

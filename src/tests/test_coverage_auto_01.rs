@@ -142,7 +142,7 @@ fn test_job_run_and_lifecycle() {
         assert!(crate::job::job_event_by_id(id).is_some_and(|event| !event.is_none()));
         assert_eq!(job_still_running(), 1);
 
-        let mut item = Item::new();
+        let item = Item::new();
         job_print_summary(&item.read(), 1);
 
         job_resize(id, 100, 30);

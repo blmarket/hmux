@@ -27,7 +27,7 @@ fn with_a_every_other_pane_of_the_window_is_removed_and_freed() {
     ensure_reactor();
     let mut t = Target::new(80, 24);
     let wl = t.state().winlink_ref().unwrap();
-    let mut w = t.state().window().unwrap();
+    let w = t.state().window().unwrap();
     let target = t.state().pane_list_ref().unwrap();
 
     let mut item = Item::new().with_args(c"kill-pane -a").targeting(&mut t);

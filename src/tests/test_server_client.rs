@@ -444,7 +444,7 @@ fn client_pane_owners_preserve_saved_selection_and_handle_missing_targets() {
 fn client_handle_lookup_and_counts_track_live_clients() {
     let _guard = globals();
     let mut attached = Clients::new();
-    let mut target = Target::new(80, 24);
+    let target = Target::new(80, 24);
     unsafe {
         let first = attached.add("first", 80, 24);
         let second = attached.add("second", 80, 24);
@@ -481,7 +481,7 @@ fn bracket_paste_tracks_start_content_end_and_masked_keys() {
 fn assume_paste_covers_disabled_bracketed_fast_repeat_and_expiry_paths() {
     let _guard = globals();
     let mut attached = Clients::new();
-    let mut target = Target::new(80, 24);
+    let target = Target::new(80, 24);
     unsafe {
         let c = &mut *attached.add("assume", 80, 24);
         c.set_attached_session(Some(target.session_handle()));
@@ -516,7 +516,7 @@ fn assume_paste_covers_disabled_bracketed_fast_repeat_and_expiry_paths() {
 fn key_table_selection_and_activity_cover_detached_attached_default_and_named_tables() {
     let _guard = globals();
     let mut attached = Clients::new();
-    let mut target = Target::new(80, 24);
+    let target = Target::new(80, 24);
     unsafe {
         let c = &mut *attached.add("keys", 80, 24);
         assert_eq!(server_client_get_key_table(c).as_ref(), c"root");
@@ -635,7 +635,7 @@ fn nested_detection_covers_missing_empty_nonmatching_and_matching_tty() {
 fn latest_modes_repeat_click_and_exit_checks_cover_safe_early_and_state_paths() {
     let _guard = globals();
     let mut attached = Clients::new();
-    let mut target = Target::new(40, 12);
+    let target = Target::new(40, 12);
     unsafe {
         let c = &mut *attached.add("state", 40, 12);
         server_client_update_latest(c);
@@ -695,7 +695,7 @@ fn cwd_and_print_helpers_cover_null_detached_session_and_visibility_paths() {
 fn attached_client_print_preserves_parsed_lines_and_escaped_bytes() {
     let _guard = globals();
     let mut attached = Clients::new();
-    let mut target = Target::new(40, 12);
+    let target = Target::new(40, 12);
     unsafe {
         let c = &mut *attached.add("print", 40, 12);
         c.set_attached_session(Some(target.session_handle()));
@@ -778,7 +778,7 @@ fn resize_checks_cover_unmarked_window_empty_queue_and_each_coalescing_shape() {
     let mut target = Target::new(40, 12);
     unsafe {
         let mut pane = target.state().pane_ref().unwrap();
-        let mut window = pane.window().unwrap();
+        let window = pane.window().unwrap();
         server_client_check_window_resize(&window);
         let mut w = window.as_window_mut();
         w.flags |= WINDOW_RESIZE;
@@ -853,7 +853,7 @@ fn pane_buffer_and_attached_lost_cover_empty_consumers_and_latest_client_reselec
             tv_sec: 2,
             tv_usec: 0,
         };
-        let mut empty = crate::tests::test_fixtures::Session::new(99, "no-window");
+        let empty = crate::tests::test_fixtures::Session::new(99, "no-window");
         let missing = attached.add("missing-current-window", 40, 12);
         (*missing).set_attached_session(Some(empty.handle()));
         (*missing).activity_time.tv_sec = 99;
@@ -1107,7 +1107,7 @@ fn status_redraw_refreshes_owned_list_modes_only_in_the_current_window() {
     let mut target = Target::new(40, 12);
     let foreign = target.add_window(1, 40, 12);
     let state = target.state();
-    let mut window = state.window().unwrap();
+    let window = state.window().unwrap();
     let mut panes = vec![state.pane_ref().unwrap()];
     let mut attached = Clients::new();
     unsafe {
@@ -1169,7 +1169,7 @@ fn status_redraw_refreshes_owned_list_modes_only_in_the_current_window() {
 #[test]
 fn default_key_table_names_share_options_and_survive_replacement() {
     let _guard = globals();
-    let mut target = Target::new(20, 6);
+    let target = Target::new(20, 6);
     let mut attached = Clients::new();
     unsafe {
         let c = &mut *attached.add("table-owner", 20, 6);
@@ -1241,7 +1241,7 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
         assert!(output.written().is_empty());
         c.flags &= !(CLIENT_READONLY as uint64_t);
         *pane.get_mut().unwrap().fd_mut() = -1;
-        let mut window = pane.window().unwrap();
+        let window = pane.window().unwrap();
         let pane_options = pane.get().unwrap().options_ref().clone();
         window.remove_pane(
             &crate::window::window_pane_find_by_id(pane.id()).expect("the pane exists"),
@@ -1255,7 +1255,7 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
         *payload.options_mut() = Some(pane_options);
         *payload.fd_mut() = 0;
         *payload.event_mut() = output.ptr();
-        let mut unregistered = RustWindowPaneRef::from_pane(payload);
+        let unregistered = RustWindowPaneRef::from_pane(payload);
         let observed = unregistered.downgrade();
         crate::window::window_panes_insert_tail(&mut window.as_window_mut(), unregistered);
         let mut unregistered = observed;
@@ -1288,7 +1288,7 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
 #[test]
 fn repeat_timing_reads_the_attached_sessions_current_options() {
     let _guard = globals();
-    let mut target = Target::new(20, 6);
+    let target = Target::new(20, 6);
     let mut attached = Clients::new();
     unsafe {
         crate::key_bindings::key_bindings_add(
@@ -1340,7 +1340,7 @@ fn latest_client_updates_follow_the_current_window_and_tolerate_missing_links() 
                 .ptr_eq(&client)
         );
         assert!(window_get_latest(&*target.window(1)).is_none());
-        let mut session = target.session_handle().clone();
+        let session = target.session_handle().clone();
         session.set_curw(target.winlink(1).as_ref());
         server_client_update_latest(c);
         assert!(
@@ -1364,7 +1364,7 @@ fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_pane
     let _guard = globals();
     let mut target = Target::new(40, 12);
     let mut pane = target.state().pane_ref().unwrap();
-    let mut window = pane.window().unwrap();
+    let window = pane.window().unwrap();
     unsafe {
         pane.as_pane_mut()
             .set_geometry(crate::pane_geometry::PaneGeometry {
@@ -1415,7 +1415,7 @@ fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_pane
             width: 4,
             height: 2,
         });
-        let mut listed = RustWindowPaneRef::from_pane(payload);
+        let listed = RustWindowPaneRef::from_pane(payload);
         let observed = listed.downgrade();
         crate::window::window_panes_insert_tail(&mut window.as_window_mut(), listed);
         let mut listed = observed;
@@ -1453,7 +1453,7 @@ fn mouse_events_follow_focus_and_keep_drag_targets_across_current_window_changes
     target.add_window(1, 40, 12);
     let mut attached = Clients::new();
     let mut first = target.state().pane_ref().unwrap();
-    let mut window = first.window().unwrap();
+    let window = first.window().unwrap();
     unsafe {
         let second_id =
             crate::window::window_add_pane(&mut window.as_window_mut(), None, 100, 0).id();
@@ -1533,7 +1533,7 @@ fn mouse_events_follow_focus_and_keep_drag_targets_across_current_window_changes
             KEYC_MOUSEDRAG1_PANE
         );
         assert_eq!(c.tty.mouse_last_pane, second_id as core::ffi::c_int);
-        let mut session = target.session_handle().clone();
+        let session = target.session_handle().clone();
         session.set_curw(target.winlink(1).as_ref());
         event.m.x = 27;
         assert_eq!(
@@ -1553,7 +1553,7 @@ fn mouse_events_follow_focus_and_keep_drag_targets_across_current_window_changes
         let held = window.clone();
         c.tty.mouse_drag_release = Some(std::rc::Rc::new(move |_, m| {
             assert_eq!(m.wp, second_id as core::ffi::c_int);
-            let mut window = held.clone();
+            let window = held.clone();
             window.remove_pane(
                 &crate::window::window_pane_find_by_id(second_id).expect("the pane exists"),
             );

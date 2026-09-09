@@ -77,8 +77,7 @@ fn the_screen_starts_where_the_history_ends() {
     assert_eq!(g.history_text(4), "abc");
     assert_eq!(g.history_text(0), "h0");
 
-    let mut gc = { grid_default_cell };
-    gc = grid_view_get_cell(&*g, 1, 1);
+    let gc = grid_view_get_cell(&*g, 1, 1);
     assert_eq!(gc.data.data[0], b'b');
 }
 
@@ -93,8 +92,7 @@ fn one_cell_and_one_padding_cell_can_be_set_through_the_view() {
         grid_view_set_padding(&mut *g, 1, 0);
     }
     assert_eq!(g.text(0), "z", "the padding cell is left out");
-    let mut read = { grid_default_cell };
-    read = grid_view_get_cell(&*g, 1, 0);
+    let read = grid_view_get_cell(&*g, 1, 0);
     assert_eq!(
         read.flags as core::ffi::c_int & GRID_FLAG_PADDING,
         GRID_FLAG_PADDING

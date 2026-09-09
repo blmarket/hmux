@@ -50,7 +50,7 @@ impl Drop for Prefix {
 /// with, freed again.
 fn prefix_of(s: &CStr) -> String {
     unsafe {
-        let mut item = Item::new().with_args(s);
+        let item = Item::new().with_args(s);
         let p = cmd_list_keys_get_prefix(&*item.args());
         p.to_string_lossy().into_owned()
     }

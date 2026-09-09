@@ -32,7 +32,7 @@ use crate::format::{
     MODE_MOUSE_STANDARD, MODE_SYNC, MODE_WRAP,
 };
 use crate::grid::{
-    GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_FLAG_PADDING, grid_default_cell, grid_get_cell,
+    GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_FLAG_PADDING, grid_get_cell,
     grid_get_line, grid_string_cells,
 };
 use crate::input::{
@@ -151,9 +151,7 @@ impl Parser {
 
     fn cell(&mut self, px: u_int, py: u_int) -> grid_cell {
         let gd = { RustScreen::grid_mut(&mut *self.s()) };
-        let mut gc = { grid_default_cell };
-        gc = grid_get_cell(&*gd, px, py);
-        gc
+        grid_get_cell(&*gd, px, py)
     }
 
     fn text_at(&mut self, px: u_int, py: u_int) -> u8 {

@@ -245,7 +245,7 @@ fn args_print_with_positional_and_multiple_flags() {
         // build args manually: flags + positional via args_set and direct value
         let args = Box::into_raw(args_create());
         // add positional value
-        let mut value = crate::types::args_value_t {
+        let value = crate::types::args_value_t {
             value: crate::types::ArgsValue::String(CString::new("pos").unwrap()),
         };
         (*args).values.push(value);

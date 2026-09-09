@@ -73,8 +73,7 @@ fn grid_get_cell_out_of_range_returns_default() {
     let mut g = Grid::new(4, 3, 0);
     g.write(0, 0, "hi");
     {
-        let mut gc = grid_default_cell;
-        gc = grid_get_cell(&*g, 100, 0);
+        let mut gc = grid_get_cell(&*g, 100, 0);
         assert_eq!(gc.data.data[0], b' ');
         // out-of-range y
         gc = grid_get_cell(&*g, 0, 99);
@@ -124,7 +123,7 @@ fn grid_compare_equal_and_unequal() {
 #[test]
 fn grid_cells_equal_and_look_equal_distinguish_style_vs_content() {
     let _guard = globals();
-    let mut gc1 = ascii(b'A');
+    let gc1 = ascii(b'A');
     let mut gc2 = ascii(b'A');
     unsafe {
         assert_ne!(grid_cells_equal(&gc1, &gc2), 0);
@@ -189,14 +188,12 @@ fn grid_set_cells_and_padding_round_trip() {
         // set_cells writes run of bytes sharing one style
         grid_set_cells(&mut *g, 0, 0, &gc, b"hello");
         assert_eq!(line_text(&g, 0), "hello");
-        let mut out = grid_default_cell;
-        out = grid_get_cell(&*g, 2, 0);
+        let out = grid_get_cell(&*g, 2, 0);
         assert_eq!(out.data.data[0], b'l');
         assert_eq!(out.fg, 2);
         // padding cell is a distinct flag
         grid_set_padding(&mut *g, 5, 0);
-        let mut pad = grid_default_cell;
-        pad = grid_get_cell(&*g, 5, 0);
+        let pad = grid_get_cell(&*g, 5, 0);
         assert_ne!(pad.flags as i32 & GRID_FLAG_PADDING, 0);
         // grid_string_cells skips padding by default
         let s = line_text(&g, 0);
@@ -220,8 +217,7 @@ fn grid_move_cells_and_move_lines() {
         // move cells right within a line
         grid_move_cells(&mut *g, 3, 0, 0, 3, 8);
         // 0..3 ("abc") moved to 3..6, source cleared to spaces
-        let mut gc = grid_default_cell;
-        gc = grid_get_cell(&*g, 0, 0);
+        let mut gc = grid_get_cell(&*g, 0, 0);
         assert_eq!(gc.data.data[0], b' ');
         gc = grid_get_cell(&*g, 3, 0);
         assert_eq!(gc.data.data[0], b'a');

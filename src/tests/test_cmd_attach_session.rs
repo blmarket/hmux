@@ -1,4 +1,6 @@
 use super::*;
+use crate::types::client;
+use crate::proc::tmuxpeer;
 use crate::cfg::{cfg_finished, cfg_print_causes};
 
 use crate::environ::new_environment_box;
@@ -135,7 +137,7 @@ fn switching_with_d_detaches_the_other_clients_of_the_target() {
 
         let mut item = Item::new();
         item.set_client(c);
-        let mut item = item.targeting(&mut t);
+        let item = item.targeting(&mut t);
         let rv = cmd_attach_session(&item.read(), None, 1, 0, 0, None, 0, None);
         assert_eq!(rv, CMD_RETURN_NORMAL);
 
@@ -176,7 +178,7 @@ fn switching_with_x_kills_the_other_clients_instead() {
     ensure_reactor();
     let _root = RootTable;
     let mut t = Target::new(80, 24);
-    let mut old = Session::new(9, "old");
+    let old = Session::new(9, "old");
     let mut list = Clients::new();
     let c = list.add("x-switcher", 80, 24);
     unsafe {
@@ -187,7 +189,7 @@ fn switching_with_x_kills_the_other_clients_instead() {
 
         let mut item = Item::new();
         item.set_client(c);
-        let mut item = item.targeting(&mut t);
+        let item = item.targeting(&mut t);
         let rv = cmd_attach_session(&item.read(), None, 0, 1, 0, None, 0, None);
         assert_eq!(rv, CMD_RETURN_NORMAL);
 
@@ -279,7 +281,7 @@ fn a_client_that_is_not_a_terminal_is_refused_the_attach() {
 
         let mut item = Item::new();
         item.set_client(c);
-        let mut item = item.targeting(&mut t);
+        let item = item.targeting(&mut t);
         let rv = cmd_attach_session(&item.read(), None, 0, 0, 0, None, 0, None);
         assert_eq!(rv, CMD_RETURN_ERROR);
 
@@ -314,7 +316,7 @@ fn a_finished_config_hands_the_session_to_cfg_show_causes() {
 
         let mut item = Item::new();
         item.set_client(c);
-        let mut item = item.targeting(&mut t);
+        let item = item.targeting(&mut t);
         let rv = cmd_attach_session(&item.read(), None, 0, 0, 0, None, 0, None);
         assert_eq!(rv, CMD_RETURN_NORMAL);
 
@@ -346,7 +348,7 @@ fn a_read_only_client_whose_peer_is_this_user_still_attaches() {
 
         let mut item = Item::new();
         item.set_client(c);
-        let mut item = item.targeting(&mut t);
+        let item = item.targeting(&mut t);
         let rv = cmd_attach_session(&item.read(), None, 0, 0, 1, None, 0, None);
         assert_eq!(rv, CMD_RETURN_NORMAL);
 

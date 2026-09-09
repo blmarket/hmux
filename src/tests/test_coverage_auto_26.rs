@@ -62,7 +62,7 @@ fn cmd_find_copy_state_duplicates_all_fields() {
     let _g = globals();
     let mut target = Target::new(80, 24);
     unsafe {
-        let mut src = target.state();
+        let src = target.state();
         let mut dst: crate::types::cmd_find_state =
             *Box::new(crate::types::cmd_find_state::default());
         cmd_find_clear_state(&mut dst, 0x99);
@@ -238,7 +238,7 @@ fn cmd_find_from_session_window_and_from_window() {
         assert_eq!(cmd_find_valid_state(&fs2), 1);
 
         // unknown window (not in any session) fails
-        let mut orphan = crate::tests::test_fixtures::Window::new(999, "orphan", 80, 24);
+        let orphan = crate::tests::test_fixtures::Window::new(999, "orphan", 80, 24);
         let mut fs3: crate::types::cmd_find_state =
             *Box::new(crate::types::cmd_find_state::default());
         assert_eq!(cmd_find_from_window(&mut fs3, &orphan.reference(), 0), -1);

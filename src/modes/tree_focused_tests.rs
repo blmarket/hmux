@@ -459,7 +459,7 @@ fn swapping_two_windows_exchanges_links_and_rejects_sorted_or_stale_pairs() {
                 .unwrap()
                 .ptr_eq(&first_window)
         );
-        let mut same = first;
+        let same = first;
         assert_eq!(
             window_tree_swap(
                 ModeTreeItemData::Tree(first),

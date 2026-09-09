@@ -88,9 +88,7 @@ impl Writer {
     /// One cell of the visible screen.
     fn cell(&mut self, px: u_int, py: u_int) -> grid_cell {
         self.flush();
-        let mut gc = { grid_default_cell };
-        gc = grid_view_get_cell(&*self.grid(), px, py);
-        gc
+        grid_view_get_cell(&*self.grid(), px, py)
     }
 
     /// The background colour each cell of a line carries, which is what a
@@ -101,8 +99,7 @@ impl Writer {
             let gd = self.grid();
             (0..(*gd).sx)
                 .map(|x| {
-                    let mut gc = grid_default_cell;
-                    gc = grid_view_get_cell(&*gd, x, py);
+                    let gc = grid_view_get_cell(&*gd, x, py);
                     gc.bg
                 })
                 .collect()
@@ -1191,7 +1188,7 @@ fn a_menu_is_drawn_with_a_border_and_a_choice() {
         key: 0,
         command: None,
     };
-    let mut m = menu {
+    let m = menu {
         title: Some(c"title".to_owned()),
         items: vec![
             entry(Some(c"one")),

@@ -302,7 +302,7 @@ fn test_menu_callbacks() {
         };
         menu_add_item(&mut m, Some(&item1), None, &mut *c, None);
 
-        let mut s = RustScreen::default();
+        let s = RustScreen::default();
         let mut md = menu_data {
             item: None,
             flags: 0,

@@ -22,7 +22,7 @@ fn test_window_client_mode_lifecycle_and_keys() {
 
         let wp = t.pane(0);
 
-        let mut item = Item::with_client()
+        let item = Item::with_client()
             .with_file(FILE, 1)
             .with_args(c"choose-client")
             .targeting(&mut t);
@@ -83,7 +83,7 @@ fn test_window_client_custom_format_and_detach() {
 
         let wp = t.pane(0);
 
-        let mut item = Item::with_client()
+        let item = Item::with_client()
             .with_file(FILE, 1)
             .with_args(c"choose-client -F \"#{client_name}\" -K \"#{client_name}\" -r -O name")
             .targeting(&mut t);

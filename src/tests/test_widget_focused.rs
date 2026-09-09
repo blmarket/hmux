@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 unsafe fn enable_rebuild(tree: &ModeTreeDataRef) {
     unsafe {
         let weak = tree.downgrade();
-        let mut owner = tree.clone();
+        let owner = tree.clone();
         owner.borrow_mut().buildcb = Some(std::rc::Rc::new(move |_, _, _| {
             let Some(tree) = weak.upgrade() else {
                 return;
@@ -131,8 +131,8 @@ fn borrowed_items_prevent_removal_while_the_tree_screen_remains_accessible() {
 fn rebuilt_items_restore_saved_flags_without_reviving_old_handles() {
     let _guard = globals();
     unsafe {
-        let (_window, mut tree) = tree();
-        let mut original = tree
+        let (_window, tree) = tree();
+        let original = tree
             .add_item(None, ModeTreeItemData::None, 1, c"root", None, 1)
             .unwrap();
         original.get_mut().unwrap().tagged = 1;
@@ -157,7 +157,7 @@ fn rebuilt_items_restore_saved_flags_without_reviving_old_handles() {
 fn retained_tree_stops_observing_a_destroyed_pane() {
     let _guard = globals();
     unsafe {
-        let (window, mut tree) = tree();
+        let (window, tree) = tree();
         let observed = tree.borrow().pane().unwrap();
         tree.borrow_mut().buildcb = Some(std::rc::Rc::new(|_, _, _| {
             panic!("a dead pane cannot rebuild")
@@ -182,7 +182,7 @@ fn retained_tree_stops_observing_a_destroyed_pane() {
 fn closing_a_mode_detaches_a_retained_tree_from_a_live_pane() {
     let _guard = globals();
     unsafe {
-        let (_window, mut tree) = tree();
+        let (_window, tree) = tree();
         let mut pane = tree.borrow().pane().unwrap();
         let id = pane.id();
         tree.close();
@@ -302,8 +302,8 @@ fn line_generation_assigns_depth_shape_and_all_key_classes() {
 fn navigation_selection_and_tag_count_cover_edges() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
-        let mut rows: Vec<_> = (0..6)
+        let (_pane, tree) = tree();
+        let rows: Vec<_> = (0..6)
             .map(|n| {
                 tree.add_item(None, ModeTreeItemData::None, 100 + n, c"row", None, 0)
                     .unwrap()
@@ -330,14 +330,14 @@ fn navigation_selection_and_tag_count_cover_edges() {
 fn item_flags_and_search_walk_both_directions() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
-        let mut alpha = tree
+        let (_pane, tree) = tree();
+        let alpha = tree
             .add_item(None, ModeTreeItemData::None, 1, c"Alpha", None, 0)
             .unwrap();
-        let mut beta = tree
+        let beta = tree
             .add_item(None, ModeTreeItemData::None, 2, c"beta target", None, 0)
             .unwrap();
-        let mut gamma = tree
+        let gamma = tree
             .add_item(None, ModeTreeItemData::None, 3, c"Gamma", None, 0)
             .unwrap();
         alpha.draw_as_parent().unwrap();
@@ -376,12 +376,12 @@ fn item_flags_and_search_walk_both_directions() {
 fn search_wraps_through_collapsed_descendants_and_excludes_the_current_item() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
+        let (_pane, tree) = tree();
         assert!(tree.search(MODE_TREE_SEARCH_FORWARD).is_none());
-        let mut root = tree
+        let root = tree
             .add_item(None, ModeTreeItemData::None, 1, c"hit root", None, 0)
             .unwrap();
-        let mut child = tree
+        let child = tree
             .add_item(
                 Some(&root),
                 ModeTreeItemData::None,
@@ -453,7 +453,7 @@ fn search_wraps_through_collapsed_descendants_and_excludes_the_current_item() {
 fn search_callbacks_can_remove_items_and_new_items_wait_for_the_next_search() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
+        let (_pane, tree) = tree();
         let root = tree
             .add_item(None, ModeTreeItemData::None, 1, c"root", None, 0)
             .unwrap();
@@ -514,7 +514,7 @@ fn search_callbacks_can_remove_items_and_new_items_wait_for_the_next_search() {
 fn expand_collapse_and_tag_lookup_cover_present_missing_and_empty_trees() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
+        let (_pane, tree) = tree();
         let parent = tree
             .add_item(None, ModeTreeItemData::None, 50, c"parent", None, 0)
             .expect("a widget row can be inserted");
@@ -556,8 +556,8 @@ unsafe fn count_each(_modedata: WindowModeData, _itemdata: ModeTreeItemData) {
 fn each_tagged_visits_tags_or_current_exactly_as_requested() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
-        let mut rows: Vec<_> = (0..4)
+        let (_pane, tree) = tree();
+        let rows: Vec<_> = (0..4)
             .map(|n| {
                 tree.add_item(None, ModeTreeItemData::None, n, c"row", None, 0)
                     .unwrap()
@@ -581,7 +581,7 @@ fn each_tagged_visits_tags_or_current_exactly_as_requested() {
 fn key_navigation_covers_pages_edges_choice_tags_and_hierarchy() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
+        let (_pane, tree) = tree();
         let parent = tree
             .add_item(None, ModeTreeItemData::None, 1, c"parent", None, 1)
             .expect("a widget row can be inserted");
@@ -628,7 +628,7 @@ fn resize_height_selection_and_free_cover_clamps_and_saved_children() {
         let mut window = Window::new(702, "widget", 80, 24);
         let mut pane = Pane::new(703, 80, 24, 100);
         window.add_pane(&mut pane);
-        let mut tree = ModeTreeDataRef::start(
+        let tree = ModeTreeDataRef::start(
             &mut *pane.ptr(),
             None,
             None,
@@ -687,7 +687,7 @@ fn current_row_name_outlives_item_removal_and_tree_release() {
 fn tagged_callbacks_can_rebuild_the_tree_and_empty_current_is_skipped() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
+        let (_pane, tree) = tree();
         let mut first = tree
             .add_item(None, ModeTreeItemData::None, 1, c"first", None, 0)
             .unwrap();
@@ -708,7 +708,7 @@ fn tagged_callbacks_can_rebuild_the_tree_and_empty_current_is_skipped() {
                 if calls == 1 {
                     removed.remove();
                     untagged.get_mut().unwrap().tagged = 0;
-                    let mut added = tree
+                    let added = tree
                         .add_item(None, ModeTreeItemData::None, 4, c"added", None, 0)
                         .unwrap();
                     added.get_mut().unwrap().tagged = 1;
@@ -727,7 +727,7 @@ fn tagged_callbacks_can_rebuild_the_tree_and_empty_current_is_skipped() {
 fn swaps_skip_descendants_and_borrow_no_tree_state_during_callbacks() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
+        let (_pane, tree) = tree();
         let payload = |session| {
             ModeTreeItemData::Tree(crate::modes::tree::window_tree_itemdata {
                 session,
@@ -777,7 +777,7 @@ fn swaps_skip_descendants_and_borrow_no_tree_state_during_callbacks() {
 fn line_key_callbacks_keep_postorder_and_can_remove_their_item() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
+        let (_pane, tree) = tree();
         let payload = |session| {
             ModeTreeItemData::Tree(crate::modes::tree::window_tree_itemdata {
                 session,
@@ -840,7 +840,7 @@ fn line_key_callbacks_keep_postorder_and_can_remove_their_item() {
 fn rebuild_callbacks_own_inputs_and_keep_the_unfiltered_fallback() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
+        let (_pane, tree) = tree();
         tree.borrow_mut().filter = Some(c"missing".to_owned());
         tree.borrow_mut().sortcb = Some(std::rc::Rc::new(|sort| sort.set_order(SORT_NAME)));
         let weak = tree.downgrade();
@@ -848,7 +848,7 @@ fn rebuild_callbacks_own_inputs_and_keep_the_unfiltered_fallback() {
         let recorded = calls.clone();
         tree.borrow_mut().buildcb = Some(std::rc::Rc::new(move |sort, tag, filter| {
             recorded.set(recorded.get() + 1);
-            let mut tree = weak.upgrade().unwrap();
+            let tree = weak.upgrade().unwrap();
             if filter.is_some() {
                 tree.borrow_mut().filter = Some(c"replacement".to_owned());
                 tree.borrow_mut().sort_crit.set_order(SORT_ACTIVITY);
@@ -864,7 +864,7 @@ fn rebuild_callbacks_own_inputs_and_keep_the_unfiltered_fallback() {
         }));
         let weak = tree.downgrade();
         tree.borrow_mut().heightcb = Some(std::rc::Rc::new(move || {
-            let mut tree = weak.upgrade().unwrap();
+            let tree = weak.upgrade().unwrap();
             assert_eq!(tree.borrow().width, 40);
             assert_eq!(tree.borrow().children.len(), 1);
             *tree.screen_handle().borrow_mut() = RustScreen::new_with_server_options(40, 16, 0);
@@ -885,7 +885,7 @@ fn rebuild_callbacks_own_inputs_and_keep_the_unfiltered_fallback() {
 fn menu_callbacks_revalidate_owners_and_can_close_the_selected_mode() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
+        let (_pane, tree) = tree();
         for tag in 1..=2 {
             tree.add_item(None, ModeTreeItemData::None, tag, c"row", None, 0)
                 .unwrap();
@@ -896,7 +896,7 @@ fn menu_callbacks_revalidate_owners_and_can_close_the_selected_mode() {
         let calls = std::rc::Rc::new(std::cell::Cell::new(0));
         let recorded = calls.clone();
         tree.borrow_mut().menucb = Some(std::rc::Rc::new(move |_, key| {
-            let mut tree = weak.upgrade().unwrap();
+            let tree = weak.upgrade().unwrap();
             assert_eq!(key, b't' as key_code);
             assert_eq!(tree.borrow().current, 1);
             tree.borrow_mut().filter = Some(c"from menu".to_owned());
@@ -928,14 +928,14 @@ fn menu_callbacks_revalidate_owners_and_can_close_the_selected_mode() {
 fn tag_changes_preserve_ancestor_exclusion_and_visible_row_rules() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
-        let mut root = tree
+        let (_pane, tree) = tree();
+        let root = tree
             .add_item(None, ModeTreeItemData::None, 1, c"root", None, 1)
             .unwrap();
         let child = tree
             .add_item(Some(&root), ModeTreeItemData::None, 2, c"child", None, 1)
             .unwrap();
-        let mut grandchild = tree
+        let grandchild = tree
             .add_item(
                 Some(&child),
                 ModeTreeItemData::None,
@@ -945,10 +945,10 @@ fn tag_changes_preserve_ancestor_exclusion_and_visible_row_rules() {
                 0,
             )
             .unwrap();
-        let mut group = tree
+        let group = tree
             .add_item(None, ModeTreeItemData::None, 4, c"group", None, 1)
             .unwrap();
-        let mut entry = tree
+        let entry = tree
             .add_item(Some(&group), ModeTreeItemData::None, 5, c"entry", None, 0)
             .unwrap();
         group.get_mut().unwrap().no_tag = 1;
@@ -1014,14 +1014,14 @@ fn hierarchy_keys_follow_rows_recreated_by_rebuilds() {
 fn a_key_rebuild_can_remove_all_items_and_detach_the_mode() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
+        let (_pane, tree) = tree();
         let item = tree
             .add_item(None, ModeTreeItemData::None, 1, c"item", None, 0)
             .unwrap();
         rebuild_lines(&tree);
         let weak = tree.downgrade();
         tree.borrow_mut().buildcb = Some(std::rc::Rc::new(move |_, _, _| {
-            let mut tree = weak.upgrade().unwrap();
+            let tree = weak.upgrade().unwrap();
             tree.borrow_mut().saved.clear();
             tree.close();
         }));
@@ -1040,7 +1040,7 @@ fn a_key_rebuild_can_remove_all_items_and_detach_the_mode() {
 fn widget_screens_are_retained_independently_of_tree_state() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
+        let (_pane, tree) = tree();
         let screen = tree.screen_handle().clone();
         let weak_screen = screen.downgrade();
         let weak_tree = tree.downgrade();
@@ -1067,7 +1067,7 @@ fn widget_screens_are_retained_independently_of_tree_state() {
 fn drawing_preserves_nested_prefixes_alignment_and_tag_labels() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
+        let (_pane, tree) = tree();
         let mut root = tree
             .add_item(None, ModeTreeItemData::None, 1, c"root", None, 1)
             .unwrap();
@@ -1145,7 +1145,7 @@ fn drawing_preserves_nested_prefixes_alignment_and_tag_labels() {
 fn preview_callbacks_can_read_the_screen_and_release_tree_items() {
     unsafe {
         let _guard = globals();
-        let (_pane, mut tree) = tree();
+        let (_pane, tree) = tree();
         let item = tree
             .add_item(None, ModeTreeItemData::None, 1, c"preview", None, 0)
             .unwrap();
@@ -1155,7 +1155,7 @@ fn preview_callbacks_can_read_the_screen_and_release_tree_items() {
         let weak = tree.downgrade();
         tree.borrow_mut().drawcb = Some(std::rc::Rc::new(move |_, writer, width, height| {
             assert_eq!((width, height), (46, 16));
-            let mut tree = weak.upgrade().unwrap();
+            let tree = weak.upgrade().unwrap();
             assert_eq!(
                 tree.screen_handle().borrow().cursor(),
                 writer.cursor_position()

@@ -81,7 +81,7 @@ fn a_style_starts_from_the_defaults_and_the_cell_it_is_given() {
 
 #[test]
 fn a_style_is_copied_whole() {
-    let mut src = parsed(c"fg=red,align=centre,width=4");
+    let src = parsed(c"fg=red,align=centre,width=4");
     let mut dst = blank();
     style_copy(&mut dst, &src);
     assert_eq!(tostring(&dst), tostring(&src));

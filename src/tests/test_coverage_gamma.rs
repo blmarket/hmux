@@ -6,20 +6,12 @@ use crate::cfg::{
 use crate::fmt_args;
 
 use crate::tests::test_fixtures::{Item, Target, globals};
-use ::core::ffi::{CStr, c_int};
+use ::core::ffi::c_int;
 use ::std::ffi::CString;
 
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
-
-/// Where the items in this file claim to come from.
-const FILE: &CStr = c"test-coverage-gamma.conf";
-
-/// The lines the server has recorded so far, oldest first.
-unsafe fn server_messages() -> Vec<String> {
-    crate::tests::test_fixtures::logged_messages()
-}
 
 /// Empties the cfg cause list if anything is in it.
 unsafe fn drain_cfg_causes() {

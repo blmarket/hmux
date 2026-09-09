@@ -187,7 +187,7 @@ fn a_double_dash_ends_the_flags_and_is_dropped() {
 
 #[test]
 fn a_question_mark_flag_fails_without_a_cause() {
-    let mut values = Values::words(&[c"cmd", c"-?"]);
+    let values = Values::words(&[c"cmd", c"-?"]);
     let mut cause = None;
     unsafe {
         let args = args_parse(&spec(c"a"), values.as_slice(), &mut cause);
@@ -680,7 +680,7 @@ fn a_number_argument_has_to_be_a_string() {
 #[test]
 fn a_number_argument_can_be_expanded_first() {
     let _guard = exclusive();
-    let mut runner = Runner::new();
+    let runner = Runner::new();
     unsafe {
         let args = Box::into_raw(args_create());
         let mut cause = None;
@@ -761,7 +761,7 @@ fn a_percentage_argument_comes_from_the_last_value_of_a_flag() {
 #[test]
 fn an_expanded_percentage_argument_comes_from_the_last_value_of_a_flag() {
     let _guard = exclusive();
-    let mut runner = Runner::new();
+    let runner = Runner::new();
     unsafe {
         let args = Box::into_raw(args_create());
         let mut cause = None;
@@ -791,7 +791,7 @@ fn an_expanded_percentage_argument_comes_from_the_last_value_of_a_flag() {
 #[test]
 fn an_expanded_percentage_is_taken_of_the_current_value() {
     let _guard = exclusive();
-    let mut runner = Runner::new();
+    let runner = Runner::new();
     let item = runner.item();
     let percentage = |value: &CStr| unsafe {
         let mut cause = None;
@@ -1052,11 +1052,6 @@ pub(crate) fn args_free_values(values: &mut [args_value_t]) {
 
 pub(crate) fn args_free(args: Box<args>) {
     drop(args);
-}
-
-/// The same, for a caller that means to change the value it names.
-pub(crate) fn args_value_mut(args: &mut args, idx: u_int) -> Option<&mut args_value_t> {
-    args.values.get_mut(idx as usize)
 }
 
 pub(crate) fn args_free_value(value: &mut args_value_t) {

@@ -74,11 +74,11 @@ fn causes_wait_for_an_active_pane_and_append_to_view_mode() {
     let _guard = globals();
     ensure_reactor();
     let mut target = Target::new(80, 24);
-    let mut window = target.state().window().unwrap();
+    let window = target.state().window().unwrap();
     let pane = target.state().pane_list_ref().unwrap();
     unsafe {
         cfg_causes.clear();
-        let mut session = target.session_handle().clone();
+        let session = target.session_handle().clone();
         session.add_attached();
         window.as_window_mut().active_pane = None;
         cfg_add_cause(c"pending configuration error", fmt_args![]);

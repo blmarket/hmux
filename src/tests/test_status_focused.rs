@@ -11,7 +11,7 @@ struct PromptFixture {
 
 impl PromptFixture {
     fn new() -> Self {
-        let mut target = Target::new(80, 24);
+        let target = Target::new(80, 24);
         let mut clients = Clients::new();
         let c = clients.add("status-focused", 80, 24);
         unsafe {
@@ -46,7 +46,7 @@ impl PromptFixture {
 #[test]
 fn status_rendering_covers_initial_unchanged_resized_forced_and_disabled_paths() {
     let _guard = globals();
-    let mut fixture = PromptFixture::new();
+    let fixture = PromptFixture::new();
     unsafe {
         let c = &mut *fixture.c;
         (c.attached_session().unwrap()).update_status_cache();
@@ -69,7 +69,7 @@ fn status_rendering_covers_initial_unchanged_resized_forced_and_disabled_paths()
 #[test]
 fn message_overlay_renders_styles_widths_reuse_and_clear_paths() {
     let _guard = globals();
-    let mut fixture = PromptFixture::new();
+    let fixture = PromptFixture::new();
     unsafe {
         let c = &mut *fixture.c;
         (c.attached_session().unwrap()).update_status_cache();
@@ -140,7 +140,7 @@ fn prompt_redraw_covers_entry_command_scrolling_quote_and_zero_terminal() {
 #[test]
 fn prompt_update_incremental_single_numeric_and_noformat_paths_are_initialized() {
     let _guard = globals();
-    let mut fixture = PromptFixture::new();
+    let fixture = PromptFixture::new();
     unsafe {
         let c = &mut *fixture.c;
         status_prompt_set(
@@ -175,7 +175,7 @@ fn prompt_update_incremental_single_numeric_and_noformat_paths_are_initialized()
 #[test]
 fn timer_callback_handles_detached_attached_hidden_message_and_prompt_states() {
     let _guard = globals();
-    let mut fixture = PromptFixture::new();
+    let fixture = PromptFixture::new();
     unsafe {
         let c = &mut *fixture.c;
         let session = c.attached_session().unwrap();
@@ -434,7 +434,7 @@ fn prompt_escape_and_word_helpers_cover_boundaries() {
 #[test]
 fn status_geometry_covers_top_bottom_disabled_control_detached_and_multiline_clamps() {
     let _guard = globals();
-    let mut fixture = PromptFixture::new();
+    let fixture = PromptFixture::new();
     unsafe {
         let c = &mut *fixture.c;
         let session = c.attached_session().unwrap();
@@ -484,7 +484,7 @@ fn status_geometry_covers_top_bottom_disabled_control_detached_and_multiline_cla
 #[test]
 fn overlay_screen_ownership_is_shared_between_message_prompt_and_restored_on_last_clear() {
     let _guard = globals();
-    let mut fixture = PromptFixture::new();
+    let fixture = PromptFixture::new();
     unsafe {
         let c = &mut *fixture.c;
         (c.attached_session().unwrap()).update_status_cache();
@@ -521,7 +521,7 @@ fn overlay_screen_ownership_is_shared_between_message_prompt_and_restored_on_las
 #[test]
 fn message_and_prompt_area_cover_alignment_percentage_absolute_and_line_preservation() {
     let _guard = globals();
-    let mut fixture = PromptFixture::new();
+    let fixture = PromptFixture::new();
     unsafe {
         let c = &mut *fixture.c;
         (c.attached_session().unwrap()).update_status_cache();
@@ -553,7 +553,7 @@ fn message_and_prompt_area_cover_alignment_percentage_absolute_and_line_preserva
 #[test]
 fn status_free_handles_initialized_reinitialized_and_already_freed_clients() {
     let _guard = globals();
-    let mut fixture = PromptFixture::new();
+    let fixture = PromptFixture::new();
     unsafe {
         let c = &mut *fixture.c;
         (c.attached_session().unwrap()).update_status_cache();
@@ -762,7 +762,7 @@ fn session_completion_prefers_matching_names_before_dollar_id_aliases() {
     let _guard = globals();
     let fixture = PromptFixture::new();
     unsafe {
-        let mut owner = (*fixture.c).attached_session().unwrap();
+        let owner = (*fixture.c).attached_session().unwrap();
         let id = CString::new(format!("${}", owner.id())).unwrap();
         let alias = CString::new(format!("{}:", id.to_string_lossy())).unwrap();
         assert_eq!(

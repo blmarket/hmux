@@ -157,7 +157,7 @@ fn cell_scan_uses_an_active_pane_absent_from_the_stacking_order_once() {
     view.add(2, 2, 3, 2);
     let ctx = view.ctx();
     unsafe {
-        let mut window = view.window.handle().clone();
+        let window = view.window.handle().clone();
         window.as_window_mut().z_index.clear();
         let inside = screen_redraw_check_cell(&ctx, 3, 2);
         assert_eq!(
@@ -197,7 +197,7 @@ fn cell_scan_wraps_to_the_visible_pane_before_its_start() {
     view.add(14, 0, 4, 3);
     let ctx = view.ctx();
     unsafe {
-        let mut window = view.window.handle().clone();
+        let window = view.window.handle().clone();
         window.as_window_mut().flags |= crate::window::WINDOW_ZOOMED;
         let checked = screen_redraw_check_cell(&ctx, 8, 1);
         assert_eq!(
@@ -483,7 +483,7 @@ fn scrollbar_redraw_tracks_owned_panes_and_skips_removed_targets() {
         client.tty.sy = 6;
         client.tty.term = Some(crate::tests::test_fixtures::zeroed_term());
         client.tty.out = Some(Box::new(crate::reactor::ByteBuffer::new()));
-        let mut window = view.window.handle().clone();
+        let window = view.window.handle().clone();
         window.set_scrollbar_settings(WindowScrollbarSettings {
             mode: crate::window::PANE_SCROLLBARS_ALWAYS,
             position: PANE_SCROLLBARS_RIGHT,
@@ -605,7 +605,7 @@ fn pane_status_drawing_preserves_clipping_zoom_and_top_or_bottom_rows() {
         client.tty.sy = 6;
         client.tty.term = Some(crate::tests::test_fixtures::zeroed_term());
         client.tty.out = Some(Box::new(crate::reactor::ByteBuffer::new()));
-        let mut window = view.window.handle().clone();
+        let window = view.window.handle().clone();
         let mut panes = window.panes();
         for (pane, text) in panes.iter_mut().zip([c"abc", c"XYZ"]) {
             let pane = pane.get_mut().unwrap();
@@ -735,7 +735,7 @@ fn pane_status_generation_tracks_formats_widths_and_owner_lifetime() {
     let mut view = View::new(12, 6);
     view.add(0, 1, 10, 3);
     unsafe {
-        let mut window = view.window.handle().clone();
+        let window = view.window.handle().clone();
         let mut pane = window.as_window().panes[0].downgrade();
         let options = pane.get().unwrap().options_ref().clone();
         pane.get_mut().unwrap().base_mut().set_title(c"alpha", 0);

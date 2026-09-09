@@ -1354,7 +1354,7 @@ fn the_scope_of_an_option_is_worked_out_from_its_name() {
     unsafe {
         let mut oo: Option<RustOptionsRef> = None;
         let mut cause = None;
-        let mut scope =
+        let scope =
             |name: &CStr, oo: &mut Option<RustOptionsRef>, cause: &mut Option<CString>| {
                 RustOptionsEngine.scope_from_name(&*args.borrow(), 0, name, &*fs, oo, cause)
             };
@@ -1387,7 +1387,7 @@ fn the_scope_of_an_option_with_no_target_is_named_in_the_reason() {
     let _guard = globals();
     let args = Args::parse(c"set-option x");
     let targeted = Args::parse(c"set-option -t other x");
-    let mut fs = Box::new(cmd_find_state::default());
+    let fs = Box::new(cmd_find_state::default());
     unsafe {
         let mut oo: Option<RustOptionsRef> = None;
         let mut cause = None;
@@ -1501,7 +1501,7 @@ fn the_scope_of_a_pane_option_follows_the_pane_flag() {
 fn a_global_flag_names_the_global_option_set() {
     let _guard = globals();
     let args = Args::parse(c"set-option -g x");
-    let mut fs = Box::new(cmd_find_state::default());
+    let fs = Box::new(cmd_find_state::default());
     unsafe {
         let mut oo: Option<RustOptionsRef> = None;
         let mut cause = None;
@@ -1614,7 +1614,7 @@ fn the_scope_of_a_user_option_is_worked_out_from_the_flags() {
 #[test]
 fn a_user_option_with_no_target_is_turned_down() {
     let _guard = globals();
-    let mut fs = Box::new(cmd_find_state::default());
+    let fs = Box::new(cmd_find_state::default());
     unsafe {
         let mut oo: Option<RustOptionsRef> = None;
         let mut cause = None;
@@ -1793,7 +1793,7 @@ fn pane_option_scopes_retain_physical_pane_options_and_reject_removed_targets() 
     let state = target.state();
     let args = Args::parse(c"set-option -p x");
     unsafe {
-        let mut window = state.window().unwrap();
+        let window = state.window().unwrap();
         let pane = crate::window::window_panes_take(
             &mut window.as_window_mut(),
             &crate::window::window_pane_find_by_id(
@@ -1804,7 +1804,7 @@ fn pane_option_scopes_retain_physical_pane_options_and_reject_removed_targets() 
         .unwrap();
         let observed = pane.downgrade();
         window.as_window_mut().panes.push(pane);
-        let mut pane = observed;
+        let pane = observed;
         assert!(state.pane_ref().is_some());
         let options = pane.get().unwrap().options_ref().clone();
         options.set_number(c"remain-on-exit", 1);

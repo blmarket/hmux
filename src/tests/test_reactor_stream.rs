@@ -153,7 +153,7 @@ fn read_callback_can_free_the_stream() {
 fn error_callback_can_free_the_stream_after_eof() {
     let mut runtime = TaskRuntime::new().expect("runtime");
     let registry = registry_with_runtime(&runtime);
-    let (source, mut peer) = UnixStream::pair().expect("socket pair");
+    let (source, peer) = UnixStream::pair().expect("socket pair");
     source.set_nonblocking(true).expect("nonblocking source");
     peer.set_nonblocking(true).expect("nonblocking peer");
     let seen = Rc::new(AtomicUsize::new(0));

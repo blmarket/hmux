@@ -71,7 +71,7 @@ impl Fixture {
             let mut p = Pane::new(pid, sx, sy, 100);
             w.window.add_pane(&mut p);
             self.panes.push(p);
-            let mut window = w.window.reference();
+            let window = w.window.reference();
             let pane = {
                 window
                     .as_window()
@@ -147,7 +147,7 @@ fn joining_in_front_of_a_later_pane_relinks_the_pane_behind_it() {
         wl_dst.get().unwrap().window_handle().unwrap().clone(),
     );
 
-    let mut item = Item::new().with_args(c"join-pane -d");
+    let item = Item::new().with_args(c"join-pane -d");
     unsafe {
         let mut state = item.item_mut();
         state.target = fs_of(&wl_dst);

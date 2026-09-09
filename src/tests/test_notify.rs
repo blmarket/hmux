@@ -145,7 +145,7 @@ fn entry(name: &CStr) -> Box<notify_entry> {
 
 #[test]
 fn a_hook_with_no_commands_behind_it_inserts_nothing() {
-    let mut world = World::new();
+    let world = World::new();
     unsafe {
         notify_hook(&world.read(), c"window-linked");
     }
@@ -154,7 +154,7 @@ fn a_hook_with_no_commands_behind_it_inserts_nothing() {
 
 #[test]
 fn a_name_that_is_not_a_hook_at_all_inserts_nothing() {
-    let mut world = World::new();
+    let world = World::new();
     unsafe {
         notify_hook(&world.read(), c"not-a-hook");
     }
@@ -163,7 +163,7 @@ fn a_name_that_is_not_a_hook_at_all_inserts_nothing() {
 
 #[test]
 fn a_session_hook_inserts_one_item_per_command_in_it() {
-    let mut world = World::new();
+    let world = World::new();
     unsafe {
         world
             .session
@@ -202,7 +202,7 @@ fn a_session_hook_inserts_one_item_per_command_in_it() {
 
 #[test]
 fn a_hook_the_session_does_not_carry_is_looked_for_on_the_pane() {
-    let mut world = World::new();
+    let world = World::new();
     unsafe {
         world
             .pane
@@ -228,7 +228,7 @@ fn a_hook_the_session_does_not_carry_is_looked_for_on_the_pane() {
 
 #[test]
 fn a_target_with_no_pane_looks_for_the_hook_on_the_window() {
-    let mut world = World::without_a_pane();
+    let world = World::without_a_pane();
     unsafe {
         world
             .window
@@ -254,7 +254,7 @@ fn a_target_with_no_pane_looks_for_the_hook_on_the_window() {
 
 #[test]
 fn a_user_option_is_parsed_as_a_command_line_of_its_own() {
-    let mut world = World::new();
+    let world = World::new();
     unsafe {
         world.session.options().set_string(
             c"@hook",
@@ -269,7 +269,7 @@ fn a_user_option_is_parsed_as_a_command_line_of_its_own() {
 
 #[test]
 fn a_user_option_that_is_not_a_command_line_inserts_nothing() {
-    let mut world = World::new();
+    let world = World::new();
     unsafe {
         world.session.options().set_string(
             c"@hook",
@@ -284,7 +284,7 @@ fn a_user_option_that_is_not_a_command_line_inserts_nothing() {
 
 #[test]
 fn an_empty_user_option_parses_to_a_command_list_with_nothing_in_it() {
-    let mut world = World::new();
+    let world = World::new();
     unsafe {
         world
             .session
@@ -297,7 +297,7 @@ fn an_empty_user_option_parses_to_a_command_list_with_nothing_in_it() {
 
 #[test]
 fn a_hook_is_named_in_the_log_when_the_log_is_on() {
-    let mut world = World::new();
+    let world = World::new();
     unsafe {
         log_add_level();
         assert_ne!(log_get_level(), 0);
@@ -364,8 +364,8 @@ fn a_target_that_is_not_valid_any_more_is_found_from_nothing() {
 
 #[test]
 fn a_hook_with_no_command_list_behind_it_leaves_the_item_where_it_was() {
-    let mut world = World::new();
-    let mut ne = notify_entry {
+    let world = World::new();
+    let ne = notify_entry {
         name: Some(c"window-linked".to_owned()),
         fs: cmd_find_state::default(),
         formats: { format_create(None, None, 0, FORMAT_NOJOBS) },
@@ -423,7 +423,7 @@ fn the_callback_dispatches_every_control_notification_and_frees_its_entry() {
 #[test]
 fn the_callback_releases_the_client_handle_the_entry_held() {
     let mut world = World::new();
-    let mut client = zeroed_client();
+    let client = zeroed_client();
     unsafe {
         let weak = world.session.weak();
         let mut ne = entry(c"window-renamed");
@@ -489,7 +489,7 @@ fn a_notification_of_a_session_that_is_gone_is_found_from_nothing() {
 
 #[test]
 fn a_command_that_asked_for_no_hooks_notifies_nothing() {
-    let mut world = World::new();
+    let world = World::new();
     let mut running = Item::new();
     let before = world.inserted();
     let queue = unsafe {

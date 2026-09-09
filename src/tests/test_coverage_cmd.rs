@@ -735,7 +735,7 @@ fn mouse_lookup_checks_membership_while_retained_handles_follow_the_allocation()
     mouse.wp = -1;
     unsafe {
         let (_, _, mut pane) = cmd_mouse_pane(&mouse).expect("active mouse pane");
-        let mut owner = pane.window().unwrap();
+        let owner = pane.window().unwrap();
         let removed = crate::window::window_panes_take(
             &mut owner.as_window_mut(),
             &crate::window::window_pane_find_by_id(pane.id()).expect("the pane exists"),

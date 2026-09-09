@@ -146,7 +146,7 @@ fn a_reset_comes_out_of_the_alternate_screen() {
     let _guard = globals();
     let mut s = RustScreen::new_with_server_options(10, 5, 0);
     s.write(0, 0, "main");
-    let mut gc = { grid_default_cell };
+    let gc = { grid_default_cell };
     unsafe {
         screen_alternate_on(&mut s, &gc, 1);
         screen_reinit(&mut s);
@@ -462,7 +462,7 @@ fn a_selection_covers_the_cells_between_its_ends() {
     let gc = { grid_default_cell };
     s.set_selection(2, 1, 4, 1, false, 0, 0, &gc);
     assert!(s.has_selection());
-    let mut check = |px, py| s.check_selection(px, py) as c_int;
+    let check = |px, py| s.check_selection(px, py) as c_int;
     assert_eq!(check(1, 1), 0);
     assert_eq!(check(2, 1), 1);
     assert_eq!(check(3, 1), 1);
@@ -501,7 +501,7 @@ fn a_rectangular_selection_is_a_box() {
     let mut s = RustScreen::new_with_server_options(10, 5, 0);
     let gc = { grid_default_cell };
     s.set_selection(2, 1, 5, 3, true, 0, 0, &gc);
-    let mut check = |px, py| s.check_selection(px, py) as c_int;
+    let check = |px, py| s.check_selection(px, py) as c_int;
     assert_eq!(check(3, 2), 1);
     assert_eq!(check(2, 1), 1);
     assert_eq!(check(5, 3), 1, "a rectangle keeps its last column");
@@ -517,7 +517,7 @@ fn a_rectangular_selection_can_be_drawn_in_any_direction() {
     let mut s = RustScreen::new_with_server_options(10, 5, 0);
     let gc = { grid_default_cell };
     s.set_selection(5, 3, 2, 1, true, 0, 0, &gc);
-    let mut check = |px, py| s.check_selection(px, py) as c_int;
+    let check = |px, py| s.check_selection(px, py) as c_int;
     assert_eq!(check(3, 2), 1);
     assert_eq!(check(1, 2), 0);
     assert_eq!(check(6, 2), 0);
@@ -525,7 +525,7 @@ fn a_rectangular_selection_can_be_drawn_in_any_direction() {
     assert_eq!(check(3, 4), 0);
 
     s.set_selection(2, 2, 5, 2, true, 0, 0, &gc);
-    let mut flat = |px, py| s.check_selection(px, py) as c_int;
+    let flat = |px, py| s.check_selection(px, py) as c_int;
     assert_eq!(flat(3, 2), 1);
     assert_eq!(flat(3, 1), 0, "a rectangle of one line is that line");
 }
@@ -536,7 +536,7 @@ fn a_selection_drawn_upwards_covers_the_same_cells() {
     let mut s = RustScreen::new_with_server_options(10, 5, 0);
     let gc = { grid_default_cell };
     s.set_selection(4, 3, 2, 1, false, 0, 0, &gc);
-    let mut check = |px, py| s.check_selection(px, py) as c_int;
+    let check = |px, py| s.check_selection(px, py) as c_int;
     assert_eq!(check(1, 1), 0);
     assert_eq!(check(2, 1), 1);
     assert_eq!(check(9, 2), 1);
@@ -552,7 +552,7 @@ fn a_selection_on_one_line_can_be_drawn_either_way() {
     let mut s = RustScreen::new_with_server_options(10, 5, 0);
     let gc = { grid_default_cell };
     s.set_selection(5, 1, 2, 1, false, 0, 0, &gc);
-    let mut back = |px, py| s.check_selection(px, py) as c_int;
+    let back = |px, py| s.check_selection(px, py) as c_int;
     assert_eq!(back(1, 1), 0);
     assert_eq!(back(2, 1), 1);
     assert_eq!(back(4, 1), 1);
@@ -711,7 +711,7 @@ fn leaving_an_alternate_screen_that_was_never_entered_only_clamps_the_cursor() {
 fn an_alternate_screen_can_be_left_without_taking_the_cursor_back() {
     let _guard = globals();
     let mut s = RustScreen::new_with_server_options(10, 3, 0);
-    let mut gc = { grid_default_cell };
+    let gc = { grid_default_cell };
     unsafe { screen_alternate_on(&mut s, &gc, 0) };
     assert_eq!((s.0.saved_cx, s.0.saved_cy), (UINT_MAX, UINT_MAX));
     s.0.cx = 2;
@@ -741,7 +741,7 @@ fn a_screen_with_a_write_list_keeps_it_across_a_resize() {
 fn freeing_a_screen_frees_what_it_put_aside() {
     let _guard = globals();
     let mut s = RustScreen::new_with_server_options(10, 3, 0);
-    let mut gc = { grid_default_cell };
+    let gc = { grid_default_cell };
     unsafe {
         screen_write_make_list(&mut s);
         screen_alternate_on(&mut s, &gc, 1);
@@ -819,7 +819,7 @@ fn a_selection_over_several_lines_takes_in_the_lines_between() {
     let mut s = RustScreen::new_with_server_options(10, 5, 0);
     let gc = { grid_default_cell };
     s.set_selection(2, 1, 4, 3, false, 0, 0, &gc);
-    let mut check = |px, py| s.check_selection(px, py) as c_int;
+    let check = |px, py| s.check_selection(px, py) as c_int;
     assert_eq!(check(2, 0), 0, "above the selection");
     assert_eq!(check(2, 4), 0, "below it");
     assert_eq!(check(1, 1), 0, "before it on its first line");
@@ -847,7 +847,7 @@ fn a_selection_that_ends_on_the_first_cell_of_a_line_still_takes_it() {
 fn the_cursor_is_clamped_when_the_alternate_screen_is_left() {
     let _guard = globals();
     let mut s = RustScreen::new_with_server_options(10, 3, 0);
-    let mut gc = { grid_default_cell };
+    let gc = { grid_default_cell };
     unsafe { screen_alternate_on(&mut s, &gc, 0) };
     s.0.cx = 20;
     s.0.cy = 20;
@@ -968,7 +968,7 @@ fn a_screen_prints_its_lines_in_quotes() {
     let mut s = RustScreen::new_with_server_options(10, 3, 0);
     s.write(0, 0, "abc");
     s.write(0, 1, "de");
-    let mut printed =
+    let printed =
         |line| unsafe { String::from_utf8_lossy(screen_print(&s, line).to_bytes()).into_owned() };
     assert_eq!(printed(-1), "0000 \"abc\"\n0001 \"de\"\n0002 \"\"\n");
     assert_eq!(printed(1), "0001 \"de\"\n");

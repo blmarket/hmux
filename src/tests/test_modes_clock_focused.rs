@@ -36,13 +36,13 @@ fn clock_resize_and_timer_follow_the_panes_current_window_options() {
             assert_clock_colour(&data.screen, 1);
             assert!(data.timer.is_armed());
         }
-        let mut original = pane.window().unwrap();
+        let original = pane.window().unwrap();
         let mut owned = window_panes_take(
             &mut original.as_window_mut(),
             &crate::window::window_pane_find_by_id(id).expect("the pane exists"),
         )
         .unwrap();
-        let mut destination_owner = destination.reference();
+        let destination_owner = destination.reference();
         window_pane_set_window_ref(owned.as_pane_mut(), Some(&destination_owner));
         window_panes_insert_tail(&mut destination_owner.as_window_mut(), owned);
         assert!(pane.get().is_some());

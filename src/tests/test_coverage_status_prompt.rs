@@ -138,7 +138,7 @@ struct Asker {
 
 impl Asker {
     fn new() -> Asker {
-        let mut target = Target::new(80, 24);
+        let target = Target::new(80, 24);
         let mut clients = Clients::new();
         let c = clients.add("asker", 80, 24);
         unsafe {
@@ -167,7 +167,7 @@ impl Asker {
 #[test]
 fn a_prompt_holds_its_input_with_the_cursor_at_the_end() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         prompt(c, c"hello", 0);
@@ -183,7 +183,7 @@ fn a_prompt_holds_its_input_with_the_cursor_at_the_end() {
 #[test]
 fn typing_inserts_at_the_cursor_and_moves_it_on() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         prompt(c, c"", 0);
@@ -204,7 +204,7 @@ fn typing_inserts_at_the_cursor_and_moves_it_on() {
 #[test]
 fn typing_grows_the_buffer_past_its_first_allocation() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         prompt(c, c"", 0);
@@ -230,7 +230,7 @@ fn typing_grows_the_buffer_past_its_first_allocation() {
 #[test]
 fn a_multibyte_character_takes_one_place_in_the_buffer() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         prompt(c, c"", 0);
@@ -252,7 +252,7 @@ fn a_multibyte_character_takes_one_place_in_the_buffer() {
 #[test]
 fn the_cursor_walks_by_character_and_stops_at_both_ends() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         prompt(c, c"abcd", 0);
@@ -287,7 +287,7 @@ fn the_cursor_walks_by_character_and_stops_at_both_ends() {
 #[test]
 fn the_cursor_walks_by_word() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         prompt(c, c"one two three", 0);
@@ -317,7 +317,7 @@ fn the_cursor_walks_by_word() {
 #[test]
 fn characters_go_away_before_and_at_the_cursor() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         prompt(c, c"axbc", 0);
@@ -395,7 +395,7 @@ fn keys_that_walk_the_line_have_nothing_to_walk_on_an_empty_prompt() {
 #[test]
 fn deleting_stops_at_the_end_of_the_line() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         prompt(c, c"ab", 0);
@@ -465,7 +465,7 @@ fn what_was_cut_is_pasted_back_at_the_cursor() {
 #[test]
 fn transposing_swaps_the_two_characters_before_the_cursor() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         prompt(c, c"ab", 0);
@@ -485,7 +485,7 @@ fn transposing_swaps_the_two_characters_before_the_cursor() {
 #[test]
 fn accepting_hands_the_answer_to_the_callback() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         drain_history();
@@ -503,7 +503,7 @@ fn accepting_hands_the_answer_to_the_callback() {
 #[test]
 fn cancelling_hands_nothing_to_the_callback() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         for key in ["Escape", "C-c", "C-g"] {
@@ -520,7 +520,7 @@ fn cancelling_hands_nothing_to_the_callback() {
 #[test]
 fn walking_the_history_replaces_the_line() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         drain_history();
@@ -553,7 +553,7 @@ fn walking_the_history_replaces_the_line() {
 #[test]
 fn each_prompt_type_keeps_its_own_history() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         drain_history();
@@ -629,7 +629,7 @@ fn vi_keys_move_and_edit_in_command_mode() {
 #[test]
 fn a_numeric_prompt_takes_only_digits() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         prompt(c, c"", PROMPT_NUMERIC);
@@ -648,7 +648,7 @@ fn a_numeric_prompt_takes_only_digits() {
 #[test]
 fn a_single_key_prompt_answers_with_one_character() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         prompt(c, c"", PROMPT_SINGLE);
@@ -663,7 +663,7 @@ fn a_single_key_prompt_answers_with_one_character() {
 #[test]
 fn a_key_prompt_answers_with_the_key_name() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         prompt(c, c"", PROMPT_KEY);
@@ -678,7 +678,7 @@ fn a_key_prompt_answers_with_the_key_name() {
 #[test]
 fn an_incremental_prompt_reports_every_change() {
     let _guard = globals();
-    let mut a = Asker::new();
+    let a = Asker::new();
     let c = a.c;
     unsafe {
         prompt(c, c"seed", PROMPT_INCREMENTAL);

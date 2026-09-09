@@ -16,7 +16,7 @@
 //! popup menu selection.
 
 use crate::fmt_args;
-use crate::grid::{grid_default_cell, grid_get_cell};
+use crate::grid::grid_get_cell;
 
 use crate::overlay::{
     _PATH_BSHELL, _PATH_TMP, BOTTOM, BOX_LINES_DEFAULT, BOX_LINES_DOUBLE, BOX_LINES_HEAVY,
@@ -98,8 +98,8 @@ fn the_popup_paths_and_masks_read_as_the_c_headers_define_them() {
 /// state held until the fixtures have given back what they took.
 struct Popup {
     session: Session,
-    window: Window,
-    clients: Clients,
+    _window: Window,
+    _clients: Clients,
     c: *mut client,
     _guard: std::sync::MutexGuard<'static, ()>,
 }
@@ -124,15 +124,11 @@ impl Popup {
         unsafe { (*c).set_attached_session(Some(session.handle())) };
         Popup {
             session,
-            window,
-            clients,
+            _window: window,
+            _clients: clients,
             c,
             _guard: guard,
         }
-    }
-
-    fn s(&mut self) -> *mut session {
-        self.session.ptr()
     }
 
     /// The live popup behind the client, once one has been displayed.
@@ -276,8 +272,7 @@ fn popup_write_feeds_the_job_stream_into_the_popup_screen_while_it_is_up() {
         assert!((*p.c).overlay_check().is_some());
         assert_eq!((*p.c).overlay_data().data().popup(), pd);
 
-        let mut gc = grid_default_cell;
-        gc = grid_get_cell(RustScreen::grid(&pd.borrow().s.borrow()), 0, 0);
+        let mut gc = grid_get_cell(RustScreen::grid(&pd.borrow().s.borrow()), 0, 0);
         assert_eq!(gc.data.data[0], b'h');
         gc = grid_get_cell(RustScreen::grid(&pd.borrow().s.borrow()), 1, 0);
         assert_eq!(gc.data.data[0], b'i');

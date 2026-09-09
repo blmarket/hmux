@@ -125,7 +125,7 @@ static LEAK_ENTRY: cmd_entry = cmd_entry {
 
 struct CmdqLeakRig {
     client: crate::types::ClientRef,
-    command: Args,
+    _command: Args,
 }
 
 impl CmdqLeakRig {
@@ -149,7 +149,7 @@ impl CmdqLeakRig {
                 m: mouse_event::default(),
                 buf: b"callback-data".to_vec(),
             });
-            let mut callback = CmdqItemRef::callback_items(c"free-key-event", move |_item| {
+            let callback = CmdqItemRef::callback_items(c"free-key-event", move |_item| {
                 drop(event);
                 0
             });
@@ -157,7 +157,10 @@ impl CmdqLeakRig {
             cmdq_append(Some(&client), vec![command_item]);
             cmdq_append(Some(&client), callback);
         }
-        CmdqLeakRig { client, command }
+        CmdqLeakRig {
+            client,
+            _command: command,
+        }
     }
 
     unsafe fn run(&self) -> u_int {
@@ -299,7 +302,7 @@ fn a_dead_client_gives_up_pane_input_file_data() {
 unsafe fn send_keys_x(t: &mut Target, line: &CStr, values: u_int) {
     unsafe {
         let wp = t.pane(0);
-        let mut fs = t.state();
+        let fs = t.state();
         let open = Args::parse(c"copy-mode");
         let source_pane_id = (*wp).pane_id();
         window_pane_set_mode(
@@ -366,7 +369,7 @@ impl SpawnRig {
     /// the cause it was refused with.
     unsafe fn refuse(&mut self, cwd: Option<&CStr>) -> String {
         unsafe {
-            let mut item = Item::new().with_args(c"respawn-pane");
+            let item = Item::new().with_args(c"respawn-pane");
             let mut sc = Box::new(spawn_context::default());
             sc.item = Some(item.handle().downgrade());
             sc.s = Some(self.session.reference());

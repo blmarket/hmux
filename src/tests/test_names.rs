@@ -92,7 +92,7 @@ fn invalid_utf8_falls_back_to_the_empty_name() {
 
 #[test]
 fn a_window_without_an_active_pane_has_an_empty_default_name() {
-    let mut w = blank_window();
+    let w = blank_window();
     unsafe {
         let p = default_window_name(&WindowRef::new(*w));
         assert_eq!(p.as_bytes(), b"");
@@ -242,7 +242,7 @@ fn checking_a_window_without_an_active_pane_does_nothing() {
     let _guard = globals();
     let mut target = Target::new(20, 6);
     unsafe {
-        let mut window = target.state().window().unwrap();
+        let window = target.state().window().unwrap();
         window.as_window_mut().active_pane = None;
         window.check_name();
         assert_eq!(window.window_name().as_deref(), Some(c"target"));
@@ -288,7 +288,7 @@ fn automatic_rename_formats_the_active_pane_and_defers_the_next_change() {
     let mut target = Target::new(20, 6);
     unsafe {
         let state = target.state();
-        let mut window = state.window().unwrap();
+        let window = state.window().unwrap();
         let mut pane = state.pane_ref().unwrap();
         let options = window.options();
         options.set_number(c"automatic-rename", 1);

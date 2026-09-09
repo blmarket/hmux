@@ -233,9 +233,9 @@ fn compound_targets_preserve_session_dots_window_colons_and_empty_components() {
     let mut target = Target::new(80, 24);
     unsafe {
         let state = target.state();
-        let mut session = state.session().unwrap();
+        let session = state.session().unwrap();
         session.rename(c"work.main".to_owned());
-        let mut window = state.window().unwrap();
+        let window = state.window().unwrap();
         window.set_window_name(Some(c"notes:extra"));
         let pane = state.pane_ref().unwrap();
         for text in [
@@ -376,7 +376,7 @@ fn target_state_copy_preserves_list_membership_and_clears_stale_observations() {
     let mut target = Target::new(80, 24);
     unsafe {
         let mut source = target.state();
-        let mut window = source.window().unwrap();
+        let window = source.window().unwrap();
         let id = source.wp_ref.as_ref().map(|pane| pane.id()).unwrap();
         window.clear_pane_membership_for_test(source.wp_ref.as_ref().unwrap());
         assert_eq!(source.pane_ref().unwrap().id(), id);
@@ -506,7 +506,7 @@ fn explicit_pane_ids_preserve_physical_membership_and_reject_other_windows() {
     unsafe {
         let source = target.state();
         let pane = source.pane_list_ref().unwrap();
-        let mut window = source.window().unwrap();
+        let window = source.window().unwrap();
         let text = CString::new(format!("%{}", pane.id())).unwrap();
         let other = crate::window::window_ref_of(&*target.window(1)).unwrap();
         for physical_only in [false, true] {

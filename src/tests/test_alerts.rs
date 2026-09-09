@@ -117,7 +117,7 @@ fn the_deferred_check_releases_every_queued_window_and_resets_the_latch() {
         let fired = alerts_fired;
         assert_eq!(fired, 0);
 
-        let mut third = Window::new(54, "third", 80, 24);
+        let third = Window::new(54, "third", 80, 24);
         third.options().set_number(c"monitor-activity", 1);
         (third.reference()).raise_alerts(WINDOW_ACTIVITY);
         assert_eq!(
@@ -138,7 +138,7 @@ fn only_an_ordinary_client_of_the_session_hears_the_alert() {
     let _guard = globals();
     ensure_reactor();
     let mut s = Session::new(31, "belled");
-    let mut other = Session::new(32, "elsewhere");
+    let other = Session::new(32, "elsewhere");
     let mut w = Window::new(55, "ringing", 80, 24);
     let wl = link(&mut s, &mut w, 0);
     let mut list = Clients::new();

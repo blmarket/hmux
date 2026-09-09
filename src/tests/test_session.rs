@@ -68,41 +68,6 @@ fn server() -> MutexGuard<'static, ()> {
     guard
 }
 
-/// A number sequence that is the same every run, which is what shuffles
-/// the entries the tree tests put in and take out again.
-struct Order(u64);
-
-impl Order {
-    fn next(&mut self, below: usize) -> usize {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1);
-        (self.0 >> 33) as usize % below
-    }
-}
-
-/// A session that is nothing but a name, which is all the tree's own
-/// comparison reads. It is in no tree of the server's and owns nothing
-/// else.
-struct Named {
-    session: Box<session>,
-    _name: CString,
-}
-
-impl Named {
-    fn new(name: &str) -> Named {
-        let name = CString::new(name).expect("no NUL");
-        let mut session = Box::new(session::default());
-        session.name = Some(name.clone());
-        Named {
-            session,
-            _name: name,
-        }
-    }
-
-    fn ptr(&mut self) -> *mut session {
-        &raw mut *self.session
-    }
-}
-
 /// The names in a tree, in the order it walks them.
 unsafe fn walk(head: &sessions_t) -> Vec<String> {
     unsafe {
@@ -160,7 +125,7 @@ impl Drop for Created {
 
 /// The names of every session the server has.
 fn registered() -> Vec<String> {
-    let mut registered = SESSIONS.map();
+    let registered = SESSIONS.map();
     unsafe { walk(&registered) }
 }
 
@@ -371,7 +336,7 @@ impl Linked {
         static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
         let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as u_int;
         let w = Window::new(id, name, 80, 24);
-        let mut session = self.handle().clone();
+        let session = self.handle().clone();
         let mut cause = None;
         let index = unsafe { session.attach(w.reference(), idx, &mut cause) }
             .expect("the fixture index is available");
@@ -484,8 +449,8 @@ fn a_window_is_linked_into_a_session_at_an_index_of_its_own() {
 #[test]
 fn an_index_that_is_in_use_is_refused_with_a_reason() {
     let _guard = server();
-    let mut linked = Linked::new("attach", 1);
-    let mut spare = Window::new(9, "spare", 80, 24);
+    let linked = Linked::new("attach", 1);
+    let spare = Window::new(9, "spare", 80, 24);
     unsafe {
         let mut cause = None;
         let index = linked.handle().attach(spare.reference(), 1, &mut cause);
@@ -968,8 +933,8 @@ fn a_session_with_no_current_window_is_not_destroyed() {
 fn destroying_a_session_unlinks_everything_it_held() {
     let _guard = server();
     let mut created = Created::new();
-    let mut first = Window::new(1, "w1", 80, 24);
-    let mut second = Window::new(2, "w2", 80, 24);
+    let first = Window::new(1, "w1", 80, 24);
+    let second = Window::new(2, "w2", 80, 24);
     unsafe {
         let s = created.session(None, Some(c"doomed"));
         let mut cause = None;
@@ -1049,7 +1014,7 @@ fn the_next_and_previous_sessions_wrap_round_the_sorted_list() {
 fn a_session_the_server_has_given_up_has_no_neighbours() {
     let _guard = server();
     let mut apart = Session::new(1, "apart");
-    let mut crit = RustSortCriteria::new(SORT_NAME, false);
+    let crit = RustSortCriteria::new(SORT_NAME, false);
     unsafe {
         assert!(
             crate::session::session_ref_of(&*apart.ptr())
@@ -1118,13 +1083,13 @@ fn a_group_is_made_once_and_holds_each_session_once() {
 #[test]
 fn safe_group_walk_survives_members_leaving_the_group() {
     let _guard = server();
-    let mut first = Session::new(1, "first");
-    let mut second = Session::new(2, "second");
+    let first = Session::new(1, "first");
+    let second = Session::new(2, "second");
     let mut group = Group::new(c"snapshot");
     group.add(second.reference());
     group.add(first.reference());
-    let mut first = first.reference();
-    let mut second = second.reference();
+    let first = first.reference();
+    let second = second.reference();
     {
         let mut walk = first.group_walk_safe().unwrap();
         let second_member = walk.next().unwrap();
@@ -1204,7 +1169,7 @@ fn a_group_is_synchronised_from_one_session_to_the_others() {
 #[test]
 fn a_session_is_synchronised_to_what_the_rest_of_its_group_holds() {
     let _guard = server();
-    let mut holding = Linked::new("holding", 2);
+    let holding = Linked::new("holding", 2);
     let mut joining = Linked::new("joining", 1);
     unsafe {
         let mut group = Group::new(c"group");

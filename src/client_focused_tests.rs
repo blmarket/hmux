@@ -56,7 +56,7 @@ impl IdentifyPeer {
             }
             let mut types = Vec::new();
             loop {
-                let Ok(Some((mut message, _len))) = imsg_get(&mut self.far) else {
+                let Ok(Some((message, _len))) = imsg_get(&mut self.far) else {
                     break;
                 };
                 types.push(imsg_get_type(&message));

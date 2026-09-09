@@ -148,7 +148,7 @@ fn waiting_on_a_fresh_channel_blocks_the_item() {
 #[test]
 fn waiting_on_a_woken_channel_returns_at_once_and_drops_it() {
     let _guard = exclusive();
-    let mut item = waiting_item();
+    let item = waiting_item();
     channel_for(c"chan", |wc| wc.woken = true);
     unsafe {
         assert_eq!(cmd_wait_for_wait(&item.read(), c"chan"), CMD_RETURN_NORMAL);
@@ -159,8 +159,8 @@ fn waiting_on_a_woken_channel_returns_at_once_and_drops_it() {
 #[test]
 fn signalling_continues_every_waiter_but_leaves_the_channel() {
     let _guard = exclusive();
-    let mut first = waiting_item();
-    let mut second = waiting_item();
+    let first = waiting_item();
+    let second = waiting_item();
     unsafe {
         cmd_wait_for_wait(&first.read(), c"chan");
         cmd_wait_for_wait(&second.read(), c"chan");
@@ -179,10 +179,10 @@ fn signalling_continues_every_waiter_but_leaves_the_channel() {
 #[test]
 fn a_waiter_whose_item_is_gone_is_skipped_by_the_signal() {
     let _guard = exclusive();
-    let mut kept = waiting_item();
+    let kept = waiting_item();
     unsafe {
         {
-            let mut gone = waiting_item();
+            let gone = waiting_item();
             assert_eq!(cmd_wait_for_wait(&gone.read(), c"chan"), CMD_RETURN_WAIT);
         }
         assert_eq!(cmd_wait_for_wait(&kept.read(), c"chan"), CMD_RETURN_WAIT);
@@ -195,7 +195,7 @@ fn a_waiter_whose_item_is_gone_is_skipped_by_the_signal() {
 #[test]
 fn waiting_without_a_client_is_an_error() {
     let _guard = exclusive();
-    let mut item = clientless_item(c"wait.conf");
+    let item = clientless_item(c"wait.conf");
     unsafe {
         assert_eq!(cmd_wait_for_wait(&item.read(), c"chan"), CMD_RETURN_ERROR);
         assert!(channel_names().is_empty());
@@ -205,7 +205,7 @@ fn waiting_without_a_client_is_an_error() {
 #[test]
 fn locking_a_free_channel_takes_the_lock() {
     let _guard = exclusive();
-    let mut item = waiting_item();
+    let item = waiting_item();
     unsafe {
         assert_eq!(cmd_wait_for_lock(&item.read(), c"chan"), CMD_RETURN_NORMAL);
         assert!(channel(c"chan").locked);
@@ -216,7 +216,7 @@ fn locking_a_free_channel_takes_the_lock() {
 #[test]
 fn locking_a_locked_channel_queues_behind_it() {
     let _guard = exclusive();
-    let mut holder = waiting_item();
+    let holder = waiting_item();
     let mut waiter = waiting_item();
     unsafe {
         cmd_wait_for_lock(&holder.read(), c"chan");
@@ -228,7 +228,7 @@ fn locking_a_locked_channel_queues_behind_it() {
 #[test]
 fn locking_without_a_client_is_an_error() {
     let _guard = exclusive();
-    let mut item = clientless_item(c"lock.conf");
+    let item = clientless_item(c"lock.conf");
     unsafe {
         assert_eq!(cmd_wait_for_lock(&item.read(), c"chan"), CMD_RETURN_ERROR);
         assert!(channel_names().is_empty());
@@ -238,7 +238,7 @@ fn locking_without_a_client_is_an_error() {
 #[test]
 fn unlocking_a_channel_that_is_not_locked_is_an_error() {
     let _guard = exclusive();
-    let mut item = clientless_item(c"unlock.conf");
+    let item = clientless_item(c"unlock.conf");
     unsafe {
         assert_eq!(cmd_wait_for_unlock(&item.read(), c"chan"), CMD_RETURN_ERROR);
         channel_for(c"chan", |_| ());
@@ -249,8 +249,8 @@ fn unlocking_a_channel_that_is_not_locked_is_an_error() {
 #[test]
 fn unlocking_hands_the_lock_to_the_next_locker() {
     let _guard = exclusive();
-    let mut holder = waiting_item();
-    let mut next = waiting_item();
+    let holder = waiting_item();
+    let next = waiting_item();
     let mut last = waiting_item();
     unsafe {
         cmd_wait_for_lock(&holder.read(), c"chan");
@@ -278,7 +278,7 @@ fn unlocking_hands_the_lock_to_the_next_locker() {
 #[test]
 fn unlocking_the_last_locker_leaves_an_unwoken_channel_behind() {
     let _guard = exclusive();
-    let mut holder = waiting_item();
+    let holder = waiting_item();
     unsafe {
         cmd_wait_for_lock(&holder.read(), c"chan");
         assert_eq!(
@@ -297,11 +297,11 @@ fn unlocking_the_last_locker_leaves_an_unwoken_channel_behind() {
 #[test]
 fn flushing_wakes_everyone_and_empties_the_tree() {
     let _guard = exclusive();
-    let mut waiter = waiting_item();
-    let mut second_waiter = waiting_item();
-    let mut holder = waiting_item();
-    let mut locker = waiting_item();
-    let mut second_locker = waiting_item();
+    let waiter = waiting_item();
+    let second_waiter = waiting_item();
+    let holder = waiting_item();
+    let locker = waiting_item();
+    let second_locker = waiting_item();
     unsafe {
         cmd_wait_for_wait(&waiter.read(), c"one");
         cmd_wait_for_wait(&second_waiter.read(), c"one");
@@ -353,7 +353,7 @@ fn the_channel_tree_stays_sorted_as_channels_come_and_go() {
 #[test]
 fn exec_dispatches_on_the_flag() {
     let _guard = exclusive();
-    let mut item = waiting_item();
+    let item = waiting_item();
     unsafe {
         let signal = Args::parse(c"wait-for -S chan");
         assert_eq!(

@@ -84,7 +84,7 @@ fn job_helpers_cover_still_running_and_check_died() {
         crate::job::job_check_died(999999, 0);
         assert_eq!(crate::job::job_still_running(), 0);
         // job_print_summary prints nothing when empty
-        let mut item = Item::new();
+        let item = Item::new();
         crate::job::job_print_summary(&item.read(), 0);
         crate::job::job_print_summary(&item.read(), 1);
     }

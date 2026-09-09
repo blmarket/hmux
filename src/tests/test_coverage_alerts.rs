@@ -486,7 +486,7 @@ fn alerts_check_session_on_a_session_without_windows_does_nothing() {
 #[test]
 fn every_alert_choice_reads_back_through_the_option_it_is_set_through() {
     let _guard = globals();
-    let mut s = Session::new(8, "choices");
+    let s = Session::new(8, "choices");
     unsafe {
         for (name, value) in [
             (c"bell-action", ALERT_ANY as c_longlong),

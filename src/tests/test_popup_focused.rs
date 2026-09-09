@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 struct Fixture {
     session: Session,
     window: Window,
-    clients: Clients,
+    _clients: Clients,
     client: *mut client,
     _guard: std::sync::MutexGuard<'static, ()>,
 }
@@ -51,7 +51,7 @@ impl Fixture {
         Self {
             session,
             window,
-            clients,
+            _clients: clients,
             client,
             _guard: guard,
         }
@@ -75,7 +75,7 @@ impl Drop for Fixture {
 
 #[test]
 fn mode_and_context_callbacks_account_for_border_and_client_identity() {
-    let mut f = Fixture::new("mode", 10, 6, BOX_LINES_SINGLE);
+    let f = Fixture::new("mode", 10, 6, BOX_LINES_SINGLE);
     unsafe {
         let pd = f.pd();
         pd.borrow().s.borrow_mut().set_cursor(2, 1);
@@ -110,7 +110,7 @@ fn mode_and_context_callbacks_account_for_border_and_client_identity() {
 
 #[test]
 fn range_callback_splits_lines_before_inside_and_after_popup() {
-    let mut f = Fixture::new("ranges", 10, 6, BOX_LINES_SINGLE);
+    let f = Fixture::new("ranges", 10, 6, BOX_LINES_SINGLE);
     unsafe {
         let pd = f.pd();
         let ranges = popup_ranges(&pd, 0, 0, 20);
@@ -141,7 +141,7 @@ fn range_callback_splits_lines_before_inside_and_after_popup() {
 
 #[test]
 fn resize_clamps_geometry_and_resizes_bordered_and_borderless_screens() {
-    let mut f = Fixture::new("resize", 20, 10, BOX_LINES_SINGLE);
+    let f = Fixture::new("resize", 20, 10, BOX_LINES_SINGLE);
     unsafe {
         let pd = f.pd();
         (*f.client).tty.sx = 12;
@@ -191,7 +191,7 @@ fn resize_clamps_geometry_and_resizes_bordered_and_borderless_screens() {
 
 #[test]
 fn drag_handler_moves_clamps_resizes_and_stops_on_release() {
-    let mut f = Fixture::new("drag", 10, 6, BOX_LINES_SINGLE);
+    let f = Fixture::new("drag", 10, 6, BOX_LINES_SINGLE);
     unsafe {
         let pd = f.pd();
         pd.borrow_mut().dragging = MOVE;
@@ -249,7 +249,7 @@ fn event(key: key_code) -> key_event {
 
 #[test]
 fn key_callback_handles_escape_close_any_key_and_outside_mouse() {
-    let mut f = Fixture::new("keys", 10, 6, BOX_LINES_SINGLE);
+    let f = Fixture::new("keys", 10, 6, BOX_LINES_SINGLE);
     unsafe {
         let pd = f.pd();
         let mut escape = event(27);
@@ -283,7 +283,7 @@ fn key_callback_handles_escape_close_any_key_and_outside_mouse() {
 
 #[test]
 fn mouse_drag_sequences_select_move_and_size_modes() {
-    let mut f = Fixture::new("mouse", 10, 6, BOX_LINES_SINGLE);
+    let f = Fixture::new("mouse", 10, 6, BOX_LINES_SINGLE);
     unsafe {
         let pd = f.pd();
         let mut move_event = event(KEYC_MOUSE as key_code);
@@ -324,7 +324,7 @@ fn mouse_drag_sequences_select_move_and_size_modes() {
 
 #[test]
 fn menu_actions_fill_center_close_and_ignore_unknown_keys() {
-    let mut f = Fixture::new("actions", 10, 6, BOX_LINES_SINGLE);
+    let f = Fixture::new("actions", 10, 6, BOX_LINES_SINGLE);
     unsafe {
         let pd = f.pd();
         popup_menu_done(0, b'F' as key_code, pd.downgrade());
@@ -350,7 +350,7 @@ fn menu_actions_fill_center_close_and_ignore_unknown_keys() {
 
 #[test]
 fn redraw_and_set_client_callbacks_mark_only_the_popup_client() {
-    let mut f = Fixture::new("redraw", 10, 6, BOX_LINES_NONE);
+    let f = Fixture::new("redraw", 10, 6, BOX_LINES_NONE);
     unsafe {
         let pd = f.pd();
         (*f.client).flags &= !(CLIENT_REDRAWOVERLAY as u64);
@@ -369,7 +369,7 @@ fn redraw_and_set_client_callbacks_mark_only_the_popup_client() {
 
 #[test]
 fn draw_callback_renders_border_title_and_body_to_buffered_terminal() {
-    let mut f = Fixture::new("draw", 10, 6, BOX_LINES_SINGLE);
+    let f = Fixture::new("draw", 10, 6, BOX_LINES_SINGLE);
     unsafe {
         (*f.client).tty.term = Some(zeroed_term());
         (*f.client).tty.out = Some(Box::new(ByteBuffer::new()));
@@ -393,7 +393,7 @@ fn draw_callback_renders_border_title_and_body_to_buffered_terminal() {
 
 #[test]
 fn style_reapplication_covers_explicit_valid_invalid_and_detached_session_paths() {
-    let mut f = Fixture::new("styles", 10, 6, BOX_LINES_SINGLE);
+    let f = Fixture::new("styles", 10, 6, BOX_LINES_SINGLE);
     unsafe {
         let pd = f.pd();
         pd.borrow_mut().style = Some(c"fg=red,bg=blue,bold".to_owned());
@@ -416,7 +416,7 @@ fn style_reapplication_covers_explicit_valid_invalid_and_detached_session_paths(
 
 #[test]
 fn borderless_and_tiny_resize_drag_paths_clamp_without_jobs() {
-    let mut f = Fixture::new("tiny", 10, 6, BOX_LINES_SINGLE);
+    let f = Fixture::new("tiny", 10, 6, BOX_LINES_SINGLE);
     unsafe {
         let pd = f.pd();
         (*f.client).tty.sx = 2;
@@ -461,7 +461,7 @@ fn borderless_and_tiny_resize_drag_paths_clamp_without_jobs() {
 
 #[test]
 fn mouse_context_menu_and_paste_markers_cover_special_key_routing() {
-    let mut f = Fixture::new("context", 12, 8, BOX_LINES_SINGLE);
+    let f = Fixture::new("context", 12, 8, BOX_LINES_SINGLE);
     unsafe {
         let pd = f.pd();
         let mut right = event(KEYC_MOUSE as key_code);
@@ -504,7 +504,7 @@ fn mouse_context_menu_and_paste_markers_cover_special_key_routing() {
 
 #[test]
 fn range_callback_covers_partial_overlap_left_right_and_zero_width() {
-    let mut f = Fixture::new("range-edges", 10, 6, BOX_LINES_SINGLE);
+    let f = Fixture::new("range-edges", 10, 6, BOX_LINES_SINGLE);
     unsafe {
         let pd = f.pd();
         let cases = [
@@ -527,7 +527,7 @@ static CLOSE_STATUS: AtomicI32 = AtomicI32::new(-1);
 
 #[test]
 fn overlay_clear_releases_popup_and_invokes_close_callback_once() {
-    let mut f = Fixture::new("close", 10, 6, BOX_LINES_NONE);
+    let f = Fixture::new("close", 10, 6, BOX_LINES_NONE);
     unsafe {
         CLOSE_STATUS.store(-1, Ordering::SeqCst);
         let pd = f.pd();
@@ -544,7 +544,7 @@ fn overlay_clear_releases_popup_and_invokes_close_callback_once() {
 
 #[test]
 fn menu_range_checks_retain_the_stored_popup_spans_and_count() {
-    let mut fixture = Fixture::new("menu ranges", 10, 6, BOX_LINES_SINGLE);
+    let fixture = Fixture::new("menu ranges", 10, 6, BOX_LINES_SINGLE);
     unsafe {
         let popup = fixture.pd();
         let mut right = event(KEYC_MOUSE as key_code);
@@ -556,7 +556,7 @@ fn menu_range_checks_retain_the_stored_popup_spans_and_count() {
             0
         );
         {
-            let mut state = popup.borrow_mut();
+            let state = popup.borrow_mut();
             let py = state.py;
             let mut menu = state
                 .md
@@ -669,7 +669,7 @@ fn a_menu_view_resolves_the_menu_currently_owned_by_the_popup() {
 
 #[test]
 fn popup_options_follow_the_explicit_session_before_the_clients_session() {
-    let mut f = Fixture::new("option-context", 10, 6, BOX_LINES_SINGLE);
+    let f = Fixture::new("option-context", 10, 6, BOX_LINES_SINGLE);
     let mut explicit = Session::new(99, "explicit");
     let mut window = Window::new(99, "explicit", 80, 24);
     link(&mut explicit, &mut window, 0);

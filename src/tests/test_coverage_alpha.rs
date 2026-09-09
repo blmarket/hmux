@@ -143,13 +143,13 @@ fn sort_would_window_tree_swap_compares_windows_by_its_criteria() {
     let wl1 = link(&mut s, &mut second, 1);
 
     // Index order never swaps: the tree already holds winlinks by index.
-    let mut c = crit(SORT_INDEX, 0);
+    let c = crit(SORT_INDEX, 0);
     unsafe {
         assert_eq!(sort_would_window_tree_swap(&c, &*wl0, &*wl1), 0);
     }
 
     // Name order swaps two winlinks whose windows differ in name.
-    let mut c = crit(SORT_NAME, 0);
+    let c = crit(SORT_NAME, 0);
     unsafe {
         assert_eq!(sort_would_window_tree_swap(&c, &*wl0, &*wl1), 1);
     }
@@ -157,7 +157,7 @@ fn sort_would_window_tree_swap_compares_windows_by_its_criteria() {
     // Two windows with the same name compare equal, so nothing swaps.
     let mut twin = Window::new(3, "first", 80, 24);
     let wl2 = link(&mut s, &mut twin, 2);
-    let mut c = crit(SORT_NAME, 0);
+    let c = crit(SORT_NAME, 0);
     unsafe {
         assert_eq!(sort_would_window_tree_swap(&c, &*wl0, &*wl2), 0);
     }
@@ -196,7 +196,7 @@ fn sort_get_buffers_orders_the_buffer_store_by_its_criteria() {
         });
 
         // Size order puts the smallest buffer first, largest last.
-        let mut c = crit(SORT_SIZE, 0);
+        let c = crit(SORT_SIZE, 0);
         let l = sort_get_buffers(&c);
         assert_eq!(l.len(), 3);
         assert_eq!(
@@ -205,7 +205,7 @@ fn sort_get_buffers_orders_the_buffer_store_by_its_criteria() {
         );
 
         // Reversed size order flips it.
-        let mut c = crit(SORT_SIZE, 1);
+        let c = crit(SORT_SIZE, 1);
         let l = sort_get_buffers(&c);
         assert_eq!(
             l.iter().map(|buffer| buffer.size).collect::<Vec<_>>(),
@@ -214,7 +214,7 @@ fn sort_get_buffers_orders_the_buffer_store_by_its_criteria() {
 
         // Name order breaks ties and sorts lexicographically; the automatic
         // names share their prefix, so they come out oldest first.
-        let mut c = crit(SORT_NAME, 0);
+        let c = crit(SORT_NAME, 0);
         let l = sort_get_buffers(&c);
         let names: Vec<String> = l
             .iter()
@@ -226,19 +226,19 @@ fn sort_get_buffers_orders_the_buffer_store_by_its_criteria() {
 
         // Order order keeps the store's own order — newest first — unless it
         // is reversed, which makes it oldest first.
-        let mut c = crit(SORT_ORDER, 0);
+        let c = crit(SORT_ORDER, 0);
         let l = sort_get_buffers(&c);
         let orders: Vec<u32> = l.iter().map(|buffer| buffer.order).collect();
         let mut newest_first = orders.clone();
         newest_first.reverse();
         assert_ne!(orders, newest_first);
-        let mut c = crit(SORT_ORDER, 1);
+        let c = crit(SORT_ORDER, 1);
         let l = sort_get_buffers(&c);
         let reversed: Vec<u32> = l.iter().map(|buffer| buffer.order).collect();
         assert_eq!(reversed, newest_first);
 
         // An unusable criterion sorts nothing at all.
-        let mut c = crit(SORT_END, 0);
+        let c = crit(SORT_END, 0);
         let l = sort_get_buffers(&c);
         assert_eq!(l.len(), 3);
         let untouched: Vec<u32> = l.iter().map(|buffer| buffer.order).collect();
@@ -261,7 +261,7 @@ fn sort_get_sessions_orders_the_session_tree_by_its_criteria() {
         (*alpha.ptr()).creation_time.tv_sec = 200;
 
         // Name order.
-        let mut c = crit(SORT_NAME, 0);
+        let c = crit(SORT_NAME, 0);
         let l = sort_get_sessions(&c);
         assert_eq!(l.len(), 2);
         assert_eq!(
@@ -270,13 +270,13 @@ fn sort_get_sessions_orders_the_session_tree_by_its_criteria() {
         );
 
         // Creation order puts the older session first.
-        let mut c = crit(SORT_CREATION, 0);
+        let c = crit(SORT_CREATION, 0);
         let l = sort_get_sessions(&c);
         assert_eq!(
             l.iter().map(SessionRef::as_ptr).collect::<Vec<_>>(),
             vec![beta.ptr(), alpha.ptr()]
         );
-        let mut c = crit(SORT_CREATION, 1);
+        let c = crit(SORT_CREATION, 1);
         let l = sort_get_sessions(&c);
         assert_eq!(
             l.iter().map(SessionRef::as_ptr).collect::<Vec<_>>(),
@@ -284,7 +284,7 @@ fn sort_get_sessions_orders_the_session_tree_by_its_criteria() {
         );
 
         // Index order is the session id.
-        let mut c = crit(SORT_INDEX, 0);
+        let c = crit(SORT_INDEX, 0);
         let l = sort_get_sessions(&c);
         assert_eq!(
             l.iter().map(SessionRef::as_ptr).collect::<Vec<_>>(),
@@ -306,7 +306,7 @@ fn sort_get_clients_skips_unusable_clients_and_orders_the_rest() {
         (*dead).flags = (CLIENT_ATTACHED | CLIENT_DEAD) as u64;
 
         // The dead client is left out; the rest come in name order.
-        let mut c = crit(SORT_NAME, 0);
+        let c = crit(SORT_NAME, 0);
         let l = sort_get_clients(&c);
         assert_eq!(l.len(), 2);
         assert_eq!(
@@ -315,13 +315,13 @@ fn sort_get_clients_skips_unusable_clients_and_orders_the_rest() {
         );
 
         // Size order compares the terminal, width before height.
-        let mut c = crit(SORT_SIZE, 0);
+        let c = crit(SORT_SIZE, 0);
         let l = sort_get_clients(&c);
         assert_eq!(
             l.iter().map(ClientRef::as_ptr).collect::<Vec<_>>(),
             vec![alpha, zeta]
         );
-        let mut c = crit(SORT_SIZE, 1);
+        let c = crit(SORT_SIZE, 1);
         let l = sort_get_clients(&c);
         assert_eq!(
             l.iter().map(ClientRef::as_ptr).collect::<Vec<_>>(),
@@ -347,7 +347,7 @@ fn sort_get_winlinks_lists_every_winlink_of_every_session() {
     {
         // Index order sorts every winlink together, by index and then by the
         // window name where two sessions hold the same index.
-        let mut c = crit(SORT_INDEX, 0);
+        let c = crit(SORT_INDEX, 0);
         let l = sort_get_winlinks(&c);
         assert_eq!(l.len(), 3);
         assert_eq!(
@@ -358,7 +358,7 @@ fn sort_get_winlinks_lists_every_winlink_of_every_session() {
         );
 
         // Name order follows the windows instead.
-        let mut c = crit(SORT_NAME, 0);
+        let c = crit(SORT_NAME, 0);
         let l = sort_get_winlinks(&c);
         assert_eq!(
             l.iter()

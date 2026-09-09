@@ -197,7 +197,7 @@ fn a_message_composed_without_a_pid_carries_this_process_id() {
     let mut link = Link::new();
     unsafe {
         assert_eq!(imsg_compose(link.writer(), 1, 0, 0, -1, &[]), 1);
-        let mut m = link.carry().expect("a message arrived");
+        let m = link.carry().expect("a message arrived");
         assert_eq!(imsg_get_pid(&m.0), getpid() as pid_t);
         assert_eq!(imsg_get_len(&m.0), 0);
         assert!(m.0.imsg_message_data().is_empty());
@@ -226,12 +226,12 @@ fn a_message_may_be_composed_from_several_pieces() {
             IoSlice::new(b"two"),
         ];
         assert_eq!(imsg_composev(link.writer(), 2, 0, 0, -1, &iov), 1);
-        let mut m = link.carry().expect("a message arrived");
+        let m = link.carry().expect("a message arrived");
         assert_eq!(m.data(), b"onetwo");
 
         // No pieces at all is an empty message.
         assert_eq!(imsg_composev(link.writer(), 2, 0, 0, -1, &[]), 1);
-        let mut empty = link.carry().expect("a message arrived");
+        let empty = link.carry().expect("a message arrived");
         assert_eq!(imsg_get_len(&empty.0), 0);
     }
 }
@@ -276,7 +276,7 @@ fn a_message_may_be_composed_from_a_buffer_that_is_handed_over() {
         assert_eq!(imsg_compose_ibuf(link.writer(), 3, 11, 22, buf), 1);
         assert_eq!(imsgbuf_queuelen(link.writer()), 2);
 
-        let mut m = link.carry().expect("a message arrived");
+        let m = link.carry().expect("a message arrived");
         assert_eq!(imsg_get_type(&m.0), 3);
         assert_eq!(imsg_get_id(&m.0), 11);
         assert_eq!(imsg_get_pid(&m.0), 22);
@@ -303,7 +303,7 @@ fn a_handed_over_buffer_with_no_pid_carries_this_process_id() {
     unsafe {
         let buf = ibuf_dynamic(0, 64).expect("a buffer to hand over");
         assert_eq!(imsg_compose_ibuf(link.writer(), 3, 0, 0, buf), 1);
-        let mut m = link.carry().expect("a message arrived");
+        let m = link.carry().expect("a message arrived");
         assert_eq!(imsg_get_pid(&m.0), getpid() as pid_t);
     }
 }
@@ -317,7 +317,7 @@ fn a_message_is_forwarded_with_its_header_and_payload() {
         let mut m = link.carry().expect("a message arrived");
         assert_eq!(imsg_forward(onward.writer(), &mut *m.0), 1);
 
-        let mut fwd = onward.carry().expect("the message was forwarded");
+        let fwd = onward.carry().expect("the message was forwarded");
         assert_eq!(imsg_get_type(&fwd.0), 5);
         assert_eq!(imsg_get_id(&fwd.0), 6);
         assert_eq!(imsg_get_pid(&fwd.0), 7);
@@ -333,7 +333,7 @@ fn an_empty_message_is_forwarded_too() {
         imsg_compose(link.writer(), 5, 0, 0, -1, &[]);
         let mut m = link.carry().expect("a message arrived");
         assert_eq!(imsg_forward(onward.writer(), &mut *m.0), 1);
-        let mut fwd = onward.carry().expect("the message was forwarded");
+        let fwd = onward.carry().expect("the message was forwarded");
         assert_eq!(imsg_get_len(&fwd.0), 0);
     }
 }
@@ -442,7 +442,7 @@ fn a_message_read_from_a_queue_is_put_back_on_one() {
         assert!(m.0.buf.is_none());
         assert_eq!(m.0.hdr.type_0, 0);
 
-        let mut back = Message(Box::new(
+        let back = Message(Box::new(
             imsg_ibufq_pop(&mut bufq)
                 .expect("queued message should parse")
                 .expect("queued message should be present"),
@@ -455,7 +455,7 @@ fn a_message_read_from_a_queue_is_put_back_on_one() {
         imsg_compose(link.writer(), 5, 0, 0, -1, &[]);
         let mut empty = link.carry().expect("a message arrived");
         imsg_ibufq_push(&mut *bufq, core::mem::take(&mut *empty.0));
-        let mut nothing = Message(Box::new(
+        let nothing = Message(Box::new(
             imsg_ibufq_pop(&mut bufq)
                 .expect("empty message should parse")
                 .expect("empty message should be present"),
@@ -595,7 +595,7 @@ fn the_older_get_answers_the_whole_message_length() {
         assert_eq!(imsgbuf_read(link.reader()), 1);
         let (m, len) = imsg_get(link.reader()).unwrap().unwrap();
         assert_eq!(len, (IMSG_HEADER_SIZE + 4) as size_t);
-        let mut m = Message(Box::new(m));
+        let m = Message(Box::new(m));
         assert_eq!(imsg_get_type(&m.0), 1);
     }
 }
@@ -618,7 +618,7 @@ fn a_message_buffer_that_passes_descriptors_reads_and_writes_the_other_way() {
         imsg_compose(link.writer(), 1, 0, 0, -1, b"fd");
         assert_eq!(imsgbuf_write(link.writer()), 0);
         assert_eq!(imsgbuf_read(link.reader()), 1);
-        let mut m = link.next().expect("a message arrived");
+        let m = link.next().expect("a message arrived");
         assert_eq!(m.data(), b"fd");
     }
 }
@@ -772,7 +772,7 @@ pub(crate) unsafe fn imsg_compose_ibuf(
     type_0: uint32_t,
     id: uint32_t,
     pid: pid_t,
-    mut buf: Box<ibuf>,
+    buf: Box<ibuf>,
 ) -> c_int {
     unsafe {
         let mut hdrbuf: Option<Box<ibuf>> = None;

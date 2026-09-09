@@ -74,7 +74,7 @@ impl Layout {
 
     fn set_floating(&mut self, pane: usize, floating: bool) {
         let id = unsafe { (*self.pane(pane)).pane_id() };
-        let mut owner = self.window.reference();
+        let owner = self.window.reference();
         crate::tests::test_fixtures::set_pane_floating(&mut owner.as_window_mut(), id, floating);
     }
 
@@ -107,7 +107,7 @@ impl Layout {
     fn resize_pane(&mut self, pane: usize, axis: layout_type, change: c_int, opposite: c_int) {
         unsafe {
             let id = (*self.pane(pane)).pane_id();
-            let mut owner = self.window.reference();
+            let owner = self.window.reference();
             owner.resize_pane(
                 &crate::window::window_pane_find_by_id(id).expect("the layout pane exists"),
                 axis,
@@ -120,7 +120,7 @@ impl Layout {
     fn close(&mut self, pane: usize) {
         unsafe {
             let id = (*self.pane(pane)).pane_id();
-            let mut owner = self.window.reference();
+            let owner = self.window.reference();
             owner.close_pane_layout(
                 &crate::window::window_pane_find_by_id(id).expect("the layout pane exists"),
             );
@@ -130,7 +130,7 @@ impl Layout {
     fn spread_out(&mut self, pane: usize) {
         unsafe {
             let id = (*self.pane(pane)).pane_id();
-            let mut owner = self.window.reference();
+            let owner = self.window.reference();
             owner.spread_pane_layout(
                 &crate::window::window_pane_find_by_id(id).expect("the layout pane exists"),
             );
@@ -140,7 +140,7 @@ impl Layout {
     fn resize_pane_to(&mut self, pane: usize, axis: layout_type, size: u_int) {
         unsafe {
             let id = (*self.pane(pane)).pane_id();
-            let mut owner = self.window.reference();
+            let owner = self.window.reference();
             owner.resize_pane_to(
                 &crate::window::window_pane_find_by_id(id).expect("the layout pane exists"),
                 axis,
@@ -299,7 +299,7 @@ fn a_new_layout_is_one_cell_filling_the_window() {
 fn a_fresh_cell_starts_at_the_largest_size_there_is() {
     let _g = guard();
     {
-        let mut lc = layout_create_cell(None);
+        let lc = layout_create_cell(None);
         assert_eq!((*lc).type_0, LAYOUT_WINDOWPANE);
         assert_eq!((*lc).flags, 0);
         assert!(!(*lc).has_parent);
@@ -401,7 +401,7 @@ fn splitting_resolves_siblings_from_the_owned_tree() {
     let _g = guard();
     let mut layout = Layout::new(80, 24);
     layout.split(0, LAYOUT_LEFTRIGHT, -1, 0);
-    let mut owner = layout.window.reference();
+    let owner = layout.window.reference();
     {
         owner
             .as_window_mut()
@@ -494,7 +494,7 @@ fn closing_resolves_parent_and_neighbor_from_the_owned_tree() {
     let mut layout = Layout::new(80, 24);
     layout.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     layout.split(1, LAYOUT_TOPBOTTOM, -1, 0);
-    let mut owner = layout.window.reference();
+    let owner = layout.window.reference();
     {
         owner
             .as_window_mut()
@@ -619,7 +619,7 @@ fn spreading_resolves_ancestors_from_the_owned_tree() {
     let mut layout = Layout::new(80, 24);
     layout.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     layout.split(1, LAYOUT_LEFTRIGHT, -1, 0);
-    let mut owner = layout.window.reference();
+    let owner = layout.window.reference();
     {
         owner
             .as_window_mut()
@@ -647,7 +647,7 @@ fn spreading_out_a_single_pane_does_nothing() {
 #[test]
 fn spreading_a_cell_that_cannot_be_shared_answers_no() {
     let _g = guard();
-    let mut l = Layout::new(80, 24);
+    let l = Layout::new(80, 24);
     unsafe {
         assert_eq!(
             (l.reference()).spread_layout_cell(&LayoutCellPath::root()),
@@ -1277,7 +1277,7 @@ fn a_floating_cell_walks_along_when_it_is_not_told_where_to_go() {
 #[test]
 fn a_floating_cell_stops_at_the_first_bad_argument() {
     let _g = guard();
-    let mut l = Layout::new(80, 24);
+    let l = Layout::new(80, 24);
     for line in [
         c"new-pane -x bad",
         c"new-pane -y bad",
@@ -2007,7 +2007,7 @@ fn resizing_a_zoomed_layout_leaves_panes_in_the_saved_tree_unchanged() {
 fn border_edges_follow_tree_ownership_instead_of_parent_back_pointers() {
     let _g = guard();
     let fixture = Window::new(90, "edges", 80, 24);
-    let mut owner = fixture.reference();
+    let owner = fixture.reference();
     {
         let mut w = owner.as_window_mut();
         let mut root = layout_create_cell(None);
@@ -2075,7 +2075,7 @@ fn unzoom_restores_geometry_from_the_owned_saved_tree() {
     let _g = guard();
     let mut layout = Layout::new(80, 24);
     layout.split(0, LAYOUT_LEFTRIGHT, -1, 0);
-    let mut owner = layout.window.reference();
+    let owner = layout.window.reference();
     unsafe {
         let id = owner.as_window().panes[0].pane_id();
         assert_eq!(

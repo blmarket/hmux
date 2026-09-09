@@ -157,9 +157,7 @@ impl Writer {
     }
 
     fn cell_at(&mut self, px: u_int, py: u_int) -> grid_cell {
-        let mut gc = { grid_default_cell };
-        gc = grid_view_get_cell(&*self.grid(), px, py);
-        gc
+        grid_view_get_cell(&*self.grid(), px, py)
     }
 }
 
@@ -330,7 +328,7 @@ struct Attached {
     clients: Clients,
     session: Session,
     other: Session,
-    tty: Tty,
+    _tty: Tty,
     client: *mut client,
 }
 
@@ -346,7 +344,7 @@ impl Attached {
             clients: Clients::new(),
             session: Session::new(1, "attached"),
             other: Session::new(2, "elsewhere"),
-            tty: Tty::new(),
+            _tty: Tty::new(),
             client: null_mut(),
         };
         link(&mut a.session, window, 0);
@@ -717,8 +715,7 @@ fn a_single_visible_column_is_redrawn_by_what_the_cell_holds() {
         grid_view_set_cell(w.grid_mut(), 0, 0, &two_bytes);
         w.move_to(3, 0);
         screen_write_clearcharacter(&mut w.ctx(), 1, 8);
-        let mut gc = grid_default_cell;
-        gc = grid_view_get_cell(&*w.grid(), 0, 0);
+        let mut gc = grid_view_get_cell(&*w.grid(), 0, 0);
         assert_eq!(gc.data.size, 2);
 
         let mut chosen = ascii(b'a');
@@ -1192,8 +1189,7 @@ fn a_join_in_a_row_nobody_can_see_is_made_but_not_written() {
     let acute = cell(ACUTE, 0);
     unsafe { screen_write_cell(&mut w.ctx(), &acute) };
     {
-        let mut gc = grid_default_cell;
-        gc = grid_view_get_cell(&*w.grid(), 0, 3);
+        let gc = grid_view_get_cell(&*w.grid(), 0, 3);
         assert_eq!(gc.data.size, 3);
     }
 }
