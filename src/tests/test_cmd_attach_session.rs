@@ -14,13 +14,12 @@ use crate::tests::test_fixtures::{
 use crate::window::CLIENT_EXIT;
 use crate::window::window_active_pane;
 use ::std::ffi::CString;
-use ::std::sync::MutexGuard;
 
 /// The globals turn every test here takes, with the server's message log
 /// emptied first: the refusal paths append to it, and what earlier tests
 /// logged is of no interest here. Only ever reached under the [`globals`]
 /// lock.
-fn attached_globals() -> MutexGuard<'static, ()> {
+fn attached_globals() -> crate::tests::test_fixtures::GlobalsGuard {
     let guard = globals();
     crate::tests::test_fixtures::reset_message_log();
     guard

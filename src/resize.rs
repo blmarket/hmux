@@ -258,18 +258,16 @@ unsafe fn clients_calculate_size(
 
 /// Says in the log whether a size has been worked out yet.
 fn log_calculated(size: &client_size) {
-    unsafe {
-        if size.sx != UINT_MAX && size.sy != UINT_MAX {
-            log_debug(
-                c"%s: calculated size %ux%u",
-                fmt_args![c"clients_calculate_size".as_ptr(), size.sx, size.sy],
-            );
-        } else {
-            log_debug(
-                c"%s: no calculated size",
-                fmt_args![c"clients_calculate_size".as_ptr()],
-            );
-        }
+    if size.sx != UINT_MAX && size.sy != UINT_MAX {
+        log_debug(
+            c"%s: calculated size %ux%u",
+            fmt_args![c"clients_calculate_size".as_ptr(), size.sx, size.sy],
+        );
+    } else {
+        log_debug(
+            c"%s: no calculated size",
+            fmt_args![c"clients_calculate_size".as_ptr()],
+        );
     }
 }
 

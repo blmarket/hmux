@@ -1235,7 +1235,7 @@ mod focused_tests {
     struct ControlCtx {
         client: ClientRef,
         stream: StreamBuffer,
-        _guard: std::sync::MutexGuard<'static, ()>,
+        _guard: crate::tests::test_fixtures::GlobalsGuard,
     }
 
     impl ControlCtx {

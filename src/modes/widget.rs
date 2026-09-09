@@ -1,5 +1,5 @@
-use crate::args::RustArguments;
 use crate::WindowPane;
+use crate::args::RustArguments;
 use crate::args::{args_get_str, args_has};
 use crate::cmd::CmdqStateRef;
 use crate::cmd::cmd_mouse_at;
@@ -368,17 +368,15 @@ fn mode_tree_insert_item(
         Some(id) => mode_tree_item_ref(mtd, id)?.expanded != 0,
         None => true,
     };
-    unsafe {
-        log_debug(
-            c"%s: %llu, %s %s",
-            fmt_args![
-                c"mode_tree_add",
-                tag as core::ffi::c_ulonglong,
-                name,
-                text.unwrap_or(c"")
-            ],
-        );
-    }
+    log_debug(
+        c"%s: %llu, %s %s",
+        fmt_args![
+            c"mode_tree_add",
+            tag as core::ffi::c_ulonglong,
+            name,
+            text.unwrap_or(c"")
+        ],
+    );
     let id = mtd.next_item_id;
     mtd.next_item_id = id.checked_add(1).expect("mode tree item IDs exhausted");
     let mut item = Box::new(mode_tree_item {

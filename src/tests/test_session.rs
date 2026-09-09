@@ -13,7 +13,6 @@ use crate::window::window_set_active;
 use ::core::ffi::{CStr, c_int};
 use ::core::ptr::null_mut;
 use ::std::ffi::CString;
-use ::std::sync::MutexGuard;
 
 #[test]
 fn moved_session_payload_cannot_recover_its_previous_owner() {
@@ -60,7 +59,7 @@ fn session_cleanup_survives_thread_local_owner_teardown() {
 /// A turn at the server-wide state these tests reach — the session tree,
 /// the session groups, the id the next session is given and the marked
 /// pane — starting from empty trees and leaving them empty.
-fn server() -> MutexGuard<'static, ()> {
+fn server() -> crate::tests::test_fixtures::GlobalsGuard {
     let guard = globals();
     ensure_reactor();
     assert!(SESSIONS.map().is_empty(), "the session tree is not empty");

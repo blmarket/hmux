@@ -73,7 +73,7 @@ struct Ctx {
     _window: Window,
     pane: Pane,
     ictx: crate::input::InputCtxRef,
-    _guard: std::sync::MutexGuard<'static, ()>,
+    _guard: crate::tests::test_fixtures::GlobalsGuard,
 }
 
 impl Ctx {

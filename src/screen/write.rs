@@ -621,41 +621,37 @@ pub(super) unsafe fn screen_write_start_pane_base(
         state
     }
 }
-pub(super) unsafe fn screen_write_start_callback(
+pub(super) fn screen_write_start_callback(
     s: &mut RustScreen,
     init_ctx: screen_write_init_ctx,
 ) -> screen_write_state {
-    unsafe {
-        let mut state = screen_write_init(s);
-        state.init_ctx = init_ctx;
-        if log_get_level() != 0 {
-            log_debug(
-                c"%s: size %ux%u, with callback",
-                fmt_args![
-                    c"screen_write_start_callback",
-                    RustScreen::grid(s).sx,
-                    RustScreen::grid(s).sy
-                ],
-            );
-        }
-        state
+    let mut state = screen_write_init(s);
+    state.init_ctx = init_ctx;
+    if log_get_level() != 0 {
+        log_debug(
+            c"%s: size %ux%u, with callback",
+            fmt_args![
+                c"screen_write_start_callback",
+                RustScreen::grid(s).sx,
+                RustScreen::grid(s).sy
+            ],
+        );
     }
+    state
 }
-pub(super) unsafe fn screen_write_start(s: &mut RustScreen) -> screen_write_state {
-    unsafe {
-        let state = screen_write_init(s);
-        if log_get_level() != 0 {
-            log_debug(
-                c"%s: size %ux%u, no pane",
-                fmt_args![
-                    c"screen_write_start",
-                    RustScreen::grid(s).sx,
-                    RustScreen::grid(s).sy
-                ],
-            );
-        }
-        state
+pub(super) fn screen_write_start(s: &mut RustScreen) -> screen_write_state {
+    let state = screen_write_init(s);
+    if log_get_level() != 0 {
+        log_debug(
+            c"%s: size %ux%u, no pane",
+            fmt_args![
+                c"screen_write_start",
+                RustScreen::grid(s).sx,
+                RustScreen::grid(s).sy
+            ],
+        );
     }
+    state
 }
 pub(super) unsafe fn screen_write_stop(ctx: &mut screen_write_ctx) {
     unsafe {
@@ -1230,34 +1226,31 @@ pub(super) unsafe fn screen_write_preview(
         }
     }
 }
-pub(super) unsafe fn screen_write_mode_set(ctx: &mut screen_write_ctx, mode: c_int) {
-    unsafe {
-        let s = ctx.screen_mut();
-        s.0.mode |= mode;
-        if log_get_level() != 0 {
-            log_debug(
-                c"%s: %s",
-                fmt_args![
-                    c"screen_write_mode_set",
-                    screen_mode_to_string(mode).as_c_str()
-                ],
-            );
-        }
+pub(super) fn screen_write_mode_set(ctx: &mut screen_write_ctx, mode: c_int) {
+    let s = ctx.screen_mut();
+    s.0.mode |= mode;
+    if log_get_level() != 0 {
+        log_debug(
+            c"%s: %s",
+            fmt_args![
+                c"screen_write_mode_set",
+                screen_mode_to_string(mode).as_c_str()
+            ],
+        );
     }
 }
-pub(super) unsafe fn screen_write_mode_clear(ctx: &mut screen_write_ctx, mode: c_int) {
-    unsafe {
-        let s = ctx.screen_mut();
-        s.0.mode &= !mode;
-        if log_get_level() != 0 {
-            log_debug(
-                c"%s: %s",
-                fmt_args![
-                    c"screen_write_mode_clear",
-                    screen_mode_to_string(mode).as_c_str()
-                ],
-            );
-        }
+
+pub(super) fn screen_write_mode_clear(ctx: &mut screen_write_ctx, mode: c_int) {
+    let s = ctx.screen_mut();
+    s.0.mode &= !mode;
+    if log_get_level() != 0 {
+        log_debug(
+            c"%s: %s",
+            fmt_args![
+                c"screen_write_mode_clear",
+                screen_mode_to_string(mode).as_c_str()
+            ],
+        );
     }
 }
 pub(super) unsafe fn screen_write_cursorup(ctx: &mut screen_write_ctx, mut ny: u_int) {
@@ -3016,65 +3009,59 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> c_
 
 /// Erases the padding cells around the cursor that a character of `width`
 /// columns is about to write over, and answers whether anything was erased.
-unsafe fn screen_write_overwrite(
-    ctx: &mut screen_write_ctx,
-    gc: &mut grid_cell,
-    width: u_int,
-) -> c_int {
-    unsafe {
-        let (cx, cy) = ctx.screen().cursor();
-        let gd = RustScreen::grid_mut(ctx.screen_mut());
-        let mut tmp_gc;
-        let mut done = 0;
-        if gc.flags as c_int & GRID_FLAG_PADDING != 0 {
-            let mut xx = cx;
-            while xx > 0 {
-                tmp_gc = grid_view_get_cell(gd, xx, cy);
-                if tmp_gc.flags as c_int & GRID_FLAG_PADDING == 0 {
-                    break;
-                }
-                log_debug(
-                    c"%s: padding at %u,%u",
-                    fmt_args![c"screen_write_overwrite", xx, cy],
-                );
-                grid_view_set_cell(gd, xx, cy, &grid_default_cell);
-                xx = xx.wrapping_sub(1);
+fn screen_write_overwrite(ctx: &mut screen_write_ctx, gc: &mut grid_cell, width: u_int) -> c_int {
+    let (cx, cy) = ctx.screen().cursor();
+    let gd = RustScreen::grid_mut(ctx.screen_mut());
+    let mut tmp_gc;
+    let mut done = 0;
+    if gc.flags as c_int & GRID_FLAG_PADDING != 0 {
+        let mut xx = cx;
+        while xx > 0 {
+            tmp_gc = grid_view_get_cell(gd, xx, cy);
+            if tmp_gc.flags as c_int & GRID_FLAG_PADDING == 0 {
+                break;
             }
             log_debug(
-                c"%s: character at %u,%u",
+                c"%s: padding at %u,%u",
                 fmt_args![c"screen_write_overwrite", xx, cy],
             );
             grid_view_set_cell(gd, xx, cy, &grid_default_cell);
-            done = 1;
+            xx = xx.wrapping_sub(1);
         }
-        if width != 1 || gc.data.width as c_int != 1 || gc.flags as c_int & GRID_FLAG_PADDING != 0 {
-            let mut xx = cx.wrapping_add(width);
-            while xx < gd.sx {
-                tmp_gc = grid_view_get_cell(gd, xx, cy);
-                if tmp_gc.flags as c_int & GRID_FLAG_PADDING == 0 {
-                    break;
-                }
-                log_debug(
-                    c"%s: overwrite at %u,%u",
-                    fmt_args![c"screen_write_overwrite", xx, cy],
-                );
-                if gc.flags as c_int & GRID_FLAG_TAB != 0 {
-                    tmp_gc = *gc;
-                    tmp_gc.data.data = [0; 32];
-                    tmp_gc.data.data[0] = b' ';
-                    tmp_gc.data.have = 1;
-                    tmp_gc.data.size = tmp_gc.data.have;
-                    tmp_gc.data.width = tmp_gc.data.size;
-                    grid_view_set_cell(gd, xx, cy, &tmp_gc);
-                } else {
-                    grid_view_set_cell(gd, xx, cy, &grid_default_cell);
-                }
-                done = 1;
-                xx = xx.wrapping_add(1);
-            }
-        }
-        done
+        log_debug(
+            c"%s: character at %u,%u",
+            fmt_args![c"screen_write_overwrite", xx, cy],
+        );
+        grid_view_set_cell(gd, xx, cy, &grid_default_cell);
+        done = 1;
     }
+    if width != 1 || gc.data.width as c_int != 1 || gc.flags as c_int & GRID_FLAG_PADDING != 0 {
+        let mut xx = cx.wrapping_add(width);
+        while xx < gd.sx {
+            tmp_gc = grid_view_get_cell(gd, xx, cy);
+            if tmp_gc.flags as c_int & GRID_FLAG_PADDING == 0 {
+                break;
+            }
+            log_debug(
+                c"%s: overwrite at %u,%u",
+                fmt_args![c"screen_write_overwrite", xx, cy],
+            );
+            if gc.flags as c_int & GRID_FLAG_TAB != 0 {
+                tmp_gc = *gc;
+                tmp_gc.data.data = [0; 32];
+                tmp_gc.data.data[0] = b' ';
+                tmp_gc.data.have = 1;
+                tmp_gc.data.size = tmp_gc.data.have;
+                tmp_gc.data.width = tmp_gc.data.size;
+                grid_view_set_cell(gd, xx, cy, &tmp_gc);
+            } else {
+                grid_view_set_cell(gd, xx, cy, &grid_default_cell);
+            }
+            done = 1;
+            xx = xx.wrapping_add(1);
+        }
+    }
+    done
 }
 /// Tells the terminal what the selection is.
 pub(super) unsafe fn screen_write_setselection(

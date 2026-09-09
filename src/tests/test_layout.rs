@@ -11,7 +11,6 @@ use crate::window_dimensions::WindowDimensionsState;
 use crate::window_scrollbar::{WindowScrollbarSettings, WindowScrollbarState};
 use ::core::ffi::c_int;
 use ::std::ffi::CString;
-use ::std::sync::MutexGuard;
 
 /// A window carrying a layout tree and the panes that hang off it. The
 /// window and its panes are the server-free fixtures; the tree is real, and
@@ -267,7 +266,7 @@ fn with_status(l: &mut Layout, status: c_int, body: impl FnOnce(&mut Layout)) {
     }
 }
 
-fn guard() -> MutexGuard<'static, ()> {
+fn guard() -> crate::tests::test_fixtures::GlobalsGuard {
     globals()
 }
 

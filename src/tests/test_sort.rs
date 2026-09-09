@@ -19,7 +19,7 @@ use ::std::sync::MutexGuard;
 /// at the server-wide state those lists are built from. Cargo runs the
 /// tests on parallel threads, so every test that asks for a list holds
 /// both, always in this order.
-fn sorting() -> (MutexGuard<'static, ()>, MutexGuard<'static, ()>) {
+fn sorting() -> (crate::tests::test_fixtures::GlobalsGuard, MutexGuard<'static, ()>) {
     static LISTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let outer = globals();
     let inner = LISTS
@@ -876,7 +876,7 @@ impl Drop for Table {
 /// rather than the tables themselves: a table nobody has bound anything in
 /// contributes nothing to any of these lists, and another module's tests
 /// leave an empty one behind them.
-fn tables() -> (MutexGuard<'static, ()>, MutexGuard<'static, ()>) {
+fn tables() -> (crate::tests::test_fixtures::GlobalsGuard, MutexGuard<'static, ()>) {
     let guards = sorting();
     unsafe {
         let c = crit(SORT_END, 0);

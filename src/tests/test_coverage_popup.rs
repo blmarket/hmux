@@ -101,7 +101,7 @@ struct Popup {
     _window: Window,
     _clients: Clients,
     c: *mut client,
-    _guard: std::sync::MutexGuard<'static, ()>,
+    _guard: crate::tests::test_fixtures::GlobalsGuard,
 }
 
 impl Drop for Popup {

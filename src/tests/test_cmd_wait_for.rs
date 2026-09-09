@@ -1,11 +1,10 @@
 use super::*;
 use crate::cmd::CMDQ_WAITING;
 use crate::tests::test_fixtures::{Args, Item, globals};
-use ::std::sync::MutexGuard;
 
 /// The parser and client fixtures still access process globals. Each test
 /// also starts with an empty channel set on its own thread.
-fn exclusive() -> MutexGuard<'static, ()> {
+fn exclusive() -> crate::tests::test_fixtures::GlobalsGuard {
     let guard = globals();
     with_channels(BTreeMap::clear);
     guard

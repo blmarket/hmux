@@ -1,11 +1,10 @@
 use super::*;
 use crate::paste::{PasteBufferStore, with_paste_buffers, with_paste_buffers_mut};
 use crate::tests::test_fixtures::globals;
-use ::std::sync::MutexGuard;
 
 /// A turn at the paste store with no buffers in it, since the store is a
 /// global the tests share.
-fn store() -> MutexGuard<'static, ()> {
+fn store() -> crate::tests::test_fixtures::GlobalsGuard {
     let guard = globals();
     let names = with_paste_buffers(|buffers| {
         buffers

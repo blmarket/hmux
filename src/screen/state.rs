@@ -288,41 +288,36 @@ impl RustScreen {
         self.0.path.as_deref()
     }
 
-    pub unsafe fn push_title(&mut self) {
-        unsafe {
-            log_debug(
-                c"%s: %u",
-                fmt_args![c"screen_push_title".as_ptr(), self.0.ntitles],
-            );
+    pub fn push_title(&mut self) {
+        log_debug(
+            c"%s: %u",
+            fmt_args![c"screen_push_title".as_ptr(), self.0.ntitles],
+        );
 
-            while self.0.ntitles >= TITLE_LIMIT {
-                screen_titles_of(self).stack.pop_back();
-                self.0.ntitles -= 1;
-            }
-
-            let title = self
-                .0
-                .title
-                .clone()
-                .expect("a screen always carries a title");
-            screen_titles_of(self).stack.push_front(title);
-            self.0.ntitles += 1;
-        }
-    }
-
-    pub unsafe fn pop_title(&mut self) {
-        unsafe {
-            let Some(text) = screen_titles_ptr(self).and_then(|titles| titles.stack.pop_front())
-            else {
-                return;
-            };
-            log_debug(
-                c"%s: %u",
-                fmt_args![c"screen_pop_title".as_ptr(), self.0.ntitles],
-            );
-            self.0.title = Some(text);
+        while self.0.ntitles >= TITLE_LIMIT {
+            screen_titles_of(self).stack.pop_back();
             self.0.ntitles -= 1;
         }
+
+        let title = self
+            .0
+            .title
+            .clone()
+            .expect("a screen always carries a title");
+        screen_titles_of(self).stack.push_front(title);
+        self.0.ntitles += 1;
+    }
+
+    pub fn pop_title(&mut self) {
+        let Some(text) = screen_titles_ptr(self).and_then(|titles| titles.stack.pop_front()) else {
+            return;
+        };
+        log_debug(
+            c"%s: %u",
+            fmt_args![c"screen_pop_title".as_ptr(), self.0.ntitles],
+        );
+        self.0.title = Some(text);
+        self.0.ntitles -= 1;
     }
 }
 
@@ -914,36 +909,28 @@ fn in_selection(s: &RustScreen, px: u_int, py: u_int) -> bool {
 }
 
 /// Reflow the grid to a new width, following the cell the cursor is on.
-unsafe fn screen_reflow(
-    s: &mut RustScreen,
-    new_x: u_int,
-    cx: &mut u_int,
-    cy: &mut u_int,
-    cursor: c_int,
-) {
-    unsafe {
-        let gd = s.grid_mut();
-        let (mut wx, mut wy) = (0, 0);
-        if cursor != 0 {
-            (wx, wy) = gd.wrap_position(*cx, *cy);
-            log_debug(
-                c"%s: cursor %u,%u is %u,%u",
-                fmt_args![c"screen_reflow".as_ptr(), *cx, *cy, wx, wy],
-            );
-        }
+fn screen_reflow(s: &mut RustScreen, new_x: u_int, cx: &mut u_int, cy: &mut u_int, cursor: c_int) {
+    let gd = s.grid_mut();
+    let (mut wx, mut wy) = (0, 0);
+    if cursor != 0 {
+        (wx, wy) = gd.wrap_position(*cx, *cy);
+        log_debug(
+            c"%s: cursor %u,%u is %u,%u",
+            fmt_args![c"screen_reflow".as_ptr(), *cx, *cy, wx, wy],
+        );
+    }
 
-        gd.reflow(new_x);
+    gd.reflow(new_x);
 
-        if cursor != 0 {
-            (*cx, *cy) = gd.unwrap_position(wx, wy);
-            log_debug(
-                c"%s: new cursor is %u,%u",
-                fmt_args![c"screen_reflow".as_ptr(), *cx, *cy],
-            );
-        } else {
-            *cx = 0;
-            *cy = gd.hsize;
-        }
+    if cursor != 0 {
+        (*cx, *cy) = gd.unwrap_position(wx, wy);
+        log_debug(
+            c"%s: new cursor is %u,%u",
+            fmt_args![c"screen_reflow".as_ptr(), *cx, *cy],
+        );
+    } else {
+        *cx = 0;
+        *cy = gd.hsize;
     }
 }
 

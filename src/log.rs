@@ -75,16 +75,14 @@ pub fn log_open(name: &CStr) {
 /// Turns the log on if it is off and off if it is on, writing the change into
 /// the log itself on either side of it.
 pub unsafe fn log_toggle(name: &CStr) {
-    unsafe {
-        if log_level.load(Ordering::Relaxed) == 0 {
-            log_level.store(1, Ordering::Relaxed);
-            log_open(name);
-            log_debug(c"log opened", fmt_args![]);
-        } else {
-            log_debug(c"log closed", fmt_args![]);
-            log_level.store(0, Ordering::Relaxed);
-            log_close();
-        }
+    if log_level.load(Ordering::Relaxed) == 0 {
+        log_level.store(1, Ordering::Relaxed);
+        log_open(name);
+        log_debug(c"log opened", fmt_args![]);
+    } else {
+        log_debug(c"log closed", fmt_args![]);
+        log_level.store(0, Ordering::Relaxed);
+        log_close();
     }
 }
 
@@ -96,45 +94,37 @@ pub fn log_close() {
 /// Writes one line to the log: the time, `prefix`, and `msg` filled in from
 /// `ap` and escaped. Nothing is written if there is no log open, if the
 /// message could not be built or if it could not be escaped.
-unsafe fn log_vwrite(msg: &CStr, args: &[FmtArg], prefix: &CStr) {
-    {
-        let mut active = log_file.lock().unwrap_or_else(|error| error.into_inner());
-        let Some(file) = active.as_mut() else {
-            return;
-        };
-        let built = format_alloc(msg, args);
-        let escaped = stravis(&built, ESCAPING);
-        let tv = timeval::now();
-        let mut line = format!("{}.{:06} ", tv.tv_sec, tv.tv_usec).into_bytes();
-        line.extend_from_slice(prefix.to_bytes());
-        line.extend_from_slice(escaped.to_bytes());
-        line.push(b'\n');
-        let _ = file.write_all(&line);
-    }
+fn log_vwrite(msg: &CStr, args: &[FmtArg], prefix: &CStr) {
+    let mut active = log_file.lock().unwrap_or_else(|error| error.into_inner());
+    let Some(file) = active.as_mut() else {
+        return;
+    };
+    let built = format_alloc(msg, args);
+    let escaped = stravis(&built, ESCAPING);
+    let tv = timeval::now();
+    let mut line = format!("{}.{:06} ", tv.tv_sec, tv.tv_usec).into_bytes();
+    line.extend_from_slice(prefix.to_bytes());
+    line.extend_from_slice(escaped.to_bytes());
+    line.push(b'\n');
+    let _ = file.write_all(&line);
 }
 
-pub unsafe fn log_debug(msg: &CStr, args: &[FmtArg]) {
-    unsafe {
-        log_vwrite(msg, args, c"");
-    }
+pub fn log_debug(msg: &CStr, args: &[FmtArg]) {
+    log_vwrite(msg, args, c"");
 }
 
-pub unsafe fn fatal(msg: &CStr, args: &[FmtArg]) -> ! {
-    unsafe {
-        let error = error_message(*__errno_location());
-        let mut prefix = format_bytes(c"fatal: %s: ", fmt_args![error.as_c_str()]);
-        prefix.truncate(255);
-        let prefix = CString::new(prefix).expect("the fatal prefix contains no NUL");
-        log_vwrite(msg, args, &prefix);
-        std::process::exit(1);
-    }
+pub fn fatal(msg: &CStr, args: &[FmtArg]) -> ! {
+    let error = error_message(unsafe { *__errno_location() });
+    let mut prefix = format_bytes(c"fatal: %s: ", fmt_args![error.as_c_str()]);
+    prefix.truncate(255);
+    let prefix = CString::new(prefix).expect("the fatal prefix contains no NUL");
+    log_vwrite(msg, args, &prefix);
+    std::process::exit(1);
 }
 
 pub unsafe fn fatalx(msg: &CStr, args: &[FmtArg]) -> ! {
-    unsafe {
-        log_vwrite(msg, args, c"fatal: ");
-        std::process::exit(1);
-    }
+    log_vwrite(msg, args, c"fatal: ");
+    std::process::exit(1);
 }
 
 #[cfg(test)]

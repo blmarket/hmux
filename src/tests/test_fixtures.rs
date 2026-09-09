@@ -168,12 +168,19 @@ pub(crate) fn globals_ready() {
 static GLOBALS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 static GLOBALS_OWNER: std::sync::Mutex<Option<std::thread::ThreadId>> = std::sync::Mutex::new(None);
 
-/// Whether this thread currently holds the fixture lock. The owner alone is
-/// insufficient: it remains recorded after the returned guard is dropped.
+pub(crate) struct GlobalsGuard {
+    _guard: MutexGuard<'static, ()>,
+}
+
+impl Drop for GlobalsGuard {
+    fn drop(&mut self) {
+        *GLOBALS_OWNER.lock().unwrap() = None;
+    }
+}
+
+/// Whether this thread currently holds the fixture lock.
 pub(crate) fn globals_held() -> bool {
-    let owner = GLOBALS_OWNER.lock().unwrap();
-    *owner == Some(std::thread::current().id())
-        && matches!(GLOBALS.try_lock(), Err(std::sync::TryLockError::WouldBlock))
+    *GLOBALS_OWNER.lock().unwrap() == Some(std::thread::current().id())
 }
 
 /// [`globals_ready`], plus a turn at the process-wide state the server keeps
@@ -182,13 +189,36 @@ pub(crate) fn globals_held() -> bool {
 /// notification queue, and the UTF-8 trees and width cache. Cargo runs the
 /// tests on parallel threads, so a test that mutates any of that holds the
 /// guard this returns for as long as it is looking.
-pub(crate) fn globals() -> MutexGuard<'static, ()> {
+pub(crate) fn globals() -> GlobalsGuard {
     let guard = GLOBALS
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     *GLOBALS_OWNER.lock().unwrap() = Some(std::thread::current().id());
+    let guard = GlobalsGuard { _guard: guard };
     globals_ready();
     guard
+}
+
+#[test]
+fn released_globals_guard_clears_owner_before_lock_handoff() {
+    let guard = globals();
+    assert!(globals_held());
+    drop(guard);
+    std::thread::scope(|scope| {
+        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        scope.spawn(move || {
+            let _guard = GLOBALS
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            locked_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        });
+        locked_rx.recv().unwrap();
+        let held = globals_held();
+        release_tx.send(()).unwrap();
+        assert!(!held);
+    });
 }
 
 /// Takes every event a client can arm back off the event loop.

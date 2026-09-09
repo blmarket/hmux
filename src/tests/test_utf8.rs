@@ -9,7 +9,7 @@ use ::core::ffi::{CStr, c_int};
 /// Serializes tests that reset the shared character store and process options.
 /// Each test also starts and ends with an empty thread-local width cache.
 struct Globals {
-    _guard: std::sync::MutexGuard<'static, ()>,
+    _guard: crate::tests::test_fixtures::GlobalsGuard,
 }
 
 impl Drop for Globals {

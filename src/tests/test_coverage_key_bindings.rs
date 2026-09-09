@@ -25,7 +25,6 @@ use crate::server::server_client_set_key_table;
 use crate::tests::test_fixtures::{Clients, Session, globals};
 use crate::types::*;
 use ::core::ffi::{CStr, c_int};
-use ::std::sync::MutexGuard;
 
 /// The tables a test created, taken back down again when the guard goes away —
 /// even through a failed assertion — so the global tree is left as found.
@@ -108,7 +107,7 @@ fn table_names() -> Vec<String> {
 
 #[test]
 fn key_bindings_get_table_looks_up_without_and_with_creation() {
-    let _guard: MutexGuard<()> = globals();
+    let _guard: crate::tests::test_fixtures::GlobalsGuard = globals();
     let mut ts = Tables::new();
     let name = c"kb-get-table";
     unsafe {

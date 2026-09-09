@@ -8,7 +8,6 @@ use crate::tests::test_fixtures::{
 };
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
-use ::std::sync::MutexGuard;
 
 /// A session in the server's tree with one window linked into it and one
 /// pane in that window, which is the least a hook needs to find a target,
@@ -25,7 +24,7 @@ struct World {
     wl: crate::window::WinlinkRef,
     item: Item,
     queue: CmdqListRef,
-    _guard: MutexGuard<'static, ()>,
+    _guard: crate::tests::test_fixtures::GlobalsGuard,
 }
 
 impl World {

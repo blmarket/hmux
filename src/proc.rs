@@ -134,25 +134,23 @@ pub unsafe fn proc_start(name: &CStr) -> ProcessRef {
 }
 /// Dispatches callbacks between checked borrows of the retained process.
 pub unsafe fn proc_loop(tp: &ProcessRef, mut should_exit: impl FnMut() -> bool) {
-    unsafe {
-        log_debug(c"%s loop enter", fmt_args![tp.borrow().name.as_deref()]);
-        loop {
-            reactor::current().run_once();
-            let exited = tp.borrow().exit != 0;
-            if exited || should_exit() {
-                break;
-            }
+    log_debug(c"%s loop enter", fmt_args![tp.borrow().name.as_deref()]);
+    loop {
+        reactor::current().run_once();
+        let exited = tp.borrow().exit != 0;
+        if exited || should_exit() {
+            break;
         }
-        log_debug(c"%s loop exit", fmt_args![tp.borrow().name.as_deref()]);
     }
+    log_debug(c"%s loop exit", fmt_args![tp.borrow().name.as_deref()]);
 }
+
 /// Asks the loop to stop. Whoever owns a peer flushes it first; the process
 /// keeps no list of them.
-pub unsafe fn proc_exit(tp: &mut tmuxproc) {
-    {
-        tp.exit = 1 as core::ffi::c_int;
-    }
+pub fn proc_exit(tp: &mut tmuxproc) {
+    tp.exit = 1 as core::ffi::c_int;
 }
+
 pub unsafe fn proc_set_signals(tp: &mut tmuxproc, signalcb: impl Fn(core::ffi::c_int) + 'static) {
     unsafe {
         let mut sa: libc::sigaction = core::mem::zeroed();
@@ -332,7 +330,7 @@ mod signal_tests {
         let process = ProcessRef::default();
         let weak = Rc::downgrade(&process);
         let callback_process = process.clone();
-        reactor::current().defer(move || unsafe {
+        reactor::current().defer(move || {
             proc_exit(&mut callback_process.borrow_mut());
         });
         unsafe {

@@ -11,7 +11,7 @@ struct Fixture {
     window: Window,
     _clients: Clients,
     client: *mut client,
-    _guard: std::sync::MutexGuard<'static, ()>,
+    _guard: crate::tests::test_fixtures::GlobalsGuard,
 }
 
 impl Fixture {

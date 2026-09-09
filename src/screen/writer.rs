@@ -174,7 +174,7 @@ impl<'a> RustScreenWriteCtx<'a> {
     /// called.
     unsafe fn start(&mut self, s: &'a mut RustScreen) {
         assert!(!self.active, "screen writer is already active");
-        self.state = unsafe { write::screen_write_start(s) };
+        self.state = write::screen_write_start(s);
         self.target = Some(s);
         self.active = true;
     }
@@ -198,7 +198,7 @@ impl<'a> RustScreenWriteCtx<'a> {
         init_ctx: super::write::screen_write_init_ctx,
     ) {
         assert!(!self.active, "screen writer is already active");
-        self.state = unsafe { write::screen_write_start_callback(s, init_ctx) };
+        self.state = write::screen_write_start_callback(s, init_ctx);
         self.target = Some(s);
         self.active = true;
     }
@@ -230,7 +230,7 @@ impl<'a> RustScreenWriteCtx<'a> {
                 .as_ref()
                 .expect("writer has a screen")
                 .borrow_mut();
-            writer.state = unsafe { write::screen_write_start(&mut screen) };
+            writer.state = write::screen_write_start(&mut screen);
         }
         writer.active = true;
         writer
@@ -462,12 +462,12 @@ impl ScreenWriteCtx for RustScreenWriteCtx<'_> {
 
     /// Enables screen modes on the target screen.
     fn mode_set(&mut self, mode: c_int) {
-        unsafe { write::screen_write_mode_set(&mut self.context_mut(), mode) };
+        write::screen_write_mode_set(&mut self.context_mut(), mode);
     }
 
     /// Disables screen modes on the target screen.
     fn mode_clear(&mut self, mode: c_int) {
-        unsafe { write::screen_write_mode_clear(&mut self.context_mut(), mode) };
+        write::screen_write_mode_clear(&mut self.context_mut(), mode);
     }
 
     /// Moves the cursor back over a character, respecting wrapped lines.

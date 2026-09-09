@@ -53,7 +53,7 @@ use ::std::ffi::CString;
 struct FakeControl {
     client: ClientRef,
     _bev: StreamBuffer,
-    _guard: std::sync::MutexGuard<'static, ()>,
+    _guard: crate::tests::test_fixtures::GlobalsGuard,
 }
 
 impl FakeControl {

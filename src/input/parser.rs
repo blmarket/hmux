@@ -5074,7 +5074,7 @@ mod focused_tests {
         _window: Window,
         pane: Pane,
         ictx: InputCtxRef,
-        _guard: std::sync::MutexGuard<'static, ()>,
+        _guard: crate::tests::test_fixtures::GlobalsGuard,
     }
 
     impl ParserCtx {

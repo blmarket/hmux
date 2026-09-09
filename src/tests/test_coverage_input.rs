@@ -55,7 +55,7 @@ struct Parser {
     pane: Pane,
     ictx: InputCtxRef,
     _bev: Option<StreamBuffer>,
-    _globals: std::sync::MutexGuard<'static, ()>,
+    _globals: crate::tests::test_fixtures::GlobalsGuard,
 }
 
 impl Parser {

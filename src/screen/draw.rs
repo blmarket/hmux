@@ -1154,24 +1154,22 @@ pub(super) unsafe fn format_draw(
 
 /// Says in the log what one finished range covers.
 fn log_range(sr: &style_range) {
-    unsafe {
-        let kind = match sr.type_0 {
-            STYLE_RANGE_LEFT => c"%s: range left at %u-%u",
-            STYLE_RANGE_RIGHT => c"%s: range right at %u-%u",
-            STYLE_RANGE_PANE => c"%s: range pane|%%%u at %u-%u",
-            STYLE_RANGE_WINDOW => c"%s: range window|%u at %u-%u",
-            STYLE_RANGE_SESSION => c"%s: range session|$%u at %u-%u",
-            STYLE_RANGE_USER => c"%s: range user|%u at %u-%u",
-            _ => c"%s: range control|%u at %u-%u",
-        };
-        if sr.type_0 == STYLE_RANGE_LEFT || sr.type_0 == STYLE_RANGE_RIGHT {
-            log_debug(kind, fmt_args![c"format_draw".as_ptr(), sr.start, sr.end]);
-        } else {
-            log_debug(
-                kind,
-                fmt_args![c"format_draw".as_ptr(), sr.argument, sr.start, sr.end],
-            );
-        }
+    let kind = match sr.type_0 {
+        STYLE_RANGE_LEFT => c"%s: range left at %u-%u",
+        STYLE_RANGE_RIGHT => c"%s: range right at %u-%u",
+        STYLE_RANGE_PANE => c"%s: range pane|%%%u at %u-%u",
+        STYLE_RANGE_WINDOW => c"%s: range window|%u at %u-%u",
+        STYLE_RANGE_SESSION => c"%s: range session|$%u at %u-%u",
+        STYLE_RANGE_USER => c"%s: range user|%u at %u-%u",
+        _ => c"%s: range control|%u at %u-%u",
+    };
+    if sr.type_0 == STYLE_RANGE_LEFT || sr.type_0 == STYLE_RANGE_RIGHT {
+        log_debug(kind, fmt_args![c"format_draw".as_ptr(), sr.start, sr.end]);
+    } else {
+        log_debug(
+            kind,
+            fmt_args![c"format_draw".as_ptr(), sr.argument, sr.start, sr.end],
+        );
     }
 }
 

@@ -129,9 +129,7 @@ impl WindowRef {
     fn on_name_timer(&self) {
         let w_ref = self;
 
-        unsafe {
-            log_debug(c"@%u name timer expired", fmt_args![w_ref.window_id()]);
-        }
+        log_debug(c"@%u name timer expired", fmt_args![w_ref.window_id()]);
     }
     fn name_time_expired(&self, now: timeval) -> core::ffi::c_int {
         let w = self;

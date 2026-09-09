@@ -26,7 +26,7 @@ struct Overlay {
     extra: Vec<Pane>,
     t: Target,
     c: ClientRef,
-    _guard: std::sync::MutexGuard<'static, ()>,
+    _guard: crate::tests::test_fixtures::GlobalsGuard,
 }
 
 impl Overlay {

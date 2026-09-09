@@ -1,6 +1,6 @@
+use crate::cmd::cmd_confirm_before_callback;
 use crate::cmd::cmd_retval;
 use crate::cmd::cmdq_item;
-use crate::cmd::cmd_confirm_before_callback;
 use crate::cmd::{CmdqItemRef, cmdq_append};
 use crate::cmd::{cmd_command_prompt_callback, cmd_command_prompt_free};
 use crate::cmd::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_valid_state};

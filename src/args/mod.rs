@@ -5,11 +5,11 @@ pub mod argument_text;
 pub mod argument_value;
 pub mod arguments_trait;
 
-use crate::cmd::{CmdListRef, cmd};
-use crate::cmd::cmdq_item;
 use crate::cmd::cmd_find_copy_state;
 use crate::cmd::cmd_parse_from_string;
+use crate::cmd::cmdq_item;
 use crate::cmd::cmdq_item_ref_of;
+use crate::cmd::{CmdListRef, cmd};
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_source};
 use crate::cmd::{cmd_log_argv, cmd_template_replace};
 use crate::compat::strtonum;
@@ -84,10 +84,18 @@ impl RustArguments {
     }
 
     pub fn argument_flag_count(&self, flag: u_char) -> c_int {
-        self.0.tree.get(&flag).map_or(0, |entry| entry.count as c_int)
+        self.0
+            .tree
+            .get(&flag)
+            .map_or(0, |entry| entry.count as c_int)
     }
 
-    pub fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<args_value_t>>, flags: c_int) {
+    pub fn set_argument_flag(
+        &mut self,
+        flag: u_char,
+        value: Option<Box<args_value_t>>,
+        flags: c_int,
+    ) {
         unsafe { args_set(self, flag, value, flags) }
     }
 
@@ -919,12 +927,10 @@ pub fn args_make_commands_prepare(
         unsafe { fatalx(c"argument out of range", fmt_args![]) };
     };
     state.cmd = Some(expand(cmd));
-    unsafe {
-        log_debug(
-            c"%s: %s",
-            fmt_args![c"args_make_commands_prepare", state.cmd.as_deref()],
-        );
-    }
+    log_debug(
+        c"%s: %s",
+        fmt_args![c"args_make_commands_prepare", state.cmd.as_deref()],
+    );
     let (file, line) = cmd_get_source(self_0);
     state.pi.line = line;
     state.source_file = file.map(CStr::to_owned);

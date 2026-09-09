@@ -10,7 +10,6 @@ use crate::tests::test_fixtures::{Pane, Window, globals};
 use crate::window::window_pane_is_floating;
 use ::core::ffi::c_int;
 use ::std::ffi::CString;
-use ::std::sync::MutexGuard;
 
 /// A window carrying a layout tree and the panes that hang off it, the same
 /// server-free shape the layout tests use. The tree is freed before the
@@ -170,7 +169,7 @@ impl Drop for Layout {
     }
 }
 
-fn guard() -> MutexGuard<'static, ()> {
+fn guard() -> crate::tests::test_fixtures::GlobalsGuard {
     globals()
 }
 

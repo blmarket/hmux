@@ -61,7 +61,7 @@ unsafe fn never(_fd: c_int, _events: c_short, _arg: *mut c_void) {}
 /// [`crate::client`] shares these statics, and the fixture peer's events
 /// live on the same process-wide ensure_reactor base every other suite uses, so
 /// each test that reaches any of it holds this guard.
-fn turn() -> (MutexGuard<'static, ()>, MutexGuard<'static, ()>) {
+fn turn() -> (MutexGuard<'static, ()>, crate::tests::test_fixtures::GlobalsGuard) {
     static TURN: Mutex<()> = Mutex::new(());
     (
         TURN.lock().unwrap_or_else(|poisoned| poisoned.into_inner()),

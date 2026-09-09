@@ -10,7 +10,6 @@ use crate::tests::test_fixtures::{Pane, Screen, StreamBuffer, Window, globals};
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::window::window_set_active;
 use ::core::ffi::{CStr, c_int};
-use ::std::sync::MutexGuard;
 
 /// A screen to read the terminal modes from, a buffer event to write the
 /// answer into, and the turn at the globals the key table and the options
@@ -18,7 +17,7 @@ use ::std::sync::MutexGuard;
 struct Keys {
     screen: Screen,
     bev: StreamBuffer,
-    _guard: MutexGuard<'static, ()>,
+    _guard: crate::tests::test_fixtures::GlobalsGuard,
 }
 
 impl Keys {

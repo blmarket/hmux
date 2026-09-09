@@ -12,7 +12,7 @@ use ::std::ffi::CString;
 
 /// The command parser and the format engine read the globals and keep
 /// state of their own in more, so the tests that run them take turns.
-fn exclusive() -> std::sync::MutexGuard<'static, ()> {
+fn exclusive() -> crate::tests::test_fixtures::GlobalsGuard {
     globals()
 }
 
