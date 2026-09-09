@@ -1,3 +1,3 @@
 This project is Rust crate translated from tmux C code.
 
-Can use rust-analyzer.
+rust-analyzer can be useful for refactoring, Rust code analysis.
