@@ -34,7 +34,6 @@
 //! allocations on a green path.
 
 use crate::WindowPane;
-use crate::args::args_count;
 use crate::cmd::CmdqItemRef;
 use crate::cmd::cmd;
 use crate::cmd::cmd_load_buffer_data;
@@ -316,7 +315,7 @@ unsafe fn send_keys_x(t: &mut Target, line: &CStr, values: u_int) {
 
         let args = Args::parse(line);
         assert_eq!(
-            args_count(&*args.borrow()),
+            args.borrow().argument_count(),
             values,
             "{line:?} did not parse into the arguments the test needs"
         );

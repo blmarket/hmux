@@ -1,5 +1,4 @@
 use crate::args::RustArguments;
-use crate::args::args_get_str;
 use crate::args::{args_value_list};
 use crate::cmd::cmdq_item_weak_of;
 
@@ -222,7 +221,7 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                         c"remain-on-exit-format",
                         0 as core::ffi::c_int,
                         c"%s",
-                        fmt_args![args_get_str(args, b'm')],
+                        fmt_args![args.argument_flag_string(b'm')],
                     )
                 };
             }

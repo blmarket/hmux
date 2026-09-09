@@ -6,7 +6,7 @@
 //! server or the command table, so no [`globals`] guard is needed except where
 //! noted.
 
-use crate::args::{RustArguments, args_escape, args_free, args_get_str, args_print, args_set};
+use crate::args::{RustArguments, args_escape, args_free, args_print, args_set};
 use crate::cmd::{cmd_pack_argv, cmd_stringify_argv, cmd_template_replace, cmd_unpack_argv};
 use crate::tests::test_fixtures::seen;
 use crate::tests::test_fixtures::seen_str;
@@ -214,24 +214,24 @@ fn args_has_get_and_print_roundtrip() {
         let args = Box::into_raw(Box::<RustArguments>::default());
         assert!(!args.is_null());
         assert_eq!((*args).argument_flag_count(b'a'), 0);
-        assert!(args_get_str(&*args, b'a').is_none());
+        assert!((*args).argument_flag_string(b'a').is_none());
         assert_eq!(args_print(&*args).to_string_lossy(), "");
         // set flag -a without value
         args_set(&mut *args, b'a', None, 0);
         assert_eq!((*args).argument_flag_count(b'a'), 1);
-        assert!(args_get_str(&*args, b'a').is_none());
+        assert!((*args).argument_flag_string(b'a').is_none());
         let printed1 = args_print(&*args).to_string_lossy().into_owned();
         assert_eq!(printed1, "-a");
         // set flag -b with string value
         let v = crate::types::ArgsValue::String(CString::new("val").unwrap());
         args_set(&mut *args, b'b', Some(v), 0);
         assert_eq!((*args).argument_flag_count(b'b'), 1);
-        assert_eq!(seen_str(args_get_str(&*args, b'b')), "val");
+        assert_eq!(seen_str((*args).argument_flag_string(b'b')), "val");
         let printed2 = args_print(&*args).to_string_lossy().into_owned();
         assert!(printed2.contains("-b"), "got {printed2:?}");
         assert!(printed2.contains("val"), "got {printed2:?}");
-        assert_eq!(crate::args::args_count(&*args), 0);
-        assert!(crate::args::args_value(&*args, 0).is_none());
+        assert_eq!((*args).argument_count(), 0);
+        assert!((*args).argument_value(0).is_none());
         args_free(Box::from_raw(args));
     }
 }
@@ -244,12 +244,9 @@ fn args_print_with_positional_and_multiple_flags() {
         ));
         let printed = args_print(&*args).to_string_lossy().into_owned();
         assert!(printed.contains("pos"), "got {printed:?}");
-        assert_eq!(crate::args::args_count(&*args), 1);
-        assert_eq!(
-            seen_str(crate::args::args_string_str(&*args, 0)),
-            "pos"
-        );
-        assert!(crate::args::args_value(&*args, 1).is_none());
+        assert_eq!((*args).argument_count(), 1);
+        assert_eq!(seen_str((*args).argument_string(0)), "pos");
+        assert!((*args).argument_value(1).is_none());
         args_free(Box::from_raw(args));
     }
 }

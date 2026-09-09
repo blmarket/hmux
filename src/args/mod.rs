@@ -831,31 +831,6 @@ pub unsafe fn args_set(
     entry.values.push(value);
 }
 
-/// The last string value given for `flag`, borrowed from the arguments.
-pub fn args_get_str(args: &RustArguments, flag: u_char) -> Option<&CStr> {
-    args.argument_flag_string(flag)
-}
-
-/// The flags the arguments carry, in flag order. This is the walk the C's
-/// `args_first` and `args_next` pair did through a cursor entry the caller
-/// held for them.
-pub fn args_flags(args: &RustArguments) -> impl Iterator<Item = u_char> + '_ {
-    args.argument_flags_iter()
-}
-
-pub fn args_count(args: &RustArguments) -> u_int {
-    args.argument_count()
-}
-
-pub fn args_value(args: &RustArguments, idx: u_int) -> Option<&ArgsValue> {
-    args.argument_value(idx)
-}
-
-/// Borrows the `idx`th argument as a string, or returns `None` when absent.
-pub unsafe fn args_string_str(args: &RustArguments, idx: u_int) -> Option<&CStr> {
-    args.argument_string(idx)
-}
-
 pub(crate) unsafe fn args_make_commands_now(
     self_0: &cmd,
     item: &cmdq_item,
@@ -900,7 +875,7 @@ pub fn args_make_commands_prepare(
         source_file: None,
         client_ref: None,
     });
-    let cmd = match args_value(args, idx) {
+    let cmd = match args.argument_value(idx) {
         Some(value) => {
             if let ArgsValue::Commands { cmdlist, .. } = value {
                 state.cmdlist = cmdlist.clone();

@@ -14,7 +14,6 @@
 //! nothing here reaches into those trees.
 
 use crate::args::RustArguments;
-use crate::args::{args_value};
 use crate::cmd::cmd_get_args;
 use crate::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 
@@ -97,7 +96,7 @@ unsafe fn binding_of(args: &RustArguments, count: u_int) -> Result<Binding, CStr
         if count == 1 {
             return Ok(Binding::Keep);
         }
-        let value = args_value(args, 1).expect("the binding has a command argument");
+        let value = args.argument_value(1).expect("the binding has a command argument");
         if count == 2
             && let ArgsValue::Commands { cmdlist, .. } = value
         {

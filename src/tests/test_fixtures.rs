@@ -1857,14 +1857,9 @@ mod tests {
     fn a_parsed_command_line_hands_over_its_arguments() {
         let _guard = globals();
         let args = Args::parse(c"wait-for -S chan");
-        unsafe {
-            assert_eq!(args.borrow().argument_flag_count(b'S'), 1);
-            assert_eq!(
-                seen_str(crate::args::args_string_str(&*args.borrow(), 0)),
-                "chan"
-            );
-            assert!(args.list_ref().command(0).is_some());
-        }
+        assert_eq!(args.borrow().argument_flag_count(b'S'), 1);
+        assert_eq!(seen_str(args.borrow().argument_string(0)), "chan");
+        assert!(args.list_ref().command(0).is_some());
     }
 
     #[test]
@@ -1894,10 +1889,7 @@ mod tests {
                 "fixture.conf"
             );
             assert_eq!((*item.command()).line, 7);
-            assert_eq!(
-                seen_str(crate::args::args_string_str(&*item.args(), 0)),
-                "hello"
-            );
+            assert_eq!(seen_str(item.args().argument_string(0)), "hello");
         }
     }
 

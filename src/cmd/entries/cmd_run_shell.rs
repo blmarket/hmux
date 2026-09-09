@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_make_commands, args_make_commands_prepare, args_string_str};
+use crate::args::{args_make_commands, args_make_commands_prepare};
 use crate::cmd::cmd_find_from_nothing;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
@@ -163,7 +163,7 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                         &mut ft,
                         &key,
                         c"%s",
-                        fmt_args![args_string_str(args, i).expect("argument index checked")],
+                        fmt_args![args.argument_string(i).expect("argument index checked")],
                     )
                 };
                 i = i.wrapping_add(1);

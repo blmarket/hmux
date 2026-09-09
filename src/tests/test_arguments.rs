@@ -140,8 +140,8 @@ fn an_empty_command_line_parses_to_empty_arguments() {
     let mut values = Values::words(&[]);
     unsafe {
         let args = parse_values(&spec(c""), &mut values).unwrap();
-        assert_eq!(args_count(&args), 0);
-        assert!(args_value(&args, 0).is_none());
+        assert_eq!(args.argument_count(), 0);
+        assert!(args.argument_value(0).is_none());
         assert_eq!(args_print(&args).to_string_lossy(), "");
         args_free(args);
     }
@@ -170,7 +170,7 @@ fn a_command_list_word_ends_the_flags() {
         Value::Commands(c"display-message hello"),
     ]);
     let args = parse_values(&spec_cb(Some(parse_as_either)), &mut values).unwrap();
-    assert_eq!(args_count(&args), 1);
+    assert_eq!(args.argument_count(), 1);
     args_free(args);
 }
 
@@ -377,13 +377,13 @@ fn a_command_list_argument_is_kept_and_printed_in_braces() {
             args_print(&args).to_string_lossy(),
             "{ display-message hello }"
         );
-        let value = args_value(&args, 0);
+        let value = args.argument_value(0);
         let cached = |value: &ArgsValue| match value {
             ArgsValue::Commands { cached, .. } => cached.get().is_some(),
             _ => panic!("not a command argument"),
         };
         assert!(!cached(value.unwrap()));
-        assert_eq!(seen_str(args_string_str(&args, 0)), "display-message hello");
+        assert_eq!(seen_str(args.argument_string(0)), "display-message hello");
         assert!(cached(value.unwrap()));
         args_free(args);
     }
@@ -400,10 +400,10 @@ fn either_kind_of_argument_is_copied_as_it_comes() {
     ]);
     unsafe {
         let args = parse_values(&spec_cb(Some(parse_as_either)), &mut values).unwrap();
-        assert_eq!(args_count(&args), 3);
-        assert_eq!(seen_str(args_string_str(&args, 0)), "x");
-        assert_eq!(seen_str(args_string_str(&args, 1)), "display-message hello");
-        assert_eq!(seen_str(args_string_str(&args, 2)), "");
+        assert_eq!(args.argument_count(), 3);
+        assert_eq!(seen_str(args.argument_string(0)), "x");
+        assert_eq!(seen_str(args.argument_string(1)), "display-message hello");
+        assert_eq!(seen_str(args.argument_string(2)), "");
         args_free(args);
     }
 }
@@ -413,12 +413,12 @@ fn an_argument_of_an_unknown_kind_is_counted_but_left_empty() {
     let mut values = Values::new(&[Value::String(c"cmd"), Value::String(c"x")]);
     unsafe {
         let args = parse_values(&spec_cb(Some(parse_as_nothing_known)), &mut values).unwrap();
-        assert_eq!(args_count(&args), 1);
+        assert_eq!(args.argument_count(), 1);
         assert!(matches!(
-            args_value(&args, 0).unwrap(),
+            args.argument_value(0).unwrap(),
             ArgsValue::None
         ));
-        assert_eq!(seen_str(args_string_str(&args, 0)), "");
+        assert_eq!(seen_str(args.argument_string(0)), "");
         args_free(args);
     }
 }
@@ -457,12 +457,12 @@ fn a_flag_is_counted_every_time_it_is_given() {
 fn the_last_value_given_for_a_flag_is_the_one_read_back() {
     unsafe {
         let args = Box::into_raw(Box::<RustArguments>::default());
-        assert!(args_get_str(&*args, b'a').is_none());
+        assert!((*args).argument_flag_string(b'a').is_none());
         args_set(&mut *args, b'a', None, 0);
-        assert!(args_get_str(&*args, b'a').is_none());
+        assert!((*args).argument_flag_string(b'a').is_none());
         args_set(&mut *args, b'a', string_value(c"one"), 0);
         args_set(&mut *args, b'a', string_value(c"two"), 0);
-        assert_eq!(seen_str(args_get_str(&*args, b'a')), "two");
+        assert_eq!(seen_str((*args).argument_flag_string(b'a')), "two");
         args_free(Box::from_raw(args));
     }
 }
@@ -471,11 +471,11 @@ fn the_last_value_given_for_a_flag_is_the_one_read_back() {
 fn the_flag_text_comes_back_as_nothing_when_the_flag_was_not_given() {
     unsafe {
         let args = Box::into_raw(Box::<RustArguments>::default());
-        assert_eq!(args_get_str(&*args, b'a'), None);
+        assert_eq!((*args).argument_flag_string(b'a'), None);
         args_set(&mut *args, b'a', None, 0);
-        assert_eq!(args_get_str(&*args, b'a'), None);
+        assert_eq!((*args).argument_flag_string(b'a'), None);
         args_set(&mut *args, b'a', string_value(c"one"), 0);
-        assert_eq!(args_get_str(&*args, b'a'), Some(c"one"));
+        assert_eq!((*args).argument_flag_string(b'a'), Some(c"one"));
         args_free(Box::from_raw(args));
     }
 }
@@ -511,11 +511,11 @@ fn a_value_of_no_type_is_thrown_away_by_args_set() {
 fn the_flags_are_walked_in_order() {
     unsafe {
         let args = Box::into_raw(Box::<RustArguments>::default());
-        assert_eq!(args_flags(&*args).next(), None);
+        assert_eq!((*args).argument_flags_iter().next(), None);
         for flag in *b"cab" {
             args_set(&mut *args, flag, None, 0);
         }
-        let walked: Vec<u_char> = args_flags(&*args).collect();
+        let walked: Vec<u_char> = (*args).argument_flags_iter().collect();
         assert_eq!(walked, [b'a', b'b', b'c']);
         args_free(Box::from_raw(args));
     }
@@ -526,12 +526,12 @@ fn the_arguments_are_read_by_index() {
     let mut values = Values::words(&[c"cmd", c"x", c"y"]);
     unsafe {
         let args = parse_values(&spec(c""), &mut values).unwrap();
-        assert_eq!(args_count(&args), 2);
-        assert_eq!(seen_str(args_string_str(&args, 0)), "x");
-        assert_eq!(seen_str(args_string_str(&args, 1)), "y");
-        assert!(args_string_str(&args, 2).is_none());
-        assert_eq!(args_value(&args, 0).unwrap().string(), c"x");
-        assert!(args_value(&args, 2).is_none());
+        assert_eq!(args.argument_count(), 2);
+        assert_eq!(seen_str(args.argument_string(0)), "x");
+        assert_eq!(seen_str(args.argument_string(1)), "y");
+        assert!(args.argument_string(2).is_none());
+        assert_eq!(args.argument_value(0).unwrap().string(), c"x");
+        assert!(args.argument_value(2).is_none());
         args_free(args);
     }
 }
@@ -610,7 +610,7 @@ fn copying_keeps_the_flags_and_their_values() {
         args_set(&mut *args, b'b', string_value(c"one"), 0);
         let copy = (*args).copy_with_arguments(&[]);
         assert_eq!(copy.argument_flag_count(b'a'), 2);
-        assert_eq!(seen_str(args_get_str(&copy, b'b')), "one");
+        assert_eq!(seen_str(copy.argument_flag_string(b'b')), "one");
         assert_eq!(args_print(&copy).to_string_lossy(), "-aa -b one");
         args_free(Box::from_raw(args));
     }
