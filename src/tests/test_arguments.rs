@@ -1075,3 +1075,22 @@ fn command_preparation_accepts_a_consuming_expander_in_safe_code() {
     assert_eq!(state.pi.file(), Some(c"args.conf"));
     assert_eq!(state.pi.line, 7);
 }
+
+#[test]
+fn rust_arguments_borrows_existing_state_in_place() {
+    let mut raw = RustArguments::from_strings(&[c"before"]).into_args();
+    let address = &raw as *const args;
+    {
+        let arguments = RustArguments::from_mut(&mut raw);
+        assert_eq!(arguments.as_args() as *const args, address);
+        assert!(arguments.set_argument_string(0, c"after"));
+        assert!(!arguments.set_argument_string(1, c"missing"));
+        arguments.set_argument_flag(b'x', None, 0);
+    }
+    assert_eq!(args_has(&raw, b'x'), 1);
+    let arguments = RustArguments::from_ref(&raw);
+    assert_eq!(arguments.argument_string(0), Some(c"after"));
+    assert_eq!(arguments.argument_count(), 1);
+    assert!(arguments.argument_value(1).is_none());
+    assert_eq!(crate::Arguments::argument_flag_count(&raw, b'x'), 1);
+}

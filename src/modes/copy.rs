@@ -4812,7 +4812,7 @@ pub(crate) unsafe fn window_copy_command(
                 }
                 let Some(wargs) = args_parse(
                     &window_copy_cmd_table[i as usize].args,
-                    &args.values,
+                    crate::RustArguments::from_ref(args).argument_values(),
                     &mut error,
                 ) else {
                     break;

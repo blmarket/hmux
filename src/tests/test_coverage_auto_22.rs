@@ -242,14 +242,9 @@ fn args_has_get_and_print_roundtrip() {
 #[test]
 fn args_print_with_positional_and_multiple_flags() {
     unsafe {
-        // build args manually: flags + positional via args_set and direct value
-        let args = Box::into_raw(args_create());
-        // add positional value
-        let value = crate::types::args_value_t {
-            value: crate::types::ArgsValue::String(CString::new("pos").unwrap()),
-        };
-        (*args).values.push(value);
-        (*args).count = 1;
+        let args = Box::into_raw(Box::new(
+            crate::RustArguments::from_strings(&[c"pos"]).into_args(),
+        ));
         let printed = args_print(&*args).to_string_lossy().into_owned();
         assert!(printed.contains("pos"), "got {printed:?}");
         assert_eq!(crate::args::args_count(&*args), 1);

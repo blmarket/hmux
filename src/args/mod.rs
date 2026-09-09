@@ -23,114 +23,183 @@ use ::std::ffi::CStr;
 use ::std::ffi::CString;
 use core::ffi::c_int;
 #[repr(C)]
+#[derive(Default)]
 pub struct args {
-    pub tree: args_tree,
-    pub count: u_int,
-    pub values: Vec<args_value_t>,
+    tree: args_tree,
+    count: u_int,
+    values: Vec<args_value_t>,
 }
 
 /// Parsed-argument state backed by hmux's transpiled argument structure.
-pub struct RustArguments(Box<args>);
+#[repr(transparent)]
+#[derive(Default)]
+pub struct RustArguments(args);
 
 impl RustArguments {
-    /// Builds positional arguments from strings.
-    pub fn from_strings(values: &[&CStr]) -> Self {
-        let mut arguments = args_create();
-        for value in values {
-            arguments.values.push(args_value_t {
-                value: ArgsValue::String((*value).to_owned()),
-            });
-            arguments.count += 1;
-        }
+    /// Borrows existing arguments without allocating or transferring ownership.
+    pub fn from_ref(arguments: &args) -> &Self {
+        unsafe { &*(arguments as *const args).cast::<Self>() }
+    }
+
+    /// Mutably borrows existing arguments without allocating or transferring ownership.
+    pub fn from_mut(arguments: &mut args) -> &mut Self {
+        unsafe { &mut *(arguments as *mut args).cast::<Self>() }
+    }
+
+    /// Wraps existing argument state by value.
+    pub fn from_args(arguments: args) -> Self {
         Self(arguments)
     }
-}
 
-impl Default for RustArguments {
-    fn default() -> Self {
-        Self(args_create())
-    }
-}
-
-impl crate::Arguments for RustArguments {
-    fn argument_flag_count(&self, flag: u_char) -> c_int {
-        crate::Arguments::argument_flag_count(&*self.0, flag)
+    /// Returns the argument state for an existing args-based API.
+    pub fn into_args(self) -> args {
+        self.0
     }
 
-    fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<args_value_t>>, flags: c_int) {
-        crate::Arguments::set_argument_flag(&mut *self.0, flag, value, flags)
+    /// Borrows the opaque state for an existing args-based API.
+    pub fn as_args(&self) -> &args {
+        &self.0
     }
 
-    fn argument_flag_string(&self, flag: u_char) -> Option<&CStr> {
-        crate::Arguments::argument_flag_string(&*self.0, flag)
+    /// Mutably borrows the opaque state for an existing args-based API.
+    pub fn as_args_mut(&mut self) -> &mut args {
+        &mut self.0
     }
 
-    fn argument_flags(&self) -> Vec<u_char> {
-        crate::Arguments::argument_flags(&*self.0)
+    /// Builds positional arguments from strings.
+    pub fn from_strings(values: &[&CStr]) -> Self {
+        let mut arguments = Self::default();
+        for value in values {
+            arguments.0.values.push(args_value_t {
+                value: ArgsValue::String((*value).to_owned()),
+            });
+            arguments.0.count += 1;
+        }
+        arguments
     }
 
-    fn argument_count(&self) -> u_int {
-        crate::Arguments::argument_count(&*self.0)
+    /// Returns one positional value.
+    pub fn argument_value(&self, index: u_int) -> Option<&args_value_t> {
+        self.argument_values().get(index as usize)
     }
 
-    fn argument_values(&self) -> &[args_value_t] {
-        crate::Arguments::argument_values(&*self.0)
+    pub fn argument_flag_count(&self, flag: u_char) -> c_int {
+        args_has(&self.0, flag)
     }
 
-    fn set_argument_string(&mut self, index: u_int, value: &CStr) -> bool {
-        crate::Arguments::set_argument_string(&mut *self.0, index, value)
+    pub fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<args_value_t>>, flags: c_int) {
+        unsafe { args_set(&mut self.0, flag, value, flags) }
     }
 
-    fn argument_string(&self, index: u_int) -> Option<&CStr> {
-        crate::Arguments::argument_string(&*self.0, index)
+    pub fn argument_flag_string(&self, flag: u_char) -> Option<&CStr> {
+        args_get_str(&self.0, flag)
     }
 
-    fn argument_flag_values(&self, flag: u_char) -> Vec<&args_value_t> {
-        crate::Arguments::argument_flag_values(&*self.0, flag)
-    }
-}
-
-impl crate::Arguments for args {
-    fn argument_flag_count(&self, flag: u_char) -> c_int {
-        args_has(self, flag)
+    pub fn argument_flags(&self) -> Vec<u_char> {
+        args_flags(&self.0).collect()
     }
 
-    fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<args_value_t>>, flags: c_int) {
-        unsafe { args_set(self, flag, value, flags) }
+    pub fn argument_count(&self) -> u_int {
+        args_count(&self.0)
     }
 
-    fn argument_flag_string(&self, flag: u_char) -> Option<&CStr> {
-        args_get_str(self, flag)
+    pub fn argument_values(&self) -> &[args_value_t] {
+        &self.0.values
     }
 
-    fn argument_flags(&self) -> Vec<u_char> {
-        args_flags(self).collect()
-    }
-
-    fn argument_count(&self) -> u_int {
-        args_count(self)
-    }
-
-    fn argument_values(&self) -> &[args_value_t] {
-        &self.values
-    }
-
-    fn set_argument_string(&mut self, index: u_int, value: &CStr) -> bool {
-        let Some(argument) = self.values.get_mut(index as usize) else {
+    pub fn set_argument_string(&mut self, index: u_int, value: &CStr) -> bool {
+        let Some(argument) = self.0.values.get_mut(index as usize) else {
             return false;
         };
         argument.value = ArgsValue::String(value.to_owned());
         true
     }
 
+    pub fn argument_string(&self, index: u_int) -> Option<&CStr> {
+        unsafe { args_string_str(&self.0, index) }
+    }
+
+    pub fn argument_flag_values(&self, flag: u_char) -> Vec<&args_value_t> {
+        args_value_list(&self.0, flag)
+    }
+}
+
+impl crate::Arguments for RustArguments {
+    fn argument_flag_count(&self, flag: u_char) -> c_int {
+        RustArguments::argument_flag_count(self, flag)
+    }
+
+    fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<args_value_t>>, flags: c_int) {
+        RustArguments::set_argument_flag(self, flag, value, flags)
+    }
+
+    fn argument_flag_string(&self, flag: u_char) -> Option<&CStr> {
+        RustArguments::argument_flag_string(self, flag)
+    }
+
+    fn argument_flags(&self) -> Vec<u_char> {
+        RustArguments::argument_flags(self)
+    }
+
+    fn argument_count(&self) -> u_int {
+        RustArguments::argument_count(self)
+    }
+
+    fn argument_values(&self) -> &[args_value_t] {
+        RustArguments::argument_values(self)
+    }
+
+    fn set_argument_string(&mut self, index: u_int, value: &CStr) -> bool {
+        RustArguments::set_argument_string(self, index, value)
+    }
+
     fn argument_string(&self, index: u_int) -> Option<&CStr> {
-        unsafe { args_string_str(self, index) }
+        RustArguments::argument_string(self, index)
     }
 
     fn argument_flag_values(&self, flag: u_char) -> Vec<&args_value_t> {
-        args_value_list(self, flag)
+        RustArguments::argument_flag_values(self, flag)
     }
 }
+
+impl crate::Arguments for args {
+    fn argument_flag_count(&self, flag: u_char) -> c_int {
+        RustArguments::argument_flag_count(RustArguments::from_ref(self), flag)
+    }
+
+    fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<args_value_t>>, flags: c_int) {
+        RustArguments::set_argument_flag(RustArguments::from_mut(self), flag, value, flags)
+    }
+
+    fn argument_flag_string(&self, flag: u_char) -> Option<&CStr> {
+        RustArguments::argument_flag_string(RustArguments::from_ref(self), flag)
+    }
+
+    fn argument_flags(&self) -> Vec<u_char> {
+        RustArguments::argument_flags(RustArguments::from_ref(self))
+    }
+
+    fn argument_count(&self) -> u_int {
+        RustArguments::argument_count(RustArguments::from_ref(self))
+    }
+
+    fn argument_values(&self) -> &[args_value_t] {
+        RustArguments::argument_values(RustArguments::from_ref(self))
+    }
+
+    fn set_argument_string(&mut self, index: u_int, value: &CStr) -> bool {
+        RustArguments::set_argument_string(RustArguments::from_mut(self), index, value)
+    }
+
+    fn argument_string(&self, index: u_int) -> Option<&CStr> {
+        RustArguments::argument_string(RustArguments::from_ref(self), index)
+    }
+
+    fn argument_flag_values(&self, flag: u_char) -> Vec<&args_value_t> {
+        RustArguments::argument_flag_values(RustArguments::from_ref(self), flag)
+    }
+}
+
 #[repr(C)]
 #[derive(Default)]
 pub struct args_command_state {
@@ -265,11 +334,7 @@ unsafe fn args_value_as_string(value: &args_value_t) -> &CStr {
 }
 
 pub fn args_create() -> Box<args> {
-    Box::new(args {
-        tree: args_tree::new(),
-        count: 0,
-        values: Vec::new(),
-    })
+    Box::default()
 }
 
 /// How the template says a flag takes its argument.

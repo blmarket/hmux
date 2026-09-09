@@ -108,7 +108,7 @@ unsafe fn binding_of(args: &args, count: u_int) -> Result<Binding, CString> {
                 None,
             )
         } else {
-            cmd_parse_from_arguments(&args.values[1..], None)
+            cmd_parse_from_arguments(&crate::RustArguments::from_ref(args).argument_values()[1..], None)
         };
         if pr.status == CMD_PARSE_ERROR {
             return Err(pr.error.take().unwrap());
