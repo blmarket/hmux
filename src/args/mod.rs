@@ -84,7 +84,7 @@ impl RustArguments {
     }
 
     pub fn argument_flag_count(&self, flag: u_char) -> c_int {
-        args_has(&self.0, flag)
+        self.0.tree.get(&flag).map_or(0, |entry| entry.count as c_int)
     }
 
     pub fn set_argument_flag(&mut self, flag: u_char, value: Option<Box<args_value_t>>, flags: c_int) {
@@ -92,15 +92,24 @@ impl RustArguments {
     }
 
     pub fn argument_flag_string(&self, flag: u_char) -> Option<&CStr> {
-        args_get_str(&self.0, flag)
+        let value = self.0.tree.get(&flag)?.values.last()?;
+        match &value.value {
+            ArgsValue::String(string) => Some(string.as_c_str()),
+            ArgsValue::None | ArgsValue::Commands { .. } => None,
+        }
     }
 
     pub fn argument_flags(&self) -> Vec<u_char> {
-        args_flags(&self.0).collect()
+        self.argument_flags_iter().collect()
+    }
+
+    /// Iterates over the flags in flag order without allocating.
+    pub fn argument_flags_iter(&self) -> impl Iterator<Item = u_char> + '_ {
+        self.0.tree.values().map(|entry| entry.flag)
     }
 
     pub fn argument_count(&self) -> u_int {
-        args_count(&self.0)
+        self.0.count
     }
 
     pub fn argument_values(&self) -> &[args_value_t] {
@@ -116,11 +125,15 @@ impl RustArguments {
     }
 
     pub fn argument_string(&self, index: u_int) -> Option<&CStr> {
-        unsafe { args_string_str(&self.0, index) }
+        self.argument_value(index)
+            .map(|value| unsafe { args_value_as_string(value) })
     }
 
     pub fn argument_flag_values(&self, flag: u_char) -> Vec<&args_value_t> {
-        args_value_list(&self.0, flag)
+        match self.0.tree.get(&flag) {
+            Some(entry) => entry.values.iter().map(|value| &**value).collect(),
+            None => Vec::new(),
+        }
     }
 }
 
@@ -276,20 +289,10 @@ fn args_find(args: &args, flag: u_char) -> Option<&args_entry> {
     args.tree.get(&flag).map(|entry| entry.as_ref())
 }
 
-/// The last value given for a flag, if it was given any.
-fn args_last_value(args: &args, flag: u_char) -> Option<&args_value_t> {
-    Some(args_find(args, flag)?.values.last()?.as_ref())
-}
-
 /// The string of the last value given for a flag, when there is one and it is
 /// a string.
 fn args_last_string(args: &args, flag: u_char) -> Option<&CStr> {
-    let entry = args.tree.get(&flag)?;
-    let value = entry.values.last()?;
-    let ArgsValue::String(string) = &value.value else {
-        return None;
-    };
-    Some(string)
+    RustArguments::from_ref(args).argument_flag_string(flag)
 }
 
 /// Whether `b` is `isalnum` under the process's current locale, which is what
@@ -803,10 +806,7 @@ pub(crate) fn args_escape_impl(s: &CStr) -> CString {
 }
 
 pub fn args_has(args: &args, flag: u_char) -> core::ffi::c_int {
-    match args_find(args, flag) {
-        Some(entry) => entry.count as core::ffi::c_int,
-        None => 0,
-    }
+    RustArguments::from_ref(args).argument_flag_count(flag)
 }
 
 pub unsafe fn args_set(
@@ -835,37 +835,27 @@ pub unsafe fn args_set(
 
 /// The last string value given for `flag`, borrowed from the arguments.
 pub fn args_get_str(args: &args, flag: u_char) -> Option<&CStr> {
-    match args_last_value(args, flag) {
-        Some(value) => match &value.value {
-            ArgsValue::String(string) => Some(string.as_c_str()),
-            ArgsValue::None | ArgsValue::Commands { .. } => None,
-        },
-        None => None,
-    }
+    RustArguments::from_ref(args).argument_flag_string(flag)
 }
 
 /// The flags the arguments carry, in flag order. This is the walk the C's
 /// `args_first` and `args_next` pair did through a cursor entry the caller
 /// held for them.
 pub fn args_flags(args: &args) -> impl Iterator<Item = u_char> + '_ {
-    args.tree.values().map(|entry| entry.flag)
+    RustArguments::from_ref(args).argument_flags_iter()
 }
 
 pub fn args_count(args: &args) -> u_int {
-    args.count
+    RustArguments::from_ref(args).argument_count()
 }
 
 pub fn args_value(args: &args, idx: u_int) -> Option<&args_value_t> {
-    args.values.get(idx as usize)
+    RustArguments::from_ref(args).argument_value(idx)
 }
 
 /// Borrows the `idx`th argument as a string, or returns `None` when absent.
 pub unsafe fn args_string_str(args: &args, idx: u_int) -> Option<&CStr> {
-    unsafe {
-        args.values
-            .get(idx as usize)
-            .map(|value| args_value_as_string(value))
-    }
+    RustArguments::from_ref(args).argument_string(idx)
 }
 
 pub(crate) unsafe fn args_make_commands_now(
@@ -1017,10 +1007,7 @@ pub unsafe fn args_make_commands_get_command(state: &args_command_state) -> CStr
 
 /// Every value given for a flag, in the order they were given.
 pub fn args_value_list(args: &args, flag: u_char) -> Vec<&args_value_t> {
-    match args_find(args, flag) {
-        Some(entry) => entry.values.iter().map(|value| &**value).collect(),
-        None => Vec::new(),
-    }
+    RustArguments::from_ref(args).argument_flag_values(flag)
 }
 
 /// The number a string holds, or the `strtonum` message saying why it is not

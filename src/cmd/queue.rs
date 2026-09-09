@@ -3,9 +3,7 @@ use super::{
     cmd_find_target, cmd_find_valid_state,
 };
 
-use crate::args::{
-    args_count, args_flags, args_get_str, args_print, args_string_str, args_value_list,
-};
+use crate::args::{RustArguments, args_get_str, args_print};
 use crate::cfg::cfg_add_cause;
 use crate::cfg::cfg_finished;
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print};
@@ -1085,24 +1083,25 @@ impl CmdqItemRef {
             new_state.add_format(c"hook", c"%s", fmt_args![name.as_c_str()]);
             let arguments = args_print(args_0);
             new_state.add_format(c"hook_arguments", c"%s", fmt_args![arguments.as_c_str()]);
+            let arguments = RustArguments::from_ref(args_0);
             i = 0 as u_int;
-            while i < args_count(args_0) {
+            while i < arguments.argument_count() {
                 let tmp = xasprintf(c"hook_argument_%d", fmt_args![i]);
                 new_state.add_format(
                     &tmp,
                     c"%s",
-                    fmt_args![args_string_str(args_0, i).expect("argument index checked")],
+                    fmt_args![arguments.argument_string(i).expect("argument index checked")],
                 );
                 i = i.wrapping_add(1);
             }
-            for flag in args_flags(args_0).map(|flag| flag as core::ffi::c_char) {
+            for flag in arguments.argument_flags_iter().map(|flag| flag as core::ffi::c_char) {
                 let tmp = xasprintf(c"hook_flag_%c", fmt_args![flag as core::ffi::c_int]);
-                match args_get_str(args_0, flag as u_char) {
+                match arguments.argument_flag_string(flag as u_char) {
                     None => new_state.add_format(&tmp, c"1", fmt_args![]),
                     Some(value) => new_state.add_format(&tmp, c"%s", fmt_args![value]),
                 }
                 i = 0 as u_int;
-                for av in args_value_list(args_0, flag as u_char) {
+                for av in arguments.argument_flag_values(flag as u_char) {
                     let tmp = xasprintf(c"hook_flag_%c_%d", fmt_args![flag as core::ffi::c_int, i]);
                     new_state.add_format(&tmp, c"%s", fmt_args![av.value.string()]);
                     i = i.wrapping_add(1);
