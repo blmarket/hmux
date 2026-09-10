@@ -43,8 +43,7 @@ use crate::tty::{tty_default_colours, tty_putcode_ss, tty_puts, tty_set_selectio
 pub use crate::types::*;
 use crate::window::{
     window_pane_get_bg, window_pane_get_fg,
-    window_pane_get_fg_control_client, window_pane_get_new_data, window_pane_get_theme,
-    window_pane_update_used_data,
+    window_pane_get_fg_control_client, window_pane_get_theme,
 };
 use crate::xmalloc::xasprintf;
 use ::core::cell::{Ref, RefCell, RefMut};
@@ -2027,16 +2026,6 @@ unsafe fn input_parse(
         if let Some(since_ground) = ictx.since_ground.as_deref_mut() {
             since_ground.append_buf(&mut pending);
         }
-    }
-}
-pub unsafe fn input_parse_pane(wp: &mut (impl crate::WindowPane + ?Sized)) {
-    unsafe {
-        let input = window_pane_get_new_data(wp, wp.offset());
-        let new_size = input.len();
-        input_parse_buffer(wp, input);
-        let mut offset = *wp.offset();
-        window_pane_update_used_data(wp, &mut offset, new_size);
-        *wp.offset_mut() = offset;
     }
 }
 pub unsafe fn input_parse_buffer(wp: &mut (impl crate::WindowPane + ?Sized), mut input: ByteBuffer) {

@@ -2,7 +2,7 @@
 
 use crate::{
     PaneActivityState, PaneBorderCache, PaneCommandState, PaneControlColours, PaneExitState,
-    PaneGeometryState, PaneIdentity, PaneOutputBaseState, PaneScrollbar,
+    PaneGeometryState, PaneIdentity, PaneScrollbar,
     PaneScrollbarStyleState, PaneSearchState, PaneStyleCache, PaneThemeState,
 };
 
@@ -24,7 +24,6 @@ pub trait WindowPane:
     + PaneScrollbar
     + PaneCommandState
     + PaneExitState
-    + PaneOutputBaseState
     + PaneStyleCache
     + PaneThemeState
     + PaneSearchState
@@ -61,17 +60,6 @@ pub trait WindowPane:
     /// Mutably borrows the pane's pseudo-terminal descriptor.
     fn fd_mut(&mut self) -> &mut core::ffi::c_int;
 
-    /// Borrows the pane's pipe descriptor.
-    fn pipe_fd(&self) -> &core::ffi::c_int;
-
-    /// Mutably borrows the pane's pipe descriptor.
-    fn pipe_fd_mut(&mut self) -> &mut core::ffi::c_int;
-
-    /// Borrows the pane's pipe process ID.
-    fn pipe_pid(&self) -> &crate::types::pid_t;
-
-    /// Mutably borrows the pane's pipe process ID.
-    fn pipe_pid_mut(&mut self) -> &mut crate::types::pid_t;
     /// Borrows the pane's optional option handle.
     fn options(&self) -> &Option<crate::options::RustOptionsRef>;
 
@@ -83,12 +71,6 @@ pub trait WindowPane:
 
     /// Mutably borrows the pane's pseudo-terminal stream handle.
     fn event_mut(&mut self) -> &mut crate::reactor::Stream;
-
-    /// Borrows the pane's output read position.
-    fn offset(&self) -> &crate::pane_output::RustPaneOutputOffset;
-
-    /// Mutably borrows the pane's output read position.
-    fn offset_mut(&mut self) -> &mut crate::pane_output::RustPaneOutputOffset;
 
     /// Resizes the base and active mode screens and queues the process resize,
     /// cancelling synchronized output. An unchanged size does nothing.
@@ -108,17 +90,40 @@ pub trait WindowPane:
     /// Mutably borrows the pane's input parser handle.
     fn ictx_mut(&mut self) -> &mut Option<crate::input::InputCtxRef>;
 
-    /// Borrows the pane's pipe stream handle.
-    fn pipe_event(&self) -> &crate::reactor::Stream;
+    /// Installs the PTY stream callbacks and parser, then enables input and output.
+    /// # Safety
+    /// The pane owns a valid PTY and has no existing live parser or stream.
+    unsafe fn initialize_io(&mut self);
 
-    /// Mutably borrows the pane's pipe stream handle.
-    fn pipe_event_mut(&mut self) -> &mut crate::reactor::Stream;
+    /// Returns the connected pipe process ID, or None when no pipe is open.
+    fn pipe_process(&self) -> Option<crate::types::pid_t>;
 
-    /// Borrows the pane's pipe read position.
-    fn pipe_offset(&self) -> &crate::pane_output::RustPaneOutputOffset;
+    /// Copies the current application-output reader position.
+    fn output_position(&self) -> crate::RustPaneOutputOffset;
 
-    /// Mutably borrows the pane's pipe read position.
-    fn pipe_offset_mut(&mut self) -> &mut crate::pane_output::RustPaneOutputOffset;
+    /// Returns bytes retained after a reader's position.
+    fn unread_output(&self, position: &crate::RustPaneOutputOffset) -> crate::reactor::ByteBuffer;
+
+    /// Returns the number of retained bytes after a reader's position.
+    fn unread_output_len(&self, position: &crate::RustPaneOutputOffset) -> usize;
+
+    /// Advances an independent reader by at most the available retained bytes.
+    fn advance_output(&self, position: &mut crate::RustPaneOutputOffset, size: usize);
+
+    /// Reclaims output consumed by the parser, pipe, and attached control clients,
+    /// rebasing their positions together on wrap and updating read backpressure.
+    /// # Safety
+    /// Exclude conflicting pane and client access while retained offsets change.
+    unsafe fn maintain_output(&mut self);
+
+    /// Parses newly retained output and advances the pane's parser position.
+    /// # Safety
+    /// Exclude conflicting pane and parser access during input callbacks.
+    unsafe fn parse_output(&mut self);
+
+    /// Tests whether exited process and pipe output have both drained.
+    fn destroy_ready(&self) -> bool;
+
     /// Borrows the pane's colour palette.
     fn palette(&self) -> &crate::types::colour_palette;
 

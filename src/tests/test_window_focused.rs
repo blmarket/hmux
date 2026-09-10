@@ -864,7 +864,7 @@ fn pane_removal_tears_down_resources_before_the_last_reference_drops() {
         let callback = on_pane(id, move |_| observed.set(observed.get() + 1));
         let (pipe, peer) = UnixStream::pair().unwrap();
         let fd = pipe.as_raw_fd();
-        *retained.get_mut().unwrap().pipe_fd_mut() = pipe.into_raw_fd();
+        crate::window_pane::install_pipe_for_test(retained.get_mut().unwrap(), pipe.into_raw_fd());
         retained.get_mut().unwrap().start_sync();
         let timer = crate::window_pane::sync_timer_for_test(retained.get().unwrap());
         assert!(timer.is_armed());
@@ -943,7 +943,7 @@ fn fixture_cleanup_retires_panes_without_closing_borrowed_descriptors() {
     let retained = window_pane_find_by_id(953).unwrap();
     unsafe {
         *(*pane.ptr()).fd_mut() = borrowed.as_raw_fd();
-        *(*pane.ptr()).pipe_fd_mut() = peer.as_raw_fd();
+        crate::window_pane::install_pipe_for_test(&mut *pane.ptr(), peer.as_raw_fd());
     }
     drop(fixture);
     assert!(window_pane_find_by_id(953).is_none());
@@ -1058,7 +1058,6 @@ fn directional_selection_retains_the_most_recent_candidate_and_preserves_first_t
 fn detached_pane() -> crate::tests::test_fixtures::PaneAllocation {
     let mut pane = crate::tests::test_fixtures::PaneAllocation::default();
     *pane.fd_mut() = -1;
-    *pane.pipe_fd_mut() = -1;
     pane
 }
 

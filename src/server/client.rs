@@ -118,7 +118,7 @@ use crate::window::window_pane_current_mode_mut;
 use crate::window::winlinks_into;
 use crate::window::{
     WINDOWS, window_get_active_at, window_pane_border_status_get_range, window_pane_find_by_id,
-    window_pane_get_new_size, window_pane_is_floating, window_pane_key, window_pane_paste,
+    window_pane_is_floating, window_pane_key, window_pane_paste,
     window_pane_send_resize, window_pane_send_theme_update, window_pane_set_mode,
     window_pane_show_scrollbar, window_redraw_active_switch, window_update_focus,
 };
@@ -1937,7 +1937,7 @@ pub fn server_client_loop() {
                 if pane.get().is_some_and(|wp| *wp.fd() != -1) {
                     pane.deliver_pending_resize();
                     if let Some(wp) = pane.get_mut() {
-                        server_client_check_pane_buffer(wp);
+                        wp.maintain_output();
                     }
                 }
                 if let Some(wp) = pane.get_mut() {
@@ -1986,104 +1986,6 @@ unsafe fn server_client_check_window_resize(w_ref: &WindowRef) {
             dimensions.pending_pixels.width as core::ffi::c_int,
             dimensions.pending_pixels.height as core::ffi::c_int,
         );
-    }
-}
-pub(crate) unsafe fn server_client_check_pane_buffer(wp: &mut (impl crate::WindowPane + ?Sized)) {
-    unsafe {
-        let mut minimum: size_t;
-        let mut off: core::ffi::c_int = 1 as core::ffi::c_int;
-        let mut attached_clients: u_int = 0 as u_int;
-        let mut new_size: size_t;
-        minimum = wp.offset().position();
-        if *wp.pipe_fd() != -(1 as core::ffi::c_int) && wp.pipe_offset().position() < minimum {
-            minimum = wp.pipe_offset().position();
-        }
-        for c in client_walk() {
-            if !c.attached_session().is_none() {
-                attached_clients = attached_clients.wrapping_add(1);
-                if !c.flags() & CLIENT_CONTROL as uint64_t != 0 {
-                    off = 0 as core::ffi::c_int;
-                } else {
-                    let (offset, flag) = control_pane_offset(c.as_client(), wp);
-                    if flag == 0 {
-                        off = 0;
-                    }
-                    if let Some(wpo) = offset {
-                        new_size = window_pane_get_new_size(wp, wpo);
-                        log_debug(
-                            c"%s: %s has %zu bytes used and %zu left for %%%u",
-                            fmt_args![
-                                c"server_client_check_pane_buffer".as_ptr(),
-                                c.name(),
-                                wpo.position().wrapping_sub(wp.output_base()),
-                                new_size,
-                                wp.pane_id()
-                            ],
-                        );
-                        if wpo.position() < minimum {
-                            minimum = wpo.position();
-                        }
-                    }
-                }
-            }
-        }
-        if attached_clients == 0 as u_int {
-            off = 0 as core::ffi::c_int;
-        }
-        minimum = minimum.wrapping_sub(wp.output_base());
-        if !(minimum == 0 as size_t) {
-            log_debug(
-                c"%s: %%%u has %zu minimum (of %zu) bytes used",
-                fmt_args![
-                    c"server_client_check_pane_buffer".as_ptr(),
-                    wp.pane_id(),
-                    minimum,
-                    wp.event().input_len()
-                ],
-            );
-            wp.event().with_input(|buffer| buffer.drain(minimum));
-            let output_base = wp.output_base();
-            if output_base > (SIZE_MAX as size_t).wrapping_sub(minimum) {
-                log_debug(
-                    c"%s: %%%u base offset has wrapped",
-                    fmt_args![c"server_client_check_pane_buffer".as_ptr(), wp.pane_id()],
-                );
-                wp.offset_mut().rebase(output_base);
-                if *wp.pipe_fd() != -(1 as core::ffi::c_int) {
-                    wp.pipe_offset_mut().rebase(output_base);
-                }
-                for mut c in client_walk() {
-                    if !(c.attached_session().is_none()
-                        || !c.flags() & CLIENT_CONTROL as uint64_t != 0)
-                    {
-                        let (offset, flag) = control_pane_offset_mut(c.as_client_mut(), wp);
-                        if let Some(offset) = offset.filter(|_| flag == 0) {
-                            offset.rebase(output_base);
-                        }
-                    }
-                }
-                wp.set_output_base(minimum);
-            } else {
-                wp.set_output_base(output_base.wrapping_add(minimum));
-            }
-        }
-        log_debug(
-            c"%s: pane %%%u is %s",
-            fmt_args![
-                c"server_client_check_pane_buffer".as_ptr(),
-                wp.pane_id(),
-                if off != 0 {
-                    c"off".as_ptr()
-                } else {
-                    c"on".as_ptr()
-                }
-            ],
-        );
-        if off != 0 {
-            wp.event().disable(Interest::Read);
-        } else {
-            wp.event().enable(Interest::Read);
-        };
     }
 }
 unsafe fn server_client_reset_state(c: &mut client) {

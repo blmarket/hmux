@@ -1,3 +1,4 @@
+pub(crate) use crate::window_pane::{on_pane, on_pane_error};
 use crate::window_pane::{GLOBAL_PANE_INDEX, window_pane_create, window_pane_destroy};
 #[cfg(test)]
 use crate::window_pane::{GlobalPaneIndex, next_window_pane_id};
@@ -24,7 +25,7 @@ use crate::grid::grid_view_string_cells;
 use crate::grid::{grid_cells_look_equal, grid_default_cell};
 use crate::input::InputOwner;
 use crate::input::input_key_pane;
-use crate::input::{input_parse_buffer, input_parse_pane};
+use crate::input::{input_parse_buffer};
 use crate::layout::layout_free_cell;
 use crate::log::{fatal, fatalx, log_debug, log_get_level};
 use crate::notify::{notify_pane, notify_window};
@@ -1035,24 +1036,6 @@ pub fn winlink_stack_remove(stack: &mut winlink_stack, wl: Option<&mut winlink>)
     }
 }
 
-pub unsafe fn window_pane_destroy_ready(wp: &(impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
-    unsafe {
-        let mut n: core::ffi::c_int = 0;
-        if *wp.pipe_fd() != -(1 as core::ffi::c_int) && wp.pipe_event().output_len() != 0 as size_t
-        {
-            return 0 as core::ffi::c_int;
-        }
-        if ioctl(*wp.fd(), FIONREAD as core::ffi::c_ulong, &raw mut n) != -(1 as core::ffi::c_int)
-            && n > 0 as core::ffi::c_int
-        {
-            return 0 as core::ffi::c_int;
-        }
-        if !*wp.flags() & PANE_EXITED != 0 {
-            return 0 as core::ffi::c_int;
-        }
-        1 as core::ffi::c_int
-    }
-}
 
 impl WindowRef {
     /// Updates the window dimensions without rearranging its layout or panes.
@@ -1598,95 +1581,8 @@ pub(crate) fn window_pane_set_window(wp: &mut (impl crate::WindowPane + ?Sized),
     }
 }
 
-fn window_pane_read_callback(wp: &mut dyn crate::WindowPane) {
-    unsafe {
-        let size = wp.event().input_len();
-        let new_size: size_t;
-        if *wp.pipe_fd() != -(1 as core::ffi::c_int) {
-            let mut new_data = window_pane_get_new_data(wp, wp.pipe_offset());
-            new_size = new_data.len();
-            if new_size > 0 as size_t {
-                wp.pipe_event().write_buffer(&mut new_data);
-                let mut pipe_offset = *wp.pipe_offset();
-                window_pane_update_used_data(wp, &mut pipe_offset, new_size);
-                *wp.pipe_offset_mut() = pipe_offset;
-            }
-        }
-        log_debug(c"%%%u has %zu bytes", fmt_args![wp.pane_id(), size]);
-        for mut c in client_walk() {
-            if !c.attached_session().is_none() && c.flags() & CLIENT_CONTROL as uint64_t != 0 {
-                control_write_output(c.as_client_mut(), wp);
-            }
-        }
-        input_parse_pane(wp);
-        wp.event().disable(Interest::Read);
-    }
-}
-fn window_pane_error_callback(wp: &mut dyn crate::WindowPane) {
-    unsafe {
-        log_debug(c"%%%u error", fmt_args![wp.pane_id()]);
-        *wp.flags_mut() |= PANE_EXITED;
-        if window_pane_destroy_ready(wp) != 0 {
-            server_destroy_pane(
-                &(wp).observation().expect("the pane is owned"),
-                1 as core::ffi::c_int,
-            );
-        }
-    }
-}
 /// A stream callback that weakly observes its pane and skips removed or
 /// temporarily detached panes without retaining their allocation.
-pub(crate) fn on_pane(
-    id: u_int,
-    body: impl Fn(&mut dyn crate::WindowPane) + 'static,
-) -> std::rc::Rc<dyn Fn(Stream)> {
-    let observed = window_pane_find_by_id(id);
-    std::rc::Rc::new(move |_stream| unsafe {
-        if let Some(mut pane) = observed.clone()
-            && pane.listed_window().is_some()
-            && let Some(wp) = pane.get_mut()
-        {
-            body(wp);
-        }
-    })
-}
-
-/// The same, for the callback a failed stream makes.
-pub(crate) fn on_pane_error(
-    id: u_int,
-    body: impl Fn(&mut dyn crate::WindowPane) + 'static,
-) -> std::rc::Rc<dyn Fn(Stream, core::ffi::c_short)> {
-    let observed = window_pane_find_by_id(id);
-    std::rc::Rc::new(move |_stream, _what| unsafe {
-        if let Some(mut pane) = observed.clone()
-            && pane.listed_window().is_some()
-            && let Some(wp) = pane.get_mut()
-        {
-            body(wp);
-        }
-    })
-}
-
-pub unsafe fn window_pane_set_event(wp: &mut (impl crate::WindowPane + ?Sized)) {
-    unsafe {
-        setblocking(*wp.fd(), 0 as core::ffi::c_int);
-        let id = wp.pane_id();
-        *wp.event_mut() = Stream::new(
-            *wp.fd(),
-            Some(on_pane(id, window_pane_read_callback)),
-            None,
-            Some(on_pane_error(id, window_pane_error_callback)),
-        );
-        if wp.event().is_none() {
-            fatalx(c"out of memory", fmt_args![]);
-        }
-        *wp.ictx_mut() = Some(InputCtxRef::create(
-            InputOwner::Pane(wp.pane_id()),
-            *wp.event(),
-        ));
-        wp.event().enable(Interest::ReadWrite);
-    }
-}
 pub unsafe fn window_pane_set_mode(
     wp: &mut (impl crate::WindowPane + ?Sized),
     source_pane: Option<RustWindowPaneWeak>,
@@ -2509,33 +2405,6 @@ pub unsafe fn window_pane_start_input(
         cdata.with_mut(|cdata| cdata.file = file);
         Ok(0 as core::ffi::c_int)
     }
-}
-/// How many bytes a reader at `wpo` has not taken yet.
-pub fn window_pane_get_new_size(wp: &(impl crate::WindowPane + ?Sized), wpo: &RustPaneOutputOffset) -> size_t {
-    let used = wpo.position().wrapping_sub(wp.output_base());
-    wp.event().input_len().wrapping_sub(used)
-}
-/// An owned view of the bytes a reader at `wpo` has not taken yet.
-pub fn window_pane_get_new_data(
-    wp: &(impl crate::WindowPane + ?Sized),
-    wpo: &RustPaneOutputOffset,
-) -> ByteBuffer {
-    let used = wpo.position().wrapping_sub(wp.output_base());
-    let size = window_pane_get_new_size(wp, wpo);
-    wp.event()
-        .with_input(|buffer| buffer.slice(used, size))
-        .unwrap_or_default()
-}
-pub fn window_pane_update_used_data(
-    wp: &(impl crate::WindowPane + ?Sized),
-    wpo: &mut RustPaneOutputOffset,
-    mut size: size_t,
-) {
-    let used: size_t = wpo.position().wrapping_sub(wp.output_base());
-    if size > wp.event().input_len().wrapping_sub(used) {
-        size = wp.event().input_len().wrapping_sub(used);
-    }
-    wpo.advance(size);
 }
 pub fn window_set_fill_character(w: &mut window) {
     {

@@ -1,3 +1,4 @@
+use super::{window_pane, on_pane_owned as on_pane, on_pane_error_owned as on_pane_error};
 use crate::WindowPane;
 use crate::compat::error_message;
 pub use crate::consts::{
@@ -17,8 +18,6 @@ use crate::server::server_destroy_pane;
 use crate::server::server_process;
 use crate::tmux::setblocking;
 use crate::types::*;
-use crate::window::window_pane_destroy_ready;
-use crate::window::{on_pane, on_pane_error};
 
 pub(crate) struct PanePipePair([core::ffi::c_int; 2]);
 
@@ -62,14 +61,14 @@ impl RustWindowPaneWeak {
     /// Exclude conflicting pane and pipe access. Destruction runs after releasing the pane owner.
     pub(crate) unsafe fn close_pipe(&self) -> Option<PanePipeClosed> {
         let mut owner = self.upgrade()?;
-        let pane = unsafe { owner.as_pane_mut() };
-        let was_open = *pane.pipe_fd() != -1;
+        let pane = unsafe { &mut *owner.0.pane.get() };
+        let was_open = pane.pipe_fd != -1;
         let mut removed = false;
         if was_open {
-            pane.pipe_event().free();
-            unsafe { close(*pane.pipe_fd()) };
-            *pane.pipe_fd_mut() = -1;
-            removed = unsafe { window_pane_destroy_ready(pane) != 0 };
+            pane.pipe_event.free();
+            unsafe { close(pane.pipe_fd) };
+            pane.pipe_fd = -1;
+            removed = unsafe { pane.destroy_ready() };
         }
         drop(owner);
         if removed {
@@ -90,15 +89,15 @@ impl RustWindowPaneWeak {
         let Some(mut owner) = self.upgrade() else {
             return Ok(());
         };
-        let wp = unsafe { owner.as_pane_mut() };
+        let wp = unsafe { &mut *owner.0.pane.get() };
         let pipe_fd = core::mem::replace(&mut pair.0, [-1; 2]);
         let null_fd: core::ffi::c_int;
         let mut set: sigset_t = __sigset_t { __val: [0; 16] };
         let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
         unsafe { sigfillset(&raw mut set) };
         unsafe { sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset) };
-        unsafe { *wp.pipe_pid_mut() = fork() as pid_t };
-        match *wp.pipe_pid() {
+        unsafe { wp.pipe_pid = fork() as pid_t };
+        match wp.pipe_pid {
             -1 => {
                 unsafe {
                     sigprocmask(
@@ -185,40 +184,40 @@ impl RustWindowPaneWeak {
                     )
                 };
                 unsafe { close(pipe_fd[1 as core::ffi::c_int as usize]) };
-                *wp.pipe_fd_mut() = pipe_fd[0 as core::ffi::c_int as usize];
-                *wp.pipe_offset_mut() = *wp.offset();
-                setblocking(*wp.pipe_fd(), 0 as core::ffi::c_int);
+                wp.pipe_fd = pipe_fd[0 as core::ffi::c_int as usize];
+                wp.pipe_offset = wp.offset;
+                setblocking(wp.pipe_fd, 0 as core::ffi::c_int);
                 let id = wp.pane_id();
-                *wp.pipe_event_mut() = Stream::new(
-                    *wp.pipe_fd(),
+                wp.pipe_event = Stream::new(
+                    wp.pipe_fd,
                     Some(on_pane(id, cmd_pipe_pane_read_callback)),
                     Some(on_pane(id, cmd_pipe_pane_write_callback)),
                     Some(on_pane_error(id, cmd_pipe_pane_error_callback)),
                 );
-                if wp.pipe_event().is_none() {
+                if wp.pipe_event.is_none() {
                     fatalx(c"out of memory", fmt_args![]);
                 }
                 if out != 0 {
-                    wp.pipe_event().enable(Interest::Write);
+                    wp.pipe_event.enable(Interest::Write);
                 }
                 if in_0 != 0 {
-                    wp.pipe_event().enable(Interest::Read);
+                    wp.pipe_event.enable(Interest::Read);
                 }
                 Ok(())
             }
         }
     }
 }
-fn cmd_pipe_pane_read_callback(wp: &mut dyn crate::WindowPane) {
+fn cmd_pipe_pane_read_callback(wp: &mut window_pane) {
     unsafe {
         let data = wp
-            .pipe_event()
+            .pipe_event
             .with_input(|buffer| buffer.copy_to_bytes(buffer.len()))
             .unwrap_or_default();
         let available = data.len();
         log_debug(c"%%%u pipe read %zu", fmt_args![wp.pane_id(), available]);
         wp.event().write(&data);
-        if window_pane_destroy_ready(wp) != 0 {
+        if wp.destroy_ready() {
             server_destroy_pane(
                 &(wp).observation().expect("the pane is owned"),
                 1 as core::ffi::c_int,
@@ -226,10 +225,10 @@ fn cmd_pipe_pane_read_callback(wp: &mut dyn crate::WindowPane) {
         }
     }
 }
-fn cmd_pipe_pane_write_callback(wp: &mut dyn crate::WindowPane) {
+fn cmd_pipe_pane_write_callback(wp: &mut window_pane) {
     unsafe {
         log_debug(c"%%%u pipe empty", fmt_args![wp.pane_id()]);
-        if window_pane_destroy_ready(wp) != 0 {
+        if wp.destroy_ready() {
             server_destroy_pane(
                 &(wp).observation().expect("the pane is owned"),
                 1 as core::ffi::c_int,
@@ -237,13 +236,13 @@ fn cmd_pipe_pane_write_callback(wp: &mut dyn crate::WindowPane) {
         }
     }
 }
-fn cmd_pipe_pane_error_callback(wp: &mut dyn crate::WindowPane) {
+fn cmd_pipe_pane_error_callback(wp: &mut window_pane) {
     unsafe {
         log_debug(c"%%%u pipe error", fmt_args![wp.pane_id()]);
-        wp.pipe_event().free();
-        close(*wp.pipe_fd());
-        *wp.pipe_fd_mut() = -(1 as core::ffi::c_int);
-        if window_pane_destroy_ready(wp) != 0 {
+        wp.pipe_event.free();
+        close(wp.pipe_fd);
+        wp.pipe_fd = -(1 as core::ffi::c_int);
+        if wp.destroy_ready() {
             server_destroy_pane(
                 &(wp).observation().expect("the pane is owned"),
                 1 as core::ffi::c_int,

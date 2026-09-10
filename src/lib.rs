@@ -99,7 +99,6 @@ pub mod pane_exit;
 pub mod pane_geometry;
 pub mod pane_identity;
 pub mod pane_output;
-pub mod pane_output_base;
 pub mod pane_resize;
 pub mod pane_scrollbar;
 pub mod pane_scrollbar_style;
@@ -307,7 +306,6 @@ pub use pane_exit::{PaneExitState, };
 pub use pane_geometry::{PaneGeometry, PaneGeometryState, };
 pub use pane_identity::PaneIdentity;
 pub use pane_output::{PaneOutputOffset, RustPaneOutputOffset};
-pub use pane_output_base::{PaneOutputBaseState, };
 pub use pane_resize::{PaneResizeQueue, PaneResizeStep, PaneSize, RustPaneResizeQueue};
 pub use pane_scrollbar::{PaneScrollbar, PaneScrollbarSlider, };
 pub use pane_scrollbar_style::{

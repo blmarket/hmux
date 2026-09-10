@@ -2109,7 +2109,7 @@ unsafe fn format_cb_pane_pipe(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        if *wp.pipe_fd() != -(1 as core::ffi::c_int) {
+        if wp.pipe_process().is_some() {
             return Some(format_callback_copy(c"1"));
         }
         Some(format_callback_copy(c"0"))
@@ -2119,10 +2119,10 @@ unsafe fn format_cb_pane_pipe_pid(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        if *wp.pipe_fd() != -(1 as core::ffi::c_int) {
+        if wp.pipe_process().is_some() {
             return Some(xasprintf(
                 c"%ld",
-                fmt_args![*wp.pipe_pid() as core::ffi::c_long],
+                fmt_args![wp.pipe_process().unwrap() as core::ffi::c_long],
             ));
         }
         None

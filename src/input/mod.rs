@@ -14,7 +14,7 @@ pub use keys::{
 
 pub use parser::{
     InputCtxRef, InputOwner, ictx_mut, input_cancel_requests, input_ctx, input_parse_buffer,
-    input_parse_pane, input_request, input_request_handle, input_set_buffer_size,
+    input_request, input_request_handle, input_set_buffer_size,
 };
 
 #[cfg(test)]

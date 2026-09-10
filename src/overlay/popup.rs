@@ -38,7 +38,7 @@ use crate::tmux::{global_options, global_w_options};
 use crate::tty::tty_draw_line;
 use crate::tty::tty_resize;
 pub use crate::types::*;
-use crate::window::{window_add_pane, window_pane_set_event};
+use crate::window::{window_add_pane};
 use crate::xmalloc::xasprintf;
 use ::core::ffi::CStr;
 use ::std::ffi::OsStr;
@@ -494,7 +494,7 @@ unsafe fn popup_make_pane(pd: &mut popup_data, type_0: layout_type) {
         let mut command = new.pane_command();
         command.shell = Some(shell.to_owned());
         new.set_pane_command(&command);
-        window_pane_set_event(new);
+        new.initialize_io();
         owner.set_active_pane(
             &crate::window::window_pane_find_by_id(new_id).expect("the selected pane exists"),
             1,

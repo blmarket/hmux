@@ -238,8 +238,7 @@ impl RustWindowPaneWeak {
 mod capture;
 pub(crate) use capture::{CapturePaneEdge, PaneCapture};
 
-mod pipe;
-pub(crate) use pipe::PanePipePair;
+pub(crate) use crate::window_pane::PanePipePair;
 
 impl RustWindowPaneWeak {
     /// # Safety
@@ -268,7 +267,7 @@ impl RustWindowPaneWeak {
     #[cfg(test)]
     pub(crate) unsafe fn output_offset(&self) -> Option<crate::RustPaneOutputOffset> {
         let owner = self.upgrade()?;
-        Some(*unsafe { owner.as_pane() }.offset())
+        Some(unsafe { owner.as_pane() }.output_position())
     }
 }
 

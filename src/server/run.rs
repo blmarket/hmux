@@ -37,7 +37,7 @@ use crate::tmux::{get_timer, setblocking};
 use crate::tmux::{global_options, socket_path, start_time};
 use crate::tty::tty_create_log;
 pub use crate::types::*;
-use crate::window::{WINDOWS, window_pane_destroy_ready};
+use crate::window::{WINDOWS};
 use crate::xmalloc::xasprintf;
 use ::core::ffi::CStr;
 use ::std::ffi::{CString, OsStr};
@@ -684,7 +684,7 @@ fn server_child_exited(pid: pid_t, status: core::ffi::c_int) {
             *wp.flags_mut() |= PANE_STATUSREADY;
             log_debug(c"%%%u exited", fmt_args![pane_id]);
             *wp.flags_mut() |= PANE_EXITED;
-            if window_pane_destroy_ready(wp) != 0 {
+            if wp.destroy_ready() {
                 let pane = (wp).observation().expect("the pane is owned");
                 drop(window);
                 server_destroy_pane(&pane, 1);

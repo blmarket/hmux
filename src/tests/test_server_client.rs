@@ -5,7 +5,6 @@ use crate::environ::new_environment_box;
 use crate::options::OptionsRef;
 use crate::pane_geometry::PaneGeometryState;
 use crate::pane_output::PaneOutputOffset;
-use crate::pane_output_base::PaneOutputBaseState;
 use crate::pane_resize::{PaneResizeQueue, PaneSize};
 use crate::tests::test_fixtures::{Clients, Target, globals, zeroed_term};
 use crate::window_dimensions::WindowDimensionsState;
@@ -849,12 +848,10 @@ fn pane_buffer_and_attached_lost_cover_empty_consumers_and_latest_client_reselec
 
         (*missing).set_attached_session(None);
         let wp = &mut *target.pane(0);
-        let output_base = wp.output_base();
-        wp.offset_mut().set_position(output_base);
-        server_client_check_pane_buffer(wp);
+        wp.maintain_output();
         (*first).set_attached_session(None);
         (*second).set_attached_session(None);
-        server_client_check_pane_buffer(wp);
+        wp.maintain_output();
     }
 }
 

@@ -16,7 +16,6 @@ use crate::tmux::{get_timer, setblocking};
 pub use crate::types::*;
 use crate::window::{RustWindowPaneWeak, window_pane_find_by_id, winlinks_in};
 use crate::window::{
-    window_pane_get_new_data, window_pane_get_new_size, window_pane_update_used_data,
 };
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
@@ -141,8 +140,8 @@ fn control_add_pane<'a>(
     cs.panes.entry(wp.pane_id()).or_insert_with(|| {
         Box::new(control_pane {
             pane: wp.pane_id(),
-            offset: *wp.offset(),
-            queued: *wp.offset(),
+            offset: wp.output_position(),
+            queued: wp.output_position(),
             flags: 0,
             pending_flag: 0,
             blocks: control_pane_blocks::new(),
@@ -237,15 +236,15 @@ pub fn control_set_pane_on(c: &mut client, wp: &(impl crate::WindowPane + ?Sized
         && cp.flags & CONTROL_PANE_OFF != 0
     {
         cp.flags &= !CONTROL_PANE_OFF;
-        cp.offset = *wp.offset();
-        cp.queued = *wp.offset();
+        cp.offset = wp.output_position();
+        cp.queued = wp.output_position();
     }
 }
 pub fn control_set_pane_off(c: &mut client, wp: &(impl crate::WindowPane + ?Sized)) {
     let cs = control_state_mut(c);
     let cp = control_add_pane(cs, wp);
-    cp.offset = *wp.offset();
-    cp.queued = *wp.offset();
+    cp.offset = wp.output_position();
+    cp.queued = wp.output_position();
     cp.flags |= CONTROL_PANE_OFF;
     control_discard_pane(cs, wp.pane_id());
 }
@@ -254,8 +253,8 @@ pub fn control_continue_pane(c: &mut client, wp: &(impl crate::WindowPane + ?Siz
         && cp.flags & CONTROL_PANE_PAUSED != 0
     {
         cp.flags &= !CONTROL_PANE_PAUSED;
-        cp.offset = *wp.offset();
-        cp.queued = *wp.offset();
+        cp.offset = wp.output_position();
+        cp.queued = wp.output_position();
         control_write(c, c"%%continue %%%u", fmt_args![wp.pane_id()]);
     }
 }
@@ -390,8 +389,8 @@ pub unsafe fn control_write_output(c: &mut client, wp: &(impl crate::WindowPane 
                 c"%s: %s: ignoring pane %%%u",
                 fmt_args![c"control_write_output", c.name.as_deref(), wp.pane_id()],
             );
-            window_pane_update_used_data(wp, &mut cp.offset, SIZE_MAX as size_t);
-            window_pane_update_used_data(wp, &mut cp.queued, SIZE_MAX as size_t);
+            wp.advance_output(&mut cp.offset, SIZE_MAX as size_t);
+            wp.advance_output(&mut cp.queued, SIZE_MAX as size_t);
             return;
         }
         if control_check_age(c, wp) != 0 {
@@ -405,11 +404,11 @@ pub unsafe fn control_write_output(c: &mut client, wp: &(impl crate::WindowPane 
             .panes
             .get_mut(&wp.pane_id())
             .expect("the control pane is present");
-        let new_size = window_pane_get_new_size(wp, &cp.queued);
+        let new_size = wp.unread_output_len(&cp.queued);
         if new_size == 0 {
             return;
         }
-        window_pane_update_used_data(wp, &mut cp.queued, new_size);
+        wp.advance_output(&mut cp.queued, new_size);
         let block = control_insert_block(
             cs,
             Box::new(control_block {
@@ -583,7 +582,7 @@ fn control_append_data(
                 message
             }
         };
-        let mut new_data = window_pane_get_new_data(wp, &cp.offset);
+        let mut new_data = wp.unread_output(&cp.offset);
         let new_size = new_data.len();
         if new_size < size {
             fatalx(c"not enough data: %zu < %zu", fmt_args![new_size, size]);
@@ -613,7 +612,7 @@ fn control_append_data(
             new_data.advance(take);
             remaining -= take;
         }
-        window_pane_update_used_data(wp, &mut cp.offset, size);
+        wp.advance_output(&mut cp.offset, size);
         Some(message)
     }
 }
@@ -1313,7 +1312,7 @@ mod focused_tests {
         let mut ctx = ControlCtx::new();
         let mut pane = zeroed_pane();
         pane.set_pane_id(71);
-        pane.offset_mut().set_position(90);
+        pane.set_output_position(90);
         {
             assert!(control_get_pane(ctx.state(), &*pane).is_none());
             control_add_pane(ctx.state(), &*pane);
@@ -1340,7 +1339,7 @@ mod focused_tests {
                 0
             );
             assert_eq!(control_pane_offset(ctx.client(), &*pane).1, 1);
-            pane.offset_mut().set_position(101);
+            pane.set_output_position(101);
             control_set_pane_on(ctx.client(), &*pane);
             assert_eq!(
                 ctx.state()
@@ -1357,7 +1356,7 @@ mod focused_tests {
                 0
             );
             control_pause_pane(ctx.client(), &*pane);
-            pane.offset_mut().set_position(110);
+            pane.set_output_position(110);
             control_continue_pane(ctx.client(), &*pane);
             assert_eq!(
                 ctx.state()
@@ -1515,7 +1514,7 @@ mod focused_tests {
         let mut ctx = ControlCtx::new();
         let mut pane = zeroed_pane();
         pane.set_pane_id(89);
-        pane.offset_mut().set_position(90);
+        pane.set_output_position(90);
         control_add_pane(ctx.state(), &*pane);
         let (offset, full) = control_pane_offset_mut(ctx.client(), &*pane);
         assert_eq!(full, 0);
@@ -1527,7 +1526,7 @@ mod focused_tests {
                 .position(),
             50
         );
-        assert_eq!(pane.offset().position(), 90);
+        assert_eq!(pane.output_position().position(), 90);
         control_set_pane_off(ctx.client(), &*pane);
         let (offset, full) = control_pane_offset_mut(ctx.client(), &*pane);
         assert!(offset.is_none());

@@ -397,7 +397,7 @@ fn control_pane_state_transitions() {
     let mut fc = FakeControl::new();
     let mut wp = zeroed_pane();
     wp.set_pane_id(5);
-    *wp.offset_mut() = RustPaneOutputOffset::at(100);
+    wp.set_output_position(100);
     unsafe {
         control_set_pane_off(&mut *fc.ptr(), &*wp);
         control_set_pane_on(&mut *fc.ptr(), &*wp);

@@ -59,7 +59,7 @@ use crate::tmux::{global_options, ptm_fd};
 pub use crate::types::*;
 use crate::window::{WinlinkRef, window_set_latest};
 use crate::window::{
-    window_add_pane, window_pane_reset_mode_all, window_pane_set_event,
+    window_add_pane, window_pane_reset_mode_all, 
     window_panes_insert_head, winlink_remove, winlink_stack_remove,
 };
 use crate::xmalloc::xasprintf;
@@ -643,7 +643,7 @@ pub(crate) unsafe fn spawn_pane(
             &raw mut oldset,
             core::ptr::null_mut::<sigset_t>(),
         );
-        window_pane_set_event(new_wp);
+        new_wp.initialize_io();
         if sc.flags & SPAWN_RESPAWN != 0 {
             return Some(new_pane);
         }

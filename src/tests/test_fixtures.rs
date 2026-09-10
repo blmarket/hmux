@@ -898,7 +898,6 @@ impl Pane {
             height: sy,
         });
         *pane.fd_mut() = -1;
-        *pane.pipe_fd_mut() = -1;
         {
             *pane.base_mut() = RustScreen::new_with_server_options(sx, sy, hlimit);
             pane.publish_border_status(0, RustScreen::new_with_server_options(1, 1, 0), Vec::new(), c"".to_owned());

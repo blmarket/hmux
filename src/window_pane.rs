@@ -14,7 +14,7 @@ use std::rc::{Rc, Weak};
 use crate::grid::grid_default_cell;
 use crate::handle_registry::HandleRegistration;
 use crate::screen::RustScreen;
-use crate::Screen;
+use crate::{Screen, PaneOutputOffset};
 use crate::types::*;
 use crate::{
     PaneBorderKind, PaneCommand, PaneControlColourPair, PaneGeometry, PaneScrollbarSlider,
@@ -384,10 +384,6 @@ impl crate::pane_command::PaneCommandState for window_pane {
     fn clear_pane_command(&mut self) { self.argv.clear(); self.shell = None; self.cwd = None; }
 }
 
-impl crate::pane_output_base::PaneOutputBaseState for window_pane {
-    fn output_base(&self) -> usize { self.base_offset }
-    fn set_output_base(&mut self, position: usize) { self.base_offset = position; }
-}
 
 impl crate::pane_activity::PaneActivityState for window_pane {
     fn activity_point(&self) -> u_int { self.active_point }
@@ -447,18 +443,6 @@ impl crate::WindowPane for window_pane {
     fn fd_mut(&mut self) -> &mut core::ffi::c_int {
         &mut self.fd
     }
-    fn pipe_fd(&self) -> &core::ffi::c_int {
-        &self.pipe_fd
-    }
-    fn pipe_fd_mut(&mut self) -> &mut core::ffi::c_int {
-        &mut self.pipe_fd
-    }
-    fn pipe_pid(&self) -> &crate::types::pid_t {
-        &self.pipe_pid
-    }
-    fn pipe_pid_mut(&mut self) -> &mut crate::types::pid_t {
-        &mut self.pipe_pid
-    }
     fn options(&self) -> &Option<crate::options::RustOptionsRef> {
         &self.options
     }
@@ -473,12 +457,6 @@ impl crate::WindowPane for window_pane {
         &mut self.event
     }
 
-    fn offset(&self) -> &crate::pane_output::RustPaneOutputOffset {
-        &self.offset
-    }
-    fn offset_mut(&mut self) -> &mut crate::pane_output::RustPaneOutputOffset {
-        &mut self.offset
-    }
 
     unsafe fn resize(&mut self, size: PaneSize) {
         let old = PaneSize { width: self.sx, height: self.sy };
@@ -516,18 +494,46 @@ impl crate::WindowPane for window_pane {
         &mut self.ictx
     }
 
-    fn pipe_event(&self) -> &crate::reactor::Stream {
-        &self.pipe_event
-    }
-    fn pipe_event_mut(&mut self) -> &mut crate::reactor::Stream {
-        &mut self.pipe_event
-    }
 
-    fn pipe_offset(&self) -> &crate::pane_output::RustPaneOutputOffset {
-        &self.pipe_offset
+    unsafe fn initialize_io(&mut self) {
+        crate::tmux::setblocking(self.fd, 0);
+        self.event = Stream::new(self.fd,
+            Some(on_pane_owned(self.id, output::window_pane_read_callback)), None,
+            Some(on_pane_error_owned(self.id, output::window_pane_error_callback)));
+        if self.event.is_none() { crate::log::fatalx(c"out of memory", crate::fmt_args![]); }
+        self.ictx = Some(unsafe { crate::input::InputCtxRef::create(crate::input::InputOwner::Pane(self.id), self.event) });
+        self.event.enable(crate::reactor::Interest::ReadWrite);
     }
-    fn pipe_offset_mut(&mut self) -> &mut crate::pane_output::RustPaneOutputOffset {
-        &mut self.pipe_offset
+    fn pipe_process(&self) -> Option<pid_t> { (self.pipe_fd != -1).then_some(self.pipe_pid) }
+    fn output_position(&self) -> crate::RustPaneOutputOffset { self.offset }
+    fn unread_output_len(&self, position: &crate::RustPaneOutputOffset) -> usize {
+        use crate::PaneOutputOffset;
+        self.event.input_len().wrapping_sub(position.position().wrapping_sub(self.base_offset))
+    }
+    fn unread_output(&self, position: &crate::RustPaneOutputOffset) -> crate::reactor::ByteBuffer {
+        use crate::PaneOutputOffset;
+        let used = position.position().wrapping_sub(self.base_offset);
+        let size = self.unread_output_len(position);
+        self.event.with_input(|buffer| buffer.slice(used, size)).unwrap_or_default()
+    }
+    fn advance_output(&self, position: &mut crate::RustPaneOutputOffset, size: usize) {
+        use crate::PaneOutputOffset;
+        position.advance(size.min(self.unread_output_len(position)));
+    }
+    unsafe fn maintain_output(&mut self) { unsafe { output::maintain_output(self) } }
+    unsafe fn parse_output(&mut self) {
+        let input = self.unread_output(&self.offset);
+        let size = input.len();
+        unsafe { crate::input::input_parse_buffer(self, input) };
+        let mut offset = self.offset;
+        self.advance_output(&mut offset, size);
+        self.offset = offset;
+    }
+    fn destroy_ready(&self) -> bool {
+        let mut remaining: c_int = 0;
+        if self.pipe_fd != -1 && self.pipe_event.output_len() != 0 { return false; }
+        if unsafe { crate::ffi::ioctl(self.fd, crate::window::FIONREAD as core::ffi::c_ulong, &raw mut remaining) } != -1 && remaining > 0 { return false; }
+        self.flags & crate::window::PANE_EXITED != 0
     }
     fn palette(&self) -> &crate::types::colour_palette {
         &self.palette
@@ -747,7 +753,7 @@ pub(crate) unsafe fn window_pane_create(
             width: sx,
             height: sy,
         });
-        *(*wp).pipe_fd_mut() = -(1 as core::ffi::c_int);
+        (*wp).pipe_fd = -(1 as core::ffi::c_int);
         let scrollbar_style = pane_scrollbar_style_from_option((*wp).options_ref());
         (*wp).set_scrollbar_style(scrollbar_style);
         RustColourEngine.init_palette((*wp).palette_mut());
@@ -787,10 +793,10 @@ pub(crate) unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
             ictx.close();
         }
         wp.r_mut().ranges.clear();
-        if *wp.pipe_fd() != -(1 as core::ffi::c_int) {
-            wp.pipe_event().free();
-            close(*wp.pipe_fd());
-            *wp.pipe_fd_mut() = -1;
+        if wp.pipe_fd != -(1 as core::ffi::c_int) {
+            wp.pipe_event.free();
+            close(wp.pipe_fd);
+            wp.pipe_fd = -1;
         }
         wp.resize_timer.disarm();
         wp.sync_timer.disarm();
@@ -829,6 +835,7 @@ impl Default for PaneAllocation {
 
 #[cfg(test)]
 impl PaneAllocation {
+    pub(crate) fn set_output_position(&mut self, position: usize) { self.0.get_mut().offset = crate::RustPaneOutputOffset::at(position); }
     pub(crate) fn set_pane_id(&mut self, id: u32) { self.0.get_mut().id = id; }
     pub(crate) fn into_owner(self) -> RustWindowPaneRef { RustWindowPaneRef::from_pane(self.0) }
 }
@@ -895,4 +902,58 @@ impl RustWindowPaneWeak {
 pub(crate) fn resize_timer_for_test(pane: &dyn WindowPane) -> TimerHandle {
     let owner = pane.observation().unwrap().upgrade().unwrap();
     unsafe { (*owner.0.pane.get()).resize_timer }
+}
+
+mod output;
+mod pipe;
+pub(crate) use pipe::PanePipePair;
+
+impl RustWindowPaneWeak {
+    unsafe fn payload_mut(&mut self) -> Option<&mut window_pane> {
+        let allocation = self.allocation.upgrade()?;
+        Some(unsafe { &mut *allocation.pane.get() })
+    }
+}
+fn on_pane_owned(
+    id: u_int,
+    body: impl Fn(&mut window_pane) + 'static,
+) -> std::rc::Rc<dyn Fn(Stream)> {
+    let observed = crate::window::window_pane_find_by_id(id);
+    std::rc::Rc::new(move |_stream| unsafe {
+        if let Some(mut pane) = observed.clone()
+            && pane.listed_window().is_some()
+            && let Some(wp) = pane.payload_mut()
+        {
+            body(wp);
+        }
+    })
+}
+
+/// The same, for the callback a failed stream makes.
+fn on_pane_error_owned(
+    id: u_int,
+    body: impl Fn(&mut window_pane) + 'static,
+) -> std::rc::Rc<dyn Fn(Stream, core::ffi::c_short)> {
+    let observed = crate::window::window_pane_find_by_id(id);
+    std::rc::Rc::new(move |_stream, _what| unsafe {
+        if let Some(mut pane) = observed.clone()
+            && pane.listed_window().is_some()
+            && let Some(wp) = pane.payload_mut()
+        {
+            body(wp);
+        }
+    })
+}
+
+pub(crate) fn on_pane(id: u_int, body: impl Fn(&mut dyn WindowPane) + 'static) -> Rc<dyn Fn(Stream)> {
+    on_pane_owned(id, move |pane| body(pane))
+}
+pub(crate) fn on_pane_error(id: u_int, body: impl Fn(&mut dyn WindowPane) + 'static) -> Rc<dyn Fn(Stream, core::ffi::c_short)> {
+    on_pane_error_owned(id, move |pane| body(pane))
+}
+
+#[cfg(test)]
+pub(crate) unsafe fn install_pipe_for_test(pane: &mut dyn WindowPane, fd: c_int) {
+    let owner = pane.observation().unwrap().upgrade().unwrap();
+    unsafe { (*owner.0.pane.get()).pipe_fd = fd };
 }
