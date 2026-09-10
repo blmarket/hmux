@@ -1687,65 +1687,13 @@ pub unsafe fn window_pane_set_event(wp: &mut (impl crate::WindowPane + ?Sized)) 
         wp.event().enable(Interest::ReadWrite);
     }
 }
-fn screen_write_sync_callback(wp: &mut (impl crate::WindowPane + ?Sized)) {
-    {
-        log_debug(
-            c"%s: %%%u sync timer expired",
-            fmt_args![c"screen_write_sync_callback".as_ptr(), wp.pane_id()],
-        );
-        wp.sync_timer_mut().disarm();
-        if wp.base().mode() & MODE_SYNC != 0 {
-            let pane_screen_mode = wp.base().mode() & !MODE_SYNC;
-            wp.base_mut().set_mode(pane_screen_mode);
-            *wp.flags_mut() |= PANE_REDRAW;
-        }
-    }
-}
-
-pub(crate) unsafe fn screen_write_start_sync(wp: Option<&mut (impl crate::WindowPane + ?Sized)>) {
-    unsafe {
-        let tv = timeval::from_secs(1 as __time_t);
-        let Some(wp) = wp else {
-            return;
-        };
-        let pane_screen_mode = wp.base().mode() | MODE_SYNC;
-        wp.base_mut().set_mode(pane_screen_mode);
-        if !wp.sync_timer().is_set() {
-            let pane = (wp).observation().expect("a syncing pane is owned");
-            wp.sync_timer_mut().set_callback(move || {
-                if let Some(wp) = pane.clone().get_mut() {
-                    screen_write_sync_callback(wp);
-                }
-            });
-        }
-        wp.sync_timer_mut().arm(tv);
-        log_debug(
-            c"%s: %%%u started sync mode",
-            fmt_args![c"screen_write_start_sync".as_ptr(), wp.pane_id()],
-        );
-    }
-}
-pub(crate) fn screen_write_stop_sync(wp: Option<&mut (impl crate::WindowPane + ?Sized)>) {
-    {
-        let Some(wp) = wp else {
-            return;
-        };
-        wp.sync_timer_mut().disarm();
-        let pane_screen_mode = wp.base().mode() & !MODE_SYNC;
-        wp.base_mut().set_mode(pane_screen_mode);
-        log_debug(
-            c"%s: %%%u stopped sync mode",
-            fmt_args![c"screen_write_stop_sync".as_ptr(), wp.pane_id()],
-        );
-    }
-}
 pub unsafe fn window_pane_resize(wp: &mut (impl crate::WindowPane + ?Sized), sx: u_int, sy: u_int) {
     unsafe {
         let geometry = wp.geometry();
         if sx == geometry.sx && sy == geometry.sy {
             return;
         }
-        screen_write_stop_sync(Some(wp));
+        wp.stop_sync();
         wp.record(
             PaneSize {
                 width: geometry.sx,
@@ -2878,7 +2826,7 @@ use crate::screen::RustScreen;
 
 #[cfg(test)]
 pub(crate) use tests::{
-    screen_write_sync_callback_for_test, window_has_floating_panes, window_pane_reserve_id,
+    window_has_floating_panes, window_pane_reserve_id,
     window_pane_zindex_insert_head, window_panes_position, window_registry_clear,
     window_set_active,
 };

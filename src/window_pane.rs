@@ -14,6 +14,7 @@ use std::rc::{Rc, Weak};
 use crate::grid::grid_default_cell;
 use crate::handle_registry::HandleRegistration;
 use crate::screen::RustScreen;
+use crate::Screen;
 use crate::types::*;
 use crate::{
     PaneBorderKind, PaneCommand, PaneControlColourPair, PaneGeometry, PaneScrollbarSlider,
@@ -503,13 +504,22 @@ impl crate::WindowPane for window_pane {
         &mut self.resize_timer
     }
 
-    fn sync_timer(&self) -> &crate::reactor::TimerHandle {
-        &self.sync_timer
+    fn start_sync(&mut self) {
+        self.base.set_mode(self.base.mode() | crate::screen::MODE_SYNC);
+        if !self.sync_timer.is_set() {
+            let pane = self.observation.clone().expect("a syncing pane is owned");
+            self.sync_timer.set_callback(move || {
+                if let Some(owner) = pane.upgrade() {
+                    unsafe { (&mut *owner.0.pane.get()).expire_sync() };
+                }
+            });
+        }
+        self.sync_timer.arm(timeval::from_secs(1));
     }
-    fn sync_timer_mut(&mut self) -> &mut crate::reactor::TimerHandle {
-        &mut self.sync_timer
+    fn stop_sync(&mut self) {
+        self.sync_timer.disarm();
+        self.base.set_mode(self.base.mode() & !crate::screen::MODE_SYNC);
     }
-
     fn ictx(&self) -> &Option<crate::input::InputCtxRef> {
         &self.ictx
     }
@@ -794,7 +804,7 @@ pub(crate) unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
             *wp.pipe_fd_mut() = -1;
         }
         wp.resize_timer_mut().disarm();
-        wp.sync_timer_mut().disarm();
+        wp.sync_timer.disarm();
         PaneResizeQueue::clear(wp);
         pane.unregister();
         if let Some(oo) = wp.options_mut().take() {
@@ -843,4 +853,26 @@ impl std::ops::Deref for PaneAllocation {
 #[cfg(test)]
 impl std::ops::DerefMut for PaneAllocation {
     fn deref_mut(&mut self) -> &mut Self::Target { self.0.get_mut() }
+}
+
+impl window_pane {
+    fn expire_sync(&mut self) {
+        self.sync_timer.disarm();
+        if self.base.mode() & crate::screen::MODE_SYNC != 0 {
+            self.base.set_mode(self.base.mode() & !crate::screen::MODE_SYNC);
+            self.flags |= crate::window::PANE_REDRAW;
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn sync_timer_for_test(pane: &dyn WindowPane) -> TimerHandle {
+    let owner = pane.observation().unwrap().upgrade().unwrap();
+    unsafe { (*owner.0.pane.get()).sync_timer }
+}
+
+#[cfg(test)]
+pub(crate) fn expire_sync_for_test(pane: &mut dyn WindowPane) {
+    let owner = pane.observation().unwrap().upgrade().unwrap();
+    unsafe { (&mut *owner.0.pane.get()).expire_sync() };
 }

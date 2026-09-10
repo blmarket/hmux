@@ -45,7 +45,7 @@ use crate::tty::{
 };
 pub use crate::types::*;
 use crate::window::{
-    screen_write_stop_sync, window_pane_index, window_pane_is_floating, window_pane_mode,
+    window_pane_index, window_pane_is_floating, window_pane_mode,
     window_pane_show_scrollbar, window_pane_visible,
 };
 
@@ -1527,7 +1527,7 @@ unsafe fn screen_redraw_draw_pane(ctx: &mut screen_redraw_ctx, pane: &mut RustWi
         };
         let Some(wp) = pane.get() else { return };
         if wp.base().0.mode & MODE_SYNC != 0 {
-            screen_write_stop_sync(pane.get_mut());
+            if let Some(wp) = pane.get_mut() { wp.stop_sync(); }
         }
         log_debug(
             c"%s: %s @%u %%%u",

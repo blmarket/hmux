@@ -97,11 +97,11 @@ pub trait WindowPane:
     /// Mutably borrows the pane's resize timer.
     fn resize_timer_mut(&mut self) -> &mut crate::reactor::TimerHandle;
 
-    /// Borrows the pane's synchronized-output timer.
-    fn sync_timer(&self) -> &crate::reactor::TimerHandle;
+    /// Starts synchronized output, rearming its allocation-bound one-second expiry.
+    fn start_sync(&mut self);
 
-    /// Mutably borrows the pane's synchronized-output timer.
-    fn sync_timer_mut(&mut self) -> &mut crate::reactor::TimerHandle;
+    /// Stops synchronized output and disarms its expiry without forcing a redraw.
+    fn stop_sync(&mut self);
 
     /// Borrows the pane's input parser handle.
     fn ictx(&self) -> &Option<crate::input::InputCtxRef>;

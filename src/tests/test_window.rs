@@ -152,10 +152,6 @@ pub(crate) fn window_has_floating_panes(w: &window) -> core::ffi::c_int {
         .any(|pane| window_pane_is_floating(w, &pane.downgrade()) != 0) as core::ffi::c_int
 }
 
-pub(crate) fn screen_write_sync_callback_for_test(wp: &mut (impl crate::WindowPane + ?Sized)) {
-    screen_write_sync_callback(wp)
-}
-
 /// Keeps `id` out of the ids the server hands out, so a pane a test builds
 /// by hand is never given the same id as one the server makes.
 pub(crate) fn window_pane_reserve_id(id: u_int) {

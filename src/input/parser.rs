@@ -42,7 +42,7 @@ use crate::tmux::{global_options, global_w_options};
 use crate::tty::{tty_default_colours, tty_putcode_ss, tty_puts, tty_set_selection};
 pub use crate::types::*;
 use crate::window::{
-    screen_write_start_sync, screen_write_stop_sync, window_pane_get_bg, window_pane_get_fg,
+    window_pane_get_bg, window_pane_get_fg,
     window_pane_get_fg_control_client, window_pane_get_new_data, window_pane_get_theme,
     window_pane_update_used_data,
 };
@@ -3312,7 +3312,7 @@ unsafe fn input_csi_dispatch_rm_private(ictx: &mut input_ctx, sctx: &mut RustScr
                 }
                 2026 => {
                     let mut pane = ictx.pane_ref();
-                    screen_write_stop_sync(pane.as_mut().and_then(|pane| pane.get_mut()));
+                    if let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut()) { wp.stop_sync(); }
                     if let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut()) {
                         *wp.flags_mut() |= PANE_REDRAW;
                     }
@@ -3436,7 +3436,7 @@ unsafe fn input_csi_dispatch_sm_private(ictx: &mut input_ctx, sctx: &mut RustScr
                 }
                 2026 => {
                     let mut pane = ictx.pane_ref();
-                    screen_write_start_sync(pane.as_mut().and_then(|pane| pane.get_mut()));
+                    if let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut()) { wp.start_sync(); }
                 }
                 _ => {
                     log_debug(
@@ -5629,7 +5629,7 @@ impl InputCtxRef {
             ictx.request_timer.disarm();
             ictx.ground_timer.disarm();
             let mut pane = ictx.pane_ref();
-            screen_write_stop_sync(pane.as_mut().and_then(|pane| pane.get_mut()));
+            if let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut()) { wp.stop_sync(); }
             drop(ictx_guard);
             drop(reference);
         }

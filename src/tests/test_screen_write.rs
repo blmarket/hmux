@@ -9,7 +9,6 @@ use crate::pane_identity::PaneIdentity;
 use crate::screen::Screen as ScreenBoundary;
 use crate::tests::test_fixtures::{Pane, Screen, Window, ascii, globals};
 use crate::window::{
-    screen_write_start_sync, screen_write_stop_sync, screen_write_sync_callback_for_test,
 };
 use ::core::ffi::c_int;
 
@@ -1435,21 +1434,19 @@ fn a_synchronised_pane_is_not_redrawn_line_by_line() {
     let _guard = globals();
     let mut w = PaneWriter::sized(8, 4, 4, 2);
     unsafe {
-        screen_write_start_sync(w.wp().as_mut());
+        (*w.wp()).start_sync();
         assert_eq!((*w.wp()).base().mode() & MODE_SYNC, MODE_SYNC);
         screen_write_mode_set(&mut w.ctx(), MODE_SYNC);
         w.puts("abc");
         screen_write_insertcharacter(&mut w.ctx(), 1, 8);
         screen_write_mode_clear(&mut w.ctx(), MODE_SYNC);
-        screen_write_stop_sync(w.wp().as_mut());
+        (*w.wp()).stop_sync();
         assert_eq!((*w.wp()).base().mode() & MODE_SYNC, 0);
-        screen_write_start_sync(None::<&mut dyn crate::WindowPane>);
-        screen_write_stop_sync(None::<&mut dyn crate::WindowPane>);
-        screen_write_sync_callback_for_test(&mut *w.wp());
+        crate::window_pane::expire_sync_for_test(&mut *w.wp());
         (*w.wp())
             .base_mut()
             .set_mode((*w.wp()).base().mode() | MODE_SYNC);
-        screen_write_sync_callback_for_test(&mut *w.wp());
+        crate::window_pane::expire_sync_for_test(&mut *w.wp());
         assert_eq!((*w.wp()).base().mode() & MODE_SYNC, 0);
         assert_eq!(*(*w.wp()).flags() & PANE_REDRAW, PANE_REDRAW);
     }

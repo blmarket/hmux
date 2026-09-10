@@ -845,7 +845,7 @@ impl Window {
 fn free_pane(pane: &mut (impl crate::WindowPane + ?Sized)) {
     {
         pane.resize_timer_mut().disarm();
-        pane.sync_timer_mut().disarm();
+        pane.stop_sync();
         if let Some(oo) = pane.options_mut().take() {
             RustOptionsEngine.destroy(oo);
         }

@@ -865,8 +865,8 @@ fn pane_removal_tears_down_resources_before_the_last_reference_drops() {
         let (pipe, peer) = UnixStream::pair().unwrap();
         let fd = pipe.as_raw_fd();
         *retained.get_mut().unwrap().pipe_fd_mut() = pipe.into_raw_fd();
-        screen_write_start_sync(retained.get_mut());
-        let timer = *retained.get().unwrap().sync_timer();
+        retained.get_mut().unwrap().start_sync();
+        let timer = crate::window_pane::sync_timer_for_test(retained.get().unwrap());
         assert!(timer.is_armed());
         callback(Stream::NONE);
         assert_eq!(calls.get(), 1);
