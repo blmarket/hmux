@@ -3,7 +3,7 @@
 use crate::{
     PaneActivityState, PaneBorderCache, PaneCommandState, PaneControlColours, PaneExitState,
     PaneGeometryState, PaneIdentity, PaneOutputBaseState, PaneResizeQueue, PaneScrollbar,
-    PaneScrollbarStyleState, PaneSearchState, PaneStatusLineState, PaneStyleCache, PaneThemeState,
+    PaneScrollbarStyleState, PaneSearchState, PaneStyleCache, PaneThemeState,
 };
 
 /// State and engine capabilities used to interact with a window pane.
@@ -28,7 +28,6 @@ pub trait WindowPane:
     + PaneResizeQueue
     + PaneStyleCache
     + PaneThemeState
-    + PaneStatusLineState
     + PaneSearchState
     + PaneBorderCache
     + PaneControlColours
@@ -127,11 +126,16 @@ pub trait WindowPane:
     /// Mutably borrows the pane's colour palette.
     fn palette_mut(&mut self) -> &mut crate::types::colour_palette;
 
-    /// Borrows the pane's border status line.
-    fn border_status_line(&self) -> &crate::types::style_line_entry;
+    /// Returns the displayed width of the cached border status.
+    fn status_line_width(&self) -> usize;
 
-    /// Mutably borrows the pane's border status line.
-    fn border_status_line_mut(&mut self) -> &mut crate::types::style_line_entry;
+    /// Publishes a rendered border status and its hit ranges atomically, returning
+    /// whether its screen contents changed. Width may be zero for hidden status.
+    fn publish_border_status(&mut self, width: usize, screen: crate::screen::RustScreen,
+        ranges: crate::types::style_ranges, expanded: std::ffi::CString) -> bool;
+
+    /// Looks up the cached border-status hit range at a status-relative column.
+    fn border_status_range(&self, x: u32) -> Option<crate::types::style_range>;
 
     /// Borrows the pane's screen selector.
     fn shown(&self) -> &crate::types::PaneScreen;
@@ -147,9 +151,6 @@ pub trait WindowPane:
 
     /// Borrows the pane's status screen.
     fn status_screen(&self) -> &crate::screen::RustScreen;
-
-    /// Mutably borrows the pane's status screen.
-    fn status_screen_mut(&mut self) -> &mut crate::screen::RustScreen;
 
     /// Borrows the pane's mode stack.
     fn modes(&self) -> &crate::types::window_modes;

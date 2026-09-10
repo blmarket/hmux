@@ -104,7 +104,6 @@ pub mod pane_resize;
 pub mod pane_scrollbar;
 pub mod pane_scrollbar_style;
 pub mod pane_search;
-pub mod pane_status_line;
 pub mod pane_style_cache;
 pub mod pane_theme;
 pub mod paste;
@@ -315,7 +314,6 @@ pub use pane_scrollbar_style::{
     PaneScrollbarStyle, PaneScrollbarStyleState,
 };
 pub use pane_search::{PaneSearchState, };
-pub use pane_status_line::{PaneStatusLineState, };
 pub use pane_style_cache::{PaneStyleCache, PaneStyleCells, };
 pub use pane_theme::{PaneThemeState, };
 pub use paste::{PasteBufferRef, PasteBufferStore, RustPasteBufferStore};

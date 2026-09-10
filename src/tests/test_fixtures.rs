@@ -899,7 +899,7 @@ impl Pane {
         *pane.pipe_fd_mut() = -1;
         {
             *pane.base_mut() = RustScreen::new_with_server_options(sx, sy, hlimit);
-            *pane.status_screen_mut() = RustScreen::new_with_server_options(1, 1, 0);
+            pane.publish_border_status(0, RustScreen::new_with_server_options(1, 1, 0), Vec::new(), c"".to_owned());
         }
         *pane.shown_mut() = PaneScreen::Base;
         let ptr = &raw mut *pane;

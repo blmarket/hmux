@@ -2848,7 +2848,6 @@ pub fn window_pane_border_status_get_range(
         let wp = wp?;
         let window = wp.window_context()?;
         let wo = window.options();
-        let srs = &wp.border_status_line().ranges;
         let pane_status: core::ffi::c_int = (wo).number(c"pane-border-status") as core::ffi::c_int;
         if pane_status == PANE_STATUS_TOP {
             line = (wp.geometry().yoff - 1 as core::ffi::c_int) as u_int;
@@ -2858,8 +2857,7 @@ pub fn window_pane_border_status_get_range(
         if pane_status == PANE_STATUS_OFF || line != y {
             return None;
         }
-        style_ranges_get_range(
-            srs,
+        wp.border_status_range(
             x.wrapping_sub(wp.geometry().xoff as u_int)
                 .wrapping_sub(2 as u_int),
         )

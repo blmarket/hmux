@@ -19,7 +19,6 @@ use crate::pane_border_cache::{PaneBorderCache, PaneBorderKind};
 use crate::pane_geometry::PaneGeometryState;
 use crate::pane_scrollbar::{PaneScrollbar, PaneScrollbarSlider};
 use crate::pane_scrollbar_style::PaneScrollbarStyleState;
-use crate::pane_status_line::PaneStatusLineState;
 use crate::server::client_ref_of;
 use crate::server::server_client_get_pane;
 use crate::server::{marked_pane, server_is_marked};
@@ -850,8 +849,6 @@ unsafe fn screen_redraw_make_pane_status(
         let max_width =
             (window.dimensions().size.width as core::ffi::c_int - (geometry.xoff + 2)).max(0) as u_int;
         let width = width.min(max_width);
-        let Some(wp) = pane.get_mut() else { return 0 };
-        wp.set_status_line_width(width as usize);
         let mut status_screen = RustScreen::new_with_server_options(width, 1, 0);
         status_screen.0.mode = 0;
         let mut ranges = Vec::new();
@@ -878,11 +875,7 @@ unsafe fn screen_redraw_make_pane_status(
         writer.format_draw(&gc, width, expanded.as_bytes(), Some(&mut ranges), 0);
         writer.finish();
         let Some(wp) = pane.get_mut() else { return 0 };
-        let changed = !status_screen.grid().content_eq(wp.status_screen().grid());
-        *wp.status_screen_mut() = status_screen;
-        wp.border_status_line_mut().ranges = ranges;
-        wp.border_status_line_mut().expanded = Some(expanded);
-        changed as core::ffi::c_int
+        wp.publish_border_status(width as usize, status_screen, ranges, expanded) as core::ffi::c_int
     }
 }
 unsafe fn screen_redraw_draw_pane_status(ctx: &mut screen_redraw_ctx) {

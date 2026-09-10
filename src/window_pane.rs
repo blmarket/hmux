@@ -410,10 +410,6 @@ impl crate::pane_activity::PaneActivityState for window_pane {
     fn mark_active_at(&mut self, point: u_int) { self.active_point = point; }
 }
 
-impl crate::pane_status_line::PaneStatusLineState for window_pane {
-    fn status_line_width(&self) -> usize { self.status_size }
-    fn set_status_line_width(&mut self, width: usize) { self.status_size = width; }
-}
 
 impl crate::pane_scrollbar_style::PaneScrollbarStyleState for window_pane {
     fn scrollbar_style(&self) -> PaneScrollbarStyle { self.scrollbar_style }
@@ -541,13 +537,19 @@ impl crate::WindowPane for window_pane {
         &mut self.palette
     }
 
-    fn border_status_line(&self) -> &crate::types::style_line_entry {
-        &self.border_status_line
+    fn status_line_width(&self) -> usize { self.status_size }
+    fn publish_border_status(&mut self, width: usize, screen: crate::screen::RustScreen,
+        ranges: style_ranges, expanded: std::ffi::CString) -> bool {
+        let changed = !self.status_screen.is_initialized()
+            || !crate::Grid::content_eq(screen.grid(), self.status_screen.grid());
+        self.status_size = width;
+        self.status_screen = screen;
+        self.border_status_line = style_line_entry { ranges, expanded: Some(expanded) };
+        changed
     }
-    fn border_status_line_mut(&mut self) -> &mut crate::types::style_line_entry {
-        &mut self.border_status_line
+    fn border_status_range(&self, x: u32) -> Option<style_range> {
+        crate::style::style_ranges_get_range(&self.border_status_line.ranges, x)
     }
-
     fn shown(&self) -> &crate::types::PaneScreen {
         &self.screen
     }
@@ -564,9 +566,6 @@ impl crate::WindowPane for window_pane {
 
     fn status_screen(&self) -> &crate::screen::RustScreen {
         &self.status_screen
-    }
-    fn status_screen_mut(&mut self) -> &mut crate::screen::RustScreen {
-        &mut self.status_screen
     }
 
     fn modes(&self) -> &crate::types::window_modes {
@@ -757,7 +756,7 @@ pub(crate) unsafe fn window_pane_create(
         *(*wp).base_mut() = RustScreen::new_with_server_options(sx, sy, hlimit);
         *(*wp).shown_mut() = PaneScreen::Base;
         window_pane_default_cursor(&mut *wp);
-        *(*wp).status_screen_mut() =
+        (*wp).status_screen =
             RustScreen::new_with_server_options(1 as u_int, 1 as u_int, 0 as u_int);
         if gethostname(
             &raw mut host as *mut core::ffi::c_char,
@@ -803,8 +802,8 @@ pub(crate) unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
         }
         wp.clear_pane_command();
         RustColourEngine.free_palette(Some(wp.palette_mut()));
-        style_ranges_free(&mut wp.border_status_line_mut().ranges);
-        wp.border_status_line_mut().expanded = None;
+        style_ranges_free(&mut wp.border_status_line.ranges);
+        wp.border_status_line.expanded = None;
         window_pane_set_window_ref(wp, None);
         drop(pane.into_pane());
     }

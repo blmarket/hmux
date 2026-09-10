@@ -2,7 +2,6 @@ use crate::WindowPane;
 use crate::options::OptionsRef;
 use crate::pane_geometry::PaneGeometryState;
 use crate::pane_scrollbar_style::PaneScrollbarStyleState;
-use crate::pane_status_line::PaneStatusLineState;
 use crate::window_scrollbar::{WindowScrollbarSettings, WindowScrollbarState};
 
 use super::*;
@@ -94,7 +93,7 @@ fn check_cell_selects_body_window_edges_and_status() {
             screen_redraw_check_cell(&mut ctx, 11, 2).cell_type,
             CELL_OUTSIDE
         );
-        (*view.pane(0)).set_status_line_width(4);
+        (*view.pane(0)).publish_border_status(4, RustScreen::new_with_server_options(4, 1, 0), Vec::new(), c"".to_owned());
         ctx.pane_status = PANE_STATUS_TOP;
         ctx.oy = 1;
         assert_eq!(
@@ -615,11 +614,11 @@ fn pane_status_drawing_preserves_clipping_zoom_and_top_or_bottom_rows() {
         let mut panes = window.panes();
         for (pane, text) in panes.iter_mut().zip([c"abc", c"XYZ"]) {
             let pane = pane.get_mut().unwrap();
-            pane.set_status_line_width(3);
-            *pane.status_screen_mut() = RustScreen::new_with_server_options(3, 1, 0);
-            let mut writer = screen_write_ctx_on_screen(pane.status_screen_mut());
+            let mut screen = RustScreen::new_with_server_options(3, 1, 0);
+            let mut writer = screen_write_ctx_on_screen(&mut screen);
             writer.puts(&grid_default_cell, text, fmt_args![]);
             writer.finish();
+            pane.publish_border_status(3, screen, Vec::new(), text.to_owned());
         }
         let mut ctx = view.ctx();
         ctx.sx = 12;
@@ -766,7 +765,7 @@ fn pane_status_generation_tracks_formats_widths_and_owner_lifetime() {
         );
         let wp = pane.get().unwrap();
         assert_eq!(wp.status_line_width(), 8);
-        assert!(!wp.border_status_line().ranges.is_empty());
+        assert!(wp.border_status_range(0).is_some());
         assert_eq!(
             crate::grid::grid_string_cells(wp.status_screen().grid(), 0, 0, 7, None, 0, None)
                 .as_bytes(),
@@ -793,7 +792,7 @@ fn pane_status_generation_tracks_formats_widths_and_owner_lifetime() {
             1
         );
         let wp = pane.get().unwrap();
-        assert!(wp.border_status_line().ranges.is_empty());
+        assert!(wp.border_status_range(0).is_none());
         assert_eq!(
             crate::grid::grid_string_cells(wp.status_screen().grid(), 0, 0, 4, None, 0, None)
                 .as_bytes(),
