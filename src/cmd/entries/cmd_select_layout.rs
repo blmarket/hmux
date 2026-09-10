@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -8,7 +9,7 @@ use crate::consts::{
 use crate::fmt_args;
 use crate::layout::layout_set_lookup;
 use crate::resize::recalculate_sizes;
-use crate::types::{args_parse_t, u_char, u_int};
+use crate::types::{u_char, u_int};
 
 pub const CMD_TARGET_WINDOW_USAGE: &core::ffi::CStr = c"[-t target-window]";
 pub(crate) static cmd_select_layout_entry: RustCommandEntry = {

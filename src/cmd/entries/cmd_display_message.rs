@@ -35,6 +35,7 @@
 //!   without checking that a client asked for anything, and `-p` reads the
 //!   item's own client rather than the target one.
 
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::args::{args_strtonum};
 use crate::cmd::cmd_find_best_client_for_session;
@@ -49,7 +50,7 @@ use crate::format::{
 };
 use crate::server::client_print_buffer;
 use crate::status::status_message_for_client;
-use crate::types::{ByteBuffer, ClientRef, RustWindowPaneWeak, args_parse_t, uint64_t};
+use crate::types::{ByteBuffer, ClientRef, RustWindowPaneWeak, uint64_t};
 use ::core::ffi::{CStr, c_char, c_int, c_longlong};
 
 use crate::consts::{

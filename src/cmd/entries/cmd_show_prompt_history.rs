@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 
 use crate::cmd::cmdq_item;
@@ -8,7 +9,7 @@ use crate::fmt_args;
 use crate::prompt_history::{
     PromptHistoryStore, PromptHistoryType, with_prompt_history, with_prompt_history_mut,
 };
-use crate::types::{args_parse_t, u_char, u_int};
+use crate::types::{u_char, u_int};
 use core::ffi::CStr;
 
 pub(crate) static cmd_show_prompt_history_entry: RustCommandEntry = {

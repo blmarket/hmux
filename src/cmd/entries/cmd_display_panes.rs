@@ -12,6 +12,7 @@
 //! Rendering is owned by the overlay subsystem; this command chooses delay,
 //! key handling and whether the queue waits for selection.
 
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::args::{args_make_commands, args_strtonum};
 use crate::cmd::cmd_make_commands_prepare;
@@ -31,7 +32,7 @@ use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
 use crate::types::{
     ClientRef, OptionsRef, Overlay, OverlayState, SessionRef, args, args_command_state,
-    args_parse_t, args_parse_type, key_code, key_event, u_int,
+    args_parse_type, key_code, key_event, u_int,
 };
 #[cfg(test)]
 use crate::types::{CmdqListRef, client, screen_redraw_ctx, window_pane};

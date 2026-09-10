@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::args::{args_percentage};
 
@@ -10,7 +11,7 @@ use crate::consts::{
     LAYOUT_TOPBOTTOM, PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
 };
 use crate::fmt_args;
-use crate::types::{OptionsRef, args_parse_t, u_char, u_int};
+use crate::types::{OptionsRef, u_char, u_int};
 
 pub(crate) static cmd_resize_pane_entry: RustCommandEntry = {
     RustCommandEntry {

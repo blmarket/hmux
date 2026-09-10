@@ -3,7 +3,7 @@ use crate::cmd::cmd_get_args;
 use crate::consts::{CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_NORMAL};
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::args_parse_t;
+use crate::args::args_parse_t;
 use crate::window::WinlinkRef;
 
 pub(crate) static cmd_rotate_window_entry: RustCommandEntry = {

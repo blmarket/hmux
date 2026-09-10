@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::cmd::cmd_get_args;
 
@@ -11,7 +12,7 @@ use crate::message_log::{MessageLogStore, with_message_log};
 use crate::terminfo::tty_term_snapshots_for_client;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{args_parse_t, u_char, u_int};
+use crate::types::{u_char, u_int};
 
 pub const SHOW_MESSAGES_TEMPLATE: &core::ffi::CStr = c"#{t/p:message_time}: #{message_text}";
 pub(crate) static cmd_show_messages_entry: RustCommandEntry = {

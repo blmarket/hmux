@@ -28,7 +28,7 @@ pub trait ArgumentParseSpec {
     fn argument_parse_callback(&self) -> args_parse_cb;
 }
 
-impl ArgumentParseSpec for crate::types::args_parse_t {
+impl ArgumentParseSpec for crate::args::args_parse_t {
     fn from_argument_parse_spec(
         template: &'static CStr,
         lower: c_int,
@@ -63,7 +63,7 @@ impl ArgumentParseSpec for crate::types::args_parse_t {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::args_parse_t;
+    use crate::args::args_parse_t;
 
     #[test]
     fn const_spec_exposes_its_configuration() {

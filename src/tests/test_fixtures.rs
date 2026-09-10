@@ -19,6 +19,7 @@
 //! is a turn at the paste store and [`KeyTable`] is a key table of the test's
 //! own.
 
+use crate::args::args_parse_t;
 use crate::cmd::{CmdListRef, cmd, cmd_entry, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
 use crate::options::{OptionsEngine, RustOptionsEngine};

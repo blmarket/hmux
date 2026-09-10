@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
 use crate::cmd::cmd_find_from_session_ref;
@@ -27,7 +28,7 @@ use crate::spawn::spawn_window;
 use crate::tmux::global_session_options;
 use crate::tmux::{check_name, clean_name};
 use crate::types::{
-    ClientRef, OptionsRef, SessionRef, args_parse_t, cmd_find_state, spawn_context, termios,
+    ClientRef, OptionsRef, SessionRef, cmd_find_state, spawn_context, termios,
     u_char, u_int, uint64_t,
 };
 use ::std::ffi::{CStr, CString};

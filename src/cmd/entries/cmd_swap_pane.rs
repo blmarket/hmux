@@ -7,7 +7,7 @@ use crate::consts::{
 };
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::args_parse_t;
+use crate::args::args_parse_t;
 
 pub(crate) static cmd_swap_pane_entry: RustCommandEntry = {
     RustCommandEntry {

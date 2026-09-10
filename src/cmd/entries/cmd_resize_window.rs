@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::args::{args_strtonum};
 use crate::cmd::cmd_get_args;
@@ -11,7 +12,7 @@ use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, INT_MAX,
     WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST, WINDOW_SIZE_MANUAL,
 };
-use crate::types::{OptionsRef, args_parse_t, u_char, u_int};
+use crate::types::{OptionsRef, u_char, u_int};
 
 pub const WINDOW_SIZE_SMALLEST: core::ffi::c_int = 1 as core::ffi::c_int;
 

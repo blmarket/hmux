@@ -4,7 +4,7 @@ use super::{CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_STOP, CMD_RETURN_WAI
 use super::cmd;
 use crate::cmd::cmdq_item;
 use super::{cmd_entry_flag, cmd_retval};
-use crate::types::args_parse_t;
+use crate::args::args_parse_t;
 use core::ffi::CStr;
 
 /// The effect a command has on command-queue execution.

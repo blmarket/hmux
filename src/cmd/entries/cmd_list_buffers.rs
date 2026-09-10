@@ -8,6 +8,7 @@
 //! defaults, and with `-f` the filter is expanded first and the line printed
 //! only when it is true.
 
+use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
@@ -20,7 +21,7 @@ use crate::format::{
     format_create_for_client, format_defaults_paste_buffer, format_expand, format_true,
 };
 use crate::sort::{RustSortCriteria, SortCriteria, SortedPasteBuffer, sort_get_buffers};
-use crate::types::{args_parse_t, format_tree, sort_criteria_t};
+use crate::types::{format_tree, sort_criteria_t};
 use ::core::ffi::CStr;
 
 pub const LIST_BUFFERS_TEMPLATE: &CStr =

@@ -14,6 +14,7 @@
 //! index of the window being printed, so every line of one run carries the
 //! same value — where `list-sessions` and `list-clients` count from zero.
 
+use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
@@ -27,7 +28,7 @@ use crate::format::{
     format_add, format_create_for_client, format_defaults_for_link, format_expand, format_true,
 };
 use crate::sort::{RustSortCriteria, SortCriteria, sort_get_winlinks};
-use crate::types::{args_parse_t, format_tree, u_int};
+use crate::types::{format_tree, u_int};
 use ::core::ffi::{CStr, c_char};
 
 pub const LIST_WINDOWS_WITH_SESSION_TEMPLATE: &CStr = c"#{session_name}:#{window_index}: #{window_name}#{window_raw_flags} (#{window_panes} panes) [#{window_width}x#{window_height}] ";

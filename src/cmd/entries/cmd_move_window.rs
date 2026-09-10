@@ -18,6 +18,7 @@
 //! `-s` named the source, since the destination is already where the caller
 //! asked for.
 
+use crate::args::args_parse_t;
 use crate::cmd::cmd_find_target;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -33,7 +34,7 @@ use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_QUIET, CMD_FIND_SESSION, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX,
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
-use crate::types::{OptionsRef, SessionRef, args_parse_t, cmd_find_state};
+use crate::types::{OptionsRef, SessionRef, cmd_find_state};
 #[cfg(test)]
 use crate::types::{WindowRef, u_int};
 use crate::window::{WinlinkRef, WinlinkShuffle};

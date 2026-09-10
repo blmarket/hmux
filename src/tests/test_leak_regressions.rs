@@ -33,6 +33,7 @@
 //! callback-owned `LoadBuffer`, `SourceFile`, `PaneInput` and `KeyEvent`
 //! allocations on a green path.
 
+use crate::args::args_parse_t;
 use crate::WindowPane;
 use crate::cmd::CmdqItemRef;
 use crate::cmd::cmd;
@@ -53,7 +54,7 @@ use crate::tests::test_fixtures::{
 use crate::types::ClientFileRef;
 use crate::cmd::{cmd_entry, cmd_entry_flag, cmd_retval};
 use crate::types::{
-    ClientFileData, ClientFileEvent, WindowMode, args_parse_t, key_code, key_event, menu_item,
+    ClientFileData, ClientFileEvent, WindowMode, key_code, key_event, menu_item,
     mouse_event, spawn_context, u_int, window_pane, winlink,
 };
 use crate::cmd::SourceFileRef;

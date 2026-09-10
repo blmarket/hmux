@@ -1,4 +1,5 @@
 
+use crate::args::args_parse_t;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
 use crate::format::format_single_from_target;
@@ -12,7 +13,7 @@ use crate::consts::{
 };
 #[cfg(test)]
 use crate::tty::tty_window_bigger;
-use crate::types::{OptionsRef, WindowRef, args_parse_t};
+use crate::types::{OptionsRef, WindowRef};
 
 pub(crate) static cmd_select_pane_entry: RustCommandEntry = {
     RustCommandEntry {

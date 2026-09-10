@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::args::{args_strtonum_and_expand};
 use crate::cmd::{CmdqItemRef, cmdq_item_ref_of};
@@ -16,7 +17,7 @@ use crate::consts::{
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::text::{utf8_from_data, utf8_fromcstr};
 use crate::types::{
-    ClientRef, OptionsRef, args_parse_t, key_code, key_event, mouse_event, u_char, u_int, uint64_t,
+    ClientRef, OptionsRef, key_code, key_event, mouse_event, u_char, u_int, uint64_t,
 };
 
 pub(crate) static cmd_send_keys_entry: RustCommandEntry = {

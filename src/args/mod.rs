@@ -19,6 +19,32 @@ use crate::xmalloc::xasprintf;
 use ::std::ffi::CStr;
 use ::std::ffi::CString;
 use core::ffi::c_int;
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct args_parse_t {
+    pub template: &'static core::ffi::CStr,
+    pub lower: core::ffi::c_int,
+    pub upper: core::ffi::c_int,
+    pub cb: args_parse_cb,
+}
+impl args_parse_t {
+    /// Builds an argument parser specification usable in static command entries.
+    pub const fn new(
+        template: &'static core::ffi::CStr,
+        lower: core::ffi::c_int,
+        upper: core::ffi::c_int,
+        cb: args_parse_cb,
+    ) -> Self {
+        Self {
+            template,
+            lower,
+            upper,
+            cb,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Default)]
 pub struct args {

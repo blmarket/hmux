@@ -10,7 +10,7 @@ use crate::environ::RustEnvironment;
 use crate::environ::with_global_environment_mut;
 use crate::fmt_args;
 use crate::format::format_single_from_target;
-use crate::types::args_parse_t;
+use crate::args::args_parse_t;
 use ::core::ffi::CStr;
 
 pub(crate) static cmd_set_environment_entry: RustCommandEntry = {

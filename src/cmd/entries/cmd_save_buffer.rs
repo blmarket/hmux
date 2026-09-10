@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::cmd::cmdq_item;
 use crate::cmd::cmdq_item_weak_of;
@@ -13,7 +14,7 @@ use crate::fmt_args;
 use crate::format::format_single_from_target;
 use crate::paste::{PasteBufferStore, with_paste_buffers};
 use crate::types::ClientFileEvent;
-use crate::types::{ByteBuffer, ClientFileData, args_parse_t, u_char, uint64_t};
+use crate::types::{ByteBuffer, ClientFileData, u_char, uint64_t};
 use ::std::ffi::CString;
 
 pub(crate) static cmd_save_buffer_entry: RustCommandEntry = {

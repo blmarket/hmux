@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -10,7 +11,7 @@ use crate::fmt_args;
 use crate::paste::{
     PasteBufferStore, paste_buffer_limit, with_paste_buffers, with_paste_buffers_mut,
 };
-use crate::types::{args_parse_t, u_int};
+use crate::types::{u_int};
 use ::std::ffi::CStr;
 
 pub(crate) static cmd_set_buffer_entry: RustCommandEntry = {

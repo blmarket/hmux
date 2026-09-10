@@ -30,6 +30,7 @@
 //! already been built, which is why the refusal frees the command's state by
 //! hand.
 
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::args::{args_make_commands, args_make_commands_get_command};
 use crate::cmd::cmd_make_commands_prepare;
@@ -48,7 +49,7 @@ use crate::fmt_args;
 use crate::prompt_history::PromptHistoryType;
 use crate::status::{status_prompt_for_client, status_prompt_update_for_client};
 use crate::types::{
-    ClientRef, Prompt, PromptData, args, args_command_state, args_parse_t, args_parse_type,
+    ClientRef, Prompt, PromptData, args, args_command_state, args_parse_type,
     cmd_command_prompt_prompt, u_int,
 };
 use ::core::ffi::{CStr, c_int};

@@ -31,6 +31,7 @@
 //! left sitting in the front slot — the binding that was first before the
 //! filter ran.
 
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::cmd::cmd_get_args;
 
@@ -55,7 +56,7 @@ use crate::sort::{RustSortCriteria, SortCriteria};
 use crate::status::status_message_for_client;
 use crate::text::{KeyStringCodec, RustKeyStringCodec, RustUtf8VisModel, Utf8VisModel};
 use crate::tmux::global_session_options;
-use crate::types::{OptionsRef, args_parse_t, format_tree, key_code, sort_criteria_t, u_int};
+use crate::types::{OptionsRef, format_tree, key_code, sort_criteria_t, u_int};
 use ::core::ffi::c_int;
 use ::std::ffi::{CStr, CString};
 

@@ -11,6 +11,7 @@
 //! The command table stays the array the rest of the crate reads, walked to
 //! the null it ends with.
 
+use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
@@ -22,7 +23,7 @@ use crate::fmt_args;
 use crate::format::{
     format_add, format_create_for_client, format_defaults_for_handles, format_expand,
 };
-use crate::types::{args_parse_t, format_tree};
+use crate::types::{format_tree};
 use crate::{CommandCatalog, CommandEntry, RustCommandCatalog};
 use ::core::ffi::CStr;
 

@@ -12,6 +12,7 @@
 //! Multi-client operations walk the live client list while recording deferred exits.
 
 
+use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -22,7 +23,7 @@ use crate::consts::{
 };
 use crate::fmt_args;
 use crate::server::client_walk;
-use crate::types::{ClientRef, args_parse_t, msgtype, uint64_t};
+use crate::types::{ClientRef, msgtype, uint64_t};
 use ::core::ffi::CStr;
 
 pub(crate) static cmd_detach_client_entry: RustCommandEntry = RustCommandEntry {

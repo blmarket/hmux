@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::cmd::cmd_find_target;
 use crate::cmd::cmd_get_args;
@@ -14,7 +15,7 @@ use crate::consts::{
     CMD_READONLY, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMDQ_STATE_REPEAT, SORT_END,
 };
 use crate::sort::{RustSortCriteria, SortCriteria};
-use crate::types::{args_parse_t, cmd_find_state, sort_criteria_t, u_char, uid_t, uint64_t};
+use crate::types::{cmd_find_state, sort_criteria_t, u_char, uid_t, uint64_t};
 
 pub(crate) static cmd_switch_client_entry: RustCommandEntry = {
     RustCommandEntry {

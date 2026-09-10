@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::cmd::cmdq_item;
 use crate::cmd::cmdq_item_weak_of;
@@ -12,7 +13,7 @@ use crate::environ::new_environment_box;
 use crate::fmt_args;
 use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};
 use crate::spawn::spawn_pane;
-use crate::types::{OptionsRef, args_parse_t, cmd_find_state, spawn_context, u_char, u_int};
+use crate::types::{OptionsRef, cmd_find_state, spawn_context, u_char, u_int};
 use crate::window::WinlinkRef;
 use ::std::ffi::CString;
 

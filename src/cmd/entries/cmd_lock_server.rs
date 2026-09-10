@@ -21,7 +21,7 @@ use crate::resize::recalculate_sizes;
 use crate::server::server_lock;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::args_parse_t;
+use crate::args::args_parse_t;
 use ::core::ffi::c_char;
 
 pub(crate) static cmd_lock_server_entry: RustCommandEntry = RustCommandEntry {

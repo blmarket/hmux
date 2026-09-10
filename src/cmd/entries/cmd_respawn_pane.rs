@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::cmd::cmd_get_args;
 
@@ -12,7 +13,7 @@ use crate::consts::{
     CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, SPAWN_KILL, SPAWN_RESPAWN,
 };
 use crate::spawn::spawn_pane;
-use crate::types::{args_parse_t, spawn_context, u_char};
+use crate::types::{spawn_context, u_char};
 use ::std::ffi::CString;
 
 pub(crate) static cmd_respawn_pane_entry: RustCommandEntry = {

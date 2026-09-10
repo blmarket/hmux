@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::cmd::cmd_get_args;
 
@@ -10,7 +11,7 @@ use crate::fmt_args;
 use crate::key_bindings::key_bindings_get_table;
 use crate::key_bindings::{key_bindings_remove, key_bindings_remove_table};
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
-use crate::types::{args_parse_t, key_code, u_char};
+use crate::types::{key_code, u_char};
 
 pub(crate) static cmd_unbind_key_entry: RustCommandEntry = {
     RustCommandEntry {

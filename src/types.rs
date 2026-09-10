@@ -119,30 +119,6 @@ pub type args_parse_type = core::ffi::c_uint;
 pub type u_int = __u_int;
 pub type args_parse_cb =
     Option<unsafe fn(&args, u_int, &mut Option<std::ffi::CString>) -> args_parse_type>;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct args_parse_t {
-    pub template: &'static core::ffi::CStr,
-    pub lower: core::ffi::c_int,
-    pub upper: core::ffi::c_int,
-    pub cb: args_parse_cb,
-}
-impl args_parse_t {
-    /// Builds an argument parser specification usable in static command entries.
-    pub const fn new(
-        template: &'static core::ffi::CStr,
-        lower: core::ffi::c_int,
-        upper: core::ffi::c_int,
-        cb: args_parse_cb,
-    ) -> Self {
-        Self {
-            template,
-            lower,
-            upper,
-            cb,
-        }
-    }
-}
 pub type bitstr_t = core::ffi::c_uchar;
 pub type box_lines = core::ffi::c_int;
 pub type cc_t = core::ffi::c_uchar;

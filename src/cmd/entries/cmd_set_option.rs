@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -12,7 +13,7 @@ use crate::format::format_single_from_target;
 use crate::notify::notify_hook;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::types::{
-    OptionsRef, RustOptionsRef, args, args_parse_t, args_parse_type, u_char, u_int,
+    OptionsRef, RustOptionsRef, args, args_parse_type, u_char, u_int,
 };
 use ::std::ffi::CString;
 

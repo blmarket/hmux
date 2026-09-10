@@ -23,6 +23,7 @@
 //! below it, which needs one, then does nothing and hands back the target's
 //! own index. The conversion nulls that variable where the C's loop left it.
 
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item_weak_of;
@@ -41,7 +42,7 @@ use crate::consts::{
 };
 use crate::spawn::spawn_window;
 use crate::tmux::{check_name, clean_name};
-use crate::types::{ClientRef, SessionRef, args_parse_t, cmd_find_state, spawn_context};
+use crate::types::{ClientRef, SessionRef, cmd_find_state, spawn_context};
 #[cfg(test)]
 use crate::types::{tmuxpeer, winlink};
 use ::core::ffi::{CStr, c_int};

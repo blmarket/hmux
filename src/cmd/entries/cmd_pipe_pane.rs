@@ -6,7 +6,7 @@ use crate::consts::{
 };
 use crate::fmt_args;
 use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand_time};
-use crate::types::args_parse_t;
+use crate::args::args_parse_t;
 
 pub(crate) static cmd_pipe_pane_entry: RustCommandEntry = {
     RustCommandEntry {

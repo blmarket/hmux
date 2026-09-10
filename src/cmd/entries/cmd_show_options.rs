@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -9,7 +10,7 @@ use crate::consts::{
 use crate::fmt_args;
 use crate::format::format_single_from_target;
 use crate::options::{OptionsEngine, RustOptionsEngine};
-use crate::types::{OptionsRef, RustOptionsRef, args_parse_t, options_entry, u_char, u_int};
+use crate::types::{OptionsRef, RustOptionsRef, options_entry, u_char, u_int};
 use crate::xmalloc::xasprintf;
 use crate::{ArgumentTextCodec, RustArgumentTextCodec};
 use ::std::ffi::CString;

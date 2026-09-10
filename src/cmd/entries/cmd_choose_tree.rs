@@ -25,6 +25,7 @@
 //!   `O`, so the check can never fire for it: the parser turns the flag down
 //!   first and `argument_flag_count` is what guards the refusal.
 
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 
 use crate::cmd::cmdq_item;
@@ -34,7 +35,7 @@ use crate::fmt_args;
 use crate::paste::{PasteBufferStore, with_paste_buffers};
 use crate::server::server_client_how_many;
 use crate::sort::{RustSortCriteria, SortCriteria};
-use crate::types::{WindowMode, args, args_parse_t, args_parse_type, u_int};
+use crate::types::{WindowMode, args, args_parse_type, u_int};
 use ::core::ffi::c_char;
 use ::std::ffi::CString;
 

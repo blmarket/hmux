@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::args::{args_percentage, args_strtonum};
 use crate::cmd::cmd_get_args;
@@ -25,7 +26,7 @@ use crate::server::{client_clear_overlay, client_working_directory};
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::tmux::checkshell;
 use crate::types::{
-    ClientRef, OptionsRef, args, args_parse_t, args_parse_type, box_lines, menu_item, u_char, u_int,
+    ClientRef, OptionsRef, args, args_parse_type, box_lines, menu_item, u_char, u_int,
 };
 use ::std::ffi::{CStr, CString};
 

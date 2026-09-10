@@ -21,6 +21,7 @@
 //! the template null; the three walks pass one of exactly three values, which
 //! [`Level`] now says outright, so that arm is gone with the conversion.
 
+use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
@@ -35,7 +36,7 @@ use crate::format::{
 };
 use crate::session::SESSIONS;
 use crate::sort::{RustSortCriteria, SortCriteria};
-use crate::types::{SessionRef, args_parse_t, format_tree, u_int};
+use crate::types::{SessionRef, format_tree, u_int};
 use crate::window::{WinlinkRef, winlinks_in};
 use ::core::ffi::{CStr, c_char};
 
