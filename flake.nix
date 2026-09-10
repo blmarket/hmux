@@ -98,6 +98,10 @@
         in
         {
           default = pkgs.mkShell ({
+            shellHook = ''
+              export SHELL="${pkgs.bashInteractive}/bin/bash"
+            '';
+
             TMUX_SRC = tmux37b.src;
             RUST_SRC_PATH = "${rustNightly}/lib/rustlib/src/rust/library";
 
@@ -113,6 +117,7 @@
             C2RUST_BUILD_RUSTC = "${rustStable}/bin/rustc";
 
             packages = [
+              pkgs.bashInteractive
               tmux37b
               rustNightly
               c2rust
