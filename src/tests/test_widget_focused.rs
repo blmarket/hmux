@@ -5,8 +5,8 @@ use crate::tests::test_fixtures::{Pane, Window, globals, zeroed_client};
 use crate::window::window_pane_find_by_id;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-unsafe fn enable_rebuild(tree: &ModeTreeDataRef) {
-    unsafe {
+fn enable_rebuild(tree: &ModeTreeDataRef) {
+    {
         let weak = tree.downgrade();
         let owner = tree.clone();
         owner.borrow_mut().buildcb = Some(std::rc::Rc::new(move |_, _, _| {
@@ -548,7 +548,7 @@ fn expand_collapse_and_tag_lookup_cover_present_missing_and_empty_trees() {
 
 static EACH_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-unsafe fn count_each(_modedata: WindowModeData, _itemdata: ModeTreeItemData) {
+fn count_each(_modedata: WindowModeData, _itemdata: ModeTreeItemData) {
     EACH_COUNT.fetch_add(1, Ordering::SeqCst);
 }
 

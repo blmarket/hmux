@@ -549,7 +549,7 @@ fn server_stop_accept() {
 
 /// The end of the pause `server_add_accept` starts when `accept` runs the
 /// server out of descriptors: it just goes back to watching the socket.
-unsafe fn server_accept_timer() {
+fn server_accept_timer() {
     {
         server_add_accept(0 as core::ffi::c_int);
     }

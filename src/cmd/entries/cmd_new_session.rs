@@ -83,7 +83,7 @@ pub(crate) static cmd_has_session_entry: RustCommandEntry = {
         exec: cmd_new_session_exec,
     }
 };
-unsafe fn join_session_group(
+fn join_session_group(
     requested: &CStr,
     existing: Option<&CStr>,
     groupwith: Option<&SessionRef>,
@@ -156,7 +156,7 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             format_defaults_for_handles(&mut ft, c.as_ref(), None, None, None);
             format_expand(&mut ft, tmp)
         };
-        if unsafe { check_name(Some(&ename)) == 0 } {
+        if check_name(Some(&ename)) == 0 {
             unsafe { item.error(c"invalid window name: %s", fmt_args![ename.as_c_str()]) };
             return CMD_RETURN_ERROR;
         }
@@ -171,7 +171,7 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             format_defaults_for_handles(&mut ft, c.as_ref(), None, None, None);
             format_expand(&mut ft, tmp)
         };
-        if unsafe { check_name(Some(&ename)) == 0 } {
+        if check_name(Some(&ename)) == 0 {
             unsafe { item.error(c"invalid session name: %s", fmt_args![ename.as_c_str()]) };
             current_block = 971598175612140897;
         } else {
@@ -262,7 +262,7 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                             .to_owned(),
                     );
                     current_block = 6717214610478484138;
-                } else if unsafe { check_name(Some(group)) == 0 } {
+                } else if check_name(Some(group)) == 0 {
                     unsafe { item.error(c"invalid session group name: %s", fmt_args![group]) };
                     current_block = 971598175612140897;
                 } else {
@@ -642,7 +642,7 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                         };
                                                     } else {
                                                         if let Some(group) = group {
-                                                            unsafe {
+                                                            {
                                                                 join_session_group(
                                                                     group,
                                                                     group_name.as_deref(),
@@ -782,7 +782,7 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                                 fmt_args![],
                                                             )
                                                         };
-                                                        if unsafe { configuration_finished() } {
+                                                        if configuration_finished() {
                                                             unsafe {
                                                                 cfg_show_causes_for_session(Some(
                                                                     &created,

@@ -122,7 +122,7 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut around = item
         .target
         .wl_idx
-        .filter(|index| unsafe { session.link(*index).is_some() });
+        .filter(|index| session.link(*index).is_some());
     let target_idx = item.target.idx;
     let mut idx = target_idx;
     let mut wname: Option<CString> = None;
@@ -133,7 +133,7 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             format_defaults_for_handles(&mut ft, c.as_ref(), Some(&session), None, None);
             format_expand(&mut ft, name)
         };
-        if unsafe { check_name(Some(&expanded)) == 0 } {
+        if check_name(Some(&expanded)) == 0 {
             unsafe { item.error(c"invalid window name: %s", fmt_args![expanded.as_c_str()]) };
             return CMD_RETURN_ERROR;
         }

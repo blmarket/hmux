@@ -91,7 +91,7 @@ unsafe fn install_default(
 }
 
 /// The keys of a table's live bindings, in table order.
-unsafe fn binding_keys(table: &KeyTableRef) -> Vec<key_code> {
+fn binding_keys(table: &KeyTableRef) -> Vec<key_code> {
     table.borrow().bindings().map(key_binding_key).collect()
 }
 

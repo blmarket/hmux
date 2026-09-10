@@ -394,7 +394,7 @@ fn list_commands_mut(list: &mut cmds) -> impl Iterator<Item = &mut cmd> + '_ {
     list.iter_mut().map(Box::as_mut)
 }
 
-pub unsafe fn cmd_log_argv(argv: &[CString], fmt: &CStr, args: &[FmtArg]) {
+pub fn cmd_log_argv(argv: &[CString], fmt: &CStr, args: &[FmtArg]) {
     {
         let prefix = format_alloc(fmt, args);
         for (i, arg) in argv.iter().enumerate() {
@@ -410,7 +410,7 @@ pub(crate) fn cmd_pack_argv_impl(argv: &[CString], out: &mut [u8]) -> c_int {
     if argv.is_empty() {
         return 0;
     }
-    unsafe { cmd_log_argv(argv, c"%s", fmt_args![c"cmd_pack_argv"]) };
+    cmd_log_argv(argv, c"%s", fmt_args![c"cmd_pack_argv"]);
     let Some(first) = out.first_mut() else {
         return -1;
     };
@@ -454,7 +454,7 @@ pub(crate) fn cmd_unpack_argv_impl(packed: &mut [u8], argc: c_int) -> Option<Vec
         argv.push(CString::new(&packed[at..at + end]).unwrap());
         at += end + 1;
     }
-    unsafe { cmd_log_argv(&argv, c"%s", fmt_args![c"cmd_unpack_argv"]) };
+    cmd_log_argv(&argv, c"%s", fmt_args![c"cmd_unpack_argv"]);
     Some(argv)
 }
 
@@ -539,14 +539,14 @@ pub fn cmd_make_commands_prepare(
                 return state;
             }
             let ArgsValue::String(string) = value else {
-                unsafe { fatalx(c"unexpected argument type", fmt_args![]) };
+                fatalx(c"unexpected argument type", fmt_args![]);
             };
             Some(string.as_c_str())
         }
         None => default_command,
     };
     let Some(cmd) = cmd else {
-        unsafe { fatalx(c"argument out of range", fmt_args![]) };
+        fatalx(c"argument out of range", fmt_args![]);
     };
     state.cmd = Some(expand(cmd));
     log_debug(

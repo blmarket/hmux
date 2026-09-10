@@ -47,7 +47,7 @@ use core::ffi::c_int;
 /// them back out — and a string that does not fit aborts, as `xsnprintf` does.
 fn cmd_display_panes_fill(buf: &mut [u8; 16], text: &str) -> size_t {
     if text.len() >= buf.len() {
-        unsafe { fatalx(c"xsnprintf: overflow", fmt_args![]) };
+        fatalx(c"xsnprintf: overflow", fmt_args![]);
     }
     buf[..text.len()].copy_from_slice(text.as_bytes());
     text.len() as size_t

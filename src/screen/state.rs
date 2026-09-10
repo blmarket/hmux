@@ -327,7 +327,7 @@ fn screen_new_with_extended_keys(
     hlimit: u_int,
     extended_keys: c_longlong,
 ) -> RustScreen {
-    unsafe {
+    {
         let mut s = RustScreen::default();
         s.0.grid = Some(grid_create(sx, sy, hlimit));
         s.0.title = Some(c"".to_owned());
@@ -355,8 +355,8 @@ pub unsafe fn screen_reinit(s: &mut RustScreen) {
     }
 }
 
-unsafe fn screen_reinit_with_extended_keys(s: &mut RustScreen, extended_keys: c_longlong) {
-    unsafe {
+fn screen_reinit_with_extended_keys(s: &mut RustScreen, extended_keys: c_longlong) {
+    {
         s.0.cx = 0;
         s.0.cy = 0;
         s.0.rupper = 0;
@@ -388,7 +388,7 @@ unsafe fn screen_reinit_with_extended_keys(s: &mut RustScreen, extended_keys: c_
 
 /// Resets a standalone screen with tmux's default extended-key mode.
 fn screen_reinit_standalone(s: &mut RustScreen) {
-    unsafe { screen_reinit_with_extended_keys(s, 0) };
+    screen_reinit_with_extended_keys(s, 0);
 }
 
 #[cfg(test)]
@@ -442,7 +442,7 @@ pub fn screen_set_cursor_style(style: u_int, cstyle: &mut screen_cursor_style, m
 /// Set the progress bar, keeping the progress it had when there is none to
 /// set.
 /// Resize a screen, keeping the cell the cursor is on.
-pub unsafe fn screen_resize_cursor(
+pub fn screen_resize_cursor(
     s: &mut RustScreen,
     sx: u_int,
     sy: u_int,
@@ -450,7 +450,7 @@ pub unsafe fn screen_resize_cursor(
     eat_empty: c_int,
     cursor: c_int,
 ) {
-    unsafe {
+    {
         let mut cx = s.0.cx;
         let mut cy = s.grid().hsize + s.0.cy;
 
@@ -511,14 +511,14 @@ pub unsafe fn screen_resize_cursor(
     }
 }
 
-pub unsafe fn screen_resize(s: &mut RustScreen, sx: u_int, sy: u_int, reflow: c_int) {
-    unsafe { screen_resize_cursor(s, sx, sy, reflow, 1, 1) }
+pub fn screen_resize(s: &mut RustScreen, sx: u_int, sy: u_int, reflow: c_int) {
+    screen_resize_cursor(s, sx, sy, reflow, 1, 1)
 }
 
 /// Give the screen a new height, moving lines into and out of the history as
 /// the new size needs.
-unsafe fn screen_resize_y(s: &mut RustScreen, sy: u_int, eat_empty: c_int, cy: &mut u_int) {
-    unsafe {
+fn screen_resize_y(s: &mut RustScreen, sy: u_int, eat_empty: c_int, cy: &mut u_int) {
+    {
         let gd = s.0.grid.as_deref_mut().expect("a screen holds a grid");
         if sy == 0 {
             fatalx(c"zero size", fmt_args![]);
@@ -757,8 +757,8 @@ impl RustScreen {
         screen_set_cursor_style(style, &mut self.0.default_cstyle, &mut self.0.default_mode);
     }
 
-    pub unsafe fn set_default_cursor(&mut self, oo: &RustOptionsRef) {
-        unsafe {
+    pub fn set_default_cursor(&mut self, oo: &RustOptionsRef) {
+        {
             self.0.default_ccolour = (oo).number(c"cursor-colour") as c_int;
             self.0.default_mode = 0;
             self.set_default_cursor_style((oo).number(c"cursor-style") as u_int);
@@ -935,7 +935,7 @@ fn screen_reflow(s: &mut RustScreen, new_x: u_int, cx: &mut u_int, cy: &mut u_in
 }
 
 /// Put the screen aside and start on an empty one.
-pub unsafe fn screen_alternate_on(s: &mut RustScreen, gc: &grid_cell, cursor: c_int) {
+pub fn screen_alternate_on(s: &mut RustScreen, gc: &grid_cell, cursor: c_int) {
     {
         if s.0.saved_grid.is_some() {
             return;
@@ -961,8 +961,8 @@ pub unsafe fn screen_alternate_on(s: &mut RustScreen, gc: &grid_cell, cursor: c_
 }
 
 /// Take the screen that was put aside back.
-pub unsafe fn screen_alternate_off(s: &mut RustScreen, gc: Option<&mut grid_cell>, cursor: c_int) {
-    unsafe {
+pub fn screen_alternate_off(s: &mut RustScreen, gc: Option<&mut grid_cell>, cursor: c_int) {
+    {
         let (sx, sy) = (s.grid().sx, s.grid().sy);
 
         /*

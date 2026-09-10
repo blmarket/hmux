@@ -178,7 +178,7 @@ pub fn layout_search_by_border(lc: &layout_cell, x: u_int, y: u_int) -> Option<L
     None
 }
 
-pub unsafe fn layout_set_size(
+pub fn layout_set_size(
     lc: &mut layout_cell,
     sx: u_int,
     sy: u_int,
@@ -209,12 +209,12 @@ pub fn layout_cell_set_pane(lc: &mut layout_cell, pane: Option<RustWindowPaneWea
 pub fn layout_make_leaf(lc: &mut layout_cell, wp: &impl crate::WindowPane) {
     lc.type_0 = LAYOUT_WINDOWPANE;
     lc.cells.clear();
-    lc.wp_ref = unsafe { crate::window::window_pane_ref_of(wp) };
+    lc.wp_ref = crate::window::window_pane_ref_of(wp);
 }
 
 pub fn layout_make_node(lc: &mut layout_cell, type_0: layout_type) {
     if type_0 == LAYOUT_WINDOWPANE {
-        unsafe { fatalx(c"bad layout type", fmt_args![]) };
+        fatalx(c"bad layout type", fmt_args![]);
     }
     lc.type_0 = type_0;
     lc.cells.clear();
@@ -422,7 +422,7 @@ pub fn layout_count_cells(lc: &layout_cell) -> u_int {
         LAYOUT_LEFTRIGHT | LAYOUT_TOPBOTTOM => lc.cells.iter().fold(0 as u_int, |count, child| {
             count.wrapping_add(layout_count_cells(child))
         }),
-        _ => unsafe { fatalx(c"bad layout type", fmt_args![]) },
+        _ => fatalx(c"bad layout type", fmt_args![]),
     }
 }
 
@@ -781,7 +781,7 @@ impl WindowRef {
                         collect(child, order);
                     }
                 }
-                _ => unsafe { fatalx(c"bad layout type", fmt_args![]) },
+                _ => fatalx(c"bad layout type", fmt_args![]),
             }
         }
         let mut order = Vec::new();
@@ -1498,7 +1498,7 @@ impl WindowRef {
     }
     /// A cell that floats over the layout at (ox, oy), under a node made for the
     /// purpose when the window is still one pane.
-    pub unsafe fn float_pane_layout(
+    pub fn float_pane_layout(
         &self,
         sx: u_int,
         sy: u_int,
@@ -1507,7 +1507,7 @@ impl WindowRef {
     ) -> LayoutCellPath {
         let owner = self;
 
-        unsafe {
+        {
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
             if w.layout_root

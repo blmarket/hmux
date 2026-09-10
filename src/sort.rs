@@ -549,7 +549,7 @@ pub(crate) fn sort_get_winlinks(sort_crit: &sort_criteria_t) -> Vec<WinlinkRef> 
     l
 }
 
-pub unsafe fn sort_get_key_bindings(sort_crit: &sort_criteria_t) -> Vec<KeyBinding> {
+pub fn sort_get_key_bindings(sort_crit: &sort_criteria_t) -> Vec<KeyBinding> {
     {
         let mut l: Vec<KeyBinding> = Vec::new();
         key_tables.with_borrow(|tables| {
@@ -562,7 +562,7 @@ pub unsafe fn sort_get_key_bindings(sort_crit: &sort_criteria_t) -> Vec<KeyBindi
     }
 }
 
-pub unsafe fn sort_get_key_bindings_table(
+pub fn sort_get_key_bindings_table(
     table: &mut key_table,
     sort_crit: &sort_criteria_t,
 ) -> Vec<KeyBinding> {
@@ -576,7 +576,7 @@ pub unsafe fn sort_get_key_bindings_table(
 mod tests;
 
 impl WindowRef {
-    pub(crate) unsafe fn sorted_panes(
+    pub(crate) fn sorted_panes(
         &self,
         sort_crit: &sort_criteria_t,
     ) -> Vec<RustWindowPaneWeak> {
@@ -611,7 +611,7 @@ impl KeyTableRef {
     /// # Safety
     /// Run on the server thread without conflicting key-table access. Sorting
     /// follows the existing criteria and dispatches no callbacks.
-    pub(crate) unsafe fn sorted_bindings(&self, criteria: &sort_criteria_t) -> Vec<KeyBinding> {
-        unsafe { sort_get_key_bindings_table(&mut self.borrow_mut(), criteria) }
+    pub(crate) fn sorted_bindings(&self, criteria: &sort_criteria_t) -> Vec<KeyBinding> {
+        sort_get_key_bindings_table(&mut self.borrow_mut(), criteria)
     }
 }

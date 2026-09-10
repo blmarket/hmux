@@ -22,14 +22,14 @@ use crate::tests::test_fixtures::{Grid, Screen, ascii, globals};
 // helpers
 // ---------------------------------------------------------------------------
 
-unsafe fn line_text(gd: &crate::types::grid, py: u32) -> String {
+fn line_text(gd: &crate::types::grid, py: u32) -> String {
     {
         let p = grid_string_cells(&*gd, 0, py, 100, None, 0, None);
         p.to_string_lossy().into_owned()
     }
 }
 
-unsafe fn text_with_flags(gd: &crate::types::grid, py: u32, nx: u32, flags: i32) -> String {
+fn text_with_flags(gd: &crate::types::grid, py: u32, nx: u32, flags: i32) -> String {
     {
         let p = grid_string_cells(&*gd, 0, py, nx, None, flags, None);
         p.to_string_lossy().into_owned()
@@ -125,12 +125,12 @@ fn grid_cells_equal_and_look_equal_distinguish_style_vs_content() {
     let _guard = globals();
     let gc1 = ascii(b'A');
     let mut gc2 = ascii(b'A');
-    unsafe {
+    {
         assert_ne!(grid_cells_equal(&gc1, &gc2), 0);
         assert_ne!(grid_cells_look_equal(&gc1, &gc2), 0);
     }
     gc2.data.data[0] = b'B';
-    unsafe {
+    {
         assert_eq!(grid_cells_equal(&gc1, &gc2), 0);
         // look-equal still true when fg/bg/attr equal despite byte change?
         // look_equal ignores size/width/content width but does compare bytes? No,
@@ -139,7 +139,7 @@ fn grid_cells_equal_and_look_equal_distinguish_style_vs_content() {
     }
     gc2 = ascii(b'A');
     gc2.fg = 1;
-    unsafe {
+    {
         assert_eq!(grid_cells_look_equal(&gc1, &gc2), 0);
         assert_eq!(grid_cells_equal(&gc1, &gc2), 0);
     }
@@ -155,7 +155,7 @@ fn grid_clear_and_clear_lines_edge_cases() {
     let mut g = Grid::new(10, 4, 0);
     g.write(0, 0, "abcdefghij");
     g.write(0, 1, "0123456789");
-    unsafe {
+    {
         // zero-size clear is a no-op
         grid_clear(&mut *g, 0, 0, 0, 1, 8);
         assert_eq!(line_text(&g, 0), "abcdefghij");
@@ -182,7 +182,7 @@ fn grid_clear_and_clear_lines_edge_cases() {
 fn grid_set_cells_and_padding_round_trip() {
     let _guard = globals();
     let mut g = Grid::new(10, 2, 0);
-    unsafe {
+    {
         let mut gc = grid_default_cell;
         gc.fg = 2;
         // set_cells writes run of bytes sharing one style
@@ -213,7 +213,7 @@ fn grid_move_cells_and_move_lines() {
     g.write(0, 1, "111");
     g.write(0, 2, "222");
     g.write(0, 3, "333");
-    unsafe {
+    {
         // move cells right within a line
         grid_move_cells(&mut *g, 3, 0, 0, 3, 8);
         // 0..3 ("abc") moved to 3..6, source cleared to spaces
@@ -250,7 +250,7 @@ fn grid_history_scroll_and_remove_and_collect() {
     let mut g = Grid::new(10, 2, 100);
     g.write(0, 0, "first");
     g.write(0, 1, "second");
-    unsafe {
+    {
         assert_eq!(g.hsize, 0);
         grid_scroll_history(&mut *g, 8);
         assert_eq!(g.hsize, 1);
@@ -281,7 +281,7 @@ fn grid_history_scroll_and_remove_and_collect() {
 fn grid_reflow_via_screen_fixture_preserves_content() {
     let _guard = globals();
     let mut s = Screen::new(10, 3, 100);
-    unsafe {
+    {
         // write a long unwrapped line then reflow narrower
         let mut gc = grid_default_cell;
         for (i, b) in b"abcdefghij".iter().enumerate() {
@@ -324,7 +324,7 @@ fn grid_string_cells_trim_and_empty_flags() {
     let _guard = globals();
     let mut g = Grid::new(10, 1, 0);
     g.write(0, 0, "hi  ");
-    unsafe {
+    {
         // default includes trailing spaces as stored, but TRIM_SPACES drops them
         let full = text_with_flags(&g, 0, 10, 0);
         assert!(full.starts_with("hi"), "{full:?}");

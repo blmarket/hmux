@@ -330,7 +330,7 @@ fn style_parse_word(sy: &mut style, base: &grid_cell, w: &[u8]) -> Result<(), ()
     Ok(())
 }
 
-unsafe fn style_parse_impl(sy: &mut style, base: &grid_cell, input: &[u8]) -> c_int {
+fn style_parse_impl(sy: &mut style, base: &grid_cell, input: &[u8]) -> c_int {
     {
         if input.is_empty() {
             return 0 as c_int;
@@ -547,7 +547,7 @@ impl StyleCodec for RustStyleCodec {
         base: &Self::Cell,
         input: &[u8],
     ) -> Result<(), StyleParseError> {
-        match unsafe { style_parse_impl(style, base, input) } {
+        match style_parse_impl(style, base, input) {
             0 => Ok(()),
             _ => Err(StyleParseError),
         }
@@ -566,11 +566,11 @@ impl StyleCodec for RustStyleCodec {
     }
 }
 
-pub unsafe fn style_parse(sy: &mut style, base: &grid_cell, input: &[u8]) -> c_int {
+pub fn style_parse(sy: &mut style, base: &grid_cell, input: &[u8]) -> c_int {
     RustStyleCodec.parse(sy, base, input).map_or(-1, |()| 0)
 }
 
-pub unsafe fn style_tostring(sy: &style) -> CString {
+pub fn style_tostring(sy: &style) -> CString {
     RustStyleCodec.to_string(sy)
 }
 

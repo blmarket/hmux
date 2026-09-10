@@ -84,7 +84,7 @@ pub(crate) fn spawn_shell_name(shell: &CStr) -> &CStr {
     }
 }
 
-unsafe fn spawn_log(from: &CStr, sc: &spawn_context) {
+fn spawn_log(from: &CStr, sc: &spawn_context) {
     {
         let s = sc.s.as_ref().expect("a spawn context has a session owner");
         let wl = sc.wl_idx;

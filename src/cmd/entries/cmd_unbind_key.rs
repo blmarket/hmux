@@ -111,6 +111,6 @@ unsafe fn cmd_unbind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     } else {
         c"prefix"
     };
-    unsafe { key_bindings_remove(tablename, key) };
+    key_bindings_remove(tablename, key);
     CMD_RETURN_NORMAL
 }

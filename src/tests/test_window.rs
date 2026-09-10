@@ -152,8 +152,8 @@ pub(crate) fn window_has_floating_panes(w: &window) -> core::ffi::c_int {
         .any(|pane| window_pane_is_floating(w, &pane.downgrade()) != 0) as core::ffi::c_int
 }
 
-pub(crate) unsafe fn screen_write_sync_callback_for_test(wp: &mut impl crate::WindowPane) {
-    unsafe { screen_write_sync_callback(wp) }
+pub(crate) fn screen_write_sync_callback_for_test(wp: &mut impl crate::WindowPane) {
+    screen_write_sync_callback(wp)
 }
 
 /// Keeps `id` out of the ids the server hands out, so a pane a test builds
@@ -188,7 +188,7 @@ pub(crate) fn window_panes_position(
 }
 
 /// Puts `wp` on top of a stacking order.
-pub(crate) unsafe fn window_pane_zindex_insert_head(w: &mut window, wp: &impl crate::WindowPane) {
+pub(crate) fn window_pane_zindex_insert_head(w: &mut window, wp: &impl crate::WindowPane) {
     let pane = w
         .panes
         .iter()

@@ -142,7 +142,7 @@ unsafe fn window_buffer_format_context(
     (fs.session(), fs.winlink_ref(), fs.pane_ref())
 }
 
-unsafe fn window_buffer_draw(
+fn window_buffer_draw(
     itemdata: ModeTreeItemData,
     writer: &mut impl ScreenWriteCtx,
     sx: u_int,
@@ -197,7 +197,7 @@ fn window_buffer_find(data: &[u8], find: &[u8], icase: core::ffi::c_int) -> core
     };
     found as core::ffi::c_int
 }
-unsafe fn window_buffer_search(
+fn window_buffer_search(
     itemdata: ModeTreeItemData,
     ss: &CStr,
     icase: core::ffi::c_int,
@@ -327,8 +327,8 @@ pub(crate) unsafe fn window_buffer_resize(wme: &mut window_mode_entry, sx: u_int
     unsafe { tree.resize(sx, sy) };
 }
 
-unsafe fn window_buffer_do_delete(modedata: WindowModeData, itemdata: ModeTreeItemData) {
-    unsafe {
+fn window_buffer_do_delete(modedata: WindowModeData, itemdata: ModeTreeItemData) {
+    {
         let held = modedata.buffer().expect("the mode holds its state");
         let tree = held.borrow().tree_ref();
         let Some(item) = itemdata.buffer() else {

@@ -9,7 +9,7 @@ use crate::tests::test_fixtures::{ensure_reactor, globals, zeroed};
 use core::ffi::{c_int, c_short, c_void};
 use core::ptr::null_mut;
 
-unsafe fn never(_fd: c_int, _events: c_short, _arg: *mut c_void) {}
+fn never(_fd: c_int, _events: c_short, _arg: *mut c_void) {}
 
 struct IdentifyPeer {
     process: ProcessRef,

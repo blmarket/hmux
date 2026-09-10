@@ -1416,7 +1416,7 @@ pub unsafe fn tty_keys_build(tty: &mut tty) {
             });
     }
 }
-pub unsafe fn tty_keys_free(tty: &mut tty) {
+pub fn tty_keys_free(tty: &mut tty) {
     {
         drop(tty.key_tree.take());
     }

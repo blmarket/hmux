@@ -512,7 +512,7 @@ pub fn utf8_update_width_cache(specs: impl IntoIterator<Item = CString>) {
 
 /// The index the trees keep a character under, adding it if it is new, or
 /// `None` once every index has been handed out.
-unsafe fn utf8_put_item(data: &[u8]) -> Option<u_int> {
+fn utf8_put_item(data: &[u8]) -> Option<u_int> {
     {
         let stored = utf8_stored_of(data);
         let (index, inserted) = UTF8_STORE
@@ -540,8 +540,8 @@ unsafe fn utf8_put_item(data: &[u8]) -> Option<u_int> {
 ///
 /// The character comes back either way: on failure it is the placeholder the
 /// C wrote through its out-parameter, one space per column of `ud`'s width.
-pub unsafe fn utf8_from_data(ud: &utf8_data) -> (utf8_state, utf8_char) {
-    unsafe {
+pub fn utf8_from_data(ud: &utf8_data) -> (utf8_state, utf8_char) {
+    {
         if ud.width > 2 {
             fatalx(
                 c"invalid UTF-8 width: %u",

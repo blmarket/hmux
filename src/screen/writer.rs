@@ -94,7 +94,7 @@ pub(crate) trait ScreenWriteCtx {
     fn reverseindex(&mut self, bg: u_int);
     fn insertline(&mut self, ny: u_int, bg: u_int);
     fn cursor_position(&self) -> (u_int, u_int);
-    unsafe fn screen_mut(&mut self) -> &mut RustScreen;
+    fn screen_mut(&mut self) -> &mut RustScreen;
     fn size(&self) -> (u_int, u_int);
     fn format_draw(
         &mut self,
@@ -168,11 +168,8 @@ impl<'a> RustScreenWriteCtx<'a> {
 
     /// Starts writing to a standalone screen using this context.
     ///
-    /// # Safety
-    ///
-    /// The screen must remain valid and exclusively borrowed until `stop` is
-    /// called.
-    unsafe fn start(&mut self, s: &'a mut RustScreen) {
+    /// The screen remains exclusively borrowed until the writer is dropped.
+    fn start(&mut self, s: &'a mut RustScreen) {
         assert!(!self.active, "screen writer is already active");
         self.state = write::screen_write_start(s);
         self.target = Some(s);
@@ -181,18 +178,15 @@ impl<'a> RustScreenWriteCtx<'a> {
 
     /// Starts writing to a pane base screen using this context.
     ///
-    /// # Safety
-    ///
-    /// The pane and its base screen must remain valid and exclusively borrowed
-    /// until `stop` is called.
-    unsafe fn start_pane_base(&mut self, wp: &'a mut impl crate::WindowPane) {
+    /// The pane remains exclusively borrowed until the writer is dropped.
+    fn start_pane_base(&mut self, wp: &'a mut impl crate::WindowPane) {
         assert!(!self.active, "screen writer is already active");
-        self.state = unsafe { write::screen_write_start_pane_base(wp) };
+        self.state = write::screen_write_start_pane_base(wp);
         self.target = Some(wp.base_mut());
         self.active = true;
     }
 
-    unsafe fn start_callback_owned(
+    fn start_callback_owned(
         &mut self,
         s: &'a mut RustScreen,
         init_ctx: super::write::screen_write_init_ctx,
@@ -209,14 +203,14 @@ impl<'a> RustScreenWriteCtx<'a> {
         init_ctx: super::write::screen_write_init_ctx,
     ) -> Self {
         let mut writer = Self::new();
-        unsafe { writer.start_callback_owned(s, init_ctx) };
+        writer.start_callback_owned(s, init_ctx);
         writer
     }
 
     /// Starts writing to a standalone screen.
     pub(crate) fn on_screen(s: &'a mut RustScreen) -> Self {
         let mut writer = Self::new();
-        unsafe { writer.start(s) };
+        writer.start(s);
         writer
     }
 
@@ -287,7 +281,7 @@ impl<'a> RustScreenWriteCtx<'a> {
     /// Starts writing to a pane's base screen.
     pub(crate) fn on_pane_base(wp: &'a mut impl crate::WindowPane) -> Self {
         let mut writer = Self::new();
-        unsafe { writer.start_pane_base(wp) };
+        writer.start_pane_base(wp);
         writer
     }
 }
@@ -342,7 +336,7 @@ impl ScreenWriteCtx for RustScreenWriteCtx<'_> {
 
     /// Clears to the end of the target line.
     fn clearendofline(&mut self, bg: u_int) {
-        unsafe { write::screen_write_clearendofline(&mut self.context_mut(), bg) };
+        write::screen_write_clearendofline(&mut self.context_mut(), bg);
     }
 
     /// Draws a box on the target screen.
@@ -532,12 +526,12 @@ impl ScreenWriteCtx for RustScreenWriteCtx<'_> {
 
     /// Clears the target line.
     fn clearline(&mut self, bg: u_int) {
-        unsafe { write::screen_write_clearline(&mut self.context_mut(), bg) };
+        write::screen_write_clearline(&mut self.context_mut(), bg);
     }
 
     /// Clears from the start of the line through the cursor.
     fn clearstartofline(&mut self, bg: u_int) {
-        unsafe { write::screen_write_clearstartofline(&mut self.context_mut(), bg) };
+        write::screen_write_clearstartofline(&mut self.context_mut(), bg);
     }
 
     /// Moves the cursor up, scrolling the target region down when needed.
@@ -557,11 +551,9 @@ impl ScreenWriteCtx for RustScreenWriteCtx<'_> {
 
     /// Returns mutable access to the screen currently being written.
     ///
-    /// # Safety
-    ///
     /// The returned screen must not be used to bypass writer operations that
     /// maintain the terminal output collection.
-    unsafe fn screen_mut(&mut self) -> &mut RustScreen {
+    fn screen_mut(&mut self) -> &mut RustScreen {
         assert!(self.active, "screen writer is inactive");
         if let Some(target) = self.shared_target.as_ref() {
             self.screen_access
@@ -606,7 +598,7 @@ impl ScreenWriteCtx for RustScreenWriteCtx<'_> {
 
     /// Clears the target screen's scrollback history.
     fn clearhistory(&mut self) {
-        unsafe { write::screen_write_clearhistory(&mut self.context_mut()) };
+        write::screen_write_clearhistory(&mut self.context_mut());
     }
 
     /// Requests a complete redraw of the target screen.
@@ -703,7 +695,7 @@ mod tests {
             let _ = &owner;
         });
         let mut writer = RustScreenWriteCtx::new();
-        unsafe { writer.start_callback_owned(&mut target, Some(callback)) };
+        writer.start_callback_owned(&mut target, Some(callback));
         assert!(weak.upgrade().is_some());
         writer.stop();
         assert!(writer.target.is_none());
@@ -724,7 +716,7 @@ mod tests {
         let mut writer = RustScreenWriteCtx::on_shared_screen(&target);
         writer.puts(&crate::grid::grid_default_cell, c"hi", &[]);
         assert_eq!(target.borrow().cursor(), (2, 0));
-        unsafe { writer.screen_mut().set_cursor_style(3) };
+        writer.screen_mut().set_cursor_style(3);
         assert_eq!(writer.cursor_position(), (2, 0));
         assert_eq!(writer.size(), (12, 3));
         writer.cursormove(1, 1, 0);

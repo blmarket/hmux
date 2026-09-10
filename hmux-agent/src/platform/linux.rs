@@ -523,7 +523,7 @@ mod tests {
     /// wrong, since it parks in a different symbol than a terminal read does.
     #[test]
     fn a_busy_or_otherwise_sleeping_process_is_not_reported_as_waiting() {
-        unsafe fn spin_forever() -> ! {
+        fn spin_forever() -> ! {
             loop {
                 std::hint::spin_loop();
             }

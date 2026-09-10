@@ -178,7 +178,7 @@ fn logging_walks_every_entry_that_has_a_name_and_a_value() {
     env.set(c"ONE", 0, c"1");
     env.set(c"", 0, c"nameless");
     env.clear(c"CLEARED");
-    unsafe { log_environment(&env, c"%s: ", fmt_args![c"prefix".as_ptr()]) };
+    log_environment(&env, c"%s: ", fmt_args![c"prefix".as_ptr()]);
     assert_eq!(
         env.entries()
             .map(|entry| entry.name.to_bytes())

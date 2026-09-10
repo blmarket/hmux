@@ -90,7 +90,7 @@ unsafe fn cmd_find_inside_pane(c: Option<&ClientRef>) -> Option<RustWindowPaneWe
         pane
     }
 }
-unsafe fn cmd_find_client_better(c: &ClientRef, than: Option<&ClientRef>) -> core::ffi::c_int {
+fn cmd_find_client_better(c: &ClientRef, than: Option<&ClientRef>) -> core::ffi::c_int {
     let Some(than) = than else {
         return 1 as core::ffi::c_int;
     };
@@ -116,8 +116,8 @@ pub(crate) unsafe fn cmd_find_best_client_for_session(s: &SessionRef) -> Option<
     unsafe { cmd_find_best_client(s.as_session()) }
 }
 
-pub unsafe fn cmd_find_best_client(s: &session) -> Option<ClientRef> {
-    unsafe {
+pub fn cmd_find_best_client(s: &session) -> Option<ClientRef> {
+    {
         let want = (s.session_attached() != 0 as u_int).then_some(s);
         with_clients(|clients| {
             let mut best: Option<&ClientRef> = None;

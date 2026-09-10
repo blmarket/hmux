@@ -251,7 +251,7 @@ fn read_callback_can_close_its_file_without_holding_the_file_borrow() {
         state.buffer.append(b"abcd");
     }
     *current.borrow_mut() = Some(file.clone());
-    unsafe { file.fire_read() };
+    file.fire_read();
     assert!(files.borrow().is_empty());
     assert_eq!(file.borrow().done, 1);
     assert_eq!(file.borrow_mut().buffer.as_slice(), b"cdef");

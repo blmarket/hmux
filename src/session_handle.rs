@@ -212,9 +212,7 @@ impl SessionRef {
         }
     }
 
-    /// # Safety
-    /// Exclude mutation of session links during this lookup.
-    pub(crate) unsafe fn link(&self, index: core::ffi::c_int) -> Option<crate::window::WinlinkRef> {
+    pub(crate) fn link(&self, index: core::ffi::c_int) -> Option<crate::window::WinlinkRef> {
         crate::window::WinlinkRef::new(self.clone(), index)
     }
 

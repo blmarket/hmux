@@ -731,11 +731,11 @@ pub(crate) fn imsg_get_strbuf(imsg: &mut imsg, str: &mut [u8]) -> c_int {
     unsafe { ibuf_get_strbuf(imsg_buf(imsg), str) }
 }
 
-pub(crate) unsafe fn imsg_get_id(imsg: &imsg) -> uint32_t {
+pub(crate) fn imsg_get_id(imsg: &imsg) -> uint32_t {
     imsg.hdr.peerid
 }
 
-pub(crate) unsafe fn imsg_get_pid(imsg: &imsg) -> pid_t {
+pub(crate) fn imsg_get_pid(imsg: &imsg) -> pid_t {
     imsg.hdr.pid as pid_t
 }
 

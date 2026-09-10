@@ -565,8 +565,8 @@ pub(crate) unsafe fn file_write_open(
         );
     }
 }
-pub(crate) unsafe fn file_write_data(files: &client_files_t, imsg: &imsg) {
-    unsafe {
+pub(crate) fn file_write_data(files: &client_files_t, imsg: &imsg) {
+    {
         let payload = imsg.imsg_message_data();
         let msglen = payload.len();
         let size: size_t = msglen.wrapping_sub(size_of::<msg_write_data>() as size_t);
@@ -796,7 +796,7 @@ impl ClientFileRef {
             cf
         }
     }
-    pub(crate) unsafe fn create_with_client(
+    pub(crate) fn create_with_client(
         mut c: Option<&mut client>,
         stream: core::ffi::c_int,
         cb: client_file_cb,
@@ -884,7 +884,7 @@ impl ClientFileRef {
             drop(discarded);
         });
     }
-    pub(crate) unsafe fn fire_read(&self) {
+    pub(crate) fn fire_read(&self) {
         let cf = self;
 
         let (callback, client, error, mut buffer, data) = {
@@ -989,7 +989,7 @@ impl ClientFileRef {
             }
         }
     }
-    unsafe fn on_write_error(self) {
+    fn on_write_error(self) {
         let cf_ref = self;
 
         let callback = {

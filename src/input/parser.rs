@@ -1825,8 +1825,8 @@ fn input_reset_cell(ictx: &mut input_ctx) {
     ictx.old_cx = 0 as u_int;
     ictx.old_cy = 0 as u_int;
 }
-unsafe fn input_save_state(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>) {
-    unsafe {
+fn input_save_state(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>) {
+    {
         let s = &mut *sctx.screen_mut();
         ictx.old_cell = ictx.cell;
         (ictx.old_cx, ictx.old_cy) = s.cursor();
@@ -2083,7 +2083,7 @@ pub unsafe fn input_parse_buffer(wp: &mut impl crate::WindowPane, mut input: Byt
 }
 
 /// The parameters the parser collected for the sequence in hand.
-unsafe fn input_params(ictx: &mut input_ctx) -> &mut [InputParam; 24] {
+fn input_params(ictx: &mut input_ctx) -> &mut [InputParam; 24] {
     &mut ictx.param_list
 }
 fn input_fields(buffer: &mut [u8], separator: u8) -> impl Iterator<Item = &CStr> {
@@ -2149,13 +2149,13 @@ unsafe fn input_split(ictx: &mut input_ctx) -> core::ffi::c_int {
     }
 }
 
-unsafe fn input_get(
+fn input_get(
     ictx: &mut input_ctx,
     validx: u_int,
     minval: core::ffi::c_int,
     defval: core::ffi::c_int,
 ) -> core::ffi::c_int {
-    unsafe {
+    {
         if validx >= ictx.param_list_len {
             return defval;
         }
@@ -2170,7 +2170,7 @@ unsafe fn input_get(
         retval
     }
 }
-unsafe fn input_send_reply(ictx: &mut input_ctx, reply: &CStr) {
+fn input_send_reply(ictx: &mut input_ctx, reply: &CStr) {
     {
         if !ictx.event.is_none() {
             log_debug(
@@ -2181,8 +2181,8 @@ unsafe fn input_send_reply(ictx: &mut input_ctx, reply: &CStr) {
         }
     }
 }
-unsafe fn input_reply(ictx: &mut input_ctx, add: core::ffi::c_int, fmt: &CStr, args: &[FmtArg]) {
-    unsafe {
+fn input_reply(ictx: &mut input_ctx, add: core::ffi::c_int, fmt: &CStr, args: &[FmtArg]) {
+    {
         let reply = format_alloc(fmt, args);
         if add != 0 && !ictx.requests.is_empty() {
             let ir = input_make_request(ictx, INPUT_REQUEST_QUEUE);
@@ -2192,7 +2192,7 @@ unsafe fn input_reply(ictx: &mut input_ctx, add: core::ffi::c_int, fmt: &CStr, a
         };
     }
 }
-unsafe fn input_clear(ictx: &mut input_ctx) {
+fn input_clear(ictx: &mut input_ctx) {
     {
         ictx.ground_timer.disarm();
         ictx.interm_buf[0] = 0;
@@ -2205,7 +2205,7 @@ unsafe fn input_clear(ictx: &mut input_ctx) {
         ictx.flags &= !INPUT_DISCARD;
     }
 }
-unsafe fn input_ground(ictx: &mut input_ctx) {
+fn input_ground(ictx: &mut input_ctx) {
     {
         ictx.ground_timer.disarm();
         if let Some(buf) = ictx.since_ground.as_deref_mut() {
@@ -2238,7 +2238,7 @@ unsafe fn input_print(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>) -
         0 as core::ffi::c_int
     }
 }
-unsafe fn input_intermediate(ictx: &mut input_ctx) -> core::ffi::c_int {
+fn input_intermediate(ictx: &mut input_ctx) -> core::ffi::c_int {
     {
         if ictx.interm_len == size_of::<[u_char; 4]>().wrapping_sub(1_usize) {
             ictx.flags |= INPUT_DISCARD;
@@ -2251,7 +2251,7 @@ unsafe fn input_intermediate(ictx: &mut input_ctx) -> core::ffi::c_int {
         0 as core::ffi::c_int
     }
 }
-unsafe fn input_parameter(ictx: &mut input_ctx) -> core::ffi::c_int {
+fn input_parameter(ictx: &mut input_ctx) -> core::ffi::c_int {
     {
         if ictx.param_len == size_of::<[u_char; 64]>().wrapping_sub(1_usize) {
             ictx.flags |= INPUT_DISCARD;
@@ -2266,7 +2266,7 @@ unsafe fn input_parameter(ictx: &mut input_ctx) -> core::ffi::c_int {
 }
 /// The length of the collected string, which the buffer holds ahead of the
 /// terminating NUL the appenders keep at its end.
-unsafe fn input_length(ictx: &mut input_ctx) -> size_t {
+fn input_length(ictx: &mut input_ctx) -> size_t {
     ictx.input_buf.len().wrapping_sub(1_usize) as size_t
 }
 unsafe fn input_input(ictx: &mut input_ctx) -> core::ffi::c_int {
@@ -3230,8 +3230,8 @@ unsafe fn input_csi_dispatch(
         0 as core::ffi::c_int
     }
 }
-unsafe fn input_csi_dispatch_rm(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>) {
-    unsafe {
+fn input_csi_dispatch_rm(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>) {
+    {
         let mut i: u_int;
         i = 0 as u_int;
         while i < ictx.param_list_len {
@@ -3336,8 +3336,8 @@ unsafe fn input_csi_dispatch_rm_private(ictx: &mut input_ctx, sctx: &mut RustScr
         }
     }
 }
-unsafe fn input_csi_dispatch_sm(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>) {
-    unsafe {
+fn input_csi_dispatch_sm(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>) {
+    {
         let mut i: u_int;
         i = 0 as u_int;
         while i < ictx.param_list_len {
@@ -3450,7 +3450,7 @@ unsafe fn input_csi_dispatch_sm_private(ictx: &mut input_ctx, sctx: &mut RustScr
         }
     }
 }
-unsafe fn input_csi_dispatch_sm_graphics(_ictx: &mut input_ctx) {}
+fn input_csi_dispatch_sm_graphics(_ictx: &mut input_ctx) {}
 unsafe fn input_csi_dispatch_winops(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>) {
     unsafe {
         let window = ictx.window_ref();
@@ -3524,7 +3524,7 @@ unsafe fn input_csi_dispatch_winops(ictx: &mut input_ctx, sctx: &mut RustScreenW
     }
 }
 
-unsafe fn input_csi_dispatch_sgr_256_do(
+fn input_csi_dispatch_sgr_256_do(
     ictx: &mut input_ctx,
     fgbg: core::ffi::c_int,
     c: core::ffi::c_int,
@@ -3547,8 +3547,8 @@ unsafe fn input_csi_dispatch_sgr_256_do(
         1 as core::ffi::c_int
     }
 }
-unsafe fn input_csi_dispatch_sgr_256(ictx: &mut input_ctx, fgbg: core::ffi::c_int, i: &mut u_int) {
-    unsafe {
+fn input_csi_dispatch_sgr_256(ictx: &mut input_ctx, fgbg: core::ffi::c_int, i: &mut u_int) {
+    {
         let c: core::ffi::c_int = input_get(
             ictx,
             (*i).wrapping_add(1 as u_int),
@@ -3560,7 +3560,7 @@ unsafe fn input_csi_dispatch_sgr_256(ictx: &mut input_ctx, fgbg: core::ffi::c_in
         }
     }
 }
-unsafe fn input_csi_dispatch_sgr_rgb_do(
+fn input_csi_dispatch_sgr_rgb_do(
     ictx: &mut input_ctx,
     fgbg: core::ffi::c_int,
     r: core::ffi::c_int,
@@ -3588,8 +3588,8 @@ unsafe fn input_csi_dispatch_sgr_rgb_do(
         1 as core::ffi::c_int
     }
 }
-unsafe fn input_csi_dispatch_sgr_rgb(ictx: &mut input_ctx, fgbg: core::ffi::c_int, i: &mut u_int) {
-    unsafe {
+fn input_csi_dispatch_sgr_rgb(ictx: &mut input_ctx, fgbg: core::ffi::c_int, i: &mut u_int) {
+    {
         let r: core::ffi::c_int = input_get(
             ictx,
             (*i).wrapping_add(1 as u_int),
@@ -3858,15 +3858,15 @@ unsafe fn input_csi_dispatch_sgr(ictx: &mut input_ctx) {
         }
     }
 }
-unsafe fn input_end_bel(ictx: &mut input_ctx) -> core::ffi::c_int {
+fn input_end_bel(ictx: &mut input_ctx) -> core::ffi::c_int {
     {
         log_debug(c"%s", fmt_args![c"input_end_bel".as_ptr()]);
         ictx.input_end = INPUT_END_BEL;
         0 as core::ffi::c_int
     }
 }
-unsafe fn input_enter_dcs(ictx: &mut input_ctx) {
-    unsafe {
+fn input_enter_dcs(ictx: &mut input_ctx) {
+    {
         log_debug(c"%s", fmt_args![c"input_enter_dcs".as_ptr()]);
         input_clear(&mut *ictx);
         input_start_ground_timer(&mut *ictx);
@@ -3975,8 +3975,8 @@ unsafe fn input_dcs_dispatch(
     }
 }
 
-unsafe fn input_enter_osc(ictx: &mut input_ctx) {
-    unsafe {
+fn input_enter_osc(ictx: &mut input_ctx) {
+    {
         log_debug(c"%s", fmt_args![c"input_enter_osc".as_ptr()]);
         input_clear(&mut *ictx);
         input_start_ground_timer(&mut *ictx);
@@ -4066,8 +4066,8 @@ unsafe fn input_exit_osc(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>
     }
 }
 
-unsafe fn input_enter_apc(ictx: &mut input_ctx) {
-    unsafe {
+fn input_enter_apc(ictx: &mut input_ctx) {
+    {
         log_debug(c"%s", fmt_args![c"input_enter_apc".as_ptr()]);
         input_clear(&mut *ictx);
         input_start_ground_timer(&mut *ictx);
@@ -4098,8 +4098,8 @@ unsafe fn input_exit_apc(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>
     }
 }
 
-unsafe fn input_enter_rename(ictx: &mut input_ctx) {
-    unsafe {
+fn input_enter_rename(ictx: &mut input_ctx) {
+    {
         log_debug(c"%s", fmt_args![c"input_enter_rename".as_ptr()]);
         input_clear(&mut *ictx);
         input_start_ground_timer(&mut *ictx);
@@ -4189,7 +4189,7 @@ unsafe fn input_top_bit_set(
         0 as core::ffi::c_int
     }
 }
-unsafe fn input_osc_colour_reply(
+fn input_osc_colour_reply(
     ictx: &mut input_ctx,
     add: core::ffi::c_int,
     n: u_int,
@@ -4197,7 +4197,7 @@ unsafe fn input_osc_colour_reply(
     mut c: core::ffi::c_int,
     end_type: input_end_type,
 ) {
-    unsafe {
+    {
         if c != -(1 as core::ffi::c_int) {
             c = RustColourEngine.force_rgb(c);
         }
@@ -4295,8 +4295,8 @@ unsafe fn input_osc_4(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p
     }
 }
 
-unsafe fn input_osc_8(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &CStr) {
-    unsafe {
+fn input_osc_8(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &CStr) {
+    {
         let bytes = p.to_bytes_with_nul();
         let Some(separator) = bytes.iter().position(|byte| *byte == b';') else {
             log_debug(c"bad OSC 8 %s", fmt_args![p]);
@@ -4500,8 +4500,8 @@ unsafe fn input_osc_111(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>,
         }
     }
 }
-unsafe fn input_osc_12(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &CStr) {
-    unsafe {
+fn input_osc_12(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &CStr) {
+    {
         let pane = ictx.pane_ref();
         let c: core::ffi::c_int;
         if p == c"?" {
@@ -4526,16 +4526,16 @@ unsafe fn input_osc_12(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, 
         sctx.screen_mut().set_cursor_colour(c);
     }
 }
-unsafe fn input_osc_112(_ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &CStr) {
-    unsafe {
+fn input_osc_112(_ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &CStr) {
+    {
         if p.is_empty() {
             sctx.screen_mut()
                 .set_cursor_colour(-(1 as core::ffi::c_int));
         }
     }
 }
-unsafe fn input_osc_133(_ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &CStr) {
-    unsafe {
+fn input_osc_133(_ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &CStr) {
+    {
         let screen = sctx.screen_mut();
         let cy = screen.cursor().1;
         let gd = RustScreen::grid_mut(screen);
@@ -4789,7 +4789,7 @@ unsafe fn input_request_timer_callback(ictx: &mut input_ctx) {
         }
     }
 }
-unsafe fn input_start_request_timer(ictx: &mut input_ctx) {
+fn input_start_request_timer(ictx: &mut input_ctx) {
     {
         let tv = timeval::from_usecs(100000 as __suseconds_t);
         ictx.request_timer.disarm();
@@ -4798,15 +4798,15 @@ unsafe fn input_start_request_timer(ictx: &mut input_ctx) {
 }
 /// The parser a request belongs to, observed rather than held: a request
 /// outlives its parser only when the parser's owner has given it up first.
-unsafe fn ictx_weak(ictx: &input_ctx) -> InputCtxWeak {
+fn ictx_weak(ictx: &input_ctx) -> InputCtxWeak {
     ictx.owner.clone().expect("a parser holds itself")
 }
 
-unsafe fn input_make_request(
+fn input_make_request(
     ictx: &mut input_ctx,
     type_0: input_request_type,
 ) -> input_request_handle {
-    unsafe {
+    {
         let id = ictx.next_request_id;
         ictx.next_request_id = ictx.next_request_id.wrapping_add(1);
         let request = Box::new(input_request {
@@ -4977,12 +4977,12 @@ unsafe fn input_add_request(
         0 as core::ffi::c_int
     }
 }
-unsafe fn input_request_palette_reply(
+fn input_request_palette_reply(
     ictx: &mut input_ctx,
     end: input_end_type,
     data: &InputRequestData,
 ) {
-    unsafe {
+    {
         let &InputRequestData::Palette { idx, c } = data else {
             return;
         };

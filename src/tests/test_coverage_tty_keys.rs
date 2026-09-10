@@ -70,7 +70,7 @@ fn count_nodes(tk: Option<&tty_key>) -> usize {
 /// Reports capability `code` as carrying the string `s`, the way a terminfo
 /// entry would. Only ever given a key capability a string: a number there is
 /// answered by the module under test with a fatal error.
-unsafe fn bind_capability(t: &mut Tty, name: &CStr, s: &CString) {
+fn bind_capability(t: &mut Tty, name: &CStr, s: &CString) {
     let code = t
         .term()
         .find_capability(name)

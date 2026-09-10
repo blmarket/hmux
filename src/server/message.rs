@@ -34,12 +34,12 @@ use ::std::ffi::CString;
 
 pub const TTYC_E3: tty_code_code = 36;
 
-pub unsafe fn server_redraw_client(c: &mut client) {
+pub fn server_redraw_client(c: &mut client) {
     {
         c.flags = (c.flags as core::ffi::c_ulonglong | CLIENT_ALLREDRAWFLAGS) as uint64_t;
     }
 }
-pub unsafe fn server_status_client(c: &mut client) {
+pub fn server_status_client(c: &mut client) {
     {
         c.flags |= CLIENT_REDRAWSTATUS as uint64_t;
     }

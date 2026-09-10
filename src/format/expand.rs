@@ -158,7 +158,7 @@ impl format_tree {
 
     /// Records `wp` as the pane the tree draws on.
     pub(crate) fn set_pane(&mut self, wp: Option<&impl crate::WindowPane>) {
-        self.wp_ref = wp.and_then(|wp| unsafe { crate::window::window_pane_ref_of(wp) });
+        self.wp_ref = wp.and_then(|wp| crate::window::window_pane_ref_of(wp));
     }
 
     /// The client the tree draws its client formats from, or null when it
@@ -843,7 +843,7 @@ fn format_cb_window_active_sessions_list(ft: &format_tree) -> Option<CString> {
     }
     format_list_value(&mut buffer)
 }
-unsafe fn format_cb_window_active_clients(ft: &format_tree) -> Option<CString> {
+fn format_cb_window_active_clients(ft: &format_tree) -> Option<CString> {
     {
         let mut n: u_int = 0 as u_int;
         let link = ft.winlink()?;
@@ -1388,7 +1388,7 @@ unsafe fn format_cb_client_control_mode(ft: &format_tree) -> Option<CString> {
         None
     }
 }
-unsafe fn format_cb_client_discarded(ft: &format_tree) -> Option<CString> {
+fn format_cb_client_discarded(ft: &format_tree) -> Option<CString> {
     if let Some(c) = ft.drawn_client() {
         return Some(format_printf(c"%zu", fmt_args![c.discarded()]));
     }
@@ -1410,7 +1410,7 @@ unsafe fn format_cb_client_height(ft: &format_tree) -> Option<CString> {
     }
     None
 }
-unsafe fn format_cb_client_key_table(ft: &format_tree) -> Option<CString> {
+fn format_cb_client_key_table(ft: &format_tree) -> Option<CString> {
     {
         if let Some(c) = ft.drawn_client() {
             return Some(format_callback_copy(c.keytable()?.name().as_c_str()));
@@ -1439,7 +1439,7 @@ unsafe fn format_cb_client_name(ft: &format_tree) -> Option<CString> {
         None
     }
 }
-unsafe fn format_cb_client_pid(ft: &format_tree) -> Option<CString> {
+fn format_cb_client_pid(ft: &format_tree) -> Option<CString> {
     if let Some(c) = ft.drawn_client() {
         return Some(format_printf(
             c"%ld",
@@ -1471,7 +1471,7 @@ unsafe fn format_cb_client_readonly(ft: &format_tree) -> Option<CString> {
         None
     }
 }
-unsafe fn format_cb_client_session(ft: &format_tree) -> Option<CString> {
+fn format_cb_client_session(ft: &format_tree) -> Option<CString> {
     {
         if let Some(c) = ft.drawn_client()
             && let Some(session) = c.attached_session()
@@ -1491,7 +1491,7 @@ unsafe fn format_cb_client_termfeatures(ft: &format_tree) -> Option<CString> {
         None
     }
 }
-unsafe fn format_cb_client_termname(ft: &format_tree) -> Option<CString> {
+fn format_cb_client_termname(ft: &format_tree) -> Option<CString> {
     {
         if let Some(c) = ft.drawn_client() {
             return Some(format_callback_copy(
@@ -1501,7 +1501,7 @@ unsafe fn format_cb_client_termname(ft: &format_tree) -> Option<CString> {
         None
     }
 }
-unsafe fn format_cb_client_termtype(ft: &format_tree) -> Option<CString> {
+fn format_cb_client_termtype(ft: &format_tree) -> Option<CString> {
     Some(ft.drawn_client()?.terminal_type().unwrap_or_default())
 }
 unsafe fn format_cb_client_tty(ft: &format_tree) -> Option<CString> {
@@ -1514,7 +1514,7 @@ unsafe fn format_cb_client_tty(ft: &format_tree) -> Option<CString> {
         None
     }
 }
-unsafe fn format_cb_client_uid(ft: &format_tree) -> Option<CString> {
+fn format_cb_client_uid(ft: &format_tree) -> Option<CString> {
     {
         let uid: uid_t;
         if let Some(c) = ft.drawn_client() {
@@ -1546,13 +1546,13 @@ unsafe fn format_cb_client_width(ft: &format_tree) -> Option<CString> {
     }
     None
 }
-unsafe fn format_cb_client_written(ft: &format_tree) -> Option<CString> {
+fn format_cb_client_written(ft: &format_tree) -> Option<CString> {
     if let Some(c) = ft.drawn_client() {
         return Some(format_printf(c"%zu", fmt_args![c.written()]));
     }
     None
 }
-unsafe fn format_cb_client_theme(ft: &format_tree) -> Option<CString> {
+fn format_cb_client_theme(ft: &format_tree) -> Option<CString> {
     {
         if let Some(c) = ft.drawn_client() {
             match c.theme() {
@@ -1569,7 +1569,7 @@ unsafe fn format_cb_client_theme(ft: &format_tree) -> Option<CString> {
         None
     }
 }
-unsafe fn format_cb_config_files(_ft: &format_tree) -> Option<CString> {
+fn format_cb_config_files(_ft: &format_tree) -> Option<CString> {
     {
         let mut bytes: Vec<u8> = Vec::new();
         for file in &configuration_files() {
@@ -2229,8 +2229,8 @@ unsafe fn format_cb_pane_y(ft: &format_tree) -> Option<CString> {
         Some(format_printf(c"%d", fmt_args![wp.geometry().y]))
     }
 }
-unsafe fn format_cb_pane_z(ft: &format_tree) -> Option<CString> {
-    unsafe {
+fn format_cb_pane_z(ft: &format_tree) -> Option<CString> {
+    {
         let pane = ft.pane_handle()?;
         if let (0, idx) = window_pane_zindex(&pane) {
             return Some(format_printf(c"%u", fmt_args![idx]));
@@ -2266,7 +2266,7 @@ fn format_cb_server_sessions(_ft: &format_tree) -> Option<CString> {
     let n = SESSIONS.read().len() as u_int;
     Some(format_printf(c"%u", fmt_args![n]))
 }
-unsafe fn format_cb_session_active(ft: &format_tree) -> Option<CString> {
+fn format_cb_session_active(ft: &format_tree) -> Option<CString> {
     {
         let c = ft.drawn_client()?;
         let s = ft.session()?;
@@ -2694,7 +2694,7 @@ fn format_cb_buffer_created(ft: &format_tree) -> Option<timeval> {
         })
     })
 }
-unsafe fn format_cb_client_activity(ft: &format_tree) -> Option<timeval> {
+fn format_cb_client_activity(ft: &format_tree) -> Option<timeval> {
     {
         if let Some(c) = ft.drawn_client() {
             return Some(c.activity_time());
@@ -2702,7 +2702,7 @@ unsafe fn format_cb_client_activity(ft: &format_tree) -> Option<timeval> {
         None
     }
 }
-unsafe fn format_cb_client_created(ft: &format_tree) -> Option<timeval> {
+fn format_cb_client_created(ft: &format_tree) -> Option<timeval> {
     {
         if let Some(c) = ft.drawn_client() {
             return Some(c.creation_time());

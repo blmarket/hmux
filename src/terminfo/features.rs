@@ -243,7 +243,7 @@ fn tty_get_features_impl(feat: c_int) -> std::ffi::CString {
 ///
 /// Every feature in the table names at least one capability, so the C's check
 /// for a feature with none is gone.
-pub(crate) unsafe fn tty_apply_features(term: &mut tty_term, feat: c_int) -> c_int {
+pub(crate) fn tty_apply_features(term: &mut tty_term, feat: c_int) -> c_int {
     {
         if feat == 0 {
             return 0;

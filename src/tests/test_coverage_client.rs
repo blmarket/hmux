@@ -54,7 +54,7 @@ use ::std::sync::{Mutex, MutexGuard};
 
 /// The handler the fixture peer's event is bound with. The fixture never runs
 /// the event loop, so nothing ever reaches it.
-unsafe fn never(_fd: c_int, _events: c_short, _arg: *mut c_void) {}
+fn never(_fd: c_int, _events: c_short, _arg: *mut c_void) {}
 
 /// A turn at the client's process-wide statics **and** at the rest of the
 /// crate's shared state. Cargo runs tests on parallel threads; everything in
@@ -181,7 +181,7 @@ impl Drop for Harness {
 }
 
 /// A message of type `ty` owning the payload dispatch reads.
-unsafe fn incoming(ty: uint32_t, payload: &[u8]) -> Box<imsg> {
+fn incoming(ty: uint32_t, payload: &[u8]) -> Box<imsg> {
     use crate::ImsgMessage;
     Box::new(imsg::from_imsg_message(
         ty,
@@ -193,8 +193,8 @@ unsafe fn incoming(ty: uint32_t, payload: &[u8]) -> Box<imsg> {
 }
 
 /// Hands the server's message of type `ty` carrying `payload` to the router.
-unsafe fn deliver(ty: uint32_t, payload: &[u8]) {
-    unsafe {
+fn deliver(ty: uint32_t, payload: &[u8]) {
+    {
         let mut m = incoming(ty, payload);
         client_dispatch(Some(&mut m));
     }

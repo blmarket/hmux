@@ -104,7 +104,7 @@ impl Overlay {
 fn colour_option(f: &mut Overlay, name: &CStr) -> c_int {
     let session = { f.c.attached_session() }.unwrap();
     let oo = { session.options() };
-    unsafe { oo.number(name) as c_int }
+    oo.number(name) as c_int
 }
 
 /// A window filling its terminal draws its one pane's number as clock cells

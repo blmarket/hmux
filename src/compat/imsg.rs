@@ -31,13 +31,13 @@ unsafe fn imsg_fail<T>(errno: c_int, answer: T) -> T {
 }
 
 /// Puts `hdr` at the end of `buf`.
-unsafe fn imsg_add_hdr(buf: &mut ibuf, hdr: &imsg_hdr) -> c_int {
-    unsafe { ibuf_add(buf, &hdr.to_ne_bytes()) }
+fn imsg_add_hdr(buf: &mut ibuf, hdr: &imsg_hdr) -> c_int {
+    ibuf_add(buf, &hdr.to_ne_bytes())
 }
 
 /// The buffer a message was read into, as the borrowed view the reading
 /// calls take.
-unsafe fn imsg_buf(imsg: &mut imsg) -> &mut ibuf {
+fn imsg_buf(imsg: &mut imsg) -> &mut ibuf {
     imsg.buf.as_deref_mut().unwrap()
 }
 
@@ -143,8 +143,8 @@ pub fn imsgbuf_clear(imsgbuf: &mut imsgbuf) {
     let _ = imsgbuf.w.take();
 }
 
-pub unsafe fn imsgbuf_queuelen(imsgbuf: &imsgbuf) -> uint32_t {
-    unsafe { msgbuf_queuelen(imsgbuf.w.as_deref().expect("an initialized message buffer")) }
+pub fn imsgbuf_queuelen(imsgbuf: &imsgbuf) -> uint32_t {
+    msgbuf_queuelen(imsgbuf.w.as_deref().expect("an initialized message buffer"))
 }
 
 pub unsafe fn imsgbuf_get(imsgbuf: &mut imsgbuf) -> Result<Option<imsg>, ()> {
@@ -175,16 +175,16 @@ pub unsafe fn imsg_get(imsgbuf: &mut imsgbuf) -> Result<Option<(imsg, size_t)>, 
     }
 }
 
-pub unsafe fn imsg_get_fd(imsg: &mut imsg) -> c_int {
-    unsafe { ibuf_fd_get(imsg_buf(imsg)) }
+pub fn imsg_get_fd(imsg: &mut imsg) -> c_int {
+    ibuf_fd_get(imsg_buf(imsg))
 }
 
-pub unsafe fn imsg_get_len(imsg: &imsg) -> size_t {
-    unsafe { ibuf_size(imsg.buf.as_deref().unwrap()) }
+pub fn imsg_get_len(imsg: &imsg) -> size_t {
+    ibuf_size(imsg.buf.as_deref().unwrap())
 }
 
 #[cfg(test)]
-pub unsafe fn imsg_get_type(imsg: &imsg) -> uint32_t {
+pub fn imsg_get_type(imsg: &imsg) -> uint32_t {
     imsg.hdr.type_0
 }
 

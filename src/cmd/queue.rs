@@ -315,7 +315,7 @@ unsafe fn cmdq_name(c: Option<&ClientRef>) -> CString {
 /// first one is queued and held by the server for as long as it runs.
 static GLOBAL_QUEUE: GlobalQueue<CmdqListRef> = GlobalQueue::new();
 
-unsafe fn cmdq_get(c: Option<&ClientRef>) -> CmdqListRef {
+fn cmdq_get(c: Option<&ClientRef>) -> CmdqListRef {
     let Some(c) = c else {
         let mut held = GLOBAL_QUEUE.queue();
         if held.is_empty() {
@@ -441,8 +441,8 @@ fn cmdq_error_callback(item: &CmdqItemRef, error: CString) -> cmd_retval {
 pub unsafe fn cmdq_next(c: Option<&ClientRef>) -> u_int {
     unsafe { cmdq_get(c).run(&cmdq_name(c)) }
 }
-pub unsafe fn cmdq_running(c: Option<&ClientRef>) -> Option<CmdqItemRef> {
-    unsafe { cmdq_get(c).running_item() }
+pub fn cmdq_running(c: Option<&ClientRef>) -> Option<CmdqItemRef> {
+    cmdq_get(c).running_item()
 }
 
 #[cfg(test)]
@@ -759,7 +759,7 @@ impl CmdqStateRef {
         }
     }
     /// The formats `state` carries, made when it has none yet.
-    unsafe fn formats_mut(&self) -> RefMut<'_, format_tree> {
+    fn formats_mut(&self) -> RefMut<'_, format_tree> {
         let state = self;
 
         RefMut::map(state.state(), |state| {
@@ -769,19 +769,19 @@ impl CmdqStateRef {
                 .as_mut()
         })
     }
-    pub unsafe fn add_format(&self, key: &CStr, fmt: &CStr, args: &[FmtArg]) {
+    pub fn add_format(&self, key: &CStr, fmt: &CStr, args: &[FmtArg]) {
         let state = self;
 
-        unsafe {
+        {
             let value = format_alloc(fmt, args);
             let mut formats = state.formats_mut();
             format_add(&mut formats, key, c"%s", fmt_args![value.as_c_str()]);
         }
     }
-    pub unsafe fn add_formats(&self, ft: &mut format_tree) {
+    pub fn add_formats(&self, ft: &mut format_tree) {
         let state = self;
 
-        unsafe {
+        {
             let mut formats = state.formats_mut();
             format_merge(&mut formats, ft);
         }
@@ -921,7 +921,7 @@ impl CmdListRef {
 }
 
 impl CmdqListRef {
-    pub unsafe fn append(
+    pub fn append(
         &self,
         held: Option<ClientRef>,
         name: &CStr,

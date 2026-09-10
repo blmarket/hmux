@@ -225,7 +225,7 @@ pub(crate) unsafe fn key_bindings_add(
         );
     }
 }
-pub unsafe fn key_bindings_remove(name: &CStr, key: key_code) {
+pub fn key_bindings_remove(name: &CStr, key: key_code) {
     let key = key & !KEYC_MASK_FLAGS;
     let Some(table_ref) = key_bindings_get_table_ref(name, 0) else {
         return;
@@ -252,7 +252,7 @@ pub unsafe fn key_bindings_remove(name: &CStr, key: key_code) {
         drop(removed_table);
     }
 }
-pub unsafe fn key_bindings_reset(name: &CStr, key: key_code) {
+pub fn key_bindings_reset(name: &CStr, key: key_code) {
     let key = key & !KEYC_MASK_FLAGS;
     let Some(table_ref) = key_bindings_get_table_ref(name, 0) else {
         return;
@@ -270,7 +270,7 @@ pub unsafe fn key_bindings_reset(name: &CStr, key: key_code) {
             return;
         }
     }
-    unsafe { key_bindings_remove(name, key) };
+    key_bindings_remove(name, key);
 }
 pub unsafe fn key_bindings_remove_table(name: &CStr) {
     let table_ref = key_tables.with_borrow_mut(|tables| tables.remove(name));

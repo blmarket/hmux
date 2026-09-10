@@ -121,7 +121,7 @@ fn terminfo_emitters_expand_parameters_and_ignore_negative_numbers() {
     t.set(TTYC_CUP, c"P%p1%d,%p2%d");
     t.set(TTYC_CMG, c"M%p1%d,%p2%d");
     t.set(TTYC_HLS, c"H%p1%s:%p2%s");
-    unsafe {
+    {
         tty_putcode_i(&mut t.tty, TTYC_CUF, -1);
         tty_putcode_ii(&mut t.tty, TTYC_CUP, 1, -1);
         tty_putcode_iii(&mut t.tty, TTYC_CMG, 1, 2, -1);
@@ -201,7 +201,7 @@ fn visibility_and_clamping_cover_inside_outside_and_each_edge() {
     ctx.ryoff = 0;
     assert_eq!(tty_is_visible(&ctx, 0, 0, 2, 2), 0);
     assert_eq!(tty_is_visible(&ctx, 6, 4, 2, 2), 1);
-    unsafe {
+    {
         assert_eq!(tty_clamp_line(&ctx, 6, 4, 2), Some((0, 1, 2, 1)));
         assert_eq!(tty_clamp_line(&ctx, 3, 4, 5), Some((2, 0, 3, 1)));
         assert_eq!(tty_clamp_line(&ctx, 13, 4, 5), Some((0, 8, 2, 1)));
@@ -321,7 +321,7 @@ fn colour_normalization_and_emitters_cover_basic_256_and_rgb_paths() {
     let mut t = Terminal::new(80, 24);
     t.number(TTYC_COLORS, 8);
     let mut gc = { grid_default_cell };
-    unsafe {
+    {
         gc.fg = 91;
         tty_check_fg(&mut t.tty, None, &mut gc);
         assert_eq!(gc.fg, 1);
@@ -444,7 +444,7 @@ fn cursor_colour_and_shape_cover_reset_and_each_style_code() {
     t.set(TTYC_CVVIS, c"V");
     t.set(TTYC_SS, c"S%p1%d");
     t.set(TTYC_SE, c"E");
-    unsafe {
+    {
         tty_force_cursor_colour(&mut t.tty, COLOUR_FLAG_RGB | 0x123456);
         assert!(t.output().starts_with(b"Crgb:12/34/56"));
         tty_force_cursor_colour(&mut t.tty, COLOUR_FLAG_RGB | 0x123456);

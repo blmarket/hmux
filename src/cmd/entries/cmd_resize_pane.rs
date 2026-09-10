@@ -94,7 +94,7 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         let flag = 'x' as i32 as u_char;
         args.argument_flag_count(flag)
     }) != 0 {
-        unsafe {
+        {
             x = args_percentage(
                 args,
                 'x' as i32 as u_char,
@@ -114,7 +114,7 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         let flag = 'y' as i32 as u_char;
         args.argument_flag_count(flag)
     }) != 0 {
-        unsafe {
+        {
             y = args_percentage(
                 args,
                 'y' as i32 as u_char,
@@ -128,7 +128,7 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             unsafe { item.error(c"height %s", fmt_args![cause.as_c_str()]) };
             return CMD_RETURN_ERROR;
         }
-        unsafe { status = owner.options().number(c"pane-border-status") as core::ffi::c_int };
+        { status = owner.options().number(c"pane-border-status") as core::ffi::c_int };
         let geometry = unsafe { reference.geometry().expect("resize target is present") };
         match status {
             PANE_STATUS_TOP => {

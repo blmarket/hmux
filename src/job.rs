@@ -371,7 +371,7 @@ pub unsafe fn job_run(
 }
 /// Hands the job's file descriptor and process id to the caller and takes the
 /// job off the list, copying its tty name into `tty` when one is given.
-pub unsafe fn job_transfer(id: u_int, tty: Option<&mut [u8]>) -> Option<(core::ffi::c_int, pid_t)> {
+pub fn job_transfer(id: u_int, tty: Option<&mut [u8]>) -> Option<(core::ffi::c_int, pid_t)> {
     {
         let mut job = take_job(id)?;
         let fd: core::ffi::c_int = job.fd;

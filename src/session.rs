@@ -1085,7 +1085,7 @@ impl SessionRef {
         let list = sort_get_sessions(sort_crit);
         match list.iter().position(|session| session.ptr_eq(self)) {
             Some(index) => Some((list, index)),
-            None => unsafe {
+            None => {
                 fatalx(
                     c"session %s not found in sorted list",
                     fmt_args![self.name().as_deref()],

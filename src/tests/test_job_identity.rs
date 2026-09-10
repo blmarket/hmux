@@ -111,7 +111,7 @@ fn transferred_tty_names_fit_and_terminate_in_the_callers_buffer() {
         let mut output = vec![b'x'; capacity];
         all_jobs.queue().push_front(job);
         assert_eq!(
-            unsafe { job_transfer(0, Some(&mut output)) },
+            { job_transfer(0, Some(&mut output)) },
             Some((-1, -1))
         );
         assert_eq!(job_event_by_id(0), None);

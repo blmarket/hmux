@@ -5805,8 +5805,8 @@ fn key_string_get_modifiers(string: &[u8]) -> Option<(key_code, &[u8])> {
 }
 
 /// Pack a decoded character into a key, if it fits in one.
-unsafe fn key_from_data(ud: &utf8_data) -> Option<utf8_char> {
-    unsafe {
+fn key_from_data(ud: &utf8_data) -> Option<utf8_char> {
+    {
         match utf8_from_data(ud) {
             (UTF8_DONE, uc) => Some(uc),
             _ => None,
@@ -5817,7 +5817,7 @@ unsafe fn key_from_data(ud: &utf8_data) -> Option<utf8_char> {
 /// The one character `string` holds, if it holds exactly one and that one can
 /// be packed into a key.
 fn key_from_cstr(string: &core::ffi::CStr) -> Option<utf8_char> {
-    unsafe {
+    {
         let udp = utf8_fromcstr(string);
         if udp.len() != 1 || udp[0].size == 0 {
             None

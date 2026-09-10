@@ -76,7 +76,7 @@ pub(crate) static cmd_find_window_entry: RustCommandEntry = RustCommandEntry {
 /// template makes mandatory — `lower` and `upper` are both one — so the
 /// parser has refused the command before exec runs if it is missing, and
 /// there is no null to guard here.
-unsafe fn cmd_find_window_filter(args: &RustArguments) -> Vec<u8> {
+fn cmd_find_window_filter(args: &RustArguments) -> Vec<u8> {
     {
         let s = args.argument_string(0)
             .expect("argument count checked")
@@ -129,14 +129,14 @@ unsafe fn cmd_find_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let target = &item.target;
     let pane = target.pane_ref().expect("the command target has a pane");
 
-    let text = unsafe { cmd_find_window_filter(args) };
+    let text = cmd_find_window_filter(args);
     let filter = ArgsValue::String(CString::new(text).expect("window filter contains no NUL bytes"));
 
     let mut new_args = Box::<RustArguments>::default();
     if args.argument_flag_count(b'Z') != 0 {
-        unsafe { args_set(&mut new_args, b'Z', None, 0) };
+        args_set(&mut new_args, b'Z', None, 0);
     }
-    unsafe { args_set(&mut new_args, b'f', Some(filter), 0) };
+    args_set(&mut new_args, b'f', Some(filter), 0);
 
     unsafe { pane.set_mode(None, WindowMode::Tree, Some(target), Some(&new_args)) };
     CMD_RETURN_NORMAL

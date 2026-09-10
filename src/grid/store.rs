@@ -432,11 +432,11 @@ fn cell_bytes(gc: &grid_cell) -> &[u_char] {
     &gc.data.data[..gc.data.size as usize]
 }
 
-pub unsafe fn grid_cells_look_equal(gc1: &grid_cell, gc2: &grid_cell) -> c_int {
+pub fn grid_cells_look_equal(gc1: &grid_cell, gc2: &grid_cell) -> c_int {
     look_equal(gc1, gc2) as c_int
 }
 
-pub unsafe fn grid_cells_equal(gc1: &grid_cell, gc2: &grid_cell) -> c_int {
+pub fn grid_cells_equal(gc1: &grid_cell, gc2: &grid_cell) -> c_int {
     (look_equal(gc1, gc2)
         && gc1.data.width == gc2.data.width
         && gc1.data.size == gc2.data.size
@@ -456,7 +456,7 @@ fn set_tab(gc: &mut grid_cell, width: u_int) {
     gc.data.data[..gc.data.size as usize].fill(b' ');
 }
 
-pub unsafe fn grid_set_tab(gc: &mut grid_cell, width: u_int) {
+pub fn grid_set_tab(gc: &mut grid_cell, width: u_int) {
     set_tab(gc, width)
 }
 
@@ -506,7 +506,7 @@ pub fn grid_compare(ga: &grid, gb: &grid) -> c_int {
         for xx in 0..cellsize {
             gca = grid_get_cell(ga, xx, yy);
             gcb = grid_get_cell(gb, xx, yy);
-            if unsafe { grid_cells_equal(&gca, &gcb) } == 0 {
+            if grid_cells_equal(&gca, &gcb) == 0 {
                 return 1;
             }
         }

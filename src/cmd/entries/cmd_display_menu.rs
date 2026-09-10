@@ -534,7 +534,7 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                 .definition(entry)
                                 .expect("menu border option exists")
                         });
-                        unsafe {
+                        {
                             lines = RustOptionsEngine.find_choice(definition, value, &mut cause)
                                 as box_lines
                         };
@@ -658,7 +658,7 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             args.argument_flag_count(flag)
         }) != 0
         {
-            unsafe {
+            {
                 h = args_percentage(
                     args,
                     'h' as i32 as u_char,
@@ -686,7 +686,7 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                     args.argument_flag_count(flag)
                 }) != 0
                 {
-                    unsafe {
+                    {
                         w = args_percentage(
                             args,
                             'w' as i32 as u_char,
@@ -797,7 +797,7 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                     .definition(entry)
                     .expect("popup border option exists")
             });
-            unsafe {
+            {
                 lines = RustOptionsEngine.find_choice(definition, value, &mut cause) as box_lines
             };
             if let Some(cause) = cause.as_ref() {

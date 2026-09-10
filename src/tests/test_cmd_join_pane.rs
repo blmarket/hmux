@@ -129,7 +129,7 @@ unsafe fn fs_of(wl: &WinlinkRef) -> cmd_find_state {
 }
 
 /// The `i`th pane of `w` in z order.
-unsafe fn z_at(w: &WindowRef, i: usize) -> RustWindowPaneWeak {
+fn z_at(w: &WindowRef, i: usize) -> RustWindowPaneWeak {
     w.as_window().z_index[i].clone()
 }
 

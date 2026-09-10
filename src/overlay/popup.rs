@@ -324,7 +324,7 @@ unsafe fn popup_redraw_cb(ttyctx: &tty_ctx) {
         *c.flags_mut() |= CLIENT_REDRAWOVERLAY as uint64_t;
     }
 }
-unsafe fn popup_set_client_cb(ttyctx: &mut tty_ctx, c: &mut client) -> core::ffi::c_int {
+fn popup_set_client_cb(ttyctx: &mut tty_ctx, c: &mut client) -> core::ffi::c_int {
     {
         let TtyCtxArg::Popup(owner) = &ttyctx.arg else {
             return 0 as core::ffi::c_int;
@@ -360,7 +360,7 @@ unsafe fn popup_set_client_cb(ttyctx: &mut tty_ctx, c: &mut client) -> core::ffi
         1 as core::ffi::c_int
     }
 }
-unsafe fn popup_init_ctx_cb(pd: &popup_data, ttyctx: &mut tty_ctx) {
+fn popup_init_ctx_cb(pd: &popup_data, ttyctx: &mut tty_ctx) {
     ttyctx.defaults = pd.defaults;
     ttyctx.flags &= !TTY_CTX_WINDOW_BIGGER;
     ttyctx.palette = Some(pd.palette.clone());
@@ -374,7 +374,7 @@ fn popup_init_ctx(owner: PopupDataWeak) -> screen_write_init_ctx {
         let Some(reference) = owner.upgrade() else {
             return;
         };
-        unsafe { popup_init_ctx_cb(&reference.borrow(), ttyctx) };
+        popup_init_ctx_cb(&reference.borrow(), ttyctx);
     }))
 }
 /// The popup's screen mode, and where its cursor stands on the terminal.
@@ -399,13 +399,13 @@ pub(crate) fn popup_mode_cb(pd: &popup_data) -> (ScreenModeState, u_int, u_int) 
 /// With a menu attached, the C code clips the previously stored popup ranges,
 /// uses the menu only for the number of ranges, and retains the old output
 /// count. Those distinctions are preserved here.
-pub(crate) unsafe fn popup_check_cb<'a>(
+pub(crate) fn popup_check_cb<'a>(
     pd: &'a mut popup_data,
     px: u_int,
     py: u_int,
     nx: u_int,
 ) -> std::cell::RefMut<'a, visible_ranges> {
-    unsafe {
+    {
         let mut r = pd.r.borrow_mut();
         if let Some(owner) = pd.md.as_ref() {
             let mut menu = owner.borrow_mut();
@@ -713,7 +713,7 @@ unsafe fn popup_job_complete_cb(job: JobEvent, popup: &PopupDataWeak) {
         }
     }
 }
-pub unsafe fn popup_present(c: &client) -> core::ffi::c_int {
+pub fn popup_present(c: &client) -> core::ffi::c_int {
     (c.overlay() == Overlay::Popup) as core::ffi::c_int
 }
 pub unsafe fn popup_modify(

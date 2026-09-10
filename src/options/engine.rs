@@ -37,27 +37,15 @@ pub trait OptionsEngine {
     /// Formats the definition’s default value using tmux’s canonical spelling.
     fn default_text(&self, oe: &options_table_entry_t) -> CString;
     /// Borrows the name under which this entry is stored.
-    ///
-    /// # Safety
-    /// The engine’s handle and server-state requirements apply.
-    unsafe fn name<'a>(&self, o: &'a Self::Entry) -> &'a CStr;
+    fn name<'a>(&self, o: &'a Self::Entry) -> &'a CStr;
     /// Returns the store holding this entry, including an inherited entry’s original owner.
-    ///
-    /// # Safety
-    /// The engine’s handle and server-state requirements apply.
-    unsafe fn owner(&self, o: &Self::Entry) -> Self::Store;
+    fn owner(&self, o: &Self::Entry) -> Self::Store;
     /// Returns the built-in definition; absent entries and user options return none.
     fn definition(&self, o: Option<&Self::Entry>) -> Option<&'static options_table_entry_t>;
     /// Removes all array elements; a scalar entry is unchanged.
-    ///
-    /// # Safety
-    /// The engine’s handle and server-state requirements apply.
-    unsafe fn array_clear(&self, o: &mut Self::Entry);
+    fn array_clear(&self, o: &mut Self::Entry);
     /// Borrows the value at an index, or returns none for a missing index or scalar entry.
-    ///
-    /// # Safety
-    /// The engine’s handle and server-state requirements apply.
-    unsafe fn array_get<'a>(&self, o: &'a Self::Entry, idx: u_int) -> Option<&'a Self::Value>;
+    fn array_get<'a>(&self, o: &'a Self::Entry, idx: u_int) -> Option<&'a Self::Value>;
     /// Sets or appends at an index, or removes it for `None`; returns 0 or -1 with a cause.
     ///
     /// # Safety
@@ -83,27 +71,15 @@ pub trait OptionsEngine {
     /// Copies the occupied array indices in ascending order; scalar entries return an empty list.
     fn array_indices(&self, o: &Self::Entry) -> Vec<u_int>;
     /// Returns the element’s array index.
-    ///
-    /// # Safety
-    /// The engine’s handle and server-state requirements apply.
-    unsafe fn array_index(&self, a: &Self::ArrayItem) -> u_int;
+    fn array_index(&self, a: &Self::ArrayItem) -> u_int;
     /// Borrows the element’s opaque value for the duration of its borrow.
     fn array_value<'a>(&self, a: &'a Self::ArrayItem) -> &'a Self::Value;
     /// Clones the array element’s command handle, if it holds one.
-    ///
-    /// # Safety
-    /// The engine’s handle and server-state requirements apply.
-    unsafe fn array_command(&self, a: &Self::ArrayItem) -> Option<CmdListRef>;
+    fn array_command(&self, a: &Self::ArrayItem) -> Option<CmdListRef>;
     /// Returns 1 for an array entry and 0 for a scalar.
-    ///
-    /// # Safety
-    /// The engine’s handle and server-state requirements apply.
-    unsafe fn is_array(&self, o: &Self::Entry) -> c_int;
+    fn is_array(&self, o: &Self::Entry) -> c_int;
     /// Returns 1 for a string entry, including user options, and 0 otherwise.
-    ///
-    /// # Safety
-    /// The engine’s handle and server-state requirements apply.
-    unsafe fn is_string(&self, o: &Self::Entry) -> c_int;
+    fn is_string(&self, o: &Self::Entry) -> c_int;
     /// Formats a scalar or array index; `numeric` requests numeric flag output.
     ///
     /// # Safety
@@ -139,10 +115,7 @@ pub trait OptionsEngine {
         cause: &mut Option<CString>,
     ) -> c_int;
     /// Returns the matching choice index, or -1 with a cause for an unknown choice.
-    ///
-    /// # Safety
-    /// The engine’s handle and server-state requirements apply.
-    unsafe fn find_choice(
+    fn find_choice(
         &self,
         oe: &options_table_entry_t,
         value: &CStr,
@@ -200,19 +173,19 @@ impl OptionsEngine for RustOptionsEngine {
     fn default_text(&self, oe: &options_table_entry_t) -> CString {
         store::options_default_to_string(oe)
     }
-    unsafe fn name<'a>(&self, o: &'a options_entry) -> &'a CStr {
-        unsafe { store::options_name(o) }
+    fn name<'a>(&self, o: &'a options_entry) -> &'a CStr {
+        store::options_name(o)
     }
-    unsafe fn owner(&self, o: &options_entry) -> RustOptionsRef {
-        unsafe { store::options_owner(o) }
+    fn owner(&self, o: &options_entry) -> RustOptionsRef {
+        store::options_owner(o)
     }
     fn definition(&self, o: Option<&options_entry>) -> Option<&'static options_table_entry_t> {
         store::options_table_entry(o)
     }
-    unsafe fn array_clear(&self, o: &mut options_entry) {
-        unsafe { store::options_array_clear(o) }
+    fn array_clear(&self, o: &mut options_entry) {
+        store::options_array_clear(o)
     }
-    unsafe fn array_get<'a>(&self, o: &'a options_entry, idx: u_int) -> Option<&'a options_value> {
+    fn array_get<'a>(&self, o: &'a options_entry, idx: u_int) -> Option<&'a options_value> {
         store::array_value_at(o, idx)
     }
     unsafe fn array_set(
@@ -236,21 +209,21 @@ impl OptionsEngine for RustOptionsEngine {
     fn array_indices(&self, o: &options_entry) -> Vec<u_int> {
         store::array_indices(o)
     }
-    unsafe fn array_index(&self, a: &options_array_item_t) -> u_int {
-        unsafe { store::options_array_item_index(a) }
+    fn array_index(&self, a: &options_array_item_t) -> u_int {
+        store::options_array_item_index(a)
     }
     fn array_value<'a>(&self, a: &'a options_array_item_t) -> &'a options_value {
         store::array_item_value(a)
     }
-    unsafe fn array_command(&self, a: &options_array_item_t) -> Option<CmdListRef> {
-        unsafe { store::options_array_item_command(a) }
+    fn array_command(&self, a: &options_array_item_t) -> Option<CmdListRef> {
+        store::options_array_item_command(a)
     }
 
-    unsafe fn is_array(&self, o: &options_entry) -> c_int {
-        unsafe { store::options_is_array(o) }
+    fn is_array(&self, o: &options_entry) -> c_int {
+        store::options_is_array(o)
     }
-    unsafe fn is_string(&self, o: &options_entry) -> c_int {
-        unsafe { store::options_is_string(o) }
+    fn is_string(&self, o: &options_entry) -> c_int {
+        store::options_is_string(o)
     }
     unsafe fn display(&self, o: &options_entry, idx: c_int, numeric: c_int) -> CString {
         unsafe { store::options_to_string(o, idx, numeric) }
@@ -293,13 +266,13 @@ impl OptionsEngine for RustOptionsEngine {
         }
     }
 
-    unsafe fn find_choice(
+    fn find_choice(
         &self,
         oe: &options_table_entry_t,
         value: &CStr,
         cause: &mut Option<CString>,
     ) -> c_int {
-        unsafe { store::options_find_choice(oe, value, cause) }
+        store::options_find_choice(oe, value, cause)
     }
 
     unsafe fn push_changes(&self, name: &CStr) {

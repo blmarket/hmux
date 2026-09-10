@@ -221,7 +221,7 @@ fn next_citem_index(len: usize) -> CItem {
 static CITEM_POOL: std::sync::Mutex<CItemPool> = std::sync::Mutex::new(CItemPool::new());
 
 /// The items of one line, as a snapshot that a walk may take from.
-unsafe fn citem_list(head: &citems) -> Vec<CItem> {
+fn citem_list(head: &citems) -> Vec<CItem> {
     head.clone()
 }
 
@@ -247,26 +247,26 @@ fn with_citem<R>(ci: CItem, f: impl FnOnce(&mut screen_write_citem) -> R) -> R {
 }
 
 /// Where `ci` sits in `head`, which is wherever it was put.
-unsafe fn citem_position(head: &citems, ci: CItem) -> Option<usize> {
+fn citem_position(head: &citems, ci: CItem) -> Option<usize> {
     head.iter().position(|&item| item == ci)
 }
 
 /// Puts `ci` at the end of `head`.
-unsafe fn citem_insert_tail(head: &mut citems, ci: CItem) {
+fn citem_insert_tail(head: &mut citems, ci: CItem) {
     head.push(ci)
 }
 
 /// Puts `ci` in front of `before`, which is already in `head`.
-unsafe fn citem_insert_before(head: &mut citems, before: CItem, ci: CItem) {
-    unsafe {
+fn citem_insert_before(head: &mut citems, before: CItem, ci: CItem) {
+    {
         let at = citem_position(head, before).expect("the anchor is on this line");
         head.insert(at, ci);
     }
 }
 
 /// Puts `ci` behind `after`, which is already in `head`.
-unsafe fn citem_insert_after(head: &mut citems, after: CItem, ci: CItem) {
-    unsafe {
+fn citem_insert_after(head: &mut citems, after: CItem, ci: CItem) {
+    {
         let at = citem_position(head, after).expect("the anchor is on this line");
         head.insert(at + 1, ci);
     }
@@ -274,8 +274,8 @@ unsafe fn citem_insert_after(head: &mut citems, after: CItem, ci: CItem) {
 
 /// Takes `ci` out of the list of collected items it hangs in, which is
 /// `head`.
-unsafe fn citem_remove(head: &mut citems, ci: CItem) {
-    unsafe {
+fn citem_remove(head: &mut citems, ci: CItem) {
+    {
         if let Some(at) = citem_position(head, ci) {
             head.remove(at);
         }
@@ -599,10 +599,10 @@ fn screen_write_init(s: &mut RustScreen) -> screen_write_state {
         ..screen_write_state::default()
     }
 }
-pub(super) unsafe fn screen_write_start_pane_base(
+pub(super) fn screen_write_start_pane_base(
     wp: &mut impl crate::WindowPane,
 ) -> screen_write_state {
-    unsafe {
+    {
         let mut state = screen_write_init(wp.base_mut());
         state.pane_ref = crate::window::window_pane_ref_of(wp);
         if log_get_level() != 0 {
@@ -1357,7 +1357,7 @@ pub(super) unsafe fn screen_write_backspace(ctx: &mut screen_write_ctx) {
 
 /// Whether a cell holds one plain single-width character, which is the only
 /// shape a redraw can write out as one cell rather than a whole line.
-unsafe fn screen_write_cell_is_single(gc: &grid_cell) -> c_int {
+fn screen_write_cell_is_single(gc: &grid_cell) -> c_int {
     let single = gc.data.width == 1
         && gc.data.size == 1
         && gc.data.data[0] >= 0x20
@@ -1679,8 +1679,8 @@ pub(super) unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, ny: u_i
         });
     }
 }
-pub(super) unsafe fn screen_write_clearline(ctx: &mut screen_write_ctx, bg: u_int) {
-    unsafe {
+pub(super) fn screen_write_clearline(ctx: &mut screen_write_ctx, bg: u_int) {
+    {
         let ci = ctx.item;
         let cy = ctx.screen().0.cy;
         let grid = RustScreen::grid_mut(ctx.screen_mut());
@@ -1701,8 +1701,8 @@ pub(super) unsafe fn screen_write_clearline(ctx: &mut screen_write_ctx, bg: u_in
         ctx.item = screen_write_get_citem();
     }
 }
-pub(super) unsafe fn screen_write_clearendofline(ctx: &mut screen_write_ctx, bg: u_int) {
-    unsafe {
+pub(super) fn screen_write_clearendofline(ctx: &mut screen_write_ctx, bg: u_int) {
+    {
         let ci = ctx.item;
         let (cx, cy) = ctx.screen().cursor();
         if cx == 0 {
@@ -1732,8 +1732,8 @@ pub(super) unsafe fn screen_write_clearendofline(ctx: &mut screen_write_ctx, bg:
 /// The C cleared the whole line instead when the cursor was past the last
 /// column; that arm is gone with the conversion, since a cursor at or after
 /// the last column has already gone to `screen_write_clearline` above.
-pub(super) unsafe fn screen_write_clearstartofline(ctx: &mut screen_write_ctx, bg: u_int) {
-    unsafe {
+pub(super) fn screen_write_clearstartofline(ctx: &mut screen_write_ctx, bg: u_int) {
+    {
         let ci = ctx.item;
         let (cx, cy) = ctx.screen().cursor();
         let sx = RustScreen::grid(ctx.screen()).sx;
@@ -2094,7 +2094,7 @@ pub(super) unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, bg: u_
     }
 }
 
-pub(super) unsafe fn screen_write_clearhistory(ctx: &mut screen_write_ctx) {
+pub(super) fn screen_write_clearhistory(ctx: &mut screen_write_ctx) {
     {
         RustScreen::grid_mut(ctx.screen_mut()).clear_history();
     }
@@ -2125,13 +2125,13 @@ fn line_text(cl: &screen_write_cline) -> &[u8] {
 /// the free only relinks it, so the wrapped flag it carried is still there
 /// and is carried on to the item replacing it. That is what the C did and it
 /// is pinned by a test.
-unsafe fn screen_write_collect_trim(
+fn screen_write_collect_trim(
     ctx: &mut screen_write_ctx,
     y: u_int,
     x: u_int,
     used: u_int,
 ) -> (CItem, bool) {
-    unsafe {
+    {
         let mut wrapped = false;
         let items = &mut write_list(ctx.screen_mut())[y as usize].items;
         let sx = x;
@@ -2239,7 +2239,7 @@ unsafe fn screen_write_collect_trim(
 }
 
 /// Gives up everything collected on `n` lines from `y`.
-unsafe fn screen_write_collect_clear(ctx: &mut screen_write_ctx, y: u_int, n: u_int) {
+fn screen_write_collect_clear(ctx: &mut screen_write_ctx, y: u_int, n: u_int) {
     {
         let wl = write_list(ctx.screen_mut());
         for i in y..y.wrapping_add(n) {
@@ -2251,8 +2251,8 @@ unsafe fn screen_write_collect_clear(ctx: &mut screen_write_ctx, y: u_int, n: u_
 /// Moves what is collected inside the scroll region up a line, taking the top
 /// line's text buffer round to the bottom, and collects a clear of the line
 /// that comes in at the bottom.
-unsafe fn screen_write_collect_scroll(ctx: &mut screen_write_ctx, bg: u_int) {
-    unsafe {
+fn screen_write_collect_scroll(ctx: &mut screen_write_ctx, bg: u_int) {
+    {
         let s = ctx.screen();
         log_debug(
             c"%s: at %u,%u (region %u-%u)",
@@ -2491,8 +2491,8 @@ unsafe fn screen_write_collect_flush(ctx: &mut screen_write_ctx, scroll_only: c_
 
 /// Puts `ci` on the line the cursor is on, in the order the writing calls
 /// expect, and gives the context a fresh item to fill in.
-unsafe fn screen_write_collect_insert(ctx: &mut screen_write_ctx, ci: CItem) {
-    unsafe {
+fn screen_write_collect_insert(ctx: &mut screen_write_ctx, ci: CItem) {
+    {
         let cy = ctx.screen().0.cy;
         let item = citem_snapshot(ci);
         let (before, wrapped) = screen_write_collect_trim(ctx, cy, item.x, item.used);
@@ -2508,13 +2508,13 @@ unsafe fn screen_write_collect_insert(ctx: &mut screen_write_ctx, ci: CItem) {
         ctx.item = screen_write_get_citem();
     }
 }
-unsafe fn screen_write_collect_insert_clear(
+fn screen_write_collect_insert_clear(
     ctx: &mut screen_write_ctx,
     px: u_int,
     nx: u_int,
     bg: u_int,
 ) {
-    unsafe {
+    {
         let ci: CItem = ctx.item;
         if nx != 0 {
             with_citem(ci, |item| {

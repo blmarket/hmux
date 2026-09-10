@@ -56,7 +56,7 @@ static layout_sets: [layout_set_entry; 7] = [
 /// The IDs of panes to arrange, in pane-index order. Arrangement calls this
 /// after `layout_free`, which clears the cells used to identify floating
 /// panes, preserving the existing inclusion of those panes in the layout.
-unsafe fn tiled(owner: &WindowRef) -> Vec<u_int> {
+fn tiled(owner: &WindowRef) -> Vec<u_int> {
     let payload = owner.as_window();
     let w = &*payload;
     w.panes
@@ -173,7 +173,7 @@ static VERTICAL: Axis = Axis {
 /// take, a size that would leave the main pane less than it asked for does the
 /// same, and anything else is taken as written with the main pane keeping the
 /// rest.
-unsafe fn main_size(owner: &WindowRef, axis: &Axis, along: u_int) -> (u_int, u_int) {
+fn main_size(owner: &WindowRef, axis: &Axis, along: u_int) -> (u_int, u_int) {
     {
         let mut cause = None;
         let s = owner.options().string_ref(axis.main_option);
@@ -213,8 +213,8 @@ unsafe fn main_size(owner: &WindowRef, axis: &Axis, along: u_int) -> (u_int, u_i
 }
 
 /// Hangs the main pane's cell at the end of the layout root.
-unsafe fn main_cell(owner: &WindowRef, axis: &Axis, main: u_int, across: u_int) {
-    unsafe {
+fn main_cell(owner: &WindowRef, axis: &Axis, main: u_int, across: u_int) {
+    {
         let id = tiled(owner)
             .into_iter()
             .next()

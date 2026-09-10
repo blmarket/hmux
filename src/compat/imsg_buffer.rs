@@ -176,7 +176,7 @@ pub fn ibuf_reserve(buf: &mut ibuf, len: size_t) -> Option<&mut [u8]> {
     Some(&mut buf.buf[start..want])
 }
 
-pub unsafe fn ibuf_add(buf: &mut ibuf, data: &[u8]) -> c_int {
+pub fn ibuf_add(buf: &mut ibuf, data: &[u8]) -> c_int {
     if data.is_empty() {
         return 0 as c_int;
     }
@@ -187,8 +187,8 @@ pub unsafe fn ibuf_add(buf: &mut ibuf, data: &[u8]) -> c_int {
     0 as c_int
 }
 
-pub unsafe fn ibuf_add_ibuf(buf: &mut ibuf, from: &ibuf) -> c_int {
-    unsafe { ibuf_add(buf, ibuf_data(from)) }
+pub fn ibuf_add_ibuf(buf: &mut ibuf, from: &ibuf) -> c_int {
+    ibuf_add(buf, ibuf_data(from))
 }
 
 /// Whether a number fits the width the buffer keeps for it. Upstream refuses
@@ -224,26 +224,26 @@ pub fn ibuf_set(buf: &mut ibuf, pos: size_t, data: &[u8]) -> c_int {
 }
 
 /// Writes the bytes of a number over a place already inside the buffer.
-unsafe fn ibuf_set_bytes(buf: &mut ibuf, pos: size_t, bytes: &[u8]) -> c_int {
+fn ibuf_set_bytes(buf: &mut ibuf, pos: size_t, bytes: &[u8]) -> c_int {
     ibuf_set(buf, pos, bytes)
 }
 
-pub unsafe fn ibuf_set_h32(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
+pub fn ibuf_set_h32(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
     if ibuf_too_wide(value, UINT32_MAX as uint64_t) {
         return -(1 as c_int);
     }
-    unsafe { ibuf_set_bytes(buf, pos, &(value as uint32_t).to_ne_bytes()) }
+    ibuf_set_bytes(buf, pos, &(value as uint32_t).to_ne_bytes())
 }
 
 pub fn ibuf_data(buf: &ibuf) -> &[u8] {
     &buf.buf[buf.rpos..buf.wpos]
 }
 
-pub unsafe fn ibuf_size(buf: &ibuf) -> size_t {
+pub fn ibuf_size(buf: &ibuf) -> size_t {
     buf.wpos.wrapping_sub(buf.rpos)
 }
 
-pub unsafe fn ibuf_left(buf: &ibuf) -> size_t {
+pub fn ibuf_left(buf: &ibuf) -> size_t {
     {
         if ibuf_on_stack(buf) {
             return 0 as size_t;
@@ -259,7 +259,7 @@ pub unsafe fn ibuf_close(msgbuf: &mut msgbuf, buf: Box<ibuf>) {
 }
 
 /// Replaces `buf` with an owned copy of a temporary byte range.
-pub unsafe fn ibuf_from_buffer(buf: &mut ibuf, data: &[u8]) {
+pub fn ibuf_from_buffer(buf: &mut ibuf, data: &[u8]) {
     let bytes = if data.is_empty() {
         BytesMut::new()
     } else {
@@ -378,8 +378,8 @@ pub unsafe fn msgbuf_new_reader(
     }
 }
 
-pub unsafe fn msgbuf_queuelen(msgbuf: &msgbuf) -> uint32_t {
-    unsafe { ibufq_queuelen(&msgbuf.bufs) }
+pub fn msgbuf_queuelen(msgbuf: &msgbuf) -> uint32_t {
+    ibufq_queuelen(&msgbuf.bufs)
 }
 
 pub unsafe fn msgbuf_clear(msgbuf: &mut msgbuf) {
@@ -393,8 +393,8 @@ pub unsafe fn msgbuf_clear(msgbuf: &mut msgbuf) {
     }
 }
 
-pub unsafe fn msgbuf_get(msgbuf: &mut msgbuf) -> Option<Box<ibuf>> {
-    unsafe { ibufq_pop(&mut msgbuf.rbufs) }
+pub fn msgbuf_get(msgbuf: &mut msgbuf) -> Option<Box<ibuf>> {
+    ibufq_pop(&mut msgbuf.rbufs)
 }
 
 /// The borrowed ranges a write can hand the kernel, and the optional descriptor.
@@ -672,7 +672,7 @@ unsafe fn msgbuf_drain(msgbuf: &mut msgbuf, mut n: size_t) {
     }
 }
 
-pub unsafe fn ibufq_pop(bufq: &mut ibufqueue) -> Option<Box<ibuf>> {
+pub fn ibufq_pop(bufq: &mut ibufqueue) -> Option<Box<ibuf>> {
     bufq.bufs.pop_front()
 }
 
@@ -683,7 +683,7 @@ pub unsafe fn ibufq_push(bufq: &mut ibufqueue, buf: Box<ibuf>) {
     bufq.bufs.push_back(buf);
 }
 
-pub unsafe fn ibufq_queuelen(bufq: &ibufqueue) -> uint32_t {
+pub fn ibufq_queuelen(bufq: &ibufqueue) -> uint32_t {
     bufq.bufs.len() as uint32_t
 }
 

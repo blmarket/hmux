@@ -75,7 +75,7 @@ fn sorted_panes_is_the_windows_panes_in_the_order_asked_for() {
     w.add_pane(&mut second);
     registry.add_window(&mut w);
 
-    unsafe {
+    {
         let mut crit = RustSortCriteria::new(SORT_INDEX, false);
         assert_eq!(
             (w.handle())

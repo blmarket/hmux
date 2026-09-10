@@ -312,7 +312,7 @@ fn the_width_cache_is_rebuilt_from_the_defaults_and_the_option() {
 #[test]
 fn a_short_character_is_carried_in_the_utf8_char_itself() {
     let _guard = exclusive();
-    unsafe {
+    {
         let ud = filled(b"\xc3\xa9", 1);
         let (state, uc) = utf8_from_data(&ud);
         assert_eq!((state, uc), (UTF8_DONE, 0x4200a9c3));
@@ -328,7 +328,7 @@ fn a_short_character_is_carried_in_the_utf8_char_itself() {
 #[test]
 fn a_long_character_is_kept_in_the_trees_under_an_index() {
     let _guard = exclusive();
-    unsafe {
+    {
         let ud = filled("😀".as_bytes(), 2);
         let (state, uc) = utf8_from_data(&ud);
         assert_eq!((state, uc), (UTF8_DONE, 0x64000000));
@@ -350,7 +350,7 @@ fn a_long_character_is_kept_in_the_trees_under_an_index() {
 #[test]
 fn characters_are_kept_in_order_of_length_and_then_of_bytes() {
     let _guard = exclusive();
-    unsafe {
+    {
         let words: [&[u8]; 5] = [
             b"123456",
             b"12345",
@@ -383,7 +383,7 @@ fn characters_are_kept_in_order_of_length_and_then_of_bytes() {
 #[test]
 fn a_character_that_will_not_fit_comes_back_as_spaces() {
     let _guard = exclusive();
-    unsafe {
+    {
         let mut ud = filled(b"x", 0);
         ud.size = 33;
         assert_eq!(utf8_from_data(&ud), (UTF8_ERROR, 0x20000000));
@@ -399,7 +399,7 @@ fn a_character_that_will_not_fit_comes_back_as_spaces() {
 #[test]
 fn the_last_index_is_where_the_trees_stop_taking_characters() {
     let _guard = exclusive();
-    unsafe {
+    {
         UTF8_STORE.lock().unwrap().next_index = UTF8_INDEX_END;
         let ud = filled("😀".as_bytes(), 2);
         assert_eq!(utf8_from_data(&ud), (UTF8_ERROR, 0x41002020));
@@ -586,7 +586,7 @@ fn character_store_shares_consistent_ids_across_concurrent_callers() {
                     let mut bytes = [0; 4];
                     let text = codepoint.encode_utf8(&mut bytes);
                     let ud = filled(text.as_bytes(), 2);
-                    let (state, uc) = unsafe { utf8_from_data(&ud) };
+                    let (state, uc) = utf8_from_data(&ud);
                     assert_eq!(state, UTF8_DONE);
                     packed.push((uc, bytes));
                 }

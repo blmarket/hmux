@@ -116,7 +116,7 @@ impl RustGrid {
     /// Write a tab and its padding beginning at `(px, py)`.
     pub fn write_tab(&mut self, px: u_int, py: u_int, width: u_int) {
         let mut cell = grid_default_cell;
-        unsafe { grid_set_tab(&mut cell, width) };
+        grid_set_tab(&mut cell, width);
         grid_set_cell(&mut self.0, px, py, &cell);
         for offset in 1..width {
             grid_set_padding(&mut self.0, px + offset, py);

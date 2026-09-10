@@ -253,7 +253,7 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             .then(|| unsafe { format_single_from_target(item, argument) });
         let path = expanded.as_deref().unwrap_or(argument);
         if path == c"-" {
-            unsafe { cdata.add(Rc::from(path)) };
+            cdata.add(Rc::from(path));
             continue;
         }
         let pattern = if path.to_bytes().starts_with(b"/") {
@@ -268,7 +268,7 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         match GlobPaths::expand(&pattern) {
             Ok(paths) => {
                 for path in paths.into_paths() {
-                    unsafe { cdata.add(path) };
+                    cdata.add(path);
                 }
             }
             Err(result) if result != GLOB_NOMATCH || flags & CMD_PARSE_QUIET == 0 => {
@@ -331,7 +331,7 @@ impl SourceFileRef {
             }
         }
     }
-    unsafe fn add(&self, path: Rc<CStr>) {
+    fn add(&self, path: Rc<CStr>) {
         let cdata = self;
 
         {

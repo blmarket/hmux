@@ -80,7 +80,7 @@ pub(crate) unsafe fn key_bindings_reset_table(name: &CStr) {
         return;
     }
     for key in keys {
-        unsafe { key_bindings_reset(name, key) };
+        key_bindings_reset(name, key);
     }
 }
 

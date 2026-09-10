@@ -1196,7 +1196,7 @@ unsafe fn yylex_token_escape(ps: &mut cmd_parse_state<'_>, buf: &mut Vec<u8>) ->
         }
     }
 }
-unsafe fn yylex_token_variable(
+fn yylex_token_variable(
     ps: &mut cmd_parse_state<'_>,
     buf: &mut Vec<u8>,
 ) -> core::ffi::c_int {

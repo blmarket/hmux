@@ -51,7 +51,7 @@ fn layout_create_cell_defaults_and_free_null_is_safe() {
 #[test]
 fn layout_set_size_writes_geometry() {
     let _g = globals();
-    unsafe {
+    {
         let mut lc = layout_create_cell(None);
         layout_set_size(&mut *lc, 42, 17, 3, 5);
         assert_eq!((*lc).sx, 42);

@@ -188,7 +188,7 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                     return false;
                 };
                 let parent =
-                    unsafe { (!RustOptionsEngine.owner(entry).ptr_eq(oo)) as core::ffi::c_int };
+                    { (!RustOptionsEngine.owner(entry).ptr_eq(oo)) as core::ffi::c_int };
                 unsafe { cmd_show_options_print(self_0, item, entry, idx, parent) };
                 true
             });

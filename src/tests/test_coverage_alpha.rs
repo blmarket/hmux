@@ -34,7 +34,7 @@ fn crit(order: u32, reversed: c_int) -> Box<sort_criteria_t> {
 }
 
 /// Frees every buffer in the store, so that a test leaves it as it found it.
-unsafe fn empty_the_store() {
+fn empty_the_store() {
     let names = with_paste_buffers(|buffers| {
         buffers
             .buffers()
@@ -187,7 +187,7 @@ unsafe fn unlink_for_test(s: &mut Session, wl: *mut winlink) {
 #[test]
 fn sort_get_buffers_orders_the_buffer_store_by_its_criteria() {
     let _guard = globals();
-    unsafe {
+    {
         empty_the_store();
         with_paste_buffers_mut(|buffers| {
             buffers.add_automatic(None, b"bbb".to_vec(), 50);

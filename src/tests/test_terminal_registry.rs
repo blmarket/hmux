@@ -55,7 +55,7 @@ fn terminal_registry_preserves_newest_first_order_and_explicit_cleanup() {
         names,
         [c"registry-second".to_owned(), c"registry-first".to_owned()]
     );
-    unsafe { tty_term_free(second) };
+    tty_term_free(second);
     let snapshots = tty_term_snapshots(None);
     assert_eq!(snapshots.len(), 1);
     assert_eq!(snapshots[0].name.as_c_str(), c"registry-first");

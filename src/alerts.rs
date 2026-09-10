@@ -141,8 +141,8 @@ unsafe fn alerts_callback() {
 /// Whether `wl` is one the session's `{bell,activity,silence}-action` asks to
 /// be told about: none means nothing happens, current means only the current
 /// window and other means only windows that are not it.
-unsafe fn alerts_action_applies(wl: &winlink, name: &CStr) -> bool {
-    unsafe {
+fn alerts_action_applies(wl: &winlink, name: &CStr) -> bool {
+    {
         let session = wl.session().expect("a link has a session");
         let action = session.options().number(name) as c_int;
         let current = session
@@ -312,10 +312,10 @@ impl WindowRef {
         }
     }
     /// Whether any of the families in `flags` is watched on the window.
-    unsafe fn alerts_enabled(&self, flags: c_int) -> bool {
+    fn alerts_enabled(&self, flags: c_int) -> bool {
         let w = self;
 
-        unsafe {
+        {
             for family in [&BELL, &ACTIVITY, &SILENCE] {
                 if flags & family.window_flag != 0 && w.options().number(family.monitor) != 0 {
                     return true;

@@ -89,7 +89,7 @@ impl RustArguments {
     }
 
     pub fn set_argument_flag(&mut self, flag: u_char, value: Option<ArgsValue>, flags: c_int) {
-        unsafe { args_set(self, flag, value, flags) }
+        args_set(self, flag, value, flags)
     }
 
     pub fn argument_flag_string(&self, flag: u_char) -> Option<&CStr> {
@@ -354,7 +354,7 @@ fn is_flag_byte(b: u8) -> bool {
     unsafe { libc::isalnum(b.into()) != 0 }
 }
 
-unsafe fn args_copy_value(to: &mut ArgsValue, from: &ArgsValue) {
+fn args_copy_value(to: &mut ArgsValue, from: &ArgsValue) {
     *to = match from {
         ArgsValue::Commands { cmdlist, .. } => ArgsValue::Commands {
             cmdlist: cmdlist.clone(),
@@ -739,7 +739,7 @@ pub unsafe fn args_print(args: &RustArguments) -> CString {
     }
 }
 
-pub unsafe fn args_set(
+pub fn args_set(
     args: &mut RustArguments,
     flag: u_char,
     value: Option<ArgsValue>,
@@ -889,7 +889,7 @@ pub unsafe fn args_strtonum_and_expand(
     }
 }
 
-pub unsafe fn args_percentage(
+pub fn args_percentage(
     args: &RustArguments,
     flag: u_char,
     minval: core::ffi::c_longlong,

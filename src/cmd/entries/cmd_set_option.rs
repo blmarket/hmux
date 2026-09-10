@@ -196,7 +196,7 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             let (parent_entry, is_array) = store.with_entry(&name, false, |entry| {
                 (
                     RustOptionsEngine.definition(entry),
-                    entry.is_some_and(|entry| unsafe { RustOptionsEngine.is_array(entry) != 0 }),
+                    entry.is_some_and(|entry| { RustOptionsEngine.is_array(entry) != 0 }),
                 )
             });
             if idx != -(1 as core::ffi::c_int)
@@ -220,7 +220,7 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                         already = 0 as core::ffi::c_int;
                     } else {
                         already = store.with_entry(&name, true, |entry| {
-                            entry.is_some_and(|entry| unsafe {
+                            entry.is_some_and(|entry| {
                                 RustOptionsEngine.array_get(entry, idx as u_int).is_some()
                             })
                         }) as core::ffi::c_int;
@@ -357,7 +357,7 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                     current_block = 16446286653754202049;
                                 } else {
                                     if !has_local {
-                                        unsafe {
+                                        {
                                             store.insert_empty(
                                                 parent_entry.expect("array has a definition"),
                                             )
@@ -367,7 +367,7 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                         let entry = entry.expect("local array was initialized");
                                         if idx == -1 {
                                             if append == 0 {
-                                                unsafe { RustOptionsEngine.array_clear(entry) };
+                                                RustOptionsEngine.array_clear(entry);
                                             }
                                             unsafe {
                                                 RustOptionsEngine.array_assign(

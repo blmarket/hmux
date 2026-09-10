@@ -232,7 +232,7 @@ impl Overlay {
     pub fn has_resize(self) -> bool {
         matches!(self, Overlay::Menu | Overlay::Popup)
     }
-    pub unsafe fn mode(self, data: OverlayData) -> (ScreenModeState, u_int, u_int) {
+    pub fn mode(self, data: OverlayData) -> (ScreenModeState, u_int, u_int) {
         {
             match self {
                 Overlay::Menu => menu_mode_cb(&data.menu().borrow()),
@@ -307,14 +307,14 @@ impl Overlay {
 }
 
 impl OverlayCheck {
-    pub unsafe fn call(
+    pub fn call(
         self,
         data: OverlayData,
         px: u_int,
         py: u_int,
         nx: u_int,
     ) -> VisibleRangesRef {
-        unsafe {
+        {
             match self {
                 OverlayCheck::Menu => {
                     let owner = data.menu();
@@ -416,8 +416,8 @@ pub unsafe fn server_client_check_nested(c: &mut client) -> core::ffi::c_int {
         0 as core::ffi::c_int
     }
 }
-pub unsafe fn server_client_set_key_table(c: &mut client, name: Option<&CStr>) {
-    unsafe {
+pub fn server_client_set_key_table(c: &mut client, name: Option<&CStr>) {
+    {
         let default_name;
         let name = match name {
             Some(name) => name,
@@ -435,7 +435,7 @@ pub unsafe fn server_client_set_key_table(c: &mut client, name: Option<&CStr>) {
             .set_activity_time(now);
     }
 }
-unsafe fn server_client_key_table_activity_diff(c: &client) -> uint64_t {
+fn server_client_key_table_activity_diff(c: &client) -> uint64_t {
     {
         let mut diff = timeval::default();
         let since = c.keytable().expect("client key table").activity_time();
@@ -453,7 +453,7 @@ unsafe fn server_client_key_table_activity_diff(c: &client) -> uint64_t {
             ) as uint64_t
     }
 }
-pub unsafe fn server_client_get_key_table(c: &client) -> std::rc::Rc<CStr> {
+pub fn server_client_get_key_table(c: &client) -> std::rc::Rc<CStr> {
     {
         let Some(session) = c.attached_session() else {
             return std::rc::Rc::from(c"root");
@@ -465,8 +465,8 @@ pub unsafe fn server_client_get_key_table(c: &client) -> std::rc::Rc<CStr> {
         name
     }
 }
-unsafe fn server_client_is_default_key_table(c: &client, table: &key_table) -> core::ffi::c_int {
-    unsafe { ((table).name() == server_client_get_key_table(c).as_ref()) as core::ffi::c_int }
+fn server_client_is_default_key_table(c: &client, table: &key_table) -> core::ffi::c_int {
+    ((table).name() == server_client_get_key_table(c).as_ref()) as core::ffi::c_int
 }
 
 /// The session the client was attached to before this one, while it lives.
@@ -671,7 +671,7 @@ pub unsafe fn server_client_suspend(c: &mut client) {
         (c.peer_handle()).send(MSG_SUSPEND, -(1 as core::ffi::c_int), &[]);
     }
 }
-pub unsafe fn server_client_detach(c: &mut client, msgtype: msgtype) {
+pub fn server_client_detach(c: &mut client, msgtype: msgtype) {
     {
         let Some(session) = c.attached_session() else {
             return;
@@ -1402,8 +1402,8 @@ unsafe fn server_client_update_latest(c: &mut client) {
         notify_client(c"client-active", Some(c));
     }
 }
-unsafe fn server_client_repeat_time(c: &client, bd: &key_binding) -> u_int {
-    unsafe {
+fn server_client_repeat_time(c: &client, bd: &key_binding) -> u_int {
+    {
         let Some(session) = c.attached_session() else {
             return 0;
         };
@@ -1992,7 +1992,7 @@ unsafe fn server_client_check_window_resize(w_ref: &WindowRef) {
         );
     }
 }
-unsafe fn server_client_resize_timer(wp: &mut impl crate::WindowPane) {
+fn server_client_resize_timer(wp: &mut impl crate::WindowPane) {
     {
         log_debug(
             c"%s: %%%u resize timer expired",
@@ -2278,8 +2278,8 @@ unsafe fn server_client_reset_state(c: &mut client) {
         c.tty.flags |= flags;
     }
 }
-unsafe fn server_client_repeat_timer(c: &mut client) {
-    unsafe {
+fn server_client_repeat_timer(c: &mut client) {
+    {
         if c.flags & CLIENT_REPEAT as uint64_t != 0 {
             server_client_set_key_table(c, None);
             c.flags &= !CLIENT_REPEAT as uint64_t;
@@ -2348,7 +2348,7 @@ unsafe fn server_client_check_exit(c: &mut client) {
         c.exit_message = None;
     }
 }
-unsafe fn server_client_redraw_timer() {
+fn server_client_redraw_timer() {
     {
         log_debug(c"redraw timer fired", fmt_args![]);
     }
@@ -2598,7 +2598,7 @@ unsafe fn server_client_set_title(c: &mut client) {
         }
     }
 }
-unsafe fn server_client_session_pane(c: &client) -> Option<RustWindowPaneWeak> {
+fn server_client_session_pane(c: &client) -> Option<RustWindowPaneWeak> {
     {
         let session = c.attached_session()?;
         let window = session.current_window()?;
@@ -3075,7 +3075,7 @@ pub unsafe fn server_client_set_flags(c: &mut client, flags: &CStr) {
     }
 }
 /// The flags a client carries, comma-separated, as the caller's own string.
-pub unsafe fn server_client_get_flags(c: &mut client) -> CString {
+pub fn server_client_get_flags(c: &mut client) -> CString {
     let mut names: Vec<&CStr> = Vec::new();
     if c.flags & CLIENT_ATTACHED as uint64_t != 0 {
         names.push(c"attached");
@@ -3136,7 +3136,7 @@ pub fn server_client_add_client_window(c: &mut client, id: u_int) -> &mut client
         sy: 0 as u_int,
     })
 }
-pub unsafe fn server_client_get_pane(c: &client) -> Option<RustWindowPaneWeak> {
+pub fn server_client_get_pane(c: &client) -> Option<RustWindowPaneWeak> {
     {
         let session = c.attached_session()?;
         let window = session.current_window()?;
@@ -3159,8 +3159,8 @@ pub(crate) fn server_client_get_pane_in_window(
         .filter(|pane| unsafe { pane.get().is_some() })
 }
 
-pub unsafe fn server_client_set_pane(c: &mut client, wp: &impl crate::WindowPane) {
-    unsafe {
+pub fn server_client_set_pane(c: &mut client, wp: &impl crate::WindowPane) {
+    {
         let Some(session) = c.attached_session() else {
             return;
         };

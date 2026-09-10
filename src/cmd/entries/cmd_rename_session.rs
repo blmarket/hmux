@@ -47,7 +47,7 @@ unsafe fn cmd_rename_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
             args.argument_string(0).expect("argument count checked"),
         )
     };
-    if unsafe { check_name(Some(&tmp)) == 0 } {
+    if check_name(Some(&tmp)) == 0 {
         unsafe { item.error(c"invalid session name: %s", fmt_args![tmp.as_c_str()]) };
         return CMD_RETURN_ERROR;
     }

@@ -110,7 +110,7 @@ fn a_channel_is_only_removed_once_it_is_woken_free_and_unwaited() {
 #[test]
 fn signalling_an_unknown_channel_creates_it_already_woken() {
     let _guard = exclusive();
-    unsafe {
+    {
         let retval = cmd_wait_for_signal(c"chan");
         assert_eq!(retval, CMD_RETURN_NORMAL);
         assert!(channel(c"chan").woken);
@@ -121,7 +121,7 @@ fn signalling_an_unknown_channel_creates_it_already_woken() {
 fn signalling_an_already_woken_channel_drops_it() {
     let _guard = exclusive();
     channel_for(c"chan", |wc| wc.woken = true);
-    unsafe {
+    {
         let retval = cmd_wait_for_signal(c"chan");
         assert_eq!(retval, CMD_RETURN_NORMAL);
         assert!(channel_names().is_empty());
@@ -390,7 +390,7 @@ fn channel_signals_and_flushes_are_confined_to_the_server_thread() {
     let ready = std::sync::Barrier::new(2);
     std::thread::scope(|scope| {
         scope.spawn(|| {
-            unsafe { cmd_wait_for_signal(c"shared-name") };
+            cmd_wait_for_signal(c"shared-name");
             ready.wait();
             ready.wait();
             assert!(channel(c"shared-name").woken);
@@ -400,7 +400,7 @@ fn channel_signals_and_flushes_are_confined_to_the_server_thread() {
         scope.spawn(|| {
             assert!(channel_names().is_empty());
             ready.wait();
-            unsafe { cmd_wait_for_signal(c"shared-name") };
+            cmd_wait_for_signal(c"shared-name");
             cmd_wait_for_flush();
             assert!(channel_names().is_empty());
             ready.wait();

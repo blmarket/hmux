@@ -19,13 +19,13 @@ fn store() -> crate::tests::test_fixtures::GlobalsGuard {
 }
 
 /// What the buffer called `name` holds, or nothing when there is none.
-unsafe fn contents(name: &CStr) -> Option<Vec<u8>> {
+fn contents(name: &CStr) -> Option<Vec<u8>> {
     with_paste_buffers(|buffers| buffers.get(name).map(|buffer| buffer.data.to_vec()))
 }
 
 /// The editor state a close would carry for the buffer called `name`, which
 /// must be there.
-unsafe fn editing(name: &CStr) -> Box<window_buffer_editdata> {
+fn editing(name: &CStr) -> Box<window_buffer_editdata> {
     let order = with_paste_buffers(|buffers| buffers.get(name).map(|buffer| buffer.order))
         .expect("the buffer is there to be edited");
     Box::new(window_buffer_editdata {

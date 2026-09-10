@@ -125,8 +125,8 @@ fn cmd_list_keys_get_table_width(l: &[key_binding]) -> u_int {
 }
 
 /// The `prefix` and `root` tables sorted and laid end to end, in that order.
-unsafe fn cmd_list_keys_get_root_and_prefix(sort_crit: &sort_criteria_t) -> Vec<key_binding> {
-    unsafe {
+fn cmd_list_keys_get_root_and_prefix(sort_crit: &sort_criteria_t) -> Vec<key_binding> {
+    {
         let mut l = Vec::new();
         for name in [c"prefix", c"root"] {
             let Some(t) = key_bindings_get_table(name, 0) else {
@@ -246,11 +246,11 @@ unsafe fn cmd_list_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         .unwrap_or(LIST_KEYS_TEMPLATE);
 
     let mut l = if let Some(table) = table {
-        unsafe { table.sorted_bindings(&sort_crit) }
+        table.sorted_bindings(&sort_crit)
     } else if notes_only != 0 {
-        unsafe { cmd_list_keys_get_root_and_prefix(&sort_crit) }
+        cmd_list_keys_get_root_and_prefix(&sort_crit)
     } else {
-        unsafe { sort_get_key_bindings(&sort_crit) }
+        sort_get_key_bindings(&sort_crit)
     };
 
     let filter_notes = (notes_only != 0 && args.argument_flag_count(b'a') == 0) as c_int;

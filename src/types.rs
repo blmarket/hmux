@@ -1211,8 +1211,8 @@ impl ModeTreeDataRef {
         &self.0.screen
     }
 
-    pub(crate) unsafe fn set_default_cursor(&self, options: &RustOptionsRef) {
-        unsafe { self.0.screen.borrow_mut().set_default_cursor(options) }
+    pub(crate) fn set_default_cursor(&self, options: &RustOptionsRef) {
+        self.0.screen.borrow_mut().set_default_cursor(options)
     }
 
     pub(crate) fn borrow(&self) -> std::cell::Ref<'_, mode_tree_data> {
@@ -2394,7 +2394,7 @@ impl window_mode_entry {
     }
 
     /// Observes the source pane directly until it is destroyed.
-    pub(crate) unsafe fn source_pane_ref(&self) -> Option<crate::window::RustWindowPaneWeak> {
+    pub(crate) fn source_pane_ref(&self) -> Option<crate::window::RustWindowPaneWeak> {
         self.source_pane
             .as_ref()
             .filter(|pane| pane.is_alive())
@@ -2622,7 +2622,7 @@ impl cmd_find_state {
 
     /// Records the pane allocation the state found.
     pub fn set_pane(&mut self, wp: Option<&impl crate::WindowPane>) {
-        self.wp_ref = wp.and_then(|pane| unsafe { crate::window::window_pane_ref_of(pane) });
+        self.wp_ref = wp.and_then(|pane| crate::window::window_pane_ref_of(pane));
     }
 }
 

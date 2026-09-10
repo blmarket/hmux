@@ -106,7 +106,7 @@ mod tests {
         assert_eq!(crate::compat::imsg_get_buf(&mut message, &mut consumed), 0);
         assert_eq!(&consumed, b"ab");
         assert_eq!(message.imsg_message_data(), b"abc");
-        assert_eq!(unsafe { crate::compat::imsg_get_len(&message) }, 1);
+        assert_eq!({ crate::compat::imsg_get_len(&message) }, 1);
         message.imsg_message_data_mut()[2] = b'd';
         let mut last = [0; 1];
         assert_eq!(crate::compat::imsg_get_buf(&mut message, &mut last), 0);

@@ -123,11 +123,11 @@ fn options_map_name(name: &CStr) -> &CStr {
 
 /// The table entry the parent set has for `s`, which is what an option added
 /// to a set below it is made from.
-unsafe fn options_parent_table_entry(
+fn options_parent_table_entry(
     oo: &RustOptionsRef,
     s: &CStr,
 ) -> &'static options_table_entry_t {
-    unsafe {
+    {
         let Some(parent) = options_get_parent(oo) else {
             fatalx(c"no parent options for %s", fmt_args![s.as_ptr()]);
         };
@@ -276,7 +276,7 @@ pub(super) unsafe fn options_default(oo: &RustOptionsRef, oe: &'static options_t
 
 /// The value the table gives `oe`, as the text a user would have written.
 pub(super) fn options_default_to_string(oe: &options_table_entry_t) -> CString {
-    unsafe {
+    {
         match oe.type_0 {
             OPTIONS_TABLE_STRING | OPTIONS_TABLE_COMMAND => {
                 oe.default_str.unwrap_or(c"").to_owned()
@@ -323,11 +323,11 @@ fn options_add(oo: &RustOptionsRef, name: &CStr) {
 }
 
 /// The name the entry is filed under.
-pub(super) unsafe fn options_name(o: &options_entry) -> &CStr {
+pub(super) fn options_name(o: &options_entry) -> &CStr {
     &o.name
 }
 
-pub(super) unsafe fn options_owner(o: &options_entry) -> RustOptionsRef {
+pub(super) fn options_owner(o: &options_entry) -> RustOptionsRef {
     RustOptionsRef(o.owner.upgrade().expect("entry store is owned"))
 }
 
@@ -339,7 +339,7 @@ pub(super) fn options_table_entry(
 
 /// The table entry an option was made from. Only ever asked of one that has
 /// it, which the `is_*` tests above have already established.
-unsafe fn table_of(o: &options_entry) -> &'static options_table_entry_t {
+fn table_of(o: &options_entry) -> &'static options_table_entry_t {
     o.tableentry.expect("the option comes from the table")
 }
 
@@ -352,8 +352,8 @@ fn options_array_slot(o: &mut options_entry, idx: u_int) -> &mut options_array_i
 }
 
 /// Empties an array option.
-pub(super) unsafe fn options_array_clear(o: &mut options_entry) {
-    unsafe {
+pub(super) fn options_array_clear(o: &mut options_entry) {
+    {
         if options_is_array(o) == 0 {
             return;
         }
@@ -477,20 +477,20 @@ pub(super) unsafe fn options_array_assign(
     }
 }
 
-pub(super) unsafe fn options_array_item_index(a: &options_array_item_t) -> u_int {
+pub(super) fn options_array_item_index(a: &options_array_item_t) -> u_int {
     a.index
 }
 
-pub(super) unsafe fn options_array_item_command(a: &options_array_item_t) -> Option<CmdListRef> {
+pub(super) fn options_array_item_command(a: &options_array_item_t) -> Option<CmdListRef> {
     a.value.commands()
 }
 
 /// The `codepoint-widths` specs held in `oo`, in array order, for
 /// [`utf8_update_width_cache`] to apply.
-pub(super) unsafe fn options_codepoint_widths(oo: &RustOptionsRef) -> Vec<CString> {
+pub(super) fn options_codepoint_widths(oo: &RustOptionsRef) -> Vec<CString> {
     with_entry(oo, c"codepoint-widths", false, |entry| {
         let entry = entry.expect("codepoint-widths is initialized");
-        if unsafe { options_is_array(entry) } == 0 {
+        if options_is_array(entry) == 0 {
             return Vec::new();
         }
         entry
@@ -503,10 +503,10 @@ pub(super) unsafe fn options_codepoint_widths(oo: &RustOptionsRef) -> Vec<CStrin
 
 /// The `pane-colours` option of `oo` as a default palette, or `None` when the
 /// option holds no entries at all.
-pub(super) unsafe fn options_pane_colours(oo: &RustOptionsRef) -> Option<[c_int; 256]> {
+pub(super) fn options_pane_colours(oo: &RustOptionsRef) -> Option<[c_int; 256]> {
     with_entry(oo, c"pane-colours", false, |entry| {
         let entry = entry.expect("pane-colours is initialized");
-        if unsafe { options_is_array(entry) } == 0 || entry.array.is_empty() {
+        if options_is_array(entry) == 0 || entry.array.is_empty() {
             return None;
         }
         let mut colours = [-1; 256];
@@ -521,21 +521,21 @@ pub(super) unsafe fn options_pane_colours(oo: &RustOptionsRef) -> Option<[c_int;
 
 /// Points the palette's default table at what the `pane-colours` option of
 /// `oo` holds.
-pub(super) unsafe fn options_load_pane_colours(
+pub(super) fn options_load_pane_colours(
     oo: &RustOptionsRef,
     p: Option<&mut colour_palette>,
 ) {
-    unsafe { RustColourEngine.set_palette_defaults(p, options_pane_colours(oo).as_ref()) }
+    RustColourEngine.set_palette_defaults(p, options_pane_colours(oo).as_ref())
 }
 
-pub(super) unsafe fn options_is_array(o: &options_entry) -> c_int {
+pub(super) fn options_is_array(o: &options_entry) -> c_int {
     {
         o.tableentry
             .is_some_and(|oe| oe.flags & OPTIONS_TABLE_IS_ARRAY != 0) as c_int
     }
 }
 
-pub(super) unsafe fn options_is_string(o: &options_entry) -> c_int {
+pub(super) fn options_is_string(o: &options_entry) -> c_int {
     is_string(o) as c_int
 }
 
@@ -676,10 +676,10 @@ pub(super) fn with_entry_mut<R>(
 pub(super) fn options_string_ref(oo: &RustOptionsRef, name: &CStr) -> Rc<CStr> {
     with_entry(oo, name, false, |entry| {
         let Some(entry) = entry else {
-            unsafe { fatalx(c"missing option %s", fmt_args![name]) };
+            fatalx(c"missing option %s", fmt_args![name]);
         };
         if !is_string(entry) {
-            unsafe { fatalx(c"option %s is not a string", fmt_args![name]) };
+            fatalx(c"option %s is not a string", fmt_args![name]);
         }
         match &entry.value.0 {
             OptionValue::String(value) => value.clone(),
@@ -688,25 +688,25 @@ pub(super) fn options_string_ref(oo: &RustOptionsRef, name: &CStr) -> Rc<CStr> {
     })
 }
 
-pub(super) unsafe fn options_get_number(oo: &RustOptionsRef, name: &CStr) -> c_longlong {
+pub(super) fn options_get_number(oo: &RustOptionsRef, name: &CStr) -> c_longlong {
     with_entry(oo, name, false, |entry| {
         let Some(entry) = entry else {
-            unsafe { fatalx(c"missing option %s", fmt_args![name]) };
+            fatalx(c"missing option %s", fmt_args![name]);
         };
         if !is_number(entry) {
-            unsafe { fatalx(c"option %s is not a number", fmt_args![name]) };
+            fatalx(c"option %s is not a number", fmt_args![name]);
         }
         entry.value.number()
     })
 }
 
-pub(super) unsafe fn options_get_command(oo: &RustOptionsRef, name: &CStr) -> Option<CmdListRef> {
+pub(super) fn options_get_command(oo: &RustOptionsRef, name: &CStr) -> Option<CmdListRef> {
     with_entry(oo, name, false, |entry| {
         let Some(entry) = entry else {
-            unsafe { fatalx(c"missing option %s", fmt_args![name]) };
+            fatalx(c"missing option %s", fmt_args![name]);
         };
         if !is_command(entry) {
-            unsafe { fatalx(c"option %s is not a command", fmt_args![name]) };
+            fatalx(c"option %s is not a command", fmt_args![name]);
         }
         entry.value.commands()
     })
@@ -1104,7 +1104,7 @@ unsafe fn options_from_string_flag(
 }
 
 /// Which of an option's choices `value` is, or -1 if it is none of them.
-pub(super) unsafe fn options_find_choice(
+pub(super) fn options_find_choice(
     oe: &options_table_entry_t,
     value: &CStr,
     cause: &mut Option<CString>,

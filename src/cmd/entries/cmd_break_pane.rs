@@ -88,7 +88,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut index = item.target.idx;
     let name = args.argument_flag_string(b'n');
     if let Some(name) = name
-        && unsafe { check_name(Some(name)) == 0 }
+        && { check_name(Some(name)) == 0 }
     {
         unsafe { item.error(c"invalid window name: %s", fmt_args![name]) };
         return CMD_RETURN_ERROR;
@@ -98,7 +98,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         let around = item
             .target
             .wl_idx
-            .filter(|index| unsafe { destination.link(*index).is_some() })
+            .filter(|index| destination.link(*index).is_some())
             .or_else(|| unsafe { destination.current_index() });
         let Some(shift) = (unsafe { destination.shuffle_windows(around, before) }) else {
             return CMD_RETURN_ERROR;
@@ -140,7 +140,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 .index()
         };
     } else {
-        if unsafe { index != -1 && destination.link(index).is_some() } {
+        if index != -1 && destination.link(index).is_some() {
             unsafe { item.error(c"index in use: %d", fmt_args![index]) };
             return CMD_RETURN_ERROR;
         }
@@ -155,7 +155,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
         unsafe { window.finish_broken_pane_layout(&source_pane) };
         if index == -1 {
-            unsafe { index = (-1 - destination.options().number(c"base-index")) as c_int };
+            { index = (-1 - destination.options().number(c"base-index")) as c_int };
         }
         let mut cause = None;
         unsafe {
@@ -181,7 +181,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         let template = args
             .argument_flag_string(b'F')
             .unwrap_or(BREAK_PANE_TEMPLATE);
-        let destination_link = unsafe { destination.link(destination_index) };
+        let destination_link = destination.link(destination_index);
         let cp = unsafe {
             let mut ft = format_create_for_client(item.client().as_ref(), Some(item), 0, 0);
             format_defaults_for_handles(

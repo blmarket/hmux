@@ -708,7 +708,7 @@ fn input_key_get_mouse_impl<E: MouseEvent + ?Sized>(
     Some(out)
 }
 
-pub unsafe fn input_key_get_mouse(
+pub fn input_key_get_mouse(
     s: &RustScreen,
     m: &mouse_event,
     x: u_int,

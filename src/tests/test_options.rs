@@ -334,7 +334,7 @@ fn shared_options_keep_ancestors_alive_and_release_them_with_the_last_child() {
     }
     drop(parent);
     drop(child);
-    unsafe {
+    {
         assert_eq!(grandchild.string_ref(c"@inherited").as_ref(), c"after",);
         grandchild.with_entry(c"@inherited", false, |entry| {
             let entry = entry.unwrap();
@@ -454,7 +454,7 @@ fn an_option_set_falls_back_on_its_parent() {
     let _guard = globals();
     let parent = Options::defaults(OPTIONS_TABLE_SESSION);
     let child = Options::empty(None);
-    unsafe {
+    {
         child.set_parent(Some(&*parent));
         assert_eq!(child.parent().unwrap(), *parent);
         assert!(child.with_entry(c"status", true, |entry| entry.is_none()));
@@ -473,7 +473,7 @@ fn an_option_set_falls_back_on_its_parent() {
 fn an_option_is_found_under_the_name_it_used_to_have() {
     let _guard = globals();
     let oo = Options::defaults(OPTIONS_TABLE_WINDOW);
-    unsafe {
+    {
         assert_eq!(
             options_map_name(c"clock-mode-color").to_string_lossy(),
             "clock-mode-colour"
@@ -979,7 +979,7 @@ fn an_option_name_can_be_shortened_until_it_is_ambiguous() {
 fn an_option_is_looked_up_by_a_shortened_name() {
     let _guard = globals();
     let oo = Options::defaults(OPTIONS_TABLE_SESSION);
-    unsafe {
+    {
         let mut idx = 0;
         let mut ambiguous = 0;
         let name = RustOptionsEngine
@@ -1727,7 +1727,7 @@ fn pane_colours_options(values: &[(u_int, &CStr)]) -> Options {
 fn an_empty_pane_colours_option_reads_back_as_no_defaults() {
     let _guard = globals();
     let oo = pane_colours_options(&[]);
-    unsafe {
+    {
         assert!(oo.pane_colours().is_none());
         let mut p = colour_palette {
             fg: 0,
@@ -1744,7 +1744,7 @@ fn an_empty_pane_colours_option_reads_back_as_no_defaults() {
 fn pane_colours_read_back_by_index_and_load_into_a_palette() {
     let _guard = globals();
     let oo = pane_colours_options(&[(0, c"red"), (1, c"#00ff00"), (300, c"blue")]);
-    unsafe {
+    {
         let def = oo.pane_colours().expect("the option holds entries");
         assert_eq!(def[0], 1);
         assert_eq!(def[1], 0x00ff00 | COLOUR_FLAG_RGB);

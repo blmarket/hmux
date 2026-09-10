@@ -30,7 +30,7 @@ fn base_cell() -> crate::types::grid_cell {
 fn parse(s: &CStr) -> (Box<crate::types::style>, core::ffi::c_int) {
     let mut sy = blank_style();
     let gc = base_cell();
-    let rc = unsafe { style_parse(&mut sy, &gc, s.to_bytes()) };
+    let rc = style_parse(&mut sy, &gc, s.to_bytes());
     (sy, rc)
 }
 
@@ -41,7 +41,7 @@ fn parsed(s: &CStr) -> Box<crate::types::style> {
 }
 
 fn tostring(sy: &crate::types::style) -> String {
-    unsafe { style_tostring(sy).to_string_lossy().into_owned() }
+    style_tostring(sy).to_string_lossy().into_owned()
 }
 
 fn range_string(sy: &crate::types::style) -> String {

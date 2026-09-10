@@ -11,7 +11,7 @@ use ::core::ffi::CStr;
 
 const FILE: &CStr = c"test_coverage_window_buffer.rs";
 
-unsafe fn clear_buffers() {
+fn clear_buffers() {
     let names = with_paste_buffers(|buffers| {
         buffers
             .buffers()

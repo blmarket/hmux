@@ -195,7 +195,7 @@ impl RustWindowPaneWeak {
                     Some(on_pane_error(id, cmd_pipe_pane_error_callback)),
                 );
                 if wp.pipe_event().is_none() {
-                    unsafe { fatalx(c"out of memory", fmt_args![]) };
+                    fatalx(c"out of memory", fmt_args![]);
                 }
                 if out != 0 {
                     wp.pipe_event().enable(Interest::Write);

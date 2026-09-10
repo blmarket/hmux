@@ -86,7 +86,7 @@ impl Hyperlinks for RustHyperlinks {
     }
 
     fn put(&self, uri: &CStr, internal_id: Option<&CStr>) -> u_int {
-        unsafe { hyperlinks_put(self, uri, internal_id) }
+        hyperlinks_put(self, uri, internal_id)
     }
 
     fn get(&self, inner: u_int) -> Option<(CString, CString, CString)> {
@@ -210,7 +210,7 @@ fn hyperlinks_evict(listed: hyperlinks_listed, set: HyperlinksWeak) {
 /// answers the number a link with that id and URI already has. An absent or
 /// empty id makes an anonymous link, which is never shared. The oldest link
 /// of any set goes once the total reaches [`MAX_HYPERLINKS`].
-unsafe fn hyperlinks_put(
+fn hyperlinks_put(
     owner: &RustHyperlinks,
     uri_in: &CStr,
     internal_id_in: Option<&CStr>,

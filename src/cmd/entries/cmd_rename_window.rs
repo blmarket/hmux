@@ -49,7 +49,7 @@ unsafe fn cmd_rename_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             args.argument_string(0).expect("argument count checked"),
         )
     };
-    if unsafe { check_name(Some(&name)) == 0 } {
+    if check_name(Some(&name)) == 0 {
         unsafe { item.error(c"invalid window name: %s", fmt_args![name.as_c_str()]) };
         return CMD_RETURN_ERROR;
     }

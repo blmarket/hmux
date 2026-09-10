@@ -330,11 +330,11 @@ fn a_line_is_cleared_whole_or_from_the_cursor() {
     w.write_at(0, 1, "abcdef");
     w.write_at(0, 2, "abcdef");
     w.move_to(3, 0);
-    unsafe { screen_write_clearendofline(&mut w.ctx(), 8) };
+    screen_write_clearendofline(&mut w.ctx(), 8);
     w.move_to(3, 1);
-    unsafe { screen_write_clearstartofline(&mut w.ctx(), 8) };
+    screen_write_clearstartofline(&mut w.ctx(), 8);
     w.move_to(3, 2);
-    unsafe { screen_write_clearline(&mut w.ctx(), 8) };
+    screen_write_clearline(&mut w.ctx(), 8);
     assert_eq!(w.lines(), ["abc", "    ef", ""]);
 }
 
@@ -343,7 +343,7 @@ fn a_clear_keeps_the_colour_it_was_given() {
     let _guard = globals();
     let mut w = Writer::new(4, 2, 100);
     w.write_at(0, 0, "abcd");
-    unsafe { screen_write_clearline(&mut w.ctx(), 2) };
+    screen_write_clearline(&mut w.ctx(), 2);
     assert_eq!(w.backgrounds(0), [2, 2, 2, 2]);
 }
 
@@ -532,7 +532,7 @@ fn the_history_is_thrown_away_when_asked() {
     w.move_to(0, 1);
     unsafe { screen_write_linefeed(&mut w.ctx(), 0, 8) };
     assert_eq!(w.history(), ["aa"]);
-    unsafe { screen_write_clearhistory(&mut w.ctx()) };
+    screen_write_clearhistory(&mut w.ctx());
     assert!(w.history().is_empty());
 }
 
@@ -1572,7 +1572,7 @@ fn clearing_to_the_start_from_the_last_column_clears_the_line() {
     let mut w = Writer::new(4, 2, 100);
     w.write_at(0, 0, "abcd");
     w.move_to(3, 0);
-    unsafe { screen_write_clearstartofline(&mut w.ctx(), 8) };
+    screen_write_clearstartofline(&mut w.ctx(), 8);
     assert_eq!(w.lines()[0], "");
 }
 
@@ -1712,7 +1712,7 @@ fn a_copy_into_a_pane_stops_at_the_panes_own_edges() {
 #[test]
 fn a_cell_is_single_only_when_it_is_one_plain_character() {
     let _guard = globals();
-    let single = |gc: &grid_cell| unsafe { screen_write_cell_is_single(gc) };
+    let single = |gc: &grid_cell| screen_write_cell_is_single(gc);
     assert_eq!(single(&ascii(b'x')), 1);
     assert_eq!(single(&utf8("\u{4e00}")), 0);
     assert_eq!(single(&ascii(0x1f)), 0);

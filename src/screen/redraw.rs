@@ -165,13 +165,13 @@ pub(crate) fn screen_redraw_two_panes(owner: &WindowRef) -> Option<layout_type> 
     }
     if count == 2 { split_type } else { None }
 }
-pub(crate) unsafe fn screen_redraw_pane_border(
+pub(crate) fn screen_redraw_pane_border(
     ctx: &screen_redraw_ctx,
     wp: &impl crate::WindowPane,
     px: core::ffi::c_int,
     py: core::ffi::c_int,
 ) -> screen_redraw_border_type {
-    unsafe {
+    {
         let window = wp
             .window_context()
             .expect("a rendered pane has a window context");
@@ -335,7 +335,7 @@ unsafe fn screen_redraw_current_window(ctx: &screen_redraw_ctx) -> Option<Window
     }
 }
 
-unsafe fn screen_redraw_cell_border1(
+fn screen_redraw_cell_border1(
     ctx: &screen_redraw_ctx,
     sb_pos: core::ffi::c_int,
     sb_w: core::ffi::c_int,
@@ -343,7 +343,7 @@ unsafe fn screen_redraw_cell_border1(
     px: core::ffi::c_int,
     py: core::ffi::c_int,
 ) -> core::ffi::c_int {
-    unsafe {
+    {
         if sb_pos == PANE_SCROLLBARS_LEFT {
             if (px < wp.geometry().x - 1 as core::ffi::c_int - sb_w
                 || px > wp.geometry().x + wp.geometry().width as core::ffi::c_int)
@@ -774,13 +774,13 @@ unsafe fn screen_redraw_check_cell(
         }
     }
 }
-pub(crate) unsafe fn screen_redraw_check_is(
+pub(crate) fn screen_redraw_check_is(
     ctx: &screen_redraw_ctx,
     px: core::ffi::c_int,
     py: core::ffi::c_int,
     wp: Option<&impl crate::WindowPane>,
 ) -> core::ffi::c_int {
-    unsafe {
+    {
         let Some(wp) = wp else {
             return 0 as core::ffi::c_int;
         };

@@ -340,12 +340,12 @@ fn a_screen_can_be_made_wider_and_narrower() {
     let _guard = globals();
     let mut s = RustScreen::new_with_server_options(10, 5, 0);
     s.write(0, 0, "abcdefghij");
-    unsafe { screen_resize(&mut s, 20, 5, 0) };
+    screen_resize(&mut s, 20, 5, 0);
     assert_eq!(s.grid().sx, 20);
     assert_eq!(s.tabs().len(), 20);
     assert_eq!(s.text(0), "abcdefghij");
 
-    unsafe { screen_resize(&mut s, 20, 5, 0) };
+    screen_resize(&mut s, 20, 5, 0);
     assert_eq!(s.grid().sx, 20, "the same width is no change");
 }
 
@@ -353,7 +353,7 @@ fn a_screen_can_be_made_wider_and_narrower() {
 fn a_screen_is_never_smaller_than_one_cell() {
     let _guard = globals();
     let mut s = RustScreen::new_with_server_options(10, 5, 0);
-    unsafe { screen_resize(&mut s, 0, 0, 0) };
+    screen_resize(&mut s, 0, 0, 0);
     assert_eq!((s.grid().sx, s.grid().sy), (1, 1));
 }
 
@@ -363,7 +363,7 @@ fn a_taller_screen_gets_empty_lines_at_the_bottom() {
     let mut s = RustScreen::new_with_server_options(10, 2, 0);
     s.write(0, 0, "one");
     s.write(0, 1, "two");
-    unsafe { screen_resize(&mut s, 10, 4, 0) };
+    screen_resize(&mut s, 10, 4, 0);
     assert_eq!(s.grid().sy, 4);
     assert_eq!(s.0.rlower, 3);
     assert_eq!([s.text(0), s.text(2)], ["one", ""]);
@@ -376,7 +376,7 @@ fn a_taller_screen_takes_back_the_history_it_scrolled() {
     s.write(0, 0, "one");
     grid_scroll_history(s.grid_mut(), 8);
     assert_eq!((s.grid().hsize, s.grid().hscrolled), (1, 1));
-    unsafe { screen_resize(&mut s, 10, 3, 0) };
+    screen_resize(&mut s, 10, 3, 0);
     assert_eq!(
         (s.grid().hsize, s.grid().hscrolled),
         (0, 0),
@@ -392,7 +392,7 @@ fn a_shorter_screen_eats_the_empty_lines_below_the_cursor_first() {
     s.write(0, 0, "one");
     s.write(0, 1, "two");
     s.0.cy = 1;
-    unsafe { screen_resize(&mut s, 10, 2, 0) };
+    screen_resize(&mut s, 10, 2, 0);
     assert_eq!(s.grid().sy, 2);
     assert_eq!([s.text(0), s.text(1)], ["one", "two"]);
     assert_eq!(s.0.cy, 1);
@@ -407,7 +407,7 @@ fn a_shorter_screen_without_history_drops_the_lines_above_the_cursor() {
     s.write(0, 2, "three");
     s.write(0, 3, "four");
     s.0.cy = 3;
-    unsafe { screen_resize(&mut s, 10, 2, 0) };
+    screen_resize(&mut s, 10, 2, 0);
     assert_eq!([s.text(0), s.text(1)], ["three", "four"]);
     assert_eq!(s.0.cy, 1);
 }
@@ -421,7 +421,7 @@ fn a_shorter_screen_with_history_pushes_the_lines_into_it() {
     s.write(0, 2, "three");
     s.write(0, 3, "four");
     s.0.cy = 3;
-    unsafe { screen_resize(&mut s, 10, 2, 0) };
+    screen_resize(&mut s, 10, 2, 0);
     assert_eq!(s.grid().hsize, 2);
     assert_eq!([s.text(0), s.text(2)], ["one", "three"]);
     assert_eq!(s.0.cy, 1);
@@ -433,7 +433,7 @@ fn a_narrower_screen_reflows_its_lines_and_carries_the_cursor() {
     let mut s = RustScreen::new_with_server_options(10, 3, 100);
     s.write(0, 0, "abcdefgh");
     s.0.cx = 7;
-    unsafe { screen_resize(&mut s, 5, 3, 1) };
+    screen_resize(&mut s, 5, 3, 1);
     assert_eq!(s.grid().hsize, 1);
     assert_eq!([s.text(0), s.text(1)], ["abcde", "fgh"]);
     assert_eq!(
@@ -449,7 +449,7 @@ fn a_reflow_that_is_not_asked_to_keep_the_cursor_puts_it_at_the_top() {
     let mut s = RustScreen::new_with_server_options(10, 3, 100);
     s.write(0, 0, "abcdefgh");
     s.0.cx = 7;
-    unsafe { screen_resize_cursor(&mut s, 5, 3, 1, 1, 0) };
+    screen_resize_cursor(&mut s, 5, 3, 1, 1, 0);
     assert_eq!((s.0.cx, s.0.cy), (0, 0));
 }
 
@@ -655,7 +655,7 @@ fn the_alternate_screen_puts_the_first_one_aside() {
     let mut gc = { grid_default_cell };
     gc.fg = 5;
 
-    unsafe { screen_alternate_on(&mut s, &gc, 1) };
+    screen_alternate_on(&mut s, &gc, 1);
     assert!(s.0.saved_grid.is_some());
     assert_eq!(s.text(0), "", "the alternate screen starts empty");
     assert_eq!(s.grid().flags & GRID_HISTORY, 0);
@@ -663,11 +663,11 @@ fn the_alternate_screen_puts_the_first_one_aside() {
 
     s.write(0, 0, "alt");
     s.0.cx = 3;
-    unsafe { screen_alternate_on(&mut s, &gc, 1) };
+    screen_alternate_on(&mut s, &gc, 1);
     assert_eq!(s.text(0), "alt", "a second call does nothing");
 
     let mut restored = { grid_default_cell };
-    unsafe { screen_alternate_off(&mut s, Some(&mut restored), 1) };
+    screen_alternate_off(&mut s, Some(&mut restored), 1);
     assert!(s.0.saved_grid.is_none());
     assert_eq!(s.text(0), "main");
     assert_eq!((s.0.cx, s.0.cy), (4, 0));
@@ -682,9 +682,9 @@ fn restoring_a_resized_alternate_screen_keeps_main_contents_and_new_dimensions()
     s.write(0, 0, "main");
     s.0.cx = 4;
     s.0.cy = 0;
-    unsafe { screen_alternate_on(&mut s, &grid_default_cell, 1) };
+    screen_alternate_on(&mut s, &grid_default_cell, 1);
     s.write(0, 0, "alternate");
-    unsafe {
+    {
         screen_resize(&mut s, 20, 5, 0);
         screen_alternate_off(&mut s, None, 1);
     }
@@ -701,7 +701,7 @@ fn leaving_an_alternate_screen_that_was_never_entered_only_clamps_the_cursor() {
     let mut s = RustScreen::new_with_server_options(10, 3, 0);
     s.0.cx = 20;
     s.0.cy = 20;
-    unsafe { screen_alternate_off(&mut s, None, 1) };
+    screen_alternate_off(&mut s, None, 1);
     assert_eq!((s.0.cx, s.0.cy), (9, 2));
 }
 
@@ -710,11 +710,11 @@ fn an_alternate_screen_can_be_left_without_taking_the_cursor_back() {
     let _guard = globals();
     let mut s = RustScreen::new_with_server_options(10, 3, 0);
     let gc = { grid_default_cell };
-    unsafe { screen_alternate_on(&mut s, &gc, 0) };
+    screen_alternate_on(&mut s, &gc, 0);
     assert_eq!((s.0.saved_cx, s.0.saved_cy), (UINT_MAX, UINT_MAX));
     s.0.cx = 2;
     s.0.cy = 1;
-    unsafe { screen_alternate_off(&mut s, None, 1) };
+    screen_alternate_off(&mut s, None, 1);
     assert_eq!(
         (s.0.cx, s.0.cy),
         (2, 1),
@@ -728,7 +728,7 @@ fn a_screen_with_a_write_list_keeps_it_across_a_resize() {
     let mut s = RustScreen::new_with_server_options(10, 3, 0);
     screen_write_make_list(&mut s);
     assert!(!s.0.write_list.is_empty());
-    unsafe { screen_resize(&mut s, 10, 5, 0) };
+    screen_resize(&mut s, 10, 5, 0);
     assert!(
         !s.0.write_list.is_empty(),
         "it was made again for the new size"
@@ -740,7 +740,7 @@ fn freeing_a_screen_frees_what_it_put_aside() {
     let _guard = globals();
     let mut s = RustScreen::new_with_server_options(10, 3, 0);
     let gc = { grid_default_cell };
-    unsafe {
+    {
         screen_write_make_list(&mut s);
         screen_alternate_on(&mut s, &gc, 1);
         s.set_title(c"one", 0);
@@ -772,7 +772,7 @@ fn a_cursor_left_above_the_screen_goes_back_to_the_top() {
     s.write(0, 0, "one");
     s.0.cx = 2;
     s.0.cy = 0;
-    unsafe { screen_resize_cursor(&mut s, 10, 2, 0, 0, 1) };
+    screen_resize_cursor(&mut s, 10, 2, 0, 0, 1);
     assert_eq!(s.grid().hsize, 2);
     assert_eq!(
         (s.0.cx, s.0.cy),
@@ -788,7 +788,7 @@ fn a_shorter_screen_only_eats_as_many_lines_as_it_needs() {
     s.write(0, 0, "one");
     s.write(0, 5, "six");
     s.0.cy = 0;
-    unsafe { screen_resize(&mut s, 10, 4, 0) };
+    screen_resize(&mut s, 10, 4, 0);
     assert_eq!(s.grid().sy, 4);
     assert_eq!(s.text(0), "one");
     assert_eq!(s.text(3), "", "the two lines below the cursor went");
@@ -803,7 +803,7 @@ fn a_taller_screen_only_takes_back_as_much_history_as_it_needs() {
         grid_scroll_history(s.grid_mut(), 8);
     }
     assert_eq!((s.grid().hsize, s.grid().hscrolled), (3, 3));
-    unsafe { screen_resize(&mut s, 10, 3, 0) };
+    screen_resize(&mut s, 10, 3, 0);
     assert_eq!(
         (s.grid().hsize, s.grid().hscrolled),
         (2, 2),
@@ -846,10 +846,10 @@ fn the_cursor_is_clamped_when_the_alternate_screen_is_left() {
     let _guard = globals();
     let mut s = RustScreen::new_with_server_options(10, 3, 0);
     let gc = { grid_default_cell };
-    unsafe { screen_alternate_on(&mut s, &gc, 0) };
+    screen_alternate_on(&mut s, &gc, 0);
     s.0.cx = 20;
     s.0.cy = 20;
-    unsafe { screen_alternate_off(&mut s, None, 0) };
+    screen_alternate_off(&mut s, None, 0);
     assert_eq!((s.0.cx, s.0.cy), (9, 2));
 }
 
@@ -894,7 +894,7 @@ fn printing_stops_when_a_tab_or_a_wide_character_no_longer_fits() {
 
     let mut tab = long_line(16376);
     let mut gc = { grid_default_cell };
-    unsafe {
+    {
         grid_set_tab(&mut gc, 2);
         grid_set_cell(tab.grid_mut(), 16376, 0, &gc);
     }
@@ -978,7 +978,7 @@ fn printing_leaves_out_padding_and_writes_tabs_and_wide_characters() {
     let _guard = globals();
     let mut s = RustScreen::new_with_server_options(10, 1, 0);
     let mut gc = { grid_default_cell };
-    unsafe {
+    {
         grid_set_tab(&mut gc, 2);
         grid_set_cell(s.grid_mut(), 0, 0, &gc);
         grid_set_padding(s.grid_mut(), 1, 0);

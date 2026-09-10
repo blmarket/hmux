@@ -249,26 +249,26 @@ pub fn control_set_pane_off(c: &mut client, wp: &impl crate::WindowPane) {
     cp.flags |= CONTROL_PANE_OFF;
     control_discard_pane(cs, wp.pane_id());
 }
-pub unsafe fn control_continue_pane(c: &mut client, wp: &impl crate::WindowPane) {
+pub fn control_continue_pane(c: &mut client, wp: &impl crate::WindowPane) {
     if let Some(cp) = control_get_pane(control_state_mut(c), wp)
         && cp.flags & CONTROL_PANE_PAUSED != 0
     {
         cp.flags &= !CONTROL_PANE_PAUSED;
         cp.offset = *wp.offset();
         cp.queued = *wp.offset();
-        unsafe { control_write(c, c"%%continue %%%u", fmt_args![wp.pane_id()]) };
+        control_write(c, c"%%continue %%%u", fmt_args![wp.pane_id()]);
     }
 }
-pub unsafe fn control_pause_pane(c: &mut client, wp: &impl crate::WindowPane) {
+pub fn control_pause_pane(c: &mut client, wp: &impl crate::WindowPane) {
     let cs = control_state_mut(c);
     let cp = control_add_pane(cs, wp);
     if cp.flags & CONTROL_PANE_PAUSED == 0 {
         cp.flags |= CONTROL_PANE_PAUSED;
         control_discard_pane(cs, wp.pane_id());
-        unsafe { control_write(c, c"%%pause %%%u", fmt_args![wp.pane_id()]) };
+        control_write(c, c"%%pause %%%u", fmt_args![wp.pane_id()]);
     }
 }
-unsafe fn control_vwrite(c: &mut client, fmt: &CStr, args: &[FmtArg]) {
+fn control_vwrite(c: &mut client, fmt: &CStr, args: &[FmtArg]) {
     {
         let cs = c
             .control_state
@@ -284,8 +284,8 @@ unsafe fn control_vwrite(c: &mut client, fmt: &CStr, args: &[FmtArg]) {
         cs.write_event.enable(Interest::Write);
     }
 }
-pub unsafe fn control_write(c: &mut client, fmt: &CStr, args: &[FmtArg]) {
-    unsafe {
+pub fn control_write(c: &mut client, fmt: &CStr, args: &[FmtArg]) {
+    {
         let cs = c
             .control_state
             .as_deref_mut()
@@ -308,8 +308,8 @@ pub unsafe fn control_write(c: &mut client, fmt: &CStr, args: &[FmtArg]) {
         cs.write_event.enable(Interest::Write);
     }
 }
-unsafe fn control_check_age(c: &mut client, wp: &impl crate::WindowPane) -> core::ffi::c_int {
-    unsafe {
+fn control_check_age(c: &mut client, wp: &impl crate::WindowPane) -> core::ffi::c_int {
+    {
         let cs = control_state_mut(c);
         let cp = cs
             .panes
@@ -483,7 +483,7 @@ fn on_client_error(
     })
 }
 
-unsafe fn control_error_callback(c: &mut client) {
+fn control_error_callback(c: &mut client) {
     c.flags |= CLIENT_EXIT as uint64_t;
 }
 unsafe fn control_read_callback(c: &mut client) {
@@ -537,7 +537,7 @@ pub fn control_all_done(c: &client) -> core::ffi::c_int {
         .expect("the client has control state");
     (cs.all_blocks.is_empty() && cs.write_event.output_len() == 0) as core::ffi::c_int
 }
-unsafe fn control_flush_all_blocks(c: &mut client) {
+fn control_flush_all_blocks(c: &mut client) {
     {
         let cs = c
             .control_state
@@ -558,7 +558,7 @@ unsafe fn control_flush_all_blocks(c: &mut client) {
         }
     }
 }
-unsafe fn control_append_data(
+fn control_append_data(
     client_flags: uint64_t,
     cp: &mut control_pane,
     age: uint64_t,
@@ -566,7 +566,7 @@ unsafe fn control_append_data(
     wp: &impl crate::WindowPane,
     size: size_t,
 ) -> Option<Box<ByteBuffer>> {
-    unsafe {
+    {
         let mut message = match message {
             Some(message) => message,
             None => {
@@ -617,7 +617,7 @@ unsafe fn control_append_data(
         Some(message)
     }
 }
-unsafe fn control_write_data(c: &mut client, mut message: Box<ByteBuffer>) {
+fn control_write_data(c: &mut client, mut message: Box<ByteBuffer>) {
     {
         let cs = c
             .control_state
@@ -853,7 +853,7 @@ pub fn control_discard(c: &mut client) {
     }
     cs.read_event.disable(Interest::Read);
 }
-pub unsafe fn control_stop(c: &mut client) {
+pub fn control_stop(c: &mut client) {
     {
         let Some(cs) = c.control_state.as_deref_mut() else {
             return;
@@ -1212,7 +1212,7 @@ pub unsafe fn control_add_sub(
         }
     }
 }
-pub unsafe fn control_remove_sub(c: &mut client, name: &CStr) {
+pub fn control_remove_sub(c: &mut client, name: &CStr) {
     {
         let cs = c
             .control_state
@@ -1314,7 +1314,7 @@ mod focused_tests {
         let mut pane = zeroed_pane();
         pane.set_pane_id(71);
         pane.offset_mut().set_position(90);
-        unsafe {
+        {
             assert!(control_get_pane(ctx.state(), &*pane).is_none());
             control_add_pane(ctx.state(), &*pane);
             assert_eq!(control_add_pane(ctx.state(), &*pane).offset.position(), 90);
@@ -1377,7 +1377,7 @@ mod focused_tests {
     #[test]
     fn line_flush_stops_at_data_then_resumes_and_write_data_appends_newline() {
         let mut ctx = ControlCtx::new();
-        unsafe {
+        {
             control_insert_block(ctx.state(), line_block(c"first"));
             control_insert_block(ctx.state(), data_block(4, 0));
             control_insert_block(ctx.state(), line_block(c"last"));
@@ -1409,7 +1409,7 @@ mod focused_tests {
         ctx.client().flags |= CLIENT_CONTROL_PAUSEAFTER;
         ctx.client().pause_age = 0;
         std::thread::sleep(std::time::Duration::from_millis(2));
-        assert_eq!(unsafe { control_check_age(ctx.client(), &*pane) }, 1);
+        assert_eq!({ control_check_age(ctx.client(), &*pane) }, 1);
         assert!(ctx.state().panes[&91].blocks.is_empty());
         assert_ne!(ctx.state().panes[&91].flags & CONTROL_PANE_PAUSED, 0);
         assert_eq!(ctx.state().panes[&92].blocks, [retained]);
@@ -1419,7 +1419,7 @@ mod focused_tests {
             ctx.state().all_blocks[1].line.as_deref(),
             Some(c"%pause %91")
         );
-        unsafe { control_pause_pane(ctx.client(), &*pane) };
+        control_pause_pane(ctx.client(), &*pane);
         assert_eq!(ctx.state().all_blocks.len(), 2);
     }
 
@@ -1450,10 +1450,10 @@ mod focused_tests {
         let _guard = globals();
         let mut client = zeroed_client();
         let weak = Some(client.downgrade());
-        let callback = on_client(&weak, |c| unsafe { control_error_callback(c) });
+        let callback = on_client(&weak, |c| control_error_callback(c));
         callback(Stream::NONE);
         assert_ne!(unsafe { client.flags() } & CLIENT_EXIT as u64, 0);
-        let error = on_client_error(&weak, |c| unsafe { control_error_callback(c) });
+        let error = on_client_error(&weak, |c| control_error_callback(c));
         *unsafe { client.flags_mut() } &= !(CLIENT_EXIT as u64);
         error(Stream::NONE, 0);
         assert_ne!(unsafe { client.flags() } & CLIENT_EXIT as u64, 0);
@@ -1491,7 +1491,7 @@ mod focused_tests {
     #[test]
     fn direct_and_queued_writes_preserve_order_and_done_state() {
         let mut ctx = ControlCtx::new();
-        unsafe {
+        {
             assert_eq!(control_all_done(ctx.client()), 1);
             control_write(ctx.client(), c"%%notice %s", fmt_args![c"first"]);
             assert_eq!(ctx.stream.written(), b"%notice first\n");
@@ -1626,7 +1626,7 @@ mod focused_tests {
             assert!(!Rc::ptr_eq(&snapshot[0], &replacement[0]));
             assert_eq!(replacement[0].borrow().format.as_c_str(), c"new");
             assert!(replacement[0].borrow().last.is_none());
-            unsafe { control_remove_sub(ctx.client(), c"same") };
+            control_remove_sub(ctx.client(), c"same");
             assert!(control_subs_snapshot(ctx.client()).is_empty());
             assert_eq!(old.format.as_c_str(), c"old");
         }

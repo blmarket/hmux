@@ -78,7 +78,7 @@ impl Msgbuf {
     fn messages(&mut self) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
         loop {
-            let Some(p) = (unsafe { msgbuf_get(self.borrow_mut()) }) else {
+            let Some(p) = msgbuf_get(self.borrow_mut()) else {
                 return out;
             };
             out.push(Buf(Some(p)).bytes());
@@ -202,8 +202,8 @@ fn an_open_buffer_is_sized_once_and_for_all() {
     assert_eq!(buf.max, 8);
     assert_eq!(buf.wpos, 0);
     assert_eq!(buf.fd, -1);
-    assert_eq!(unsafe { ibuf_size(&buf) }, 0);
-    assert_eq!(unsafe { ibuf_left(&buf) }, 8);
+    assert_eq!({ ibuf_size(&buf) }, 0);
+    assert_eq!({ ibuf_left(&buf) }, 8);
     assert_eq!(buf.bytes(), []);
 
     let empty = Buf::open(0);
@@ -287,7 +287,7 @@ fn reserving_moves_the_write_position_and_grows_the_buffer() {
 #[test]
 fn reserving_more_than_the_buffer_may_hold_is_refused() {
     let mut buf = Buf::dynamic(0, 8);
-    unsafe {
+    {
         clear_errno();
         assert!(ibuf_reserve(buf.borrow_mut(), 9).is_none());
         assert_eq!(errno(), ERANGE);
@@ -328,7 +328,7 @@ fn empty_ibuf() -> Box<ibuf> {
 #[test]
 fn adding_nothing_adds_nothing() {
     let mut buf = Buf::dynamic(0, 8);
-    unsafe {
+    {
         assert_eq!(ibuf_add(buf.borrow_mut(), &[]), 0);
         buf.borrow_mut().put_bytes(0, 0);
         assert_eq!(ibuf_size(&buf), 0);
@@ -338,7 +338,7 @@ fn adding_nothing_adds_nothing() {
 #[test]
 fn adding_past_the_limit_is_refused() {
     let mut buf = Buf::dynamic(0, 2);
-    unsafe {
+    {
         assert_eq!(ibuf_add(buf.borrow_mut(), b"abcd"), -1);
         assert!(ibuf_reserve(buf.borrow_mut(), 4).is_none());
         assert_eq!(ibuf_size(&buf), 0);
@@ -348,7 +348,7 @@ fn adding_past_the_limit_is_refused() {
 #[test]
 fn numbers_are_added_in_network_order_and_in_host_order() {
     let mut buf = Buf::dynamic(0, 64);
-    unsafe {
+    {
         assert_eq!(ibuf_add_n8(buf.borrow_mut(), 0x12), 0);
         assert_eq!(ibuf_add_n16(buf.borrow_mut(), 0x1234), 0);
         assert_eq!(ibuf_add_n32(buf.borrow_mut(), 0x1234_5678), 0);
@@ -363,7 +363,7 @@ fn numbers_are_added_in_network_order_and_in_host_order() {
     }
 
     let mut host = Buf::dynamic(0, 64);
-    unsafe {
+    {
         assert_eq!(ibuf_add_h16(host.borrow_mut(), 0x1234), 0);
         assert_eq!(ibuf_add_h32(host.borrow_mut(), 0x1234_5678), 0);
         assert_eq!(ibuf_add_h64(host.borrow_mut(), 0x1234_5678_9abc_def0), 0);
@@ -379,7 +379,7 @@ fn numbers_are_added_in_network_order_and_in_host_order() {
 #[test]
 fn a_number_too_big_for_its_width_is_refused() {
     let mut buf = Buf::dynamic(0, 64);
-    unsafe {
+    {
         for (retval, width) in [
             (ibuf_add_n8(buf.borrow_mut(), 0x100), 8),
             (ibuf_add_n16(buf.borrow_mut(), 0x1_0000), 16),
@@ -398,7 +398,7 @@ fn a_number_too_big_for_its_width_is_refused() {
 fn one_buffer_is_added_to_another() {
     let mut buf = Buf::dynamic(0, 16);
     let mut from = Buf::dynamic(0, 16);
-    unsafe {
+    {
         ibuf_add(from.borrow_mut(), b"abc");
         assert_eq!(ibuf_add_ibuf(buf.borrow_mut(), &*from), 0);
         assert_eq!(buf.bytes(), b"abc");
@@ -439,7 +439,7 @@ fn seeking_finds_a_place_inside_what_is_written() {
 #[test]
 fn a_number_already_written_is_written_over() {
     let mut buf = Buf::dynamic(0, 64);
-    unsafe {
+    {
         buf.borrow_mut().put_bytes(0, 32);
         assert_eq!(ibuf_set_n8(buf.borrow_mut(), 0, 0x12), 0);
         assert_eq!(ibuf_set_n16(buf.borrow_mut(), 1, 0x1234), 0);
@@ -465,7 +465,7 @@ fn a_number_already_written_is_written_over() {
 #[test]
 fn a_number_too_big_for_the_field_it_is_written_into_is_refused() {
     let mut buf = Buf::dynamic(0, 64);
-    unsafe {
+    {
         buf.borrow_mut().put_bytes(0, 32);
         assert_eq!(ibuf_set_n8(buf.borrow_mut(), 0, 0x100), -1);
         assert_eq!(ibuf_set_n16(buf.borrow_mut(), 0, 0x1_0000), -1);
@@ -494,7 +494,7 @@ fn truncating_cuts_what_is_written_or_pads_it_with_zeroes() {
 #[test]
 fn rewinding_puts_the_read_position_back_at_the_start() {
     let mut buf = Buf::dynamic(0, 16);
-    unsafe {
+    {
         ibuf_add(buf.borrow_mut(), b"abcd");
         buf.borrow_mut().advance(2);
         assert_eq!(buf.bytes(), b"cd");
@@ -1129,7 +1129,7 @@ fn network_u64_writes_preserve_all_bytes() {
         let mut buf = Buf::open(8);
         buf.borrow_mut().put_u64(value);
         assert_eq!(buf.bytes(), value.to_be_bytes());
-        unsafe {
+        {
             assert_eq!(ibuf_set_n64(buf.borrow_mut(), 0, !value), 0);
         }
         assert_eq!(buf.bytes(), (!value).to_be_bytes());
@@ -1157,20 +1157,20 @@ fn buffer_writes_respect_updated_storage_limits() {
     buf.set_imsg_data_buffer_max_size(4);
     buf.borrow_mut().put_slice(b"four");
     assert_eq!(buf.borrow_mut().remaining_mut(), 0);
-    assert_eq!(unsafe { ibuf_add(buf.borrow_mut(), b"x") }, -1);
+    assert_eq!({ ibuf_add(buf.borrow_mut(), b"x") }, -1);
     assert_eq!(buf.bytes(), b"four");
     buf.set_imsg_data_buffer_max_size(8);
-    assert_eq!(unsafe { ibuf_add(buf.borrow_mut(), b"more") }, 0);
+    assert_eq!({ ibuf_add(buf.borrow_mut(), b"more") }, 0);
     assert_eq!(buf.bytes(), b"fourmore");
 }
 
 /// Puts the bytes of a number at the end of the buffer.
-pub(crate) unsafe fn ibuf_add_bytes(buf: &mut ibuf, bytes: &[u8]) -> c_int {
-    unsafe { ibuf_add(buf, bytes) }
+pub(crate) fn ibuf_add_bytes(buf: &mut ibuf, bytes: &[u8]) -> c_int {
+    ibuf_add(buf, bytes)
 }
 
-pub(crate) unsafe fn ibuf_add_n8(buf: &mut ibuf, value: uint64_t) -> c_int {
-    unsafe {
+pub(crate) fn ibuf_add_n8(buf: &mut ibuf, value: uint64_t) -> c_int {
+    {
         if ibuf_too_wide(value, UINT8_MAX as uint64_t) {
             return -(1 as c_int);
         }
@@ -1178,8 +1178,8 @@ pub(crate) unsafe fn ibuf_add_n8(buf: &mut ibuf, value: uint64_t) -> c_int {
     }
 }
 
-pub(crate) unsafe fn ibuf_add_n16(buf: &mut ibuf, value: uint64_t) -> c_int {
-    unsafe {
+pub(crate) fn ibuf_add_n16(buf: &mut ibuf, value: uint64_t) -> c_int {
+    {
         if ibuf_too_wide(value, UINT16_MAX as uint64_t) {
             return -(1 as c_int);
         }
@@ -1187,8 +1187,8 @@ pub(crate) unsafe fn ibuf_add_n16(buf: &mut ibuf, value: uint64_t) -> c_int {
     }
 }
 
-pub(crate) unsafe fn ibuf_add_n32(buf: &mut ibuf, value: uint64_t) -> c_int {
-    unsafe {
+pub(crate) fn ibuf_add_n32(buf: &mut ibuf, value: uint64_t) -> c_int {
+    {
         if ibuf_too_wide(value, UINT32_MAX as uint64_t) {
             return -(1 as c_int);
         }
@@ -1196,12 +1196,12 @@ pub(crate) unsafe fn ibuf_add_n32(buf: &mut ibuf, value: uint64_t) -> c_int {
     }
 }
 
-pub(crate) unsafe fn ibuf_add_n64(buf: &mut ibuf, value: uint64_t) -> c_int {
-    unsafe { ibuf_add_bytes(buf, &value.to_be_bytes()) }
+pub(crate) fn ibuf_add_n64(buf: &mut ibuf, value: uint64_t) -> c_int {
+    ibuf_add_bytes(buf, &value.to_be_bytes())
 }
 
-pub(crate) unsafe fn ibuf_add_h16(buf: &mut ibuf, value: uint64_t) -> c_int {
-    unsafe {
+pub(crate) fn ibuf_add_h16(buf: &mut ibuf, value: uint64_t) -> c_int {
+    {
         if ibuf_too_wide(value, UINT16_MAX as uint64_t) {
             return -(1 as c_int);
         }
@@ -1209,8 +1209,8 @@ pub(crate) unsafe fn ibuf_add_h16(buf: &mut ibuf, value: uint64_t) -> c_int {
     }
 }
 
-pub(crate) unsafe fn ibuf_add_h32(buf: &mut ibuf, value: uint64_t) -> c_int {
-    unsafe {
+pub(crate) fn ibuf_add_h32(buf: &mut ibuf, value: uint64_t) -> c_int {
+    {
         if ibuf_too_wide(value, UINT32_MAX as uint64_t) {
             return -(1 as c_int);
         }
@@ -1218,8 +1218,8 @@ pub(crate) unsafe fn ibuf_add_h32(buf: &mut ibuf, value: uint64_t) -> c_int {
     }
 }
 
-pub(crate) unsafe fn ibuf_add_h64(buf: &mut ibuf, value: uint64_t) -> c_int {
-    unsafe { ibuf_add_bytes(buf, &value.to_ne_bytes()) }
+pub(crate) fn ibuf_add_h64(buf: &mut ibuf, value: uint64_t) -> c_int {
+    ibuf_add_bytes(buf, &value.to_ne_bytes())
 }
 
 pub(crate) unsafe fn ibuf_add_strbuf(buf: &mut ibuf, str: &std::ffi::CStr, len: size_t) -> c_int {
@@ -1238,40 +1238,40 @@ pub(crate) unsafe fn ibuf_add_strbuf(buf: &mut ibuf, str: &std::ffi::CStr, len: 
     }
 }
 
-pub(crate) unsafe fn ibuf_set_n8(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
+pub(crate) fn ibuf_set_n8(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
     if ibuf_too_wide(value, UINT8_MAX as uint64_t) {
         return -(1 as c_int);
     }
-    unsafe { ibuf_set_bytes(buf, pos, &(value as uint8_t).to_ne_bytes()) }
+    ibuf_set_bytes(buf, pos, &(value as uint8_t).to_ne_bytes())
 }
 
-pub(crate) unsafe fn ibuf_set_n16(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
+pub(crate) fn ibuf_set_n16(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
     if ibuf_too_wide(value, UINT16_MAX as uint64_t) {
         return -(1 as c_int);
     }
-    unsafe { ibuf_set_bytes(buf, pos, &(value as uint16_t).swap_bytes().to_ne_bytes()) }
+    ibuf_set_bytes(buf, pos, &(value as uint16_t).swap_bytes().to_ne_bytes())
 }
 
-pub(crate) unsafe fn ibuf_set_n32(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
+pub(crate) fn ibuf_set_n32(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
     if ibuf_too_wide(value, UINT32_MAX as uint64_t) {
         return -(1 as c_int);
     }
-    unsafe { ibuf_set_bytes(buf, pos, &(value as uint32_t).swap_bytes().to_ne_bytes()) }
+    ibuf_set_bytes(buf, pos, &(value as uint32_t).swap_bytes().to_ne_bytes())
 }
 
-pub(crate) unsafe fn ibuf_set_n64(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
-    unsafe { ibuf_set_bytes(buf, pos, &value.to_be_bytes()) }
+pub(crate) fn ibuf_set_n64(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
+    ibuf_set_bytes(buf, pos, &value.to_be_bytes())
 }
 
-pub(crate) unsafe fn ibuf_set_h16(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
+pub(crate) fn ibuf_set_h16(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
     if ibuf_too_wide(value, UINT16_MAX as uint64_t) {
         return -(1 as c_int);
     }
-    unsafe { ibuf_set_bytes(buf, pos, &(value as uint16_t).to_ne_bytes()) }
+    ibuf_set_bytes(buf, pos, &(value as uint16_t).to_ne_bytes())
 }
 
-pub(crate) unsafe fn ibuf_set_h64(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
-    unsafe { ibuf_set_bytes(buf, pos, &value.to_ne_bytes()) }
+pub(crate) fn ibuf_set_h64(buf: &mut ibuf, pos: size_t, value: uint64_t) -> c_int {
+    ibuf_set_bytes(buf, pos, &value.to_ne_bytes())
 }
 
 pub(crate) unsafe fn ibuf_truncate(buf: &mut ibuf, len: size_t) -> c_int {
@@ -1292,8 +1292,8 @@ pub(crate) unsafe fn ibuf_truncate(buf: &mut ibuf, len: size_t) -> c_int {
     }
 }
 
-pub(crate) unsafe fn ibuf_from_ibuf(buf: &mut ibuf, from: &ibuf) {
-    unsafe {
+pub(crate) fn ibuf_from_ibuf(buf: &mut ibuf, from: &ibuf) {
+    {
         let data = ibuf_data(from);
         ibuf_from_buffer(buf, data);
     }
@@ -1412,6 +1412,6 @@ pub(crate) unsafe fn ibufq_free(mut bufq: Box<ibufqueue>) {
     }
 }
 
-pub(crate) unsafe fn ibuf_rewind(buf: &mut ibuf) {
+pub(crate) fn ibuf_rewind(buf: &mut ibuf) {
     buf.rpos = 0 as size_t;
 }

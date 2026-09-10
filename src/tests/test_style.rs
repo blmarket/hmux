@@ -28,7 +28,7 @@ fn base() -> grid_cell {
 fn parse(s: &CStr) -> (Box<style>, c_int) {
     let mut sy = blank();
     let gc = base();
-    let retval = unsafe { style_parse(&mut sy, &gc, s.to_bytes()) };
+    let retval = style_parse(&mut sy, &gc, s.to_bytes());
     (sy, retval)
 }
 
@@ -47,7 +47,7 @@ fn refused(s: &CStr) {
 }
 
 fn tostring(sy: &style) -> String {
-    unsafe { style_tostring(sy).to_string_lossy().into_owned() }
+    style_tostring(sy).to_string_lossy().into_owned()
 }
 
 fn range_string(sy: &style) -> String {
@@ -91,7 +91,7 @@ fn a_style_is_copied_whole() {
 fn an_empty_string_leaves_the_style_as_it_was() {
     let mut sy = parsed(c"fg=red");
     let gc = base();
-    assert_eq!(unsafe { style_parse(&mut sy, &gc, b"") }, 0);
+    assert_eq!({ style_parse(&mut sy, &gc, b"") }, 0);
     assert_eq!(tostring(&sy), "fg=red");
 }
 
@@ -186,7 +186,7 @@ fn a_range_argument_is_cut_to_the_room_the_style_keeps_for_it() {
 fn a_user_range_keeps_non_utf8_bytes_when_printed() {
     let input = CString::new(b"range=user|\xff".as_slice()).unwrap();
     let sy = parsed(&input);
-    assert_eq!(unsafe { style_tostring(&sy) }.as_bytes(), input.as_bytes());
+    assert_eq!({ style_tostring(&sy) }.as_bytes(), input.as_bytes());
 }
 
 #[test]
@@ -294,7 +294,7 @@ fn a_style_is_put_back_as_it_was_when_a_later_word_is_refused() {
     let mut sy = parsed(c"fg=red");
     let gc = base();
     assert_eq!(
-        unsafe { style_parse(&mut sy, &gc, b"bg=blue,notanattribute") },
+        { style_parse(&mut sy, &gc, b"bg=blue,notanattribute") },
         -1
     );
     assert_eq!(tostring(&sy), "fg=red");

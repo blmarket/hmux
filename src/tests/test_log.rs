@@ -169,7 +169,7 @@ log_test!(opening_a_log_twice_carries_on_where_the_first_left_off, {
 
 log_test!(toggling_opens_the_log_and_toggling_again_closes_it, {
     let log = Log::new();
-    unsafe {
+    {
         log_toggle(c"unit-test");
         assert_eq!(log_get_level(), 1);
         log_debug(c"between", fmt_args![]);

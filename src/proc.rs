@@ -134,7 +134,7 @@ pub unsafe fn proc_start(name: &CStr) -> ProcessRef {
     }
 }
 /// Dispatches callbacks between checked borrows of the retained process.
-pub unsafe fn proc_loop(tp: &ProcessRef, mut should_exit: impl FnMut() -> bool) {
+pub fn proc_loop(tp: &ProcessRef, mut should_exit: impl FnMut() -> bool) {
     log_debug(c"%s loop enter", fmt_args![tp.borrow().name.as_deref()]);
     loop {
         reactor::current().run_once();
@@ -278,8 +278,8 @@ pub unsafe fn proc_clear_signals(tp: &mut tmuxproc, defaults: core::ffi::c_int) 
     }
 }
 
-pub unsafe fn proc_toggle_log(tp: &mut tmuxproc) {
-    unsafe {
+pub fn proc_toggle_log(tp: &mut tmuxproc) {
+    {
         log_toggle(tp.name.as_deref().expect("a process retains its log name"));
     }
 }
@@ -334,7 +334,7 @@ mod signal_tests {
         reactor::current().defer(move || {
             proc_exit(&mut callback_process.borrow_mut());
         });
-        unsafe {
+        {
             proc_loop(&process, || panic!("the process already requested exit"));
         }
         assert_eq!(process.borrow().exit, 1);
@@ -348,7 +348,7 @@ mod signal_tests {
         crate::tests::test_fixtures::ensure_reactor();
         let process = ProcessRef::default();
         let mut calls = 0;
-        unsafe {
+        {
             proc_loop(&process, || {
                 calls += 1;
                 proc_exit(&mut process.borrow_mut());
@@ -575,7 +575,7 @@ impl tmuxpeer {
             0 as core::ffi::c_int
         }
     }
-    pub unsafe fn mark_bad(&mut self) {
+    pub fn mark_bad(&mut self) {
         let peer = self;
         {
             peer.flags |= PEER_BAD;
@@ -710,8 +710,8 @@ impl PeerRef {
         unsafe { self.borrow_mut().send(message, fd, bytes) }
     }
 
-    pub unsafe fn mark_bad(&self) {
-        unsafe { self.borrow_mut().mark_bad() };
+    pub fn mark_bad(&self) {
+        self.borrow_mut().mark_bad();
     }
 
     pub unsafe fn flush(&self) {

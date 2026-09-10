@@ -15,7 +15,7 @@ fn options_get_falls_back_to_parent_while_get_only_does_not() {
     let _g = globals();
     let parent = Options::defaults(OPTIONS_TABLE_SESSION);
     let child = Options::empty(Some(&parent));
-    unsafe {
+    {
         // child has nothing of its own
         assert!(child.with_entry(c"status", true, |entry| entry.is_none()));
         assert!(child.with_entry(c"status-left", true, |entry| entry.is_none()));

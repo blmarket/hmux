@@ -55,7 +55,7 @@ fn checkshell_refuses_its_own_program() {
 
 #[test]
 fn check_name_validates_utf8_only() {
-    unsafe {
+    {
         assert_eq!(check_name(Some(c"hello")), 1);
         assert_eq!(check_name(Some(c"")), 1);
         assert_eq!(check_name(Some(c"hello world")), 1);
@@ -106,7 +106,7 @@ fn clean_name_keeps_other_hash_uses() {
 
 #[test]
 fn shell_argv0_builds_login_and_plain_names() {
-    unsafe {
+    {
         assert_eq!(shell_argv0(c"/bin/bash", 0).to_str().unwrap(), "bash");
         assert_eq!(shell_argv0(c"/bin/bash", 1).to_str().unwrap(), "-bash");
 

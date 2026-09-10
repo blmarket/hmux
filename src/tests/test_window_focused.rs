@@ -1801,7 +1801,7 @@ fn a_recorded_window_context_expires_when_its_last_owner_drops() {
     let window = WindowRef::new(window::default());
     let weak = window.downgrade();
     let mut pane = window_pane::default();
-    unsafe { window_pane_set_window_ref(&mut pane, Some(&window)) };
+    window_pane_set_window_ref(&mut pane, Some(&window));
     let retained = pane.window_context().unwrap();
     assert!(retained.ptr_eq(&window));
     drop(window);

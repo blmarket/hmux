@@ -46,7 +46,7 @@ struct CustomizeOptionScope {
 }
 
 impl CustomizeOptionScope {
-    unsafe fn new(scope: window_customize_scope, fs: &cmd_find_state) -> Self {
+    fn new(scope: window_customize_scope, fs: &cmd_find_state) -> Self {
         let id = {
             match scope {
                 WINDOW_CUSTOMIZE_SESSION => {
@@ -143,18 +143,18 @@ impl window_customize_modedata {
         self.next_tag
     }
 
-    unsafe fn option_tag(
+    fn option_tag(
         &mut self,
         scope: window_customize_scope,
         fs: &cmd_find_state,
         option: &options_entry,
         index: core::ffi::c_int,
     ) -> uint64_t {
-        let name = unsafe { RustOptionsEngine.name(option) }.to_owned();
+        let name = RustOptionsEngine.name(option).to_owned();
         let key = if RustOptionsEngine.definition(Some(option)).is_some() {
             CustomizeTag::BuiltinOption(name, index)
         } else {
-            CustomizeTag::UserOption(unsafe { CustomizeOptionScope::new(scope, fs) }, name, index)
+            CustomizeTag::UserOption(CustomizeOptionScope::new(scope, fs), name, index)
         };
         self.tag_for(key)
     }
@@ -1612,7 +1612,7 @@ impl WindowCustomizeModeDataRef {
             }
         }
     }
-    unsafe fn owner(&self) -> Option<WindowCustomizeModeDataWeak> {
+    fn owner(&self) -> Option<WindowCustomizeModeDataWeak> {
         let data = self;
 
         Some(data.downgrade())

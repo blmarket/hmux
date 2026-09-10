@@ -22,7 +22,7 @@ fn state() -> format_expand_state {
     }
 }
 
-unsafe fn clear_cached_jobs(_ft: &format_tree) -> Option<CString> {
+fn clear_cached_jobs(_ft: &format_tree) -> Option<CString> {
     format_jobs.map().clear();
     Some(c"rendered".to_owned())
 }
@@ -330,7 +330,7 @@ fn expression_operator_covers_integer_float_comparison_and_error_paths() {
     }
 }
 
-unsafe fn lazy_value(_ft: &format_tree) -> Option<CString> {
+fn lazy_value(_ft: &format_tree) -> Option<CString> {
     Some(c"lazy".to_owned())
 }
 
@@ -422,7 +422,7 @@ fn format_search_rechecks_its_pane_after_expanding_the_search_text() {
 
 #[test]
 fn window_name_search_observes_changes_made_by_its_expansion_callback() {
-    unsafe fn rename_window(ft: &format_tree) -> Option<CString> {
+    fn rename_window(ft: &format_tree) -> Option<CString> {
         let window = ft.window()?;
         window.set_window_name(Some(c"renamed"));
         Some(c"renamed".to_owned())

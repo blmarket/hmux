@@ -111,7 +111,7 @@ fn mode_and_context_callbacks_account_for_border_and_client_identity() {
 #[test]
 fn range_callback_splits_lines_before_inside_and_after_popup() {
     let f = Fixture::new("ranges", 10, 6, BOX_LINES_SINGLE);
-    unsafe {
+    {
         let pd = f.pd();
         let ranges = popup_ranges(&pd, 0, 0, 20);
         let r = ranges.borrow();
@@ -234,9 +234,9 @@ fn drag_handler_moves_clamps_resizes_and_stops_on_release() {
     }
 }
 
-unsafe fn popup_ranges(owner: &PopupDataRef, px: u_int, py: u_int, nx: u_int) -> VisibleRangesRef {
+fn popup_ranges(owner: &PopupDataRef, px: u_int, py: u_int, nx: u_int) -> VisibleRangesRef {
     let mut pd = owner.borrow_mut();
-    unsafe { popup_check_cb(&mut pd, px, py, nx) };
+    popup_check_cb(&mut pd, px, py, nx);
     pd.r.clone()
 }
 
@@ -505,7 +505,7 @@ fn mouse_context_menu_and_paste_markers_cover_special_key_routing() {
 #[test]
 fn range_callback_covers_partial_overlap_left_right_and_zero_width() {
     let f = Fixture::new("range-edges", 10, 6, BOX_LINES_SINGLE);
-    unsafe {
+    {
         let pd = f.pd();
         let cases = [
             (0, pd.borrow().py, 4),

@@ -843,8 +843,8 @@ pub fn status_prompt_save_history() {
         }
     }
 }
-unsafe fn status_timer_callback(c: &mut client) {
-    unsafe {
+fn status_timer_callback(c: &mut client) {
+    {
         let session = c.attached_session();
         let mut tv = timeval::default();
         c.status.timer.disarm();
@@ -964,7 +964,7 @@ fn status_pop_screen(sl: &mut status_line, taken: Option<ScreenRef>) {
         sl.active = StatusActive::Own;
     }
 }
-pub unsafe fn status_init(c: &mut client) {
+pub fn status_init(c: &mut client) {
     let sl: &mut status_line = &mut c.status;
     sl.screen = RustScreen::new_with_server_options(c.tty.sx, 1 as u_int, 0 as u_int);
     sl.active = StatusActive::Own;
@@ -1168,7 +1168,7 @@ pub unsafe fn status_message_set(
         c.flags |= CLIENT_REDRAWSTATUS as uint64_t;
     }
 }
-pub unsafe fn status_message_clear(c: &mut client) {
+pub fn status_message_clear(c: &mut client) {
     {
         if c.message_string.is_none() {
             return;
@@ -1181,8 +1181,8 @@ pub unsafe fn status_message_clear(c: &mut client) {
         status_pop_screen(&mut c.status, c.message_overlay.take());
     }
 }
-unsafe fn status_message_callback(c: &mut client) {
-    unsafe {
+fn status_message_callback(c: &mut client) {
+    {
         status_message_clear(c);
     }
 }
@@ -1401,7 +1401,7 @@ impl Prompt {
         }
     }
     /// Releases `client::prompt_data`.
-    pub unsafe fn free(self, data: PromptData) {
+    pub fn free(self, data: PromptData) {
         {
             match (self, data) {
                 (Prompt::CommandPrompt, PromptData::CommandPrompt(data)) => {
@@ -1518,8 +1518,8 @@ pub unsafe fn status_prompt_set(
         }
     }
 }
-pub unsafe fn status_prompt_clear(c: &mut client) {
-    unsafe {
+pub fn status_prompt_clear(c: &mut client) {
+    {
         if c.prompt_string.is_none() {
             return;
         }
@@ -1557,7 +1557,7 @@ pub unsafe fn status_prompt_update(c: &mut client, msg: &CStr, input: Option<&CS
         c.flags |= CLIENT_REDRAWSTATUS as uint64_t;
     }
 }
-unsafe fn status_prompt_redraw_character(
+fn status_prompt_redraw_character(
     writer: &mut impl ScreenWriteCtx,
     offset: u_int,
     pwidth: u_int,
@@ -1599,7 +1599,7 @@ unsafe fn status_prompt_redraw_character(
         1 as core::ffi::c_int
     }
 }
-unsafe fn status_prompt_redraw_quote(
+fn status_prompt_redraw_quote(
     prompt_flags: core::ffi::c_int,
     pcursor: u_int,
     writer: &mut impl ScreenWriteCtx,
@@ -1608,7 +1608,7 @@ unsafe fn status_prompt_redraw_quote(
     width: &mut u_int,
     gc: &mut grid_cell,
 ) -> core::ffi::c_int {
-    unsafe {
+    {
         let mut ud = utf8_data::default();
         if prompt_flags & PROMPT_QUOTENEXT != 0
             && writer.cursor_position().0 == pcursor.wrapping_add(1 as u_int)
@@ -1795,7 +1795,7 @@ fn status_prompt_in_list(ws: &CStr, ud: &utf8_data) -> core::ffi::c_int {
 }
 /// Whether the character the prompt holds at `idx` is a space. Past the end of
 /// what it holds there is no character, and so no space.
-unsafe fn status_prompt_space_at(c: &mut client, idx: size_t) -> core::ffi::c_int {
+fn status_prompt_space_at(c: &mut client, idx: size_t) -> core::ffi::c_int {
     {
         let buf = &c.prompt_buffer;
         match buf.get(idx) {
@@ -1807,7 +1807,7 @@ unsafe fn status_prompt_space_at(c: &mut client, idx: size_t) -> core::ffi::c_in
 
 /// Whether the character the prompt holds at `idx` is one of `separators`,
 /// answering for the end of the prompt the way [`status_prompt_space_at`] does.
-unsafe fn status_prompt_in_list_at(c: &client, separators: &CStr, idx: size_t) -> core::ffi::c_int {
+fn status_prompt_in_list_at(c: &client, separators: &CStr, idx: size_t) -> core::ffi::c_int {
     {
         let buf = &c.prompt_buffer;
         match buf.get(idx) {
@@ -2122,13 +2122,13 @@ unsafe fn status_prompt_replace_complete(c: &mut client, s: Option<&CStr>) -> co
         1 as core::ffi::c_int
     }
 }
-unsafe fn status_prompt_forward_word(
+fn status_prompt_forward_word(
     c: &mut client,
     size: size_t,
     vi: core::ffi::c_int,
     separators: &CStr,
 ) {
-    unsafe {
+    {
         let mut idx: size_t = c.prompt_index;
 
         if vi == 0 {
@@ -2161,8 +2161,8 @@ unsafe fn status_prompt_forward_word(
         c.prompt_index = idx;
     }
 }
-unsafe fn status_prompt_end_word(c: &mut client, size: size_t, separators: &CStr) {
-    unsafe {
+fn status_prompt_end_word(c: &mut client, size: size_t, separators: &CStr) {
+    {
         let mut idx: size_t = c.prompt_index;
 
         if idx == size {
@@ -2193,8 +2193,8 @@ unsafe fn status_prompt_end_word(c: &mut client, size: size_t, separators: &CStr
         c.prompt_index = idx.wrapping_sub(1 as size_t);
     }
 }
-unsafe fn status_prompt_backward_word(c: &mut client, separators: &CStr) {
-    unsafe {
+fn status_prompt_backward_word(c: &mut client, separators: &CStr) {
+    {
         let mut idx: size_t = c.prompt_index;
 
         while idx != 0 as size_t {
@@ -2220,7 +2220,7 @@ unsafe fn status_prompt_backward_word(c: &mut client, separators: &CStr) {
 /// Cuts `prompt_buffer[idx..prompt_index]` out of the prompt, keeping a copy
 /// in `prompt_saved` for a later yank and leaving the cursor at `idx`. `size`
 /// is the prompt's length in cells, as [`utf8_vec_strlen`] reports it.
-unsafe fn status_prompt_delete_range(c: &mut client, idx: size_t, size: size_t) {
+fn status_prompt_delete_range(c: &mut client, idx: size_t, size: size_t) {
     {
         let cut = c.prompt_index.wrapping_sub(idx);
         c.prompt_saved = Some(c.prompt_buffer[idx..idx + cut].to_vec());

@@ -97,7 +97,7 @@ unsafe fn cmd_wait_for_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
     let name = args.argument_string(0).expect("argument count checked");
     if args.argument_flag_count(b'S') != 0 {
-        return unsafe { cmd_wait_for_signal(name) };
+        return cmd_wait_for_signal(name);
     }
     if args.argument_flag_count(b'L') != 0 {
         return unsafe { cmd_wait_for_lock(item, name) };
@@ -108,7 +108,7 @@ unsafe fn cmd_wait_for_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     unsafe { cmd_wait_for_wait(item, name) }
 }
 
-unsafe fn cmd_wait_for_signal(name: &CStr) -> cmd_retval {
+fn cmd_wait_for_signal(name: &CStr) -> cmd_retval {
     {
         let waiters = with_channels(|all| {
             let wc = channel_for_in(all, name);

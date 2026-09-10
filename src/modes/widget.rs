@@ -267,7 +267,7 @@ fn mode_tree_find_item(mtl: &mode_tree_list, tag: uint64_t) -> Option<&mode_tree
     None
 }
 
-unsafe fn mode_tree_check_selected(mtd: &mut mode_tree_data) {
+fn mode_tree_check_selected(mtd: &mut mode_tree_data) {
     {
         if mtd.current > mtd.height.wrapping_sub(1 as u_int) {
             mtd.offset = mtd
@@ -278,10 +278,10 @@ unsafe fn mode_tree_check_selected(mtd: &mut mode_tree_data) {
     }
 }
 /// How many lines the tree currently flattens to.
-unsafe fn line_count(mtd: &mode_tree_data) -> u_int {
+fn line_count(mtd: &mode_tree_data) -> u_int {
     mtd.line_list.len() as u_int
 }
-unsafe fn mode_tree_clear_lines(mtd: &mut mode_tree_data) {
+fn mode_tree_clear_lines(mtd: &mut mode_tree_data) {
     {
         mtd.line_list = Vec::new();
     }
@@ -671,10 +671,10 @@ impl ModeTreeDataRef {
             }
         }
     }
-    pub unsafe fn up(&self, wrap: core::ffi::c_int) {
+    pub fn up(&self, wrap: core::ffi::c_int) {
         let mtd = self;
 
-        unsafe {
+        {
             let owner = mtd.clone();
             let mut mtd = owner.borrow_mut();
             if line_count(&mtd) == 0 as u_int {
@@ -695,10 +695,10 @@ impl ModeTreeDataRef {
             };
         }
     }
-    pub unsafe fn down(&self, wrap: core::ffi::c_int) -> core::ffi::c_int {
+    pub fn down(&self, wrap: core::ffi::c_int) -> core::ffi::c_int {
         let mtd = self;
 
-        unsafe {
+        {
             let owner = mtd.clone();
             let mut mtd = owner.borrow_mut();
             if line_count(&mtd) == 0 as u_int {
@@ -769,7 +769,7 @@ impl ModeTreeDataRef {
             }
         }
     }
-    pub unsafe fn current_item(&self) -> ModeTreeItemData {
+    pub fn current_item(&self) -> ModeTreeItemData {
         let mtd = self;
 
         let tree = mtd.borrow();
@@ -778,7 +778,7 @@ impl ModeTreeDataRef {
     }
     /// Returns an owned copy of the current row's name, or nothing for an unnamed
     /// row or an empty tree. The name remains valid after the tree changes or is freed.
-    pub unsafe fn current_name(&self) -> Option<CString> {
+    pub fn current_name(&self) -> Option<CString> {
         let mtd = self;
 
         let tree = mtd.borrow();
@@ -819,10 +819,10 @@ impl ModeTreeDataRef {
             }
         }
     }
-    pub unsafe fn set_current(&self, tag: uint64_t) -> core::ffi::c_int {
+    pub fn set_current(&self, tag: uint64_t) -> core::ffi::c_int {
         let mtd = self;
 
-        unsafe {
+        {
             let owner = mtd.clone();
             let mut mtd = owner.borrow_mut();
             if let Some(found) = mode_tree_get_tag(&mtd, tag) {
@@ -854,7 +854,7 @@ impl ModeTreeDataRef {
             0 as core::ffi::c_int
         }
     }
-    pub unsafe fn count_tagged(&self) -> u_int {
+    pub fn count_tagged(&self) -> u_int {
         let mtd = self;
 
         let tree = mtd.borrow();
@@ -864,7 +864,7 @@ impl ModeTreeDataRef {
             .filter(|item| item.tagged != 0)
             .count() as u_int
     }
-    pub unsafe fn each_tagged(
+    pub fn each_tagged(
         &self,
         mut cb: impl FnMut(WindowModeData, ModeTreeItemData),
         current: core::ffi::c_int,
@@ -904,7 +904,7 @@ impl ModeTreeDataRef {
         }
     }
     #[allow(clippy::too_many_arguments)]
-    pub(crate) unsafe fn start(
+    pub(crate) fn start(
         wp: &mut impl crate::WindowPane,
         args: Option<&RustArguments>,
         buildcb: mode_tree_build_cb,
@@ -919,7 +919,7 @@ impl ModeTreeDataRef {
         modedata: WindowModeData,
         menu: &'static [menu_item<'static>],
     ) -> ModeTreeDataRef {
-        unsafe {
+        {
             let preview = if args.is_some_and(|args| args.argument_flag_count(b'N') > 1) {
                 MODE_TREE_PREVIEW_BIG as core::ffi::c_int
             } else if args.is_some_and(|args| args.argument_flag_count(b'N') != 0) {
@@ -1004,10 +1004,10 @@ impl ModeTreeDataRef {
             }
         }
     }
-    unsafe fn set_height(&self) {
+    fn set_height(&self) {
         let mtd = self;
 
-        unsafe {
+        {
             let owner = mtd.clone();
             let heightcb = owner.borrow().heightcb.clone();
             let reserved_height = heightcb.map(|heightcb| heightcb());
@@ -1147,7 +1147,7 @@ impl ModeTreeDataRef {
             owner.borrow().redraw_pane();
         }
     }
-    pub(crate) unsafe fn add_item(
+    pub(crate) fn add_item(
         &self,
         parent: Option<&ModeTreeItemRef>,
         itemdata: ModeTreeItemData,
@@ -1390,7 +1390,7 @@ impl ModeTreeDataRef {
     /// Searches a snapshot of the item order, including collapsed descendants.
     /// Items removed by a search callback are skipped; newly added items wait for
     /// the next search. No item or tree borrow is held across a callback.
-    unsafe fn search(&self, direction: mode_tree_search_dir) -> Option<ModeTreeItemRef> {
+    fn search(&self, direction: mode_tree_search_dir) -> Option<ModeTreeItemRef> {
         let mtd = self;
 
         {
@@ -1838,7 +1838,7 @@ impl ModeTreeDataRef {
 }
 
 impl ModeTreeItemRef {
-    pub(crate) unsafe fn remove(&self) {
+    pub(crate) fn remove(&self) {
         let item = self;
 
         let tree = item.tree.clone();

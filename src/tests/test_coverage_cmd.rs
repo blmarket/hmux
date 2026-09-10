@@ -91,7 +91,7 @@ unsafe fn printed(cmdlist: &CmdListRef, flags: c_int) -> String {
 }
 
 /// What `template` becomes with `s` put in for argument `idx`.
-unsafe fn expand(template: &CStr, s: &CStr, idx: c_int) -> String {
+fn expand(template: &CStr, s: &CStr, idx: c_int) -> String {
     {
         cmd_template_replace(template, s, idx)
             .to_string_lossy()
@@ -657,7 +657,7 @@ fn a_mouse_event_resolves_to_a_pane_inside_the_window_it_names() {
 
 #[test]
 fn a_template_with_no_percent_in_it_comes_back_as_it_was() {
-    unsafe {
+    {
         assert_eq!(expand(c"nothing to do", c"arg", 1), "nothing to do");
         assert_eq!(expand(c"", c"arg", 1), "");
     }
@@ -665,7 +665,7 @@ fn a_template_with_no_percent_in_it_comes_back_as_it_was() {
 
 #[test]
 fn a_numbered_placeholder_is_replaced_only_when_its_number_matches() {
-    unsafe {
+    {
         assert_eq!(expand(c"echo %1", c"hello", 1), "echo hello");
         assert_eq!(expand(c"echo %2", c"hello", 1), "echo %2");
         assert_eq!(expand(c"echo %2", c"hello", 2), "echo hello");
@@ -681,7 +681,7 @@ fn a_numbered_placeholder_is_replaced_only_when_its_number_matches() {
 
 #[test]
 fn a_bare_double_percent_is_replaced_once_and_copied_out_after_that() {
-    unsafe {
+    {
         assert_eq!(expand(c"echo %%", c"hello", 1), "echo hello");
 
         // The second one in the same template is literal, because the flag
@@ -696,7 +696,7 @@ fn a_bare_double_percent_is_replaced_once_and_copied_out_after_that() {
 
 #[test]
 fn a_placeholder_followed_by_a_percent_escapes_what_it_puts_in() {
-    unsafe {
+    {
         // The quoted forms are `%1%` and `%%%`; each escapes the five
         // characters a command line would otherwise read.
         assert_eq!(expand(c"echo %1%", c"a\"b", 1), "echo a\\\"b");

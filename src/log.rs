@@ -74,7 +74,7 @@ pub fn log_open(name: &CStr) {
 
 /// Turns the log on if it is off and off if it is on, writing the change into
 /// the log itself on either side of it.
-pub unsafe fn log_toggle(name: &CStr) {
+pub fn log_toggle(name: &CStr) {
     if log_level.load(Ordering::Relaxed) == 0 {
         log_level.store(1, Ordering::Relaxed);
         log_open(name);
@@ -122,7 +122,7 @@ pub fn fatal(msg: &CStr, args: &[FmtArg]) -> ! {
     std::process::exit(1);
 }
 
-pub unsafe fn fatalx(msg: &CStr, args: &[FmtArg]) -> ! {
+pub fn fatalx(msg: &CStr, args: &[FmtArg]) -> ! {
     log_vwrite(msg, args, c"fatal: ");
     std::process::exit(1);
 }

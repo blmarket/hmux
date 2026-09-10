@@ -915,7 +915,7 @@ pub fn winlink_find_by_window<'a>(wwl: &'a winlinks, w: &window) -> Option<&'a w
             .is_some_and(|owner| core::ptr::eq(owner.as_ptr(), w))
     })
 }
-pub unsafe fn winlink_find_by_window_id(wwl: &winlinks, id: u_int) -> Option<&winlink> {
+pub fn winlink_find_by_window_id(wwl: &winlinks, id: u_int) -> Option<&winlink> {
     {
         wwl.values()
             .find(|link| {
@@ -937,7 +937,7 @@ fn winlink_next_index(links: &winlinks, start: core::ffi::c_int) -> Option<core:
         }
     }
 }
-pub unsafe fn winlink_count(wwl: &winlinks) -> u_int {
+pub fn winlink_count(wwl: &winlinks) -> u_int {
     wwl.len() as u_int
 }
 pub(crate) fn winlink_insert(
@@ -1027,11 +1027,11 @@ pub(crate) fn winlinks_into(w: &window) -> impl Iterator<Item = WinlinkRef> + us
         .into_iter()
 }
 
-pub unsafe fn winlink_remove(links: &mut winlinks, index: core::ffi::c_int) -> bool {
+pub fn winlink_remove(links: &mut winlinks, index: core::ffi::c_int) -> bool {
     let Some(mut link) = links.remove(&index) else {
         return false;
     };
-    let window = unsafe { link.detach_window() };
+    let window = link.detach_window();
     drop(link);
     drop(window);
     true
@@ -1069,8 +1069,8 @@ pub fn winlink_previous_by_number<'a>(
     }
     Some(wl)
 }
-pub unsafe fn winlink_stack_push(stack: &mut winlink_stack, wl: Option<&mut winlink>) {
-    unsafe {
+pub fn winlink_stack_push(stack: &mut winlink_stack, wl: Option<&mut winlink>) {
+    {
         let Some(wl) = wl else {
             return;
         };
@@ -1080,7 +1080,7 @@ pub unsafe fn winlink_stack_push(stack: &mut winlink_stack, wl: Option<&mut winl
         wl.flags |= WINLINK_VISITED;
     }
 }
-pub unsafe fn winlink_stack_remove(stack: &mut winlink_stack, wl: Option<&mut winlink>) {
+pub fn winlink_stack_remove(stack: &mut winlink_stack, wl: Option<&mut winlink>) {
     if let Some(wl) = wl
         && wl.flags & WINLINK_VISITED != 0
     {
@@ -1207,7 +1207,7 @@ pub(crate) fn window_active_pane(w: &window) -> Option<RustWindowPaneWeak> {
         .cloned()
 }
 
-unsafe fn window_pane_get_palette(
+fn window_pane_get_palette(
     wp: Option<&impl crate::WindowPane>,
     c: core::ffi::c_int,
 ) -> core::ffi::c_int {
@@ -1414,7 +1414,7 @@ pub unsafe fn window_add_pane(
 }
 
 pub fn window_pane_at_index(w: &window, idx: u_int) -> Option<RustWindowPaneWeak> {
-    let mut n = unsafe { w.options_ref().number(c"pane-base-index") } as u_int;
+    let mut n = w.options_ref().number(c"pane-base-index") as u_int;
     for pane in &w.panes {
         if n == idx {
             return Some(pane.downgrade());
@@ -1485,7 +1485,7 @@ pub unsafe fn window_pane_index(
 }
 /// How many floating panes sit over this one, and whether the z-order holds
 /// it at all.
-pub unsafe fn window_pane_zindex(target: &RustWindowPaneWeak) -> (core::ffi::c_int, u_int) {
+pub fn window_pane_zindex(target: &RustWindowPaneWeak) -> (core::ffi::c_int, u_int) {
     {
         let Some(window) = target.window() else {
             return (-1, 0);
@@ -1530,7 +1530,7 @@ pub fn window_get_latest(w: &window) -> Option<ClientRef> {
 }
 
 /// Records `c` as the client that used the window most recently.
-pub unsafe fn window_set_latest(w: &mut window, c: Option<&client>) {
+pub fn window_set_latest(w: &mut window, c: Option<&client>) {
     w.latest = c.and_then(client_ref_of).map(|c| c.downgrade());
 }
 
@@ -1635,7 +1635,7 @@ pub fn window_pane_find_by_id(id: u_int) -> Option<RustWindowPaneWeak> {
 }
 
 /// Observes the supplied pane allocation without substituting another pane with the same ID.
-pub(crate) unsafe fn window_pane_ref_of(
+pub(crate) fn window_pane_ref_of(
     pane: &impl crate::WindowPane,
 ) -> Option<RustWindowPaneWeak> {
     {
@@ -1654,15 +1654,15 @@ pub(crate) unsafe fn window_pane_ref_of(
     }
 }
 
-pub(crate) unsafe fn window_pane_set_window_ref(
+pub(crate) fn window_pane_set_window_ref(
     wp: &mut impl crate::WindowPane,
     w_ref: Option<&WindowRef>,
 ) {
     wp.set_window_context(w_ref);
 }
 
-pub(crate) unsafe fn window_pane_set_window(wp: &mut impl crate::WindowPane, w: Option<&window>) {
-    unsafe {
+pub(crate) fn window_pane_set_window(wp: &mut impl crate::WindowPane, w: Option<&window>) {
+    {
         let w_ref = w.and_then(window_ref_of);
         window_pane_set_window_ref(wp, w_ref.as_ref());
     }
@@ -1847,7 +1847,7 @@ pub unsafe fn window_pane_set_event(wp: &mut impl crate::WindowPane) {
         wp.event().enable(Interest::ReadWrite);
     }
 }
-unsafe fn screen_write_sync_callback(wp: &mut impl crate::WindowPane) {
+fn screen_write_sync_callback(wp: &mut impl crate::WindowPane) {
     {
         log_debug(
             c"%s: %%%u sync timer expired",
@@ -1885,7 +1885,7 @@ pub(crate) unsafe fn screen_write_start_sync(wp: Option<&mut impl crate::WindowP
         );
     }
 }
-pub(crate) unsafe fn screen_write_stop_sync(wp: Option<&mut impl crate::WindowPane>) {
+pub(crate) fn screen_write_stop_sync(wp: Option<&mut impl crate::WindowPane>) {
     {
         let Some(wp) = wp else {
             return;
@@ -2189,7 +2189,7 @@ pub unsafe fn window_pane_visible(w: &window, wp: &impl crate::WindowPane) -> co
     }
 }
 
-pub unsafe fn window_pane_exited(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+pub fn window_pane_exited(wp: &impl crate::WindowPane) -> core::ffi::c_int {
     (*wp.fd() == -(1 as core::ffi::c_int) || *wp.flags() & PANE_EXITED != 0) as core::ffi::c_int
 }
 pub unsafe fn window_pane_search(
@@ -2253,7 +2253,7 @@ unsafe fn window_pane_choose_best(list: &[&RustWindowPaneRef]) -> Option<RustWin
 }
 /// Where a pane sits and how big it is with its scrollbar counted in, as
 /// `(xoff, yoff, sx, sy)`.
-unsafe fn window_pane_full_size_offset(
+fn window_pane_full_size_offset(
     w: &window,
     wp: &impl crate::WindowPane,
 ) -> (core::ffi::c_int, core::ffi::c_int, u_int, u_int) {
@@ -2576,12 +2576,12 @@ pub(crate) fn pane_stack(w: &mut window, which: PaneStack) -> &mut Vec<RustWindo
     }
 }
 
-pub unsafe fn window_pane_stack_push(
+pub fn window_pane_stack_push(
     w: &mut window,
     which: PaneStack,
     wp: Option<&mut impl crate::WindowPane>,
 ) {
-    unsafe {
+    {
         if let Some(wp) = wp {
             window_pane_stack_remove(&mut *w, which, Some(&mut *wp));
             let pane = window_pane_ref_of(wp).expect("a stacked pane is owned");
@@ -2590,7 +2590,7 @@ pub unsafe fn window_pane_stack_push(
         }
     }
 }
-pub unsafe fn window_pane_stack_remove(
+pub fn window_pane_stack_remove(
     w: &mut window,
     which: PaneStack,
     wp: Option<&mut impl crate::WindowPane>,
@@ -2606,13 +2606,13 @@ pub unsafe fn window_pane_stack_remove(
 }
 /// Takes `wp` off a stacking order. Unlike [`window_pane_stack_remove`] this
 /// carries no membership flag: a pane not on the order is left alone.
-pub unsafe fn window_pane_zindex_remove(w: &mut window, wp: &impl crate::WindowPane) {
+pub fn window_pane_zindex_remove(w: &mut window, wp: &impl crate::WindowPane) {
     pane_stack(&mut *w, PaneStack::ZIndex).retain(|pane| !core::ptr::addr_eq(pane.as_ptr(), wp));
 }
 
 /// Puts `wp` at the bottom of a stacking order.
-pub unsafe fn window_pane_zindex_insert_tail(w: &mut window, wp: &impl crate::WindowPane) {
-    let pane = unsafe { window_pane_ref_of(wp) }.expect("a stacked pane is owned");
+pub fn window_pane_zindex_insert_tail(w: &mut window, wp: &impl crate::WindowPane) {
+    let pane = window_pane_ref_of(wp).expect("a stacked pane is owned");
     pane_stack(&mut *w, PaneStack::ZIndex).push(pane);
 }
 /// Puts `wp` directly below `other` on a stacking order, or at the bottom
@@ -2643,7 +2643,7 @@ impl WinlinkShuffle {
     }
 }
 
-pub(crate) unsafe fn winlink_shuffle_up(
+pub(crate) fn winlink_shuffle_up(
     s: &mut session,
     around: Option<core::ffi::c_int>,
     before: core::ffi::c_int,
@@ -2784,7 +2784,7 @@ pub fn window_pane_get_new_data(
         .with_input(|buffer| buffer.slice(used, size))
         .unwrap_or_default()
 }
-pub unsafe fn window_pane_update_used_data(
+pub fn window_pane_update_used_data(
     wp: &impl crate::WindowPane,
     wpo: &mut RustPaneOutputOffset,
     mut size: size_t,
@@ -2795,7 +2795,7 @@ pub unsafe fn window_pane_update_used_data(
     }
     wpo.advance(size);
 }
-pub unsafe fn window_set_fill_character(w: &mut window) {
+pub fn window_set_fill_character(w: &mut window) {
     {
         w.set_fill_character(None);
         let value = w.options_ref().string_ref(c"fill-character");
@@ -2809,8 +2809,8 @@ pub unsafe fn window_set_fill_character(w: &mut window) {
         }
     }
 }
-pub unsafe fn window_pane_default_cursor(wp: &mut impl crate::WindowPane) {
-    unsafe {
+pub fn window_pane_default_cursor(wp: &mut impl crate::WindowPane) {
+    {
         let options = wp.options_ref().clone();
         if matches!(*wp.shown(), PaneScreen::Base) || wp.modes().is_empty() {
             wp.base_mut().set_default_cursor(&options);
@@ -3016,12 +3016,12 @@ pub unsafe fn window_pane_send_theme_update(wp: Option<&mut impl crate::WindowPa
         };
     }
 }
-pub unsafe fn window_pane_border_status_get_range(
+pub fn window_pane_border_status_get_range(
     wp: Option<&impl crate::WindowPane>,
     x: u_int,
     y: u_int,
 ) -> Option<style_range> {
-    unsafe {
+    {
         let mut line: u_int = 0;
 
         let wp = wp?;
@@ -3334,13 +3334,13 @@ impl WindowRef {
         let dst_options = { destination.options() };
         {
             let pane = unsafe { source_observation.get_mut().unwrap() };
-            unsafe { window_pane_set_window_ref(pane, Some(destination)) };
+            window_pane_set_window_ref(pane, Some(destination));
             pane.options_ref().set_parent(Some(&dst_options));
             *pane.flags_mut() |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         }
         {
             let pane = unsafe { destination_observation.get_mut().unwrap() };
-            unsafe { window_pane_set_window_ref(pane, Some(self)) };
+            window_pane_set_window_ref(pane, Some(self));
             pane.options_ref().set_parent(Some(&src_options));
             *pane.flags_mut() |= PANE_STYLECHANGED | PANE_THEMECHANGED;
         }
@@ -3509,7 +3509,7 @@ impl WindowRef {
         })
     }
 
-    pub(crate) unsafe fn set_layout_cell_geometry(
+    pub(crate) fn set_layout_cell_geometry(
         &self,
         path: &crate::layout::LayoutCellPath,
         geometry: crate::pane_geometry::PaneGeometry,
@@ -3520,7 +3520,7 @@ impl WindowRef {
             .as_deref_mut()
             .and_then(|root| path.get_mut(root))
             .expect("the resized cell path is unchanged");
-        unsafe {
+        {
             crate::layout::layout_set_size(
                 cell,
                 geometry.width,
@@ -4265,7 +4265,7 @@ impl WindowRef {
             }
         }
     }
-    unsafe fn has_attached_client(&self, client: &client) -> bool {
+    fn has_attached_client(&self, client: &client) -> bool {
         let window = self;
 
         {
@@ -4300,7 +4300,7 @@ impl winlink {
 
         wl.session().map(|session| (session.downgrade(), wl.idx))
     }
-    unsafe fn detach_window(&mut self) -> Option<WindowRef> {
+    fn detach_window(&mut self) -> Option<WindowRef> {
         let wl = self;
 
         let mut old = wl.window_ref.take();
@@ -4311,10 +4311,10 @@ impl winlink {
         }
         old
     }
-    pub(crate) unsafe fn set_window(&mut self, window: WindowRef) {
+    pub(crate) fn set_window(&mut self, window: WindowRef) {
         let wl = self;
 
-        unsafe {
+        {
             let old = wl.detach_window();
             drop(old);
             if let Some(key) = wl.key() {

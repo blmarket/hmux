@@ -223,13 +223,13 @@ unsafe fn window_copy_scroll_timer(mut pane: RustWindowPaneWeak, mode: WindowMod
 fn window_copy_free_backing(data: &mut window_copy_mode_data) {
     data.backing.take();
 }
-unsafe fn window_copy_clone_screen(
+fn window_copy_clone_screen(
     src: &RustScreen,
     hint: &RustScreen,
     want_cursor: bool,
     trim: core::ffi::c_int,
 ) -> (Box<RustScreen>, u_int, u_int) {
-    unsafe {
+    {
         let mut dst: Box<RustScreen>;
         let mut gl: Option<&grid_line>;
         let mut sy: u_int;
@@ -992,7 +992,7 @@ pub unsafe fn window_copy_get_word(
         format_grid_word(gd, x, gd.hsize.wrapping_add(y).wrapping_sub(data.oy))
     }
 }
-pub unsafe fn window_copy_get_line(wp: &impl crate::WindowPane, y: u_int) -> CString {
+pub fn window_copy_get_line(wp: &impl crate::WindowPane, y: u_int) -> CString {
     {
         let wme = window_pane_current_mode(wp).expect("pane is in a mode");
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
@@ -1004,7 +1004,7 @@ pub unsafe fn window_copy_get_line(wp: &impl crate::WindowPane, y: u_int) -> CSt
         format_grid_line(gd, gd.hsize.wrapping_add(y).wrapping_sub(data.oy))
     }
 }
-pub unsafe fn window_copy_get_hyperlink(
+pub fn window_copy_get_hyperlink(
     wp: &impl crate::WindowPane,
     x: u_int,
     y: u_int,
@@ -1055,8 +1055,8 @@ unsafe fn window_copy_search_match_cb(ft: &format_tree) -> Option<CString> {
         window_copy_match_at_cursor(data)
     }
 }
-pub(crate) unsafe fn window_copy_formats(wme: &window_mode_entry, ft: &mut format_tree) {
-    unsafe {
+pub(crate) fn window_copy_formats(wme: &window_mode_entry, ft: &mut format_tree) {
+    {
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let hsize: u_int = RustScreen::grid(
             data.backing
@@ -1245,8 +1245,8 @@ pub(crate) unsafe fn window_copy_resize(wme: &mut window_mode_entry, sx: u_int, 
         window_copy_redraw_screen(wme);
     }
 }
-pub(crate) unsafe fn window_copy_key_table(wme: &window_mode_entry) -> &'static CStr {
-    unsafe {
+pub(crate) fn window_copy_key_table(wme: &window_mode_entry) -> &'static CStr {
+    {
         let pane = wme.pane_ref().expect("mode has a pane");
         let window = pane.window().expect("mode pane has a window");
         if (window.options()).number(c"mode-keys") == MODEKEY_VI as core::ffi::c_longlong {
@@ -1338,7 +1338,7 @@ unsafe fn window_copy_cmd_begin_selection(
         WINDOW_COPY_CMD_REDRAW
     }
 }
-unsafe fn window_copy_cmd_stop_selection(
+fn window_copy_cmd_stop_selection(
     cs: &mut window_copy_cmd_state<'_>,
 ) -> window_copy_cmd_action {
     {
@@ -1898,7 +1898,7 @@ unsafe fn window_copy_cmd_halfpage_up(
         WINDOW_COPY_CMD_NOTHING
     }
 }
-unsafe fn window_copy_cmd_toggle_position(
+fn window_copy_cmd_toggle_position(
     cs: &mut window_copy_cmd_state<'_>,
 ) -> window_copy_cmd_action {
     {
@@ -2424,7 +2424,7 @@ unsafe fn window_copy_cmd_other_end(cs: &mut window_copy_cmd_state<'_>) -> windo
         WINDOW_COPY_CMD_NOTHING
     }
 }
-unsafe fn window_copy_cmd_selection_mode(
+fn window_copy_cmd_selection_mode(
     cs: &mut window_copy_cmd_state<'_>,
 ) -> window_copy_cmd_action {
     {
@@ -2572,7 +2572,7 @@ unsafe fn window_copy_cmd_rectangle_toggle(
         WINDOW_COPY_CMD_NOTHING
     }
 }
-unsafe fn window_copy_cmd_scroll_exit_on(
+fn window_copy_cmd_scroll_exit_on(
     cs: &mut window_copy_cmd_state<'_>,
 ) -> window_copy_cmd_action {
     {
@@ -2585,7 +2585,7 @@ unsafe fn window_copy_cmd_scroll_exit_on(
         WINDOW_COPY_CMD_NOTHING
     }
 }
-unsafe fn window_copy_cmd_scroll_exit_off(
+fn window_copy_cmd_scroll_exit_off(
     cs: &mut window_copy_cmd_state<'_>,
 ) -> window_copy_cmd_action {
     {
@@ -2598,7 +2598,7 @@ unsafe fn window_copy_cmd_scroll_exit_off(
         WINDOW_COPY_CMD_NOTHING
     }
 }
-unsafe fn window_copy_cmd_scroll_exit_toggle(
+fn window_copy_cmd_scroll_exit_toggle(
     cs: &mut window_copy_cmd_state<'_>,
 ) -> window_copy_cmd_action {
     {
@@ -2890,7 +2890,7 @@ unsafe fn window_copy_cmd_select_word(
         WINDOW_COPY_CMD_REDRAW
     }
 }
-unsafe fn window_copy_cmd_set_mark(cs: &mut window_copy_cmd_state<'_>) -> window_copy_cmd_action {
+fn window_copy_cmd_set_mark(cs: &mut window_copy_cmd_state<'_>) -> window_copy_cmd_action {
     {
         let data = cs
             .wme
@@ -5073,7 +5073,7 @@ fn window_copy_search_compare(
     }
     ud.data[..ud.size as usize] == sud.data[..sud.size as usize]
 }
-unsafe fn window_copy_search_lr(
+fn window_copy_search_lr(
     gd: &grid,
     sgd: &grid,
     py: u_int,
@@ -5127,7 +5127,7 @@ unsafe fn window_copy_search_lr(
         None
     }
 }
-unsafe fn window_copy_search_rl(
+fn window_copy_search_rl(
     gd: &grid,
     sgd: &grid,
     py: u_int,
@@ -5495,7 +5495,7 @@ unsafe fn window_copy_cstrtocellpos(
         *ppy = pywrap;
     }
 }
-unsafe fn window_copy_move_left(
+fn window_copy_move_left(
     s: &RustScreen,
     fx: &mut u_int,
     fy: &mut u_int,
@@ -5520,7 +5520,7 @@ unsafe fn window_copy_move_left(
         };
     }
 }
-unsafe fn window_copy_move_right(
+fn window_copy_move_right(
     s: &RustScreen,
     fx: &mut u_int,
     fy: &mut u_int,
@@ -5745,13 +5745,13 @@ unsafe fn window_copy_search_position(
         None
     }
 }
-unsafe fn window_copy_move_after_search_mark(
+fn window_copy_move_after_search_mark(
     data: &window_copy_mode_data,
     fx: &mut u_int,
     fy: &mut u_int,
     wrapflag: core::ffi::c_int,
 ) {
-    unsafe {
+    {
         let s = data
             .backing
             .as_deref()
@@ -6009,7 +6009,7 @@ unsafe fn window_copy_search(
 }
 /// The first and last line of what the pane shows, the first walked back
 /// over the wrapped lines it continues.
-unsafe fn window_copy_visible_lines(data: &window_copy_mode_data) -> (u_int, u_int) {
+fn window_copy_visible_lines(data: &window_copy_mode_data) -> (u_int, u_int) {
     {
         let gd = RustScreen::grid(
             data.backing
@@ -6031,7 +6031,7 @@ unsafe fn window_copy_visible_lines(data: &window_copy_mode_data) -> (u_int, u_i
 }
 /// Where `px`,`py` falls in the search mark, or nothing when it is not on
 /// the part of the history the pane shows.
-unsafe fn window_copy_search_mark_at(
+fn window_copy_search_mark_at(
     data: &window_copy_mode_data,
     px: u_int,
     py: u_int,
@@ -6067,14 +6067,14 @@ fn window_copy_clip_width(width: u_int, b: u_int, sx: u_int, sy: u_int) -> u_int
         width
     }
 }
-unsafe fn window_copy_search_mark_match(
+fn window_copy_search_mark_match(
     data: &mut window_copy_mode_data,
     px: u_int,
     py: u_int,
     mut width: u_int,
     regex: core::ffi::c_int,
 ) -> u_int {
-    unsafe {
+    {
         let gd = RustScreen::grid(
             data.backing
                 .as_deref()
@@ -6287,7 +6287,7 @@ unsafe fn window_copy_search_marks(
         1 as core::ffi::c_int
     }
 }
-unsafe fn window_copy_clear_marks(wme: &mut window_mode_entry) {
+fn window_copy_clear_marks(wme: &mut window_mode_entry) {
     {
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
         data.searchcount = -(1 as core::ffi::c_int);
@@ -6347,7 +6347,7 @@ unsafe fn window_copy_goto_line(wme: &mut window_mode_entry, linestr: &CStr) {
     }
 }
 /// The first and last cell of the run of marks `at` stands in.
-unsafe fn window_copy_match_start_end(data: &window_copy_mode_data, at: u_int) -> (u_int, u_int) {
+fn window_copy_match_start_end(data: &window_copy_mode_data, at: u_int) -> (u_int, u_int) {
     {
         let gd = RustScreen::grid(
             data.backing
@@ -6428,7 +6428,7 @@ unsafe fn window_copy_match_at_cursor(data: &window_copy_mode_data) -> Option<CS
         Some(CString::from_vec_unchecked(buf))
     }
 }
-unsafe fn window_copy_window_options(wme: &window_mode_entry) -> RustOptionsRef {
+fn window_copy_window_options(wme: &window_mode_entry) -> RustOptionsRef {
     {
         if let Some(window) = wme.pane_ref().and_then(|pane| pane.window()) {
             return window.options();
@@ -6461,7 +6461,7 @@ unsafe fn window_copy_format_context(wme: &window_mode_entry) -> Box<format_tree
     }
 }
 
-unsafe fn window_copy_update_style(
+fn window_copy_update_style(
     wme: &window_mode_entry,
     fx: u_int,
     fy: u_int,
@@ -6470,7 +6470,7 @@ unsafe fn window_copy_update_style(
     cgc: &grid_cell,
     mkgc: &grid_cell,
 ) {
-    unsafe {
+    {
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
 
         let start: u_int;
@@ -6549,7 +6549,7 @@ unsafe fn window_copy_update_style(
         };
     }
 }
-unsafe fn window_copy_write_one(
+fn window_copy_write_one(
     wme: &window_mode_entry,
     writer: &mut impl ScreenWriteCtx,
     coords: (u_int, u_int, u_int, u_int),
@@ -6557,7 +6557,7 @@ unsafe fn window_copy_write_one(
     cgc: &grid_cell,
     mkgc: &grid_cell,
 ) {
-    unsafe {
+    {
         let (px, py, fy, nx) = coords;
         let mut gc;
         let mut fx: u_int;
@@ -6583,8 +6583,8 @@ unsafe fn window_copy_write_one(
         }
     }
 }
-unsafe fn window_copy_line_number_mode(wme: &window_mode_entry) -> core::ffi::c_int {
-    unsafe {
+fn window_copy_line_number_mode(wme: &window_mode_entry) -> core::ffi::c_int {
+    {
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         if data.line_numbers == 0 {
             return WINDOW_COPY_LINE_NUMBERS_OFF as core::ffi::c_int;
@@ -6592,8 +6592,8 @@ unsafe fn window_copy_line_number_mode(wme: &window_mode_entry) -> core::ffi::c_
         window_copy_window_options(wme).number(c"copy-mode-line-numbers") as core::ffi::c_int
     }
 }
-unsafe fn window_copy_line_number_is_absolute(wme: &window_mode_entry) -> core::ffi::c_int {
-    unsafe {
+fn window_copy_line_number_is_absolute(wme: &window_mode_entry) -> core::ffi::c_int {
+    {
         match window_copy_line_number_mode(wme) {
             2..=4 => return 1 as core::ffi::c_int,
             0 | 1 => return 0 as core::ffi::c_int,
@@ -6602,14 +6602,14 @@ unsafe fn window_copy_line_number_is_absolute(wme: &window_mode_entry) -> core::
         fatalx(c"bad line number mode", fmt_args![]);
     }
 }
-unsafe fn window_copy_line_numbers_active(wme: &window_mode_entry) -> core::ffi::c_int {
-    unsafe {
+fn window_copy_line_numbers_active(wme: &window_mode_entry) -> core::ffi::c_int {
+    {
         (window_copy_line_number_mode(wme) != WINDOW_COPY_LINE_NUMBERS_OFF as core::ffi::c_int)
             as core::ffi::c_int
     }
 }
-unsafe fn window_copy_line_number_width(wme: &window_mode_entry) -> u_int {
-    unsafe {
+fn window_copy_line_number_width(wme: &window_mode_entry) -> u_int {
+    {
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let mut lines: u_int;
         let mut digits: u_int;
@@ -6642,8 +6642,8 @@ unsafe fn window_copy_line_number_width(wme: &window_mode_entry) -> u_int {
         digits.wrapping_add(1 as u_int)
     }
 }
-unsafe fn window_copy_cursor_offset(wme: &window_mode_entry, cx: u_int, sx: u_int) -> u_int {
-    unsafe {
+fn window_copy_cursor_offset(wme: &window_mode_entry, cx: u_int, sx: u_int) -> u_int {
+    {
         let width: u_int = window_copy_line_number_width(wme);
 
         if width == 0 as u_int {
@@ -6660,8 +6660,8 @@ unsafe fn window_copy_cursor_offset(wme: &window_mode_entry, cx: u_int, sx: u_in
         width.wrapping_add(cx)
     }
 }
-unsafe fn window_copy_cursor_unoffset(wme: &window_mode_entry, mut vx: u_int, sx: u_int) -> u_int {
-    unsafe {
+fn window_copy_cursor_unoffset(wme: &window_mode_entry, mut vx: u_int, sx: u_int) -> u_int {
+    {
         let width: u_int = window_copy_line_number_width(wme);
 
         if width == 0 as u_int {
@@ -6989,12 +6989,12 @@ pub(crate) unsafe fn window_copy_style_changed(wme: &mut window_mode_entry) {
         window_copy_redraw_screen(wme);
     }
 }
-unsafe fn window_copy_synchronize_cursor_end(
+fn window_copy_synchronize_cursor_end(
     wme: &mut window_mode_entry,
     mut begin: core::ffi::c_int,
     no_reset: core::ffi::c_int,
 ) {
-    unsafe {
+    {
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let mut xx: u_int;
         let mut yy: u_int;
@@ -7066,8 +7066,8 @@ unsafe fn window_copy_synchronize_cursor_end(
         };
     }
 }
-unsafe fn window_copy_synchronize_cursor(wme: &mut window_mode_entry, no_reset: core::ffi::c_int) {
-    unsafe {
+fn window_copy_synchronize_cursor(wme: &mut window_mode_entry, no_reset: core::ffi::c_int) {
+    {
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         match data.cursordrag {
             CURSORDRAG_ENDSEL => {
@@ -7190,7 +7190,7 @@ unsafe fn window_copy_start_selection(wme: &mut window_mode_entry) {
         window_copy_set_selection(wme, 1 as core::ffi::c_int, 0 as core::ffi::c_int);
     }
 }
-unsafe fn window_copy_adjust_selection(
+fn window_copy_adjust_selection(
     wme: &window_mode_entry,
     selx: &mut u_int,
     sely: &mut u_int,
@@ -7599,14 +7599,14 @@ unsafe fn window_copy_append_selection(wme: &mut window_mode_entry) {
         }
     }
 }
-unsafe fn window_copy_copy_line(
+fn window_copy_copy_line(
     wme: &window_mode_entry,
     buf: &mut Vec<u8>,
     sy: u_int,
     mut sx: u_int,
     mut ex: u_int,
 ) {
-    unsafe {
+    {
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let gd = RustScreen::grid(
             data.backing
@@ -7689,7 +7689,7 @@ unsafe fn window_copy_clear_selection(wme: &mut window_mode_entry) {
         }
     }
 }
-unsafe fn window_copy_in_set(
+fn window_copy_in_set(
     wme: &window_mode_entry,
     px: u_int,
     py: u_int,
@@ -7705,7 +7705,7 @@ unsafe fn window_copy_in_set(
         .in_set(px, py, set)
     }
 }
-unsafe fn window_copy_find_length(wme: &window_mode_entry, py: u_int) -> u_int {
+fn window_copy_find_length(wme: &window_mode_entry, py: u_int) -> u_int {
     {
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         RustScreen::grid(
@@ -7716,12 +7716,12 @@ unsafe fn window_copy_find_length(wme: &window_mode_entry, py: u_int) -> u_int {
         .line_length(py)
     }
 }
-unsafe fn window_copy_cursor_limit(
+fn window_copy_cursor_limit(
     wme: &window_mode_entry,
     py: u_int,
     allow_onemore: core::ffi::c_int,
 ) -> u_int {
-    unsafe {
+    {
         let oo = window_copy_window_options(wme);
 
         let len: u_int = window_copy_find_length(wme, py);
@@ -8374,11 +8374,11 @@ unsafe fn window_copy_cursor_next_word(wme: &mut window_mode_entry, separators: 
         window_copy_acquire_cursor_down(wme, hsize, sy, oy, oldy, px, py, 0 as core::ffi::c_int);
     }
 }
-unsafe fn window_copy_cursor_next_word_end_pos(
+fn window_copy_cursor_next_word_end_pos(
     wme: &window_mode_entry,
     separators: &CStr,
 ) -> (u_int, u_int) {
-    unsafe {
+    {
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let oo = window_copy_window_options(wme);
         let back_s = data
@@ -8442,7 +8442,7 @@ unsafe fn window_copy_cursor_next_word_end(
         window_copy_acquire_cursor_down(wme, hsize, sy, oy, oldy, px, py, no_reset);
     }
 }
-unsafe fn window_copy_cursor_previous_word_pos(
+fn window_copy_cursor_previous_word_pos(
     wme: &window_mode_entry,
     separators: &CStr,
 ) -> (u_int, u_int) {

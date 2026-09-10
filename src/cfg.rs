@@ -91,7 +91,7 @@ fn take_causes() -> Vec<CString> {
     with_config(|config| core::mem::take(&mut config.causes))
 }
 fn cfg_client_done(_item: &CmdqItemRef) -> cmd_retval {
-    unsafe {
+    {
         if !configuration_finished() {
             return CMD_RETURN_WAIT;
         }
@@ -251,7 +251,7 @@ pub unsafe fn load_cfg_from_buffer(
         0 as core::ffi::c_int
     }
 }
-pub unsafe fn cfg_add_cause(fmt: &CStr, args: &[FmtArg]) {
+pub fn cfg_add_cause(fmt: &CStr, args: &[FmtArg]) {
     let msg = format_alloc(fmt, args);
     with_config(|config| config.causes.push(msg));
 }
@@ -376,9 +376,8 @@ pub(crate) unsafe fn cfg_show_causes_for_session(s: Option<&SessionRef>) {
 
 /// Reports whether initial configuration loading has completed.
 ///
-/// # Safety
 /// Query on the server thread without concurrent configuration-state mutation.
-pub(crate) unsafe fn configuration_finished() -> bool {
+pub(crate) fn configuration_finished() -> bool {
     with_config(|config| config.finished)
 }
 

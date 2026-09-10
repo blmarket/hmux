@@ -206,7 +206,7 @@ struct WindowTreeTarget {
 /// Resolves an item's IDs while retaining its session and window. Session and
 /// window items may have no active pane; pane items must still belong to the
 /// named window.
-unsafe fn window_tree_resolve_item(item: &window_tree_itemdata) -> Option<WindowTreeTarget> {
+fn window_tree_resolve_item(item: &window_tree_itemdata) -> Option<WindowTreeTarget> {
     {
         let session = SessionRef::find_by_id(item.session as u_int)?;
         let index = if item.type_0 == WINDOW_TREE_SESSION {
@@ -1438,7 +1438,7 @@ impl WindowTreeModeDataRef {
             }
         }
     }
-    unsafe fn owner(&self) -> Option<WindowTreeModeDataWeak> {
+    fn owner(&self) -> Option<WindowTreeModeDataWeak> {
         let data = self;
 
         Some(data.downgrade())

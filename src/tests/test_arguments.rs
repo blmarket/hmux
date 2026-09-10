@@ -260,7 +260,7 @@ fn the_argument_count_is_checked_against_the_bounds() {
     );
 }
 
-unsafe fn parse_as_string(
+fn parse_as_string(
     _args: &args,
     _idx: u_int,
     _cause: &mut Option<CString>,
@@ -268,7 +268,7 @@ unsafe fn parse_as_string(
     ARGS_PARSE_STRING
 }
 
-unsafe fn parse_as_commands(
+fn parse_as_commands(
     _args: &args,
     _idx: u_int,
     _cause: &mut Option<CString>,
@@ -276,7 +276,7 @@ unsafe fn parse_as_commands(
     ARGS_PARSE_COMMANDS
 }
 
-unsafe fn parse_as_either(
+fn parse_as_either(
     _args: &args,
     _idx: u_int,
     _cause: &mut Option<CString>,
@@ -284,12 +284,12 @@ unsafe fn parse_as_either(
     ARGS_PARSE_COMMANDS_OR_STRING
 }
 
-unsafe fn refuse(_args: &args, idx: u_int, cause: &mut Option<CString>) -> args_parse_type {
+fn refuse(_args: &args, idx: u_int, cause: &mut Option<CString>) -> args_parse_type {
     *cause = Some(xasprintf(c"no argument %u", fmt_args![idx]));
     ARGS_PARSE_INVALID
 }
 
-unsafe fn parse_as_nothing_known(
+fn parse_as_nothing_known(
     _args: &args,
     _idx: u_int,
     _cause: &mut Option<CString>,
@@ -311,7 +311,7 @@ fn the_callback_says_what_each_argument_must_be() {
 
 #[test]
 fn the_callback_observes_flags_and_preceding_arguments() {
-    unsafe fn inspect(
+    fn inspect(
         arguments: &args,
         index: u_int,
         _cause: &mut Option<CString>,
@@ -431,7 +431,7 @@ fn the_type_names_are_what_the_log_prints() {
 
 #[test]
 fn a_flag_is_counted_every_time_it_is_given() {
-    unsafe {
+    {
         let mut args = RustArguments::default();
         assert_eq!(args.argument_flag_count(b'a'), 0);
         args_set(&mut args, b'a', None, 0);
@@ -444,7 +444,7 @@ fn a_flag_is_counted_every_time_it_is_given() {
 
 #[test]
 fn the_last_value_given_for_a_flag_is_the_one_read_back() {
-    unsafe {
+    {
         let mut args = RustArguments::default();
         assert!(args.argument_flag_string(b'a').is_none());
         args_set(&mut args, b'a', None, 0);
@@ -457,7 +457,7 @@ fn the_last_value_given_for_a_flag_is_the_one_read_back() {
 
 #[test]
 fn the_flag_text_comes_back_as_nothing_when_the_flag_was_not_given() {
-    unsafe {
+    {
         let mut args = RustArguments::default();
         assert_eq!(args.argument_flag_string(b'a'), None);
         args_set(&mut args, b'a', None, 0);
@@ -469,7 +469,7 @@ fn the_flag_text_comes_back_as_nothing_when_the_flag_was_not_given() {
 
 #[test]
 fn the_values_of_a_flag_come_back_in_order() {
-    unsafe {
+    {
         let mut args = RustArguments::default();
         assert!(args.argument_flag_values(b'a').is_empty());
         args_set(&mut args, b'a', string_value(c"one"), 0);
@@ -483,7 +483,7 @@ fn the_values_of_a_flag_come_back_in_order() {
 
 #[test]
 fn a_value_of_no_type_is_thrown_away_by_args_set() {
-    unsafe {
+    {
         let mut args = RustArguments::default();
         let value = ArgsValue::default();
         args_set(&mut args, b'a', Some(value), 0);
@@ -494,7 +494,7 @@ fn a_value_of_no_type_is_thrown_away_by_args_set() {
 
 #[test]
 fn the_flags_are_walked_in_order() {
-    unsafe {
+    {
         let mut args = RustArguments::default();
         assert_eq!(args.argument_flags_iter().next(), None);
         for flag in *b"cab" {
@@ -636,7 +636,7 @@ fn the_arguments_flatten_back_to_a_word_list() {
 
 #[test]
 fn a_number_argument_is_read_from_the_last_value_of_a_flag() {
-    unsafe {
+    {
         let mut args = RustArguments::default();
         let mut cause = None;
         assert_eq!(args_strtonum(&args, b'a', 0, 10, &mut cause), 0);
@@ -659,7 +659,7 @@ fn a_number_argument_is_read_from_the_last_value_of_a_flag() {
 #[test]
 fn a_number_argument_has_to_be_a_string() {
     let _guard = exclusive();
-    unsafe {
+    {
         let mut args = RustArguments::default();
         let value = ArgsValue::Commands {
             cmdlist: Some(cmdlist(c"display-message hello")),
@@ -735,7 +735,7 @@ fn a_percentage_is_taken_of_the_current_value() {
 
 #[test]
 fn a_percentage_argument_comes_from_the_last_value_of_a_flag() {
-    unsafe {
+    {
         let mut args = RustArguments::default();
         let mut cause = None;
         assert_eq!(args_percentage(&args, b'a', 0, 100, 50, &mut cause), 0);

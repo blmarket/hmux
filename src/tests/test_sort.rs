@@ -624,7 +624,7 @@ fn sorted_pane_observers_do_not_retain_panes_or_the_window() {
     let mut pane = titled(7, "pane", 80, 24);
     window.add_pane(&mut pane);
     let weak = window.handle().downgrade();
-    let panes = unsafe { (window.handle()).sorted_panes(&crit(SORT_INDEX, 0)) };
+    let panes = (window.handle()).sorted_panes(&crit(SORT_INDEX, 0));
     assert_eq!(panes.len(), 1);
     assert_eq!(panes[0].id(), 7);
     assert!(unsafe { panes[0].get() }.is_some());
@@ -701,7 +701,7 @@ fn no_sessions_at_all_hand_back_no_panes() {
 }
 
 /// The names of the windows winlinks point at.
-unsafe fn linked(l: &[WinlinkRef]) -> Vec<String> {
+fn linked(l: &[WinlinkRef]) -> Vec<String> {
     {
         l.iter()
             .map(|wl| {
@@ -718,8 +718,8 @@ unsafe fn linked(l: &[WinlinkRef]) -> Vec<String> {
 }
 
 /// The winlinks of `s`, by window name, under `order`.
-unsafe fn session_winlinks(s: &SessionRef, order: sort_order, reversed: c_int) -> Vec<String> {
-    unsafe {
+fn session_winlinks(s: &SessionRef, order: sort_order, reversed: c_int) -> Vec<String> {
+    {
         let c = crit(order, reversed);
         let l = s.sorted_winlinks(&c);
         linked(&l)
@@ -736,7 +736,7 @@ fn winlinks_sort_by_index_by_window_name_and_by_window_size() {
     let wl1 = link(&mut session, &mut first, 3);
     let wl2 = link(&mut session, &mut second, 1);
     let wl3 = link(&mut session, &mut third, 2);
-    unsafe {
+    {
         let s = session.handle();
         assert_eq!(session_winlinks(s, SORT_INDEX, 0), ["aaa", "bbb", "ccc"]);
         assert_eq!(session_winlinks(s, SORT_INDEX, 1), ["ccc", "bbb", "aaa"]);
@@ -763,7 +763,7 @@ fn winlinks_sort_by_the_creation_and_activity_of_their_windows() {
     }
     let wl1 = link(&mut session, &mut older, 1);
     let wl2 = link(&mut session, &mut newer, 2);
-    unsafe {
+    {
         let s = session.handle();
         assert_eq!(session_winlinks(s, SORT_CREATION, 0), ["older", "newer"]);
         assert_eq!(session_winlinks(s, SORT_CREATION, 1), ["newer", "older"]);
@@ -782,7 +782,7 @@ fn winlinks_of_windows_at_one_time_fall_back_on_the_window_names() {
     let mut aaa = Window::new(2, "aaa", 80, 24);
     let wl1 = link(&mut session, &mut bbb, 1);
     let wl2 = link(&mut session, &mut aaa, 2);
-    unsafe {
+    {
         let s = session.handle();
         assert_eq!(session_winlinks(s, SORT_CREATION, 0), ["aaa", "bbb"]);
         assert_eq!(session_winlinks(s, SORT_ACTIVITY, 0), ["aaa", "bbb"]);
@@ -806,7 +806,7 @@ fn every_session_hands_over_its_winlinks() {
     let wl3 = link(&mut second, &mut three, 1);
     registry.add_session(&mut first);
     registry.add_session(&mut second);
-    unsafe {
+    {
         let c = crit(SORT_END, 0);
         let l = sort_get_winlinks(&c);
         assert_eq!(linked(&l), ["one", "two", "three"]);
@@ -824,7 +824,7 @@ fn every_session_hands_over_its_winlinks() {
 fn a_session_with_no_windows_hands_back_no_winlinks() {
     let _guard = sorting();
     let session = Session::new(1, "s");
-    unsafe {
+    {
         assert!(session_winlinks(session.handle(), SORT_INDEX, 0).is_empty());
     }
 }
@@ -863,7 +863,7 @@ impl Table {
 
 impl Drop for Table {
     fn drop(&mut self) {
-        unsafe {
+        {
             for key in &self.keys {
                 key_bindings_remove(&self.name, *key);
             }
@@ -878,7 +878,7 @@ impl Drop for Table {
 /// leave an empty one behind them.
 fn tables() -> (crate::tests::test_fixtures::GlobalsGuard, MutexGuard<'static, ()>) {
     let guards = sorting();
-    unsafe {
+    {
         let c = crit(SORT_END, 0);
         let l = sort_get_key_bindings(&c);
         assert_eq!(l.len(), 0, "the key tables already hold bindings");
@@ -892,8 +892,8 @@ fn keys(l: &[key_binding]) -> Vec<key_code> {
 }
 
 /// The bindings of `table` under `order`, by key.
-unsafe fn table_keys(table: &KeyTableRef, order: sort_order, reversed: c_int) -> Vec<key_code> {
-    unsafe {
+fn table_keys(table: &KeyTableRef, order: sort_order, reversed: c_int) -> Vec<key_code> {
+    {
         let c = crit(order, reversed);
         let l = sort_get_key_bindings_table(&mut table.borrow_mut(), &c);
         keys(&l)
@@ -907,7 +907,7 @@ fn key_bindings_sort_by_the_key_itself() {
     table.add(b'c' as key_code);
     table.add(b'a' as key_code);
     table.add(b'b' as key_code);
-    unsafe {
+    {
         assert_eq!(
             table_keys(&table.handle(), SORT_INDEX, 0),
             [b'a' as key_code, b'b' as key_code, b'c' as key_code]
@@ -936,7 +936,7 @@ fn the_modifiers_of_a_key_are_cut_off_both_of_the_comparisons() {
     let mut table = Table::new("one-table");
     table.add(b'a' as key_code);
     table.add(b'a' as key_code | KEYC_META);
-    unsafe {
+    {
         assert_eq!(
             table_keys(&table.handle(), SORT_INDEX, 0),
             [b'a' as key_code | KEYC_META, b'a' as key_code]
@@ -962,7 +962,7 @@ fn two_bindings_of_one_table_are_turned_round_by_their_table_name() {
     let mut table = Table::new("one-table");
     table.add(b'a' as key_code);
     table.add(b'b' as key_code);
-    unsafe {
+    {
         assert_eq!(
             table_keys(&table.handle(), SORT_NAME, 0),
             [b'b' as key_code, b'a' as key_code]
@@ -982,7 +982,7 @@ fn every_binding_of_a_table_is_turned_round_by_their_table_name() {
     for key in b'a'..=b'j' {
         table.add(key as key_code);
     }
-    unsafe {
+    {
         assert_eq!(
             table_keys(&table.handle(), SORT_NAME, 0),
             (b'a'..=b'j')
@@ -1006,7 +1006,7 @@ fn each_table_keeps_its_place_when_its_own_run_is_turned_round() {
     for key in *b"ab" {
         second.add(key as key_code);
     }
-    unsafe {
+    {
         let c = crit(SORT_NAME, 0);
         let l = sort_get_key_bindings(&c);
         assert_eq!(
@@ -1028,7 +1028,7 @@ fn each_table_keeps_its_place_when_its_own_run_is_turned_round() {
 fn a_table_with_no_bindings_hands_back_nothing() {
     let _guards = tables();
     let table = KeyTableRef::new(key_table::new(CString::default()));
-    unsafe {
+    {
         assert!(table_keys(&table, SORT_INDEX, 0).is_empty());
     }
 }
@@ -1041,7 +1041,7 @@ fn every_table_hands_over_its_bindings() {
     first.add(b'c' as key_code);
     second.add(b'a' as key_code);
     second.add(b'b' as key_code);
-    unsafe {
+    {
         let c = crit(SORT_END, 0);
         let l = sort_get_key_bindings(&c);
         assert_eq!(
@@ -1068,7 +1068,7 @@ fn two_bindings_of_different_tables_compare_the_same() {
     let mut second = Table::new("bbb-table");
     first.add(b'b' as key_code);
     second.add(b'a' as key_code);
-    unsafe {
+    {
         let c = crit(SORT_NAME, 0);
         let l = sort_get_key_bindings(&c);
         assert_eq!(keys(&l), [b'b' as key_code, b'a' as key_code]);
@@ -1078,7 +1078,7 @@ fn two_bindings_of_different_tables_compare_the_same() {
 #[test]
 fn no_key_tables_at_all_hand_back_nothing() {
     let _guards = tables();
-    unsafe {
+    {
         let c = crit(SORT_INDEX, 0);
         let l = sort_get_key_bindings(&c);
         assert_eq!(keys(&l), Vec::<key_code>::new());
@@ -1338,7 +1338,7 @@ fn a_key_binding_comparison_answers_one_for_two_bindings_of_a_table() {
     let mut table = Table::new("one-table");
     table.add(b'a' as key_code);
     table.add(b'b' as key_code | KEYC_CTRL);
-    unsafe {
+    {
         let c = crit(SORT_END, 0);
         let l = sort_get_key_bindings(&c);
         let aaa = &l[0];
@@ -1423,7 +1423,7 @@ pub(crate) unsafe fn sort_get_panes(sort_crit: &sort_criteria_t) -> Vec<RustWind
     }
 }
 
-pub(crate) unsafe fn sort_get_panes_session(
+pub(crate) fn sort_get_panes_session(
     s: &session,
     sort_crit: &sort_criteria_t,
 ) -> Vec<RustWindowPaneWeak> {

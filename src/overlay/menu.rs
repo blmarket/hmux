@@ -356,7 +356,7 @@ pub(crate) fn menu_resize_cb(c: &client, data: &mut menu_data) {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub unsafe fn menu_prepare(
+pub fn menu_prepare(
     menu: Box<menu>,
     flags: core::ffi::c_int,
     mut starting_choice: core::ffi::c_int,
@@ -371,7 +371,7 @@ pub unsafe fn menu_prepare(
     fs: Option<&cmd_find_state>,
     cb: menu_choice_cb,
 ) -> Option<MenuDataRef> {
-    unsafe {
+    {
         let mut choice: core::ffi::c_int;
         let session = c.attached_session().expect("a menu client has a session");
         let link = session.curw().expect("a menu client has a current window");

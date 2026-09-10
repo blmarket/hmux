@@ -142,7 +142,7 @@ fn resolved_targets_keep_owners_alive_and_observe_fixture_teardown() {
     let _guard = globals();
     let mut fixture = Target::new(40, 12);
     let (_, _, item) = unsafe { items(&mut fixture) };
-    let resolved = unsafe { window_tree_resolve_item(&item) }.unwrap();
+    let resolved = window_tree_resolve_item(&item).unwrap();
     let session = resolved.link.session().downgrade();
     let window = resolved.window.downgrade();
 

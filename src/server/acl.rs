@@ -161,7 +161,7 @@ pub(crate) fn server_acl_update_clients(uid: uid_t, access: ServerAclAccess) {
         }
     }
 }
-pub(crate) unsafe fn server_acl_join(c: &mut client) -> core::ffi::c_int {
+pub(crate) fn server_acl_join(c: &mut client) -> core::ffi::c_int {
     let uid = (c.peer_handle()).uid();
     if uid == -(1 as core::ffi::c_int) as uid_t {
         return 0 as core::ffi::c_int;

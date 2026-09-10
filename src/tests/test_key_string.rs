@@ -259,9 +259,9 @@ fn a_character_too_long_to_pack_is_not_a_key() {
     ud.have = 1;
     ud.size = 1;
     ud.width = 1;
-    assert_eq!(unsafe { key_from_data(&ud) }, Some(0x41000061));
+    assert_eq!({ key_from_data(&ud) }, Some(0x41000061));
     ud.size = 33;
-    assert_eq!(unsafe { key_from_data(&ud) }, None);
+    assert_eq!({ key_from_data(&ud) }, None);
 }
 
 #[test]

@@ -281,7 +281,7 @@ pub unsafe fn tty_resize(tty: &mut tty) {
         tty_invalidate(tty);
     }
 }
-pub unsafe fn tty_set_size(tty: &mut tty, sx: u_int, sy: u_int, xpixel: u_int, ypixel: u_int) {
+pub fn tty_set_size(tty: &mut tty, sx: u_int, sy: u_int, xpixel: u_int, ypixel: u_int) {
     {
         tty.sx = sx;
         tty.sy = sy;
@@ -774,19 +774,19 @@ fn tty_term_string_for(tty: &tty, code: tty_code_code) -> std::ffi::CString {
     tty_term_of(tty).string(code).to_owned()
 }
 
-pub unsafe fn tty_putcode(tty: &mut tty, code: tty_code_code) {
+pub fn tty_putcode(tty: &mut tty, code: tty_code_code) {
     {
         tty_puts(tty, &tty_term_string_for(tty, code));
     }
 }
-pub unsafe fn tty_putcode_i(tty: &mut tty, code: tty_code_code, a: core::ffi::c_int) {
+pub fn tty_putcode_i(tty: &mut tty, code: tty_code_code, a: core::ffi::c_int) {
     if a < 0 as core::ffi::c_int {
         return;
     }
     let expanded = tty_term_of(tty).expand_i(code, a);
     tty_puts(tty, &expanded);
 }
-pub unsafe fn tty_putcode_ii(
+pub fn tty_putcode_ii(
     tty: &mut tty,
     code: tty_code_code,
     a: core::ffi::c_int,
@@ -798,7 +798,7 @@ pub unsafe fn tty_putcode_ii(
     let expanded = tty_term_of(tty).expand_ii(code, a, b);
     tty_puts(tty, &expanded);
 }
-pub unsafe fn tty_putcode_iii(
+pub fn tty_putcode_iii(
     tty: &mut tty,
     code: tty_code_code,
     a: core::ffi::c_int,
@@ -938,8 +938,8 @@ unsafe fn tty_set_italics(tty: &mut tty) {
         tty_putcode(tty, TTYC_SMSO);
     }
 }
-pub unsafe fn tty_set_title(tty: &mut tty, title: &core::ffi::CStr) {
-    unsafe {
+pub fn tty_set_title(tty: &mut tty, title: &core::ffi::CStr) {
+    {
         if !tty_term_of(tty).has(TTYC_TSL) || !tty_term_of(tty).has(TTYC_FSL) {
             return;
         }
@@ -948,8 +948,8 @@ pub unsafe fn tty_set_title(tty: &mut tty, title: &core::ffi::CStr) {
         tty_putcode(tty, TTYC_FSL);
     }
 }
-pub unsafe fn tty_set_path(tty: &mut tty, title: &core::ffi::CStr) {
-    unsafe {
+pub fn tty_set_path(tty: &mut tty, title: &core::ffi::CStr) {
+    {
         if !tty_term_of(tty).has(TTYC_SWD) || !tty_term_of(tty).has(TTYC_FSL) {
             return;
         }
@@ -958,8 +958,8 @@ pub unsafe fn tty_set_path(tty: &mut tty, title: &core::ffi::CStr) {
         tty_putcode(tty, TTYC_FSL);
     }
 }
-unsafe fn tty_force_cursor_colour(tty: &mut tty, mut c: core::ffi::c_int) {
-    unsafe {
+fn tty_force_cursor_colour(tty: &mut tty, mut c: core::ffi::c_int) {
+    {
         if c != -(1 as core::ffi::c_int) {
             c = RustColourEngine.force_rgb(c);
         }
@@ -983,12 +983,12 @@ unsafe fn tty_force_cursor_colour(tty: &mut tty, mut c: core::ffi::c_int) {
         tty.ccolour = c;
     }
 }
-unsafe fn tty_update_cursor(
+fn tty_update_cursor(
     tty: &mut tty,
     mode: core::ffi::c_int,
     s: Option<ScreenModeState>,
 ) -> core::ffi::c_int {
-    unsafe {
+    {
         let mut cstyle: screen_cursor_style;
         let ccolour: core::ffi::c_int;
 
@@ -1130,13 +1130,13 @@ pub unsafe fn tty_update_mode(
         tty.mode = mode;
     }
 }
-unsafe fn tty_emulate_repeat(
+fn tty_emulate_repeat(
     tty: &mut tty,
     code: tty_code_code,
     code1: tty_code_code,
     mut n: u_int,
 ) {
-    unsafe {
+    {
         if tty_term_of(tty).has(code) {
             tty_putcode_i(tty, code, n as core::ffi::c_int);
         } else {
@@ -1184,7 +1184,7 @@ pub unsafe fn tty_window_bigger(tty: &tty) -> core::ffi::c_int {
 }
 /// Whether the window is bigger than the terminal, and the part of it the
 /// terminal shows: offset and size.
-pub unsafe fn tty_window_offset(tty: &tty) -> (core::ffi::c_int, u_int, u_int, u_int, u_int) {
+pub fn tty_window_offset(tty: &tty) -> (core::ffi::c_int, u_int, u_int, u_int, u_int) {
     (tty.oflag, tty.oox, tty.ooy, tty.osx, tty.osy)
 }
 unsafe fn tty_window_offset1(
@@ -1310,7 +1310,7 @@ pub unsafe fn tty_update_client_offset(c: &mut client) {
 fn tty_large_region(ctx: &tty_ctx) -> core::ffi::c_int {
     (ctx.orlower.wrapping_sub(ctx.orupper) >= ctx.sy.wrapping_div(2 as u_int)) as core::ffi::c_int
 }
-pub unsafe fn tty_fake_bce(tty: &tty, gc: &grid_cell, bg: u_int) -> core::ffi::c_int {
+pub fn tty_fake_bce(tty: &tty, gc: &grid_cell, bg: u_int) -> core::ffi::c_int {
     {
         if tty_term_of(tty).flag(TTYC_BCE) != 0 {
             return 0 as core::ffi::c_int;
@@ -1369,13 +1369,13 @@ fn tty_is_visible(ctx: &tty_ctx, px: u_int, py: u_int, nx: u_int, ny: u_int) -> 
     }
     1 as core::ffi::c_int
 }
-unsafe fn tty_clamp_line(
+fn tty_clamp_line(
     ctx: &tty_ctx,
     px: u_int,
     py: u_int,
     nx: u_int,
 ) -> Option<(u_int, u_int, u_int, u_int)> {
-    unsafe {
+    {
         let i: u_int;
         let x: u_int;
         let rx: u_int;
@@ -1511,14 +1511,14 @@ unsafe fn tty_clear_pane_line(
         }
     }
 }
-unsafe fn tty_clamp_area(
+fn tty_clamp_area(
     ctx: &tty_ctx,
     px: u_int,
     py: u_int,
     nx: u_int,
     ny: u_int,
 ) -> Option<(u_int, u_int, u_int, u_int, u_int, u_int)> {
-    unsafe {
+    {
         let i: u_int;
         let j: u_int;
         let x: u_int;
@@ -1879,7 +1879,7 @@ pub unsafe fn tty_sync_end(tty: &mut tty) {
         }
     }
 }
-unsafe fn tty_client_ready(ctx: &tty_ctx, c: &client) -> core::ffi::c_int {
+fn tty_client_ready(ctx: &tty_ctx, c: &client) -> core::ffi::c_int {
     {
         if c.attached_session().is_none() || c.tty.term.is_none() {
             return 0 as core::ffi::c_int;
@@ -1921,8 +1921,8 @@ pub unsafe fn tty_write(mut command: impl FnMut(&mut tty, &tty_ctx), ctx: &mut t
 }
 /// The count a terminal command carries. Only asked of the commands whose
 /// context was built with one.
-unsafe fn tty_ctx_num(ctx: &tty_ctx) -> u_int {
-    unsafe {
+fn tty_ctx_num(ctx: &tty_ctx) -> u_int {
+    {
         match ctx.value {
             TtyCtxValue::Num(n) => n,
             _ => fatalx(c"terminal command has no count", fmt_args![]),
@@ -1931,8 +1931,8 @@ unsafe fn tty_ctx_num(ctx: &tty_ctx) -> u_int {
 }
 
 /// The bytes a terminal command carries.
-unsafe fn tty_ctx_bytes<'a>(ctx: &tty_ctx<'a>) -> tty_ctx_data<'a> {
-    unsafe {
+fn tty_ctx_bytes<'a>(ctx: &tty_ctx<'a>) -> tty_ctx_data<'a> {
+    {
         match ctx.value {
             TtyCtxValue::Data(data) => data,
             _ => fatalx(c"terminal command has no data", fmt_args![]),
@@ -1941,8 +1941,8 @@ unsafe fn tty_ctx_bytes<'a>(ctx: &tty_ctx<'a>) -> tty_ctx_data<'a> {
 }
 
 /// The selection a terminal command carries.
-unsafe fn tty_ctx_sel_of<'a>(ctx: &tty_ctx<'a>) -> tty_ctx_sel<'a> {
-    unsafe {
+fn tty_ctx_sel_of<'a>(ctx: &tty_ctx<'a>) -> tty_ctx_sel<'a> {
+    {
         match ctx.value {
             TtyCtxValue::Sel(sel) => sel,
             _ => fatalx(c"terminal command has no selection", fmt_args![]),
@@ -2611,13 +2611,13 @@ unsafe fn tty_region(tty: &mut tty, rupper: u_int, rlower: u_int) {
         tty.cx = tty.cy;
     }
 }
-pub unsafe fn tty_margin_off(tty: &mut tty) {
-    unsafe {
+pub fn tty_margin_off(tty: &mut tty) {
+    {
         tty_margin(tty, 0 as u_int, tty.sx.wrapping_sub(1 as u_int));
     }
 }
-unsafe fn tty_margin_pane(tty: &mut tty, ctx: &tty_ctx) {
-    unsafe {
+fn tty_margin_pane(tty: &mut tty, ctx: &tty_ctx) {
+    {
         let mut l: core::ffi::c_int;
         let mut r: core::ffi::c_int;
         l = (ctx.xoff as u_int).wrapping_sub(ctx.wox) as core::ffi::c_int;
@@ -2640,8 +2640,8 @@ unsafe fn tty_margin_pane(tty: &mut tty, ctx: &tty_ctx) {
         tty_margin(tty, l as u_int, r as u_int);
     }
 }
-unsafe fn tty_margin(tty: &mut tty, rleft: u_int, rright: u_int) {
-    unsafe {
+fn tty_margin(tty: &mut tty, rleft: u_int, rright: u_int) {
+    {
         if tty_term_of(tty).flags() & TERM_DECSLRM == 0 {
             return;
         }
@@ -3124,8 +3124,8 @@ unsafe fn tty_colours_fg(tty: &mut tty, gc: &grid_cell) {
         tty.cell.fg = gc.fg;
     }
 }
-unsafe fn tty_colours_bg(tty: &mut tty, gc: &grid_cell) {
-    unsafe {
+fn tty_colours_bg(tty: &mut tty, gc: &grid_cell) {
+    {
         if gc.bg & COLOUR_FLAG_RGB != 0 || gc.bg & COLOUR_FLAG_256 != 0 {
             if !(tty_try_colour(tty, gc.bg, c"48") == 0 as core::ffi::c_int) {
                 return;
@@ -3147,8 +3147,8 @@ unsafe fn tty_colours_bg(tty: &mut tty, gc: &grid_cell) {
         tty.cell.bg = gc.bg;
     }
 }
-unsafe fn tty_colours_us(tty: &mut tty, gc: &grid_cell) {
-    unsafe {
+fn tty_colours_us(tty: &mut tty, gc: &grid_cell) {
+    {
         let mut c: u_int;
         if gc.us == 8 as core::ffi::c_int || gc.us == 9 as core::ffi::c_int {
             tty_putcode(tty, TTYC_OL);
@@ -3178,12 +3178,12 @@ unsafe fn tty_colours_us(tty: &mut tty, gc: &grid_cell) {
         tty.cell.us = gc.us;
     }
 }
-unsafe fn tty_try_colour(
+fn tty_try_colour(
     tty: &mut tty,
     colour: core::ffi::c_int,
     type_0: &core::ffi::CStr,
 ) -> core::ffi::c_int {
-    unsafe {
+    {
         let is_fg = type_0.to_bytes().first() == Some(&b'3');
         if colour & COLOUR_FLAG_256 != 0 {
             if is_fg && tty_term_of(tty).has(TTYC_SETAF) {
@@ -3217,7 +3217,7 @@ unsafe fn tty_try_colour(
         -(1 as core::ffi::c_int)
     }
 }
-unsafe fn tty_window_default_style(gc: &mut grid_cell, wp: &impl crate::WindowPane) {
+fn tty_window_default_style(gc: &mut grid_cell, wp: &impl crate::WindowPane) {
     *gc = grid_default_cell;
     gc.fg = wp.palette().fg;
     gc.bg = wp.palette().bg;
@@ -3289,8 +3289,8 @@ pub fn tty_clipboard_query(tty: &mut tty) {
         tty.clipboard_timer.arm(tv);
     }
 }
-pub unsafe fn tty_set_progress_bar(tty: &mut tty, pb: &progress_bar) {
-    unsafe {
+pub fn tty_set_progress_bar(tty: &mut tty, pb: &progress_bar) {
+    {
         if tty_term_of(tty).has(TTYC_SPB) {
             tty_putcode_ii(tty, TTYC_SPB, pb.state as core::ffi::c_int, pb.progress);
         }

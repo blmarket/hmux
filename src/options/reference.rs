@@ -57,43 +57,25 @@ pub trait OptionsRef: Clone + Eq + std::fmt::Debug {
     /// Copies local entry names in bytewise order, independently of later mutations.
     fn local_names(&self) -> Vec<CString>;
     /// Replaces the named local entry with an uninitialized entry of this definition.
-    ///
-    /// # Safety
-    /// The handle and server-state requirements of this trait apply.
-    unsafe fn insert_empty(&self, oe: &'static options_table_entry_t);
+    fn insert_empty(&self, oe: &'static options_table_entry_t);
     /// Replaces the named local entry with its definition’s scalar or array default.
     ///
     /// # Safety
     /// The handle and server-state requirements of this trait apply.
     unsafe fn set_default(&self, oe: &'static options_table_entry_t);
     /// Copies the `codepoint-widths` strings in array order for the Unicode-width adapter.
-    ///
-    /// # Safety
-    /// The handle and server-state requirements of this trait apply.
-    unsafe fn codepoint_widths(&self) -> Vec<CString>;
+    fn codepoint_widths(&self) -> Vec<CString>;
     /// Copies valid `pane-colours` indices into a palette, or returns none for an empty array.
-    ///
-    /// # Safety
-    /// The handle and server-state requirements of this trait apply.
-    unsafe fn pane_colours(&self) -> Option<[c_int; 256]>;
+    fn pane_colours(&self) -> Option<[c_int; 256]>;
     /// Updates a palette’s defaults from `pane-colours` without changing explicit colours.
-    ///
-    /// # Safety
-    /// The handle and server-state requirements of this trait apply.
-    unsafe fn load_pane_colours(&self, p: Option<&mut colour_palette>);
+    fn load_pane_colours(&self, p: Option<&mut colour_palette>);
     /// Retains an immutable inherited string snapshot; missing or nonstring options are fatal errors.
     /// The snapshot remains valid after replacement, removal, reparenting, or dropping the store.
     fn string_ref(&self, name: &CStr) -> Rc<CStr>;
     /// Reads an inherited numeric value; missing or nonnumeric options are fatal errors.
-    ///
-    /// # Safety
-    /// The handle and server-state requirements of this trait apply.
-    unsafe fn number(&self, name: &CStr) -> c_longlong;
+    fn number(&self, name: &CStr) -> c_longlong;
     /// Clones an inherited command handle; missing or noncommand options are fatal errors.
-    ///
-    /// # Safety
-    /// The handle and server-state requirements of this trait apply.
-    unsafe fn command(&self, name: &CStr) -> Option<CmdListRef>;
+    fn command(&self, name: &CStr) -> Option<CmdListRef>;
     /// Formats and sets a string, optionally appending with its definition’s separator.
     ///
     /// # Safety
@@ -155,7 +137,7 @@ impl OptionsRef for RustOptionsRef {
     ) -> R {
         store::with_entry_mut(self, name, local, write)
     }
-    unsafe fn insert_empty(&self, oe: &'static options_table_entry_t) {
+    fn insert_empty(&self, oe: &'static options_table_entry_t) {
         {
             store::options_empty(self, oe);
         }
@@ -165,23 +147,23 @@ impl OptionsRef for RustOptionsRef {
             store::options_default(self, oe);
         }
     }
-    unsafe fn codepoint_widths(&self) -> Vec<CString> {
-        unsafe { store::options_codepoint_widths(self) }
+    fn codepoint_widths(&self) -> Vec<CString> {
+        store::options_codepoint_widths(self)
     }
-    unsafe fn pane_colours(&self) -> Option<[c_int; 256]> {
-        unsafe { store::options_pane_colours(self) }
+    fn pane_colours(&self) -> Option<[c_int; 256]> {
+        store::options_pane_colours(self)
     }
-    unsafe fn load_pane_colours(&self, p: Option<&mut colour_palette>) {
-        unsafe { store::options_load_pane_colours(self, p) }
+    fn load_pane_colours(&self, p: Option<&mut colour_palette>) {
+        store::options_load_pane_colours(self, p)
     }
     fn string_ref(&self, name: &CStr) -> Rc<CStr> {
         store::options_string_ref(self, name)
     }
-    unsafe fn number(&self, name: &CStr) -> c_longlong {
-        unsafe { store::options_get_number(self, name) }
+    fn number(&self, name: &CStr) -> c_longlong {
+        store::options_get_number(self, name)
     }
-    unsafe fn command(&self, name: &CStr) -> Option<CmdListRef> {
-        unsafe { store::options_get_command(self, name) }
+    fn command(&self, name: &CStr) -> Option<CmdListRef> {
+        store::options_get_command(self, name)
     }
     unsafe fn set_string(&self, name: &CStr, append: c_int, fmt: &CStr, args: &[FmtArg]) {
         unsafe {

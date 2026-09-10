@@ -182,7 +182,7 @@ unsafe fn cmd_move_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if cmd_get_entry(self_0).name == cmd_move_window_entry.name {
         unsafe { source.unlink_window(source_index) };
     }
-    if unsafe { sflag == 0 && source.options().number(c"renumber-windows") != 0 } {
+    if sflag == 0 && source.options().number(c"renumber-windows") != 0 {
         unsafe { source.renumber_windows() };
     }
     recalculate_sizes();

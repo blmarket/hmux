@@ -1648,7 +1648,7 @@ impl KeyTable {
 
 impl Drop for KeyTable {
     fn drop(&mut self) {
-        unsafe {
+        {
             for key in &self.keys {
                 key_bindings_remove(&self.name, *key);
             }
@@ -1666,7 +1666,7 @@ pub(crate) struct Paste(());
 
 impl Paste {
     pub(crate) fn new() -> Paste {
-        unsafe { Paste::empty() };
+        Paste::empty();
         Paste(())
     }
 
@@ -1680,7 +1680,7 @@ impl Paste {
         name.to_owned()
     }
 
-    unsafe fn empty() {
+    fn empty() {
         let names = with_paste_buffers(|buffers| {
             buffers
                 .buffers()
@@ -1695,7 +1695,7 @@ impl Paste {
 
 impl Drop for Paste {
     fn drop(&mut self) {
-        unsafe { Paste::empty() };
+        Paste::empty();
     }
 }
 

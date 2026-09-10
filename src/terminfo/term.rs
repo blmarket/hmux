@@ -1559,7 +1559,7 @@ pub(crate) fn tty_term_opt_mut(
 ) -> Option<std::cell::RefMut<'_, tty_term>> {
     value.as_ref().map(|term| term.borrow_mut())
 }
-pub(crate) unsafe fn tty_term_free(term: TerminalRef) {
+pub(crate) fn tty_term_free(term: TerminalRef) {
     {
         log_debug(
             c"removing term %s",
@@ -1734,7 +1734,7 @@ fn tty_term_flag(term: &tty_term, code: tty_code_code) -> core::ffi::c_int {
         return 0 as core::ffi::c_int;
     }
     let TtyCode::Flag(value) = tty_term_code(term, code) else {
-        unsafe {
+        {
             fatalx(c"not a flag: %d", fmt_args![code as core::ffi::c_uint]);
         }
     };
@@ -1742,7 +1742,7 @@ fn tty_term_flag(term: &tty_term, code: tty_code_code) -> core::ffi::c_int {
 }
 /// How a capability reads: its number, its name and the value the terminal
 /// gave it, as the caller's own string.
-unsafe fn tty_term_describe(term: &tty_term, code: tty_code_code) -> CString {
+fn tty_term_describe(term: &tty_term, code: tty_code_code) -> CString {
     let name = tty_term_codes[code as usize].name;
     match tty_term_code(term, code) {
         TtyCode::None => format_alloc(
@@ -1814,7 +1814,7 @@ impl TerminalCapabilities for tty_term {
     }
 
     fn apply_features(&mut self, features: core::ffi::c_int) -> bool {
-        unsafe { tty_apply_features(self, features) != 0 }
+        tty_apply_features(self, features) != 0
     }
 
     fn refresh_derived(&mut self) {
@@ -1858,7 +1858,7 @@ impl TerminalCapabilities for tty_term {
     }
 
     fn describe(&self, code: tty_code_code) -> CString {
-        unsafe { tty_term_describe(self, code) }
+        tty_term_describe(self, code)
     }
 }
 

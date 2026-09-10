@@ -527,7 +527,7 @@ fn areshell(shell: &CStr) -> core::ffi::c_int {
     let progname = progname.strip_prefix(b"-").unwrap_or(progname);
     (basename == progname) as core::ffi::c_int
 }
-unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
+fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
     {
         let path = path.to_bytes();
         if path.starts_with(b"~/") {
@@ -551,8 +551,8 @@ unsafe fn expand_path(path: &CStr, home: Option<&CStr>) -> Option<CString> {
         Some(CString::new(path).expect("a C string has no interior NUL"))
     }
 }
-unsafe fn expand_paths(s: &CStr, no_realpath: core::ffi::c_int) -> Vec<CString> {
-    unsafe {
+fn expand_paths(s: &CStr, no_realpath: core::ffi::c_int) -> Vec<CString> {
+    {
         let home = find_home();
         let mut paths: Vec<CString> = Vec::new();
         for next in s.to_bytes().split(|&byte| byte == b':') {
@@ -648,7 +648,7 @@ fn make_label(label: Option<&CStr>) -> Result<CString, CString> {
         }
     }
 }
-pub unsafe fn shell_argv0(shell: &CStr, is_login: core::ffi::c_int) -> CString {
+pub fn shell_argv0(shell: &CStr, is_login: core::ffi::c_int) -> CString {
     {
         let bytes = shell.to_bytes();
         let start = bytes
@@ -705,7 +705,7 @@ pub unsafe fn clean_name(name: &CStr, untrusted: core::ffi::c_int) -> Option<CSt
         )
     }
 }
-pub unsafe fn check_name(name: Option<&CStr>) -> core::ffi::c_int {
+pub fn check_name(name: Option<&CStr>) -> core::ffi::c_int {
     let Some(name) = name else {
         return 0 as core::ffi::c_int;
     };
