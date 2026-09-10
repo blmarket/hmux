@@ -1,6 +1,5 @@
 pub mod argument_command_state;
 pub mod argument_entry;
-pub mod argument_parse_spec;
 pub mod argument_text;
 pub mod argument_value;
 pub mod arguments_trait;

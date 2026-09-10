@@ -118,7 +118,7 @@ pub type __useconds_t = core::ffi::c_uint;
 pub type args_parse_type = core::ffi::c_uint;
 pub type u_int = __u_int;
 pub type args_parse_cb =
-    Option<unsafe fn(&args, u_int, &mut Option<std::ffi::CString>) -> args_parse_type>;
+    Option<fn(&args, u_int, &mut Option<std::ffi::CString>) -> args_parse_type>;
 pub type bitstr_t = core::ffi::c_uchar;
 pub type box_lines = core::ffi::c_int;
 pub type cc_t = core::ffi::c_uchar;
