@@ -5,6 +5,9 @@ pub mod argument_value;
 pub mod arguments_trait;
 
 use crate::args::argument_command_state::ArgumentCommandState;
+use crate::args::argument_text::ArgumentTextCodec;
+use crate::args::argument_text::RustArgumentTextCodec;
+use crate::args::arguments_trait::Arguments;
 use crate::cmd::CmdListRef;
 use crate::cmd::cmd_get_entry;
 use crate::cmd::cmd_parse_from_string;
@@ -216,7 +219,7 @@ impl RustArguments {
     }
 }
 
-impl crate::Arguments for RustArguments {
+impl Arguments for RustArguments {
     fn argument_flag_count(&self, flag: u_char) -> c_int {
         RustArguments::argument_flag_count(self, flag)
     }
@@ -254,7 +257,7 @@ impl crate::Arguments for RustArguments {
     }
 }
 
-impl crate::Arguments for args {
+impl Arguments for args {
     fn argument_flag_count(&self, flag: u_char) -> c_int {
         RustArguments::argument_flag_count(RustArguments::from_ref(self), flag)
     }
@@ -713,7 +716,10 @@ unsafe fn args_print_add_value(out: &mut Vec<u8>, value: &ArgsValue) {
                 out.extend_from_slice(b" }");
             }
             ArgsValue::String(string) => {
-                let expanded = args_escape(string.as_c_str());
+                let expanded = {
+                    let s = string.as_c_str();
+                    ArgumentTextCodec::escape(&RustArgumentTextCodec, s)
+                };
                 out.extend_from_slice(expanded.as_bytes());
             }
             ArgsValue::None => {}
@@ -988,10 +994,6 @@ pub(crate) fn args_string_percentage_impl(
     }
 }
 
-pub fn args_escape(s: &CStr) -> CString {
-    crate::ArgumentTextCodec::escape(&crate::RustArgumentTextCodec, s)
-}
-
 pub fn args_string_percentage(
     value: &CStr,
     minval: core::ffi::c_longlong,
@@ -999,14 +1001,7 @@ pub fn args_string_percentage(
     curval: core::ffi::c_longlong,
     cause: &mut Option<CString>,
 ) -> core::ffi::c_longlong {
-    crate::ArgumentTextCodec::percentage(
-        &crate::RustArgumentTextCodec,
-        value,
-        minval,
-        maxval,
-        curval,
-        cause,
-    )
+    ArgumentTextCodec::percentage(&RustArgumentTextCodec, value, minval, maxval, curval, cause)
 }
 
 /// Like `args_string_percentage`, but expanding the value as a format first.

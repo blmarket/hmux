@@ -1,5 +1,6 @@
-use crate::cmd::cmdq_item;
 use crate::WindowPane;
+use crate::args::argument_text::{ArgumentTextCodec as _, RustArgumentTextCodec};
+use crate::cmd::cmdq_item;
 use crate::format_modifier::FormatModifier;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::pane_identity::PaneIdentity;
@@ -80,7 +81,7 @@ use crate::window::{
     winlink_count,
 };
 use crate::xmalloc::xasprintf;
-use crate::{ArgumentTextCodec, CommandTextCodec, RustArgumentTextCodec, RustCommandTextCodec};
+use crate::{CommandTextCodec, RustCommandTextCodec};
 use crate::{FormatText, RustFormatText};
 use ::core::ffi::CStr;
 use ::std::ffi::CString;

@@ -1,5 +1,7 @@
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
+use crate::args::args_parse_t;
+use crate::args::argument_text::ArgumentTextCodec as _;
+use crate::args::argument_text::RustArgumentTextCodec;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -12,7 +14,6 @@ use crate::format::format_single_from_target;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::types::{OptionsRef, RustOptionsRef, options_entry, u_char, u_int};
 use crate::xmalloc::xasprintf;
-use crate::{ArgumentTextCodec, RustArgumentTextCodec};
 use ::std::ffi::CString;
 
 pub(crate) static cmd_show_options_entry: RustCommandEntry = {
@@ -188,8 +189,7 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 let Some(entry) = entry else {
                     return false;
                 };
-                let parent =
-                    { (!RustOptionsEngine.owner(entry).ptr_eq(oo)) as core::ffi::c_int };
+                let parent = { (!RustOptionsEngine.owner(entry).ptr_eq(oo)) as core::ffi::c_int };
                 unsafe { cmd_show_options_print(self_0, item, entry, idx, parent) };
                 true
             });

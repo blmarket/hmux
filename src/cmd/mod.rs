@@ -7,6 +7,7 @@
 //! What else the rest of the crate may use is re-exported here.
 
 use crate::args::RustArguments;
+use crate::args::argument_text::{ArgumentTextCodec as _, RustArgumentTextCodec};
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use core::fmt;
 use std::cell::RefCell;
@@ -39,9 +40,9 @@ pub use queue::{
     cmdq_append, cmdq_item, cmdq_item_list, cmdq_items, cmdq_list, cmdq_next, cmdq_running,
     cmdq_state,
 };
-pub(crate) use queue::{cmdq_item_ref_of, cmdq_item_weak_of};
 #[cfg(test)]
 pub(crate) use queue::{CmdqListOps, CmdqType};
+pub(crate) use queue::{cmdq_item_ref_of, cmdq_item_weak_of};
 
 pub use parse::{
     CMD_PARSE_COMMANDS, CMD_PARSE_STRING, CMD_PARSE_SUCCESS, cmd_parse_argument, cmd_parse_command,
@@ -75,8 +76,6 @@ pub use entries::cmd_source_file::cmd_source_file_data;
 pub use entries::cmd_wait_for::cmd_wait_for_flush;
 
 use crate::args::{args_make_commands, args_parse, args_print};
-use crate::format::format_single_from_target;
-use crate::types::{ClientRef, args_command_state, cmd_parse_input};
 use crate::cmd::entries::cmd_attach_session::cmd_attach_session_entry;
 use crate::cmd::entries::cmd_bind_key::cmd_bind_key_entry;
 use crate::cmd::entries::cmd_break_pane::cmd_break_pane_entry;
@@ -157,7 +156,9 @@ use crate::cmd::entries::cmd_unbind_key::cmd_unbind_key_entry;
 use crate::cmd::entries::cmd_wait_for::cmd_wait_for_entry;
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
+use crate::format::format_single_from_target;
 use crate::log::{fatalx, log_debug};
+use crate::types::{ClientRef, args_command_state, cmd_parse_input};
 
 pub use crate::consts::{
     ARGS_PARSE_COMMANDS, ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_INVALID, ARGS_PARSE_STRING,
@@ -186,12 +187,11 @@ pub use crate::consts::{
 };
 use crate::tmux::global_options;
 pub use crate::types::{
-    ArgsValue, OptionsRef, RustWindowPaneWeak, SessionRef, WindowPane, WindowRef, args, mouse_event,
-    u_int,
+    ArgsValue, OptionsRef, RustWindowPaneWeak, SessionRef, WindowPane, WindowRef, args,
+    mouse_event, u_int,
 };
 use crate::window::WinlinkRef;
 use crate::xmalloc::xasprintf;
-use crate::{ArgumentTextCodec, RustArgumentTextCodec};
 use crate::{CommandCatalog, RustCommandCatalog};
 use ::core::ffi::{CStr, c_int, c_uint};
 use ::std::ffi::CString;

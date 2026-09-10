@@ -64,8 +64,7 @@ impl ArgumentEntry for crate::types::args_entry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::argument_value::ArgumentValue;
-    use crate::types::args_entry;
+    use crate::{args::argument_value::ArgumentValue, types::args_entry};
     use std::ffi::CString;
 
     #[test]

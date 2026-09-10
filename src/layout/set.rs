@@ -1,4 +1,7 @@
-use crate::window_dimensions::WindowDimensionsState;
+use crate::{
+    args::argument_text::{ArgumentTextCodec as _, RustArgumentTextCodec},
+    window_dimensions::WindowDimensionsState,
+};
 
 use super::cells::{
     LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, LayoutCellPath, PANE_MINIMUM, insert_new_tail,
@@ -8,7 +11,6 @@ use crate::notify::notify_window;
 
 pub use crate::types::*;
 use crate::window::{window_count_panes, window_pane_is_floating};
-use crate::{ArgumentTextCodec, RustArgumentTextCodec};
 use ::core::ffi::{CStr, c_int, c_longlong};
 
 /// The narrowest a pane may be, as the sizes here count.

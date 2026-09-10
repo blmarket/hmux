@@ -6,7 +6,8 @@
 //! server or the command table, so no [`globals`] guard is needed except where
 //! noted.
 
-use crate::args::{RustArguments, args_escape, args_print, args_set};
+use crate::args::argument_text::{ArgumentTextCodec, RustArgumentTextCodec};
+use crate::args::{RustArguments, args_print, args_set};
 use crate::cmd::{cmd_pack_argv, cmd_stringify_argv, cmd_template_replace, cmd_unpack_argv};
 use crate::tests::test_fixtures::seen;
 use crate::tests::test_fixtures::seen_str;
@@ -187,24 +188,36 @@ fn cmd_template_replace_numbered_and_double_percent() {
 #[test]
 fn args_escape_empty_tilde_and_quotes() {
     // empty string -> ''
-    let e0 = args_escape(c"").to_string_lossy().into_owned();
+    let e0 = ArgumentTextCodec::escape(&RustArgumentTextCodec, c"")
+        .to_string_lossy()
+        .into_owned();
     assert_eq!(e0, "''");
     // single tilde needs escaping
-    let e1 = args_escape(c"~").to_string_lossy().into_owned();
+    let e1 = ArgumentTextCodec::escape(&RustArgumentTextCodec, c"~")
+        .to_string_lossy()
+        .into_owned();
     assert_eq!(e1, "\\~");
     // leading tilde with more content also escapes tilde
-    let e2 = args_escape(c"~/foo").to_string_lossy().into_owned();
+    let e2 = ArgumentTextCodec::escape(&RustArgumentTextCodec, c"~/foo")
+        .to_string_lossy()
+        .into_owned();
     assert!(e2.starts_with("\\~") || e2.starts_with('"'), "got {e2:?}");
     // string with space needs quoting
-    let e3 = args_escape(c"a b").to_string_lossy().into_owned();
+    let e3 = ArgumentTextCodec::escape(&RustArgumentTextCodec, c"a b")
+        .to_string_lossy()
+        .into_owned();
     assert!(e3.contains("a b"));
     assert!(e3.starts_with('"') || e3.starts_with('\''), "got {e3:?}");
     // string needing double quotes
-    let e4 = args_escape(c"a#b").to_string_lossy().into_owned();
+    let e4 = ArgumentTextCodec::escape(&RustArgumentTextCodec, c"a#b")
+        .to_string_lossy()
+        .into_owned();
     assert!(e4.starts_with('"'), "got {e4:?}");
     assert!(e4.contains("a#b"));
     // plain word no quoting
-    let e5 = args_escape(c"hello").to_string_lossy().into_owned();
+    let e5 = ArgumentTextCodec::escape(&RustArgumentTextCodec, c"hello")
+        .to_string_lossy()
+        .into_owned();
     assert_eq!(e5, "hello");
 }
 

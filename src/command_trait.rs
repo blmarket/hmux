@@ -1,6 +1,8 @@
 //! Stable value-state capabilities of a parsed command.
 
-use crate::{Arguments, CommandGroupState, CommandParseFlagsState, CommandSourceState};
+use crate::{
+    CommandGroupState, CommandParseFlagsState, CommandSourceState, args::arguments_trait::Arguments,
+};
 
 /// Shared access to a parsed command.
 pub trait Command: CommandGroupState + CommandSourceState + CommandParseFlagsState {

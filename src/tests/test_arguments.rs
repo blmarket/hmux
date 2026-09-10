@@ -1,5 +1,6 @@
-use crate::args::args_parse_t;
 use super::*;
+use crate::args::args_parse_t;
+use crate::args::arguments_trait::Arguments;
 use crate::cmd::{cmd_make_commands_now, cmd_make_commands_prepare};
 
 use crate::cmd::cmd_parse_from_string;
@@ -261,27 +262,15 @@ fn the_argument_count_is_checked_against_the_bounds() {
     );
 }
 
-fn parse_as_string(
-    _args: &args,
-    _idx: u_int,
-    _cause: &mut Option<CString>,
-) -> args_parse_type {
+fn parse_as_string(_args: &args, _idx: u_int, _cause: &mut Option<CString>) -> args_parse_type {
     ARGS_PARSE_STRING
 }
 
-fn parse_as_commands(
-    _args: &args,
-    _idx: u_int,
-    _cause: &mut Option<CString>,
-) -> args_parse_type {
+fn parse_as_commands(_args: &args, _idx: u_int, _cause: &mut Option<CString>) -> args_parse_type {
     ARGS_PARSE_COMMANDS
 }
 
-fn parse_as_either(
-    _args: &args,
-    _idx: u_int,
-    _cause: &mut Option<CString>,
-) -> args_parse_type {
+fn parse_as_either(_args: &args, _idx: u_int, _cause: &mut Option<CString>) -> args_parse_type {
     ARGS_PARSE_COMMANDS_OR_STRING
 }
 
@@ -312,11 +301,7 @@ fn the_callback_says_what_each_argument_must_be() {
 
 #[test]
 fn the_callback_observes_flags_and_preceding_arguments() {
-    fn inspect(
-        arguments: &args,
-        index: u_int,
-        _cause: &mut Option<CString>,
-    ) -> args_parse_type {
+    fn inspect(arguments: &args, index: u_int, _cause: &mut Option<CString>) -> args_parse_type {
         let arguments = RustArguments::from_ref(arguments);
         assert_eq!(arguments.argument_flag_string(b'f'), Some(c"value"));
         assert_eq!(arguments.argument_count(), index);
@@ -542,7 +527,11 @@ fn printing_quotes_what_would_otherwise_be_read_back_wrongly() {
 
 #[test]
 fn escaping_quotes_a_string_the_way_the_parser_would_read_it_back() {
-    let escape = |s: &CStr| args_escape(s).to_string_lossy().into_owned();
+    let escape = |s: &CStr| {
+        ArgumentTextCodec::escape(&RustArgumentTextCodec, s)
+            .to_string_lossy()
+            .into_owned()
+    };
     assert_eq!(escape(c""), "''");
     assert_eq!(escape(c"a"), "a");
     assert_eq!(escape(c"abc"), "abc");
@@ -1065,10 +1054,10 @@ fn rust_arguments_borrows_existing_state_in_place() {
         assert!(!arguments.set_argument_string(1, c"missing"));
         arguments.set_argument_flag(b'x', None, 0);
     }
-    assert_eq!(crate::Arguments::argument_flag_count(&raw, b'x'), 1);
+    assert_eq!(Arguments::argument_flag_count(&raw, b'x'), 1);
     let arguments = RustArguments::from_ref(&raw);
     assert_eq!(arguments.argument_string(0), Some(c"after"));
     assert_eq!(arguments.argument_count(), 1);
     assert!(arguments.argument_value(1).is_none());
-    assert_eq!(crate::Arguments::argument_flag_count(&raw, b'x'), 1);
+    assert_eq!(Arguments::argument_flag_count(&raw, b'x'), 1);
 }
