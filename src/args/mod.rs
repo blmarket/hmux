@@ -5,10 +5,10 @@ pub mod argument_text;
 pub mod argument_value;
 pub mod arguments_trait;
 
-use crate::cmd::cmd_parse_from_string;
-use crate::cmd::cmdq_item;
 use crate::cmd::CmdListRef;
 use crate::cmd::cmd_get_entry;
+use crate::cmd::cmd_parse_from_string;
+use crate::cmd::cmdq_item;
 use crate::cmd::{cmd_log_argv, cmd_template_replace};
 use crate::compat::strtonum;
 use crate::fmt_args;
@@ -67,7 +67,10 @@ impl RustArguments {
     pub fn from_strings(values: &[&CStr]) -> Self {
         let mut arguments = Self::default();
         for value in values {
-            arguments.0.values.push(ArgsValue::String((*value).to_owned()));
+            arguments
+                .0
+                .values
+                .push(ArgsValue::String((*value).to_owned()));
             arguments.0.count += 1;
         }
         arguments
@@ -85,12 +88,7 @@ impl RustArguments {
             .map_or(0, |entry| entry.count as c_int)
     }
 
-    pub fn set_argument_flag(
-        &mut self,
-        flag: u_char,
-        value: Option<ArgsValue>,
-        flags: c_int,
-    ) {
+    pub fn set_argument_flag(&mut self, flag: u_char, value: Option<ArgsValue>, flags: c_int) {
         unsafe { args_set(self, flag, value, flags) }
     }
 
@@ -830,11 +828,6 @@ pub unsafe fn args_make_commands_get_command(state: &args_command_state) -> CStr
             .unwrap_or(cmd.len());
         CString::from_vec_unchecked(cmd[..end].to_vec())
     }
-}
-
-/// Every value given for a flag, in the order they were given.
-pub fn args_value_list(args: &RustArguments, flag: u_char) -> Vec<&ArgsValue> {
-    args.argument_flag_values(flag)
 }
 
 /// The number a string holds, or the `strtonum` message saying why it is not

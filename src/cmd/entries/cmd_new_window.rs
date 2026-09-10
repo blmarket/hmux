@@ -24,7 +24,6 @@
 //! own index. The conversion nulls that variable where the C's loop left it.
 
 use crate::args::RustArguments;
-use crate::args::args_value_list;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item_weak_of;
 
@@ -98,7 +97,7 @@ unsafe fn select_found_window(session: &SessionRef, idx: c_int, c: Option<&Clien
 /// whatever `-e` asked for, even when nothing did.
 fn spawn_environ(args: &RustArguments) -> Box<RustEnvironment> {
     let mut env = new_environment_box();
-    for av in args_value_list(args, b'e') {
+    for av in args.argument_flag_values(b'e') {
         env.put(av.string(), 0);
     }
     env
@@ -203,7 +202,9 @@ unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         return CMD_RETURN_ERROR;
     };
 
-    if unsafe { args.argument_flag_count(b'd') == 0 || session.current_index() == Some(new_wl.index()) } {
+    if unsafe {
+        args.argument_flag_count(b'd') == 0 || session.current_index() == Some(new_wl.index())
+    } {
         unsafe { current_state_ref.update_current_link(&new_wl, None, 0) };
         unsafe { session.redraw_group() };
     } else {

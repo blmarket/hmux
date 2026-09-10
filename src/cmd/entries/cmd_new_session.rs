@@ -1,5 +1,4 @@
 use crate::args::RustArguments;
-use crate::args::args_value_list;
 use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
 use crate::cmd::cmd_find_from_session_ref;
 use crate::cmd::cmdq_item_weak_of;
@@ -585,7 +584,10 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                         };
                                                     }
                                                     for av in
-                                                        args_value_list(args, 'e' as i32 as u_char)
+                                                        {
+                                                            let flag = 'e' as i32 as u_char;
+                                                            args.argument_flag_values(flag)
+                                                        }
                                                     {
                                                         env.as_deref_mut()
                                                             .unwrap()

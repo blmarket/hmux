@@ -1,5 +1,4 @@
 use crate::args::RustArguments;
-use crate::args::args_value_list;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item_weak_of;
 
@@ -52,7 +51,10 @@ unsafe fn cmd_respawn_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     sc.tc = target_client.as_ref().map(ClientRef::downgrade);
     unsafe { sc.argv = args.to_vector() };
     sc.environ = Some(new_environment_box());
-    for av in args_value_list(args, 'e' as i32 as u_char) {
+    for av in {
+        let flag = 'e' as i32 as u_char;
+        args.argument_flag_values(flag)
+    } {
         sc.environ
             .as_deref_mut()
             .expect("the respawn environment is initialized")

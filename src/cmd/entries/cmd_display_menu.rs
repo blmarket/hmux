@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_percentage, args_strtonum, args_value_list};
+use crate::args::{args_percentage, args_strtonum};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::cmdq_item_ref_of;
@@ -765,7 +765,10 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                             }) >= 1 as core::ffi::c_int
                             {
                                 let mut e = new_environment_box();
-                                for av in args_value_list(args, 'e' as i32 as u_char) {
+                                for av in {
+                                    let flag = 'e' as i32 as u_char;
+                                    args.argument_flag_values(flag)
+                                } {
                                     e.put(av.string(), 0);
                                 }
                                 env = Some(e);

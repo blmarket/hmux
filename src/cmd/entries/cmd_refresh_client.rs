@@ -1,5 +1,5 @@
 use crate::args::RustArguments;
-use crate::args::{args_value_list};
+use crate::args::{};
 use crate::cmd::cmd_get_args;
 
 use crate::compat::strtonum;
@@ -321,7 +321,10 @@ unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
         args.argument_flag_count(flag)
     }) != 0 {
         if unsafe { tc.is_control() } {
-            for av in args_value_list(args, 'A' as i32 as u_char) {
+            for av in {
+                let flag = 'A' as i32 as u_char;
+                args.argument_flag_values(flag)
+            } {
                 unsafe { cmd_refresh_client_update_offset(&mut tc, av.string()) };
             }
             return CMD_RETURN_NORMAL;
@@ -331,7 +334,10 @@ unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
         args.argument_flag_count(flag)
     }) != 0 {
         if unsafe { tc.is_control() } {
-            for av in args_value_list(args, 'B' as i32 as u_char) {
+            for av in {
+                let flag = 'B' as i32 as u_char;
+                args.argument_flag_values(flag)
+            } {
                 unsafe { cmd_refresh_client_update_subscription(&mut tc, av.string()) };
             }
             return CMD_RETURN_NORMAL;

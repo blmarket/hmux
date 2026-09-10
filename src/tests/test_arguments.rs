@@ -1,5 +1,5 @@
-use crate::cmd::{cmd_make_commands_now, cmd_make_commands_prepare};
 use super::*;
+use crate::cmd::{cmd_make_commands_now, cmd_make_commands_prepare};
 
 use crate::cmd::cmd_parse_from_string;
 
@@ -320,7 +320,11 @@ fn the_callback_says_what_each_argument_must_be() {
 
 #[test]
 fn the_callback_observes_flags_and_preceding_arguments() {
-    unsafe fn inspect(arguments: &args, index: u_int, _cause: &mut Option<CString>) -> args_parse_type {
+    unsafe fn inspect(
+        arguments: &args,
+        index: u_int,
+        _cause: &mut Option<CString>,
+    ) -> args_parse_type {
         let arguments = RustArguments::from_ref(arguments);
         assert_eq!(arguments.argument_flag_string(b'f'), Some(c"value"));
         assert_eq!(arguments.argument_count(), index);
@@ -415,10 +419,7 @@ fn an_argument_of_an_unknown_kind_is_counted_but_left_empty() {
     unsafe {
         let args = parse_values(&spec_cb(Some(parse_as_nothing_known)), &mut values).unwrap();
         assert_eq!(args.argument_count(), 1);
-        assert!(matches!(
-            args.argument_value(0).unwrap(),
-            ArgsValue::None
-        ));
+        assert!(matches!(args.argument_value(0).unwrap(), ArgsValue::None));
         assert_eq!(seen_str(args.argument_string(0)), "");
         args_free(args);
     }
@@ -485,10 +486,13 @@ fn the_flag_text_comes_back_as_nothing_when_the_flag_was_not_given() {
 fn the_values_of_a_flag_come_back_in_order() {
     unsafe {
         let args = Box::into_raw(Box::<RustArguments>::default());
-        assert!(args_value_list(&*args, b'a').is_empty());
+        assert!((*args).argument_flag_values(b'a').is_empty());
         args_set(&mut *args, b'a', string_value(c"one"), 0);
         args_set(&mut *args, b'a', string_value(c"two"), 0);
-        let values = args_value_list(&*args, b'a');
+        let values = {
+            let args: &RustArguments = &*args;
+            args.argument_flag_values(b'a')
+        };
         assert_eq!(values.len(), 2);
         assert_eq!(values[0].string(), c"one");
         assert_eq!(values[1].string(), c"two");
@@ -503,7 +507,7 @@ fn a_value_of_no_type_is_thrown_away_by_args_set() {
         let value = ArgsValue::default();
         args_set(&mut *args, b'a', Some(value), 0);
         assert_eq!((*args).argument_flag_count(b'a'), 1);
-        assert!(args_value_list(&*args, b'a').is_empty());
+        assert!((*args).argument_flag_values(b'a').is_empty());
         args_free(Box::from_raw(args));
     }
 }
@@ -933,8 +937,7 @@ fn an_empty_command_list_argument_has_no_command_name() {
         runner.with_args(&mut values);
         let source_list = runner.cmdlist.clone();
         let command = source_list.command(0).expect("the prepared command");
-        let state =
-            cmd_make_commands_prepare(&command, &runner.item(), 0, None, 0, CStr::to_owned);
+        let state = cmd_make_commands_prepare(&command, &runner.item(), 0, None, 0, CStr::to_owned);
         assert_eq!(args_make_commands_get_command(&state).as_c_str(), c"");
     }
 }
