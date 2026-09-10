@@ -1964,6 +1964,7 @@ pub struct style_line_entry {
 }
 pub type client_exit_type = core::ffi::c_uint;
 pub type client_prompt_mode = core::ffi::c_uint;
+#[derive(Default)]
 #[repr(C)]
 pub struct winlink {
     pub idx: core::ffi::c_int,

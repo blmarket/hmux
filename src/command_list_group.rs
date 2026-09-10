@@ -11,29 +11,16 @@ pub trait CommandListGroupState {
     fn set_command_list_group(&mut self, group: u_int);
 }
 
-/// The command-list group storage used by hmux.
-#[derive(Default)]
-pub struct RustCommandListGroupState {
-    group: u_int,
-}
-
-impl CommandListGroupState for RustCommandListGroupState {
-    fn command_list_group(&self) -> u_int {
-        self.group
-    }
-
-    fn set_command_list_group(&mut self, group: u_int) {
-        self.group = group;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn group_can_be_replaced() {
-        let mut state = RustCommandListGroupState::default();
+        let mut state = crate::cmd::cmd_list {
+            group: 0,
+            list: None,
+        };
         assert_eq!(state.command_list_group(), 0);
         state.set_command_list_group(77);
         assert_eq!(state.command_list_group(), 77);

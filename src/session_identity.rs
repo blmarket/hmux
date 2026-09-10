@@ -11,29 +11,13 @@ pub trait SessionIdentity {
     fn set_session_id(&mut self, id: u_int);
 }
 
-/// The session identity storage used by hmux.
-#[derive(Default)]
-pub struct RustSessionIdentity {
-    id: u_int,
-}
-
-impl SessionIdentity for RustSessionIdentity {
-    fn session_id(&self) -> u_int {
-        self.id
-    }
-
-    fn set_session_id(&mut self, id: u_int) {
-        self.id = id;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn identity_can_be_assigned_and_replaced() {
-        let mut identity = RustSessionIdentity::default();
+        let mut identity = crate::session::session::default();
         assert_eq!(identity.session_id(), 0);
         identity.set_session_id(42);
         assert_eq!(identity.session_id(), 42);

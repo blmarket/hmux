@@ -26,36 +26,13 @@ pub trait CommandFindFlagsState {
     }
 }
 
-/// The command-target flag storage used by hmux.
-#[derive(Clone, Default)]
-pub struct RustCommandFindFlagsState {
-    flags: c_int,
-}
-
-impl RustCommandFindFlagsState {
-    /// Builds flag storage with the supplied value.
-    pub const fn new(flags: c_int) -> Self {
-        Self { flags }
-    }
-}
-
-impl CommandFindFlagsState for RustCommandFindFlagsState {
-    fn command_find_flags(&self) -> c_int {
-        self.flags
-    }
-
-    fn set_command_find_flags(&mut self, flags: c_int) {
-        self.flags = flags;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn masks_can_be_added_and_removed() {
-        let mut state = RustCommandFindFlagsState::default();
+        let mut state = crate::types::cmd_find_state::default();
         state.add_command_find_flags(0x3);
         assert!(state.has_command_find_flags(0x2));
         state.remove_command_find_flags(0x1);

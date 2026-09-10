@@ -26,29 +26,18 @@ pub trait WinlinkFlagsState {
     }
 }
 
-/// The window-link flag storage used by hmux.
-#[derive(Default)]
-pub struct RustWinlinkFlagsState {
-    flags: c_int,
-}
-
-impl WinlinkFlagsState for RustWinlinkFlagsState {
-    fn winlink_flags(&self) -> c_int {
-        self.flags
-    }
-
-    fn set_winlink_flags(&mut self, flags: c_int) {
-        self.flags = flags;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn masks_can_be_added_and_removed() {
-        let mut state = RustWinlinkFlagsState::default();
+        let mut state = crate::types::winlink {
+            idx: 0,
+            session_ref: None,
+            window_ref: None,
+            flags: 0,
+        };
         assert_eq!(state.winlink_flags(), 0);
         state.add_winlink_flags(0x3);
         assert!(state.has_winlink_flags(0x1));

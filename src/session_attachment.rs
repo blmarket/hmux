@@ -14,33 +14,13 @@ pub trait SessionAttachmentState {
     fn add_session_attached(&mut self);
 }
 
-/// The attached-client counter used by hmux.
-#[derive(Default)]
-pub struct RustSessionAttachmentState {
-    attached: u_int,
-}
-
-impl SessionAttachmentState for RustSessionAttachmentState {
-    fn session_attached(&self) -> u_int {
-        self.attached
-    }
-
-    fn clear_session_attached(&mut self) {
-        self.attached = 0;
-    }
-
-    fn add_session_attached(&mut self) {
-        self.attached = self.attached.wrapping_add(1);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn attached_clients_can_be_counted_and_cleared() {
-        let mut state = RustSessionAttachmentState::default();
+        let mut state = crate::session::session::default();
         assert_eq!(state.session_attached(), 0);
         state.add_session_attached();
         state.add_session_attached();

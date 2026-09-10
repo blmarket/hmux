@@ -29,41 +29,13 @@ pub trait SessionTimestampState {
     fn set_session_last_activity_time(&mut self, time: timeval);
 }
 
-/// The session timestamp storage used by hmux.
-#[derive(Default)]
-pub struct RustSessionTimestampState {
-    timestamps: SessionTimestamps,
-}
-
-impl SessionTimestampState for RustSessionTimestampState {
-    fn session_timestamps(&self) -> SessionTimestamps {
-        self.timestamps
-    }
-
-    fn set_session_creation_time(&mut self, time: timeval) {
-        self.timestamps.creation = time;
-    }
-
-    fn set_session_last_attached_time(&mut self, time: timeval) {
-        self.timestamps.last_attached = time;
-    }
-
-    fn set_session_activity_time(&mut self, time: timeval) {
-        self.timestamps.activity = time;
-    }
-
-    fn set_session_last_activity_time(&mut self, time: timeval) {
-        self.timestamps.last_activity = time;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn timestamps_are_independently_replaceable() {
-        let mut state = RustSessionTimestampState::default();
+        let mut state = crate::session::session::default();
         state.set_session_creation_time(timeval {
             tv_sec: 1,
             tv_usec: 2,

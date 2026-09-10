@@ -2,7 +2,6 @@
 
 use crate::types::u_int;
 use core::ffi::CStr;
-use std::ffi::CString;
 
 /// A command's optional source file and its line number.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -20,34 +19,13 @@ pub trait CommandSourceState {
     fn set_command_source(&mut self, source: CommandSource<'_>);
 }
 
-/// The command-source storage used by hmux.
-#[derive(Default)]
-pub struct RustCommandSourceState {
-    file: Option<CString>,
-    line: u_int,
-}
-
-impl CommandSourceState for RustCommandSourceState {
-    fn command_source(&self) -> CommandSource<'_> {
-        CommandSource {
-            file: self.file.as_deref(),
-            line: self.line,
-        }
-    }
-
-    fn set_command_source(&mut self, source: CommandSource<'_>) {
-        self.file = source.file.map(CStr::to_owned);
-        self.line = source.line;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn source_can_be_replaced_and_cleared() {
-        let mut state = RustCommandSourceState::default();
+        let mut state = *crate::tests::test_fixtures::empty_cmd();
         assert_eq!(
             state.command_source(),
             CommandSource {

@@ -19,29 +19,13 @@ pub trait SessionStatusState {
     fn set_session_status(&mut self, status: SessionStatus);
 }
 
-/// The session status-line storage used by hmux.
-#[derive(Default)]
-pub struct RustSessionStatusState {
-    status: SessionStatus,
-}
-
-impl SessionStatusState for RustSessionStatusState {
-    fn session_status(&self) -> SessionStatus {
-        self.status
-    }
-
-    fn set_session_status(&mut self, status: SessionStatus) {
-        self.status = status;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn placement_and_height_are_replaced_together() {
-        let mut state = RustSessionStatusState::default();
+        let mut state = crate::session::session::default();
         assert_eq!(state.session_status(), SessionStatus::default());
         state.set_session_status(SessionStatus {
             position: -1,
