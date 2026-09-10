@@ -35,8 +35,7 @@ enum Value<'a> {
     Commands(&'a CStr),
 }
 
-/// An owned value array, freed the way the command parser frees the values
-/// it passed in.
+/// An owned array of command parser values.
 struct Values(Vec<ArgsValue>);
 
 impl Values {
@@ -71,12 +70,6 @@ impl Values {
 
     fn as_slice(&self) -> &[ArgsValue] {
         &self.0
-    }
-}
-
-impl Drop for Values {
-    fn drop(&mut self) {
-        args_free_values(&mut self.0);
     }
 }
 
@@ -126,7 +119,7 @@ fn parse_spec(spec: &args_parse_t, words: &[&CStr]) -> Result<String, String> {
     unsafe {
         let args = parse_values(spec, &mut values)?;
         let printed = args_print(&args).to_string_lossy().into_owned();
-        args_free(args);
+
         Ok(printed)
     }
 }
@@ -144,7 +137,6 @@ fn an_empty_command_line_parses_to_empty_arguments() {
         assert_eq!(args.argument_count(), 0);
         assert!(args.argument_value(0).is_none());
         assert_eq!(args_print(&args).to_string_lossy(), "");
-        args_free(args);
     }
 }
 
@@ -172,7 +164,6 @@ fn a_command_list_word_ends_the_flags() {
     ]);
     let args = parse_values(&spec_cb(Some(parse_as_either)), &mut values).unwrap();
     assert_eq!(args.argument_count(), 1);
-    args_free(args);
 }
 
 #[test]
@@ -390,7 +381,6 @@ fn a_command_list_argument_is_kept_and_printed_in_braces() {
         assert!(!cached(value.unwrap()));
         assert_eq!(seen_str(args.argument_string(0)), "display-message hello");
         assert!(cached(value.unwrap()));
-        args_free(args);
     }
 }
 
@@ -409,7 +399,6 @@ fn either_kind_of_argument_is_copied_as_it_comes() {
         assert_eq!(seen_str(args.argument_string(0)), "x");
         assert_eq!(seen_str(args.argument_string(1)), "display-message hello");
         assert_eq!(seen_str(args.argument_string(2)), "");
-        args_free(args);
     }
 }
 
@@ -421,7 +410,6 @@ fn an_argument_of_an_unknown_kind_is_counted_but_left_empty() {
         assert_eq!(args.argument_count(), 1);
         assert!(matches!(args.argument_value(0).unwrap(), ArgsValue::None));
         assert_eq!(seen_str(args.argument_string(0)), "");
-        args_free(args);
     }
 }
 
@@ -444,85 +432,76 @@ fn the_type_names_are_what_the_log_prints() {
 #[test]
 fn a_flag_is_counted_every_time_it_is_given() {
     unsafe {
-        let args = Box::into_raw(Box::<RustArguments>::default());
-        assert_eq!((*args).argument_flag_count(b'a'), 0);
-        args_set(&mut *args, b'a', None, 0);
-        assert_eq!((*args).argument_flag_count(b'a'), 1);
-        args_set(&mut *args, b'a', None, 0);
-        assert_eq!((*args).argument_flag_count(b'a'), 2);
-        assert_eq!((*args).argument_flag_count(b'b'), 0);
-        args_free(Box::from_raw(args));
+        let mut args = RustArguments::default();
+        assert_eq!(args.argument_flag_count(b'a'), 0);
+        args_set(&mut args, b'a', None, 0);
+        assert_eq!(args.argument_flag_count(b'a'), 1);
+        args_set(&mut args, b'a', None, 0);
+        assert_eq!(args.argument_flag_count(b'a'), 2);
+        assert_eq!(args.argument_flag_count(b'b'), 0);
     }
 }
 
 #[test]
 fn the_last_value_given_for_a_flag_is_the_one_read_back() {
     unsafe {
-        let args = Box::into_raw(Box::<RustArguments>::default());
-        assert!((*args).argument_flag_string(b'a').is_none());
-        args_set(&mut *args, b'a', None, 0);
-        assert!((*args).argument_flag_string(b'a').is_none());
-        args_set(&mut *args, b'a', string_value(c"one"), 0);
-        args_set(&mut *args, b'a', string_value(c"two"), 0);
-        assert_eq!(seen_str((*args).argument_flag_string(b'a')), "two");
-        args_free(Box::from_raw(args));
+        let mut args = RustArguments::default();
+        assert!(args.argument_flag_string(b'a').is_none());
+        args_set(&mut args, b'a', None, 0);
+        assert!(args.argument_flag_string(b'a').is_none());
+        args_set(&mut args, b'a', string_value(c"one"), 0);
+        args_set(&mut args, b'a', string_value(c"two"), 0);
+        assert_eq!(seen_str(args.argument_flag_string(b'a')), "two");
     }
 }
 
 #[test]
 fn the_flag_text_comes_back_as_nothing_when_the_flag_was_not_given() {
     unsafe {
-        let args = Box::into_raw(Box::<RustArguments>::default());
-        assert_eq!((*args).argument_flag_string(b'a'), None);
-        args_set(&mut *args, b'a', None, 0);
-        assert_eq!((*args).argument_flag_string(b'a'), None);
-        args_set(&mut *args, b'a', string_value(c"one"), 0);
-        assert_eq!((*args).argument_flag_string(b'a'), Some(c"one"));
-        args_free(Box::from_raw(args));
+        let mut args = RustArguments::default();
+        assert_eq!(args.argument_flag_string(b'a'), None);
+        args_set(&mut args, b'a', None, 0);
+        assert_eq!(args.argument_flag_string(b'a'), None);
+        args_set(&mut args, b'a', string_value(c"one"), 0);
+        assert_eq!(args.argument_flag_string(b'a'), Some(c"one"));
     }
 }
 
 #[test]
 fn the_values_of_a_flag_come_back_in_order() {
     unsafe {
-        let args = Box::into_raw(Box::<RustArguments>::default());
-        assert!((*args).argument_flag_values(b'a').is_empty());
-        args_set(&mut *args, b'a', string_value(c"one"), 0);
-        args_set(&mut *args, b'a', string_value(c"two"), 0);
-        let values = {
-            let args: &RustArguments = &*args;
-            args.argument_flag_values(b'a')
-        };
+        let mut args = RustArguments::default();
+        assert!(args.argument_flag_values(b'a').is_empty());
+        args_set(&mut args, b'a', string_value(c"one"), 0);
+        args_set(&mut args, b'a', string_value(c"two"), 0);
+        let values = args.argument_flag_values(b'a');
         assert_eq!(values.len(), 2);
         assert_eq!(values[0].string(), c"one");
         assert_eq!(values[1].string(), c"two");
-        args_free(Box::from_raw(args));
     }
 }
 
 #[test]
 fn a_value_of_no_type_is_thrown_away_by_args_set() {
     unsafe {
-        let args = Box::into_raw(Box::<RustArguments>::default());
+        let mut args = RustArguments::default();
         let value = ArgsValue::default();
-        args_set(&mut *args, b'a', Some(value), 0);
-        assert_eq!((*args).argument_flag_count(b'a'), 1);
-        assert!((*args).argument_flag_values(b'a').is_empty());
-        args_free(Box::from_raw(args));
+        args_set(&mut args, b'a', Some(value), 0);
+        assert_eq!(args.argument_flag_count(b'a'), 1);
+        assert!(args.argument_flag_values(b'a').is_empty());
     }
 }
 
 #[test]
 fn the_flags_are_walked_in_order() {
     unsafe {
-        let args = Box::into_raw(Box::<RustArguments>::default());
-        assert_eq!((*args).argument_flags_iter().next(), None);
+        let mut args = RustArguments::default();
+        assert_eq!(args.argument_flags_iter().next(), None);
         for flag in *b"cab" {
-            args_set(&mut *args, flag, None, 0);
+            args_set(&mut args, flag, None, 0);
         }
-        let walked: Vec<u_char> = (*args).argument_flags_iter().collect();
+        let walked: Vec<u_char> = args.argument_flags_iter().collect();
         assert_eq!(walked, [b'a', b'b', b'c']);
-        args_free(Box::from_raw(args));
     }
 }
 
@@ -537,7 +516,6 @@ fn the_arguments_are_read_by_index() {
         assert!(args.argument_string(2).is_none());
         assert_eq!(args.argument_value(0).unwrap().string(), c"x");
         assert!(args.argument_value(2).is_none());
-        args_free(args);
     }
 }
 
@@ -602,33 +580,30 @@ fn arguments_are_copied_with_the_template_words_replaced() {
             args_print(&copy).to_string_lossy(),
             "-a one-two \"x one\" { display-message hello } "
         );
-        args_free(args);
     }
 }
 
 #[test]
 fn copying_keeps_the_flags_and_their_values() {
     unsafe {
-        let args = Box::into_raw(Box::<RustArguments>::default());
-        args_set(&mut *args, b'a', None, 0);
-        args_set(&mut *args, b'a', None, 0);
-        args_set(&mut *args, b'b', string_value(c"one"), 0);
-        let copy = (*args).copy_with_arguments(&[]);
+        let mut args = RustArguments::default();
+        args_set(&mut args, b'a', None, 0);
+        args_set(&mut args, b'a', None, 0);
+        args_set(&mut args, b'b', string_value(c"one"), 0);
+        let copy = args.copy_with_arguments(&[]);
         assert_eq!(copy.argument_flag_count(b'a'), 2);
         assert_eq!(seen_str(copy.argument_flag_string(b'b')), "one");
         assert_eq!(args_print(&copy).to_string_lossy(), "-aa -b one");
-        args_free(Box::from_raw(args));
     }
 }
 
 #[test]
 fn an_optional_value_flag_is_printed_before_the_arguments() {
     unsafe {
-        let args = Box::into_raw(Box::<RustArguments>::default());
-        args_set(&mut *args, b'a', None, ARGS_ENTRY_OPTIONAL_VALUE);
-        args_set(&mut *args, b'b', string_value(c"one"), 0);
-        assert_eq!(args_print(&*args).to_string_lossy(), "-a -b one");
-        args_free(Box::from_raw(args));
+        let mut args = RustArguments::default();
+        args_set(&mut args, b'a', None, ARGS_ENTRY_OPTIONAL_VALUE);
+        args_set(&mut args, b'b', string_value(c"one"), 0);
+        assert_eq!(args_print(&args).to_string_lossy(), "-a -b one");
     }
 }
 
@@ -656,30 +631,28 @@ fn the_arguments_flatten_back_to_a_word_list() {
         assert_eq!(argv.len(), 2);
         assert_eq!(argv[0].as_bytes(), b"x");
         assert_eq!(argv[1].as_bytes(), b"display-message hello");
-        args_free(args);
     }
 }
 
 #[test]
 fn a_number_argument_is_read_from_the_last_value_of_a_flag() {
     unsafe {
-        let args = Box::into_raw(Box::<RustArguments>::default());
+        let mut args = RustArguments::default();
         let mut cause = None;
-        assert_eq!(args_strtonum(&*args, b'a', 0, 10, &mut cause), 0);
+        assert_eq!(args_strtonum(&args, b'a', 0, 10, &mut cause), 0);
         assert_eq!(cause.take().unwrap().to_string_lossy(), "missing");
 
-        args_set(&mut *args, b'a', None, 0);
-        assert_eq!(args_strtonum(&*args, b'a', 0, 10, &mut cause), 0);
+        args_set(&mut args, b'a', None, 0);
+        assert_eq!(args_strtonum(&args, b'a', 0, 10, &mut cause), 0);
         assert_eq!(cause.take().unwrap().to_string_lossy(), "missing");
 
-        args_set(&mut *args, b'a', string_value(c"3"), 0);
-        assert_eq!(args_strtonum(&*args, b'a', 0, 10, &mut cause), 3);
+        args_set(&mut args, b'a', string_value(c"3"), 0);
+        assert_eq!(args_strtonum(&args, b'a', 0, 10, &mut cause), 3);
         assert!(cause.is_none());
 
-        args_set(&mut *args, b'a', string_value(c"11"), 0);
-        assert_eq!(args_strtonum(&*args, b'a', 0, 10, &mut cause), 0);
+        args_set(&mut args, b'a', string_value(c"11"), 0);
+        assert_eq!(args_strtonum(&args, b'a', 0, 10, &mut cause), 0);
         assert_eq!(cause.take().unwrap().to_string_lossy(), "too large");
-        args_free(Box::from_raw(args));
     }
 }
 
@@ -687,16 +660,15 @@ fn a_number_argument_is_read_from_the_last_value_of_a_flag() {
 fn a_number_argument_has_to_be_a_string() {
     let _guard = exclusive();
     unsafe {
-        let args = Box::into_raw(Box::<RustArguments>::default());
+        let mut args = RustArguments::default();
         let value = ArgsValue::Commands {
             cmdlist: Some(cmdlist(c"display-message hello")),
             cached: OnceCell::new(),
         };
-        args_set(&mut *args, b'a', Some(value), 0);
+        args_set(&mut args, b'a', Some(value), 0);
         let mut cause = None;
-        assert_eq!(args_strtonum(&*args, b'a', 0, 10, &mut cause), 0);
+        assert_eq!(args_strtonum(&args, b'a', 0, 10, &mut cause), 0);
         assert_eq!(cause.take().unwrap().to_string_lossy(), "missing");
-        args_free(Box::from_raw(args));
     }
 }
 
@@ -705,35 +677,34 @@ fn a_number_argument_can_be_expanded_first() {
     let _guard = exclusive();
     let runner = Runner::new();
     unsafe {
-        let args = Box::into_raw(Box::<RustArguments>::default());
+        let mut args = RustArguments::default();
         let mut cause = None;
         assert_eq!(
-            args_strtonum_and_expand(&*args, b'a', 0, 10, &runner.item(), &mut cause),
+            args_strtonum_and_expand(&args, b'a', 0, 10, &runner.item(), &mut cause),
             0
         );
         assert_eq!(cause.take().unwrap().to_string_lossy(), "missing");
 
-        args_set(&mut *args, b'a', None, 0);
+        args_set(&mut args, b'a', None, 0);
         assert_eq!(
-            args_strtonum_and_expand(&*args, b'a', 0, 10, &runner.item(), &mut cause),
+            args_strtonum_and_expand(&args, b'a', 0, 10, &runner.item(), &mut cause),
             0
         );
         assert_eq!(cause.take().unwrap().to_string_lossy(), "missing");
 
-        args_set(&mut *args, b'a', string_value(c"#{e|+|:1,2}"), 0);
+        args_set(&mut args, b'a', string_value(c"#{e|+|:1,2}"), 0);
         assert_eq!(
-            args_strtonum_and_expand(&*args, b'a', 0, 10, &runner.item(), &mut cause),
+            args_strtonum_and_expand(&args, b'a', 0, 10, &runner.item(), &mut cause),
             3
         );
         assert!(cause.is_none());
 
-        args_set(&mut *args, b'a', string_value(c"x"), 0);
+        args_set(&mut args, b'a', string_value(c"x"), 0);
         assert_eq!(
-            args_strtonum_and_expand(&*args, b'a', 0, 10, &runner.item(), &mut cause),
+            args_strtonum_and_expand(&args, b'a', 0, 10, &runner.item(), &mut cause),
             0
         );
         assert_eq!(cause.take().unwrap().to_string_lossy(), "invalid");
-        args_free(Box::from_raw(args));
     }
 }
 
@@ -765,19 +736,18 @@ fn a_percentage_is_taken_of_the_current_value() {
 #[test]
 fn a_percentage_argument_comes_from_the_last_value_of_a_flag() {
     unsafe {
-        let args = Box::into_raw(Box::<RustArguments>::default());
+        let mut args = RustArguments::default();
         let mut cause = None;
-        assert_eq!(args_percentage(&*args, b'a', 0, 100, 50, &mut cause), 0);
+        assert_eq!(args_percentage(&args, b'a', 0, 100, 50, &mut cause), 0);
         assert_eq!(cause.take().unwrap().to_string_lossy(), "missing");
 
-        args_set(&mut *args, b'a', None, 0);
-        assert_eq!(args_percentage(&*args, b'a', 0, 100, 50, &mut cause), 0);
+        args_set(&mut args, b'a', None, 0);
+        assert_eq!(args_percentage(&args, b'a', 0, 100, 50, &mut cause), 0);
         assert_eq!(cause.take().unwrap().to_string_lossy(), "empty");
 
-        args_set(&mut *args, b'a', string_value(c"50%"), 0);
-        assert_eq!(args_percentage(&*args, b'a', 0, 100, 50, &mut cause), 25);
+        args_set(&mut args, b'a', string_value(c"50%"), 0);
+        assert_eq!(args_percentage(&args, b'a', 0, 100, 50, &mut cause), 25);
         assert!(cause.is_none());
-        args_free(Box::from_raw(args));
     }
 }
 
@@ -786,28 +756,27 @@ fn an_expanded_percentage_argument_comes_from_the_last_value_of_a_flag() {
     let _guard = exclusive();
     let runner = Runner::new();
     unsafe {
-        let args = Box::into_raw(Box::<RustArguments>::default());
+        let mut args = RustArguments::default();
         let mut cause = None;
         assert_eq!(
-            args_percentage_and_expand(&*args, b'a', 0, 100, 50, &runner.item(), &mut cause),
+            args_percentage_and_expand(&args, b'a', 0, 100, 50, &runner.item(), &mut cause),
             0
         );
         assert_eq!(cause.take().unwrap().to_string_lossy(), "missing");
 
-        args_set(&mut *args, b'a', None, 0);
+        args_set(&mut args, b'a', None, 0);
         assert_eq!(
-            args_percentage_and_expand(&*args, b'a', 0, 100, 50, &runner.item(), &mut cause),
+            args_percentage_and_expand(&args, b'a', 0, 100, 50, &runner.item(), &mut cause),
             0
         );
         assert_eq!(cause.take().unwrap().to_string_lossy(), "empty");
 
-        args_set(&mut *args, b'a', string_value(c"#{e|+|:20,30}%"), 0);
+        args_set(&mut args, b'a', string_value(c"#{e|+|:20,30}%"), 0);
         assert_eq!(
-            args_percentage_and_expand(&*args, b'a', 0, 100, 50, &runner.item(), &mut cause),
+            args_percentage_and_expand(&args, b'a', 0, 100, 50, &runner.item(), &mut cause),
             25
         );
         assert!(cause.is_none());
-        args_free(Box::from_raw(args));
     }
 }
 
@@ -1064,20 +1033,6 @@ fn making_the_commands_at_once_reports_a_parse_error_to_the_queue() {
 
         assert!(cmd_make_commands_now(&command, &runner.item(), 1, 0).is_none());
     }
-}
-
-pub(crate) fn args_free_values(values: &mut [ArgsValue]) {
-    for value in values {
-        args_free_value(value);
-    }
-}
-
-pub(crate) fn args_free(args: Box<RustArguments>) {
-    drop(args);
-}
-
-pub(crate) fn args_free_value(value: &mut ArgsValue) {
-    *value = ArgsValue::None;
 }
 
 #[test]
