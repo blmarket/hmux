@@ -130,7 +130,7 @@ unsafe fn cmd_bind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let note = args.argument_flag_string(b'N');
     let count = args.argument_count();
 
-    let keyname = unsafe { args.argument_string(0).expect("argument count checked") };
+    let keyname = args.argument_string(0).expect("argument count checked");
     let key = RustKeyStringCodec.parse_key(keyname);
     if key == KEYC_NONE || key == KEYC_UNKNOWN {
         unsafe { item.error(c"unknown key: %s", fmt_args![keyname]) };

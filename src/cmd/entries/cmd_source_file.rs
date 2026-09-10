@@ -248,7 +248,7 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         cmd_source_file_quote_for_glob(client_working_directory(c.as_ref(), None).as_c_str())
     };
     for i in 0..args.argument_count() {
-        let argument = unsafe { args.argument_string(i).expect("argument index checked") };
+        let argument = args.argument_string(i).expect("argument index checked");
         let expanded = (args.argument_flag_count(b'F') != 0)
             .then(|| unsafe { format_single_from_target(item, argument) });
         let path = expanded.as_deref().unwrap_or(argument);

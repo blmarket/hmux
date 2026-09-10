@@ -487,7 +487,7 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 menu_item.key = RustKeyStringCodec.parse_key(key);
                 let fresh5 = i;
                 i = i.wrapping_add(1);
-                let cmd = unsafe {
+                let cmd = {
                     args.argument_string(fresh5)
                         .expect("argument index checked")
                 };
@@ -737,7 +737,7 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                 default_command = Some(s.options().string_ref(c"default-command"));
                                 shellcmd = default_command.as_deref();
                             } else if count == 1 as u_int {
-                                unsafe {
+                                {
                                     shellcmd = Some(
                                         args.argument_string(0).expect("argument count checked"),
                                     )

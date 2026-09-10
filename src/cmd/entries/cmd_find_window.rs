@@ -77,7 +77,7 @@ pub(crate) static cmd_find_window_entry: RustCommandEntry = RustCommandEntry {
 /// parser has refused the command before exec runs if it is missing, and
 /// there is no null to guard here.
 unsafe fn cmd_find_window_filter(args: &RustArguments) -> Vec<u8> {
-    unsafe {
+    {
         let s = args.argument_string(0)
             .expect("argument count checked")
             .to_bytes();

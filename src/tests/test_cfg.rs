@@ -21,7 +21,7 @@ impl Loading {
 
 impl Drop for Loading {
     fn drop(&mut self) {
-        unsafe {
+        {
             with_config(|config| config.client = self.0.take());
             replace_configuration_finished(self.1);
         }

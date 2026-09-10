@@ -40,7 +40,7 @@ pub(crate) static cmd_unbind_key_entry: RustCommandEntry = {
 unsafe fn cmd_unbind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args: &RustArguments = cmd_get_args(self_0);
 
-    let keystr = unsafe { args.argument_string(0) };
+    let keystr = args.argument_string(0);
     let quiet: core::ffi::c_int = {
         let flag = 'q' as i32 as u_char;
         args.argument_flag_count(flag)

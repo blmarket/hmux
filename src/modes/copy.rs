@@ -2427,7 +2427,7 @@ unsafe fn window_copy_cmd_other_end(cs: &mut window_copy_cmd_state<'_>) -> windo
 unsafe fn window_copy_cmd_selection_mode(
     cs: &mut window_copy_cmd_state<'_>,
 ) -> window_copy_cmd_action {
-    unsafe {
+    {
         let wme = &mut *cs.wme;
         let so = (cs.s.expect("the copy command has a session"))
             .options_ref()

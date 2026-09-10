@@ -102,7 +102,7 @@ impl Writer {
             screen: Screen::new(sx, sy, 100),
             state: screen_write_state::default(),
         };
-        w.state = unsafe { screen_write_start(&mut w.screen) };
+        w.state = screen_write_start(&mut w.screen);
         w
     }
 
@@ -1010,7 +1010,7 @@ fn a_padding_cell_is_not_written_at_all() {
 fn with_wrapping_off_a_character_that_does_not_fit_is_dropped() {
     let _guard = globals();
     let mut w = Writer::new(4, 2);
-    unsafe { screen_write_mode_clear(&mut w.ctx(), MODE_WRAP) };
+    screen_write_mode_clear(&mut w.ctx(), MODE_WRAP);
     w.move_to(3, 0);
     let wide = cell(WIDE, 2);
     unsafe { screen_write_cell(&mut w.ctx(), &wide) };
@@ -1020,7 +1020,7 @@ fn with_wrapping_off_a_character_that_does_not_fit_is_dropped() {
     let mut past = Writer::new(4, 2);
     past.puts("abcd");
     assert_eq!(past.cursor(), (4, 0));
-    unsafe { screen_write_mode_clear(&mut past.ctx(), MODE_WRAP) };
+    screen_write_mode_clear(&mut past.ctx(), MODE_WRAP);
     past.puts("e");
     assert_eq!(past.cursor(), (4, 0));
     assert_eq!(past.lines(), ["abcd", ""]);

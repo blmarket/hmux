@@ -116,14 +116,14 @@ log_test!(the_level_starts_at_nothing_and_goes_up_one_at_a_time, {
 log_test!(a_log_at_level_zero_is_not_opened_at_all, {
     let log = Log::new();
     log.open();
-    unsafe { log_debug(c"nothing", fmt_args![]) };
+    log_debug(c"nothing", fmt_args![]);
     assert!(!log.path().exists());
     assert_eq!(log.lines(), Vec::<String>::new());
 });
 
 log_test!(a_log_that_is_open_takes_what_is_written_to_it, {
     let log = Log::new();
-    unsafe {
+    {
         log_add_level();
         log.open();
         log_debug(c"one %d", fmt_args![1 as c_int]);
@@ -134,7 +134,7 @@ log_test!(a_log_that_is_open_takes_what_is_written_to_it, {
 
 log_test!(what_is_written_is_escaped, {
     let log = Log::new();
-    unsafe {
+    {
         log_add_level();
         log.open();
         log_debug(c"a\nb\tc\x07d\x80e", fmt_args![]);
@@ -144,7 +144,7 @@ log_test!(what_is_written_is_escaped, {
 
 log_test!(a_log_that_is_closed_takes_nothing_more, {
     let log = Log::new();
-    unsafe {
+    {
         log_add_level();
         log.open();
         log_debug(c"before", fmt_args![]);
@@ -157,7 +157,7 @@ log_test!(a_log_that_is_closed_takes_nothing_more, {
 
 log_test!(opening_a_log_twice_carries_on_where_the_first_left_off, {
     let log = Log::new();
-    unsafe {
+    {
         log_add_level();
         log.open();
         log_debug(c"first", fmt_args![]);
@@ -199,7 +199,7 @@ log_test!(the_level_can_be_borrowed_and_is_given_back, {
 
 log_test!(a_log_that_cannot_be_opened_stays_closed, {
     let log = Log::new();
-    unsafe {
+    {
         log_add_level();
         log_open(c"no/such/place");
         log_debug(c"nowhere", fmt_args![]);
@@ -212,7 +212,7 @@ log_test!(a_log_is_named_after_what_it_was_opened_with, {
     let log = Log::new();
     let other = std::path::PathBuf::from(format!("tmux-other-name-{}.log", std::process::id()));
     let _ = std::fs::remove_file(&other);
-    unsafe {
+    {
         log_add_level();
         log_open(c"other-name");
         log_debug(c"in the other one", fmt_args![]);
@@ -233,7 +233,7 @@ log_test!(concurrent_writes_and_reopens_keep_each_record_intact, {
     log.open();
     std::thread::scope(|scope| {
         for worker in 0..4 {
-            scope.spawn(move || unsafe {
+            scope.spawn(move || {
                 for record in 0..100 {
                     log_debug(c"worker %d record %d", fmt_args![worker, record]);
                 }
@@ -247,7 +247,7 @@ log_test!(concurrent_writes_and_reopens_keep_each_record_intact, {
         });
     });
     log.open();
-    unsafe {
+    {
         log_debug(c"final", fmt_args![]);
     }
     log_close();

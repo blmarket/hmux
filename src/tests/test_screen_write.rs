@@ -28,7 +28,7 @@ impl Writer {
             screen: Screen::new(sx, sy, hlimit),
             state: screen_write_state::default(),
         };
-        w.state = unsafe { screen_write_start(&mut w.screen) };
+        w.state = screen_write_start(&mut w.screen);
         w
     }
 
@@ -313,7 +313,7 @@ fn a_scrolling_region_must_be_more_than_one_line_and_fit() {
 fn a_mode_is_set_and_cleared() {
     let _guard = globals();
     let mut w = Writer::new(10, 3, 100);
-    unsafe {
+    {
         let before = w.screen().mode();
         screen_write_mode_set(&mut w.ctx(), MODE_INSERT);
         assert_eq!(w.screen().mode(), before | MODE_INSERT);
@@ -1004,7 +1004,7 @@ fn a_line_wraps_when_it_is_full() {
 fn a_line_that_may_not_wrap_keeps_writing_the_last_cell() {
     let _guard = globals();
     let mut w = Writer::new(3, 2, 100);
-    unsafe { screen_write_mode_clear(&mut w.ctx(), MODE_WRAP) };
+    screen_write_mode_clear(&mut w.ctx(), MODE_WRAP);
     w.puts("abcde");
     assert_eq!(w.lines(), ["abe", ""]);
 }
@@ -1017,7 +1017,7 @@ fn insert_mode_pushes_the_line_along() {
     w.puts("abcd");
     w.flush();
     w.move_to(1, 0);
-    unsafe { screen_write_mode_set(&mut w.ctx(), MODE_INSERT) };
+    screen_write_mode_set(&mut w.ctx(), MODE_INSERT);
     w.puts("x");
     assert_eq!(w.lines()[0], "axbcd");
 }
@@ -1104,12 +1104,12 @@ fn a_cell_the_collector_cannot_hold_goes_straight_through() {
     assert_eq!(w.cursor(), (1, 0));
 
     let mut w = Writer::new(8, 2, 100);
-    unsafe { screen_write_mode_clear(&mut w.ctx(), MODE_WRAP) };
+    screen_write_mode_clear(&mut w.ctx(), MODE_WRAP);
     w.collect("ab");
     assert_eq!(w.peek()[0], "ab");
 
     let mut w = Writer::new(8, 2, 100);
-    unsafe { screen_write_mode_set(&mut w.ctx(), MODE_INSERT) };
+    screen_write_mode_set(&mut w.ctx(), MODE_INSERT);
     w.collect("ab");
     assert_eq!(w.peek()[0], "ab");
 
@@ -1227,7 +1227,7 @@ fn the_debug_paths_run_at_a_raised_log_level() {
     let _guard = globals();
     crate::log::log_with_level(1, || {
         let mut w = Writer::new(6, 3, 100);
-        unsafe {
+        {
             screen_write_mode_set(&mut w.ctx(), MODE_INSERT);
             screen_write_mode_clear(&mut w.ctx(), MODE_INSERT);
         }

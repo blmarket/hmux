@@ -208,7 +208,7 @@ unsafe fn cmd_list_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut table = None;
     let mut only: key_code = KEYC_UNKNOWN;
 
-    let keystr = unsafe { args.argument_string(0) };
+    let keystr = args.argument_string(0);
     if let Some(keystr) = keystr {
         only = RustKeyStringCodec.parse_key(keystr);
         if only == KEYC_UNKNOWN {

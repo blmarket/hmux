@@ -94,7 +94,7 @@ unsafe fn cmd_list_commands(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     unsafe { format_defaults_for_handles(&mut ft, None, None, None, None) };
 
     let catalog = RustCommandCatalog;
-    let command = unsafe { args.argument_string(0) };
+    let command = args.argument_string(0);
     if let Some(command) = command {
         let entry = match catalog.find(command) {
             Ok(entry) => entry,

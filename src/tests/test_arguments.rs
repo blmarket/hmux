@@ -393,7 +393,7 @@ fn either_kind_of_argument_is_copied_as_it_comes() {
         Value::Commands(c"display-message hello"),
         Value::None,
     ]);
-    unsafe {
+    {
         let args = parse_values(&spec_cb(Some(parse_as_either)), &mut values).unwrap();
         assert_eq!(args.argument_count(), 3);
         assert_eq!(seen_str(args.argument_string(0)), "x");
@@ -405,7 +405,7 @@ fn either_kind_of_argument_is_copied_as_it_comes() {
 #[test]
 fn an_argument_of_an_unknown_kind_is_counted_but_left_empty() {
     let mut values = Values::new(&[Value::String(c"cmd"), Value::String(c"x")]);
-    unsafe {
+    {
         let args = parse_values(&spec_cb(Some(parse_as_nothing_known)), &mut values).unwrap();
         assert_eq!(args.argument_count(), 1);
         assert!(matches!(args.argument_value(0).unwrap(), ArgsValue::None));
@@ -508,7 +508,7 @@ fn the_flags_are_walked_in_order() {
 #[test]
 fn the_arguments_are_read_by_index() {
     let mut values = Values::words(&[c"cmd", c"x", c"y"]);
-    unsafe {
+    {
         let args = parse_values(&spec(c""), &mut values).unwrap();
         assert_eq!(args.argument_count(), 2);
         assert_eq!(seen_str(args.argument_string(0)), "x");

@@ -124,7 +124,7 @@ unsafe fn cmd_set_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { item.error(c"no data specified", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
-    let value = unsafe { args.argument_string(0).expect("argument count checked") };
+    let value = args.argument_string(0).expect("argument count checked");
     if value.is_empty() {
         return CMD_RETURN_NORMAL;
     }

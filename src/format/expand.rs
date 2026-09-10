@@ -1570,7 +1570,7 @@ unsafe fn format_cb_client_theme(ft: &format_tree) -> Option<CString> {
     }
 }
 unsafe fn format_cb_config_files(_ft: &format_tree) -> Option<CString> {
-    unsafe {
+    {
         let mut bytes: Vec<u8> = Vec::new();
         for file in &configuration_files() {
             bytes.extend_from_slice(file.as_bytes());

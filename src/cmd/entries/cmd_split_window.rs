@@ -128,7 +128,7 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             args.argument_flag_count(flag)
         }
     };
-    if unsafe {
+    if {
         empty != 0
             && count != 0 as u_int
             && (count != 1 as u_int

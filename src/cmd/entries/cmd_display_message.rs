@@ -199,7 +199,7 @@ unsafe fn cmd_display_message_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval
 
     let given = match count {
         0 => args.argument_flag_string(b'F'),
-        _ => unsafe { args.argument_string(0) },
+        _ => args.argument_string(0),
     };
     let template = given.unwrap_or(DISPLAY_MESSAGE_TEMPLATE);
 

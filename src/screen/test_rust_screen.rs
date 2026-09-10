@@ -298,14 +298,14 @@ fn the_title_stack_holds_ten() {
     let mut s = RustScreen::new_with_server_options(10, 5, 0);
     for i in 0..12 {
         let title = CString::new(format!("t{i}")).unwrap();
-        unsafe {
+        {
             s.set_title(&title, 0);
             s.push_title();
         }
     }
     assert_eq!(s.0.ntitles, 10);
     for i in (2..12).rev() {
-        unsafe { s.pop_title() };
+        s.pop_title();
         assert_eq!(
             s.title_text(),
             format!("t{i}"),

@@ -104,7 +104,7 @@ fn cmd_show_environment_lines(
 unsafe fn cmd_show_environment_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args: &RustArguments = cmd_get_args(self_0);
     let target = &item.target;
-    let name = unsafe { args.argument_string(0) };
+    let name = args.argument_string(0);
     let tflag = {
         let flag = 't' as i32 as u_char;
         args.argument_flag_string(flag)

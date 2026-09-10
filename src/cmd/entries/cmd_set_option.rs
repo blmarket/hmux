@@ -158,7 +158,7 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             Some(name) => name,
             None => unreachable!("option name was checked above"),
         };
-        let mut value = unsafe { args.argument_string(1) };
+        let mut value = args.argument_string(1);
         if let Some(raw) = value
             && ({
                 let flag = 'F' as i32 as u_char;

@@ -95,7 +95,7 @@ fn remove_if_idle(name: &CStr) {
 
 unsafe fn cmd_wait_for_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args = cmd_get_args(self_0);
-    let name = unsafe { args.argument_string(0).expect("argument count checked") };
+    let name = args.argument_string(0).expect("argument count checked");
     if args.argument_flag_count(b'S') != 0 {
         return unsafe { cmd_wait_for_signal(name) };
     }
