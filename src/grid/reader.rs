@@ -1,5 +1,5 @@
 use super::store::{
-    Grid, grid_create, grid_default_cell, grid_get_cell, grid_get_line, grid_in_set,
+    grid_create, grid_default_cell, grid_get_cell, grid_get_line, grid_in_set,
     grid_line_length, grid_peek_line, grid_set_cell, grid_set_cells, grid_set_padding,
     grid_set_tab,
 };
@@ -65,13 +65,13 @@ pub struct RustGridReader<'a> {
     cy: u_int,
 }
 
-/// A grid fixture whose representation stays behind the reader boundary.
-pub struct RustGrid(Box<grid>);
+/// The Rust terminal grid implementation.
+pub type RustGrid = grid;
 
 impl RustGrid {
     /// Builds an empty grid with the given visible size and history limit.
     pub fn new(sx: u_int, sy: u_int, hlimit: u_int) -> Self {
-        Self(grid_create(sx, sy, hlimit))
+        *grid_create(sx, sy, hlimit)
     }
 
     /// Build a grid from lines, treating a trailing backslash as a wrap marker.
@@ -84,7 +84,7 @@ impl RustGrid {
             };
             grid.write(0, py as u_int, text);
             if wrapped {
-                grid_get_line(&mut grid.0, py as u_int).flags |= GRID_LINE_WRAPPED;
+                grid_get_line(&mut grid, py as u_int).flags |= GRID_LINE_WRAPPED;
             }
         }
         grid
@@ -92,12 +92,12 @@ impl RustGrid {
 
     /// Start a reader at `(cx, cy)`.
     pub fn reader(&self, cx: u_int, cy: u_int) -> RustGridReader<'_> {
-        RustGridReader::start(&self.0, cx, cy)
+        RustGridReader::start(self, cx, cy)
     }
 
     /// Write text beginning at `(px, py)`.
     pub fn write(&mut self, px: u_int, py: u_int, text: &str) {
-        grid_set_cells(&mut self.0, px, py, &grid_default_cell, text.as_bytes());
+        grid_set_cells(self, px, py, &grid_default_cell, text.as_bytes());
     }
 
     /// Write a two-column character and its padding beginning at `(px, py)`.
@@ -109,119 +109,18 @@ impl RustGrid {
         cell.data.have = encoded.len() as u8;
         cell.data.size = cell.data.have;
         cell.data.width = 2;
-        grid_set_cell(&mut self.0, px, py, &cell);
-        grid_set_padding(&mut self.0, px + 1, py);
+        grid_set_cell(self, px, py, &cell);
+        grid_set_padding(self, px + 1, py);
     }
 
     /// Write a tab and its padding beginning at `(px, py)`.
     pub fn write_tab(&mut self, px: u_int, py: u_int, width: u_int) {
         let mut cell = grid_default_cell;
         grid_set_tab(&mut cell, width);
-        grid_set_cell(&mut self.0, px, py, &cell);
+        grid_set_cell(self, px, py, &cell);
         for offset in 1..width {
-            grid_set_padding(&mut self.0, px + offset, py);
+            grid_set_padding(self, px + offset, py);
         }
-    }
-}
-
-impl Grid for RustGrid {
-    type Cell = grid_cell;
-    type Screen = crate::screen::RustScreen;
-
-    fn dimensions(&self) -> (u_int, u_int, u_int, u_int) {
-        self.0.dimensions()
-    }
-
-    fn content_eq(&self, other: &Self) -> bool {
-        self.0.content_eq(&other.0)
-    }
-
-    fn cell(&self, px: u_int, py: u_int) -> Self::Cell {
-        self.0.cell(px, py)
-    }
-
-    fn set_cell(&mut self, px: u_int, py: u_int, cell: &Self::Cell) {
-        self.0.set_cell(px, py, cell)
-    }
-
-    fn set_padding(&mut self, px: u_int, py: u_int) {
-        self.0.set_padding(px, py)
-    }
-
-    fn set_cells(&mut self, px: u_int, py: u_int, cell: &Self::Cell, text: &[u8]) {
-        self.0.set_cells(px, py, cell, text)
-    }
-
-    fn clear(&mut self, px: u_int, py: u_int, nx: u_int, ny: u_int, background: u_int) {
-        self.0.clear(px, py, nx, ny, background)
-    }
-
-    fn clear_lines(&mut self, py: u_int, ny: u_int, background: u_int) {
-        self.0.clear_lines(py, ny, background)
-    }
-
-    fn move_lines(&mut self, dy: u_int, py: u_int, ny: u_int, background: u_int) {
-        self.0.move_lines(dy, py, ny, background)
-    }
-
-    fn move_cells(&mut self, dx: u_int, px: u_int, py: u_int, nx: u_int, background: u_int) {
-        self.0.move_cells(dx, px, py, nx, background)
-    }
-
-    fn collect_history(&mut self, all: bool) {
-        self.0.collect_history(all)
-    }
-
-    fn remove_history(&mut self, lines: u_int) {
-        self.0.remove_history(lines)
-    }
-
-    fn clear_history(&mut self) {
-        self.0.clear_history()
-    }
-
-    fn scroll_history(&mut self, background: u_int) {
-        self.0.scroll_history(background)
-    }
-
-    fn scroll_history_region(&mut self, upper: u_int, lower: u_int, background: u_int) {
-        self.0.scroll_history_region(upper, lower, background)
-    }
-
-    fn duplicate_lines(&mut self, dy: u_int, source: &Self, sy: u_int, ny: u_int) {
-        self.0.duplicate_lines(dy, &source.0, sy, ny)
-    }
-
-    fn reflow(&mut self, width: u_int) {
-        self.0.reflow(width)
-    }
-
-    fn wrap_position(&self, px: u_int, py: u_int) -> (u_int, u_int) {
-        self.0.wrap_position(px, py)
-    }
-
-    fn unwrap_position(&self, wx: u_int, wy: u_int) -> (u_int, u_int) {
-        self.0.unwrap_position(wx, wy)
-    }
-
-    fn line_length(&self, py: u_int) -> u_int {
-        self.0.line_length(py)
-    }
-
-    fn in_set(&self, px: u_int, py: u_int, set: &CStr) -> c_int {
-        self.0.in_set(px, py, set)
-    }
-
-    fn string_cells(
-        &self,
-        px: u_int,
-        py: u_int,
-        nx: u_int,
-        last_cell: Option<&mut Self::Cell>,
-        flags: c_int,
-        screen: Option<&Self::Screen>,
-    ) -> std::ffi::CString {
-        self.0.string_cells(px, py, nx, last_cell, flags, screen)
     }
 }
 
