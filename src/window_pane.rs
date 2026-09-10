@@ -292,9 +292,6 @@ impl crate::pane_identity::PaneIdentity for window_pane {
         self.id
     }
 
-    fn set_pane_id(&mut self, id: u32) {
-        self.id = id;
-    }
 }
 
 impl crate::pane_resize::PaneResizeQueue for window_pane {
@@ -746,7 +743,7 @@ pub(crate) unsafe fn window_pane_create(
         window_pane_set_window(&mut *wp, Some(w));
         *(*wp).options_mut() = Some(RustOptionsEngine.create(Some((*w).options_ref())));
         *(*wp).flags_mut() = PANE_STYLECHANGED;
-        (*wp).set_pane_id(fresh2);
+        (*wp).id = fresh2;
         *(*wp).fd_mut() = -(1 as core::ffi::c_int);
         (*wp).set_size(PaneSize {
             width: sx,
@@ -834,6 +831,7 @@ impl Default for PaneAllocation {
 
 #[cfg(test)]
 impl PaneAllocation {
+    pub(crate) fn set_pane_id(&mut self, id: u32) { self.0.get_mut().id = id; }
     pub(crate) fn into_owner(self) -> RustWindowPaneRef { RustWindowPaneRef::from_pane(self.0) }
 }
 

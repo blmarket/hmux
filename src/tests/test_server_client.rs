@@ -1250,7 +1250,7 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
         assert_eq!(send(b'z' as key_code, b"missing pane"), CMD_RETURN_NORMAL);
         assert!(output.written().is_empty());
         let mut payload = crate::tests::test_fixtures::PaneAllocation::default();
-        crate::PaneIdentity::set_pane_id(&mut *payload, 99);
+        payload.set_pane_id(99);
         *payload.base_mut() = RustScreen::new_with_server_options(20, 6, 0);
         *payload.options_mut() = Some(pane_options);
         *payload.fd_mut() = 0;
@@ -1406,7 +1406,7 @@ fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_pane
             sb_pos: PANE_SCROLLBARS_RIGHT,
         });
         let mut payload = crate::tests::test_fixtures::PaneAllocation::default();
-        crate::PaneIdentity::set_pane_id(&mut *payload, 99);
+        payload.set_pane_id(99);
         *payload.base_mut() = RustScreen::new_with_server_options(4, 2, 0);
         *payload.options_mut() = Some(pane.as_pane().options_ref().clone());
         payload.set_geometry(crate::pane_geometry::PaneGeometry {
