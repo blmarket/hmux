@@ -30,13 +30,13 @@
 //! already been built, which is why the refusal frees the command's state by
 //! hand.
 
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
+use crate::args::args_parse_t;
 use crate::args::{args_make_commands, args_make_commands_get_command};
-use crate::cmd::cmd_make_commands_prepare;
 use crate::cmd::CmdqItemRef;
 use crate::cmd::CmdqItemWeak;
 use crate::cmd::cmd_get_args;
+use crate::cmd::cmd_make_commands_prepare;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmdq_append, cmdq_item_weak_of};
@@ -167,7 +167,8 @@ unsafe fn cmd_command_prompt_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     if tc.has_prompt_text() {
         return CMD_RETURN_NORMAL;
     }
-    let wait = (args.argument_flag_count(b'b') == 0 && args.argument_flag_count(b'i') == 0) as c_int;
+    let wait =
+        (args.argument_flag_count(b'b') == 0 && args.argument_flag_count(b'i') == 0) as c_int;
 
     let mut cdata = unsafe {
         Box::new(cmd_command_prompt_cdata {
@@ -201,7 +202,7 @@ unsafe fn cmd_command_prompt_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     let prompts = if let Some(s) = args.argument_flag_string(b'p') {
         Some(s.to_owned())
     } else if args.argument_count() != 0 {
-        let tmp = unsafe { args_make_commands_get_command(cdata.state.as_deref().unwrap()) };
+        let tmp = args_make_commands_get_command(cdata.state.as_deref().unwrap());
         let mut spelled = b"(".to_vec();
         spelled.extend_from_slice(tmp.as_bytes());
         spelled.push(b')');
