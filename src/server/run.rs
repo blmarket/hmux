@@ -674,7 +674,7 @@ fn server_child_exited(pid: pid_t, status: core::ffi::c_int) {
             let Some(pane) = window
                 .panes
                 .iter_mut()
-                .find(|pane| *pane.as_pane().pid() == pid)
+                .find(|pane| pane.as_pane().process_id() == pid)
             else {
                 continue;
             };
@@ -700,7 +700,7 @@ fn server_child_stopped(pid: pid_t, status: core::ffi::c_int) {
         }
         for owner in windows.iter().filter_map(|(_, window)| window.upgrade()) {
             for pane in &owner.as_window().panes {
-                if *pane.as_pane().pid() == pid && killpg(pid, SIGCONT) != 0 {
+                if pane.as_pane().process_id() == pid && killpg(pid, SIGCONT) != 0 {
                     kill(pid, SIGCONT);
                 }
             }

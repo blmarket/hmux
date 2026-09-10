@@ -5,7 +5,6 @@ pub use crate::consts::{
     GRID_STRING_ESCAPE_SEQUENCES, GRID_STRING_TRIM_SPACES, GRID_STRING_WITH_SEQUENCES,
 };
 use crate::grid::{Grid, Hyperlinks, grid_default_cell, grid_peek_line};
-use crate::input::ictx_mut;
 use crate::screen::RustScreen as screen;
 use crate::window::window_pane_current_mode;
 use core::ffi::{c_char, c_int};
@@ -199,37 +198,6 @@ impl RustWindowPaneWeak {
             }
             Some(Ok(buf))
         }
-    }
-
-    /// # Safety
-    /// Exclude conflicting pane and parser access while reading pending bytes.
-    pub(crate) unsafe fn capture_pending(&self, escape: bool) -> Option<Vec<u8>> {
-        let owner = self.upgrade()?;
-        let wp = unsafe { owner.as_pane() };
-        let mut ictx = ictx_mut(wp.ictx());
-        let Some(pending) = ictx.pending() else {
-            return Some(Vec::new());
-        };
-        let line = pending.as_slice();
-        let linelen = line.len();
-        if linelen == 0 {
-            return Some(Vec::new());
-        }
-        if !escape {
-            return Some(line.to_vec());
-        }
-        let mut buf = Vec::with_capacity(linelen);
-        for &byte in line {
-            if byte as c_char >= b' ' as c_char && byte != b'\\' {
-                buf.push(byte);
-            } else {
-                buf.push(b'\\');
-                buf.push(b'0' + (byte >> 6));
-                buf.push(b'0' + ((byte >> 3) & 7));
-                buf.push(b'0' + (byte & 7));
-            }
-        }
-        Some(buf)
     }
 
     /// # Safety

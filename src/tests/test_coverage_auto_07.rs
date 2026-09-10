@@ -134,12 +134,12 @@ fn window_pane_visible_and_exited_with_fixtures() {
         // fd == -1 means exited (no process)
         assert_eq!(window_pane_exited(&*p.ptr()), 1);
         // give it a fake fd -> not exited unless PANE_EXITED flag
-        *(*p.ptr()).fd_mut() = 5;
+        (*p.ptr()).configure_test_io(crate::window_pane::PaneTestIo::Descriptor(5));
         assert_eq!(window_pane_exited(&*p.ptr()), 0);
         *(*p.ptr()).flags_mut() |= crate::window::PANE_EXITED;
         assert_eq!(window_pane_exited(&*p.ptr()), 1);
         *(*p.ptr()).flags_mut() &= !crate::window::PANE_EXITED;
-        *(*p.ptr()).fd_mut() = -1;
+        (*p.ptr()).configure_test_io(crate::window_pane::PaneTestIo::Descriptor(-1));
 
         // zoomed: only active pane visible
         (*w.ptr()).flags |= crate::window::WINDOW_ZOOMED;

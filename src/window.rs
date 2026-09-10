@@ -25,7 +25,6 @@ use crate::grid::grid_view_string_cells;
 use crate::grid::{grid_cells_look_equal, grid_default_cell};
 use crate::input::InputOwner;
 use crate::input::input_key_pane;
-use crate::input::{input_parse_buffer};
 use crate::layout::layout_free_cell;
 use crate::log::{fatal, fatalx, log_debug, log_get_level};
 use crate::notify::{notify_pane, notify_window};
@@ -1090,39 +1089,6 @@ impl WindowRef {
         }
     }
 }
-pub unsafe fn window_pane_send_resize(pane: &RustWindowPaneWeak, sx: u_int, sy: u_int) {
-    unsafe {
-        let Some(wp) = pane.get() else { return };
-        let mut ws = winsize::default();
-        if *wp.fd() == -(1 as core::ffi::c_int) {
-            return;
-        }
-        let Some(window) = pane.window() else { return };
-        let w = window.as_window();
-        if !w.panes.iter().any(|owner| owner.downgrade().ptr_eq(pane)) {
-            return;
-        }
-        log_debug(
-            c"%s: %%%u resize to %u,%u",
-            fmt_args![c"window_pane_send_resize", wp.pane_id(), sx, sy],
-        );
-        ws.ws_col = sx as core::ffi::c_ushort;
-        ws.ws_row = sy as core::ffi::c_ushort;
-        ws.ws_xpixel =
-            w.dimensions().pixels.width.wrapping_mul(ws.ws_col as u_int) as core::ffi::c_ushort;
-        ws.ws_ypixel = w
-            .dimensions()
-            .pixels
-            .height
-            .wrapping_mul(ws.ws_row as u_int) as core::ffi::c_ushort;
-        if ioctl(*wp.fd(), TIOCSWINSZ as core::ffi::c_ulong, &raw mut ws)
-            == -(1 as core::ffi::c_int)
-        {
-            fatal(c"ioctl failed", fmt_args![]);
-        }
-    }
-}
-
 pub unsafe fn window_update_focus(window: Option<&WindowRef>) {
     if let Some(window) = window {
         unsafe { window.update_focus() };
@@ -1581,8 +1547,7 @@ pub(crate) fn window_pane_set_window(wp: &mut (impl crate::WindowPane + ?Sized),
     }
 }
 
-/// A stream callback that weakly observes its pane and skips removed or
-/// temporarily detached panes without retaining their allocation.
+/// Starts a pane mode or brings an existing mode to the front.
 pub unsafe fn window_pane_set_mode(
     wp: &mut (impl crate::WindowPane + ?Sized),
     source_pane: Option<RustWindowPaneWeak>,
@@ -1683,7 +1648,7 @@ unsafe fn window_pane_copy_paste(wp: &(impl crate::WindowPane + ?Sized), buf: By
             }
             let Some(target) = pane.get() else { continue };
             if target.modes().is_empty()
-                && *target.fd() != -1
+                && target.process_active()
                 && *target.flags() & PANE_INPUTOFF == 0
                 && window_pane_visible(&window.as_window(), target) != 0
                 && target.options_ref().number(c"synchronize-panes") != 0
@@ -1700,7 +1665,7 @@ unsafe fn window_pane_copy_paste(wp: &(impl crate::WindowPane + ?Sized), buf: By
                         ],
                     );
                 }
-                target.event().write_buffer(&mut buf.clone());
+                target.write_terminal_buffer(&mut buf.clone());
             }
         }
     }
@@ -1717,7 +1682,7 @@ unsafe fn window_pane_copy_key(wp: &(impl crate::WindowPane + ?Sized), key: key_
             }
             let Some(target) = pane.get() else { continue };
             if target.modes().is_empty()
-                && *target.fd() != -1
+                && target.process_active()
                 && *target.flags() & PANE_INPUTOFF == 0
                 && window_pane_visible(&window.as_window(), target) != 0
                 && target.options_ref().number(c"synchronize-panes") != 0
@@ -1732,7 +1697,7 @@ pub unsafe fn window_pane_paste(wp: &(impl crate::WindowPane + ?Sized), key: key
         if !wp.modes().is_empty() {
             return;
         }
-        if *wp.fd() == -(1 as core::ffi::c_int) || *wp.flags() & PANE_INPUTOFF != 0 {
+        if !wp.process_active() || *wp.flags() & PANE_INPUTOFF != 0 {
             return;
         }
         if key as core::ffi::c_ulonglong & KEYC_MASK_TYPE
@@ -1757,7 +1722,7 @@ pub unsafe fn window_pane_paste(wp: &(impl crate::WindowPane + ?Sized), key: key
         if (wp.options_ref()).number(c"synchronize-panes") != 0 {
             window_pane_copy_paste(wp, buf.clone());
         }
-        wp.event().write_buffer(&mut buf);
+        wp.write_terminal_buffer(&mut buf);
     }
 }
 pub unsafe fn window_pane_key(
@@ -1797,7 +1762,7 @@ pub unsafe fn window_pane_key(
         let Some(wp) = pane.get() else {
             return -1;
         };
-        if *wp.fd() == -(1 as core::ffi::c_int) || *wp.flags() & PANE_INPUTOFF != 0 {
+        if !wp.process_active() || *wp.flags() & PANE_INPUTOFF != 0 {
             return 0 as core::ffi::c_int;
         }
         if input_key_pane(wp, key, m) != 0 as core::ffi::c_int {
@@ -1834,7 +1799,7 @@ pub unsafe fn window_pane_visible(w: &window, wp: &(impl crate::WindowPane + ?Si
 }
 
 pub fn window_pane_exited(wp: &(impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
-    (*wp.fd() == -(1 as core::ffi::c_int) || *wp.flags() & PANE_EXITED != 0) as core::ffi::c_int
+    (!wp.process_active() || *wp.flags() & PANE_EXITED != 0) as core::ffi::c_int
 }
 pub unsafe fn window_pane_search(
     wp: &(impl crate::WindowPane + ?Sized),
@@ -2598,14 +2563,14 @@ pub unsafe fn window_pane_send_theme_update(wp: Option<&mut (impl crate::WindowP
                     c"%s: %%%u light theme",
                     fmt_args![c"window_pane_send_theme_update", wp.pane_id()],
                 );
-                wp.event().write(b"\x1B[?997;2n");
+                wp.write_terminal(b"\x1B[?997;2n");
             }
             THEME_DARK => {
                 log_debug(
                     c"%s: %%%u dark theme",
                     fmt_args![c"window_pane_send_theme_update", wp.pane_id()],
                 );
-                wp.event().write(b"\x1B[?997;1n");
+                wp.write_terminal(b"\x1B[?997;1n");
             }
             THEME_UNKNOWN => {
                 log_debug(
@@ -3359,7 +3324,7 @@ impl PaneInputRef {
                     .as_mut()
                     .and_then(|pane| pane.get_mut())
                     .expect("input pane");
-                input_parse_buffer(wp, core::mem::take(buffer));
+                wp.parse_bytes(core::mem::take(buffer));
             }
             buffer.drain(len);
         }
@@ -3502,7 +3467,7 @@ impl WindowRef {
                 fmt_args![c"window_pane_update_focus", pane.id(), description],
             );
             if wp.base().mode() & MODE_FOCUSON != 0 {
-                wp.event().write(sequence);
+                wp.write_terminal(sequence);
             }
             crate::notify::notify_pane_in_window(event, wp, w);
             if let Some(wp) = pane.get_mut() {

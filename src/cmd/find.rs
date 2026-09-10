@@ -70,7 +70,7 @@ unsafe fn cmd_find_inside_pane(c: Option<&ClientRef>) -> Option<RustWindowPaneWe
         let c = c?;
         let mut pane = pane_walk().find(|pane| {
             let wp = pane.get().expect("registered pane");
-            *wp.fd() != -1 && c.ttyname_ref().as_deref() == Some(wp.terminal_name())
+            wp.process_active() && c.ttyname_ref().as_deref() == Some(wp.terminal_name())
         });
         if pane.is_none()
             && let Some(value) = c

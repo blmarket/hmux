@@ -302,7 +302,7 @@ pub unsafe fn input_key_pane(
             }
             return 0;
         }
-        input_key(&wp.screen_ref(), *wp.event(), key)
+        wp.write_key(key)
     }
 }
 
@@ -744,7 +744,7 @@ unsafe fn input_key_mouse(wp: &(impl crate::WindowPane + ?Sized), m: &mouse_even
             c"writing mouse %.*s to %%%u",
             fmt_args![report.len() as c_int, report.as_slice(), wp.pane_id()],
         );
-        wp.event().write(&report);
+        wp.write_terminal(&report);
     }
 }
 #[cfg(test)]

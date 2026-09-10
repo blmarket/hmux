@@ -1,14 +1,14 @@
 use super::*;
 use crate::WindowPane;
-use crate::pane_handle::send_line;
+use crate::window_pane::send_line;
 use crate::tests::test_fixtures::{Args, Item, Paste, StreamBuffer, Target, globals};
 
 /// A pane the exec routine will write to: not exited, with its writes
 /// going to `bev`. The descriptor number is only ever read.
 unsafe fn attach(wp: *mut (dyn crate::WindowPane + 'static), bev: &StreamBuffer) {
     unsafe {
-        *(*wp).fd_mut() = 1000;
-        *(*wp).event_mut() = bev.ptr();
+        (*wp).configure_test_io(crate::window_pane::PaneTestIo::Descriptor(1000));
+        (*wp).configure_test_io(crate::window_pane::PaneTestIo::Stream(bev.ptr()));
     }
 }
 

@@ -302,14 +302,7 @@ pub unsafe fn server_destroy_pane(pane: &RustWindowPaneWeak, notify: core::ffi::
 
         let sx = wp.base().grid().sx;
         let sy = wp.base().grid().sy;
-        if *wp.fd() != -(1 as core::ffi::c_int) {
-            utempter_remove_record(*wp.fd());
-            kill(getpid(), SIGCHLD);
-            wp.event().free();
-            *wp.event_mut() = Stream::NONE;
-            close(*wp.fd());
-            *wp.fd_mut() = -(1 as core::ffi::c_int);
-        }
+        wp.close_process();
         let remain_on_exit: core::ffi::c_int =
             ((*wp).options_ref()).number(c"remain-on-exit") as core::ffi::c_int;
         if remain_on_exit != 0 as core::ffi::c_int && !*wp.flags() & PANE_STATUSREADY != 0 {

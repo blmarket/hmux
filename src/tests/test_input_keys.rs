@@ -434,7 +434,7 @@ fn a_pane_is_given_the_bytes_of_a_key() {
     let mut pane = Pane::new(1, 10, 2, 0);
     let bev = StreamBuffer::new();
     unsafe {
-        *(*pane.ptr()).event_mut() = bev.ptr();
+        (*pane.ptr()).configure_test_io(crate::window_pane::PaneTestIo::Stream(bev.ptr()));
         assert_eq!(input_key_pane(&*pane.ptr(), b'a' as key_code, None), 0);
     }
     assert_eq!(shown(&bev.written()), "a");
@@ -451,7 +451,7 @@ fn a_pane_is_given_a_mouse_report_only_for_a_click_inside_it() {
     m.sgr_type = b' ' as u_int;
     m.wp = 1;
     unsafe {
-        *(*pane.ptr()).event_mut() = bev.ptr();
+        (*pane.ptr()).configure_test_io(crate::window_pane::PaneTestIo::Stream(bev.ptr()));
         pane.base_mut().set_mode(MODE_MOUSE_STANDARD);
 
         let key = KEYC_MOUSE as key_code;
@@ -490,7 +490,7 @@ fn a_pane_names_the_key_in_the_log_and_takes_a_mouse_type_key_too() {
     unsafe {
         log_add_level();
         assert_ne!(log_get_level(), 0);
-        *(*pane.ptr()).event_mut() = bev.ptr();
+        (*pane.ptr()).configure_test_io(crate::window_pane::PaneTestIo::Stream(bev.ptr()));
         assert_eq!(input_key_pane(&*pane.ptr(), b'a' as key_code, None), 0);
         assert_eq!(shown(&bev.written()), "a");
         assert_eq!(
@@ -515,7 +515,7 @@ fn a_pane_writes_nothing_for_a_report_its_terminal_turned_down() {
     m.wp = 1;
     m.b = MOUSE_MASK_DRAG as u_int;
     unsafe {
-        *(*pane.ptr()).event_mut() = bev.ptr();
+        (*pane.ptr()).configure_test_io(crate::window_pane::PaneTestIo::Stream(bev.ptr()));
         pane.base_mut().set_mode(MODE_MOUSE_STANDARD);
         assert_eq!(
             input_key_pane(&*pane.ptr(), KEYC_MOUSE as key_code, Some(&m)),
@@ -579,7 +579,7 @@ fn a_pane_told_about_a_mouse_key_with_no_report_behind_it_writes_nothing() {
     let mut pane = Pane::new(1, 10, 2, 0);
     let bev = StreamBuffer::new();
     unsafe {
-        *(*pane.ptr()).event_mut() = bev.ptr();
+        (*pane.ptr()).configure_test_io(crate::window_pane::PaneTestIo::Stream(bev.ptr()));
         assert_eq!(
             input_key_pane(&*pane.ptr(), KEYC_MOUSE as key_code, None),
             0
@@ -599,7 +599,7 @@ fn pane_input_encodes_keys_and_mouse_from_the_shared_shown_screen() {
     let output = StreamBuffer::new();
     unsafe {
         let pane = &mut *target.pane(0);
-        *pane.event_mut() = output.ptr();
+        pane.configure_test_io(crate::window_pane::PaneTestIo::Stream(output.ptr()));
         let pane_screen_mode = MODE_KCURSOR | MODE_MOUSE_STANDARD;
         pane.base_mut().set_mode(pane_screen_mode);
         assert_eq!(

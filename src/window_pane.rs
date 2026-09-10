@@ -14,7 +14,9 @@ use std::rc::{Rc, Weak};
 use crate::grid::grid_default_cell;
 use crate::handle_registry::HandleRegistration;
 use crate::screen::RustScreen;
-use crate::{Screen, PaneOutputOffset};
+use crate::{Screen, PaneOutputOffset, WindowDimensionsState};
+use crate::fmt_args;
+use crate::log::log_debug;
 use crate::types::*;
 use crate::{
     PaneBorderKind, PaneCommand, PaneControlColourPair, PaneGeometry, PaneScrollbarSlider,
@@ -425,24 +427,6 @@ impl crate::WindowPane for window_pane {
     fn flags_mut(&mut self) -> &mut core::ffi::c_int {
         &mut self.flags
     }
-    fn pid(&self) -> &crate::types::pid_t {
-        &self.pid
-    }
-    fn pid_mut(&mut self) -> &mut crate::types::pid_t {
-        &mut self.pid
-    }
-    fn tty(&self) -> &[u8; 32] {
-        &self.tty
-    }
-    fn tty_mut(&mut self) -> &mut [u8; 32] {
-        &mut self.tty
-    }
-    fn fd(&self) -> &core::ffi::c_int {
-        &self.fd
-    }
-    fn fd_mut(&mut self) -> &mut core::ffi::c_int {
-        &mut self.fd
-    }
     fn options(&self) -> &Option<crate::options::RustOptionsRef> {
         &self.options
     }
@@ -450,12 +434,6 @@ impl crate::WindowPane for window_pane {
         &mut self.options
     }
 
-    fn event(&self) -> &crate::reactor::Stream {
-        &self.event
-    }
-    fn event_mut(&mut self) -> &mut crate::reactor::Stream {
-        &mut self.event
-    }
 
 
     unsafe fn resize(&mut self, size: PaneSize) {
@@ -487,23 +465,77 @@ impl crate::WindowPane for window_pane {
         self.sync_timer.disarm();
         self.base.set_mode(self.base.mode() & !crate::screen::MODE_SYNC);
     }
-    fn ictx(&self) -> &Option<crate::input::InputCtxRef> {
-        &self.ictx
-    }
-    fn ictx_mut(&mut self) -> &mut Option<crate::input::InputCtxRef> {
-        &mut self.ictx
-    }
 
 
-    unsafe fn initialize_io(&mut self) {
-        crate::tmux::setblocking(self.fd, 0);
-        self.event = Stream::new(self.fd,
-            Some(on_pane_owned(self.id, output::window_pane_read_callback)), None,
-            Some(on_pane_error_owned(self.id, output::window_pane_error_callback)));
-        if self.event.is_none() { crate::log::fatalx(c"out of memory", crate::fmt_args![]); }
-        self.ictx = Some(unsafe { crate::input::InputCtxRef::create(crate::input::InputOwner::Pane(self.id), self.event) });
-        self.event.enable(crate::reactor::Interest::ReadWrite);
+    #[cfg(test)]
+    unsafe fn configure_test_io(&mut self, setting: PaneTestIo) {
+        match setting {
+            PaneTestIo::Descriptor(fd) => self.fd = fd,
+            PaneTestIo::Stream(stream) => self.event = stream,
+            PaneTestIo::Parser(parser) => {
+                if let Some(old) = self.ictx.take() { unsafe { old.close() }; }
+                self.ictx = parser;
+            }
+            PaneTestIo::Terminal(name) => self.tty = name,
+        }
     }
+    fn process_id(&self) -> pid_t { self.pid }
+    fn process_active(&self) -> bool { self.fd != -1 }
+    fn process_name(&self) -> Option<CString> { crate::osdep_linux::osdep_get_name(self.fd) }
+    fn process_cwd(&self) -> Option<CString> { crate::osdep_linux::osdep_get_cwd(self.fd) }
+    fn process_groups(&self) -> Option<(Option<pid_t>, Option<pid_t>)> {
+        if self.fd == -1 { return None; }
+        let group = unsafe { libc::tcgetpgrp(self.fd) };
+        let leader = unsafe { libc::tcgetsid(self.fd) };
+        Some(((group > 0).then_some(group), (leader > 0).then_some(leader)))
+    }
+    unsafe fn fork_process(&mut self, master: c_int, size: &winsize) -> pid_t {
+        let result = unsafe { crate::compat::fdforkpty(master, None, Some(size)) };
+        self.pid = result.pid;
+        self.fd = if result.pid == -1 { -1 } else { result.master_fd };
+        self.tty = result.tty_name;
+        self.pid
+    }
+    fn take_job(&mut self, id: u32) -> bool {
+        let Some((fd, pid)) = crate::job::job_transfer(id, Some(&mut self.tty)) else { return false };
+        self.fd = fd;
+        self.pid = pid;
+        true
+    }
+    unsafe fn prepare_respawn(&mut self) {
+        if self.fd != -1 {
+            self.event.free();
+            self.event = Stream::NONE;
+            unsafe { close(self.fd) };
+            self.fd = -1;
+        }
+        unsafe { crate::window::window_pane_reset_mode_all(self) };
+        unsafe { crate::screen::screen_reinit(&mut self.base) };
+        if let Some(context) = self.ictx.take() { unsafe { context.close() }; }
+        self.flags &= !(crate::consts::PANE_STATUSREADY | crate::consts::PANE_STATUSDRAWN);
+    }
+    unsafe fn close_process(&mut self) {
+        if self.fd != -1 {
+            unsafe { utempter_remove_record(self.fd); kill(getpid(), SIGCHLD); }
+            self.event.free();
+            self.event = Stream::NONE;
+            unsafe { close(self.fd) };
+            self.fd = -1;
+        }
+    }
+    unsafe fn activate_spawned_process(&mut self, signal_mask: &sigset_t) {
+        if self.flags & crate::window::PANE_EMPTY == 0 {
+            let name = crate::xmalloc::xasprintf(c"tmux(%lu).%%%u", crate::fmt_args![unsafe { getpid() } as core::ffi::c_long, self.id]);
+            unsafe { crate::ffi::utempter_add_record(self.fd, name.as_ptr() as *mut core::ffi::c_char); kill(getpid(), SIGCHLD); }
+        }
+        self.flags &= !crate::window::PANE_EXITED;
+        unsafe { crate::ffi::sigprocmask(crate::consts::SIG_SETMASK, signal_mask, core::ptr::null_mut()); self.initialize_io(); }
+    }
+    fn write_terminal(&self, bytes: &[u8]) { self.event.write(bytes); }
+    fn write_terminal_buffer(&self, bytes: &mut crate::reactor::ByteBuffer) { self.event.write_buffer(bytes); }
+    unsafe fn write_key(&self, key: key_code) -> c_int { unsafe { crate::input::input_key(&self.screen_ref(), self.event, key) } }
+    unsafe fn parse_bytes(&mut self, bytes: crate::reactor::ByteBuffer) { unsafe { output::parse_bytes(self, bytes) } }
+    unsafe fn activate_transferred_process(&mut self) { unsafe { self.initialize_io() }; }
     fn pipe_process(&self) -> Option<pid_t> { (self.pipe_fd != -1).then_some(self.pipe_pid) }
     fn output_position(&self) -> crate::RustPaneOutputOffset { self.offset }
     fn unread_output_len(&self, position: &crate::RustPaneOutputOffset) -> usize {
@@ -524,7 +556,7 @@ impl crate::WindowPane for window_pane {
     unsafe fn parse_output(&mut self) {
         let input = self.unread_output(&self.offset);
         let size = input.len();
-        unsafe { crate::input::input_parse_buffer(self, input) };
+        unsafe { self.parse_bytes(input) };
         let mut offset = self.offset;
         self.advance_output(&mut offset, size);
         self.offset = offset;
@@ -748,7 +780,7 @@ pub(crate) unsafe fn window_pane_create(
         *(*wp).options_mut() = Some(RustOptionsEngine.create(Some((*w).options_ref())));
         *(*wp).flags_mut() = PANE_STYLECHANGED;
         (*wp).id = fresh2;
-        *(*wp).fd_mut() = -(1 as core::ffi::c_int);
+        (*wp).fd = -(1 as core::ffi::c_int);
         (*wp).set_size(PaneSize {
             width: sx,
             height: sy,
@@ -782,14 +814,8 @@ pub(crate) unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
         let wp = &mut *pane.0.pane.get();
         window_pane_reset_mode_all(&mut *wp);
         PaneSearchState::clear(wp);
-        if *wp.fd() != -(1 as core::ffi::c_int) {
-            utempter_remove_record(*wp.fd());
-            kill(getpid(), SIGCHLD);
-            wp.event().free();
-            close(*wp.fd());
-            *wp.fd_mut() = -1;
-        }
-        if let Some(ictx) = wp.ictx_mut().take() {
+        wp.close_process();
+        if let Some(ictx) = wp.ictx.take() {
             ictx.close();
         }
         wp.r_mut().ranges.clear();
@@ -891,7 +917,7 @@ impl RustWindowPaneWeak {
         }
         let step = pane.resize_queue.next_step().expect("the resize queue is not empty");
         drop(owner);
-        unsafe { crate::window::window_pane_send_resize(self, step.size.width, step.size.height) };
+        unsafe { self.send_process_resize(step.size.width, step.size.height) };
         if let Some(owner) = self.upgrade() {
             unsafe { (*owner.0.pane.get()).resize_timer.arm(timeval::from_usecs(step.retry_after.as_micros() as __suseconds_t)) };
         }
@@ -956,4 +982,66 @@ pub(crate) fn on_pane_error(id: u_int, body: impl Fn(&mut dyn WindowPane) + 'sta
 pub(crate) unsafe fn install_pipe_for_test(pane: &mut dyn WindowPane, fd: c_int) {
     let owner = pane.observation().unwrap().upgrade().unwrap();
     unsafe { (*owner.0.pane.get()).pipe_fd = fd };
+}
+
+mod io;
+#[cfg(test)]
+pub(crate) use io::send_line;
+
+#[cfg(test)]
+pub enum PaneTestIo {
+    Descriptor(c_int),
+    Stream(Stream),
+    Parser(Option<crate::input::InputCtxRef>),
+    Terminal([u8; 32]),
+}
+
+impl RustWindowPaneWeak {
+pub(crate) unsafe fn send_process_resize(&self, sx: u_int, sy: u_int) {
+    unsafe {
+        let pane = self;
+        let Some(allocation) = pane.allocation.upgrade() else { return };
+        let wp = &*allocation.pane.get();
+        let mut ws = winsize::default();
+        if !wp.process_active() {
+            return;
+        }
+        let Some(window) = pane.window() else { return };
+        let w = window.as_window();
+        if !w.panes.iter().any(|owner| owner.downgrade().ptr_eq(pane)) {
+            return;
+        }
+        log_debug(
+            c"%s: %%%u resize to %u,%u",
+            fmt_args![c"window_pane_send_resize", wp.pane_id(), sx, sy],
+        );
+        ws.ws_col = sx as core::ffi::c_ushort;
+        ws.ws_row = sy as core::ffi::c_ushort;
+        ws.ws_xpixel =
+            w.dimensions().pixels.width.wrapping_mul(ws.ws_col as u_int) as core::ffi::c_ushort;
+        ws.ws_ypixel = w
+            .dimensions()
+            .pixels
+            .height
+            .wrapping_mul(ws.ws_row as u_int) as core::ffi::c_ushort;
+        if crate::ffi::ioctl(wp.fd, crate::window::TIOCSWINSZ as core::ffi::c_ulong, &raw mut ws)
+            == -(1 as core::ffi::c_int)
+        {
+            crate::log::fatal(c"ioctl failed", crate::fmt_args![]);
+        }
+    }
+}
+
+}
+
+impl window_pane {
+    unsafe fn initialize_io(&mut self) {
+        crate::tmux::setblocking(self.fd, 0);
+        self.event = Stream::new(self.fd,
+            Some(on_pane_owned(self.id, output::window_pane_read_callback)), None,
+            Some(on_pane_error_owned(self.id, output::window_pane_error_callback)));
+        if self.event.is_none() { crate::log::fatalx(c"out of memory", crate::fmt_args![]); }
+        self.ictx = Some(unsafe { crate::input::InputCtxRef::create(crate::input::InputOwner::Pane(self.id), self.event) });
+        self.event.enable(crate::reactor::Interest::ReadWrite);
+    }
 }

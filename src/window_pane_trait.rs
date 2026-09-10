@@ -42,35 +42,11 @@ pub trait WindowPane:
     /// Mutably borrows the pane's server flags.
     fn flags_mut(&mut self) -> &mut core::ffi::c_int;
 
-    /// Borrows the pane's process ID.
-    fn pid(&self) -> &crate::types::pid_t;
-
-    /// Mutably borrows the pane's process ID.
-    fn pid_mut(&mut self) -> &mut crate::types::pid_t;
-
-    /// Borrows the pane's fixed terminal device-name storage.
-    fn tty(&self) -> &[u8; 32];
-
-    /// Mutably borrows the pane's fixed terminal device-name storage.
-    fn tty_mut(&mut self) -> &mut [u8; 32];
-
-    /// Borrows the pane's pseudo-terminal descriptor.
-    fn fd(&self) -> &core::ffi::c_int;
-
-    /// Mutably borrows the pane's pseudo-terminal descriptor.
-    fn fd_mut(&mut self) -> &mut core::ffi::c_int;
-
     /// Borrows the pane's optional option handle.
     fn options(&self) -> &Option<crate::options::RustOptionsRef>;
 
     /// Mutably borrows the pane's optional option handle.
     fn options_mut(&mut self) -> &mut Option<crate::options::RustOptionsRef>;
-
-    /// Borrows the pane's pseudo-terminal stream handle.
-    fn event(&self) -> &crate::reactor::Stream;
-
-    /// Mutably borrows the pane's pseudo-terminal stream handle.
-    fn event_mut(&mut self) -> &mut crate::reactor::Stream;
 
     /// Resizes the base and active mode screens and queues the process resize,
     /// cancelling synchronized output. An unchanged size does nothing.
@@ -84,16 +60,58 @@ pub trait WindowPane:
     /// Stops synchronized output and disarms its expiry without forcing a redraw.
     fn stop_sync(&mut self);
 
-    /// Borrows the pane's input parser handle.
-    fn ictx(&self) -> &Option<crate::input::InputCtxRef>;
-
-    /// Mutably borrows the pane's input parser handle.
-    fn ictx_mut(&mut self) -> &mut Option<crate::input::InputCtxRef>;
-
-    /// Installs the PTY stream callbacks and parser, then enables input and output.
+    /// Configures borrowed I/O in unit fixtures; unavailable in production builds.
     /// # Safety
-    /// The pane owns a valid PTY and has no existing live parser or stream.
-    unsafe fn initialize_io(&mut self);
+    /// Prevent conflicting stream/parser use and keep injected resources alive.
+    #[cfg(test)]
+    unsafe fn configure_test_io(&mut self, setting: crate::window_pane::PaneTestIo);
+
+    /// Returns the pane's child process ID.
+    fn process_id(&self) -> crate::types::pid_t;
+    /// Returns whether the pane owns an open PTY.
+    fn process_active(&self) -> bool;
+    /// Returns the current foreground process name from the PTY.
+    fn process_name(&self) -> Option<std::ffi::CString>;
+    /// Returns the current working directory reported for the PTY.
+    fn process_cwd(&self) -> Option<std::ffi::CString>;
+    /// Returns the foreground group and session leader, when the PTY is open.
+    fn process_groups(&self) -> Option<(Option<crate::types::pid_t>, Option<crate::types::pid_t>)>;
+    /// Forks a PTY and installs its PID, descriptor and terminal name together.
+    /// # Safety
+    /// Follow fork requirements and provide exclusive process access.
+    unsafe fn fork_process(&mut self, master: core::ffi::c_int, size: &crate::types::winsize) -> crate::types::pid_t;
+    /// Takes a job's PTY, process and terminal identity together.
+    fn take_job(&mut self, id: u32) -> bool;
+    /// Closes the old PTY/parser, resets modes and screen, and clears exit-display state.
+    /// # Safety
+    /// Exclude conflicting access while mode teardown callbacks run.
+    unsafe fn prepare_respawn(&mut self);
+    /// Removes the session record, closes the PTY stream and descriptor, and marks it closed.
+    /// # Safety
+    /// Exclude conflicting process and stream access.
+    unsafe fn close_process(&mut self);
+    /// Records the spawned terminal, clears exit state, restores the pre-fork
+    /// signal mask, then installs the stream and parser (also for an empty pane).
+    /// # Safety
+    /// Run in the parent after child setup, with exclusive pane/parser access.
+    unsafe fn activate_spawned_process(&mut self, signal_mask: &crate::types::sigset_t);
+    /// Writes bytes to the terminal, including protocol replies which bypass input-off.
+    fn write_terminal(&self, bytes: &[u8]);
+    /// Transfers buffered bytes to the terminal without applying key encoding.
+    fn write_terminal_buffer(&self, bytes: &mut crate::reactor::ByteBuffer);
+    /// Encodes and writes a key using the selected screen and existing key encoder.
+    /// # Safety
+    /// Exclude conflicting screen access while selecting its modes.
+    unsafe fn write_key(&self, key: crate::types::key_code) -> core::ffi::c_int;
+    /// Parses submitted output in the attached or mode-screen context as appropriate.
+    /// # Safety
+    /// Exclude conflicting pane/parser access during parser and drawing callbacks.
+    unsafe fn parse_bytes(&mut self, bytes: crate::reactor::ByteBuffer);
+
+    /// Installs the stream and parser after a job transfer and screen setup.
+    /// # Safety
+    /// Exclude conflicting pane/parser access; job transfer is already complete.
+    unsafe fn activate_transferred_process(&mut self);
 
     /// Returns the connected pipe process ID, or None when no pipe is open.
     fn pipe_process(&self) -> Option<crate::types::pid_t>;

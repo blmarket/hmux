@@ -119,7 +119,7 @@ use crate::window::winlinks_into;
 use crate::window::{
     WINDOWS, window_get_active_at, window_pane_border_status_get_range, window_pane_find_by_id,
     window_pane_is_floating, window_pane_key, window_pane_paste,
-    window_pane_send_resize, window_pane_send_theme_update, window_pane_set_mode,
+    window_pane_send_theme_update, window_pane_set_mode,
     window_pane_show_scrollbar, window_redraw_active_switch, window_update_focus,
 };
 use crate::window::{window_get_latest, window_set_latest};
@@ -1934,7 +1934,7 @@ pub fn server_client_loop() {
         for window in windows.iter().filter_map(|(_, window)| window.upgrade()) {
             let panes = window.panes();
             for mut pane in panes {
-                if pane.get().is_some_and(|wp| *wp.fd() != -1) {
+                if pane.get().is_some_and(|wp| wp.process_active()) {
                     pane.deliver_pending_resize();
                     if let Some(wp) = pane.get_mut() {
                         wp.maintain_output();

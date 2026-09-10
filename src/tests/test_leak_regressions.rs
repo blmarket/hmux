@@ -353,7 +353,7 @@ impl SpawnRig {
         let mut session = Session::new(0, "0");
         let mut window = Window::new(0, "keep", 80, 24);
         let mut pane = Pane::new(1, 80, 24, 100);
-        unsafe { *(*pane.ptr()).fd_mut() = FAKE_FD };
+        unsafe { (*pane.ptr()).configure_test_io(crate::window_pane::PaneTestIo::Descriptor(FAKE_FD))};
         window.add_pane(&mut pane);
         let wl = link(&mut session, &mut window, 0);
         SpawnRig {

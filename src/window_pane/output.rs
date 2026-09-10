@@ -1,5 +1,7 @@
 use super::*;
-use crate::window::PANE_EXITED;
+use crate::window::{PANE_EXITED, PANE_CHANGED, PANE_UNSEENCHANGES};
+use crate::screen::RustScreenWriteCtx;
+use crate::log::log_get_level;
 use crate::control::{control_pane_offset, control_pane_offset_mut, control_write_output};
 use crate::server::{client_walk, server_destroy_pane};
 use crate::reactor::Interest;
@@ -58,10 +60,10 @@ pub(super) unsafe fn maintain_output(wp: &mut window_pane) {
                     c"server_client_check_pane_buffer".as_ptr(),
                     wp.pane_id(),
                     minimum,
-                    wp.event().input_len()
+                    wp.event.input_len()
                 ],
             );
-            wp.event().with_input(|buffer| buffer.drain(minimum));
+            wp.event.with_input(|buffer| buffer.drain(minimum));
             let output_base = wp.base_offset;
             if output_base > (SIZE_MAX as size_t).wrapping_sub(minimum) {
                 log_debug(
@@ -100,15 +102,15 @@ pub(super) unsafe fn maintain_output(wp: &mut window_pane) {
             ],
         );
         if off != 0 {
-            wp.event().disable(Interest::Read);
+            wp.event.disable(Interest::Read);
         } else {
-            wp.event().enable(Interest::Read);
+            wp.event.enable(Interest::Read);
         };
     }
 }
 pub(super) fn window_pane_read_callback(wp: &mut window_pane) {
     unsafe {
-        let size = wp.event().input_len();
+        let size = wp.event.input_len();
         let new_size: size_t;
         if wp.pipe_fd != -(1 as core::ffi::c_int) {
             let mut new_data = wp.unread_output(&wp.pipe_offset);
@@ -127,7 +129,7 @@ pub(super) fn window_pane_read_callback(wp: &mut window_pane) {
             }
         }
         wp.parse_output();
-        wp.event().disable(Interest::Read);
+        wp.event.disable(Interest::Read);
     }
 }
 pub(super) fn window_pane_error_callback(wp: &mut window_pane) {
@@ -183,3 +185,44 @@ mod tests {
         assert_eq!(pane.unread_output(&pane.output_position()).as_slice(), b"e");
     }
 }
+
+pub(super) unsafe fn parse_bytes(wp: &mut window_pane, mut input: ByteBuffer) {
+    unsafe {
+        let owner = wp.ictx.clone().expect("a pane being parsed has a parser");
+        let mut ictx = owner.borrow_mut();
+        let len = input.len();
+        if len == 0 {
+            return;
+        }
+        let window = wp
+            .window_context()
+            .expect("a parsed pane has a window context");
+        window.update_activity();
+        crate::plugin::note_pane_output(wp.pane_id());
+        *wp.flags_mut() |= PANE_CHANGED;
+        if !wp.modes().is_empty() {
+            *wp.flags_mut() |= PANE_UNSEENCHANGES;
+        }
+        if log_get_level() != 0 {
+            let data = input.as_slice();
+            log_debug(
+                c"%s: %%%u %s, %zu bytes: %.*s",
+                fmt_args![
+                    c"input_parse_buffer".as_ptr(),
+                    wp.pane_id(),
+                    ictx.state.name.as_ptr(),
+                    len,
+                    len as core::ffi::c_int,
+                    data.as_ptr()
+                ],
+            );
+        }
+        let mut sctx = if wp.modes().is_empty() {
+            RustScreenWriteCtx::on_pane_base(wp)
+        } else {
+            RustScreenWriteCtx::on_screen(wp.base_mut())
+        };
+        crate::input::parser::input_parse(&mut ictx, &mut sctx, input);
+    }
+}
+

@@ -13,7 +13,7 @@ pub use keys::{
 };
 
 pub use parser::{
-    InputCtxRef, InputOwner, ictx_mut, input_cancel_requests, input_ctx, input_parse_buffer,
+    InputCtxRef, InputOwner, ictx_mut, input_cancel_requests, input_ctx,
     input_request, input_request_handle, input_set_buffer_size,
 };
 

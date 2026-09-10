@@ -21,11 +21,12 @@ impl Parser {
         let wp = pane.ptr();
         let ictx = unsafe {
             RustColourEngine.init_palette((*wp).palette_mut());
-            *(*wp).ictx_mut() = Some(InputCtxRef::create(
+            let context = InputCtxRef::create(
                 InputOwner::Pane((*wp).pane_id()),
                 Stream::NONE,
-            ));
-            ictx_opt((*wp).ictx()).unwrap()
+            );
+            (*wp).configure_test_io(crate::window_pane::PaneTestIo::Parser(Some(context.clone())));
+            context
         };
         Self {
             _window: window,
@@ -37,8 +38,7 @@ impl Parser {
 
     unsafe fn parse(&mut self, bytes: &'static [u8]) {
         unsafe {
-            input_parse_buffer(
-                &mut *self.pane.ptr(),
+            (&mut *self.pane.ptr()).parse_bytes(
                 ByteBuffer::from(bytes::Bytes::from_static(bytes)),
             );
         }
@@ -49,9 +49,7 @@ impl Drop for Parser {
     fn drop(&mut self) {
         unsafe {
             let wp = self.pane.ptr();
-            if let Some(ictx) = (*wp).ictx_mut().take() {
-                ictx.close();
-            }
+            (*wp).configure_test_io(crate::window_pane::PaneTestIo::Parser(None));
             RustColourEngine.free_palette(Some((*wp).palette_mut()));
         }
     }

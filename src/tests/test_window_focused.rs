@@ -942,7 +942,7 @@ fn fixture_cleanup_retires_panes_without_closing_borrowed_descriptors() {
     let owner = fixture.reference();
     let retained = window_pane_find_by_id(953).unwrap();
     unsafe {
-        *(*pane.ptr()).fd_mut() = borrowed.as_raw_fd();
+        (*pane.ptr()).configure_test_io(crate::window_pane::PaneTestIo::Descriptor(borrowed.as_raw_fd()));
         crate::window_pane::install_pipe_for_test(&mut *pane.ptr(), peer.as_raw_fd());
     }
     drop(fixture);
@@ -976,8 +976,8 @@ fn synchronized_key_and_paste_skip_the_source_and_unavailable_destinations() {
         let mut panes = window.handle().panes();
         for (pane, stream) in panes.iter_mut().zip(&streams) {
             let wp = pane.as_pane_mut();
-            *wp.fd_mut() = 1000;
-            *wp.event_mut() = stream.ptr();
+            wp.configure_test_io(crate::window_pane::PaneTestIo::Descriptor(1000));
+            wp.configure_test_io(crate::window_pane::PaneTestIo::Stream(stream.ptr()));
             wp.options_ref().set_number(c"synchronize-panes", 1);
         }
         *panes[2].as_pane_mut().flags_mut() |= PANE_INPUTOFF;
@@ -985,7 +985,7 @@ fn synchronized_key_and_paste_skip_the_source_and_unavailable_destinations() {
             .as_pane()
             .options_ref()
             .set_number(c"synchronize-panes", 0);
-        *panes[4].as_pane_mut().fd_mut() = -1;
+        panes[4].as_pane_mut().configure_test_io(crate::window_pane::PaneTestIo::Descriptor(-1));
         window_pane_copy_key(panes[0].as_pane(), b'x' as key_code);
         window_pane_copy_paste(panes[0].as_pane(), ByteBuffer::from(b"paste".to_vec()));
         assert!(streams[0].written().is_empty());
@@ -1057,7 +1057,6 @@ fn directional_selection_retains_the_most_recent_candidate_and_preserves_first_t
 
 fn detached_pane() -> crate::tests::test_fixtures::PaneAllocation {
     let mut pane = crate::tests::test_fixtures::PaneAllocation::default();
-    *pane.fd_mut() = -1;
     pane
 }
 
@@ -1173,7 +1172,7 @@ fn focus_updates_emit_only_transitions_and_preserve_exited_panes() {
         let mut pane = window.as_window().panes[0].downgrade();
         {
             let wp = pane.get_mut().unwrap();
-            *wp.event_mut() = output.ptr();
+            wp.configure_test_io(crate::window_pane::PaneTestIo::Stream(output.ptr()));
             let pane_screen_mode = wp.base().mode() | MODE_FOCUSON;
             wp.base_mut().set_mode(pane_screen_mode);
         }
@@ -1325,8 +1324,8 @@ fn theme_notifications_follow_the_shown_screen_and_only_emit_changed_themes() {
     let output = StreamBuffer::new();
     unsafe {
         let pane = &mut *target.pane(0);
-        *pane.fd_mut() = 1000;
-        *pane.event_mut() = output.ptr();
+        pane.configure_test_io(crate::window_pane::PaneTestIo::Descriptor(1000));
+        pane.configure_test_io(crate::window_pane::PaneTestIo::Stream(output.ptr()));
         let pane_screen_mode = pane.base().mode() | MODE_THEME_UPDATES;
         pane.base_mut().set_mode(pane_screen_mode);
         assert_eq!(
@@ -1389,7 +1388,7 @@ fn theme_notifications_follow_the_shown_screen_and_only_emit_changed_themes() {
         window_pane_send_theme_update(Some(pane));
         assert!(output.written().is_empty());
         assert_eq!(pane.theme(), THEME_DARK);
-        *pane.fd_mut() = -1;
+        pane.configure_test_io(crate::window_pane::PaneTestIo::Descriptor(-1));
     }
 }
 
@@ -1667,7 +1666,7 @@ fn terminal_resize_uses_the_panes_current_window_pixels_and_skips_missing_owners
         let slave = OwnedFd::from_raw_fd(slave);
         let pane_fd = libc::dup(master.as_raw_fd());
         assert!(pane_fd >= 0);
-        *pane.as_pane_mut().fd_mut() = pane_fd;
+        pane.as_pane_mut().configure_test_io(crate::window_pane::PaneTestIo::Descriptor(pane_fd));
         let size = || {
             let mut size = libc::winsize {
                 ws_col: 0,
@@ -1681,22 +1680,22 @@ fn terminal_resize_uses_the_panes_current_window_pixels_and_skips_missing_owners
             );
             (size.ws_col, size.ws_row, size.ws_xpixel, size.ws_ypixel)
         };
-        window_pane_send_resize(&pane, 10, 4);
+        pane.send_process_resize(10, 4);
         assert_eq!(size(), (10, 4, 80, 64));
         let transferred = window_panes_take(
             &mut original.as_window_mut(),
             &crate::window::window_pane_find_by_id(pane.id()).expect("the pane exists"),
         )
         .unwrap();
-        window_pane_send_resize(&pane, 11, 5);
+        pane.send_process_resize(11, 5);
         assert_eq!(size(), (10, 4, 80, 64));
         window_panes_insert_tail(&mut destination.as_window_mut(), transferred);
-        window_pane_send_resize(&pane, 11, 5);
+        pane.send_process_resize(11, 5);
         assert_eq!(size(), (11, 5, 110, 100));
         destination.remove_pane(
             &crate::window::window_pane_find_by_id(pane.id()).expect("the pane exists"),
         );
-        window_pane_send_resize(&pane, 12, 6);
+        pane.send_process_resize(12, 6);
         assert_eq!(size(), (11, 5, 110, 100));
         drop(target);
     }

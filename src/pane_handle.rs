@@ -153,75 +153,9 @@ impl RustWindowPaneWeak {
         Some(unsafe { owner.as_pane_mut().base_mut().set_title(title, 0) != 0 })
     }
 
-    /// # Safety
-    /// Exclude conflicting palette and input access while resetting the terminal.
-    pub(crate) unsafe fn reset_terminal(&self) -> bool {
-        use crate::style::ColourEngine;
-        let context = {
-            let Some(mut owner) = self.upgrade() else {
-                return false;
-            };
-            let pane = unsafe { owner.as_pane_mut() };
-            crate::style::RustColourEngine.clear_palette(Some(pane.palette_mut()));
-            pane.ictx().clone()
-        };
-        unsafe {
-            context.as_ref().expect("pane input initialized").reset(1);
-            self.add_flags(PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW);
-        }
-        true
-    }
-}
-
-/// Sends one line to the pane's output stream: `-S` hands the bytes over as
-/// they are, and without it `utf8_stravisx` makes control bytes visible.
-pub(crate) fn send_line(output: crate::reactor::Stream, line: &[u8], raw: bool) {
-    if raw {
-        output.write(line);
-    } else {
-        let visible = RustUtf8VisModel.encode_utf8(line, 0x20 | 0x40);
-        output.write(visible.as_bytes());
-    }
 }
 
 impl RustWindowPaneWeak {
-    /// # Safety
-    /// Exclude conflicting pane and stream access while sending the paste.
-    pub(crate) unsafe fn paste_buffer(
-        &self,
-        bytes: &[u8],
-        separator: &[u8],
-        raw: bool,
-        bracket: bool,
-    ) -> bool {
-        let Some(owner) = self.upgrade() else {
-            return false;
-        };
-        let pane = unsafe { owner.as_pane() };
-        if *pane.flags() & crate::window::PANE_INPUTOFF != 0 {
-            return true;
-        }
-        let wrap = bracket && pane.screen_ref().mode() & crate::window::MODE_BRACKETPASTE != 0;
-        let output = *pane.event();
-        drop(owner);
-        if wrap {
-            output.write(b"\x1b[200~");
-        }
-        for line in bytes.split_inclusive(|&b| b == b'\n') {
-            match line.strip_suffix(b"\n") {
-                Some(head) => {
-                    send_line(output, head, raw);
-                    output.write(separator);
-                }
-                None => send_line(output, line, raw),
-            }
-        }
-        if wrap {
-            output.write(b"\x1b[201~");
-        }
-        true
-    }
-
     /// # Safety
     /// Exclude conflicting pane state access until the file-input operation is created.
     pub(crate) unsafe fn start_input(

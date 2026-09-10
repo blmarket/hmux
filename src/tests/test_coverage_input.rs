@@ -36,7 +36,7 @@ use crate::grid::{
     grid_string_cells,
 };
 use crate::input::{
-    GRID_LINE_START_OUTPUT, GRID_LINE_START_PROMPT, MODE_FOCUSON, input_parse_buffer,
+    GRID_LINE_START_OUTPUT, GRID_LINE_START_PROMPT, MODE_FOCUSON,
     input_set_buffer_size,
 };
 
@@ -83,11 +83,12 @@ impl Parser {
         let wp = pane.ptr();
         let ictx = unsafe {
             RustColourEngine.init_palette((*wp).palette_mut());
-            *(*wp).ictx_mut() = Some(InputCtxRef::create(
+            let context = InputCtxRef::create(
                 crate::input::InputOwner::Pane((*wp).pane_id()),
                 bev.as_ref().map_or(Stream::NONE, |b| b.ptr()),
-            ));
-            crate::input::ictx_opt((*wp).ictx()).unwrap()
+            );
+            (*wp).configure_test_io(crate::window_pane::PaneTestIo::Parser(Some(context.clone())));
+            context
         };
         Parser {
             window,
@@ -108,8 +109,7 @@ impl Parser {
 
     fn feed(&mut self, seq: &[u8]) {
         unsafe {
-            input_parse_buffer(
-                &mut *self.wp(),
+            (&mut *self.wp()).parse_bytes(
                 ByteBuffer::from(bytes::Bytes::copy_from_slice(seq)),
             )
         };
@@ -170,9 +170,7 @@ impl Parser {
 impl Drop for Parser {
     fn drop(&mut self) {
         unsafe {
-            if let Some(ictx) = (*self.wp()).ictx_mut().take() {
-                ictx.close();
-            }
+            (*self.wp()).configure_test_io(crate::window_pane::PaneTestIo::Parser(None));
             RustColourEngine.free_palette(Some((*self.wp()).palette_mut()));
         }
     }
@@ -717,7 +715,7 @@ fn an_unterminated_sequence_keeps_the_owned_input_segment() {
     let mut p = Parser::new();
     let input = bytes::Bytes::from_static(b"\x1b[");
     let input_ptr = input.as_ptr();
-    unsafe { input_parse_buffer(&mut *p.wp(), ByteBuffer::from(input)) };
+    unsafe { (&mut *p.wp()).parse_bytes( ByteBuffer::from(input)) };
     let mut ictx = p.ictx.borrow_mut();
     let pending = ictx.pending().unwrap();
     assert_eq!(pending.as_slice(), b"\x1b[");

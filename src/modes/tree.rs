@@ -930,7 +930,7 @@ unsafe fn window_tree_search(
                 let Some(pane) = target.pane.as_ref().and_then(|pane| pane.get()) else {
                     return 0;
                 };
-                let cmd = osdep_get_name(*pane.fd()).filter(|cmd| !cmd.as_bytes().is_empty());
+                let cmd = pane.process_name().filter(|cmd| !cmd.as_bytes().is_empty());
                 let Some(cmd) = cmd else {
                     return 0 as core::ffi::c_int;
                 };

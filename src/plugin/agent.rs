@@ -146,7 +146,7 @@ fn state_emoji(pane: PaneId, status: Option<&AgentStatus>) -> CString {
     };
     unsafe {
         let wp = pane.as_pane();
-        let dead = *(*wp).fd() == -1 && *(*wp).flags() & PANE_STATUSREADY != 0;
+        let dead = !(*wp).process_active() && *(*wp).flags() & PANE_STATUSREADY != 0;
         let alternate_on = (*wp).base().is_alternate();
         let emoji = PaneClass::classify(pane_probe(wp).as_ref(), alternate_on, dead).emoji();
         CString::new(emoji).expect("an emoji has no NUL")
@@ -157,20 +157,15 @@ fn state_emoji(pane: PaneId, status: Option<&AgentStatus>) -> CString {
 /// and the session leader, with the pane's own command line as the fallback
 /// for a group whose leader has already exited.
 fn pane_probe(wp: &(impl crate::WindowPane + ?Sized)) -> Option<PaneProcessProbe> {
-    let fd = *wp.fd();
-    if fd == -1 {
-        return None;
-    }
-    let foreground = unsafe { libc::tcgetpgrp(fd) };
-    let session_leader = unsafe { libc::tcgetsid(fd) };
+    let (foreground, session_leader) = wp.process_groups()?;
     let command = wp.pane_command();
     let fallback = match command.argv.is_empty() {
         true => command.shell,
         false => Some(stringify_argv(&command.argv)),
     };
     Some(PaneProcessProbe::new(
-        (foreground > 0).then_some(foreground),
-        (session_leader > 0).then_some(session_leader),
+        foreground,
+        session_leader,
         fallback,
     ))
 }

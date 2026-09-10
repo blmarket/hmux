@@ -10,7 +10,7 @@ use crate::input::InputCtxRef;
 use crate::input::{
     INPUT_BUF_DEFAULT_SIZE, INPUT_BUF_START, INPUT_DISCARD, INPUT_END_BEL, INPUT_END_ST,
     INPUT_LAST, INPUT_REQUEST_CLIPBOARD, INPUT_REQUEST_PALETTE, INPUT_REQUEST_QUEUE,
-    INPUT_REQUEST_TIMEOUT, input_cancel_requests, input_parse_buffer, input_set_buffer_size,
+    INPUT_REQUEST_TIMEOUT, input_cancel_requests, input_set_buffer_size,
 };
 use crate::pane_identity::PaneIdentity;
 use crate::reactor::{ByteBuffer, Stream};
@@ -90,8 +90,8 @@ impl Ctx {
                 crate::input::InputOwner::Pane((*wp).pane_id()),
                 Stream::NONE,
             );
-            *(*wp).ictx_mut() = Some(ctx);
-            crate::input::ictx_opt((*wp).ictx()).unwrap()
+            (*wp).configure_test_io(crate::window_pane::PaneTestIo::Parser(Some(ctx.clone())));
+            ctx
         };
         Self {
             _window: window,
@@ -110,9 +110,7 @@ impl Drop for Ctx {
     fn drop(&mut self) {
         unsafe {
             let wp = self.wp();
-            if let Some(ictx) = (*wp).ictx_mut().take() {
-                ictx.close();
-            }
+            (*wp).configure_test_io(crate::window_pane::PaneTestIo::Parser(None));
             RustColourEngine.free_palette(Some((*wp).palette_mut()));
         }
     }
@@ -168,12 +166,11 @@ fn input_parse_buffer_with_zero_length_is_noop() {
     unsafe {
         let before = ctx.pane.base().cursor();
         let pending_before = ctx.ictx.pending().unwrap().len();
-        input_parse_buffer(&mut *ctx.wp(), ByteBuffer::new());
+        (&mut *ctx.wp()).parse_bytes( ByteBuffer::new());
         assert_eq!(ctx.ictx.pending().unwrap().len(), pending_before);
         assert_eq!(ctx.pane.base().cursor(), before);
         // printable path works after the no-op
-        input_parse_buffer(
-            &mut *ctx.wp(),
+        (&mut *ctx.wp()).parse_bytes(
             ByteBuffer::from(bytes::Bytes::from_static(b"hi")),
         );
         assert_eq!(ctx.pane.base().cursor().0, 2);

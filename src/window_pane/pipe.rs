@@ -216,7 +216,7 @@ fn cmd_pipe_pane_read_callback(wp: &mut window_pane) {
             .unwrap_or_default();
         let available = data.len();
         log_debug(c"%%%u pipe read %zu", fmt_args![wp.pane_id(), available]);
-        wp.event().write(&data);
+        wp.event.write(&data);
         if wp.destroy_ready() {
             server_destroy_pane(
                 &(wp).observation().expect("the pane is owned"),

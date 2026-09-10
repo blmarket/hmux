@@ -293,7 +293,7 @@ fn stamp(gitdir: &Path) -> Option<Stamp> {
 /// `#{pane_current_path}` reads it.
 fn pane_cwd(pane: PaneId) -> Option<PathBuf> {
     let pane = window_pane_find_by_id(pane.0)?;
-    let cwd = osdep_get_cwd(unsafe { *pane.as_pane().fd() })?;
+    let cwd = unsafe { pane.as_pane().process_cwd() }?;
     let path = PathBuf::from(OsString::from_vec(cwd.into_bytes()));
     path.is_absolute().then_some(path)
 }

@@ -932,7 +932,7 @@ unsafe fn format_cb_current_command(ft: &format_tree) -> Option<CString> {
         let wp = pane.get()?;
         let pane_command = wp.pane_command();
         pane_command.shell.as_ref()?;
-        let cmd = osdep_get_name(*wp.fd()).filter(|cmd| !cmd.as_bytes().is_empty());
+        let cmd = wp.process_name().filter(|cmd| !cmd.as_bytes().is_empty());
         let Some(cmd) = cmd else {
             let command = RustCommandTextCodec.stringify(&pane_command.argv);
             if command.as_bytes().is_empty() {
@@ -951,7 +951,7 @@ unsafe fn format_cb_current_path(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        let cwd = osdep_get_cwd(*wp.fd())?;
+        let cwd = wp.process_cwd()?;
         Some(format_callback_copy(&cwd))
     }
 }
@@ -1927,7 +1927,7 @@ unsafe fn format_cb_pane_dead(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        if *wp.fd() == -(1 as core::ffi::c_int) && *wp.flags() & PANE_STATUSREADY != 0 {
+        if !wp.process_active() && *wp.flags() & PANE_STATUSREADY != 0 {
             return Some(format_callback_copy(c"1"));
         }
         Some(format_callback_copy(c"0"))
@@ -2101,7 +2101,7 @@ unsafe fn format_cb_pane_pid(ft: &format_tree) -> Option<CString> {
         let wp = pane.get()?;
         Some(format_printf(
             c"%ld",
-            fmt_args![*wp.pid() as core::ffi::c_long],
+            fmt_args![wp.process_id() as core::ffi::c_long],
         ))
     }
 }

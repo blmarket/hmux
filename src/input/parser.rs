@@ -1972,7 +1972,7 @@ unsafe fn input_set_state(
         }
     }
 }
-unsafe fn input_parse(
+pub(crate) unsafe fn input_parse(
     ictx: &mut input_ctx,
     sctx: &mut RustScreenWriteCtx<'_>,
     mut input: ByteBuffer,
@@ -2028,46 +2028,6 @@ unsafe fn input_parse(
         }
     }
 }
-pub unsafe fn input_parse_buffer(wp: &mut (impl crate::WindowPane + ?Sized), mut input: ByteBuffer) {
-    unsafe {
-        let owner = ictx_opt(wp.ictx()).expect("a pane being parsed has a parser");
-        let mut ictx = owner.borrow_mut();
-        let len = input.len();
-        if len == 0 {
-            return;
-        }
-        let window = wp
-            .window_context()
-            .expect("a parsed pane has a window context");
-        window.update_activity();
-        crate::plugin::note_pane_output(wp.pane_id());
-        *wp.flags_mut() |= PANE_CHANGED;
-        if !wp.modes().is_empty() {
-            *wp.flags_mut() |= PANE_UNSEENCHANGES;
-        }
-        if log_get_level() != 0 {
-            let data = input.as_slice();
-            log_debug(
-                c"%s: %%%u %s, %zu bytes: %.*s",
-                fmt_args![
-                    c"input_parse_buffer".as_ptr(),
-                    wp.pane_id(),
-                    ictx.state.name.as_ptr(),
-                    len,
-                    len as core::ffi::c_int,
-                    data.as_ptr()
-                ],
-            );
-        }
-        let mut sctx = if wp.modes().is_empty() {
-            RustScreenWriteCtx::on_pane_base(wp)
-        } else {
-            RustScreenWriteCtx::on_screen(wp.base_mut())
-        };
-        input_parse(&mut ictx, &mut sctx, input);
-    }
-}
-
 /// The parameters the parser collected for the sequence in hand.
 fn input_params(ictx: &mut input_ctx) -> &mut [InputParam; 24] {
     &mut ictx.param_list
@@ -5071,11 +5031,12 @@ mod focused_tests {
             let wp = pane.ptr();
             let ictx = unsafe {
                 RustColourEngine.init_palette((*wp).palette_mut());
-                *(*wp).ictx_mut() = Some(InputCtxRef::create(
+                let context = InputCtxRef::create(
                     InputOwner::Pane((*wp).pane_id()),
                     Stream::NONE,
-                ));
-                ictx_opt((*wp).ictx()).unwrap()
+                );
+            (*wp).configure_test_io(crate::window_pane::PaneTestIo::Parser(Some(context.clone())));
+            context
             };
             Self {
                 _window: window,
@@ -5087,8 +5048,7 @@ mod focused_tests {
 
         unsafe fn parse(&mut self, bytes: &'static [u8]) {
             unsafe {
-                input_parse_buffer(
-                    &mut *self.pane.ptr(),
+                (&mut *self.pane.ptr()).parse_bytes(
                     ByteBuffer::from(bytes::Bytes::from_static(bytes)),
                 );
             }
@@ -5099,9 +5059,7 @@ mod focused_tests {
         fn drop(&mut self) {
             unsafe {
                 let wp = self.pane.ptr();
-                if let Some(ictx) = (*wp).ictx_mut().take() {
-                    ictx.close();
-                }
+                (*wp).configure_test_io(crate::window_pane::PaneTestIo::Parser(None));
                 RustColourEngine.free_palette(Some((*wp).palette_mut()));
             }
         }

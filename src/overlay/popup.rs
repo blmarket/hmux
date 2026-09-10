@@ -466,10 +466,8 @@ unsafe fn popup_make_pane(pd: &mut popup_data, type_0: layout_type) {
         owner.assign_pane_layout(&slot, &pane, 0);
         let new = pane.get_mut().expect("the new pane is present");
         if let Some(id) = pd.job
-            && let Some((fd, pid)) = job_transfer(id, Some(new.tty_mut()))
+            && new.take_job(id)
         {
-            *new.fd_mut() = fd;
-            *new.pid_mut() = pid;
             pd.job = None;
         }
         pd.s.borrow_mut().set_title(
@@ -494,7 +492,7 @@ unsafe fn popup_make_pane(pd: &mut popup_data, type_0: layout_type) {
         let mut command = new.pane_command();
         command.shell = Some(shell.to_owned());
         new.set_pane_command(&command);
-        new.initialize_io();
+        new.activate_transferred_process();
         owner.set_active_pane(
             &crate::window::window_pane_find_by_id(new_id).expect("the selected pane exists"),
             1,

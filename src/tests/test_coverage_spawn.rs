@@ -94,7 +94,7 @@ impl Rig {
                 .map(|pane| pane.downgrade())
                 .unwrap()
         };
-        unsafe { *p.as_pane_mut().fd_mut() = FAKE_FD };
+        unsafe { p.as_pane_mut().configure_test_io(crate::window_pane::PaneTestIo::Descriptor(FAKE_FD))};
         link(&mut session, &mut window, idx);
         let wl = WinlinkRef::new(session.reference(), idx).unwrap();
         Rig {
@@ -378,7 +378,7 @@ fn respawning_a_window_with_an_attached_pane_refuses_without_touching_it() {
                 .first()
                 .is_some_and(|owner| owner.downgrade().ptr_eq(&rig.p))
         );
-        assert_eq!(*rig.p.as_pane().fd(), FAKE_FD, "the pane was never closed");
+        assert_eq!(rig.p.as_pane().process_active(), true, "the pane was never closed");
         assert_eq!(
             rig.window
                 .handle()
@@ -448,7 +448,7 @@ fn an_explicit_index_already_in_use_refuses_the_window_spawn() {
                 .first()
                 .is_some_and(|owner| owner.downgrade().ptr_eq(&rig.p))
         );
-        assert_eq!(*rig.p.as_pane().fd(), FAKE_FD);
+        assert_eq!(rig.p.as_pane().process_active(), true);
         assert!(
             core::ptr::eq(
                 rig.session
@@ -481,8 +481,8 @@ fn respawning_a_pane_that_is_still_attached_refuses_before_any_descriptor_work()
         assert_eq!(cause.unwrap().to_str().unwrap(), "pane 0:0.0 still active");
 
         assert_eq!(
-            *rig.p.as_pane().fd(),
-            FAKE_FD,
+            rig.p.as_pane().process_active(),
+            true,
             "the pane's descriptor stayed open"
         );
         assert!(
@@ -547,7 +547,7 @@ fn spawning_refuses_a_destroyed_pane() {
             &crate::window::window_pane_find_by_id(rig.p.id()).expect("the pane exists"),
         )
         .unwrap();
-        assert_eq!(*removed.as_pane().fd(), FAKE_FD);
+        assert_eq!(removed.as_pane().process_active(), true);
         drop(removed);
         let mut cause = None;
         assert!(spawn_pane(&mut sc, None, &mut cause).is_none());
@@ -570,7 +570,7 @@ fn spawning_refuses_a_window_that_has_been_unlinked() {
         cause = None;
         assert!(spawn_pane(&mut sc, None, &mut cause).is_none());
         assert_eq!(cause.as_deref(), Some(c"window no longer exists"));
-        assert_eq!(*rig.p.as_pane().fd(), FAKE_FD);
+        assert_eq!(rig.p.as_pane().process_active(), true);
         assert!(
             rig.window
                 .handle()

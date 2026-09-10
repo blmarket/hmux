@@ -103,8 +103,8 @@ impl PaneObservability for PaneView {
         unsafe {
             let wp = pane.get().expect("resolved pane");
             Ok(PaneProcess {
-                child_pid: (*wp.pid() > 0).then_some(*wp.pid() as u32),
-                exited: *wp.fd() == -1,
+                child_pid: (wp.process_id() > 0).then_some(wp.process_id() as u32),
+                exited: !wp.process_active(),
             })
         }
     }

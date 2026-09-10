@@ -600,10 +600,12 @@ fn pane_terminal_names_borrow_only_the_initialized_string() {
     let _guard = globals();
     let mut target = Target::new(40, 12);
     let pane = unsafe { &mut *target.pane(0) };
-    pane.tty_mut().fill(b'x');
-    pane.tty_mut()[..5].copy_from_slice(b"/\xfe/1\0");
+    let mut name = [b'x'; 32];
+    name[..5].copy_from_slice(b"/\xfe/1\0");
+    unsafe { pane.configure_test_io(crate::window_pane::PaneTestIo::Terminal(name)) };
     assert_eq!(pane.terminal_name().to_bytes(), b"/\xfe/1");
-    pane.tty_mut()[0] = 0;
+    name[0] = 0;
+    unsafe { pane.configure_test_io(crate::window_pane::PaneTestIo::Terminal(name)) };
     assert_eq!(pane.terminal_name(), c"");
 }
 
@@ -623,9 +625,9 @@ fn nested_detection_covers_missing_empty_nonmatching_and_matching_tty() {
         assert_eq!(server_client_check_nested(c), 0);
         let wp = &mut *target.pane(0);
         let bytes = b"/dev/pts/focused\0";
-        for (dst, src) in wp.tty_mut().iter_mut().zip(bytes) {
-            *dst = *src;
-        }
+        let mut name = [0; 32];
+        name[..bytes.len()].copy_from_slice(bytes);
+        wp.configure_test_io(crate::window_pane::PaneTestIo::Terminal(name));
         assert_eq!(server_client_check_nested(c), 1);
     }
 }
@@ -1197,8 +1199,8 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
         let mut item = Item::with_client();
         item.set_client(c);
         let item = item.handle();
-        *pane.get_mut().unwrap().fd_mut() = 0;
-        *pane.get_mut().unwrap().event_mut() = output.ptr();
+        pane.get_mut().unwrap().configure_test_io(crate::window_pane::PaneTestIo::Descriptor(0));
+        pane.get_mut().unwrap().configure_test_io(crate::window_pane::PaneTestIo::Stream(output.ptr()));
         let send = |key, bytes: &[u8]| {
             server_client_key_callback(
                 &item,
@@ -1218,7 +1220,7 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
         assert_eq!(send(b'z' as key_code, b"ignored"), CMD_RETURN_NORMAL);
         assert!(output.written().is_empty());
         c.flags &= !(CLIENT_READONLY as uint64_t);
-        *pane.get_mut().unwrap().fd_mut() = -1;
+        pane.get_mut().unwrap().configure_test_io(crate::window_pane::PaneTestIo::Descriptor(-1));
         let window = pane.window().unwrap();
         let pane_options = pane.get().unwrap().options_ref().clone();
         window.remove_pane(
@@ -1231,8 +1233,8 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
         payload.set_pane_id(99);
         *payload.base_mut() = RustScreen::new_with_server_options(20, 6, 0);
         *payload.options_mut() = Some(pane_options);
-        *payload.fd_mut() = 0;
-        *payload.event_mut() = output.ptr();
+        payload.configure_test_io(crate::window_pane::PaneTestIo::Descriptor(0));
+        payload.configure_test_io(crate::window_pane::PaneTestIo::Stream(output.ptr()));
         let unregistered = (payload).into_owner();
         let observed = unregistered.downgrade();
         crate::window::window_panes_insert_tail(&mut window.as_window_mut(), unregistered);
@@ -1255,7 +1257,7 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
             CMD_RETURN_NORMAL
         );
         assert_eq!(output.written(), b"listed pane paste");
-        *unregistered.get_mut().unwrap().fd_mut() = -1;
+        unregistered.get_mut().unwrap().configure_test_io(crate::window_pane::PaneTestIo::Descriptor(-1));
         c.set_attached_session(None);
         assert_eq!(send(b'z' as key_code, b"detached"), CMD_RETURN_NORMAL);
         assert!(output.written().is_empty());

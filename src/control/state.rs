@@ -653,7 +653,7 @@ unsafe fn control_write_pending(
         let Some(wp) = held
             .as_ref()
             .and_then(|pane| pane.get())
-            .filter(|pane| *pane.fd() != -1)
+            .filter(|pane| pane.process_active())
         else {
             control_discard_pane(control_state_mut(c), pane);
             control_flush_all_blocks(c);
@@ -893,7 +893,7 @@ unsafe fn control_check_subs_pane(c: &mut client, csub: &mut control_sub) {
         let Some(mut pane) = window_pane_find_by_id(csub.id) else {
             return;
         };
-        if pane.get().is_none_or(|pane| *pane.fd() == -1) {
+        if pane.get().is_none_or(|pane| !pane.process_active()) {
             return;
         }
         let Some(window) = pane.window() else { return };

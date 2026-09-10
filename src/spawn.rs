@@ -149,7 +149,7 @@ pub(crate) unsafe fn spawn_window(
                     .as_window()
                     .panes
                     .iter()
-                    .any(|pane| *pane.as_pane().fd() != -1)
+                    .any(|pane| pane.as_pane().process_active())
             {
                 *cause = Some(xasprintf(
                     c"window %s:%d still active",
@@ -365,7 +365,7 @@ pub(crate) unsafe fn spawn_pane(
             new_pane = previous.expect("respawning requires an existing pane");
             let previous = &mut new_pane;
             new_id = previous.id();
-            if *previous.get().expect("the respawn pane is present").fd() != -1
+            if previous.get().expect("the respawn pane is present").process_active()
                 && sc.flags & SPAWN_KILL == 0
             {
                 let index = crate::window::window_pane_index(
@@ -380,16 +380,7 @@ pub(crate) unsafe fn spawn_pane(
                 return None;
             }
             let pane = previous.get_mut().expect("the respawn pane is present");
-            if *pane.fd() != -1 {
-                pane.event().free();
-                close(*pane.fd());
-            }
-            window_pane_reset_mode_all(pane);
-            screen_reinit(pane.base_mut());
-            if let Some(ictx) = pane.ictx_mut().take() {
-                ictx.close();
-            }
-            *pane.flags_mut() &= !(PANE_STATUSREADY | PANE_STATUSDRAWN);
+            pane.prepare_respawn();
         } else {
             if let Some(lc) = lc {
                 new_pane = window_add_pane(
@@ -516,16 +507,12 @@ pub(crate) unsafe fn spawn_pane(
                     actual_cwd = Some(c"/");
                 }
             }
-            let forkpty = fdforkpty(ptm_fd.get(), None, Some(&ws));
-            *new_wp.pid_mut() = forkpty.pid;
-            *new_wp.fd_mut() = forkpty.master_fd;
-            *new_wp.tty_mut() = forkpty.tty_name;
-            if *new_wp.pid() == -(1 as core::ffi::c_int) {
+            let pid = new_wp.fork_process(ptm_fd.get(), &ws);
+            if pid == -(1 as core::ffi::c_int) {
                 *cause = Some(xasprintf(
                     c"fork failed: %s",
                     fmt_args![error_message(*__errno_location()).as_c_str()],
                 ));
-                *new_wp.fd_mut() = -(1 as core::ffi::c_int);
                 if !sc.flags & SPAWN_RESPAWN != 0 {
                     server_client_remove_pane(new_wp);
                     let pane_id = new_id;
@@ -542,7 +529,7 @@ pub(crate) unsafe fn spawn_pane(
                 );
                 return None;
             }
-            if *new_wp.pid() != 0 as core::ffi::c_int {
+            if pid != 0 as core::ffi::c_int {
                 if actual_cwd.is_some()
                     && chdir(path.as_ptr()) != 0
                     && home.is_none_or(|home| chdir(home.as_ptr()) != 0)
@@ -629,21 +616,7 @@ pub(crate) unsafe fn spawn_pane(
                 _exit(1 as core::ffi::c_int);
             }
         }
-        if !*new_wp.flags() & PANE_EMPTY != 0 {
-            let cp = xasprintf(
-                c"tmux(%lu).%%%u",
-                fmt_args![getpid() as core::ffi::c_long, new_id],
-            );
-            utempter_add_record(*new_wp.fd(), cp.as_ptr() as *mut core::ffi::c_char);
-            kill(getpid(), SIGCHLD);
-        }
-        *new_wp.flags_mut() &= !PANE_EXITED;
-        sigprocmask(
-            SIG_SETMASK,
-            &raw mut oldset,
-            core::ptr::null_mut::<sigset_t>(),
-        );
-        new_wp.initialize_io();
+        new_wp.activate_spawned_process(&oldset);
         if sc.flags & SPAWN_RESPAWN != 0 {
             return Some(new_pane);
         }
