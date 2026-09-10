@@ -966,34 +966,6 @@ fn share_of(
     ll
 }
 
-pub(crate) fn args_string_percentage_impl(
-    value: &CStr,
-    minval: core::ffi::c_longlong,
-    maxval: core::ffi::c_longlong,
-    curval: core::ffi::c_longlong,
-    cause: &mut Option<CString>,
-) -> core::ffi::c_longlong {
-    let text = value.to_bytes();
-    if text.is_empty() {
-        return no_number(cause, c"empty");
-    }
-    let Some(percent) = percentage_of(text) else {
-        return match number(value, minval, maxval) {
-            Ok(ll) => {
-                *cause = None;
-                ll
-            }
-            Err(errstr) => no_number(cause, errstr),
-        };
-    };
-    let copy = copy_of(percent);
-    let result = number(&copy, 0, 100);
-    match result {
-        Ok(percent) => share_of(percent, minval, maxval, curval, cause),
-        Err(errstr) => no_number(cause, errstr),
-    }
-}
-
 pub fn args_string_percentage(
     value: &CStr,
     minval: core::ffi::c_longlong,

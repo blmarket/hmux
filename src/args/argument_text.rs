@@ -1,5 +1,6 @@
 //! Text conversion for command arguments.
 
+use crate::args::{copy_of, no_number, number, percentage_of, share_of};
 use crate::consts::{VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::text::{RustUtf8VisModel, Utf8VisModel};
 use core::ffi::c_longlong;
@@ -97,6 +98,26 @@ impl ArgumentTextCodec for RustArgumentTextCodec {
         current: c_longlong,
         cause: &mut Option<CString>,
     ) -> c_longlong {
-        crate::args::args_string_percentage_impl(value, minimum, maximum, current, cause)
+        {
+            let text = value.to_bytes();
+            if text.is_empty() {
+                return no_number(cause, c"empty");
+            }
+            let Some(percent) = percentage_of(text) else {
+                return match number(value, minimum, maximum) {
+                    Ok(ll) => {
+                        *cause = None;
+                        ll
+                    }
+                    Err(errstr) => no_number(cause, errstr),
+                };
+            };
+            let copy = copy_of(percent);
+            let result = number(&copy, 0, 100);
+            match result {
+                Ok(percent) => share_of(percent, minimum, maximum, current, cause),
+                Err(errstr) => no_number(cause, errstr),
+            }
+        }
     }
 }
