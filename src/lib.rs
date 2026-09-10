@@ -171,7 +171,6 @@ pub mod tests {
     pub mod test_coverage_auto_17;
     pub mod test_coverage_auto_18;
     pub mod test_coverage_auto_19;
-    pub mod test_coverage_auto_20;
     pub mod test_coverage_auto_21;
     pub mod test_coverage_auto_22;
     pub mod test_coverage_auto_23;

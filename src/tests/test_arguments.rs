@@ -892,13 +892,11 @@ fn an_empty_command_list_argument_has_no_command_name() {
     let _guard = exclusive();
     let mut runner = Runner::new();
     let mut values = Values::new(&[Value::String(c"cmd"), Value::Commands(c"")]);
-    unsafe {
-        runner.with_args(&mut values);
-        let source_list = runner.cmdlist.clone();
-        let command = source_list.command(0).expect("the prepared command");
-        let state = cmd_make_commands_prepare(&command, &runner.item(), 0, None, 0, CStr::to_owned);
-        assert_eq!(args_make_commands_get_command(&state).as_c_str(), c"");
-    }
+    runner.with_args(&mut values);
+    let source_list = runner.cmdlist.clone();
+    let command = source_list.command(0).expect("the prepared command");
+    let state = cmd_make_commands_prepare(&command, &runner.item(), 0, None, 0, CStr::to_owned);
+    assert_eq!(args_make_commands_get_command(&state).as_c_str(), c"");
 }
 
 #[test]
@@ -953,23 +951,21 @@ fn a_default_command_stands_in_for_a_missing_argument() {
     let _guard = exclusive();
     let mut runner = Runner::new();
     let mut values = Values::words(&[c"cmd"]);
-    unsafe {
-        runner.with_args(&mut values);
-        let source_list = runner.cmdlist.clone();
-        let command = source_list.command(0).expect("the prepared command");
-        let state = cmd_make_commands_prepare(
-            &command,
-            &runner.item(),
-            0,
-            Some(c"display-message #{e|+|:1,2}"),
-            0,
-            CStr::to_owned,
-        );
-        assert_eq!(
-            args_make_commands_get_command(&state).as_c_str(),
-            c"display-message"
-        );
-    }
+    runner.with_args(&mut values);
+    let source_list = runner.cmdlist.clone();
+    let command = source_list.command(0).expect("the prepared command");
+    let state = cmd_make_commands_prepare(
+        &command,
+        &runner.item(),
+        0,
+        Some(c"display-message #{e|+|:1,2}"),
+        0,
+        CStr::to_owned,
+    );
+    assert_eq!(
+        args_make_commands_get_command(&state).as_c_str(),
+        c"display-message"
+    );
 }
 
 #[test]

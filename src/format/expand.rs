@@ -6378,6 +6378,3 @@ use crate::screen::RustScreen;
 #[cfg(test)]
 #[path = "../tests/test_format_expand_focused.rs"]
 mod focused_tests;
-
-#[cfg(test)]
-pub use crate::consts::SORT_END;
