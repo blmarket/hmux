@@ -239,10 +239,7 @@ pub mod xmalloc;
 
 pub use alternate_character_entry::*;
 pub use args::RustArguments;
-pub use args::{
-    argument_command_state, argument_entry, argument_text, argument_value, arguments_trait,
-};
-pub use argument_command_state::*;
+use args::{argument_entry, argument_text, argument_value, arguments_trait};
 pub use argument_entry::*;
 pub use argument_text::{ArgumentTextCodec, RustArgumentTextCodec};
 pub use argument_value::*;

@@ -4,6 +4,7 @@ pub mod argument_text;
 pub mod argument_value;
 pub mod arguments_trait;
 
+use crate::args::argument_command_state::ArgumentCommandState;
 use crate::cmd::CmdListRef;
 use crate::cmd::cmd_get_entry;
 use crate::cmd::cmd_parse_from_string;
@@ -301,7 +302,7 @@ pub struct args_command_state {
     pub(crate) client_ref: Option<ClientRef>,
 }
 
-impl crate::ArgumentCommandState for args_command_state {
+impl ArgumentCommandState for args_command_state {
     fn prepared_command_list(&self) -> Option<&CmdListRef> {
         self.cmdlist.as_ref()
     }
