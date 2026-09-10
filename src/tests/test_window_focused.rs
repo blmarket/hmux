@@ -589,9 +589,7 @@ fn pane_registration_cleanup_outlives_the_thread_local_index() {
 
 #[test]
 fn pane_registration_removes_only_its_own_entry() {
-    let index = GlobalPaneIndex {
-        panes: HandleRegistry::new(),
-    };
+    let index = GlobalPaneIndex::new();
     let old = index.register(detached_pane());
     let replacement = index.register(detached_pane());
     let id = replacement.pane_id();
@@ -838,9 +836,7 @@ fn losing_the_active_pane_uses_history_then_owned_neighbors() {
 
 #[test]
 fn pane_index_observers_do_not_retain_the_allocation() {
-    let index = GlobalPaneIndex {
-        panes: HandleRegistry::new(),
-    };
+    let index = GlobalPaneIndex::new();
     let original = index.register(detached_pane());
     let id = original.id();
     let weak = original.downgrade();

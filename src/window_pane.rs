@@ -1,3 +1,13 @@
+use crate::entity_id::next_entity_id;
+use crate::ffi::{gethostname, getpid, kill, close, utempter_remove_record};
+use crate::handle_registry::HandleRegistry;
+use crate::options::{OptionsEngine, RustOptionsEngine};
+use crate::reactor::Timer;
+use crate::style::{ColourEngine, RustColourEngine, pane_scrollbar_style_from_option, style_ranges_free};
+use crate::window::{window_pane_set_window, window_pane_set_window_ref, window_pane_reset_mode_all, window_pane_default_cursor, PANE_STYLECHANGED};
+use crate::{WindowPane, PaneIdentity, PaneGeometryState, PaneScrollbarStyleState, PaneSearchState, PaneResizeQueue, PaneCommandState};
+use std::cell::Cell;
+use libc::SIGCHLD;
 use std::cell::{RefCell, UnsafeCell};
 use std::rc::{Rc, Weak};
 
@@ -689,5 +699,134 @@ mod tests {
             assert!(retained.get_mut().is_none());
         }
         assert!(retained.as_ptr().is_null());
+    }
+}
+
+pub(crate) struct GlobalPaneIndex {
+    panes: HandleRegistry<RustWindowPaneWeak>,
+}
+
+impl GlobalPaneIndex {
+    pub(crate) fn find(&self, id: u_int) -> Option<RustWindowPaneWeak> {
+        self.panes
+            .get(id as usize)
+            .filter(RustWindowPaneWeak::is_alive)
+    }
+
+    pub(crate) fn ids(&self) -> Vec<u_int> {
+        self.panes
+            .keys()
+            .into_iter()
+            .map(|id| id as u_int)
+            .collect()
+    }
+}
+
+impl GlobalPaneIndex {
+    pub(crate) fn register(&self, pane: Box<window_pane>) -> RustWindowPaneRef {
+        let reference = RustWindowPaneRef::from_pane(pane);
+        let registration = self
+            .panes
+            .register(reference.pane_id() as usize, reference.downgrade());
+        reference.register(registration);
+        reference
+    }
+}
+
+impl RustWindowPaneRef {
+    pub(crate) fn new(pane: Box<window_pane>) -> Self {
+        GLOBAL_PANE_INDEX.with(|index| index.register(pane))
+    }
+}
+
+pub(crate) const GLOBAL_PANE_INDEX: crate::server_state::LocalField<GlobalPaneIndex> =
+    crate::server_state::LocalField::new(|state| &state.global_pane_index);
+pub(crate) const next_window_pane_id: crate::server_state::LocalField<Cell<Option<u_int>>> =
+    crate::server_state::LocalField::new(|state| &state.next_window_pane_id);
+pub(crate) unsafe fn window_pane_create(
+    w: &mut window,
+    sx: u_int,
+    sy: u_int,
+    hlimit: u_int,
+) -> RustWindowPaneRef {
+    unsafe {
+        let fresh2 = next_entity_id(&next_window_pane_id);
+        let mut host: [core::ffi::c_char; 65] = [0; 65];
+        let mut wp_box = Box::new(window_pane::new());
+        let wp = &raw mut *wp_box;
+        window_pane_set_window(&mut *wp, Some(w));
+        *(*wp).options_mut() = Some(RustOptionsEngine.create(Some((*w).options_ref())));
+        *(*wp).flags_mut() = PANE_STYLECHANGED;
+        (*wp).set_pane_id(fresh2);
+        *(*wp).fd_mut() = -(1 as core::ffi::c_int);
+        (*wp).set_size(PaneSize {
+            width: sx,
+            height: sy,
+        });
+        *(*wp).pipe_fd_mut() = -(1 as core::ffi::c_int);
+        let scrollbar_style = pane_scrollbar_style_from_option((*wp).options_ref());
+        (*wp).set_scrollbar_style(scrollbar_style);
+        RustColourEngine.init_palette((*wp).palette_mut());
+        ((*wp).options_ref()).load_pane_colours(Some((*wp).palette_mut()));
+        *(*wp).base_mut() = RustScreen::new_with_server_options(sx, sy, hlimit);
+        *(*wp).shown_mut() = PaneScreen::Base;
+        window_pane_default_cursor(&mut *wp);
+        *(*wp).status_screen_mut() =
+            RustScreen::new_with_server_options(1 as u_int, 1 as u_int, 0 as u_int);
+        if gethostname(
+            &raw mut host as *mut core::ffi::c_char,
+            size_of::<[core::ffi::c_char; 65]>() as size_t,
+        ) == 0 as core::ffi::c_int
+        {
+            (*wp)
+                .base_mut()
+                .set_title(CStr::from_ptr(host.as_ptr()), 0 as core::ffi::c_int);
+        }
+        RustWindowPaneRef::new(wp_box)
+    }
+}
+/// Tears down and frees the pane at the end of destruction. Observers do not
+/// postpone resource or allocation release.
+pub(crate) unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
+    unsafe {
+        let wp = &mut *pane.as_mut_ptr();
+        window_pane_reset_mode_all(&mut *wp);
+        PaneSearchState::clear(wp);
+        if *wp.fd() != -(1 as core::ffi::c_int) {
+            utempter_remove_record(*wp.fd());
+            kill(getpid(), SIGCHLD);
+            wp.event().free();
+            close(*wp.fd());
+            *wp.fd_mut() = -1;
+        }
+        if let Some(ictx) = wp.ictx_mut().take() {
+            ictx.close();
+        }
+        wp.r_mut().ranges.clear();
+        if *wp.pipe_fd() != -(1 as core::ffi::c_int) {
+            wp.pipe_event().free();
+            close(*wp.pipe_fd());
+            *wp.pipe_fd_mut() = -1;
+        }
+        wp.resize_timer_mut().disarm();
+        wp.sync_timer_mut().disarm();
+        PaneResizeQueue::clear(wp);
+        pane.unregister();
+        if let Some(oo) = wp.options_mut().take() {
+            RustOptionsEngine.destroy(oo);
+        }
+        wp.clear_pane_command();
+        RustColourEngine.free_palette(Some(wp.palette_mut()));
+        style_ranges_free(&mut wp.border_status_line_mut().ranges);
+        wp.border_status_line_mut().expanded = None;
+        window_pane_set_window_ref(wp, None);
+        drop(pane.into_pane());
+    }
+}
+impl GlobalPaneIndex {
+    pub(crate) fn new() -> Self {
+        Self {
+            panes: HandleRegistry::new(),
+        }
     }
 }
