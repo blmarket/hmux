@@ -64,9 +64,9 @@ impl std::fmt::Debug for RustWindowPaneWeak {
 impl RustWindowPaneRef {
     pub(crate) fn from_pane(pane: Box<window_pane>) -> Self {
         let pane = unsafe { Box::from_raw(Box::into_raw(pane).cast::<UnsafeCell<window_pane>>()) };
-        Self(Rc::new(RustWindowPane {
-            registration: RefCell::new(None),
-            pane,
+        Self(Rc::new_cyclic(|allocation| {
+            unsafe { (*pane.get()).observation = Some(RustWindowPaneWeak { allocation: allocation.clone() }) };
+            RustWindowPane { registration: RefCell::new(None), pane }
         }))
     }
 
@@ -238,6 +238,7 @@ impl RustWindowPaneWeak {
 #[derive(Default)]
 #[repr(C)]
 pub struct window_pane {
+    observation: Option<RustWindowPaneWeak>,
     id: u32,
     active_point: u_int,
     /// The window backlink, retained during transfers and teardown.
@@ -446,6 +447,10 @@ impl window_pane {
 }
 
 impl crate::WindowPane for window_pane {
+    fn observation(&self) -> Option<RustWindowPaneWeak> {
+        self.observation.clone()
+    }
+
     fn flags(&self) -> &core::ffi::c_int {
         &self.flags
     }
@@ -631,6 +636,21 @@ mod tests {
     use super::*;
     use crate::PaneGeometryState;
     use crate::window::PANE_STYLECHANGED;
+
+    #[test]
+    fn observations_remain_bound_to_the_original_allocation() {
+        let owner = RustWindowPaneRef::from_pane(Box::default());
+        let observed = unsafe { owner.get().unwrap().observation().unwrap() };
+        assert_eq!(observed, owner.downgrade());
+        let id = owner.pane_id();
+        drop(owner);
+        let replacement = RustWindowPaneRef::from_pane(Box::default());
+        assert_eq!(id, replacement.pane_id());
+        assert_ne!(observed, replacement.downgrade());
+        assert!(!observed.is_alive());
+        assert!(unsafe { observed.get() }.is_none());
+        assert!(window_pane::default().observation().is_none());
+    }
 
     #[test]
     fn weak_upgrade_shares_the_strong_owner_without_changing_identity() {

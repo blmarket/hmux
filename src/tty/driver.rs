@@ -3256,7 +3256,7 @@ pub unsafe fn tty_default_colours(gc: &mut grid_cell, wp: &mut impl crate::Windo
         let active = wp.window_context().is_some_and(|window| {
             window
                 .active_pane()
-                .is_some_and(|pane| core::ptr::addr_eq(pane.as_pane(), wp))
+                .is_some_and(|pane| wp.observation().as_ref() == Some(&pane))
         });
         if active && styles.cached_active_gc.fg != 8 as core::ffi::c_int {
             gc.fg = styles.cached_active_gc.fg;

@@ -3187,7 +3187,7 @@ pub unsafe fn server_client_remove_pane(pane: &impl crate::WindowPane) {
                 .filter(|cw| {
                     cw.pane
                         .as_ref()
-                        .is_some_and(|reference| core::ptr::addr_eq(reference.as_ptr(), pane))
+                        .is_some_and(|reference| pane.observation().as_ref() == Some(reference))
                 })
                 .map(|cw| cw.window);
             if let Some(window) = remove {

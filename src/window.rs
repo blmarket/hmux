@@ -1465,9 +1465,7 @@ pub unsafe fn window_pane_index(
     unsafe {
         let mut i = (w.options_ref()).number(c"pane-base-index") as u_int;
         for pane in &w.panes {
-            if pane
-                .get()
-                .is_some_and(|candidate| core::ptr::addr_eq(wp, candidate))
+            if wp.observation().as_ref() == Some(&pane.downgrade())
             {
                 return (0, i);
             }
@@ -1633,20 +1631,7 @@ pub fn window_pane_find_by_id(id: u_int) -> Option<RustWindowPaneWeak> {
 
 /// Observes the supplied pane allocation without substituting another pane with the same ID.
 pub(crate) fn window_pane_ref_of(pane: &impl crate::WindowPane) -> Option<RustWindowPaneWeak> {
-    {
-        if let Some(reference) = window_pane_find_by_id(pane.pane_id())
-            && core::ptr::addr_eq(reference.as_ptr(), pane)
-        {
-            return Some(reference);
-        }
-        let owner = pane.window_context()?;
-        owner
-            .as_window()
-            .panes
-            .iter()
-            .find(|candidate| core::ptr::addr_eq(candidate.as_ptr(), pane))
-            .map(|candidate| candidate.downgrade())
-    }
+    pane.observation()
 }
 
 pub(crate) fn window_pane_set_window_ref(
@@ -2166,9 +2151,7 @@ pub unsafe fn window_pane_visible(w: &window, wp: &impl crate::WindowPane) -> co
         w.active_pane_id()
             .and_then(|id| w.panes.iter().find(|pane| pane.pane_id() == id))
             .is_some_and(|active| {
-                active
-                    .get()
-                    .is_some_and(|active| core::ptr::addr_eq(active, wp))
+                wp.observation().as_ref() == Some(&active.downgrade())
             }) as core::ffi::c_int
     }
 }
@@ -2577,7 +2560,7 @@ pub fn window_pane_stack_remove(
     if let Some(wp) = wp {
         let stack = pane_stack(w, which);
         let previous_len = stack.len();
-        stack.retain(|pane| !core::ptr::addr_eq(pane.as_ptr(), wp));
+        stack.retain(|pane| wp.observation().as_ref() != Some(pane));
         if stack.len() != previous_len {
             *wp.flags_mut() &= !PANE_VISITED;
         }
@@ -2586,7 +2569,7 @@ pub fn window_pane_stack_remove(
 /// Takes `wp` off a stacking order. Unlike [`window_pane_stack_remove`] this
 /// carries no membership flag: a pane not on the order is left alone.
 pub fn window_pane_zindex_remove(w: &mut window, wp: &impl crate::WindowPane) {
-    pane_stack(&mut *w, PaneStack::ZIndex).retain(|pane| !core::ptr::addr_eq(pane.as_ptr(), wp));
+    pane_stack(&mut *w, PaneStack::ZIndex).retain(|pane| wp.observation().as_ref() != Some(pane));
 }
 
 /// Puts `wp` at the bottom of a stacking order.

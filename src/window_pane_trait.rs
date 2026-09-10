@@ -34,6 +34,11 @@ pub trait WindowPane:
     + PaneControlColours
     + PaneScrollbarStyleState
 {
+    /// Observes this allocation without retaining it. Unowned implementations return None.
+    /// The observation retains its allocation identity after destruction and never
+    /// resolves another allocation with the same pane ID.
+    fn observation(&self) -> Option<crate::types::RustWindowPaneWeak>;
+
     /// Borrows the pane's server flags.
     fn flags(&self) -> &core::ffi::c_int;
 
