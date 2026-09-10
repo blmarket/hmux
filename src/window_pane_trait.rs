@@ -2,7 +2,7 @@
 
 use crate::{
     PaneActivityState, PaneBorderCache, PaneCommandState, PaneControlColours, PaneExitState,
-    PaneGeometryState, PaneIdentity, PaneOutputBaseState, PaneResizeQueue, PaneScrollbar,
+    PaneGeometryState, PaneIdentity, PaneOutputBaseState, PaneScrollbar,
     PaneScrollbarStyleState, PaneSearchState, PaneStyleCache, PaneThemeState,
 };
 
@@ -25,7 +25,6 @@ pub trait WindowPane:
     + PaneCommandState
     + PaneExitState
     + PaneOutputBaseState
-    + PaneResizeQueue
     + PaneStyleCache
     + PaneThemeState
     + PaneSearchState
@@ -91,11 +90,11 @@ pub trait WindowPane:
     /// Mutably borrows the pane's output read position.
     fn offset_mut(&mut self) -> &mut crate::pane_output::RustPaneOutputOffset;
 
-    /// Borrows the pane's resize timer.
-    fn resize_timer(&self) -> &crate::reactor::TimerHandle;
-
-    /// Mutably borrows the pane's resize timer.
-    fn resize_timer_mut(&mut self) -> &mut crate::reactor::TimerHandle;
+    /// Resizes the base and active mode screens and queues the process resize,
+    /// cancelling synchronized output. An unchanged size does nothing.
+    /// # Safety
+    /// Exclude conflicting access while mode resize callbacks execute.
+    unsafe fn resize(&mut self, size: crate::PaneSize);
 
     /// Starts synchronized output, rearming its allocation-bound one-second expiry.
     fn start_sync(&mut self);

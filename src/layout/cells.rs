@@ -13,7 +13,7 @@ use crate::notify::notify_window;
 use crate::pane_geometry::PaneGeometryState;
 use crate::pane_scrollbar_style::PaneScrollbarStyleState;
 pub use crate::types::*;
-use crate::window::{window_pane_resize, window_pane_show_scrollbar};
+use crate::window::{window_pane_show_scrollbar};
 use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
 
@@ -340,7 +340,7 @@ impl PaneLayout {
                     *pane.flags_mut() |= PANE_REDRAWSCROLLBAR;
                 }
                 pane.set_position(self.x, self.y);
-                window_pane_resize(pane, self.sx, self.sy);
+                pane.resize(crate::PaneSize { width: self.sx, height: self.sy });
             }
         }
     }

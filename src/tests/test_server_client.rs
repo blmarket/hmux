@@ -795,43 +795,24 @@ fn resize_checks_cover_unmarked_window_empty_queue_and_each_coalescing_shape() {
         );
         drop(w);
 
-        server_client_check_pane_resize(&mut pane);
-        pane.as_pane_mut().record(
-            PaneSize {
-                width: 40,
-                height: 12,
-            },
-            PaneSize {
+        pane.deliver_pending_resize();
+        pane.as_pane_mut().resize(PaneSize {
                 width: 41,
                 height: 13,
-            },
-        );
-        server_client_check_pane_resize(&mut pane);
-        assert!(pane.as_pane().resize_timer().is_armed());
-        server_client_resize_timer(pane.as_pane_mut());
-        pane.as_pane_mut().record(
-            PaneSize {
-                width: 41,
-                height: 13,
-            },
-            PaneSize {
+            });
+        pane.deliver_pending_resize();
+        assert!(crate::window_pane::resize_timer_for_test(pane.as_pane()).is_armed());
+        crate::window_pane::resize_timer_for_test(pane.as_pane()).disarm();
+        pane.as_pane_mut().resize(PaneSize {
                 width: 42,
                 height: 14,
-            },
-        );
-        pane.as_pane_mut().record(
-            PaneSize {
-                width: 42,
-                height: 14,
-            },
-            PaneSize {
+            });
+        pane.as_pane_mut().resize(PaneSize {
                 width: 45,
                 height: 16,
-            },
-        );
-        server_client_check_pane_resize(&mut pane);
-        server_client_resize_timer(pane.as_pane_mut());
-        PaneResizeQueue::clear(pane.as_pane_mut());
+            });
+        pane.deliver_pending_resize();
+        crate::window_pane::resize_timer_for_test(pane.as_pane()).disarm();
     }
 }
 

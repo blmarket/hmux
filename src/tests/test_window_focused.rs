@@ -394,7 +394,7 @@ fn resize_modes_visibility_flags_and_fill_character_cover_safe_state_paths() {
             ),
             1
         );
-        window_pane_resize(&mut *wp, 30, 8);
+        (*wp).resize(crate::PaneSize { width: 30, height: 8 });
         assert_eq!(((*wp).geometry().sx, (*wp).geometry().sy), (30, 8));
         window_pane_reset_mode_all(&mut *wp);
         assert!(window_pane_current_mode(&*wp).is_none());

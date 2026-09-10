@@ -842,9 +842,11 @@ impl Window {
 /// Gives back what [`Pane::new`] made: the two screens, the timers and the
 /// option set. A fixture pane has no process behind it, so this is the whole
 /// of its teardown before its owning registration is dropped.
-fn free_pane(pane: &mut (impl crate::WindowPane + ?Sized)) {
+fn free_pane(pane: &mut dyn crate::WindowPane) {
     {
-        pane.resize_timer_mut().disarm();
+        if pane.observation().is_some() {
+            crate::window_pane::resize_timer_for_test(pane).disarm();
+        }
         pane.stop_sync();
         if let Some(oo) = pane.options_mut().take() {
             RustOptionsEngine.destroy(oo);

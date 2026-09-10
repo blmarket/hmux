@@ -295,23 +295,6 @@ impl crate::pane_identity::PaneIdentity for window_pane {
 
 }
 
-impl crate::pane_resize::PaneResizeQueue for window_pane {
-    fn is_empty(&self) -> bool {
-        crate::pane_resize::PaneResizeQueue::is_empty(&self.resize_queue)
-    }
-
-    fn clear(&mut self) {
-        crate::pane_resize::PaneResizeQueue::clear(&mut self.resize_queue);
-    }
-
-    fn record(&mut self, old: crate::pane_resize::PaneSize, new: crate::pane_resize::PaneSize) {
-        crate::pane_resize::PaneResizeQueue::record(&mut self.resize_queue, old, new);
-    }
-
-    fn next_step(&mut self) -> Option<crate::pane_resize::PaneResizeStep> {
-        crate::pane_resize::PaneResizeQueue::next_step(&mut self.resize_queue)
-    }
-}
 
 impl crate::pane_style_cache::PaneStyleCache for window_pane {
     fn styles(&self) -> PaneStyleCells {
@@ -497,13 +480,19 @@ impl crate::WindowPane for window_pane {
         &mut self.offset
     }
 
-    fn resize_timer(&self) -> &crate::reactor::TimerHandle {
-        &self.resize_timer
+    unsafe fn resize(&mut self, size: PaneSize) {
+        let old = PaneSize { width: self.sx, height: self.sy };
+        if old == size { return; }
+        self.stop_sync();
+        self.resize_queue.record(old, size);
+        self.sx = size.width;
+        self.sy = size.height;
+        let reflow = !self.base.is_alternate();
+        unsafe { crate::screen::screen_resize(&mut self.base, size.width, size.height, reflow as c_int) };
+        if let Some(mode) = self.modes.first_mut() {
+            unsafe { mode.mode().resize(mode, size.width, size.height) };
+        }
     }
-    fn resize_timer_mut(&mut self) -> &mut crate::reactor::TimerHandle {
-        &mut self.resize_timer
-    }
-
     fn start_sync(&mut self) {
         self.base.set_mode(self.base.mode() | crate::screen::MODE_SYNC);
         if !self.sync_timer.is_set() {
@@ -803,9 +792,9 @@ pub(crate) unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
             close(*wp.pipe_fd());
             *wp.pipe_fd_mut() = -1;
         }
-        wp.resize_timer_mut().disarm();
+        wp.resize_timer.disarm();
         wp.sync_timer.disarm();
-        PaneResizeQueue::clear(wp);
+        wp.resize_queue.clear();
         pane.unregister();
         if let Some(oo) = wp.options_mut().take() {
             RustOptionsEngine.destroy(oo);
@@ -875,4 +864,35 @@ pub(crate) fn sync_timer_for_test(pane: &dyn WindowPane) -> TimerHandle {
 pub(crate) fn expire_sync_for_test(pane: &mut dyn WindowPane) {
     let owner = pane.observation().unwrap().upgrade().unwrap();
     unsafe { (&mut *owner.0.pane.get()).expire_sync() };
+}
+
+impl RustWindowPaneWeak {
+    /// Delivers a coalesced process resize when the retry delay has elapsed.
+    /// # Safety
+    /// Exclude conflicting pane access and window changes during delivery.
+    pub(crate) unsafe fn deliver_pending_resize(&self) {
+        let Some(owner) = self.upgrade() else { return };
+        let pane = unsafe { &mut *owner.0.pane.get() };
+        if pane.resize_queue.is_empty() || pane.resize_timer.is_armed() { return; }
+        if !pane.resize_timer.is_set() {
+            let observed = self.clone();
+            pane.resize_timer.set_callback(move || {
+                if let Some(owner) = observed.upgrade() {
+                    unsafe { (*owner.0.pane.get()).resize_timer.disarm() };
+                }
+            });
+        }
+        let step = pane.resize_queue.next_step().expect("the resize queue is not empty");
+        drop(owner);
+        unsafe { crate::window::window_pane_send_resize(self, step.size.width, step.size.height) };
+        if let Some(owner) = self.upgrade() {
+            unsafe { (*owner.0.pane.get()).resize_timer.arm(timeval::from_usecs(step.retry_after.as_micros() as __suseconds_t)) };
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn resize_timer_for_test(pane: &dyn WindowPane) -> TimerHandle {
+    let owner = pane.observation().unwrap().upgrade().unwrap();
+    unsafe { (*owner.0.pane.get()).resize_timer }
 }

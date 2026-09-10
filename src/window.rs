@@ -1687,43 +1687,6 @@ pub unsafe fn window_pane_set_event(wp: &mut (impl crate::WindowPane + ?Sized)) 
         wp.event().enable(Interest::ReadWrite);
     }
 }
-pub unsafe fn window_pane_resize(wp: &mut (impl crate::WindowPane + ?Sized), sx: u_int, sy: u_int) {
-    unsafe {
-        let geometry = wp.geometry();
-        if sx == geometry.sx && sy == geometry.sy {
-            return;
-        }
-        wp.stop_sync();
-        wp.record(
-            PaneSize {
-                width: geometry.sx,
-                height: geometry.sy,
-            },
-            PaneSize {
-                width: sx,
-                height: sy,
-            },
-        );
-        wp.set_size(PaneSize {
-            width: sx,
-            height: sy,
-        });
-        log_debug(
-            c"%s: %%%u resize %ux%u",
-            fmt_args![c"window_pane_resize".as_ptr(), wp.pane_id(), sx, sy],
-        );
-        let base_has_no_saved_grid = !wp.base().is_alternate();
-        screen_resize(
-            wp.base_mut(),
-            sx,
-            sy,
-            base_has_no_saved_grid as core::ffi::c_int,
-        );
-        if let Some(wme) = window_pane_current_mode_mut(wp) {
-            wme.mode().resize(wme, sx, sy);
-        }
-    }
-}
 pub unsafe fn window_pane_set_mode(
     wp: &mut (impl crate::WindowPane + ?Sized),
     source_pane: Option<RustWindowPaneWeak>,
@@ -3114,12 +3077,12 @@ impl WindowRef {
         {
             let pane = unsafe { source_observation.get_mut().unwrap() };
             pane.set_position(dst_geometry.xoff, dst_geometry.yoff);
-            unsafe { window_pane_resize(pane, dst_geometry.sx, dst_geometry.sy) };
+            unsafe { pane.resize(PaneSize { width: dst_geometry.sx, height: dst_geometry.sy }) };
         }
         {
             let pane = unsafe { destination_observation.get_mut().unwrap() };
             pane.set_position(src_geometry.xoff, src_geometry.yoff);
-            unsafe { window_pane_resize(pane, src_geometry.sx, src_geometry.sy) };
+            unsafe { pane.resize(PaneSize { width: src_geometry.sx, height: src_geometry.sy }) };
         }
         Ok((src_was_active, dst_was_active))
     }
@@ -4130,7 +4093,7 @@ impl WindowRef {
                 self.bind_layout_pane(path.as_ref(), &pane);
                 let payload = pane.as_pane_mut();
                 payload.set_position(geometry.xoff, geometry.yoff);
-                window_pane_resize(payload, geometry.sx, geometry.sy);
+                payload.resize(PaneSize { width: geometry.sx, height: geometry.sy });
             }
             panes
         }

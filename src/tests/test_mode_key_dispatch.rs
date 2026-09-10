@@ -3,7 +3,7 @@ use crate::WindowPane;
 use crate::pane_identity::PaneIdentity;
 use crate::tests::test_fixtures::{Target, globals, zeroed_client};
 use crate::window::{window_pane_current_mode, window_pane_reset_mode, window_pane_set_mode};
-use crate::window::{window_pane_reset_mode_all, window_pane_resize};
+use crate::window::{window_pane_reset_mode_all};
 
 #[test]
 fn stale_key_targets_leave_replacement_modes_open_and_current_targets_can_close_them() {
@@ -129,7 +129,7 @@ fn every_mode_initializes_resizes_and_releases_its_own_state() {
             let size = RustScreen::grid(&shown);
             assert_eq!((size.sx, size.sy), (80, 24));
             drop(shown);
-            window_pane_resize(pane, 40, 12);
+            pane.resize(crate::PaneSize { width: 40, height: 12 });
             let shown = pane.screen_ref();
             let size = RustScreen::grid(&shown);
             assert_eq!((size.sx, size.sy), (40, 12));

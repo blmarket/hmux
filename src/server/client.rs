@@ -1935,7 +1935,7 @@ pub fn server_client_loop() {
             let panes = window.panes();
             for mut pane in panes {
                 if pane.get().is_some_and(|wp| *wp.fd() != -1) {
-                    server_client_check_pane_resize(&mut pane);
+                    pane.deliver_pending_resize();
                     if let Some(wp) = pane.get_mut() {
                         server_client_check_pane_buffer(wp);
                     }
@@ -1986,45 +1986,6 @@ unsafe fn server_client_check_window_resize(w_ref: &WindowRef) {
             dimensions.pending_pixels.width as core::ffi::c_int,
             dimensions.pending_pixels.height as core::ffi::c_int,
         );
-    }
-}
-fn server_client_resize_timer(wp: &mut (impl crate::WindowPane + ?Sized)) {
-    {
-        log_debug(
-            c"%s: %%%u resize timer expired",
-            fmt_args![c"server_client_resize_timer", wp.pane_id()],
-        );
-        wp.resize_timer_mut().disarm();
-    }
-}
-pub(crate) unsafe fn server_client_check_pane_resize(pane: &mut RustWindowPaneWeak) {
-    unsafe {
-        let observed = pane.clone();
-        let Some(wp) = pane.get_mut() else { return };
-        if PaneResizeQueue::is_empty(wp) {
-            return;
-        }
-        if !wp.resize_timer().is_set() {
-            wp.resize_timer_mut().set_callback(move || {
-                let mut pane = observed.clone();
-                if let Some(wp) = pane.get_mut() {
-                    server_client_resize_timer(wp);
-                }
-            });
-        }
-        if wp.resize_timer().is_armed() {
-            return;
-        }
-        log_debug(
-            c"%s: %%%u needs to be resized",
-            fmt_args![c"server_client_check_pane_resize", wp.pane_id()],
-        );
-        let step = PaneResizeQueue::next_step(wp).expect("the resize queue is not empty");
-        window_pane_send_resize(pane, step.size.width, step.size.height);
-        let tv = timeval::from_usecs(step.retry_after.as_micros() as __suseconds_t);
-        if let Some(wp) = pane.get_mut() {
-            wp.resize_timer_mut().arm(tv);
-        }
     }
 }
 pub(crate) unsafe fn server_client_check_pane_buffer(wp: &mut (impl crate::WindowPane + ?Sized)) {

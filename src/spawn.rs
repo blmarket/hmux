@@ -59,7 +59,7 @@ use crate::tmux::{global_options, ptm_fd};
 pub use crate::types::*;
 use crate::window::{WinlinkRef, window_set_latest};
 use crate::window::{
-    window_add_pane, window_pane_reset_mode_all, window_pane_resize, window_pane_set_event,
+    window_add_pane, window_pane_reset_mode_all, window_pane_set_event,
     window_panes_insert_head, winlink_remove, winlink_stack_remove,
 };
 use crate::xmalloc::xasprintf;
@@ -171,7 +171,7 @@ pub(crate) unsafe fn spawn_window(
                 .find(|pane| pane.pane_id() == pane_id)
                 .expect("the retained pane belongs to its window")
                 .as_pane_mut();
-            window_pane_resize(pane, size.width, size.height);
+            pane.resize(size);
             drop(payload);
             window.init_layout(
                 &crate::window::window_pane_find_by_id(pane_id).expect("the layout pane exists"),
