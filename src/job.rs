@@ -1,5 +1,5 @@
 use crate::cmd::cmdq_item;
-use crate::cfg::cfg_finished;
+use crate::cfg::configuration_finished;
 use crate::cmd::cmd_log_argv;
 
 use crate::compat::fdforkpty;
@@ -149,7 +149,7 @@ pub unsafe fn job_run(
         let mut ws = winsize::default();
         let mut master: core::ffi::c_int = 0;
         let mut tty: [u8; 32] = [0; 32];
-        let mut env = environment_for_session(s, (cfg_finished == 0) as core::ffi::c_int);
+        let mut env = environment_for_session(s, (!configuration_finished()) as core::ffi::c_int);
         if let Some(e) = e {
             env.copy_from(e);
         }

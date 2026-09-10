@@ -55,8 +55,25 @@ static mut CFG_CLIENT: Option<ClientWeak> = None;
 pub fn cfg_client() -> Option<ClientRef> {
     unsafe { CFG_CLIENT.as_ref().and_then(ClientWeak::upgrade) }
 }
-pub static mut cfg_finished: core::ffi::c_int = 0;
-static mut cfg_causes: Vec<CString> = Vec::new();
+#[derive(Default)]
+pub(crate) struct ConfigState {
+    causes: Vec<CString>,
+    finished: bool,
+}
+
+fn with_config<R>(visit: impl FnOnce(&mut ConfigState) -> R) -> R {
+    unsafe {
+        let mut process = crate::server::server_proc
+            .as_ref()
+            .expect("server process is initialized")
+            .borrow_mut();
+        visit(&mut process.config)
+    }
+}
+
+fn take_causes() -> Vec<CString> {
+    with_config(|config| core::mem::take(&mut config.causes))
+}
 /// The item the config load has left waiting on the first client, while it
 /// waits.
 static mut cfg_item: Option<CmdqItemWeak> = None;
@@ -64,7 +81,7 @@ pub static mut cfg_quiet: core::ffi::c_int = 1 as core::ffi::c_int;
 pub static mut cfg_files: Vec<CString> = Vec::new();
 fn cfg_client_done(_item: &CmdqItemRef) -> cmd_retval {
     unsafe {
-        if cfg_finished == 0 {
+        if !configuration_finished() {
             return CMD_RETURN_WAIT;
         }
         CMD_RETURN_NORMAL
@@ -72,10 +89,10 @@ fn cfg_client_done(_item: &CmdqItemRef) -> cmd_retval {
 }
 fn cfg_done(_item: &CmdqItemRef) -> cmd_retval {
     unsafe {
-        if cfg_finished != 0 {
+        if configuration_finished() {
             return CMD_RETURN_NORMAL;
         }
-        cfg_finished = 1 as core::ffi::c_int;
+        with_config(|config| config.finished = true);
         cfg_show_causes(None);
         if let Some(item) = cfg_item.as_ref().and_then(CmdqItemWeak::upgrade) {
             item.resume();
@@ -223,15 +240,13 @@ pub unsafe fn load_cfg_from_buffer(
     }
 }
 pub unsafe fn cfg_add_cause(fmt: &CStr, args: &[FmtArg]) {
-    unsafe {
-        let msg = format_alloc(fmt, args);
-        cfg_causes.push(msg);
-    }
+    let msg = format_alloc(fmt, args);
+    with_config(|config| config.causes.push(msg));
 }
 pub unsafe fn cfg_print_causes(item: &cmdq_item) {
     unsafe {
         let mut c = item.client();
-        for msg in core::mem::take(&mut cfg_causes) {
+        for msg in take_causes() {
             if let Some(c) = c.as_mut()
                 && c.flags() & CLIENT_CONTROL as uint64_t != 0
             {
@@ -249,13 +264,13 @@ pub unsafe fn cfg_print_causes(item: &cmdq_item) {
 pub unsafe fn cfg_show_causes(s: Option<&session>) {
     unsafe {
         let mut c = first_client();
-        if cfg_causes.is_empty() {
+        if with_config(|config| config.causes.is_empty()) {
             return;
         }
         if let Some(c) = c.as_mut()
             && c.flags() & CLIENT_CONTROL as uint64_t != 0
         {
-            for msg in core::mem::take(&mut cfg_causes) {
+            for msg in take_causes() {
                 control_write(
                     c.as_client_mut(),
                     c"%%config-error %s",
@@ -297,7 +312,7 @@ pub unsafe fn cfg_show_causes(s: Option<&session>) {
             {
                 window_pane_set_mode(pane.as_pane_mut(), None, WindowMode::View, None, None);
             }
-            for msg in core::mem::take(&mut cfg_causes) {
+            for msg in take_causes() {
                 window_copy_add(pane.as_pane_mut(), 0, c"%s", fmt_args![msg.as_ptr()]);
             }
         }
@@ -352,5 +367,10 @@ pub(crate) unsafe fn cfg_show_causes_for_session(s: Option<&SessionRef>) {
 /// # Safety
 /// Query on the server thread without concurrent configuration-state mutation.
 pub(crate) unsafe fn configuration_finished() -> bool {
-    unsafe { cfg_finished != 0 }
+    with_config(|config| config.finished)
+}
+
+#[cfg(test)]
+pub(crate) fn replace_configuration_finished(finished: bool) -> bool {
+    with_config(|config| core::mem::replace(&mut config.finished, finished))
 }

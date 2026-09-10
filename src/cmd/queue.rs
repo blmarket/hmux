@@ -5,7 +5,7 @@ use super::{
 
 use crate::args::{RustArguments, args_print};
 use crate::cfg::cfg_add_cause;
-use crate::cfg::cfg_finished;
+use crate::cfg::configuration_finished;
 use crate::cmd::{CommandEntry, RustCommandContext};
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print};
 use crate::compat::toupper;
@@ -1311,7 +1311,7 @@ impl CmdqItemRef {
             let cmd = list.command(at).expect("the fired command is in its list");
             let args = cmd_get_args(&cmd);
             let entry = cmd_get_entry(&cmd);
-            if cfg_finished != 0 {
+            if configuration_finished() {
                 fired.with_item(|item| cmdq_add_message(item));
             }
             if log_get_level() > 1 {

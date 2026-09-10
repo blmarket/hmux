@@ -174,6 +174,7 @@ pub(crate) struct GlobalsGuard {
 
 impl Drop for GlobalsGuard {
     fn drop(&mut self) {
+        unsafe { crate::server::server_proc = None };
         *GLOBALS_OWNER.lock().unwrap() = None;
     }
 }
@@ -196,6 +197,8 @@ pub(crate) fn globals() -> GlobalsGuard {
     *GLOBALS_OWNER.lock().unwrap() = Some(std::thread::current().id());
     let guard = GlobalsGuard { _guard: guard };
     globals_ready();
+    let process = crate::proc::ProcessRef::default();
+    unsafe { crate::server::server_proc = Some(process) };
     guard
 }
 

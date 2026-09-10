@@ -66,6 +66,7 @@ pub struct tmuxpeer {
 #[derive(Default)]
 #[repr(C)]
 pub struct tmuxproc {
+    pub(crate) config: crate::cfg::ConfigState,
     pub name: Option<std::ffi::CString>,
     pub exit: core::ffi::c_int,
     pub signalcb: Option<std::rc::Rc<ProcSignalCallback>>,

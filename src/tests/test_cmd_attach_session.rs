@@ -1,7 +1,7 @@
 use super::*;
 use crate::types::client;
 use crate::proc::tmuxpeer;
-use crate::cfg::{cfg_finished, cfg_print_causes};
+use crate::cfg::{cfg_print_causes, replace_configuration_finished};
 
 use crate::environ::new_environment_box;
 use crate::key_bindings::{key_bindings_get_table_ref, key_bindings_remove_table};
@@ -39,23 +39,19 @@ impl Drop for RootTable {
     }
 }
 
-/// `cfg_finished` for the length of a test, back to what it was afterwards
+/// Configuration completion for the length of a test, back to what it was afterwards
 /// even if the test panics.
-struct ConfigFinished(c_int);
+struct ConfigFinished(bool);
 
 impl ConfigFinished {
     fn new() -> ConfigFinished {
-        unsafe {
-            let was = cfg_finished;
-            cfg_finished = 1;
-            ConfigFinished(was)
-        }
+        ConfigFinished(replace_configuration_finished(true))
     }
 }
 
 impl Drop for ConfigFinished {
     fn drop(&mut self) {
-        unsafe { cfg_finished = self.0 };
+        replace_configuration_finished(self.0);
     }
 }
 

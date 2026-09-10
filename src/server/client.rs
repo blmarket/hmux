@@ -17,7 +17,7 @@ use super::run::{server_add_accept, server_update_socket};
 use crate::alerts::alerts_check_session;
 use crate::args::args_from_vector;
 use crate::cfg::start_cfg;
-use crate::cfg::{cfg_client, cfg_finished};
+use crate::cfg::{cfg_client, configuration_finished};
 
 use crate::cmd::cmd_parse_from_arguments;
 use crate::cmd::{CmdqItemRef, cmdq_append};
@@ -2950,7 +2950,7 @@ unsafe fn server_client_dispatch_identify(c: &mut client, imsg: &mut imsg) -> co
                 as uint64_t;
         }
         if !c.flags & CLIENT_EXIT as uint64_t != 0
-            && cfg_finished == 0
+            && !configuration_finished()
             && with_clients(|clients| {
                 clients
                     .first()
@@ -2981,7 +2981,7 @@ unsafe fn server_client_dispatch_shell(c: &mut client) -> core::ffi::c_int {
 pub unsafe fn server_client_get_cwd(c: Option<&client>, s: Option<&session>) -> CString {
     unsafe {
         let loading = cfg_client();
-        if cfg_finished == 0
+        if !configuration_finished()
             && let Some(loading) = loading
             && let Some(cwd) = loading.as_client().cwd.as_ref()
         {

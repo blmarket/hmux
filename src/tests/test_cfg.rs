@@ -5,16 +5,15 @@ use crate::server::server_client_get_cwd;
 use crate::tests::test_fixtures::{Clients, globals};
 
 /// A load under way against `c`, the way [`start_cfg`] leaves one once it has
-/// the first client. Both are process-wide, so this puts them back as they
+/// the first client. This puts the client and completion flag back as they
 /// were on the way out, even if the test panics.
-struct Loading(Option<ClientWeak>, core::ffi::c_int);
+struct Loading(Option<ClientWeak>, bool);
 
 impl Loading {
     unsafe fn for_client(c: *mut client) -> Loading {
         unsafe {
-            let held = Loading(CFG_CLIENT.take(), cfg_finished);
+            let held = Loading(CFG_CLIENT.take(), replace_configuration_finished(false));
             CFG_CLIENT = client_ref_of(&*c).map(|c| c.downgrade());
-            cfg_finished = 0;
             held
         }
     }
@@ -24,7 +23,7 @@ impl Drop for Loading {
     fn drop(&mut self) {
         unsafe {
             CFG_CLIENT = self.0.take();
-            cfg_finished = self.1;
+            replace_configuration_finished(self.1);
         }
     }
 }
@@ -77,13 +76,13 @@ fn causes_wait_for_an_active_pane_and_append_to_view_mode() {
     let window = target.state().window().unwrap();
     let pane = target.state().pane_list_ref().unwrap();
     unsafe {
-        cfg_causes.clear();
+        take_causes();
         let session = target.session_handle().clone();
         session.add_attached();
         window.as_window_mut().active_pane = None;
         cfg_add_cause(c"pending configuration error", fmt_args![]);
         cfg_show_causes(Some(session.as_session()));
-        assert_eq!(cfg_causes.len(), 1);
+        assert_eq!(with_config(|config| config.causes.len()), 1);
         assert!(pane.get().unwrap().modes().is_empty());
 
         {
@@ -98,7 +97,7 @@ fn causes_wait_for_an_active_pane_and_append_to_view_mode() {
         cfg_show_causes(Some(session.as_session()));
         cfg_add_cause(c"another configuration error", fmt_args![]);
         cfg_show_causes(Some(session.as_session()));
-        assert!(cfg_causes.is_empty());
+        assert!(with_config(|config| config.causes.is_empty()));
         let active = pane.get().unwrap();
         let mode = active.modes().first().unwrap();
         assert_eq!(mode.mode(), WindowMode::View);
