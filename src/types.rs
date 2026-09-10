@@ -1936,17 +1936,7 @@ pub struct grid_cell_entry {
     pub flags: u_char,
 }
 const _: () = assert!(size_of::<grid_cell_entry>() == 5);
-#[repr(C)]
-pub struct grid {
-    pub flags: core::ffi::c_int,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub hscrolled: u_int,
-    pub hsize: u_int,
-    pub hlimit: u_int,
-    pub linedata: Vec<grid_line>,
-}
-pub use crate::grid::grid_line;
+pub use crate::grid::{grid, grid_line};
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct style_range {

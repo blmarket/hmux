@@ -18,6 +18,17 @@ pub use crate::types::*;
 use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
 
+#[repr(C)]
+pub struct grid {
+    pub flags: core::ffi::c_int,
+    pub sx: u_int,
+    pub sy: u_int,
+    pub hscrolled: u_int,
+    pub hsize: u_int,
+    pub hlimit: u_int,
+    pub linedata: Vec<grid_line>,
+}
+
 pub const GRID_FLAG_FG256: c_int = 0x1 as c_int;
 pub const GRID_FLAG_BG256: c_int = 0x2 as c_int;
 
