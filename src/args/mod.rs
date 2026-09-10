@@ -16,7 +16,6 @@ use crate::compat::strtonum;
 use crate::fmt_args;
 use crate::format::format_single_from_target;
 use crate::log::{fatalx, log_debug};
-use crate::text::{RustUtf8VisModel, Utf8VisModel};
 pub use crate::types::*;
 use crate::xmalloc::xasprintf;
 use ::std::ffi::CStr;
@@ -741,69 +740,6 @@ pub unsafe fn args_print(args: &RustArguments) -> CString {
             args_print_add_value(&mut out, value);
         }
         copy_of(&out)
-    }
-}
-
-/// The quoting a string needs to survive being read back as one word.
-#[derive(Clone, Copy, PartialEq)]
-enum Quotes {
-    None,
-    Single,
-    Double,
-}
-
-/// The quoting a string needs: double quotes for the bytes the parser would
-/// otherwise read as syntax, single quotes for the ones only they survive.
-fn quotes_for(text: &[u8]) -> Quotes {
-    if text.iter().any(|b| b" #';${}%".contains(b)) {
-        Quotes::Double
-    } else if text.iter().any(|b| b" \"".contains(b)) {
-        Quotes::Single
-    } else {
-        Quotes::None
-    }
-}
-
-pub(crate) fn args_escape_impl(s: &CStr) -> CString {
-    unsafe {
-        let text = s.to_bytes();
-        let Some(&first) = text.first() else {
-            return CString::from_vec_unchecked(b"''".to_vec());
-        };
-        let quotes = quotes_for(text);
-        if first != b' ' && text.len() == 1 && (quotes != Quotes::None || first == b'~') {
-            return CString::from_vec_unchecked(vec![b'\\', first]);
-        }
-        let mut flags = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
-        if quotes == Quotes::Double {
-            flags |= VIS_DQ;
-        }
-        let escaped = RustUtf8VisModel.encode_utf8(text, flags);
-        let visible = escaped.as_bytes();
-        let tilde = visible.first() == Some(&b'~');
-        let mut result: Vec<u8> = Vec::new();
-        match quotes {
-            Quotes::Single => {
-                result.push(b'\'');
-                result.extend_from_slice(visible);
-                result.push(b'\'');
-            }
-            Quotes::Double => {
-                result.push(b'"');
-                if tilde {
-                    result.push(b'\\');
-                }
-                result.extend_from_slice(visible);
-                result.push(b'"');
-            }
-            Quotes::None => {
-                if tilde {
-                    result.push(b'\\');
-                }
-                result.extend_from_slice(visible);
-            }
-        }
-        CString::from_vec_unchecked(result)
     }
 }
 
