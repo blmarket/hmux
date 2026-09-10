@@ -1,64 +1,22 @@
-//! Log output and fatal process exits are checked in isolated child processes.
+//! Log output is checked per thread; fatal exits run in child processes.
 
 use super::*;
 
 /// The name of the variable a child process is told it is one by.
 const CHILD: &str = "TMUX_C2RS_LOG_TEST_CHILD";
 
-/// Runs `test` in a child process of its own and answers whether it did —
-/// which is to say whether this process is the parent.
-///
-/// Everything this module keeps is process-wide, and both halves of it are
-/// reached from outside: every module's `log_debug` writes to whatever file
-/// this one has open, and the debug level is read by the guards in front of
-/// those calls, which another module's tests borrow through
-/// [`log_with_level`]. The child process keeps unrelated messages and level
-/// changes out of the assertions. It is the same test binary with one test
-/// selected and one test thread.
-fn in_a_child_process(test: &str) -> bool {
-    if std::env::var_os(CHILD).is_some() {
-        return false;
-    }
-    let exe = std::env::current_exe().expect("the test binary");
-    let out = std::process::Command::new(exe)
-        .args(["--exact", test, "--test-threads=1", "--nocapture"])
-        .env(CHILD, "1")
-        .output()
-        .expect("the child process ran");
-    assert!(
-        out.status.success(),
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    true
+/// Owns this thread's log and a filename unique to the test thread.
+struct Log {
+    name: CString,
 }
-
-/// A test of the log, which is one that runs in a child process of its own.
-macro_rules! log_test {
-    ($name:ident, $body:block) => {
-        #[test]
-        fn $name() {
-            if in_a_child_process(concat!("log::tests::", stringify!($name))) {
-                return;
-            }
-            $body
-        }
-    };
-}
-
-/// A turn at the log — the level and open file, both this module's own
-/// statics — starting from a
-/// closed log at level zero and leaving one behind. The file the log is
-/// written to is named after the process, so it is the same path for every
-/// test and is taken away again here whether the test passed or not.
-struct Log;
 
 impl Log {
     fn new() -> Log {
         log_close();
         log_level.set(0);
-        let log = Log;
+        let log = Log {
+            name: CString::new(format!("unit-test-{:?}", std::thread::current().id())).unwrap(),
+        };
         log.forget();
         log
     }
@@ -66,7 +24,11 @@ impl Log {
     /// Where `log_open` puts what it writes, which is the name it is given
     /// and this process's id.
     fn path(&self) -> std::path::PathBuf {
-        std::path::PathBuf::from(format!("tmux-unit-test-{}.log", std::process::id()))
+        std::path::PathBuf::from(format!(
+            "tmux-{}-{}.log",
+            self.name.to_str().unwrap(),
+            std::process::id()
+        ))
     }
 
     /// What has been written to the log so far, with the timestamp in
@@ -89,7 +51,7 @@ impl Log {
     }
 
     fn open(&self) {
-        log_open(c"unit-test");
+        log_open(&self.name);
     }
 }
 
@@ -101,7 +63,8 @@ impl Drop for Log {
     }
 }
 
-log_test!(the_level_starts_at_nothing_and_goes_up_one_at_a_time, {
+#[test]
+fn the_level_starts_at_nothing_and_goes_up_one_at_a_time() {
     let log = Log::new();
     {
         assert_eq!(log_get_level(), 0);
@@ -111,17 +74,19 @@ log_test!(the_level_starts_at_nothing_and_goes_up_one_at_a_time, {
         assert_eq!(log_get_level(), 2);
     }
     drop(log);
-});
+}
 
-log_test!(a_log_at_level_zero_is_not_opened_at_all, {
+#[test]
+fn a_log_at_level_zero_is_not_opened_at_all() {
     let log = Log::new();
     log.open();
     log_debug(c"nothing", fmt_args![]);
     assert!(!log.path().exists());
     assert_eq!(log.lines(), Vec::<String>::new());
-});
+}
 
-log_test!(a_log_that_is_open_takes_what_is_written_to_it, {
+#[test]
+fn a_log_that_is_open_takes_what_is_written_to_it() {
     let log = Log::new();
     {
         log_add_level();
@@ -130,9 +95,10 @@ log_test!(a_log_that_is_open_takes_what_is_written_to_it, {
         log_debug(c"two %s", fmt_args![c"here".as_ptr()]);
     }
     assert_eq!(log.lines(), ["one 1", "two here"]);
-});
+}
 
-log_test!(what_is_written_is_escaped, {
+#[test]
+fn what_is_written_is_escaped() {
     let log = Log::new();
     {
         log_add_level();
@@ -140,9 +106,10 @@ log_test!(what_is_written_is_escaped, {
         log_debug(c"a\nb\tc\x07d\x80e", fmt_args![]);
     }
     assert_eq!(log.lines(), ["a\\nb\\tc\\ad\\200e"]);
-});
+}
 
-log_test!(a_log_that_is_closed_takes_nothing_more, {
+#[test]
+fn a_log_that_is_closed_takes_nothing_more() {
     let log = Log::new();
     {
         log_add_level();
@@ -153,9 +120,10 @@ log_test!(a_log_that_is_closed_takes_nothing_more, {
         log_close();
     }
     assert_eq!(log.lines(), ["before"]);
-});
+}
 
-log_test!(opening_a_log_twice_carries_on_where_the_first_left_off, {
+#[test]
+fn opening_a_log_twice_carries_on_where_the_first_left_off() {
     let log = Log::new();
     {
         log_add_level();
@@ -165,39 +133,43 @@ log_test!(opening_a_log_twice_carries_on_where_the_first_left_off, {
         log_debug(c"second", fmt_args![]);
     }
     assert_eq!(log.lines(), ["first", "second"]);
-});
+}
 
-log_test!(toggling_opens_the_log_and_toggling_again_closes_it, {
+#[test]
+fn toggling_opens_the_log_and_toggling_again_closes_it() {
     let log = Log::new();
     {
-        log_toggle(c"unit-test");
+        log_toggle(&log.name);
         assert_eq!(log_get_level(), 1);
         log_debug(c"between", fmt_args![]);
         log_add_level();
-        log_toggle(c"unit-test");
+        log_toggle(&log.name);
         assert_eq!(log_get_level(), 0);
         log_debug(c"after", fmt_args![]);
     }
     assert_eq!(log.lines(), ["log opened", "between", "log closed"]);
-});
+}
 
-log_test!(opening_a_log_does_not_consume_runtime_state, {
+#[test]
+fn opening_a_log_does_not_consume_runtime_state() {
     let log = Log::new();
     log_add_level();
     log.open();
     assert!(log.lines().is_empty());
-});
+}
 
-log_test!(the_level_can_be_borrowed_and_is_given_back, {
+#[test]
+fn the_level_can_be_borrowed_and_is_given_back() {
     let log = Log::new();
     {
         assert_eq!(log_with_level(3, log_get_level), 3);
         assert_eq!(log_get_level(), 0);
     }
     drop(log);
-});
+}
 
-log_test!(a_log_that_cannot_be_opened_stays_closed, {
+#[test]
+fn a_log_that_cannot_be_opened_stays_closed() {
     let log = Log::new();
     {
         log_add_level();
@@ -206,9 +178,10 @@ log_test!(a_log_that_cannot_be_opened_stays_closed, {
         assert_eq!(log_get_level(), 1);
     }
     assert!(!log.path().exists());
-});
+}
 
-log_test!(a_log_is_named_after_what_it_was_opened_with, {
+#[test]
+fn a_log_is_named_after_what_it_was_opened_with() {
     let log = Log::new();
     let other = std::path::PathBuf::from(format!("tmux-other-name-{}.log", std::process::id()));
     let _ = std::fs::remove_file(&other);
@@ -225,47 +198,45 @@ log_test!(a_log_is_named_after_what_it_was_opened_with, {
             .contains("in the other one")
     );
     let _ = std::fs::remove_file(&other);
-});
+}
 
-log_test!(concurrent_writes_and_reopens_keep_each_record_intact, {
+#[test]
+fn concurrent_logs_keep_levels_files_and_reopens_independent() {
     let log = Log::new();
     log_add_level();
     log.open();
+    let barrier = std::sync::Barrier::new(5);
     std::thread::scope(|scope| {
         for worker in 0..4 {
+            let barrier = &barrier;
             scope.spawn(move || {
+                barrier.wait();
+                assert_eq!(log_get_level(), 0);
+                let log = Log::new();
+                for _ in 0..worker + 2 {
+                    log_add_level();
+                }
+                log.open();
                 for record in 0..100 {
                     log_debug(c"worker %d record %d", fmt_args![worker, record]);
+                    log_close();
+                    log.open();
                 }
+                assert_eq!(log_get_level(), worker + 2);
+                assert_eq!(
+                    log.lines(),
+                    (0..100)
+                        .map(|record| format!("worker {worker} record {record}"))
+                        .collect::<Vec<_>>()
+                );
             });
         }
-        scope.spawn(|| {
-            for _ in 0..50 {
-                log_close();
-                log_open(c"unit-test");
-            }
-        });
+        barrier.wait();
+        log_debug(c"parent", fmt_args![]);
     });
-    log.open();
-    {
-        log_debug(c"final", fmt_args![]);
-    }
-    log_close();
-    let lines = log.lines();
-    assert_eq!(lines.last().map(String::as_str), Some("final"));
-    for line in &lines[..lines.len() - 1] {
-        let fields: Vec<_> = line.split_whitespace().collect();
-        assert_eq!(fields.len(), 4);
-        assert_eq!(fields[0], "worker");
-        assert_eq!(fields[2], "record");
-        assert!(fields[1].parse::<u32>().unwrap() < 4);
-        assert!(fields[3].parse::<u32>().unwrap() < 100);
-    }
-    assert_eq!(
-        lines.iter().collect::<std::collections::HashSet<_>>().len(),
-        lines.len()
-    );
-});
+    assert_eq!(log_get_level(), 1);
+    assert_eq!(log.lines(), ["parent"]);
+}
 
 #[test]
 fn fatal_preserves_errno_and_exits_with_or_without_an_open_log() {
