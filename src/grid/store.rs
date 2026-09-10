@@ -496,11 +496,6 @@ pub fn grid_create(sx: u_int, sy: u_int, hlimit: u_int) -> Box<grid> {
     })
 }
 
-#[cfg(test)]
-pub fn grid_destroy(gd: Box<grid>) {
-    drop(gd);
-}
-
 /// Whether two grids hold the same screen. Only the first `sy` lines are
 /// looked at, which are the history when there is any.
 pub fn grid_compare(ga: &grid, gb: &grid) -> c_int {

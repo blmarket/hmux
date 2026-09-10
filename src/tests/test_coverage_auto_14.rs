@@ -11,10 +11,9 @@
 use crate::grid::{
     GRID_FLAG_PADDING, GRID_HISTORY, GRID_STRING_EMPTY_CELLS, GRID_STRING_TRIM_SPACES,
     grid_cells_equal, grid_cells_look_equal, grid_clear, grid_clear_history, grid_clear_lines,
-    grid_collect_history, grid_compare, grid_create, grid_default_cell, grid_destroy,
-    grid_duplicate_lines, grid_get_cell, grid_move_cells, grid_move_lines, grid_reflow,
-    grid_remove_history, grid_scroll_history, grid_set_cell, grid_set_cells, grid_set_padding,
-    grid_string_cells,
+    grid_collect_history, grid_compare, grid_default_cell, grid_duplicate_lines, grid_get_cell,
+    grid_move_cells, grid_move_lines, grid_reflow, grid_remove_history, grid_scroll_history,
+    grid_set_cell, grid_set_cells, grid_set_padding, grid_string_cells,
 };
 use crate::tests::test_fixtures::{Grid, Screen, ascii, globals};
 
@@ -333,7 +332,5 @@ fn grid_string_cells_trim_and_empty_flags() {
         // EMPTY_CELLS pads to cellsize even beyond cellused
         let empty_padded = text_with_flags(&g, 0, 10, GRID_STRING_EMPTY_CELLS);
         assert!(empty_padded.len() >= full.len());
-        let grid = grid_create(5, 1, 0);
-        grid_destroy(grid);
     }
 }

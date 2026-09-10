@@ -14,11 +14,11 @@ pub use line::grid_line;
 pub use links::{Hyperlinks, RustHyperlinks};
 pub use reader::{GridReader, RustGrid, RustGridReader};
 pub use store::{
-    GRID_LINE_WRAPPED, GRID_STRING_EMPTY_CELLS, GRID_STRING_TRIM_SPACES, Grid, grid, grid_adjust_lines,
-    grid_cells_equal, grid_cells_look_equal, grid_clear_history, grid_clear_lines,
-    grid_collect_history, grid_compare, grid_create, grid_default_cell, grid_duplicate_lines,
-    grid_empty_line, grid_get_cell, grid_get_line, grid_get_line_ref, grid_in_set,
-    grid_line_length, grid_peek_line, grid_reflow, grid_remove_history, grid_set_cell,
+    GRID_LINE_WRAPPED, GRID_STRING_EMPTY_CELLS, GRID_STRING_TRIM_SPACES, Grid, grid,
+    grid_adjust_lines, grid_cells_equal, grid_cells_look_equal, grid_clear_history,
+    grid_clear_lines, grid_collect_history, grid_compare, grid_create, grid_default_cell,
+    grid_duplicate_lines, grid_empty_line, grid_get_cell, grid_get_line, grid_get_line_ref,
+    grid_in_set, grid_line_length, grid_peek_line, grid_reflow, grid_remove_history, grid_set_cell,
     grid_set_cells, grid_set_padding, grid_set_tab, grid_string_cells, grid_unwrap_position,
     grid_wrap_position,
 };
@@ -32,6 +32,6 @@ pub use view::{
 
 #[cfg(test)]
 pub(crate) use store::{
-    GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_FLAG_PADDING, GRID_HISTORY, grid_clear, grid_destroy,
+    GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_FLAG_PADDING, GRID_HISTORY, grid_clear,
     grid_move_cells, grid_move_lines, grid_scroll_history,
 };
