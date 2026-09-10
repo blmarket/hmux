@@ -1,6 +1,6 @@
-use crate::cmd::{CmdListRef, cmd_retval};
 use crate::cmd::CmdqStateRef;
 use crate::cmd::cmd_parse_from_string;
+use crate::cmd::{CmdListRef, cmd_retval};
 use crate::cmd::{CmdqItemRef, cmdq_append};
 
 use crate::fmt_args;
@@ -150,13 +150,10 @@ pub use crate::consts::{
     THEME_DARK, THEME_LIGHT, THEME_UNKNOWN,
 };
 
-thread_local! {
-    /// The live key-binding tables for this thread, by name. A client keeps a
-    /// strong handle after the table is removed from this registry.
-    pub(crate) static key_tables: RefCell<BTreeMap<CString, KeyTableRef>> = const {
-        RefCell::new(BTreeMap::new())
-    };
-}
+pub(crate) const key_tables: crate::server_state::LocalField<
+    RefCell<BTreeMap<CString, KeyTableRef>>,
+> = crate::server_state::LocalField::new(|state| &state.key_tables);
+
 pub(crate) fn key_bindings_get_table_ref(
     name: &CStr,
     create: core::ffi::c_int,

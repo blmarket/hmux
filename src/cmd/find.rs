@@ -11,7 +11,7 @@ use crate::server::server_check_marked;
 use crate::server::server_client_get_pane;
 use crate::server::with_clients;
 
-use crate::session::SESSIONS;
+use crate::session::SESSIONS_FIELD;
 
 pub use crate::consts::{
     CMD_FIND_CANFAIL, CMD_FIND_DEFAULT_MARKED, CMD_FIND_PANE, CMD_FIND_PREFER_UNATTACHED,
@@ -164,6 +164,8 @@ pub(crate) unsafe fn cmd_find_best_session(
     slist: &[SessionRef],
     flags: core::ffi::c_int,
 ) -> Option<SessionRef> {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     unsafe {
         let mut s: Option<SessionRef> = None;
         let mut i: u_int;
@@ -227,6 +229,8 @@ fn cmd_find_map_table<'a>(table: &[(&'a CStr, &'a CStr)], s: &'a CStr) -> &'a CS
     s
 }
 unsafe fn cmd_find_get_session(fs: &mut cmd_find_state, session: &CStr) -> core::ffi::c_int {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     unsafe {
         let mut selected: Option<SessionRef> = None;
         log_debug(
@@ -1003,9 +1007,10 @@ pub unsafe fn cmd_find_target(
         );
         cmd_find_clear_state(fs, flags);
         let queue_current = item.current().clone();
+        let marked_state = marked_pane.get();
         let mut current_state: Option<&cmd_find_state> = None;
         if server_check_marked() != 0 && flags & CMD_FIND_DEFAULT_MARKED != 0 {
-            current_state = Some(&marked_pane);
+            current_state = Some(&marked_state);
             log_debug(c"%s: current is marked pane", fmt_args![c"cmd_find_target"]);
             current_block = 1836292691772056875;
         } else if cmd_find_valid_state(&queue_current) != 0 {
@@ -1109,7 +1114,7 @@ pub unsafe fn cmd_find_target(
                     }
                     current_block = 5874756215481722497;
                 } else {
-                    cmd_find_copy_state(fs, &marked_pane);
+                    cmd_find_copy_state(fs, &marked_pane.get());
                     current_block = 8711307700714518445;
                 }
             } else if let Some(given) = given {

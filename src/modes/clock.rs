@@ -1,5 +1,5 @@
-use crate::args::RustArguments;
 use crate::WindowPane;
+use crate::args::RustArguments;
 use crate::screen::Screen;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 

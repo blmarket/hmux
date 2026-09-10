@@ -1,6 +1,6 @@
-use crate::cmd::{DisplayPanesRef, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::ImsgMessage;
+use crate::cmd::cmdq_item;
+use crate::cmd::{DisplayPanesRef, cmd_retval};
 
 use crate::WindowPane;
 use crate::pane_identity::PaneIdentity;
@@ -307,13 +307,7 @@ impl Overlay {
 }
 
 impl OverlayCheck {
-    pub fn call(
-        self,
-        data: OverlayData,
-        px: u_int,
-        py: u_int,
-        nx: u_int,
-    ) -> VisibleRangesRef {
+    pub fn call(self, data: OverlayData, px: u_int, py: u_int, nx: u_int) -> VisibleRangesRef {
         {
             match self {
                 OverlayCheck::Menu => {
@@ -694,6 +688,7 @@ pub unsafe fn server_client_exec(c: &mut client, cmd: &CStr) {
         let options = match session.as_ref() {
             Some(session) => session.options(),
             None => global_s_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized")
                 .clone(),
@@ -1321,12 +1316,12 @@ unsafe fn server_client_check_mouse(c: &mut client, event: &mut key_event) -> ke
     }
 }
 unsafe fn server_client_is_bracket_paste(c: &mut client, key: key_code) -> core::ffi::c_int {
-    unsafe {
+    {
         if key as core::ffi::c_ulonglong & KEYC_MASK_KEY
             == KEYC_PASTE_START as core::ffi::c_ulong as core::ffi::c_ulonglong
         {
             c.flags = (c.flags as core::ffi::c_ulonglong | CLIENT_BRACKETPASTING) as uint64_t;
-            c.paste_time = current_time;
+            c.paste_time = current_time.get();
             log_debug(c"%s: bracket paste on", fmt_args![c.name.as_deref()]);
             return 0 as core::ffi::c_int;
         }
@@ -1341,7 +1336,7 @@ unsafe fn server_client_is_bracket_paste(c: &mut client, key: key_code) -> core:
     }
 }
 unsafe fn server_client_is_assume_paste(c: &mut client) -> core::ffi::c_int {
-    unsafe {
+    {
         let Some(session) = c.attached_session() else {
             return 0;
         };
@@ -1371,7 +1366,7 @@ unsafe fn server_client_is_assume_paste(c: &mut client) -> core::ffi::c_int {
                 return 1 as core::ffi::c_int;
             }
             c.flags = (c.flags as core::ffi::c_ulonglong | CLIENT_ASSUMEPASTING) as uint64_t;
-            c.paste_time = current_time;
+            c.paste_time = current_time.get();
             log_debug(c"%s: assume paste on", fmt_args![c.name.as_deref()]);
             return 0 as core::ffi::c_int;
         }
@@ -1589,6 +1584,7 @@ fn server_client_key_callback(item: &CmdqItemRef, mut event: Box<key_event>) -> 
                                         }
                                         bd = table.borrow().binding(key0).cloned();
                                         prefix_delay = (global_options
+                                            .get()
                                             .as_ref()
                                             .expect("global options are initialized"))
                                         .number(c"prefix-timeout")
@@ -2394,7 +2390,8 @@ unsafe fn server_client_check_redraw(c: &mut client) {
         let mut redraw_scrollbar_only: core::ffi::c_int;
         let mut bit: u_int = 0 as u_int;
         let tv = timeval::from_usecs(1000 as __suseconds_t);
-        static mut ev: TimerHandle = TimerHandle::ZERO;
+        const client_flags_timer: crate::server_state::Value<TimerHandle> =
+            crate::server_state::Value::new(|state| &state.client_flags_timer);
         let left: size_t;
         if c.flags & (CLIENT_CONTROL | CLIENT_SUSPENDED) as uint64_t != 0 {
             return;
@@ -2465,14 +2462,16 @@ unsafe fn server_client_check_redraw(c: &mut client) {
                 c"%s: redraw deferred (%zu left)",
                 fmt_args![c.name.as_deref(), left],
             );
-            if !ev.is_set() {
-                ev.set_callback(move || {
-                    server_client_redraw_timer();
+            if !client_flags_timer.get().is_set() {
+                client_flags_timer.with_mut(|current| {
+                    current.set_callback(move || {
+                        server_client_redraw_timer();
+                    })
                 });
             }
-            if !ev.is_armed() {
+            if !client_flags_timer.get().is_armed() {
                 log_debug(c"redraw timer started", fmt_args![]);
-                ev.arm(tv);
+                client_flags_timer.with_mut(|current| current.arm(tv));
             }
             if !c.flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
                 for pane in window.as_window().panes.iter() {
@@ -2650,6 +2649,7 @@ fn server_client_default_command(item: &CmdqItemRef) -> cmd_retval {
         let mut client = item.client().expect("default command without a client");
         let c = client.as_client_mut();
         let cmdlist = (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .command(c"default-client-command")
@@ -2849,7 +2849,7 @@ unsafe fn server_client_dispatch_identify(c: &mut client, imsg: &mut imsg) -> co
                 if access(data.as_ptr(), X_OK) == 0 as core::ffi::c_int {
                     c.cwd = Some(data.to_owned());
                 } else {
-                    c.cwd = Some(find_home().unwrap_or(c"/").to_owned());
+                    c.cwd = Some(find_home().unwrap_or_else(|| c"/".to_owned()).to_owned());
                 }
                 log_debug(c"client %p IDENTIFY_CWD %s", fmt_args![&raw const *c, data]);
             }
@@ -2939,7 +2939,7 @@ unsafe fn server_client_dispatch_identify(c: &mut client, imsg: &mut imsg) -> co
             c.out_fd = -(1 as core::ffi::c_int);
         }
         if c.flags as core::ffi::c_ulonglong & (CLIENT_BRACKETPASTING | CLIENT_ASSUMEPASTING) != 0
-            && current_time - c.paste_time > CLIENT_PASTE_TIME_LIMIT as time_t
+            && current_time.get() - c.paste_time > CLIENT_PASTE_TIME_LIMIT as time_t
         {
             log_debug(
                 c"%s: paste time limit exceeded",
@@ -2965,7 +2965,7 @@ unsafe fn server_client_dispatch_identify(c: &mut client, imsg: &mut imsg) -> co
 unsafe fn server_client_dispatch_shell(c: &mut client) -> core::ffi::c_int {
     unsafe {
         let configured = global_s_options
-            .as_ref()
+            .get()
             .expect("global options are initialized")
             .string_ref(c"default-shell");
         let shell = if checkshell(Some(&configured)) == 0 {
@@ -3001,7 +3001,7 @@ pub unsafe fn server_client_get_cwd(c: Option<&client>, s: Option<&session>) -> 
         {
             return cwd.to_owned();
         }
-        find_home().unwrap_or(c"/").to_owned()
+        find_home().unwrap_or_else(|| c"/".to_owned()).to_owned()
     }
 }
 unsafe fn server_client_control_flags(c: &mut client, next: &CStr) -> uint64_t {

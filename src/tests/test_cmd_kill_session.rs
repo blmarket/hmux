@@ -30,6 +30,8 @@ impl Drop for Group {
 
 #[test]
 fn session_registry_walk_survives_one_leaving_mid_walk() {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     let _guard = globals();
     let mut registry = Registry::new();
     let mut ay = Session::new(60, "a");

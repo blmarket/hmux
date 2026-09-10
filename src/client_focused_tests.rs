@@ -42,8 +42,8 @@ impl IdentifyPeer {
                 WatchMode::Once,
                 move |fd, events| never(fd, events, null_mut()),
             );
-            client_proc = Some(value.process.clone());
-            client_peer = Some(value.peer.clone());
+            client_proc.set(Some(value.process.clone()));
+            client_peer.set(Some(value.peer.clone()));
             value
         }
     }
@@ -70,8 +70,8 @@ impl IdentifyPeer {
 impl Drop for IdentifyPeer {
     fn drop(&mut self) {
         unsafe {
-            client_proc = None;
-            client_peer = None;
+            client_proc.set(None);
+            client_peer.set(None);
             self.peer.borrow_mut().event.disable();
             imsgbuf_clear(&mut self.peer.borrow_mut().ibuf);
             imsgbuf_clear(&mut self.far);
@@ -86,7 +86,7 @@ fn identify_sends_fixed_fields_capabilities_descriptors_environment_and_done() {
     let _guard = globals();
     let mut peer = IdentifyPeer::new();
     unsafe {
-        client_flags = CLIENT_CONTROL as u64;
+        client_flags.set(CLIENT_CONTROL as u64);
         let caps = vec![c"RGB".to_owned(), c"clipboard".to_owned()];
         client_send_identify(c"/dev/pts/focused", c"xterm-256color", &caps, c"/tmp", 7);
         let messages = peer.messages();
@@ -113,6 +113,6 @@ fn identify_sends_fixed_fields_capabilities_descriptors_environment_and_done() {
                 .count(),
             2
         );
-        client_flags = 0;
+        client_flags.set(0);
     }
 }

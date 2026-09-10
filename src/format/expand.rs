@@ -45,8 +45,8 @@ use crate::server::server_client_get_cwd;
 use crate::server::{client_walk, with_clients};
 
 use crate::session::{
-    SESSION_GROUPS, SESSIONS, next_session_id, session_group_attached_count, session_group_count,
-    session_group_name,
+    SESSION_GROUPS, SESSIONS_FIELD, next_session_id, session_group_attached_count,
+    session_group_count, session_group_name,
 };
 
 pub use crate::consts::{
@@ -85,7 +85,6 @@ use crate::{CommandTextCodec, RustCommandTextCodec};
 use crate::{FormatText, RustFormatText};
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
-use ::std::sync::OnceLock;
 
 #[derive(Default)]
 #[repr(C)]
@@ -287,7 +286,9 @@ pub const INT64_MAX: core::ffi::c_long = 9223372036854775807 as core::ffi::c_lon
 
 pub const FORMAT_LAST: core::ffi::c_int = 0x10 as core::ffi::c_int;
 
-static format_jobs: GlobalTree<format_job_key, Box<format_job>> = GlobalTree::new();
+const format_jobs_FIELD: crate::server_state::LocalField<
+    std::rc::Rc<GlobalTree<format_job_key, Box<format_job>>>,
+> = crate::server_state::LocalField::new(|state| &state.format_jobs);
 pub const FORMAT_MAX_WIDTH: core::ffi::c_int = 10000 as core::ffi::c_int;
 pub const FORMAT_MAX_REPEAT: core::ffi::c_int = 10000 as core::ffi::c_int;
 pub const FORMAT_MAX_PRECISION: core::ffi::c_int = 100 as core::ffi::c_int;
@@ -407,6 +408,8 @@ unsafe fn with_format_job<R>(
     locator: &FormatJobLocator,
     f: impl FnOnce(&mut format_job) -> R,
 ) -> Option<R> {
+    let format_jobs = format_jobs_FIELD.get();
+
     match locator.client.as_ref() {
         Some(watched) => {
             let mut client = watched.upgrade()?;
@@ -504,6 +507,8 @@ unsafe fn format_job_get(
     es: &mut format_expand_state,
     cmd: &CStr,
 ) -> CString {
+    let format_jobs = format_jobs_FIELD.get();
+
     unsafe {
         let mut client = ft.client();
         let locator = FormatJobLocator {
@@ -644,6 +649,8 @@ fn format_strftime(max: size_t, fmt: &CStr, tm: &tm) -> Option<CString> {
     }
 }
 pub fn format_tidy_jobs() {
+    let format_jobs = format_jobs_FIELD.get();
+
     unsafe {
         format_job_tidy(&mut format_jobs.map(), 0 as core::ffi::c_int);
         for mut c in client_walk() {
@@ -2049,11 +2056,12 @@ unsafe fn format_cb_pane_left(ft: &format_tree) -> Option<CString> {
     }
 }
 unsafe fn format_cb_pane_marked(ft: &format_tree) -> Option<CString> {
-    unsafe {
+    {
         let pane = ft.pane_handle()?;
         Some(format_callback_copy(
             if server_check_marked() != 0
                 && marked_pane
+                    .get()
                     .pane_ref()
                     .is_some_and(|marked| marked.id() == pane.id())
             {
@@ -2264,6 +2272,8 @@ unsafe fn format_cb_scroll_region_upper(ft: &format_tree) -> Option<CString> {
     }
 }
 fn format_cb_server_sessions(_ft: &format_tree) -> Option<CString> {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     let n = SESSIONS.read().len() as u_int;
     Some(format_printf(c"%u", fmt_args![n]))
 }
@@ -2368,10 +2378,11 @@ fn format_cb_session_many_attached(ft: &format_tree) -> Option<CString> {
     None
 }
 unsafe fn format_cb_session_marked(ft: &format_tree) -> Option<CString> {
-    unsafe {
+    {
         if let Some(s) = (*ft).session() {
             if server_check_marked() != 0
                 && marked_pane
+                    .get()
                     .session()
                     .is_some_and(|marked| marked.ptr_eq(&s))
             {
@@ -2408,7 +2419,7 @@ unsafe fn format_cb_session_windows(ft: &format_tree) -> Option<CString> {
     }
 }
 unsafe fn format_cb_socket_path(_ft: &format_tree) -> Option<CString> {
-    unsafe { socket_path.as_deref().map(format_callback_copy) }
+    socket_path.get().as_deref().map(format_callback_copy)
 }
 fn format_cb_version(_ft: &format_tree) -> Option<CString> {
     Some(format_callback_copy(getversion()))
@@ -2527,6 +2538,8 @@ unsafe fn format_cb_window_last_flag(ft: &format_tree) -> Option<CString> {
     Some(format_callback_copy(if last { c"1" } else { c"0" }))
 }
 unsafe fn format_cb_window_linked(ft: &format_tree) -> Option<CString> {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     unsafe {
         let link = ft.winlink()?;
         let window = link.get()?.window_handle()?.clone();
@@ -2548,6 +2561,8 @@ unsafe fn format_cb_window_linked(ft: &format_tree) -> Option<CString> {
     }
 }
 unsafe fn format_cb_window_linked_sessions(ft: &format_tree) -> Option<CString> {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     unsafe {
         let link = ft.winlink()?;
         let window = link.get()?.window_handle()?.clone();
@@ -2584,10 +2599,10 @@ unsafe fn format_cb_window_linked_sessions(ft: &format_tree) -> Option<CString> 
     }
 }
 unsafe fn format_cb_window_marked_flag(ft: &format_tree) -> Option<CString> {
-    unsafe {
+    {
         let link = ft.winlink()?;
         if server_check_marked() != 0
-            && marked_pane.winlink_ref().is_some_and(|marked| {
+            && marked_pane.get().winlink_ref().is_some_and(|marked| {
                 marked.index() == link.index() && marked.session().ptr_eq(link.session())
             })
         {
@@ -2734,7 +2749,7 @@ unsafe fn format_cb_session_last_attached(ft: &format_tree) -> Option<timeval> {
     }
 }
 unsafe fn format_cb_start_time(_ft: &format_tree) -> Option<timeval> {
-    unsafe { Some(start_time) }
+    Some(start_time.get())
 }
 fn format_cb_window_activity(ft: &format_tree) -> Option<timeval> {
     if let Some(w) = (*ft).window() {
@@ -2762,14 +2777,16 @@ fn format_cb_uid(_ft: &format_tree) -> Option<CString> {
     ))
 }
 fn format_cb_user(_ft: &format_tree) -> Option<CString> {
-    static CACHED_USER: OnceLock<CString> = OnceLock::new();
-    if let Some(value) = CACHED_USER.get() {
-        return Some(value.clone());
-    }
-    let account = UserAccountRecord::lookup_uid(unsafe { getuid() })?;
-    let name = account.account_name()?.to_owned();
-    Some(CACHED_USER.get_or_init(|| name).clone())
+    crate::server::server_proc.with(|state| {
+        if let Some(name) = state.cached_user.get() {
+            return Some(name.clone());
+        }
+        let account = UserAccountRecord::lookup_uid(unsafe { getuid() })?;
+        let name = account.account_name()?.to_owned();
+        Some(state.cached_user.get_or_init(|| name).clone())
+    })
 }
+
 static format_table: [format_table_entry; 195] = {
     [
         format_table_entry {
@@ -3770,6 +3787,7 @@ unsafe fn format_find_option(ft: &format_tree, key: &CStr) -> Option<CString> {
         };
         if let Some(value) = read(
             global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"),
         ) {
@@ -3788,6 +3806,7 @@ unsafe fn format_find_option(ft: &format_tree, key: &CStr) -> Option<CString> {
         }
         if let Some(value) = read(
             global_w_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"),
         ) {
@@ -3800,6 +3819,7 @@ unsafe fn format_find_option(ft: &format_tree, key: &CStr) -> Option<CString> {
         }
         read(
             global_s_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"),
         )
@@ -4324,6 +4344,8 @@ unsafe fn format_session_name(
     es: &mut format_expand_state,
     fmt: &CStr,
 ) -> Option<CString> {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     unsafe {
         let name = format_expand1(ft, es, fmt);
         for s in SESSIONS.read().values() {
@@ -6269,7 +6291,7 @@ fn format_is_word_separator(ws: &CStr, gc: &grid_cell) -> core::ffi::c_int {
         as core::ffi::c_int
 }
 pub unsafe fn format_grid_word(gd: &grid, mut x: u_int, mut y: u_int) -> Option<CString> {
-    unsafe {
+    {
         let mut gl: Option<&grid_line>;
         let mut gc;
         let mut ud: Vec<utf8_data> = Vec::new();
@@ -6277,6 +6299,7 @@ pub unsafe fn format_grid_word(gd: &grid, mut x: u_int, mut y: u_int) -> Option<
         let mut found: core::ffi::c_int = 0 as core::ffi::c_int;
         let mut s: Option<CString> = None;
         let ws = (global_s_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .string_ref(c"word-separators");

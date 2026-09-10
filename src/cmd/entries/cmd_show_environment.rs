@@ -1,5 +1,5 @@
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
+use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -12,7 +12,7 @@ use crate::environ::RustEnvironment;
 use crate::environ::with_global_environment;
 use crate::fmt_args;
 use crate::fmt_engine::format_alloc;
-use crate::types::{u_char};
+use crate::types::u_char;
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
 

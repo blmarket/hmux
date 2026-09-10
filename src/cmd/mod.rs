@@ -12,12 +12,11 @@ use crate::options::{OptionsEngine, RustOptionsEngine};
 use core::fmt;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU32, Ordering};
 mod command_entry;
-mod entries;
+pub(crate) mod entries;
 mod find;
 mod parse;
-mod queue;
+pub(crate) mod queue;
 #[cfg(test)]
 pub(crate) use find::CMD_FIND_QUIET;
 #[cfg(test)]
@@ -355,13 +354,18 @@ pub static cmd_table: &[&RustCommandEntry] = &[
     &cmd_unlink_window_entry,
     &cmd_wait_for_entry,
 ];
-static CMD_LIST_NEXT_GROUP: AtomicU32 = AtomicU32::new(1);
+const CMD_LIST_NEXT_GROUP: crate::server_state::LocalField<std::cell::Cell<u32>> =
+    crate::server_state::LocalField::new(|state| &state.cmd_list_next_group);
 
 /// The number the next command list, or the next move onto one, is stamped
 /// with. Every command in a list carries its list's number, and a step
 /// between two of them is what `;;` prints as.
 fn next_group() -> u_int {
-    CMD_LIST_NEXT_GROUP.fetch_add(1, Ordering::Relaxed)
+    CMD_LIST_NEXT_GROUP.with(|counter| {
+        let previous = counter.get();
+        counter.set(previous.wrapping_add(1));
+        previous
+    })
 }
 
 /// Moves everything `from` holds onto the end of `list`, leaving `from` empty.
@@ -591,8 +595,9 @@ pub fn cmd_get_parse_flags(cmd: &cmd) -> c_int {
 }
 
 pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
-    unsafe {
+    {
         global_options
+            .get()
             .as_ref()
             .expect("global options are initialized")
             .with_entry(c"command-alias", true, |entry| {

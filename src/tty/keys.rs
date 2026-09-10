@@ -1399,6 +1399,7 @@ pub unsafe fn tty_keys_build(tty: &mut tty) {
             }
         }
         global_options
+            .get()
             .as_ref()
             .expect("global options are initialized")
             .with_entry(c"user-keys", false, |entry| {
@@ -3653,6 +3654,7 @@ impl ClientRef {
                             }
                         } else {
                             delay = (global_options
+                                .get()
                                 .as_ref()
                                 .expect("global options are initialized"))
                             .number(c"escape-time")

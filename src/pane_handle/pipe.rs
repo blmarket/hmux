@@ -14,7 +14,7 @@ use crate::pane_identity::PaneIdentity;
 use crate::proc::proc_clear_signals;
 use crate::reactor::Interest;
 use crate::server::server_destroy_pane;
-use crate::server::server_proc;
+use crate::server::server_process;
 use crate::tmux::setblocking;
 use crate::types::*;
 use crate::window::window_pane_destroy_ready;
@@ -118,7 +118,8 @@ impl RustWindowPaneWeak {
             0 => {
                 unsafe {
                     proc_clear_signals(
-                        &mut server_proc
+                        &mut server_process
+                            .get()
                             .as_ref()
                             .expect("server process is initialized")
                             .borrow_mut(),

@@ -3,9 +3,9 @@
 use crate::cmd::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_FIND_WINDOW};
 use crate::cmd::{
     cmd_find_best_client, cmd_find_clear_state, cmd_find_copy_state, cmd_find_empty_state,
-    cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session,
-    cmd_find_from_session_window, cmd_find_from_window, cmd_find_from_winlink,
-    cmd_find_from_winlink_pane, cmd_find_target, cmd_find_valid_state,
+    cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session, cmd_find_from_session_window,
+    cmd_find_from_window, cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_target,
+    cmd_find_valid_state,
 };
 use crate::tests::test_fixtures::{Item, Target, globals};
 

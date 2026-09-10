@@ -121,6 +121,7 @@ pub mod resize;
 pub mod screen;
 pub mod screen_redraw_context;
 pub mod server;
+mod server_state;
 pub mod session;
 pub mod session_alert;
 pub mod session_attachment;

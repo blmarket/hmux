@@ -16,8 +16,8 @@ fn stale_key_targets_leave_replacement_modes_open_and_current_targets_can_close_
         let window_options = fs.window().unwrap().options();
         let session_options = fs.session().unwrap().options();
         pane_options.set_parent(Some(&window_options));
-        window_options.set_parent(crate::tmux::global_w_options.as_ref());
-        session_options.set_parent(crate::tmux::global_s_options.as_ref());
+        window_options.set_parent(crate::tmux::global_w_options.get().as_ref());
+        session_options.set_parent(crate::tmux::global_s_options.get().as_ref());
         let mut client = zeroed_client();
         for mode in [
             WindowMode::Clock,
@@ -105,12 +105,12 @@ fn every_mode_initializes_resizes_and_releases_its_own_state() {
             let pane = &mut *target.pane(0);
             let window_options = state.window().unwrap().options();
             pane.options_ref().set_parent(Some(&window_options));
-            window_options.set_parent(crate::tmux::global_w_options.as_ref());
+            window_options.set_parent(crate::tmux::global_w_options.get().as_ref());
             state
                 .session()
                 .unwrap()
                 .options()
-                .set_parent(crate::tmux::global_s_options.as_ref());
+                .set_parent(crate::tmux::global_s_options.get().as_ref());
             let source = (mode == WindowMode::Copy).then_some(pane.pane_id());
             assert_eq!(
                 window_pane_set_mode(

@@ -1,11 +1,11 @@
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::args::args_make_commands;
-use crate::cmd::{cmd_make_commands_now, cmd_make_commands_prepare};
+use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{CmdqItemWeak, cmdq_append, cmdq_item_ref_of, cmdq_item_weak_of};
+use crate::cmd::{cmd_make_commands_now, cmd_make_commands_prepare};
 use crate::compat::toupper;
 use crate::consts::{
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, CMD_FIND_CANFAIL, CMD_FIND_PANE,
@@ -16,9 +16,7 @@ use crate::format::format_single_from_target;
 use crate::job::job_run_for_session;
 use crate::server::client_working_directory;
 use crate::status::status_message_for_client;
-use crate::types::{
-    ClientRef, JobEvent, args, args_command_state, args_parse_type, u_char, u_int,
-};
+use crate::types::{ClientRef, JobEvent, args, args_command_state, args_parse_type, u_char, u_int};
 use ::std::ffi::CString;
 
 #[derive(Default)]
@@ -92,7 +90,8 @@ unsafe fn cmd_if_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'F' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         if shellcmd
             .as_bytes()
             .first()

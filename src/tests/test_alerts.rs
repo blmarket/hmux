@@ -104,7 +104,7 @@ fn the_deferred_check_releases_every_queued_window_and_resets_the_latch() {
                 second.reference().window_id(),
             ]
         );
-        let fired = alerts_fired;
+        let fired = alerts_fired.get();
         assert_eq!(fired, 1);
 
         drain();
@@ -114,7 +114,7 @@ fn the_deferred_check_releases_every_queued_window_and_resets_the_latch() {
             assert_eq!((*w).flags & WINDOW_ALERTFLAGS, 0);
         }
         assert!(queued_window_ids().is_empty());
-        let fired = alerts_fired;
+        let fired = alerts_fired.get();
         assert_eq!(fired, 0);
 
         let third = Window::new(54, "third", 80, 24);
@@ -255,6 +255,8 @@ fn a_visual_alert_names_the_window_unless_the_client_is_looking_at_it() {
 /// be readable through the links the `window` struct carried, and is not any
 /// more.
 pub(crate) fn queued_window_ids() -> Vec<u_int> {
+    let alerts_list = alerts_list_FIELD.get();
+
     alerts_list
         .queue()
         .iter()

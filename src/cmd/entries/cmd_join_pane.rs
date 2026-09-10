@@ -12,12 +12,10 @@ use crate::fmt_args;
 
 use crate::resize::recalculate_sizes;
 
-use crate::consts::{
-    CMD_FIND_DEFAULT_MARKED, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
-};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::args::args_parse_t;
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::consts::{CMD_FIND_DEFAULT_MARKED, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL};
 #[cfg(test)]
 use crate::types::{RustWindowPaneWeak, WindowRef, cmd_find_state, u_int};
 use ::core::ffi::c_char;

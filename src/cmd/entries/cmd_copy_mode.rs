@@ -23,15 +23,14 @@
 //! line numbers are set on both halves of the "was it already open" branch,
 //! only the drag start being conditional.
 
-
 use crate::args::args_parse_t;
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_READONLY, CMD_RETURN_NORMAL, KEYC_MASK_KEY, KEYC_MASK_TYPE,
     KEYC_MOUSE, KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK,
 };
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{ClientRef, WindowMode, key_code};
 
 pub const CMD_TARGET_PANE_USAGE: &core::ffi::CStr = c"[-t target-pane]";

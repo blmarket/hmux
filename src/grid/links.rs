@@ -164,21 +164,14 @@ struct hyperlinks_listed {
 /// The eviction order and identities shared by hyperlink sets on one server
 /// thread. Sets retain this owner so their cleanup also works after thread-local
 /// teardown has released its reference to the registry.
-struct HyperlinkRegistry {
+pub(crate) struct HyperlinkRegistry {
     next_set: usize,
     next_external: c_longlong,
     links: LinkedHashMap<hyperlinks_listed, HyperlinksWeak>,
 }
 
-thread_local! {
-    static HYPERLINK_REGISTRY: Rc<RefCell<HyperlinkRegistry>> = Rc::new(RefCell::new(
-        HyperlinkRegistry {
-            next_set: 1,
-            next_external: 1,
-            links: LinkedHashMap::new(),
-        }
-    ));
-}
+const HYPERLINK_REGISTRY: crate::server_state::LocalField<Rc<RefCell<HyperlinkRegistry>>> =
+    crate::server_state::LocalField::new(|state| &state.hyperlink_registry);
 
 /// Takes the link `inner` of `hl` off its registry, if it is on it.
 fn hyperlinks_unlist(hl: &hyperlinks, inner: u_int) {
@@ -210,11 +203,7 @@ fn hyperlinks_evict(listed: hyperlinks_listed, set: HyperlinksWeak) {
 /// answers the number a link with that id and URI already has. An absent or
 /// empty id makes an anonymous link, which is never shared. The oldest link
 /// of any set goes once the total reaches [`MAX_HYPERLINKS`].
-fn hyperlinks_put(
-    owner: &RustHyperlinks,
-    uri_in: &CStr,
-    internal_id_in: Option<&CStr>,
-) -> u_int {
+fn hyperlinks_put(owner: &RustHyperlinks, uri_in: &CStr, internal_id_in: Option<&CStr>) -> u_int {
     {
         let internal_id_in = internal_id_in.unwrap_or(c"");
 
@@ -304,3 +293,13 @@ fn hyperlinks_reset(hl: &mut hyperlinks) {
 #[cfg(test)]
 #[path = "../tests/test_hyperlinks.rs"]
 mod tests;
+
+impl HyperlinkRegistry {
+    pub(crate) fn new() -> Self {
+        Self {
+            next_set: 1,
+            next_external: 1,
+            links: LinkedHashMap::new(),
+        }
+    }
+}

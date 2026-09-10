@@ -1,5 +1,5 @@
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
+use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -12,9 +12,7 @@ use crate::fmt_args;
 use crate::format::format_single_from_target;
 use crate::notify::notify_hook;
 use crate::options::{OptionsEngine, RustOptionsEngine};
-use crate::types::{
-    OptionsRef, RustOptionsRef, args, args_parse_type, u_char, u_int,
-};
+use crate::types::{OptionsRef, RustOptionsRef, args, args_parse_type, u_char, u_int};
 use ::std::ffi::CString;
 
 pub(crate) static cmd_set_option_entry: RustCommandEntry = {
@@ -197,7 +195,7 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             let (parent_entry, is_array) = store.with_entry(&name, false, |entry| {
                 (
                     RustOptionsEngine.definition(entry),
-                    entry.is_some_and(|entry| { RustOptionsEngine.is_array(entry) != 0 }),
+                    entry.is_some_and(|entry| RustOptionsEngine.is_array(entry) != 0),
                 )
             });
             if idx != -(1 as core::ffi::c_int)

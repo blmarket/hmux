@@ -193,7 +193,7 @@ fn a_session_environment_is_the_global_one_plus_the_terminal_and_tmux() {
     unsafe {
         with_global_environment_mut(|env| env.set(c"C2RS_GLOBAL", 0, c"global"));
         let saved = socket_path.take();
-        socket_path = Some(c"/tmp/c2rs.sock".to_owned());
+        socket_path.set(Some(c"/tmp/c2rs.sock".to_owned()));
         let env = environment_for_session(None, 0);
         assert_eq!(value(&env, c"C2RS_GLOBAL"), Some("global".to_owned()));
         assert_eq!(value(&env, c"TERM_PROGRAM"), Some("tmux".to_owned()));
@@ -210,7 +210,7 @@ fn a_session_environment_is_the_global_one_plus_the_terminal_and_tmux() {
             value(&env, c"TMUX"),
             Some(format!("/tmp/c2rs.sock,{},-1", getpid()))
         );
-        socket_path = saved;
+        socket_path.set(saved);
         with_global_environment_mut(|env| env.unset(c"C2RS_GLOBAL"));
     }
 }
@@ -221,7 +221,7 @@ fn a_session_environment_can_leave_the_terminal_out_and_takes_the_session_over()
     let mut s = Session::new(9, "envtest");
     unsafe {
         let saved = socket_path.take();
-        socket_path = Some(c"/tmp/c2rs.sock".to_owned());
+        socket_path.set(Some(c"/tmp/c2rs.sock".to_owned()));
         s.environ_mut().set(c"C2RS_SESSION", 0, c"session");
         let env = environment_for_session(Some(s.handle().as_session()), 1);
         assert_eq!(value(&env, c"C2RS_SESSION"), Some("session".to_owned()));
@@ -231,7 +231,7 @@ fn a_session_environment_can_leave_the_terminal_out_and_takes_the_session_over()
             value(&env, c"TMUX"),
             Some(format!("/tmp/c2rs.sock,{},9", getpid()))
         );
-        socket_path = saved;
+        socket_path.set(saved);
     }
 }
 

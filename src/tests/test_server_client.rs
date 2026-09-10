@@ -1,6 +1,6 @@
-use crate::cmd::CmdListRef;
 use super::*;
 use crate::WindowPane;
+use crate::cmd::CmdListRef;
 use crate::environ::new_environment_box;
 use crate::options::OptionsRef;
 use crate::pane_geometry::PaneGeometryState;

@@ -1,7 +1,7 @@
-use crate::cmd::cmd_retval;
-use crate::cmd::cmdq_item;
 use crate::WindowPane as _;
 use crate::cmd::CmdqStateRef;
+use crate::cmd::cmd_retval;
+use crate::cmd::cmdq_item;
 use crate::cmd::{CmdqItemRef, CmdqItemWeak, cmdq_append};
 use crate::cmd::{cmd_parse_from_buffer, cmd_parse_from_file};
 use crate::compat::error_message;
@@ -78,11 +78,11 @@ pub(crate) fn configuration_files() -> Vec<CString> {
 }
 
 fn with_config<R>(visit: impl FnOnce(&mut ConfigState) -> R) -> R {
-    unsafe {
-        let mut process = crate::server::server_proc
-            .as_ref()
-            .expect("server process is initialized")
-            .borrow_mut();
+    {
+        let process = crate::server::server_process
+            .get()
+            .expect("server process is initialized");
+        let mut process = process.borrow_mut();
         visit(&mut process.config)
     }
 }
@@ -105,7 +105,9 @@ fn cfg_done(_item: &CmdqItemRef) -> cmd_retval {
         }
         with_config(|config| config.finished = true);
         cfg_show_causes(None);
-        if let Some(item) = with_config(|config| config.item.as_ref().and_then(CmdqItemWeak::upgrade)) {
+        if let Some(item) =
+            with_config(|config| config.item.as_ref().and_then(CmdqItemWeak::upgrade))
+        {
             item.resume();
         }
         status_prompt_load_history();

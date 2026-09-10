@@ -293,10 +293,7 @@ fn a_word_too_long_for_the_buffer_is_refused() {
 fn a_style_is_put_back_as_it_was_when_a_later_word_is_refused() {
     let mut sy = parsed(c"fg=red");
     let gc = base();
-    assert_eq!(
-        { style_parse(&mut sy, &gc, b"bg=blue,notanattribute") },
-        -1
-    );
+    assert_eq!({ style_parse(&mut sy, &gc, b"bg=blue,notanattribute") }, -1);
     assert_eq!(tostring(&sy), "fg=red");
 }
 

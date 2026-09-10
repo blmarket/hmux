@@ -1,7 +1,9 @@
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
+use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG, CMD_FIND_PANE, CMD_RETURN_NORMAL,
 };
@@ -10,8 +12,6 @@ use crate::format::{format_add, format_add_tv, format_create_from_target, format
 use crate::job::job_print_summary;
 use crate::message_log::{MessageLogStore, with_message_log};
 use crate::terminfo::tty_term_snapshots_for_client;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{u_char, u_int};
 
 pub const SHOW_MESSAGES_TEMPLATE: &core::ffi::CStr = c"#{t/p:message_time}: #{message_text}";
@@ -84,14 +84,16 @@ unsafe fn cmd_show_messages_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'T' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         unsafe { blank = cmd_show_messages_terminals(self_0, item, blank) };
         done = 1 as core::ffi::c_int;
     }
     if ({
         let flag = 'J' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         unsafe { job_print_summary(item, blank) };
         done = 1 as core::ffi::c_int;
     }

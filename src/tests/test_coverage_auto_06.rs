@@ -241,6 +241,7 @@ fn status_line_size_and_at_line_with_flags() {
         // null session -> falls back to global_s_options "status"
         (*c).set_attached_session(None);
         let expected = (crate::tmux::global_s_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"status") as u32;

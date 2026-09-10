@@ -13,7 +13,7 @@ use crate::xmalloc::xasprintf;
 use ::core::ffi::{CStr, c_int};
 use ::std::collections::BTreeMap;
 use ::std::ffi::CString;
-use ::std::sync::OnceLock;
+use std::rc::Rc;
 
 pub const C0_ESC: key_code = 27;
 pub const C0_CR: key_code = 13;
@@ -215,49 +215,53 @@ static input_key_defaults: [(key_code, &CStr); 85] = [
     (KEYC_DC | KEYC_BUILD_MODIFIERS, c"\x1b[3;_~"),
 ];
 
-/// Every key the terminal is told about, in key order.
-static INPUT_KEYS: OnceLock<BTreeMap<key_code, CString>> = OnceLock::new();
-
-fn keys() -> &'static BTreeMap<key_code, CString> {
-    INPUT_KEYS.get_or_init(|| {
-        let mut keys = BTreeMap::new();
-        for &(key, data) in &input_key_defaults {
-            if key & KEYC_BUILD_MODIFIERS == 0 {
-                keys.entry(key).or_insert_with(|| data.to_owned());
-                continue;
-            }
-            for (j, modifiers) in input_key_modifiers.iter().enumerate().skip(2) {
-                let mut bytes = data.to_bytes().to_vec();
-                let at = bytes
-                    .iter()
-                    .position(|&byte| byte == b'_')
-                    .expect("every family names where its modifiers go");
-                bytes[at] = b'0' + j as u8;
-                keys.entry((key & !KEYC_BUILD_MODIFIERS) | modifiers)
-                    .or_insert_with(|| CString::new(bytes).expect("no NUL inside"));
-            }
-        }
-        {
-            for (key, data) in &keys {
-                let key_name = RustKeyStringCodec.format_key(*key, true);
-                log_debug(
-                    c"%s: 0x%llx (%s) is %s",
-                    fmt_args![
-                        c"input_key_build".as_ptr(),
-                        *key,
-                        key_name.as_ptr(),
-                        data.as_ptr()
-                    ],
-                );
-            }
-        }
-        keys
+fn keys() -> Rc<BTreeMap<key_code, Rc<CString>>> {
+    crate::server::server_proc.with(|state| {
+        state
+            .input_keys
+            .get_or_init(|| {
+                let mut keys = BTreeMap::new();
+                for &(key, data) in &input_key_defaults {
+                    if key & KEYC_BUILD_MODIFIERS == 0 {
+                        keys.entry(key).or_insert_with(|| Rc::new(data.to_owned()));
+                        continue;
+                    }
+                    for (j, modifiers) in input_key_modifiers.iter().enumerate().skip(2) {
+                        let mut bytes = data.to_bytes().to_vec();
+                        let at = bytes
+                            .iter()
+                            .position(|&byte| byte == b'_')
+                            .expect("every family names where its modifiers go");
+                        bytes[at] = b'0' + j as u8;
+                        keys.entry((key & !KEYC_BUILD_MODIFIERS) | modifiers)
+                            .or_insert_with(|| {
+                                Rc::new(CString::new(bytes).expect("no NUL inside"))
+                            });
+                    }
+                }
+                {
+                    for (key, data) in &keys {
+                        let key_name = RustKeyStringCodec.format_key(*key, true);
+                        log_debug(
+                            c"%s: 0x%llx (%s) is %s",
+                            fmt_args![
+                                c"input_key_build".as_ptr(),
+                                *key,
+                                key_name.as_ptr(),
+                                data.as_ptr()
+                            ],
+                        );
+                    }
+                }
+                Rc::new(keys)
+            })
+            .clone()
     })
 }
 
 /// What the terminal is sent for `key`, if anything.
-fn input_key_get(key: key_code) -> Option<&'static CStr> {
-    keys().get(&key).map(|data| data.as_c_str())
+fn input_key_get(key: key_code) -> Option<Rc<CString>> {
+    keys().get(&key).cloned()
 }
 
 /// Works out the key table, filling in each `_` of the defaults that stand for
@@ -600,12 +604,14 @@ fn input_key_encode_impl(
 /// Writes `key` to the terminal behind `bev`, in whichever form the modes of
 /// `s` say it understands.
 pub unsafe fn input_key(s: &RustScreen, bev: Stream, key: key_code) -> c_int {
-    unsafe {
+    {
         let backspace = (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"backspace") as key_code;
         let extended_keys_format = (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"extended-keys-format") as c_int;
@@ -708,12 +714,7 @@ fn input_key_get_mouse_impl<E: MouseEvent + ?Sized>(
     Some(out)
 }
 
-pub fn input_key_get_mouse(
-    s: &RustScreen,
-    m: &mouse_event,
-    x: u_int,
-    y: u_int,
-) -> Option<Vec<u8>> {
+pub fn input_key_get_mouse(s: &RustScreen, m: &mouse_event, x: u_int, y: u_int) -> Option<Vec<u8>> {
     RustMouseInputEncoder.encode(s.mode(), m, x, y)
 }
 

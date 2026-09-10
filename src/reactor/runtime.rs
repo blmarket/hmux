@@ -18,9 +18,7 @@ pub(crate) struct RuntimeHost {
 }
 
 impl RuntimeHost {
-    fn new() -> Self {
-        let control = CONTROL.with(Clone::clone);
-        let streams = STREAMS.with(Clone::clone);
+    pub(crate) fn new(control: RuntimeControl, streams: StreamRegistry) -> Self {
         Self {
             runtime: None,
             control,
@@ -70,17 +68,28 @@ impl RuntimeHost {
     }
 }
 
-thread_local! {
-    static CONTROL: RuntimeControl = RuntimeControl::new();
-    static STREAMS: StreamRegistry = StreamRegistry::new();
-    static HOST: RefCell<RuntimeHost> = RefCell::new(RuntimeHost::new());
-}
+const CONTROL: crate::server_state::LocalField<RuntimeControl> =
+    crate::server_state::LocalField::new(|state| &state.runtime_control);
+const STREAMS: crate::server_state::LocalField<StreamRegistry> =
+    crate::server_state::LocalField::new(|state| &state.stream_registry);
+const HOST: crate::server_state::LocalField<RefCell<RuntimeHost>> =
+    crate::server_state::LocalField::new(|state| &state.runtime_host);
 
 #[derive(Copy, Clone)]
 pub struct Base;
 
+/// Cleanup can outlive the thread-local owner, whose watches are then gone.
+pub(crate) fn try_runtime_control() -> Option<RuntimeControl> {
+    CONTROL.try_with(Clone::clone).ok()
+}
+
 pub(crate) fn runtime_control() -> RuntimeControl {
     CONTROL.with(Clone::clone)
+}
+
+/// Retained file owners may be dropped after the process registry is gone.
+pub(crate) fn try_stream_registry() -> Option<StreamRegistry> {
+    STREAMS.try_with(Clone::clone).ok()
 }
 
 pub(crate) fn stream_registry() -> StreamRegistry {

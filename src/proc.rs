@@ -98,7 +98,7 @@ pub unsafe fn proc_start(name: &CStr) -> ProcessRef {
     unsafe {
         let mut u: utsname = core::mem::zeroed();
         log_open(name);
-        setproctitle(c"%s (%s)", fmt_args![name, socket_path.as_deref()]);
+        setproctitle(c"%s (%s)", fmt_args![name, socket_path.get().as_deref()]);
         if uname(&raw mut u) < 0 as core::ffi::c_int {
             u = core::mem::zeroed();
         }
@@ -108,7 +108,7 @@ pub unsafe fn proc_start(name: &CStr) -> ProcessRef {
                 name,
                 getpid() as core::ffi::c_long,
                 getversion(),
-                socket_path.as_deref(),
+                socket_path.get().as_deref(),
                 PROTOCOL_VERSION
             ],
         );

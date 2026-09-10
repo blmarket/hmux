@@ -104,7 +104,7 @@ impl RustPasteBufferStore {
         }
     }
 
-    const fn server() -> Self {
+    pub(crate) const fn server() -> Self {
         Self {
             next_index: 0,
             next_order: 0,
@@ -313,11 +313,8 @@ impl PasteBufferStore for RustPasteBufferStore {
     }
 }
 
-thread_local! {
-    static PASTE_BUFFERS: RefCell<RustPasteBufferStore> = const {
-        RefCell::new(RustPasteBufferStore::server())
-    };
-}
+const PASTE_BUFFERS: crate::server_state::LocalField<RefCell<RustPasteBufferStore>> =
+    crate::server_state::LocalField::new(|state| &state.paste_buffers);
 
 /// Runs `read` with shared access to this thread's server paste-buffer store.
 pub(crate) fn with_paste_buffers<R>(read: impl FnOnce(&RustPasteBufferStore) -> R) -> R {
@@ -345,8 +342,9 @@ pub(crate) fn with_paste_buffers_mut<R>(mutate: impl FnOnce(&mut RustPasteBuffer
 
 /// Returns the live automatic-buffer limit.
 pub(crate) unsafe fn paste_buffer_limit() -> u_int {
-    unsafe {
+    {
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"buffer-limit") as u_int

@@ -70,9 +70,9 @@ impl CustomizeOptionScope {
     unsafe fn options(self) -> Option<RustOptionsRef> {
         unsafe {
             match self.scope {
-                WINDOW_CUSTOMIZE_SERVER => global_options.clone(),
-                WINDOW_CUSTOMIZE_GLOBAL_SESSION => global_s_options.clone(),
-                WINDOW_CUSTOMIZE_GLOBAL_WINDOW => global_w_options.clone(),
+                WINDOW_CUSTOMIZE_SERVER => global_options.get(),
+                WINDOW_CUSTOMIZE_GLOBAL_SESSION => global_s_options.get(),
+                WINDOW_CUSTOMIZE_GLOBAL_WINDOW => global_w_options.get(),
                 WINDOW_CUSTOMIZE_SESSION => {
                     SessionRef::find_by_id(self.id).map(|session| session.options())
                 }
@@ -277,8 +277,8 @@ unsafe fn window_customize_get_tree(
             WINDOW_CUSTOMIZE_NONE | WINDOW_CUSTOMIZE_KEY => {
                 return None;
             }
-            WINDOW_CUSTOMIZE_SERVER => return global_options.clone(),
-            WINDOW_CUSTOMIZE_GLOBAL_SESSION => return global_s_options.clone(),
+            WINDOW_CUSTOMIZE_SERVER => return global_options.get(),
+            WINDOW_CUSTOMIZE_GLOBAL_SESSION => return global_s_options.get(),
             WINDOW_CUSTOMIZE_SESSION => {
                 return Some(
                     fs.session()
@@ -287,7 +287,7 @@ unsafe fn window_customize_get_tree(
                         .clone(),
                 );
             }
-            WINDOW_CUSTOMIZE_GLOBAL_WINDOW => return global_w_options.clone(),
+            WINDOW_CUSTOMIZE_GLOBAL_WINDOW => return global_w_options.get(),
             WINDOW_CUSTOMIZE_WINDOW => {
                 return Some(fs.window().expect("the state names a window").options());
             }
@@ -1225,6 +1225,7 @@ impl WindowCustomizeModeDataRef {
                 OPTIONS_TABLE_SERVER,
                 WINDOW_CUSTOMIZE_SERVER,
                 global_options
+                    .get()
                     .as_ref()
                     .expect("global options are initialized"),
                 WINDOW_CUSTOMIZE_NONE,
@@ -1241,6 +1242,7 @@ impl WindowCustomizeModeDataRef {
                 OPTIONS_TABLE_SESSION,
                 WINDOW_CUSTOMIZE_GLOBAL_SESSION,
                 global_s_options
+                    .get()
                     .as_ref()
                     .expect("global options are initialized"),
                 WINDOW_CUSTOMIZE_SESSION,
@@ -1259,6 +1261,7 @@ impl WindowCustomizeModeDataRef {
                 OPTIONS_TABLE_WINDOW,
                 WINDOW_CUSTOMIZE_GLOBAL_WINDOW,
                 global_w_options
+                    .get()
                     .as_ref()
                     .expect("global options are initialized"),
                 WINDOW_CUSTOMIZE_WINDOW,

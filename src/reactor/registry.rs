@@ -35,8 +35,10 @@ impl Timer for TimerHandle {
     }
 
     fn disarm(&mut self) {
-        if self.0 != 0 {
-            current_control().disarm_timer(self.0);
+        if self.0 != 0
+            && let Some(control) = super::runtime::try_runtime_control()
+        {
+            control.disarm_timer(self.0);
         }
     }
 
@@ -69,8 +71,10 @@ impl IoWatch for IoHandle {
     }
 
     fn disable(&mut self) {
-        if self.0 != 0 {
-            current_control().disable_io(self.0);
+        if self.0 != 0
+            && let Some(control) = super::runtime::try_runtime_control()
+        {
+            control.disable_io(self.0);
         }
     }
 }
@@ -99,8 +103,10 @@ impl SignalWatch for SignalHandle {
     const ZERO: Self = Self(0);
 
     fn unwatch(&mut self) {
-        if self.0 != 0 {
-            current_control().unwatch_signal(self.0);
+        if self.0 != 0
+            && let Some(control) = super::runtime::try_runtime_control()
+        {
+            control.unwatch_signal(self.0);
         }
     }
 }

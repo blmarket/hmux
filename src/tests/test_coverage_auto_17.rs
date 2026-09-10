@@ -38,9 +38,10 @@ fn utf8_rpadcstr(input: &CStr, width: u32) -> CString {
 #[test]
 fn utf8_isvalid_accepts_printable_ascii_and_valid_multibyte() {
     let _g = globals();
-    unsafe {
+    {
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -62,9 +63,10 @@ fn utf8_isvalid_accepts_printable_ascii_and_valid_multibyte() {
 #[test]
 fn utf8_isvalid_rejects_controls_and_broken_utf8() {
     let _g = globals();
-    unsafe {
+    {
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -99,9 +101,10 @@ fn utf8_isvalid_rejects_controls_and_broken_utf8() {
 #[test]
 fn utf8_sanitize_keeps_printable_ascii_replaces_controls() {
     let _g = globals();
-    unsafe {
+    {
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -129,9 +132,10 @@ fn utf8_sanitize_keeps_printable_ascii_replaces_controls() {
 #[test]
 fn utf8_sanitize_replaces_each_character_by_its_display_width() {
     let _g = globals();
-    unsafe {
+    {
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -165,9 +169,10 @@ fn utf8_sanitize_replaces_each_character_by_its_display_width() {
 #[test]
 fn utf8_cstrwidth_counts_display_width_skipping_controls() {
     let _g = globals();
-    unsafe {
+    {
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -196,9 +201,10 @@ fn utf8_cstrwidth_counts_display_width_skipping_controls() {
 #[test]
 fn utf8_padcstr_uses_display_width_for_padding() {
     let _g = globals();
-    unsafe {
+    {
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -237,7 +243,7 @@ fn width_cache_defaults_are_applied_after_update() {
     unsafe {
         // ensure a clean rebuild from defaults
         let store = global_options
-            .as_ref()
+            .get()
             .expect("global options are initialized");
         // clear any previous entries
         store.with_entry_mut(c"codepoint-widths", false, |entry| {
@@ -245,6 +251,7 @@ fn width_cache_defaults_are_applied_after_update() {
         });
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -266,6 +273,7 @@ fn width_cache_defaults_are_applied_after_update() {
         });
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -278,7 +286,7 @@ fn width_cache_codepoint_widths_option_overrides_and_range() {
     let _g = globals();
     unsafe {
         let store = global_options
-            .as_ref()
+            .get()
             .expect("global options are initialized");
         // single multibyte codepoint: é (U+E9) normally width 1, force to 2
         store.with_entry_mut(c"codepoint-widths", false, |entry| {
@@ -286,6 +294,7 @@ fn width_cache_codepoint_widths_option_overrides_and_range() {
         });
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -299,6 +308,7 @@ fn width_cache_codepoint_widths_option_overrides_and_range() {
         });
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -311,6 +321,7 @@ fn width_cache_codepoint_widths_option_overrides_and_range() {
         });
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -326,6 +337,7 @@ fn width_cache_codepoint_widths_option_overrides_and_range() {
         });
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -339,6 +351,7 @@ fn width_cache_codepoint_widths_option_overrides_and_range() {
         });
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -351,6 +364,7 @@ fn width_cache_codepoint_widths_option_overrides_and_range() {
         });
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),

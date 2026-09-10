@@ -1,8 +1,8 @@
-use crate::cmd::cmdq_item;
 use crate::cmd::CmdqItemRef;
 use crate::cmd::CmdqStateRef;
 use crate::cmd::cmd_find_copy_state;
 use crate::cmd::cmd_parse_and_append;
+use crate::cmd::cmdq_item;
 use crate::cmd::{CmdqItemWeak, cmdq_append};
 use crate::fmt_args;
 use crate::format::{format_create_defaults, format_create_from_state_for_client, format_expand};

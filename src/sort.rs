@@ -26,7 +26,7 @@ use crate::pane_activity::PaneActivityState;
 use crate::pane_geometry::PaneGeometryState;
 use crate::paste::{PasteBufferStore, with_paste_buffers};
 use crate::server::with_clients;
-use crate::session::SESSIONS;
+use crate::session::SESSIONS_FIELD;
 pub use crate::types::*;
 use crate::window::{WinlinkRef, window_pane_index, window_pane_zindex, winlinks_in};
 use ::core::cmp::Ordering;
@@ -530,6 +530,8 @@ pub fn sort_get_clients(sort_crit: &sort_criteria_t) -> Vec<ClientRef> {
 }
 
 pub fn sort_get_sessions(sort_crit: &sort_criteria_t) -> Vec<SessionRef> {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     let mut l: Vec<SessionRef> = SESSIONS.read().values().cloned().collect();
     sort_list(
         &mut l,
@@ -540,6 +542,8 @@ pub fn sort_get_sessions(sort_crit: &sort_criteria_t) -> Vec<SessionRef> {
 }
 
 pub(crate) fn sort_get_winlinks(sort_crit: &sort_criteria_t) -> Vec<WinlinkRef> {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     let mut l: Vec<_> = SESSIONS.read().values().flat_map(winlinks_in).collect();
     sort_list(
         &mut l,
@@ -576,10 +580,7 @@ pub fn sort_get_key_bindings_table(
 mod tests;
 
 impl WindowRef {
-    pub(crate) fn sorted_panes(
-        &self,
-        sort_crit: &sort_criteria_t,
-    ) -> Vec<RustWindowPaneWeak> {
+    pub(crate) fn sorted_panes(&self, sort_crit: &sort_criteria_t) -> Vec<RustWindowPaneWeak> {
         let w = self;
 
         {

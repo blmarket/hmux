@@ -66,7 +66,11 @@ pub(crate) fn server_apply_option_defaults(defaults: &[(&str, &str)]) {
 /// than an absent entry.
 unsafe fn set_if_default(name: &CStr, value: &CStr) {
     unsafe {
-        for oo in [&global_options, &global_s_options, &global_w_options] {
+        for oo in [
+            &global_options.get(),
+            &global_s_options.get(),
+            &global_w_options.get(),
+        ] {
             if oo.is_none() {
                 continue;
             }

@@ -20,7 +20,7 @@ use crate::resize::recalculate_sizes;
 use crate::server::client_walk;
 use crate::server::server_client_set_key_table;
 use crate::server::server_redraw_client;
-use crate::session::SESSIONS;
+use crate::session::SESSIONS_FIELD;
 use crate::status::status_timer_start_all;
 use crate::style::{ColourEngine, RustColourEngine};
 use crate::style::{RustStyleCodec, StyleCodec, pane_scrollbar_style_from_option};
@@ -123,10 +123,7 @@ fn options_map_name(name: &CStr) -> &CStr {
 
 /// The table entry the parent set has for `s`, which is what an option added
 /// to a set below it is made from.
-fn options_parent_table_entry(
-    oo: &RustOptionsRef,
-    s: &CStr,
-) -> &'static options_table_entry_t {
+fn options_parent_table_entry(oo: &RustOptionsRef, s: &CStr) -> &'static options_table_entry_t {
     {
         let Some(parent) = options_get_parent(oo) else {
             fatalx(c"no parent options for %s", fmt_args![s.as_ptr()]);
@@ -521,10 +518,7 @@ pub(super) fn options_pane_colours(oo: &RustOptionsRef) -> Option<[c_int; 256]> 
 
 /// Points the palette's default table at what the `pane-colours` option of
 /// `oo` holds.
-pub(super) fn options_load_pane_colours(
-    oo: &RustOptionsRef,
-    p: Option<&mut colour_palette>,
-) {
+pub(super) fn options_load_pane_colours(oo: &RustOptionsRef, p: Option<&mut colour_palette>) {
     RustColourEngine.set_palette_defaults(p, options_pane_colours(oo).as_ref())
 }
 
@@ -813,7 +807,7 @@ unsafe fn options_window_scope(
 ) -> c_int {
     unsafe {
         if args.argument_flag_count(b'g') != 0 {
-            *oo = global_w_options.clone();
+            *oo = global_w_options.get();
             return OPTIONS_TABLE_WINDOW;
         }
         let window = fs.session().and_then(|session| {
@@ -864,12 +858,12 @@ pub(super) unsafe fn options_scope_from_name(
         let target = args.argument_flag_string(b't');
         match oe.scope {
             OPTIONS_TABLE_SERVER => {
-                *oo = global_options.clone();
+                *oo = global_options.get();
                 OPTIONS_TABLE_SERVER
             }
             OPTIONS_TABLE_SESSION => {
                 if args.argument_flag_count(b'g') != 0 {
-                    *oo = global_s_options.clone();
+                    *oo = global_s_options.get();
                     return OPTIONS_TABLE_SESSION;
                 }
                 let Some(session) = fs.session() else {
@@ -917,7 +911,7 @@ pub(super) unsafe fn options_scope_from_flags(
     unsafe {
         let target = args.argument_flag_string(b't');
         if args.argument_flag_count(b's') != 0 {
-            *oo = global_options.clone();
+            *oo = global_options.get();
             return OPTIONS_TABLE_SERVER;
         }
         if args.argument_flag_count(b'p') != 0 {
@@ -939,7 +933,7 @@ pub(super) unsafe fn options_scope_from_flags(
             return options_window_scope(args, fs, oo, cause);
         }
         if args.argument_flag_count(b'g') != 0 {
-            *oo = global_s_options.clone();
+            *oo = global_s_options.get();
             return OPTIONS_TABLE_SESSION;
         }
         let Some(session) = fs.session() else {
@@ -1258,6 +1252,8 @@ pub(super) unsafe fn options_from_string(
 /// having the status caches, the window sizes and the attached clients brought
 /// up to date, whether or not it is one of the names below.
 pub(super) unsafe fn options_push_changes(name: &CStr) {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     WINDOWS.with(|windows| unsafe {
         log_debug(
             c"%s: %s",
@@ -1355,6 +1351,7 @@ pub(super) unsafe fn options_push_changes(name: &CStr) {
         if name == c"codepoint-widths" {
             utf8_update_width_cache(options_codepoint_widths(
                 global_options
+                    .get()
                     .as_ref()
                     .expect("global options are initialized"),
             ));
@@ -1362,6 +1359,7 @@ pub(super) unsafe fn options_push_changes(name: &CStr) {
         if name == c"input-buffer-size" {
             input_set_buffer_size(options_get_number(
                 global_options
+                    .get()
                     .as_ref()
                     .expect("global options are initialized"),
                 name,
@@ -1408,9 +1406,13 @@ pub(super) unsafe fn options_remove_or_default(
             return 0;
         };
         if let Some(definition) = definition
-            && [&global_options, &global_s_options, &global_w_options]
-                .into_iter()
-                .any(|global| global.as_ref().is_some_and(|global| owner.ptr_eq(global)))
+            && [
+                &global_options.get(),
+                &global_s_options.get(),
+                &global_w_options.get(),
+            ]
+            .into_iter()
+            .any(|global| global.as_ref().is_some_and(|global| owner.ptr_eq(global)))
         {
             options_default(owner, definition);
         } else {

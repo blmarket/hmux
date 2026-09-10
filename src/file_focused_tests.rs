@@ -2,11 +2,11 @@ use super::*;
 use crate::tests::test_fixtures::{ensure_reactor, globals};
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 type Event = (i32, Vec<u8>, Vec<u8>);
 
-static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
+const EVENTS: crate::server_state::LocalField<std::cell::RefCell<Vec<Event>>> =
+    crate::server_state::LocalField::new(|state| &state.file_test_events);
 
 fn record(event: ClientFileEvent<'_>) {
     if let ClientFileEvent::Done {
@@ -16,10 +16,9 @@ fn record(event: ClientFileEvent<'_>) {
         ..
     } = event
     {
-        EVENTS
-            .lock()
-            .unwrap()
-            .push((error, path.to_bytes().to_vec(), buffer.as_slice().to_vec()));
+        EVENTS.with_borrow_mut(|events| {
+            events.push((error, path.to_bytes().to_vec(), buffer.as_slice().to_vec()))
+        });
     }
 }
 
@@ -55,14 +54,14 @@ fn cpath(path: &Path) -> CString {
 }
 
 fn event() -> (i32, Vec<u8>, Vec<u8>) {
-    EVENTS.lock().unwrap().pop().expect("file callback ran")
+    EVENTS.with_borrow_mut(|events| events.pop().expect("file callback ran"))
 }
 
 #[test]
 fn direct_write_truncates_appends_and_reports_completion() {
     let _guard = globals();
     ensure_reactor();
-    EVENTS.lock().unwrap().clear();
+    EVENTS.with_borrow_mut(Vec::clear);
     let dir = TempDir::new();
     let path = dir.path("output");
     let path_c = cpath(&path);
@@ -115,7 +114,7 @@ fn direct_write_truncates_appends_and_reports_completion() {
 fn direct_read_delivers_bytes_and_missing_path_error() {
     let _guard = globals();
     ensure_reactor();
-    EVENTS.lock().unwrap().clear();
+    EVENTS.with_borrow_mut(Vec::clear);
     let dir = TempDir::new();
     let path = dir.path("input");
     if std::fs::write(&path, b"alpha\0beta\n").is_err() {
@@ -143,7 +142,7 @@ fn direct_read_delivers_bytes_and_missing_path_error() {
 fn direct_filesystem_errors_and_standard_streams_report_errno() {
     let _guard = globals();
     ensure_reactor();
-    EVENTS.lock().unwrap().clear();
+    EVENTS.with_borrow_mut(Vec::clear);
     let dir = TempDir::new();
     let directory_c = cpath(&dir.0);
     unsafe {
@@ -279,10 +278,10 @@ fn stream_callbacks_ignore_a_dropped_file_set() {
 
 #[test]
 fn stream_callbacks_release_global_file_set_before_unlinking() {
-    static FILES: crate::tree::GlobalTree<i32, ClientFileRef> = crate::tree::GlobalTree::new();
+    let files = std::rc::Rc::new(crate::tree::GlobalTree::<i32, ClientFileRef>::new());
     let _guard = globals();
     ensure_reactor();
-    let owner = FileOwner::Global(&FILES);
+    let owner = FileOwner::Global(std::rc::Rc::downgrade(&files));
     for error in [false, true] {
         let file = unsafe {
             ClientFileRef::create_with_peer(None, &owner, 74, None, ClientFileData::None)
@@ -292,7 +291,7 @@ fn stream_callbacks_release_global_file_set_before_unlinking() {
         } else {
             on_file(owner.clone(), 74, |file| unsafe { file.close() })(Stream::NONE);
         }
-        assert!(FILES.map().is_empty());
+        assert!(files.map().is_empty());
         assert_eq!(file.borrow().done, 1);
     }
 }
@@ -301,7 +300,7 @@ fn stream_callbacks_release_global_file_set_before_unlinking() {
 fn deferred_file_completion_survives_dropped_file_set() {
     let _guard = globals();
     ensure_reactor();
-    EVENTS.lock().unwrap().clear();
+    EVENTS.with_borrow_mut(Vec::clear);
     let files = std::rc::Rc::new(std::cell::RefCell::new(client_files_t::new()));
     let file = unsafe {
         ClientFileRef::create_with_peer(

@@ -570,9 +570,8 @@ pub struct ClientRef(Rc<ClientStorage>);
 #[derive(Clone)]
 pub struct ClientWeak(Weak<ClientStorage>);
 
-thread_local! {
-    static NEXT_CLIENT_ID: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
-}
+const NEXT_CLIENT_ID: crate::server_state::LocalField<std::cell::Cell<u64>> =
+    crate::server_state::LocalField::new(|state| &state.next_client_id);
 
 pub(crate) struct ClientStorage {
     id: u64,
@@ -2250,6 +2249,17 @@ pub struct WindowModeOptional {
     pub formats: Option<unsafe fn(&window_mode_entry, &mut format_tree) -> ()>,
     pub get_screen: Option<fn(&window_mode_entry) -> Option<&RustScreen>>,
 }
+impl WindowModeOptional {
+    pub const EMPTY: Self = Self {
+        default_format: None,
+        style_changed: None,
+        key_table: None,
+        command: None,
+        formats: None,
+        get_screen: None,
+    };
+}
+
 /// Which logical mode a pane is in, and the selector for the [`window_mode`]
 /// table that mode dispatches through.
 ///
@@ -2858,7 +2868,7 @@ pub(crate) enum FileOwner {
     /// The files of one client, observed rather than held.
     Client(ClientWeak),
     /// The process-global set, borrowed only while visiting it.
-    Global(&'static crate::tree::GlobalTree<core::ffi::c_int, ClientFileRef>),
+    Global(Weak<crate::tree::GlobalTree<core::ffi::c_int, ClientFileRef>>),
     /// An owned set observed without keeping its files in an ownership cycle.
     #[cfg(test)]
     Shared(Weak<RefCell<client_files_t>>),
@@ -2884,7 +2894,9 @@ impl FileOwner {
                 }
                 None => (None, None),
             },
-            FileOwner::Global(files) => (None, Some(visit(&mut files.map()))),
+            FileOwner::Global(files) => {
+                (None, files.upgrade().map(|files| visit(&mut files.map())))
+            }
             #[cfg(test)]
             FileOwner::Shared(watched) => match watched.upgrade() {
                 Some(files) => {

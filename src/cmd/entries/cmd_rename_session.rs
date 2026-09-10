@@ -1,5 +1,5 @@
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
+use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
@@ -11,7 +11,7 @@ use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
 use crate::tmux::{check_name, clean_name};
-use crate::types::{SessionRef};
+use crate::types::SessionRef;
 
 pub(crate) static cmd_rename_session_entry: RustCommandEntry = {
     RustCommandEntry {

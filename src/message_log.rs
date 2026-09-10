@@ -2,7 +2,6 @@ use crate::types::timeval;
 use core::ffi::CStr;
 use std::collections::VecDeque;
 use std::ffi::CString;
-use std::sync::Mutex;
 
 /// The wall-clock time at which a saved server message was recorded.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,7 +60,7 @@ impl RustMessageLog {
         Self::empty()
     }
 
-    const fn empty() -> Self {
+    pub(crate) const fn empty() -> Self {
         Self {
             entries: VecDeque::new(),
             next: 0,
@@ -106,19 +105,21 @@ impl MessageLogStore for RustMessageLog {
     }
 }
 
-static MESSAGE_LOG: Mutex<RustMessageLog> = Mutex::new(RustMessageLog::empty());
+const MESSAGE_LOG_FIELD: crate::server_state::LocalField<
+    std::rc::Rc<std::cell::RefCell<RustMessageLog>>,
+> = crate::server_state::LocalField::new(|state| &state.message_log);
 
 pub(crate) fn with_message_log<R>(read: impl FnOnce(&RustMessageLog) -> R) -> R {
-    let log = MESSAGE_LOG
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let MESSAGE_LOG = MESSAGE_LOG_FIELD.get();
+
+    let log = MESSAGE_LOG.borrow_mut();
     read(&log)
 }
 
 pub(crate) fn with_message_log_mut<R>(mutate: impl FnOnce(&mut RustMessageLog) -> R) -> R {
-    let mut log = MESSAGE_LOG
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let MESSAGE_LOG = MESSAGE_LOG_FIELD.get();
+
+    let mut log = MESSAGE_LOG.borrow_mut();
     mutate(&mut log)
 }
 

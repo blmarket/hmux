@@ -7,7 +7,7 @@
 
 mod acs;
 mod features;
-mod term;
+pub(crate) mod term;
 
 pub use acs::{
     AlternateCharacterSet, BorderCharacterSet, RustAlternateCharacterSet, tty_acs_double_borders,

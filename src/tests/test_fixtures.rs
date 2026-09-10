@@ -20,8 +20,8 @@
 //! own.
 
 use crate::args::args_parse_t;
-use crate::cmd::{CmdListRef, cmd, cmd_entry, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
+use crate::cmd::{CmdListRef, cmd, cmd_entry, cmd_entry_flag, cmd_retval};
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::pane_identity::PaneIdentity;
 use crate::window_dimensions::WindowDimensionsState;
@@ -43,7 +43,8 @@ use crate::window::{
 /// Every call a [`Prompt::Recorder`] prompt made to its input callback, as the
 /// answer it carried and whether it was the final one. A test holds
 /// [`globals`], so the list is only ever touched by one of them at a time.
-static PROMPT_ANSWERS: std::sync::Mutex<Vec<(String, c_int)>> = std::sync::Mutex::new(Vec::new());
+const PROMPT_ANSWERS: crate::server_state::LocalField<std::cell::RefCell<Vec<(String, c_int)>>> =
+    crate::server_state::LocalField::new(|state| &state.prompt_test_answers);
 
 /// What [`Prompt::Recorder`] answers with. Returning zero is what a one-shot
 /// prompt's callback does, and what makes the accepting paths take the prompt
@@ -58,18 +59,18 @@ pub unsafe fn prompt_recorder(
         None => "<none>".to_string(),
         Some(s) => unsafe { seen(s.as_ptr()) },
     };
-    PROMPT_ANSWERS.lock().unwrap().push((answer, done));
+    PROMPT_ANSWERS.with_borrow_mut(|answers| answers.push((answer, done)));
     0
 }
 
 /// The answers recorded so far, oldest first.
 pub fn prompt_answers() -> Vec<(String, c_int)> {
-    PROMPT_ANSWERS.lock().unwrap().clone()
+    PROMPT_ANSWERS.with_borrow(Clone::clone)
 }
 
 /// Forgets every recorded answer, so a test reads only its own prompt's.
 pub fn prompt_answers_clear() {
-    PROMPT_ANSWERS.lock().unwrap().clear();
+    PROMPT_ANSWERS.with_borrow_mut(Vec::clear);
 }
 
 use crate::cmd::CmdqListOps;
@@ -102,7 +103,6 @@ use crate::terminfo::{RustTerminalCapabilities, TerminalCapabilities};
 use ::core::ffi::{CStr, c_char, c_int};
 use ::core::ptr::null_mut;
 use ::std::ffi::CString;
-use ::std::sync::MutexGuard;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LoggedMessage {
@@ -143,86 +143,62 @@ pub(crate) fn reset_message_log() {
 /// The globals `main` sets up that the modules' tests need — the environment,
 /// the three option trees and the socket path the format engine reports.
 ///
-/// This is one-time setup, not exclusion. A test that only *reads* what the
-/// server built at startup wants this and nothing more, and two such tests
-/// have no reason to wait for each other.
+/// Each test thread initializes its own process state independently.
 pub(crate) fn globals_ready() {
-    static SETUP: std::sync::Once = std::sync::Once::new();
-    SETUP.call_once(|| unsafe {
+    if crate::tmux::global_options.get().is_some() {
+        return;
+    }
+    unsafe {
         crate::tmux::global_options_create();
         defaults(
-            crate::tmux::global_options.as_ref().unwrap(),
+            crate::tmux::global_options.get().as_ref().unwrap(),
             OPTIONS_TABLE_SERVER,
         );
         defaults(
-            crate::tmux::global_s_options.as_ref().unwrap(),
+            crate::tmux::global_s_options.get().as_ref().unwrap(),
             OPTIONS_TABLE_SESSION,
         );
         defaults(
-            crate::tmux::global_w_options.as_ref().unwrap(),
+            crate::tmux::global_w_options.get().as_ref().unwrap(),
             OPTIONS_TABLE_WINDOW,
         );
-        crate::tmux::socket_path = Some(c"/tmp/tmux-fixture/default".to_owned());
-    });
-}
-
-static GLOBALS: std::sync::Mutex<()> = std::sync::Mutex::new(());
-static GLOBALS_OWNER: std::sync::Mutex<Option<std::thread::ThreadId>> = std::sync::Mutex::new(None);
-
-pub(crate) struct GlobalsGuard {
-    _guard: MutexGuard<'static, ()>,
-}
-
-impl Drop for GlobalsGuard {
-    fn drop(&mut self) {
-        unsafe { crate::server::server_proc = None };
-        *GLOBALS_OWNER.lock().unwrap() = None;
+        crate::tmux::socket_path.set(Some(c"/tmp/tmux-fixture/default".to_owned()));
     }
 }
 
-/// Whether this thread currently holds the fixture lock.
-pub(crate) fn globals_held() -> bool {
-    *GLOBALS_OWNER.lock().unwrap() == Some(std::thread::current().id())
+/// Restores the calling thread's previous process handle on scope exit.
+pub(crate) struct GlobalsGuard {
+    previous: Option<crate::proc::ProcessRef>,
+}
+impl Drop for GlobalsGuard {
+    fn drop(&mut self) {
+        crate::server::server_process.set(self.previous.take());
+    }
 }
 
-/// [`globals_ready`], plus a turn at the process-wide state the server keeps
-/// in statics that a test goes on to *change*: the session, window and pane
-/// trees, the option trees, the command parser's own globals, the
-/// notification queue, and the UTF-8 trees and width cache. Cargo runs the
-/// tests on parallel threads, so a test that mutates any of that holds the
-/// guard this returns for as long as it is looking.
+/// Initializes this test thread's options and process handle.
 pub(crate) fn globals() -> GlobalsGuard {
-    let guard = GLOBALS
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    *GLOBALS_OWNER.lock().unwrap() = Some(std::thread::current().id());
-    let guard = GlobalsGuard { _guard: guard };
     globals_ready();
-    let process = crate::proc::ProcessRef::default();
-    unsafe { crate::server::server_proc = Some(process) };
-    guard
+    let previous = crate::server::server_process.replace(Some(crate::proc::ProcessRef::default()));
+    GlobalsGuard { previous }
 }
 
 #[test]
-fn released_globals_guard_clears_owner_before_lock_handoff() {
-    let guard = globals();
-    assert!(globals_held());
-    drop(guard);
-    std::thread::scope(|scope| {
-        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
-        let (release_tx, release_rx) = std::sync::mpsc::channel();
-        scope.spawn(move || {
-            let _guard = GLOBALS
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            locked_tx.send(()).unwrap();
-            release_rx.recv().unwrap();
-        });
-        locked_rx.recv().unwrap();
-        let held = globals_held();
-        release_tx.send(()).unwrap();
-        assert!(!held);
-    });
+fn fixture_process_is_restored_after_nested_scopes() {
+    let outer = globals();
+    let process = crate::server::server_process.get().unwrap();
+    let inner = globals();
+    assert!(!std::rc::Rc::ptr_eq(
+        &process,
+        &crate::server::server_process.get().unwrap()
+    ));
+    drop(inner);
+    assert!(std::rc::Rc::ptr_eq(
+        &process,
+        &crate::server::server_process.get().unwrap()
+    ));
+    drop(outer);
+    assert!(crate::server::server_process.get().is_none());
 }
 
 /// Takes every event a client can arm back off the event loop.
@@ -1241,10 +1217,7 @@ impl Tty {
 
 /// Initializes the process-local reactor used by tests.
 pub(crate) fn ensure_reactor() {
-    static BASE: std::sync::Once = std::sync::Once::new();
-    BASE.call_once(|| {
-        reactor::current();
-    });
+    reactor::current();
 }
 
 /// A stream over one end of a socket pair used by tests that need buffered

@@ -712,7 +712,7 @@ use crate::screen::{ScreenWriteCtx, screen_write_ctx_on_screen};
 use crate::server::client_walk;
 use crate::server::server_add_message;
 use crate::server::{client_ref_of, server_client_clear_overlay};
-use crate::session::SESSIONS;
+use crate::session::SESSIONS_FIELD;
 use crate::style::style_apply;
 use crate::style::{style_ranges_free, style_ranges_get_range};
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
@@ -751,8 +751,9 @@ pub const PROMPT_NTYPES: core::ffi::c_int = 4 as core::ffi::c_int;
 pub const PROMPT_QUOTENEXT: core::ffi::c_int = 0x40 as core::ffi::c_int;
 
 fn status_prompt_find_history_file() -> Option<CString> {
-    let history_file = unsafe {
+    let history_file = {
         global_options
+            .get()
             .as_ref()
             .expect("global options are initialized")
             .string_ref(c"history-file")
@@ -913,6 +914,7 @@ pub unsafe fn status_line_size(c: &client) -> u_int {
         match c.attached_session() {
             Some(session) => session.as_session().statuslines,
             None => global_s_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized")
                 .number(c"status") as u_int,
@@ -9813,8 +9815,9 @@ fn status_prompt_newer_history(idx: &mut [u_int; 4], kind: PromptHistoryType) ->
 }
 
 fn status_prompt_record_history(line: &CStr, kind: PromptHistoryType) {
-    let limit = unsafe {
+    let limit = {
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"prompt-history-limit") as u_int
@@ -9828,7 +9831,7 @@ fn status_prompt_add_list(list: &mut Vec<CString>, entry: &CStr) {
     list.push(entry.to_owned());
 }
 unsafe fn status_prompt_complete_list(s: &CStr, at_start: core::ffi::c_int) -> Vec<CString> {
-    unsafe {
+    {
         let prefix = s.to_bytes();
         let mut list: Vec<CString> = Vec::new();
 
@@ -9843,6 +9846,7 @@ unsafe fn status_prompt_complete_list(s: &CStr, at_start: core::ffi::c_int) -> V
             }
         }
         global_options
+            .get()
             .as_ref()
             .expect("global options are initialized")
             .with_entry(c"command-alias", true, |entry| {
@@ -10141,6 +10145,8 @@ unsafe fn status_prompt_complete_session(
     s: &CStr,
     flag: core::ffi::c_char,
 ) -> Option<CString> {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     unsafe {
         for owner in SESSIONS.read().values() {
             let session = owner.as_session();

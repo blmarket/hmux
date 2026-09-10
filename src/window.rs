@@ -52,6 +52,7 @@ use crate::server::{client_walk, with_clients};
 use crate::server::{server_check_marked, server_clear_marked};
 use crate::server::{server_destroy_pane, server_status_session};
 
+use crate::server_state::LocalField;
 use crate::style::pane_scrollbar_style_from_option;
 use crate::style::{ColourEngine, RustColourEngine};
 use crate::style::{style_ranges_free, style_ranges_get_range};
@@ -65,7 +66,6 @@ use ::core::cell::Cell;
 use ::core::ffi::CStr;
 use ::core::ops::Bound;
 use ::std::ffi::CString;
-use ::std::thread::LocalKey;
 pub type ctype_mask = core::ffi::c_uint;
 pub const _ISalnum: ctype_mask = 8;
 pub const _ISpunct: ctype_mask = 4;
@@ -784,9 +784,8 @@ pub const WINDOW_WASZOOMED: core::ffi::c_int = 0x10 as core::ffi::c_int;
 
 pub const PANE_SCROLLBARS_ALWAYS: core::ffi::c_int = 2 as core::ffi::c_int;
 
-thread_local! {
-    pub(crate) static WINDOWS: HandleRegistry<WindowWeak> = HandleRegistry::new();
-}
+pub(crate) const WINDOWS: crate::server_state::LocalField<HandleRegistry<WindowWeak>> =
+    crate::server_state::LocalField::new(|state| &state.windows);
 
 pub(crate) fn register_window_id(reference: &WindowRef) -> HandleRegistration<WindowWeak> {
     let id = reference.window_id();
@@ -803,7 +802,7 @@ trait PaneIndex {
     fn ids(&self) -> Vec<u_int>;
 }
 
-struct GlobalPaneIndex {
+pub(crate) struct GlobalPaneIndex {
     panes: HandleRegistry<RustWindowPaneWeak>,
 }
 
@@ -840,22 +839,18 @@ impl RustWindowPaneRef {
     }
 }
 
-thread_local! {
-    static GLOBAL_PANE_INDEX: GlobalPaneIndex = GlobalPaneIndex {
-        panes: HandleRegistry::new(),
-    };
-    /// The id the next pane made is handed, never reused and never wound back.
-    static next_window_pane_id: Cell<Option<u_int>> = const { Cell::new(Some(0)) };
-    /// The id the next window made is handed.
-    static next_window_id: Cell<Option<u_int>> = const { Cell::new(Some(0)) };
-    /// The stamp the next pane to become active is marked with, which is what
-    /// orders the panes by how recently they were used.
-    static next_active_point: Cell<u_int> = const { Cell::new(0) };
-}
+const GLOBAL_PANE_INDEX: crate::server_state::LocalField<GlobalPaneIndex> =
+    crate::server_state::LocalField::new(|state| &state.global_pane_index);
+const next_window_pane_id: crate::server_state::LocalField<Cell<Option<u_int>>> =
+    crate::server_state::LocalField::new(|state| &state.next_window_pane_id);
+const next_window_id: crate::server_state::LocalField<Cell<Option<u_int>>> =
+    crate::server_state::LocalField::new(|state| &state.next_window_id);
+const next_active_point: crate::server_state::LocalField<Cell<u_int>> =
+    crate::server_state::LocalField::new(|state| &state.next_active_point);
 
 /// Answers a counter's value and moves it on, which is what the post-increment
 /// the C reads these globals with does.
-fn next_id(counter: &'static LocalKey<Cell<u_int>>) -> u_int {
+fn next_id(counter: &LocalField<Cell<u_int>>) -> u_int {
     counter.replace(counter.get().wrapping_add(1))
 }
 
@@ -1559,6 +1554,7 @@ pub unsafe fn window_printable_flags(wl: &winlink, escape: core::ffi::c_int) -> 
         }
         if server_check_marked() != 0
             && marked_pane
+                .get()
                 .winlink_ref()
                 .is_some_and(|marked| marked.get().is_some_and(|marked| core::ptr::eq(wl, marked)))
         {
@@ -1631,13 +1627,14 @@ pub(crate) fn pane_walk() -> impl Iterator<Item = RustWindowPaneWeak> {
 
 /// Observes a registered pane directly, without traversing its owning window.
 pub fn window_pane_find_by_id(id: u_int) -> Option<RustWindowPaneWeak> {
-    GLOBAL_PANE_INDEX.with(|index| index.find(id))
+    GLOBAL_PANE_INDEX
+        .try_with(|index| index.find(id))
+        .ok()
+        .flatten()
 }
 
 /// Observes the supplied pane allocation without substituting another pane with the same ID.
-pub(crate) fn window_pane_ref_of(
-    pane: &impl crate::WindowPane,
-) -> Option<RustWindowPaneWeak> {
+pub(crate) fn window_pane_ref_of(pane: &impl crate::WindowPane) -> Option<RustWindowPaneWeak> {
     {
         if let Some(reference) = window_pane_find_by_id(pane.pane_id())
             && core::ptr::addr_eq(reference.as_ptr(), pane)
@@ -3552,13 +3549,15 @@ impl WindowRef {
 }
 
 unsafe fn window_find_best_session(fs: &mut cmd_find_state, w: &WindowRef) -> core::ffi::c_int {
+    let SESSIONS = crate::session::SESSIONS_FIELD.get();
+
     unsafe {
         let mut slist: Vec<SessionRef> = Vec::new();
         log_debug(
             c"%s: window is @%u",
             fmt_args![c"cmd_find_best_session_with_window".as_ptr(), w.window_id()],
         );
-        for s_loop in crate::session::SESSIONS.read().values() {
+        for s_loop in SESSIONS.read().values() {
             if s_loop.has(w) {
                 slist.push(s_loop.clone());
             }
@@ -3857,7 +3856,7 @@ impl WindowRef {
                 fill_character_state: RustWindowFillCharacterState::default(),
                 flags: 0,
                 alert_queue: RustWindowAlertQueueState::default(),
-                options: Some(RustOptionsEngine.create(global_w_options.as_ref())),
+                options: Some(RustOptionsEngine.create(global_w_options.get().as_ref())),
                 winlinks: window_winlinks::new(),
             };
             let reference = WindowRef::new(value);
@@ -3993,6 +3992,7 @@ impl WindowRef {
             *selected.flags_mut() |= PANE_CHANGED;
             drop(payload);
             if global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized")
                 .number(c"focus-events")
@@ -4143,6 +4143,7 @@ impl WindowRef {
                 fmt_args![c"window_lost_pane", w.window_id(), pane.id()],
             );
             if marked_pane
+                .get()
                 .pane_ref()
                 .is_some_and(|marked| marked.ptr_eq(pane))
             {
@@ -4443,12 +4444,13 @@ impl WinlinkRef {
                 Some(target_window.clone());
             source_window.add_winlink(target.get().expect("swap target link"));
             target_window.add_winlink(self.get().expect("swap source link"));
-            if marked_pane.wl_idx == Some(self.index())
+            if marked_pane.get().wl_idx == Some(self.index())
                 && marked_pane
+                    .get()
                     .session()
                     .is_some_and(|owner| owner.ptr_eq(self.session()))
             {
-                marked_pane.set_winlink(target.get());
+                marked_pane.with_mut(|current| current.set_winlink(target.get()));
             }
         }
     }
@@ -4469,6 +4471,14 @@ impl WindowRef {
             }
             self.redraw_borders();
             self.redraw_status();
+        }
+    }
+}
+
+impl GlobalPaneIndex {
+    pub(crate) fn new() -> Self {
+        Self {
+            panes: HandleRegistry::new(),
         }
     }
 }

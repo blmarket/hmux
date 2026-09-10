@@ -302,12 +302,11 @@ const UTF8_DEFAULT_WIDTHS: [(wchar_t, u_int); 162] = [
     (0x1faf8, 2),
 ];
 
-thread_local! {
-    static UTF8_WIDTH_CACHE: std::cell::RefCell<std::collections::BTreeMap<wchar_t, u_int>> = const {
-        std::cell::RefCell::new(std::collections::BTreeMap::new())
-    };
-    static UTF8_NO_WIDTH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
+const UTF8_WIDTH_CACHE: crate::server_state::LocalField<
+    std::cell::RefCell<std::collections::BTreeMap<wchar_t, u_int>>,
+> = crate::server_state::LocalField::new(|state| &state.utf8_width_cache);
+const UTF8_NO_WIDTH: crate::server_state::LocalField<std::cell::Cell<bool>> =
+    crate::server_state::LocalField::new(|state| &state.utf8_no_width);
 
 fn without_width<R>(read: impl FnOnce() -> R) -> R {
     struct Restore<'a> {
@@ -327,14 +326,14 @@ fn without_width<R>(read: impl FnOnce() -> R) -> R {
         read()
     })
 }
-struct Utf8Store {
+pub(crate) struct Utf8Store {
     next_index: u_int,
     by_data: std::collections::BTreeMap<utf8_stored, u_int>,
     by_index: std::collections::BTreeMap<u_int, utf8_stored>,
 }
 
 impl Utf8Store {
-    const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             next_index: 0,
             by_data: std::collections::BTreeMap::new(),
@@ -357,7 +356,9 @@ impl Utf8Store {
     }
 }
 
-static UTF8_STORE: std::sync::Mutex<Utf8Store> = std::sync::Mutex::new(Utf8Store::new());
+const UTF8_STORE_FIELD: crate::server_state::LocalField<
+    std::rc::Rc<std::cell::RefCell<Utf8Store>>,
+> = crate::server_state::LocalField::new(|state| &state.utf8_store);
 
 /// The bytes a character holds.
 fn utf8_bytes(ud: &utf8_data) -> &[u8] {
@@ -513,12 +514,11 @@ pub fn utf8_update_width_cache(specs: impl IntoIterator<Item = CString>) {
 /// The index the trees keep a character under, adding it if it is new, or
 /// `None` once every index has been handed out.
 fn utf8_put_item(data: &[u8]) -> Option<u_int> {
+    let UTF8_STORE = UTF8_STORE_FIELD.get();
+
     {
         let stored = utf8_stored_of(data);
-        let (index, inserted) = UTF8_STORE
-            .lock()
-            .expect("UTF-8 store lock is not poisoned")
-            .intern(stored)?;
+        let (index, inserted) = UTF8_STORE.borrow_mut().intern(stored)?;
         log_debug(
             if inserted {
                 c"%s: added %.*s = %u"
@@ -584,6 +584,8 @@ pub fn utf8_from_data(ud: &utf8_data) -> (utf8_state, utf8_char) {
 }
 
 pub fn utf8_to_data(uc: utf8_char, ud: &mut utf8_data) {
+    let UTF8_STORE = UTF8_STORE_FIELD.get();
+
     {
         *ud = utf8_data::default();
         ud.have = (uc >> 24 & 0x1f) as u_char;
@@ -596,8 +598,7 @@ pub fn utf8_to_data(uc: utf8_char, ud: &mut utf8_data) {
         } else {
             let size = ud.size as usize;
             let stored = UTF8_STORE
-                .lock()
-                .expect("UTF-8 store lock is not poisoned")
+                .borrow_mut()
                 .by_index
                 .get(&((uc & 0xffffff) as u_int))
                 .copied();

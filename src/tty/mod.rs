@@ -7,7 +7,7 @@
 mod device;
 mod draw;
 pub(crate) use device::terminal_device_name;
-mod driver;
+pub(crate) mod driver;
 mod keys;
 
 pub use draw::tty_draw_line;

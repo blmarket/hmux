@@ -240,7 +240,7 @@ fn the_user_keys_option_extends_the_default_tree_by_index() {
     let custom = CString::new(b"\x1b]u;fixture\x07".as_slice()).expect("no NUL");
     unsafe {
         let store = global_options
-            .as_ref()
+            .get()
             .expect("global options are initialized");
 
         tty_keys_build(&mut *t.ptr());

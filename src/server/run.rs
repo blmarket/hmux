@@ -30,7 +30,7 @@ use crate::proc::proc_fork_and_daemon;
 use crate::proc::{proc_clear_signals, proc_loop, proc_set_signals, proc_start, proc_toggle_log};
 use crate::reactor;
 use crate::reactor::{Interest, IoWatch, Reactor, Timer, WatchMode};
-use crate::session::{SESSIONS, sessions_empty};
+use crate::session::{SESSIONS_FIELD, sessions_empty};
 use crate::status::status_prompt_save_history;
 use crate::text::utf8_update_width_cache;
 use crate::tmux::{get_timer, setblocking};
@@ -71,9 +71,8 @@ pub const S_IROTH: core::ffi::c_int = S_IRGRP >> 3 as core::ffi::c_int;
 pub const S_IXOTH: core::ffi::c_int = S_IXGRP >> 3 as core::ffi::c_int;
 pub const S_IRWXO: core::ffi::c_int = S_IRWXG >> 3 as core::ffi::c_int;
 
-thread_local! {
-    static CLIENTS: std::cell::RefCell<clients_t> = const { std::cell::RefCell::new(Vec::new()) };
-}
+const CLIENTS: crate::server_state::LocalField<std::cell::RefCell<clients_t>> =
+    crate::server_state::LocalField::new(|state| &state.clients);
 
 /// Borrows the server thread's client registry without retaining its clients.
 /// Nested reads are allowed; registering or removing clients during the visit panics.
@@ -148,40 +147,42 @@ pub fn first_client() -> Option<ClientRef> {
     with_clients(|clients| clients.first().cloned())
 }
 
-pub static mut server_proc: Option<ProcessRef> = None;
-static mut server_fd: core::ffi::c_int = -(1 as core::ffi::c_int);
-static mut server_client_flags: uint64_t = 0;
-static mut server_exit: core::ffi::c_int = 0;
-static mut server_ev_accept: IoHandle = IoHandle::ZERO;
-static mut server_ev_accept_timer: TimerHandle = TimerHandle::ZERO;
-static mut server_ev_tidy: TimerHandle = TimerHandle::ZERO;
-pub static mut marked_pane: cmd_find_state = cmd_find_state {
-    flags: 0,
-    s_ref: None,
-    wl_idx: None,
-    w_ref: None,
-    wp_ref: None,
-    idx: 0,
-};
-pub static mut current_time: time_t = 0;
+pub const server_process: crate::server_state::Value<Option<ProcessRef>> =
+    crate::server_state::Value::new(|state| &state.process);
+const server_fd: crate::server_state::Value<core::ffi::c_int> =
+    crate::server_state::Value::new(|state| &state.server_fd);
+const server_client_flags: crate::server_state::Value<uint64_t> =
+    crate::server_state::Value::new(|state| &state.server_client_flags);
+const server_exit: crate::server_state::Value<core::ffi::c_int> =
+    crate::server_state::Value::new(|state| &state.server_exit);
+const server_ev_accept: crate::server_state::Value<IoHandle> =
+    crate::server_state::Value::new(|state| &state.server_ev_accept);
+const server_ev_accept_timer: crate::server_state::Value<TimerHandle> =
+    crate::server_state::Value::new(|state| &state.server_ev_accept_timer);
+const server_ev_tidy: crate::server_state::Value<TimerHandle> =
+    crate::server_state::Value::new(|state| &state.server_ev_tidy);
+pub const marked_pane: crate::server_state::Value<cmd_find_state> =
+    crate::server_state::Value::new(|state| &state.marked_pane);
+pub const current_time: crate::server_state::Value<time_t> =
+    crate::server_state::Value::new(|state| &state.current_time);
 pub unsafe fn server_set_marked(
     s: Option<&session>,
     wl: Option<&winlink>,
     wp: Option<&impl crate::WindowPane>,
 ) {
-    unsafe {
-        cmd_find_clear_state(&mut marked_pane, 0 as core::ffi::c_int);
-        marked_pane.set_session(s);
-        marked_pane.set_winlink(wl);
+    {
+        marked_pane.with_mut(|global_0| cmd_find_clear_state(global_0, 0 as core::ffi::c_int));
+        marked_pane.with_mut(|current| current.set_session(s));
+        marked_pane.with_mut(|current| current.set_winlink(wl));
         if let Some(wl) = wl {
-            marked_pane.set_window_ref(wl.window_handle());
+            marked_pane.with_mut(|current| current.set_window_ref(wl.window_handle()));
         }
-        marked_pane.set_pane(wp);
+        marked_pane.with_mut(|current| current.set_pane(wp));
     }
 }
 pub fn server_clear_marked() {
-    unsafe {
-        cmd_find_clear_state(&mut marked_pane, 0 as core::ffi::c_int);
+    {
+        marked_pane.with_mut(|global_0| cmd_find_clear_state(global_0, 0 as core::ffi::c_int));
     }
 }
 pub unsafe fn server_is_marked(
@@ -194,9 +195,9 @@ pub unsafe fn server_is_marked(
             return 0;
         };
         let (Some(session), Some(link), Some(pane)) = (
-            marked_pane.session(),
-            marked_pane.winlink_ref(),
-            marked_pane.pane_ref(),
+            marked_pane.get().session(),
+            marked_pane.get().winlink_ref(),
+            marked_pane.get().pane_ref(),
         ) else {
             return 0;
         };
@@ -212,7 +213,7 @@ pub unsafe fn server_is_marked(
     }
 }
 pub fn server_check_marked() -> core::ffi::c_int {
-    unsafe { cmd_find_valid_state(&marked_pane) }
+    unsafe { cmd_find_valid_state(&marked_pane.get()) }
 }
 pub unsafe fn server_create_socket(
     flags: uint64_t,
@@ -223,7 +224,8 @@ pub unsafe fn server_create_socket(
         let mask: mode_t;
         let fd: core::ffi::c_int;
         let saved_errno: core::ffi::c_int;
-        let path = socket_path
+        let socket_name = socket_path.get();
+        let path = socket_name
             .as_deref()
             .expect("the server has a socket path");
         if !sa.set_unix_socket_address(AF_UNIX as sa_family_t, path) {
@@ -267,7 +269,7 @@ pub unsafe fn server_create_socket(
         *cause = Some(xasprintf(
             c"error creating %s (%s)",
             fmt_args![
-                socket_path.as_deref(),
+                socket_path.get().as_deref(),
                 error_message(*__errno_location()).as_c_str()
             ],
         ));
@@ -287,7 +289,7 @@ unsafe fn server_tidy_event() {
                 get_timer().wrapping_sub(t) as core::ffi::c_ulonglong
             ],
         );
-        server_ev_tidy.arm(tv);
+        server_ev_tidy.with_mut(|current| current.arm(tv));
     }
 }
 pub unsafe fn server_start(
@@ -319,15 +321,16 @@ pub unsafe fn server_start(
             return fd;
         }
         proc_clear_signals(&mut client.borrow_mut(), 0 as core::ffi::c_int);
-        server_client_flags = flags;
+        server_client_flags.set(flags);
         if !base.reinit() {
             fatalx(c"reactor reinit failed", fmt_args![]);
         }
         let process = proc_start(c"server");
         process.borrow_mut().config = core::mem::take(&mut client.borrow_mut().config);
-        server_proc = Some(process);
+        server_process.set(Some(process));
         proc_set_signals(
-            &mut server_proc
+            &mut server_process
+                .get()
                 .as_ref()
                 .expect("server process is initialized")
                 .borrow_mut(),
@@ -344,20 +347,22 @@ pub unsafe fn server_start(
         input_key_build();
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
         );
         key_bindings_init();
-        start_time = timeval::now();
-        server_fd = systemd_create_socket(flags as core::ffi::c_int, &mut cause);
-        if server_fd != -(1 as core::ffi::c_int) {
+        start_time.set(timeval::now());
+        server_fd.set(systemd_create_socket(flags as core::ffi::c_int, &mut cause));
+        if server_fd.get() != -(1 as core::ffi::c_int) {
             server_update_socket();
         }
         if !flags & CLIENT_NOFORK as uint64_t != 0 {
             c = Some(ClientRef::from_fd(fd));
         } else {
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .set_number(c"exit-empty", 0 as core::ffi::c_longlong);
@@ -383,16 +388,19 @@ pub unsafe fn server_start(
                 };
             }
         }
-        server_ev_tidy.set_callback(move || {
-            server_tidy_event();
+        server_ev_tidy.with_mut(|current| {
+            current.set_callback(move || {
+                server_tidy_event();
+            })
         });
-        server_ev_tidy.arm(tv);
+        server_ev_tidy.with_mut(|current| current.arm(tv));
         crate::plugin::init();
         server_default_options();
         server_acl_init();
         server_add_accept(0 as core::ffi::c_int);
         proc_loop(
-            &server_proc
+            &server_process
+                .get()
                 .as_ref()
                 .expect("server process is initialized")
                 .clone(),
@@ -410,7 +418,7 @@ pub unsafe fn server_start(
 fn server_loop() -> core::ffi::c_int {
     unsafe {
         let mut items: u_int;
-        current_time = time(core::ptr::null_mut::<time_t>());
+        current_time.set(time(core::ptr::null_mut::<time_t>()));
         loop {
             items = cmdq_next(None);
             for c in client_walk() {
@@ -424,15 +432,17 @@ fn server_loop() -> core::ffi::c_int {
         }
         server_client_loop();
         if (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"exit-empty")
             == 0
-            && server_exit == 0
+            && server_exit.get() == 0
         {
             return 0 as core::ffi::c_int;
         }
         if (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"exit-unattached")
@@ -455,6 +465,8 @@ fn server_loop() -> core::ffi::c_int {
     }
 }
 fn server_send_exit() {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     unsafe {
         cmd_wait_for_flush();
         for mut c in client_walk_safe() {
@@ -472,13 +484,17 @@ fn server_send_exit() {
     }
 }
 pub fn server_update_socket() {
-    unsafe {
-        static mut last: core::ffi::c_int = -(1 as core::ffi::c_int);
+    let SESSIONS = SESSIONS_FIELD.get();
+
+    {
+        const server_last_attached: crate::server_state::Value<core::ffi::c_int> =
+            crate::server_state::Value::new(|state| &state.server_last_attached);
         let mut mode: core::ffi::c_int;
         let n = SESSIONS.read().values().any(|s| s.attached() != 0 as u_int) as core::ffi::c_int;
-        if n != last {
-            last = n;
-            let Some(path) = socket_path
+        if n != server_last_attached.get() {
+            server_last_attached.set(n);
+            let socket_name = socket_path.get();
+            let Some(path) = socket_name
                 .as_deref()
                 .map(|path| OsStr::from_bytes(path.to_bytes()))
             else {
@@ -525,7 +541,7 @@ unsafe fn server_accept(fd: core::ffi::c_int, _events: core::ffi::c_short) {
             }
             fatal(c"accept failed", fmt_args![]);
         }
-        if server_exit != 0 {
+        if server_exit.get() != 0 {
             close(newfd);
             return;
         }
@@ -541,9 +557,9 @@ unsafe fn server_accept(fd: core::ffi::c_int, _events: core::ffi::c_short) {
 /// until a timer says to look again; only one of the two is ever on, and this
 /// is what takes whichever it is off.
 fn server_stop_accept() {
-    unsafe {
-        server_ev_accept.disable();
-        server_ev_accept_timer.disarm();
+    {
+        server_ev_accept.with_mut(|current| current.disable());
+        server_ev_accept_timer.with_mut(|current| current.disarm());
     }
 }
 
@@ -558,23 +574,27 @@ fn server_accept_timer() {
 pub fn server_add_accept(timeout: core::ffi::c_int) {
     unsafe {
         let tv = timeval::from_secs(timeout as __time_t);
-        if server_fd == -(1 as core::ffi::c_int) {
+        if server_fd.get() == -(1 as core::ffi::c_int) {
             return;
         }
         server_stop_accept();
         if timeout == 0 as core::ffi::c_int {
-            server_ev_accept.set_callback(
-                server_fd,
-                Interest::Read,
-                WatchMode::Once,
-                move |fd, events| server_accept(fd, events),
-            );
-            server_ev_accept.enable();
-        } else {
-            server_ev_accept_timer.set_callback(move || {
-                server_accept_timer();
+            server_ev_accept.with_mut(|current| {
+                current.set_callback(
+                    server_fd.get(),
+                    Interest::Read,
+                    WatchMode::Once,
+                    move |fd, events| server_accept(fd, events),
+                )
             });
-            server_ev_accept_timer.arm(tv);
+            server_ev_accept.with_mut(|current| current.enable());
+        } else {
+            server_ev_accept_timer.with_mut(|current| {
+                current.set_callback(move || {
+                    server_accept_timer();
+                })
+            });
+            server_ev_accept_timer.with_mut(|current| current.arm(tv));
         };
     }
 }
@@ -587,7 +607,7 @@ fn server_signal(sig: core::ffi::c_int) {
         );
         match sig {
             SIGINT | SIGTERM => {
-                server_exit = 1 as core::ffi::c_int;
+                server_exit.set(1 as core::ffi::c_int);
                 server_send_exit();
             }
             SIGCHLD => {
@@ -595,17 +615,18 @@ fn server_signal(sig: core::ffi::c_int) {
             }
             SIGUSR1 => {
                 server_stop_accept();
-                fd = server_create_socket(server_client_flags, &mut None);
+                fd = server_create_socket(server_client_flags.get(), &mut None);
                 if fd != -(1 as core::ffi::c_int) {
-                    close(server_fd);
-                    server_fd = fd;
+                    close(server_fd.get());
+                    server_fd.set(fd);
                     server_update_socket();
                 }
                 server_add_accept(0 as core::ffi::c_int);
             }
             SIGUSR2 => {
                 proc_toggle_log(
-                    &mut server_proc
+                    &mut server_process
+                        .get()
                         .as_ref()
                         .expect("server process is initialized")
                         .borrow_mut(),
@@ -686,10 +707,11 @@ fn server_child_stopped(pid: pid_t, status: core::ffi::c_int) {
     });
 }
 pub(crate) unsafe fn server_add_message(fmt: &CStr, args: &[FmtArg]) {
-    unsafe {
+    {
         let s = format_alloc(fmt, args);
         log_debug(c"message: %s", fmt_args![s.as_c_str()]);
         let limit = (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"message-limit") as u_int;
@@ -717,7 +739,7 @@ pub(crate) unsafe fn server_toggle_marked_pane(
 ) {
     unsafe {
         let previous = if server_check_marked() != 0 {
-            marked_pane.pane_ref()
+            marked_pane.get().pane_ref()
         } else {
             None
         };
@@ -727,7 +749,10 @@ pub(crate) unsafe fn server_toggle_marked_pane(
         } else {
             server_set_marked(Some(link.session().as_session()), link.get(), pane.get());
         }
-        for marked in [previous, marked_pane.pane_ref()].into_iter().flatten() {
+        for marked in [previous, marked_pane.get().pane_ref()]
+            .into_iter()
+            .flatten()
+        {
             marked.add_flags(
                 crate::window::PANE_REDRAW
                     | crate::window::PANE_STYLECHANGED

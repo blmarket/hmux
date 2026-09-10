@@ -187,13 +187,13 @@ pub type CItem = u32;
 /// after it is stopped.
 pub const CITEM_NONE: CItem = CItem::MAX;
 
-struct CItemPool {
+pub(crate) struct CItemPool {
     items: std::collections::VecDeque<screen_write_citem>,
     free: std::collections::VecDeque<CItem>,
 }
 
 impl CItemPool {
-    const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             items: std::collections::VecDeque::new(),
             free: std::collections::VecDeque::new(),
@@ -218,7 +218,9 @@ fn next_citem_index(len: usize) -> CItem {
         .expect("collected item IDs exhausted")
 }
 
-static CITEM_POOL: std::sync::Mutex<CItemPool> = std::sync::Mutex::new(CItemPool::new());
+const CITEM_POOL_FIELD: crate::server_state::LocalField<
+    std::rc::Rc<std::cell::RefCell<CItemPool>>,
+> = crate::server_state::LocalField::new(|state| &state.citem_pool);
 
 /// The items of one line, as a snapshot that a walk may take from.
 fn citem_list(head: &citems) -> Vec<CItem> {
@@ -227,9 +229,10 @@ fn citem_list(head: &citems) -> Vec<CItem> {
 
 /// A snapshot of the item `ci` names.
 pub(crate) fn citem_snapshot(ci: CItem) -> screen_write_citem {
+    let CITEM_POOL = CITEM_POOL_FIELD.get();
+
     *CITEM_POOL
-        .lock()
-        .expect("collected item pool lock is not poisoned")
+        .borrow_mut()
         .items
         .get(ci as usize)
         .expect("a collected item index names its pool entry")
@@ -237,9 +240,9 @@ pub(crate) fn citem_snapshot(ci: CItem) -> screen_write_citem {
 
 /// Mutate the item `ci` names for the duration of `f`.
 fn with_citem<R>(ci: CItem, f: impl FnOnce(&mut screen_write_citem) -> R) -> R {
-    let mut pool = CITEM_POOL
-        .lock()
-        .expect("collected item pool lock is not poisoned");
+    let CITEM_POOL = CITEM_POOL_FIELD.get();
+
+    let mut pool = CITEM_POOL.borrow_mut();
     f(pool
         .items
         .get_mut(ci as usize)
@@ -285,11 +288,9 @@ fn citem_remove(head: &mut citems, ci: CItem) {
 /// Moves every item of `src` to the end of the free list, leaving `src`
 /// empty.
 fn citem_free_all(src: &mut citems) {
-    CITEM_POOL
-        .lock()
-        .expect("collected item pool lock is not poisoned")
-        .free
-        .extend(src.drain(..))
+    let CITEM_POOL = CITEM_POOL_FIELD.get();
+
+    CITEM_POOL.borrow_mut().free.extend(src.drain(..))
 }
 
 /// The screen's collect lists, one for each line of its grid.
@@ -300,21 +301,18 @@ fn write_list(s: &mut RustScreen) -> &mut [screen_write_cline] {
 /// A collected item to fill in: one off the free list, zeroed again, or a
 /// fresh one when the free list is empty.
 fn screen_write_get_citem() -> CItem {
-    CITEM_POOL
-        .lock()
-        .expect("collected item pool lock is not poisoned")
-        .allocate()
+    let CITEM_POOL = CITEM_POOL_FIELD.get();
+
+    CITEM_POOL.borrow_mut().allocate()
 }
 
 /// Hands `ci` back to the free list. Nothing it carried is written over, so
 /// it can still be read back afterwards — which `screen_write_collect_trim`
 /// relies on for the wrapped flag.
 fn screen_write_free_citem(ci: CItem) {
-    CITEM_POOL
-        .lock()
-        .expect("collected item pool lock is not poisoned")
-        .free
-        .push_back(ci)
+    let CITEM_POOL = CITEM_POOL_FIELD.get();
+
+    CITEM_POOL.borrow_mut().free.push_back(ci)
 }
 unsafe fn screen_write_offset_timer(w_ref: WindowRef) {
     unsafe { w_ref.update_client_offsets() }
@@ -599,9 +597,7 @@ fn screen_write_init(s: &mut RustScreen) -> screen_write_state {
         ..screen_write_state::default()
     }
 }
-pub(super) fn screen_write_start_pane_base(
-    wp: &mut impl crate::WindowPane,
-) -> screen_write_state {
+pub(super) fn screen_write_start_pane_base(wp: &mut impl crate::WindowPane) -> screen_write_state {
     {
         let mut state = screen_write_init(wp.base_mut());
         state.pane_ref = crate::window::window_pane_ref_of(wp);
@@ -669,6 +665,7 @@ pub(super) unsafe fn screen_write_reset(ctx: &mut screen_write_ctx) {
         let s = ctx.screen_mut();
         s.0.mode = MODE_CURSOR | MODE_WRAP;
         if (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"extended-keys")
@@ -2508,12 +2505,7 @@ fn screen_write_collect_insert(ctx: &mut screen_write_ctx, ci: CItem) {
         ctx.item = screen_write_get_citem();
     }
 }
-fn screen_write_collect_insert_clear(
-    ctx: &mut screen_write_ctx,
-    px: u_int,
-    nx: u_int,
-    bg: u_int,
-) {
+fn screen_write_collect_insert_clear(ctx: &mut screen_write_ctx, px: u_int, nx: u_int, bg: u_int) {
     {
         let ci: CItem = ctx.item;
         if nx != 0 {
@@ -2880,8 +2872,8 @@ pub(super) unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cel
 unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> c_int {
     unsafe {
         let ud: &utf8_data = &gc.data;
-        let oo: &RustOptionsRef = global_options
-            .as_ref()
+        let oo = global_options
+            .get()
             .expect("global options are initialized");
         let (mut cx, cy) = ctx.screen().cursor();
         let mut n: u_int;

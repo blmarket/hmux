@@ -879,11 +879,13 @@ pub unsafe fn popup_display(
         pd.s = ScreenRef::new(RustScreen::new_with_server_options(jx, jy, 0 as u_int));
         pd.s.borrow_mut().set_default_cursor(
             global_w_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"),
         );
         RustColourEngine.init_palette(&mut pd.palette);
         (global_w_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .load_pane_colours(Some(&mut pd.palette));
@@ -995,7 +997,7 @@ pub unsafe fn popup_editor(
         let mut path = *b"/tmp/tmux.XXXXXXXX\0";
 
         let editor = global_options
-            .as_ref()
+            .get()
             .expect("global options are initialized")
             .string_ref(c"editor");
         if editor.is_empty() {

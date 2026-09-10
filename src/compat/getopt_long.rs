@@ -16,12 +16,16 @@ pub const no_argument: c_int = 0;
 pub const required_argument: c_int = 1;
 pub const optional_argument: c_int = 2;
 
-pub static mut BSDopterr: c_int = 1;
-pub static mut BSDoptind: c_int = 1;
-pub static mut BSDoptopt: c_int = '?' as c_int;
-pub static mut BSDoptreset: c_int = 0;
+pub const BSDopterr: crate::server_state::Value<c_int> =
+    crate::server_state::Value::new(|state| &state.bsdopterr);
+pub const BSDoptind: crate::server_state::Value<c_int> =
+    crate::server_state::Value::new(|state| &state.bsdoptind);
+pub const BSDoptopt: crate::server_state::Value<c_int> =
+    crate::server_state::Value::new(|state| &state.bsdoptopt);
+pub const BSDoptreset: crate::server_state::Value<c_int> =
+    crate::server_state::Value::new(|state| &state.bsdoptreset);
 #[derive(Clone, Copy)]
-struct ArgumentPosition {
+pub(crate) struct ArgumentPosition {
     index: usize,
     offset: usize,
 }
@@ -40,11 +44,12 @@ impl ArgumentPosition {
     }
 }
 
-static mut optarg: Option<ArgumentPosition> = None;
+const optarg: crate::server_state::Value<Option<ArgumentPosition>> =
+    crate::server_state::Value::new(|state| &state.optarg);
 
 /// Borrows the last option's argument from the list being parsed.
 pub unsafe fn BSDoptarg(arguments: &[CString]) -> Option<&CStr> {
-    unsafe { optarg.map(|position| position.read(arguments)) }
+    optarg.get().map(|position| position.read(arguments))
 }
 
 /// Move every plain argument behind the options rather than stopping at the
@@ -60,17 +65,17 @@ pub const BADCH: c_int = '?' as c_int;
 /// What a plain argument is answered as under [`FLAG_ALLARGS`].
 pub const INORDER: c_int = 1;
 
-/// The argument and byte offset being read, or no current argument.
-static mut place: Option<ArgumentPosition> = None;
+const place: crate::server_state::Value<Option<ArgumentPosition>> =
+    crate::server_state::Value::new(|state| &state.place);
 
 unsafe fn current_argument(arguments: &[CString]) -> &CStr {
-    unsafe { place.map_or(c"", |position| position.read(arguments)) }
+    place.get().map_or(c"", |position| position.read(arguments))
 }
 
-/// The stretch of plain arguments waiting to be moved behind the options, or
-/// -1 for each end that is not known yet.
-static mut nonopt_start: c_int = -1;
-static mut nonopt_end: c_int = -1;
+const nonopt_start: crate::server_state::Value<c_int> =
+    crate::server_state::Value::new(|state| &state.nonopt_start);
+const nonopt_end: crate::server_state::Value<c_int> =
+    crate::server_state::Value::new(|state| &state.nonopt_end);
 
 const RECARGCHAR: &CStr = c"option requires an argument -- %c";
 const RECARGSTRING: &CStr = c"option requires an argument -- %s";
@@ -134,10 +139,13 @@ unsafe fn parse_long_options(
 ) -> c_int {
     unsafe {
         let quiet = options.first() == Some(&b':');
-        let position = place.expect("a long option has a current argument");
+        let position = place.get().expect("a long option has a current argument");
         let current = position.read(nargv);
         let whole = current.to_bytes();
-        BSDoptind += 1;
+        {
+            let value = 1;
+            BSDoptind.with_mut(|current| *current += value)
+        };
         let (name, has_equal) = match whole.iter().position(|&b| b == b'=') {
             Some(at) => (&whole[..at], Some(position.advance(at + 1))),
             None => (whole, None),
@@ -163,49 +171,62 @@ unsafe fn parse_long_options(
                 found = Some(i);
                 continue;
             }
-            if BSDopterr != 0 && !quiet {
+            if BSDopterr.get() != 0 && !quiet {
                 warnx(AMBIG.as_ptr(), name.len() as c_int, current.as_ptr());
             }
-            BSDoptopt = 0;
+            BSDoptopt.set(0);
             return BADCH;
         }
         let Some(at) = found else {
             if short_too {
-                BSDoptind -= 1;
+                {
+                    let value = 1;
+                    BSDoptind.with_mut(|current| *current -= value)
+                };
                 return -1;
             }
-            if BSDopterr != 0 && !quiet {
+            if BSDopterr.get() != 0 && !quiet {
                 warnx(ILLOPTSTRING.as_ptr(), current.as_ptr());
             }
-            BSDoptopt = 0;
+            BSDoptopt.set(0);
             return BADCH;
         };
         let entry = &mut entries[at];
         let refused = |entry: &option_t| if entry.flag.is_none() { entry.val } else { 0 };
         if entry.has_arg == no_argument && has_equal.is_some() {
-            if BSDopterr != 0 && !quiet {
+            if BSDopterr.get() != 0 && !quiet {
                 warnx(NOARG.as_ptr(), name.len() as c_int, current.as_ptr());
             }
-            BSDoptopt = refused(entry);
+            BSDoptopt.set(refused(entry));
             return if quiet { ':' as c_int } else { BADCH };
         }
         if entry.has_arg == required_argument || entry.has_arg == optional_argument {
             if let Some(value) = has_equal {
-                optarg = Some(value);
+                optarg.set(Some(value));
             } else if entry.has_arg == required_argument {
-                optarg = nargv.get(BSDoptind as usize).map(|_| ArgumentPosition {
-                    index: BSDoptind as usize,
-                    offset: 0,
-                });
-                BSDoptind += 1;
+                optarg.set(
+                    nargv
+                        .get(BSDoptind.get() as usize)
+                        .map(|_| ArgumentPosition {
+                            index: BSDoptind.get() as usize,
+                            offset: 0,
+                        }),
+                );
+                {
+                    let value = 1;
+                    BSDoptind.with_mut(|current| *current += value)
+                };
             }
         }
-        if entry.has_arg == required_argument && optarg.is_none() {
-            if BSDopterr != 0 && !quiet {
+        if entry.has_arg == required_argument && optarg.get().is_none() {
+            if BSDopterr.get() != 0 && !quiet {
                 warnx(RECARGSTRING.as_ptr(), current.as_ptr());
             }
-            BSDoptopt = refused(entry);
-            BSDoptind -= 1;
+            BSDoptopt.set(refused(entry));
+            {
+                let value = 1;
+                BSDoptind.with_mut(|current| *current -= value)
+            };
             return if quiet { ':' as c_int } else { BADCH };
         }
         if let Some(idx) = idx {
@@ -232,104 +253,125 @@ unsafe fn getopt_internal(
     mut flags: c_int,
 ) -> c_int {
     unsafe {
-        static mut posixly_correct: c_int = -1;
+        const getopt_posixly_correct: crate::server_state::Value<c_int> =
+            crate::server_state::Value::new(|state| &state.getopt_posixly_correct);
         let Some(options) = options else {
             return -1;
         };
         let mut options = options.to_bytes();
         let nargc = nargv.len() as c_int;
-        if BSDoptind == 0 {
-            BSDoptreset = 1;
-            BSDoptind = BSDoptreset;
+        if BSDoptind.get() == 0 {
+            BSDoptreset.set(1);
+            BSDoptind.set(BSDoptreset.get());
         }
-        if posixly_correct == -1 || BSDoptreset != 0 {
-            posixly_correct = process_environment_value(c"POSIXLY_CORRECT").is_some() as c_int;
+        if getopt_posixly_correct.get() == -1 || BSDoptreset.get() != 0 {
+            getopt_posixly_correct
+                .set(process_environment_value(c"POSIXLY_CORRECT").is_some() as c_int);
         }
         if options.first() == Some(&b'-') {
             flags |= FLAG_ALLARGS;
-        } else if posixly_correct != 0 || options.first() == Some(&b'+') {
+        } else if getopt_posixly_correct.get() != 0 || options.first() == Some(&b'+') {
             flags &= !FLAG_PERMUTE;
         }
         if options.first() == Some(&b'+') || options.first() == Some(&b'-') {
             options = &options[1..];
         }
         let quiet = options.first() == Some(&b':');
-        optarg = None;
-        if BSDoptreset != 0 {
-            nonopt_end = -1;
-            nonopt_start = -1;
+        optarg.set(None);
+        if BSDoptreset.get() != 0 {
+            nonopt_end.set(-1);
+            nonopt_start.set(-1);
         }
-        while BSDoptreset != 0 || current_argument(nargv).is_empty() {
-            BSDoptreset = 0;
-            if BSDoptind >= nargc {
-                place = None;
-                if nonopt_end != -1 {
-                    permute_args(nonopt_start, nonopt_end, BSDoptind, nargv);
-                    BSDoptind -= nonopt_end - nonopt_start;
-                } else if nonopt_start != -1 {
-                    BSDoptind = nonopt_start;
+        while BSDoptreset.get() != 0 || current_argument(nargv).is_empty() {
+            BSDoptreset.set(0);
+            if BSDoptind.get() >= nargc {
+                place.set(None);
+                if nonopt_end.get() != -1 {
+                    permute_args(nonopt_start.get(), nonopt_end.get(), BSDoptind.get(), nargv);
+                    {
+                        let value = nonopt_end.get() - nonopt_start.get();
+                        BSDoptind.with_mut(|current| *current -= value)
+                    };
+                } else if nonopt_start.get() != -1 {
+                    BSDoptind.set(nonopt_start.get());
                 }
-                nonopt_end = -1;
-                nonopt_start = -1;
+                nonopt_end.set(-1);
+                nonopt_start.set(-1);
                 return -1;
             }
-            place = Some(ArgumentPosition {
-                index: BSDoptind as usize,
+            place.set(Some(ArgumentPosition {
+                index: BSDoptind.get() as usize,
                 offset: 0,
-            });
+            }));
             let current = current_argument(nargv).to_bytes();
             if current.first() != Some(&b'-')
                 || (current.len() == 1 && find(options, b'-').is_none())
             {
-                place = None;
+                place.set(None);
                 if flags & FLAG_ALLARGS != 0 {
-                    optarg = nargv.get(BSDoptind as usize).map(|_| ArgumentPosition {
-                        index: BSDoptind as usize,
-                        offset: 0,
-                    });
-                    BSDoptind += 1;
+                    optarg.set(
+                        nargv
+                            .get(BSDoptind.get() as usize)
+                            .map(|_| ArgumentPosition {
+                                index: BSDoptind.get() as usize,
+                                offset: 0,
+                            }),
+                    );
+                    {
+                        let value = 1;
+                        BSDoptind.with_mut(|current| *current += value)
+                    };
                     return INORDER;
                 }
                 if flags & FLAG_PERMUTE == 0 {
                     return -1;
                 }
-                if nonopt_start == -1 {
-                    nonopt_start = BSDoptind;
-                } else if nonopt_end != -1 {
-                    permute_args(nonopt_start, nonopt_end, BSDoptind, nargv);
-                    nonopt_start = BSDoptind - (nonopt_end - nonopt_start);
-                    nonopt_end = -1;
+                if nonopt_start.get() == -1 {
+                    nonopt_start.set(BSDoptind.get());
+                } else if nonopt_end.get() != -1 {
+                    permute_args(nonopt_start.get(), nonopt_end.get(), BSDoptind.get(), nargv);
+                    nonopt_start.set(BSDoptind.get() - (nonopt_end.get() - nonopt_start.get()));
+                    nonopt_end.set(-1);
                 }
-                BSDoptind += 1;
+                {
+                    let value = 1;
+                    BSDoptind.with_mut(|current| *current += value)
+                };
                 continue;
             }
-            if nonopt_start != -1 && nonopt_end == -1 {
-                nonopt_end = BSDoptind;
+            if nonopt_start.get() != -1 && nonopt_end.get() == -1 {
+                nonopt_end.set(BSDoptind.get());
             }
             if current.len() > 1 {
-                place = place.map(|position| position.advance(1));
+                place.set(place.get().map(|position| position.advance(1)));
                 if current_argument(nargv) == c"-" {
-                    BSDoptind += 1;
-                    place = None;
-                    if nonopt_end != -1 {
-                        permute_args(nonopt_start, nonopt_end, BSDoptind, nargv);
-                        BSDoptind -= nonopt_end - nonopt_start;
+                    {
+                        let value = 1;
+                        BSDoptind.with_mut(|current| *current += value)
+                    };
+                    place.set(None);
+                    if nonopt_end.get() != -1 {
+                        permute_args(nonopt_start.get(), nonopt_end.get(), BSDoptind.get(), nargv);
+                        {
+                            let value = nonopt_end.get() - nonopt_start.get();
+                            BSDoptind.with_mut(|current| *current -= value)
+                        };
                     }
-                    nonopt_end = -1;
-                    nonopt_start = -1;
+                    nonopt_end.set(-1);
+                    nonopt_start.set(-1);
                     return -1;
                 }
             }
             break;
         }
         if !long_options.is_empty()
-            && place.is_some_and(|position| position.offset != 0)
+            && place.get().is_some_and(|position| position.offset != 0)
             && (current_argument(nargv).to_bytes().first() == Some(&b'-')
                 || flags & FLAG_LONGONLY != 0)
         {
             let mut short_too = false;
             if current_argument(nargv).to_bytes().first() == Some(&b'-') {
-                place = place.map(|position| position.advance(1));
+                place.set(place.get().map(|position| position.advance(1)));
             } else if current_argument(nargv).to_bytes().first() != Some(&b':')
                 && find(options, current_argument(nargv).to_bytes_with_nul()[0]).is_some()
             {
@@ -338,12 +380,12 @@ unsafe fn getopt_internal(
             let optchar =
                 parse_long_options(nargv, options, long_options, idx.as_deref_mut(), short_too);
             if optchar != -1 {
-                place = None;
+                place.set(None);
                 return optchar;
             }
         }
         let optchar = current_argument(nargv).to_bytes_with_nul()[0] as c_char as c_int;
-        place = place.map(|position| position.advance(1));
+        place.set(place.get().map(|position| position.advance(1)));
         let known = if optchar == ':' as c_int
             || (optchar == '-' as c_int && !current_argument(nargv).is_empty())
         {
@@ -356,60 +398,79 @@ unsafe fn getopt_internal(
                 return -1;
             }
             if current_argument(nargv).is_empty() {
-                BSDoptind += 1;
+                {
+                    let value = 1;
+                    BSDoptind.with_mut(|current| *current += value)
+                };
             }
-            if BSDopterr != 0 && !quiet {
+            if BSDopterr.get() != 0 && !quiet {
                 warnx(ILLOPTCHAR.as_ptr(), optchar);
             }
-            BSDoptopt = optchar;
+            BSDoptopt.set(optchar);
             return BADCH;
         };
         let opts = options;
         if !long_options.is_empty() && optchar == 'W' as c_int && opts.get(oli + 1) == Some(&b';') {
             if current_argument(nargv).is_empty() {
-                BSDoptind += 1;
-                if BSDoptind >= nargc {
-                    place = None;
-                    if BSDopterr != 0 && !quiet {
+                {
+                    let value = 1;
+                    BSDoptind.with_mut(|current| *current += value)
+                };
+                if BSDoptind.get() >= nargc {
+                    place.set(None);
+                    if BSDopterr.get() != 0 && !quiet {
                         warnx(RECARGCHAR.as_ptr(), optchar);
                     }
-                    BSDoptopt = optchar;
+                    BSDoptopt.set(optchar);
                     return if quiet { ':' as c_int } else { BADCH };
                 }
-                place = Some(ArgumentPosition {
-                    index: BSDoptind as usize,
+                place.set(Some(ArgumentPosition {
+                    index: BSDoptind.get() as usize,
                     offset: 0,
-                });
+                }));
             }
             let optchar = parse_long_options(nargv, options, long_options, idx, false);
-            place = None;
+            place.set(None);
             return optchar;
         }
         if opts.get(oli + 1) != Some(&b':') {
             if current_argument(nargv).is_empty() {
-                BSDoptind += 1;
+                {
+                    let value = 1;
+                    BSDoptind.with_mut(|current| *current += value)
+                };
             }
         } else {
-            optarg = None;
+            optarg.set(None);
             if !current_argument(nargv).is_empty() {
-                optarg = place;
+                optarg.set(place.get());
             } else if opts.get(oli + 2) != Some(&b':') {
-                BSDoptind += 1;
-                if BSDoptind >= nargc {
-                    place = None;
-                    if BSDopterr != 0 && !quiet {
+                {
+                    let value = 1;
+                    BSDoptind.with_mut(|current| *current += value)
+                };
+                if BSDoptind.get() >= nargc {
+                    place.set(None);
+                    if BSDopterr.get() != 0 && !quiet {
                         warnx(RECARGCHAR.as_ptr(), optchar);
                     }
-                    BSDoptopt = optchar;
+                    BSDoptopt.set(optchar);
                     return if quiet { ':' as c_int } else { BADCH };
                 }
-                optarg = nargv.get(BSDoptind as usize).map(|_| ArgumentPosition {
-                    index: BSDoptind as usize,
-                    offset: 0,
-                });
+                optarg.set(
+                    nargv
+                        .get(BSDoptind.get() as usize)
+                        .map(|_| ArgumentPosition {
+                            index: BSDoptind.get() as usize,
+                            offset: 0,
+                        }),
+                );
             }
-            place = None;
-            BSDoptind += 1;
+            place.set(None);
+            {
+                let value = 1;
+                BSDoptind.with_mut(|current| *current += value)
+            };
         }
         optchar
     }

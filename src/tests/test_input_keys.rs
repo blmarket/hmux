@@ -27,6 +27,7 @@ impl Keys {
         BUILD.call_once(input_key_build);
         unsafe {
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .set_number(
@@ -34,6 +35,7 @@ impl Keys {
                 RustKeyStringCodec.parse_key(c"C-?") as core::ffi::c_longlong,
             );
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .set_number(c"extended-keys-format", 0);
@@ -67,6 +69,7 @@ impl Keys {
     fn backspace(&mut self, s: &CStr) -> &mut Keys {
         unsafe {
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .set_number(
@@ -80,6 +83,7 @@ impl Keys {
     fn extended_format(&mut self, format: core::ffi::c_longlong) -> &mut Keys {
         unsafe {
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .set_number(c"extended-keys-format", format)
@@ -555,6 +559,7 @@ fn a_backspace_option_naming_a_mouse_key_is_ignored() {
     let mut keys = Keys::new();
     unsafe {
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(

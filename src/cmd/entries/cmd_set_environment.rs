@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -10,7 +11,6 @@ use crate::environ::RustEnvironment;
 use crate::environ::with_global_environment_mut;
 use crate::fmt_args;
 use crate::format::format_single_from_target;
-use crate::args::args_parse_t;
 use ::core::ffi::CStr;
 
 pub(crate) static cmd_set_environment_entry: RustCommandEntry = {

@@ -47,14 +47,14 @@ fn server_create_socket_too_long_path_returns_error() {
     let _guard = globals();
     let long = "a".repeat(200);
     let cs = std::ffi::CString::new(long).unwrap();
-    let saved = unsafe { socket_path.take() };
+    let saved = { socket_path.take() };
     unsafe {
-        socket_path = Some(cs.clone());
+        socket_path.set(Some(cs.clone()));
         let mut cause = None;
         let fd = server_create_socket(0, &mut cause);
         assert_eq!(fd, -1);
         assert!(cause.is_some());
-        socket_path = saved;
+        socket_path.set(saved);
     }
 }
 
@@ -65,16 +65,16 @@ fn server_create_socket_success_and_cleanup() {
     let _ = std::fs::create_dir_all(&dir);
     let sock = dir.join("sock");
     let cs = std::ffi::CString::new(sock.to_str().unwrap()).unwrap();
-    let saved = unsafe { socket_path.take() };
+    let saved = { socket_path.take() };
     unsafe {
-        socket_path = Some(cs.clone());
+        socket_path.set(Some(cs.clone()));
         let mut cause = None;
         let fd = server_create_socket(0, &mut cause);
         if fd >= 0 {
             libc::close(fd);
             let _ = std::fs::remove_file(&sock);
         }
-        socket_path = saved;
+        socket_path.set(saved);
     }
     let _ = std::fs::remove_dir_all(&dir);
 }

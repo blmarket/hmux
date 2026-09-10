@@ -1,5 +1,5 @@
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
+use crate::args::args_parse_t;
 use crate::cmd::cmd_find_target;
 use crate::cmd::cmd_get_args;
 
@@ -81,7 +81,8 @@ unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'r' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         if unsafe {
             tc.as_ref().expect("the command has a client").flags() & CLIENT_READONLY as uint64_t
                 != 0
@@ -128,10 +129,12 @@ unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { item.error(c"invalid sort order", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }
-    sort_crit.set_reversed(({
-        let flag = 'r' as i32 as u_char;
-        args.argument_flag_count(flag)
-    }) != 0);
+    sort_crit.set_reversed(
+        ({
+            let flag = 'r' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) != 0,
+    );
     if args.argument_flag_count(b'n') != 0 {
         let current = {
             tc.as_ref()
@@ -211,7 +214,8 @@ unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'E' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) == 0 {
+    }) == 0
+    {
         unsafe {
             selected_session.update_environment_from(tc.as_ref().expect("the command has a client"))
         };

@@ -1,8 +1,8 @@
-use crate::args::args_parse_t;
 use crate::CompiledRegex;
 use crate::WindowPane;
 use crate::args::RustArguments;
-use crate::args::{args_parse};
+use crate::args::args_parse;
+use crate::args::args_parse_t;
 use crate::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::compat::strtonum;
 use crate::compat::{cstr_eq_ignore_case, tolower};
@@ -336,6 +336,7 @@ unsafe fn window_copy_common_init(
         data.screen = ScreenRef::new(RustScreen::new_sharing_hyperlinks(sx, sy, 0 as u_int, base));
         data.screen.borrow_mut().set_default_cursor(
             global_w_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"),
         );
@@ -1270,7 +1271,8 @@ unsafe fn window_copy_expand_search_string(cs: &mut window_copy_cmd_state<'_>) -
         let search = if ({
             let args: &RustArguments = cs.args;
             args.argument_flag_count(b'F')
-        }) != 0 {
+        }) != 0
+        {
             let pane = wme.pane_ref().expect("mode has a pane");
             let expanded = format_single(None, ss, None, None, None, pane.get());
             if expanded.as_bytes().is_empty() {
@@ -1339,9 +1341,7 @@ unsafe fn window_copy_cmd_begin_selection(
         WINDOW_COPY_CMD_REDRAW
     }
 }
-fn window_copy_cmd_stop_selection(
-    cs: &mut window_copy_cmd_state<'_>,
-) -> window_copy_cmd_action {
+fn window_copy_cmd_stop_selection(cs: &mut window_copy_cmd_state<'_>) -> window_copy_cmd_action {
     {
         let wme = &mut *cs.wme;
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
@@ -1406,18 +1406,16 @@ unsafe fn window_copy_do_copy_end_of_line(
             let idx = 1 as u_int;
             args.argument_string(idx)
         };
-        let set_paste: core::ffi::c_int =
-            (({
-                let args: &RustArguments = cs.wargs;
-                let flag = 'P' as i32 as u_char;
-                args.argument_flag_count(flag)
-            }) == 0) as core::ffi::c_int;
-        let set_clip: core::ffi::c_int =
-            (({
-                let args: &RustArguments = cs.wargs;
-                let flag = 'C' as i32 as u_char;
-                args.argument_flag_count(flag)
-            }) == 0) as core::ffi::c_int;
+        let set_paste: core::ffi::c_int = (({
+            let args: &RustArguments = cs.wargs;
+            let flag = 'P' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) == 0) as core::ffi::c_int;
+        let set_clip: core::ffi::c_int = (({
+            let args: &RustArguments = cs.wargs;
+            let flag = 'C' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) == 0) as core::ffi::c_int;
         if pipe != 0 {
             if let Some(arg1) = arg1.filter(|_| count == 2 as u_int) {
                 prefix = Some(format_single(None, arg1, c.as_deref(), s, wl, pane.get()));
@@ -1515,18 +1513,16 @@ unsafe fn window_copy_do_copy_line(
             let idx = 1 as u_int;
             args.argument_string(idx)
         };
-        let set_paste: core::ffi::c_int =
-            (({
-                let args: &RustArguments = cs.wargs;
-                let flag = 'P' as i32 as u_char;
-                args.argument_flag_count(flag)
-            }) == 0) as core::ffi::c_int;
-        let set_clip: core::ffi::c_int =
-            (({
-                let args: &RustArguments = cs.wargs;
-                let flag = 'C' as i32 as u_char;
-                args.argument_flag_count(flag)
-            }) == 0) as core::ffi::c_int;
+        let set_paste: core::ffi::c_int = (({
+            let args: &RustArguments = cs.wargs;
+            let flag = 'P' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) == 0) as core::ffi::c_int;
+        let set_clip: core::ffi::c_int = (({
+            let args: &RustArguments = cs.wargs;
+            let flag = 'C' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) == 0) as core::ffi::c_int;
         if pipe != 0 {
             if let Some(arg1) = arg1.filter(|_| count == 2 as u_int) {
                 prefix = Some(format_single(None, arg1, c.as_deref(), s, wl, pane.get()));
@@ -1610,18 +1606,16 @@ unsafe fn window_copy_cmd_copy_selection_no_clear(
             let idx = 0 as u_int;
             args.argument_string(idx)
         };
-        let set_paste: core::ffi::c_int =
-            (({
-                let args: &RustArguments = cs.wargs;
-                let flag = 'P' as i32 as u_char;
-                args.argument_flag_count(flag)
-            }) == 0) as core::ffi::c_int;
-        let set_clip: core::ffi::c_int =
-            (({
-                let args: &RustArguments = cs.wargs;
-                let flag = 'C' as i32 as u_char;
-                args.argument_flag_count(flag)
-            }) == 0) as core::ffi::c_int;
+        let set_paste: core::ffi::c_int = (({
+            let args: &RustArguments = cs.wargs;
+            let flag = 'P' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) == 0) as core::ffi::c_int;
+        let set_clip: core::ffi::c_int = (({
+            let args: &RustArguments = cs.wargs;
+            let flag = 'C' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) == 0) as core::ffi::c_int;
         if let Some(arg0) = arg0 {
             prefix = Some(format_single(None, arg0, c.as_deref(), s, wl, pane.get()));
         }
@@ -1899,9 +1893,7 @@ unsafe fn window_copy_cmd_halfpage_up(
         WINDOW_COPY_CMD_NOTHING
     }
 }
-fn window_copy_cmd_toggle_position(
-    cs: &mut window_copy_cmd_state<'_>,
-) -> window_copy_cmd_action {
+fn window_copy_cmd_toggle_position(cs: &mut window_copy_cmd_state<'_>) -> window_copy_cmd_action {
     {
         let wme = &mut *cs.wme;
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
@@ -2425,9 +2417,7 @@ unsafe fn window_copy_cmd_other_end(cs: &mut window_copy_cmd_state<'_>) -> windo
         WINDOW_COPY_CMD_NOTHING
     }
 }
-fn window_copy_cmd_selection_mode(
-    cs: &mut window_copy_cmd_state<'_>,
-) -> window_copy_cmd_action {
+fn window_copy_cmd_selection_mode(cs: &mut window_copy_cmd_state<'_>) -> window_copy_cmd_action {
     {
         let wme = &mut *cs.wme;
         let so = (cs.s.expect("the copy command has a session"))
@@ -2573,9 +2563,7 @@ unsafe fn window_copy_cmd_rectangle_toggle(
         WINDOW_COPY_CMD_NOTHING
     }
 }
-fn window_copy_cmd_scroll_exit_on(
-    cs: &mut window_copy_cmd_state<'_>,
-) -> window_copy_cmd_action {
+fn window_copy_cmd_scroll_exit_on(cs: &mut window_copy_cmd_state<'_>) -> window_copy_cmd_action {
     {
         let data = cs
             .wme
@@ -2586,9 +2574,7 @@ fn window_copy_cmd_scroll_exit_on(
         WINDOW_COPY_CMD_NOTHING
     }
 }
-fn window_copy_cmd_scroll_exit_off(
-    cs: &mut window_copy_cmd_state<'_>,
-) -> window_copy_cmd_action {
+fn window_copy_cmd_scroll_exit_off(cs: &mut window_copy_cmd_state<'_>) -> window_copy_cmd_action {
     {
         let data = cs
             .wme
@@ -2951,18 +2937,16 @@ unsafe fn window_copy_cmd_copy_pipe_no_clear(
             let idx = 1 as u_int;
             args.argument_string(idx)
         };
-        let set_paste: core::ffi::c_int =
-            (({
-                let args: &RustArguments = cs.wargs;
-                let flag = 'P' as i32 as u_char;
-                args.argument_flag_count(flag)
-            }) == 0) as core::ffi::c_int;
-        let set_clip: core::ffi::c_int =
-            (({
-                let args: &RustArguments = cs.wargs;
-                let flag = 'C' as i32 as u_char;
-                args.argument_flag_count(flag)
-            }) == 0) as core::ffi::c_int;
+        let set_paste: core::ffi::c_int = (({
+            let args: &RustArguments = cs.wargs;
+            let flag = 'P' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) == 0) as core::ffi::c_int;
+        let set_clip: core::ffi::c_int = (({
+            let args: &RustArguments = cs.wargs;
+            let flag = 'C' as i32 as u_char;
+            args.argument_flag_count(flag)
+        }) == 0) as core::ffi::c_int;
         if let Some(arg1) = arg1 {
             prefix = Some(format_single(None, arg1, c.as_deref(), s, wl, pane.get()));
         }
@@ -3009,12 +2993,12 @@ unsafe fn window_copy_cmd_pipe_no_clear(
         let pane = wme.pane_ref().expect("mode has a pane");
         let mut command: Option<CString> = None;
         if s.is_some()
-            && let Some(arg0) =
-                {
-                    let args: &RustArguments = cs.wargs;
-                    let idx = 0 as u_int;
-                    args.argument_string(idx)
-                }.filter(|arg0| !arg0.to_bytes().is_empty())
+            && let Some(arg0) = {
+                let args: &RustArguments = cs.wargs;
+                let idx = 0 as u_int;
+                args.argument_string(idx)
+            }
+            .filter(|arg0| !arg0.to_bytes().is_empty())
         {
             command = Some(format_single(None, arg0, c.as_deref(), s, wl, pane.get()));
         }
@@ -3041,12 +3025,12 @@ unsafe fn window_copy_cmd_pipe_and_cancel(
 unsafe fn window_copy_cmd_goto_line(cs: &mut window_copy_cmd_state<'_>) -> window_copy_cmd_action {
     unsafe {
         let wme = &mut *cs.wme;
-        if let Some(arg0) =
-            {
-                let args: &RustArguments = cs.wargs;
-                let idx = 0 as u_int;
-                args.argument_string(idx)
-            }.filter(|arg0| !arg0.to_bytes().is_empty())
+        if let Some(arg0) = {
+            let args: &RustArguments = cs.wargs;
+            let idx = 0 as u_int;
+            args.argument_string(idx)
+        }
+        .filter(|arg0| !arg0.to_bytes().is_empty())
         {
             window_copy_goto_line(&mut *wme, arg0);
         }
@@ -3060,12 +3044,12 @@ unsafe fn window_copy_cmd_jump_backward(
         let wme = &mut *cs.wme;
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
         let mut np: u_int = wme.prefix;
-        if let Some(arg0) =
-            {
-                let args: &RustArguments = cs.wargs;
-                let idx = 0 as u_int;
-                args.argument_string(idx)
-            }.filter(|arg0| !arg0.to_bytes().is_empty())
+        if let Some(arg0) = {
+            let args: &RustArguments = cs.wargs;
+            let idx = 0 as u_int;
+            args.argument_string(idx)
+        }
+        .filter(|arg0| !arg0.to_bytes().is_empty())
         {
             data.jumptype = WINDOW_COPY_JUMPBACKWARD as core::ffi::c_int;
             data.jumpchar = utf8_fromcstr(arg0).into_iter().next();
@@ -3084,12 +3068,12 @@ unsafe fn window_copy_cmd_jump_forward(
         let wme = &mut *cs.wme;
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
         let mut np: u_int = wme.prefix;
-        if let Some(arg0) =
-            {
-                let args: &RustArguments = cs.wargs;
-                let idx = 0 as u_int;
-                args.argument_string(idx)
-            }.filter(|arg0| !arg0.to_bytes().is_empty())
+        if let Some(arg0) = {
+            let args: &RustArguments = cs.wargs;
+            let idx = 0 as u_int;
+            args.argument_string(idx)
+        }
+        .filter(|arg0| !arg0.to_bytes().is_empty())
         {
             data.jumptype = WINDOW_COPY_JUMPFORWARD as core::ffi::c_int;
             data.jumpchar = utf8_fromcstr(arg0).into_iter().next();
@@ -3108,12 +3092,12 @@ unsafe fn window_copy_cmd_jump_to_backward(
         let wme = &mut *cs.wme;
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
         let mut np: u_int = wme.prefix;
-        if let Some(arg0) =
-            {
-                let args: &RustArguments = cs.wargs;
-                let idx = 0 as u_int;
-                args.argument_string(idx)
-            }.filter(|arg0| !arg0.to_bytes().is_empty())
+        if let Some(arg0) = {
+            let args: &RustArguments = cs.wargs;
+            let idx = 0 as u_int;
+            args.argument_string(idx)
+        }
+        .filter(|arg0| !arg0.to_bytes().is_empty())
         {
             data.jumptype = WINDOW_COPY_JUMPTOBACKWARD as core::ffi::c_int;
             data.jumpchar = utf8_fromcstr(arg0).into_iter().next();
@@ -3132,12 +3116,12 @@ unsafe fn window_copy_cmd_jump_to_forward(
         let wme = &mut *cs.wme;
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
         let mut np: u_int = wme.prefix;
-        if let Some(arg0) =
-            {
-                let args: &RustArguments = cs.wargs;
-                let idx = 0 as u_int;
-                args.argument_string(idx)
-            }.filter(|arg0| !arg0.to_bytes().is_empty())
+        if let Some(arg0) = {
+            let args: &RustArguments = cs.wargs;
+            let idx = 0 as u_int;
+            args.argument_string(idx)
+        }
+        .filter(|arg0| !arg0.to_bytes().is_empty())
         {
             data.jumptype = WINDOW_COPY_JUMPTOFORWARD as core::ffi::c_int;
             data.jumpchar = utf8_fromcstr(arg0).into_iter().next();
@@ -3163,15 +3147,11 @@ unsafe fn window_copy_cmd_next_prompt(
 ) -> window_copy_cmd_action {
     unsafe {
         let wme = &mut *cs.wme;
-        window_copy_cursor_prompt(
-            &mut *wme,
-            1 as core::ffi::c_int,
-            {
-                let args: &RustArguments = cs.wargs;
-                let flag = 'o' as i32 as u_char;
-                args.argument_flag_count(flag)
-            },
-        );
+        window_copy_cursor_prompt(&mut *wme, 1 as core::ffi::c_int, {
+            let args: &RustArguments = cs.wargs;
+            let flag = 'o' as i32 as u_char;
+            args.argument_flag_count(flag)
+        });
         WINDOW_COPY_CMD_NOTHING
     }
 }
@@ -3180,15 +3160,11 @@ unsafe fn window_copy_cmd_previous_prompt(
 ) -> window_copy_cmd_action {
     unsafe {
         let wme = &mut *cs.wme;
-        window_copy_cursor_prompt(
-            &mut *wme,
-            0 as core::ffi::c_int,
-            {
-                let args: &RustArguments = cs.wargs;
-                let flag = 'o' as i32 as u_char;
-                args.argument_flag_count(flag)
-            },
-        );
+        window_copy_cursor_prompt(&mut *wme, 0 as core::ffi::c_int, {
+            let args: &RustArguments = cs.wargs;
+            let flag = 'o' as i32 as u_char;
+            args.argument_flag_count(flag)
+        });
         WINDOW_COPY_CMD_NOTHING
     }
 }
@@ -3290,7 +3266,8 @@ unsafe fn window_copy_cmd_search_backward_incremental(
             let args: &RustArguments = cs.wargs;
             let idx = 0 as u_int;
             args.argument_string(idx)
-        }.unwrap_or(c"");
+        }
+        .unwrap_or(c"");
         let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_NOTHING;
         data.timeout = 0 as core::ffi::c_int;
         log_debug(
@@ -3367,7 +3344,8 @@ unsafe fn window_copy_cmd_search_forward_incremental(
             let args: &RustArguments = cs.wargs;
             let idx = 0 as u_int;
             args.argument_string(idx)
-        }.unwrap_or(c"");
+        }
+        .unwrap_or(c"");
         let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_NOTHING;
         data.timeout = 0 as core::ffi::c_int;
         log_debug(
@@ -4905,7 +4883,8 @@ pub(crate) unsafe fn window_copy_command(
         let command = {
             let idx = 0 as u_int;
             args.argument_string(idx)
-        }.expect("the count is not zero");
+        }
+        .expect("the count is not zero");
         if let Some(m) = m
             && m.valid != 0
             && !(m.b & MOUSE_MASK_BUTTONS as u_int == MOUSE_WHEEL_UP as u_int
@@ -6032,11 +6011,7 @@ fn window_copy_visible_lines(data: &window_copy_mode_data) -> (u_int, u_int) {
 }
 /// Where `px`,`py` falls in the search mark, or nothing when it is not on
 /// the part of the history the pane shows.
-fn window_copy_search_mark_at(
-    data: &window_copy_mode_data,
-    px: u_int,
-    py: u_int,
-) -> Option<u_int> {
+fn window_copy_search_mark_at(data: &window_copy_mode_data, px: u_int, py: u_int) -> Option<u_int> {
     {
         let gd = RustScreen::grid(
             data.backing
@@ -7461,6 +7436,7 @@ unsafe fn window_copy_copy_buffer(
         let mut redraw: core::ffi::c_int = 0 as core::ffi::c_int;
         if set_clip != 0
             && (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .number(c"set-clipboard")
@@ -7503,6 +7479,7 @@ unsafe fn window_copy_pipe_run(
             Some(cmd) => cmd,
             None => {
                 fallback = global_options
+                    .get()
                     .as_ref()
                     .expect("global options are initialized")
                     .string_ref(c"copy-command");
@@ -7568,6 +7545,7 @@ unsafe fn window_copy_append_selection(wme: &mut window_mode_entry) {
             return;
         };
         if (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"set-clipboard")

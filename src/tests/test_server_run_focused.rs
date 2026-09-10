@@ -8,21 +8,21 @@ fn socket_bind_failure_restores_the_process_umask() {
     unsafe {
         let saved_path = socket_path.take();
         // /dev/null is a file, so binding a socket beneath it must fail.
-        socket_path = Some(c"/dev/null/hmux.sock".to_owned());
+        socket_path.set(Some(c"/dev/null/hmux.sock".to_owned()));
         let original_mask = umask(0o022);
         for flags in [0, CLIENT_DEFAULTSOCKET as u64] {
             let mut cause = None;
             let fd = server_create_socket(flags, &mut cause);
             let restored_mask = umask(original_mask);
-            socket_path = saved_path.clone();
+            socket_path.set(saved_path.clone());
             assert_eq!(fd, -1);
             assert!(cause.is_some());
             assert_eq!(restored_mask, 0o022);
-            socket_path = Some(c"/dev/null/hmux.sock".to_owned());
+            socket_path.set(Some(c"/dev/null/hmux.sock".to_owned()));
             umask(0o022);
         }
         umask(original_mask);
-        socket_path = saved_path;
+        socket_path.set(saved_path);
     }
 }
 
@@ -31,14 +31,16 @@ fn socket_creation_reports_long_paths_and_builds_both_permission_modes() {
     let _guard = globals();
     unsafe {
         let saved = socket_path.take();
-        socket_path = Some(CString::new(format!("/tmp/{}", "x".repeat(120))).unwrap());
+        socket_path.set(Some(
+            CString::new(format!("/tmp/{}", "x".repeat(120))).unwrap(),
+        ));
         let mut cause = None;
         assert_eq!(server_create_socket(0, &mut cause), -1);
         assert!(cause.unwrap().to_bytes().starts_with(b"error creating"));
 
         for flags in [0, CLIENT_DEFAULTSOCKET as u64] {
             let path = format!("/tmp/hmux-sr-{}-{flags}.sock", std::process::id());
-            socket_path = Some(CString::new(path.clone()).unwrap());
+            socket_path.set(Some(CString::new(path.clone()).unwrap()));
             let mut cause = None;
             let fd = server_create_socket(flags, &mut cause);
             assert!(fd >= 0, "{cause:?}");
@@ -47,7 +49,7 @@ fn socket_creation_reports_long_paths_and_builds_both_permission_modes() {
             assert!(metadata.file_type().is_socket());
             fs::remove_file(path).unwrap();
         }
-        socket_path = saved;
+        socket_path.set(saved);
     }
 }
 
@@ -90,13 +92,13 @@ fn client_walk_marked_and_accept_helpers_cover_empty_safe_states() {
         server_set_marked(None, None, None::<&crate::types::window_pane>);
         assert_eq!(server_check_marked(), 0);
 
-        let old_fd = server_fd;
-        server_fd = -1;
+        let old_fd = server_fd.get();
+        server_fd.set(-1);
         server_add_accept(0);
         server_add_accept(1);
         server_stop_accept();
         server_accept_timer();
-        server_fd = old_fd;
+        server_fd.set(old_fd);
     }
 }
 

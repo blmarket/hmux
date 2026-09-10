@@ -1,4 +1,3 @@
-
 use crate::args::args_parse_t;
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
@@ -131,7 +130,11 @@ unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             return CMD_RETURN_NORMAL;
         }
         unsafe {
-            crate::server::server_toggle_marked_pane(&link, &pane, args.argument_flag_count(b'M') != 0)
+            crate::server::server_toggle_marked_pane(
+                &link,
+                &pane,
+                args.argument_flag_count(b'M') != 0,
+            )
         };
         if window.pane_is_floating(&pane) {
             unsafe {

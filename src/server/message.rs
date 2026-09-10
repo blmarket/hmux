@@ -21,7 +21,7 @@ pub use crate::consts::{
     MODE_CURSOR, MSG_LOCK, PANE_REDRAW, PANE_STATUSDRAWN, PANE_STATUSREADY, SIGCHLD, SORT_NAME,
     TTYC_CLEAR, TTYC_SMCUP, WINLINK_ALERTFLAGS,
 };
-use crate::session::SESSIONS;
+use crate::session::SESSIONS_FIELD;
 use crate::sort::{RustSortCriteria, SortCriteria};
 use crate::terminfo::{TerminalCapabilities, tty_term_of};
 use crate::tty::{tty_raw, tty_stop_tty};
@@ -194,6 +194,8 @@ pub unsafe fn server_kill_pane(pane: &RustWindowPaneWeak) {
 }
 
 pub fn server_renumber_all() {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     unsafe {
         for s_ref in SESSIONS.read().values() {
             s_ref.renumber_group_if_enabled();
@@ -253,18 +255,21 @@ pub(crate) unsafe fn server_link_window(
         let Some(index) = destination.attach(window, dstidx, cause) else {
             return -1;
         };
-        if marked_pane.wl_idx == Some(source.index())
+        if marked_pane.get().wl_idx == Some(source.index())
             && marked_pane
+                .get()
                 .session()
                 .is_some_and(|session| session.ptr_eq(source.session()))
         {
-            marked_pane.set_winlink(
-                destination
-                    .as_session()
-                    .windows
-                    .get(&index)
-                    .map(Box::as_ref),
-            );
+            marked_pane.with_mut(|current| {
+                current.set_winlink(
+                    destination
+                        .as_session()
+                        .windows
+                        .get(&index)
+                        .map(Box::as_ref),
+                )
+            });
         }
         if selectflag != 0 {
             destination.select(index);
@@ -405,6 +410,8 @@ unsafe fn server_find_session(
     s: &mut session,
     f: impl Fn(&session, Option<&session>) -> core::ffi::c_int,
 ) -> Option<SessionRef> {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     unsafe {
         let mut s_out: Option<SessionRef> = None;
         for s_loop in SESSIONS.read().values() {
@@ -502,6 +509,8 @@ pub unsafe fn server_destroy_session(s: &mut session) {
     }
 }
 pub fn server_check_unattached() {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     unsafe {
         for mut owner in SESSIONS.walk_safe() {
             if owner.attached() != 0 {
@@ -564,6 +573,8 @@ impl WindowRef {
         }
     }
     pub unsafe fn redraw_status(&self) {
+        let SESSIONS = SESSIONS_FIELD.get();
+
         let w = self;
 
         unsafe {
@@ -575,6 +586,8 @@ impl WindowRef {
         }
     }
     pub unsafe fn kill(self, renumber: core::ffi::c_int) {
+        let SESSIONS = SESSIONS_FIELD.get();
+
         let window = self;
 
         unsafe {

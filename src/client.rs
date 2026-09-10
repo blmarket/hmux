@@ -88,12 +88,15 @@ pub const TCSAFLUSH: core::ffi::c_int = 2 as core::ffi::c_int;
 
 pub const CLIENT_STARTSERVER: core::ffi::c_int = 0x10000000 as core::ffi::c_int;
 
-pub(crate) static mut client_proc: Option<ProcessRef> = None;
-pub(crate) static mut client_peer: Option<PeerRef> = None;
+pub(crate) const client_proc: crate::server_state::Value<Option<ProcessRef>> =
+    crate::server_state::Value::new(|state| &state.client_proc);
+pub(crate) const client_peer: crate::server_state::Value<Option<PeerRef>> =
+    crate::server_state::Value::new(|state| &state.client_peer);
 
 fn client_peer_ref() -> PeerRef {
-    unsafe {
+    {
         client_peer
+            .get()
             .as_ref()
             .expect("client peer is initialized")
             .clone()
@@ -103,29 +106,43 @@ fn client_peer_ref() -> PeerRef {
 /// Flushes what the client still owes the server, then asks the loop to stop.
 unsafe fn client_exit_proc() {
     unsafe {
-        if let Some(peer) = client_peer.as_ref() {
+        if let Some(peer) = client_peer.get().as_ref() {
             imsgbuf_flush(&mut peer.borrow_mut().ibuf);
         }
         proc_exit(
             &mut client_proc
+                .get()
                 .as_ref()
                 .expect("client process is initialized")
                 .borrow_mut(),
         );
     }
 }
-pub(crate) static mut client_flags: uint64_t = 0;
-pub(crate) static mut client_suspended: core::ffi::c_int = 0;
-pub(crate) static mut client_exitreason: client_exit_reason = CLIENT_EXIT_NONE;
-pub(crate) static mut client_exitflag: core::ffi::c_int = 0;
-pub(crate) static mut client_exitval: core::ffi::c_int = 0;
-pub(crate) static mut client_exittype: msgtype = 0 as msgtype;
-pub(crate) static mut client_exitsession: Option<std::ffi::CString> = None;
-pub(crate) static mut client_exitmessage: Option<std::ffi::CString> = None;
-pub(crate) static mut client_execshell: Option<std::ffi::CString> = None;
-pub(crate) static mut client_execcmd: Option<std::ffi::CString> = None;
-pub(crate) static mut client_attached: core::ffi::c_int = 0;
-pub(crate) static client_files: GlobalTree<core::ffi::c_int, ClientFileRef> = GlobalTree::new();
+pub(crate) const client_flags: crate::server_state::Value<uint64_t> =
+    crate::server_state::Value::new(|state| &state.client_flags);
+pub(crate) const client_suspended: crate::server_state::Value<core::ffi::c_int> =
+    crate::server_state::Value::new(|state| &state.client_suspended);
+pub(crate) const client_exitreason: crate::server_state::Value<client_exit_reason> =
+    crate::server_state::Value::new(|state| &state.client_exitreason);
+pub(crate) const client_exitflag: crate::server_state::Value<core::ffi::c_int> =
+    crate::server_state::Value::new(|state| &state.client_exitflag);
+pub(crate) const client_exitval: crate::server_state::Value<core::ffi::c_int> =
+    crate::server_state::Value::new(|state| &state.client_exitval);
+pub(crate) const client_exittype: crate::server_state::Value<msgtype> =
+    crate::server_state::Value::new(|state| &state.client_exittype);
+pub(crate) const client_exitsession: crate::server_state::Value<Option<std::ffi::CString>> =
+    crate::server_state::Value::new(|state| &state.client_exitsession);
+pub(crate) const client_exitmessage: crate::server_state::Value<Option<std::ffi::CString>> =
+    crate::server_state::Value::new(|state| &state.client_exitmessage);
+pub(crate) const client_execshell: crate::server_state::Value<Option<std::ffi::CString>> =
+    crate::server_state::Value::new(|state| &state.client_execshell);
+pub(crate) const client_execcmd: crate::server_state::Value<Option<std::ffi::CString>> =
+    crate::server_state::Value::new(|state| &state.client_execcmd);
+pub(crate) const client_attached: crate::server_state::Value<core::ffi::c_int> =
+    crate::server_state::Value::new(|state| &state.client_attached);
+pub(crate) const client_files_FIELD: crate::server_state::LocalField<
+    std::rc::Rc<GlobalTree<core::ffi::c_int, ClientFileRef>>,
+> = crate::server_state::LocalField::new(|state| &state.client_files);
 
 pub(crate) unsafe fn client_get_lock(lockfile: &CStr) -> core::ffi::c_int {
     unsafe {
@@ -239,6 +256,7 @@ pub(crate) unsafe fn client_connect(
                 }
                 fd = server_start(
                     &client_proc
+                        .get()
                         .as_ref()
                         .expect("client process is initialized")
                         .clone(),
@@ -273,13 +291,13 @@ pub(crate) unsafe fn client_connect(
 }
 /// Why the client is going, as the caller's own string.
 pub(crate) unsafe fn client_exit_message() -> std::ffi::CString {
-    unsafe {
-        match client_exitreason {
-            CLIENT_EXIT_DETACHED => match client_exitsession.as_deref() {
+    {
+        match client_exitreason.get() {
+            CLIENT_EXIT_DETACHED => match client_exitsession.get().as_deref() {
                 Some(session) => format_alloc(c"detached (from session %s)", fmt_args![session]),
                 None => c"detached".to_owned(),
             },
-            CLIENT_EXIT_DETACHED_HUP => match client_exitsession.as_deref() {
+            CLIENT_EXIT_DETACHED_HUP => match client_exitsession.get().as_deref() {
                 Some(session) => {
                     format_alloc(c"detached and SIGHUP (from session %s)", fmt_args![session])
                 }
@@ -290,7 +308,7 @@ pub(crate) unsafe fn client_exit_message() -> std::ffi::CString {
             CLIENT_EXIT_LOST_SERVER => c"server exited unexpectedly".to_owned(),
             CLIENT_EXIT_EXITED => c"exited".to_owned(),
             CLIENT_EXIT_SERVER_EXITED => c"server exited".to_owned(),
-            CLIENT_EXIT_MESSAGE_PROVIDED => match client_exitmessage.as_ref() {
+            CLIENT_EXIT_MESSAGE_PROVIDED => match client_exitmessage.get().as_ref() {
                 Some(message) => message.clone(),
                 None => c"unknown reason".to_owned(),
             },
@@ -299,6 +317,8 @@ pub(crate) unsafe fn client_exit_message() -> std::ffi::CString {
     }
 }
 pub(crate) unsafe fn client_exit() {
+    let client_files = client_files_FIELD.get();
+
     unsafe {
         if file_write_left(&client_files.map()) == 0 {
             client_exit_proc();
@@ -319,7 +339,7 @@ pub(crate) unsafe fn client_main(
         let mut saved_tio: termios = core::mem::zeroed();
         let size: size_t;
         let argc = argv.len() as core::ffi::c_int;
-        if shell_command.is_some() {
+        if shell_command.get().is_some() {
             msg = MSG_SHELL;
             flags |= CLIENT_STARTSERVER as uint64_t;
         } else if argv.is_empty() {
@@ -342,22 +362,24 @@ pub(crate) unsafe fn client_main(
         }
         let process = proc_start(c"client");
         process.borrow_mut().config = config;
-        client_proc = Some(process);
+        client_proc.set(Some(process));
         proc_set_signals(
             &mut client_proc
+                .get()
                 .as_ref()
                 .expect("client process is initialized")
                 .borrow_mut(),
             |sig| client_signal(sig),
         );
-        client_flags = flags;
+        client_flags.set(flags);
         log_debug(
             c"flags are %#llx",
-            fmt_args![client_flags as core::ffi::c_ulonglong],
+            fmt_args![client_flags.get() as core::ffi::c_ulonglong],
         );
         let fd: core::ffi::c_int = if systemd_activated() != 0 {
             server_start(
                 &client_proc
+                    .get()
                     .as_ref()
                     .expect("client process is initialized")
                     .clone(),
@@ -369,8 +391,11 @@ pub(crate) unsafe fn client_main(
         } else {
             client_connect(
                 base,
-                socket_path.as_deref().expect("socket path was selected"),
-                client_flags,
+                socket_path
+                    .get()
+                    .as_deref()
+                    .expect("socket path was selected"),
+                client_flags.get(),
             )
         };
         if fd == -(1 as core::ffi::c_int) {
@@ -379,6 +404,7 @@ pub(crate) unsafe fn client_main(
                     &[
                         b"no server running on ".as_slice(),
                         socket_path
+                            .get()
                             .as_deref()
                             .expect("socket path was selected")
                             .to_bytes(),
@@ -392,6 +418,7 @@ pub(crate) unsafe fn client_main(
                     &[
                         b"error connecting to ".as_slice(),
                         socket_path
+                            .get()
                             .as_deref()
                             .expect("socket path was selected")
                             .to_bytes(),
@@ -405,9 +432,10 @@ pub(crate) unsafe fn client_main(
             return 1 as core::ffi::c_int;
         }
         let dispatch = std::rc::Rc::new(client_dispatch);
-        client_peer = Some(PeerRef::from_fd(fd, Some(dispatch)));
+        client_peer.set(Some(PeerRef::from_fd(fd, Some(dispatch))));
         let found_cwd = find_cwd();
-        let cwd = match (&found_cwd, find_home()) {
+        let home = find_home();
+        let cwd = match (&found_cwd, home.as_deref()) {
             (Some(found), _) => found.as_c_str(),
             (None, Some(home)) => home,
             (None, None) => c"/",
@@ -428,11 +456,11 @@ pub(crate) unsafe fn client_main(
         } else {
             Vec::new()
         };
-        if ptm_fd != -(1 as core::ffi::c_int) {
-            close(ptm_fd);
+        if ptm_fd.get() != -(1 as core::ffi::c_int) {
+            close(ptm_fd.get());
         }
         global_options_free();
-        if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
+        if client_flags.get() & CLIENT_CONTROLCONTROL as uint64_t != 0 {
             if tcgetattr(STDIN_FILENO, &raw mut saved_tio) != 0 as core::ffi::c_int {
                 let error = error_message(*__errno_location());
                 let _ = std::io::stderr().lock().write_all(
@@ -481,14 +509,16 @@ pub(crate) unsafe fn client_main(
         }
         proc_loop(
             &client_proc
+                .get()
                 .as_ref()
                 .expect("client process is initialized")
                 .clone(),
             || false,
         );
-        if client_exittype as core::ffi::c_uint == MSG_EXEC as core::ffi::c_int as core::ffi::c_uint
+        if client_exittype.get() as core::ffi::c_uint
+            == MSG_EXEC as core::ffi::c_int as core::ffi::c_uint
         {
-            if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
+            if client_flags.get() & CLIENT_CONTROLCONTROL as uint64_t != 0 {
                 tcsetattr(STDOUT_FILENO, TCSAFLUSH, &raw mut saved_tio);
             }
             let execshell = client_execshell.take().expect("MSG_EXEC supplies a shell");
@@ -498,8 +528,8 @@ pub(crate) unsafe fn client_main(
         setblocking(STDIN_FILENO, 1 as core::ffi::c_int);
         setblocking(STDOUT_FILENO, 1 as core::ffi::c_int);
         setblocking(STDERR_FILENO, 1 as core::ffi::c_int);
-        if client_attached != 0 {
-            if client_exitreason as core::ffi::c_uint
+        if client_attached.get() != 0 {
+            if client_exitreason.get() as core::ffi::c_uint
                 != CLIENT_EXIT_NONE as core::ffi::c_int as core::ffi::c_uint
             {
                 let _ = std::io::stdout().lock().write_all(
@@ -507,14 +537,14 @@ pub(crate) unsafe fn client_main(
                 );
             }
             ppid = getppid() as pid_t;
-            if client_exittype as core::ffi::c_uint
+            if client_exittype.get() as core::ffi::c_uint
                 == MSG_DETACHKILL as core::ffi::c_int as core::ffi::c_uint
                 && ppid > 1 as core::ffi::c_int
             {
                 kill(ppid as __pid_t, SIGHUP);
             }
-        } else if client_flags & CLIENT_CONTROL as uint64_t != 0 {
-            if client_exitreason as core::ffi::c_uint
+        } else if client_flags.get() & CLIENT_CONTROL as uint64_t != 0 {
+            if client_exitreason.get() as core::ffi::c_uint
                 != CLIENT_EXIT_NONE as core::ffi::c_int as core::ffi::c_uint
             {
                 let _ = std::io::stdout().lock().write_all(
@@ -529,7 +559,7 @@ pub(crate) unsafe fn client_main(
                 let _ = std::io::stdout().lock().write_all(b"%exit\n");
             }
             let _ = std::io::stdout().lock().flush();
-            if client_flags as core::ffi::c_ulonglong & CLIENT_CONTROL_WAITEXIT != 0 {
+            if client_flags.get() as core::ffi::c_ulonglong & CLIENT_CONTROL_WAITEXIT != 0 {
                 let mut stdin = std::io::stdin().lock();
                 let mut line = Vec::<u8>::new();
                 loop {
@@ -540,19 +570,19 @@ pub(crate) unsafe fn client_main(
                     }
                 }
             }
-            if client_flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {
+            if client_flags.get() & CLIENT_CONTROLCONTROL as uint64_t != 0 {
                 let _ = std::io::stdout().lock().write_all(b"\x1B\\");
                 let _ = std::io::stdout().lock().flush();
                 tcsetattr(STDOUT_FILENO, TCSAFLUSH, &raw mut saved_tio);
             }
-        } else if client_exitreason as core::ffi::c_uint
+        } else if client_exitreason.get() as core::ffi::c_uint
             != CLIENT_EXIT_NONE as core::ffi::c_int as core::ffi::c_uint
         {
             let _ = std::io::stderr()
                 .lock()
                 .write_all(&[client_exit_message().to_bytes(), b"\n"].concat());
         }
-        client_exitval
+        client_exitval.get()
     }
 }
 unsafe fn client_send_identify(
@@ -564,7 +594,7 @@ unsafe fn client_send_identify(
 ) {
     unsafe {
         let mut fd: core::ffi::c_int;
-        let flags: uint64_t = client_flags;
+        let flags: uint64_t = client_flags.get();
 
         (client_peer_ref()).send(
             MSG_IDENTIFY_LONGFLAGS,
@@ -574,7 +604,7 @@ unsafe fn client_send_identify(
         (client_peer_ref()).send(
             MSG_IDENTIFY_LONGFLAGS,
             -(1 as core::ffi::c_int),
-            &client_flags.to_ne_bytes(),
+            &client_flags.get().to_ne_bytes(),
         );
         (client_peer_ref()).send(
             MSG_IDENTIFY_TERM,
@@ -633,11 +663,12 @@ unsafe fn client_exec(shell: &CStr, shellcmd: Option<&CStr>) -> ! {
         log_debug(c"shell %s, command %s", fmt_args![shell, shellcmd]);
         let argv0 = shell_argv0(
             shell,
-            (client_flags & CLIENT_LOGIN as uint64_t != 0) as core::ffi::c_int,
+            (client_flags.get() & CLIENT_LOGIN as uint64_t != 0) as core::ffi::c_int,
         );
         setenv(c"SHELL".as_ptr(), shell.as_ptr(), 1 as core::ffi::c_int);
         proc_clear_signals(
             &mut client_proc
+                .get()
                 .as_ref()
                 .expect("client process is initialized")
                 .borrow_mut(),
@@ -683,22 +714,22 @@ pub(crate) unsafe fn client_signal(sig: core::ffi::c_int) {
                     fmt_args![error_message(*__errno_location()).as_c_str()],
                 );
             }
-        } else if client_attached == 0 {
+        } else if client_attached.get() == 0 {
             if sig == SIGTERM || sig == SIGHUP {
                 client_exit_proc();
             }
         } else {
             match sig {
                 SIGHUP => {
-                    client_exitreason = CLIENT_EXIT_LOST_TTY;
-                    client_exitval = 1 as core::ffi::c_int;
+                    client_exitreason.set(CLIENT_EXIT_LOST_TTY);
+                    client_exitval.set(1 as core::ffi::c_int);
                     (client_peer_ref()).send(MSG_EXITING, -(1 as core::ffi::c_int), &[]);
                 }
                 SIGTERM => {
-                    if client_suspended == 0 {
-                        client_exitreason = CLIENT_EXIT_TERMINATED;
+                    if client_suspended.get() == 0 {
+                        client_exitreason.set(CLIENT_EXIT_TERMINATED);
                     }
-                    client_exitval = 1 as core::ffi::c_int;
+                    client_exitval.set(1 as core::ffi::c_int);
                     (client_peer_ref()).send(MSG_EXITING, -(1 as core::ffi::c_int), &[]);
                 }
                 SIGWINCH => {
@@ -718,7 +749,7 @@ pub(crate) unsafe fn client_signal(sig: core::ffi::c_int) {
                         fatal(c"sigaction failed", fmt_args![]);
                     }
                     (client_peer_ref()).send(MSG_WAKEUP, -(1 as core::ffi::c_int), &[]);
-                    client_suspended = 0 as core::ffi::c_int;
+                    client_suspended.set(0 as core::ffi::c_int);
                 }
                 _ => {}
             }
@@ -730,7 +761,7 @@ pub(crate) fn client_file_check_cb(event: ClientFileEvent<'_>) {
         if !matches!(event, ClientFileEvent::CheckExit) {
             return;
         }
-        if client_exitflag != 0 {
+        if client_exitflag.get() != 0 {
             client_exit();
         }
     }
@@ -738,14 +769,14 @@ pub(crate) fn client_file_check_cb(event: ClientFileEvent<'_>) {
 pub(crate) fn client_dispatch(imsg: Option<&mut imsg>) {
     unsafe {
         let Some(imsg) = imsg else {
-            if client_exitflag == 0 {
-                client_exitreason = CLIENT_EXIT_LOST_SERVER;
-                client_exitval = 1 as core::ffi::c_int;
+            if client_exitflag.get() == 0 {
+                client_exitreason.set(CLIENT_EXIT_LOST_SERVER);
+                client_exitval.set(1 as core::ffi::c_int);
             }
             client_exit_proc();
             return;
         };
-        if client_attached != 0 {
+        if client_attached.get() != 0 {
             client_dispatch_attached(imsg);
         } else {
             client_dispatch_wait(imsg);
@@ -753,7 +784,7 @@ pub(crate) fn client_dispatch(imsg: Option<&mut imsg>) {
     }
 }
 pub(crate) unsafe fn client_dispatch_exit_message(data: &[u8]) {
-    unsafe {
+    {
         let retval: core::ffi::c_int;
         if data.len() < size_of::<core::ffi::c_int>() && !data.is_empty() {
             fatalx(c"bad MSG_EXIT size", fmt_args![]);
@@ -764,7 +795,7 @@ pub(crate) unsafe fn client_dispatch_exit_message(data: &[u8]) {
                     .try_into()
                     .expect("exit status size checked"),
             );
-            client_exitval = retval;
+            client_exitval.set(retval);
         }
         if data.len() > size_of::<core::ffi::c_int>() {
             let bytes = &data[size_of::<core::ffi::c_int>()..];
@@ -772,26 +803,28 @@ pub(crate) unsafe fn client_dispatch_exit_message(data: &[u8]) {
                 .iter()
                 .position(|byte| *byte == 0)
                 .unwrap_or(bytes.len().wrapping_sub(1));
-            client_exitmessage = std::ffi::CString::new(&bytes[..end]).ok();
-            client_exitreason = CLIENT_EXIT_MESSAGE_PROVIDED;
+            client_exitmessage.set(std::ffi::CString::new(&bytes[..end]).ok());
+            client_exitreason.set(CLIENT_EXIT_MESSAGE_PROVIDED);
         }
     }
 }
 pub(crate) unsafe fn client_dispatch_wait(imsg: &imsg) {
+    let client_files = client_files_FIELD.get();
+
     unsafe {
         let payload = imsg.imsg_message_data();
         let datalen = payload.len() as ssize_t;
         match imsg.hdr.type_0 {
             MSG_EXIT | MSG_SHUTDOWN => {
                 client_dispatch_exit_message(payload);
-                client_exitflag = 1 as core::ffi::c_int;
+                client_exitflag.set(1 as core::ffi::c_int);
                 client_exit();
             }
             MSG_READY => {
                 if datalen != 0 as ssize_t {
                     fatalx(c"bad MSG_READY size", fmt_args![]);
                 }
-                client_attached = 1 as core::ffi::c_int;
+                client_attached.set(1 as core::ffi::c_int);
                 (client_peer_ref()).send(MSG_RESIZE, -(1 as core::ffi::c_int), &[]);
             }
             MSG_VERSION => {
@@ -804,18 +837,19 @@ pub(crate) unsafe fn client_dispatch_wait(imsg: &imsg) {
                     PROTOCOL_VERSION,
                     imsg.hdr.peerid & 0xff
                 );
-                client_exitval = 1 as core::ffi::c_int;
+                client_exitval.set(1 as core::ffi::c_int);
                 client_exit_proc();
             }
             MSG_FLAGS => {
                 if datalen as usize != size_of::<uint64_t>() {
                     fatalx(c"bad MSG_FLAGS string", fmt_args![]);
                 }
-                client_flags =
-                    uint64_t::from_ne_bytes(payload.try_into().expect("flag size checked"));
+                client_flags.set(uint64_t::from_ne_bytes(
+                    payload.try_into().expect("flag size checked"),
+                ));
                 log_debug(
                     c"new flags are %#llx",
-                    fmt_args![client_flags as core::ffi::c_ulonglong],
+                    fmt_args![client_flags.get() as core::ffi::c_ulonglong],
                 );
             }
             MSG_SHELL => {
@@ -824,7 +858,7 @@ pub(crate) unsafe fn client_dispatch_wait(imsg: &imsg) {
                 }
                 client_exec(
                     CStr::from_bytes_until_nul(payload).expect("terminated shell"),
-                    shell_command.as_deref(),
+                    shell_command.get().as_deref(),
                 );
             }
             MSG_DETACH | MSG_DETACHKILL => {
@@ -835,25 +869,28 @@ pub(crate) unsafe fn client_dispatch_wait(imsg: &imsg) {
             }
             MSG_READ_OPEN => {
                 file_read_open(
-                    &FileOwner::Global(&client_files),
+                    &FileOwner::Global(std::rc::Rc::downgrade(&client_files)),
                     &client_peer_ref(),
                     imsg,
                     1 as core::ffi::c_int,
-                    (client_flags & CLIENT_CONTROL as uint64_t == 0) as core::ffi::c_int,
+                    (client_flags.get() & CLIENT_CONTROL as uint64_t == 0) as core::ffi::c_int,
                     Some(std::rc::Rc::new(client_file_check_cb)),
                     ClientFileData::None,
                 );
             }
             MSG_READ_CANCEL => {
-                file_read_cancel(&FileOwner::Global(&client_files), imsg);
+                file_read_cancel(
+                    &FileOwner::Global(std::rc::Rc::downgrade(&client_files)),
+                    imsg,
+                );
             }
             MSG_WRITE_OPEN => {
                 file_write_open(
-                    &FileOwner::Global(&client_files),
+                    &FileOwner::Global(std::rc::Rc::downgrade(&client_files)),
                     &client_peer_ref(),
                     imsg,
                     1 as core::ffi::c_int,
-                    (client_flags & CLIENT_CONTROL as uint64_t == 0) as core::ffi::c_int,
+                    (client_flags.get() & CLIENT_CONTROL as uint64_t == 0) as core::ffi::c_int,
                     Some(std::rc::Rc::new(client_file_check_cb)),
                     ClientFileData::None,
                 );
@@ -862,7 +899,10 @@ pub(crate) unsafe fn client_dispatch_wait(imsg: &imsg) {
                 file_write_data(&client_files.map(), imsg);
             }
             MSG_WRITE_CLOSE => {
-                file_write_close(&FileOwner::Global(&client_files), imsg);
+                file_write_close(
+                    &FileOwner::Global(std::rc::Rc::downgrade(&client_files)),
+                    imsg,
+                );
             }
             MSG_OLDSTDERR | MSG_OLDSTDIN | MSG_OLDSTDOUT => {
                 let _ = std::io::stderr()
@@ -884,27 +924,28 @@ pub(crate) unsafe fn client_dispatch_attached(imsg: &imsg) {
                 if datalen as usize != size_of::<uint64_t>() {
                     fatalx(c"bad MSG_FLAGS string", fmt_args![]);
                 }
-                client_flags =
-                    uint64_t::from_ne_bytes(payload.try_into().expect("flag size checked"));
+                client_flags.set(uint64_t::from_ne_bytes(
+                    payload.try_into().expect("flag size checked"),
+                ));
                 log_debug(
                     c"new flags are %#llx",
-                    fmt_args![client_flags as core::ffi::c_ulonglong],
+                    fmt_args![client_flags.get() as core::ffi::c_ulonglong],
                 );
             }
             MSG_DETACH | MSG_DETACHKILL => {
                 if payload.last() != Some(&0) {
                     fatalx(c"bad MSG_DETACH string", fmt_args![]);
                 }
-                client_exitsession = Some(
+                client_exitsession.set(Some(
                     CStr::from_bytes_until_nul(payload)
                         .expect("terminated session")
                         .to_owned(),
-                );
-                client_exittype = imsg.hdr.type_0 as msgtype;
+                ));
+                client_exittype.set(imsg.hdr.type_0 as msgtype);
                 if imsg.hdr.type_0 == MSG_DETACHKILL as core::ffi::c_int as uint32_t {
-                    client_exitreason = CLIENT_EXIT_DETACHED_HUP;
+                    client_exitreason.set(CLIENT_EXIT_DETACHED_HUP);
                 } else {
-                    client_exitreason = CLIENT_EXIT_DETACHED;
+                    client_exitreason.set(CLIENT_EXIT_DETACHED);
                 }
                 (client_peer_ref()).send(MSG_EXITING, -(1 as core::ffi::c_int), &[]);
             }
@@ -917,21 +958,21 @@ pub(crate) unsafe fn client_dispatch_attached(imsg: &imsg) {
                 if shell.is_empty() {
                     fatalx(c"bad MSG_EXEC string", fmt_args![]);
                 }
-                client_execcmd = Some(command.to_owned());
-                client_execshell = Some(
+                client_execcmd.set(Some(command.to_owned()));
+                client_execshell.set(Some(
                     CStr::from_bytes_until_nul(shell)
                         .expect("terminated shell")
                         .to_owned(),
-                );
-                client_exittype = imsg.hdr.type_0 as msgtype;
+                ));
+                client_exittype.set(imsg.hdr.type_0 as msgtype);
                 (client_peer_ref()).send(MSG_EXITING, -(1 as core::ffi::c_int), &[]);
             }
             MSG_EXIT => {
                 client_dispatch_exit_message(payload);
-                if client_exitreason as core::ffi::c_uint
+                if client_exitreason.get() as core::ffi::c_uint
                     == CLIENT_EXIT_NONE as core::ffi::c_int as core::ffi::c_uint
                 {
-                    client_exitreason = CLIENT_EXIT_EXITED;
+                    client_exitreason.set(CLIENT_EXIT_EXITED);
                 }
                 (client_peer_ref()).send(MSG_EXITING, -(1 as core::ffi::c_int), &[]);
             }
@@ -946,8 +987,8 @@ pub(crate) unsafe fn client_dispatch_attached(imsg: &imsg) {
                     fatalx(c"bad MSG_SHUTDOWN size", fmt_args![]);
                 }
                 (client_peer_ref()).send(MSG_EXITING, -(1 as core::ffi::c_int), &[]);
-                client_exitreason = CLIENT_EXIT_SERVER_EXITED;
-                client_exitval = 1 as core::ffi::c_int;
+                client_exitreason.set(CLIENT_EXIT_SERVER_EXITED);
+                client_exitval.set(1 as core::ffi::c_int);
             }
             MSG_SUSPEND => {
                 if datalen != 0 as ssize_t {
@@ -965,7 +1006,7 @@ pub(crate) unsafe fn client_dispatch_attached(imsg: &imsg) {
                 {
                     fatal(c"sigaction failed", fmt_args![]);
                 }
-                client_suspended = 1 as core::ffi::c_int;
+                client_suspended.set(1 as core::ffi::c_int);
                 kill(getpid(), SIGTSTP);
             }
             MSG_LOCK => {

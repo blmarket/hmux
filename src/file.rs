@@ -66,7 +66,8 @@ impl Drop for client_file {
         self.client_ref = None;
     }
 }
-static mut file_next_stream: core::ffi::c_int = 3 as core::ffi::c_int;
+const file_next_stream: crate::server_state::Value<core::ffi::c_int> =
+    crate::server_state::Value::new(|state| &state.file_next_stream);
 pub(crate) fn file_find_ref(
     files: &client_files_t,
     stream: core::ffi::c_int,
@@ -79,7 +80,7 @@ unsafe fn file_get_path(c: Option<&client>, file: &CStr) -> CString {
         let path = if !file.to_bytes().starts_with(b"~/") {
             file.to_owned()
         } else {
-            let home = find_home().unwrap_or(c"");
+            let home = find_home().unwrap_or_else(|| c"".to_owned());
             let tail = CStr::from_bytes_with_nul(&file.to_bytes_with_nul()[1..])
                 .expect("a path suffix remains NUL-terminated");
             xasprintf(c"%s%s", fmt_args![home.as_ptr(), tail.as_ptr()])
@@ -235,8 +236,11 @@ pub(crate) unsafe fn file_write(
         let cf_ref: ClientFileRef;
         let msglen: size_t;
         let mut fd: core::ffi::c_int = -(1 as core::ffi::c_int);
-        let fresh0 = file_next_stream;
-        file_next_stream += 1;
+        let fresh0 = file_next_stream.get();
+        {
+            let value = 1;
+            file_next_stream.with_mut(|current| *current += value)
+        };
         let stream: u_int = fresh0 as u_int;
         if path.to_bytes() == b"-" {
             cf_ref = ClientFileRef::create_with_client(
@@ -338,8 +342,11 @@ pub(crate) unsafe fn file_read(
         let cf_ref: ClientFileRef;
         let msglen: size_t;
         let mut fd: core::ffi::c_int = -(1 as core::ffi::c_int);
-        let fresh1 = file_next_stream;
-        file_next_stream += 1;
+        let fresh1 = file_next_stream.get();
+        {
+            let value = 1;
+            file_next_stream.with_mut(|current| *current += value)
+        };
         let stream: u_int = fresh1 as u_int;
         if path.to_bytes() == b"-" {
             cf_ref = ClientFileRef::create_with_client(

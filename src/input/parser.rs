@@ -1764,7 +1764,8 @@ static input_state_consume_st_table: [input_transition; 7] = {
         },
     ]
 };
-static mut input_buffer_size: size_t = INPUT_BUF_DEFAULT_SIZE as size_t;
+const input_buffer_size: crate::server_state::Value<size_t> =
+    crate::server_state::Value::new(|state| &state.input_buffer_size);
 /// The entry of `table` the parser's character and intermediates name.
 fn input_table_find(
     ictx: &input_ctx,
@@ -1785,15 +1786,11 @@ fn input_table_compare(key: &input_ctx, value: &input_table_entry) -> core::cmp:
 }
 
 unsafe fn input_stop_utf8(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>) {
-    unsafe {
-        static mut rc: utf8_data = utf8_data {
-            data: *b"\xEF\xBF\xBD\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-            have: 3 as u_char,
-            size: 3 as u_char,
-            width: 1 as u_char,
-        };
+    {
+        const input_cell_buffer: crate::server_state::Value<utf8_data> =
+            crate::server_state::Value::new(|state| &state.input_cell_buffer);
         if ictx.utf8started != 0 {
-            utf8_copy(&mut ictx.cell.cell.data, &rc);
+            utf8_copy(&mut ictx.cell.cell.data, &input_cell_buffer.get());
             sctx.collect_add(&ictx.cell.cell);
         }
         ictx.utf8started = 0 as core::ffi::c_int;
@@ -2270,11 +2267,11 @@ fn input_length(ictx: &mut input_ctx) -> size_t {
     ictx.input_buf.len().wrapping_sub(1_usize) as size_t
 }
 unsafe fn input_input(ictx: &mut input_ctx) -> core::ffi::c_int {
-    unsafe {
+    {
         let mut available: size_t = INPUT_BUF_START as size_t;
         while ictx.input_buf.len() as size_t >= available {
             available = available.wrapping_mul(2 as size_t);
-            if available > input_buffer_size {
+            if available > input_buffer_size.get() {
                 ictx.flags |= INPUT_DISCARD;
                 return 0 as core::ffi::c_int;
             }
@@ -2591,6 +2588,7 @@ unsafe fn input_csi_dispatch(
                         0 as core::ffi::c_int,
                     );
                     ek = (global_options
+                        .get()
                         .as_ref()
                         .expect("global options are initialized"))
                     .number(c"extended-keys") as core::ffi::c_int;
@@ -2614,6 +2612,7 @@ unsafe fn input_csi_dispatch(
                 if !(n != 4 as core::ffi::c_int) {
                     sctx.mode_clear(MODE_KEYS_EXTENDED | MODE_KEYS_EXTENDED_2);
                     if (global_options
+                        .get()
                         .as_ref()
                         .expect("global options are initialized"))
                     .number(c"extended-keys")
@@ -2837,10 +2836,10 @@ unsafe fn input_csi_dispatch(
                             let pane = ictx.pane_ref();
                             let options =
                                 if let Some(pane) = pane.as_ref().and_then(|pane| pane.get()) {
-                                    pane.options_ref()
+                                    pane.options_ref().clone()
                                 } else {
                                     global_w_options
-                                        .as_ref()
+                                        .get()
                                         .expect("global options are initialized")
                                 };
                             p = options.number(c"cursor-style") as core::ffi::c_int;
@@ -3911,10 +3910,10 @@ unsafe fn input_handle_decrqss(
             _ => {
                 let pane = ictx.pane_ref();
                 let options = if let Some(pane) = pane.as_ref().and_then(|pane| pane.get()) {
-                    pane.options_ref()
+                    pane.options_ref().clone()
                 } else {
                     global_w_options
-                        .as_ref()
+                        .get()
                         .expect("global options are initialized")
                 };
                 let value = (options).number(c"cursor-style") as core::ffi::c_int;
@@ -3955,10 +3954,10 @@ unsafe fn input_dcs_dispatch(
         }
         let pane = ictx.pane_ref();
         let options = if let Some(pane) = pane.as_ref().and_then(|pane| pane.get()) {
-            pane.options_ref()
+            pane.options_ref().clone()
         } else {
             global_w_options
-                .as_ref()
+                .get()
                 .expect("global options are initialized")
         };
         let allow_passthrough = (options).number(c"allow-passthrough");
@@ -4560,6 +4559,7 @@ unsafe fn input_osc_52_reply(ictx: &mut input_ctx, clip: core::ffi::c_char) {
         let ev: Stream = ictx.event;
 
         let state: core::ffi::c_int = (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"get-clipboard") as core::ffi::c_int;
@@ -4591,6 +4591,7 @@ unsafe fn input_osc_52_reply(ictx: &mut input_ctx, clip: core::ffi::c_char) {
 unsafe fn input_osc_52_parse(ictx: &mut input_ctx, p: &CStr) -> Option<(CString, Vec<u8>)> {
     unsafe {
         if (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"set-clipboard")
@@ -4748,16 +4749,16 @@ pub unsafe fn input_reply_clipboard(bev: Stream, buf: &[u8], end: &CStr, clip: c
     }
 }
 pub fn input_set_buffer_size(buffer_size: size_t) {
-    unsafe {
+    {
         log_debug(
             c"%s: %lu -> %lu",
             fmt_args![
                 c"input_set_buffer_size".as_ptr(),
-                input_buffer_size,
+                input_buffer_size.get(),
                 buffer_size
             ],
         );
-        input_buffer_size = buffer_size;
+        input_buffer_size.set(buffer_size);
     }
 }
 unsafe fn input_request_timer_callback(ictx: &mut input_ctx) {
@@ -4802,10 +4803,7 @@ fn ictx_weak(ictx: &input_ctx) -> InputCtxWeak {
     ictx.owner.clone().expect("a parser holds itself")
 }
 
-fn input_make_request(
-    ictx: &mut input_ctx,
-    type_0: input_request_type,
-) -> input_request_handle {
+fn input_make_request(ictx: &mut input_ctx, type_0: input_request_type) -> input_request_handle {
     {
         let id = ictx.next_request_id;
         ictx.next_request_id = ictx.next_request_id.wrapping_add(1);
@@ -4977,11 +4975,7 @@ unsafe fn input_add_request(
         0 as core::ffi::c_int
     }
 }
-fn input_request_palette_reply(
-    ictx: &mut input_ctx,
-    end: input_end_type,
-    data: &InputRequestData,
-) {
+fn input_request_palette_reply(ictx: &mut input_ctx, end: input_end_type, data: &InputRequestData) {
     {
         let &InputRequestData::Palette { idx, c } = data else {
             return;
@@ -5001,6 +4995,7 @@ unsafe fn input_request_clipboard_reply(
         };
 
         let state: core::ffi::c_int = (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"get-clipboard") as core::ffi::c_int;
@@ -5459,7 +5454,7 @@ mod focused_tests {
         let mut ictx = ctx.ictx.borrow_mut();
         unsafe {
             let options = global_options
-                .as_ref()
+                .get()
                 .expect("global options are initialized");
             (options).set_number(c"set-clipboard", 2);
             for (input, selectors, bytes) in [

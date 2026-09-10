@@ -130,7 +130,13 @@ unsafe fn calculate(
         let size = clients_calculate_size(type_0, c.as_ref(), w.as_ref(), |client| {
             default_window_size_skip_client(client, s.as_ref(), w.as_ref())
         });
-        (size.found as c_int, size.sx, size.sy, size.xpixel, size.ypixel)
+        (
+            size.found as c_int,
+            size.sx,
+            size.sy,
+            size.xpixel,
+            size.ypixel,
+        )
     }
 }
 

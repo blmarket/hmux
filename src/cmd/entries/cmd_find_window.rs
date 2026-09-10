@@ -24,9 +24,9 @@
 //!   when [`window_pane_set_mode`] is going to refuse them because the pane is
 //!   already in that mode.
 
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
-use crate::args::{args_set};
+use crate::args::args_parse_t;
+use crate::args::args_set;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -79,7 +79,8 @@ pub(crate) static cmd_find_window_entry: RustCommandEntry = RustCommandEntry {
 /// there is no null to guard here.
 fn cmd_find_window_filter(args: &RustArguments) -> Vec<u8> {
     {
-        let s = args.argument_string(0)
+        let s = args
+            .argument_string(0)
             .expect("argument count checked")
             .to_bytes();
         let regex = args.argument_flag_count(b'r') != 0;
@@ -131,7 +132,8 @@ unsafe fn cmd_find_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let pane = target.pane_ref().expect("the command target has a pane");
 
     let text = cmd_find_window_filter(args);
-    let filter = ArgsValue::String(CString::new(text).expect("window filter contains no NUL bytes"));
+    let filter =
+        ArgsValue::String(CString::new(text).expect("window filter contains no NUL bytes"));
 
     let mut new_args = Box::<RustArguments>::default();
     if args.argument_flag_count(b'Z') != 0 {

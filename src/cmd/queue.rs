@@ -38,7 +38,6 @@ use crate::{UserAccount, UserAccountRecord};
 use ::std::cell::{RefCell, RefMut};
 use ::std::ffi::{CStr, CString};
 use ::std::rc::{Rc, Weak};
-use std::sync::atomic::{AtomicU32, Ordering};
 #[repr(C)]
 pub struct cmdq_list {
     /// Whether the queue is part-way through running the item at the front
@@ -311,11 +310,12 @@ unsafe fn cmdq_name(c: Option<&ClientRef>) -> CString {
         format_alloc(c"<%p>", fmt_args![c.as_ptr()])
     }
 }
-/// The queue the items with no client behind them wait on, made when the
-/// first one is queued and held by the server for as long as it runs.
-static GLOBAL_QUEUE: GlobalQueue<CmdqListRef> = GlobalQueue::new();
+const GLOBAL_QUEUE_FIELD: crate::server_state::LocalField<std::rc::Rc<GlobalQueue<CmdqListRef>>> =
+    crate::server_state::LocalField::new(|state| &state.global_queue);
 
 fn cmdq_get(c: Option<&ClientRef>) -> CmdqListRef {
+    let GLOBAL_QUEUE = GLOBAL_QUEUE_FIELD.get();
+
     let Some(c) = c else {
         let mut held = GLOBAL_QUEUE.queue();
         if held.is_empty() {
@@ -945,7 +945,8 @@ impl CmdqListRef {
         unsafe {
             let queue = self;
             let mut items: u_int = 0;
-            static NUMBER: AtomicU32 = AtomicU32::new(0);
+            const NUMBER: crate::server_state::LocalField<std::cell::Cell<u32>> =
+                crate::server_state::LocalField::new(|state| &state.cmdq_next_number);
             if queue.is_empty() {
                 log_debug(c"%s %s: empty", fmt_args![c"cmdq_next", name]);
                 return 0;
@@ -990,7 +991,13 @@ impl CmdqListRef {
                     {
                         let mut item = fired.item();
                         item.time = time(core::ptr::null_mut::<time_t>());
-                        item.number = NUMBER.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+                        item.number = NUMBER
+                            .with(|counter| {
+                                let previous = counter.get();
+                                counter.set(previous.wrapping_add(1));
+                                previous
+                            })
+                            .wrapping_add(1);
                     }
                     let retval = if is_command {
                         let retval = fired.fire_command();
@@ -1059,6 +1066,7 @@ impl CmdqItemRef {
             let oo = match s {
                 Some(s) => (s).options_ref().clone(),
                 None => global_s_options
+                    .get()
                     .as_ref()
                     .expect("global options are initialized")
                     .clone(),

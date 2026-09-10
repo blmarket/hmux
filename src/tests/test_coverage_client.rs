@@ -35,7 +35,7 @@ use crate::client::{
     PROTOCOL_VERSION, client_attached, client_connect, client_dispatch,
     client_dispatch_exit_message, client_execcmd, client_execshell, client_exit,
     client_exit_message, client_exitflag, client_exitmessage, client_exitreason,
-    client_exitsession, client_exittype, client_exitval, client_file_check_cb, client_files,
+    client_exitsession, client_exittype, client_exitval, client_file_check_cb, client_files_FIELD,
     client_flags, client_get_lock, client_peer, client_proc, client_signal, client_suspended,
 };
 use crate::compat::{
@@ -45,9 +45,9 @@ use crate::compat::{
 use crate::ffi::{__errno_location, close, sigaction, socketpair};
 use crate::reactor;
 use crate::reactor::{Interest, IoWatch, WatchMode};
-use crate::tests::test_fixtures::{ensure_reactor, seen, zeroed};
+use crate::tests::test_fixtures::{ensure_reactor, zeroed};
 use crate::types::*;
-use ::core::ffi::{c_char, c_int, c_short, c_void};
+use ::core::ffi::{c_int, c_short, c_void};
 use ::core::ptr::{null, null_mut};
 use ::std::ffi::CString;
 use ::std::sync::{Mutex, MutexGuard};
@@ -61,7 +61,10 @@ fn never(_fd: c_int, _events: c_short, _arg: *mut c_void) {}
 /// [`crate::client`] shares these statics, and the fixture peer's events
 /// live on the same process-wide ensure_reactor base every other suite uses, so
 /// each test that reaches any of it holds this guard.
-fn turn() -> (MutexGuard<'static, ()>, crate::tests::test_fixtures::GlobalsGuard) {
+fn turn() -> (
+    MutexGuard<'static, ()>,
+    crate::tests::test_fixtures::GlobalsGuard,
+) {
     static TURN: Mutex<()> = Mutex::new(());
     (
         TURN.lock().unwrap_or_else(|poisoned| poisoned.into_inner()),
@@ -72,26 +75,24 @@ fn turn() -> (MutexGuard<'static, ()>, crate::tests::test_fixtures::GlobalsGuard
 /// Puts every client static back the way a fresh process would find it,
 /// freeing the strings earlier tests left behind.
 unsafe fn reset() {
-    unsafe {
-        client_exitmessage = None;
-        client_exitsession = None;
-        client_execshell = None;
-        client_execcmd = None;
-        client_proc = None;
-        client_peer = None;
-        client_flags = 0;
-        client_suspended = 0;
-        client_attached = 0;
-        client_exitflag = 0;
-        client_exitval = 0;
-        client_exittype = 0;
-        client_exitreason = CLIENT_EXIT_NONE;
+    let client_files = client_files_FIELD.get();
+
+    {
+        client_exitmessage.set(None);
+        client_exitsession.set(None);
+        client_execshell.set(None);
+        client_execcmd.set(None);
+        client_proc.set(None);
+        client_peer.set(None);
+        client_flags.set(0);
+        client_suspended.set(0);
+        client_attached.set(0);
+        client_exitflag.set(0);
+        client_exitval.set(0);
+        client_exittype.set(0);
+        client_exitreason.set(CLIENT_EXIT_NONE);
         client_files.map().clear();
     }
-}
-
-unsafe fn client_string_ptr(value: *const Option<CString>) -> *const c_char {
-    unsafe { (*value).as_ref().map_or(null(), |value| value.as_ptr()) }
 }
 
 /// A retained client process and a peer with a message buffer on one end of
@@ -135,8 +136,8 @@ impl Harness {
                 WatchMode::Once,
                 move |fd, events| never(fd, events, null_mut()),
             );
-            client_proc = Some(h.pr.clone());
-            client_peer = Some(h.peer.clone());
+            client_proc.set(Some(h.pr.clone()));
+            client_peer.set(Some(h.peer.clone()));
         }
         h
     }
@@ -169,8 +170,8 @@ impl Harness {
 impl Drop for Harness {
     fn drop(&mut self) {
         unsafe {
-            client_proc = None;
-            client_peer = None;
+            client_proc.set(None);
+            client_peer.set(None);
             self.peer.borrow_mut().event.disable();
             imsgbuf_clear(&mut self.peer.borrow_mut().ibuf);
             imsgbuf_clear(&mut self.far);
@@ -216,37 +217,37 @@ fn exit_payload(retval: c_int, message: &[u8]) -> Vec<u8> {
 /// Copies of the client's bookkeeping, taken under the caller's turn so that
 /// assertions never hold a reference into the statics themselves.
 unsafe fn exit_value() -> c_int {
-    unsafe { client_exitval }
+    client_exitval.get()
 }
 
 /// The reason currently recorded for leaving.
 unsafe fn exit_reason() -> uint32_t {
-    unsafe { client_exitreason }
+    client_exitreason.get()
 }
 
 /// The message type the next exec or detach will act on.
 unsafe fn exit_type() -> uint32_t {
-    unsafe { client_exittype }
+    client_exittype.get()
 }
 
 /// Whether an exit was already asked for.
 unsafe fn exit_asked() -> c_int {
-    unsafe { client_exitflag }
+    client_exitflag.get()
 }
 
 /// The flags the server last sent.
 unsafe fn flags_now() -> uint64_t {
-    unsafe { client_flags }
+    client_flags.get()
 }
 
 /// Whether the client considers itself attached.
 unsafe fn attached_now() -> c_int {
-    unsafe { client_attached }
+    client_attached.get()
 }
 
 /// Whether the client considers itself suspended.
 unsafe fn suspended_now() -> c_int {
-    unsafe { client_suspended }
+    client_suspended.get()
 }
 
 #[test]
@@ -418,7 +419,7 @@ fn every_exit_reason_names_itself() {
             },
         ];
         for case in cases {
-            client_exitreason = case.reason;
+            client_exitreason.set(case.reason);
             assert_eq!(
                 client_exit_message().to_bytes(),
                 case.want,
@@ -427,7 +428,7 @@ fn every_exit_reason_names_itself() {
             );
         }
 
-        client_exitreason = CLIENT_EXIT_NONE;
+        client_exitreason.set(CLIENT_EXIT_NONE);
     }
 }
 
@@ -440,21 +441,21 @@ fn a_detached_client_names_the_session_it_left() {
         reset();
         let held = CString::new("work").unwrap();
 
-        client_exitreason = CLIENT_EXIT_DETACHED;
-        client_exitsession = Some(held);
+        client_exitreason.set(CLIENT_EXIT_DETACHED);
+        client_exitsession.set(Some(held));
         assert_eq!(
             client_exit_message().to_bytes(),
             b"detached (from session work)"
         );
 
-        client_exitreason = CLIENT_EXIT_DETACHED_HUP;
+        client_exitreason.set(CLIENT_EXIT_DETACHED_HUP);
         assert_eq!(
             client_exit_message().to_bytes(),
             b"detached and SIGHUP (from session work)"
         );
 
-        client_exitsession = None;
-        client_exitreason = CLIENT_EXIT_NONE;
+        client_exitsession.set(None);
+        client_exitreason.set(CLIENT_EXIT_NONE);
     }
 }
 
@@ -465,12 +466,12 @@ fn a_provided_exit_message_is_returned_verbatim() {
     let _t = turn();
     unsafe {
         reset();
-        client_exitreason = CLIENT_EXIT_MESSAGE_PROVIDED;
-        client_exitmessage = Some(CString::new("server is going down").unwrap());
+        client_exitreason.set(CLIENT_EXIT_MESSAGE_PROVIDED);
+        client_exitmessage.set(Some(CString::new("server is going down").unwrap()));
         assert_eq!(client_exit_message().to_bytes(), b"server is going down");
 
-        client_exitmessage = None;
-        client_exitreason = CLIENT_EXIT_NONE;
+        client_exitmessage.set(None);
+        client_exitreason.set(CLIENT_EXIT_NONE);
     }
 }
 
@@ -480,17 +481,17 @@ fn an_empty_msg_exit_payload_changes_nothing() {
     let _t = turn();
     unsafe {
         reset();
-        client_exitval = 4;
-        client_exitreason = CLIENT_EXIT_DETACHED;
+        client_exitval.set(4);
+        client_exitreason.set(CLIENT_EXIT_DETACHED);
 
         client_dispatch_exit_message(&[]);
 
         assert_eq!(exit_value(), 4);
         assert_eq!(exit_reason(), CLIENT_EXIT_DETACHED);
-        assert!(client_exitmessage.is_none());
+        assert!(client_exitmessage.get().is_none());
 
-        client_exitreason = CLIENT_EXIT_NONE;
-        client_exitval = 0;
+        client_exitreason.set(CLIENT_EXIT_NONE);
+        client_exitval.set(0);
     }
 }
 
@@ -507,7 +508,7 @@ fn a_bare_msg_exit_sets_only_the_exit_value() {
 
         assert_eq!(exit_value(), -7);
         assert_eq!(exit_reason(), CLIENT_EXIT_NONE);
-        assert!(client_exitmessage.is_none());
+        assert!(client_exitmessage.get().is_none());
     }
 }
 
@@ -524,13 +525,10 @@ fn a_msg_exit_with_a_message_carries_both() {
 
         assert_eq!(exit_value(), 9);
         assert_eq!(exit_reason(), CLIENT_EXIT_MESSAGE_PROVIDED);
-        assert_eq!(
-            seen(client_string_ptr(&raw const client_exitmessage)),
-            "done"
-        );
+        assert_eq!(client_exitmessage.get().unwrap().to_str().unwrap(), "done");
 
-        client_exitmessage = None;
-        client_exitreason = CLIENT_EXIT_NONE;
+        client_exitmessage.set(None);
+        client_exitreason.set(CLIENT_EXIT_NONE);
     }
 }
 
@@ -547,13 +545,13 @@ fn a_msg_exit_message_ends_at_its_first_nul() {
 
         assert_eq!(exit_reason(), CLIENT_EXIT_MESSAGE_PROVIDED);
         assert_eq!(
-            seen(client_string_ptr(&raw const client_exitmessage)),
+            client_exitmessage.get().unwrap().to_str().unwrap(),
             "stopped"
         );
 
-        client_exitmessage = None;
-        client_exitreason = CLIENT_EXIT_NONE;
-        client_exitval = 0;
+        client_exitmessage.set(None);
+        client_exitreason.set(CLIENT_EXIT_NONE);
+        client_exitval.set(0);
     }
 }
 
@@ -569,11 +567,11 @@ fn an_unterminated_msg_exit_message_drops_its_last_byte() {
         client_dispatch_exit_message(&payload);
 
         assert_eq!(exit_reason(), CLIENT_EXIT_MESSAGE_PROVIDED);
-        assert_eq!(seen(client_string_ptr(&raw const client_exitmessage)), "cu");
+        assert_eq!(client_exitmessage.get().unwrap().to_str().unwrap(), "cu");
 
-        client_exitmessage = None;
-        client_exitreason = CLIENT_EXIT_NONE;
-        client_exitval = 0;
+        client_exitmessage.set(None);
+        client_exitreason.set(CLIENT_EXIT_NONE);
+        client_exitval.set(0);
     }
 }
 
@@ -707,16 +705,16 @@ fn a_reported_loss_does_not_overwrite_an_earlier_reason() {
     unsafe {
         reset();
         let h = Harness::new();
-        client_exitflag = 1;
-        client_exitreason = CLIENT_EXIT_MESSAGE_PROVIDED;
+        client_exitflag.set(1);
+        client_exitreason.set(CLIENT_EXIT_MESSAGE_PROVIDED);
 
         client_dispatch(None);
 
         assert_eq!(exit_reason(), CLIENT_EXIT_MESSAGE_PROVIDED);
         assert_eq!(h.pr.borrow().exit, 1);
 
-        client_exitreason = CLIENT_EXIT_NONE;
-        client_exitflag = 0;
+        client_exitreason.set(CLIENT_EXIT_NONE);
+        client_exitflag.set(0);
     }
 }
 
@@ -748,7 +746,7 @@ fn the_wait_state_answers_a_detach_by_leaving() {
         deliver(MSG_DETACHKILL as uint32_t, b"ignored");
 
         assert_eq!(h.sent(), [MSG_EXITING as uint32_t, MSG_EXITING as uint32_t]);
-        assert!(client_string_ptr(&raw const client_exitsession).is_null());
+        assert!(client_exitsession.get().is_none());
         assert_eq!(exit_type(), 0);
         assert_eq!(exit_reason(), CLIENT_EXIT_NONE);
     }
@@ -768,7 +766,7 @@ fn msg_readiness_attaches_the_client() {
         assert_eq!(attached_now(), 1);
         assert_eq!(h.sent(), [MSG_RESIZE as uint32_t]);
 
-        client_attached = 0;
+        client_attached.set(0);
     }
 }
 
@@ -788,7 +786,7 @@ fn an_empty_msg_exit_ends_the_wait() {
         assert_eq!(exit_reason(), CLIENT_EXIT_NONE);
         assert_eq!(h.pr.borrow().exit, 1);
 
-        client_exitflag = 0;
+        client_exitflag.set(0);
     }
 }
 
@@ -806,16 +804,16 @@ fn a_msg_exit_with_text_records_both_before_finishing() {
 
         assert_eq!(exit_value(), 3);
         assert_eq!(
-            seen(client_string_ptr(&raw const client_exitmessage)),
+            client_exitmessage.get().unwrap().to_str().unwrap(),
             "shutting down"
         );
         assert_eq!(exit_reason(), CLIENT_EXIT_MESSAGE_PROVIDED);
         assert_eq!(exit_asked(), 1);
         assert_eq!(h.pr.borrow().exit, 1);
 
-        client_exitmessage = None;
-        client_exitreason = CLIENT_EXIT_NONE;
-        client_exitflag = 0;
+        client_exitmessage.set(None);
+        client_exitreason.set(CLIENT_EXIT_NONE);
+        client_exitflag.set(0);
     }
 }
 
@@ -831,11 +829,11 @@ fn msg_shutdown_walks_the_same_wait_path_as_msg_exit() {
         deliver(MSG_SHUTDOWN as uint32_t, &exit_payload(2, b""));
 
         assert_eq!(exit_value(), 2);
-        assert!(client_exitmessage.is_none());
+        assert!(client_exitmessage.get().is_none());
         assert_eq!(exit_asked(), 1);
         assert_eq!(h.pr.borrow().exit, 1);
 
-        client_exitflag = 0;
+        client_exitflag.set(0);
     }
 }
 
@@ -918,33 +916,33 @@ fn an_attached_client_records_who_detached_it_and_how() {
     unsafe {
         reset();
         let mut h = Harness::new();
-        client_attached = 1;
+        client_attached.set(1);
 
         deliver(MSG_DETACH as uint32_t, b"sessions\0");
 
         assert_eq!(
-            seen(client_string_ptr(&raw const client_exitsession)),
+            client_exitsession.get().unwrap().to_str().unwrap(),
             "sessions"
         );
         assert_eq!(exit_type(), MSG_DETACH as uint32_t);
         assert_eq!(exit_reason(), CLIENT_EXIT_DETACHED);
         assert_eq!(h.sent(), [MSG_EXITING as uint32_t]);
-        client_exitsession = None;
-        client_exitreason = CLIENT_EXIT_NONE;
+        client_exitsession.set(None);
+        client_exitreason.set(CLIENT_EXIT_NONE);
 
         deliver(MSG_DETACHKILL as uint32_t, b"killed\0");
 
         assert_eq!(
-            seen(client_string_ptr(&raw const client_exitsession)),
+            client_exitsession.get().unwrap().to_str().unwrap(),
             "killed"
         );
         assert_eq!(exit_type(), MSG_DETACHKILL as uint32_t);
         assert_eq!(exit_reason(), CLIENT_EXIT_DETACHED_HUP);
         assert_eq!(h.sent(), [MSG_EXITING as uint32_t]);
 
-        client_exitsession = None;
-        client_exitreason = CLIENT_EXIT_NONE;
-        client_attached = 0;
+        client_exitsession.set(None);
+        client_exitreason.set(CLIENT_EXIT_NONE);
+        client_attached.set(0);
     }
 }
 
@@ -956,24 +954,21 @@ fn an_attached_client_prepares_an_exec_request() {
     unsafe {
         reset();
         let mut h = Harness::new();
-        client_attached = 1;
+        client_attached.set(1);
 
         deliver(MSG_EXEC as uint32_t, b"tmux attach -t work\0/bin/sh\0");
 
         assert_eq!(
-            seen(client_string_ptr(&raw const client_execcmd)),
+            client_execcmd.get().unwrap().to_str().unwrap(),
             "tmux attach -t work"
         );
-        assert_eq!(
-            seen(client_string_ptr(&raw const client_execshell)),
-            "/bin/sh"
-        );
+        assert_eq!(client_execshell.get().unwrap().to_str().unwrap(), "/bin/sh");
         assert_eq!(exit_type(), MSG_EXEC as uint32_t);
         assert_eq!(h.sent(), [MSG_EXITING as uint32_t]);
 
-        client_execcmd = None;
-        client_execshell = None;
-        client_attached = 0;
+        client_execcmd.set(None);
+        client_execshell.set(None);
+        client_attached.set(0);
     }
 }
 
@@ -986,22 +981,22 @@ fn an_attached_client_names_msg_exit_but_keeps_an_earlier_reason() {
     unsafe {
         reset();
         let mut h = Harness::new();
-        client_attached = 1;
+        client_attached.set(1);
 
-        client_exitreason = CLIENT_EXIT_DETACHED;
+        client_exitreason.set(CLIENT_EXIT_DETACHED);
         deliver(MSG_EXIT as uint32_t, b"");
         assert_eq!(exit_reason(), CLIENT_EXIT_DETACHED);
         assert_eq!(h.sent(), [MSG_EXITING as uint32_t]);
 
-        client_exitreason = CLIENT_EXIT_NONE;
+        client_exitreason.set(CLIENT_EXIT_NONE);
         deliver(MSG_EXIT as uint32_t, b"");
         assert_eq!(exit_reason(), CLIENT_EXIT_EXITED);
         assert_eq!(h.sent(), [MSG_EXITING as uint32_t]);
 
         assert_eq!(h.pr.borrow().exit, 0);
 
-        client_exitreason = CLIENT_EXIT_NONE;
-        client_attached = 0;
+        client_exitreason.set(CLIENT_EXIT_NONE);
+        client_attached.set(0);
     }
 }
 
@@ -1013,7 +1008,7 @@ fn msg_shutdown_tells_an_attached_client_the_server_is_gone() {
     unsafe {
         reset();
         let mut h = Harness::new();
-        client_attached = 1;
+        client_attached.set(1);
 
         deliver(MSG_SHUTDOWN as uint32_t, b"");
 
@@ -1021,9 +1016,9 @@ fn msg_shutdown_tells_an_attached_client_the_server_is_gone() {
         assert_eq!(exit_reason(), CLIENT_EXIT_SERVER_EXITED);
         assert_eq!(exit_value(), 1);
 
-        client_exitreason = CLIENT_EXIT_NONE;
-        client_exitval = 0;
-        client_attached = 0;
+        client_exitreason.set(CLIENT_EXIT_NONE);
+        client_exitval.set(0);
+        client_attached.set(0);
     }
 }
 
@@ -1035,13 +1030,13 @@ fn msg_exited_while_attached_ends_the_process() {
     unsafe {
         reset();
         let h = Harness::new();
-        client_attached = 1;
+        client_attached.set(1);
 
         deliver(MSG_EXITED as uint32_t, b"");
 
         assert_eq!(h.pr.borrow().exit, 1);
 
-        client_attached = 0;
+        client_attached.set(0);
     }
 }
 
@@ -1052,14 +1047,14 @@ fn an_attached_client_tracks_new_flags_too() {
     unsafe {
         reset();
         let mut h = Harness::new();
-        client_attached = 1;
+        client_attached.set(1);
 
         deliver(MSG_FLAGS as uint32_t, &flags_payload(CLIENT_CONTROL as u64));
 
         assert_eq!(flags_now(), CLIENT_CONTROL as uint64_t);
         assert!(h.sent().is_empty());
 
-        client_attached = 0;
+        client_attached.set(0);
     }
 }
 
@@ -1105,7 +1100,7 @@ fn an_attached_client_reports_lost_tty_on_sighup() {
     unsafe {
         reset();
         let mut h = Harness::new();
-        client_attached = 1;
+        client_attached.set(1);
 
         client_signal(crate::client::SIGHUP);
 
@@ -1113,8 +1108,8 @@ fn an_attached_client_reports_lost_tty_on_sighup() {
         assert_eq!(exit_value(), 1);
         assert_eq!(h.sent(), [MSG_EXITING as uint32_t]);
 
-        client_exitreason = CLIENT_EXIT_NONE;
-        client_attached = 0;
+        client_exitreason.set(CLIENT_EXIT_NONE);
+        client_attached.set(0);
     }
 }
 
@@ -1127,22 +1122,22 @@ fn an_attached_client_reports_sigterm_according_to_suspension() {
     unsafe {
         reset();
         let mut h = Harness::new();
-        client_attached = 1;
+        client_attached.set(1);
 
         client_signal(crate::client::SIGTERM);
         assert_eq!(exit_reason(), CLIENT_EXIT_TERMINATED);
         assert_eq!(exit_value(), 1);
         assert_eq!(h.sent(), [MSG_EXITING as uint32_t]);
 
-        client_exitreason = CLIENT_EXIT_NONE;
-        client_suspended = 1;
+        client_exitreason.set(CLIENT_EXIT_NONE);
+        client_suspended.set(1);
         client_signal(crate::client::SIGTERM);
         assert_eq!(exit_reason(), CLIENT_EXIT_NONE);
         assert_eq!(exit_value(), 1);
         assert_eq!(h.sent(), [MSG_EXITING as uint32_t]);
 
-        client_suspended = 0;
-        client_attached = 0;
+        client_suspended.set(0);
+        client_attached.set(0);
     }
 }
 
@@ -1154,7 +1149,7 @@ fn an_attached_client_asks_for_a_resize_on_sigwinch() {
     unsafe {
         reset();
         let mut h = Harness::new();
-        client_attached = 1;
+        client_attached.set(1);
 
         client_signal(crate::client::SIGWINCH);
 
@@ -1162,7 +1157,7 @@ fn an_attached_client_asks_for_a_resize_on_sigwinch() {
         assert_eq!(h.pr.borrow().exit, 0);
         assert_eq!(exit_reason(), CLIENT_EXIT_NONE);
 
-        client_attached = 0;
+        client_attached.set(0);
     }
 }
 
@@ -1175,8 +1170,8 @@ fn an_attached_client_wakes_up_on_sigcont() {
     unsafe {
         reset();
         let mut h = Harness::new();
-        client_attached = 1;
-        client_suspended = 1;
+        client_attached.set(1);
+        client_suspended.set(1);
 
         let mut old: libc::sigaction = core::mem::zeroed();
         assert_eq!(sigaction(crate::client::SIGTSTP, null(), &raw mut old), 0);
@@ -1194,7 +1189,7 @@ fn an_attached_client_wakes_up_on_sigcont() {
         assert_eq!(suspended_now(), 0);
         assert_eq!(h.sent(), [MSG_WAKEUP as uint32_t]);
 
-        client_attached = 0;
+        client_attached.set(0);
     }
 }
 
@@ -1225,10 +1220,10 @@ fn the_file_callback_defers_to_pending_transfers_until_asked_to_exit() {
         client_file_check_cb(ClientFileEvent::CheckExit);
         assert_eq!(h.pr.borrow().exit, 0);
 
-        client_exitflag = 1;
+        client_exitflag.set(1);
         client_file_check_cb(ClientFileEvent::CheckExit);
         assert_eq!(h.pr.borrow().exit, 1);
 
-        client_exitflag = 0;
+        client_exitflag.set(0);
     }
 }

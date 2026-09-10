@@ -1,6 +1,6 @@
-use crate::cmd::cmdq_item;
 use crate::cfg::configuration_finished;
 use crate::cmd::cmd_log_argv;
+use crate::cmd::cmdq_item;
 
 use crate::compat::fdforkpty;
 use crate::environ::EnvironmentStore;
@@ -14,7 +14,7 @@ use crate::log::{fatal, fatalx, log_debug};
 
 use crate::proc::proc_clear_signals;
 use crate::reactor::Interest;
-use crate::server::server_proc;
+use crate::server::server_process;
 
 pub use crate::consts::{
     _PATH_BSHELL, _PATH_DEVNULL, AF_UNIX, CLIENT_EXIT_DETACH, CLIENT_EXIT_RETURN,
@@ -97,16 +97,16 @@ pub const O_RDWR: core::ffi::c_int = 0o2 as core::ffi::c_int;
 pub use crate::consts::EV_READ;
 pub use crate::consts::EV_WRITE;
 
-/// Every job the server has started, newest first, and the owner of each.
-/// [`job_free`] is what takes one off.
-static all_jobs: GlobalQueue<Box<job>> = GlobalQueue::new();
+const all_jobs_FIELD: crate::server_state::LocalField<std::rc::Rc<GlobalQueue<Box<job>>>> =
+    crate::server_state::LocalField::new(|state| &state.all_jobs);
 
-thread_local! {
-    static NEXT_JOB_ID: std::cell::Cell<Option<u_int>> = const { std::cell::Cell::new(Some(0)) };
-}
+const NEXT_JOB_ID: crate::server_state::LocalField<std::cell::Cell<Option<u_int>>> =
+    crate::server_state::LocalField::new(|state| &state.next_job_id);
 
 /// The event stream of a registered job, or nothing after it leaves the registry.
 pub fn job_event_by_id(id: u_int) -> Option<Stream> {
+    let all_jobs = all_jobs_FIELD.get();
+
     all_jobs
         .queue()
         .iter()
@@ -116,6 +116,8 @@ pub fn job_event_by_id(id: u_int) -> Option<Stream> {
 
 /// Removes the named job and transfers its ownership to the caller.
 fn take_job(id: u_int) -> Option<Box<job>> {
+    let all_jobs = all_jobs_FIELD.get();
+
     let at = all_jobs.queue().iter().position(|listed| listed.id == id)?;
     all_jobs.queue().remove(at)
 }
@@ -132,6 +134,8 @@ pub unsafe fn job_run(
     sx: core::ffi::c_int,
     sy: core::ffi::c_int,
 ) -> Option<u_int> {
+    let all_jobs = all_jobs_FIELD.get();
+
     unsafe {
         let Some(id) = crate::entity_id::try_next_entity_id(&NEXT_JOB_ID) else {
             drop(updatecb);
@@ -160,6 +164,7 @@ pub unsafe fn job_run(
             let options = match s {
                 Some(s) => (s).options_ref().clone(),
                 None => global_s_options
+                    .get()
                     .as_ref()
                     .expect("global options are initialized")
                     .clone(),
@@ -177,7 +182,7 @@ pub unsafe fn job_run(
         if flags & JOB_PTY != 0 {
             ws.ws_col = sx as core::ffi::c_ushort;
             ws.ws_row = sy as core::ffi::c_ushort;
-            let forkpty = fdforkpty(ptm_fd, None, Some(&ws));
+            let forkpty = fdforkpty(ptm_fd.get(), None, Some(&ws));
             pid = forkpty.pid;
             master = forkpty.master_fd;
             tty = forkpty.tty_name;
@@ -216,7 +221,8 @@ pub unsafe fn job_run(
                 }
                 0 => {
                     proc_clear_signals(
-                        &mut server_proc
+                        &mut server_process
+                            .get()
                             .as_ref()
                             .expect("server process is initialized")
                             .borrow_mut(),
@@ -233,7 +239,7 @@ pub unsafe fn job_run(
                         } else {
                             if let Some(home) = find_home().filter(|home| chdir(home.as_ptr()) == 0)
                             {
-                                env.set(c"PWD", 0, home);
+                                env.set(c"PWD", 0, &home);
                             } else if chdir(c"/".as_ptr()) == 0 as core::ffi::c_int {
                                 env.set(c"PWD", 0, c"/");
                             } else {
@@ -413,6 +419,8 @@ pub unsafe fn job_free(id: u_int) {
     }
 }
 pub unsafe fn job_resize(id: u_int, sx: u_int, sy: u_int) {
+    let all_jobs = all_jobs_FIELD.get();
+
     unsafe {
         let jobs = all_jobs.queue();
         let Some(job) = jobs.iter().find(|job| job.id == id) else {
@@ -445,6 +453,8 @@ fn on_job_error(
 }
 
 fn job_read_callback(id: u_int) {
+    let all_jobs = all_jobs_FIELD.get();
+
     let (callback, event) = {
         let jobs = all_jobs.queue();
         let Some(job) = jobs.iter().find(|job| job.id == id) else {
@@ -458,6 +468,8 @@ fn job_read_callback(id: u_int) {
 }
 
 fn job_write_callback(id: u_int) {
+    let all_jobs = all_jobs_FIELD.get();
+
     let jobs = all_jobs.queue();
     let Some(job) = jobs.iter().find(|job| job.id == id) else {
         return;
@@ -476,6 +488,8 @@ fn job_write_callback(id: u_int) {
 }
 
 fn job_error_callback(id: u_int) {
+    let all_jobs = all_jobs_FIELD.get();
+
     let (callback, event) = {
         let mut jobs = all_jobs.queue();
         let Some(job) = jobs.iter_mut().find(|job| job.id == id) else {
@@ -501,6 +515,8 @@ fn job_error_callback(id: u_int) {
 }
 
 pub fn job_check_died(pid: pid_t, status: core::ffi::c_int) {
+    let all_jobs = all_jobs_FIELD.get();
+
     let (callback, event) = {
         let mut jobs = all_jobs.queue();
         let Some(job) = jobs.iter_mut().find(|job| job.pid == pid) else {
@@ -533,6 +549,8 @@ pub fn job_check_died(pid: pid_t, status: core::ffi::c_int) {
     unsafe { job_free(event.id) };
 }
 pub fn job_kill_all() {
+    let all_jobs = all_jobs_FIELD.get();
+
     unsafe {
         for job in all_jobs.queue().iter() {
             if job.pid != -(1 as core::ffi::c_int) {
@@ -542,12 +560,16 @@ pub fn job_kill_all() {
     }
 }
 pub fn job_still_running() -> core::ffi::c_int {
+    let all_jobs = all_jobs_FIELD.get();
+
     all_jobs
         .queue()
         .iter()
         .any(|job| job.flags & JOB_NOWAIT == 0 && job.state == JOB_RUNNING) as core::ffi::c_int
 }
 pub unsafe fn job_print_summary(item: &cmdq_item, mut blank: core::ffi::c_int) {
+    let all_jobs = all_jobs_FIELD.get();
+
     let lines: Vec<_> = all_jobs
         .queue()
         .iter()

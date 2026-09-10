@@ -42,6 +42,8 @@ fn each_level_carries_the_template_that_names_it() {
 
 #[test]
 fn each_session_hands_over_every_registered_session_in_name_order() {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     let _guard = globals();
     let mut registry = Registry::new();
     let mut bee = Session::new(71, "b");

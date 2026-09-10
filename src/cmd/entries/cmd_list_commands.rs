@@ -23,7 +23,7 @@ use crate::fmt_args;
 use crate::format::{
     format_add, format_create_for_client, format_defaults_for_handles, format_expand,
 };
-use crate::types::{format_tree};
+use crate::types::format_tree;
 use crate::{CommandCatalog, CommandEntry, RustCommandCatalog};
 use ::core::ffi::CStr;
 

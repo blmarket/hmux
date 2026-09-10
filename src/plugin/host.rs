@@ -28,12 +28,8 @@ use crate::window::{RustWindowPaneWeak, pane_walk, window_pane_find_by_id};
 
 use super::{Host, PaneId as HostPaneId};
 
-thread_local! {
-    /// Per-pane output revision. Kept here rather than on `window_pane` so the
-    /// pane struct stays the shape the transpiler left it in; a pane that goes
-    /// away simply stops being asked about.
-    static REVISIONS: RefCell<HashMap<u_int, u64>> = RefCell::new(HashMap::new());
-}
+const REVISIONS: crate::server_state::LocalField<RefCell<HashMap<u_int, u64>>> =
+    crate::server_state::LocalField::new(|state| &state.plugin_revisions);
 
 /// Record that a pane parsed some output, which is what makes its screen worth
 /// reading again.

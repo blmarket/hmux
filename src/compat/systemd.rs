@@ -165,10 +165,10 @@ pub unsafe fn systemd_create_socket(
                     .iter()
                     .position(|byte| *byte == 0)
                     .unwrap_or(sa.sun_path.len());
-                socket_path = Some(
+                socket_path.set(Some(
                     CString::new(&sa.sun_path[..length])
                         .expect("the socket path ends before its first terminator"),
-                );
+                ));
                 return fd;
             }
         } else {

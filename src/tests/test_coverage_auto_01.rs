@@ -133,8 +133,10 @@ fn test_job_run_and_lifecycle() {
     let _guard = globals();
     ensure_reactor();
     let proc = crate::proc::ProcessRef::default();
-    let prev_proc = unsafe { crate::server::server_proc.take() };
-    unsafe { crate::server::server_proc = Some(proc) };
+    let prev_proc = { crate::server::server_process.take() };
+    {
+        crate::server::server_process.set(Some(proc))
+    };
 
     unsafe {
         let j = job_run(Some(c"true"), &[], None, None, None, None, None, 0, 80, 24);
@@ -151,7 +153,7 @@ fn test_job_run_and_lifecycle() {
         assert_eq!(crate::job::job_event_by_id(id), None);
 
         assert_eq!(job_still_running(), 0);
-        crate::server::server_proc = prev_proc;
+        crate::server::server_process.set(prev_proc);
     }
 }
 
@@ -160,8 +162,10 @@ fn test_job_transfer_and_check_died() {
     let _guard = globals();
     ensure_reactor();
     let proc = crate::proc::ProcessRef::default();
-    let prev_proc = unsafe { crate::server::server_proc.take() };
-    unsafe { crate::server::server_proc = Some(proc) };
+    let prev_proc = { crate::server::server_process.take() };
+    {
+        crate::server::server_process.set(Some(proc))
+    };
 
     unsafe {
         let j = job_run(
@@ -187,6 +191,6 @@ fn test_job_transfer_and_check_died() {
             libc::close(fd);
         }
 
-        crate::server::server_proc = prev_proc;
+        crate::server::server_process.set(prev_proc);
     }
 }

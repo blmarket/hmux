@@ -176,7 +176,8 @@ pub const TTY_NOBLOCK: core::ffi::c_int = 0x8 as core::ffi::c_int;
 
 pub const TTY_SYNCING: core::ffi::c_int = 0x400 as core::ffi::c_int;
 
-static mut tty_log_fd: core::ffi::c_int = -(1 as core::ffi::c_int);
+const tty_log_fd: crate::server_state::Value<core::ffi::c_int> =
+    crate::server_state::Value::new(|state| &state.tty_log_fd);
 pub const TTY_BLOCK_INTERVAL: core::ffi::c_int = 100000 as core::ffi::c_int;
 pub const TTY_QUERY_TIMEOUT: core::ffi::c_int = 5 as core::ffi::c_int;
 pub const TTY_REQUEST_LIMIT: core::ffi::c_int = 30 as core::ffi::c_int;
@@ -186,13 +187,13 @@ pub fn tty_create_log() {
             c"tmux-out-%ld.log",
             fmt_args![getpid() as core::ffi::c_long],
         );
-        tty_log_fd = open(
+        tty_log_fd.set(open(
             name.as_ptr(),
             O_WRONLY | O_CREAT | O_TRUNC,
             0o644 as core::ffi::c_int,
-        );
-        if tty_log_fd != -(1 as core::ffi::c_int)
-            && fcntl(tty_log_fd, F_SETFD, FD_CLOEXEC) == -(1 as core::ffi::c_int)
+        ));
+        if tty_log_fd.get() != -(1 as core::ffi::c_int)
+            && fcntl(tty_log_fd.get(), F_SETFD, FD_CLOEXEC) == -(1 as core::ffi::c_int)
         {
             fatal(c"fcntl failed", fmt_args![]);
         }
@@ -725,6 +726,7 @@ pub unsafe fn tty_update_features(tty: &mut tty) {
             tty_putcode(tty, TTYC_ENMG);
         }
         if (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"extended-keys")
@@ -733,6 +735,7 @@ pub unsafe fn tty_update_features(tty: &mut tty) {
             tty_puts(tty, &tty_term_string_for(tty, TTYC_ENEKS));
         }
         if (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"focus-events")
@@ -844,8 +847,12 @@ fn tty_add(tty: &mut tty, buf: &[u8]) {
         if let Some(client) = held.as_mut() {
             client.record_written(len);
         }
-        if tty_log_fd != -(1 as core::ffi::c_int) {
-            write(tty_log_fd, buf.as_ptr().cast::<core::ffi::c_void>(), len);
+        if tty_log_fd.get() != -(1 as core::ffi::c_int) {
+            write(
+                tty_log_fd.get(),
+                buf.as_ptr().cast::<core::ffi::c_void>(),
+                len,
+            );
         }
         if tty.flags & TTY_STARTED != 0 {
             tty.event_out.enable();
@@ -924,10 +931,10 @@ pub fn tty_putn(tty: &mut tty, buf: &[u8], width: u_int) {
     };
 }
 unsafe fn tty_set_italics(tty: &mut tty) {
-    unsafe {
+    {
         if tty_term_of(tty).has(TTYC_SITM) {
             let s = global_options
-                .as_ref()
+                .get()
                 .expect("global options are initialized")
                 .string_ref(c"default-terminal");
             if s.as_ref() != c"screen" && !s.to_bytes().starts_with(b"screen-") {
@@ -1130,12 +1137,7 @@ pub unsafe fn tty_update_mode(
         tty.mode = mode;
     }
 }
-fn tty_emulate_repeat(
-    tty: &mut tty,
-    code: tty_code_code,
-    code1: tty_code_code,
-    mut n: u_int,
-) {
+fn tty_emulate_repeat(tty: &mut tty, code: tty_code_code, code1: tty_code_code, mut n: u_int) {
     {
         if tty_term_of(tty).has(code) {
             tty_putcode_i(tty, code, n as core::ffi::c_int);
@@ -1152,21 +1154,22 @@ fn tty_emulate_repeat(
     }
 }
 pub unsafe fn tty_repeat_space(tty: &mut tty, mut n: u_int) {
-    unsafe {
-        static mut s: [u_char; 500] = [0; 500];
-        let spaces = &mut s;
-        if spaces[0] as core::ffi::c_int != ' ' as i32 {
-            spaces.fill(' ' as i32 as u_char);
+    const SPACES: crate::server_state::Value<[u_char; 500]> =
+        crate::server_state::Value::new(|state| &state.tty_string_buffer);
+    SPACES.with_mut(|spaces| {
+        if spaces[0] != b' ' {
+            spaces.fill(b' ');
         }
         while n as usize > spaces.len() {
             tty_putn(tty, spaces, spaces.len() as u_int);
-            n = n.wrapping_sub(spaces.len() as u_int);
+            n -= spaces.len() as u_int;
         }
-        if n != 0 as u_int {
+        if n != 0 {
             tty_putn(tty, &spaces[..n as usize], n);
         }
-    }
+    });
 }
+
 pub unsafe fn tty_window_bigger(tty: &tty) -> core::ffi::c_int {
     unsafe {
         let held = tty_client(tty).expect("the tty has a client");

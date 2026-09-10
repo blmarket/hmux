@@ -26,8 +26,10 @@ fn exclusive() -> Globals {
 
 /// Resets the shared character store and width cache between isolated tests.
 fn forget_everything() {
+    let UTF8_STORE = UTF8_STORE_FIELD.get();
+
     {
-        *UTF8_STORE.lock().unwrap() = Utf8Store::new();
+        *UTF8_STORE.borrow_mut() = Utf8Store::new();
         UTF8_WIDTH_CACHE.with_borrow_mut(|cache| cache.clear());
         UTF8_NO_WIDTH.set(false);
     }
@@ -277,7 +279,7 @@ fn the_width_cache_is_rebuilt_from_the_defaults_and_the_option() {
     unsafe {
         utf8_insert_width_cache(0x41, 2);
         let store = global_options
-            .as_ref()
+            .get()
             .expect("global options are initialized");
         store.with_entry_mut(c"codepoint-widths", false, |entry| {
             RustOptionsEngine.array_set(entry.unwrap(), 0, Some(c"U+42=2"), 0, &mut None)
@@ -285,6 +287,7 @@ fn the_width_cache_is_rebuilt_from_the_defaults_and_the_option() {
 
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -297,6 +300,7 @@ fn the_width_cache_is_rebuilt_from_the_defaults_and_the_option() {
 
         utf8_update_width_cache(
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .codepoint_widths(),
@@ -311,12 +315,14 @@ fn the_width_cache_is_rebuilt_from_the_defaults_and_the_option() {
 
 #[test]
 fn a_short_character_is_carried_in_the_utf8_char_itself() {
+    let UTF8_STORE = UTF8_STORE_FIELD.get();
+
     let _guard = exclusive();
     {
         let ud = filled(b"\xc3\xa9", 1);
         let (state, uc) = utf8_from_data(&ud);
         assert_eq!((state, uc), (UTF8_DONE, 0x4200a9c3));
-        assert!(UTF8_STORE.lock().unwrap().by_data.is_empty());
+        assert!(UTF8_STORE.borrow_mut().by_data.is_empty());
 
         let mut back = utf8_data::default();
         utf8_to_data(uc, &mut back);
@@ -398,9 +404,11 @@ fn a_character_that_will_not_fit_comes_back_as_spaces() {
 
 #[test]
 fn the_last_index_is_where_the_trees_stop_taking_characters() {
+    let UTF8_STORE = UTF8_STORE_FIELD.get();
+
     let _guard = exclusive();
     {
-        UTF8_STORE.lock().unwrap().next_index = UTF8_INDEX_END;
+        UTF8_STORE.borrow_mut().next_index = UTF8_INDEX_END;
         let ud = filled("😀".as_bytes(), 2);
         assert_eq!(utf8_from_data(&ud), (UTF8_ERROR, 0x41002020));
     }
@@ -575,38 +583,32 @@ fn character_store_exhaustion_keeps_existing_identities_and_both_indexes() {
 }
 
 #[test]
-fn character_store_shares_consistent_ids_across_concurrent_callers() {
+fn character_store_reuses_ids_and_decodes_every_interned_character() {
     let _guard = exclusive();
-    let threads: Vec<_> = (0..8)
-        .map(|offset| {
-            std::thread::spawn(move || {
-                let mut packed = Vec::new();
-                for n in 0..128 {
-                    let codepoint = char::from_u32(0x1f600 + (n + offset) % 32).unwrap();
-                    let mut bytes = [0; 4];
-                    let text = codepoint.encode_utf8(&mut bytes);
-                    let ud = filled(text.as_bytes(), 2);
-                    let (state, uc) = utf8_from_data(&ud);
-                    assert_eq!(state, UTF8_DONE);
-                    packed.push((uc, bytes));
-                }
-                packed
-            })
-        })
-        .collect();
-    for thread in threads {
-        for (uc, bytes) in thread.join().unwrap() {
-            let mut ud = utf8_data::default();
-            utf8_to_data(uc, &mut ud);
-            assert_eq!(&ud.data[..4], &bytes);
+    let mut packed = Vec::new();
+    for offset in 0..8 {
+        for n in 0..128 {
+            let character = char::from_u32(0x1f600 + (n + offset) % 32).unwrap();
+            let mut bytes = [0; 4];
+            let text = character.encode_utf8(&mut bytes);
+            let (state, id) = utf8_from_data(&filled(text.as_bytes(), 2));
+            assert_eq!(state, UTF8_DONE);
+            packed.push((id, bytes));
         }
     }
-    let store = UTF8_STORE.lock().unwrap();
-    assert_eq!(store.by_data.len(), 32);
-    assert_eq!(store.by_index.len(), 32);
-    for (data, index) in &store.by_data {
-        assert_eq!(store.by_index.get(index), Some(data));
+    for (id, bytes) in packed {
+        let mut decoded = utf8_data::default();
+        utf8_to_data(id, &mut decoded);
+        assert_eq!(&decoded.data[..4], &bytes);
     }
+    UTF8_STORE_FIELD.with(|store| {
+        let store = store.borrow();
+        assert_eq!(store.by_data.len(), 32);
+        assert_eq!(store.by_index.len(), 32);
+        for (data, index) in &store.by_data {
+            assert_eq!(store.by_index.get(index), Some(data));
+        }
+    });
 }
 
 #[test]

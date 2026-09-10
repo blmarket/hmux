@@ -1,8 +1,8 @@
 use crate::WindowPane as _;
 use crate::compat::error_message;
 
-use crate::cmd::cmd_log_argv;
 use crate::cmd::CmdqItemRef;
+use crate::cmd::cmd_log_argv;
 
 use crate::compat::fdforkpty;
 use crate::compat::systemd_move_to_new_cgroup;
@@ -25,7 +25,7 @@ use crate::proc::proc_clear_signals;
 use crate::resize::default_window_size;
 use crate::screen::Screen;
 use crate::screen::screen_reinit;
-use crate::server::server_proc;
+use crate::server::server_process;
 use crate::server::{server_client_get_cwd, server_client_remove_pane};
 
 pub use crate::consts::{
@@ -312,7 +312,8 @@ pub(crate) unsafe fn spawn_pane(
         }
         let mut cwd: Option<CString>;
         let mut path: [core::ffi::c_char; 4096] = [0; 4096];
-        let home = find_home();
+        let home_path = find_home();
+        let home = home_path.as_deref();
         let mut actual_cwd: Option<&CStr> = None;
         let mut now: termios = core::mem::zeroed();
 
@@ -515,7 +516,7 @@ pub(crate) unsafe fn spawn_pane(
                     actual_cwd = Some(c"/");
                 }
             }
-            let forkpty = fdforkpty(ptm_fd, None, Some(&ws));
+            let forkpty = fdforkpty(ptm_fd.get(), None, Some(&ws));
             *new_wp.pid_mut() = forkpty.pid;
             *new_wp.fd_mut() = forkpty.master_fd;
             *new_wp.tty_mut() = forkpty.tty_name;
@@ -568,6 +569,7 @@ pub(crate) unsafe fn spawn_pane(
                     now.c_cc = tio.c_cc;
                 }
                 key = (global_options
+                    .get()
                     .as_ref()
                     .expect("global options are initialized"))
                 .number(c"backspace") as key_code;
@@ -581,7 +583,8 @@ pub(crate) unsafe fn spawn_pane(
                     _exit(1 as core::ffi::c_int);
                 }
                 proc_clear_signals(
-                    &mut server_proc
+                    &mut server_process
+                        .get()
                         .as_ref()
                         .expect("server process is initialized")
                         .borrow_mut(),

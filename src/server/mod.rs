@@ -4,11 +4,11 @@
 //! Everything below this module is private. What the rest of the crate may
 //! use is exactly what is re-exported here.
 
-mod acl;
-mod client;
+pub(crate) mod acl;
+pub(crate) mod client;
 mod defaults;
 mod message;
-mod run;
+pub(crate) mod run;
 
 pub use acl::{RustServerAclStore, ServerAclAccess, ServerAclEntry, ServerAclStore};
 pub(crate) use client::ClientPanDirection;
@@ -31,7 +31,7 @@ pub use message::{
 };
 pub use run::{
     current_time, first_client, marked_pane, server_check_marked, server_clear_marked,
-    server_create_socket, server_is_marked, server_proc, server_set_marked, server_start,
+    server_create_socket, server_is_marked, server_process, server_set_marked, server_start,
 };
 
 #[cfg(test)]
@@ -61,3 +61,5 @@ pub(crate) use run::server_toggle_marked_pane;
 pub(crate) use client::{
     client_clear_overlay, client_print_buffer, client_set_overlay, client_working_directory,
 };
+
+pub(crate) use crate::server_state::server_proc;

@@ -7,7 +7,7 @@ use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::tmux::getversion;
 use crate::tmux::{global_options, socket_path};
 pub use crate::types::*;
-use ::core::ffi::{CStr, c_char, c_int};
+use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
 
 /// A borrowed observation of one environment entry.
@@ -49,10 +49,8 @@ pub struct RustEnvironment {
     entries: std::collections::BTreeMap<CString, RustEnvironmentEntry>,
 }
 
-std::thread_local! {
-    static GLOBAL_ENVIRONMENT: std::cell::RefCell<RustEnvironment> =
-        std::cell::RefCell::new(RustEnvironment::empty());
-}
+const GLOBAL_ENVIRONMENT: crate::server_state::LocalField<std::cell::RefCell<RustEnvironment>> =
+    crate::server_state::LocalField::new(|state| &state.global_environment);
 
 pub(crate) fn with_global_environment<R>(read: impl FnOnce(&RustEnvironment) -> R) -> R {
     GLOBAL_ENVIRONMENT.with(|env| read(&env.borrow()))
@@ -209,12 +207,8 @@ pub(crate) unsafe fn update_environment(
 }
 
 pub(crate) unsafe fn push_environment_to_process(env: &RustEnvironment) {
-    // The empty environment the first `setenv` grows from. The C library
-    // allocates its own array the moment it has an entry to store, so this one
-    // is never handed back and never has to be freed.
-    static mut EMPTY_ENVIRON: [*mut c_char; 1] = [core::ptr::null_mut()];
     unsafe {
-        environ = (&raw mut EMPTY_ENVIRON).cast::<*mut c_char>();
+        libc::clearenv();
         for envent in env.entries() {
             if let Some(value) = envent.value
                 && !envent.name.to_bytes().is_empty()
@@ -254,6 +248,7 @@ pub(crate) unsafe fn environment_for_session(
         }
         if no_TERM == 0 {
             let value = (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .string_ref(c"default-terminal");
@@ -267,7 +262,11 @@ pub(crate) unsafe fn environment_for_session(
         env.clear(c"LISTEN_FDNAMES");
         let tmux = format_alloc(
             c"%s,%ld,%d",
-            fmt_args![socket_path.as_deref(), getpid() as core::ffi::c_long, idx],
+            fmt_args![
+                socket_path.get().as_deref(),
+                getpid() as core::ffi::c_long,
+                idx
+            ],
         );
         env.set(c"TMUX", 0, &tmux);
         env

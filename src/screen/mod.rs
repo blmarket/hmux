@@ -7,7 +7,7 @@
 mod draw;
 mod redraw;
 mod state;
-mod write;
+pub(crate) mod write;
 mod writer;
 
 pub use draw::{format_trim_left, format_trim_right, format_width};

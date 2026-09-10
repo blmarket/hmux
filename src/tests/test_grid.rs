@@ -759,7 +759,7 @@ fn history_grows_by_one_line_at_a_time() {
     assert_eq!(g.text(0), "one");
     assert_eq!(g.text(1), "two");
     assert_eq!(g.text(2), "");
-    assert_eq!(g.line(0).time, unsafe { current_time });
+    assert_eq!(g.line(0).time, { current_time.get() });
 }
 
 #[test]
@@ -954,7 +954,7 @@ fn scrolling_a_region_moves_its_top_line_into_the_history() {
     assert_eq!(g.text(2), "three");
     assert_eq!(g.text(3), "", "the bottom of the region is empty now");
     assert_eq!(g.text(4), "four");
-    assert_eq!(g.line(0).time, unsafe { current_time });
+    assert_eq!(g.line(0).time, { current_time.get() });
 }
 
 #[test]

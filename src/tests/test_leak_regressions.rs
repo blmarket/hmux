@@ -33,15 +33,17 @@
 //! callback-owned `LoadBuffer`, `SourceFile`, `PaneInput` and `KeyEvent`
 //! allocations on a green path.
 
-use crate::args::args_parse_t;
 use crate::WindowPane;
+use crate::args::args_parse_t;
+use crate::cmd::CMD_FIND_PANE;
 use crate::cmd::CmdqItemRef;
+use crate::cmd::SourceFileRef;
 use crate::cmd::cmd;
 use crate::cmd::cmd_load_buffer_data;
 use crate::cmd::cmd_source_file_data;
-use crate::cmd::CMD_FIND_PANE;
-use crate::cmd::{CmdqType, KEYC_NONE, cmdq_append, cmdq_next};
 use crate::cmd::{CmdqListRef, CmdqStateRef};
+use crate::cmd::{CmdqType, KEYC_NONE, cmdq_append, cmdq_next};
+use crate::cmd::{cmd_entry, cmd_entry_flag, cmd_retval};
 use crate::file::CLIENT_DEAD;
 use crate::overlay::{menu_add_item, menu_create};
 use crate::pane_identity::PaneIdentity;
@@ -52,13 +54,11 @@ use crate::tests::test_fixtures::{
     zeroed_client, zeroed_cmdq_item,
 };
 use crate::types::ClientFileRef;
-use crate::cmd::{cmd_entry, cmd_entry_flag, cmd_retval};
-use crate::types::{
-    ClientFileData, ClientFileEvent, WindowMode, key_code, key_event, menu_item,
-    mouse_event, spawn_context, u_int, window_pane, winlink,
-};
-use crate::cmd::SourceFileRef;
 use crate::types::PaneInputRef;
+use crate::types::{
+    ClientFileData, ClientFileEvent, WindowMode, key_code, key_event, menu_item, mouse_event,
+    spawn_context, u_int, window_pane, winlink,
+};
 use crate::window::window_pane_current_mode_mut;
 use crate::window::window_pane_input_data;
 use crate::window::window_pane_set_mode;

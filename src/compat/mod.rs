@@ -6,7 +6,7 @@
 
 mod ctype;
 mod fdforkpty;
-mod getopt_long;
+pub(crate) mod getopt_long;
 mod getpeereid;
 mod getprogname;
 mod imsg;

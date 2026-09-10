@@ -48,12 +48,12 @@ use crate::xmalloc::xasprintf;
 use ::core::ffi::{CStr, c_int, c_longlong};
 use ::std::ffi::CString;
 
-/// Every session the server holds, by name, which is what holds them alive.
-pub(crate) static SESSIONS: GlobalTree<CString, SessionRef> = GlobalTree::new();
+pub(crate) const SESSIONS_FIELD: crate::server_state::LocalField<
+    std::rc::Rc<GlobalTree<CString, SessionRef>>,
+> = crate::server_state::LocalField::new(|state| &state.sessions);
 
-thread_local! {
-    static NEXT_SESSION_ID: std::cell::Cell<Option<u_int>> = const { std::cell::Cell::new(Some(0)) };
-}
+const NEXT_SESSION_ID: crate::server_state::LocalField<std::cell::Cell<Option<u_int>>> =
+    crate::server_state::LocalField::new(|state| &state.next_session_id);
 
 pub(crate) fn next_session_id() -> Option<u_int> {
     NEXT_SESSION_ID.get()
@@ -95,11 +95,9 @@ impl crate::SessionGroupState for session_group {
 /// Every session group the server holds, by name.
 pub type session_groups_t = std::collections::BTreeMap<CString, Box<session_group>>;
 
-thread_local! {
-    pub(crate) static SESSION_GROUPS: std::cell::RefCell<session_groups_t> = const {
-        std::cell::RefCell::new(std::collections::BTreeMap::new())
-    };
-}
+pub(crate) const SESSION_GROUPS: crate::server_state::LocalField<
+    std::cell::RefCell<session_groups_t>,
+> = crate::server_state::LocalField::new(|state| &state.session_groups);
 
 pub(crate) fn session_group_registry_remove(name: &CStr) {
     let removed = SESSION_GROUPS.with_borrow_mut(|groups| groups.remove(name));
@@ -118,6 +116,8 @@ pub(crate) fn session_ref_of(value: &session) -> Option<SessionRef> {
 /// Files a session in the registry under the name it carries, which is what
 /// makes it discoverable and what holds it alive.
 pub(crate) fn session_registry_insert(reference: &SessionRef) {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     unsafe {
         let name = (*reference.as_ptr())
             .name
@@ -129,6 +129,8 @@ pub(crate) fn session_registry_insert(reference: &SessionRef) {
 }
 
 pub(crate) fn session_registry_remove(s: &session) -> Option<SessionRef> {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     SESSIONS
         .map()
         .remove(s.name.as_deref().expect("a registered session has a name"))
@@ -136,6 +138,8 @@ pub(crate) fn session_registry_remove(s: &session) -> Option<SessionRef> {
 
 /// Whether the server holds no session at all.
 pub(crate) fn sessions_empty() -> bool {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     SESSIONS.read().is_empty()
 }
 
@@ -333,6 +337,8 @@ impl session {
 
 /// The first session the server holds, in name order.
 pub fn sessions_first() -> Option<SessionRef> {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     SESSIONS.read().values().next().cloned()
 }
 
@@ -814,6 +820,7 @@ impl SessionRef {
             );
             s.curw_idx = Some(index);
             if global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized")
                 .number(c"focus-events")
@@ -848,9 +855,10 @@ impl SessionRef {
             let s = &mut *self.as_ptr();
             let current_index = s.curw().map(|link| link.idx);
             let marked_index = marked_pane
+                .get()
                 .session()
                 .filter(|marked| self.ptr_eq(marked))
-                .and(marked_pane.wl_idx);
+                .and(marked_pane.get().wl_idx);
             let mut old_windows = core::mem::take(&mut s.windows);
             let mut next_index = s.options_ref().number(c"base-index") as c_int;
             let mut current_index_new = 0;
@@ -889,7 +897,7 @@ impl SessionRef {
             }
             if let Some(index) = marked_index_new {
                 let marked = s.windows.get(&index).map(Box::as_ref);
-                marked_pane.set_winlink(marked);
+                marked_pane.with_mut(|current| current.set_winlink(marked));
                 if marked.is_none() {
                     server_clear_marked();
                 }
@@ -999,6 +1007,8 @@ impl SessionRef {
     }
 
     pub fn find(name: &CStr) -> Option<SessionRef> {
+        let SESSIONS = SESSIONS_FIELD.get();
+
         session_of_name(&SESSIONS.read(), name)
     }
     pub fn find_by_id_str(s: &CStr) -> Option<SessionRef> {
@@ -1015,6 +1025,8 @@ impl SessionRef {
         }
     }
     pub fn find_by_id(id: u_int) -> Option<SessionRef> {
+        let SESSIONS = SESSIONS_FIELD.get();
+
         SESSIONS.read().values().find(|s| s.id() == id).cloned()
     }
     /// Creates a session of `name`, or one named after `prefix` and the id it is
@@ -1031,6 +1043,8 @@ impl SessionRef {
         oo: crate::options::RustOptionsRef,
         tio: Option<&termios>,
     ) -> SessionRef {
+        let SESSIONS = SESSIONS_FIELD.get();
+
         unsafe {
             let id = crate::entity_id::next_entity_id(&NEXT_SESSION_ID);
             let reference = SessionRef::new(session {
@@ -1075,6 +1089,8 @@ impl SessionRef {
     }
     /// Whether the server still holds this session in its live registry.
     pub fn is_registered(&self) -> bool {
+        let SESSIONS = SESSIONS_FIELD.get();
+
         SESSIONS.read().values().any(|session| session.ptr_eq(self))
     }
 
@@ -1085,12 +1101,10 @@ impl SessionRef {
         let list = sort_get_sessions(sort_crit);
         match list.iter().position(|session| session.ptr_eq(self)) {
             Some(index) => Some((list, index)),
-            None => {
-                fatalx(
-                    c"session %s not found in sorted list",
-                    fmt_args![self.name().as_deref()],
-                )
-            },
+            None => fatalx(
+                c"session %s not found in sorted list",
+                fmt_args![self.name().as_deref()],
+            ),
         }
     }
 

@@ -57,7 +57,7 @@ struct Log;
 impl Log {
     fn new() -> Log {
         log_close();
-        log_level.store(0, Ordering::Relaxed);
+        log_level.set(0);
         let log = Log;
         log.forget();
         log
@@ -96,7 +96,7 @@ impl Log {
 impl Drop for Log {
     fn drop(&mut self) {
         log_close();
-        log_level.store(0, Ordering::Relaxed);
+        log_level.set(0);
         self.forget();
     }
 }
@@ -315,8 +315,8 @@ fn fatal_preserves_errno_and_exits_with_or_without_an_open_log() {
 /// anything is written out as well wants a log that has been opened, which
 /// only this module's own tests do.
 pub(crate) fn log_with_level<T>(level: c_int, body: impl FnOnce() -> T) -> T {
-    let was = log_level.swap(level, Ordering::Relaxed);
+    let was = log_level.replace(level);
     let answer = body();
-    log_level.store(was, Ordering::Relaxed);
+    log_level.set(was);
     answer
 }

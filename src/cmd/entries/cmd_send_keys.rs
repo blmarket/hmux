@@ -1,6 +1,6 @@
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
-use crate::args::{args_strtonum_and_expand};
+use crate::args::args_parse_t;
+use crate::args::args_strtonum_and_expand;
 use crate::cmd::{CmdqItemRef, cmdq_item_ref_of};
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::ffi::strtol;
@@ -82,7 +82,8 @@ unsafe fn cmd_send_keys_inject_key(
         if ({
             let flag = 'K' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) != 0 {
+        }) != 0
+        {
             if tc.is_none() {
                 return Some(item.clone());
             }
@@ -129,7 +130,8 @@ unsafe fn cmd_send_keys_inject_string(
         let s = {
             let idx = i as u_int;
             args.argument_string(idx)
-        }.expect("argument index checked");
+        }
+        .expect("argument index checked");
         let mut key: key_code;
         let mut endptr: *mut core::ffi::c_char = core::ptr::null_mut::<core::ffi::c_char>();
         let n: core::ffi::c_long;
@@ -137,7 +139,8 @@ unsafe fn cmd_send_keys_inject_string(
         if ({
             let flag = 'H' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) != 0 {
+        }) != 0
+        {
             n = strtol(s.as_ptr(), &raw mut endptr, 16 as core::ffi::c_int);
             if s.to_bytes().is_empty()
                 || n < 0 as core::ffi::c_long
@@ -208,7 +211,8 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'N' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         unsafe {
             np = args_strtonum_and_expand(
                 args,
@@ -249,7 +253,8 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'M' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         return event_state_ref.with_mouse_event(|m| {
             let Some((_, _, mouse_wp)) = (unsafe { cmd_mouse_pane(m) }) else {
                 unsafe { item.error(c"no mouse target", fmt_args![]) };
@@ -266,10 +271,15 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         if ({
             let flag = '2' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) != 0 {
-            { key = session.options().number(c"prefix2") as key_code };
+        }) != 0
+        {
+            {
+                key = session.options().number(c"prefix2") as key_code
+            };
         } else {
-            { key = session.options().number(c"prefix") as key_code };
+            {
+                key = session.options().number(c"prefix") as key_code
+            };
         }
         unsafe { cmd_send_keys_inject_key(&item_ref, Some(item_ref.clone()), args, key) };
         return CMD_RETURN_NORMAL;
@@ -283,10 +293,12 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         if ({
             let flag = 'N' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) != 0 || ({
-            let flag = 'R' as i32 as u_char;
-            args.argument_flag_count(flag)
-        }) != 0 {
+        }) != 0
+            || ({
+                let flag = 'R' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) != 0
+        {
             return CMD_RETURN_NORMAL;
         }
         let event_key = event_state_ref.event_snapshot().key;

@@ -5,7 +5,7 @@
 //! use is exactly what is re-exported here.
 
 mod line;
-mod links;
+pub(crate) mod links;
 mod reader;
 mod store;
 mod view;

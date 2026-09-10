@@ -1,18 +1,18 @@
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
+use crate::args::args_parse_t;
 use crate::cmd::cmd_find_from_session_ref;
 
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
 use crate::resize::recalculate_sizes;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_SESSION, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
     CMD_TARGET_SESSION_USAGE,
 };
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
-use crate::types::{u_char};
+use crate::types::u_char;
 
 pub(crate) static cmd_select_window_entry: RustCommandEntry = {
     RustCommandEntry {
@@ -132,21 +132,24 @@ unsafe fn cmd_select_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'n' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         next = 1 as core::ffi::c_int;
     }
     previous = core::ptr::eq(cmd_get_entry(self_0), &cmd_previous_window_entry) as core::ffi::c_int;
     if ({
         let flag = 'p' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         previous = 1 as core::ffi::c_int;
     }
     last = core::ptr::eq(cmd_get_entry(self_0), &cmd_last_window_entry) as core::ffi::c_int;
     if ({
         let flag = 'l' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         last = 1 as core::ffi::c_int;
     }
     if next != 0 || previous != 0 || last != 0 {
@@ -198,13 +201,12 @@ unsafe fn cmd_select_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
     current_state_ref.replace_current(current.clone());
     unsafe {
-        (crate::cmd::cmdq_item_ref_of(item).expect("the command has an owner"))
-            .insert_session_hook(
-                Some(&session),
-                Some(&current),
-                c"after-select-window",
-                fmt_args![],
-            )
+        (crate::cmd::cmdq_item_ref_of(item).expect("the command has an owner")).insert_session_hook(
+            Some(&session),
+            Some(&current),
+            c"after-select-window",
+            fmt_args![],
+        )
     };
     if let Some(client) = c.as_ref()
         && { !client.attached_session().is_none() }

@@ -177,7 +177,7 @@ fn trim_ascii(mut value: &[u8]) -> &[u8] {
 }
 
 /// One registered plugin and the schedule it runs on.
-struct Slot {
+pub(crate) struct Slot {
     plugin: RefCell<Box<dyn Plugin>>,
     interval: Option<Duration>,
     /// When this plugin is next due. Measured from the end of the last tick,
@@ -186,10 +186,10 @@ struct Slot {
     due: Cell<Instant>,
 }
 
-thread_local! {
-    static PLUGINS: RefCell<Vec<Slot>> = const { RefCell::new(Vec::new()) };
-    static TICK: RefCell<TimerHandle> = const { RefCell::new(TimerHandle::ZERO) };
-}
+const PLUGINS: crate::server_state::LocalField<RefCell<Vec<Slot>>> =
+    crate::server_state::LocalField::new(|state| &state.plugins);
+const TICK: crate::server_state::LocalField<RefCell<TimerHandle>> =
+    crate::server_state::LocalField::new(|state| &state.plugin_tick);
 
 /// Whether any plugin is registered. The lookup hooks in the format engine ask
 /// this first so that a server running none pays a single flag read, and the

@@ -1,6 +1,6 @@
-use crate::args::RustArguments;
 #[cfg(test)]
 use crate::PaneCommandState;
+use crate::args::RustArguments;
 use crate::grid::Grid;
 use crate::screen::Screen;
 use crate::text::{RustUtf8VisModel, Utf8VisModel};

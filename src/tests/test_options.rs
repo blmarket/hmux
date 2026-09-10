@@ -70,7 +70,7 @@ fn command_defaults_can_read_aliases_from_their_own_store() {
     };
     let _guard = globals();
     unsafe {
-        let store = global_options.as_ref().unwrap();
+        let store = global_options.get().unwrap();
         store.with_entry_mut(c"command-alias", true, |entry| {
             assert_eq!(
                 RustOptionsEngine.array_set(
@@ -1255,7 +1255,7 @@ fn a_style_option_is_read_once_and_kept_unless_it_is_a_format() {
 fn style_expansion_survives_replacement_of_its_option() {
     unsafe fn replace_style(_: &format_tree) -> Option<CString> {
         unsafe {
-            let store = global_s_options.as_ref().unwrap();
+            let store = global_s_options.get().unwrap();
             store.set_default(entry_for(c"status-style"));
             store.set_string(c"status-style", 0, c"fg=blue", &[]);
         }
@@ -1263,7 +1263,7 @@ fn style_expansion_survives_replacement_of_its_option() {
     }
     let _guard = globals();
     unsafe {
-        let store = global_s_options.as_ref().unwrap();
+        let store = global_s_options.get().unwrap();
         store.set_string(c"status-style", 0, c"#{replace_style}", &[]);
         let mut format = format_create(None, None, 0, FORMAT_NOJOBS);
         crate::format::format_add_cb(&mut format, c"replace_style", Some(replace_style));
@@ -1318,12 +1318,13 @@ fn a_global_option_taken_away_goes_back_to_its_default() {
     let _guard = globals();
     unsafe {
         (global_s_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_string(c"status-left", 0, c"%s", fmt_args![c"changed"]);
         assert_eq!(
             RustOptionsEngine.remove_or_default(
-                global_s_options.as_ref().unwrap(),
+                global_s_options.get().as_ref().unwrap(),
                 c"status-left",
                 -1,
                 &mut None
@@ -1331,7 +1332,7 @@ fn a_global_option_taken_away_goes_back_to_its_default() {
             0
         );
         assert_eq!(
-            string_of(global_s_options.as_ref().unwrap(), c"status-left"),
+            string_of(global_s_options.get().as_ref().unwrap(), c"status-left"),
             "[#{session_name}] "
         );
     }
@@ -1354,15 +1355,14 @@ fn the_scope_of_an_option_is_worked_out_from_its_name() {
     unsafe {
         let mut oo: Option<RustOptionsRef> = None;
         let mut cause = None;
-        let scope =
-            |name: &CStr, oo: &mut Option<RustOptionsRef>, cause: &mut Option<CString>| {
-                RustOptionsEngine.scope_from_name(args.borrow().as_args(), 0, name, &*fs, oo, cause)
-            };
+        let scope = |name: &CStr, oo: &mut Option<RustOptionsRef>, cause: &mut Option<CString>| {
+            RustOptionsEngine.scope_from_name(args.borrow().as_args(), 0, name, &*fs, oo, cause)
+        };
         assert_eq!(
             scope(c"copy-command", &mut oo, &mut cause),
             OPTIONS_TABLE_SERVER
         );
-        assert_eq!(oo, global_options);
+        assert_eq!(oo, global_options.get());
         assert_eq!(
             scope(c"status-left", &mut oo, &mut cause),
             OPTIONS_TABLE_SESSION
@@ -1516,7 +1516,7 @@ fn a_global_flag_names_the_global_option_set() {
             ),
             OPTIONS_TABLE_SESSION
         );
-        assert_eq!(oo, global_s_options);
+        assert_eq!(oo, global_s_options.get());
         assert_eq!(
             RustOptionsEngine.scope_from_name(
                 args.borrow().as_args(),
@@ -1528,7 +1528,7 @@ fn a_global_flag_names_the_global_option_set() {
             ),
             OPTIONS_TABLE_WINDOW
         );
-        assert_eq!(oo, global_w_options);
+        assert_eq!(oo, global_w_options.get());
     }
 }
 
@@ -1553,7 +1553,7 @@ fn the_scope_of_a_user_option_is_worked_out_from_the_flags() {
                 c"set-option -s @u",
                 0,
                 OPTIONS_TABLE_SERVER,
-                global_options.clone(),
+                global_options.get(),
             ),
             (
                 c"set-option -p @u",
@@ -1577,7 +1577,7 @@ fn the_scope_of_a_user_option_is_worked_out_from_the_flags() {
                 c"set-option -wg @u",
                 0,
                 OPTIONS_TABLE_WINDOW,
-                global_w_options.clone(),
+                global_w_options.get(),
             ),
             (
                 c"set-option @u",
@@ -1589,7 +1589,7 @@ fn the_scope_of_a_user_option_is_worked_out_from_the_flags() {
                 c"set-option -g @u",
                 0,
                 OPTIONS_TABLE_SESSION,
-                global_s_options.clone(),
+                global_s_options.get(),
             ),
         ] {
             let args = Args::parse(line);
@@ -1658,8 +1658,10 @@ fn a_change_is_pushed_out_to_the_windows_panes_and_clients_it_reaches() {
     let client = list.add("push", 10, 2);
     unsafe {
         window.options().set_number(c"automatic-rename", 1);
-        session.options().set_parent(global_s_options.as_ref());
-        window.options().set_parent(global_w_options.as_ref());
+        session
+            .options()
+            .set_parent(global_s_options.get().as_ref());
+        window.options().set_parent(global_w_options.get().as_ref());
         pane.options().set_parent(Some(&window.options()));
         (*client).set_attached_session(Some(session.handle()));
         (*client).tty.term = Some(zeroed_term());

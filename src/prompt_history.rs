@@ -1,6 +1,5 @@
 use core::ffi::CStr;
 use std::ffi::CString;
-use std::sync::Mutex;
 
 /// One of tmux's independent prompt histories.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -70,7 +69,7 @@ impl RustPromptHistoryStore {
         Self::empty()
     }
 
-    const fn empty() -> Self {
+    pub(crate) const fn empty() -> Self {
         Self {
             histories: [Vec::new(), Vec::new(), Vec::new(), Vec::new()],
         }
@@ -144,21 +143,23 @@ impl PromptHistoryStore for RustPromptHistoryStore {
     }
 }
 
-static PROMPT_HISTORY: Mutex<RustPromptHistoryStore> = Mutex::new(RustPromptHistoryStore::empty());
+const PROMPT_HISTORY_FIELD: crate::server_state::LocalField<
+    std::rc::Rc<std::cell::RefCell<RustPromptHistoryStore>>,
+> = crate::server_state::LocalField::new(|state| &state.prompt_history);
 
 pub(crate) fn with_prompt_history<R>(read: impl FnOnce(&RustPromptHistoryStore) -> R) -> R {
-    let history = PROMPT_HISTORY
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let PROMPT_HISTORY = PROMPT_HISTORY_FIELD.get();
+
+    let history = PROMPT_HISTORY.borrow_mut();
     read(&history)
 }
 
 pub(crate) fn with_prompt_history_mut<R>(
     mutate: impl FnOnce(&mut RustPromptHistoryStore) -> R,
 ) -> R {
-    let mut history = PROMPT_HISTORY
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let PROMPT_HISTORY = PROMPT_HISTORY_FIELD.get();
+
+    let mut history = PROMPT_HISTORY.borrow_mut();
     mutate(&mut history)
 }
 

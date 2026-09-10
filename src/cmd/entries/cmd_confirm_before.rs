@@ -35,10 +35,10 @@
 //! and not printable. The rewrite reads the length off the string instead,
 //! which gives that same refusal without the overread.
 
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
-use crate::cmd::cmd_make_commands_now;
+use crate::args::args_parse_t;
 use crate::cmd::CmdqItemWeak;
+use crate::cmd::cmd_make_commands_now;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
@@ -46,9 +46,7 @@ use crate::cmd::{cmdq_append, cmdq_item_weak_of};
 use crate::fmt_args;
 use crate::prompt_history::PromptHistoryType;
 use crate::status::status_prompt_for_client;
-use crate::types::{
-    ClientRef, Prompt, PromptData, args, args_parse_type, u_char, u_int, uint64_t,
-};
+use crate::types::{ClientRef, Prompt, PromptData, args, args_parse_type, u_char, u_int, uint64_t};
 use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
 

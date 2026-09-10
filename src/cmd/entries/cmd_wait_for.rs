@@ -1,3 +1,4 @@
+use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdqItemWeak, cmdq_item_weak_of};
@@ -5,7 +6,6 @@ use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_WAIT};
 use crate::fmt_args;
 use crate::log::log_debug;
-use crate::args::args_parse_t;
 use ::core::ffi::CStr;
 use ::std::cell::RefCell;
 use ::std::collections::btree_map::Entry;
@@ -42,18 +42,15 @@ pub(crate) static cmd_wait_for_entry: RustCommandEntry = {
 /// arrived, and the command queue items blocked on each of the two waits —
 /// held as observations, so an item whose queue has already given it up is
 /// skipped rather than answered.
-struct WaitChannel {
+pub(crate) struct WaitChannel {
     locked: bool,
     woken: bool,
     waiters: VecDeque<CmdqItemWeak>,
     lockers: VecDeque<CmdqItemWeak>,
 }
 
-thread_local! {
-    static WAIT_CHANNELS: RefCell<BTreeMap<CString, WaitChannel>> = const {
-        RefCell::new(BTreeMap::new())
-    };
-}
+const WAIT_CHANNELS: crate::server_state::LocalField<RefCell<BTreeMap<CString, WaitChannel>>> =
+    crate::server_state::LocalField::new(|state| &state.wait_channels);
 
 /// Accesses the current server thread's channels for one state transition.
 fn with_channels<R>(operation: impl FnOnce(&mut BTreeMap<CString, WaitChannel>) -> R) -> R {

@@ -19,7 +19,10 @@ use ::std::sync::MutexGuard;
 /// at the server-wide state those lists are built from. Cargo runs the
 /// tests on parallel threads, so every test that asks for a list holds
 /// both, always in this order.
-fn sorting() -> (crate::tests::test_fixtures::GlobalsGuard, MutexGuard<'static, ()>) {
+fn sorting() -> (
+    crate::tests::test_fixtures::GlobalsGuard,
+    MutexGuard<'static, ()>,
+) {
     static LISTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let outer = globals();
     let inner = LISTS
@@ -876,7 +879,10 @@ impl Drop for Table {
 /// rather than the tables themselves: a table nobody has bound anything in
 /// contributes nothing to any of these lists, and another module's tests
 /// leave an empty one behind them.
-fn tables() -> (crate::tests::test_fixtures::GlobalsGuard, MutexGuard<'static, ()>) {
+fn tables() -> (
+    crate::tests::test_fixtures::GlobalsGuard,
+    MutexGuard<'static, ()>,
+) {
     let guards = sorting();
     {
         let c = crit(SORT_END, 0);
@@ -1409,6 +1415,8 @@ fn entries_that_compare_equal_keep_the_order_they_came_in() {
 }
 
 pub(crate) unsafe fn sort_get_panes(sort_crit: &sort_criteria_t) -> Vec<RustWindowPaneWeak> {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     unsafe {
         let mut l = Vec::new();
         for s in SESSIONS.read().values() {

@@ -15,15 +15,14 @@
 //! detaches every winlink of that window from every session and so rewrites
 //! the tree being walked.
 
-
+use crate::args::args_parse_t;
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL};
 use crate::fmt_args;
 use crate::resize::recalculate_sizes;
 use crate::server::server_renumber_all;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
-use crate::args::args_parse_t;
 #[cfg(test)]
 use crate::types::cmd_find_state;
 use ::core::ffi::c_char;

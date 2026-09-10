@@ -11,7 +11,6 @@
 //!
 //! Multi-client operations walk the live client list while recording deferred exits.
 
-
 use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};

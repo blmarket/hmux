@@ -118,6 +118,7 @@ fn a_reset_turns_extended_keys_on_when_the_option_asks_for_it() {
     let _guard = globals();
     unsafe {
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"extended-keys", 2)
@@ -133,6 +134,7 @@ fn a_reset_turns_extended_keys_on_when_the_option_asks_for_it() {
     assert_eq!(s.mode() & MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED);
     unsafe {
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"extended-keys", 0)
@@ -181,15 +183,18 @@ fn the_default_cursor_comes_from_the_options() {
     let mut s = RustScreen::new_with_server_options(10, 5, 0);
     unsafe {
         (global_w_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"cursor-colour", 4);
         (global_w_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"cursor-style", 3);
         s.set_default_cursor(
             global_w_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"),
         );
@@ -199,10 +204,12 @@ fn the_default_cursor_comes_from_the_options() {
     assert_eq!(s.0.default_mode, MODE_CURSOR_BLINKING);
     unsafe {
         (global_w_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"cursor-colour", -1);
         (global_w_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"cursor-style", 0);

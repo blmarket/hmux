@@ -1,6 +1,6 @@
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
-use crate::args::{args_strtonum};
+use crate::args::args_parse_t;
+use crate::args::args_strtonum;
 use crate::cmd::cmd_get_args;
 
 use crate::compat::strtonum;
@@ -73,7 +73,8 @@ unsafe fn cmd_resize_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'x' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         sx = args_strtonum(
             args,
             'x' as i32 as u_char,
@@ -89,7 +90,8 @@ unsafe fn cmd_resize_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'y' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         sy = args_strtonum(
             args,
             'y' as i32 as u_char,
@@ -105,37 +107,43 @@ unsafe fn cmd_resize_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'L' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         if sx >= adjust {
             sx = sx.wrapping_sub(adjust);
         }
     } else if ({
         let flag = 'R' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         sx = sx.wrapping_add(adjust);
     } else if ({
         let flag = 'U' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         if sy >= adjust {
             sy = sy.wrapping_sub(adjust);
         }
     } else if ({
         let flag = 'D' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         sy = sy.wrapping_add(adjust);
     }
     if ({
         let flag = 'A' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         unsafe { (sx, sy, _, _) = window.default_size(target.session(), WINDOW_SIZE_LARGEST) };
     } else if ({
         let flag = 'a' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         unsafe { (sx, sy, _, _) = window.default_size(target.session(), WINDOW_SIZE_SMALLEST) };
     }
     unsafe {

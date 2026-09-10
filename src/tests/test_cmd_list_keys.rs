@@ -12,9 +12,10 @@ struct Prefix(c_longlong);
 impl Prefix {
     /// Remembers what `prefix` is set to now.
     fn guard() -> Prefix {
-        unsafe {
+        {
             Prefix(
                 (global_s_options
+                    .get()
                     .as_ref()
                     .expect("global options are initialized"))
                 .number(c"prefix"),
@@ -28,6 +29,7 @@ impl Prefix {
         unsafe {
             let key = RustKeyStringCodec.parse_key(name);
             (global_s_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .set_number(c"prefix", key as c_longlong);
@@ -39,6 +41,7 @@ impl Drop for Prefix {
     fn drop(&mut self) {
         unsafe {
             (global_s_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .set_number(c"prefix", self.0)

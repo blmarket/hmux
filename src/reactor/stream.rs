@@ -40,8 +40,10 @@ impl Stream {
     }
 
     pub fn free(self) {
-        if self.0 != 0 {
-            current_stream_registry().free(self.0);
+        if self.0 != 0
+            && let Some(registry) = super::runtime::try_stream_registry()
+        {
+            registry.free(self.0);
         }
     }
 
@@ -106,8 +108,10 @@ impl Stream {
     }
 
     pub fn disable(&self, interest: Interest) {
-        if self.0 != 0 {
-            current_stream_registry().disable(self.0, interest);
+        if self.0 != 0
+            && let Some(registry) = super::runtime::try_stream_registry()
+        {
+            registry.disable(self.0, interest);
         }
     }
 

@@ -1,7 +1,9 @@
 use super::RustScreen;
 use super::write::{screen_write_free_list, screen_write_make_list};
 use crate::fmt_args;
-use crate::grid::{Grid, grid_adjust_lines, grid_create, grid_default_cell, grid_empty_line};
+use crate::grid::{
+    Grid, RustGrid, grid_adjust_lines, grid_create, grid_default_cell, grid_empty_line,
+};
 use crate::grid::{Hyperlinks, RustHyperlinks};
 use crate::grid::{grid_view_clear, grid_view_delete_lines};
 use crate::log::{fatalx, log_debug};
@@ -104,7 +106,7 @@ pub(super) struct screen {
     pub path: Option<CString>,
     pub titles: Option<Box<screen_titles>>,
     pub ntitles: u_int,
-    pub(super) grid: Option<Box<grid>>,
+    pub(super) grid: Option<Box<RustGrid>>,
     pub(super) cx: u_int,
     pub(super) cy: u_int,
     pub cstyle: screen_cursor_style,
@@ -117,7 +119,7 @@ pub(super) struct screen {
     pub default_mode: c_int,
     pub saved_cx: u_int,
     pub saved_cy: u_int,
-    pub(super) saved_grid: Option<Box<grid>>,
+    pub(super) saved_grid: Option<Box<RustGrid>>,
     pub saved_cell: grid_cell,
     pub saved_flags: c_int,
     pub tabs: Vec<u8>,
@@ -198,11 +200,11 @@ impl Default for screen {
 }
 
 impl RustScreen {
-    pub(crate) fn grid(&self) -> &grid {
+    pub(crate) fn grid(&self) -> &RustGrid {
         self.0.grid.as_deref().expect("a screen holds a grid")
     }
 
-    pub(crate) fn grid_mut(&mut self) -> &mut grid {
+    pub(crate) fn grid_mut(&mut self) -> &mut RustGrid {
         self.0.grid.as_deref_mut().expect("a screen holds a grid")
     }
 
@@ -215,8 +217,9 @@ impl RustScreen {
     /// The global option set must be there, since resetting the screen reads
     /// `extended-keys` from it.
     pub(crate) fn new_with_server_options(sx: u_int, sy: u_int, hlimit: u_int) -> RustScreen {
-        unsafe {
+        {
             let extended_keys = (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .number(c"extended-keys");
@@ -346,8 +349,9 @@ fn screen_new_standalone(sx: u_int, sy: u_int, hlimit: u_int) -> RustScreen {
 
 /// Reset a screen to what a new one is, keeping its size and its history.
 pub unsafe fn screen_reinit(s: &mut RustScreen) {
-    unsafe {
+    {
         let extended_keys = (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"extended-keys");
@@ -808,7 +812,7 @@ impl RustScreen {
         self.0.tabs.fill(0);
     }
 
-    pub fn saved_grid(&self) -> Option<&grid> {
+    pub fn saved_grid(&self) -> Option<&RustGrid> {
         self.0.saved_grid.as_deref()
     }
 }

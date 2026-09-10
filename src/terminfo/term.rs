@@ -167,7 +167,7 @@ struct tty_term_entry {
 /// owned by the tty of the client it was made for; this is the observer list
 /// `show-messages -T` walks.
 #[derive(Default)]
-struct TerminalRegistry {
+pub(crate) struct TerminalRegistry {
     entries: std::rc::Rc<std::cell::RefCell<std::collections::VecDeque<tty_term_entry>>>,
 }
 
@@ -210,9 +210,8 @@ impl Drop for tty_term {
     }
 }
 
-thread_local! {
-    static TTY_TERMS: TerminalRegistry = TerminalRegistry::default();
-}
+const TTY_TERMS: crate::server_state::LocalField<TerminalRegistry> =
+    crate::server_state::LocalField::new(|state| &state.tty_terms);
 
 pub(crate) struct TerminalDescriptionSnapshot {
     pub(crate) name: CString,
@@ -1343,6 +1342,7 @@ fn tty_term_apply(term: &mut tty_term, capabilities: &CStr, quiet: core::ffi::c_
 pub(crate) unsafe fn tty_term_apply_overrides(term: &mut tty_term) {
     unsafe {
         global_options
+            .get()
             .as_ref()
             .expect("global options are initialized")
             .with_entry(c"terminal-overrides", true, |entry| {
@@ -1469,6 +1469,7 @@ pub(crate) fn tty_term_create(
             }
         }
         global_options
+            .get()
             .as_ref()
             .expect("global options are initialized")
             .with_entry(c"terminal-features", true, |entry| {

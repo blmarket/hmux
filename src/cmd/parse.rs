@@ -1,8 +1,8 @@
 use crate::cmd::CmdListRef;
 use crate::cmd::cmd_get_alias;
 use crate::cmd::cmd_parse;
-use crate::cmd::{cmd_find_from_client, cmd_find_valid_state};
 use crate::cmd::{CmdqItemWeak, CmdqStateRef, cmdq_append};
+use crate::cmd::{cmd_find_from_client, cmd_find_valid_state};
 pub use crate::consts::{
     CMD_PARSE_ERROR, CMD_PARSE_PARSEONLY, CMD_PARSE_SUCCESS, CMD_PARSE_VERBOSE, ENVIRON_HIDDEN,
     FORMAT_NOJOBS, FORMAT_NONE, UINT_MAX,
@@ -1196,10 +1196,7 @@ unsafe fn yylex_token_escape(ps: &mut cmd_parse_state<'_>, buf: &mut Vec<u8>) ->
         }
     }
 }
-fn yylex_token_variable(
-    ps: &mut cmd_parse_state<'_>,
-    buf: &mut Vec<u8>,
-) -> core::ffi::c_int {
+fn yylex_token_variable(ps: &mut cmd_parse_state<'_>, buf: &mut Vec<u8>) -> core::ffi::c_int {
     {
         let mut ch: core::ffi::c_int;
         let mut brackets: core::ffi::c_int = 0 as core::ffi::c_int;

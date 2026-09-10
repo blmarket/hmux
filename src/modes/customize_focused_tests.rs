@@ -27,8 +27,8 @@ impl Chain {
             let window = window.options();
             let session = fs.session().unwrap().options();
             pane.set_parent(Some(&window));
-            window.set_parent(global_w_options.as_ref());
-            session.set_parent(global_s_options.as_ref());
+            window.set_parent(global_w_options.get().as_ref());
+            session.set_parent(global_s_options.get().as_ref());
             Self {
                 pane,
                 window,
@@ -105,11 +105,15 @@ fn scope_tree_and_text_map_to_the_target_owners() {
     unsafe {
         assert!(window_customize_get_tree(WINDOW_CUSTOMIZE_NONE, &fs).is_none());
         assert!(window_customize_get_tree(WINDOW_CUSTOMIZE_KEY, &fs).is_none());
-        assert!(window_customize_get_tree(WINDOW_CUSTOMIZE_SERVER, &fs) == global_options);
+        assert!(window_customize_get_tree(WINDOW_CUSTOMIZE_SERVER, &fs) == global_options.get());
         assert!(
-            window_customize_get_tree(WINDOW_CUSTOMIZE_GLOBAL_SESSION, &fs) == global_s_options
+            window_customize_get_tree(WINDOW_CUSTOMIZE_GLOBAL_SESSION, &fs)
+                == global_s_options.get()
         );
-        assert!(window_customize_get_tree(WINDOW_CUSTOMIZE_GLOBAL_WINDOW, &fs) == global_w_options);
+        assert!(
+            window_customize_get_tree(WINDOW_CUSTOMIZE_GLOBAL_WINDOW, &fs)
+                == global_w_options.get()
+        );
         assert!(
             window_customize_get_tree(WINDOW_CUSTOMIZE_SESSION, &fs)
                 == Some(fs.session().unwrap().options())
@@ -162,7 +166,7 @@ fn item_allocation_tags_and_validity_are_deterministic() {
             &mut data.borrow_mut(),
             window_customize_itemdata {
                 scope: WINDOW_CUSTOMIZE_WINDOW,
-                oo: global_w_options.clone(),
+                oo: global_w_options.get(),
                 ..Default::default()
             },
         );
@@ -170,6 +174,7 @@ fn item_allocation_tags_and_validity_are_deterministic() {
 
         let fs = target.state();
         global_w_options
+            .get()
             .as_ref()
             .unwrap()
             .with_entry(c"automatic-rename", false, |entry| {
@@ -224,7 +229,7 @@ fn option_unset_and_reset_mutate_only_matching_live_owners() {
 
         let wrong = option_item(
             WINDOW_CUSTOMIZE_WINDOW,
-            global_w_options.as_ref().unwrap(),
+            global_w_options.get().as_ref().unwrap(),
             c"@temporary",
             -1,
         );
@@ -404,18 +409,21 @@ fn option_actions_toggle_flags_cycle_choices_and_map_requested_scopes() {
         assert_eq!(session.number(c"status-position"), old_position);
 
         let global_before = (global_w_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"automatic-rename");
         data.set_option(client.as_client_mut(), Some(&automatic), 1, 0);
         assert_eq!(
             (global_w_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .number(c"automatic-rename"),
             (global_before == 0) as i64
         );
         (global_w_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"automatic-rename", global_before);
@@ -423,7 +431,7 @@ fn option_actions_toggle_flags_cycle_choices_and_map_requested_scopes() {
         data.set_option(client.as_client_mut(), None, 0, 0);
         let stale = option_item(
             WINDOW_CUSTOMIZE_WINDOW,
-            global_w_options.as_ref().unwrap(),
+            global_w_options.get().as_ref().unwrap(),
             c"automatic-rename",
             -1,
         );
@@ -438,6 +446,7 @@ fn rebuilding_tracks_user_option_precedence_filters_and_global_visibility() {
     let _chain = unsafe { Chain::new(&mut target) };
     unsafe {
         (global_w_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_string(c"@focused-global", 0, c"global", &[]);
@@ -483,6 +492,7 @@ fn rebuilding_tracks_user_option_precedence_filters_and_global_visibility() {
         window_pane_reset_mode_all(&mut *wp);
         RustOptionsEngine.remove_or_default(
             global_w_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"),
             c"@focused-global",

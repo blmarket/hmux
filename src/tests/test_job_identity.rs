@@ -20,6 +20,8 @@ fn inert_job(id: u_int) -> Box<job> {
 
 #[test]
 fn freeing_a_job_removes_its_identity_before_dropping_callback_data() {
+    let all_jobs = all_jobs_FIELD.get();
+
     let _guard = crate::tests::test_fixtures::globals();
     struct Released(Rc<Cell<u32>>);
     impl Drop for Released {
@@ -42,6 +44,8 @@ fn freeing_a_job_removes_its_identity_before_dropping_callback_data() {
 
 #[test]
 fn update_callbacks_can_remove_their_job_and_stale_stream_events_are_ignored() {
+    let all_jobs = all_jobs_FIELD.get();
+
     let _guard = crate::tests::test_fixtures::globals();
     let calls = Rc::new(Cell::new(0));
     let observed = calls.clone();
@@ -65,6 +69,8 @@ fn update_callbacks_can_remove_their_job_and_stale_stream_events_are_ignored() {
 
 #[test]
 fn completion_callbacks_can_remove_jobs_for_either_event_order() {
+    let all_jobs = all_jobs_FIELD.get();
+
     let _guard = crate::tests::test_fixtures::globals();
     for eof_first in [false, true] {
         let calls = Rc::new(Cell::new(0));
@@ -95,6 +101,8 @@ fn completion_callbacks_can_remove_jobs_for_either_event_order() {
 
 #[test]
 fn transferred_tty_names_fit_and_terminate_in_the_callers_buffer() {
+    let all_jobs = all_jobs_FIELD.get();
+
     let _guard = crate::tests::test_fixtures::globals();
     for (capacity, expected) in [
         (0, &b""[..]),
@@ -110,10 +118,7 @@ fn transferred_tty_names_fit_and_terminate_in_the_callers_buffer() {
         job.tty = tty;
         let mut output = vec![b'x'; capacity];
         all_jobs.queue().push_front(job);
-        assert_eq!(
-            { job_transfer(0, Some(&mut output)) },
-            Some((-1, -1))
-        );
+        assert_eq!({ job_transfer(0, Some(&mut output)) }, Some((-1, -1)));
         assert_eq!(job_event_by_id(0), None);
         assert_eq!(output, expected);
     }

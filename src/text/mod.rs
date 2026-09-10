@@ -6,7 +6,7 @@
 
 mod combined;
 mod key_string;
-mod utf8;
+pub(crate) mod utf8;
 
 pub use combined::{
     HANGULJAMO_STATE_CHOSEONG, HANGULJAMO_STATE_NOT_COMPOSABLE, HANGULJAMO_STATE_NOT_HANGULJAMO,

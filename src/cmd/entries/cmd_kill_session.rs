@@ -14,14 +14,14 @@
 //! Both destruction walks retain ordered session handles before mutation,
 //! since destruction removes sessions from the registry and their groups.
 
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
+use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
-use crate::consts::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_NORMAL};
-use crate::session::SESSIONS;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
-use crate::types::{SessionRef};
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::consts::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_NORMAL};
+use crate::session::SESSIONS_FIELD;
+use crate::types::SessionRef;
 #[cfg(test)]
 use crate::types::session;
 use ::core::ffi::c_char;
@@ -77,6 +77,8 @@ unsafe fn destroy(session: &mut SessionRef) {
 /// and invoke no callbacks;
 /// destruction retains its existing server lifecycle requirements.
 unsafe fn cmd_kill_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     let args = cmd_get_args(self_0);
     let mut session = item.target.session().expect("kill target session");
 

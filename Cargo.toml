@@ -38,11 +38,10 @@ hashlink = "0.12.1"
 [build-dependencies]
 lalrpop = { version = "0.23.1", default-features = false }
 
-# The transpiled code keeps C's shape: `static mut` globals that every access
-# borrows, and raw pointers whose fields are reached through method calls.
-# Allowed until those two patterns are rewritten.
 [lints.rust]
-static_mut_refs = "allow"
+# Mutable application state belongs to the thread-local process owner.
+static_mut_refs = "deny"
+# Raw-pointer field access still follows the translated C code in some modules.
 dangerous_implicit_autorefs = "allow"
 
 [lints.clippy]

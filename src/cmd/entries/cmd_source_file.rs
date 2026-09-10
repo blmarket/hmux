@@ -1,6 +1,6 @@
-use crate::args::args_parse_t;
 use crate::GlobPaths;
 use crate::args::RustArguments;
+use crate::args::args_parse_t;
 use crate::cfg::cfg_print_causes;
 use crate::cfg::{configuration_finished, load_cfg_buffer_for_client};
 use crate::cmd::cmdq_item;
@@ -24,7 +24,6 @@ use crate::xmalloc::xasprintf;
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU32, Ordering};
 
 #[derive(Clone)]
 #[repr(C)]
@@ -45,7 +44,8 @@ pub const GLOB_NOSPACE: core::ffi::c_int = 1 as core::ffi::c_int;
 pub const GLOB_NOMATCH: core::ffi::c_int = 3 as core::ffi::c_int;
 
 pub const CMD_SOURCE_FILE_DEPTH_LIMIT: core::ffi::c_int = 50 as core::ffi::c_int;
-static CMD_SOURCE_FILE_DEPTH: AtomicU32 = AtomicU32::new(0);
+const CMD_SOURCE_FILE_DEPTH: crate::server_state::LocalField<std::cell::Cell<u32>> =
+    crate::server_state::LocalField::new(|state| &state.cmd_source_file_depth);
 pub(crate) static cmd_source_file_entry: RustCommandEntry = {
     RustCommandEntry {
         name: c"source-file",
@@ -83,7 +83,11 @@ fn cmd_source_file_complete_cb(item: &CmdqItemRef) -> cmd_retval {
             );
         } else {
             let depth = CMD_SOURCE_FILE_DEPTH
-                .fetch_sub(1, Ordering::Relaxed)
+                .with(|counter| {
+                    let previous = counter.get();
+                    counter.set(previous.wrapping_sub(1));
+                    previous
+                })
                 .wrapping_sub(1);
             log_debug(
                 c"%s: depth now %u",
@@ -195,11 +199,15 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             fmt_args![c"cmd_source_file_exec", c.source_file_depth()],
         );
     } else {
-        let Ok(previous) =
-            CMD_SOURCE_FILE_DEPTH.try_update(Ordering::Relaxed, Ordering::Relaxed, |depth| {
-                (depth < CMD_SOURCE_FILE_DEPTH_LIMIT as u_int).then(|| depth + 1)
-            })
-        else {
+        let Ok(previous) = CMD_SOURCE_FILE_DEPTH.with(|counter| {
+            let depth = counter.get();
+            if depth < CMD_SOURCE_FILE_DEPTH_LIMIT as u_int {
+                counter.set(depth + 1);
+                Ok(depth)
+            } else {
+                Err(depth)
+            }
+        }) else {
             unsafe { item.error(c"too many nested files", fmt_args![]) };
             return CMD_RETURN_ERROR;
         };

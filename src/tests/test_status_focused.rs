@@ -460,13 +460,7 @@ fn status_geometry_covers_top_bottom_disabled_control_detached_and_multiline_cla
         c.flags &= !(CLIENT_CONTROL as u64);
 
         c.set_attached_session(None);
-        assert_eq!(
-            status_line_size(c),
-            (global_s_options
-                .as_ref()
-                .expect("global options are initialized"))
-            .number(c"status") as u_int
-        );
+        assert_eq ! (status_line_size (c) , (global_s_options . get () . as_ref () . expect ("global options are initialized")) . number (c"status") as u_int);
         assert_eq!(status_at_line(c), -1);
         assert_eq!(status_prompt_line_at(c), 0);
         c.flags |= CLIENT_STATUSOFF as u64;

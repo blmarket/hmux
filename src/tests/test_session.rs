@@ -60,6 +60,8 @@ fn session_cleanup_survives_thread_local_owner_teardown() {
 /// the session groups, the id the next session is given and the marked
 /// pane — starting from empty trees and leaving them empty.
 fn server() -> crate::tests::test_fixtures::GlobalsGuard {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     let guard = globals();
     ensure_reactor();
     assert!(SESSIONS.map().is_empty(), "the session tree is not empty");
@@ -124,6 +126,8 @@ impl Drop for Created {
 
 /// The names of every session the server has.
 fn registered() -> Vec<String> {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     let registered = SESSIONS.map();
     unsafe { walk(&registered) }
 }
@@ -279,6 +283,8 @@ fn an_id_that_is_not_a_number_after_a_dollar_finds_nothing() {
 /// last strong handle goes away.
 #[test]
 fn a_session_is_kept_while_anything_holds_a_handle_to_it() {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     let _guard = server();
     let mut created = Created::new();
     unsafe {
@@ -1342,6 +1348,7 @@ fn moving_between_windows_can_carry_the_focus_with_it() {
         window_set_active(&mut *w, Some(&*wp));
         *(*wp).flags_mut() |= PANE_FOCUSED;
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"focus-events", 1);
@@ -1352,6 +1359,7 @@ fn moving_between_windows_can_carry_the_focus_with_it() {
             0
         );
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"focus-events", 0);
@@ -1465,17 +1473,17 @@ fn renumbering_does_not_retarget_another_sessions_mark_at_the_same_index() {
     unsafe {
         renumbered.attach("renumbered-window", 6);
         marked.attach("marked-window", 6);
-        marked_pane.set_session(marked.ptr().as_ref());
-        marked_pane.set_winlink(marked.wl(0).get());
-        marked_pane.set_window_ref(Some(marked.windows[0].handle()));
-        let marked_window = marked_pane.window().unwrap();
+        marked_pane.with_mut(|current| current.set_session(marked.ptr().as_ref()));
+        marked_pane.with_mut(|current| current.set_winlink(marked.wl(0).get()));
+        marked_pane.with_mut(|current| current.set_window_ref(Some(marked.windows[0].handle())));
+        let marked_window = marked_pane.get().window().unwrap();
 
         renumbered.handle().renumber_windows();
 
         assert_eq!(renumbered.indexes(), [0]);
-        assert_eq!(marked_pane.wl_idx, Some(6));
-        assert!(marked_pane.session().unwrap().ptr_eq(marked.handle()));
-        assert!(marked_pane.window().unwrap().ptr_eq(&marked_window));
+        assert_eq!(marked_pane.get().wl_idx, Some(6));
+        assert!(marked_pane.get().session().unwrap().ptr_eq(marked.handle()));
+        assert!(marked_pane.get().window().unwrap().ptr_eq(&marked_window));
         server_clear_marked();
         renumbered.winlinks.clear();
     }
@@ -1491,13 +1499,13 @@ fn renumbering_carries_the_marked_pane_over() {
         linked.attach("w0", 2);
         linked.attach("w1", 6);
         linked.handle().set_curw(linked.wl(0).get());
-        marked_pane.set_winlink(linked.wl(1).get());
-        marked_pane.set_session(linked.ptr().as_ref());
-        marked_pane.set_window_ref(Some(linked.windows[1].handle()));
+        marked_pane.with_mut(|current| current.set_winlink(linked.wl(1).get()));
+        marked_pane.with_mut(|current| current.set_session(linked.ptr().as_ref()));
+        marked_pane.with_mut(|current| current.set_window_ref(Some(linked.windows[1].handle())));
 
         linked.handle().renumber_windows();
         assert_eq!(linked.indexes(), [0, 1]);
-        let marked = marked_pane.winlink_ref().unwrap();
+        let marked = marked_pane.get().winlink_ref().unwrap();
         let link = marked.get().unwrap();
         assert_eq!(link.idx, 1);
         assert_eq!(
@@ -1623,6 +1631,8 @@ pub(crate) fn session_groups_empty() -> bool {
 }
 
 pub(crate) fn session_registry_clear() {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     SESSIONS.map().clear();
 }
 

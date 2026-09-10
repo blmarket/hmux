@@ -20,9 +20,9 @@ use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
 
-use crate::server::server_kill_pane;
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::server::server_kill_pane;
 use crate::types::{RustWindowPaneWeak, WindowRef};
 
 use crate::consts::{CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL};

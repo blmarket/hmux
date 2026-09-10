@@ -10,7 +10,6 @@
 //! sites use, so a slot the mode left empty reads as nothing to do rather than
 //! as a null check at every caller.
 
-use crate::args::RustArguments;
 use super::buffer::{
     WINDOW_BUFFER_DEFAULT_FORMAT, window_buffer_free, window_buffer_init, window_buffer_resize,
 };
@@ -33,6 +32,7 @@ use super::customize::{
 use super::tree::{
     WINDOW_TREE_DEFAULT_FORMAT, window_tree_free, window_tree_init, window_tree_resize,
 };
+use crate::args::RustArguments;
 use crate::types::*;
 
 impl WindowModeData {
@@ -161,7 +161,7 @@ impl window_mode_entry {
 impl WindowMode {
     /// What this mode implements.
     pub fn table(self) -> &'static window_mode {
-        static TABLES: std::sync::LazyLock<[window_mode; 7]> = std::sync::LazyLock::new(|| {
+        static TABLES: [window_mode; 7] = {
             let copy = window_mode {
                 name: c"copy-mode",
                 init: window_copy_init,
@@ -173,7 +173,7 @@ impl WindowMode {
                     command: Some(window_copy_command),
                     formats: Some(window_copy_formats),
                     get_screen: Some(window_copy_get_screen),
-                    ..Default::default()
+                    ..WindowModeOptional::EMPTY
                 },
             };
             [
@@ -182,7 +182,7 @@ impl WindowMode {
                     init: window_clock_init,
                     free: window_clock_free,
                     resize: window_clock_resize,
-                    optional: Default::default(),
+                    optional: WindowModeOptional::EMPTY,
                 },
                 copy,
                 window_mode {
@@ -197,7 +197,7 @@ impl WindowMode {
                     resize: window_buffer_resize,
                     optional: WindowModeOptional {
                         default_format: Some(WINDOW_BUFFER_DEFAULT_FORMAT),
-                        ..Default::default()
+                        ..WindowModeOptional::EMPTY
                     },
                 },
                 window_mode {
@@ -207,7 +207,7 @@ impl WindowMode {
                     resize: window_client_resize,
                     optional: WindowModeOptional {
                         default_format: Some(WINDOW_CLIENT_DEFAULT_FORMAT),
-                        ..Default::default()
+                        ..WindowModeOptional::EMPTY
                     },
                 },
                 window_mode {
@@ -217,7 +217,7 @@ impl WindowMode {
                     resize: window_tree_resize,
                     optional: WindowModeOptional {
                         default_format: Some(WINDOW_TREE_DEFAULT_FORMAT),
-                        ..Default::default()
+                        ..WindowModeOptional::EMPTY
                     },
                 },
                 window_mode {
@@ -227,11 +227,11 @@ impl WindowMode {
                     resize: window_customize_resize,
                     optional: WindowModeOptional {
                         default_format: Some(WINDOW_CUSTOMIZE_DEFAULT_FORMAT),
-                        ..Default::default()
+                        ..WindowModeOptional::EMPTY
                     },
                 },
             ]
-        });
+        };
         match self {
             WindowMode::Clock => &TABLES[0],
             WindowMode::Copy => &TABLES[1],

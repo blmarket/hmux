@@ -32,8 +32,8 @@ use crate::format::{
     MODE_MOUSE_STANDARD, MODE_SYNC, MODE_WRAP,
 };
 use crate::grid::{
-    GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_FLAG_PADDING, grid_get_cell,
-    grid_get_line, grid_string_cells,
+    GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_FLAG_PADDING, grid_get_cell, grid_get_line,
+    grid_string_cells,
 };
 use crate::input::{
     GRID_LINE_START_OUTPUT, GRID_LINE_START_PROMPT, MODE_FOCUSON, input_parse_buffer,
@@ -641,6 +641,7 @@ fn osc_clipboard_write_stores_a_paste_buffer_when_allowed() {
     let mut p = Parser::new();
     unsafe {
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"set-clipboard", 2)
@@ -661,6 +662,7 @@ fn an_osc_52_query_is_refused_while_set_clipboard_is_off() {
     let mut p = Parser::answering();
     unsafe {
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"set-clipboard", 0)

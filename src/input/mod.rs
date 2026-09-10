@@ -4,8 +4,8 @@
 //! Everything below this module is private. What the rest of the crate may
 //! use is exactly what is re-exported here.
 
-mod keys;
-mod parser;
+pub(crate) mod keys;
+pub(crate) mod parser;
 
 pub use keys::{
     KeyEncoding, KeyInputEncoder, MouseInputEncoder, RustKeyInputEncoder, RustMouseInputEncoder,

@@ -23,9 +23,9 @@
 //! collection came out empty contributes nothing at all, newline included;
 //! and `-p` reads the client's flags without checking that there is a client.
 
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
-use crate::args::{args_strtonum_and_expand};
+use crate::args::args_parse_t;
+use crate::args::args_strtonum_and_expand;
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};

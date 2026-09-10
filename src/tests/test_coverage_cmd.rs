@@ -312,7 +312,7 @@ fn an_alias_entry_without_an_equals_sign_is_skipped() {
     let _guard = globals();
     unsafe {
         let store = crate::tmux::global_options
-            .as_ref()
+            .get()
             .expect("global options are initialized");
         let idx = store.with_entry_mut(c"command-alias", true, |entry| {
             let entry = entry.unwrap();
@@ -349,9 +349,9 @@ fn there_is_no_alias_at_all_when_the_option_is_not_there() {
         // an array it has not got. The global set is put back as it was.
         let saved = crate::tmux::global_options.take();
         let empty = RustOptionsEngine.create(None);
-        crate::tmux::global_options = Some(empty.clone());
+        crate::tmux::global_options.set(Some(empty.clone()));
         let answer = cmd_get_alias(c"splitp");
-        crate::tmux::global_options = saved;
+        crate::tmux::global_options.set(saved);
         RustOptionsEngine.destroy(empty);
 
         assert!(answer.is_none());

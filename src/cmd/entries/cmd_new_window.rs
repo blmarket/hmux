@@ -23,8 +23,8 @@
 //! below it, which needs one, then does nothing and hands back the target's
 //! own index. The conversion nulls that variable where the C's loop left it.
 
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
+use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item_weak_of;
 

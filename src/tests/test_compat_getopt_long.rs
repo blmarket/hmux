@@ -13,7 +13,9 @@ fn parser() -> MutexGuard<'static, ()> {
     let guard = PARSER
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    unsafe { BSDopterr = 0 };
+    {
+        BSDopterr.set(0)
+    };
     reset();
     guard
 }
@@ -22,11 +24,11 @@ fn parser() -> MutexGuard<'static, ()> {
 /// one, and the place inside the current argument is given up so that no
 /// run reads what the run before it left behind.
 fn reset() {
-    unsafe {
-        BSDoptind = 0;
-        BSDoptopt = '?' as c_int;
-        optarg = None;
-        place = None;
+    {
+        BSDoptind.set(0);
+        BSDoptopt.set('?' as c_int);
+        optarg.set(None);
+        place.set(None);
     }
 }
 
@@ -91,11 +93,11 @@ fn drive(args: &[&str], options: &CStr, long: &mut [option_t<'_>], flags: c_int)
         ));
         assert!(opts.len() < 32, "the parser is not making progress");
     }
-    unsafe {
+    {
         Run {
             opts,
-            optind: BSDoptind,
-            optopt: BSDoptopt,
+            optind: BSDoptind.get(),
+            optopt: BSDoptopt.get(),
             idx,
             argv: argv.now(),
         }
@@ -120,11 +122,11 @@ fn getopt(args: &[&str], options: &CStr) -> Run {
         ));
         assert!(opts.len() < 32, "the parser is not making progress");
     }
-    unsafe {
+    {
         Run {
             opts,
-            optind: BSDoptind,
-            optopt: BSDoptopt,
+            optind: BSDoptind.get(),
+            optopt: BSDoptopt.get(),
             idx: -1,
             argv: argv.now(),
         }
@@ -232,7 +234,9 @@ fn a_dash_at_the_end_of_a_group_ends_the_parse() {
 #[test]
 fn an_unknown_option_is_reported() {
     let _guard = parser();
-    unsafe { BSDopterr = 1 };
+    {
+        BSDopterr.set(1)
+    };
     let run = getopt(&["tmux", "-x", "-2"], c"2");
     assert_eq!(opts(&run), [('?', None), ('2', None)]);
     assert_eq!(run.optind, 3);
@@ -249,7 +253,9 @@ fn a_colon_is_never_an_option() {
 #[test]
 fn an_option_whose_argument_is_missing_is_reported() {
     let _guard = parser();
-    unsafe { BSDopterr = 1 };
+    {
+        BSDopterr.set(1)
+    };
     let run = getopt(&["tmux", "-f"], c"f:");
     assert_eq!(opts(&run), [('?', None)]);
     assert_eq!(run.optopt, 'f' as c_int);
@@ -262,7 +268,9 @@ fn an_option_whose_argument_is_missing_is_reported() {
 #[test]
 fn a_leading_colon_asks_for_quiet_reporting() {
     let _guard = parser();
-    unsafe { BSDopterr = 1 };
+    {
+        BSDopterr.set(1)
+    };
     let run = getopt(&["tmux", "-f"], c":f:");
     assert_eq!(opts(&run), [(':', None)]);
     assert_eq!(run.optopt, 'f' as c_int);
@@ -413,7 +421,9 @@ fn a_long_option_may_be_shortened_while_it_stays_the_only_one() {
 #[test]
 fn a_shortened_long_option_that_fits_two_is_refused() {
     let _guard = parser();
-    unsafe { BSDopterr = 1 };
+    {
+        BSDopterr.set(1)
+    };
     let mut table = [
         long(c"file", no_argument, 'f' as c_int),
         long(c"filter", no_argument, 'F' as c_int),
@@ -427,7 +437,9 @@ fn a_shortened_long_option_that_fits_two_is_refused() {
 #[test]
 fn a_long_option_that_takes_no_argument_refuses_one() {
     let _guard = parser();
-    unsafe { BSDopterr = 1 };
+    {
+        BSDopterr.set(1)
+    };
     let mut table = [long(c"quiet", no_argument, 'q' as c_int), end()];
     let run = drive(&["tmux", "--quiet=x"], c"q", &mut table, 0);
     assert_eq!(opts(&run), [('?', None)]);
@@ -439,7 +451,9 @@ fn a_long_option_that_takes_no_argument_refuses_one() {
 #[test]
 fn a_long_option_whose_argument_is_missing_is_reported() {
     let _guard = parser();
-    unsafe { BSDopterr = 1 };
+    {
+        BSDopterr.set(1)
+    };
     let mut table = [long(c"file", required_argument, 'f' as c_int), end()];
     let run = drive(&["tmux", "--file"], c"f:", &mut table, 0);
     assert_eq!(opts(&run), [('?', None)]);
@@ -451,7 +465,9 @@ fn a_long_option_whose_argument_is_missing_is_reported() {
 #[test]
 fn a_long_option_nobody_declared_is_reported() {
     let _guard = parser();
-    unsafe { BSDopterr = 1 };
+    {
+        BSDopterr.set(1)
+    };
     let mut table = [long(c"file", no_argument, 'f' as c_int), end()];
     let run = drive(&["tmux", "--zzz"], c"f", &mut table, 0);
     assert_eq!(opts(&run), [('?', None)]);
@@ -536,7 +552,9 @@ fn a_w_option_stands_for_a_long_option() {
         opts(&drive(&["tmux", "-Wfile=conf"], c"W;", &mut table, 0)),
         [('f', Some("conf"))]
     );
-    unsafe { BSDopterr = 1 };
+    {
+        BSDopterr.set(1)
+    };
     let run = drive(&["tmux", "-W"], c"W;", &mut table, 0);
     assert_eq!(opts(&run), [('?', None)]);
     assert_eq!(run.optopt, 'W' as c_int);

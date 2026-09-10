@@ -26,8 +26,6 @@ use ::std::fs::{self, DirBuilder};
 use ::std::io::{ErrorKind, Write};
 use ::std::os::unix::ffi::{OsStrExt, OsStringExt};
 use ::std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
-use ::std::sync::{LazyLock, OnceLock};
-use ::std::time::Instant;
 pub type nl_item_value = core::ffi::c_uint;
 pub const _NL_NUM: nl_item_value = 786449;
 pub const _NL_NUM_LC_IDENTIFICATION: nl_item_value = 786448;
@@ -434,10 +432,10 @@ pub const TMUX_SOCK_PERM: core::ffi::c_int = 7 as core::ffi::c_int;
 
 /// Initializes the server's owned option handles and starting environment.
 pub unsafe fn global_options_create() {
-    unsafe {
-        global_options = Some(RustOptionsEngine.create(None));
-        global_s_options = Some(RustOptionsEngine.create(None));
-        global_w_options = Some(RustOptionsEngine.create(None));
+    {
+        global_options.set(Some(RustOptionsEngine.create(None)));
+        global_s_options.set(Some(RustOptionsEngine.create(None)));
+        global_w_options.set(Some(RustOptionsEngine.create(None)));
 
         reset_global_environment();
     }
@@ -445,28 +443,28 @@ pub unsafe fn global_options_create() {
 
 /// Releases the server's option handles and starting environment.
 pub unsafe fn global_options_free() {
-    unsafe {
-        global_options = None;
-        global_s_options = None;
-        global_w_options = None;
+    {
+        global_options.set(None);
+        global_s_options.set(None);
+        global_w_options.set(None);
         reset_global_environment();
     }
 }
 
-pub static mut global_options: Option<RustOptionsRef> = None;
-pub static mut global_s_options: Option<RustOptionsRef> = None;
-pub static mut global_w_options: Option<RustOptionsRef> = None;
-pub static mut start_time: timeval = timeval {
-    tv_sec: 0,
-    tv_usec: 0,
-};
-/// The socket the client talks to the server over, which is what `-S` and
-/// `-L` between them decide.
-pub static mut socket_path: Option<CString> = None;
-pub static mut ptm_fd: core::ffi::c_int = -(1 as core::ffi::c_int);
-/// The command `-c` was given, which the client asks the server to run in a
-/// shell instead of attaching.
-pub static mut shell_command: Option<CString> = None;
+pub const global_options: crate::server_state::Value<Option<RustOptionsRef>> =
+    crate::server_state::Value::new(|state| &state.global_options);
+pub const global_s_options: crate::server_state::Value<Option<RustOptionsRef>> =
+    crate::server_state::Value::new(|state| &state.global_s_options);
+pub const global_w_options: crate::server_state::Value<Option<RustOptionsRef>> =
+    crate::server_state::Value::new(|state| &state.global_w_options);
+pub const start_time: crate::server_state::Value<timeval> =
+    crate::server_state::Value::new(|state| &state.start_time);
+pub const socket_path: crate::server_state::Value<Option<CString>> =
+    crate::server_state::Value::new(|state| &state.socket_path);
+pub const ptm_fd: crate::server_state::Value<core::ffi::c_int> =
+    crate::server_state::Value::new(|state| &state.ptm_fd);
+pub const shell_command: crate::server_state::Value<Option<CString>> =
+    crate::server_state::Value::new(|state| &state.shell_command);
 
 fn usage(status: core::ffi::c_int) -> ! {
     let message = [b"usage: ".as_slice(), getprogname().to_bytes(), b" [-2CDhlNuVv] [-c shell-command] [-f file] [-L socket-name]\n            [-S socket-path] [-T features] [command [flags]]\n"].concat();
@@ -557,7 +555,7 @@ fn expand_paths(s: &CStr, no_realpath: core::ffi::c_int) -> Vec<CString> {
         let mut paths: Vec<CString> = Vec::new();
         for next in s.to_bytes().split(|&byte| byte == b':') {
             let next = CString::new(next).expect("a C string has no interior NUL");
-            let Some(expanded) = expand_path(&next, home) else {
+            let Some(expanded) = expand_path(&next, home.as_deref()) else {
                 log_debug(
                     c"%s: invalid path: %s",
                     fmt_args![c"expand_paths", next.as_c_str()],
@@ -682,8 +680,7 @@ pub fn setblocking(fd: core::ffi::c_int, state: core::ffi::c_int) {
 }
 /// Milliseconds elapsed on a monotonic clock whose epoch is the first call.
 pub fn get_timer() -> uint64_t {
-    static START: LazyLock<Instant> = LazyLock::new(Instant::now);
-    START.elapsed().as_millis() as uint64_t
+    crate::server::server_proc.with(|state| state.timer_start.elapsed().as_millis() as uint64_t)
 }
 pub unsafe fn clean_name(name: &CStr, untrusted: core::ffi::c_int) -> Option<CString> {
     unsafe {
@@ -746,11 +743,10 @@ pub fn find_cwd() -> Option<CString> {
 }
 /// The home directory, from the environment or from the password file, kept
 /// once it has been worked out.
-pub fn find_home() -> Option<&'static CStr> {
-    unsafe {
-        static CACHED_HOME: OnceLock<CString> = OnceLock::new();
-        if let Some(home) = CACHED_HOME.get() {
-            return Some(home.as_c_str());
+pub fn find_home() -> Option<CString> {
+    crate::server::server_proc.with(|state| unsafe {
+        if let Some(home) = state.cached_home.get() {
+            return Some(home.clone());
         }
         let home = if let Some(home) =
             process_environment_value(c"HOME").filter(|home| !home.is_empty())
@@ -761,9 +757,10 @@ pub fn find_home() -> Option<&'static CStr> {
                 .account_home()?
                 .to_owned()
         };
-        Some(CACHED_HOME.get_or_init(|| home).as_c_str())
-    }
+        Some(state.cached_home.get_or_init(|| home).clone())
+    })
 }
+
 pub fn getversion() -> &'static CStr {
     c"3.7b"
 }
@@ -820,11 +817,11 @@ pub unsafe fn main_0(argv: &mut [CString]) -> core::ffi::c_int {
                     feat = RustTerminalFeatureSet.add(feat, c"256", c":,");
                 }
                 99 => {
-                    shell_command = Some(
+                    shell_command.set(Some(
                         BSDoptarg(argv)
                             .expect("this option requires an argument")
                             .to_owned(),
-                    );
+                    ));
                 }
                 68 => {
                     flags |= CLIENT_NOFORK as uint64_t;
@@ -899,16 +896,16 @@ pub unsafe fn main_0(argv: &mut [CString]) -> core::ffi::c_int {
                 }
             }
         }
-        argc -= BSDoptind;
-        let argv = &argv[BSDoptind as usize..];
-        if shell_command.is_some() && argc != 0 as core::ffi::c_int {
+        argc -= BSDoptind.get();
+        let argv = &argv[BSDoptind.get() as usize..];
+        if shell_command.get().is_some() && argc != 0 as core::ffi::c_int {
             usage(1 as core::ffi::c_int);
         }
         if flags & CLIENT_NOFORK as uint64_t != 0 && argc != 0 as core::ffi::c_int {
             usage(1 as core::ffi::c_int);
         }
-        ptm_fd = getptmfd();
-        if ptm_fd == -(1 as core::ffi::c_int) {
+        ptm_fd.set(getptmfd());
+        if ptm_fd.get() == -(1 as core::ffi::c_int) {
             err(1 as core::ffi::c_int, c"getptmfd".as_ptr());
         }
         if process_environment_value(c"TMUX").is_some() {
@@ -925,18 +922,21 @@ pub unsafe fn main_0(argv: &mut [CString]) -> core::ffi::c_int {
         for oe in RustOptionsEngine.table() {
             if oe.scope & OPTIONS_TABLE_SERVER != 0 {
                 (global_options
+                    .get()
                     .as_ref()
                     .expect("global options are initialized"))
                 .set_default(oe);
             }
             if oe.scope & OPTIONS_TABLE_SESSION != 0 {
                 (global_s_options
+                    .get()
                     .as_ref()
                     .expect("global options are initialized"))
                 .set_default(oe);
             }
             if oe.scope & OPTIONS_TABLE_WINDOW != 0 {
                 (global_w_options
+                    .get()
                     .as_ref()
                     .expect("global options are initialized"))
                 .set_default(oe);
@@ -944,6 +944,7 @@ pub unsafe fn main_0(argv: &mut [CString]) -> core::ffi::c_int {
         }
         let shell = getshell();
         (global_s_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_string(
@@ -956,6 +957,7 @@ pub unsafe fn main_0(argv: &mut [CString]) -> core::ffi::c_int {
             process_environment_value(c"VISUAL").or_else(|| process_environment_value(c"EDITOR"));
         if let Some(editor) = editor {
             (global_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .set_string(
@@ -975,10 +977,12 @@ pub unsafe fn main_0(argv: &mut [CString]) -> core::ffi::c_int {
                 keys = MODEKEY_EMACS;
             }
             (global_s_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .set_number(c"status-keys", keys as core::ffi::c_longlong);
             (global_w_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .set_number(c"mode-keys", keys as core::ffi::c_longlong);
@@ -1011,7 +1015,7 @@ pub unsafe fn main_0(argv: &mut [CString]) -> core::ffi::c_int {
             }
             flags |= CLIENT_DEFAULTSOCKET as uint64_t;
         }
-        socket_path = Some(path.expect("socket path was selected"));
+        socket_path.set(Some(path.expect("socket path was selected")));
         let status = client_main(osdep_event_init(), argv, flags, feat, config);
         crate::reactor::shutdown();
         std::process::exit(status);
@@ -1026,7 +1030,7 @@ pub const TMUX_CONF: &CStr =
 /// # Safety
 /// Run on the server thread without concurrent global-option replacement.
 pub(crate) unsafe fn global_session_options() -> Option<RustOptionsRef> {
-    unsafe { global_s_options.clone() }
+    global_s_options.get()
 }
 
 /// Retains the server, session and window global option contexts, in that order.
@@ -1034,11 +1038,11 @@ pub(crate) unsafe fn global_session_options() -> Option<RustOptionsRef> {
 /// # Safety
 /// Call on the server thread without concurrent global-context replacement.
 pub unsafe fn global_option_contexts() -> [Option<RustOptionsRef>; 3] {
-    unsafe {
+    {
         [
-            global_options.clone(),
-            global_s_options.clone(),
-            global_w_options.clone(),
+            global_options.get(),
+            global_s_options.get(),
+            global_w_options.get(),
         ]
     }
 }

@@ -1,9 +1,9 @@
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
 use crate::args::args_make_commands;
-use crate::cmd::cmd_make_commands_prepare;
+use crate::args::args_parse_t;
 use crate::cmd::cmd_find_from_nothing;
 use crate::cmd::cmd_get_args;
+use crate::cmd::cmd_make_commands_prepare;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{CmdqItemWeak, cmdq_append, cmdq_item_weak_of};
@@ -20,8 +20,7 @@ use crate::server::client_working_directory;
 use crate::status::status_message_for_client;
 use crate::types::{
     __suseconds_t, __time_t, ClientRef, JobEvent, SessionRef, Stream, TimerHandle, args,
-    args_command_state, args_parse_type, cmd_find_state, time_t, timeval, u_char,
-    u_int,
+    args_command_state, args_parse_type, cmd_find_state, time_t, timeval, u_char, u_int,
 };
 use crate::window::window_pane_find_by_id;
 use crate::xmalloc::xasprintf;
@@ -86,7 +85,8 @@ fn cmd_run_shell_args_parse(
     if ({
         let flag = 'C' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         return ARGS_PARSE_COMMANDS_OR_STRING;
     }
     ARGS_PARSE_STRING
@@ -153,7 +153,8 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'C' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) == 0 {
+    }) == 0
+    {
         let cmd = args.argument_string(0);
         if let Some(cmd) = cmd {
             let mut ft = unsafe { format_create_from_target(item) };
@@ -185,7 +186,8 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 't' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         cdata.wp_id = target_pane_id.map_or(-1, |id| id as core::ffi::c_int);
     } else {
         cdata.wp_id = -(1 as core::ffi::c_int);
@@ -213,7 +215,8 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'E' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         cdata.flags |= JOB_SHOWSTDERR;
     }
     cdata.session_ref = target_session;

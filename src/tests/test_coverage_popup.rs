@@ -380,6 +380,7 @@ fn popup_editor_declines_when_no_editor_is_configured() {
     let _guard = globals();
     unsafe {
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_string(c"editor", 0, c"%s", fmt_args![c"".as_ptr()]);
@@ -390,6 +391,7 @@ fn popup_editor_declines_when_no_editor_is_configured() {
             Box::new(|_| unreachable!("an editor-less popup cannot complete")),
         );
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_string(c"editor", 0, c"%s", fmt_args![c"/usr/bin/vi".as_ptr()]);

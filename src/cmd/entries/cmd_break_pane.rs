@@ -30,7 +30,7 @@ use crate::consts::{
     CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
 use crate::tmux::check_name;
-use crate::types::{OptionsRef};
+use crate::types::OptionsRef;
 #[cfg(test)]
 use crate::types::{SessionRef, WindowRef, cmd_find_state, u_int, winlink};
 use crate::window::WinlinkRef;
@@ -156,7 +156,9 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
         unsafe { window.finish_broken_pane_layout(&source_pane) };
         if index == -1 {
-            { index = (-1 - destination.options().number(c"base-index")) as c_int };
+            {
+                index = (-1 - destination.options().number(c"base-index")) as c_int
+            };
         }
         let mut cause = None;
         unsafe {

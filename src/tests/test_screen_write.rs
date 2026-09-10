@@ -1633,12 +1633,14 @@ fn a_reset_turns_on_extended_keys_when_the_option_asks() {
     let mut w = Writer::new(4, 2, 100);
     unsafe {
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"extended-keys", 2);
         screen_write_reset(&mut w.ctx());
         assert_eq!(w.screen().mode() & MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED);
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"extended-keys", 0);
@@ -1778,16 +1780,19 @@ fn a_variation_selector_widens_nothing_when_asked_not_to() {
     unsafe {
         let name = c"variation-selector-always-wide".as_ptr();
         let before = (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(CStr::from_ptr(name));
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(CStr::from_ptr(name), 0);
         w.puts("a");
         screen_write_cell(&mut w.ctx(), &vs);
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(CStr::from_ptr(name), before);
@@ -2076,32 +2081,25 @@ fn collected_item_pool_never_allocates_the_sentinel_or_wraps() {
 }
 
 #[test]
-fn collected_item_pool_serializes_concurrent_allocations_and_keeps_snapshots() {
-    let threads: Vec<_> = (0..8)
-        .map(|owner| {
-            std::thread::spawn(move || {
-                let mut items = Vec::new();
-                for sequence in 0..64 {
-                    let ci = screen_write_get_citem();
-                    with_citem(ci, |item| {
-                        item.x = owner;
-                        item.used = sequence;
-                    });
-                    items.push((ci, owner, sequence));
-                }
-                items
-            })
-        })
-        .collect();
+fn collected_item_pool_allocates_unique_ids_and_keeps_snapshots() {
+    let mut items = Vec::new();
+    for owner in 0..8 {
+        for sequence in 0..64 {
+            let ci = screen_write_get_citem();
+            with_citem(ci, |item| {
+                item.x = owner;
+                item.used = sequence;
+            });
+            items.push((ci, owner, sequence));
+        }
+    }
     let mut ids = std::collections::BTreeSet::new();
     let mut live = Vec::new();
-    for thread in threads {
-        for (ci, owner, sequence) in thread.join().unwrap() {
-            assert!(ids.insert(ci));
-            let snapshot = citem_snapshot(ci);
-            assert_eq!((snapshot.x, snapshot.used), (owner, sequence));
-            live.push(ci);
-        }
+    for (ci, owner, sequence) in items {
+        assert!(ids.insert(ci));
+        let snapshot = citem_snapshot(ci);
+        assert_eq!((snapshot.x, snapshot.used), (owner, sequence));
+        live.push(ci);
     }
     citem_free_all(&mut live);
     assert!(live.is_empty());

@@ -23,12 +23,16 @@ fn state() -> format_expand_state {
 }
 
 fn clear_cached_jobs(_ft: &format_tree) -> Option<CString> {
+    let format_jobs = format_jobs_FIELD.get();
+
     format_jobs.map().clear();
     Some(c"rendered".to_owned())
 }
 
 #[test]
 fn cached_job_output_can_clear_the_cache_during_expansion() {
+    let format_jobs = format_jobs_FIELD.get();
+
     let _guard = globals();
     let mut ft = Format::new();
     format_add_cb(ft.tree(), c"clear_cache", Some(clear_cached_jobs));
@@ -54,6 +58,8 @@ fn cached_job_output_can_clear_the_cache_during_expansion() {
 
 #[test]
 fn a_job_removed_during_command_expansion_is_not_reused() {
+    let format_jobs = format_jobs_FIELD.get();
+
     let _guard = globals();
     let mut ft = Format::new();
     format_add_cb(ft.tree(), c"clear_cache", Some(clear_cached_jobs));

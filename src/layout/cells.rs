@@ -1,6 +1,6 @@
+use crate::WindowPane;
 use crate::args::RustArguments;
 use crate::cmd::cmdq_item;
-use crate::WindowPane;
 use crate::window_scrollbar::WindowScrollbarState;
 
 use crate::window_dimensions::WindowDimensionsState;
@@ -178,13 +178,7 @@ pub fn layout_search_by_border(lc: &layout_cell, x: u_int, y: u_int) -> Option<L
     None
 }
 
-pub fn layout_set_size(
-    lc: &mut layout_cell,
-    sx: u_int,
-    sy: u_int,
-    xoff: c_int,
-    yoff: c_int,
-) {
+pub fn layout_set_size(lc: &mut layout_cell, sx: u_int, sy: u_int, xoff: c_int, yoff: c_int) {
     {
         lc.sx = sx;
         lc.sy = sy;
@@ -1498,13 +1492,7 @@ impl WindowRef {
     }
     /// A cell that floats over the layout at (ox, oy), under a node made for the
     /// purpose when the window is still one pane.
-    pub fn float_pane_layout(
-        &self,
-        sx: u_int,
-        sy: u_int,
-        ox: c_int,
-        oy: c_int,
-    ) -> LayoutCellPath {
+    pub fn float_pane_layout(&self, sx: u_int, sy: u_int, ox: c_int, oy: c_int) -> LayoutCellPath {
         let owner = self;
 
         {

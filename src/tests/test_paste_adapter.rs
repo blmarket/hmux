@@ -54,15 +54,18 @@ fn the_server_adapter_reads_the_live_buffer_limit() {
     let _guard = globals();
     unsafe {
         let before = (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .number(c"buffer-limit");
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"buffer-limit", 17);
         assert_eq!(paste_buffer_limit(), 17);
         (global_options
+            .get()
             .as_ref()
             .expect("global options are initialized"))
         .set_number(c"buffer-limit", before);

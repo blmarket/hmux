@@ -1335,7 +1335,7 @@ unsafe fn screen_redraw_draw_borders_cell(ctx: &mut screen_redraw_ctx, i: u_int,
             && cell_type != CELL_OUTSIDE as u_int
         {
             screen_redraw_draw_borders_style(ctx, x, y, pane, &mut gc);
-            let marked = marked_pane.pane_ref();
+            let marked = marked_pane.get().pane_ref();
             if server_is_marked(
                 Some(session.as_session()),
                 session

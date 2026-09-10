@@ -23,12 +23,10 @@ use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc, format_bytes};
 pub use crate::types::*;
 use ::core::ffi::{CStr, c_int};
-use ::core::sync::atomic::{AtomicI32, Ordering};
 use ::std::ffi::{CString, OsStr};
 use ::std::fs::{File, OpenOptions};
 use ::std::io::Write;
 use ::std::os::unix::ffi::OsStrExt;
-use ::std::sync::Mutex;
 
 pub use crate::consts::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 
@@ -37,30 +35,35 @@ pub use crate::consts::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 /// included, so that one message stays one line.
 const ESCAPING: c_int = VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL;
 
-/// The owned log stream, or nothing, serialized with writes and reopening.
-static log_file: Mutex<Option<File>> = Mutex::new(None);
+const log_file_FIELD: crate::server_state::LocalField<
+    std::rc::Rc<std::cell::RefCell<Option<File>>>,
+> = crate::server_state::LocalField::new(|state| &state.log_file);
 
-/// How much is logged: nothing at all at zero, everything above it. Only the
-/// guards in front of the calls that build a message read it past that, so the
-/// levels above one are the callers' to tell apart.
-static log_level: AtomicI32 = AtomicI32::new(0);
+const log_level: crate::server_state::LocalField<std::cell::Cell<i32>> =
+    crate::server_state::LocalField::new(|state| &state.log_level);
 
 pub fn log_add_level() {
-    log_level.fetch_add(1, Ordering::Relaxed);
+    log_level.with(|counter| {
+        let previous = counter.get();
+        counter.set(previous.wrapping_add(1));
+        previous
+    });
 }
 
 pub fn log_get_level() -> c_int {
-    log_level.load(Ordering::Relaxed)
+    log_level.try_with(std::cell::Cell::get).unwrap_or(0)
 }
 
 /// Opens the log for `name`, in a file named after it and this process. A level
 /// of zero opens nothing, and a file that would not open leaves the log closed
 /// without saying so.
 pub fn log_open(name: &CStr) {
-    if log_level.load(Ordering::Relaxed) == 0 {
+    let log_file = log_file_FIELD.get();
+
+    if log_level.get() == 0 {
         return;
     }
-    let mut active = log_file.lock().unwrap_or_else(|error| error.into_inner());
+    let mut active = log_file.borrow_mut();
     drop(active.take());
     let mut path = b"tmux-".to_vec();
     path.extend_from_slice(name.to_bytes());
@@ -75,19 +78,21 @@ pub fn log_open(name: &CStr) {
 /// Turns the log on if it is off and off if it is on, writing the change into
 /// the log itself on either side of it.
 pub fn log_toggle(name: &CStr) {
-    if log_level.load(Ordering::Relaxed) == 0 {
-        log_level.store(1, Ordering::Relaxed);
+    if log_level.get() == 0 {
+        log_level.set(1);
         log_open(name);
         log_debug(c"log opened", fmt_args![]);
     } else {
         log_debug(c"log closed", fmt_args![]);
-        log_level.store(0, Ordering::Relaxed);
+        log_level.set(0);
         log_close();
     }
 }
 
 pub fn log_close() {
-    let mut active = log_file.lock().unwrap_or_else(|error| error.into_inner());
+    let log_file = log_file_FIELD.get();
+
+    let mut active = log_file.borrow_mut();
     drop(active.take());
 }
 
@@ -95,7 +100,11 @@ pub fn log_close() {
 /// `ap` and escaped. Nothing is written if there is no log open, if the
 /// message could not be built or if it could not be escaped.
 fn log_vwrite(msg: &CStr, args: &[FmtArg], prefix: &CStr) {
-    let mut active = log_file.lock().unwrap_or_else(|error| error.into_inner());
+    let Ok(log_file) = log_file_FIELD.try_with(std::rc::Rc::clone) else {
+        return;
+    };
+
+    let mut active = log_file.borrow_mut();
     let Some(file) = active.as_mut() else {
         return;
     };

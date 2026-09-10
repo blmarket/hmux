@@ -567,7 +567,7 @@ pub fn grid_remove_history(gd: &mut grid, ny: u_int) {
 
 /// Scroll the whole screen, moving its top line into the history.
 pub fn grid_scroll_history(gd: &mut grid, bg: u_int) {
-    unsafe {
+    {
         let yy = gd.hsize + gd.sy;
         gd.linedata.push(grid_line::new());
         grid_empty_line(gd, yy, bg);
@@ -575,7 +575,7 @@ pub fn grid_scroll_history(gd: &mut grid, bg: u_int) {
         let hsize = gd.hsize;
         let gl = line_at_mut(gd, hsize);
         grid_compact_line(gl);
-        gl.time = current_time;
+        gl.time = current_time.get();
         gd.hsize += 1;
     }
 }
@@ -589,7 +589,7 @@ pub fn grid_clear_history(gd: &mut grid) {
 
 /// Scroll one region of the screen up, moving its top line into the history.
 pub fn grid_scroll_history_region(gd: &mut grid, upper: u_int, lower: u_int, bg: u_int) {
-    unsafe {
+    {
         /* Create a space for a new line. */
         gd.linedata.push(grid_line::new());
 
@@ -604,7 +604,7 @@ pub fn grid_scroll_history_region(gd: &mut grid, upper: u_int, lower: u_int, bg:
         /* Move the line into the history. */
         let promoted = std::mem::take(&mut gd.linedata[upper]);
         gd.linedata[history] = promoted;
-        gd.linedata[history].time = current_time;
+        gd.linedata[history].time = current_time.get();
 
         /* Then move the region up and clear the bottom line. */
         gd.linedata[upper..=lower].rotate_left(1);

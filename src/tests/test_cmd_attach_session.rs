@@ -1,7 +1,7 @@
 use super::*;
-use crate::types::client;
-use crate::proc::tmuxpeer;
 use crate::cfg::{cfg_print_causes, replace_configuration_finished};
+use crate::proc::tmuxpeer;
+use crate::types::client;
 
 use crate::environ::new_environment_box;
 use crate::key_bindings::{key_bindings_get_table_ref, key_bindings_remove_table};

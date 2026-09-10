@@ -56,13 +56,11 @@ pub const ALERT_CURRENT: c_int = 2;
 
 pub const VISUAL_BOTH: c_int = 2;
 
-/// Whether a deferred check is already asked for, so that a burst of alerts
-/// asks ensure_reactor for one callback and not one each.
-static mut alerts_fired: c_int = 0;
+const alerts_fired: crate::server_state::Value<c_int> =
+    crate::server_state::Value::new(|state| &state.alerts_fired);
 
-/// The windows waiting for that check, in the order they were queued. Strong
-/// handles keep them alive until the deferred callback drains the queue.
-static alerts_list: GlobalQueue<WindowRef> = GlobalQueue::new();
+const alerts_list_FIELD: crate::server_state::LocalField<std::rc::Rc<GlobalQueue<WindowRef>>> =
+    crate::server_state::LocalField::new(|state| &state.alerts_list);
 
 /// One alert family: the window flag that records it and the winlink flag that
 /// marks a session's copy of the window, the options that say whether anyone
@@ -124,6 +122,8 @@ fn showing(w: &WindowRef) -> impl Iterator<Item = crate::window::WinlinkRef> {
 /// the next alert asks for a fresh callback. Dropping each queued handle at the
 /// end of the callback releases the queue's ownership.
 unsafe fn alerts_callback() {
+    let alerts_list = alerts_list_FIELD.get();
+
     unsafe {
         let mut queued = core::mem::take(&mut *alerts_list.queue());
         while let Some(w_ref) = queued.pop_front() {
@@ -134,7 +134,7 @@ unsafe fn alerts_callback() {
             );
             w_ref.finish_alerts();
         }
-        alerts_fired = 0;
+        alerts_fired.set(0);
     }
 }
 
@@ -346,6 +346,8 @@ impl WindowRef {
     /// Records `flags` on `w` and, if anyone is watching any of them, puts the
     /// window on the queue the deferred check drains.
     pub unsafe fn raise_alerts(&self, flags: c_int) {
+        let alerts_list = alerts_list_FIELD.get();
+
         let w = self;
 
         unsafe {
@@ -363,10 +365,10 @@ impl WindowRef {
                     alerts_list.queue().push_back(w.clone());
                 }
 
-                if alerts_fired == 0 {
+                if alerts_fired.get() == 0 {
                     log_debug(c"alerts check queued (by @%u)", fmt_args![w.window_id()]);
                     reactor::current().defer(|| alerts_callback());
-                    alerts_fired = 1;
+                    alerts_fired.set(1);
                 }
             }
         }

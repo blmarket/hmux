@@ -12,24 +12,24 @@
 //! Rendering is owned by the overlay subsystem; this command chooses delay,
 //! key handling and whether the queue waits for selection.
 
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
+use crate::args::args_parse_t;
 use crate::args::{args_make_commands, args_strtonum};
-use crate::cmd::cmd_make_commands_prepare;
 use crate::cmd::CmdqItemRef;
 use crate::cmd::cmd_get_args;
+use crate::cmd::cmd_make_commands_prepare;
 use crate::cmd::{CmdqItemWeak, cmdq_append, cmdq_item_weak_of};
 use crate::fmt_args;
 
 use crate::server::client_set_overlay;
 
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
     ARGS_PARSE_COMMANDS_OR_STRING, CMD_AFTERHOOK, CMD_CLIENT_TFLAG, CMD_FIND_PANE,
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_WAIT, KEYC_MASK_KEY, KEYC_MASK_MODIFIERS,
     UINT_MAX,
 };
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
 use crate::types::{
     ClientRef, OptionsRef, Overlay, OverlayState, SessionRef, args, args_command_state,
     args_parse_type, key_code, key_event, u_int,

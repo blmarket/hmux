@@ -3,7 +3,7 @@
 //! Everything below this module is private. What the rest of the crate may
 //! use is exactly what is re-exported here.
 
-mod expand;
+pub(crate) mod expand;
 
 pub use crate::screen::{format_trim_left, format_trim_right, format_width};
 pub use expand::{

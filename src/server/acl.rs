@@ -1,5 +1,5 @@
-use crate::cmd::cmdq_item;
 use super::run::client_walk;
+use crate::cmd::cmdq_item;
 
 use crate::ffi::getuid;
 use crate::fmt_args;
@@ -7,7 +7,6 @@ use crate::fmt_args;
 pub use crate::types::*;
 use crate::{UserAccount, UserAccountRecord};
 use std::collections::BTreeMap;
-use std::sync::Mutex;
 /// Access granted to one user by a server ACL.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServerAclAccess {
@@ -55,7 +54,7 @@ impl RustServerAclStore {
         Self::empty()
     }
 
-    const fn empty() -> Self {
+    pub(crate) const fn empty() -> Self {
         Self {
             entries: BTreeMap::new(),
         }
@@ -100,19 +99,21 @@ impl ServerAclStore for RustServerAclStore {
 }
 
 pub use crate::consts::CLIENT_READONLY;
-static SERVER_ACL: Mutex<RustServerAclStore> = Mutex::new(RustServerAclStore::empty());
+const SERVER_ACL_FIELD: crate::server_state::LocalField<
+    std::rc::Rc<std::cell::RefCell<RustServerAclStore>>,
+> = crate::server_state::LocalField::new(|state| &state.server_acl);
 
 pub(crate) fn with_server_acl<R>(read: impl FnOnce(&RustServerAclStore) -> R) -> R {
-    let acl = SERVER_ACL
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let SERVER_ACL = SERVER_ACL_FIELD.get();
+
+    let acl = SERVER_ACL.borrow_mut();
     read(&acl)
 }
 
 pub(crate) fn with_server_acl_mut<R>(mutate: impl FnOnce(&mut RustServerAclStore) -> R) -> R {
-    let mut acl = SERVER_ACL
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let SERVER_ACL = SERVER_ACL_FIELD.get();
+
+    let mut acl = SERVER_ACL.borrow_mut();
     mutate(&mut acl)
 }
 

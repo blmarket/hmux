@@ -34,7 +34,7 @@ use crate::fmt_args;
 use crate::format::{
     format_add, format_create_for_client, format_defaults_for_link_pane, format_expand, format_true,
 };
-use crate::session::SESSIONS;
+use crate::session::SESSIONS_FIELD;
 use crate::sort::{RustSortCriteria, SortCriteria};
 use crate::types::{SessionRef, format_tree, u_int};
 use crate::window::{WinlinkRef, winlinks_in};
@@ -138,6 +138,8 @@ unsafe fn cmd_list_panes_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 
 unsafe fn cmd_list_panes_server(self_0: &cmd, item: &cmdq_item) {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     unsafe {
         for s in SESSIONS.read().values() {
             cmd_list_panes_session(self_0, s, item, Level::Server);

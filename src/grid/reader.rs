@@ -1,7 +1,6 @@
 use super::store::{
-    grid_create, grid_default_cell, grid_get_cell, grid_get_line, grid_in_set,
-    grid_line_length, grid_peek_line, grid_set_cell, grid_set_cells, grid_set_padding,
-    grid_set_tab,
+    grid_create, grid_default_cell, grid_get_cell, grid_get_line, grid_in_set, grid_line_length,
+    grid_peek_line, grid_set_cell, grid_set_cells, grid_set_padding, grid_set_tab,
 };
 pub use crate::consts::{GRID_FLAG_PADDING, GRID_FLAG_TAB, GRID_LINE_WRAPPED};
 pub use crate::types::*;

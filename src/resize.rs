@@ -9,7 +9,7 @@ use crate::notify::notify_window;
 
 use crate::server::{client_walk, with_clients};
 
-use crate::session::SESSIONS;
+use crate::session::SESSIONS_FIELD;
 use crate::status::status_line_size;
 use crate::tmux::global_w_options;
 
@@ -309,6 +309,7 @@ pub unsafe fn default_window_size(
         let (mut sx, mut sy, xpixel, ypixel);
         if type_0 == -1 {
             type_0 = (global_w_options
+                .get()
                 .as_ref()
                 .expect("global options are initialized"))
             .number(c"window-size") as c_int;
@@ -382,6 +383,8 @@ pub fn recalculate_sizes() {
 /// Recalculates every window's size, first counting how many clients each
 /// session has attached and deciding which clients have room for a status line.
 pub fn recalculate_sizes_now(now: c_int) {
+    let SESSIONS = SESSIONS_FIELD.get();
+
     WINDOWS.with(|windows| unsafe {
         for s_ref in SESSIONS.read().values() {
             s_ref.clear_attached();

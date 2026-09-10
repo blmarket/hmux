@@ -1,7 +1,7 @@
 //! The complete boundary for option storage and its live-server adapters.
 
-use crate::cmd::CmdListRef;
 use super::{RustOptionsRef, store};
+use crate::cmd::CmdListRef;
 use crate::types::*;
 use core::ffi::{CStr, c_int, c_longlong};
 use std::ffi::CString;
@@ -247,7 +247,12 @@ impl OptionsEngine for RustOptionsEngine {
     ) -> c_int {
         unsafe {
             store::options_scope_from_name(
-                crate::RustArguments::from_ref(args), window, name, fs, oo, cause,
+                crate::RustArguments::from_ref(args),
+                window,
+                name,
+                fs,
+                oo,
+                cause,
             )
         }
     }
@@ -261,7 +266,11 @@ impl OptionsEngine for RustOptionsEngine {
     ) -> c_int {
         unsafe {
             store::options_scope_from_flags(
-                crate::RustArguments::from_ref(args), window, fs, oo, cause,
+                crate::RustArguments::from_ref(args),
+                window,
+                fs,
+                oo,
+                cause,
             )
         }
     }

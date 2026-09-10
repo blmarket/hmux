@@ -1,5 +1,5 @@
-use crate::args::args_parse_t;
 use crate::args::RustArguments;
+use crate::args::args_parse_t;
 use crate::cfg::{cfg_show_causes_for_session, configuration_finished};
 use crate::cmd::cmd_find_from_session_ref;
 use crate::cmd::cmdq_item_weak_of;
@@ -28,8 +28,8 @@ use crate::spawn::spawn_window;
 use crate::tmux::global_session_options;
 use crate::tmux::{check_name, clean_name};
 use crate::types::{
-    ClientRef, OptionsRef, SessionRef, cmd_find_state, spawn_context, termios,
-    u_char, u_int, uint64_t,
+    ClientRef, OptionsRef, SessionRef, cmd_find_state, spawn_context, termios, u_char, u_int,
+    uint64_t,
 };
 use ::std::ffi::{CStr, CString};
 
@@ -140,10 +140,11 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         let flag = 't' as i32 as u_char;
         args.argument_flag_count(flag)
     }) != 0
-        && (count != 0 as u_int || ({
-            let flag = 'n' as i32 as u_char;
-            args.argument_flag_count(flag)
-        }) != 0)
+        && (count != 0 as u_int
+            || ({
+                let flag = 'n' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) != 0)
     {
         unsafe { item.error(c"command or window name given with target", fmt_args![]) };
         return CMD_RETURN_ERROR;
@@ -186,7 +187,8 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         if ({
             let flag = 'A' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) != 0 {
+        }) != 0
+        {
             let attach_session = if let Some(sname) = sname.as_ref() {
                 SessionRef::find(sname)
             } else {
@@ -385,7 +387,8 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                     if ({
                                         let flag = 'x' as i32 as u_char;
                                         args.argument_flag_count(flag)
-                                    }) != 0 {
+                                    }) != 0
+                                    {
                                         let tmp = {
                                             let flag = 'x' as i32 as u_char;
                                             args.argument_flag_string(flag)
@@ -427,7 +430,8 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                             if ({
                                                 let flag = 'y' as i32 as u_char;
                                                 args.argument_flag_count(flag)
-                                            }) != 0 {
+                                            }) != 0
+                                            {
                                                 let tmp = {
                                                     let flag = 'y' as i32 as u_char;
                                                     args.argument_flag_string(flag)
@@ -509,16 +513,14 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                             if ({
                                                                 let flag = 'x' as i32 as u_char;
                                                                 args.argument_flag_count(flag)
-                                                            })
-                                                                != 0
+                                                            }) != 0
                                                             {
                                                                 sx = dsx;
                                                             }
                                                             if ({
                                                                 let flag = 'y' as i32 as u_char;
                                                                 args.argument_flag_count(flag)
-                                                            })
-                                                                != 0
+                                                            }) != 0
                                                             {
                                                                 sy = dsy;
                                                             }
@@ -584,12 +586,10 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                         )
                                                         };
                                                     }
-                                                    for av in
-                                                        {
-                                                            let flag = 'e' as i32 as u_char;
-                                                            args.argument_flag_values(flag)
-                                                        }
-                                                    {
+                                                    for av in {
+                                                        let flag = 'e' as i32 as u_char;
+                                                        args.argument_flag_values(flag)
+                                                    } {
                                                         env.as_deref_mut()
                                                             .unwrap()
                                                             .put(av.string(), 0);
@@ -668,8 +668,7 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                             if ({
                                                                 let flag = 'f' as i32 as u_char;
                                                                 args.argument_flag_count(flag)
-                                                            })
-                                                                != 0
+                                                            }) != 0
                                                                 && let Some(fflag) = {
                                                                     let flag = 'f' as i32 as u_char;
                                                                     args.argument_flag_string(flag)
