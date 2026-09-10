@@ -210,7 +210,7 @@ impl PaneWriter {
         screen_write_ctx::new(&mut self.state, self.pane.base_mut())
     }
 
-    fn wp(&mut self) -> *mut window_pane {
+    fn wp(&mut self) -> *mut (dyn crate::WindowPane + 'static) {
         self.pane.ptr()
     }
 
@@ -275,7 +275,7 @@ struct Floating {
 
 impl Floating {
     fn over(
-        under: *mut window_pane,
+        under: *mut (dyn crate::WindowPane + 'static),
         w: *mut window,
         xoff: c_int,
         yoff: c_int,

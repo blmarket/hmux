@@ -34,7 +34,7 @@ mod tests {
 
     #[test]
     fn move_and_resize_preserve_the_other_half() {
-        let mut state = crate::types::window_pane::default();
+        let mut state = crate::tests::test_fixtures::PaneAllocation::default();
         state.set_geometry(PaneGeometry {
             xoff: -3,
             yoff: 4,

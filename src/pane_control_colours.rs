@@ -29,7 +29,7 @@ mod tests {
 
     #[test]
     fn both_colours_are_replaced_and_cleared_together() {
-        let mut state = crate::types::window_pane::default();
+        let mut state = crate::tests::test_fixtures::PaneAllocation::default();
         assert_eq!(state.colours(), PaneControlColourPair::default());
         state.set_colours(PaneControlColourPair {
             control_fg: Some(3),
@@ -42,7 +42,7 @@ mod tests {
                 control_bg: Some(4),
             }
         );
-        state.clear();
+        PaneControlColours::clear(&mut *state);
         assert_eq!(state.colours(), PaneControlColourPair::default());
     }
 }

@@ -53,7 +53,7 @@ use crate::terminfo::{tty_acs_double_borders, tty_acs_heavy_borders};
 use crate::tests::test_fixtures::{Pane, Session, Window, globals, link, unlink, zeroed_client};
 use crate::types::{
     ClientRef, client, grid_cell, layout_cell, screen_redraw_ctx, u_char, u_int, u_short,
-    utf8_data, visible_range, visible_ranges, window, window_pane, winlink,
+    utf8_data, visible_range, visible_ranges, window, winlink,
 };
 use ::core::ffi::c_int;
 use ::core::ptr::null_mut;
@@ -120,7 +120,7 @@ impl Pair {
         self.window.ptr()
     }
 
-    fn wp(&mut self, i: usize) -> *mut window_pane {
+    fn wp(&mut self, i: usize) -> *mut (dyn crate::WindowPane + 'static) {
         self.panes[i].ptr()
     }
 }
@@ -168,7 +168,7 @@ impl Viewed {
         self.pair.w()
     }
 
-    fn wp(&mut self, i: usize) -> *mut window_pane {
+    fn wp(&mut self, i: usize) -> *mut (dyn crate::WindowPane + 'static) {
         self.pair.wp(i)
     }
 

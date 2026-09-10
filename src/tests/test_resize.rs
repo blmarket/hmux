@@ -58,7 +58,7 @@ impl Win {
         self.window.handle()
     }
 
-    fn pane(&mut self, i: usize) -> *mut window_pane {
+    fn pane(&mut self, i: usize) -> *mut (dyn crate::WindowPane + 'static) {
         self.panes[i].ptr()
     }
 

@@ -73,7 +73,7 @@ fn layout_make_leaf_and_node_round_trip() {
         layout_make_leaf(&mut *lc, &mut *p.ptr());
         assert_eq!((*lc).type_0, LAYOUT_WINDOWPANE);
         assert!(
-            layout_cell_pane(&*lc).is_some_and(|pane| core::ptr::addr_eq(pane.as_ptr(), p.ptr()))
+            layout_cell_pane(&*lc).is_some_and(|pane| (*p.ptr()).observation().as_ref() == Some(&pane))
         );
         assert_eq!(
             (*lc).wp.as_ref().map(|pane| pane.id()),

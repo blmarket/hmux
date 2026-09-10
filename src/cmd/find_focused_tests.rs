@@ -181,7 +181,7 @@ fn last_pane_target_only_resolves_the_first_history_reference() {
                     .into_iter()
                     .map(|id| {
                         crate::window::window_pane_find_by_id(id).unwrap_or_else(|| {
-                            RustWindowPaneRef::from_pane(Box::new(window_pane::default()))
+                            (crate::tests::test_fixtures::PaneAllocation::default()).into_owner()
                                 .downgrade()
                         })
                     })

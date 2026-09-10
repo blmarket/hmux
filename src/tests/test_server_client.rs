@@ -1249,13 +1249,13 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
         assert!(pane.get().is_none());
         assert_eq!(send(b'z' as key_code, b"missing pane"), CMD_RETURN_NORMAL);
         assert!(output.written().is_empty());
-        let mut payload = Box::new(window_pane::default());
+        let mut payload = crate::tests::test_fixtures::PaneAllocation::default();
         crate::PaneIdentity::set_pane_id(&mut *payload, 99);
         *payload.base_mut() = RustScreen::new_with_server_options(20, 6, 0);
         *payload.options_mut() = Some(pane_options);
         *payload.fd_mut() = 0;
         *payload.event_mut() = output.ptr();
-        let unregistered = RustWindowPaneRef::from_pane(payload);
+        let unregistered = (payload).into_owner();
         let observed = unregistered.downgrade();
         crate::window::window_panes_insert_tail(&mut window.as_window_mut(), unregistered);
         let mut unregistered = observed;
@@ -1405,7 +1405,7 @@ fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_pane
             sb: 0,
             sb_pos: PANE_SCROLLBARS_RIGHT,
         });
-        let mut payload = Box::new(window_pane::default());
+        let mut payload = crate::tests::test_fixtures::PaneAllocation::default();
         crate::PaneIdentity::set_pane_id(&mut *payload, 99);
         *payload.base_mut() = RustScreen::new_with_server_options(4, 2, 0);
         *payload.options_mut() = Some(pane.as_pane().options_ref().clone());
@@ -1415,7 +1415,7 @@ fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_pane
             sx: 4,
             sy: 2,
         });
-        let listed = RustWindowPaneRef::from_pane(payload);
+        let listed = (payload).into_owner();
         let observed = listed.downgrade();
         crate::window::window_panes_insert_tail(&mut window.as_window_mut(), listed);
         let mut listed = observed;

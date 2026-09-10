@@ -21,7 +21,7 @@ mod tests {
 
     #[test]
     fn replacement_reports_only_real_transitions() {
-        let mut state = crate::types::window_pane::default();
+        let mut state = crate::tests::test_fixtures::PaneAllocation::default();
         assert_eq!(state.theme(), THEME_UNKNOWN);
         assert!(!state.replace(THEME_UNKNOWN));
         assert!(state.replace(THEME_LIGHT));

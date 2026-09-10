@@ -206,9 +206,6 @@ fn target_registers_session_window_and_pane_under_globals() {
             (&*s).curw().unwrap(),
             fs.winlink_ref().unwrap().get().unwrap()
         ));
-        // zeroed helper produces a zeroed struct
-        let z: crate::types::window_pane = *Box::new(crate::types::window_pane::default());
-        assert_eq!(z.pane_id(), 0);
-        assert_eq!(*z.fd(), 0);
+
     }
 }

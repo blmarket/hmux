@@ -198,10 +198,8 @@ fn winlink_and_window_find_via_target() {
         );
         assert!(WindowRef::find_by_id(99999).is_none());
         assert_eq!(
-            window_pane_find_by_id((*target.pane(0)).pane_id())
-                .unwrap()
-                .as_mut_ptr(),
-            target.pane(0)
+            window_pane_find_by_id((*target.pane(0)).pane_id()),
+            (*target.pane(0)).observation()
         );
         assert!(window_pane_find_by_id(99999).is_none());
     }

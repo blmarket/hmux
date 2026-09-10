@@ -5,7 +5,7 @@ use crate::tests::test_fixtures::{Args, Item, Paste, StreamBuffer, Target, globa
 
 /// A pane the exec routine will write to: not exited, with its writes
 /// going to `bev`. The descriptor number is only ever read.
-unsafe fn attach(wp: *mut window_pane, bev: &StreamBuffer) {
+unsafe fn attach(wp: *mut (dyn crate::WindowPane + 'static), bev: &StreamBuffer) {
     unsafe {
         *(*wp).fd_mut() = 1000;
         *(*wp).event_mut() = bev.ptr();

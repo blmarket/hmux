@@ -180,15 +180,3 @@ pub trait WindowPane:
     /// Borrows the shown screen when the current mode has initialized it.
     fn try_screen_ref(&self) -> Option<crate::types::ScreenBorrow<'_>>;
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn assert_window_pane<T: WindowPane>() {}
-
-    #[test]
-    fn server_pane_implements_the_aggregate_contract() {
-        assert_window_pane::<crate::types::window_pane>();
-    }
-}

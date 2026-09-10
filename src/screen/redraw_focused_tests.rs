@@ -8,7 +8,7 @@ use crate::window_scrollbar::{WindowScrollbarSettings, WindowScrollbarState};
 use super::*;
 use crate::server::client_ref_of;
 use crate::tests::test_fixtures::{Pane, Session, Window, globals, link, unlink, zeroed_client};
-use crate::types::{ClientRef, client, window_pane, winlink};
+use crate::types::{ClientRef, client, winlink};
 use core::{ffi::c_int, ptr::null_mut};
 
 struct View {
@@ -19,7 +19,7 @@ struct View {
     wl: *mut winlink,
 }
 
-unsafe fn set_scrollbar_dimensions(wp: *mut window_pane, width: c_int, padding: c_int) {
+unsafe fn set_scrollbar_dimensions(wp: *mut (dyn crate::WindowPane + 'static), width: c_int, padding: c_int) {
     unsafe {
         let mut style = (*wp).scrollbar_style();
         style.width = width;
@@ -52,7 +52,7 @@ impl View {
         self.panes.len() - 1
     }
 
-    fn pane(&mut self, index: usize) -> *mut window_pane {
+    fn pane(&mut self, index: usize) -> *mut (dyn crate::WindowPane + 'static) {
         self.panes[index].ptr()
     }
 

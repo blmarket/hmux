@@ -101,7 +101,7 @@ impl Ctx {
         }
     }
 
-    fn wp(&mut self) -> *mut crate::types::window_pane {
+    fn wp(&mut self) -> *mut (dyn crate::WindowPane + 'static) {
         self.pane.ptr()
     }
 }

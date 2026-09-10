@@ -27,7 +27,7 @@ mod tests {
 
     #[test]
     fn entries_are_independent_and_clear_together() {
-        let mut cache = crate::types::window_pane::default();
+        let mut cache = crate::tests::test_fixtures::PaneAllocation::default();
         let normal = grid_cell {
             fg: 3,
             ..Default::default()
@@ -43,7 +43,7 @@ mod tests {
         assert!(cache.get(PaneBorderKind::Active).is_none());
         cache.insert(PaneBorderKind::Active, active);
         assert_eq!(cache.get(PaneBorderKind::Active).unwrap().bg, 4);
-        cache.clear();
+        PaneBorderCache::clear(&mut *cache);
         assert!(cache.get(PaneBorderKind::Normal).is_none());
         assert!(cache.get(PaneBorderKind::Active).is_none());
     }

@@ -98,7 +98,7 @@ impl Parser {
         }
     }
 
-    fn wp(&mut self) -> *mut window_pane {
+    fn wp(&mut self) -> *mut (dyn crate::WindowPane + 'static) {
         self.pane.ptr()
     }
 

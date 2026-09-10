@@ -15,7 +15,7 @@ fn blank_window() -> Box<window> {
     zeroed_window()
 }
 
-fn blank_pane() -> Box<window_pane> {
+fn blank_pane() -> crate::tests::test_fixtures::PaneAllocation {
     zeroed_pane()
 }
 
@@ -109,7 +109,7 @@ fn the_default_name_comes_from_the_active_pane_command() {
         argv: vec![arg0, arg1],
         ..Default::default()
     });
-    let pane = RustWindowPaneRef::new(p);
+    let pane = (p).into_owner().register_owner();
     w.active = Some(pane.downgrade());
     w.panes.push(pane);
     unsafe {
@@ -127,7 +127,7 @@ fn the_default_name_falls_back_to_the_pane_shell() {
         shell: Some(shell.to_owned()),
         ..Default::default()
     });
-    let pane = RustWindowPaneRef::new(p);
+    let pane = (p).into_owner().register_owner();
     w.active = Some(pane.downgrade());
     w.panes.push(pane);
     unsafe {
@@ -327,8 +327,8 @@ fn destroying_a_window_with_blank_panes_preserves_stdin() {
     let before = unsafe { libc::fcntl(libc::STDIN_FILENO, libc::F_GETFD) };
     assert!(before >= 0, "the child test has an open stdin");
     let mut window = blank_window();
-    window.panes.push(RustWindowPaneRef::new(blank_pane()));
-    window.panes.push(RustWindowPaneRef::new(blank_pane()));
+    window.panes.push((blank_pane()).into_owner().register_owner());
+    window.panes.push((blank_pane()).into_owner().register_owner());
     drop(WindowRef::new(*window));
     assert_eq!(
         unsafe { libc::fcntl(libc::STDIN_FILENO, libc::F_GETFD) },

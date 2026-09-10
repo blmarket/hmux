@@ -26,7 +26,7 @@ mod tests {
 
     #[test]
     fn a_search_is_replaced_matched_and_cleared_as_one_value() {
-        let mut state = crate::types::window_pane::default();
+        let mut state = crate::tests::test_fixtures::PaneAllocation::default();
         assert_eq!(state.query(), None);
         assert!(!state.is_regex());
         assert!(!state.matches(c"first", false));
@@ -39,7 +39,7 @@ mod tests {
         state.set(c"s[ée]cond", true);
         assert_eq!(state.query(), Some(c"s[ée]cond"));
         assert!(state.is_regex());
-        state.clear();
+        PaneSearchState::clear(&mut *state);
         assert_eq!(state.query(), None);
         assert!(!state.is_regex());
     }

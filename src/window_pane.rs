@@ -23,7 +23,7 @@ use core::ffi::{c_int, CStr};
 use std::ffi::CString;
 
 /// A pane allocation owned through a strong reference.
-pub struct RustWindowPane {
+struct RustWindowPane {
     registration: RefCell<Option<HandleRegistration<RustWindowPaneWeak>>>,
     pane: Box<UnsafeCell<window_pane>>,
 }
@@ -41,6 +41,25 @@ pub struct RustWindowPane {
 /// ```compile_fail
 /// use tmux_c2rs::types::RustWindowPaneRef;
 /// fn exclusive(owner: &mut RustWindowPaneRef) -> &mut impl tmux_c2rs::WindowPane { owner }
+/// ```
+///
+/// ```compile_fail
+/// use tmux_c2rs::types::window_pane;
+/// ```
+///
+/// ```compile_fail
+/// use tmux_c2rs::window_pane::window_pane;
+/// ```
+///
+/// ```compile_fail
+/// let owner = tmux_c2rs::types::RustWindowPaneRef::detached();
+/// let _ = owner.as_ptr();
+/// ```
+///
+/// ```compile_fail
+/// let owner = tmux_c2rs::types::RustWindowPaneRef::detached();
+/// let pane = unsafe { owner.get().unwrap() };
+/// let _ = &pane.base;
 /// ```
 #[derive(Clone)]
 pub struct RustWindowPaneRef(Rc<RustWindowPane>);
@@ -72,8 +91,7 @@ impl std::fmt::Debug for RustWindowPaneWeak {
 }
 
 impl RustWindowPaneRef {
-    pub(crate) fn from_pane(pane: Box<window_pane>) -> Self {
-        let pane = unsafe { Box::from_raw(Box::into_raw(pane).cast::<UnsafeCell<window_pane>>()) };
+    fn from_pane(pane: Box<UnsafeCell<window_pane>>) -> Self {
         Self(Rc::new_cyclic(|allocation| {
             unsafe { (*pane.get()).observation = Some(RustWindowPaneWeak { allocation: allocation.clone() }) };
             RustWindowPane { registration: RefCell::new(None), pane }
@@ -82,7 +100,7 @@ impl RustWindowPaneRef {
 
     /// The immutable identity under which this pane was registered.
     pub fn pane_id(&self) -> u32 {
-        unsafe { (*self.as_ptr()).id }
+        unsafe { (*self.0.pane.get()).id }
     }
 
     pub(crate) fn id(&self) -> u32 {
@@ -99,11 +117,11 @@ impl RustWindowPaneRef {
         Rc::ptr_eq(&self.0, &other.0)
     }
 
-    pub(crate) fn register(&self, registration: HandleRegistration<RustWindowPaneWeak>) {
+    fn install_registration(&self, registration: HandleRegistration<RustWindowPaneWeak>) {
         *self.0.registration.borrow_mut() = Some(registration);
     }
 
-    pub(crate) fn unregister(&self) {
+    fn unregister(&self) {
         self.0.registration.borrow_mut().take();
     }
 
@@ -112,16 +130,8 @@ impl RustWindowPaneRef {
         self.downgrade().window()
     }
 
-    pub(crate) fn as_ptr(&self) -> *const window_pane {
-        self.0.pane.get().cast_const()
-    }
-
-    pub(crate) fn as_mut_ptr(&self) -> *mut window_pane {
-        self.0.pane.get()
-    }
-
     /// Consumes the sole owner at the server's pane destruction point.
-    pub(crate) fn into_pane(self) -> Box<UnsafeCell<window_pane>> {
+    fn into_pane(self) -> Box<UnsafeCell<window_pane>> {
         Rc::try_unwrap(self.0)
             .ok()
             .expect("pane destruction requires sole ownership")
@@ -131,28 +141,28 @@ impl RustWindowPaneRef {
     /// # Safety
     /// Exclude mutation for this borrow, including through other owners,
     /// observations, and callbacks.
-    pub(crate) unsafe fn as_pane(&self) -> &dyn WindowPane {
+    pub(crate) unsafe fn as_pane(&self) -> &(dyn WindowPane + 'static) {
         unsafe { &*self.0.pane.get() }
     }
 
     /// # Safety
     /// Exclude other payload access for this borrow, including through
     /// observations and callbacks. The registered ID must not change.
-    pub(crate) unsafe fn as_pane_mut(&mut self) -> &mut dyn WindowPane {
+    pub(crate) unsafe fn as_pane_mut(&mut self) -> &mut (dyn WindowPane + 'static) {
         unsafe { &mut *self.0.pane.get() }
     }
 
     /// # Safety
     /// Exclude mutation for this borrow, including through other owners,
     /// observations, and callbacks.
-    pub unsafe fn get(&self) -> Option<&dyn WindowPane> {
+    pub unsafe fn get(&self) -> Option<&(dyn WindowPane + 'static)> {
         Some(unsafe { self.as_pane() })
     }
 
     /// # Safety
     /// Exclude other payload access for this borrow, including through
     /// observations and callbacks. The registered ID must not change.
-    pub unsafe fn get_mut(&mut self) -> Option<&mut dyn WindowPane> {
+    pub unsafe fn get_mut(&mut self) -> Option<&mut (dyn WindowPane + 'static)> {
         Some(unsafe { self.as_pane_mut() })
     }
 }
@@ -185,32 +195,19 @@ impl RustWindowPaneWeak {
         self.window().filter(|window| window.contains_pane(self))
     }
 
-    /// The compatibility address, or null after destruction.
-    /// Obtaining it grants no payload borrow and does not retain the allocation.
-    pub(crate) fn as_ptr(&self) -> *const window_pane {
-        self.as_mut_ptr().cast_const()
-    }
-
-    /// The compatibility address, or null after destruction.
-    /// Obtaining it grants no payload borrow and does not retain the allocation.
-    pub(crate) fn as_mut_ptr(&self) -> *mut window_pane {
-        self.allocation
-            .upgrade()
-            .map_or(std::ptr::null_mut(), |pane| pane.pane.get())
-    }
-
     /// # Safety
     /// Prevent mutation and destruction for the returned borrow, including
     /// through other observations and reentrant callbacks.
-    pub(crate) unsafe fn as_pane(&self) -> &dyn WindowPane {
+    pub(crate) unsafe fn as_pane(&self) -> &(dyn WindowPane + 'static) {
         unsafe { self.get() }.expect("the pane has been removed")
     }
 
     /// # Safety
     /// Prevent mutation and destruction for the returned borrow, including
     /// through other observations and reentrant callbacks.
-    pub unsafe fn get(&self) -> Option<&dyn WindowPane> {
-        unsafe { self.as_ptr().as_ref().map(|pane| pane as &dyn WindowPane) }
+    pub unsafe fn get(&self) -> Option<&(dyn WindowPane + 'static)> {
+        let allocation = self.allocation.upgrade()?;
+        Some(unsafe { &*allocation.pane.get() })
     }
 
     pub fn ptr_eq(&self, other: &Self) -> bool {
@@ -220,34 +217,22 @@ impl RustWindowPaneWeak {
     /// # Safety
     /// Exclude all other payload access and destruction for this borrow,
     /// including through observations and callbacks. The ID must not change.
-    pub(crate) unsafe fn as_pane_mut(&mut self) -> &mut dyn WindowPane {
+    pub(crate) unsafe fn as_pane_mut(&mut self) -> &mut (dyn WindowPane + 'static) {
         unsafe { self.get_mut() }.expect("the pane has been removed")
     }
 
     /// # Safety
     /// Exclude all other payload access and destruction for this borrow,
     /// including through observations and callbacks. The ID must not change.
-    pub unsafe fn get_mut(&mut self) -> Option<&mut dyn WindowPane> {
-        unsafe { self.as_mut_ptr().as_mut().map(|pane| pane as &mut dyn WindowPane) }
+    pub unsafe fn get_mut(&mut self) -> Option<&mut (dyn WindowPane + 'static)> {
+        let allocation = self.allocation.upgrade()?;
+        Some(unsafe { &mut *allocation.pane.get() })
     }
 }
 
 /// Pane storage accessed through [`crate::WindowPane`] and its capabilities.
-///
-/// ```compile_fail
-/// use tmux_c2rs::types::window_pane;
-/// let mut pane = window_pane::default();
-/// pane.flags = 1;
-/// ```
-///
-/// ```compile_fail
-/// use tmux_c2rs::types::window_pane;
-/// let pane = window_pane::default();
-/// let _ = &pane.base;
-/// ```
 #[derive(Default)]
-#[repr(C)]
-pub struct window_pane {
+struct window_pane {
     observation: Option<RustWindowPaneWeak>,
     id: u32,
     active_point: u_int,
@@ -664,7 +649,7 @@ mod tests {
 
     #[test]
     fn weak_upgrade_shares_the_strong_owner_without_changing_identity() {
-        let owner = RustWindowPaneRef::from_pane(Box::new(window_pane::default()));
+        let owner = RustWindowPaneRef::from_pane(Box::default());
         let observed = owner.downgrade();
         let retained = observed.upgrade().unwrap();
         assert!(owner.ptr_eq(&retained));
@@ -698,7 +683,7 @@ mod tests {
             assert!(retained.get().is_none());
             assert!(retained.get_mut().is_none());
         }
-        assert!(retained.as_ptr().is_null());
+        assert!(!retained.is_alive());
     }
 }
 
@@ -723,19 +708,23 @@ impl GlobalPaneIndex {
 }
 
 impl GlobalPaneIndex {
-    pub(crate) fn register(&self, pane: Box<window_pane>) -> RustWindowPaneRef {
-        let reference = RustWindowPaneRef::from_pane(pane);
+    pub(crate) fn register(&self, reference: RustWindowPaneRef) -> RustWindowPaneRef {
         let registration = self
             .panes
             .register(reference.pane_id() as usize, reference.downgrade());
-        reference.register(registration);
+        reference.install_registration(registration);
         reference
     }
 }
 
 impl RustWindowPaneRef {
-    pub(crate) fn new(pane: Box<window_pane>) -> Self {
-        GLOBAL_PANE_INDEX.with(|index| index.register(pane))
+    /// Creates an unregistered pane without process or stream resources.
+    pub fn detached() -> Self {
+        Self::from_pane(Box::new(UnsafeCell::new(window_pane { fd: -1, pipe_fd: -1, ..Default::default() })))
+    }
+
+    pub(crate) fn register_owner(self) -> Self {
+        GLOBAL_PANE_INDEX.with(|index| index.register(self))
     }
 }
 
@@ -752,8 +741,8 @@ pub(crate) unsafe fn window_pane_create(
     unsafe {
         let fresh2 = next_entity_id(&next_window_pane_id);
         let mut host: [core::ffi::c_char; 65] = [0; 65];
-        let mut wp_box = Box::new(window_pane::new());
-        let wp = &raw mut *wp_box;
+        let wp_box = Box::new(UnsafeCell::new(window_pane::new()));
+        let wp = wp_box.get();
         window_pane_set_window(&mut *wp, Some(w));
         *(*wp).options_mut() = Some(RustOptionsEngine.create(Some((*w).options_ref())));
         *(*wp).flags_mut() = PANE_STYLECHANGED;
@@ -782,14 +771,14 @@ pub(crate) unsafe fn window_pane_create(
                 .base_mut()
                 .set_title(CStr::from_ptr(host.as_ptr()), 0 as core::ffi::c_int);
         }
-        RustWindowPaneRef::new(wp_box)
+        RustWindowPaneRef::from_pane(wp_box).register_owner()
     }
 }
 /// Tears down and frees the pane at the end of destruction. Observers do not
 /// postpone resource or allocation release.
 pub(crate) unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
     unsafe {
-        let wp = &mut *pane.as_mut_ptr();
+        let wp = &mut *pane.0.pane.get();
         window_pane_reset_mode_all(&mut *wp);
         PaneSearchState::clear(wp);
         if *wp.fd() != -(1 as core::ffi::c_int) {
@@ -829,4 +818,32 @@ impl GlobalPaneIndex {
             panes: HandleRegistry::new(),
         }
     }
+}
+
+/// Unique test construction storage. No observation exists until this owner is
+/// consumed, so its capability borrows cannot expose a shared owning handle.
+#[cfg(test)]
+pub(crate) struct PaneAllocation(Box<UnsafeCell<window_pane>>);
+
+#[cfg(test)]
+impl Default for PaneAllocation {
+    fn default() -> Self {
+        Self(Box::new(UnsafeCell::new(window_pane { fd: -1, pipe_fd: -1, ..Default::default() })))
+    }
+}
+
+#[cfg(test)]
+impl PaneAllocation {
+    pub(crate) fn into_owner(self) -> RustWindowPaneRef { RustWindowPaneRef::from_pane(self.0) }
+}
+
+#[cfg(test)]
+impl std::ops::Deref for PaneAllocation {
+    type Target = dyn WindowPane;
+    fn deref(&self) -> &Self::Target { unsafe { &*self.0.get() } }
+}
+
+#[cfg(test)]
+impl std::ops::DerefMut for PaneAllocation {
+    fn deref_mut(&mut self) -> &mut Self::Target { self.0.get_mut() }
 }

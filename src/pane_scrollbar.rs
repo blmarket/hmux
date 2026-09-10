@@ -29,11 +29,11 @@ mod tests {
 
     #[test]
     fn the_slider_is_replaced_and_cleared_as_one_value() {
-        let mut scrollbar = crate::types::window_pane::default();
+        let mut scrollbar = crate::tests::test_fixtures::PaneAllocation::default();
         assert_eq!(scrollbar.slider(), PaneScrollbarSlider::default());
         scrollbar.set_slider(PaneScrollbarSlider { sb_slider_y: 3, sb_slider_h: 7 });
         assert_eq!(scrollbar.slider(), PaneScrollbarSlider { sb_slider_y: 3, sb_slider_h: 7 });
-        scrollbar.clear();
+        PaneScrollbar::clear(&mut *scrollbar);
         assert_eq!(scrollbar.slider(), PaneScrollbarSlider::default());
     }
 }

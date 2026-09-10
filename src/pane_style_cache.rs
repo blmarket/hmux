@@ -24,7 +24,7 @@ mod tests {
 
     #[test]
     fn pair_is_replaced_together() {
-        let mut cache = crate::types::window_pane::default();
+        let mut cache = crate::tests::test_fixtures::PaneAllocation::default();
         assert_eq!(cache.styles().cached_gc.data.data[0], 0);
         assert_eq!(cache.styles().cached_active_gc.data.data[0], 0);
         cache.set_styles(PaneStyleCells {

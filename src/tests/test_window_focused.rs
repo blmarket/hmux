@@ -14,7 +14,7 @@ fn window_handle_snapshots_release_borrows_and_do_not_own_panes() {
     let _guard = globals();
     let fixture = Window::new(42, "before", 80, 24);
     let owner = fixture.handle();
-    let pane = RustWindowPaneRef::from_pane(Box::new(window_pane::default()));
+    let pane = (crate::tests::test_fixtures::PaneAllocation::default()).into_owner();
     let weak = pane.downgrade();
     owner.as_window_mut().panes.push(pane);
     owner.as_window_mut().active = Some(weak.clone());
@@ -99,7 +99,7 @@ fn window_borrows_are_checked_across_cloned_handles() {
 
 #[test]
 fn shown_screen_borrows_handle_pending_modes_and_base_fallback() {
-    let mut pane = window_pane::default();
+    let mut pane = crate::tests::test_fixtures::PaneAllocation::default();
     assert!(core::ptr::eq(&*pane.try_screen_ref().unwrap(), pane.base()));
     *pane.shown_mut() = PaneScreen::Mode;
     assert!(core::ptr::eq(&*pane.try_screen_ref().unwrap(), pane.base()));
@@ -157,7 +157,7 @@ fn window_cleanup_works_during_thread_local_teardown() {
             {
                 window_panes_insert_tail(
                     &mut reference.as_window_mut(),
-                    RustWindowPaneRef::new(detached_pane()),
+                    (detached_pane()).into_owner().register_owner(),
                 );
             }
             *last = Some(reference);
@@ -219,7 +219,7 @@ fn registry_string_lookup_and_names_cover_valid_invalid_and_untrusted_paths() {
         );
         assert!(WindowRef::find_by_id_str(c"0").is_none());
         assert!(WindowRef::find_by_id_str(c"@bad").is_none());
-        assert_eq!(window_pane_find_by_id_str(c"%0").unwrap().as_mut_ptr(), wp);
+        assert_eq!(window_pane_find_by_id_str(c"%0"), (*wp).observation());
         assert!(window_pane_find_by_id_str(c"0").is_none());
         assert!(window_pane_find_by_id_str(c"%bad").is_none());
 
@@ -270,12 +270,8 @@ fn pane_order_active_last_used_zindex_and_direction_helpers_cover_boundaries() {
         assert!(window_pane_at_index(&*w, 7).is_none());
         window.options().set_number(c"pane-base-index", 0);
         assert_eq!(
-            window
-                .handle()
-                .pane_by_id((*b).pane_id())
-                .unwrap()
-                .as_mut_ptr(),
-            b
+            window.handle().pane_by_id((*b).pane_id()),
+            (*b).observation()
         );
         assert_eq!(window_panes_position(&*w, Some(&*b)), Some(1));
         let panes = window.handle().panes();
@@ -580,7 +576,7 @@ fn pane_registration_cleanup_outlives_the_thread_local_index() {
     }
     std::thread::spawn(|| {
         LAST_PANE.with_borrow_mut(|last| {
-            *last = Some(RustWindowPaneRef::new(detached_pane()));
+            *last = Some((detached_pane()).into_owner().register_owner());
         });
     })
     .join()
@@ -590,8 +586,8 @@ fn pane_registration_cleanup_outlives_the_thread_local_index() {
 #[test]
 fn pane_registration_removes_only_its_own_entry() {
     let index = GlobalPaneIndex::new();
-    let old = index.register(detached_pane());
-    let replacement = index.register(detached_pane());
+    let old = index.register(detached_pane().into_owner());
+    let replacement = index.register(detached_pane().into_owner());
     let id = replacement.pane_id();
     drop(old);
     assert!(index.find(id).is_some());
@@ -605,7 +601,7 @@ fn pane_walk_skips_removed_ids_and_defers_new_registrations() {
     let registered = |id| {
         let mut pane = detached_pane();
         pane.set_pane_id(id);
-        RustWindowPaneRef::new(pane)
+        (pane).into_owner().register_owner()
     };
     let first = registered(1);
     let removed = registered(2);
@@ -622,13 +618,13 @@ fn pane_walk_skips_removed_ids_and_defers_new_registrations() {
 }
 
 #[test]
-fn pane_owner_transfer_preserves_address_and_expires_deferred_observers() {
+fn pane_owner_transfer_preserves_identity_and_expires_deferred_observers() {
     let _guard = globals();
-    let mut allocation = detached_pane();
-    let pointer = core::ptr::from_mut(&mut *allocation);
-    let owner = RustWindowPaneRef::new(allocation);
+    let allocation = detached_pane();
+    let owner = (allocation).into_owner().register_owner();
+    let identity = owner.downgrade();
     let id = owner.pane_id();
-    assert_eq!(owner.as_ptr(), pointer);
+    assert_eq!(owner.downgrade(), identity);
     let calls = std::rc::Rc::new(std::cell::Cell::new(0));
     let observed = calls.clone();
     let callback = on_pane(id, move |_| observed.set(observed.get() + 1));
@@ -654,7 +650,7 @@ fn pane_owner_transfer_preserves_address_and_expires_deferred_observers() {
             window_panes_insert_tail(&mut destination.as_window_mut(), transferred).id(),
             id
         );
-        assert_eq!(window_pane_find_by_id(id).unwrap().as_mut_ptr(), pointer);
+        assert_eq!(window_pane_find_by_id(id), Some(identity));
         assert!(
             window_pane_find_by_id(id)
                 .unwrap()
@@ -679,7 +675,7 @@ fn pane_lookup_follows_swapped_owners_after_exclusive_borrows() {
     let pane = |id| {
         let mut value = detached_pane();
         value.set_pane_id(id);
-        RustWindowPaneRef::new(value)
+        (value).into_owner().register_owner()
     };
     unsafe {
         window_panes_insert_tail(&mut source.as_window_mut(), pane(1));
@@ -737,11 +733,11 @@ fn moving_an_old_pane_cannot_rebind_a_replacement_registration() {
     let source = WindowRef::new(window::default());
     let destination = WindowRef::new(window::default());
     {
-        let old = RustWindowPaneRef::new(detached_pane());
+        let old = (detached_pane()).into_owner().register_owner();
         let id = old.pane_id();
         let original = old.downgrade();
         window_panes_insert_tail(&mut source.as_window_mut(), old);
-        let replacement = RustWindowPaneRef::new(detached_pane());
+        let replacement = (detached_pane()).into_owner().register_owner();
         window_panes_insert_tail(&mut destination.as_window_mut(), replacement);
         let detached = window_panes_take(&mut source.as_window_mut(), &original).unwrap();
         window_panes_insert_tail(&mut source.as_window_mut(), detached);
@@ -803,7 +799,7 @@ fn losing_the_active_pane_uses_history_then_owned_neighbors() {
                 .into_iter()
                 .map(|id| {
                     crate::window::window_pane_find_by_id(id).unwrap_or_else(|| {
-                        RustWindowPaneRef::from_pane(Box::new(window_pane::default())).downgrade()
+                        (crate::tests::test_fixtures::PaneAllocation::default()).into_owner().downgrade()
                     })
                 })
                 .collect();
@@ -837,7 +833,7 @@ fn losing_the_active_pane_uses_history_then_owned_neighbors() {
 #[test]
 fn pane_index_observers_do_not_retain_the_allocation() {
     let index = GlobalPaneIndex::new();
-    let original = index.register(detached_pane());
+    let original = index.register(detached_pane().into_owner());
     let id = original.id();
     let weak = original.downgrade();
     let retained = index.find(id).unwrap();
@@ -882,7 +878,7 @@ fn pane_removal_tears_down_resources_before_the_last_reference_drops() {
         assert!(retained.get_mut().is_none());
         assert!(retained.window().is_none());
         assert!(weak.upgrade().is_none());
-        assert!(retained.as_ptr().is_null());
+        assert!(!retained.is_alive());
         assert!(!timer.is_armed());
         assert_eq!(libc::fcntl(fd, libc::F_GETFD), -1);
         assert_eq!(
@@ -921,14 +917,14 @@ fn retained_pane_does_not_keep_its_window_alive_or_delay_window_teardown() {
     drop(owner);
     assert!(weak_window.upgrade().is_some());
     assert!(window_pane_find_by_id(id).is_some());
-    assert!(unsafe { (*pane.as_ptr()).options().is_some() });
+    assert!(unsafe { pane.get().unwrap().options().is_some() });
     drop(last_owner);
     assert!(weak_window.upgrade().is_none());
     assert!(window_pane_find_by_id(id).is_none());
     assert!(pane.window().is_none());
     assert!(unsafe { pane.get() }.is_none());
     assert!(weak_pane.upgrade().is_none());
-    assert!(pane.as_ptr().is_null());
+    assert!(!pane.is_alive());
     drop(pane);
     assert!(weak_pane.upgrade().is_none());
 }
@@ -953,7 +949,7 @@ fn fixture_cleanup_retires_panes_without_closing_borrowed_descriptors() {
     assert!(window_pane_find_by_id(953).is_none());
     assert!(retained.window().is_none());
     assert!(unsafe { retained.get() }.is_none());
-    assert!(retained.as_ptr().is_null());
+    assert!(!retained.is_alive());
     drop(owner);
     drop(retained);
     assert_ne!(
@@ -1059,8 +1055,8 @@ fn directional_selection_retains_the_most_recent_candidate_and_preserves_first_t
     }
 }
 
-fn detached_pane() -> Box<window_pane> {
-    let mut pane = Box::new(window_pane::default());
+fn detached_pane() -> crate::tests::test_fixtures::PaneAllocation {
+    let mut pane = crate::tests::test_fixtures::PaneAllocation::default();
     *pane.fd_mut() = -1;
     *pane.pipe_fd_mut() = -1;
     pane
@@ -1071,7 +1067,7 @@ fn window_pane_lookup_checks_the_list_while_transfers_retain_the_backlink() {
     let _guard = globals();
     let source = WindowRef::new(window::default());
     let destination = WindowRef::new(window::default());
-    let pane = RustWindowPaneRef::new(detached_pane());
+    let pane = (detached_pane()).into_owner().register_owner();
     let id = pane.pane_id();
     unsafe {
         window_panes_insert_tail(&mut source.as_window_mut(), pane);
@@ -1119,9 +1115,9 @@ fn window_pane_lookup_checks_the_list_while_transfers_retain_the_backlink() {
 fn registry_lookup_requires_registration_and_list_membership() {
     let _guard = globals();
     let owner = WindowRef::new(window::default());
-    let unregistered = RustWindowPaneRef::from_pane(detached_pane());
+    let mut unregistered = (detached_pane()).into_owner();
     let id = unregistered.pane_id();
-    let pointer = unregistered.as_mut_ptr();
+    let pointer = unsafe { unregistered.get_mut().unwrap() as *mut dyn crate::WindowPane };
     unsafe {
         window_panes_insert_tail(&mut owner.as_window_mut(), unregistered);
         assert!(owner.pane_by_id(id).is_none());
@@ -1143,7 +1139,7 @@ fn registry_lookup_requires_registration_and_list_membership() {
         owner.remove_pane(&target.pane_list_ref().unwrap());
         assert!(target.pane_list_ref().is_none());
 
-        let mut pane = RustWindowPaneRef::new(detached_pane());
+        let mut pane = (detached_pane()).into_owner().register_owner();
         window_pane_set_window_ref(pane.as_pane_mut(), Some(&owner));
         owner.as_window_mut().panes.push(pane);
         assert!(owner.pane_by_id(id).is_some());
@@ -1538,9 +1534,9 @@ fn shown_mode_screen_reads_hold_the_shared_screen_borrow() {
 fn floating_checks_and_counts_read_the_supplied_layout_without_pane_back_references() {
     let mut w = window::default();
     for id in [3, 7] {
-        let mut pane = Box::new(window_pane::default());
+        let mut pane = crate::tests::test_fixtures::PaneAllocation::default();
         pane.set_pane_id(id);
-        w.panes.push(RustWindowPaneRef::from_pane(pane));
+        w.panes.push((pane).into_owner());
     }
     w.layout_root = Some(Box::new(layout_cell {
         cells: vec![
@@ -1561,7 +1557,7 @@ fn floating_checks_and_counts_read_the_supplied_layout_without_pane_back_referen
     assert_eq!(
         window_pane_is_floating(
             &w,
-            &RustWindowPaneRef::from_pane(Box::new(window_pane::default())).downgrade()
+            &(crate::tests::test_fixtures::PaneAllocation::default()).into_owner().downgrade()
         ),
         0
     );
@@ -1583,11 +1579,11 @@ fn pane_stacking_and_flags_follow_physical_owners_and_skip_retired_targets() {
     let pane = target.state().pane_ref().unwrap();
     let window = pane.window().unwrap();
     unsafe {
-        let mut payload = Box::new(window_pane::default());
+        let mut payload = crate::tests::test_fixtures::PaneAllocation::default();
         payload.set_pane_id(99);
         *payload.options_mut() = Some(pane.as_pane().options_ref().clone());
         *payload.flags_mut() = PANE_ZOOMED;
-        let listed = RustWindowPaneRef::from_pane(payload);
+        let listed = (payload).into_owner();
         let observed = listed.downgrade();
         window_panes_insert_tail(&mut window.as_window_mut(), listed);
         let listed = observed;
@@ -1614,17 +1610,17 @@ fn pane_stacking_and_flags_follow_physical_owners_and_skip_retired_targets() {
         window.as_window_mut().z_index = vec![listed.clone(), pane.clone()];
         assert_eq!(window_pane_zindex(&listed), (0, 1));
         assert_eq!(window_pane_zindex(&pane), (0, 0));
-        let mut impostor = Box::new(window_pane::default());
+        let mut impostor = crate::tests::test_fixtures::PaneAllocation::default();
         impostor.set_pane_id(listed.id());
         impostor.set_window_context(Some(&window));
-        let impostor = RustWindowPaneRef::from_pane(impostor);
+        let impostor = (impostor).into_owner();
         assert_eq!(window_pane_zindex(&impostor.downgrade()), (-1, 1));
         assert_eq!(
             window_pane_printable_flags(&impostor.downgrade()).as_deref(),
             Some(c"")
         );
         window.as_window_mut().z_index = vec![
-            RustWindowPaneRef::from_pane(Box::new(window_pane::default())).downgrade(),
+            (crate::tests::test_fixtures::PaneAllocation::default()).into_owner().downgrade(),
             pane.clone(),
             listed.clone(),
         ];
@@ -1717,7 +1713,7 @@ fn pane_indices_read_the_supplied_list_and_options_without_rebinding_duplicate_i
         let options = original.options();
         let mut supplied = window::default();
         supplied.options = Some(options.clone());
-        let mut unregistered = Box::new(window_pane::default());
+        let mut unregistered = crate::tests::test_fixtures::PaneAllocation::default();
         unregistered.set_pane_id(99);
         options.set_number(c"pane-base-index", 10);
         assert_eq!(
@@ -1725,18 +1721,18 @@ fn pane_indices_read_the_supplied_list_and_options_without_rebinding_duplicate_i
             (0, 10)
         );
         let owned = original.as_window_mut().panes.remove(0);
-        supplied.panes = vec![RustWindowPaneRef::from_pane(unregistered), owned];
+        supplied.panes = vec![(unregistered).into_owner(), owned];
         assert_eq!(window_pane_index(&supplied, pane.as_pane()), (0, 11));
         assert_eq!(
             window_pane_index(&supplied, supplied.panes[0].as_pane()),
             (0, 10)
         );
-        let mut duplicate = window_pane::default();
+        let mut duplicate = crate::tests::test_fixtures::PaneAllocation::default();
         duplicate.set_pane_id(pane.id());
-        assert_eq!(window_pane_index(&supplied, &duplicate), (-1, 12));
+        assert_eq!(window_pane_index(&supplied, &*duplicate), (-1, 12));
         options.set_number(c"pane-base-index", -1);
         assert_eq!(window_pane_index(&supplied, pane.as_pane()), (0, 0));
-        assert_eq!(window_pane_index(&supplied, &duplicate), (-1, 1));
+        assert_eq!(window_pane_index(&supplied, &*duplicate), (-1, 1));
         original
             .as_window_mut()
             .panes
@@ -1748,9 +1744,9 @@ fn pane_indices_read_the_supplied_list_and_options_without_rebinding_duplicate_i
 fn visibility_uses_the_supplied_zoom_state_and_physical_pane_identity() {
     let mut w = window::default();
     for id in [3, 7] {
-        let mut pane = Box::new(window_pane::default());
+        let mut pane = crate::tests::test_fixtures::PaneAllocation::default();
         pane.set_pane_id(id);
-        w.panes.push(RustWindowPaneRef::from_pane(pane));
+        w.panes.push((pane).into_owner());
     }
     let first = w.panes[0].downgrade();
     let second = w.panes[1].downgrade();
@@ -1765,9 +1761,9 @@ fn visibility_uses_the_supplied_zoom_state_and_physical_pane_identity() {
             .map(|pane| pane.downgrade());
         assert_eq!(window_pane_visible(&w, first.as_pane()), 1);
         assert_eq!(window_pane_visible(&w, second.as_pane()), 0);
-        let mut duplicate = window_pane::default();
+        let mut duplicate = crate::tests::test_fixtures::PaneAllocation::default();
         duplicate.set_pane_id(first.id());
-        assert_eq!(window_pane_visible(&w, &duplicate), 0);
+        assert_eq!(window_pane_visible(&w, &*duplicate), 0);
         w.active = w
             .panes
             .iter()
@@ -1791,8 +1787,8 @@ fn a_recorded_window_context_expires_when_its_last_owner_drops() {
     let _guard = globals();
     let window = WindowRef::new(window::default());
     let weak = window.downgrade();
-    let mut pane = window_pane::default();
-    window_pane_set_window_ref(&mut pane, Some(&window));
+    let mut pane = crate::tests::test_fixtures::PaneAllocation::default();
+    window_pane_set_window_ref(&mut *pane, Some(&window));
     let retained = pane.window_context().unwrap();
     assert!(retained.ptr_eq(&window));
     drop(window);

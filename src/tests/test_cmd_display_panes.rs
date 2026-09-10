@@ -56,7 +56,7 @@ impl Overlay {
         unsafe { self.c.as_client_mut() }
     }
 
-    fn pane(&mut self) -> *mut window_pane {
+    fn pane(&mut self) -> *mut (dyn crate::WindowPane + 'static) {
         self.t.pane(0)
     }
 

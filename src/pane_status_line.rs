@@ -15,7 +15,7 @@ mod tests {
 
     #[test]
     fn width_is_zero_then_replaceable() {
-        let mut state = crate::types::window_pane::default();
+        let mut state = crate::tests::test_fixtures::PaneAllocation::default();
         assert_eq!(state.status_line_width(), 0);
         state.set_status_line_width(42);
         assert_eq!(state.status_line_width(), 42);

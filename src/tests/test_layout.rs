@@ -99,7 +99,7 @@ impl Layout {
         self.window.ptr()
     }
 
-    fn pane(&mut self, i: usize) -> *mut window_pane {
+    fn pane(&mut self, i: usize) -> *mut (dyn crate::WindowPane + 'static) {
         self.panes[i].ptr()
     }
 

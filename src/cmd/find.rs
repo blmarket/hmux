@@ -24,7 +24,7 @@ pub use crate::types::{
     u_int, winlink,
 };
 #[cfg(test)]
-use crate::types::{RustWindowPaneRef, window_pane};
+use crate::types::{RustWindowPaneRef};
 use crate::window::pane_walk;
 use crate::window::{
     window_pane_find_by_id_str, window_pane_find_down, window_pane_find_left,

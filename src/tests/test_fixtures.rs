@@ -359,13 +359,10 @@ pub(crate) fn zeroed_window() -> Box<window> {
     Box::new(window::default())
 }
 
-pub(crate) fn zeroed_pane() -> Box<window_pane> {
-    let mut pane = Box::new(window_pane::default());
-    // A fixture owns no descriptors. Zero would make window teardown close
-    // stdin, or a different test's descriptor after that number is reused.
-    *pane.fd_mut() = -1;
-    *pane.pipe_fd_mut() = -1;
-    pane
+pub(crate) use crate::window_pane::PaneAllocation;
+
+pub(crate) fn zeroed_pane() -> PaneAllocation {
+    PaneAllocation::default()
 }
 
 /// A terminal description the way `tty_term_create` leaves one, near enough:
@@ -824,7 +821,7 @@ impl Window {
     /// fixtures.
     pub(crate) fn add_pane(&mut self, pane: &mut Pane) {
         {
-            let owned = RustWindowPaneRef::new(pane.take());
+            let owned = (pane.take()).into_owner().register_owner();
             pane.observer = Some(owned.downgrade());
             let id = owned.pane_id();
             let mut w = self.window.as_window_mut();
@@ -862,7 +859,7 @@ impl Drop for Window {
             for mut pane in core::mem::take(&mut (*w).panes) {
                 free_pane(pane.as_pane_mut());
                 crate::window::window_pane_set_window_ref(pane.as_pane_mut(), None);
-                drop(pane.into_pane());
+                drop(pane);
             }
             (*w).z_index.clear();
             (*w).last_panes.clear();
@@ -883,9 +880,9 @@ impl Drop for Window {
 /// [`Window::add_pane`] does; after that the window is what gives it back and
 /// this is only the pointer to it.
 pub(crate) struct Pane {
-    pane: Option<Box<window_pane>>,
+    pane: Option<crate::tests::test_fixtures::PaneAllocation>,
     observer: Option<RustWindowPaneWeak>,
-    ptr: *mut window_pane,
+    ptr: *mut (dyn crate::WindowPane + 'static),
 }
 
 impl Pane {
@@ -913,15 +910,15 @@ impl Pane {
         }
     }
 
-    pub(crate) fn ptr(&mut self) -> *mut window_pane {
+    pub(crate) fn ptr(&mut self) -> *mut (dyn crate::WindowPane + 'static) {
         self.observer
             .as_ref()
-            .map_or(self.ptr, |pane| pane.as_mut_ptr())
+            .map_or(self.ptr, |pane| unsafe { &mut *pane.clone().get_mut().unwrap() as *mut _ })
     }
 
     /// Gives the pane itself up, for a window to take over. What is left
     /// behind still answers [`Pane::ptr`].
-    fn take(&mut self) -> Box<window_pane> {
+    fn take(&mut self) -> crate::tests::test_fixtures::PaneAllocation {
         self.pane
             .take()
             .expect("the pane has not been handed to a window yet")
@@ -930,10 +927,10 @@ impl Pane {
     /// Puts the pane at the end of `w`'s pane list and on its stacking order,
     /// the way [`Window::add_pane`] does, for a test holding the window as a
     /// bare pointer. `w` takes the pane over and must outlive it.
-    pub(crate) fn hand_to(&mut self, w: *mut window) -> *mut window_pane {
+    pub(crate) fn hand_to(&mut self, w: *mut window) -> *mut (dyn crate::WindowPane + 'static) {
         unsafe {
             let wp = self.ptr();
-            let owned = RustWindowPaneRef::new(self.take());
+            let owned = (self.take()).into_owner().register_owner();
             self.observer = Some(owned.downgrade());
             window_panes_insert_tail(&mut *w, owned);
             crate::window::window_pane_set_window(&mut *wp, w.as_ref());
@@ -1019,7 +1016,7 @@ impl Layout {
         &mut self.window
     }
 
-    pub(crate) fn pane(&mut self, i: usize) -> *mut window_pane {
+    pub(crate) fn pane(&mut self, i: usize) -> *mut (dyn crate::WindowPane + 'static) {
         self.panes[i].ptr()
     }
 
@@ -1490,7 +1487,7 @@ impl Target {
         self.windows[i].ptr()
     }
 
-    pub(crate) fn pane(&mut self, i: usize) -> *mut window_pane {
+    pub(crate) fn pane(&mut self, i: usize) -> *mut (dyn crate::WindowPane + 'static) {
         self.panes[i].ptr()
     }
 
@@ -1518,8 +1515,8 @@ impl Drop for Target {
     fn drop(&mut self) {
         for p in &mut self.panes {
             unsafe {
-                if let Some(pane) = p.ptr().as_mut() {
-                    window_pane_reset_mode_all(pane);
+                if p.observer.as_ref().is_none_or(RustWindowPaneWeak::is_alive) {
+                    window_pane_reset_mode_all(&mut *p.ptr());
                 }
             }
         }
@@ -1959,10 +1956,8 @@ mod tests {
                     .is_some_and(|owner| core::ptr::eq(owner.as_ptr(), t.window(0)))
             );
             assert_eq!(
-                crate::window::window_pane_find_by_id(0)
-                    .unwrap()
-                    .as_mut_ptr(),
-                t.pane(0)
+                crate::window::window_pane_find_by_id(0),
+                (*t.pane(0)).observation()
             );
             assert!(core::ptr::eq((&*t.session()).curw().unwrap(), t.winlink(0)));
             let fs = t.state();

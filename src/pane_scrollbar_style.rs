@@ -26,7 +26,7 @@ mod tests {
 
     #[test]
     fn style_is_replaced_as_one_snapshot() {
-        let mut state = crate::types::window_pane::default();
+        let mut state = crate::tests::test_fixtures::PaneAllocation::default();
         let style = PaneScrollbarStyle {
             cell: grid_cell {
                 fg: 3,

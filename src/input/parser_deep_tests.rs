@@ -146,7 +146,7 @@ fn escape_and_string_cancellation_cover_intermediate_and_utf8_paths() {
 fn palette_access_observes_immediate_pane_destruction() {
     let _guard = globals();
     ensure_reactor();
-    let pane = RustWindowPaneRef::new(Box::new(window_pane::default()));
+    let pane = (crate::tests::test_fixtures::PaneAllocation::default()).into_owner().register_owner();
     let observer = pane.downgrade();
     let parser = unsafe { InputCtxRef::create(InputOwner::Pane(pane.id()), Stream::NONE) };
     unsafe {

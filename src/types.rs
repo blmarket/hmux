@@ -2134,7 +2134,7 @@ impl window {
     }
 }
 pub use crate::WindowPane;
-pub use crate::window_pane::{RustWindowPane, RustWindowPaneRef, RustWindowPaneWeak, window_pane};
+pub use crate::window_pane::{RustWindowPaneRef, RustWindowPaneWeak};
 
 /// Which screen a pane is showing.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]

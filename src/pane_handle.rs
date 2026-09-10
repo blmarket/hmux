@@ -278,7 +278,7 @@ mod lifetime_tests {
 
     #[test]
     fn owned_snapshots_do_not_pin_the_pane_or_follow_later_mutation() {
-        let mut owner = RustWindowPaneRef::from_pane(Box::default());
+        let mut owner = RustWindowPaneRef::detached();
         let pane = owner.downgrade();
         unsafe {
             owner.as_pane_mut().set_pane_command(&crate::PaneCommand {
@@ -292,13 +292,12 @@ mod lifetime_tests {
             owner.as_pane_mut().clear_pane_command();
             assert_eq!((geometry.xoff, geometry.yoff), (2, 4));
             assert_eq!(command.argv, [c"before".to_owned()]);
-            let payload = owner.into_pane();
+            drop(owner);
             assert!(!pane.is_alive());
             assert!(pane.geometry().is_none());
             assert!(pane.output_offset().is_none());
             assert!(!pane.set_position(0, 0));
             assert!(!pane.reset_modes());
-            drop(payload);
         }
     }
 }

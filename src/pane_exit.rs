@@ -24,7 +24,7 @@ mod tests {
 
     #[test]
     fn status_and_time_are_independently_replaceable() {
-        let mut state = crate::types::window_pane::default();
+        let mut state = crate::tests::test_fixtures::PaneAllocation::default();
         assert_eq!(state.exit_status(), 0);
         assert_eq!(state.death_time().tv_sec, 0);
         assert_eq!(state.death_time().tv_usec, 0);

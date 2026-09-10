@@ -57,7 +57,7 @@ use crate::types::ClientFileRef;
 use crate::types::PaneInputRef;
 use crate::types::{
     ClientFileData, ClientFileEvent, WindowMode, key_code, key_event, menu_item, mouse_event,
-    spawn_context, u_int, window_pane, winlink,
+    spawn_context, u_int, winlink,
 };
 use crate::window::window_pane_current_mode_mut;
 use crate::window::window_pane_input_data;
@@ -343,7 +343,7 @@ unsafe fn send_keys_x(t: &mut Target, line: &CStr, values: u_int) {
 struct SpawnRig {
     session: Session,
     wl: *mut winlink,
-    pane: *mut window_pane,
+    pane: *mut (dyn crate::WindowPane + 'static),
     _window: Window,
     _pane: Pane,
 }

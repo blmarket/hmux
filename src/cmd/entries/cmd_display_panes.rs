@@ -35,7 +35,7 @@ use crate::types::{
     args_parse_type, key_code, key_event, u_int,
 };
 #[cfg(test)]
-use crate::types::{CmdqListRef, client, screen_redraw_ctx, window_pane};
+use crate::types::{CmdqListRef, client, screen_redraw_ctx};
 use crate::xmalloc::xasprintf;
 use ::core::ffi::{c_int, c_longlong, c_ulonglong};
 use ::std::ffi::CString;

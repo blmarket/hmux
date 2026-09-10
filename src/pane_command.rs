@@ -28,7 +28,7 @@ mod tests {
 
     #[test]
     fn command_can_be_replaced_and_cleared() {
-        let mut state = crate::types::window_pane::default();
+        let mut state = crate::tests::test_fixtures::PaneAllocation::default();
         let command = PaneCommand {
             argv: vec![c"sh".to_owned(), c"-c".to_owned(), c"true".to_owned()],
             shell: Some(c"/bin/sh".to_owned()),

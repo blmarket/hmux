@@ -15,7 +15,7 @@ mod tests {
 
     #[test]
     fn position_is_zero_then_replaceable() {
-        let mut state = crate::types::window_pane::default();
+        let mut state = crate::tests::test_fixtures::PaneAllocation::default();
         assert_eq!(state.output_base(), 0);
         state.set_output_base(42);
         assert_eq!(state.output_base(), 42);

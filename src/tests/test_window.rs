@@ -184,7 +184,7 @@ pub(crate) fn window_panes_position(
     let wp = wp?;
     w.panes
         .iter()
-        .position(|pane| core::ptr::addr_eq(pane.as_ptr(), wp))
+        .position(|pane| wp.observation().as_ref() == Some(&pane.downgrade()))
 }
 
 /// Puts `wp` on top of a stacking order.

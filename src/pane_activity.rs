@@ -17,7 +17,7 @@ mod tests {
 
     #[test]
     fn activity_point_is_zero_then_replaceable() {
-        let mut state = crate::types::window_pane::default();
+        let mut state = crate::tests::test_fixtures::PaneAllocation::default();
         assert_eq!(state.activity_point(), 0);
         state.mark_active_at(42);
         assert_eq!(state.activity_point(), 42);

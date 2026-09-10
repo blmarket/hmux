@@ -75,7 +75,7 @@ fn server_marked_pane_set_check_is_and_clear() {
         assert_eq!(server_is_marked(s.as_ref(), wl.as_ref(), wp.as_ref()), 1);
 
         // different pane is not marked
-        let mut other_pane_box = Box::new(crate::types::window_pane::default());
+        let mut other_pane_box = crate::tests::test_fixtures::PaneAllocation::default();
         let other_wp = &raw mut *other_pane_box;
         assert_eq!(
             server_is_marked(s.as_ref(), wl.as_ref(), other_wp.as_ref()),

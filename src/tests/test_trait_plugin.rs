@@ -4,7 +4,7 @@
 //! through [`Plugin`], with everything it is told about the server arriving
 //! through a [`Host`] double rather than a running one. That is the whole
 //! point of the contract — a plugin reads panes through [`Host`] and holds no
-//! `*mut window_pane` — so none of this needs a server, and none of it needs
+//! `*mut (dyn crate::WindowPane + 'static)` — so none of this needs a server, and none of it needs
 //! the process-wide state a server keeps in statics.
 
 use ::std::cell::RefCell;
