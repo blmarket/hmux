@@ -76,7 +76,7 @@ use ::std::ffi::CString;
 #[repr(C)]
 pub struct mode_tree_data {
     pub zoomed: core::ffi::c_int,
-    pane_ref: Option<RustWindowPaneWeak>,
+    wp: Option<RustWindowPaneWeak>,
     pub modedata: WindowModeData,
     pub menu: &'static [menu_item<'static>],
     pub sort_crit: sort_criteria_t,
@@ -88,7 +88,7 @@ pub struct mode_tree_data {
     pub keycb: mode_tree_key_cb,
     pub swapcb: mode_tree_swap_cb,
     pub sortcb: mode_tree_sort_cb,
-    pub help: mode_tree_help,
+    pub helpcb: mode_tree_help,
     pub children: mode_tree_list,
     pub saved: mode_tree_list,
     /// The id the next item added to the tree is given.
@@ -111,7 +111,7 @@ pub struct mode_tree_data {
 impl mode_tree_data {
     /// Resolves the pane while both it and the mode are still live.
     pub(crate) fn pane(&self) -> Option<RustWindowPaneWeak> {
-        self.pane_ref
+        self.wp
             .as_ref()
             .filter(|pane| pane.is_alive())
             .cloned()
@@ -155,9 +155,9 @@ pub const MODE_TREE_PREVIEW_OFF: mode_tree_preview = 0;
 pub struct mode_tree_menu {
     /// The client the menu is showing on, observed rather than held, so that
     /// a client which goes while the menu is up leaves nothing behind.
-    pub(crate) client: ClientWeak,
+    pub(crate) c: ClientWeak,
     pub line: u_int,
-    owner: ModeTreeDataWeak,
+    data: ModeTreeDataWeak,
 }
 
 pub type mode_tree_preview = core::ffi::c_uint;
@@ -441,10 +441,10 @@ fn mode_tree_search_ids(items: &mode_tree_list, ids: &mut Vec<u_int>) {
 #[allow(clippy::boxed_local)]
 unsafe fn mode_tree_menu_callback(_idx: u_int, key: key_code, mtm: Box<mode_tree_menu>) {
     unsafe {
-        let Some(owner) = mtm.owner.upgrade() else {
+        let Some(owner) = mtm.data.upgrade() else {
             return;
         };
-        let Some(mut client) = mtm.client.upgrade() else {
+        let Some(mut client) = mtm.c.upgrade() else {
             return;
         };
         let menucb = {
@@ -937,15 +937,15 @@ impl ModeTreeDataRef {
                 .and_then(|args| args.argument_flag_string(b'f'))
                 .map(CStr::to_owned);
             let screen_ref = ScreenRef::new(RustScreen::new_with_server_options(
-                wp.geometry().width,
-                wp.geometry().height,
+                wp.geometry().sx,
+                wp.geometry().sy,
                 0,
             ));
 
             ModeTreeDataRef::new(
                 mode_tree_data {
                     zoomed: 0,
-                    pane_ref: crate::window::window_pane_ref_of(wp),
+                    wp: crate::window::window_pane_ref_of(wp),
                     modedata,
                     menu,
                     sort_crit,
@@ -957,7 +957,7 @@ impl ModeTreeDataRef {
                     keycb,
                     swapcb,
                     sortcb,
-                    help,
+                    helpcb: help,
                     children: mode_tree_list::new(),
                     saved: mode_tree_list::new(),
                     next_item_id: 0,
@@ -1123,7 +1123,7 @@ impl ModeTreeDataRef {
             let owner = mtd.clone();
             let (id, zoomed) = {
                 let mut tree = owner.borrow_mut();
-                (tree.pane_ref.take(), tree.zoomed)
+                (tree.wp.take(), tree.zoomed)
             };
             if zoomed == 0
                 && let Some(pane) = id
@@ -1554,9 +1554,9 @@ impl ModeTreeDataRef {
                 return;
             };
             let mtm = Box::new(mode_tree_menu {
-                client,
+                c: client,
                 line,
-                owner: mtd.downgrade(),
+                data: mtd.downgrade(),
             });
             x = x.saturating_sub(menu.width.wrapping_add(4).wrapping_div(2));
             menu_display(
@@ -1670,7 +1670,7 @@ impl ModeTreeDataRef {
             match *key {
                 113 | 27 | 35184372088923 | 35184372088935 => return (1, 0, 0),
                 8589934600 | 35184372088936 => {
-                    let help = owner.borrow().help;
+                    let help = owner.borrow().helpcb;
                     mode_tree_display_help(help, c);
                 }
                 8589934619 | 107 | 38654705664 | 35184372088944 => owner.up(1),

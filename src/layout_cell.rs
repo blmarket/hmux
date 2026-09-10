@@ -150,7 +150,7 @@ impl LayoutCell for crate::types::layout_cell {
     }
 
     fn layout_cell_has_parent(&self) -> bool {
-        self.has_parent
+        self.parent
     }
 
     fn layout_cell_child_count(&self) -> usize {

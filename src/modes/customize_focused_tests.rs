@@ -21,7 +21,7 @@ impl Chain {
             let fs = target.state();
             let window = fs.window().unwrap();
             let pane = window
-                .pane_by_id(fs.wp_ref.as_ref().map(|pane| pane.id()).unwrap())
+                .pane_by_id(fs.wp.as_ref().map(|pane| pane.id()).unwrap())
                 .unwrap();
             let pane = pane.get().unwrap().options_ref().clone();
             let window = window.options();
@@ -48,7 +48,7 @@ impl Drop for Chain {
 
 fn data(target: &mut Target) -> WindowCustomizeModeDataRef {
     WindowCustomizeModeDataRef::new(window_customize_modedata {
-        wp_ref: target.state().pane_ref(),
+        wp: target.state().pane_ref(),
         data: None,
         format: Some(WINDOW_CUSTOMIZE_DEFAULT_FORMAT.to_owned()),
         hide_global: 0,
@@ -581,7 +581,7 @@ fn key_selection_and_expansion_survive_inserting_earlier_tables_and_bindings() {
         let mut pane = fs
             .window()
             .unwrap()
-            .pane_by_id(fs.wp_ref.as_ref().map(|pane| pane.id()).unwrap())
+            .pane_by_id(fs.wp.as_ref().map(|pane| pane.id()).unwrap())
             .unwrap();
         assert_eq!(
             window_pane_set_mode(

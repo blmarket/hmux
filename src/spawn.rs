@@ -87,7 +87,7 @@ pub(crate) fn spawn_shell_name(shell: &CStr) -> &CStr {
 fn spawn_log(from: &CStr, sc: &spawn_context) {
     {
         let s = sc.s.as_ref().expect("a spawn context has a session owner");
-        let wl = sc.wl_idx;
+        let wl = sc.wl;
         let item = spawn_item(sc);
         log_debug(
             c"%s: %s, flags=%#x",
@@ -130,7 +130,7 @@ pub(crate) unsafe fn spawn_window(
         spawn_log(c"spawn_window", sc);
         if sc.flags & SPAWN_RESPAWN != 0 {
             let Some(existing) = sc
-                .wl_idx
+                .wl
                 .filter(|index| session.as_session().windows.contains_key(index))
             else {
                 *cause = Some(c"window no longer exists".to_owned());
@@ -176,7 +176,7 @@ pub(crate) unsafe fn spawn_window(
             window.init_layout(
                 &crate::window::window_pane_find_by_id(pane_id).expect("the layout pane exists"),
             );
-            window.as_window_mut().active_pane = None;
+            window.as_window_mut().active = None;
             window.set_active_pane(
                 &crate::window::window_pane_find_by_id(pane_id).expect("the selected pane exists"),
                 0,
@@ -210,7 +210,7 @@ pub(crate) unsafe fn spawn_window(
                     );
                     winlink_remove(&mut s.windows, requested);
                     if was_current {
-                        s.curw_idx = None;
+                        s.curw = None;
                         sc.flags &= !SPAWN_DETACHED;
                     }
                 }
@@ -218,10 +218,10 @@ pub(crate) unsafe fn spawn_window(
             if requested == -1 {
                 requested = (-1 - session.options().number(c"base-index")) as core::ffi::c_int;
             }
-            sc.wl_idx =
+            sc.wl =
                 crate::window::winlink_insert(&mut session.as_session_mut().windows, requested)
                     .map(|link| link.idx);
-            let Some(created) = sc.wl_idx else {
+            let Some(created) = sc.wl else {
                 *cause = Some(xasprintf(c"couldn't add window %d", fmt_args![requested]));
                 return None;
             };
@@ -235,7 +235,7 @@ pub(crate) unsafe fn spawn_window(
             );
             window = WindowRef::create(sx, sy, xpixel, ypixel);
             if session.curw().is_none() {
-                session.as_session_mut().curw_idx = Some(index);
+                session.as_session_mut().curw = Some(index);
             }
             window_set_latest(
                 &mut window.as_window_mut(),
@@ -247,7 +247,7 @@ pub(crate) unsafe fn spawn_window(
                 .windows
                 .get_mut(&index)
                 .expect("the new link remains registered");
-            link.session_ref = Some(observer);
+            link.session = Some(observer);
             link.set_window(window.clone());
         }
         sc.flags |= SPAWN_NONOTIFY;
@@ -255,10 +255,10 @@ pub(crate) unsafe fn spawn_window(
             if sc.flags & SPAWN_RESPAWN == 0 {
                 let s = session.as_session_mut();
                 if s.curw().is_some_and(|link| link.idx == index) {
-                    s.curw_idx = None;
+                    s.curw = None;
                 }
                 winlink_remove(&mut s.windows, index);
-                sc.wl_idx = None;
+                sc.wl = None;
             }
             return None;
         }
@@ -294,7 +294,7 @@ pub(crate) unsafe fn spawn_pane(
 
         let session = sc.s.clone().expect("a spawn context has a session owner");
         let Some(link) = sc
-            .wl_idx
+            .wl
             .and_then(|index| WinlinkRef::new(session.clone(), index))
         else {
             *cause = Some(c"window no longer exists".to_owned());

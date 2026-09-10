@@ -124,7 +124,11 @@ pub use crate::consts::{
 
 /// The bytes of a character too long to fit in a `utf8_char`, keyed the way
 /// the index and data trees order them: by length first, then by the bytes.
-type utf8_stored = (u_char, [u8; 32]);
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+struct utf8_stored {
+    size: u_char,
+    data: [u8; 32],
+}
 
 pub const __WCHAR_MAX: core::ffi::c_int = __WCHAR_MAX__;
 pub const ULLONG_MAX: core::ffi::c_ulonglong = (__LONG_LONG_MAX__ as core::ffi::c_ulonglong)
@@ -328,8 +332,8 @@ fn without_width<R>(read: impl FnOnce() -> R) -> R {
 }
 pub(crate) struct Utf8Store {
     next_index: u_int,
-    by_data: std::collections::BTreeMap<utf8_stored, u_int>,
-    by_index: std::collections::BTreeMap<u_int, utf8_stored>,
+    by_data: std::collections::BTreeMap<std::rc::Rc<utf8_stored>, u_int>,
+    by_index: std::collections::BTreeMap<u_int, std::rc::Rc<utf8_stored>>,
 }
 
 impl Utf8Store {
@@ -350,7 +354,8 @@ impl Utf8Store {
         }
         let index = self.next_index;
         self.next_index += 1;
-        self.by_index.insert(index, stored);
+        let stored = std::rc::Rc::new(stored);
+        self.by_index.insert(index, stored.clone());
         self.by_data.insert(stored, index);
         Some((index, true))
     }
@@ -397,7 +402,7 @@ fn utf8_is_alpha(b: u8) -> bool {
 fn utf8_stored_of(data: &[u8]) -> utf8_stored {
     let mut bytes: [u8; 32] = [0; 32];
     bytes[..data.len()].copy_from_slice(data);
-    (data.len() as u_char, bytes)
+    utf8_stored { size: data.len() as u_char, data: bytes }
 }
 
 /// The width the cache holds for `wc`, or `None` when it has none.
@@ -601,12 +606,12 @@ pub fn utf8_to_data(uc: utf8_char, ud: &mut utf8_data) {
                 .borrow_mut()
                 .by_index
                 .get(&((uc & 0xffffff) as u_int))
-                .copied();
+                .cloned();
             let data = &mut (&mut ud.data)[..size];
             match stored {
                 None => data.fill(b' '),
-                Some((_, bytes)) => {
-                    for (to, &from) in data.iter_mut().zip(bytes.iter()) {
+                Some(stored) => {
+                    for (to, &from) in data.iter_mut().zip(stored.data.iter()) {
                         *to = from;
                     }
                 }

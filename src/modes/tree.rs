@@ -61,8 +61,8 @@ impl WindowTreeTag {
 #[repr(C)]
 pub struct window_tree_modedata {
     /// The pane the mode is running in.
-    pub wp_ref: Option<RustWindowPaneWeak>,
-    pub(crate) data: Option<ModeTreeDataWeak>,
+    pub wp: Option<RustWindowPaneWeak>,
+    pub(crate) data: Option<ModeTreeDataRef>,
     pub format: Option<CString>,
     pub key_format: Option<CString>,
     pub command: Option<CString>,
@@ -104,7 +104,7 @@ impl window_tree_modedata {
     /// The pane the mode is running in, retained while it is still owned by
     /// its window.
     pub(crate) fn pane(&self) -> Option<RustWindowPaneWeak> {
-        self.wp_ref.as_ref().filter(|pane| pane.is_alive()).cloned()
+        self.wp.as_ref().filter(|pane| pane.is_alive()).cloned()
     }
 
     /// The mode tree the mode is showing, as a handle. Only ever asked of a
@@ -112,7 +112,7 @@ impl window_tree_modedata {
     pub(crate) fn tree_ref(&self) -> ModeTreeDataRef {
         self.data
             .as_ref()
-            .and_then(ModeTreeDataWeak::upgrade)
+            .cloned()
             .expect("the mode is showing a tree")
     }
 }
@@ -985,8 +985,8 @@ unsafe fn window_tree_swap(
             .as_window_mut()
             .winlinks
             .retain(|held| !winlink_is(held, other.link.get().unwrap()));
-        current.link.get_mut().unwrap().window_ref = Some(other.window.clone());
-        other.link.get_mut().unwrap().window_ref = Some(current.window.clone());
+        current.link.get_mut().unwrap().window = Some(other.window.clone());
+        other.link.get_mut().unwrap().window = Some(current.window.clone());
         if let Some(key) = key_other {
             current.window.as_window_mut().winlinks.push(key);
         }
@@ -1039,7 +1039,7 @@ pub(crate) unsafe fn window_tree_init(
         let data_ref = WindowTreeModeDataRef::new(window_tree_modedata::default());
         let mut data_guard = data_ref.borrow_mut();
         let data = &mut *data_guard;
-        data.wp_ref = Some(pane.clone());
+        data.wp = Some(pane.clone());
         wme.state = WindowModeState::Tree(data_ref.clone());
         if args.is_some_and(|args| args.argument_flag_count(b's') != 0) {
             data.type_0 = WINDOW_TREE_SESSION;
@@ -1110,8 +1110,7 @@ pub(crate) unsafe fn window_tree_init(
             WindowModeData::Tree(data_ref.downgrade()),
             &window_tree_menu_items,
         );
-        data_ref.borrow_mut().data = Some(mtd.downgrade());
-        wme.mode_tree_ref = Some(mtd);
+        data_ref.borrow_mut().data = Some(mtd.clone());
         (data_ref.tree_ref()).zoom(args);
         (data_ref.tree_ref()).build();
         (data_ref.tree_ref()).draw();
@@ -1123,7 +1122,8 @@ pub(crate) unsafe fn window_tree_free(wme: &mut window_mode_entry) {
         let Some(data) = wme.state.tree() else {
             return;
         };
-        (data.tree_ref()).close();
+        let tree = data.borrow_mut().data.take().expect("the mode is showing a tree");
+        tree.close();
     }
 }
 pub(crate) unsafe fn window_tree_resize(wme: &mut window_mode_entry, sx: u_int, sy: u_int) {
@@ -1301,7 +1301,7 @@ impl WindowTreeModeDataRef {
             }
             let session_key = current.as_ref().map(|session| session.id());
             let window_key = session_key
-                .zip(fs.wl_idx)
+                .zip(fs.wl)
                 .map(|(id, index)| WindowTreeTag::Window(id, index));
             let selection = match type_0 {
                 WINDOW_TREE_SESSION => session_key.map(WindowTreeTag::Session),
@@ -1310,7 +1310,7 @@ impl WindowTreeModeDataRef {
                     if fs.window().is_some_and(|window| window.pane_count() == 1) {
                         window_key
                     } else {
-                        fs.wp_ref
+                        fs.wp
                             .as_ref()
                             .map(|pane| pane.id())
                             .map(WindowTreeTag::Pane)
@@ -1657,7 +1657,7 @@ impl WindowTreeModeDataRef {
                         let tag = data.borrow_mut().tag_for(WindowTreeTag::Session(id));
                         tree.expand(tag);
                     }
-                    let window_tag = session_id.zip(fsp.wl_idx).map(|(id, index)| {
+                    let window_tag = session_id.zip(fsp.wl).map(|(id, index)| {
                         data.borrow_mut().tag_for(WindowTreeTag::Window(id, index))
                     });
                     if let Some(tag) = window_tag {

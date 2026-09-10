@@ -141,17 +141,17 @@ unsafe fn cmd_display_panes_draw_pane(
         let oo = session.options();
         let tty = client.as_tty_mut();
 
-        if wp.geometry().x.wrapping_add(wp.geometry().width as c_int) <= ctx.ox
-            || wp.geometry().x >= ctx.ox.wrapping_add(ctx.sx as c_int)
-            || wp.geometry().y.wrapping_add(wp.geometry().height as c_int) <= ctx.oy
-            || wp.geometry().y >= ctx.oy.wrapping_add(ctx.sy as c_int)
+        if wp.geometry().xoff.wrapping_add(wp.geometry().sx as c_int) <= ctx.ox
+            || wp.geometry().xoff >= ctx.ox.wrapping_add(ctx.sx as c_int)
+            || wp.geometry().yoff.wrapping_add(wp.geometry().sy as c_int) <= ctx.oy
+            || wp.geometry().yoff >= ctx.oy.wrapping_add(ctx.sy as c_int)
         {
             return;
         }
         let (xoff, sx) =
-            cmd_display_panes_clip(wp.geometry().x, wp.geometry().width, ctx.ox, ctx.sx);
+            cmd_display_panes_clip(wp.geometry().xoff, wp.geometry().sx, ctx.ox, ctx.sx);
         let (mut yoff, sy) =
-            cmd_display_panes_clip(wp.geometry().y, wp.geometry().height, ctx.oy, ctx.sy);
+            cmd_display_panes_clip(wp.geometry().yoff, wp.geometry().sy, ctx.oy, ctx.sy);
         if ctx.statustop != 0 {
             yoff = yoff.wrapping_add(ctx.statuslines);
         }
@@ -186,7 +186,7 @@ unsafe fn cmd_display_panes_draw_pane(
         let mut rbuf = [0u8; 16];
         let rlen = cmd_display_panes_fill(
             &mut rbuf,
-            &format!("{}x{}", wp.geometry().width, wp.geometry().height),
+            &format!("{}x{}", wp.geometry().sx, wp.geometry().sy),
         );
         let mut lbuf = [0u8; 16];
         let llen = match pane > 9 && pane < 35 {

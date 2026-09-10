@@ -42,8 +42,15 @@ pub trait PaneResizeQueue {
 
 #[derive(Clone, Copy)]
 struct PaneResize {
-    old: PaneSize,
-    new: PaneSize,
+    sx: u_int,
+    sy: u_int,
+    osx: u_int,
+    osy: u_int,
+}
+
+impl PaneResize {
+    fn size(&self) -> PaneSize { PaneSize { width: self.sx, height: self.sy } }
+    fn old_size(&self) -> PaneSize { PaneSize { width: self.osx, height: self.osy } }
 }
 
 /// The pane resize queue used by hmux.
@@ -62,7 +69,7 @@ impl PaneResizeQueue for RustPaneResizeQueue {
     }
 
     fn record(&mut self, old: PaneSize, new: PaneSize) {
-        self.queue.push_back(PaneResize { old, new });
+        self.queue.push_back(PaneResize { sx: new.width, sy: new.height, osx: old.width, osy: old.height });
     }
 
     fn next_step(&mut self) -> Option<PaneResizeStep> {
@@ -71,14 +78,14 @@ impl PaneResizeQueue for RustPaneResizeQueue {
         if self.queue.len() == 1 {
             self.queue.pop_front();
             return Some(PaneResizeStep {
-                size: first.new,
+                size: first.size(),
                 retry_after: NORMAL_RETRY,
             });
         }
-        if last.new != first.old {
+        if last.size() != first.old_size() {
             self.queue.clear();
             return Some(PaneResizeStep {
-                size: last.new,
+                size: last.size(),
                 retry_after: NORMAL_RETRY,
             });
         }
@@ -88,7 +95,7 @@ impl PaneResizeQueue for RustPaneResizeQueue {
         self.queue.clear();
         self.queue.push_back(last);
         Some(PaneResizeStep {
-            size: resize.new,
+            size: resize.size(),
             retry_after: QUICK_RETRY,
         })
     }

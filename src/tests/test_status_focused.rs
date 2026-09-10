@@ -647,7 +647,7 @@ fn completion_menu_callback_replaces_words_targets_and_ignores_cancel() {
             0,
             b'0' as key_code,
             status_prompt_menu {
-                client: weak.clone(),
+                c: weak.clone(),
                 start: 1,
                 list: vec![c"zero".to_owned(), c"chosen".to_owned()],
                 flag: 0,
@@ -665,7 +665,7 @@ fn completion_menu_callback_replaces_words_targets_and_ignores_cancel() {
             0,
             b'0' as key_code,
             status_prompt_menu {
-                client: weak.clone(),
+                c: weak.clone(),
                 start: 0,
                 list: vec![c"3".to_owned()],
                 flag: 0,
@@ -676,7 +676,7 @@ fn completion_menu_callback_replaces_words_targets_and_ignores_cancel() {
             0,
             KEYC_NONE,
             status_prompt_menu {
-                client: weak,
+                c: weak,
                 start: 0,
                 list: vec![c"ignored".to_owned()],
                 flag: b't' as i8,

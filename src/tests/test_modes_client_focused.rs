@@ -8,7 +8,7 @@ use crate::window::window_pane_find_by_id;
 
 fn mode_data(key_format: &'static CStr) -> WindowClientModeDataRef {
     WindowClientModeDataRef::new(window_client_modedata {
-        wp_ref: None,
+        wp: None,
         data: None,
         format: Some(c"#{client_name}".to_owned()),
         key_format: Some(key_format.to_owned()),
@@ -88,7 +88,7 @@ fn build_selects_attached_clients_and_applies_filters() {
             WindowModeData::Client(data.downgrade()),
             &window_client_menu_items,
         );
-        data.borrow_mut().data = Some(tree.downgrade());
+        data.borrow_mut().data = Some(tree.clone());
 
         let session = Session::new(902, "client-mode");
         let mut clients = Clients::new();
@@ -166,32 +166,28 @@ fn lifecycle_initializes_resizes_updates_and_frees_an_empty_mode() {
         let mut target = Target::new(40, 12);
         let pane = target.pane(0);
         let mut entry = window_mode_entry {
-            pane_weak: Some(
+            wp: Some(
                 crate::window::window_pane_find_by_id((*pane).pane_id())
                     .unwrap()
                     .clone(),
             ),
-            source_pane: None,
+            swp: None,
             state: WindowModeState::None,
-            screen_ready: false,
+            screen: None,
             prefix: 0,
-            mode_tree_ref: None,
-        };
+            };
         WindowMode::Client.init(
             &mut entry,
             crate::window::window_pane_find_by_id((*pane).pane_id()).unwrap(),
             None,
             None,
         );
-        assert!(entry.screen_ready);
+        assert!(entry.screen.is_some());
         assert!(matches!(entry.state, WindowModeState::Client(_)));
         window_client_resize(&mut entry, 32, 8);
         {
             let screen = entry
-                .mode_tree_ref
-                .as_ref()
-                .unwrap()
-                .screen_handle()
+                .screen.as_ref().unwrap().shared().unwrap()
                 .borrow();
             assert_eq!(RustScreen::grid(&screen).sx, 32);
             assert_eq!(RustScreen::grid(&screen).sy, 8);
@@ -207,7 +203,7 @@ fn menu_callbacks_stop_observing_a_removed_pane() {
     let _guard = globals();
     let mut target = Target::new(40, 12);
     let data = mode_data(c"#{line}");
-    data.borrow_mut().wp_ref = target.state().pane_ref();
+    data.borrow_mut().wp = target.state().pane_ref();
     let observed = data.borrow().pane().unwrap();
     drop(target);
     unsafe {
@@ -236,10 +232,10 @@ fn preview_uses_the_clients_current_window_and_skips_missing_active_panes() {
         client.set_attached_session(Some(&session));
         client.as_client_mut().status.screen = RustScreen::new_with_server_options(40, 1, 0);
         let metadata = ModeTreeItemData::Client(std::rc::Rc::new(window_client_itemdata {
-            client_ref: client.clone(),
+            c: client.clone(),
         }));
         for (index, expected) in [(0, b'A'), (7, b'B')] {
-            session.as_session_mut().curw_idx = Some(index);
+            session.as_session_mut().curw = Some(index);
             let mut output = Screen::new(40, 12, 0);
             {
                 let mut writer = crate::screen::screen_write_ctx_on_screen(&mut output);
@@ -253,9 +249,9 @@ fn preview_uses_the_clients_current_window_and_skips_missing_active_panes() {
             );
         }
         let window = session.curw().unwrap().window().unwrap().clone();
-        window.as_window_mut().active_pane = None;
+        window.as_window_mut().active = None;
         for current in [Some(7), None] {
-            session.as_session_mut().curw_idx = current;
+            session.as_session_mut().curw = current;
             let mut output = Screen::new(40, 12, 0);
             {
                 let mut writer = crate::screen::screen_write_ctx_on_screen(&mut output);
@@ -269,7 +265,7 @@ fn preview_uses_the_clients_current_window_and_skips_missing_active_panes() {
                     .is_empty()
             );
         }
-        session.as_session_mut().curw_idx = Some(0);
+        session.as_session_mut().curw = Some(0);
         client.set_attached_session(None);
     }
 }

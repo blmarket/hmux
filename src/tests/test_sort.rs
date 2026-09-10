@@ -1308,8 +1308,8 @@ fn a_winlink_comparison_answers_the_times_of_the_windows_behind_it() {
                 assert_eq!(compares(sort_winlink_cmp, order, 1, wl1, wl2), -older);
             }
             let times = (*aaa).timestamps();
-            (*bbb).set_creation_time(times.creation);
-            (*bbb).set_activity_time(times.activity);
+            (*bbb).set_creation_time(times.creation_time);
+            (*bbb).set_activity_time(times.activity_time);
             assert!(compares(sort_winlink_cmp, order, 0, wl1, wl2) < 0);
         }
     }

@@ -31,7 +31,7 @@ pub trait ArgumentCommandState: Default {
     /// Sets the command source and source line together.
     fn set_prepared_command_source(&mut self, file: Option<&CStr>, line: u_int);
 
-    /// Holds the parse client while retaining only a weak reference in the context.
+    /// Holds the parse client in the command's parse context.
     fn set_prepared_command_client(&mut self, client: Option<ClientRef>);
 
     /// Returns the client held for parsing, when it is still present.
@@ -60,6 +60,32 @@ mod tests {
         assert_eq!(state.prepared_command_parse_input().command_parse_line(), 9);
         assert!(state.prepared_command_list().is_none());
         assert!(state.prepared_command_client().is_none());
+    }
+
+    #[test]
+    fn prepared_parse_context_retains_and_releases_its_client() {
+        let client = ClientRef::new(crate::types::client::default());
+        let weak = client.downgrade();
+        let mut state = args_command_state::default();
+        state.set_prepared_command_client(Some(client));
+        let mut context = state.prepared_command_parse_input().clone();
+        assert!(context.command_parse_client().is_some());
+        state.set_prepared_command_client(None);
+        assert!(state.prepared_command_client().is_none());
+        assert!(state.prepared_command_parse_input().command_parse_client().is_none());
+        assert!(weak.upgrade().is_some());
+        context.set_command_parse_client(None);
+        assert!(weak.upgrade().is_none());
+    }
+
+    #[test]
+    fn ordinary_parse_context_does_not_retain_its_client() {
+        let client = ClientRef::new(crate::types::client::default());
+        let weak = client.downgrade();
+        let mut context = cmd_parse_input::default();
+        context.set_command_parse_client(Some(client));
+        assert!(weak.upgrade().is_none());
+        assert!(context.command_parse_client().is_none());
     }
 
     #[test]

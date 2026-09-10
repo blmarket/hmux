@@ -134,7 +134,7 @@ fn retained_rows_survive_rebuild_and_close_and_resolve_replaced_buffers_by_name(
         let mut pane = fs
             .window()
             .unwrap()
-            .pane_by_id(fs.wp_ref.as_ref().map(|pane| pane.id()).unwrap())
+            .pane_by_id(fs.wp.as_ref().map(|pane| pane.id()).unwrap())
             .unwrap();
         with_paste_buffers_mut(|buffers| buffers.set_named(c"retained", b"original".to_vec()))
             .unwrap();
@@ -267,7 +267,7 @@ fn row_and_key_formats_use_the_resolved_target_and_drop_invalid_context() {
             (owner.clone()).get_key(tree.current_item(), 0),
             b'7' as key_code
         );
-        owner.borrow_mut().fs.wl_idx = Some(99);
+        owner.borrow_mut().fs.wl = Some(99);
         tree.build();
         assert_eq!(
             tree.borrow().children[0].text.as_deref(),

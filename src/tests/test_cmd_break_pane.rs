@@ -121,7 +121,7 @@ impl Drop for World {
             let mut owner = fixture.handle().clone();
             unsafe {
                 let session = owner.as_session_mut();
-                session.curw_idx = None;
+                session.curw = None;
                 session.lastw.clear();
                 while let Some(index) = session.windows.keys().next().copied() {
                     crate::window::winlink_remove(&mut session.windows, index);
@@ -531,7 +531,7 @@ fn breaking_the_last_pane_hands_both_list_tails_to_the_one_in_front() {
                 .iter()
                 .map(|pane| pane.id())
                 .collect::<Vec<_>>(),
-            vec![first.pane_id(), front.pane_id()],
+            vec![first.id(), front.id()],
             "and the z-order list's tail"
         );
         assert!(w0.as_window().panes.get(2).is_none());
@@ -557,7 +557,7 @@ fn breaking_the_last_pane_hands_both_list_tails_to_the_one_in_front() {
                 .iter()
                 .map(|pane| pane.id())
                 .collect::<Vec<_>>(),
-            vec![moved.pane_id()]
+            vec![moved.id()]
         );
         assert!(nw.active_pane().is_some_and(|pane| { pane.ptr_eq(&moved) }));
         assert_eq!(window_count_panes(&nw.as_window(), 1), 1);

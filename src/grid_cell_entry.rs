@@ -34,7 +34,7 @@ pub trait GridCellEntry {
 impl GridCellEntry for crate::types::grid_cell_entry {
     fn from_compact_grid_cell_entry(data: [u8; 4], flags: u8) -> Self {
         Self {
-            c2rust_unnamed: crate::types::grid_cell_entry_union {
+            value: crate::types::grid_cell_entry_union {
                 data: crate::types::grid_cell_entry_data {
                     attr: data[0],
                     fg: data[1],
@@ -48,18 +48,18 @@ impl GridCellEntry for crate::types::grid_cell_entry {
 
     fn from_extended_grid_cell_entry(offset: u32, flags: u8) -> Self {
         Self {
-            c2rust_unnamed: crate::types::grid_cell_entry_union { offset },
+            value: crate::types::grid_cell_entry_union { offset },
             flags,
         }
     }
 
     fn grid_cell_entry_data(&self) -> [u8; 4] {
-        let data = unsafe { self.c2rust_unnamed.data };
+        let data = unsafe { self.value.data };
         [data.attr, data.fg, data.bg, data.data]
     }
 
     fn set_grid_cell_entry_data(&mut self, data: [u8; 4]) {
-        self.c2rust_unnamed.data = crate::types::grid_cell_entry_data {
+        self.value.data = crate::types::grid_cell_entry_data {
             attr: data[0],
             fg: data[1],
             bg: data[2],
@@ -68,11 +68,11 @@ impl GridCellEntry for crate::types::grid_cell_entry {
     }
 
     fn grid_cell_entry_offset(&self) -> u32 {
-        unsafe { self.c2rust_unnamed.offset }
+        unsafe { self.value.offset }
     }
 
     fn set_grid_cell_entry_offset(&mut self, offset: u32) {
-        self.c2rust_unnamed.offset = offset;
+        self.value.offset = offset;
     }
 
     fn grid_cell_entry_flags(&self) -> u8 {

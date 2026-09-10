@@ -42,9 +42,9 @@ unsafe fn cmd_swap_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let src = item.source.session().expect("swap source session");
     let dst = item.target.session().expect("swap target session");
     let same_session = src.ptr_eq(&dst);
-    let source = WinlinkRef::new(src.clone(), item.source.wl_idx.expect("swap source link"))
+    let source = WinlinkRef::new(src.clone(), item.source.wl.expect("swap source link"))
         .expect("swap source link is present");
-    let target = WinlinkRef::new(dst.clone(), item.target.wl_idx.expect("swap target link"))
+    let target = WinlinkRef::new(dst.clone(), item.target.wl.expect("swap target link"))
         .expect("swap target link is present");
     if !same_session && src.shares_group(&dst) {
         unsafe { item.error(c"can't move window, sessions are grouped", fmt_args![]) };

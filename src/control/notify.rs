@@ -52,7 +52,7 @@ pub unsafe fn control_notify_window_layout_changed(w: &WindowRef) {
 }
 pub unsafe fn control_notify_window_pane_changed(w: &WindowRef) {
     unsafe {
-        let Some(pane) = w.active_pane() else {
+        let Some(pane_id) = w.active_pane().and_then(|pane| pane.pane_id()) else {
             return;
         };
         for mut owner in client_walk() {
@@ -61,7 +61,7 @@ pub unsafe fn control_notify_window_pane_changed(w: &WindowRef) {
                 control_write(
                     c,
                     c"%%window-pane-changed @%u %%%u",
-                    fmt_args![w.window_id(), pane.pane_id()],
+                    fmt_args![w.window_id(), pane_id],
                 );
             }
         }

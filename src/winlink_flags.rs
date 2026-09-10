@@ -34,8 +34,8 @@ mod tests {
     fn masks_can_be_added_and_removed() {
         let mut state = crate::types::winlink {
             idx: 0,
-            session_ref: None,
-            window_ref: None,
+            session: None,
+            window: None,
             flags: 0,
         };
         assert_eq!(state.winlink_flags(), 0);

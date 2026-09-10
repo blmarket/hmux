@@ -154,10 +154,10 @@ fn a_plain_cell_is_packed_into_the_entry() {
     let gce = g.entry(1, 0);
     assert_eq!(gce.flags, 0);
     unsafe {
-        assert_eq!(gce.c2rust_unnamed.data.fg, 4);
-        assert_eq!(gce.c2rust_unnamed.data.bg, 2);
-        assert_eq!(gce.c2rust_unnamed.data.attr, GRID_ATTR_BRIGHT as u_char);
-        assert_eq!(gce.c2rust_unnamed.data.data, b'x');
+        assert_eq!(gce.value.data.fg, 4);
+        assert_eq!(gce.value.data.bg, 2);
+        assert_eq!(gce.value.data.attr, GRID_ATTR_BRIGHT as u_char);
+        assert_eq!(gce.value.data.data, b'x');
     }
 
     let read = g.cell(1, 0);
@@ -182,8 +182,8 @@ fn the_256_colour_flags_live_in_the_entry_flags() {
     let gce = g.entry(0, 0);
     assert_eq!(gce.flags as c_int, GRID_FLAG_FG256 | GRID_FLAG_BG256);
     unsafe {
-        assert_eq!(gce.c2rust_unnamed.data.fg, 200);
-        assert_eq!(gce.c2rust_unnamed.data.bg, 100);
+        assert_eq!(gce.value.data.fg, 200);
+        assert_eq!(gce.value.data.bg, 100);
     }
     let read = g.cell(0, 0);
     assert_eq!(read.fg, 200 | COLOUR_FLAG_256);
@@ -304,7 +304,7 @@ fn an_extended_entry_pointing_outside_the_extended_data_reads_as_default() {
     grid_set_cell(&mut *g, 0, 0, &gc);
     {
         let gl = &mut g.linedata[0];
-        gl.celldata_mut()[0].c2rust_unnamed.offset = 99;
+        gl.celldata_mut()[0].value.offset = 99;
     }
     let read = g.cell(0, 0);
     assert_eq!(text_of(&read), " ");

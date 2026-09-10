@@ -73,7 +73,7 @@ unsafe fn wire_up(c: *mut client) -> Wired {
         (*c).ttyname = Some(ttyname.clone());
         (*c).peer = Some(crate::proc::PeerRef::new(*zeroed::<tmuxpeer>()));
         let table_ref = key_bindings_get_table_ref(c"root", 1).unwrap();
-        (*c).keytable_ref = Some(table_ref);
+        (*c).keytable = Some(table_ref);
         Wired { c, ttyname }
     }
 }
@@ -91,7 +91,7 @@ impl Wired {
 impl Drop for Wired {
     fn drop(&mut self) {
         unsafe {
-            (*self.c).keytable_ref = None;
+            (*self.c).keytable = None;
         };
     }
 }

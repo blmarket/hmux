@@ -30,9 +30,9 @@ use ::core::ffi::CStr;
 #[repr(C)]
 pub struct window_buffer_modedata {
     /// The pane the mode is running in.
-    pub wp_ref: Option<RustWindowPaneWeak>,
+    pub wp: Option<RustWindowPaneWeak>,
     pub fs: cmd_find_state,
-    pub(crate) data: Option<ModeTreeDataWeak>,
+    pub(crate) data: Option<ModeTreeDataRef>,
     pub command: Option<std::ffi::CString>,
     pub format: Option<std::ffi::CString>,
     pub key_format: Option<std::ffi::CString>,
@@ -44,7 +44,7 @@ pub struct window_buffer_modedata {
 impl window_buffer_modedata {
     /// The pane the mode is running in, retained directly until this reference is dropped.
     pub(crate) fn pane(&self) -> Option<RustWindowPaneWeak> {
-        self.wp_ref.as_ref().filter(|pane| pane.is_alive()).cloned()
+        self.wp.as_ref().filter(|pane| pane.is_alive()).cloned()
     }
 
     /// The mode tree the mode is showing, as a handle. Only ever asked of a
@@ -52,7 +52,7 @@ impl window_buffer_modedata {
     pub(crate) fn tree_ref(&self) -> ModeTreeDataRef {
         self.data
             .as_ref()
-            .and_then(ModeTreeDataWeak::upgrade)
+            .cloned()
             .expect("the mode is showing a tree")
     }
 }
@@ -263,7 +263,7 @@ pub(crate) unsafe fn window_buffer_init(
             None => WINDOW_BUFFER_DEFAULT_COMMAND.to_owned(),
         };
         let data_ref = WindowBufferModeDataRef::new(window_buffer_modedata {
-            wp_ref: Some(pane.clone()),
+            wp: Some(pane.clone()),
             fs: state,
             data: None,
             command: Some(command),
@@ -307,18 +307,17 @@ pub(crate) unsafe fn window_buffer_init(
             WindowModeData::Buffer(data_ref.downgrade()),
             &window_buffer_menu_items,
         );
-        data_ref.borrow_mut().data = Some(mtd.downgrade());
+        data_ref.borrow_mut().data = Some(mtd.clone());
         mtd.zoom(args);
         mtd.build();
         mtd.draw();
-        wme.mode_tree_ref = Some(mtd);
     }
 }
 pub(crate) unsafe fn window_buffer_free(wme: &mut window_mode_entry) {
     let Some(owner) = wme.state.buffer() else {
         return;
     };
-    let tree = owner.borrow().tree_ref();
+    let tree = owner.borrow_mut().data.take().expect("the mode is showing a tree");
     unsafe { tree.close() };
 }
 pub(crate) unsafe fn window_buffer_resize(wme: &mut window_mode_entry, sx: u_int, sy: u_int) {
@@ -571,7 +570,7 @@ impl WindowBufferModeDataRef {
                     101 => {
                         if let Some(item) = tree.current_item().buffer() {
                             window_buffer_start_edit(
-                                owner.borrow().wp_ref.as_ref().unwrap().id(),
+                                owner.borrow().wp.as_ref().unwrap().id(),
                                 &item,
                                 c,
                             );

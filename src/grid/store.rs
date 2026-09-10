@@ -227,7 +227,7 @@ static grid_padding_cell: grid_cell = one_byte_cell(b'!', 0, 0, GRID_FLAG_PADDIN
 static grid_cleared_cell: grid_cell = one_byte_cell(b' ', 1, 1, GRID_FLAG_CLEARED);
 
 static grid_cleared_entry: grid_cell_entry = grid_cell_entry {
-    c2rust_unnamed: grid_cell_entry_union {
+    value: grid_cell_entry_union {
         data: grid_cell_entry_data {
             attr: 0,
             fg: 8,
@@ -278,7 +278,7 @@ fn grid_store_cell(gce: &mut grid_cell_entry, gc: &grid_cell, c: u_char) {
         flags |= GRID_FLAG_BG256;
     }
     gce.flags = flags as u_char;
-    gce.c2rust_unnamed.data = grid_cell_entry_data {
+    gce.value.data = grid_cell_entry_data {
         attr: gc.attr as u_char,
         fg: (gc.fg & 0xff) as u_char,
         bg: (gc.bg & 0xff) as u_char,
@@ -303,7 +303,7 @@ fn grid_need_extended_cell(gce: &grid_cell_entry, gc: &grid_cell) -> bool {
 fn grid_get_extended_cell(gl: &mut grid_line, px: u_int, flags: c_int) {
     let at = gl.push_extended();
     let gce = &mut gl.celldata_mut()[px as usize];
-    gce.c2rust_unnamed.offset = at;
+    gce.value.offset = at;
     gce.flags = (flags | GRID_FLAG_EXTENDED) as u_char;
 }
 
@@ -315,7 +315,7 @@ fn grid_extended_cell(gl: &mut grid_line, px: u_int, gc: &grid_cell) -> u_int {
         let gce = gl.celldata()[px as usize];
         if gce.flags as c_int & GRID_FLAG_EXTENDED == 0 {
             grid_get_extended_cell(gl, px, flags);
-        } else if gce.c2rust_unnamed.offset >= gl.extdsize() {
+        } else if gce.value.offset >= gl.extdsize() {
             fatalx(c"offset too big", fmt_args![]);
         }
         gl.flags |= GRID_LINE_EXTENDED;
@@ -327,7 +327,7 @@ fn grid_extended_cell(gl: &mut grid_line, px: u_int, gc: &grid_cell) -> u_int {
         } else {
             utf8_from_data(&gc.data).1
         };
-        let at = gl.celldata()[px as usize].c2rust_unnamed.offset;
+        let at = gl.celldata()[px as usize].value.offset;
         gl.extddata_mut()[at as usize] = grid_extd_entry {
             data,
             attr: gc.attr,
@@ -360,8 +360,8 @@ fn grid_compact_line(gl: &mut grid_line) {
         let (cells, old) = gl.parts_mut();
         for gce in cells {
             if gce.flags as c_int & GRID_FLAG_EXTENDED != 0 {
-                new.push(old[gce.c2rust_unnamed.offset as usize]);
-                gce.c2rust_unnamed.offset = new.len() as u_int - 1;
+                new.push(old[gce.value.offset as usize]);
+                gce.value.offset = new.len() as u_int - 1;
             }
         }
         gl.set_extended(&new);
@@ -389,13 +389,13 @@ fn grid_clear_cell(gd: &mut grid, px: u_int, py: u_int, bg: u_int, moved: bool) 
     unsafe {
         let gl = line_at_mut(gd, py);
         let old = gl.celldata()[px as usize];
-        let old_offset = old.c2rust_unnamed.offset;
+        let old_offset = old.value.offset;
         let had_extended = old.flags as c_int & GRID_FLAG_EXTENDED != 0;
         gl.celldata_mut()[px as usize] = grid_cleared_entry;
         if !moved && had_extended && old_offset < gl.extdsize() {
             let gce = &mut gl.celldata_mut()[px as usize];
             gce.flags = (gce.flags as c_int | GRID_FLAG_EXTENDED) as u_char;
-            gce.c2rust_unnamed.offset = old_offset;
+            gce.value.offset = old_offset;
             let at = grid_extended_cell(gl, px, &grid_cleared_cell);
             if bg != 8 {
                 gl.extddata_mut()[at as usize].bg = bg as c_int;
@@ -411,7 +411,7 @@ fn grid_clear_cell(gd: &mut grid, px: u_int, py: u_int, bg: u_int, moved: bool) 
                 if bg & COLOUR_FLAG_256 as u_int != 0 {
                     gce.flags = (gce.flags as c_int | GRID_FLAG_BG256) as u_char;
                 }
-                gce.c2rust_unnamed.data.bg = bg as u_char;
+                gce.value.data.bg = bg as u_char;
             }
         }
     }
@@ -660,7 +660,7 @@ fn grid_get_cell1(gl: &grid_line, px: u_int, gc: &mut grid_cell) {
     unsafe {
         let gce = gl.celldata()[px as usize];
         if gce.flags as c_int & GRID_FLAG_EXTENDED != 0 {
-            let offset = gce.c2rust_unnamed.offset;
+            let offset = gce.value.offset;
             if offset >= gl.extdsize() {
                 *gc = grid_default_cell;
                 return;
@@ -679,7 +679,7 @@ fn grid_get_cell1(gl: &grid_line, px: u_int, gc: &mut grid_cell) {
             }
             return;
         }
-        let data = gce.c2rust_unnamed.data;
+        let data = gce.value.data;
         gc.flags = (gce.flags as c_int & !(GRID_FLAG_FG256 | GRID_FLAG_BG256)) as u_char;
         gc.attr = data.attr as u_short;
         gc.fg = data.fg as c_int;

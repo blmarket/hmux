@@ -166,7 +166,7 @@ pub struct cmdq_item {
     pub number: u_int,
     pub time: time_t,
     pub flags: core::ffi::c_int,
-    state_ref: Option<CmdqStateRef>,
+    state: Option<CmdqStateRef>,
     owner: Option<CmdqItemWeak>,
     pub source: cmd_find_state,
     pub target: cmd_find_state,
@@ -252,7 +252,7 @@ impl CmdqItemRef {
 
 impl cmdq_item {
     pub(crate) fn state_ref(&self) -> CmdqStateRef {
-        self.state_ref
+        self.state
             .clone()
             .expect("a queue item without a state")
     }
@@ -335,7 +335,7 @@ pub unsafe fn cmdq_append(c: Option<&ClientRef>, items: cmdq_items) -> Option<Cm
 
 fn cmdq_remove(item: &mut cmdq_item) {
     let _ = item.client.take();
-    let _ = item.state_ref.take();
+    let _ = item.state.take();
     let queue = item.queue.as_ref().and_then(CmdqListWeak::upgrade);
     item.name = None;
     if let Some(queue) = queue
@@ -796,12 +796,12 @@ impl CmdqItemRef {
             queue: None,
             client: None,
             target_client: None,
-            type_0,
+            type_0: type_0,
             group: 0,
             number: 0,
             time: 0,
             flags: 0,
-            state_ref: Some(state),
+            state: Some(state),
             owner: None,
             source: cmd_find_state::default(),
             target: cmd_find_state::default(),
@@ -1166,7 +1166,7 @@ impl cmdq_item {
         let item = self;
 
         let state = item
-            .state_ref
+            .state
             .as_ref()
             .expect("a queue item without a state");
         state.event()
@@ -1175,7 +1175,7 @@ impl cmdq_item {
         let item = self;
 
         let state = item
-            .state_ref
+            .state
             .as_ref()
             .expect("a queue item without a state");
         state.current()
@@ -1193,7 +1193,7 @@ impl cmdq_item {
                 let entry = cmd_get_entry(&cmd);
                 format_add(ft, c"command", c"%s", fmt_args![entry.name]);
             }
-            if let Some(state) = item.state_ref.as_ref()
+            if let Some(state) = item.state.as_ref()
                 && let Some(formats) = state.state().formats.as_deref()
             {
                 format_merge(ft, formats);

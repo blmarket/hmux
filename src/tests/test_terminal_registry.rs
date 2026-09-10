@@ -6,7 +6,7 @@ fn terminal_with_caps(name: &CStr, caps: &[CString]) -> Result<TerminalRef, CStr
     (unsafe { owner.as_client_mut() }).environ =
         Some(Box::new(crate::environ::RustEnvironment::empty()));
     let mut tty = tty::default();
-    tty.owner = Some(owner.downgrade());
+    tty.client = Some(owner.downgrade());
     tty_term_create(&mut tty, name, caps, &mut 0)
 }
 

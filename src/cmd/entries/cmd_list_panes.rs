@@ -130,7 +130,7 @@ unsafe fn cmd_list_panes_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { cmd_list_panes_session(self_0, &session, item, Level::Session) };
     } else {
         let session = item.target.session().expect("the state names a session");
-        let winlink = WinlinkRef::new(session, item.target.wl_idx.expect("the target has a link"))
+        let winlink = WinlinkRef::new(session, item.target.wl.expect("the target has a link"))
             .expect("the target link exists");
         unsafe { cmd_list_panes_window(self_0, &winlink, item, Level::Window) };
     }

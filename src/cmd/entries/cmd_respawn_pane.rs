@@ -47,7 +47,7 @@ unsafe fn cmd_respawn_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut cause: Option<CString> = None;
     sc.item = cmdq_item_weak_of(item);
     sc.s = item.target.session();
-    sc.wl_idx = item.target.wl_idx;
+    sc.wl = item.target.wl;
     sc.wp0 = item.target.pane_ref();
     unsafe { sc.argv = args.to_vector() };
     sc.environ = Some(new_environment_box());

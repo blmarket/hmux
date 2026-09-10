@@ -375,7 +375,7 @@ fn draw_callback_renders_border_title_and_body_to_buffered_terminal() {
     unsafe {
         (*f.client).tty.term = Some(zeroed_term());
         (*f.client).tty.out = Some(Box::new(ByteBuffer::new()));
-        (*f.client).tty.owner = crate::server::client_ref_of(&*f.client).map(|c| c.downgrade());
+        (*f.client).tty.client = crate::server::client_ref_of(&*f.client).map(|c| c.downgrade());
         (*f.client).tty.sx = 80;
         (*f.client).tty.sy = 24;
         let pd = f.pd();
@@ -535,7 +535,7 @@ fn overlay_clear_releases_popup_and_invokes_close_callback_once() {
         CLOSE_STATUS.set(-1);
         let pd = f.pd();
         pd.borrow_mut().status = 37;
-        pd.borrow_mut().close_cb = Some(Box::new(|status| CLOSE_STATUS.set(status)));
+        pd.borrow_mut().cb = Some(Box::new(|status| CLOSE_STATUS.set(status)));
         assert!(pd.downgrade().upgrade().is_some());
         server_client_clear_overlay(&mut *f.client);
         assert_eq!(CLOSE_STATUS.get(), 37);
@@ -611,7 +611,7 @@ fn range_handles_observe_nested_checks_and_outlive_the_popup() {
     let fixture = Fixture::new("retained ranges", 10, 6, BOX_LINES_SINGLE);
     unsafe {
         let owner = fixture.pd().downgrade();
-        (*fixture.client).tty.owner = Some(
+        (*fixture.client).tty.client = Some(
             crate::server::client_ref_of(&*fixture.client)
                 .unwrap()
                 .downgrade(),
@@ -711,10 +711,10 @@ fn popup_options_follow_the_explicit_session_before_the_clients_session() {
         assert_eq!(show(client.as_client_mut(), None), 0);
         assert_eq!(f.pd().borrow().defaults.fg, 1);
         server_client_clear_overlay(client.as_client_mut());
-        let current = session.as_session_mut().curw_idx.take();
+        let current = session.as_session_mut().curw.take();
         assert_eq!(show(client.as_client_mut(), Some(session.as_session())), -1);
         assert!(client.overlay().is_none());
-        session.as_session_mut().curw_idx = current;
+        session.as_session_mut().curw = current;
         client.set_attached_session(None);
         assert_eq!(show(client.as_client_mut(), Some(session.as_session())), 0);
         assert_eq!(f.pd().borrow().defaults.fg, 4);
@@ -778,7 +778,7 @@ fn popup_teardown_releases_metadata_before_menu_and_close_callbacks() {
             owner.borrow_mut().status = 17;
         }));
         let close_owner = owner.downgrade();
-        owner.borrow_mut().close_cb = Some(Box::new(move |status| {
+        owner.borrow_mut().cb = Some(Box::new(move |status| {
             assert_eq!(status, 17);
             let owner = close_owner.upgrade().unwrap();
             owner.borrow_mut().status = 23;

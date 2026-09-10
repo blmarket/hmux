@@ -201,7 +201,7 @@ pub fn tty_create_log() {
 }
 /// The client whose terminal this is, held for as long as the caller keeps it.
 pub fn tty_client(tty: &tty) -> Option<ClientRef> {
-    tty.owner.as_ref().and_then(ClientWeak::upgrade)
+    tty.client.as_ref().and_then(ClientWeak::upgrade)
 }
 
 pub unsafe fn tty_init(c: &mut client) -> core::ffi::c_int {
@@ -213,7 +213,7 @@ pub unsafe fn tty_init(c: &mut client) -> core::ffi::c_int {
         let fd = c.fd;
         let tty = &mut c.tty;
         *tty = tty::default();
-        tty.owner = owner;
+        tty.client = owner;
         tty.cstyle = SCREEN_CURSOR_DEFAULT;
         tty.ccolour = -(1 as core::ffi::c_int);
         tty.bg = -(1 as core::ffi::c_int);
@@ -413,7 +413,7 @@ pub unsafe fn tty_open(tty: &mut tty, cause: &mut Option<std::ffi::CString>) -> 
         }
         tty.flags |= TTY_OPENED;
         tty.flags &= !(TTY_NOCURSOR | TTY_FREEZE | TTY_BLOCK | TTY_TIMER);
-        let owner = tty.owner.clone();
+        let owner = tty.client.clone();
         tty.event_in.set_callback(
             c.as_ref().expect("the tty has a client").fd(),
             Interest::Read,
@@ -424,8 +424,8 @@ pub unsafe fn tty_open(tty: &mut tty, cause: &mut Option<std::ffi::CString>) -> 
                 }
             },
         );
-        tty.in_0 = Some(Box::new(ByteBuffer::new()));
-        let owner = tty.owner.clone();
+        tty.r#in = Some(Box::new(ByteBuffer::new()));
+        let owner = tty.client.clone();
         tty.event_out.set_callback(
             c.as_ref().expect("the tty has a client").fd(),
             Interest::Write,
@@ -437,19 +437,19 @@ pub unsafe fn tty_open(tty: &mut tty, cause: &mut Option<std::ffi::CString>) -> 
             },
         );
         tty.out = Some(Box::new(ByteBuffer::new()));
-        let owner = tty.owner.clone();
+        let owner = tty.client.clone();
         tty.clipboard_timer.set_callback(move || {
             if let Some(mut c) = owner.as_ref().and_then(ClientWeak::upgrade) {
                 c.as_tty_mut().flags &= !TTY_OSC52QUERY;
             }
         });
-        let owner = tty.owner.clone();
+        let owner = tty.client.clone();
         tty.start_timer.set_callback(move || {
             if let Some(mut c) = owner.as_ref().and_then(ClientWeak::upgrade) {
                 tty_start_timer_callback(c.as_tty_mut());
             }
         });
-        let owner = tty.owner.clone();
+        let owner = tty.client.clone();
         tty.timer.set_callback(move || {
             if let Some(mut c) = owner.as_ref().and_then(ClientWeak::upgrade) {
                 tty_timer_callback(c.as_tty_mut());
@@ -689,7 +689,7 @@ pub unsafe fn tty_close(tty: &mut tty) {
         tty.key_timer.disarm();
         tty_stop_tty(tty);
         if tty.flags & TTY_OPENED != 0 {
-            tty.in_0 = None;
+            tty.r#in = None;
             tty.event_in.disable();
             tty.out = None;
             tty.event_out.disable();
@@ -1252,8 +1252,8 @@ unsafe fn tty_window_offset1(
             *oy = 0 as u_int;
         } else {
             let (screen_cx, screen_cy) = pane_screen.cursor();
-            cx = (wp.geometry().x as u_int).wrapping_add(screen_cx);
-            cy = (wp.geometry().y as u_int).wrapping_add(screen_cy);
+            cx = (wp.geometry().xoff as u_int).wrapping_add(screen_cx);
+            cy = (wp.geometry().yoff as u_int).wrapping_add(screen_cy);
             if cx < *sx {
                 *ox = 0 as u_int;
             } else if cx > size.width.wrapping_sub(*sx) {
@@ -3243,7 +3243,7 @@ unsafe fn tty_style_changed(wp: &mut impl crate::WindowPane) {
         let mut normal = grid_default_cell;
         tty_window_default_style(&mut normal, wp);
         style_add(&mut normal, &oo, c"window-style", Some(&mut ft));
-        wp.set_styles(PaneStyleCells { normal, active });
+        wp.set_styles(PaneStyleCells { cached_gc: normal, cached_active_gc: active });
     }
 }
 pub unsafe fn tty_default_colours(gc: &mut grid_cell, wp: &mut impl crate::WindowPane) {
@@ -3258,15 +3258,15 @@ pub unsafe fn tty_default_colours(gc: &mut grid_cell, wp: &mut impl crate::Windo
                 .active_pane()
                 .is_some_and(|pane| core::ptr::addr_eq(pane.as_pane(), wp))
         });
-        if active && styles.active.fg != 8 as core::ffi::c_int {
-            gc.fg = styles.active.fg;
+        if active && styles.cached_active_gc.fg != 8 as core::ffi::c_int {
+            gc.fg = styles.cached_active_gc.fg;
         } else {
-            gc.fg = styles.normal.fg;
+            gc.fg = styles.cached_gc.fg;
         }
-        if active && styles.active.bg != 8 as core::ffi::c_int {
-            gc.bg = styles.active.bg;
+        if active && styles.cached_active_gc.bg != 8 as core::ffi::c_int {
+            gc.bg = styles.cached_active_gc.bg;
         } else {
-            gc.bg = styles.normal.bg;
+            gc.bg = styles.cached_gc.bg;
         };
     }
 }
@@ -3343,10 +3343,10 @@ impl ClientRef {
             let identity = c.clone();
             let name = identity.name();
             let fd = c.fd();
-            let size = c.as_tty().in_0.as_ref().unwrap().len();
+            let size = c.as_tty().r#in.as_ref().unwrap().len();
             let nread = match c
                 .as_tty_mut()
-                .in_0
+                .r#in
                 .as_mut()
                 .unwrap()
                 .read_from_fd(fd, 64 * 1024)

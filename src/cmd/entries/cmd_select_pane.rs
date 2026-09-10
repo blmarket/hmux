@@ -270,17 +270,17 @@ mod tests {
         let mut owners: Vec<_> = client_walk().collect();
         unsafe {
             let tty_owner = owners[0].downgrade();
-            owners[0].as_tty_mut().owner = Some(tty_owner);
+            owners[0].as_tty_mut().client = Some(tty_owner);
             owners[0].set_attached_session(Some(&session));
             *owners[0].flags_mut() = 0;
             owners[1].set_attached_session(Some(&session));
             *owners[1].flags_mut() = CLIENT_CONTROL as u64;
-            let current = session.as_session_mut().curw_idx.take();
+            let current = session.as_session_mut().curw.take();
             cmd_select_pane_redraw(&window);
             assert_eq!(owners[0].flags(), CLIENT_REDRAWSTATUS as u64);
             assert_eq!(owners[1].flags(), CLIENT_CONTROL as u64);
             assert_eq!(tty_window_bigger(owners[0].as_tty()), 0);
-            session.as_session_mut().curw_idx = current;
+            session.as_session_mut().curw = current;
         }
     }
 }

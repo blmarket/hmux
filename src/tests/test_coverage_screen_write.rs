@@ -290,10 +290,10 @@ impl Floating {
             let above = f.pane.hand_to(w);
             (*w).z_index.retain(|pane| pane.id() != (*above).pane_id());
             (*above).set_geometry(crate::pane_geometry::PaneGeometry {
-                x: xoff,
-                y: yoff,
-                width: sx,
-                height: sy,
+                xoff: xoff,
+                yoff: yoff,
+                sx: sx,
+                sy: sy,
             });
             crate::tests::test_fixtures::set_pane_floating(&mut *w, (*above).pane_id(), true);
             let at = (*w)
@@ -352,7 +352,7 @@ impl Attached {
         unsafe {
             let c = a.client;
             (*c).set_attached_session(Some(a.session.handle()));
-            (*c).tty.owner = crate::server::client_ref_of(&*c).map(|c| c.downgrade());
+            (*c).tty.client = crate::server::client_ref_of(&*c).map(|c| c.downgrade());
             (*c).tty.term = Some(zeroed_term());
             (*c).tty.out = Some(Box::new(ByteBuffer::new()));
         }
@@ -410,7 +410,7 @@ fn the_client_callback_turns_a_client_down_before_working_out_offsets() {
         assert_eq!(cb(&mut ttyctx, &mut *c), 0);
         let mut owner = a.session.handle().clone();
         let session = owner.as_session_mut();
-        session.curw_idx = session.windows.get(&0).map(|link| link.idx);
+        session.curw = session.windows.get(&0).map(|link| link.idx);
         unlink(&mut a.session, wl);
     }
 }
@@ -692,7 +692,7 @@ fn a_pane_placed_outside_its_window_wraps_the_width_left_for_it() {
     let mut w = PaneWriter::sized(4, 2, 4, 2);
     unsafe {
         let geometry = (*w.wp()).geometry();
-        (*w.wp()).set_position(6, geometry.y);
+        (*w.wp()).set_position(6, geometry.yoff);
         w.puts("ab");
         screen_write_clearcharacter(&mut w.ctx(), 1, 8);
     }

@@ -261,13 +261,22 @@ impl WindowMode {
         fs: Option<&cmd_find_state>,
         args: Option<&RustArguments>,
     ) {
-        wme.screen_ready = false;
+        wme.screen = None;
         unsafe { (self.table().init)(wme, pane, fs, args) };
-        wme.screen_ready = true;
+        wme.screen = Some(match &wme.state {
+            WindowModeState::Clock(_) => ModeScreen::Clock,
+            WindowModeState::Copy(data) | WindowModeState::View(data) => ModeScreen::Shared(data.screen.clone()),
+            WindowModeState::Buffer(data) => ModeScreen::Shared(data.borrow().tree_ref().screen_handle().clone()),
+            WindowModeState::Client(data) => ModeScreen::Shared(data.borrow().tree_ref().screen_handle().clone()),
+            WindowModeState::Tree(data) => ModeScreen::Shared(data.borrow().tree_ref().screen_handle().clone()),
+            WindowModeState::Customize(data) => ModeScreen::Shared(data.borrow().tree_ref().screen_handle().clone()),
+            WindowModeState::None => return,
+        });
     }
 
     /// Releases the private state built by [`WindowMode::init`].
     pub unsafe fn free(self, wme: &mut window_mode_entry) {
+        wme.screen = None;
         unsafe { (self.table().free)(wme) }
     }
 
@@ -342,8 +351,8 @@ pub(crate) enum ModeKeyTarget {
 impl window_mode_entry {
     pub(crate) fn key_target(&self) -> Option<ModeKeyTarget> {
         match &self.state {
-            WindowModeState::Clock(data) => data
-                .wp_ref
+            WindowModeState::Clock(data) => self
+                .wp
                 .as_ref()
                 .filter(|pane| pane.is_alive())
                 .map(|pane| ModeKeyTarget::Clock(pane.clone(), data.timer)),

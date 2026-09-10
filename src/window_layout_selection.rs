@@ -14,33 +14,13 @@ pub trait WindowLayoutSelectionState: Default {
     fn clear_previous_layout(&mut self);
 }
 
-/// The window layout-selection storage used by hmux.
-#[derive(Default)]
-pub struct RustWindowLayoutSelectionState {
-    previous: Option<c_int>,
-}
-
-impl WindowLayoutSelectionState for RustWindowLayoutSelectionState {
-    fn previous_layout(&self) -> Option<c_int> {
-        self.previous
-    }
-
-    fn remember_layout(&mut self, layout: c_int) {
-        self.previous = (layout != -1).then_some(layout);
-    }
-
-    fn clear_previous_layout(&mut self) {
-        self.previous = None;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn previous_layout_can_be_replaced_and_cleared() {
-        let mut state = RustWindowLayoutSelectionState::default();
+        let mut state = crate::types::window::default();
         assert_eq!(state.previous_layout(), None);
         state.remember_layout(6);
         assert_eq!(state.previous_layout(), Some(6));

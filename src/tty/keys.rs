@@ -2050,7 +2050,7 @@ unsafe fn tty_keys_clipboard(tty: &mut tty, buf: &[u8], size: &mut size_t) -> co
             INPUT_REQUEST_CLIPBOARD,
             &InputRequestData::Clipboard {
                 clip,
-                data: out.clone(),
+                buf: out.clone(),
             },
         );
         if tty.flags & TTY_OSC52QUERY != 0 {
@@ -3212,8 +3212,8 @@ impl ClientRef {
     ) {
         unsafe {
             let current = pane.as_pane().colours();
-            let mut foreground = current.foreground.unwrap_or(-1);
-            let mut background = current.background.unwrap_or(-1);
+            let mut foreground = current.control_fg.unwrap_or(-1);
+            let mut background = current.control_bg.unwrap_or(-1);
             let mut size = 0;
             tty_keys_colours(
                 self.as_tty_mut(),
@@ -3223,8 +3223,8 @@ impl ClientRef {
                 &mut background,
             );
             pane.as_pane_mut().set_colours(PaneControlColourPair {
-                foreground: (foreground != -1).then_some(foreground),
-                background: (background != -1).then_some(background),
+                control_fg: (foreground != -1).then_some(foreground),
+                control_bg: (background != -1).then_some(background),
             });
         }
     }
@@ -3243,7 +3243,7 @@ impl ClientRef {
             let mut key: key_code = 0;
             let mut onlykey: key_code;
             let mut m = mouse_event::default();
-            let input = client.as_tty_mut().in_0.as_mut().unwrap().snapshot();
+            let input = client.as_tty_mut().r#in.as_mut().unwrap().snapshot();
             let buf = input.as_ref();
             let len = buf.len();
             if len == 0 {
@@ -3424,7 +3424,7 @@ impl ClientRef {
                                                                 );
                                                                 client
                                                                     .as_tty_mut()
-                                                                    .in_0
+                                                                    .r#in
                                                                     .as_mut()
                                                                     .unwrap()
                                                                     .drain(size);
@@ -3635,7 +3635,7 @@ impl ClientRef {
                             });
                             server_client_handle_key(client.as_client_mut(), event);
                         }
-                        client.as_tty_mut().in_0.as_mut().unwrap().drain(size);
+                        client.as_tty_mut().r#in.as_mut().unwrap().drain(size);
                         return 1 as core::ffi::c_int;
                     }
                     _ => {
@@ -3690,7 +3690,7 @@ impl ClientRef {
                             tv.tv_usec = ((delay % 1000 as core::ffi::c_int) as core::ffi::c_long
                                 * 1000 as core::ffi::c_long)
                                 as __suseconds_t;
-                            let owner = client.as_tty().owner.clone();
+                            let owner = client.as_tty().client.clone();
                             client.as_tty_mut().key_timer.set_callback(move || {
                                 if let Some(mut c) = owner.as_ref().and_then(ClientWeak::upgrade) {
                                     c.on_tty_key_timer();

@@ -392,10 +392,10 @@ fn pane_selection_falls_back_to_active_pane() {
         assert!(c.windows.is_empty());
         c.set_attached_session(Some(target.session_handle()));
         let mut session = target.session_handle().clone();
-        let current = session.as_session_mut().curw_idx.take();
+        let current = session.as_session_mut().curw.take();
         server_client_set_pane(c, &*target.pane(0));
         assert!(c.windows.is_empty());
-        session.as_session_mut().curw_idx = current;
+        session.as_session_mut().curw = current;
         assert_eq!(
             server_client_get_pane(c).map(|pane| pane.id()),
             Some((*target.pane(0)).pane_id())
@@ -426,16 +426,16 @@ fn client_pane_owners_preserve_saved_selection_and_handle_missing_targets() {
         let window_id = (*target.window(0)).window_id();
         let active = server_client_get_pane(&*c).unwrap();
         assert!(active.ptr_eq(&window_pane_find_by_id((*target.pane(0)).pane_id()).unwrap()));
-        server_client_add_client_window(&mut *c, window_id).pane_ref = None;
+        server_client_add_client_window(&mut *c, window_id).pane = None;
         assert!(server_client_get_pane(&*c).is_none());
         let other_pane = window_pane_find_by_id((*target.pane(other)).pane_id()).unwrap();
-        server_client_add_client_window(&mut *c, window_id).pane_ref = Some(other_pane.clone());
+        server_client_add_client_window(&mut *c, window_id).pane = Some(other_pane.clone());
         assert!(server_client_get_pane(&*c).unwrap().ptr_eq(&other_pane));
         (*c).flags &= !CLIENT_ACTIVEPANE;
         assert!(server_client_get_pane(&*c).unwrap().ptr_eq(&active));
-        let current = session.as_session_mut().curw_idx.take();
+        let current = session.as_session_mut().curw.take();
         assert!(server_client_get_pane(&*c).is_none());
-        session.as_session_mut().curw_idx = current;
+        session.as_session_mut().curw = current;
         forget_client_windows(c);
     }
 }
@@ -555,7 +555,7 @@ fn key_table_selection_and_activity_cover_detached_attached_default_and_named_ta
             server_client_is_default_key_table(c, &c.keytable().unwrap().borrow()),
             0
         );
-        c.keytable_ref = None;
+        c.keytable = None;
     }
 }
 
@@ -567,10 +567,10 @@ fn mouse_location_in_pane_covers_inside_outside_and_each_plain_border() {
         let mut pane = target.state().pane_ref().unwrap();
         pane.as_pane_mut()
             .set_geometry(crate::pane_geometry::PaneGeometry {
-                x: 2,
-                y: 2,
-                width: 20,
-                height: 6,
+                xoff: 2,
+                yoff: 2,
+                sx: 20,
+                sy: 6,
             });
         let mut slider = 0;
         assert_eq!(
@@ -936,7 +936,7 @@ fn terminal_metadata_uses_the_session_pane_even_with_a_client_selection() {
         active.base_mut().set_progress_bar(PROGRESS_BAR_NORMAL, 42);
         let other_pane = &*target.pane(other);
         let selection = server_client_add_client_window(client, (*target.window(0)).window_id());
-        selection.pane_ref = crate::window::window_pane_ref_of(other_pane);
+        selection.pane = crate::window::window_pane_ref_of(other_pane);
         assert_eq!(
             server_client_get_pane(client).unwrap().id(),
             other_pane.pane_id()
@@ -972,7 +972,7 @@ fn terminal_metadata_leaves_cached_values_when_the_session_has_no_active_pane() 
             state: PROGRESS_BAR_PAUSED,
             progress: 19,
         };
-        (*target.window(0)).active_pane = None;
+        (*target.window(0)).active = None;
         server_client_set_path(client);
         server_client_set_progress_bar(client);
         assert_eq!(client.path.as_deref(), Some(c"cached"));
@@ -996,7 +996,7 @@ fn focus_update_accepts_clients_without_a_session_or_current_window() {
         let client = &mut *attached.add("unattached", 20, 6);
         server_client_update_focus(client);
         client.set_attached_session(Some(target.session_handle()));
-        (*target.session()).curw_idx = None;
+        (*target.session()).curw = None;
         server_client_update_focus(client);
         assert_eq!(*(*target.pane(0)).flags() & crate::window::PANE_FOCUSED, 0);
     }
@@ -1010,7 +1010,7 @@ fn reset_state_reads_mouse_tracking_from_every_shown_pane_screen() {
     unsafe {
         let c = &mut *attached.add("mouse", 40, 12);
         c.set_attached_session(Some(target.session_handle()));
-        c.tty.owner = Some(client_ref_of(c).unwrap().downgrade());
+        c.tty.client = Some(client_ref_of(c).unwrap().downgrade());
         c.tty.term = Some(zeroed_term());
         c.tty.out = Some(Box::new(crate::reactor::ByteBuffer::new()));
         (&*target.session())
@@ -1074,7 +1074,7 @@ fn deferred_redraw_keeps_pane_positions_until_the_output_queue_drains() {
     unsafe {
         let c = &mut *attached.add("deferred", 20, 6);
         c.set_attached_session(Some(target.session_handle()));
-        c.tty.owner = Some(client_ref_of(c).unwrap().downgrade());
+        c.tty.client = Some(client_ref_of(c).unwrap().downgrade());
         c.tty.term = Some(zeroed_term());
         c.tty.out = Some(Box::new(crate::reactor::ByteBuffer::new()));
         c.tty.out.as_mut().unwrap().append(b"pending");
@@ -1206,7 +1206,7 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
     unsafe {
         let c = &mut *attached.add("queued-input", 20, 6);
         c.set_attached_session(Some(target.session_handle()));
-        c.tty.owner = Some(client_ref_of(c).unwrap().downgrade());
+        c.tty.client = Some(client_ref_of(c).unwrap().downgrade());
         c.tty.term = Some(zeroed_term());
         c.tty.out = Some(Box::new(ByteBuffer::new()));
         target.session_handle().options().set_string(
@@ -1261,7 +1261,7 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
         let mut unregistered = observed;
         {
             let mut payload = window.as_window_mut();
-            payload.active_pane = payload
+            payload.active = payload
                 .panes
                 .iter()
                 .find(|pane| pane.pane_id() == unregistered.id())
@@ -1368,13 +1368,13 @@ fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_pane
     unsafe {
         pane.as_pane_mut()
             .set_geometry(crate::pane_geometry::PaneGeometry {
-                x: 4,
-                y: 2,
-                width: 20,
-                height: 6,
+                xoff: 4,
+                yoff: 2,
+                sx: 20,
+                sy: 6,
             });
         pane.as_pane_mut()
-            .set_slider(crate::pane_scrollbar::PaneScrollbarSlider { y: 2, height: 2 });
+            .set_slider(crate::pane_scrollbar::PaneScrollbarSlider { sb_slider_y: 2, sb_slider_h: 2 });
         pane.as_pane_mut()
             .set_scrollbar_style(crate::pane_scrollbar_style::PaneScrollbarStyle {
                 width: 2,
@@ -1384,8 +1384,8 @@ fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_pane
         let mut offset = 99;
         for (position, x) in [(PANE_SCROLLBARS_RIGHT, 25), (PANE_SCROLLBARS_LEFT, 1)] {
             window.set_scrollbar_settings(crate::window_scrollbar::WindowScrollbarSettings {
-                mode: crate::window::PANE_SCROLLBARS_ALWAYS,
-                position,
+                sb: crate::window::PANE_SCROLLBARS_ALWAYS,
+                sb_pos: position,
             });
             assert_eq!(
                 server_client_check_mouse_in_pane(&pane, x, 3, &mut offset),
@@ -1402,18 +1402,18 @@ fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_pane
             );
         }
         window.set_scrollbar_settings(crate::window_scrollbar::WindowScrollbarSettings {
-            mode: 0,
-            position: PANE_SCROLLBARS_RIGHT,
+            sb: 0,
+            sb_pos: PANE_SCROLLBARS_RIGHT,
         });
         let mut payload = Box::new(window_pane::default());
         crate::PaneIdentity::set_pane_id(&mut *payload, 99);
         *payload.base_mut() = RustScreen::new_with_server_options(4, 2, 0);
         *payload.options_mut() = Some(pane.as_pane().options_ref().clone());
         payload.set_geometry(crate::pane_geometry::PaneGeometry {
-            x: 30,
-            y: 8,
-            width: 4,
-            height: 2,
+            xoff: 30,
+            yoff: 8,
+            sx: 4,
+            sy: 2,
         });
         let listed = RustWindowPaneRef::from_pane(payload);
         let observed = listed.downgrade();
@@ -1461,22 +1461,22 @@ fn mouse_events_follow_focus_and_keep_drag_targets_across_current_window_changes
         first
             .as_pane_mut()
             .set_geometry(crate::pane_geometry::PaneGeometry {
-                x: 0,
-                y: 0,
-                width: 19,
-                height: 12,
+                xoff: 0,
+                yoff: 0,
+                sx: 19,
+                sy: 12,
             });
         second
             .as_pane_mut()
             .set_geometry(crate::pane_geometry::PaneGeometry {
-                x: 20,
-                y: 0,
-                width: 20,
-                height: 12,
+                xoff: 20,
+                yoff: 0,
+                sx: 20,
+                sy: 12,
             });
         {
             let mut payload = window.as_window_mut();
-            payload.active_pane = payload
+            payload.active = payload
                 .panes
                 .iter()
                 .find(|pane| pane.pane_id() == first.id())
@@ -1485,7 +1485,7 @@ fn mouse_events_follow_focus_and_keep_drag_targets_across_current_window_changes
         let c = &mut *attached.add("mouse-owners", 40, 12);
         c.set_attached_session(Some(target.session_handle()));
         c.flags |= crate::status::CLIENT_STATUSOFF as uint64_t;
-        c.tty.owner = Some(client_ref_of(c).unwrap().downgrade());
+        c.tty.client = Some(client_ref_of(c).unwrap().downgrade());
         c.tty.osx = 40;
         c.tty.osy = 12;
         c.tty.mouse_last_pane = -1;

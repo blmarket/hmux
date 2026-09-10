@@ -445,7 +445,7 @@ unsafe fn cmd_find_get_window_with_session(
                     .as_deref()
                     .expect("a live window has a name")
             {
-                if fs.wl_idx.is_some() {
+                if fs.wl.is_some() {
                     return -(1 as core::ffi::c_int);
                 }
                 fs.set_winlink(Some(link));
@@ -474,7 +474,7 @@ unsafe fn cmd_find_get_window_with_session(
                 .to_bytes()
                 .starts_with(window.to_bytes())
             {
-                if fs.wl_idx.is_some() {
+                if fs.wl.is_some() {
                     return -(1 as core::ffi::c_int);
                 }
                 fs.set_winlink(Some(link));
@@ -502,7 +502,7 @@ unsafe fn cmd_find_get_window_with_session(
                 0 as core::ffi::c_int,
             ) == 0 as core::ffi::c_int
             {
-                if fs.wl_idx.is_some() {
+                if fs.wl.is_some() {
                     return -(1 as core::ffi::c_int);
                 }
                 fs.set_winlink(Some(link));
@@ -529,7 +529,7 @@ unsafe fn cmd_find_get_pane(
     unsafe {
         log_debug(c"%s: %s", fmt_args![c"cmd_find_get_pane".as_ptr(), pane]);
         if pane.to_bytes().first() == Some(&b'%') {
-            fs.wp_ref = window_pane_find_by_id_str(pane);
+            fs.wp = window_pane_find_by_id_str(pane);
             let Some(pane) = fs.pane_list_ref() else {
                 return -1;
             };
@@ -538,7 +538,7 @@ unsafe fn cmd_find_get_pane(
             return cmd_find_best_session_with_window(fs);
         }
         (*fs).set_session_ref((*current).session().as_ref());
-        fs.wl_idx = current.winlink_ref().map(|link| link.index());
+        fs.wl = current.winlink_ref().map(|link| link.index());
         fs.idx = current.idx;
         (*fs).set_window_ref((*current).window().as_ref());
         if cmd_find_get_pane_with_window(fs, pane) == 0 as core::ffi::c_int {
@@ -549,7 +549,7 @@ unsafe fn cmd_find_get_pane(
                 == 0 as core::ffi::c_int
         {
             let window = fs.window().expect("the state names a window");
-            fs.wp_ref = window.active_pane();
+            fs.wp = window.active_pane();
             return 0 as core::ffi::c_int;
         }
         -(1 as core::ffi::c_int)
@@ -562,7 +562,7 @@ unsafe fn cmd_find_get_pane_with_session(fs: &mut cmd_find_state, pane: &CStr) -
             fmt_args![c"cmd_find_get_pane_with_session".as_ptr(), pane],
         );
         if pane.to_bytes().first() == Some(&b'%') {
-            fs.wp_ref = window_pane_find_by_id_str(pane);
+            fs.wp = window_pane_find_by_id_str(pane);
             let Some(pane) = fs.pane_list_ref() else {
                 return -1;
             };
@@ -586,7 +586,7 @@ unsafe fn cmd_find_get_pane_with_window(fs: &mut cmd_find_state, pane: &CStr) ->
             fmt_args![c"cmd_find_get_pane_with_window".as_ptr(), pane],
         );
         if pane.to_bytes().first() == Some(&b'%') {
-            fs.wp_ref = window_pane_find_by_id_str(pane);
+            fs.wp = window_pane_find_by_id_str(pane);
             let Some(pane) = fs.pane_list_ref() else {
                 return -1;
             };
@@ -650,7 +650,7 @@ unsafe fn cmd_find_get_pane_with_window(fs: &mut cmd_find_state, pane: &CStr) ->
             } else {
                 window.previous_pane_by_number(active.as_ref(), n)
             };
-            fs.wp_ref = selected.clone();
+            fs.wp = selected.clone();
             if selected.is_some() {
                 return 0;
             }
@@ -664,14 +664,14 @@ unsafe fn cmd_find_get_pane_with_window(fs: &mut cmd_find_state, pane: &CStr) ->
         if parsed.is_ok() {
             let window = fs.window().expect("the state names a window");
             let selected = window.pane_at_index(idx as u_int);
-            fs.wp_ref = selected.clone();
+            fs.wp = selected.clone();
             if selected.is_some() {
                 return 0 as core::ffi::c_int;
             }
         }
         let window = fs.window().expect("the state names a window");
         let selected = window.find_pane_string(pane);
-        fs.wp_ref = selected.clone();
+        fs.wp = selected.clone();
         if selected.is_some() {
             return 0;
         }
@@ -719,10 +719,10 @@ pub unsafe fn cmd_find_valid_state(fs: &cmd_find_state) -> core::ffi::c_int {
 
 pub fn cmd_find_copy_state(dst: &mut cmd_find_state, src: &cmd_find_state) {
     dst.set_session_ref(src.session().as_ref());
-    dst.wl_idx = src.winlink_ref().map(|link| link.index());
+    dst.wl = src.winlink_ref().map(|link| link.index());
     dst.idx = src.idx;
     dst.set_window_ref(src.window().as_ref());
-    dst.wp_ref = src.wp_ref.clone();
+    dst.wp = src.wp.clone();
 }
 unsafe fn cmd_find_log_state(prefix: &CStr, fs: &cmd_find_state) {
     unsafe { cmd_find_log_state_with_window(prefix, fs, None) }
@@ -787,7 +787,7 @@ pub unsafe fn cmd_find_from_session(fs: &mut cmd_find_state, s: &session, flags:
         fs.set_winlink(Some(link));
         let window = link.window_handle().expect("a session link has a window");
         fs.set_window_ref(Some(window));
-        fs.wp_ref = window.active_pane();
+        fs.wp = window.active_pane();
         cmd_find_log_state(c"cmd_find_from_session", fs);
     }
 }
@@ -802,7 +802,7 @@ pub unsafe fn cmd_find_from_winlink(
         (*fs).set_winlink(Some(wl));
         let window = wl.window_handle().expect("a session link has a window");
         fs.set_window_ref(Some(window));
-        fs.wp_ref = window.active_pane();
+        fs.wp = window.active_pane();
         cmd_find_log_state(c"cmd_find_from_winlink", fs);
     }
 }
@@ -835,7 +835,7 @@ pub unsafe fn cmd_find_from_winlink_pane(
         fs.set_winlink(Some(wl));
         fs.idx = wl.idx;
         fs.set_window_ref(wl.window_handle());
-        fs.wp_ref = crate::window::window_pane_ref_of(wp);
+        fs.wp = crate::window::window_pane_ref_of(wp);
         cmd_find_log_state(c"cmd_find_from_winlink_pane", fs);
     }
 }
@@ -884,7 +884,7 @@ pub unsafe fn cmd_find_from_nothing(
         fs.idx = link.index();
         let window = link.window().expect("a session link has a window");
         fs.set_window_ref(Some(&window));
-        fs.wp_ref = window.active_pane();
+        fs.wp = window.active_pane();
         cmd_find_log_state(c"cmd_find_from_nothing", fs);
         0 as core::ffi::c_int
     }
@@ -900,9 +900,9 @@ pub unsafe fn cmd_find_from_mouse(
             return -1;
         };
         fs.set_session_ref(Some(&session));
-        fs.wl_idx = Some(link.index());
+        fs.wl = Some(link.index());
         fs.set_window_ref(pane.window().as_ref());
-        fs.wp_ref = Some(pane.clone());
+        fs.wp = Some(pane.clone());
         cmd_find_log_state(c"cmd_find_from_mouse", fs);
         0
     }
@@ -940,7 +940,7 @@ pub unsafe fn cmd_find_from_client(
                 fs.set_winlink(link.get());
                 let window = link.window().expect("a session link has a window");
                 fs.set_window_ref(Some(&window));
-                fs.wp_ref = window.active_pane();
+                fs.wp = window.active_pane();
                 cmd_find_log_state(c"cmd_find_from_client", fs);
                 return 0;
             }
@@ -1046,7 +1046,7 @@ pub unsafe fn cmd_find_target(
                     let link = session.curw().expect("the session has a current link");
                     fs.set_winlink(link.get());
                     let window = link.window().expect("a session link has a window");
-                    fs.wp_ref = window.active_pane();
+                    fs.wp = window.active_pane();
                     fs.set_window_ref(Some(&window));
                     current_block = 8711307700714518445;
                 } else {
@@ -1061,12 +1061,12 @@ pub unsafe fn cmd_find_target(
                     CMD_FIND_PANE => {
                         if let Some((session, link, pane)) = cmd_mouse_pane(m) {
                             fs.set_session_ref(Some(&session));
-                            fs.wl_idx = Some(link.index());
+                            fs.wl = Some(link.index());
                             fs.set_window_ref(pane.window().as_ref());
-                            fs.wp_ref = Some(pane.clone());
+                            fs.wp = Some(pane.clone());
                             current_block_56 = 7343950298149844727;
                         } else {
-                            fs.wp_ref = None;
+                            fs.wp = None;
                             current_block_56 = 1142519184231123645;
                         }
                     }
@@ -1080,18 +1080,18 @@ pub unsafe fn cmd_find_target(
                 if current_block_56 == 1142519184231123645 {
                     if let Some((session, link)) = cmd_mouse_window(m) {
                         fs.set_session_ref(Some(&session));
-                        fs.wl_idx = link.map(|link| link.index());
+                        fs.wl = link.map(|link| link.index());
                     } else {
-                        fs.wl_idx = None;
+                        fs.wl = None;
                     }
                     if let Some(session) = fs.session() {
                         let s = session.as_session();
-                        if fs.wl_idx.is_none() {
-                            fs.wl_idx = s.curw_idx.filter(|index| s.windows.contains_key(index));
+                        if fs.wl.is_none() {
+                            fs.wl = s.curw.filter(|index| s.windows.contains_key(index));
                         }
-                        if let Some(link) = fs.wl_idx.and_then(|index| s.windows.get(&index)) {
+                        if let Some(link) = fs.wl.and_then(|index| s.windows.get(&index)) {
                             fs.set_window_ref(link.window_handle());
-                            fs.wp_ref = link.window_handle().and_then(|owner| {
+                            fs.wp = link.window_handle().and_then(|owner| {
                                 owner
                                     .active_pane()
                                     .filter(|target| owner.panes().contains(target))
@@ -1099,7 +1099,7 @@ pub unsafe fn cmd_find_target(
                         }
                     }
                 }
-                if fs.wp_ref.is_none() {
+                if fs.wp.is_none() {
                     if !flags & CMD_FIND_QUIET != 0 {
                         item.error(c"no mouse target", fmt_args![]);
                     }
@@ -1207,7 +1207,7 @@ pub unsafe fn cmd_find_target(
                             fs.idx = -1;
                             let window = link.window().expect("a session link has a window");
                             fs.set_window_ref(Some(&window));
-                            fs.wp_ref = window.active_pane();
+                            fs.wp = window.active_pane();
                             current_block = 8711307700714518445;
                         } else if let (Some(window), None) = (window, pane) {
                             if cmd_find_get_window_with_session(fs, window) != 0 as core::ffi::c_int
@@ -1220,7 +1220,7 @@ pub unsafe fn cmd_find_target(
                                         .expect("the selected link is present")
                                         .window_handle()
                                         .expect("a session link has a window");
-                                    fs.wp_ref = window.active_pane();
+                                    fs.wp = window.active_pane();
                                 }
                                 current_block = 8711307700714518445;
                             }
@@ -1267,7 +1267,7 @@ pub unsafe fn cmd_find_target(
                                     .expect("the selected link is present")
                                     .window_handle()
                                     .expect("a session link has a window");
-                                fs.wp_ref = window.active_pane();
+                                fs.wp = window.active_pane();
                             }
                             current_block = 8711307700714518445;
                         }

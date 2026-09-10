@@ -17,17 +17,17 @@ pub trait CommandFindTargets {
 impl CommandFindTargets for crate::types::cmd_find_state {
     fn from_command_find_targets(winlink_index: Option<i32>) -> Self {
         Self {
-            wl_idx: winlink_index,
+            wl: winlink_index,
             ..Self::default()
         }
     }
 
     fn command_find_winlink_index(&self) -> Option<i32> {
-        self.wl_idx
+        self.wl
     }
 
     fn set_command_find_winlink_index(&mut self, winlink_index: Option<i32>) {
-        self.wl_idx = winlink_index;
+        self.wl = winlink_index;
     }
 }
 

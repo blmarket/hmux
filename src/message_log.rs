@@ -43,9 +43,9 @@ pub trait MessageLogStore {
 }
 
 struct RustMessageLogEntry {
-    text: CString,
-    number: u32,
-    time: MessageLogTime,
+    msg: CString,
+    msg_num: u32,
+    msg_time: MessageLogTime,
 }
 
 /// The saved-message implementation used by hmux.
@@ -77,9 +77,9 @@ impl Default for RustMessageLog {
 impl MessageLogStore for RustMessageLog {
     fn entries(&self) -> impl Iterator<Item = MessageLogEntryRef<'_>> {
         self.entries.iter().rev().map(|entry| MessageLogEntryRef {
-            text: &entry.text,
-            number: entry.number,
-            time: entry.time,
+            text: &entry.msg,
+            number: entry.msg_num,
+            time: entry.msg_time,
         })
     }
 
@@ -88,9 +88,9 @@ impl MessageLogStore for RustMessageLog {
         let number = self.next;
         self.next = self.next.wrapping_add(1);
         self.entries.push_back(RustMessageLogEntry {
-            text: text.to_owned(),
-            number,
-            time: MessageLogTime {
+            msg: text.to_owned(),
+            msg_num: number,
+            msg_time: MessageLogTime {
                 seconds: now.tv_sec,
                 microseconds: now.tv_usec,
             },
@@ -98,7 +98,7 @@ impl MessageLogStore for RustMessageLog {
         while self
             .entries
             .front()
-            .is_some_and(|entry| entry.number.wrapping_add(limit) < self.next)
+            .is_some_and(|entry| entry.msg_num.wrapping_add(limit) < self.next)
         {
             self.entries.pop_front();
         }

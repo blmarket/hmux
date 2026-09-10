@@ -134,7 +134,7 @@ impl WindowRef {
     fn name_time_expired(&self, now: timeval) -> core::ffi::c_int {
         let w = self;
 
-        interval_left(w.timestamps().name_update, now)
+        interval_left(w.timestamps().name_time, now)
     }
     /// Drives automatic renaming while retaining the window across format expansion.
     pub unsafe fn check_name(&self) {

@@ -213,8 +213,8 @@ fn main_pane(l: &mut Layout) -> String {
     unsafe {
         format!(
             "{}x{}",
-            (*l.pane(0)).geometry().width,
-            (*l.pane(0)).geometry().height
+            (*l.pane(0)).geometry().sx,
+            (*l.pane(0)).geometry().sy
         )
     }
 }

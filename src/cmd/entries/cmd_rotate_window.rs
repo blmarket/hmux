@@ -39,7 +39,7 @@ unsafe fn cmd_rotate_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             .session()
             .expect("a rotation target has a session"),
         item.target
-            .wl_idx
+            .wl
             .expect("a rotation target has a window link"),
     )
     .expect("the rotation target is linked");

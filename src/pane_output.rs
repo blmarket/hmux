@@ -21,28 +21,28 @@ pub trait PaneOutputOffset: Copy + Default {
 /// The pane output offset used by hmux.
 #[derive(Clone, Copy, Default)]
 pub struct RustPaneOutputOffset {
-    position: usize,
+    used: usize,
 }
 
 impl PaneOutputOffset for RustPaneOutputOffset {
     fn at(position: usize) -> Self {
-        Self { position }
+        Self { used: position }
     }
 
     fn position(&self) -> usize {
-        self.position
+        self.used
     }
 
     fn set_position(&mut self, position: usize) {
-        self.position = position;
+        self.used = position;
     }
 
     fn advance(&mut self, amount: usize) {
-        self.position = self.position.wrapping_add(amount);
+        self.used = self.used.wrapping_add(amount);
     }
 
     fn rebase(&mut self, old_base: usize) {
-        self.position = self.position.wrapping_sub(old_base);
+        self.used = self.used.wrapping_sub(old_base);
     }
 }
 

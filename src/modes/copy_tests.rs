@@ -520,9 +520,9 @@ fn scrollbar_motion_covers_slider_clamps_both_directions_and_selection_updates()
         let mut target = Target::new(18, 6);
         let pane = target.pane(0);
         let wme = open_copy(&mut target);
-        (*pane).set_slider(PaneScrollbarSlider { y: 0, height: 2 });
+        (*pane).set_slider(PaneScrollbarSlider { sb_slider_y: 0, sb_slider_h: 2 });
         let geometry = (*pane).geometry();
-        (*pane).set_position(geometry.x, 1);
+        (*pane).set_position(geometry.xoff, 1);
 
         window_copy_scroll(&mut *pane, 1, 0, 0, 0);
         window_copy_scroll(&mut *pane, 0, 100, 0, 0);
@@ -567,7 +567,7 @@ fn scrollbar_exit_restores_the_previous_mode_then_the_base_screen() {
         window_copy_goto_line(wme, c"10");
 
         let pane = &mut *target.pane(0);
-        pane.set_slider(PaneScrollbarSlider { y: 0, height: 1 });
+        pane.set_slider(PaneScrollbarSlider { sb_slider_y: 0, sb_slider_h: 1 });
         window_copy_scroll(pane, 0, 100, 0, 1);
         assert_eq!(
             window_pane_current_mode(pane).unwrap().mode(),
@@ -1222,12 +1222,12 @@ fn pane_style_changes_can_read_copy_selection_formats_during_redraw() {
         *(*pane).flags_mut() |= crate::window::PANE_STYLECHANGED;
         window_copy_redraw_screen(entry);
         assert_eq!(*(*pane).flags() & crate::window::PANE_STYLECHANGED, 0);
-        assert_eq!((*pane).styles().normal.fg, 4);
+        assert_eq!((*pane).styles().cached_gc.fg, 4);
         window_copy_start_selection(entry);
         window_copy_cursor_right(entry, 0);
         *(*pane).flags_mut() |= crate::window::PANE_STYLECHANGED;
         window_copy_redraw_screen(entry);
-        assert_eq!((*pane).styles().normal.fg, 1);
+        assert_eq!((*pane).styles().cached_gc.fg, 1);
     }
 }
 

@@ -738,7 +738,7 @@ pub type keyc = core::ffi::c_ulong;
 pub struct status_prompt_menu {
     /// The client the menu is showing on, observed rather than held, so that
     /// a client which goes while the menu is up leaves nothing behind.
-    pub(crate) client: ClientWeak,
+    pub(crate) c: ClientWeak,
     pub start: u_int,
     pub list: Vec<CString>,
     pub flag: core::ffi::c_char,
@@ -9904,7 +9904,7 @@ fn status_prompt_complete_prefix(list: &[CString]) -> Option<CString> {
 }
 unsafe fn status_prompt_menu_callback(mut idx: u_int, key: key_code, spm: status_prompt_menu) {
     unsafe {
-        let Some(mut client) = spm.client.upgrade() else {
+        let Some(mut client) = spm.c.upgrade() else {
             return;
         };
         let c = client.as_client_mut();
@@ -9964,7 +9964,7 @@ unsafe fn status_prompt_complete_list_menu(
             return 0 as core::ffi::c_int;
         };
         let spm: Box<status_prompt_menu> = Box::new(status_prompt_menu {
-            client,
+            c: client,
             start: 0,
             list,
             flag,
@@ -10095,7 +10095,7 @@ unsafe fn status_prompt_complete_window_menu(
         }
         let client = client_ref_of(c).map(|c| c.downgrade())?;
         let spm: Box<status_prompt_menu> = Box::new(status_prompt_menu {
-            client,
+            c: client,
             start: 0,
             list,
             flag,

@@ -96,7 +96,7 @@ fn removing_a_link_by_index_detaches_only_that_window_membership() {
         );
         assert!(winlink_remove(&mut session.as_session_mut().windows, 2));
         assert!(window.as_window().winlinks.is_empty());
-        session.as_session_mut().curw_idx = None;
+        session.as_session_mut().curw = None;
     }
 }
 
@@ -112,11 +112,11 @@ fn shuffling_links_preserves_selection_history_and_owner_observations() {
     link(&mut s, &mut distant, 3);
     let mut owner = s.reference();
     unsafe {
-        owner.as_session_mut().curw_idx = Some(1);
+        owner.as_session_mut().curw = Some(1);
         owner.as_session_mut().lastw = vec![0, 3];
         let shift = winlink_shuffle_up(owner.as_session_mut(), Some(0), 1).unwrap();
         assert_eq!(shift.index, 0);
-        assert_eq!(owner.as_session().curw_idx, Some(2));
+        assert_eq!(owner.as_session().curw, Some(2));
         assert_eq!(owner.as_session().lastw, vec![1, 3]);
         for (original, window) in [
             (0, first.reference()),
@@ -167,7 +167,7 @@ pub(crate) fn window_pane_reserve_id(id: u_int) {
 /// Makes `wp` the window's active pane, or gives up having one when it is
 /// null.
 pub(crate) unsafe fn window_set_active(w: &mut window, wp: Option<&impl crate::WindowPane>) {
-    w.active_pane = wp.and_then(|wp| {
+    w.active = wp.and_then(|wp| {
         w.panes
             .iter()
             .find(|pane| core::ptr::addr_eq(unsafe { pane.as_pane() }, wp))

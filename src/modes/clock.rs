@@ -14,7 +14,6 @@ pub use crate::types::*;
 use crate::window::window_pane_reset_mode;
 #[repr(C)]
 pub struct window_clock_mode_data {
-    pub(crate) wp_ref: Option<RustWindowPaneWeak>,
     pub screen: RustScreen,
     pub tim: time_t,
     pub timer: TimerHandle,
@@ -203,7 +202,6 @@ pub(crate) unsafe fn window_clock_init(
             .expect("the clock pane has a window")
             .options();
         let mut data = Box::new(window_clock_mode_data {
-            wp_ref: Some(pane.clone()),
             screen: RustScreen::new_with_server_options(sx, sy, 0),
             tim: window_clock_now().as_secs() as time_t,
             timer: TimerHandle::ZERO,
@@ -223,14 +221,16 @@ pub(crate) fn window_clock_free(wme: &mut window_mode_entry) {
 }
 pub(crate) unsafe fn window_clock_resize(wme: &mut window_mode_entry, sx: u_int, sy: u_int) {
     unsafe {
+        let window = wme.pane_ref().and_then(|pane| pane.window());
         let data = wme.state.clock().expect("the mode holds its state");
         screen_resize(&mut data.screen, sx, sy, 0 as core::ffi::c_int);
-        if let Some(window) = data.wp_ref.as_ref().and_then(|pane| pane.window()) {
+        if let Some(window) = window {
             let options = window.options();
             window_clock_draw_screen(data, &options);
         }
     }
 }
+
 pub(crate) unsafe fn window_clock_key(mut pane: crate::window::RustWindowPaneWeak) {
     if let Some(pane) = unsafe { pane.get_mut() } {
         unsafe { window_pane_reset_mode(pane) };

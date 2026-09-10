@@ -140,14 +140,14 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         let geometry = unsafe { reference.geometry().expect("resize target is present") };
         match status {
             PANE_STATUS_TOP => {
-                if y != INT_MAX && geometry.y == 1 as core::ffi::c_int {
+                if y != INT_MAX && geometry.yoff == 1 as core::ffi::c_int {
                     y += 1;
                 }
             }
             PANE_STATUS_BOTTOM
                 if {
                     y != INT_MAX
-                        && (geometry.y as u_int).wrapping_add(geometry.height)
+                        && (geometry.yoff as u_int).wrapping_add(geometry.sy)
                             == owner.dimensions().size.height.wrapping_sub(1 as u_int)
                 } =>
             {

@@ -19,8 +19,8 @@ mod tests {
     fn index_can_be_replaced() {
         let mut identity = crate::types::winlink {
             idx: 0,
-            session_ref: None,
-            window_ref: None,
+            session: None,
+            window: None,
             flags: 0,
         };
         assert_eq!(identity.winlink_index(), 0);

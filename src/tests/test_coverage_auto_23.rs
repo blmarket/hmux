@@ -40,8 +40,8 @@ fn layout_create_cell_defaults_and_free_null_is_safe() {
         let lc = layout_create_cell(None);
         assert_eq!((*lc).type_0, LAYOUT_WINDOWPANE);
         assert_eq!((*lc).flags, 0);
-        assert!(!(*lc).has_parent);
-        assert!((*lc).wp_ref.as_ref().map(|pane| pane.id()).is_none());
+        assert!(!(*lc).parent);
+        assert!((*lc).wp.as_ref().map(|pane| pane.id()).is_none());
         assert_eq!((*lc).sx, u32::MAX);
         assert_eq!((*lc).sy, u32::MAX);
         layout_free_cell(None);
@@ -75,12 +75,12 @@ fn layout_make_leaf_and_node_round_trip() {
             layout_cell_pane(&*lc).is_some_and(|pane| core::ptr::addr_eq(pane.as_ptr(), p.ptr()))
         );
         assert_eq!(
-            (*lc).wp_ref.as_ref().map(|pane| pane.id()),
+            (*lc).wp.as_ref().map(|pane| pane.id()),
             Some((*p.ptr()).pane_id())
         );
         layout_make_node(&mut *lc, LAYOUT_LEFTRIGHT);
         assert_eq!((*lc).type_0, LAYOUT_LEFTRIGHT);
-        assert!((*lc).wp_ref.as_ref().map(|pane| pane.id()).is_none());
+        assert!((*lc).wp.as_ref().map(|pane| pane.id()).is_none());
         layout_make_node(&mut *lc, LAYOUT_TOPBOTTOM);
         assert_eq!((*lc).type_0, LAYOUT_TOPBOTTOM);
     }
@@ -138,7 +138,7 @@ fn layout_search_by_border_inside_vs_between() {
         assert!(
             layout_search_by_border(&mut *root, 40, 5).is_some_and(|path| path
                 .get(&*root)
-                .is_some_and(|cell| cell.wp_ref.as_ref().map(|pane| pane.id())
+                .is_some_and(|cell| cell.wp.as_ref().map(|pane| pane.id())
                     == Some((*l.pane(0)).pane_id())))
         );
         // inside first pane
@@ -217,10 +217,10 @@ fn layout_assign_pane_skip_flag_leaves_skip_pane_size() {
                 .as_ref(),
         );
         // skipped pane keeps old size, other pane is fixed to its cell
-        assert_eq!((*l.pane(0)).geometry().width, 5);
-        assert_eq!((*l.pane(j)).geometry().width, l.cell(j).unwrap().sx);
+        assert_eq!((*l.pane(0)).geometry().sx, 5);
+        assert_eq!((*l.pane(j)).geometry().sx, l.cell(j).unwrap().sx);
         // without skip both are fixed
         (l.reference()).fix_layout_panes(None);
-        assert_eq!((*l.pane(0)).geometry().width, l.cell(0).unwrap().sx);
+        assert_eq!((*l.pane(0)).geometry().sx, l.cell(0).unwrap().sx);
     }
 }

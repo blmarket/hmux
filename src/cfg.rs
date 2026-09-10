@@ -174,7 +174,7 @@ pub unsafe fn load_cfg(
         pi.file = Some(path.to_owned());
         pi.line = 1 as u_int;
         pi.item = item.map(CmdqItemRef::downgrade);
-        pi.c = c.and_then(client_ref_of).map(|c| c.downgrade());
+        pi.c = c.and_then(client_ref_of).map(|c| c.downgrade().into());
         let mut pr = cmd_parse_from_file(contents, Some(&mut pi));
         if pr.status as core::ffi::c_uint
             == CMD_PARSE_ERROR as core::ffi::c_int as core::ffi::c_uint
@@ -223,7 +223,7 @@ pub unsafe fn load_cfg_from_buffer(
         pi.file = Some(path.to_owned());
         pi.line = 1 as u_int;
         pi.item = item.map(CmdqItemRef::downgrade);
-        pi.c = c.and_then(client_ref_of).map(|c| c.downgrade());
+        pi.c = c.and_then(client_ref_of).map(|c| c.downgrade().into());
         let mut pr = cmd_parse_from_buffer(buf, Some(&mut pi));
         if pr.status as core::ffi::c_uint
             == CMD_PARSE_ERROR as core::ffi::c_int as core::ffi::c_uint

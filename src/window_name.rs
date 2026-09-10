@@ -1,7 +1,6 @@
 //! Owned name retained by a window.
 
 use core::ffi::CStr;
-use std::ffi::CString;
 
 /// Storage for a window's optional name.
 pub trait WindowNameState: Default {
@@ -12,29 +11,13 @@ pub trait WindowNameState: Default {
     fn set_window_name(&mut self, name: Option<&CStr>);
 }
 
-/// The window name storage used by hmux.
-#[derive(Default)]
-pub struct RustWindowNameState {
-    name: Option<CString>,
-}
-
-impl WindowNameState for RustWindowNameState {
-    fn window_name(&self) -> Option<&CStr> {
-        self.name.as_deref()
-    }
-
-    fn set_window_name(&mut self, name: Option<&CStr>) {
-        self.name = name.map(CStr::to_owned);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn name_can_be_replaced_and_cleared() {
-        let mut state = RustWindowNameState::default();
+        let mut state = crate::types::window::default();
         assert!(state.window_name().is_none());
         state.set_window_name(Some(c"editor"));
         assert_eq!(state.window_name(), Some(c"editor"));

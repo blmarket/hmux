@@ -56,7 +56,7 @@ pub struct popup_data {
     /// The popup's observation of itself, which is what its job and its menu
     /// hold it by.
     pub(crate) owner: Option<PopupDataWeak>,
-    pub(crate) client_ref: Option<ClientRef>,
+    pub(crate) c: Option<ClientRef>,
     pub(crate) item: Option<CmdqItemWeak>,
     pub flags: core::ffi::c_int,
     pub title: Option<std::ffi::CString>,
@@ -72,10 +72,10 @@ pub struct popup_data {
     /// The id of the job the popup is running, or nothing while it runs
     /// none. A job is named by its id and nothing else, so the popup never
     /// names one that has finished.
-    pub(crate) job_id: Option<u_int>,
+    pub(crate) job: Option<u_int>,
     pub ictx: Option<InputCtxRef>,
     pub status: core::ffi::c_int,
-    pub(crate) close_cb: Option<Box<dyn FnOnce(core::ffi::c_int)>>,
+    pub(crate) cb: Option<Box<dyn FnOnce(core::ffi::c_int)>>,
     pub md: Option<MenuDataRef>,
     pub close: core::ffi::c_int,
     pub px: u_int,
@@ -97,12 +97,12 @@ pub struct popup_data {
 impl popup_data {
     /// The stream of the popup's registered job, if it is still running.
     pub(crate) fn job_event(&self) -> Option<Stream> {
-        self.job_id.and_then(job_event_by_id)
+        self.job.and_then(job_event_by_id)
     }
 
     /// The client the popup is drawn on, if the popup still holds it.
     pub(crate) fn client(&self) -> Option<ClientRef> {
-        self.client_ref.clone()
+        self.c.clone()
     }
 }
 pub type popup_data_dragging = core::ffi::c_uint;
@@ -465,12 +465,12 @@ unsafe fn popup_make_pane(pd: &mut popup_data, type_0: layout_type) {
         let new_id = pane.id();
         owner.assign_pane_layout(&slot, &pane, 0);
         let new = pane.get_mut().expect("the new pane is present");
-        if let Some(id) = pd.job_id
+        if let Some(id) = pd.job
             && let Some((fd, pid)) = job_transfer(id, Some(new.tty_mut()))
         {
             *new.fd_mut() = fd;
             *new.pid_mut() = pid;
-            pd.job_id = None;
+            pd.job = None;
         }
         pd.s.borrow_mut().set_title(
             new.base()
@@ -484,7 +484,7 @@ unsafe fn popup_make_pane(pd: &mut popup_data, type_0: layout_type) {
             RustScreen::new_with_server_options(1, 1, 0),
         );
         let geometry = new.geometry();
-        screen_resize(new.base_mut(), geometry.width, geometry.height, 1);
+        screen_resize(new.base_mut(), geometry.sx, geometry.sy, 1);
         let configured = session.options().string_ref(c"default-shell");
         let shell = if checkshell(Some(&configured)) == 0 {
             _PATH_BSHELL
@@ -619,7 +619,7 @@ unsafe fn popup_handle_drag(c: &mut client, pd: &mut popup_data, m: &mouse_event
             pd.psy = pd.sy;
             if pd.border_lines as core::ffi::c_int == BOX_LINES_NONE as core::ffi::c_int {
                 screen_resize(&mut pd.s.borrow_mut(), pd.sx, pd.sy, 0 as core::ffi::c_int);
-                if let Some(id) = pd.job_id {
+                if let Some(id) = pd.job {
                     job_resize(id, pd.sx, pd.sy);
                 }
             } else {
@@ -629,7 +629,7 @@ unsafe fn popup_handle_drag(c: &mut client, pd: &mut popup_data, m: &mouse_event
                     pd.sy.wrapping_sub(2 as u_int),
                     0 as core::ffi::c_int,
                 );
-                if let Some(id) = pd.job_id {
+                if let Some(id) = pd.job {
                     job_resize(
                         id,
                         pd.sx.wrapping_sub(2 as u_int),
@@ -701,7 +701,7 @@ unsafe fn popup_job_complete_cb(job: JobEvent, popup: &PopupDataWeak) {
         } else {
             pd.status = 0 as core::ffi::c_int;
         }
-        pd.job_id = None;
+        pd.job = None;
         if pd.flags & POPUP_CLOSEEXIT != 0
             || pd.flags & POPUP_CLOSEEXITZERO != 0 && pd.status == 0 as core::ffi::c_int
         {
@@ -759,7 +759,7 @@ pub unsafe fn popup_modify(
                 && pd.border_lines as core::ffi::c_int != lines as core::ffi::c_int
             {
                 screen_resize(&mut pd.s.borrow_mut(), pd.sx, pd.sy, 1 as core::ffi::c_int);
-                if let Some(id) = pd.job_id {
+                if let Some(id) = pd.job {
                     job_resize(id, pd.sx, pd.sy);
                 }
             } else if pd.border_lines as core::ffi::c_int == BOX_LINES_NONE as core::ffi::c_int
@@ -771,7 +771,7 @@ pub unsafe fn popup_modify(
                     pd.sy.wrapping_sub(2 as u_int),
                     1 as core::ffi::c_int,
                 );
-                if let Some(id) = pd.job_id {
+                if let Some(id) = pd.job {
                     job_resize(
                         id,
                         pd.sx.wrapping_sub(2 as u_int),
@@ -859,8 +859,8 @@ pub unsafe fn popup_display(
         pd.title = title.map(CStr::to_owned);
         pd.style = style.map(CStr::to_owned);
         pd.border_style = border_style.map(CStr::to_owned);
-        pd.client_ref = client_ref_of(c);
-        pd.close_cb = close_cb;
+        pd.c = client_ref_of(c);
+        pd.cb = close_cb;
         pd.status = 128 as core::ffi::c_int + SIGHUP;
         pd.border_lines = lines;
         pd.border_cell = grid_default_cell;
@@ -932,7 +932,7 @@ pub unsafe fn popup_display(
                 jx as core::ffi::c_int,
                 jy as core::ffi::c_int,
             );
-            pd.job_id = job;
+            pd.job = job;
             let Some(event) = job.and_then(job_event_by_id) else {
                 drop(guard);
                 pd_box.free_resources();
@@ -1069,7 +1069,7 @@ impl PopupDataRef {
         unsafe {
             let (client, job, ictx) = {
                 let mut pd = reference.borrow_mut();
-                (pd.client_ref.take(), pd.job_id.take(), pd.ictx.take())
+                (pd.c.take(), pd.job.take(), pd.ictx.take())
             };
             drop(client);
             if let Some(id) = job {
@@ -1099,7 +1099,7 @@ impl PopupDataRef {
             }
             let (callback, status) = {
                 let mut pd = reference.borrow_mut();
-                (pd.close_cb.take(), pd.status)
+                (pd.cb.take(), pd.status)
             };
             if let Some(callback) = callback {
                 callback(status);
@@ -1236,7 +1236,7 @@ impl PopupDataRef {
             }
             if pd.border_lines as core::ffi::c_int == BOX_LINES_NONE as core::ffi::c_int {
                 screen_resize(&mut pd.s.borrow_mut(), pd.sx, pd.sy, 0 as core::ffi::c_int);
-                if let Some(id) = pd.job_id {
+                if let Some(id) = pd.job {
                     job_resize(id, pd.sx, pd.sy);
                 }
             } else if pd.sx > 2 as u_int && pd.sy > 2 as u_int {
@@ -1246,7 +1246,7 @@ impl PopupDataRef {
                     pd.sy.wrapping_sub(2 as u_int),
                     0 as core::ffi::c_int,
                 );
-                if let Some(id) = pd.job_id {
+                if let Some(id) = pd.job {
                     job_resize(
                         id,
                         pd.sx.wrapping_sub(2 as u_int),

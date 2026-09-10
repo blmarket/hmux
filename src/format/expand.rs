@@ -93,22 +93,22 @@ pub struct format_tree {
     /// The client the tree draws its client formats from, observed rather
     /// than held. This is not the client the tree was created for — that one
     /// is `client_ref` below — but the one `format_defaults` picked out.
-    pub(crate) c_ref: Option<ClientWeak>,
+    pub(crate) c: Option<ClientWeak>,
     /// The session the tree draws on, observed rather than held.
-    pub(crate) s_ref: Option<SessionWeak>,
+    pub(crate) s: Option<SessionWeak>,
     /// The link the tree draws on, named by the session that holds it and
     /// the index it holds it at, or nothing when it draws on none.
-    pub(crate) wl_ref: Option<(SessionWeak, core::ffi::c_int)>,
+    pub(crate) wl: Option<(SessionWeak, core::ffi::c_int)>,
     /// The window the tree draws on, observed the same way.
-    pub(crate) w_ref: Option<WindowWeak>,
+    pub(crate) w: Option<WindowWeak>,
     /// The pane the tree draws on, observed independently of its window.
-    pub wp_ref: Option<RustWindowPaneWeak>,
+    pub wp: Option<RustWindowPaneWeak>,
     /// The name of the buffer the tree draws on, or nothing when it draws on
     /// none. A buffer is named by its name and nothing else.
-    pub pb_name: Option<CString>,
+    pub pb: Option<CString>,
     /// The queue item the tree was made for, observed rather than held.
-    pub(crate) item_ref: Option<CmdqItemWeak>,
-    pub(crate) client_ref: Option<ClientRef>,
+    pub(crate) item: Option<CmdqItemWeak>,
+    pub(crate) client: Option<ClientRef>,
     pub flags: core::ffi::c_int,
     pub tag: u_int,
     pub m: mouse_event,
@@ -119,86 +119,86 @@ impl format_tree {
     /// The session the tree draws on, or null when it draws on none or the
     /// server has since given it up.
     pub(crate) fn session(&self) -> Option<SessionRef> {
-        self.s_ref.as_ref().and_then(SessionWeak::upgrade)
+        self.s.as_ref().and_then(SessionWeak::upgrade)
     }
 
     /// Records `s` as the session the tree draws on.
     pub(crate) fn set_session(&mut self, s: Option<&session>) {
-        self.s_ref = s
+        self.s = s
             .and_then(crate::session::session_ref_of)
             .map(|s| s.downgrade());
     }
 
     /// The link the tree draws on, retained through the session that owns it.
     pub(crate) fn winlink(&self) -> Option<WinlinkRef> {
-        let (held, idx) = self.wl_ref.as_ref()?;
+        let (held, idx) = self.wl.as_ref()?;
         let held = held.upgrade()?;
         WinlinkRef::new(held, *idx)
     }
 
     /// Records `wl` as the link the tree draws on.
     pub(crate) fn set_winlink(&mut self, wl: Option<&winlink>) {
-        self.wl_ref = wl.and_then(|wl| wl.session().map(|s| (s.downgrade(), wl.idx)));
+        self.wl = wl.and_then(|wl| wl.session().map(|s| (s.downgrade(), wl.idx)));
     }
 
     /// The window the tree draws on, or null the same way.
     pub(crate) fn window(&self) -> Option<WindowRef> {
-        self.w_ref.as_ref().and_then(WindowWeak::upgrade)
+        self.w.as_ref().and_then(WindowWeak::upgrade)
     }
 
     /// Records `w` as the window the tree draws on.
     pub(crate) fn set_window(&mut self, w: Option<&WindowRef>) {
-        self.w_ref = w.map(WindowRef::downgrade);
+        self.w = w.map(WindowRef::downgrade);
     }
 
     /// Observes the pane independently of changes to its window membership.
     pub(crate) fn pane_handle(&self) -> Option<crate::window::RustWindowPaneWeak> {
-        self.wp_ref.as_ref().filter(|pane| pane.is_alive()).cloned()
+        self.wp.as_ref().filter(|pane| pane.is_alive()).cloned()
     }
 
     /// Records `wp` as the pane the tree draws on.
     pub(crate) fn set_pane(&mut self, wp: Option<&impl crate::WindowPane>) {
-        self.wp_ref = wp.and_then(|wp| crate::window::window_pane_ref_of(wp));
+        self.wp = wp.and_then(|wp| crate::window::window_pane_ref_of(wp));
     }
 
     /// The client the tree draws its client formats from, or null when it
     /// draws on none or the server has since given it up.
     pub(crate) fn drawn_client(&self) -> Option<ClientRef> {
-        self.c_ref.as_ref().and_then(ClientWeak::upgrade)
+        self.c.as_ref().and_then(ClientWeak::upgrade)
     }
 
     /// Records `c` as the client the tree draws its client formats from.
     pub(crate) fn set_drawn_client(&mut self, c: Option<&ClientRef>) {
-        self.c_ref = c.map(ClientRef::downgrade);
+        self.c = c.map(ClientRef::downgrade);
     }
 
     /// The queue item the tree was made for, or null when it was made for
     /// none or the queue has since given it up.
     pub(crate) fn item(&self) -> Option<CmdqItemRef> {
-        self.item_ref.as_ref().and_then(CmdqItemWeak::upgrade)
+        self.item.as_ref().and_then(CmdqItemWeak::upgrade)
     }
 
     /// Records `item` as the item the tree was made for.
     pub(crate) fn set_item(&mut self, item: Option<&cmdq_item>) {
-        self.item_ref = item
+        self.item = item
             .and_then(crate::cmd::cmdq_item_ref_of)
             .map(|item| item.downgrade());
     }
 
     /// The name of the buffer the tree draws on, if it has one.
     pub(crate) fn buffer_name(&self) -> Option<&CStr> {
-        self.pb_name.as_deref()
+        self.pb.as_deref()
     }
 
     /// Records the buffer name the tree draws on.
     pub(crate) fn set_buffer(&mut self, name: Option<&CStr>) {
-        self.pb_name = name.map(CStr::to_owned);
+        self.pb = name.map(CStr::to_owned);
     }
 
     /// The client whose jobs and working directory this tree draws on, if it
     /// was created with one.
     pub(crate) fn client(&self) -> Option<ClientRef> {
-        self.client_ref.clone()
+        self.client.clone()
     }
 }
 /// The entries of a format tree, by key. An entry lives in the map, so a
@@ -239,7 +239,7 @@ pub struct format_job {
     /// The id of the job the entry is running, or nothing while it runs
     /// none. A job is named by its id and nothing else, so the entry never
     /// names one that has finished.
-    pub job_id: Option<u_int>,
+    pub job: Option<u_int>,
     pub status: core::ffi::c_int,
 }
 
@@ -250,7 +250,7 @@ pub struct format_job {
 #[derive(Clone, Default)]
 #[repr(C)]
 pub struct format_expand_state {
-    pub loop_0: u_int,
+    pub r#loop: u_int,
     pub start_time: uint64_t,
     pub flags: core::ffi::c_int,
     pub time: time_t,
@@ -398,7 +398,7 @@ unsafe fn format_log1(
             item.with_item(|item| {
                 item.print(
                     c"#%.*s%s",
-                    fmt_args![es.loop_0, c"          ", s.as_c_str()],
+                    fmt_args![es.r#loop, c"          ", s.as_c_str()],
                 );
             });
         }
@@ -469,7 +469,7 @@ unsafe fn format_job_complete(job: JobEvent, locator: FormatJobLocator) {
             })
             .unwrap_or_default();
         let notify = with_format_job(&locator, |fj| {
-            fj.job_id = None;
+            fj.job = None;
             log_debug(
                 c"%s: %s: %s",
                 fmt_args![c"format_job_complete", fj.cmd.as_c_str(), bytes.as_slice()],
@@ -524,7 +524,7 @@ unsafe fn format_job_get(
                 last: 0,
                 out: None,
                 updated: 0,
-                job_id: None,
+                job: None,
                 status: 0,
             })
         };
@@ -548,8 +548,8 @@ unsafe fn format_job_get(
             } else {
                 ft.flags & FORMAT_FORCE != 0
             };
-            let old_job = if force { fj.job_id.take() } else { None };
-            (old_job, force || fj.job_id.is_none() && fj.last != t)
+            let old_job = if force { fj.job.take() } else { None };
+            (old_job, force || fj.job.is_none() && fj.last != t)
         }) else {
             return CString::default();
         };
@@ -580,7 +580,7 @@ unsafe fn format_job_get(
                 -1,
             );
             if with_format_job(&locator, |fj| {
-                fj.job_id = id;
+                fj.job = id;
                 if id.is_none() {
                     fj.out = Some(format_alloc(
                         c"<'%s' didn't start>",
@@ -599,7 +599,7 @@ unsafe fn format_job_get(
             }
         } else {
             with_format_job(&locator, |fj| {
-                if fj.job_id.is_some() && t - fj.last > 1 && fj.out.is_none() {
+                if fj.job.is_some() && t - fj.last > 1 && fj.out.is_none() {
                     fj.out = Some(format_alloc(
                         c"<'%s' not ready>",
                         fmt_args![fj.cmd.as_c_str()],
@@ -627,7 +627,7 @@ unsafe fn format_job_tidy(jobs: &mut format_job_tree, force: core::ffi::c_int) {
                 return true;
             }
             log_debug(c"%s: %s", fmt_args![c"format_job_tidy", fj.cmd.as_c_str()]);
-            if let Some(id) = fj.job_id.take() {
+            if let Some(id) = fj.job.take() {
                 job_free(id);
             }
             false
@@ -1123,9 +1123,9 @@ unsafe fn format_cb_pane_at_top(ft: &format_tree) -> Option<CString> {
         let status: core::ffi::c_int =
             (w.options_ref()).number(c"pane-border-status") as core::ffi::c_int;
         let flag: core::ffi::c_int = if status == PANE_STATUS_TOP {
-            (wp.geometry().y == 1 as core::ffi::c_int) as core::ffi::c_int
+            (wp.geometry().yoff == 1 as core::ffi::c_int) as core::ffi::c_int
         } else {
-            (wp.geometry().y == 0 as core::ffi::c_int) as core::ffi::c_int
+            (wp.geometry().yoff == 0 as core::ffi::c_int) as core::ffi::c_int
         };
         let value = xasprintf(c"%d", fmt_args![flag]);
         Some(value)
@@ -1141,11 +1141,11 @@ unsafe fn format_cb_pane_at_bottom(ft: &format_tree) -> Option<CString> {
         let status: core::ffi::c_int =
             (w.options_ref()).number(c"pane-border-status") as core::ffi::c_int;
         let flag: core::ffi::c_int = if status == PANE_STATUS_BOTTOM {
-            (wp.geometry().y + wp.geometry().height as core::ffi::c_int
+            (wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int
                 == w.dimensions().size.height as core::ffi::c_int - 1 as core::ffi::c_int)
                 as core::ffi::c_int
         } else {
-            (wp.geometry().y + wp.geometry().height as core::ffi::c_int
+            (wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int
                 == w.dimensions().size.height as core::ffi::c_int) as core::ffi::c_int
         };
         let value = xasprintf(c"%d", fmt_args![flag]);
@@ -1882,7 +1882,7 @@ unsafe fn format_cb_synchronized_output_flag(ft: &format_tree) -> Option<CString
 fn format_cb_pane_active(ft: &format_tree) -> Option<CString> {
     let pane = ft.pane_handle()?;
     Some(format_callback_copy(
-        if pane.window()?.active_pane_id() == Some(pane.id()) {
+        if pane.listed_window()?.active_pane_id() == Some(pane.id()) {
             c"1"
         } else {
             c"0"
@@ -1893,7 +1893,7 @@ unsafe fn format_cb_pane_at_left(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        if wp.geometry().x == 0 as core::ffi::c_int {
+        if wp.geometry().xoff == 0 as core::ffi::c_int {
             return Some(format_callback_copy(c"1"));
         }
         Some(format_callback_copy(c"0"))
@@ -1903,7 +1903,7 @@ unsafe fn format_cb_pane_at_right(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        if wp.geometry().x + wp.geometry().width as core::ffi::c_int
+        if wp.geometry().xoff + wp.geometry().sx as core::ffi::c_int
             == pane.window()?.dimensions().size.width as core::ffi::c_int
         {
             return Some(format_callback_copy(c"1"));
@@ -1918,7 +1918,7 @@ unsafe fn format_cb_pane_bottom(ft: &format_tree) -> Option<CString> {
         Some(format_printf(
             c"%d",
             fmt_args![
-                wp.geometry().y + wp.geometry().height as core::ffi::c_int - 1 as core::ffi::c_int
+                wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int - 1 as core::ffi::c_int
             ],
         ))
     }
@@ -1984,7 +1984,7 @@ unsafe fn format_cb_pane_height(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        Some(format_printf(c"%u", fmt_args![wp.geometry().height]))
+        Some(format_printf(c"%u", fmt_args![wp.geometry().sy]))
     }
 }
 unsafe fn format_cb_pane_id(ft: &format_tree) -> Option<CString> {
@@ -2041,7 +2041,7 @@ unsafe fn format_cb_pane_key_mode(ft: &format_tree) -> Option<CString> {
 fn format_cb_pane_last(ft: &format_tree) -> Option<CString> {
     let pane = ft.pane_handle()?;
     Some(format_callback_copy(
-        if pane.window()?.as_window().last_panes.first() == Some(&pane) {
+        if pane.listed_window()?.as_window().last_panes.first() == Some(&pane) {
             c"1"
         } else {
             c"0"
@@ -2052,7 +2052,7 @@ unsafe fn format_cb_pane_left(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        Some(format_printf(c"%d", fmt_args![wp.geometry().x]))
+        Some(format_printf(c"%d", fmt_args![wp.geometry().xoff]))
     }
 }
 unsafe fn format_cb_pane_marked(ft: &format_tree) -> Option<CString> {
@@ -2170,7 +2170,7 @@ unsafe fn format_cb_pane_right(ft: &format_tree) -> Option<CString> {
         Some(format_printf(
             c"%d",
             fmt_args![
-                wp.geometry().x + wp.geometry().width as core::ffi::c_int - 1 as core::ffi::c_int
+                wp.geometry().xoff + wp.geometry().sx as core::ffi::c_int - 1 as core::ffi::c_int
             ],
         ))
     }
@@ -2207,7 +2207,7 @@ unsafe fn format_cb_pane_top(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        Some(format_printf(c"%d", fmt_args![wp.geometry().y]))
+        Some(format_printf(c"%d", fmt_args![wp.geometry().yoff]))
     }
 }
 unsafe fn format_cb_pane_tty(ft: &format_tree) -> Option<CString> {
@@ -2221,21 +2221,21 @@ unsafe fn format_cb_pane_width(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        Some(format_printf(c"%u", fmt_args![wp.geometry().width]))
+        Some(format_printf(c"%u", fmt_args![wp.geometry().sx]))
     }
 }
 unsafe fn format_cb_pane_x(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        Some(format_printf(c"%d", fmt_args![wp.geometry().x]))
+        Some(format_printf(c"%d", fmt_args![wp.geometry().xoff]))
     }
 }
 unsafe fn format_cb_pane_y(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        Some(format_printf(c"%d", fmt_args![wp.geometry().y]))
+        Some(format_printf(c"%d", fmt_args![wp.geometry().yoff]))
     }
 }
 fn format_cb_pane_z(ft: &format_tree) -> Option<CString> {
@@ -2753,7 +2753,7 @@ unsafe fn format_cb_start_time(_ft: &format_tree) -> Option<timeval> {
 }
 fn format_cb_window_activity(ft: &format_tree) -> Option<timeval> {
     if let Some(w) = (*ft).window() {
-        return Some(w.timestamps().activity);
+        return Some(w.timestamps().activity_time);
     }
     None
 }
@@ -3615,7 +3615,7 @@ pub(crate) fn format_create_for_client(
     flags: core::ffi::c_int,
 ) -> Box<format_tree> {
     let mut ft = Box::new(format_tree {
-        client_ref: c.cloned(),
+        client: c.cloned(),
         flags,
         tag: tag as u_int,
         ..Default::default()
@@ -5597,7 +5597,7 @@ unsafe fn format_expand1(
         if fmt.is_empty() || format_check_time(ft, es) == 0 {
             return CString::default();
         }
-        if es.loop_0 == FORMAT_LOOP_LIMIT as u_int {
+        if es.r#loop == FORMAT_LOOP_LIMIT as u_int {
             format_log1(
                 ft,
                 es,
@@ -5607,7 +5607,7 @@ unsafe fn format_expand1(
             );
             return CString::default();
         }
-        es.loop_0 = es.loop_0.wrapping_add(1);
+        es.r#loop = es.r#loop.wrapping_add(1);
         format_log1(
             ft,
             es,
@@ -5797,7 +5797,7 @@ unsafe fn format_expand1(
             c"result is: %s",
             fmt_args![result.as_c_str()],
         );
-        es.loop_0 = es.loop_0.wrapping_sub(1);
+        es.r#loop = es.r#loop.wrapping_sub(1);
         result
     }
 }
@@ -6248,7 +6248,7 @@ fn format_defaults_session(ft: &mut format_tree, s: &session) {
 }
 fn format_defaults_client(ft: &mut format_tree, c: &ClientRef) {
     if ft.session().is_none() {
-        ft.s_ref = c.attached_session().map(|session| session.downgrade());
+        ft.s = c.attached_session().map(|session| session.downgrade());
     }
     ft.set_drawn_client(Some(c));
 }

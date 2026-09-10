@@ -48,7 +48,7 @@ unsafe fn cmd_respawn_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     let mut cause: Option<CString> = None;
     sc.item = cmdq_item_weak_of(item);
     sc.s = item.target.session();
-    sc.wl_idx = item.target.wl_idx;
+    sc.wl = item.target.wl;
     sc.tc = target_client.as_ref().map(ClientRef::downgrade);
     unsafe { sc.argv = args.to_vector() };
     sc.environ = Some(new_environment_box());

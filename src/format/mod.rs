@@ -16,7 +16,6 @@ pub use expand::{
     format_true,
 };
 
-pub(crate) use expand::FORMAT_TYPE_PANE;
 pub(crate) use expand::{
     format_create_for_client, format_create_from_state_for_client, format_defaults_for_handles,
     format_defaults_for_link, format_defaults_for_link_pane, format_defaults_for_session,

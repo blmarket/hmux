@@ -84,7 +84,7 @@ unsafe fn cmd_join_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         .expect("a join destination has a pane");
     let dst_idx = item
         .target
-        .wl_idx
+        .wl
         .expect("a join destination has a window link");
     unsafe { dst_owner.unzoom_and_redraw() };
     let src_owner = item.source.window().expect("a join source has a window");

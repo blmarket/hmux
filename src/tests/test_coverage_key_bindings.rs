@@ -443,7 +443,7 @@ fn key_bindings_remove_table_rebinds_attached_clients() {
         (*c).set_attached_session(Some(s.handle()));
         let home_table_ref = key_bindings_get_table_ref(home, 1).unwrap();
         let home_table = home_table_ref.clone();
-        (*c).keytable_ref = Some(home_table_ref.clone());
+        (*c).keytable = Some(home_table_ref.clone());
 
         let name = c"kb-detach";
         let table = ts.take(name);
@@ -455,7 +455,7 @@ fn key_bindings_remove_table_rebinds_attached_clients() {
         assert!(key_bindings_get_table(name, 0).is_none());
         assert_eq!((*c).keytable(), Some(home_table.clone()));
 
-        (*c).keytable_ref = None;
+        (*c).keytable = None;
         drop(home_table_ref);
         key_bindings_remove_table(home);
         assert!(key_bindings_get_table(home, 0).is_none());

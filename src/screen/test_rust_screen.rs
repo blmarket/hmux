@@ -1034,7 +1034,7 @@ pub(crate) unsafe fn screen_print(s: &RustScreen, line: c_int) -> CString {
                     if last + 2 >= PRINT_SIZE {
                         break 'out;
                     }
-                    buf[last] = gce.c2rust_unnamed.data.data;
+                    buf[last] = gce.value.data.data;
                     last += 1;
                 } else if gce.flags as c_int & GRID_FLAG_TAB != 0 {
                     /*
@@ -1050,7 +1050,7 @@ pub(crate) unsafe fn screen_print(s: &RustScreen, line: c_int) -> CString {
                 } else {
                     let mut ud = utf8_data::default();
                     utf8_to_data(
-                        gl.extddata()[gce.c2rust_unnamed.offset as usize].data,
+                        gl.extddata()[gce.value.offset as usize].data,
                         &mut ud,
                     );
                     let size = ud.size as usize;

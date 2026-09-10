@@ -290,7 +290,7 @@ mod lifetime_tests {
             let command = pane.command().unwrap();
             pane.set_position(8, 9);
             owner.as_pane_mut().clear_pane_command();
-            assert_eq!((geometry.x, geometry.y), (2, 4));
+            assert_eq!((geometry.xoff, geometry.yoff), (2, 4));
             assert_eq!(command.argv, [c"before".to_owned()]);
             let payload = owner.into_pane();
             assert!(!pane.is_alive());

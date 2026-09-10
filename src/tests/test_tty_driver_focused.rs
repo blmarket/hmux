@@ -17,7 +17,7 @@ impl Terminal {
     fn new(sx: u_int, sy: u_int) -> Self {
         let client = zeroed_client();
         let mut tty = zeroed_tty();
-        tty.owner = Some(client.downgrade());
+        tty.client = Some(client.downgrade());
         tty.term = Some(zeroed_term());
         tty.out = Some(Box::new(ByteBuffer::new()));
         tty.sx = sx;
@@ -650,7 +650,7 @@ fn window_offset_updates_only_terminal_clients_viewing_that_window() {
         assert_ne!(watching.flags & CLIENT_REDRAWWINDOW as uint64_t, 0);
         assert_eq!(detached.tty.osx, 999);
         assert_eq!(nonterminal.tty.osx, 999);
-        (*target.session()).curw_idx = None;
+        (*target.session()).curw = None;
         watching.tty.osx = 999;
         ((*target.winlink(0)).window_handle().unwrap()).update_client_offsets();
         assert_eq!(watching.tty.osx, 999);
@@ -674,12 +674,12 @@ fn default_colours_follow_active_pane_identity_and_per_colour_fallbacks() {
             let wp = pane.get_mut().unwrap();
             *wp.flags_mut() &= !PANE_STYLECHANGED;
             wp.set_styles(PaneStyleCells {
-                normal: grid_cell {
+                cached_gc: grid_cell {
                     fg: 1,
                     bg: 2,
                     ..grid_default_cell
                 },
-                active: grid_cell {
+                cached_active_gc: grid_cell {
                     fg: 3,
                     bg: 8,
                     ..grid_default_cell
@@ -693,19 +693,19 @@ fn default_colours_follow_active_pane_identity_and_per_colour_fallbacks() {
         assert_eq!((colours.fg, colours.bg), (1, 2));
         {
             let mut payload = owner.as_window_mut();
-            payload.active_pane = payload
+            payload.active = payload
                 .panes
                 .iter()
                 .find(|pane| pane.pane_id() == panes[1].id())
                 .map(|pane| pane.downgrade());
         }
         panes[1].get_mut().unwrap().set_styles(PaneStyleCells {
-            normal: grid_cell {
+            cached_gc: grid_cell {
                 fg: 1,
                 bg: 2,
                 ..grid_default_cell
             },
-            active: grid_cell {
+            cached_active_gc: grid_cell {
                 fg: 8,
                 bg: 4,
                 ..grid_default_cell
@@ -717,7 +717,7 @@ fn default_colours_follow_active_pane_identity_and_per_colour_fallbacks() {
         assert_eq!((colours.fg, colours.bg), (1, 2));
         {
             let mut payload = owner.as_window_mut();
-            payload.active_pane = payload
+            payload.active = payload
                 .panes
                 .iter()
                 .find(|pane| pane.pane_id() == 999)

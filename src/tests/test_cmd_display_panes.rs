@@ -42,7 +42,7 @@ impl Overlay {
         unsafe { c.as_tty_mut() }.sy = sy;
         unsafe { c.as_tty_mut() }.term = Some(term);
         unsafe { c.as_tty_mut() }.out = Some(Box::new(ByteBuffer::new()));
-        unsafe { c.as_tty_mut() }.owner =
+        unsafe { c.as_tty_mut() }.client =
             crate::server::client_ref_of(&*(unsafe { c.as_client() })).map(|c| c.downgrade());
         Overlay {
             extra: Vec::new(),
@@ -355,7 +355,7 @@ fn a_size_wider_than_the_visible_pane_is_dropped() {
 #[test]
 fn a_template_that_will_not_parse_queues_its_error_on_the_client() {
     let mut f = Overlay::new(80, 24);
-    let mut state = zeroed::<args_command_state>();
+    let mut state = Box::new(args_command_state::default());
     let mut cdata = zeroed::<cmd_display_panes_data>();
     let mut event = key_event::default();
     unsafe {

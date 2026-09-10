@@ -54,8 +54,6 @@ use ::std::ffi::CString;
 pub struct window_copy_mode_data {
     pub(crate) screen: ScreenRef,
     pub(crate) backing: Option<Box<RustScreen>>,
-    pub(crate) teardown_options: Option<RustOptionsRef>,
-    pub(crate) teardown_window: Option<WindowWeak>,
     pub backing_written: core::ffi::c_int,
     pub ictx: Option<InputCtxRef>,
     pub viewmode: core::ffi::c_int,
@@ -594,7 +592,7 @@ pub unsafe fn window_copy_scroll(
             &crate::window::window_pane_find_by_id(selected_id).expect("the selected pane exists"),
             0,
         );
-        let slider_height = wp.slider().height;
+        let slider_height = wp.slider().sb_slider_h;
         let geometry = wp.geometry();
         let Some((offset, size)) = window_copy_get_current_offset(wp) else {
             return;
@@ -603,8 +601,8 @@ pub unsafe fn window_copy_scroll(
         if window_copy_scroll1(
             wme,
             slider_height,
-            geometry.height,
-            geometry.y as u_int,
+            geometry.sy,
+            geometry.yoff as u_int,
             offset,
             size,
             sl_mpos,
@@ -1815,7 +1813,7 @@ unsafe fn window_copy_cmd_centre_vertical(
         let geometry = pane.get().expect("mode pane is live").geometry();
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let x = data.cx;
-        let y = geometry.height.wrapping_div(2);
+        let y = geometry.sy.wrapping_div(2);
         window_copy_update_cursor(wme, x, y);
         window_copy_update_selection(&mut *wme, 1 as core::ffi::c_int, 0 as core::ffi::c_int);
         WINDOW_COPY_CMD_REDRAW
@@ -1829,7 +1827,7 @@ unsafe fn window_copy_cmd_centre_horizontal(
         let pane = wme.pane_ref().expect("mode has a pane");
         let geometry = pane.get().expect("mode pane is live").geometry();
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
-        let x = geometry.width.wrapping_div(2);
+        let x = geometry.sx.wrapping_div(2);
         let y = data.cy;
         window_copy_update_cursor(wme, x, y);
         window_copy_update_selection(&mut *wme, 1 as core::ffi::c_int, 0 as core::ffi::c_int);
@@ -5285,13 +5283,13 @@ unsafe fn window_copy_cellstring(gl: &grid_line, px: u_int) -> Cow<'_, [u8]> {
             return Cow::Borrowed(&[]);
         }
         if !(gce.flags as core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
-            return Cow::Borrowed(core::slice::from_ref(&gce.c2rust_unnamed.data.data));
+            return Cow::Borrowed(core::slice::from_ref(&gce.value.data.data));
         }
         if gce.flags as core::ffi::c_int & GRID_FLAG_TAB != 0 {
             return Cow::Borrowed(b"\t");
         }
         utf8_to_data(
-            (*gl).extddata()[gce.c2rust_unnamed.offset as usize].data,
+            (*gl).extddata()[gce.value.offset as usize].data,
             &mut ud,
         );
         if ud.size as core::ffi::c_int == 0 as core::ffi::c_int {
@@ -6405,35 +6403,23 @@ unsafe fn window_copy_match_at_cursor(data: &window_copy_mode_data) -> Option<CS
     }
 }
 fn window_copy_window_options(wme: &window_mode_entry) -> RustOptionsRef {
-    {
-        if let Some(window) = wme.pane_ref().and_then(|pane| pane.window()) {
-            return window.options();
-        }
-        wme.state
-            .copy_mode_data_ref()
-            .expect("copy mode has state")
-            .teardown_options
-            .clone()
-            .expect("copy mode has a window context")
+    let pane = wme.pane_ref().expect("copy mode has a pane");
+    if let Some(window) = pane.window() {
+        return window.options();
+    }
+    unsafe {
+        pane.get()
+            .expect("the pane exists during mode teardown")
+            .options_ref()
+            .parent()
+            .expect("pane options inherit window options")
     }
 }
 
 unsafe fn window_copy_format_context(wme: &window_mode_entry) -> Box<format_tree> {
     unsafe {
         let pane = wme.pane_ref().expect("copy mode has a pane");
-        if let Some(pane) = pane.get() {
-            return format_create_defaults(None, None, None, None, Some(pane));
-        }
-        let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
-        let mut ft =
-            format_create_defaults(None, None, None, None, None::<&crate::types::window_pane>);
-        if let Some(window) = data.teardown_window.as_ref().and_then(WindowWeak::upgrade) {
-            crate::format::format_defaults_window(&mut ft, &window);
-        }
-        ft.type_0 = crate::format::FORMAT_TYPE_PANE;
-        ft.wp_ref = Some(pane.clone());
-        window_copy_formats(wme, &mut ft);
-        ft
+        format_create_defaults(None, None, None, None, pane.get())
     }
 }
 
@@ -6896,7 +6882,7 @@ unsafe fn window_copy_redraw_lines(wme: &mut window_mode_entry, py: u_int, ny: u
             return;
         };
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
-        if pane.get().is_none() && data.teardown_options.is_none() {
+        if pane.get().is_none() {
             return;
         }
         let _window = pane.window();

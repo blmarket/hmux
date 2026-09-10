@@ -301,8 +301,6 @@ pub struct args_command_state {
     pub(crate) cmdlist: Option<CmdListRef>,
     pub cmd: Option<CString>,
     pub pi: cmd_parse_input,
-    pub(crate) source_file: Option<CString>,
-    pub(crate) client_ref: Option<ClientRef>,
 }
 
 impl ArgumentCommandState for args_command_state {
@@ -328,29 +326,26 @@ impl ArgumentCommandState for args_command_state {
         &mut self.pi
     }
     fn set_prepared_command_source(&mut self, file: Option<&CStr>, line: u_int) {
-        self.source_file = file.map(CStr::to_owned);
-        self.pi.file = self.source_file.clone();
+        self.pi.file = file.map(CStr::to_owned);
         self.pi.line = line;
     }
     fn set_prepared_command_client(&mut self, client: Option<ClientRef>) {
-        crate::CommandParseInput::set_command_parse_client(&mut self.pi, client.clone());
-        self.client_ref = client;
+        self.pi.c = client.map(crate::types::ParseClient::Owned);
     }
     fn prepared_command_client(&self) -> Option<&ClientRef> {
-        self.client_ref.as_ref()
+        match self.pi.c.as_ref()? {
+            crate::types::ParseClient::Owned(client) => Some(client),
+            crate::types::ParseClient::Observed(_) => None,
+        }
     }
 }
 impl Clone for args_command_state {
     fn clone(&self) -> Self {
-        let source_file = self.source_file.clone();
-        let mut pi = self.pi.clone();
-        pi.file = source_file.clone();
+
         Self {
             cmdlist: self.cmdlist.clone(),
             cmd: self.cmd.clone(),
-            pi,
-            source_file,
-            client_ref: self.client_ref.clone(),
+            pi: self.pi.clone(),
         }
     }
 }

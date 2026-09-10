@@ -47,7 +47,7 @@ fn cached_job_output_can_clear_the_cache_during_expansion() {
             last: 0,
             out: Some(c"#{clear_cache}".to_owned()),
             updated: 1,
-            job_id: Some(u_int::MAX),
+            job: Some(u_int::MAX),
             status: 0,
         }),
     );
@@ -222,7 +222,7 @@ fn expansion_byte_cursors_preserve_malformed_endings_and_style_boundaries() {
             unsafe { format_expand1(ft.tree(), &mut es, source) }.to_bytes(),
             expected.as_bytes()
         );
-        assert_eq!(es.loop_0, 0);
+        assert_eq!(es.r#loop, 0);
     }
     let host = ft.expand(c"#H");
     for (source, expected) in [
@@ -381,9 +381,9 @@ fn time_expansion_and_loop_guards_cover_empty_percent_and_limits() {
         assert_eq!(text(format_expand_time(&mut *ft.ptr(), c"%%")), "%");
         assert_eq!(text(format_expand_time(&mut *ft.ptr(), c"%Y")).len(), 4);
         let mut es = state();
-        es.loop_0 = FORMAT_LOOP_LIMIT as u_int;
+        es.r#loop = FORMAT_LOOP_LIMIT as u_int;
         assert_eq!(format_expand1(&mut *ft.ptr(), &mut es, c"text"), c"");
-        es.loop_0 = 0;
+        es.r#loop = 0;
         es.start_time = get_timer().wrapping_sub(FORMAT_TIME_LIMIT as u64 + 1);
         assert_eq!(format_check_time(&mut *ft.ptr(), &mut es), 0);
     }
@@ -592,7 +592,7 @@ fn active_window_formats_skip_sessions_without_a_current_link() {
             Some(c"1")
         );
         let mut session = ft.tree().session().unwrap();
-        let current = session.as_session_mut().curw_idx.take();
+        let current = session.as_session_mut().curw.take();
         assert_eq!(
             format_cb_window_active_clients(ft.tree()).as_deref(),
             Some(c"0")
@@ -603,7 +603,7 @@ fn active_window_formats_skip_sessions_without_a_current_link() {
             Some(c"0")
         );
         assert_eq!(format_cb_window_active_sessions_list(ft.tree()), None);
-        session.as_session_mut().curw_idx = current;
+        session.as_session_mut().curw = current;
     }
 }
 

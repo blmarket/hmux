@@ -38,9 +38,9 @@ pub struct notify_entry {
     pub name: Option<std::ffi::CString>,
     pub fs: cmd_find_state,
     pub formats: Box<format_tree>,
-    pub(crate) client_ref: Option<ClientRef>,
-    pub(crate) session_ref: Option<SessionRef>,
-    pub(crate) window_ref: Option<WindowRef>,
+    pub(crate) client: Option<ClientRef>,
+    pub(crate) session: Option<SessionRef>,
+    pub(crate) window: Option<WindowRef>,
     pub pane: c_int,
     pub pbname: Option<std::ffi::CString>,
 }
@@ -52,7 +52,7 @@ impl notify_entry {
     /// No owner or callback may mutate the session while the view is in use.
     pub(crate) unsafe fn session(&self) -> Option<&session> {
         unsafe {
-            self.session_ref
+            self.session
                 .as_ref()
                 .map(|reference| reference.as_session())
         }
@@ -60,7 +60,7 @@ impl notify_entry {
 
     /// Returns the window handle retained by this notification, if any.
     pub(crate) fn window(&self) -> Option<&WindowRef> {
-        self.window_ref.as_ref()
+        self.window.as_ref()
     }
 }
 
@@ -216,13 +216,13 @@ fn notify_callback(item: &CmdqItemRef, mut ne: Box<notify_entry>) -> cmd_retval 
                 control_notify_window_renamed(ne.window().expect("the hook names a window"))
             }
             Some(b"client-session-changed") => control_notify_client_session_changed(
-                ne.client_ref
+                ne.client
                     .as_mut()
                     .expect("the hook names a client")
                     .as_client_mut(),
             ),
             Some(b"client-detached") => control_notify_client_detached(
-                ne.client_ref
+                ne.client
                     .as_mut()
                     .expect("the hook names a client")
                     .as_client_mut(),
@@ -283,9 +283,9 @@ unsafe fn notify_add(
             name: Some(name.to_owned()),
             fs: cmd_find_state::default(),
             formats: format_create(None, None, 0, FORMAT_NOJOBS),
-            client_ref: c.and_then(client_ref_of),
-            session_ref,
-            window_ref,
+            client: c.and_then(client_ref_of),
+            session: session_ref,
+            window: window_ref,
             pane: wp.map_or(-1, |wp| wp.pane_id() as c_int),
             pbname: pbname.map(CStr::to_owned),
         });
@@ -372,12 +372,13 @@ pub unsafe fn notify_hook(item: &cmdq_item, name: &CStr) {
             name: Some(name.to_owned()),
             fs: cmd_find_state::default(),
             formats: format_create(None, None, 0, FORMAT_NOJOBS),
-            client_ref: None,
-            session_ref: None,
-            window_ref: None,
+            client: None,
+            session: None,
+            window: None,
             pane: target
                 .pane_list_ref()
-                .map_or(-1, |pane| pane.pane_id() as c_int),
+                .and_then(|pane| pane.pane_id())
+                .map_or(-1, |id| id as c_int),
             pbname: None,
         };
         cmd_find_copy_state(&mut ne.fs, target);

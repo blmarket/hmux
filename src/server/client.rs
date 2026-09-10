@@ -285,7 +285,7 @@ impl Overlay {
         unsafe {
             match (self, data) {
                 (Overlay::Menu, OverlayState::Menu(data)) => data.close(c),
-                (Overlay::Popup, OverlayState::Popup(data)) => data.close(c),
+                (Overlay::Popup, OverlayState::Popup(data) | OverlayState::PopupMenu(data) | OverlayState::PopupHidden(data)) => data.close(c),
                 (Overlay::DisplayPanes { .. }, OverlayState::DisplayPanes(data)) => data.close(),
                 (Overlay::None, _) => panic!("overlay is not set"),
                 _ => panic!("overlay data does not match overlay"),
@@ -422,7 +422,7 @@ pub fn server_client_set_key_table(c: &mut client, name: Option<&CStr>) {
         };
         let table_ref = key_bindings_get_table_ref(name, 1 as core::ffi::c_int)
             .expect("key table creation requested");
-        c.keytable_ref = Some(table_ref);
+        c.keytable = Some(table_ref);
         let now = timeval::now();
         c.keytable()
             .expect("client key table")
@@ -638,7 +638,7 @@ pub unsafe fn server_client_set_session(c: &mut client, s_ref: Option<&SessionRe
             session.update_activity(None);
             session.theme_changed();
             session.as_session_mut().last_attached_time = timeval::now();
-            let current = session.as_session().curw_idx;
+            let current = session.as_session().curw;
             if let Some(link) =
                 current.and_then(|index| session.as_session_mut().windows.get_mut(&index))
             {
@@ -733,7 +733,7 @@ unsafe fn server_client_check_mouse_in_pane(
         let slider = wp.slider();
         let pane_status: core::ffi::c_int =
             (w.options_ref()).number(c"pane-border-status") as core::ffi::c_int;
-        if window_pane_show_scrollbar(wp, w.scrollbar_settings().mode) != 0 {
+        if window_pane_show_scrollbar(wp, w.scrollbar_settings().sb) != 0 {
             sb_w = wp.scrollbar_style().width;
             sb_pad = wp.scrollbar_style().padding;
         } else {
@@ -741,47 +741,47 @@ unsafe fn server_client_check_mouse_in_pane(
             sb_pad = 0 as core::ffi::c_int;
         }
         let pane_status_line: core::ffi::c_int = if pane_status == PANE_STATUS_TOP {
-            wp.geometry().y - 1 as core::ffi::c_int
+            wp.geometry().yoff - 1 as core::ffi::c_int
         } else if pane_status == PANE_STATUS_BOTTOM {
-            (wp.geometry().y as u_int).wrapping_add(wp.geometry().height) as core::ffi::c_int
+            (wp.geometry().yoff as u_int).wrapping_add(wp.geometry().sy) as core::ffi::c_int
         } else {
             -(1 as core::ffi::c_int)
         };
-        bdr_left = wp.geometry().x - 1 as core::ffi::c_int;
-        if w.scrollbar_settings().position == PANE_SCROLLBARS_LEFT {
+        bdr_left = wp.geometry().xoff - 1 as core::ffi::c_int;
+        if w.scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT {
             bdr_left -= sb_pad + sb_w;
         }
         if (pane_status != PANE_STATUS_OFF
             && py != pane_status_line
-            && py != wp.geometry().y + wp.geometry().height as core::ffi::c_int
-            || wp.geometry().y == 0 as core::ffi::c_int
-                && py < wp.geometry().height as core::ffi::c_int
-            || py >= wp.geometry().y
-                && py < wp.geometry().y + wp.geometry().height as core::ffi::c_int)
-            && (w.scrollbar_settings().position == PANE_SCROLLBARS_RIGHT
-                && px < wp.geometry().x + wp.geometry().width as core::ffi::c_int + sb_pad + sb_w
-                || w.scrollbar_settings().position == PANE_SCROLLBARS_LEFT
+            && py != wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int
+            || wp.geometry().yoff == 0 as core::ffi::c_int
+                && py < wp.geometry().sy as core::ffi::c_int
+            || py >= wp.geometry().yoff
+                && py < wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int)
+            && (w.scrollbar_settings().sb_pos == PANE_SCROLLBARS_RIGHT
+                && px < wp.geometry().xoff + wp.geometry().sx as core::ffi::c_int + sb_pad + sb_w
+                || w.scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT
                     && px
-                        < wp.geometry().x + wp.geometry().width as core::ffi::c_int - sb_pad - sb_w)
+                        < wp.geometry().xoff + wp.geometry().sx as core::ffi::c_int - sb_pad - sb_w)
         {
-            return if w.scrollbar_settings().position == PANE_SCROLLBARS_RIGHT
-                && (px >= wp.geometry().x + wp.geometry().width as core::ffi::c_int + sb_pad
+            return if w.scrollbar_settings().sb_pos == PANE_SCROLLBARS_RIGHT
+                && (px >= wp.geometry().xoff + wp.geometry().sx as core::ffi::c_int + sb_pad
                     && px
-                        < wp.geometry().x + wp.geometry().width as core::ffi::c_int + sb_pad + sb_w)
-                || w.scrollbar_settings().position == PANE_SCROLLBARS_LEFT
-                    && (px >= wp.geometry().x - sb_pad - sb_w && px < wp.geometry().x - sb_pad)
+                        < wp.geometry().xoff + wp.geometry().sx as core::ffi::c_int + sb_pad + sb_w)
+                || w.scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT
+                    && (px >= wp.geometry().xoff - sb_pad - sb_w && px < wp.geometry().xoff - sb_pad)
             {
-                sl_top = (wp.geometry().y as u_int).wrapping_add(slider.y) as core::ffi::c_int;
-                sl_bottom = (wp.geometry().y as u_int)
-                    .wrapping_add(slider.y)
-                    .wrapping_add(slider.height)
+                sl_top = (wp.geometry().yoff as u_int).wrapping_add(slider.sb_slider_y) as core::ffi::c_int;
+                sl_bottom = (wp.geometry().yoff as u_int)
+                    .wrapping_add(slider.sb_slider_y)
+                    .wrapping_add(slider.sb_slider_h)
                     .wrapping_sub(1 as u_int) as core::ffi::c_int;
                 if py < sl_top {
                     KEYC_MOUSE_LOCATION_SCROLLBAR_UP
                 } else if py >= sl_top && py <= sl_bottom {
                     *sl_mpos = (py as u_int)
-                        .wrapping_sub(slider.y)
-                        .wrapping_sub(wp.geometry().y as u_int);
+                        .wrapping_sub(slider.sb_slider_y)
+                        .wrapping_sub(wp.geometry().yoff as u_int);
                     KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER
                 } else {
                     KEYC_MOUSE_LOCATION_SCROLLBAR_DOWN
@@ -791,8 +791,8 @@ unsafe fn server_client_check_mouse_in_pane(
                 &{ crate::window::window_pane_ref_of(wp) }.expect("the pane allocation exists"),
             ) != 0
                 && (px == bdr_left
-                    || py == wp.geometry().y - 1 as core::ffi::c_int
-                    || py == wp.geometry().y + wp.geometry().height as core::ffi::c_int)
+                    || py == wp.geometry().yoff - 1 as core::ffi::c_int
+                    || py == wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int)
             {
                 KEYC_MOUSE_LOCATION_BORDER
             } else {
@@ -804,28 +804,28 @@ unsafe fn server_client_check_mouse_in_pane(
                     continue;
                 };
                 if !(w.flags & WINDOW_ZOOMED != 0 && !*fwp.flags() & PANE_ZOOMED != 0) {
-                    if window_pane_show_scrollbar(fwp, w.scrollbar_settings().mode) != 0 {
+                    if window_pane_show_scrollbar(fwp, w.scrollbar_settings().sb) != 0 {
                         sb_w = fwp.scrollbar_style().width;
                         sb_pad = fwp.scrollbar_style().padding;
                     } else {
                         sb_w = 0 as core::ffi::c_int;
                         sb_pad = 0 as core::ffi::c_int;
                     }
-                    bdr_top = fwp.geometry().y - 1 as core::ffi::c_int;
-                    bdr_left = fwp.geometry().x - 1 as core::ffi::c_int;
-                    if w.scrollbar_settings().position == PANE_SCROLLBARS_LEFT {
+                    bdr_top = fwp.geometry().yoff - 1 as core::ffi::c_int;
+                    bdr_left = fwp.geometry().xoff - 1 as core::ffi::c_int;
+                    if w.scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT {
                         bdr_left -= sb_pad + sb_w;
-                        bdr_right = (fwp.geometry().x as u_int).wrapping_add(fwp.geometry().width)
+                        bdr_right = (fwp.geometry().xoff as u_int).wrapping_add(fwp.geometry().sx)
                             as core::ffi::c_int;
                     } else {
-                        bdr_right = (fwp.geometry().x as u_int)
-                            .wrapping_add(fwp.geometry().width)
+                        bdr_right = (fwp.geometry().xoff as u_int)
+                            .wrapping_add(fwp.geometry().sx)
                             .wrapping_add(sb_pad as u_int)
                             .wrapping_add(sb_w as u_int)
                             as core::ffi::c_int;
                     }
-                    if py >= fwp.geometry().y - 1 as core::ffi::c_int
-                        && py <= fwp.geometry().y + fwp.geometry().height as core::ffi::c_int
+                    if py >= fwp.geometry().yoff - 1 as core::ffi::c_int
+                        && py <= fwp.geometry().yoff + fwp.geometry().sy as core::ffi::c_int
                     {
                         if px == bdr_right {
                             return KEYC_MOUSE_LOCATION_BORDER;
@@ -841,9 +841,9 @@ unsafe fn server_client_check_mouse_in_pane(
                         }
                     }
                     if px >= bdr_left
-                        && px <= fwp.geometry().x + fwp.geometry().width as core::ffi::c_int
+                        && px <= fwp.geometry().xoff + fwp.geometry().sx as core::ffi::c_int
                     {
-                        bdr_bottom = (fwp.geometry().y as u_int).wrapping_add(fwp.geometry().height)
+                        bdr_bottom = (fwp.geometry().yoff as u_int).wrapping_add(fwp.geometry().sy)
                             as core::ffi::c_int;
                         if py == bdr_bottom {
                             return KEYC_MOUSE_LOCATION_BORDER;
@@ -2207,17 +2207,17 @@ unsafe fn server_client_reset_state(c: &mut client) {
                 window_bigger
             };
             let (screen_cx, screen_cy) = s.expect("the pane has a screen mode").cursor;
-            if wp.geometry().x + screen_cx as core::ffi::c_int >= ox as core::ffi::c_int
-                && wp.geometry().x + screen_cx as core::ffi::c_int
+            if wp.geometry().xoff + screen_cx as core::ffi::c_int >= ox as core::ffi::c_int
+                && wp.geometry().xoff + screen_cx as core::ffi::c_int
                     <= ox as core::ffi::c_int + sx as core::ffi::c_int
-                && wp.geometry().y + screen_cy as core::ffi::c_int >= oy as core::ffi::c_int
-                && wp.geometry().y + screen_cy as core::ffi::c_int
+                && wp.geometry().yoff + screen_cy as core::ffi::c_int >= oy as core::ffi::c_int
+                && wp.geometry().yoff + screen_cy as core::ffi::c_int
                     <= oy as core::ffi::c_int + sy as core::ffi::c_int
             {
                 cursor = 1 as core::ffi::c_int;
-                cx = (wp.geometry().x + screen_cx as core::ffi::c_int - ox as core::ffi::c_int)
+                cx = (wp.geometry().xoff + screen_cx as core::ffi::c_int - ox as core::ffi::c_int)
                     as u_int;
-                cy = (wp.geometry().y + screen_cy as core::ffi::c_int - oy as core::ffi::c_int)
+                cy = (wp.geometry().yoff + screen_cy as core::ffi::c_int - oy as core::ffi::c_int)
                     as u_int;
                 ranges.set_visible_ranges(
                     Some(wp),
@@ -3131,7 +3131,7 @@ pub fn server_client_get_client_window(c: &mut client, id: u_int) -> Option<&mut
 pub fn server_client_add_client_window(c: &mut client, id: u_int) -> &mut client_window {
     c.windows.entry(id).or_insert(client_window {
         window: id,
-        pane_ref: None,
+        pane: None,
         sx: 0 as u_int,
         sy: 0 as u_int,
     })
@@ -3154,7 +3154,7 @@ pub(crate) fn server_client_get_pane_in_window(
     let Some(cw) = c.windows.get(&window.window_id()) else {
         return window.active_pane();
     };
-    cw.pane_ref
+    cw.pane
         .clone()
         .filter(|pane| unsafe { pane.get().is_some() })
 }
@@ -3168,7 +3168,7 @@ pub fn server_client_set_pane(c: &mut client, wp: &impl crate::WindowPane) {
             return;
         };
         let cw = server_client_add_client_window(c, window.window_id());
-        cw.pane_ref = crate::window::window_pane_ref_of(wp);
+        cw.pane = crate::window::window_pane_ref_of(wp);
         log_debug(
             c"%s pane now %%%u",
             fmt_args![c.name.as_deref(), wp.pane_id()],
@@ -3185,7 +3185,7 @@ pub unsafe fn server_client_remove_pane(pane: &impl crate::WindowPane) {
         for mut c in client_walk() {
             let remove = server_client_get_client_window(c.as_client_mut(), window_id)
                 .filter(|cw| {
-                    cw.pane_ref
+                    cw.pane
                         .as_ref()
                         .is_some_and(|reference| core::ptr::addr_eq(reference.as_ptr(), pane))
                 })
@@ -3388,7 +3388,7 @@ impl ClientRef {
             c.flags |= CLIENT_FOCUSED as uint64_t;
             let table_ref = key_bindings_get_table_ref(c"root", 1 as core::ffi::c_int)
                 .expect("root key table creation requested");
-            c.keytable_ref = Some(table_ref);
+            c.keytable = Some(table_ref);
             c.repeat_timer.set_callback(move || {
                 if let Some(mut c) = repeat_client.upgrade() {
                     server_client_repeat_timer(c.as_client_mut());
@@ -3447,7 +3447,7 @@ impl ClientRef {
             c.as_client_mut().exit_message = None;
             c.as_client_mut().repeat_timer.disarm();
             c.as_client_mut().click_timer.disarm();
-            c.as_client_mut().keytable_ref = None;
+            c.as_client_mut().keytable = None;
             c.as_client_mut().message_string = None;
             c.as_client_mut().message_timer.disarm();
             c.as_client_mut().prompt_saved = None;

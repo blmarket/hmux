@@ -71,7 +71,7 @@ fn with_a_every_other_pane_of_the_window_is_removed_and_freed() {
                 .iter()
                 .map(|pane| pane.id())
                 .collect::<Vec<_>>(),
-            vec![target.pane_id()]
+            vec![target.id()]
         );
         assert!(
             w.active_pane().is_some_and(|pane| pane.ptr_eq(&target)),
@@ -105,7 +105,7 @@ fn without_a_the_target_pane_alone_is_killed() {
         assert_eq!(window_count_panes(&mut *w, 1), 2);
 
         let mut fs = t.state();
-        fs.wp_ref = crate::window::window_pane_find_by_id(doomed);
+        fs.wp = crate::window::window_pane_find_by_id(doomed);
         (*item.ptr()).target = fs;
 
         assert_eq!(run(&mut item), CMD_RETURN_NORMAL);

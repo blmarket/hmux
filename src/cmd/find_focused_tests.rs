@@ -210,18 +210,18 @@ fn state_validation_requires_a_live_link_and_its_own_pane() {
             .window_handle()
             .unwrap()
             .clone();
-        fs.wl_idx = Some(1);
+        fs.wl = Some(1);
         assert_eq!(cmd_find_valid_state(&fs), 0);
         fs.set_window_ref(Some(&other_window));
         assert_eq!(cmd_find_valid_state(&fs), 0);
-        fs.wp_ref = Some(other_window.panes()[0].clone());
+        fs.wp = Some(other_window.panes()[0].clone());
         assert_eq!(cmd_find_valid_state(&fs), 1);
-        fs.wp_ref = None;
+        fs.wp = None;
         assert_eq!(cmd_find_valid_state(&fs), 0);
-        fs.wp_ref = Some(other_window.panes()[0].clone());
-        fs.wl_idx = Some(99);
+        fs.wp = Some(other_window.panes()[0].clone());
+        fs.wl = Some(99);
         assert_eq!(cmd_find_valid_state(&fs), 0);
-        fs.wl_idx = Some(1);
+        fs.wl = Some(1);
         fs.set_session_ref(None);
         assert_eq!(cmd_find_valid_state(&fs), 0);
     }
@@ -313,7 +313,7 @@ fn window_targets_preserve_aliases_wraparound_and_unallocated_indices() {
     target.add_window(7, 80, 24);
     unsafe {
         let mut session = target.state().session().unwrap();
-        session.as_session_mut().curw_idx = Some(3);
+        session.as_session_mut().curw = Some(3);
         session.as_session_mut().lastw = vec![0];
         for (text, index) in [
             (c"!", 0),
@@ -358,10 +358,10 @@ fn best_window_link_prefers_current_then_lowest_matching_index() {
         let mut other = crate::window::WinlinkRef::new(session.clone(), 7).unwrap();
         let unlinked = other.get().unwrap().window_handle().unwrap().clone();
         other.set_window(window).unwrap();
-        session.as_session_mut().curw_idx = Some(7);
+        session.as_session_mut().curw = Some(7);
         assert_eq!(cmd_find_best_winlink_with_window(&mut state), 0);
         assert_eq!(state.idx, 7);
-        session.as_session_mut().curw_idx = Some(3);
+        session.as_session_mut().curw = Some(3);
         assert_eq!(cmd_find_best_winlink_with_window(&mut state), 0);
         assert_eq!(state.idx, 0);
         state.set_window_ref(Some(&unlinked));
@@ -377,8 +377,8 @@ fn target_state_copy_preserves_list_membership_and_clears_stale_observations() {
     unsafe {
         let mut source = target.state();
         let window = source.window().unwrap();
-        let id = source.wp_ref.as_ref().map(|pane| pane.id()).unwrap();
-        window.clear_pane_membership_for_test(source.wp_ref.as_ref().unwrap());
+        let id = source.wp.as_ref().map(|pane| pane.id()).unwrap();
+        window.clear_pane_membership_for_test(source.wp.as_ref().unwrap());
         assert_eq!(source.pane_ref().unwrap().id(), id);
         assert_eq!(source.pane_list_ref().unwrap().id(), id);
         let mut copied = cmd_find_state {
@@ -386,18 +386,18 @@ fn target_state_copy_preserves_list_membership_and_clears_stale_observations() {
             ..Default::default()
         };
         cmd_find_copy_state(&mut copied, &source);
-        assert_eq!(copied.wp_ref.as_ref().map(|pane| pane.id()), Some(id));
+        assert_eq!(copied.wp.as_ref().map(|pane| pane.id()), Some(id));
         assert_eq!(copied.flags, 0x99);
         {
             let session = source.session().unwrap();
             let mut constructed = cmd_find_state::default();
             cmd_find_from_session(&mut constructed, session.as_session(), 0x11);
-            assert_eq!(constructed.wp_ref.as_ref().map(|pane| pane.id()), Some(id));
+            assert_eq!(constructed.wp.as_ref().map(|pane| pane.id()), Some(id));
             assert_eq!(constructed.idx, -1);
             assert_eq!(constructed.flags, 0x11);
             window.set_active_pane_id_for_test(u32::MAX);
             cmd_find_from_session(&mut constructed, session.as_session(), 0x11);
-            assert_eq!(constructed.wp_ref.as_ref().map(|pane| pane.id()), None);
+            assert_eq!(constructed.wp.as_ref().map(|pane| pane.id()), None);
             window.set_active_pane_id_for_test(id);
         }
         for (text, index) in [(c"0:", -1), (c"0:0", 0), (c":0", 0)] {
@@ -407,11 +407,11 @@ fn target_state_copy_preserves_list_membership_and_clears_stale_observations() {
             assert_eq!(found.pane_list_ref().unwrap().id(), id, "{text:?}");
             assert_eq!(found.pane_ref().unwrap().id(), id, "{text:?}");
         }
-        source.wl_idx = Some(999);
-        source.wp_ref = None;
+        source.wl = Some(999);
+        source.wp = None;
         cmd_find_copy_state(&mut copied, &source);
-        assert_eq!(copied.wl_idx, None);
-        assert_eq!(copied.wp_ref.as_ref().map(|pane| pane.id()), None);
+        assert_eq!(copied.wl, None);
+        assert_eq!(copied.wp.as_ref().map(|pane| pane.id()), None);
         drop(window);
         drop(target);
         cmd_find_copy_state(&mut copied, &source);
@@ -473,7 +473,7 @@ fn detached_client_targets_the_sessions_current_window_after_finding_its_origin_
         let origin = state.pane_ref().unwrap();
         let mut session = state.session().unwrap();
         target.add_window(3, 80, 24);
-        session.as_session_mut().curw_idx = Some(3);
+        session.as_session_mut().curw = Some(3);
         let current = target.state().pane_ref().unwrap();
         let client = clients.add("detached-client", 80, 24);
         (*client).environ = Some(crate::environ::new_environment_box());

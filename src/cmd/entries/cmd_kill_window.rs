@@ -84,7 +84,7 @@ unsafe fn cmd_kill_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         .target
         .window()
         .expect("a kill-window target has a window");
-    let index = item.target.wl_idx.expect("a kill-window target has a link");
+    let index = item.target.wl.expect("a kill-window target has a link");
 
     if cmd_get_entry(self_0).name == cmd_unlink_window_entry.name {
         if args.argument_flag_count(b'k') == 0 && !session.is_linked(&window) {

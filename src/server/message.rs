@@ -237,7 +237,7 @@ pub(crate) unsafe fn server_link_window(
             if killflag != 0 {
                 notify_session_window(c"window-unlinked", destination.as_session(), &replaced);
                 let dst = destination.as_session_mut();
-                let was_current = dst.curw_idx == Some(dstidx);
+                let was_current = dst.curw == Some(dstidx);
                 if let Some(link) = dst.windows.get_mut(&dstidx) {
                     link.flags &= !WINLINK_ALERTFLAGS;
                     winlink_stack_remove(&mut dst.lastw, Some(link));
@@ -245,7 +245,7 @@ pub(crate) unsafe fn server_link_window(
                 winlink_remove(&mut dst.windows, dstidx);
                 if was_current {
                     selectflag = 1;
-                    dst.curw_idx = None;
+                    dst.curw = None;
                 }
             }
         }
@@ -255,7 +255,7 @@ pub(crate) unsafe fn server_link_window(
         let Some(index) = destination.attach(window, dstidx, cause) else {
             return -1;
         };
-        if marked_pane.get().wl_idx == Some(source.index())
+        if marked_pane.get().wl == Some(source.index())
             && marked_pane
                 .get()
                 .session()

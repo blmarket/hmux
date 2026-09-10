@@ -63,7 +63,7 @@ fn layout_append(lc: Option<&layout_cell>, buf: &mut Vec<u8>, len: usize) -> c_i
         return 0;
     };
 
-    let tmp = if let Some(pane) = lc.wp_ref.as_ref() {
+    let tmp = if let Some(pane) = lc.wp.as_ref() {
         format!("{}x{},{},{},{}", lc.sx, lc.sy, lc.xoff, lc.yoff, pane.id())
     } else {
         format!("{}x{},{},{}", lc.sx, lc.sy, lc.xoff, lc.yoff)

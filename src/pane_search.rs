@@ -1,7 +1,6 @@
 //! The last search retained by a pane for copy mode and formats.
 
 use core::ffi::CStr;
-use std::ffi::CString;
 
 /// A pane's retained search text and interpretation.
 pub trait PaneSearchState {
@@ -21,44 +20,13 @@ pub trait PaneSearchState {
     fn matches(&self, query: &CStr, regex: bool) -> bool;
 }
 
-/// The pane search state used by hmux.
-#[derive(Default)]
-pub struct RustPaneSearchState {
-    query: Option<CString>,
-    regex: bool,
-}
-
-impl PaneSearchState for RustPaneSearchState {
-    fn query(&self) -> Option<&CStr> {
-        self.query.as_deref()
-    }
-
-    fn is_regex(&self) -> bool {
-        self.regex
-    }
-
-    fn set(&mut self, query: &CStr, regex: bool) {
-        self.query = Some(query.to_owned());
-        self.regex = regex;
-    }
-
-    fn clear(&mut self) {
-        self.query = None;
-        self.regex = false;
-    }
-
-    fn matches(&self, query: &CStr, regex: bool) -> bool {
-        self.regex == regex && self.query.as_deref() == Some(query)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn a_search_is_replaced_matched_and_cleared_as_one_value() {
-        let mut state = RustPaneSearchState::default();
+        let mut state = crate::types::window_pane::default();
         assert_eq!(state.query(), None);
         assert!(!state.is_regex());
         assert!(!state.matches(c"first", false));

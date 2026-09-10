@@ -157,7 +157,7 @@ use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::format::format_single_from_target;
 use crate::log::{fatalx, log_debug};
-use crate::types::{ClientRef, args_command_state, cmd_parse_input};
+use crate::types::{args_command_state, cmd_parse_input};
 
 pub use crate::consts::{
     ARGS_PARSE_COMMANDS, ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_INVALID, ARGS_PARSE_STRING,
@@ -533,8 +533,6 @@ pub fn cmd_make_commands_prepare(
         cmdlist: None,
         cmd: None,
         pi: cmd_parse_input::default(),
-        source_file: None,
-        client_ref: None,
     });
     let cmd = match args.argument_value(idx) {
         Some(value) => {
@@ -559,10 +557,8 @@ pub fn cmd_make_commands_prepare(
     );
     let (file, line) = cmd_get_source(command);
     state.pi.line = line;
-    state.source_file = file.map(CStr::to_owned);
-    state.pi.file = state.source_file.clone();
-    state.pi.c = tc.as_ref().map(ClientRef::downgrade);
-    state.client_ref = tc;
+    state.pi.file = file.map(CStr::to_owned);
+    state.pi.c = tc.map(crate::types::ParseClient::Owned);
     cmd_find_copy_state(&mut state.pi.fs, target);
     if wait != 0 {
         state.pi.item = cmdq_item_ref_of(item).map(|item| item.downgrade());
@@ -706,19 +702,19 @@ pub fn cmd_mouse_at(
     if m.statusat == 0 && y >= m.statuslines {
         y = y.wrapping_sub(m.statuslines);
     }
-    if (x as c_int) < wp.geometry().x
-        || x as c_int >= wp.geometry().x.wrapping_add(wp.geometry().width as c_int)
+    if (x as c_int) < wp.geometry().xoff
+        || x as c_int >= wp.geometry().xoff.wrapping_add(wp.geometry().sx as c_int)
     {
         return None;
     }
-    if (y as c_int) < wp.geometry().y
-        || y as c_int >= wp.geometry().y.wrapping_add(wp.geometry().height as c_int)
+    if (y as c_int) < wp.geometry().yoff
+        || y as c_int >= wp.geometry().yoff.wrapping_add(wp.geometry().sy as c_int)
     {
         return None;
     }
     Some((
-        x.wrapping_sub(wp.geometry().x as u_int),
-        y.wrapping_sub(wp.geometry().y as u_int),
+        x.wrapping_sub(wp.geometry().xoff as u_int),
+        y.wrapping_sub(wp.geometry().yoff as u_int),
     ))
 }
 
@@ -731,7 +727,7 @@ pub(crate) unsafe fn cmd_mouse_window(m: &mouse_event) -> Option<(SessionRef, Op
         let owner = SessionRef::find_by_id(m.s as u_int)?;
         let s = owner.as_session();
         let index = if m.w == -1 {
-            s.curw_idx
+            s.curw
         } else {
             let window = WindowRef::find_by_id(m.w as u_int)?;
             s.windows.iter().find_map(|(&index, link)| {
@@ -950,7 +946,7 @@ impl cmd_entry_flag {
     ) -> Self {
         Self {
             flag,
-            type_0,
+            type_0: type_0,
             flags,
         }
     }

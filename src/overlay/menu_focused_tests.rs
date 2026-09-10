@@ -24,7 +24,7 @@ impl Fixture {
         unsafe { client.set_attached_session(Some(target.session_handle())) };
         unsafe { client.as_tty_mut() }.term = Some(zeroed_term());
         unsafe { client.as_tty_mut() }.out = Some(Box::new(ByteBuffer::new()));
-        unsafe { client.as_tty_mut() }.owner = Some(client.downgrade());
+        unsafe { client.as_tty_mut() }.client = Some(client.downgrade());
         Self {
             _target: target,
             client,

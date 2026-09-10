@@ -70,7 +70,7 @@ impl ClientFileState for crate::types::client_file {
         closed: i32,
     ) -> Self {
         Self {
-            client_ref: None,
+            c: None,
             peer: None,
             tree: Default::default(),
             stream,

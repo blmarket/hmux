@@ -152,10 +152,10 @@ impl Layout {
                     format!(
                         "%{} {}x{}+{}+{}",
                         pane.pane_id(),
-                        geometry.width,
-                        geometry.height,
-                        geometry.x,
-                        geometry.y
+                        geometry.sx,
+                        geometry.sy,
+                        geometry.xoff,
+                        geometry.yoff
                     )
                 })
                 .collect()
@@ -419,7 +419,7 @@ fn the_bottom_right_cell_is_the_last_one_all_the_way_down() {
             found
                 .get(&*root)
                 .unwrap()
-                .wp_ref
+                .wp
                 .as_ref()
                 .map(|pane| pane.id()),
             Some((*l.pane(2)).pane_id())
@@ -504,7 +504,7 @@ fn assigning_panes_walks_the_tree_in_order() {
         layout_assign(&mut panes, None, 0);
         for (pane, cell) in w.panes.iter().zip(&mut root.cells) {
             assert_eq!(
-                cell.wp_ref.as_ref().map(|pane| pane.id()),
+                cell.wp.as_ref().map(|pane| pane.id()),
                 Some(pane.pane_id())
             );
             assert_eq!(cell.flags & LAYOUT_CELL_FLOATING, LAYOUT_CELL_FLOATING);

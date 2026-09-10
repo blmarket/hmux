@@ -78,13 +78,13 @@ fn window_redraw_skips_unrelated_and_missing_current_windows_but_status_tracks_l
         assert_eq!(owners[1].flags(), 0);
 
         *owners[0].flags_mut() = 0;
-        let current = session.as_session_mut().curw_idx.take();
+        let current = session.as_session_mut().curw.take();
         window.redraw();
         window.redraw_borders();
         assert!(owners.iter().all(|client| client.flags() == 0));
         window.redraw_status();
         assert_eq!(owners[0].flags(), CLIENT_REDRAWSTATUS as u64);
         assert_eq!(owners[1].flags(), 0);
-        session.as_session_mut().curw_idx = current;
+        session.as_session_mut().curw = current;
     }
 }

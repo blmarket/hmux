@@ -11,29 +11,13 @@ pub trait PaneActivityState {
     fn mark_active_at(&mut self, point: c_uint);
 }
 
-/// The pane activity storage used by hmux.
-#[derive(Default)]
-pub struct RustPaneActivityState {
-    point: c_uint,
-}
-
-impl PaneActivityState for RustPaneActivityState {
-    fn activity_point(&self) -> c_uint {
-        self.point
-    }
-
-    fn mark_active_at(&mut self, point: c_uint) {
-        self.point = point;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn activity_point_is_zero_then_replaceable() {
-        let mut state = RustPaneActivityState::default();
+        let mut state = crate::types::window_pane::default();
         assert_eq!(state.activity_point(), 0);
         state.mark_active_at(42);
         assert_eq!(state.activity_point(), 42);

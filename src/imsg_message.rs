@@ -66,7 +66,7 @@ impl ImsgMessage for crate::types::imsg {
         buf.wpos = end;
         Self {
             hdr,
-            body_range: IMSG_HEADER_SIZE..end,
+            data: IMSG_HEADER_SIZE..end,
             buf: Some(buf),
         }
     }
@@ -85,12 +85,12 @@ impl ImsgMessage for crate::types::imsg {
     fn imsg_message_data(&self) -> &[u8] {
         self.buf
             .as_deref()
-            .map_or(&[], |buf| &buf.buf[self.body_range.clone()])
+            .map_or(&[], |buf| &buf.buf[self.data.clone()])
     }
     fn imsg_message_data_mut(&mut self) -> &mut [u8] {
         self.buf
             .as_deref_mut()
-            .map_or(&mut [], |buf| &mut buf.buf[self.body_range.clone()])
+            .map_or(&mut [], |buf| &mut buf.buf[self.data.clone()])
     }
 }
 

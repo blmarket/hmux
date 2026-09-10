@@ -110,7 +110,7 @@ fn the_default_name_comes_from_the_active_pane_command() {
         ..Default::default()
     });
     let pane = RustWindowPaneRef::new(p);
-    w.active_pane = Some(pane.downgrade());
+    w.active = Some(pane.downgrade());
     w.panes.push(pane);
     unsafe {
         let name = default_window_name(&WindowRef::new(*w));
@@ -128,7 +128,7 @@ fn the_default_name_falls_back_to_the_pane_shell() {
         ..Default::default()
     });
     let pane = RustWindowPaneRef::new(p);
-    w.active_pane = Some(pane.downgrade());
+    w.active = Some(pane.downgrade());
     w.panes.push(pane);
     unsafe {
         let name = default_window_name(&WindowRef::new(*w));
@@ -243,7 +243,7 @@ fn checking_a_window_without_an_active_pane_does_nothing() {
     let mut target = Target::new(20, 6);
     unsafe {
         let window = target.state().window().unwrap();
-        window.as_window_mut().active_pane = None;
+        window.as_window_mut().active = None;
         window.check_name();
         assert_eq!(window.window_name().as_deref(), Some(c"target"));
         assert!(!window.as_window().name_event.is_armed());

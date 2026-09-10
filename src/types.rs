@@ -412,13 +412,17 @@ impl WindowRef {
         }
     }
 
-    /// Observes a registered pane whose recorded membership is this window.
-    /// This lookup does not borrow the window payload or search its pane list;
-    /// manually constructed panes must be registered and assigned membership.
+    /// Observes a registered pane present in this window's pane list.
     pub fn pane_by_id(&self, id: u32) -> Option<RustWindowPaneWeak> {
         let pane = crate::window::window_pane_find_by_id(id)?;
-        pane.window().filter(|owner| owner.ptr_eq(self))?;
-        Some(pane)
+        self.contains_pane(&pane).then_some(pane)
+    }
+
+    pub(crate) fn contains_pane(&self, pane: &RustWindowPaneWeak) -> bool {
+        self.as_window()
+            .panes
+            .iter()
+            .any(|owner| owner.downgrade().ptr_eq(pane))
     }
 
     pub(crate) fn new(value: window) -> Self {
@@ -773,7 +777,7 @@ impl ClientRef {
         unsafe {
             (*self.0.value.as_ptr())
                 .overlay_data
-                .view_data((*self.0.value.as_ptr()).overlay_data_view)
+                .view_data()
         }
     }
 
@@ -787,15 +791,15 @@ impl ClientRef {
             match view {
                 OverlayView::Menu => {
                     (*self.0.value.as_ptr()).overlay_check = OverlayCheck::Menu;
-                    (*self.0.value.as_ptr()).overlay_data_view = Some(OverlayView::Menu);
+                    (*self.0.value.as_ptr()).overlay_data.set_view(OverlayView::Menu);
                 }
                 OverlayView::Nothing => {
                     (*self.0.value.as_ptr()).overlay_check = OverlayCheck::None;
-                    (*self.0.value.as_ptr()).overlay_data_view = Some(OverlayView::Nothing);
+                    (*self.0.value.as_ptr()).overlay_data.set_view(OverlayView::Nothing);
                 }
                 OverlayView::Popup => {
                     (*self.0.value.as_ptr()).overlay_check = OverlayCheck::Popup;
-                    (*self.0.value.as_ptr()).overlay_data_view = None;
+                    (*self.0.value.as_ptr()).overlay_data.set_view(OverlayView::Popup);
                 }
             }
         }
@@ -808,7 +812,7 @@ impl ClientRef {
     /// The accessed fields must not otherwise be accessed during this call.
     pub(crate) unsafe fn clear_overlay_view(&mut self) {
         unsafe {
-            (*self.0.value.as_ptr()).overlay_data_view = None;
+            (*self.0.value.as_ptr()).overlay_data.set_view(OverlayView::Popup);
         }
     }
 
@@ -853,7 +857,7 @@ impl ClientRef {
 
     /// The key table the client's next key is looked up in, if one is assigned.
     pub(crate) fn keytable(&self) -> Option<KeyTableRef> {
-        self.0.value.borrow().keytable_ref.clone()
+        self.0.value.borrow().keytable.clone()
     }
 
     /// Retains the observed attachment while its session is still alive.
@@ -861,7 +865,7 @@ impl ClientRef {
         self.0
             .value
             .borrow()
-            .attached_session
+            .session
             .as_ref()
             .and_then(SessionWeak::upgrade)
     }
@@ -872,7 +876,7 @@ impl ClientRef {
     /// The accessed fields must not otherwise be accessed during this call.
     pub(crate) unsafe fn set_attached_session(&mut self, session: Option<&SessionRef>) {
         unsafe {
-            (*self.0.value.as_ptr()).attached_session = session.map(SessionRef::downgrade);
+            (*self.0.value.as_ptr()).session = session.map(SessionRef::downgrade);
         }
     }
 
@@ -1068,8 +1072,7 @@ impl ClientRef {
             if check.is_none() {
                 return None;
             }
-            let view = (*self.0.value.as_ptr()).overlay_data_view;
-            let data = (*self.0.value.as_ptr()).overlay_data.view_data(view);
+            let data = (*self.0.value.as_ptr()).overlay_data.view_data();
             Some(check.call(data, px, py, nx))
         }
     }
@@ -1184,10 +1187,6 @@ impl ModeTreeDataRef {
     /// The tree's screen, independently accessible from its item state.
     pub(crate) fn screen_handle(&self) -> &ScreenRef {
         &self.0.screen
-    }
-
-    pub(crate) fn set_default_cursor(&self, options: &RustOptionsRef) {
-        self.0.screen.borrow_mut().set_default_cursor(options)
     }
 
     pub(crate) fn borrow(&self) -> std::cell::Ref<'_, mode_tree_data> {
@@ -1480,7 +1479,7 @@ pub enum InputRequestData {
     },
     Clipboard {
         clip: core::ffi::c_char,
-        data: Vec<u8>,
+        buf: Vec<u8>,
     },
 }
 pub type input_request_type = core::ffi::c_uint;
@@ -1867,7 +1866,7 @@ pub struct tty_term_code_entry {
 impl tty_term_code_entry {
     /// Builds a static terminal capability table entry.
     pub const fn new(type_0: tty_code_type, name: &'static core::ffi::CStr) -> Self {
-        Self { type_0, name }
+        Self { type_0: type_0, name }
     }
 }
 
@@ -1931,7 +1930,7 @@ pub union grid_cell_entry_union {
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct grid_cell_entry {
-    pub c2rust_unnamed: grid_cell_entry_union,
+    pub value: grid_cell_entry_union,
     pub flags: u_char,
 }
 const _: () = assert!(size_of::<grid_cell_entry>() == 5);
@@ -1959,8 +1958,8 @@ pub struct winlink {
     pub idx: core::ffi::c_int,
     /// The session that holds the link, observed rather than held: the
     /// session owns the link, so holding it back would be a cycle.
-    pub(crate) session_ref: Option<SessionWeak>,
-    pub(crate) window_ref: Option<WindowRef>,
+    pub(crate) session: Option<SessionWeak>,
+    pub(crate) window: Option<WindowRef>,
     pub flags: core::ffi::c_int,
 }
 
@@ -1987,13 +1986,13 @@ impl crate::WinlinkFlagsState for winlink {
 impl winlink {
     /// The session that holds this link, or null once it has gone.
     pub(crate) fn session(&self) -> Option<SessionRef> {
-        self.session_ref.as_ref().and_then(SessionWeak::upgrade)
+        self.session.as_ref().and_then(SessionWeak::upgrade)
     }
 
     /// The handle on the window this link points at, borrowed for as long as
     /// the link is, or nothing while the link holds none.
     pub(crate) fn window_handle(&self) -> Option<&WindowRef> {
-        self.window_ref.as_ref()
+        self.window.as_ref()
     }
 }
 #[derive(Default)]
@@ -2002,25 +2001,39 @@ pub struct window {
     pub(crate) owner: Option<WindowWeak>,
     pub(crate) id: u32,
     pub(crate) latest: Option<ClientWeak>,
-    pub(crate) name_state: crate::window_name::RustWindowNameState,
+    pub(crate) name: Option<std::ffi::CString>,
     pub name_event: TimerHandle,
-    pub(crate) timestamps: crate::window_timestamps::RustWindowTimestampState,
+    pub(crate) name_time: timeval,
+    pub(crate) activity_time: timeval,
+    pub(crate) creation_time: timeval,
     pub alerts_timer: TimerHandle,
     pub offset_timer: TimerHandle,
     /// The pane the window is showing as its active one.
-    pub active_pane: Option<RustWindowPaneWeak>,
+    pub active: Option<RustWindowPaneWeak>,
     pub last_panes: window_pane_stack_t,
     pub z_index: window_pane_stack_t,
     pub(crate) panes: window_panes_t,
-    pub(crate) layout_selection: crate::window_layout_selection::RustWindowLayoutSelectionState,
+    pub(crate) lastlayout: Option<core::ffi::c_int>,
     pub layout_root: Option<Box<layout_cell>>,
     pub saved_layout_root: Option<Box<layout_cell>>,
-    pub(crate) saved_layout_state: crate::window_saved_layout::RustWindowSavedLayoutState,
-    pub(crate) dimensions: crate::window_dimensions::RustWindowDimensionsState,
-    pub(crate) scrollbar: crate::window_scrollbar::RustWindowScrollbarState,
-    pub(crate) fill_character_state: crate::window_fill_character::RustWindowFillCharacterState,
+    pub(crate) old_layout: Option<std::ffi::CString>,
+    pub(crate) sx: u_int,
+    pub(crate) sy: u_int,
+    pub(crate) manual_sx: u_int,
+    pub(crate) manual_sy: u_int,
+    pub(crate) xpixel: u_int,
+    pub(crate) ypixel: u_int,
+    pub(crate) new_sx: u_int,
+    pub(crate) new_sy: u_int,
+    pub(crate) new_xpixel: u_int,
+    pub(crate) new_ypixel: u_int,
+    pub(crate) last_new_pane_x: u_int,
+    pub(crate) last_new_pane_y: u_int,
+    pub(crate) sb: core::ffi::c_int,
+    pub(crate) sb_pos: core::ffi::c_int,
+    pub(crate) fill_character: Option<utf8_data>,
     pub flags: core::ffi::c_int,
-    pub(crate) alert_queue: crate::window_alert_queue::RustWindowAlertQueueState,
+    pub(crate) alerts_queued: bool,
     pub options: Option<crate::options::RustOptionsRef>,
     /// The sessions' links to this window, in the order they were made. A
     /// link belongs to its session, not to the window.
@@ -2029,7 +2042,7 @@ pub struct window {
 
 impl window {
     pub(crate) fn active_pane_id(&self) -> Option<u_int> {
-        self.active_pane
+        self.active
             .as_ref()
             .filter(|pane| pane.is_alive())
             .map(|pane| pane.id())
@@ -2038,168 +2051,75 @@ impl window {
 
 impl crate::window_dimensions::WindowDimensionsState for window {
     fn dimensions(&self) -> crate::window_dimensions::WindowDimensions {
-        crate::window_dimensions::WindowDimensionsState::dimensions(&self.dimensions)
+        use crate::pane_resize::PaneSize;
+        use crate::window_dimensions::{WindowDimensions, WindowPixelSize, WindowCellPosition};
+        WindowDimensions {
+            size: PaneSize { width: self.sx, height: self.sy },
+            manual_size: PaneSize { width: self.manual_sx, height: self.manual_sy },
+            pixels: WindowPixelSize { width: self.xpixel, height: self.ypixel },
+            pending_size: PaneSize { width: self.new_sx, height: self.new_sy },
+            pending_pixels: WindowPixelSize { width: self.new_xpixel, height: self.new_ypixel },
+            last_new_pane: WindowCellPosition { x: self.last_new_pane_x, y: self.last_new_pane_y },
+        }
     }
-
     fn set_dimensions(&mut self, dimensions: crate::window_dimensions::WindowDimensions) {
-        crate::window_dimensions::WindowDimensionsState::set_dimensions(
-            &mut self.dimensions,
-            dimensions,
-        );
+        self.set_size(dimensions.size);
+        self.set_manual_size(dimensions.manual_size);
+        self.set_pixels(dimensions.pixels);
+        self.set_pending_size(dimensions.pending_size);
+        self.set_pending_pixels(dimensions.pending_pixels);
+        self.set_last_new_pane(dimensions.last_new_pane);
     }
-
-    fn set_size(&mut self, size: crate::pane_resize::PaneSize) {
-        crate::window_dimensions::WindowDimensionsState::set_size(&mut self.dimensions, size);
-    }
-
-    fn set_manual_size(&mut self, size: crate::pane_resize::PaneSize) {
-        crate::window_dimensions::WindowDimensionsState::set_manual_size(
-            &mut self.dimensions,
-            size,
-        );
-    }
-
-    fn set_pixels(&mut self, pixels: crate::window_dimensions::WindowPixelSize) {
-        crate::window_dimensions::WindowDimensionsState::set_pixels(&mut self.dimensions, pixels);
-    }
-
-    fn set_pending_size(&mut self, size: crate::pane_resize::PaneSize) {
-        crate::window_dimensions::WindowDimensionsState::set_pending_size(
-            &mut self.dimensions,
-            size,
-        );
-    }
-
-    fn set_pending_pixels(&mut self, pixels: crate::window_dimensions::WindowPixelSize) {
-        crate::window_dimensions::WindowDimensionsState::set_pending_pixels(
-            &mut self.dimensions,
-            pixels,
-        );
-    }
-
-    fn set_last_new_pane(&mut self, position: crate::window_dimensions::WindowCellPosition) {
-        crate::window_dimensions::WindowDimensionsState::set_last_new_pane(
-            &mut self.dimensions,
-            position,
-        );
-    }
+    fn set_size(&mut self, size: crate::pane_resize::PaneSize) { self.sx = size.width; self.sy = size.height; }
+    fn set_manual_size(&mut self, size: crate::pane_resize::PaneSize) { self.manual_sx = size.width; self.manual_sy = size.height; }
+    fn set_pixels(&mut self, pixels: crate::window_dimensions::WindowPixelSize) { self.xpixel = pixels.width; self.ypixel = pixels.height; }
+    fn set_pending_size(&mut self, size: crate::pane_resize::PaneSize) { self.new_sx = size.width; self.new_sy = size.height; }
+    fn set_pending_pixels(&mut self, pixels: crate::window_dimensions::WindowPixelSize) { self.new_xpixel = pixels.width; self.new_ypixel = pixels.height; }
+    fn set_last_new_pane(&mut self, position: crate::window_dimensions::WindowCellPosition) { self.last_new_pane_x = position.x; self.last_new_pane_y = position.y; }
 }
 
 impl crate::window_timestamps::WindowTimestampState for window {
     fn timestamps(&self) -> crate::window_timestamps::WindowTimestamps {
-        crate::window_timestamps::WindowTimestampState::timestamps(&self.timestamps)
+        crate::window_timestamps::WindowTimestamps { creation_time: self.creation_time, activity_time: self.activity_time, name_time: self.name_time }
     }
-
-    fn set_creation_time(&mut self, time: timeval) {
-        crate::window_timestamps::WindowTimestampState::set_creation_time(
-            &mut self.timestamps,
-            time,
-        );
-    }
-
-    fn set_activity_time(&mut self, time: timeval) {
-        crate::window_timestamps::WindowTimestampState::set_activity_time(
-            &mut self.timestamps,
-            time,
-        );
-    }
-
-    fn set_name_update_time(&mut self, time: timeval) {
-        crate::window_timestamps::WindowTimestampState::set_name_update_time(
-            &mut self.timestamps,
-            time,
-        );
-    }
+    fn set_creation_time(&mut self, time: timeval) { self.creation_time = time; }
+    fn set_activity_time(&mut self, time: timeval) { self.activity_time = time; }
+    fn set_name_update_time(&mut self, time: timeval) { self.name_time = time; }
 }
 
 impl crate::window_fill_character::WindowFillCharacterState for window {
-    fn fill_character(&self) -> Option<utf8_data> {
-        crate::window_fill_character::WindowFillCharacterState::fill_character(
-            &self.fill_character_state,
-        )
-    }
-
-    fn set_fill_character(&mut self, character: Option<utf8_data>) {
-        crate::window_fill_character::WindowFillCharacterState::set_fill_character(
-            &mut self.fill_character_state,
-            character,
-        );
-    }
+    fn fill_character(&self) -> Option<utf8_data> { self.fill_character }
+    fn set_fill_character(&mut self, character: Option<utf8_data>) { self.fill_character = character; }
 }
 
 impl crate::window_alert_queue::WindowAlertQueueState for window {
-    fn alerts_are_queued(&self) -> bool {
-        crate::window_alert_queue::WindowAlertQueueState::alerts_are_queued(&self.alert_queue)
-    }
-
-    fn queue_alerts(&mut self) -> bool {
-        crate::window_alert_queue::WindowAlertQueueState::queue_alerts(&mut self.alert_queue)
-    }
-
-    fn clear_queued_alerts(&mut self) {
-        crate::window_alert_queue::WindowAlertQueueState::clear_queued_alerts(
-            &mut self.alert_queue,
-        );
-    }
+    fn alerts_are_queued(&self) -> bool { self.alerts_queued }
+    fn queue_alerts(&mut self) -> bool { let changed = !self.alerts_queued; self.alerts_queued = true; changed }
+    fn clear_queued_alerts(&mut self) { self.alerts_queued = false; }
 }
 
 impl crate::window_scrollbar::WindowScrollbarState for window {
     fn scrollbar_settings(&self) -> crate::window_scrollbar::WindowScrollbarSettings {
-        crate::window_scrollbar::WindowScrollbarState::scrollbar_settings(&self.scrollbar)
+        crate::window_scrollbar::WindowScrollbarSettings { sb: self.sb, sb_pos: self.sb_pos }
     }
-
-    fn set_scrollbar_settings(
-        &mut self,
-        settings: crate::window_scrollbar::WindowScrollbarSettings,
-    ) {
-        crate::window_scrollbar::WindowScrollbarState::set_scrollbar_settings(
-            &mut self.scrollbar,
-            settings,
-        );
+    fn set_scrollbar_settings(&mut self, settings: crate::window_scrollbar::WindowScrollbarSettings) {
+        self.sb = settings.sb; self.sb_pos = settings.sb_pos;
     }
 }
 impl crate::window_layout_selection::WindowLayoutSelectionState for window {
-    fn previous_layout(&self) -> Option<core::ffi::c_int> {
-        crate::window_layout_selection::WindowLayoutSelectionState::previous_layout(
-            &self.layout_selection,
-        )
-    }
-
-    fn remember_layout(&mut self, layout: core::ffi::c_int) {
-        crate::window_layout_selection::WindowLayoutSelectionState::remember_layout(
-            &mut self.layout_selection,
-            layout,
-        );
-    }
-
-    fn clear_previous_layout(&mut self) {
-        crate::window_layout_selection::WindowLayoutSelectionState::clear_previous_layout(
-            &mut self.layout_selection,
-        );
-    }
+    fn previous_layout(&self) -> Option<core::ffi::c_int> { self.lastlayout }
+    fn remember_layout(&mut self, layout: core::ffi::c_int) { self.lastlayout = (layout != -1).then_some(layout); }
+    fn clear_previous_layout(&mut self) { self.lastlayout = None; }
 }
 
 impl crate::window_saved_layout::WindowSavedLayoutState for window {
-    fn saved_layout(&self) -> Option<&core::ffi::CStr> {
-        crate::window_saved_layout::WindowSavedLayoutState::saved_layout(&self.saved_layout_state)
-    }
-
-    fn set_saved_layout(&mut self, layout: Option<&core::ffi::CStr>) {
-        crate::window_saved_layout::WindowSavedLayoutState::set_saved_layout(
-            &mut self.saved_layout_state,
-            layout,
-        );
-    }
+    fn saved_layout(&self) -> Option<&core::ffi::CStr> { self.old_layout.as_deref() }
+    fn set_saved_layout(&mut self, layout: Option<&core::ffi::CStr>) { self.old_layout = layout.map(core::ffi::CStr::to_owned); }
 }
 
 impl crate::window_name::WindowNameState for window {
-    fn window_name(&self) -> Option<&core::ffi::CStr> {
-        crate::window_name::WindowNameState::window_name(&self.name_state)
-    }
-
-    fn set_window_name(&mut self, name: Option<&core::ffi::CStr>) {
-        crate::window_name::WindowNameState::set_window_name(&mut self.name_state, name);
-    }
+    fn window_name(&self) -> Option<&core::ffi::CStr> { self.name.as_deref() }
+    fn set_window_name(&mut self, name: Option<&core::ffi::CStr>) { self.name = name.map(core::ffi::CStr::to_owned); }
 }
 
 impl crate::window_trait::Window for window {
@@ -2352,19 +2272,33 @@ impl ModeTreeItemData {
         }
     }
 }
+pub(crate) enum ModeScreen {
+    Clock,
+    Shared(ScreenRef),
+}
+
+#[cfg(test)]
+impl ModeScreen {
+    pub(crate) fn shared(&self) -> Option<&ScreenRef> {
+        match self {
+            Self::Clock => None,
+            Self::Shared(screen) => Some(screen),
+        }
+    }
+}
+
 #[repr(C)]
 pub struct window_mode_entry {
-    pub(crate) pane_weak: Option<RustWindowPaneWeak>,
-    pub(crate) source_pane: Option<RustWindowPaneWeak>,
+    pub(crate) wp: Option<RustWindowPaneWeak>,
+    pub(crate) swp: Option<RustWindowPaneWeak>,
     pub(crate) state: WindowModeState,
-    pub(crate) screen_ready: bool,
+    pub(crate) screen: Option<ModeScreen>,
     pub prefix: u_int,
-    pub(crate) mode_tree_ref: Option<ModeTreeDataRef>,
 }
 impl window_mode_entry {
     /// Observes the pane while its owner still exists.
     pub(crate) fn pane_ref(&self) -> Option<RustWindowPaneWeak> {
-        self.pane_weak
+        self.wp
             .as_ref()
             .filter(|pane| pane.is_alive())
             .cloned()
@@ -2372,7 +2306,7 @@ impl window_mode_entry {
 
     /// Observes the source pane directly until it is destroyed.
     pub(crate) fn source_pane_ref(&self) -> Option<crate::window::RustWindowPaneWeak> {
-        self.source_pane
+        self.swp
             .as_ref()
             .filter(|pane| pane.is_alive())
             .cloned()
@@ -2384,13 +2318,13 @@ impl window_mode_entry {
 pub struct layout_cell {
     pub type_0: layout_type,
     pub flags: core::ffi::c_int,
-    pub(crate) has_parent: bool,
+    pub(crate) parent: bool,
     pub sx: u_int,
     pub sy: u_int,
     pub xoff: core::ffi::c_int,
     pub yoff: core::ffi::c_int,
     /// The pane allocation held by this leaf, or nothing for a branch cell.
-    pub wp_ref: Option<RustWindowPaneWeak>,
+    pub wp: Option<RustWindowPaneWeak>,
     pub cells: layout_cells,
 }
 #[derive(Default)]
@@ -2441,7 +2375,7 @@ pub struct client {
     pub exit_msgtype: msgtype,
     pub exit_session: Option<std::ffi::CString>,
     pub exit_message: Option<std::ffi::CString>,
-    pub(crate) keytable_ref: Option<KeyTableRef>,
+    pub(crate) keytable: Option<KeyTableRef>,
     pub last_key: key_code,
     pub paste_time: time_t,
     pub redraw_panes: uint64_t,
@@ -2465,7 +2399,7 @@ pub struct client {
     pub prompt_flags: core::ffi::c_int,
     pub prompt_type: PromptHistoryType,
     pub prompt_cursor: core::ffi::c_int,
-    attached_session: Option<SessionWeak>,
+    session: Option<SessionWeak>,
     pub(crate) last_session: Option<SessionWeak>,
     pub(crate) pan_window: Option<WindowWeak>,
     pub pan_ox: u_int,
@@ -2479,7 +2413,6 @@ pub struct client {
     overlay_check: OverlayCheck,
     overlay: Overlay,
     overlay_data: OverlayState,
-    overlay_data_view: Option<OverlayView>,
     pub overlay_timer: TimerHandle,
     pub(crate) files: client_files_t,
     pub source_file_depth: u_int,
@@ -2487,7 +2420,7 @@ pub struct client {
 }
 #[repr(C)]
 pub struct client_file {
-    pub(crate) client_ref: Option<ClientRef>,
+    pub(crate) c: Option<ClientRef>,
     pub peer: Option<PeerRef>,
     /// Which set of files this one belongs to.
     pub(crate) tree: FileOwner,
@@ -2506,7 +2439,7 @@ pub struct client_file {
 impl client_file {
     /// The client the file belongs to, if it was opened for one.
     pub(crate) fn client(&self) -> Option<ClientRef> {
-        self.client_ref.clone()
+        self.c.clone()
     }
 }
 #[derive(Clone, Default)]
@@ -2524,7 +2457,7 @@ pub enum ClientFileData {
 pub struct client_window {
     pub window: u_int,
     /// The pane allocation selected by this client in the window.
-    pub pane_ref: Option<RustWindowPaneWeak>,
+    pub pane: Option<RustWindowPaneWeak>,
     pub sx: u_int,
     pub sy: u_int,
 }
@@ -2536,14 +2469,14 @@ pub struct cmd_find_state {
     pub flags: core::ffi::c_int,
     /// The session the state found, observed rather than held, so that a
     /// state kept across a queue turn finds nothing rather than freed memory.
-    pub(crate) s_ref: Option<SessionWeak>,
+    pub(crate) s: Option<SessionWeak>,
     /// The index of the link the state found, resolved against the session
     /// above, or nothing when it found none.
-    pub wl_idx: Option<core::ffi::c_int>,
+    pub wl: Option<core::ffi::c_int>,
     /// The window the state found, observed the same way.
-    pub(crate) w_ref: Option<WindowWeak>,
+    pub(crate) w: Option<WindowWeak>,
     /// The pane allocation the state found, independently of its saved window.
-    pub wp_ref: Option<RustWindowPaneWeak>,
+    pub wp: Option<RustWindowPaneWeak>,
     pub idx: core::ffi::c_int,
 }
 
@@ -2551,7 +2484,7 @@ impl cmd_find_state {
     /// The session the state found, or null when it found none or the server
     /// has since given it up.
     pub fn session(&self) -> Option<SessionRef> {
-        self.s_ref.as_ref().and_then(SessionWeak::upgrade)
+        self.s.as_ref().and_then(SessionWeak::upgrade)
     }
 
     /// Records `s` as the session the state found.
@@ -2562,32 +2495,32 @@ impl cmd_find_state {
 
     /// Records an owner as a weak observation without borrowing its payload.
     pub(crate) fn set_session_ref(&mut self, s: Option<&SessionRef>) {
-        self.s_ref = s.map(SessionRef::downgrade);
+        self.s = s.map(SessionRef::downgrade);
     }
 
     /// Retains the session owning the window link identified by this target.
     pub(crate) fn winlink_ref(&self) -> Option<crate::window::WinlinkRef> {
-        crate::window::WinlinkRef::new(self.session()?, self.wl_idx?)
+        crate::window::WinlinkRef::new(self.session()?, self.wl?)
     }
 
     /// Records `wl` as the link the state found.
     pub fn set_winlink(&mut self, wl: Option<&winlink>) {
-        self.wl_idx = wl.map(|wl| wl.idx);
+        self.wl = wl.map(|wl| wl.idx);
     }
 
     /// The window the state found, or null the same way.
     pub fn window(&self) -> Option<WindowRef> {
-        self.w_ref.as_ref().and_then(WindowWeak::upgrade)
+        self.w.as_ref().and_then(WindowWeak::upgrade)
     }
 
     /// Records an owner as a weak observation without borrowing its payload.
     pub(crate) fn set_window_ref(&mut self, w: Option<&WindowRef>) {
-        self.w_ref = w.map(WindowRef::downgrade);
+        self.w = w.map(WindowRef::downgrade);
     }
 
     /// Observes the original pane allocation while it remains alive.
     pub(crate) fn pane_ref(&self) -> Option<RustWindowPaneWeak> {
-        self.wp_ref
+        self.wp
             .clone()
             .filter(|pane| unsafe { pane.get().is_some() })
     }
@@ -2599,7 +2532,7 @@ impl cmd_find_state {
 
     /// Records the pane allocation the state found.
     pub fn set_pane(&mut self, wp: Option<&impl crate::WindowPane>) {
-        self.wp_ref = wp.and_then(|pane| crate::window::window_pane_ref_of(pane));
+        self.wp = wp.and_then(|pane| crate::window::window_pane_ref_of(pane));
     }
 }
 
@@ -2718,7 +2651,7 @@ pub type mouse_drag_cb = Option<Rc<dyn Fn(&mut client, &mouse_event)>>;
 pub struct tty {
     /// The client whose terminal this is, observed rather than held: a tty
     /// is an inline field of its client, so holding it would be a cycle.
-    pub(crate) owner: Option<ClientWeak>,
+    pub(crate) client: Option<ClientWeak>,
     pub start_timer: TimerHandle,
     pub clipboard_timer: TimerHandle,
     pub last_requests: time_t,
@@ -2743,7 +2676,7 @@ pub struct tty {
     pub rleft: u_int,
     pub rright: u_int,
     pub event_in: IoHandle,
-    pub in_0: Option<Box<ByteBuffer>>,
+    pub r#in: Option<Box<ByteBuffer>>,
     pub event_out: IoHandle,
     pub out: Option<Box<ByteBuffer>>,
     pub timer: TimerHandle,
@@ -2770,7 +2703,7 @@ impl Default for tty {
     /// A terminal that has not been opened yet: no client, no events, no term.
     fn default() -> tty {
         tty {
-            owner: None,
+            client: None,
             start_timer: TimerHandle::default(),
             clipboard_timer: TimerHandle::default(),
             last_requests: 0,
@@ -2795,7 +2728,7 @@ impl Default for tty {
             rleft: 0,
             rright: 0,
             event_in: IoHandle::default(),
-            in_0: None,
+            r#in: None,
             event_out: IoHandle::default(),
             out: None,
             timer: TimerHandle::default(),
@@ -2942,30 +2875,40 @@ pub enum OverlayState {
     None,
     Menu(MenuDataRef),
     Popup(PopupDataRef),
+    PopupMenu(PopupDataRef),
+    PopupHidden(PopupDataRef),
     DisplayPanes(DisplayPanesRef),
 }
 
 impl OverlayState {
-    fn view_data(&mut self, view: Option<OverlayView>) -> OverlayData {
-        match view {
-            Some(OverlayView::Menu) => {
-                let OverlayState::Popup(popup) = self else {
-                    panic!("a menu view belongs to a popup");
-                };
+    fn view_data(&mut self) -> OverlayData {
+        match self {
+            Self::PopupMenu(popup) => {
                 let popup = popup.borrow();
-                let menu = popup.md.as_ref().expect("a menu view has a menu").clone();
-                OverlayData::Menu(menu)
+                OverlayData::Menu(popup.md.as_ref().expect("a menu view has a menu").clone())
             }
-            Some(OverlayView::Nothing) => OverlayData::None,
-            None | Some(OverlayView::Popup) => self.data(),
+            Self::PopupHidden(_) => OverlayData::None,
+            _ => self.data(),
         }
+    }
+
+    fn set_view(&mut self, view: OverlayView) {
+        let popup = match self {
+            Self::Popup(popup) | Self::PopupMenu(popup) | Self::PopupHidden(popup) => popup.clone(),
+            _ => return,
+        };
+        *self = match view {
+            OverlayView::Popup => Self::Popup(popup),
+            OverlayView::Menu => Self::PopupMenu(popup),
+            OverlayView::Nothing => Self::PopupHidden(popup),
+        };
     }
 
     pub fn data(&mut self) -> OverlayData {
         match self {
             OverlayState::None => OverlayData::None,
             OverlayState::Menu(data) => OverlayData::Menu(data.clone()),
-            OverlayState::Popup(data) => OverlayData::Popup(data.clone()),
+            OverlayState::Popup(data) | OverlayState::PopupMenu(data) | OverlayState::PopupHidden(data) => OverlayData::Popup(data.clone()),
             OverlayState::DisplayPanes(data) => OverlayData::DisplayPanes(data.clone()),
         }
     }
@@ -2990,14 +2933,14 @@ impl OverlayState {
 impl client {
     /// Retains the observed attachment while its session is still alive.
     pub(crate) fn attached_session(&self) -> Option<SessionRef> {
-        self.attached_session
+        self.session
             .as_ref()
             .and_then(SessionWeak::upgrade)
     }
 
     /// Records the attachment without running session-change callbacks or redraws.
     pub(crate) fn set_attached_session(&mut self, session: Option<&SessionRef>) {
-        self.attached_session = session.map(SessionRef::downgrade);
+        self.session = session.map(SessionRef::downgrade);
     }
 
     /// The peer handle carrying the connected client's messages.
@@ -3015,11 +2958,11 @@ impl client {
 
     /// The key table the client's next key is looked up in, if one is assigned.
     pub(crate) fn keytable(&self) -> Option<KeyTableRef> {
-        self.keytable_ref.clone()
+        self.keytable.clone()
     }
 
     pub(crate) fn current_overlay_data(&mut self) -> OverlayData {
-        self.overlay_data.view_data(self.overlay_data_view)
+        self.overlay_data.view_data()
     }
 
     /// The overlay the client is showing, which is `Overlay::None` when it is
@@ -3045,7 +2988,7 @@ impl client {
         self.overlay_check = overlay.check();
         self.overlay = overlay;
         self.overlay_data = data;
-        self.overlay_data_view = None;
+        self.overlay_data.set_view(OverlayView::Popup);
     }
 
     /// Takes the overlay down and hands back what it was showing, so that the
@@ -3054,7 +2997,6 @@ impl client {
         let overlay = core::mem::replace(&mut self.overlay, Overlay::None);
         let data = core::mem::take(&mut self.overlay_data);
         self.overlay_check = OverlayCheck::None;
-        self.overlay_data_view = None;
         (overlay, data)
     }
 
@@ -3064,15 +3006,15 @@ impl client {
         match view {
             OverlayView::Menu => {
                 self.overlay_check = OverlayCheck::Menu;
-                self.overlay_data_view = Some(OverlayView::Menu);
+                self.overlay_data.set_view(OverlayView::Menu);
             }
             OverlayView::Nothing => {
                 self.overlay_check = OverlayCheck::None;
-                self.overlay_data_view = Some(OverlayView::Nothing);
+                self.overlay_data.set_view(OverlayView::Nothing);
             }
             OverlayView::Popup => {
                 self.overlay_check = OverlayCheck::Popup;
-                self.overlay_data_view = None;
+                self.overlay_data.set_view(OverlayView::Popup);
             }
         }
     }
@@ -3080,7 +3022,7 @@ impl client {
     /// Gives the drawing data back to the overlay itself, which is what a
     /// popup does once the menu it was carrying is gone.
     pub(crate) fn clear_overlay_view(&mut self) {
-        self.overlay_data_view = None;
+        self.overlay_data.set_view(OverlayView::Popup);
     }
 }
 
@@ -3265,9 +3207,21 @@ pub struct cmd_parse_input {
     pub file: Option<std::ffi::CString>,
     pub line: u_int,
     pub item: Option<crate::cmd::CmdqItemWeak>,
-    /// The client the parse is for, observed rather than held.
-    pub(crate) c: Option<ClientWeak>,
+    /// The client the parse is for, held by prepared commands and otherwise observed.
+    pub(crate) c: Option<ParseClient>,
     pub fs: cmd_find_state,
+}
+
+#[derive(Clone)]
+pub(crate) enum ParseClient {
+    Observed(ClientWeak),
+    Owned(ClientRef),
+}
+
+impl From<ClientWeak> for ParseClient {
+    fn from(client: ClientWeak) -> Self {
+        Self::Observed(client)
+    }
 }
 
 impl cmd_parse_input {
@@ -3279,7 +3233,10 @@ impl cmd_parse_input {
 
     /// The client the parse is for, or nothing when it is for none.
     pub fn client(&self) -> Option<ClientRef> {
-        self.c.as_ref().and_then(ClientWeak::upgrade)
+        match self.c.as_ref()? {
+            ParseClient::Observed(client) => client.upgrade(),
+            ParseClient::Owned(client) => Some(client.clone()),
+        }
     }
 }
 /// What one spawn was asked for. Strings borrow the command that asked,
@@ -3289,7 +3246,7 @@ impl cmd_parse_input {
 pub struct spawn_context<'a> {
     pub item: Option<crate::cmd::CmdqItemWeak>,
     pub s: Option<SessionRef>,
-    pub wl_idx: Option<core::ffi::c_int>,
+    pub wl: Option<core::ffi::c_int>,
     pub tc: Option<ClientWeak>,
     pub wp0: Option<RustWindowPaneWeak>,
     pub name: Option<&'a core::ffi::CStr>,
@@ -3402,7 +3359,7 @@ pub struct ibuf {
 pub struct imsg {
     pub hdr: imsg_hdr,
     /// The original body range, independent of the buffer's read cursor.
-    pub(crate) body_range: core::ops::Range<usize>,
+    pub(crate) data: core::ops::Range<usize>,
     /// The buffer the message was read out of, which the message owns until
     /// it is given up or handed on to a queue.
     pub buf: Option<Box<ibuf>>,

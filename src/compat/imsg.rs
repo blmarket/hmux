@@ -64,7 +64,7 @@ unsafe fn imsg_from_ibuf(mut buf: Box<ibuf>) -> Option<imsg> {
             ibuf_free(buf);
             return None;
         }
-        m.body_range = buf.rpos..buf.wpos;
+        m.data = buf.rpos..buf.wpos;
         m.buf = Some(buf);
         m.hdr.len = (m.hdr.len as c_uint & !IMSG_FD_MARK) as uint32_t;
         Some(m)
@@ -220,7 +220,7 @@ fn imsg_make_hdr(
     len: uint32_t,
 ) -> imsg_hdr {
     imsg_hdr {
-        type_0,
+        type_0: type_0,
         len,
         peerid: id,
         pid: if pid as uint32_t == 0 as uint32_t {

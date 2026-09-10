@@ -92,7 +92,7 @@ pub struct input_ctx {
 pub struct input_request {
     /// The client the request went to, observed rather than held, so that a
     /// client which goes before the answer arrives leaves nothing behind.
-    pub(crate) client: Option<ClientWeak>,
+    pub(crate) c: Option<ClientWeak>,
     pub(crate) ictx: InputCtxWeak,
     pub(crate) id: u64,
     pub type_0: input_request_type,
@@ -4808,10 +4808,10 @@ fn input_make_request(ictx: &mut input_ctx, type_0: input_request_type) -> input
         let id = ictx.next_request_id;
         ictx.next_request_id = ictx.next_request_id.wrapping_add(1);
         let request = Box::new(input_request {
-            client: None,
+            c: None,
             ictx: ictx_weak(&*ictx),
             id,
-            type_0,
+            type_0: type_0,
             t: get_timer(),
             end: INPUT_END_ST,
             idx: 0,
@@ -4873,7 +4873,7 @@ unsafe fn input_free_request_in(ictx: &mut input_ctx, handle: input_request_hand
         else {
             return;
         };
-        let client = ictx.requests[at].client.clone();
+        let client = ictx.requests[at].c.clone();
         if let Some(mut client) = client.and_then(|client| client.upgrade()) {
             input_unlink_request(&mut client.as_client_mut().input_requests, &handle);
         }
@@ -4909,7 +4909,7 @@ unsafe fn input_free_request_in_client(
         else {
             return;
         };
-        let client = ictx.requests[at].client.clone();
+        let client = ictx.requests[at].c.clone();
         if let Some(mut client_ref) = client.and_then(|client| client.upgrade()) {
             if core::ptr::eq(client_ref.as_ptr(), identity) {
                 input_unlink_request(requests, &handle);
@@ -4957,7 +4957,7 @@ unsafe fn input_add_request(
         let ir = input_make_request(ictx, type_0);
         let end = ictx.input_end;
         input_request_mut_in(ictx, ir.id, |request| {
-            request.client = Some(c.downgrade());
+            request.c = Some(c.downgrade());
             request.idx = idx;
             request.end = end;
         });
@@ -4990,7 +4990,7 @@ unsafe fn input_request_clipboard_reply(
 ) {
     unsafe {
         let ev: Stream = ictx.event;
-        let InputRequestData::Clipboard { clip, data } = data else {
+        let InputRequestData::Clipboard { clip, buf: data } = data else {
             return;
         };
 

@@ -99,8 +99,8 @@ impl Drop for World {
         let mut owner = self.session.handle().clone();
         unsafe {
             let session = owner.as_session_mut();
-            if session.curw_idx == Some(self.wl.index()) {
-                session.curw_idx = None;
+            if session.curw == Some(self.wl.index()) {
+                session.curw = None;
             }
             crate::window::winlink_remove(&mut session.windows, self.wl.index());
         }
@@ -133,9 +133,9 @@ fn entry(name: &CStr) -> Box<notify_entry> {
             name: Some(name.to_owned()),
             fs: cmd_find_state::default(),
             formats: format_create(None, None, 0, FORMAT_NOJOBS),
-            client_ref: None,
-            session_ref: None,
-            window_ref: None,
+            client: None,
+            session: None,
+            window: None,
             pane: -1,
             pbname: Some(c"buffer0".to_owned()),
         })
@@ -368,9 +368,9 @@ fn a_hook_with_no_command_list_behind_it_leaves_the_item_where_it_was() {
         name: Some(c"window-linked".to_owned()),
         fs: cmd_find_state::default(),
         formats: { format_create(None, None, 0, FORMAT_NOJOBS) },
-        client_ref: None,
-        session_ref: None,
-        window_ref: None,
+        client: None,
+        session: None,
+        window: None,
         pane: -1,
         pbname: None,
     };
@@ -409,9 +409,9 @@ fn the_callback_dispatches_every_control_notification_and_frees_its_entry() {
     ] {
         unsafe {
             let mut ne = entry(name);
-            ne.client_ref = crate::server::client_ref_of(&*c);
-            ne.session_ref = Some(world.session.reference());
-            ne.window_ref = Some(world.window.reference());
+            ne.client = crate::server::client_ref_of(&*c);
+            ne.session = Some(world.session.reference());
+            ne.window = Some(world.window.reference());
             ne.fs.set_session(world.session.ptr().as_ref());
             assert_eq!(notify_callback(&world.item.handle(), ne), CMD_RETURN_NORMAL);
         }
@@ -426,9 +426,9 @@ fn the_callback_releases_the_client_handle_the_entry_held() {
     unsafe {
         let weak = world.session.weak();
         let mut ne = entry(c"window-renamed");
-        ne.client_ref = Some(client.clone());
-        ne.session_ref = Some(world.session.reference());
-        ne.window_ref = Some(world.window.reference());
+        ne.client = Some(client.clone());
+        ne.session = Some(world.session.reference());
+        ne.window = Some(world.window.reference());
         ne.fs.set_session(world.session.ptr().as_ref());
         notify_callback(&world.item.handle(), ne);
         assert!(weak.upgrade().is_some());

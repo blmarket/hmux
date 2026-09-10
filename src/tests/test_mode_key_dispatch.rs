@@ -124,7 +124,7 @@ fn every_mode_initializes_resizes_and_releases_its_own_state() {
             );
             assert_eq!(mode.name(), name);
             assert_eq!(pane.modes()[0].mode(), mode);
-            assert!(pane.modes()[0].screen_ready);
+            assert!(pane.modes()[0].screen.is_some());
             let shown = pane.screen_ref();
             let size = RustScreen::grid(&shown);
             assert_eq!((size.sx, size.sy), (80, 24));

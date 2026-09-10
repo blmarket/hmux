@@ -135,14 +135,14 @@ fn check_cell_selects_scrollbar_and_front_floating_pane() {
         );
 
         (*view.window.ptr()).set_scrollbar_settings(WindowScrollbarSettings {
-            mode: 2,
-            position: PANE_SCROLLBARS_RIGHT,
+            sb: 2,
+            sb_pos: PANE_SCROLLBARS_RIGHT,
         });
         set_scrollbar_dimensions(view.pane(base), 1, 1);
         let geometry = (*view.pane(base)).geometry();
         (*view.pane(base)).set_size(crate::pane_resize::PaneSize {
             width: 10,
-            height: geometry.height,
+            height: geometry.sy,
         });
         let checked = screen_redraw_check_cell(&mut ctx, 10, 5);
         assert_eq!(checked.cell_type, CELL_SCROLLBAR);
@@ -175,7 +175,7 @@ fn cell_scan_uses_an_active_pane_absent_from_the_stacking_order_once() {
             ),
             (CELL_OUTSIDE, Some(50))
         );
-        let active = window.as_window_mut().active_pane.take();
+        let active = window.as_window_mut().active.take();
         let missing = screen_redraw_check_cell(&ctx, 3, 2);
         assert_eq!(
             (
@@ -184,7 +184,7 @@ fn cell_scan_uses_an_active_pane_absent_from_the_stacking_order_once() {
             ),
             (CELL_OUTSIDE, None)
         );
-        window.as_window_mut().active_pane = active;
+        window.as_window_mut().active = active;
     }
 }
 
@@ -292,8 +292,8 @@ fn floating_pane_reports_each_border_edge_and_outside() {
         );
 
         (*view.window.ptr()).set_scrollbar_settings(WindowScrollbarSettings {
-            mode: 1,
-            position: PANE_SCROLLBARS_LEFT,
+            sb: 1,
+            sb_pos: PANE_SCROLLBARS_LEFT,
         });
         set_scrollbar_dimensions(wp, 1, 1);
         let _ = screen_redraw_pane_border(&mut ctx, wp, 2, 4);
@@ -336,11 +336,11 @@ fn border_probes_handle_a_missing_current_window() {
     let mut ctx = view.ctx();
     unsafe {
         let mut session = view.session.handle().clone();
-        let current = session.as_session_mut().curw_idx.take();
+        let current = session.as_session_mut().curw.take();
         let pane = &*view.pane(0);
         assert_eq!(screen_redraw_cell_border(&ctx, pane, 9, 2), 0);
         assert_eq!(screen_redraw_type_of_cell(&ctx, pane, 9, 2), CELL_OUTSIDE);
-        session.as_session_mut().curw_idx = current;
+        session.as_session_mut().curw = current;
         assert_eq!(screen_redraw_cell_border(&ctx, pane, 9, 2), 1);
         ctx.c = None;
         assert_eq!(screen_redraw_type_of_cell(&ctx, pane, 9, 2), CELL_OUTSIDE);
@@ -428,7 +428,7 @@ fn visible_ranges_clip_to_window_and_front_pane_occlusion() {
         assert_eq!(r.used, 0);
 
         let mut scrollbar = (*view.window.ptr()).scrollbar_settings();
-        scrollbar.position = PANE_SCROLLBARS_LEFT;
+        scrollbar.sb_pos = PANE_SCROLLBARS_LEFT;
         (*view.window.ptr()).set_scrollbar_settings(scrollbar);
         set_scrollbar_dimensions(view.pane(front), 1, 1);
         r.set_visible_ranges(Some(&*view.pane(base)), 0, 4, 20);
@@ -481,15 +481,15 @@ fn scrollbar_redraw_tracks_owned_panes_and_skips_removed_targets() {
     unsafe {
         let weak = view.client.downgrade();
         let client = view.client.as_client_mut();
-        client.tty.owner = Some(weak);
+        client.tty.client = Some(weak);
         client.tty.sx = 12;
         client.tty.sy = 6;
         client.tty.term = Some(crate::tests::test_fixtures::zeroed_term());
         client.tty.out = Some(Box::new(crate::reactor::ByteBuffer::new()));
         let window = view.window.handle().clone();
         window.set_scrollbar_settings(WindowScrollbarSettings {
-            mode: crate::window::PANE_SCROLLBARS_ALWAYS,
-            position: PANE_SCROLLBARS_RIGHT,
+            sb: crate::window::PANE_SCROLLBARS_ALWAYS,
+            sb_pos: PANE_SCROLLBARS_RIGHT,
         });
         let mut panes = window.panes();
         for pane in &mut panes {
@@ -498,7 +498,7 @@ fn scrollbar_redraw_tracks_owned_panes_and_skips_removed_targets() {
             style.width = 1;
             style.padding = 0;
             pane.set_scrollbar_style(style);
-            pane.set_slider(PaneScrollbarSlider { y: 99, height: 99 });
+            pane.set_slider(PaneScrollbarSlider { sb_slider_y: 99, sb_slider_h: 99 });
         }
         let mut ctx = view.ctx();
         ctx.sx = 12;
@@ -506,18 +506,18 @@ fn scrollbar_redraw_tracks_owned_panes_and_skips_removed_targets() {
         screen_redraw_draw_pane_scrollbars(&mut ctx);
         for pane in &panes {
             let slider = pane.get().unwrap().slider();
-            assert_eq!((slider.y, slider.height), (0, 3));
+            assert_eq!((slider.sb_slider_y, slider.sb_slider_h), (0, 3));
         }
         window.set_scrollbar_settings(WindowScrollbarSettings {
-            mode: PANE_SCROLLBARS_MODAL,
-            position: PANE_SCROLLBARS_RIGHT,
+            sb: PANE_SCROLLBARS_MODAL,
+            sb_pos: PANE_SCROLLBARS_RIGHT,
         });
         panes[0]
             .get_mut()
             .unwrap()
-            .set_slider(PaneScrollbarSlider { y: 7, height: 8 });
+            .set_slider(PaneScrollbarSlider { sb_slider_y: 7, sb_slider_h: 8 });
         screen_redraw_draw_pane_scrollbars(&mut ctx);
-        assert_eq!(panes[0].get().unwrap().slider().y, 7);
+        assert_eq!(panes[0].get().unwrap().slider().sb_slider_y, 7);
         let id = panes[1].id();
         window.remove_pane(&crate::window::window_pane_find_by_id(id).expect("the pane exists"));
         assert!(panes[1].get().is_none());
@@ -534,7 +534,7 @@ fn pane_drawing_borrows_the_shown_screen_after_style_evaluation_and_clips_rows()
     unsafe {
         let weak = view.client.downgrade();
         let client = view.client.as_client_mut();
-        client.tty.owner = Some(weak);
+        client.tty.client = Some(weak);
         client.tty.sx = 8;
         client.tty.sy = 3;
         client.tty.term = Some(crate::tests::test_fixtures::zeroed_term());
@@ -606,7 +606,7 @@ fn pane_status_drawing_preserves_clipping_zoom_and_top_or_bottom_rows() {
     unsafe {
         let weak = view.client.downgrade();
         let client = view.client.as_client_mut();
-        client.tty.owner = Some(weak);
+        client.tty.client = Some(weak);
         client.tty.sx = 12;
         client.tty.sy = 6;
         client.tty.term = Some(crate::tests::test_fixtures::zeroed_term());
@@ -634,7 +634,7 @@ fn pane_status_drawing_preserves_clipping_zoom_and_top_or_bottom_rows() {
         window.as_window_mut().flags |= crate::window::WINDOW_ZOOMED;
         {
             let mut payload = window.as_window_mut();
-            payload.active_pane = payload
+            payload.active = payload
                 .panes
                 .iter()
                 .find(|pane| pane.pane_id() == panes[1].id())
@@ -723,12 +723,12 @@ fn redraw_context_reads_shared_owners_and_rejects_detached_or_missing_windows() 
         assert!(screen_redraw_set_context(c, &mut ctx));
         assert_eq!((ctx.statuslines, ctx.statustop), (1, 1));
         c.prompt_string = None;
-        let current = session.as_session_mut().curw_idx.take();
+        let current = session.as_session_mut().curw.take();
         assert!(!screen_redraw_set_context(c, &mut ctx));
         assert!(ctx.c.is_none());
         assert_eq!((ctx.sx, ctx.sy), (0, 0));
         screen_redraw_screen(c);
-        session.as_session_mut().curw_idx = current;
+        session.as_session_mut().curw = current;
         c.set_attached_session(None);
         assert!(!screen_redraw_set_context(c, &mut ctx));
         screen_redraw_screen(c);
@@ -863,9 +863,9 @@ fn status_drawing_skips_a_missing_current_window_before_accessing_the_terminal()
     ctx.statuslines = 1;
     unsafe {
         let mut session = view.session.handle().clone();
-        session.as_session_mut().curw_idx = None;
+        session.as_session_mut().curw = None;
         screen_redraw_draw_status(&mut ctx);
-        session.as_session_mut().curw_idx = Some(99);
+        session.as_session_mut().curw = Some(99);
         screen_redraw_draw_status(&mut ctx);
         view.client.set_attached_session(None);
         screen_redraw_draw_status(&mut ctx);

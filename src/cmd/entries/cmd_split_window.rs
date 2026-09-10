@@ -77,7 +77,7 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let session = item.target.session().expect("a split target has a session");
     let link = item
         .target
-        .wl_idx
+        .wl
         .and_then(|index| WinlinkRef::new(session.clone(), index))
         .expect("a split target has a window link");
     let owner = link.window().expect("a split target has a window owner");
@@ -160,7 +160,7 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
     sc.item = cmdq_item_weak_of(item);
     sc.s = Some(session.clone());
-    sc.wl_idx = Some(link.index());
+    sc.wl = Some(link.index());
     sc.wp0 = Some(pane.clone());
     unsafe { sc.argv = args.to_vector() };
     sc.environ = Some(new_environment_box());

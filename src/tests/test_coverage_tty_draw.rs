@@ -72,7 +72,7 @@ impl Drawer {
             seen: 0,
         };
         d.tty.term = Some(zeroed_term());
-        d.tty.owner = crate::server::client_ref_of(&*(unsafe { d.client.as_client() }))
+        d.tty.client = crate::server::client_ref_of(&*(unsafe { d.client.as_client() }))
             .map(|c| c.downgrade());
         d.tty.out = Some(Box::new(ByteBuffer::new()));
         d.tty.sx = sx;

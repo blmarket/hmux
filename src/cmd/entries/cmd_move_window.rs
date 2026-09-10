@@ -117,7 +117,7 @@ unsafe fn room_for(
 ) -> Option<WinlinkShuffle> {
     unsafe {
         let around = target
-            .wl_idx
+            .wl
             .filter(|index| dst.link(*index).is_some())
             .or_else(|| dst.current_index());
         dst.shuffle_windows(around, before)
@@ -143,7 +143,7 @@ unsafe fn cmd_move_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }
 
     let mut source = item.source.session().expect("a move source has a session");
-    let mut source_index = item.source.wl_idx.expect("a move source has a window link");
+    let mut source_index = item.source.wl.expect("a move source has a window link");
     let Some(target) = (unsafe { resolve(item, tflag, CMD_FIND_WINDOW, CMD_FIND_WINDOW_INDEX) })
     else {
         return CMD_RETURN_ERROR;

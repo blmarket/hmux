@@ -21,7 +21,7 @@ impl ClientWindowState for crate::types::client_window {
     fn from_client_window_state(window_id: u32, width: u32, height: u32) -> Self {
         Self {
             window: window_id,
-            pane_ref: None,
+            pane: None,
             sx: width,
             sy: height,
         }

@@ -6,18 +6,15 @@ use crate::handle_registry::HandleRegistration;
 use crate::screen::RustScreen;
 use crate::types::*;
 use crate::{
-    PaneStyleCache, PaneStyleCells, RustPaneActivityState, RustPaneBorderCache,
-    RustPaneCommandState, RustPaneControlColours, RustPaneExitState, RustPaneGeometryState,
-    RustPaneIdentity, RustPaneOutputBaseState, RustPaneOutputOffset, RustPaneResizeQueue,
-    RustPaneScrollbar, RustPaneScrollbarStyleState, RustPaneSearchState, RustPaneStatusLineState,
-    RustPaneStyleCache, RustPaneThemeState,
+    PaneBorderKind, PaneCommand, PaneControlColourPair, PaneGeometry, PaneScrollbarSlider,
+    PaneScrollbarStyle, PaneSize, PaneStyleCells,
 };
+use core::ffi::{c_int, CStr};
+use std::ffi::CString;
 
 /// A pane allocation owned through a strong reference.
 pub struct RustWindowPane {
     registration: RefCell<Option<HandleRegistration<RustWindowPaneWeak>>>,
-    window: RefCell<Option<WindowWeak>>,
-    id: u32,
     pane: Box<UnsafeCell<window_pane>>,
 }
 
@@ -44,7 +41,6 @@ pub struct RustWindowPaneRef(Rc<RustWindowPane>);
 /// an observation is unsafe because it does not keep the allocation alive.
 #[derive(Clone)]
 pub struct RustWindowPaneWeak {
-    id: u32,
     allocation: Weak<RustWindowPane>,
 }
 
@@ -59,7 +55,7 @@ impl Eq for RustWindowPaneWeak {}
 impl std::fmt::Debug for RustWindowPaneWeak {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RustWindowPaneWeak")
-            .field("id", &self.id)
+            .field("id", &self.upgrade().map(|pane| pane.pane_id()))
             .field("alive", &self.is_alive())
             .finish()
     }
@@ -67,19 +63,16 @@ impl std::fmt::Debug for RustWindowPaneWeak {
 
 impl RustWindowPaneRef {
     pub(crate) fn from_pane(pane: Box<window_pane>) -> Self {
-        let id = crate::PaneIdentity::pane_id(&*pane);
         let pane = unsafe { Box::from_raw(Box::into_raw(pane).cast::<UnsafeCell<window_pane>>()) };
         Self(Rc::new(RustWindowPane {
             registration: RefCell::new(None),
-            window: RefCell::new(None),
-            id,
             pane,
         }))
     }
 
     /// The immutable identity under which this pane was registered.
     pub fn pane_id(&self) -> u32 {
-        self.0.id
+        unsafe { (*self.as_ptr()).id }
     }
 
     pub(crate) fn id(&self) -> u32 {
@@ -88,7 +81,6 @@ impl RustWindowPaneRef {
 
     pub fn downgrade(&self) -> RustWindowPaneWeak {
         RustWindowPaneWeak {
-            id: self.0.id,
             allocation: Rc::downgrade(&self.0),
         }
     }
@@ -105,13 +97,9 @@ impl RustWindowPaneRef {
         self.0.registration.borrow_mut().take();
     }
 
-    pub(crate) fn register_window(&self, window: Option<WindowWeak>) {
-        *self.0.window.borrow_mut() = window;
-    }
-
     #[cfg(test)]
     pub(crate) fn window(&self) -> Option<WindowRef> {
-        self.0.window.borrow().as_ref()?.upgrade()
+        self.downgrade().window()
     }
 
     pub(crate) fn as_ptr(&self) -> *const window_pane {
@@ -160,13 +148,13 @@ impl RustWindowPaneRef {
 }
 
 impl RustWindowPaneWeak {
-    /// The immutable identity under which this pane was registered.
-    pub fn pane_id(&self) -> u32 {
-        self.id
+    /// Returns the ID while the pane is alive.
+    pub fn pane_id(&self) -> Option<u32> {
+        self.upgrade().map(|pane| pane.pane_id())
     }
 
     pub(crate) fn id(&self) -> u32 {
-        self.id
+        self.pane_id().expect("the pane is alive")
     }
 
     pub fn upgrade(&self) -> Option<RustWindowPaneRef> {
@@ -180,7 +168,11 @@ impl RustWindowPaneWeak {
     /// The current window, including changes made by pane moves and swaps.
     pub(crate) fn window(&self) -> Option<WindowRef> {
         let pane = self.allocation.upgrade()?;
-        pane.window.borrow().as_ref()?.upgrade()
+        unsafe { (*pane.pane.get()).window.as_ref()?.upgrade() }
+    }
+
+    pub(crate) fn listed_window(&self) -> Option<WindowRef> {
+        self.window().filter(|window| window.contains_pane(self))
     }
 
     /// The compatibility address, or null after destruction.
@@ -246,30 +238,37 @@ impl RustWindowPaneWeak {
 #[derive(Default)]
 #[repr(C)]
 pub struct window_pane {
-    identity: crate::pane_identity::RustPaneIdentity,
-    activity: crate::pane_activity::RustPaneActivityState,
-    /// The recorded window context, preserved while a pane is between lists.
-    /// Registered membership is tracked separately by the pane owner.
-    recorded_window: Option<WindowWeak>,
+    id: u32,
+    active_point: u_int,
+    /// The window backlink, retained during transfers and teardown.
+    window: Option<WindowWeak>,
     options: Option<crate::options::RustOptionsRef>,
-    geometry: crate::pane_geometry::RustPaneGeometryState,
+    sx: u_int,
+    sy: u_int,
+    xoff: c_int,
+    yoff: c_int,
     flags: core::ffi::c_int,
-    scrollbar: crate::pane_scrollbar::RustPaneScrollbar,
-    command: crate::pane_command::RustPaneCommandState,
+    sb_slider_y: u_int,
+    sb_slider_h: u_int,
+    argv: Vec<CString>,
+    shell: Option<CString>,
+    cwd: Option<CString>,
     pid: pid_t,
     tty: [u8; 32],
-    exit_state: crate::pane_exit::RustPaneExitState,
+    status: c_int,
+    dead_time: timeval,
     fd: core::ffi::c_int,
     event: Stream,
     offset: crate::pane_output::RustPaneOutputOffset,
-    output_base: crate::pane_output_base::RustPaneOutputBaseState,
+    base_offset: usize,
     resize_queue: crate::pane_resize::RustPaneResizeQueue,
     resize_timer: TimerHandle,
     sync_timer: TimerHandle,
     ictx: Option<InputCtxRef>,
-    style_cache: crate::pane_style_cache::RustPaneStyleCache,
+    cached_gc: grid_cell,
+    cached_active_gc: grid_cell,
     palette: colour_palette,
-    theme: crate::pane_theme::RustPaneThemeState,
+    last_theme: client_theme,
     border_status_line: style_line_entry,
     pipe_fd: core::ffi::c_int,
     pipe_pid: pid_t,
@@ -277,25 +276,28 @@ pub struct window_pane {
     pipe_offset: crate::pane_output::RustPaneOutputOffset,
     /// Which screen the pane is showing: its own, or the one the mode at the
     /// front of its mode list draws on.
-    shown: PaneScreen,
+    screen: PaneScreen,
     base: RustScreen,
     status_screen: RustScreen,
-    status_line: crate::pane_status_line::RustPaneStatusLineState,
+    status_size: usize,
     modes: window_modes,
-    search: crate::pane_search::RustPaneSearchState,
-    border_cache: crate::pane_border_cache::RustPaneBorderCache,
-    control_colours: crate::pane_control_colours::RustPaneControlColours,
-    scrollbar_style_state: crate::pane_scrollbar_style::RustPaneScrollbarStyleState,
+    searchstr: Option<CString>,
+    searchregex: bool,
+    border_gc: Option<grid_cell>,
+    active_border_gc: Option<grid_cell>,
+    control_bg: Option<c_int>,
+    control_fg: Option<c_int>,
+    scrollbar_style: PaneScrollbarStyle,
     r: visible_ranges,
 }
 
 impl crate::pane_identity::PaneIdentity for window_pane {
     fn pane_id(&self) -> u32 {
-        crate::pane_identity::PaneIdentity::pane_id(&self.identity)
+        self.id
     }
 
     fn set_pane_id(&mut self, id: u32) {
-        crate::pane_identity::PaneIdentity::set_pane_id(&mut self.identity, id);
+        self.id = id;
     }
 }
 
@@ -318,256 +320,127 @@ impl crate::pane_resize::PaneResizeQueue for window_pane {
 }
 
 impl crate::pane_style_cache::PaneStyleCache for window_pane {
-    fn styles(&self) -> crate::pane_style_cache::PaneStyleCells {
-        crate::pane_style_cache::PaneStyleCache::styles(&self.style_cache)
+    fn styles(&self) -> PaneStyleCells {
+        PaneStyleCells { cached_gc: self.cached_gc, cached_active_gc: self.cached_active_gc }
     }
-
-    fn set_styles(&mut self, styles: crate::pane_style_cache::PaneStyleCells) {
-        crate::pane_style_cache::PaneStyleCache::set_styles(&mut self.style_cache, styles);
+    fn set_styles(&mut self, styles: PaneStyleCells) {
+        self.cached_gc = styles.cached_gc;
+        self.cached_active_gc = styles.cached_active_gc;
     }
 }
 
 impl crate::pane_border_cache::PaneBorderCache for window_pane {
-    fn get(
-        &self,
-        kind: crate::pane_border_cache::PaneBorderKind,
-    ) -> Option<crate::types::grid_cell> {
-        crate::pane_border_cache::PaneBorderCache::get(&self.border_cache, kind)
+    fn get(&self, kind: PaneBorderKind) -> Option<grid_cell> {
+        match kind { PaneBorderKind::Normal => self.border_gc, PaneBorderKind::Active => self.active_border_gc }
     }
-
-    fn insert(
-        &mut self,
-        kind: crate::pane_border_cache::PaneBorderKind,
-        cell: crate::types::grid_cell,
-    ) {
-        crate::pane_border_cache::PaneBorderCache::insert(&mut self.border_cache, kind, cell);
+    fn insert(&mut self, kind: PaneBorderKind, cell: grid_cell) {
+        match kind { PaneBorderKind::Normal => self.border_gc = Some(cell), PaneBorderKind::Active => self.active_border_gc = Some(cell) }
     }
-
-    fn clear(&mut self) {
-        crate::pane_border_cache::PaneBorderCache::clear(&mut self.border_cache);
-    }
+    fn clear(&mut self) { self.border_gc = None; self.active_border_gc = None; }
 }
 
 impl crate::pane_control_colours::PaneControlColours for window_pane {
-    fn colours(&self) -> crate::pane_control_colours::PaneControlColourPair {
-        crate::pane_control_colours::PaneControlColours::colours(&self.control_colours)
+    fn colours(&self) -> PaneControlColourPair {
+        PaneControlColourPair { control_fg: self.control_fg, control_bg: self.control_bg }
     }
-
-    fn set_colours(&mut self, colours: crate::pane_control_colours::PaneControlColourPair) {
-        crate::pane_control_colours::PaneControlColours::set_colours(
-            &mut self.control_colours,
-            colours,
-        );
+    fn set_colours(&mut self, colours: PaneControlColourPair) {
+        self.control_fg = colours.control_fg; self.control_bg = colours.control_bg;
     }
-
-    fn clear(&mut self) {
-        crate::pane_control_colours::PaneControlColours::clear(&mut self.control_colours);
-    }
+    fn clear(&mut self) { self.control_fg = None; self.control_bg = None; }
 }
 
 impl crate::pane_theme::PaneThemeState for window_pane {
-    fn theme(&self) -> crate::types::client_theme {
-        crate::pane_theme::PaneThemeState::theme(&self.theme)
-    }
-
-    fn set_theme(&mut self, theme: crate::types::client_theme) {
-        crate::pane_theme::PaneThemeState::set_theme(&mut self.theme, theme);
-    }
-
-    fn replace(&mut self, theme: crate::types::client_theme) -> bool {
-        crate::pane_theme::PaneThemeState::replace(&mut self.theme, theme)
+    fn theme(&self) -> client_theme { self.last_theme }
+    fn set_theme(&mut self, theme: client_theme) { self.last_theme = theme; }
+    fn replace(&mut self, theme: client_theme) -> bool {
+        let changed = self.last_theme != theme;
+        self.last_theme = theme;
+        changed
     }
 }
 
 impl crate::pane_search::PaneSearchState for window_pane {
-    fn query(&self) -> Option<&core::ffi::CStr> {
-        crate::pane_search::PaneSearchState::query(&self.search)
+    fn query(&self) -> Option<&CStr> { self.searchstr.as_deref() }
+    fn is_regex(&self) -> bool { self.searchregex }
+    fn set(&mut self, query: &CStr, regex: bool) {
+        self.searchstr = Some(query.to_owned()); self.searchregex = regex;
     }
-
-    fn is_regex(&self) -> bool {
-        crate::pane_search::PaneSearchState::is_regex(&self.search)
-    }
-
-    fn set(&mut self, query: &core::ffi::CStr, regex: bool) {
-        crate::pane_search::PaneSearchState::set(&mut self.search, query, regex);
-    }
-
-    fn clear(&mut self) {
-        crate::pane_search::PaneSearchState::clear(&mut self.search);
-    }
-
-    fn matches(&self, query: &core::ffi::CStr, regex: bool) -> bool {
-        crate::pane_search::PaneSearchState::matches(&self.search, query, regex)
+    fn clear(&mut self) { self.searchstr = None; self.searchregex = false; }
+    fn matches(&self, query: &CStr, regex: bool) -> bool {
+        self.searchregex == regex && self.searchstr.as_deref() == Some(query)
     }
 }
 
 impl crate::pane_scrollbar::PaneScrollbar for window_pane {
-    fn slider(&self) -> crate::pane_scrollbar::PaneScrollbarSlider {
-        crate::pane_scrollbar::PaneScrollbar::slider(&self.scrollbar)
+    fn slider(&self) -> PaneScrollbarSlider {
+        PaneScrollbarSlider { sb_slider_y: self.sb_slider_y, sb_slider_h: self.sb_slider_h }
     }
-
-    fn set_slider(&mut self, slider: crate::pane_scrollbar::PaneScrollbarSlider) {
-        crate::pane_scrollbar::PaneScrollbar::set_slider(&mut self.scrollbar, slider);
-    }
-
-    fn clear(&mut self) {
-        crate::pane_scrollbar::PaneScrollbar::clear(&mut self.scrollbar);
-    }
+    fn set_slider(&mut self, slider: PaneScrollbarSlider) { self.sb_slider_y = slider.sb_slider_y; self.sb_slider_h = slider.sb_slider_h; }
+    fn clear(&mut self) { self.sb_slider_y = 0; self.sb_slider_h = 0; }
 }
 
 impl crate::pane_geometry::PaneGeometryState for window_pane {
-    fn geometry(&self) -> crate::pane_geometry::PaneGeometry {
-        crate::pane_geometry::PaneGeometryState::geometry(&self.geometry)
+    fn geometry(&self) -> PaneGeometry {
+        PaneGeometry { xoff: self.xoff, yoff: self.yoff, sx: self.sx, sy: self.sy }
     }
-
-    fn set_geometry(&mut self, geometry: crate::pane_geometry::PaneGeometry) {
-        crate::pane_geometry::PaneGeometryState::set_geometry(&mut self.geometry, geometry);
+    fn set_geometry(&mut self, geometry: PaneGeometry) {
+        self.xoff = geometry.xoff; self.yoff = geometry.yoff; self.sx = geometry.sx; self.sy = geometry.sy;
     }
-
-    fn set_position(&mut self, x: core::ffi::c_int, y: core::ffi::c_int) {
-        crate::pane_geometry::PaneGeometryState::set_position(&mut self.geometry, x, y);
-    }
-
-    fn set_size(&mut self, size: crate::pane_resize::PaneSize) {
-        crate::pane_geometry::PaneGeometryState::set_size(&mut self.geometry, size);
-    }
+    fn set_position(&mut self, x: c_int, y: c_int) { self.xoff = x; self.yoff = y; }
+    fn set_size(&mut self, size: PaneSize) { self.sx = size.width; self.sy = size.height; }
 }
 
 impl crate::pane_exit::PaneExitState for window_pane {
-    fn exit_status(&self) -> core::ffi::c_int {
-        crate::pane_exit::PaneExitState::exit_status(&self.exit_state)
-    }
-
-    fn set_exit_status(&mut self, status: core::ffi::c_int) {
-        crate::pane_exit::PaneExitState::set_exit_status(&mut self.exit_state, status);
-    }
-
-    fn death_time(&self) -> timeval {
-        crate::pane_exit::PaneExitState::death_time(&self.exit_state)
-    }
-
-    fn set_death_time(&mut self, time: timeval) {
-        crate::pane_exit::PaneExitState::set_death_time(&mut self.exit_state, time);
-    }
+    fn exit_status(&self) -> c_int { self.status }
+    fn set_exit_status(&mut self, status: c_int) { self.status = status; }
+    fn death_time(&self) -> timeval { self.dead_time }
+    fn set_death_time(&mut self, time: timeval) { self.dead_time = time; }
 }
 
 impl crate::pane_command::PaneCommandState for window_pane {
-    fn pane_command(&self) -> crate::pane_command::PaneCommand {
-        crate::pane_command::PaneCommandState::pane_command(&self.command)
+    fn pane_command(&self) -> PaneCommand {
+        PaneCommand { argv: self.argv.clone(), shell: self.shell.clone(), cwd: self.cwd.clone() }
     }
-
-    fn set_pane_command(&mut self, command: &crate::pane_command::PaneCommand) {
-        crate::pane_command::PaneCommandState::set_pane_command(&mut self.command, command);
+    fn set_pane_command(&mut self, command: &PaneCommand) {
+        self.argv.clone_from(&command.argv); self.shell.clone_from(&command.shell); self.cwd.clone_from(&command.cwd);
     }
-
-    fn clear_pane_command(&mut self) {
-        crate::pane_command::PaneCommandState::clear_pane_command(&mut self.command);
-    }
+    fn clear_pane_command(&mut self) { self.argv.clear(); self.shell = None; self.cwd = None; }
 }
 
 impl crate::pane_output_base::PaneOutputBaseState for window_pane {
-    fn output_base(&self) -> usize {
-        crate::pane_output_base::PaneOutputBaseState::output_base(&self.output_base)
-    }
-
-    fn set_output_base(&mut self, position: usize) {
-        crate::pane_output_base::PaneOutputBaseState::set_output_base(
-            &mut self.output_base,
-            position,
-        );
-    }
+    fn output_base(&self) -> usize { self.base_offset }
+    fn set_output_base(&mut self, position: usize) { self.base_offset = position; }
 }
 
 impl crate::pane_activity::PaneActivityState for window_pane {
-    fn activity_point(&self) -> u_int {
-        crate::pane_activity::PaneActivityState::activity_point(&self.activity)
-    }
-
-    fn mark_active_at(&mut self, point: u_int) {
-        crate::pane_activity::PaneActivityState::mark_active_at(&mut self.activity, point);
-    }
+    fn activity_point(&self) -> u_int { self.active_point }
+    fn mark_active_at(&mut self, point: u_int) { self.active_point = point; }
 }
 
 impl crate::pane_status_line::PaneStatusLineState for window_pane {
-    fn status_line_width(&self) -> usize {
-        crate::pane_status_line::PaneStatusLineState::status_line_width(&self.status_line)
-    }
-
-    fn set_status_line_width(&mut self, width: usize) {
-        crate::pane_status_line::PaneStatusLineState::set_status_line_width(
-            &mut self.status_line,
-            width,
-        );
-    }
+    fn status_line_width(&self) -> usize { self.status_size }
+    fn set_status_line_width(&mut self, width: usize) { self.status_size = width; }
 }
 
 impl crate::pane_scrollbar_style::PaneScrollbarStyleState for window_pane {
-    fn scrollbar_style(&self) -> crate::pane_scrollbar_style::PaneScrollbarStyle {
-        crate::pane_scrollbar_style::PaneScrollbarStyleState::scrollbar_style(
-            &self.scrollbar_style_state,
-        )
-    }
-
-    fn set_scrollbar_style(&mut self, style: crate::pane_scrollbar_style::PaneScrollbarStyle) {
-        crate::pane_scrollbar_style::PaneScrollbarStyleState::set_scrollbar_style(
-            &mut self.scrollbar_style_state,
-            style,
-        );
-    }
+    fn scrollbar_style(&self) -> PaneScrollbarStyle { self.scrollbar_style }
+    fn set_scrollbar_style(&mut self, style: PaneScrollbarStyle) { self.scrollbar_style = style; }
 }
 
 impl window_pane {
     pub(crate) fn new() -> Self {
         window_pane {
-            identity: RustPaneIdentity::default(),
-            activity: RustPaneActivityState::default(),
-            recorded_window: None,
-            options: None,
-            geometry: RustPaneGeometryState::default(),
-            flags: 0,
-            scrollbar: RustPaneScrollbar::default(),
-            command: RustPaneCommandState::default(),
-            pid: 0,
-            tty: [0; 32],
-            exit_state: RustPaneExitState::default(),
             fd: -1,
-            event: Stream::NONE,
-            offset: RustPaneOutputOffset::default(),
-            output_base: RustPaneOutputBaseState::default(),
-            resize_queue: RustPaneResizeQueue::default(),
-            resize_timer: TimerHandle(0),
-            sync_timer: TimerHandle(0),
-            ictx: None,
-            style_cache: {
-                let mut cache = RustPaneStyleCache::default();
-                cache.set_styles(PaneStyleCells {
-                    normal: grid_default_cell,
-                    active: grid_default_cell,
-                });
-                cache
-            },
+            pipe_fd: -1,
+            cached_gc: grid_default_cell,
+            cached_active_gc: grid_default_cell,
             palette: colour_palette {
                 fg: 8,
                 bg: 8,
                 palette: None,
                 default_palette: None,
             },
-            theme: RustPaneThemeState::default(),
-            border_status_line: style_line_entry::default(),
-            pipe_fd: -1,
-            pipe_pid: 0,
-            pipe_event: Stream::NONE,
-            pipe_offset: RustPaneOutputOffset::default(),
-            shown: PaneScreen::Base,
-            base: RustScreen::default(),
-            status_screen: RustScreen::default(),
-            status_line: RustPaneStatusLineState::default(),
-            modes: window_modes::new(),
-            search: RustPaneSearchState::default(),
-            border_cache: RustPaneBorderCache::default(),
-            control_colours: RustPaneControlColours::default(),
-            scrollbar_style_state: RustPaneScrollbarStyleState::default(),
-            r: visible_ranges::default(),
+            ..Default::default()
         }
     }
 }
@@ -679,10 +552,10 @@ impl crate::WindowPane for window_pane {
     }
 
     fn shown(&self) -> &crate::types::PaneScreen {
-        &self.shown
+        &self.screen
     }
     fn shown_mut(&mut self) -> &mut crate::types::PaneScreen {
-        &mut self.shown
+        &mut self.screen
     }
 
     fn base(&self) -> &crate::screen::RustScreen {
@@ -714,7 +587,7 @@ impl crate::WindowPane for window_pane {
     }
     /// Retains the recorded window context, including during pane transfers.
     fn window_context(&self) -> Option<WindowRef> {
-        self.recorded_window.as_ref().and_then(WindowWeak::upgrade)
+        self.window.as_ref().and_then(WindowWeak::upgrade)
     }
 
     /// Borrows the terminal device name within the pane's fixed storage.
@@ -735,30 +608,21 @@ impl crate::WindowPane for window_pane {
 
     /// Borrows the shown screen when the current mode has initialized it.
     fn try_screen_ref(&self) -> Option<ScreenBorrow<'_>> {
-        if self.shown == PaneScreen::Base || self.modes.is_empty() {
+        if self.screen == PaneScreen::Base || self.modes.is_empty() {
             return Some(ScreenBorrow::Owned(&self.base));
         }
         let mode = self.modes.first()?;
-        if !mode.screen_ready {
-            return None;
-        }
-        match &mode.state {
-            WindowModeState::Clock(data) => Some(ScreenBorrow::Owned(&data.screen)),
-            WindowModeState::Copy(data) | WindowModeState::View(data) => {
-                Some(ScreenBorrow::Shared(data.screen.borrow()))
+        match mode.screen.as_ref()? {
+            ModeScreen::Clock => {
+                let WindowModeState::Clock(data) = &mode.state else { return None };
+                Some(ScreenBorrow::Owned(&data.screen))
             }
-            WindowModeState::Buffer(_)
-            | WindowModeState::Client(_)
-            | WindowModeState::Tree(_)
-            | WindowModeState::Customize(_) => Some(ScreenBorrow::Shared({
-                mode.mode_tree_ref.as_ref()?.screen_handle().borrow()
-            })),
-            WindowModeState::None => None,
+            ModeScreen::Shared(screen) => Some(ScreenBorrow::Shared(screen.borrow())),
         }
     }
 
     fn set_window_context(&mut self, window: Option<&WindowRef>) {
-        self.recorded_window = window.map(WindowRef::downgrade);
+        self.window = window.map(WindowRef::downgrade);
     }
 }
 
@@ -795,8 +659,8 @@ mod tests {
         }
         unsafe {
             let pane: &window_pane = retained.get().unwrap();
-            assert_eq!(pane.geometry().width, 80);
-            assert_eq!(pane.geometry().height, 24);
+            assert_eq!(pane.geometry().sx, 80);
+            assert_eq!(pane.geometry().sy, 24);
             assert_eq!(*pane.flags(), PANE_STYLECHANGED);
         }
         drop(owner);

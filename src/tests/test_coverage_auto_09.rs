@@ -162,8 +162,8 @@ fn window_pane_and_session_fixtures_hold_expected_invariants() {
                 .is_some_and(|active| core::ptr::addr_eq(active, pane.ptr()))
         }));
         assert_eq!((*pane.ptr()).pane_id(), 99);
-        assert_eq!((*pane.ptr()).geometry().width, 80);
-        assert_eq!((*pane.ptr()).geometry().height, 24);
+        assert_eq!((*pane.ptr()).geometry().sx, 80);
+        assert_eq!((*pane.ptr()).geometry().sy, 24);
         assert_eq!(*(*pane.ptr()).fd(), -1);
         // options are present
         let _ = (*win.ptr()).options_ref();

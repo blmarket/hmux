@@ -53,12 +53,12 @@ pub fn layout_create_cell(lcparent: Option<&mut layout_cell>) -> Box<layout_cell
     Box::new(layout_cell {
         type_0: LAYOUT_WINDOWPANE,
         flags: 0,
-        has_parent: lcparent.is_some(),
+        parent: lcparent.is_some(),
         sx: UINT_MAX,
         sy: UINT_MAX,
         xoff: INT_MAX,
         yoff: INT_MAX,
-        wp_ref: None,
+        wp: None,
         cells: layout_cells::new(),
     })
 }
@@ -87,7 +87,7 @@ pub unsafe fn layout_print_cell(lc: Option<&layout_cell>, hdr: &CStr, n: u_int) 
                 n,
                 c" ",
                 type_0,
-                lc.wp_ref.as_ref().map_or(u_int::MAX, |pane| pane.id()),
+                lc.wp.as_ref().map_or(u_int::MAX, |pane| pane.id()),
                 lc.xoff,
                 lc.yoff,
                 lc.sx,
@@ -136,7 +136,7 @@ impl LayoutCellPath {
     }
 
     pub(crate) fn for_pane(root: &layout_cell, pane: &RustWindowPaneWeak) -> Option<Self> {
-        if root.wp_ref.as_ref() == Some(pane) {
+        if root.wp.as_ref() == Some(pane) {
             return Some(Self(Vec::new()));
         }
         root.cells.iter().enumerate().find_map(|(index, child)| {
@@ -190,20 +190,20 @@ pub fn layout_set_size(lc: &mut layout_cell, sx: u_int, sy: u_int, xoff: c_int, 
 /// Observes the pane allocation held by the cell while it remains alive.
 #[cfg(test)]
 pub fn layout_cell_pane(lc: &layout_cell) -> Option<RustWindowPaneWeak> {
-    lc.wp_ref
+    lc.wp
         .clone()
         .filter(|pane| unsafe { pane.get().is_some() })
 }
 
 /// Records the pane allocation held by the cell.
 pub fn layout_cell_set_pane(lc: &mut layout_cell, pane: Option<RustWindowPaneWeak>) {
-    lc.wp_ref = pane;
+    lc.wp = pane;
 }
 
 pub fn layout_make_leaf(lc: &mut layout_cell, wp: &impl crate::WindowPane) {
     lc.type_0 = LAYOUT_WINDOWPANE;
     lc.cells.clear();
-    lc.wp_ref = crate::window::window_pane_ref_of(wp);
+    lc.wp = crate::window::window_pane_ref_of(wp);
 }
 
 pub fn layout_make_node(lc: &mut layout_cell, type_0: layout_type) {
@@ -212,7 +212,7 @@ pub fn layout_make_node(lc: &mut layout_cell, type_0: layout_type) {
     }
     lc.type_0 = type_0;
     lc.cells.clear();
-    lc.wp_ref = None;
+    lc.wp = None;
 }
 
 /// Gives every cell under `lc` the offset its size and its siblings' put it at.
@@ -285,7 +285,7 @@ pub(crate) fn layout_cell_for_pane<'a>(
 ) -> Option<(&'a layout_cell, Option<&'a layout_cell>)> {
     let mut pending = vec![(root?, None)];
     while let Some((cell, parent)) = pending.pop() {
-        if cell.wp_ref.as_ref() == Some(pane) {
+        if cell.wp.as_ref() == Some(pane) {
             return Some((cell, parent));
         }
         pending.extend(
@@ -362,12 +362,12 @@ unsafe fn layout_pane_geometry(
             }
             sy = sy.wrapping_sub(1);
         }
-        let redraw_scrollbar = window_pane_show_scrollbar(pane, scrollbar.mode) != 0;
+        let redraw_scrollbar = window_pane_show_scrollbar(pane, scrollbar.sb) != 0;
         if redraw_scrollbar {
             let style = pane.scrollbar_style();
             let sb_w = core::cmp::max(style.width, 1);
             let sb_pad = core::cmp::max(style.padding, 0);
-            if scrollbar.position == PANE_SCROLLBARS_LEFT {
+            if scrollbar.sb_pos == PANE_SCROLLBARS_LEFT {
                 if sx as c_int - sb_w < PANE_MINIMUM {
                     x = x + sx as c_int - PANE_MINIMUM;
                     sx = PANE_MINIMUM as u_int;
@@ -474,7 +474,7 @@ impl LayoutResizeLimits {
                 .find(|pane| Some(pane.pane_id()) == w.active_pane_id())
                 .expect("a resized layout has an active pane");
             let style = active.as_pane().scrollbar_style();
-            let minimum_width = if w.scrollbar_settings().mode != PANE_SCROLLBARS_OFF {
+            let minimum_width = if w.scrollbar_settings().sb != PANE_SCROLLBARS_OFF {
                 (PANE_MINIMUM + style.width + style.padding) as u_int
             } else {
                 PANE_MINIMUM as u_int
@@ -627,11 +627,11 @@ impl LayoutCellRemoval {
                 .as_deref_mut()
                 .and_then(|root| grandparent_path.get_mut(root))
                 .expect("the grandparent is unchanged");
-            only.has_parent = true;
+            only.parent = true;
             let index = *parent_path.0.last().expect("the parent has a grandparent");
             removed.push(core::mem::replace(&mut grandparent.cells[index], only));
         } else {
-            only.has_parent = false;
+            only.parent = false;
             if !floating(&only) {
                 only.xoff = 0;
                 only.yoff = 0;
@@ -769,7 +769,7 @@ impl WindowRef {
         let w = &mut *payload;
         fn collect(cell: &layout_cell, order: &mut Vec<RustWindowPaneWeak>) {
             match cell.type_0 {
-                LAYOUT_WINDOWPANE => order.extend(cell.wp_ref.clone()),
+                LAYOUT_WINDOWPANE => order.extend(cell.wp.clone()),
                 LAYOUT_LEFTRIGHT | LAYOUT_TOPBOTTOM => {
                     for child in &cell.cells {
                         collect(child, order);
@@ -1332,7 +1332,7 @@ impl WindowRef {
             let (sx, sy, xoff, yoff) = (cell.sx, cell.sy, cell.xoff as u_int, cell.yoff as u_int);
             let minimum = match type_0 {
                 LAYOUT_LEFTRIGHT => {
-                    if w.scrollbar_settings().mode != PANE_SCROLLBARS_OFF {
+                    if w.scrollbar_settings().sb != PANE_SCROLLBARS_OFF {
                         (PANE_MINIMUM * 2 + sb_style.width + sb_style.padding) as u_int
                     } else {
                         (PANE_MINIMUM * 2 + 1) as u_int
@@ -1425,7 +1425,7 @@ impl WindowRef {
                     let parent = parent_path
                         .get_mut(w.layout_root.as_deref_mut().unwrap())
                         .unwrap();
-                    node.has_parent = true;
+                    node.parent = true;
                     let index = *path.0.last().unwrap();
                     core::mem::replace(&mut parent.cells[index], node)
                 } else {
@@ -1434,7 +1434,7 @@ impl WindowRef {
                         .expect("the split cell is the root")
                 };
                 let node = path.get_mut(w.layout_root.as_deref_mut().unwrap()).unwrap();
-                only.has_parent = true;
+                only.parent = true;
                 node.cells.push(only);
                 let new = layout_create_cell(Some(node));
                 node.cells.insert(usize::from(!before), new);
@@ -1514,7 +1514,7 @@ impl WindowRef {
                     0,
                 );
                 let mut only = w.layout_root.take().expect("the window has a root");
-                only.has_parent = true;
+                only.parent = true;
                 node.cells.push(only);
                 w.layout_root = Some(node);
             }
@@ -1735,9 +1735,9 @@ impl WindowRef {
                         w.dimensions().size.width
                     }
                 } else if type_0 == LAYOUT_TOPBOTTOM {
-                    geometry.height
+                    geometry.sy
                 } else {
-                    geometry.width
+                    geometry.sx
                 };
             }
 

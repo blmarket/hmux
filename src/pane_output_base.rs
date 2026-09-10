@@ -9,29 +9,13 @@ pub trait PaneOutputBaseState {
     fn set_output_base(&mut self, position: usize);
 }
 
-/// The pane output-base storage used by hmux.
-#[derive(Default)]
-pub struct RustPaneOutputBaseState {
-    position: usize,
-}
-
-impl PaneOutputBaseState for RustPaneOutputBaseState {
-    fn output_base(&self) -> usize {
-        self.position
-    }
-
-    fn set_output_base(&mut self, position: usize) {
-        self.position = position;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn position_is_zero_then_replaceable() {
-        let mut state = RustPaneOutputBaseState::default();
+        let mut state = crate::types::window_pane::default();
         assert_eq!(state.output_base(), 0);
         state.set_output_base(42);
         assert_eq!(state.output_base(), 42);

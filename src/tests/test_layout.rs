@@ -203,10 +203,10 @@ impl Layout {
                     format!(
                         "%{} {}x{}+{}+{}",
                         pane.pane_id(),
-                        geometry.width,
-                        geometry.height,
-                        geometry.x,
-                        geometry.y
+                        geometry.sx,
+                        geometry.sy,
+                        geometry.xoff,
+                        geometry.yoff
                     )
                 })
                 .collect()
@@ -233,7 +233,7 @@ fn dump_cell(lc: Option<&layout_cell>) -> String {
     match lc.type_0 {
         LAYOUT_WINDOWPANE => format!(
             "%{}{floating} {here}",
-            lc.wp_ref
+            lc.wp
                 .as_ref()
                 .map(|pane| pane.id())
                 .unwrap_or(u_int::MAX)
@@ -286,7 +286,7 @@ fn a_new_layout_is_one_cell_filling_the_window() {
                 .layout_root
                 .as_deref()
                 .unwrap()
-                .wp_ref
+                .wp
                 .as_ref()
                 .map(|pane| pane.id()),
             Some((*l.pane(0)).pane_id())
@@ -301,12 +301,12 @@ fn a_fresh_cell_starts_at_the_largest_size_there_is() {
         let lc = layout_create_cell(None);
         assert_eq!((*lc).type_0, LAYOUT_WINDOWPANE);
         assert_eq!((*lc).flags, 0);
-        assert!(!(*lc).has_parent);
+        assert!(!(*lc).parent);
         assert_eq!((*lc).sx, UINT_MAX as u_int);
         assert_eq!((*lc).sy, UINT_MAX as u_int);
         assert_eq!((*lc).xoff, INT_MAX);
         assert_eq!((*lc).yoff, INT_MAX);
-        assert!((*lc).wp_ref.as_ref().map(|pane| pane.id()).is_none());
+        assert!((*lc).wp.as_ref().map(|pane| pane.id()).is_none());
         layout_free_cell(None);
     }
 }
@@ -408,7 +408,7 @@ fn splitting_resolves_siblings_from_the_owned_tree() {
             .as_deref_mut()
             .unwrap()
             .cells[1]
-            .has_parent = false;
+            .parent = false;
     }
     layout.split(1, LAYOUT_LEFTRIGHT, -1, SPAWN_BEFORE);
     assert_eq!(
@@ -502,7 +502,7 @@ fn closing_resolves_parent_and_neighbor_from_the_owned_tree() {
             .unwrap()
             .cells[1]
             .cells[1]
-            .has_parent = false;
+            .parent = false;
         layout.close(2);
     }
     assert_eq!(layout.dump(), "LR 80x24+0+0 [%1 40x24+0+0 | %2 39x24+41+0]");
@@ -626,7 +626,7 @@ fn spreading_resolves_ancestors_from_the_owned_tree() {
             .as_deref_mut()
             .unwrap()
             .cells[0]
-            .has_parent = false;
+            .parent = false;
     }
     layout.spread_out(0);
     assert_eq!(
@@ -686,7 +686,7 @@ fn the_border_search_finds_the_cell_a_click_is_next_to() {
         assert!(
             layout_search_by_border(&mut *root, 40, 5).is_some_and(|path| path
                 .get(&*root)
-                .is_some_and(|cell| cell.wp_ref.as_ref().map(|pane| pane.id())
+                .is_some_and(|cell| cell.wp.as_ref().map(|pane| pane.id())
                     == Some((*l.pane(0)).pane_id())))
         );
         assert!(layout_search_by_border(&mut *root, 0, 0).is_none());
@@ -704,7 +704,7 @@ fn the_border_search_works_top_to_bottom_and_through_nodes() {
         assert!(
             layout_search_by_border(&mut *root, 5, 12).is_some_and(|path| path
                 .get(&*root)
-                .is_some_and(|cell| cell.wp_ref.as_ref().map(|pane| pane.id())
+                .is_some_and(|cell| cell.wp.as_ref().map(|pane| pane.id())
                     == Some((*l.pane(0)).pane_id())))
         );
         assert!(layout_search_by_border(&mut *root, 5, 0).is_none());
@@ -718,7 +718,7 @@ fn the_border_search_works_top_to_bottom_and_through_nodes() {
         assert!(
             layout_search_by_border(&mut *root, 50, 12).is_some_and(|path| path
                 .get(&*root)
-                .is_some_and(|cell| cell.wp_ref.as_ref().map(|pane| pane.id())
+                .is_some_and(|cell| cell.wp.as_ref().map(|pane| pane.id())
                     == Some((*l.pane(1)).pane_id())))
         );
     }
@@ -780,12 +780,12 @@ fn a_scrollbar_takes_columns_off_the_pane() {
     let mut l = Layout::new(80, 24);
     unsafe {
         (*l.w()).set_scrollbar_settings(WindowScrollbarSettings {
-            mode: PANE_SCROLLBARS_ALWAYS,
-            position: PANE_SCROLLBARS_RIGHT,
+            sb: PANE_SCROLLBARS_ALWAYS,
+            sb_pos: PANE_SCROLLBARS_RIGHT,
         });
         set_scrollbar_dimensions(&mut *l.pane(0), 2, 1);
         assert_eq!(
-            window_pane_show_scrollbar(&*l.pane(0), (*l.w()).scrollbar_settings().mode),
+            window_pane_show_scrollbar(&*l.pane(0), (*l.w()).scrollbar_settings().sb),
             1
         );
 
@@ -793,7 +793,7 @@ fn a_scrollbar_takes_columns_off_the_pane() {
         assert_eq!(l.panes(), vec!["%1 77x24+0+0"]);
 
         let mut scrollbar = (*l.w()).scrollbar_settings();
-        scrollbar.position = PANE_SCROLLBARS_LEFT;
+        scrollbar.sb_pos = PANE_SCROLLBARS_LEFT;
         (*l.w()).set_scrollbar_settings(scrollbar);
         (l.reference()).fix_layout_panes(None);
         assert_eq!(l.panes(), vec!["%1 77x24+3+0"]);
@@ -806,8 +806,8 @@ fn a_scrollbar_wider_than_the_pane_leaves_one_column() {
     let mut l = Layout::new(4, 24);
     unsafe {
         (*l.w()).set_scrollbar_settings(WindowScrollbarSettings {
-            mode: PANE_SCROLLBARS_ALWAYS,
-            position: PANE_SCROLLBARS_RIGHT,
+            sb: PANE_SCROLLBARS_ALWAYS,
+            sb_pos: PANE_SCROLLBARS_RIGHT,
         });
         set_scrollbar_dimensions(&mut *l.pane(0), 8, -1);
 
@@ -815,7 +815,7 @@ fn a_scrollbar_wider_than_the_pane_leaves_one_column() {
         assert_eq!(l.panes(), vec!["%1 1x24+0+0"]);
 
         let mut scrollbar = (*l.w()).scrollbar_settings();
-        scrollbar.position = PANE_SCROLLBARS_LEFT;
+        scrollbar.sb_pos = PANE_SCROLLBARS_LEFT;
         (*l.w()).set_scrollbar_settings(scrollbar);
         (l.reference()).fix_layout_panes(None);
         assert_eq!(l.panes(), vec!["%1 1x24+3+0"]);
@@ -832,8 +832,8 @@ fn a_scrollbar_makes_a_side_by_side_split_need_more_room() {
     let mut l = Layout::new(5, 24);
     unsafe {
         (*l.w()).set_scrollbar_settings(WindowScrollbarSettings {
-            mode: PANE_SCROLLBARS_ALWAYS,
-            position: PANE_SCROLLBARS_RIGHT,
+            sb: PANE_SCROLLBARS_ALWAYS,
+            sb_pos: PANE_SCROLLBARS_RIGHT,
         });
         set_scrollbar_dimensions(&mut *l.pane(0), 3, 1);
     }
@@ -847,8 +847,8 @@ fn a_scrollbar_is_kept_out_of_the_room_a_pane_can_give_up() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
         (*l.w()).set_scrollbar_settings(WindowScrollbarSettings {
-            mode: PANE_SCROLLBARS_ALWAYS,
-            position: PANE_SCROLLBARS_RIGHT,
+            sb: PANE_SCROLLBARS_ALWAYS,
+            sb_pos: PANE_SCROLLBARS_RIGHT,
         });
         let mut active = window_active_pane(&*l.w()).unwrap();
         set_scrollbar_dimensions(active.as_pane_mut(), 3, 1);
@@ -858,7 +858,7 @@ fn a_scrollbar_is_kept_out_of_the_room_a_pane_can_give_up() {
             69
         );
         let mut scrollbar = (*l.w()).scrollbar_settings();
-        scrollbar.mode = PANE_SCROLLBARS_OFF;
+        scrollbar.sb = PANE_SCROLLBARS_OFF;
         (*l.w()).set_scrollbar_settings(scrollbar);
         assert_eq!(
             (l.reference()).layout_resize_check(&mut *root, LAYOUT_LEFTRIGHT),
@@ -1043,12 +1043,12 @@ fn a_cell_can_be_turned_into_a_node_and_back_into_a_leaf() {
         let mut lc = layout_create_cell(None);
         layout_make_leaf(&mut *lc, &mut *l.pane(0));
         assert_eq!(
-            (*lc).wp_ref.as_ref().map(|pane| pane.id()),
+            (*lc).wp.as_ref().map(|pane| pane.id()),
             Some((*l.pane(0)).pane_id())
         );
         layout_make_node(&mut *lc, LAYOUT_TOPBOTTOM);
         assert_eq!((*lc).type_0, LAYOUT_TOPBOTTOM);
-        assert!((*lc).wp_ref.as_ref().map(|pane| pane.id()).is_none());
+        assert!((*lc).wp.as_ref().map(|pane| pane.id()).is_none());
         layout_make_node(&mut *lc, LAYOUT_LEFTRIGHT);
         (l.reference()).init_layout(
             &crate::window::window_pane_find_by_id((*l.pane(0)).pane_id())
@@ -1326,13 +1326,13 @@ fn the_border_search_walks_past_a_gap_that_is_not_the_one_clicked() {
         assert!(
             layout_search_by_border(&mut *root, 60, 5).is_some_and(|path| path
                 .get(&*root)
-                .is_some_and(|cell| cell.wp_ref.as_ref().map(|pane| pane.id())
+                .is_some_and(|cell| cell.wp.as_ref().map(|pane| pane.id())
                     == Some((*l.pane(1)).pane_id())))
         );
         assert!(
             layout_search_by_border(&mut *root, 40, 5).is_some_and(|path| path
                 .get(&*root)
-                .is_some_and(|cell| cell.wp_ref.as_ref().map(|pane| pane.id())
+                .is_some_and(|cell| cell.wp.as_ref().map(|pane| pane.id())
                     == Some((*l.pane(0)).pane_id())))
         );
     }
@@ -1345,7 +1345,7 @@ fn the_border_search_walks_past_a_gap_that_is_not_the_one_clicked() {
         assert!(
             layout_search_by_border(&mut *root, 5, 18).is_some_and(|path| path
                 .get(&*root)
-                .is_some_and(|cell| cell.wp_ref.as_ref().map(|pane| pane.id())
+                .is_some_and(|cell| cell.wp.as_ref().map(|pane| pane.id())
                     == Some((*l.pane(1)).pane_id())))
         );
     }
@@ -1996,7 +1996,7 @@ fn resizing_a_zoomed_layout_leaves_panes_in_the_saved_tree_unchanged() {
         );
         (layout.reference()).resize_layout(100, 30);
         let visible = (*layout.pane(0)).geometry();
-        assert_eq!((visible.width, visible.height), (100, 30));
+        assert_eq!((visible.sx, visible.sy), (100, 30));
         assert_eq!((*layout.pane(1)).geometry(), hidden);
         assert_eq!((layout.reference()).unzoom(0), 0);
     }
@@ -2063,7 +2063,7 @@ fn unzoom_restores_geometry_from_the_owned_saved_tree() {
         let mut copy = layout_create_cell(parent);
         copy.type_0 = cell.type_0;
         copy.flags = cell.flags;
-        copy.wp_ref = cell.wp_ref.clone();
+        copy.wp = cell.wp.clone();
         (copy.sx, copy.sy, copy.xoff, copy.yoff) = (cell.sx, cell.sy, cell.xoff, cell.yoff);
         for child in &cell.cells {
             let child = rebuild(child, Some(&mut copy));
@@ -2092,7 +2092,7 @@ fn unzoom_restores_geometry_from_the_owned_saved_tree() {
                 layout_cell_for_pane(w.layout_root.as_deref(), &pane.downgrade()).unwrap();
             let geometry = pane.as_pane().geometry();
             assert_eq!(
-                (geometry.width, geometry.height, geometry.x, geometry.y),
+                (geometry.sx, geometry.sy, geometry.xoff, geometry.yoff),
                 (cell.sx, cell.sy, cell.xoff, cell.yoff)
             );
         }
@@ -2140,7 +2140,7 @@ fn a_new_slot_survives_removing_a_pane_from_the_same_window() {
                             assert!(
                                 slot.get(w.layout_root.as_deref().unwrap())
                                     .unwrap()
-                                    .wp_ref
+                                    .wp
                                     .as_ref()
                                     .map(|pane| pane.id())
                                     .is_none()

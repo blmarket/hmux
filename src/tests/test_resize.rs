@@ -161,8 +161,8 @@ fn resizing_a_window_moves_it_and_its_layout() {
     unsafe { (w.reference()).resize_with_layout(40, 10, -1, -1) };
     assert_eq!(w.size(), (40, 10, 40, 10));
     unsafe {
-        assert_eq!((*w.pane(0)).geometry().width, 40);
-        assert_eq!((*w.pane(0)).geometry().height, 10);
+        assert_eq!((*w.pane(0)).geometry().sx, 40);
+        assert_eq!((*w.pane(0)).geometry().sy, 10);
         assert_eq!((*w.ptr()).flags & WINDOW_RESIZE, 0);
     }
 }
@@ -209,7 +209,7 @@ fn a_zoomed_window_is_unzoomed_and_zoomed_again_around_the_resize() {
         (w.reference()).resize_with_layout(40, 10, -1, -1);
         assert_ne!((*w.ptr()).flags & WINDOW_ZOOMED, 0);
         assert_ne!(*(*w.pane(0)).flags() & PANE_ZOOMED, 0);
-        assert_eq!((*w.pane(0)).geometry().width, 40);
+        assert_eq!((*w.pane(0)).geometry().sx, 40);
     }
     assert_eq!(w.size().0, 40);
 }
@@ -731,7 +731,7 @@ fn resize_selection_skips_clients_without_a_current_window() {
             1,
             &window
         ));
-        session.as_session_mut().curw_idx = Some(1);
+        session.as_session_mut().curw = Some(1);
         assert!(!recalculate_size_skip_client(
             client.as_client(),
             0,
@@ -739,7 +739,7 @@ fn resize_selection_skips_clients_without_a_current_window() {
         ));
         assert!(recalculate_size_skip_client(client.as_client(), 1, &window));
         for index in [None, Some(99)] {
-            session.as_session_mut().curw_idx = index;
+            session.as_session_mut().curw = index;
             assert!(recalculate_size_skip_client(client.as_client(), 0, &window));
             assert!(recalculate_size_skip_client(client.as_client(), 1, &window));
         }

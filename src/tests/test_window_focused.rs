@@ -17,7 +17,7 @@ fn window_handle_snapshots_release_borrows_and_do_not_own_panes() {
     let pane = RustWindowPaneRef::from_pane(Box::new(window_pane::default()));
     let weak = pane.downgrade();
     owner.as_window_mut().panes.push(pane);
-    owner.as_window_mut().active_pane = Some(weak.clone());
+    owner.as_window_mut().active = Some(weak.clone());
 
     let name = owner.window_name();
     let options = owner.options();
@@ -104,23 +104,21 @@ fn shown_screen_borrows_handle_pending_modes_and_base_fallback() {
     *pane.shown_mut() = PaneScreen::Mode;
     assert!(core::ptr::eq(&*pane.try_screen_ref().unwrap(), pane.base()));
     pane.modes_mut().push(Box::new(window_mode_entry {
-        pane_weak: None,
-        source_pane: None,
+        wp: None,
+        swp: None,
         state: WindowModeState::None,
-        screen_ready: false,
+        screen: None,
         prefix: 1,
-        mode_tree_ref: None,
     }));
     assert!(pane.try_screen_ref().is_none());
     pane.modes_mut()[0].state =
         WindowModeState::Clock(Box::new(crate::modes::window_clock_mode_data {
-            wp_ref: None,
             screen: RustScreen::default(),
             tim: 0,
             timer: TimerHandle::ZERO,
         }));
     assert!(pane.try_screen_ref().is_none());
-    pane.modes_mut()[0].screen_ready = true;
+    pane.modes_mut()[0].screen = Some(ModeScreen::Clock);
     let WindowModeState::Clock(data) = &pane.modes()[0].state else {
         unreachable!()
     };
@@ -244,8 +242,8 @@ fn pane_order_active_last_used_zindex_and_direction_helpers_cover_boundaries() {
         let w = window.ptr();
         let a = p0.ptr();
         let b = p1.ptr();
-        (*a).set_position(0, (*a).geometry().y);
-        (*b).set_position(20, (*b).geometry().y);
+        (*a).set_position(0, (*a).geometry().yoff);
+        (*b).set_position(20, (*b).geometry().yoff);
         let payload = window.handle().as_window();
         let mut panes = payload.panes.iter();
         assert!(core::ptr::addr_eq(panes.next().unwrap().get().unwrap(), a));
@@ -401,7 +399,7 @@ fn resize_modes_visibility_flags_and_fill_character_cover_safe_state_paths() {
             1
         );
         window_pane_resize(&mut *wp, 30, 8);
-        assert_eq!(((*wp).geometry().width, (*wp).geometry().height), (30, 8));
+        assert_eq!(((*wp).geometry().sx, (*wp).geometry().sy), (30, 8));
         window_pane_reset_mode_all(&mut *wp);
         assert!(window_pane_current_mode(&*wp).is_none());
 
@@ -449,8 +447,8 @@ fn window_link_lookup_borrows_the_first_matching_allocation() {
             index,
             Box::new(winlink {
                 idx: index,
-                session_ref: None,
-                window_ref: owner,
+                session: None,
+                window: owner,
                 flags: 0,
             }),
         );
@@ -798,7 +796,7 @@ fn losing_the_active_pane_uses_history_then_owned_neighbors() {
         let owner = fixture.reference();
         unsafe {
             let mut w = owner.as_window_mut();
-            w.active_pane = w
+            w.active = w
                 .panes
                 .iter()
                 .find(|pane| pane.pane_id() == lost)
@@ -824,8 +822,8 @@ fn losing_the_active_pane_uses_history_then_owned_neighbors() {
             owner.lost_pane(&lost_pane);
             let w = owner.as_window();
             assert_eq!(w.active_pane_id(), Some(expected));
-            assert!(!w.last_panes.iter().any(|pane| pane.id() == lost));
-            assert!(!w.last_panes.iter().any(|pane| pane.id() == expected));
+            assert!(!w.last_panes.iter().any(|pane| pane.pane_id() == Some(lost)));
+            assert!(!w.last_panes.iter().any(|pane| pane.pane_id() == Some(expected)));
             let selected = w
                 .panes
                 .iter()
@@ -1034,22 +1032,22 @@ fn directional_selection_retains_the_most_recent_candidate_and_preserves_first_t
     unsafe {
         let mut panes = window.handle().panes();
         panes[0].as_pane_mut().set_geometry(PaneGeometry {
-            x: 0,
-            y: 0,
-            width: 19,
-            height: 20,
+            xoff: 0,
+            yoff: 0,
+            sx: 19,
+            sy: 20,
         });
         panes[1].as_pane_mut().set_geometry(PaneGeometry {
-            x: 20,
-            y: 0,
-            width: 20,
-            height: 9,
+            xoff: 20,
+            yoff: 0,
+            sx: 20,
+            sy: 9,
         });
         panes[2].as_pane_mut().set_geometry(PaneGeometry {
-            x: 20,
-            y: 10,
-            width: 20,
-            height: 10,
+            xoff: 20,
+            yoff: 10,
+            sx: 20,
+            sy: 10,
         });
         panes[1].as_pane_mut().mark_active_at(7);
         panes[2].as_pane_mut().mark_active_at(9);
@@ -1073,7 +1071,7 @@ fn detached_pane() -> Box<window_pane> {
 }
 
 #[test]
-fn window_pane_lookup_tracks_membership_without_borrowing_the_window_payload() {
+fn window_pane_lookup_checks_the_list_while_transfers_retain_the_backlink() {
     let _guard = globals();
     let source = WindowRef::new(window::default());
     let destination = WindowRef::new(window::default());
@@ -1082,17 +1080,17 @@ fn window_pane_lookup_tracks_membership_without_borrowing_the_window_payload() {
     unsafe {
         window_panes_insert_tail(&mut source.as_window_mut(), pane);
         let lookup = source.clone();
-        let mut payload = source.as_window_mut();
         assert!(lookup.pane_by_id(id).is_some());
         assert!(lookup.pane_by_id(id + 1).is_none());
         assert!(destination.pane_by_id(id).is_none());
-        payload.active_pane = payload
+        let mut payload = source.as_window_mut();
+        payload.active = payload
             .panes
             .iter()
             .find(|pane| pane.pane_id() == id)
             .map(|pane| pane.downgrade());
-        let retained = source.pane_by_id(id).unwrap();
         drop(payload);
+        let retained = source.pane_by_id(id).unwrap();
         let moved = window_panes_take(
             &mut source.as_window_mut(),
             &crate::window::window_pane_find_by_id(id).expect("the pane exists"),
@@ -1100,7 +1098,7 @@ fn window_pane_lookup_tracks_membership_without_borrowing_the_window_payload() {
         .unwrap();
         assert!(source.pane_by_id(id).is_none());
         assert!(destination.pane_by_id(id).is_none());
-        assert!(moved.window().is_none());
+        assert!(moved.window().unwrap().ptr_eq(&source));
         assert!(moved.as_pane().window_context().unwrap().ptr_eq(&source));
         assert!(window_pane_find_by_id(id).unwrap().ptr_eq(&retained));
         window_panes_insert_tail(&mut destination.as_window_mut(), moved);
@@ -1122,7 +1120,7 @@ fn window_pane_lookup_tracks_membership_without_borrowing_the_window_payload() {
 }
 
 #[test]
-fn registry_lookup_requires_registration_and_recorded_membership() {
+fn registry_lookup_requires_registration_and_list_membership() {
     let _guard = globals();
     let owner = WindowRef::new(window::default());
     let unregistered = RustWindowPaneRef::from_pane(detached_pane());
@@ -1140,7 +1138,7 @@ fn registry_lookup_requires_registration_and_recorded_membership() {
         );
         let mut target = cmd_find_state::default();
         target.set_window_ref(Some(&owner));
-        target.wp_ref = Some(owner.as_window().panes[0].downgrade());
+        target.wp = Some(owner.as_window().panes[0].downgrade());
         assert!(core::ptr::addr_eq(
             target.pane_list_ref().unwrap().get().unwrap(),
             pointer
@@ -1152,7 +1150,7 @@ fn registry_lookup_requires_registration_and_recorded_membership() {
         let mut pane = RustWindowPaneRef::new(detached_pane());
         window_pane_set_window_ref(pane.as_pane_mut(), Some(&owner));
         owner.as_window_mut().panes.push(pane);
-        assert!(owner.pane_by_id(id).is_none());
+        assert!(owner.pane_by_id(id).is_some());
         assert!(window_pane_find_by_id(id).is_some());
         let pane = window_panes_take(
             &mut owner.as_window_mut(),
@@ -1233,10 +1231,10 @@ fn focus_requires_a_client_viewing_the_panes_current_window() {
         let pane = window.as_window().panes[0].downgrade();
         (window).update_focus();
         assert_eq!(*pane.get().unwrap().flags() & PANE_FOCUSED, 0);
-        (*target.session()).curw_idx = Some(1);
+        (*target.session()).curw = Some(1);
         (window).update_focus();
         assert_ne!(*pane.get().unwrap().flags() & PANE_FOCUSED, 0);
-        (*target.session()).curw_idx = None;
+        (*target.session()).curw = None;
         (window).update_focus();
         assert_eq!(*pane.get().unwrap().flags() & PANE_FOCUSED, 0);
         client.set_attached_session(None);
@@ -1266,7 +1264,7 @@ fn client_colours_use_the_first_known_value_from_any_linked_window() {
         second.set_attached_session(Some(target.session_handle()));
         second.tty.fg = 2;
         second.tty.bg = 7;
-        (*target.session()).curw_idx = Some(1);
+        (*target.session()).curw = Some(1);
         let pane = &*target.pane(0);
         assert_eq!(window_pane_get_fg(pane), 1);
         assert_eq!(window_get_bg_client(pane), 7);
@@ -1297,8 +1295,8 @@ fn pane_theme_uses_client_consensus_only_without_a_known_background() {
         let pane = &mut *target.pane(0);
         *pane.flags_mut() &= !PANE_STYLECHANGED;
         pane.set_styles(PaneStyleCells {
-            normal: grid_default_cell,
-            active: grid_default_cell,
+            cached_gc: grid_default_cell,
+            cached_active_gc: grid_default_cell,
         });
         assert_eq!(window_pane_get_theme(Some(pane)), THEME_LIGHT);
         second.theme = THEME_DARK;
@@ -1310,13 +1308,13 @@ fn pane_theme_uses_client_consensus_only_without_a_known_background() {
             ..grid_default_cell
         };
         pane.set_styles(PaneStyleCells {
-            normal: light,
-            active: light,
+            cached_gc: light,
+            cached_active_gc: light,
         });
         assert_eq!(window_pane_get_theme(Some(pane)), THEME_LIGHT);
         pane.set_styles(PaneStyleCells {
-            normal: grid_default_cell,
-            active: grid_default_cell,
+            cached_gc: grid_default_cell,
+            cached_active_gc: grid_default_cell,
         });
         second.set_attached_session(None);
         assert_eq!(window_pane_get_theme(Some(pane)), THEME_UNKNOWN);
@@ -1361,8 +1359,8 @@ fn theme_notifications_follow_the_shown_screen_and_only_emit_changed_themes() {
             ..grid_default_cell
         };
         pane.set_styles(PaneStyleCells {
-            normal: light,
-            active: light,
+            cached_gc: light,
+            cached_active_gc: light,
         });
         window_pane_send_theme_update(Some(pane));
         assert!(output.written().is_empty());
@@ -1386,16 +1384,16 @@ fn theme_notifications_follow_the_shown_screen_and_only_emit_changed_themes() {
             ..grid_default_cell
         };
         pane.set_styles(PaneStyleCells {
-            normal: dark,
-            active: dark,
+            cached_gc: dark,
+            cached_active_gc: dark,
         });
         window_pane_send_theme_update(Some(pane));
         assert_eq!(output.written(), b"\x1b[?997;1n");
         assert_eq!(pane.theme(), THEME_DARK);
         *pane.flags_mut() |= PANE_THEMECHANGED | PANE_EXITED;
         pane.set_styles(PaneStyleCells {
-            normal: light,
-            active: light,
+            cached_gc: light,
+            cached_active_gc: light,
         });
         window_pane_send_theme_update(Some(pane));
         assert!(output.written().is_empty());
@@ -1521,10 +1519,7 @@ fn shown_mode_screen_reads_hold_the_shared_screen_borrow() {
             let display = match &entry.state {
                 WindowModeState::Copy(data) | WindowModeState::View(data) => data.screen.clone(),
                 _ => entry
-                    .mode_tree_ref
-                    .as_ref()
-                    .unwrap()
-                    .screen_handle()
+                    .screen.as_ref().unwrap().shared().unwrap()
                     .clone(),
             };
             let shown = pane.get().unwrap().screen_ref();
@@ -1554,12 +1549,12 @@ fn floating_checks_and_counts_read_the_supplied_layout_without_pane_back_referen
     w.layout_root = Some(Box::new(layout_cell {
         cells: vec![
             Box::new(layout_cell {
-                wp_ref: Some(w.panes[0].downgrade()),
+                wp: Some(w.panes[0].downgrade()),
                 flags: LAYOUT_CELL_FLOATING,
                 ..Default::default()
             }),
             Box::new(layout_cell {
-                wp_ref: Some(w.panes[1].downgrade()),
+                wp: Some(w.panes[1].downgrade()),
                 ..Default::default()
             }),
         ],
@@ -1601,14 +1596,14 @@ fn pane_stacking_and_flags_follow_physical_owners_and_skip_retired_targets() {
         window_panes_insert_tail(&mut window.as_window_mut(), listed);
         let listed = observed;
         window.as_window_mut().layout_root = Some(Box::new(layout_cell {
-            wp_ref: Some(pane.clone()),
+            wp: Some(pane.clone()),
             flags: LAYOUT_CELL_FLOATING,
             ..Default::default()
         }));
         window.as_window_mut().z_index = vec![pane.clone(), listed.clone()];
         {
             let mut payload = window.as_window_mut();
-            payload.active_pane = payload
+            payload.active = payload
                 .panes
                 .iter()
                 .find(|pane| pane.pane_id() == listed.id())
@@ -1625,8 +1620,8 @@ fn pane_stacking_and_flags_follow_physical_owners_and_skip_retired_targets() {
         assert_eq!(window_pane_zindex(&pane), (0, 0));
         let mut impostor = Box::new(window_pane::default());
         impostor.set_pane_id(listed.id());
+        impostor.set_window_context(Some(&window));
         let impostor = RustWindowPaneRef::from_pane(impostor);
-        impostor.register_window(Some(window.downgrade()));
         assert_eq!(window_pane_zindex(&impostor.downgrade()), (-1, 1));
         assert_eq!(
             window_pane_printable_flags(&impostor.downgrade()).as_deref(),
@@ -1767,7 +1762,7 @@ fn visibility_uses_the_supplied_zoom_state_and_physical_pane_identity() {
         assert_eq!(window_pane_visible(&w, first.as_pane()), 1);
         assert_eq!(window_pane_visible(&w, second.as_pane()), 1);
         w.flags |= WINDOW_ZOOMED;
-        w.active_pane = w
+        w.active = w
             .panes
             .iter()
             .find(|pane| pane.pane_id() == first.id())
@@ -1777,14 +1772,14 @@ fn visibility_uses_the_supplied_zoom_state_and_physical_pane_identity() {
         let mut duplicate = window_pane::default();
         duplicate.set_pane_id(first.id());
         assert_eq!(window_pane_visible(&w, &duplicate), 0);
-        w.active_pane = w
+        w.active = w
             .panes
             .iter()
             .find(|pane| pane.pane_id() == second.id())
             .map(|pane| pane.downgrade());
         assert_eq!(window_pane_visible(&w, first.as_pane()), 0);
         assert_eq!(window_pane_visible(&w, second.as_pane()), 1);
-        w.active_pane = w
+        w.active = w
             .panes
             .iter()
             .find(|pane| pane.pane_id() == 99)

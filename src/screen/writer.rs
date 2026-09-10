@@ -146,8 +146,8 @@ impl<'a> RustScreenWriteCtx<'a> {
         assert!(self.active, "screen writer is inactive");
         self.screen_access = None;
         if self.shared_target.is_some()
-            && self.state.init_ctx.is_none()
-            && let Some(pane) = self.state.pane_ref.as_mut()
+            && self.state.init_ctx_cb.is_none()
+            && let Some(pane) = self.state.wp.as_mut()
             && let Some(pane) = unsafe { pane.get_mut() }
             && *pane.flags() & crate::window::PANE_STYLECHANGED != 0
         {
@@ -236,7 +236,7 @@ impl<'a> RustScreenWriteCtx<'a> {
         init_ctx: super::write::screen_write_init_ctx,
     ) -> Self {
         let mut writer = Self::on_shared_screen(target);
-        writer.state.init_ctx = init_ctx;
+        writer.state.init_ctx_cb = init_ctx;
         writer
     }
 
@@ -246,7 +246,7 @@ impl<'a> RustScreenWriteCtx<'a> {
         pane: Option<RustWindowPaneWeak>,
     ) -> Self {
         let mut writer = Self::on_shared_screen(target);
-        writer.state.pane_ref = pane;
+        writer.state.wp = pane;
         writer
     }
 
@@ -257,24 +257,11 @@ impl<'a> RustScreenWriteCtx<'a> {
         }
         let pane = crate::window::window_pane_find_by_id(crate::PaneIdentity::pane_id(wp));
         let mode = wp.modes_mut().first_mut().expect("pane has a mode");
-        assert!(mode.screen_ready, "shown mode has a screen");
-        let mut writer = match &mut mode.state {
-            WindowModeState::Clock(data) => Self::on_screen(&mut data.screen),
-            WindowModeState::Copy(data) | WindowModeState::View(data) => {
-                Self::on_shared_screen(&data.screen)
-            }
-            WindowModeState::Buffer(_)
-            | WindowModeState::Client(_)
-            | WindowModeState::Tree(_)
-            | WindowModeState::Customize(_) => Self::on_shared_screen({
-                mode.mode_tree_ref
-                    .as_ref()
-                    .expect("mode has a tree")
-                    .screen_handle()
-            }),
-            WindowModeState::None => panic!("shown mode has no state"),
+        let mut writer = match mode.screen.as_ref().expect("shown mode has a screen") {
+            ModeScreen::Clock => Self::on_screen(&mut mode.state.clock().expect("clock mode has state").screen),
+            ModeScreen::Shared(screen) => Self::on_shared_screen(screen),
         };
-        writer.state.pane_ref = pane;
+        writer.state.wp = pane;
         writer
     }
 
@@ -699,7 +686,7 @@ mod tests {
         assert!(weak.upgrade().is_some());
         writer.stop();
         assert!(writer.target.is_none());
-        assert!(writer.state.pane_ref.is_none());
+        assert!(writer.state.wp.is_none());
         assert!(weak.upgrade().is_none());
         writer.stop();
         drop(writer);
@@ -841,10 +828,7 @@ mod tests {
                     }
                     _ => Some(
                         entry
-                            .mode_tree_ref
-                            .as_ref()
-                            .unwrap()
-                            .screen_handle()
+                            .screen.as_ref().unwrap().shared().unwrap()
                             .clone(),
                     ),
                 };

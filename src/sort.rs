@@ -71,7 +71,7 @@ pub trait SortCriteria: Sized {
 pub struct RustSortCriteria {
     order: sort_order,
     reversed: bool,
-    cycle: Option<Vec<sort_order>>,
+    order_seq: Option<Vec<sort_order>>,
 }
 
 impl Default for RustSortCriteria {
@@ -325,9 +325,9 @@ fn sort_pane_cmp(
             SORT_CREATION => a.pane_id().wrapping_sub(b.pane_id()) as c_int,
             SORT_SIZE => a
                 .geometry()
-                .width
-                .wrapping_mul(a.geometry().height)
-                .wrapping_sub(b.geometry().width.wrapping_mul(b.geometry().height))
+                .sx
+                .wrapping_mul(a.geometry().sy)
+                .wrapping_sub(b.geometry().sx.wrapping_mul(b.geometry().sy))
                 as c_int,
             SORT_INDEX => {
                 let (_, ai) = a_owner
@@ -368,8 +368,8 @@ fn sort_winlink_cmp(a0: &winlink, b0: &winlink, crit: &sort_criteria_t) -> c_int
         let (order, reversed) = criteria(crit);
         let mut result = match order {
             SORT_INDEX => wla.idx.wrapping_sub(wlb.idx),
-            SORT_CREATION => by_creation(&wa.timestamps().creation, &wb.timestamps().creation),
-            SORT_ACTIVITY => -by_creation(&wa.timestamps().activity, &wb.timestamps().activity),
+            SORT_CREATION => by_creation(&wa.timestamps().creation_time, &wb.timestamps().creation_time),
+            SORT_ACTIVITY => -by_creation(&wa.timestamps().activity_time, &wb.timestamps().activity_time),
             SORT_NAME => name_cmp(wa.window_name(), wb.window_name()),
             SORT_SIZE => wa
                 .dimensions()
@@ -427,7 +427,7 @@ impl SortCriteria for RustSortCriteria {
         Self {
             order,
             reversed,
-            cycle: None,
+            order_seq: None,
         }
     }
 
@@ -468,15 +468,15 @@ impl SortCriteria for RustSortCriteria {
     }
 
     fn set_cycle(&mut self, cycle: &[sort_order]) {
-        self.cycle = Some(cycle.to_vec());
+        self.order_seq = Some(cycle.to_vec());
     }
 
     fn has_cycle(&self) -> bool {
-        self.cycle.is_some()
+        self.order_seq.is_some()
     }
 
     fn advance(&mut self) {
-        let Some(cycle) = self.cycle.as_deref() else {
+        let Some(cycle) = self.order_seq.as_deref() else {
             return;
         };
         self.order = next_in(cycle, self.order);

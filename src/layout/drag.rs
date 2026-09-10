@@ -32,14 +32,14 @@ unsafe fn cmd_resize_pane_mouse_update_floating(c: &mut ClientRef, m: &mouse_eve
         };
         let geometry = pane.geometry();
         let style = pane.scrollbar_style();
-        let sx: core::ffi::c_int = geometry.width as core::ffi::c_int;
-        let sy: core::ffi::c_int = geometry.height as core::ffi::c_int;
-        left = geometry.x - 1;
-        right = geometry.x + sx;
-        if window_pane_show_scrollbar(pane, owner.scrollbar_settings().mode) != 0 {
-            if owner.scrollbar_settings().position == PANE_SCROLLBARS_LEFT {
+        let sx: core::ffi::c_int = geometry.sx as core::ffi::c_int;
+        let sy: core::ffi::c_int = geometry.sy as core::ffi::c_int;
+        left = geometry.xoff - 1;
+        right = geometry.xoff + sx;
+        if window_pane_show_scrollbar(pane, owner.scrollbar_settings().sb) != 0 {
+            if owner.scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT {
                 left -= style.width + style.padding;
-            } else if owner.scrollbar_settings().position == PANE_SCROLLBARS_RIGHT {
+            } else if owner.scrollbar_settings().sb_pos == PANE_SCROLLBARS_RIGHT {
                 right += style.width + style.padding;
             }
         }
@@ -49,7 +49,7 @@ unsafe fn cmd_resize_pane_mouse_update_floating(c: &mut ClientRef, m: &mouse_eve
         let cell = owner
             .layout_cell_geometry(&path)
             .expect("the dragged cell path is unchanged");
-        let (cell_sx, cell_sy, cell_xoff, cell_yoff) = (cell.width, cell.height, cell.x, cell.y);
+        let (cell_sx, cell_sy, cell_xoff, cell_yoff) = (cell.sx, cell.sy, cell.xoff, cell.yoff);
         y = m.y.wrapping_add(m.oy) as core::ffi::c_int;
         let x: core::ffi::c_int = m.x.wrapping_add(m.ox) as core::ffi::c_int;
         if m.statusat == 0 as core::ffi::c_int && y >= m.statuslines as core::ffi::c_int {
@@ -65,7 +65,7 @@ unsafe fn cmd_resize_pane_mouse_update_floating(c: &mut ClientRef, m: &mouse_eve
             ly = m.statusat - 1 as core::ffi::c_int;
         }
         if (lx == left || lx == left + 1 as core::ffi::c_int)
-            && ly == geometry.y - 1 as core::ffi::c_int
+            && ly == geometry.yoff - 1 as core::ffi::c_int
         {
             new_sx = cell_sx.wrapping_add((lx - x) as u_int) as core::ffi::c_int;
             if new_sx < PANE_MINIMUM {
@@ -80,15 +80,15 @@ unsafe fn cmd_resize_pane_mouse_update_floating(c: &mut ClientRef, m: &mouse_eve
             owner.set_layout_cell_geometry(
                 &path,
                 crate::pane_geometry::PaneGeometry {
-                    width: new_sx as u_int,
-                    height: new_sy as u_int,
-                    x: new_xoff,
-                    y: new_yoff,
+                    sx: new_sx as u_int,
+                    sy: new_sy as u_int,
+                    xoff: new_xoff,
+                    yoff: new_yoff,
                 },
             );
             resizes += 1;
         } else if (lx == right + 1 as core::ffi::c_int || lx == right)
-            && ly == geometry.y - 1 as core::ffi::c_int
+            && ly == geometry.yoff - 1 as core::ffi::c_int
         {
             new_sx = x - cell_xoff;
             if new_sx < PANE_MINIMUM {
@@ -102,14 +102,14 @@ unsafe fn cmd_resize_pane_mouse_update_floating(c: &mut ClientRef, m: &mouse_eve
             owner.set_layout_cell_geometry(
                 &path,
                 crate::pane_geometry::PaneGeometry {
-                    width: new_sx as u_int,
-                    height: new_sy as u_int,
-                    x: cell_xoff,
-                    y: new_yoff,
+                    sx: new_sx as u_int,
+                    sy: new_sy as u_int,
+                    xoff: cell_xoff,
+                    yoff: new_yoff,
                 },
             );
             resizes += 1;
-        } else if (lx == left || lx == left + 1 as core::ffi::c_int) && ly == geometry.y + sy {
+        } else if (lx == left || lx == left + 1 as core::ffi::c_int) && ly == geometry.yoff + sy {
             new_sx = cell_sx.wrapping_add((lx - x) as u_int) as core::ffi::c_int;
             if new_sx < PANE_MINIMUM {
                 new_sx = PANE_MINIMUM;
@@ -122,14 +122,14 @@ unsafe fn cmd_resize_pane_mouse_update_floating(c: &mut ClientRef, m: &mouse_eve
             owner.set_layout_cell_geometry(
                 &path,
                 crate::pane_geometry::PaneGeometry {
-                    width: new_sx as u_int,
-                    height: new_sy as u_int,
-                    x: new_xoff,
-                    y: cell_yoff,
+                    sx: new_sx as u_int,
+                    sy: new_sy as u_int,
+                    xoff: new_xoff,
+                    yoff: cell_yoff,
                 },
             );
             resizes += 1;
-        } else if (lx == right + 1 as core::ffi::c_int || lx == right) && ly == geometry.y + sy {
+        } else if (lx == right + 1 as core::ffi::c_int || lx == right) && ly == geometry.yoff + sy {
             new_sx = x - cell_xoff;
             if new_sx < PANE_MINIMUM {
                 new_sx = PANE_MINIMUM;
@@ -141,10 +141,10 @@ unsafe fn cmd_resize_pane_mouse_update_floating(c: &mut ClientRef, m: &mouse_eve
             owner.set_layout_cell_geometry(
                 &path,
                 crate::pane_geometry::PaneGeometry {
-                    width: new_sx as u_int,
-                    height: new_sy as u_int,
-                    x: cell_xoff,
-                    y: cell_yoff,
+                    sx: new_sx as u_int,
+                    sy: new_sy as u_int,
+                    xoff: cell_xoff,
+                    yoff: cell_yoff,
                 },
             );
             resizes += 1;
@@ -156,10 +156,10 @@ unsafe fn cmd_resize_pane_mouse_update_floating(c: &mut ClientRef, m: &mouse_eve
             owner.set_layout_cell_geometry(
                 &path,
                 crate::pane_geometry::PaneGeometry {
-                    width: new_sx as u_int,
-                    height: cell_sy,
-                    x: cell_xoff,
-                    y: cell_yoff,
+                    sx: new_sx as u_int,
+                    sy: cell_sy,
+                    xoff: cell_xoff,
+                    yoff: cell_yoff,
                 },
             );
             resizes += 1;
@@ -172,14 +172,14 @@ unsafe fn cmd_resize_pane_mouse_update_floating(c: &mut ClientRef, m: &mouse_eve
             owner.set_layout_cell_geometry(
                 &path,
                 crate::pane_geometry::PaneGeometry {
-                    width: new_sx as u_int,
-                    height: cell_sy,
-                    x: new_xoff,
-                    y: cell_yoff,
+                    sx: new_sx as u_int,
+                    sy: cell_sy,
+                    xoff: new_xoff,
+                    yoff: cell_yoff,
                 },
             );
             resizes += 1;
-        } else if ly == geometry.y + sy {
+        } else if ly == geometry.yoff + sy {
             new_sy = y - cell_yoff;
             if new_sy < PANE_MINIMUM {
                 return;
@@ -187,23 +187,23 @@ unsafe fn cmd_resize_pane_mouse_update_floating(c: &mut ClientRef, m: &mouse_eve
             owner.set_layout_cell_geometry(
                 &path,
                 crate::pane_geometry::PaneGeometry {
-                    width: cell_sx,
-                    height: new_sy as u_int,
-                    x: cell_xoff,
-                    y: cell_yoff,
+                    sx: cell_sx,
+                    sy: new_sy as u_int,
+                    xoff: cell_xoff,
+                    yoff: cell_yoff,
                 },
             );
             resizes += 1;
-        } else if ly == geometry.y - 1 as core::ffi::c_int {
+        } else if ly == geometry.yoff - 1 as core::ffi::c_int {
             new_xoff = cell_xoff + (x - lx);
             new_yoff = y + 1 as core::ffi::c_int;
             owner.set_layout_cell_geometry(
                 &path,
                 crate::pane_geometry::PaneGeometry {
-                    width: cell_sx,
-                    height: cell_sy,
-                    x: new_xoff,
-                    y: new_yoff,
+                    sx: cell_sx,
+                    sy: cell_sy,
+                    xoff: new_xoff,
+                    yoff: new_yoff,
                 },
             );
             resizes += 1;

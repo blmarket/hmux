@@ -82,7 +82,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         .expect("a break destination has a session");
     let mut source_index = item
         .source
-        .wl_idx
+        .wl
         .expect("a break source has a window link");
     let source_pane = item.source.pane_ref().expect("a break source has a pane");
     let mut window = item.source.window().expect("a break source has a window");
@@ -98,7 +98,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if args.argument_flag_count(b'a') != 0 || before != 0 {
         let around = item
             .target
-            .wl_idx
+            .wl
             .filter(|index| destination.link(*index).is_some())
             .or_else(|| unsafe { destination.current_index() });
         let Some(shift) = (unsafe { destination.shuffle_windows(around, before) }) else {

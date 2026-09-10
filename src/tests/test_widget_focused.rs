@@ -905,8 +905,8 @@ fn menu_callbacks_revalidate_owners_and_can_close_the_selected_mode() {
         }));
         let menu = |line| {
             Box::new(mode_tree_menu {
-                owner: tree.downgrade(),
-                client: client.downgrade(),
+                data: tree.downgrade(),
+                c: client.downgrade(),
                 line,
             })
         };

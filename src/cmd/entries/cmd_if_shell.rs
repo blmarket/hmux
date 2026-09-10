@@ -24,7 +24,7 @@ use ::std::ffi::CString;
 pub struct cmd_if_shell_data {
     pub cmd_if: Option<Box<args_command_state>>,
     pub cmd_else: Option<Box<args_command_state>>,
-    pub(crate) client_ref: Option<ClientRef>,
+    pub(crate) client: Option<ClientRef>,
     pub(crate) item: Option<CmdqItemWeak>,
 }
 
@@ -134,10 +134,10 @@ unsafe fn cmd_if_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         ));
     }
     if wait != 0 {
-        cdata.client_ref = item.client();
+        cdata.client = item.client();
         cdata.item = cmdq_item_weak_of(item);
     } else {
-        cdata.client_ref = target_client;
+        cdata.client = target_client;
     }
     let mut cdata = cdata;
     let session = target_session.as_ref();
@@ -167,7 +167,7 @@ unsafe fn cmd_if_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 pub unsafe fn cmd_if_shell_callback(job: JobEvent, cdata: &mut cmd_if_shell_data) {
     unsafe {
-        let c = cdata.client_ref.as_mut();
+        let c = cdata.client.as_mut();
         let item = cdata.item.as_ref().and_then(CmdqItemWeak::upgrade);
 
         let cmdlist: Option<CmdListRef>;

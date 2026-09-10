@@ -579,7 +579,7 @@ fn character_store_exhaustion_keeps_existing_identities_and_both_indexes() {
     assert_eq!(store.intern(rejected), None);
     assert_eq!(store.intern(last), Some((UTF8_INDEX_END - 1, false)));
     assert_eq!(store.by_data.len(), 1);
-    assert_eq!(store.by_index.get(&(UTF8_INDEX_END - 1)), Some(&last));
+    assert_eq!(store.by_index.get(&(UTF8_INDEX_END - 1)).map(std::rc::Rc::as_ref), Some(&last));
 }
 
 #[test]
@@ -606,7 +606,7 @@ fn character_store_reuses_ids_and_decodes_every_interned_character() {
         assert_eq!(store.by_data.len(), 32);
         assert_eq!(store.by_index.len(), 32);
         for (data, index) in &store.by_data {
-            assert_eq!(store.by_index.get(index), Some(data));
+            assert!(std::rc::Rc::ptr_eq(store.by_index.get(index).unwrap(), data));
         }
     });
 }

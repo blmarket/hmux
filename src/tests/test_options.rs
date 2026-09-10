@@ -37,7 +37,7 @@ const fn made_up(
     options_table_entry_t {
         name,
         alternative_name: None,
-        type_0,
+        type_0: type_0,
         scope: 0,
         flags,
         minimum: 0,
@@ -1667,7 +1667,7 @@ fn a_change_is_pushed_out_to_the_windows_panes_and_clients_it_reaches() {
         (*client).tty.term = Some(zeroed_term());
         (*client).tty.flags = TTY_OPENED;
         let table_ref = crate::key_bindings::key_bindings_get_table_ref(c"root", 1).unwrap();
-        (*client).keytable_ref = Some(table_ref);
+        (*client).keytable = Some(table_ref);
         for name in [
             c"automatic-rename",
             c"cursor-colour",
@@ -1799,7 +1799,7 @@ fn pane_option_scopes_retain_physical_pane_options_and_reject_removed_targets() 
         let pane = crate::window::window_panes_take(
             &mut window.as_window_mut(),
             &crate::window::window_pane_find_by_id(
-                state.wp_ref.as_ref().map(|pane| pane.id()).unwrap(),
+                state.wp.as_ref().map(|pane| pane.id()).unwrap(),
             )
             .expect("the pane exists"),
         )

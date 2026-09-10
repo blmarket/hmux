@@ -694,7 +694,7 @@ fn two_panes_answers_only_for_exactly_two_sharing_a_parent() {
         parent.type_0 = LAYOUT_LEFTRIGHT;
         for pane in w.panes.iter().take(2) {
             let mut cell = Box::new(layout_cell::default());
-            cell.wp_ref = Some(pane.downgrade());
+            cell.wp = Some(pane.downgrade());
             parent.cells.push(cell);
         }
         w.layout_root = Some(parent);
@@ -714,7 +714,7 @@ fn two_panes_answers_only_for_exactly_two_sharing_a_parent() {
         w.layout_root.as_mut().unwrap().cells[1].flags = 0;
 
         let mut third = Box::new(layout_cell::default());
-        third.wp_ref = Some(w.panes[2].downgrade());
+        third.wp = Some(w.panes[2].downgrade());
         w.layout_root.as_mut().unwrap().cells.push(third);
         assert_eq!(screen_redraw_two_panes(pair.window.handle()), None);
 

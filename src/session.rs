@@ -181,7 +181,7 @@ pub struct session {
     /// The index of the link the session is showing, or nothing while it
     /// shows none. A link is named by its index in `windows` and nothing
     /// else, so the session never holds one it has given up.
-    pub curw_idx: Option<c_int>,
+    pub curw: Option<c_int>,
     pub lastw: winlink_stack,
     pub windows: winlinks,
     pub statusat: c_int,
@@ -325,7 +325,7 @@ impl session {
 /// The link the session shows, for a caller that only means to read it.
 impl session {
     pub(crate) fn curw(&self) -> Option<&winlink> {
-        self.curw_idx
+        self.curw
             .and_then(|idx| self.windows.get(&idx))
             .map(|wl| &**wl)
     }
@@ -449,7 +449,7 @@ impl SessionRef {
     unsafe fn walk(&self, alert: c_int, way: Walk) -> c_int {
         unsafe {
             let s = self.as_session();
-            let Some(current) = s.curw_idx.filter(|idx| s.windows.contains_key(idx)) else {
+            let Some(current) = s.curw.filter(|idx| s.windows.contains_key(idx)) else {
                 return -1;
             };
             let mut idx = way.step(&s.windows, current);
@@ -576,7 +576,7 @@ impl SessionRef {
     /// The current-link field must not be borrowed during this call.
     pub unsafe fn set_curw(&self, wl: Option<&winlink>) {
         let index = wl.map(|link| link.idx);
-        unsafe { (*self.as_ptr()).curw_idx = index };
+        unsafe { (*self.as_ptr()).curw = index };
     }
 
     /// Applies the session's history limit to every pane in its windows.
@@ -616,10 +616,10 @@ impl SessionRef {
                 c"session %s destroyed (%s)",
                 fmt_args![s.name.as_deref(), from],
             );
-            if s.curw_idx.is_none() {
+            if s.curw.is_none() {
                 return;
             }
-            s.curw_idx = None;
+            s.curw = None;
             session_registry_remove(s);
             if notify != 0 {
                 notify_session(c"session-closed", Some(&*s));
@@ -708,7 +708,7 @@ impl SessionRef {
                 *cause = Some(xasprintf(c"index in use: %d", fmt_args![idx]));
                 return None;
             };
-            link.session_ref = Some(self.downgrade());
+            link.session = Some(self.downgrade());
             link.set_window(w.clone());
             let index = link.idx;
             notify_session_window(c"window-linked", s, &w);
@@ -818,7 +818,7 @@ impl SessionRef {
                     .and_then(|index| s.windows.get_mut(&index))
                     .map(Box::as_mut),
             );
-            s.curw_idx = Some(index);
+            s.curw = Some(index);
             if global_options
                 .get()
                 .as_ref()
@@ -858,7 +858,7 @@ impl SessionRef {
                 .get()
                 .session()
                 .filter(|marked| self.ptr_eq(marked))
-                .and(marked_pane.get().wl_idx);
+                .and(marked_pane.get().wl);
             let mut old_windows = core::mem::take(&mut s.windows);
             let mut next_index = s.options_ref().number(c"base-index") as c_int;
             let mut current_index_new = 0;
@@ -866,7 +866,7 @@ impl SessionRef {
             for link in old_windows.values() {
                 let new = winlink_insert(&mut s.windows, next_index)
                     .expect("renumbering assigns each link an unused index");
-                new.session_ref = Some(self.downgrade());
+                new.session = Some(self.downgrade());
                 new.set_window(
                     link.window_handle()
                         .expect("a link owns its window")
@@ -902,7 +902,7 @@ impl SessionRef {
                     server_clear_marked();
                 }
             }
-            s.curw_idx = s.windows.get(&current_index_new).map(|link| link.idx);
+            s.curw = s.windows.get(&current_index_new).map(|link| link.idx);
             while let Some(index) = old_windows.keys().next().copied() {
                 winlink_remove(&mut old_windows, index);
             }
@@ -1262,15 +1262,15 @@ impl SessionRef {
             for (index, window, flags) in sources {
                 let new = winlink_insert(&mut s.windows, index)
                     .expect("source session indexes are unique");
-                new.session_ref = Some(self.downgrade());
+                new.session = Some(self.downgrade());
                 new.set_window(window.clone());
                 notify_session_window(c"window-linked", s, &window);
                 if let Some(new) = s.windows.get_mut(&index) {
                     new.flags |= flags;
                 }
             }
-            let current = s.curw_idx.or_else(|| target.curw().map(|link| link.idx));
-            s.curw_idx = current.and_then(|index| s.windows.get(&index).map(|link| link.idx));
+            let current = s.curw.or_else(|| target.curw().map(|link| link.idx));
+            s.curw = current.and_then(|index| s.windows.get(&index).map(|link| link.idx));
             for index in core::mem::take(&mut s.lastw) {
                 if let Some(link) = s.windows.get_mut(&index) {
                     s.lastw.push(link.idx);

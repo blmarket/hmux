@@ -832,7 +832,7 @@ impl Window {
             w.z_index
                 .push(crate::window::window_pane_find_by_id(id).unwrap());
             if crate::window::window_active_pane(&w).is_none() {
-                w.active_pane = w
+                w.active = w
                     .panes
                     .iter()
                     .find(|pane| pane.pane_id() == id)
@@ -1057,10 +1057,10 @@ impl Layout {
                     format!(
                         "%{} {}x{}+{}+{}",
                         pane.pane_id(),
-                        geometry.width,
-                        geometry.height,
-                        geometry.x,
-                        geometry.y
+                        geometry.sx,
+                        geometry.sy,
+                        geometry.xoff,
+                        geometry.yoff
                     )
                 })
                 .collect()
@@ -1092,7 +1092,7 @@ pub(crate) fn dump_cell(lc: Option<&layout_cell>) -> String {
     match lc.type_0 {
         LAYOUT_WINDOWPANE => format!(
             "%{}{floating} {here}",
-            lc.wp_ref
+            lc.wp
                 .as_ref()
                 .map(|pane| pane.id())
                 .unwrap_or(u_int::MAX)
@@ -1135,7 +1135,7 @@ impl Tty {
         };
         let term = zeroed_term();
         t.tty.term = Some(term);
-        t.tty.owner = Some(t.client.downgrade());
+        t.tty.client = Some(t.client.downgrade());
         t
     }
 
@@ -1380,11 +1380,11 @@ pub(crate) fn link(session: &mut Session, window: &mut Window, idx: c_int) -> *m
         let observer = owner.downgrade();
         let link = winlink_insert(&mut owner.as_session_mut().windows, idx)
             .expect("the fixture index is available");
-        link.session_ref = Some(observer);
+        link.session = Some(observer);
         link.set_window(window.window.clone());
         let index = link.idx;
         if owner.curw().is_none() {
-            owner.as_session_mut().curw_idx = Some(index);
+            owner.as_session_mut().curw = Some(index);
         }
         let link = owner
             .as_session_mut()
@@ -1420,7 +1420,7 @@ pub(crate) fn unlink_all(session: &mut Session) {
     unsafe {
         let mut owner = session.reference();
         let session = owner.as_session_mut();
-        session.curw_idx = None;
+        session.curw = None;
         while let Some(index) = session.windows.keys().next().copied() {
             crate::window::winlink_remove(&mut session.windows, index);
         }
@@ -2132,7 +2132,7 @@ mod tests {
                     .next()
                     .is_some_and(|held| held.get().is_some_and(|link| core::ptr::eq(link, wl)))
             );
-            assert!((*wl).window_ref.is_some());
+            assert!((*wl).window.is_some());
         }
         unlink(&mut s, wl);
         unsafe {
@@ -2165,24 +2165,24 @@ pub(crate) fn set_pane_floating(w: &mut window, pane_id: u_int, floating: bool) 
         }
         .geometry();
         let mut cell = layout_create_cell(None);
-        cell.wp_ref = w
+        cell.wp = w
             .panes
             .iter()
             .find(|pane| pane.pane_id() == pane_id)
             .map(|pane| pane.downgrade());
         (cell.sx, cell.sy, cell.xoff, cell.yoff) =
-            (geometry.width, geometry.height, geometry.x, geometry.y);
+            (geometry.sx, geometry.sy, geometry.xoff, geometry.yoff);
         if let Some(root) = w.layout_root.as_deref() {
-            if root.wp_ref.as_ref().map(|pane| pane.id()).is_some() {
+            if root.wp.as_ref().map(|pane| pane.id()).is_some() {
                 let mut parent = layout_create_cell(None);
                 parent.type_0 = LAYOUT_LEFTRIGHT;
                 let size = w.dimensions().size;
                 (parent.sx, parent.sy, parent.xoff, parent.yoff) = (size.width, size.height, 0, 0);
                 let mut only = w.layout_root.replace(parent).unwrap();
-                only.has_parent = true;
+                only.parent = true;
                 w.layout_root.as_deref_mut().unwrap().cells.push(only);
             }
-            cell.has_parent = true;
+            cell.parent = true;
             w.layout_root.as_deref_mut().unwrap().cells.push(cell);
         } else {
             w.layout_root = Some(cell);

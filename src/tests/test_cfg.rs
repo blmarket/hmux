@@ -82,7 +82,7 @@ fn causes_wait_for_an_active_pane_and_append_to_view_mode() {
         take_causes();
         let session = target.session_handle().clone();
         session.add_attached();
-        window.as_window_mut().active_pane = None;
+        window.as_window_mut().active = None;
         cfg_add_cause(c"pending configuration error", fmt_args![]);
         cfg_show_causes(Some(session.as_session()));
         assert_eq!(with_config(|config| config.causes.len()), 1);
@@ -91,7 +91,7 @@ fn causes_wait_for_an_active_pane_and_append_to_view_mode() {
         {
             let mut payload = window.as_window_mut();
 
-            payload.active_pane = payload
+            payload.active = payload
                 .panes
                 .iter()
                 .find(|pane| pane.pane_id() == pane.pane_id())

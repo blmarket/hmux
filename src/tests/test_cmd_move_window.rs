@@ -60,7 +60,7 @@ impl Drop for Chain {
         let mut owner = self.session.handle().clone();
         unsafe {
             let session = owner.as_session_mut();
-            session.curw_idx = None;
+            session.curw = None;
             session.lastw.clear();
             while let Some(index) = session.windows.keys().next().copied() {
                 crate::window::winlink_remove(&mut session.windows, index);

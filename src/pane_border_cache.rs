@@ -21,41 +21,13 @@ pub trait PaneBorderCache {
     fn clear(&mut self);
 }
 
-/// The pane border cache used by hmux.
-#[derive(Default)]
-pub struct RustPaneBorderCache {
-    normal: Option<grid_cell>,
-    active: Option<grid_cell>,
-}
-
-impl PaneBorderCache for RustPaneBorderCache {
-    fn get(&self, kind: PaneBorderKind) -> Option<grid_cell> {
-        match kind {
-            PaneBorderKind::Normal => self.normal,
-            PaneBorderKind::Active => self.active,
-        }
-    }
-
-    fn insert(&mut self, kind: PaneBorderKind, cell: grid_cell) {
-        match kind {
-            PaneBorderKind::Normal => self.normal = Some(cell),
-            PaneBorderKind::Active => self.active = Some(cell),
-        }
-    }
-
-    fn clear(&mut self) {
-        self.normal = None;
-        self.active = None;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn entries_are_independent_and_clear_together() {
-        let mut cache = RustPaneBorderCache::default();
+        let mut cache = crate::types::window_pane::default();
         let normal = grid_cell {
             fg: 3,
             ..Default::default()

@@ -27,8 +27,8 @@ use ::core::ffi::CStr;
 #[repr(C)]
 pub struct window_client_modedata {
     /// The pane the mode is running in.
-    pub wp_ref: Option<RustWindowPaneWeak>,
-    pub(crate) data: Option<ModeTreeDataWeak>,
+    pub wp: Option<RustWindowPaneWeak>,
+    pub(crate) data: Option<ModeTreeDataRef>,
     pub format: Option<std::ffi::CString>,
     pub key_format: Option<std::ffi::CString>,
     pub command: Option<std::ffi::CString>,
@@ -40,7 +40,7 @@ pub struct window_client_modedata {
 impl window_client_modedata {
     /// The pane the mode is running in, retained directly until this reference is dropped.
     pub(crate) fn pane(&self) -> Option<RustWindowPaneWeak> {
-        self.wp_ref.as_ref().filter(|pane| pane.is_alive()).cloned()
+        self.wp.as_ref().filter(|pane| pane.is_alive()).cloned()
     }
 
     /// The mode tree the mode is showing, as a handle. Only ever asked of a
@@ -48,19 +48,19 @@ impl window_client_modedata {
     pub(crate) fn tree_ref(&self) -> ModeTreeDataRef {
         self.data
             .as_ref()
-            .and_then(ModeTreeDataWeak::upgrade)
+            .cloned()
             .expect("the mode is showing a tree")
     }
 }
 #[repr(C)]
 pub struct window_client_itemdata {
-    pub(crate) client_ref: ClientRef,
+    pub(crate) c: ClientRef,
 }
 
 impl window_client_itemdata {
     /// The client retained by this row.
     pub(crate) fn client(&self) -> ClientRef {
-        self.client_ref.clone()
+        self.c.clone()
     }
 }
 
@@ -116,7 +116,7 @@ fn window_client_add_item(
     data: &mut window_client_modedata,
     client: ClientRef,
 ) -> std::rc::Rc<window_client_itemdata> {
-    let item = std::rc::Rc::new(window_client_itemdata { client_ref: client });
+    let item = std::rc::Rc::new(window_client_itemdata { c: client });
     data.item_list.push(item.clone());
     item
 }
@@ -253,7 +253,7 @@ pub(crate) unsafe fn window_client_init(
             None => WINDOW_CLIENT_DEFAULT_COMMAND.to_owned(),
         };
         let data_ref = WindowClientModeDataRef::new(window_client_modedata {
-            wp_ref: Some(pane.clone()),
+            wp: Some(pane.clone()),
             data: None,
             format: Some(format),
             key_format: Some(key_format),
@@ -294,18 +294,17 @@ pub(crate) unsafe fn window_client_init(
             WindowModeData::Client(data_ref.downgrade()),
             &window_client_menu_items,
         );
-        data_ref.borrow_mut().data = Some(mtd.downgrade());
+        data_ref.borrow_mut().data = Some(mtd.clone());
         mtd.zoom(args);
         mtd.build();
         mtd.draw();
-        wme.mode_tree_ref = Some(mtd);
     }
 }
 pub(crate) unsafe fn window_client_free(wme: &mut window_mode_entry) {
     let Some(owner) = wme.state.client() else {
         return;
     };
-    let tree = owner.borrow().tree_ref();
+    let tree = owner.borrow_mut().data.take().expect("the mode is showing a tree");
     unsafe { tree.close() };
 }
 pub(crate) unsafe fn window_client_resize(wme: &mut window_mode_entry, sx: u_int, sy: u_int) {

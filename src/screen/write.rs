@@ -16,9 +16,9 @@ use crate::grid::{Grid, grid_default_cell, grid_get_line, grid_peek_line};
 use crate::pane_geometry::PaneGeometryState;
 
 pub(super) struct screen_write_state {
-    pub(super) pane_ref: Option<RustWindowPaneWeak>,
+    pub(super) wp: Option<RustWindowPaneWeak>,
     pub(super) flags: core::ffi::c_int,
-    pub(super) init_ctx: screen_write_init_ctx,
+    pub(super) init_ctx_cb: screen_write_init_ctx,
     pub(super) item: CItem,
     pub(super) scrolled: u_int,
     pub(super) bg: u_int,
@@ -26,7 +26,7 @@ pub(super) struct screen_write_state {
 
 pub(super) struct screen_write_ctx<'a> {
     state: &'a mut screen_write_state,
-    target: ScreenWriteTarget<'a>,
+    s: ScreenWriteTarget<'a>,
 }
 
 enum ScreenWriteTarget<'a> {
@@ -39,9 +39,9 @@ pub(crate) type screen_write_init_ctx = Option<::std::rc::Rc<dyn Fn(&mut tty_ctx
 impl Default for screen_write_state {
     fn default() -> Self {
         Self {
-            pane_ref: None,
+            wp: None,
             flags: 0,
-            init_ctx: None,
+            init_ctx_cb: None,
             item: CITEM_NONE,
             scrolled: 0,
             bg: 0,
@@ -67,7 +67,7 @@ impl<'a> screen_write_ctx<'a> {
     pub(super) fn new(state: &'a mut screen_write_state, target: &'a mut RustScreen) -> Self {
         Self {
             state,
-            target: ScreenWriteTarget::Borrowed(target),
+            s: ScreenWriteTarget::Borrowed(target),
         }
     }
 
@@ -77,27 +77,27 @@ impl<'a> screen_write_ctx<'a> {
     ) -> Self {
         Self {
             state,
-            target: ScreenWriteTarget::Shared(target),
+            s: ScreenWriteTarget::Shared(target),
         }
     }
 
     pub(super) fn pane_mut(&mut self) -> Option<&mut impl crate::WindowPane> {
-        unsafe { self.state.pane_ref.as_mut()?.get_mut() }
+        unsafe { self.state.wp.as_mut()?.get_mut() }
     }
 
     pub(super) fn pane(&self) -> Option<&impl crate::WindowPane> {
-        unsafe { self.state.pane_ref.as_ref()?.get() }
+        unsafe { self.state.wp.as_ref()?.get() }
     }
 
     pub(super) fn screen(&self) -> &RustScreen {
-        match &self.target {
+        match &self.s {
             ScreenWriteTarget::Borrowed(screen) => screen,
             ScreenWriteTarget::Shared(screen) => screen,
         }
     }
 
     pub(super) fn screen_mut(&mut self) -> &mut RustScreen {
-        match &mut self.target {
+        match &mut self.s {
             ScreenWriteTarget::Borrowed(screen) => screen,
             ScreenWriteTarget::Shared(screen) => screen,
         }
@@ -375,8 +375,10 @@ unsafe fn screen_write_set_client_cb(ttyctx: &mut tty_ctx, c: &mut client) -> c_
         let TtyCtxArg::Pane(mut pane_ref) = ttyctx.arg.clone() else {
             return 0;
         };
-        let id = pane_ref.id();
-        let Some(window) = pane_ref.window() else {
+        let Some(id) = pane_ref.pane_id() else {
+            return 0;
+        };
+        let Some(window) = pane_ref.listed_window() else {
             return 0;
         };
         let attached = c.attached_session();
@@ -421,9 +423,9 @@ unsafe fn screen_write_set_client_cb(ttyctx: &mut tty_ctx, c: &mut client) -> c_
         } else {
             ttyctx.flags &= !TTY_CTX_WINDOW_BIGGER;
         }
-        ttyctx.rxoff = pane.geometry().x;
+        ttyctx.rxoff = pane.geometry().xoff;
         ttyctx.xoff = ttyctx.rxoff;
-        ttyctx.ryoff = pane.geometry().y;
+        ttyctx.ryoff = pane.geometry().yoff;
         ttyctx.yoff = ttyctx.ryoff;
         if status_at_line(&*c) == 0 {
             ttyctx.yoff = (ttyctx.yoff as u_int).wrapping_add(status_line_size(&*c)) as c_int;
@@ -454,10 +456,10 @@ unsafe fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> c_int {
         let w = window.as_window();
         let base_id = base.pane_id();
         let b_geometry = base.geometry();
-        if b_geometry.x < 0
-            || b_geometry.y < 0
-            || (b_geometry.x as u_int).wrapping_add(b_geometry.width) > w.dimensions().size.width
-            || (b_geometry.y as u_int).wrapping_add(b_geometry.height) > w.dimensions().size.height
+        if b_geometry.xoff < 0
+            || b_geometry.yoff < 0
+            || (b_geometry.xoff as u_int).wrapping_add(b_geometry.sx) > w.dimensions().size.width
+            || (b_geometry.yoff as u_int).wrapping_add(b_geometry.sy) > w.dimensions().size.height
         {
             ctx.flags |= SCREEN_WRITE_OBSCURED;
             return 1;
@@ -476,16 +478,16 @@ unsafe fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> c_int {
                 &w,
                 &{ crate::window::window_pane_ref_of(f) }.expect("the pane allocation exists"),
             ) != 0
-                && (f_geometry.y >= b_geometry.y
-                    && f_geometry.y <= b_geometry.y + b_geometry.height as c_int
-                    || f_geometry.y + f_geometry.height as c_int >= b_geometry.y
-                        && (f_geometry.y as u_int).wrapping_add(f_geometry.height)
-                            <= (b_geometry.y as u_int).wrapping_add(b_geometry.height))
-                && (f_geometry.x >= b_geometry.x
-                    && f_geometry.x <= b_geometry.x + b_geometry.width as c_int
-                    || f_geometry.x + f_geometry.width as c_int >= b_geometry.x
-                        && (f_geometry.x as u_int).wrapping_add(f_geometry.width)
-                            <= (b_geometry.x as u_int).wrapping_add(b_geometry.width))
+                && (f_geometry.yoff >= b_geometry.yoff
+                    && f_geometry.yoff <= b_geometry.yoff + b_geometry.sy as c_int
+                    || f_geometry.yoff + f_geometry.sy as c_int >= b_geometry.yoff
+                        && (f_geometry.yoff as u_int).wrapping_add(f_geometry.sy)
+                            <= (b_geometry.yoff as u_int).wrapping_add(b_geometry.sy))
+                && (f_geometry.xoff >= b_geometry.xoff
+                    && f_geometry.xoff <= b_geometry.xoff + b_geometry.sx as c_int
+                    || f_geometry.xoff + f_geometry.sx as c_int >= b_geometry.xoff
+                        && (f_geometry.xoff as u_int).wrapping_add(f_geometry.sx)
+                            <= (b_geometry.xoff as u_int).wrapping_add(b_geometry.sx))
             {
                 ctx.flags |= SCREEN_WRITE_OBSCURED;
                 return 1;
@@ -516,7 +518,7 @@ unsafe fn screen_write_initctx(
             ttyctx.flags |= TTY_CTX_PANE_OBSCURED;
         }
         ttyctx.defaults = grid_default_cell;
-        if let Some(cb) = ctx.init_ctx.clone() {
+        if let Some(cb) = ctx.init_ctx_cb.clone() {
             cb(ttyctx);
             if let Some(palette) = &ttyctx.palette {
                 if ttyctx.defaults.fg == 8 {
@@ -533,7 +535,7 @@ unsafe fn screen_write_initctx(
                 ttyctx.palette = Some(pane.palette().clone());
                 ttyctx.set_client_cb = Some(screen_write_set_client_cb);
                 ttyctx.arg = TtyCtxArg::Pane(
-                    ctx.pane_ref
+                    ctx.wp
                         .as_ref()
                         .expect("the writer has a pane")
                         .clone(),
@@ -600,7 +602,7 @@ fn screen_write_init(s: &mut RustScreen) -> screen_write_state {
 pub(super) fn screen_write_start_pane_base(wp: &mut impl crate::WindowPane) -> screen_write_state {
     {
         let mut state = screen_write_init(wp.base_mut());
-        state.pane_ref = crate::window::window_pane_ref_of(wp);
+        state.wp = crate::window::window_pane_ref_of(wp);
         if log_get_level() != 0 {
             log_debug(
                 c"%s: size %ux%u, pane %%%u (at %u,%u)",
@@ -609,8 +611,8 @@ pub(super) fn screen_write_start_pane_base(wp: &mut impl crate::WindowPane) -> s
                     RustScreen::grid(wp.base()).sx,
                     RustScreen::grid(wp.base()).sy,
                     wp.pane_id(),
-                    wp.geometry().x,
-                    wp.geometry().y
+                    wp.geometry().xoff,
+                    wp.geometry().yoff
                 ],
             );
         }
@@ -622,7 +624,7 @@ pub(super) fn screen_write_start_callback(
     init_ctx: screen_write_init_ctx,
 ) -> screen_write_state {
     let mut state = screen_write_init(s);
-    state.init_ctx = init_ctx;
+    state.init_ctx_cb = init_ctx;
     if log_get_level() != 0 {
         log_debug(
             c"%s: size %ux%u, with callback",
@@ -901,7 +903,7 @@ pub(super) unsafe fn screen_write_fast_copy(
         }
         let (xoff, yoff) = ctx.pane().map_or((0, 0), |pane| {
             let geometry = pane.geometry();
-            (geometry.x, geometry.y)
+            (geometry.xoff, geometry.yoff)
         });
         let mut yy = py;
         while yy < py.wrapping_add(ny) {
@@ -1382,7 +1384,7 @@ unsafe fn screen_write_redraw_line(ctx: &mut screen_write_ctx, ttyctx: &mut tty_
             .pane()
             .expect("a redrawn line belongs to a pane")
             .geometry();
-        let (xoff, yoff) = (geometry.x, geometry.y);
+        let (xoff, yoff) = (geometry.xoff, geometry.yoff);
         if ctx.screen().0.mode & MODE_SYNC != 0 {
             return;
         }
@@ -1918,7 +1920,7 @@ fn pane_offset(ctx: &screen_write_ctx) -> (u_int, u_int) {
         .pane()
         .expect("an obscured writer has a pane")
         .geometry();
-    (geometry.x as u_int, geometry.y as u_int)
+    (geometry.xoff as u_int, geometry.yoff as u_int)
 }
 
 /// Collects a clear of whatever is visible of `nx` columns from `px` on line
@@ -2313,7 +2315,7 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> c_i
         }
         if let Some(pane) = ctx.pane() {
             let geometry = pane.geometry();
-            let bottom = (geometry.y as u_int).wrapping_add(geometry.height);
+            let bottom = (geometry.yoff as u_int).wrapping_add(geometry.sy);
             let window = pane
                 .window_context()
                 .expect("a writing pane has a window context");
@@ -2357,7 +2359,7 @@ unsafe fn screen_write_collect_flush_line(ctx: &mut screen_write_ctx, y: u_int) 
                     .expect("a writing pane has a window context");
                 let size = window.dimensions().size;
                 let geometry = pane.geometry();
-                (size.width, size.height, geometry.x, geometry.y)
+                (size.width, size.height, geometry.xoff, geometry.yoff)
             }
             None => (
                 RustScreen::grid(ctx.screen()).sx,
@@ -2687,7 +2689,7 @@ pub(super) unsafe fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &g
 /// lets a write be skipped.
 fn cell_matches_entry(gc: &grid_cell, gce: &grid_cell_entry) -> bool {
     unsafe {
-        let data = &gce.c2rust_unnamed.data;
+        let data = &gce.value.data;
         gce.flags as c_int & GRID_FLAG_EXTENDED == 0
             && gc.flags as c_int == gce.flags as c_int
             && gc.attr as c_int == data.attr as c_int
@@ -2798,7 +2800,7 @@ pub(super) unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cel
         let s = ctx.screen();
         let (xoff, yoff) = ctx.pane().map_or((0, 0), |pane| {
             let geometry = pane.geometry();
-            (geometry.x, geometry.y)
+            (geometry.xoff, geometry.yoff)
         });
         let mut ranges = visible_ranges::default();
         ranges.set_visible_ranges(
@@ -2969,7 +2971,7 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> c_
         if force_wide {
             grid_view_set_padding(gd, cx.wrapping_sub(1), cy);
         }
-        let yoff = ctx.pane().map_or(0, |pane| pane.geometry().y as u_int);
+        let yoff = ctx.pane().map_or(0, |pane| pane.geometry().yoff as u_int);
         let mut ranges = visible_ranges::default();
         ranges.set_visible_ranges(
             ctx.pane(),

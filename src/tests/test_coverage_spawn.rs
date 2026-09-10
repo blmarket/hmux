@@ -119,8 +119,8 @@ fn context(
     let mut sc = Box::new(spawn_context::default());
     sc.item = Some(item.handle().downgrade());
     sc.s = Some(rig.session.reference());
-    sc.wl_idx = Some(rig.wl.index());
-    sc.wp0 = wp0.and_then(|pane| crate::window::window_pane_find_by_id(pane.pane_id()));
+    sc.wl = Some(rig.wl.index());
+    sc.wp0 = wp0.filter(|pane| pane.is_alive()).cloned();
     sc.idx = idx;
     sc.flags = flags;
     sc
@@ -544,7 +544,7 @@ fn spawning_refuses_a_destroyed_pane() {
     unsafe {
         let removed = crate::window::window_panes_take(
             &mut rig.window.reference().as_window_mut(),
-            &crate::window::window_pane_find_by_id(rig.p.pane_id()).expect("the pane exists"),
+            &crate::window::window_pane_find_by_id(rig.p.id()).expect("the pane exists"),
         )
         .unwrap();
         assert_eq!(*removed.as_pane().fd(), FAKE_FD);
@@ -615,7 +615,7 @@ fn replacing_the_current_window_overrides_detached_spawning() {
     unsafe {
         let result = spawn_window(&mut sc, &mut cause);
         let flags = sc.flags;
-        let current = session.reference().as_session().curw_idx;
+        let current = session.reference().as_session().curw;
         let index = result.as_ref().map(|link| link.index());
         unlink_all(&mut session);
         assert!(cause.is_none());

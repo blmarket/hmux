@@ -6,7 +6,7 @@ impl SessionRef {
     /// # Safety
     /// Exclude mutable payload access during this query.
     pub(crate) unsafe fn current_link(&self) -> Option<crate::window::WinlinkRef> {
-        let index = unsafe { self.as_session().curw_idx }?;
+        let index = unsafe { self.as_session().curw }?;
         crate::window::WinlinkRef::new(self.clone(), index)
     }
 

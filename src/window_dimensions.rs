@@ -77,53 +77,13 @@ pub trait WindowDimensionsState: Default {
     fn set_last_new_pane(&mut self, position: WindowCellPosition);
 }
 
-/// The window dimension storage used by hmux.
-#[derive(Default)]
-pub struct RustWindowDimensionsState {
-    dimensions: WindowDimensions,
-}
-
-impl WindowDimensionsState for RustWindowDimensionsState {
-    fn dimensions(&self) -> WindowDimensions {
-        self.dimensions
-    }
-
-    fn set_dimensions(&mut self, dimensions: WindowDimensions) {
-        self.dimensions = dimensions;
-    }
-
-    fn set_size(&mut self, size: PaneSize) {
-        self.dimensions.size = size;
-    }
-
-    fn set_manual_size(&mut self, size: PaneSize) {
-        self.dimensions.manual_size = size;
-    }
-
-    fn set_pixels(&mut self, pixels: WindowPixelSize) {
-        self.dimensions.pixels = pixels;
-    }
-
-    fn set_pending_size(&mut self, size: PaneSize) {
-        self.dimensions.pending_size = size;
-    }
-
-    fn set_pending_pixels(&mut self, pixels: WindowPixelSize) {
-        self.dimensions.pending_pixels = pixels;
-    }
-
-    fn set_last_new_pane(&mut self, position: WindowCellPosition) {
-        self.dimensions.last_new_pane = position;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn independent_updates_preserve_the_other_dimensions() {
-        let mut state = RustWindowDimensionsState::default();
+        let mut state = crate::types::window::default();
         state.set_size(PaneSize {
             width: 80,
             height: 24,

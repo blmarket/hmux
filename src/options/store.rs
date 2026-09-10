@@ -82,8 +82,7 @@ type options_tree = std::collections::BTreeMap<CString, Box<options_entry>>;
 
 /// One option: its name, the table entry that says what kind of value it
 /// holds, the value itself, and the style that value was last read as. An
-/// array option keeps its values in `array` rather than in `value`, which a
-/// union cannot hold.
+/// array option stores its elements in the array variant of `value`.
 #[repr(C)]
 pub struct options_entry {
     /// The owning store, held weakly to avoid an ownership cycle.
@@ -91,7 +90,6 @@ pub struct options_entry {
     name: CString,
     tableentry: Option<&'static options_table_entry_t>,
     value: options_value,
-    array: options_array,
     cached: c_int,
     style: style,
 }
@@ -266,7 +264,6 @@ pub(super) unsafe fn options_default(oo: &RustOptionsRef, oe: &'static options_t
         with_entry_mut(oo, oe.name, true, |entry| {
             let entry = entry.expect("default entry was initialized");
             entry.value = initialized.value;
-            entry.array = initialized.array;
         });
     }
 }
@@ -300,7 +297,6 @@ fn new_entry(oo: &RustOptionsRef, name: &CStr) -> options_entry {
         name: name.to_owned(),
         tableentry: None,
         value: options_value::None,
-        array: options_array::new(),
         cached: 0,
         style: style::default(),
     }
@@ -342,7 +338,7 @@ fn table_of(o: &options_entry) -> &'static options_table_entry_t {
 
 /// The value at `idx`, inserting an empty value when the slot is absent.
 fn options_array_slot(o: &mut options_entry, idx: u_int) -> &mut options_array_item_t {
-    o.array.entry(idx).or_insert(options_array_item_t {
+    o.value.array_mut().entry(idx).or_insert(options_array_item_t {
         index: idx,
         value: options_value::default(),
     })
@@ -354,16 +350,16 @@ pub(super) fn options_array_clear(o: &mut options_entry) {
         if options_is_array(o) == 0 {
             return;
         }
-        o.array.clear();
+        o.value.array_mut().clear();
     }
 }
 
 pub(super) fn array_indices(o: &options_entry) -> Vec<u_int> {
-    o.array.keys().copied().collect()
+    o.value.array().into_iter().flat_map(|array| array.keys().copied()).collect()
 }
 
 pub(super) fn array_value_at(o: &options_entry, idx: u_int) -> Option<&options_value> {
-    o.array.get(&idx).map(|item| &item.value)
+    o.value.array()?.get(&idx).map(|item| &item.value)
 }
 
 pub(super) fn array_item_value(item: &options_array_item_t) -> &options_value {
@@ -385,7 +381,7 @@ pub(super) unsafe fn options_array_set(
             return -1;
         }
         let Some(value) = value else {
-            o.array.remove(&idx);
+            o.value.array_mut().remove(&idx);
             return 0;
         };
         if is_command(o) {
@@ -405,7 +401,7 @@ pub(super) unsafe fn options_array_set(
         }
         if is_string(o) {
             let new = if append != 0
-                && let Some(item) = o.array.get(&idx)
+                && let Some(item) = o.value.array().and_then(|array| array.get(&idx))
             {
                 xasprintf(c"%s%s", fmt_args![item.value.string(), value])
             } else {
@@ -449,7 +445,7 @@ pub(super) unsafe fn options_array_assign(
 
         let first_free = |o: &options_entry| {
             let mut i = 0;
-            while o.array.contains_key(&i) {
+            while o.value.array().is_some_and(|array| array.contains_key(&i)) {
                 i += 1;
             }
             i
@@ -490,9 +486,7 @@ pub(super) fn options_codepoint_widths(oo: &RustOptionsRef) -> Vec<CString> {
         if options_is_array(entry) == 0 {
             return Vec::new();
         }
-        entry
-            .array
-            .values()
+        entry.value.array().into_iter().flat_map(|array| array.values())
             .map(|item| item.value.string().to_owned())
             .collect()
     })
@@ -503,11 +497,11 @@ pub(super) fn options_codepoint_widths(oo: &RustOptionsRef) -> Vec<CString> {
 pub(super) fn options_pane_colours(oo: &RustOptionsRef) -> Option<[c_int; 256]> {
     with_entry(oo, c"pane-colours", false, |entry| {
         let entry = entry.expect("pane-colours is initialized");
-        if options_is_array(entry) == 0 || entry.array.is_empty() {
+        if options_is_array(entry) == 0 || entry.value.array().is_none_or(|array| array.is_empty()) {
             return None;
         }
         let mut colours = [-1; 256];
-        for item in entry.array.values() {
+        for item in entry.value.array().into_iter().flat_map(|array| array.values()) {
             if let Some(colour) = colours.get_mut(item.index as usize) {
                 *colour = item.value.number() as c_int;
             }
@@ -541,15 +535,13 @@ pub(super) unsafe fn options_to_string(o: &options_entry, idx: c_int, numeric: c
             return options_value_to_string(o, &o.value, numeric);
         }
         if idx != -1 {
-            return o
-                .array
-                .get(&(idx as u_int))
+            return o.value.array().and_then(|array| array.get(&(idx as u_int)))
                 .map_or_else(CString::default, |item| {
                     options_value_to_string(o, &item.value, numeric)
                 });
         }
         let mut result = Vec::new();
-        for item in o.array.values() {
+        for item in o.value.array().into_iter().flat_map(|array| array.values()) {
             if !result.is_empty() {
                 result.push(b' ');
             }
@@ -814,7 +806,7 @@ unsafe fn options_window_scope(
             session
                 .as_session()
                 .windows
-                .get(&fs.wl_idx?)?
+                .get(&fs.wl?)?
                 .window_handle()
                 .cloned()
         });
@@ -1331,8 +1323,8 @@ pub(super) unsafe fn options_push_changes(name: &CStr) {
                 let position =
                     options_get_number(window.options_ref(), c"pane-scrollbars-position") as c_int;
                 window.set_scrollbar_settings(crate::window_scrollbar::WindowScrollbarSettings {
-                    mode,
-                    position,
+                    sb: mode,
+                    sb_pos: position,
                 });
                 drop(window);
                 owner.fix_layout_panes(None);
@@ -1455,6 +1447,21 @@ enum OptionValue {
     Number(core::ffi::c_longlong),
     String(Rc<CStr>),
     Commands(CmdListRef),
+    Array(options_array),
+}
+
+impl options_value {
+    fn array(&self) -> Option<&options_array> {
+        match &self.0 { OptionValue::Array(array) => Some(array), _ => None }
+    }
+
+    fn array_mut(&mut self) -> &mut options_array {
+        if !matches!(self.0, OptionValue::Array(_)) {
+            self.0 = OptionValue::Array(options_array::new());
+        }
+        let OptionValue::Array(array) = &mut self.0 else { unreachable!() };
+        array
+    }
 }
 
 impl options_value {

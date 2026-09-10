@@ -1192,7 +1192,7 @@ pub unsafe fn control_add_sub(
         let csub = control_sub {
             name: name.to_owned(),
             format: format.to_owned(),
-            type_0,
+            type_0: type_0,
             id: id as u_int,
             last: None,
             panes: control_sub_panes::new(),

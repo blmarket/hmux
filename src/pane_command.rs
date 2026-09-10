@@ -22,33 +22,13 @@ pub trait PaneCommandState {
     fn clear_pane_command(&mut self);
 }
 
-/// The pane command storage used by hmux.
-#[derive(Default)]
-pub struct RustPaneCommandState {
-    command: PaneCommand,
-}
-
-impl PaneCommandState for RustPaneCommandState {
-    fn pane_command(&self) -> PaneCommand {
-        self.command.clone()
-    }
-
-    fn set_pane_command(&mut self, command: &PaneCommand) {
-        self.command.clone_from(command);
-    }
-
-    fn clear_pane_command(&mut self) {
-        self.command = PaneCommand::default();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn command_can_be_replaced_and_cleared() {
-        let mut state = RustPaneCommandState::default();
+        let mut state = crate::types::window_pane::default();
         let command = PaneCommand {
             argv: vec![c"sh".to_owned(), c"-c".to_owned(), c"true".to_owned()],
             shell: Some(c"/bin/sh".to_owned()),

@@ -3,16 +3,12 @@ use crate::cmd::cmdq_item;
 use crate::entity_id::next_entity_id;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::pane_activity::PaneActivityState;
-use crate::window_alert_queue::RustWindowAlertQueueState;
-use crate::window_dimensions::{
-    RustWindowDimensionsState, WindowDimensions, WindowDimensionsState, WindowPixelSize,
-};
-use crate::window_fill_character::{RustWindowFillCharacterState, WindowFillCharacterState};
-use crate::window_layout_selection::RustWindowLayoutSelectionState;
-use crate::window_name::{RustWindowNameState, WindowNameState};
-use crate::window_saved_layout::{RustWindowSavedLayoutState, WindowSavedLayoutState};
-use crate::window_scrollbar::{RustWindowScrollbarState, WindowScrollbarState};
-use crate::window_timestamps::{RustWindowTimestampState, WindowTimestampState};
+use crate::window_dimensions::WindowDimensionsState;
+use crate::window_fill_character::{WindowFillCharacterState};
+use crate::window_name::{WindowNameState};
+use crate::window_saved_layout::{WindowSavedLayoutState};
+use crate::window_scrollbar::{WindowScrollbarState};
+use crate::window_timestamps::{WindowTimestampState};
 use crate::window_trait::Window as _;
 
 use crate::cmd::{CmdqItemWeak, cmdq_item_ref_of};
@@ -763,7 +759,6 @@ pub type keyc = core::ffi::c_ulong;
 pub struct window_pane_input_data {
     pub(crate) item: Option<CmdqItemWeak>,
     pub wp: u_int,
-    pub(crate) client_ref: Option<ClientRef>,
     pub(crate) file: Option<ClientFileRef>,
 }
 
@@ -881,7 +876,7 @@ impl Drop for WindowStorage {
             layout_free_cell((*w).saved_layout_root.take());
             (*w).set_saved_layout(None);
             for pane in window_panes_take_all(&mut *w) {
-                window_pane_destroy(pane, (*w).options.clone(), None);
+                window_pane_destroy(pane);
             }
             (*w).name_event.disarm();
             (*w).alerts_timer.disarm();
@@ -951,8 +946,8 @@ pub(crate) fn winlink_insert(
         entry
             .insert(Box::new(winlink {
                 idx: index,
-                session_ref: None,
-                window_ref: None,
+                session: None,
+                window: None,
                 flags: 0,
             }))
             .as_mut(),
@@ -1166,6 +1161,9 @@ pub unsafe fn window_pane_send_resize(pane: &RustWindowPaneWeak, sx: u_int, sy: 
         }
         let Some(window) = pane.window() else { return };
         let w = window.as_window();
+        if !w.panes.iter().any(|owner| owner.downgrade().ptr_eq(pane)) {
+            return;
+        }
         log_debug(
             c"%s: %%%u resize to %u,%u",
             fmt_args![c"window_pane_send_resize", wp.pane_id(), sx, sy],
@@ -1196,7 +1194,7 @@ pub unsafe fn window_update_focus(window: Option<&WindowRef>) {
 /// Observes the active pane from the window's own list, including panes
 /// without registered membership.
 pub(crate) fn window_active_pane(w: &window) -> Option<RustWindowPaneWeak> {
-    w.active_pane
+    w.active
         .as_ref()
         .filter(|pane| pane.is_alive())
         .cloned()
@@ -1213,12 +1211,12 @@ fn window_pane_get_palette(
 }
 pub unsafe fn window_redraw_active_switch(w: &mut window, selected: &RustWindowPaneWeak) {
     unsafe {
-        if w.active_pane.as_ref() == Some(selected)
+        if w.active.as_ref() == Some(selected)
             || !w.panes.iter().any(|pane| pane.downgrade().ptr_eq(selected))
         {
             return;
         }
-        for mut reference in [Some(selected.clone()), w.active_pane.clone()]
+        for mut reference in [Some(selected.clone()), w.active.clone()]
             .into_iter()
             .flatten()
         {
@@ -1229,8 +1227,8 @@ pub unsafe fn window_redraw_active_switch(w: &mut window, selected: &RustWindowP
                 continue;
             };
             let styles = pane.styles();
-            let normal = &styles.normal;
-            let active = &styles.active;
+            let normal = &styles.cached_gc;
+            let active = &styles.cached_active_gc;
             if grid_cells_look_equal(normal, active) == 0
                 || window_pane_get_palette(Some(pane), normal.fg)
                     != window_pane_get_palette(Some(pane), active.fg)
@@ -1255,7 +1253,7 @@ pub unsafe fn window_get_active_at(w: &window, x: u_int, y: u_int) -> Option<Rus
                 .iter()
                 .take_while(|pane| pane.is_alive())
                 .filter(|pane| {
-                    w.flags & WINDOW_ZOOMED == 0 || w.active_pane.as_ref() == Some(*pane)
+                    w.flags & WINDOW_ZOOMED == 0 || w.active.as_ref() == Some(*pane)
                 })
                 .map(|pane| {
                     let floating =
@@ -1363,7 +1361,7 @@ pub unsafe fn window_add_pane(
     flags: core::ffi::c_int,
 ) -> RustWindowPaneWeak {
     unsafe {
-        let other = other.cloned().or_else(|| w.active_pane.clone());
+        let other = other.cloned().or_else(|| w.active.clone());
         let wp_box = window_pane_create(
             w,
             (*w).dimensions().size.width,
@@ -1586,7 +1584,7 @@ pub unsafe fn window_pane_printable_flags(pane: &RustWindowPaneWeak) -> Option<C
         if matches(w.active_pane_id()) {
             flags.push(b'*');
         }
-        if matches(w.last_panes.first().map(|pane| pane.id())) {
+        if matches(w.last_panes.first().and_then(|pane| pane.pane_id())) {
             flags.push(b'-');
         }
         if *wp.flags() & PANE_ZOOMED != 0 {
@@ -1709,19 +1707,9 @@ unsafe fn window_pane_create(
 }
 /// Tears down and frees the pane at the end of destruction. Observers do not
 /// postpone resource or allocation release.
-unsafe fn window_pane_destroy(
-    pane: RustWindowPaneRef,
-    options: Option<RustOptionsRef>,
-    window: Option<WindowWeak>,
-) {
+unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
     unsafe {
         let wp = &mut *pane.as_mut_ptr();
-        for entry in wp.modes_mut() {
-            if let WindowModeState::Copy(data) | WindowModeState::View(data) = &mut entry.state {
-                data.teardown_options = options.clone();
-                data.teardown_window = window.clone();
-            }
-        }
         window_pane_reset_mode_all(&mut *wp);
         PaneSearchState::clear(wp);
         if *wp.fd() != -(1 as core::ffi::c_int) {
@@ -1800,7 +1788,7 @@ pub(crate) fn on_pane(
     let observed = window_pane_find_by_id(id);
     std::rc::Rc::new(move |_stream| unsafe {
         if let Some(mut pane) = observed.clone()
-            && pane.window().is_some()
+            && pane.listed_window().is_some()
             && let Some(wp) = pane.get_mut()
         {
             body(wp);
@@ -1816,7 +1804,7 @@ pub(crate) fn on_pane_error(
     let observed = window_pane_find_by_id(id);
     std::rc::Rc::new(move |_stream, _what| unsafe {
         if let Some(mut pane) = observed.clone()
-            && pane.window().is_some()
+            && pane.listed_window().is_some()
             && let Some(wp) = pane.get_mut()
         {
             body(wp);
@@ -1899,14 +1887,14 @@ pub(crate) fn screen_write_stop_sync(wp: Option<&mut impl crate::WindowPane>) {
 pub unsafe fn window_pane_resize(wp: &mut impl crate::WindowPane, sx: u_int, sy: u_int) {
     unsafe {
         let geometry = wp.geometry();
-        if sx == geometry.width && sy == geometry.height {
+        if sx == geometry.sx && sy == geometry.sy {
             return;
         }
         screen_write_stop_sync(Some(wp));
         wp.record(
             PaneSize {
-                width: geometry.width,
-                height: geometry.height,
+                width: geometry.sx,
+                height: geometry.sy,
             },
             PaneSize {
                 width: sx,
@@ -1958,12 +1946,11 @@ pub unsafe fn window_pane_set_mode(
         } else {
             let pane = window_pane_ref_of(wp).expect("a mode opens on an owned pane");
             let entry = Box::new(window_mode_entry {
-                pane_weak: Some(pane.clone()),
-                source_pane,
+                wp: Some(pane.clone()),
+                swp: source_pane,
                 state: WindowModeState::None,
-                screen_ready: false,
+                screen: None,
                 prefix: 1,
-                mode_tree_ref: None,
             });
             wp.modes_mut().insert(0, entry);
             let wme = window_pane_current_mode_mut(wp).expect("mode was just inserted");
@@ -1998,7 +1985,7 @@ pub unsafe fn window_pane_reset_mode(wp: &mut impl crate::WindowPane) {
                 c"%s: next mode is %s",
                 fmt_args![c"window_pane_reset_mode".as_ptr(), next.mode().name()],
             );
-            next.mode().resize(next, geometry.width, geometry.height);
+            next.mode().resize(next, geometry.sx, geometry.sy);
         } else {
             *wp.flags_mut() &= !PANE_UNSEENCHANGES;
             log_debug(
@@ -2255,21 +2242,21 @@ fn window_pane_full_size_offset(
     wp: &impl crate::WindowPane,
 ) -> (core::ffi::c_int, core::ffi::c_int, u_int, u_int) {
     {
-        let sb_w: u_int = if window_pane_show_scrollbar(wp, w.scrollbar_settings().mode) != 0 {
+        let sb_w: u_int = if window_pane_show_scrollbar(wp, w.scrollbar_settings().sb) != 0 {
             (wp.scrollbar_style().width + wp.scrollbar_style().padding) as u_int
         } else {
             0 as u_int
         };
-        let xoff = if w.scrollbar_settings().position == PANE_SCROLLBARS_LEFT {
-            (wp.geometry().x as u_int).wrapping_sub(sb_w) as core::ffi::c_int
+        let xoff = if w.scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT {
+            (wp.geometry().xoff as u_int).wrapping_sub(sb_w) as core::ffi::c_int
         } else {
-            wp.geometry().x
+            wp.geometry().xoff
         };
         (
             xoff,
-            wp.geometry().y,
-            wp.geometry().width.wrapping_add(sb_w),
-            wp.geometry().height,
+            wp.geometry().yoff,
+            wp.geometry().sx.wrapping_add(sb_w),
+            wp.geometry().sy,
         )
     }
 }
@@ -2363,8 +2350,8 @@ pub unsafe fn window_pane_find_down(
         } else if edge >= w.dimensions().size.height as core::ffi::c_int {
             edge = 0 as core::ffi::c_int;
         }
-        let left: core::ffi::c_int = wp.geometry().x;
-        let right: core::ffi::c_int = wp.geometry().x + wp.geometry().width as core::ffi::c_int;
+        let left: core::ffi::c_int = wp.geometry().xoff;
+        let right: core::ffi::c_int = wp.geometry().xoff + wp.geometry().sx as core::ffi::c_int;
         for next in &w.panes {
             let Some(next_pane) = next.get() else {
                 continue;
@@ -2455,8 +2442,8 @@ pub unsafe fn window_pane_find_right(
         if edge >= w.dimensions().size.width as core::ffi::c_int {
             edge = 0 as core::ffi::c_int;
         }
-        let top: core::ffi::c_int = wp.geometry().y;
-        let bottom: core::ffi::c_int = wp.geometry().y + wp.geometry().height as core::ffi::c_int;
+        let top: core::ffi::c_int = wp.geometry().yoff;
+        let bottom: core::ffi::c_int = wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int;
         for next in &w.panes {
             let Some(next_pane) = next.get() else {
                 continue;
@@ -2487,7 +2474,6 @@ fn window_panes_insert_at(
 ) -> RustWindowPaneWeak {
     let pane = wp.downgrade();
     let window = window_ref_of(w);
-    wp.register_window(window.as_ref().map(WindowRef::downgrade));
     unsafe { window_pane_set_window_ref(wp.as_pane_mut(), window.as_ref()) };
     w.panes.insert(at, wp);
     pane
@@ -2540,7 +2526,7 @@ pub(crate) fn window_panes_insert_after(
         .unwrap_or(w.panes.len());
     window_panes_insert_at(w, at, wp)
 }
-/// Takes the window's sole ownership of `pane` and clears its membership.
+/// Takes the window's sole ownership of `pane`, retaining its window backlink.
 /// The caller transfers it to another window or explicitly tears the pane down.
 pub(crate) fn window_panes_take(
     w: &mut window,
@@ -2549,11 +2535,7 @@ pub(crate) fn window_panes_take(
     w.panes
         .iter()
         .position(|candidate| candidate.downgrade().ptr_eq(pane))
-        .map(|at| {
-            let pane = w.panes.remove(at);
-            pane.register_window(None);
-            pane
-        })
+        .map(|at| w.panes.remove(at))
 }
 
 /// Which of a window's two pane orders a call works on: the one that records
@@ -2689,7 +2671,7 @@ pub(crate) fn winlink_shuffle_up(
             }
             last -= 1;
         }
-        s.curw_idx = s.curw_idx.map(|current| shift.remap(current));
+        s.curw = s.curw.map(|current| shift.remap(current));
         for held in &mut s.lastw {
             *held = shift.remap(*held);
         }
@@ -2752,7 +2734,6 @@ pub unsafe fn window_pane_start_input(
         let cdata = PaneInputRef::new(window_pane_input_data {
             item: cmdq_item_ref_of(item).map(|item| item.downgrade()),
             wp: wp.pane_id(),
-            client_ref: Some(cmdq_client.clone()),
             file: None,
         });
         let file = file_read(
@@ -2817,21 +2798,11 @@ pub fn window_pane_default_cursor(wp: &mut impl crate::WindowPane) {
             .modes_mut()
             .first_mut()
             .expect("the shown mode is present");
-        match &mut mode.state {
-            WindowModeState::Clock(data) => data.screen.set_default_cursor(&options),
-            WindowModeState::Copy(data) | WindowModeState::View(data) => {
-                data.screen.borrow_mut().set_default_cursor(&options);
+        match mode.screen.as_ref().expect("the shown mode has a screen") {
+            ModeScreen::Clock => {
+                mode.state.clock().expect("clock mode has state").screen.set_default_cursor(&options);
             }
-            WindowModeState::Buffer(_)
-            | WindowModeState::Client(_)
-            | WindowModeState::Tree(_)
-            | WindowModeState::Customize(_) => {
-                mode.mode_tree_ref
-                    .as_ref()
-                    .expect("the shown mode has a tree")
-                    .set_default_cursor(&options);
-            }
-            WindowModeState::None => panic!("the shown mode has no screen"),
+            ModeScreen::Shared(screen) => screen.borrow_mut().set_default_cursor(&options),
         }
     }
 }
@@ -2897,7 +2868,7 @@ pub unsafe fn window_get_bg_client(wp: &impl crate::WindowPane) -> core::ffi::c_
 
 pub fn window_pane_get_bg_control_client(wp: &impl crate::WindowPane) -> core::ffi::c_int {
     with_clients(|clients| {
-        let Some(background) = wp.colours().background else {
+        let Some(background) = wp.colours().control_bg else {
             return -(1 as core::ffi::c_int);
         };
         for owner in clients {
@@ -2926,7 +2897,7 @@ pub unsafe fn window_pane_get_fg(wp: &impl crate::WindowPane) -> core::ffi::c_in
 
 pub fn window_pane_get_fg_control_client(wp: &impl crate::WindowPane) -> core::ffi::c_int {
     with_clients(|clients| {
-        let Some(foreground) = wp.colours().foreground else {
+        let Some(foreground) = wp.colours().control_fg else {
             return -(1 as core::ffi::c_int);
         };
         for owner in clients {
@@ -3027,16 +2998,16 @@ pub fn window_pane_border_status_get_range(
         let srs = &wp.border_status_line().ranges;
         let pane_status: core::ffi::c_int = (wo).number(c"pane-border-status") as core::ffi::c_int;
         if pane_status == PANE_STATUS_TOP {
-            line = (wp.geometry().y - 1 as core::ffi::c_int) as u_int;
+            line = (wp.geometry().yoff - 1 as core::ffi::c_int) as u_int;
         } else if pane_status == PANE_STATUS_BOTTOM {
-            line = (wp.geometry().y as u_int).wrapping_add(wp.geometry().height);
+            line = (wp.geometry().yoff as u_int).wrapping_add(wp.geometry().sy);
         }
         if pane_status == PANE_STATUS_OFF || line != y {
             return None;
         }
         style_ranges_get_range(
             srs,
-            x.wrapping_sub(wp.geometry().x as u_int)
+            x.wrapping_sub(wp.geometry().xoff as u_int)
                 .wrapping_sub(2 as u_int),
         )
     }
@@ -3343,13 +3314,13 @@ impl WindowRef {
         }
         {
             let pane = unsafe { source_observation.get_mut().unwrap() };
-            pane.set_position(dst_geometry.x, dst_geometry.y);
-            unsafe { window_pane_resize(pane, dst_geometry.width, dst_geometry.height) };
+            pane.set_position(dst_geometry.xoff, dst_geometry.yoff);
+            unsafe { window_pane_resize(pane, dst_geometry.sx, dst_geometry.sy) };
         }
         {
             let pane = unsafe { destination_observation.get_mut().unwrap() };
-            pane.set_position(src_geometry.x, src_geometry.y);
-            unsafe { window_pane_resize(pane, src_geometry.width, src_geometry.height) };
+            pane.set_position(src_geometry.xoff, src_geometry.yoff);
+            unsafe { window_pane_resize(pane, src_geometry.sx, src_geometry.sy) };
         }
         Ok((src_was_active, dst_was_active))
     }
@@ -3399,7 +3370,7 @@ impl WindowRef {
         let mut window = self.as_window_mut();
         let pane = window_panes_insert_head(&mut window, pane);
         window.z_index.insert(0, pane.clone());
-        window.active_pane = Some(pane);
+        window.active = Some(pane);
     }
 
     pub(crate) fn insert_pane_after(&self, other: &RustWindowPaneWeak, pane: RustWindowPaneRef) {
@@ -3499,10 +3470,10 @@ impl WindowRef {
         let window = self.as_window();
         let cell = path.get(window.layout_root.as_deref()?)?;
         Some(crate::pane_geometry::PaneGeometry {
-            x: cell.xoff,
-            y: cell.yoff,
-            width: cell.sx,
-            height: cell.sy,
+            xoff: cell.xoff,
+            yoff: cell.yoff,
+            sx: cell.sx,
+            sy: cell.sy,
         })
     }
 
@@ -3520,10 +3491,10 @@ impl WindowRef {
         {
             crate::layout::layout_set_size(
                 cell,
-                geometry.width,
-                geometry.height,
-                geometry.x,
-                geometry.y,
+                geometry.sx,
+                geometry.sy,
+                geometry.xoff,
+                geometry.yoff,
             )
         };
     }
@@ -3615,7 +3586,7 @@ pub(crate) unsafe fn window_find_from_session(
             crate::cmd::cmd_find_clear_state(fs, flags);
             return -(1 as core::ffi::c_int);
         }
-        fs.wp_ref = w.active_pane();
+        fs.wp = w.active_pane();
         crate::cmd::cmd_find_log_state_with_window(
             c"cmd_find_from_session_window",
             fs,
@@ -3641,7 +3612,7 @@ pub(crate) unsafe fn window_find_from_window(
             crate::cmd::cmd_find_clear_state(fs, flags);
             return -(1 as core::ffi::c_int);
         }
-        fs.wp_ref = w.active_pane();
+        fs.wp = w.active_pane();
         crate::cmd::cmd_find_log_state_with_window(
             c"cmd_find_from_window",
             fs,
@@ -3712,7 +3683,7 @@ impl WindowRef {
 
     pub(crate) fn set_active_pane_id_for_test(&self, id: u_int) {
         let mut window = self.as_window_mut();
-        window.active_pane = window
+        window.active = window
             .panes
             .iter()
             .find(|pane| pane.pane_id() == id)
@@ -3813,51 +3784,16 @@ impl WindowRef {
             }
             let fresh0 = next_entity_id(&next_window_id);
             let value = window {
-                owner: None,
                 id: fresh0,
-                latest: None,
-                name_state: {
-                    let mut state = RustWindowNameState::default();
-                    state.set_window_name(Some(c""));
-                    state
-                },
-                name_event: TimerHandle::ZERO,
-                timestamps: RustWindowTimestampState::default(),
-                alerts_timer: TimerHandle::ZERO,
-                offset_timer: TimerHandle::ZERO,
-                active_pane: None,
-                last_panes: Vec::new(),
-                z_index: Vec::new(),
-                panes: Vec::new(),
-                layout_selection: RustWindowLayoutSelectionState::default(),
-                layout_root: None,
-                saved_layout_root: None,
-                saved_layout_state: RustWindowSavedLayoutState::default(),
-                dimensions: {
-                    let mut dimensions = RustWindowDimensionsState::default();
-                    dimensions.set_dimensions(WindowDimensions {
-                        size: PaneSize {
-                            width: sx,
-                            height: sy,
-                        },
-                        manual_size: PaneSize {
-                            width: sx,
-                            height: sy,
-                        },
-                        pixels: WindowPixelSize {
-                            width: xpixel,
-                            height: ypixel,
-                        },
-                        ..Default::default()
-                    });
-                    dimensions
-                },
-                scrollbar: RustWindowScrollbarState::default(),
-                fill_character_state: RustWindowFillCharacterState::default(),
-                flags: 0,
-                alert_queue: RustWindowAlertQueueState::default(),
+                name: Some(c"".to_owned()),
+                sx,
+                sy,
+                manual_sx: sx,
+                manual_sy: sy,
+                xpixel,
+                ypixel,
                 options: Some(RustOptionsEngine.create(global_w_options.get().as_ref())),
-                winlinks: window_winlinks::new(),
+                ..Default::default()
             };
             let reference = WindowRef::new(value);
             reference.register_id();
@@ -3968,7 +3904,7 @@ impl WindowRef {
                 c"%s: pane %%%u",
                 fmt_args![c"window_set_active_pane", pane.id()],
             );
-            if w.active_pane.as_ref() == Some(pane) {
+            if w.active.as_ref() == Some(pane) {
                 return 0;
             }
             let zoomed = w.flags & WINDOW_ZOOMED != 0;
@@ -3978,13 +3914,13 @@ impl WindowRef {
             }
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
-            let previous = w.active_pane.clone();
+            let previous = w.active.clone();
             let mut selected = pane.clone();
             window_pane_stack_remove(w, PaneStack::LastUsed, selected.get_mut());
             if let Some(mut last) = previous.clone() {
                 window_pane_stack_push(w, PaneStack::LastUsed, last.get_mut());
             }
-            w.active_pane = Some(pane.clone());
+            w.active = Some(pane.clone());
             let selected = selected
                 .get_mut()
                 .expect("the window owns the selected pane");
@@ -4027,7 +3963,7 @@ impl WindowRef {
             if window_count_panes(w, 1) == 1 {
                 return -1;
             }
-            let activate = w.active_pane.as_ref() != Some(pane);
+            let activate = w.active.as_ref() != Some(pane);
             drop(payload);
             if activate {
                 owner.set_active_pane(pane, 1);
@@ -4155,15 +4091,15 @@ impl WindowRef {
                 *lost_payload.flags_mut() &= !PANE_VISITED;
                 w.last_panes.retain(|candidate| !candidate.ptr_eq(pane));
             }
-            if w.active_pane
+            if w.active
                 .as_ref()
                 .is_some_and(|active| active.ptr_eq(pane))
             {
                 let previous = w.last_panes.first().filter(|pane| pane.is_alive()).cloned();
-                w.active_pane = previous
+                w.active = previous
                     .or_else(|| index.checked_sub(1).map(|index| w.panes[index].downgrade()))
                     .or_else(|| w.panes.get(index + 1).map(|pane| pane.downgrade()));
-                if let Some(mut selected) = w.active_pane.clone() {
+                if let Some(mut selected) = w.active.clone() {
                     let selected_ref = selected.clone();
                     let active = selected.get_mut().expect("the replacement pane exists");
                     if *active.flags() & PANE_VISITED != 0 {
@@ -4186,10 +4122,9 @@ impl WindowRef {
             let mut w = owner.as_window_mut();
             w.z_index.retain(|candidate| !candidate.ptr_eq(pane));
             let pane = window_panes_take(&mut w, pane);
-            let options = w.options.clone();
             drop(w);
             if let Some(pane) = pane {
-                window_pane_destroy(pane, options, Some(owner.downgrade()));
+                window_pane_destroy(pane);
             }
         }
     }
@@ -4200,10 +4135,9 @@ impl WindowRef {
         unsafe {
             let mut w = owner.as_window_mut();
             let panes = window_panes_take_all(&mut w);
-            let options = w.options.clone();
             drop(w);
             for pane in panes {
-                window_pane_destroy(pane, options.clone(), Some(owner.downgrade()));
+                window_pane_destroy(pane);
             }
         }
     }
@@ -4233,16 +4167,12 @@ impl WindowRef {
             if src.ptr_eq(dst) {
                 src.as_window_mut().panes.swap(src_at, dst_at);
             } else {
-                let src_weak = src.downgrade();
-                let dst_weak = dst.downgrade();
                 let src_context = src.clone();
                 let dst_context = dst.clone();
                 let mut src_w = src.as_window_mut();
                 let mut dst_w = dst.as_window_mut();
                 core::mem::swap(&mut src_w.panes[src_at], &mut dst_w.panes[dst_at]);
-                src_w.panes[src_at].register_window(Some(src_weak));
                 window_pane_set_window_ref(src_w.panes[src_at].as_pane_mut(), Some(&src_context));
-                dst_w.panes[dst_at].register_window(Some(dst_weak));
                 window_pane_set_window_ref(dst_w.panes[dst_at].as_pane_mut(), Some(&dst_context));
             }
         }
@@ -4304,7 +4234,7 @@ impl winlink {
     fn detach_window(&mut self) -> Option<WindowRef> {
         let wl = self;
 
-        let mut old = wl.window_ref.take();
+        let mut old = wl.window.take();
         if let Some(window) = old.as_mut() {
             { window.as_window_mut() }
                 .winlinks
@@ -4321,7 +4251,7 @@ impl winlink {
             if let Some(key) = wl.key() {
                 window.as_window_mut().winlinks.push(key);
             }
-            wl.window_ref = Some(window);
+            wl.window = Some(window);
         }
     }
 }
@@ -4400,8 +4330,8 @@ impl WindowRef {
                 let mut pane = panes[index].clone();
                 self.bind_layout_pane(path.as_ref(), &pane);
                 let payload = pane.as_pane_mut();
-                payload.set_position(geometry.x, geometry.y);
-                window_pane_resize(payload, geometry.width, geometry.height);
+                payload.set_position(geometry.xoff, geometry.yoff);
+                window_pane_resize(payload, geometry.sx, geometry.sy);
             }
             panes
         }
@@ -4439,12 +4369,12 @@ impl WinlinkRef {
                 .clone()
                 .get_mut()
                 .expect("swap target link")
-                .window_ref = Some(source_window.clone());
-            self.clone().get_mut().expect("swap source link").window_ref =
+                .window = Some(source_window.clone());
+            self.clone().get_mut().expect("swap source link").window =
                 Some(target_window.clone());
             source_window.add_winlink(target.get().expect("swap target link"));
             target_window.add_winlink(self.get().expect("swap source link"));
-            if marked_pane.get().wl_idx == Some(self.index())
+            if marked_pane.get().wl == Some(self.index())
                 && marked_pane
                     .get()
                     .session()

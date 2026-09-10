@@ -479,10 +479,10 @@ fn a_mouse_event_lands_at_a_pane_offset_or_outside_the_pane_altogether() {
     unsafe {
         let mut wp = zeroed_pane();
         wp.set_geometry(crate::pane_geometry::PaneGeometry {
-            x: 10,
-            y: 5,
-            width: 20,
-            height: 8,
+            xoff: 10,
+            yoff: 5,
+            sx: 20,
+            sy: 8,
         });
         let wp = &raw mut *wp;
 

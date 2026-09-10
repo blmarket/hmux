@@ -63,7 +63,7 @@ impl Drop for client_file {
     fn drop(&mut self) {
         file_release_io(self);
         self.path = None;
-        self.client_ref = None;
+        self.c = None;
     }
 }
 const file_next_stream: crate::server_state::Value<core::ffi::c_int> =
@@ -782,7 +782,7 @@ impl ClientFileRef {
     ) -> ClientFileRef {
         unsafe {
             let cf = ClientFileRef::new(client_file {
-                client_ref: None,
+                c: None,
                 peer,
                 tree: files.clone(),
                 stream,
@@ -821,7 +821,7 @@ impl ClientFileRef {
             None => FileOwner::None,
         };
         let cf = ClientFileRef::new(client_file {
-            client_ref,
+            c: client_ref,
             peer,
             tree,
             stream,
@@ -870,7 +870,7 @@ impl ClientFileRef {
                 if deliver {
                     let callback = file.cb.clone();
                     let event = ClientFileEvent::Done {
-                        client: file.client_ref.clone(),
+                        client: file.c.clone(),
                         path: file
                             .path
                             .take()
@@ -901,7 +901,7 @@ impl ClientFileRef {
             };
             (
                 callback,
-                file.client_ref.clone(),
+                file.c.clone(),
                 file.error,
                 std::mem::take(file.buffer.as_mut()),
                 file.data.clone(),

@@ -328,7 +328,7 @@ impl Linked {
             linked.attach(&format!("w{i}"), i as c_int + 1);
         }
         let current = linked.winlinks.first().map(|link| link.index());
-        unsafe { linked.session.handle().clone().as_session_mut().curw_idx = current };
+        unsafe { linked.session.handle().clone().as_session_mut().curw = current };
 
         linked
     }
@@ -418,7 +418,7 @@ impl Drop for Linked {
     fn drop(&mut self) {
         unsafe {
             let mut owner = self.handle().clone();
-            owner.as_session_mut().curw_idx = None;
+            owner.as_session_mut().curw = None;
             while let Some(index) = owner.as_session().lastw.first().copied() {
                 let session = owner.as_session_mut();
                 winlink_stack_remove(
@@ -635,7 +635,7 @@ fn a_session_goes_back_to_the_window_it_came_from() {
         {
             let session = &mut *s;
             let current = session
-                .curw_idx
+                .curw
                 .and_then(|index| session.windows.get_mut(&index));
             winlink_stack_push(&mut session.lastw, current.map(|link| &mut **link));
         }
@@ -719,7 +719,7 @@ fn the_next_and_previous_windows_wrap_round() {
         );
         assert_eq!(linked.current().as_deref(), Some("w1"));
 
-        let current = (*s).curw_idx.take();
+        let current = (*s).curw.take();
         assert_eq!(
             crate::session::session_ref_of(&mut *s)
                 .expect("session owner")
@@ -732,7 +732,7 @@ fn the_next_and_previous_windows_wrap_round() {
                 .previous(0),
             -1
         );
-        (*s).curw_idx = current;
+        (*s).curw = current;
     }
 }
 
@@ -952,7 +952,7 @@ fn destroying_a_session_unlinks_everything_it_held() {
         let wl2 = crate::session::session_ref_of(&mut *s)
             .expect("session owner")
             .attach(second.reference(), 2, &mut cause);
-        (*s).curw_idx = wl;
+        (*s).curw = wl;
         crate::session::session_ref_of(&mut *s)
             .expect("session owner")
             .set_current(wl2);
@@ -1484,7 +1484,7 @@ fn renumbering_does_not_retarget_another_sessions_mark_at_the_same_index() {
         renumbered.handle().renumber_windows();
 
         assert_eq!(renumbered.indexes(), [0]);
-        assert_eq!(marked_pane.get().wl_idx, Some(6));
+        assert_eq!(marked_pane.get().wl, Some(6));
         assert!(marked_pane.get().session().unwrap().ptr_eq(marked.handle()));
         assert!(marked_pane.get().window().unwrap().ptr_eq(&marked_window));
         server_clear_marked();

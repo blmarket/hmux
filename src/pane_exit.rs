@@ -18,38 +18,13 @@ pub trait PaneExitState {
     fn set_death_time(&mut self, time: timeval);
 }
 
-/// The pane exit-state storage used by hmux.
-#[derive(Default)]
-pub struct RustPaneExitState {
-    status: c_int,
-    time: timeval,
-}
-
-impl PaneExitState for RustPaneExitState {
-    fn exit_status(&self) -> c_int {
-        self.status
-    }
-
-    fn set_exit_status(&mut self, status: c_int) {
-        self.status = status;
-    }
-
-    fn death_time(&self) -> timeval {
-        self.time
-    }
-
-    fn set_death_time(&mut self, time: timeval) {
-        self.time = time;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn status_and_time_are_independently_replaceable() {
-        let mut state = RustPaneExitState::default();
+        let mut state = crate::types::window_pane::default();
         assert_eq!(state.exit_status(), 0);
         assert_eq!(state.death_time().tv_sec, 0);
         assert_eq!(state.death_time().tv_usec, 0);

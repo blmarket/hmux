@@ -83,11 +83,11 @@ impl Fixture {
             unsafe {
                 if i == 0 {
                     window.init_layout(
-                        &crate::window::window_pane_find_by_id(pane.pane_id())
+                        &crate::window::window_pane_find_by_id(pane.id())
                             .expect("the layout pane exists"),
                     );
                 } else {
-                    let pane_id = made[i - 1].pane_id();
+                    let pane_id = made[i - 1].id();
                     let lc = window.split_pane_layout(
                         &crate::window::window_pane_find_by_id(pane_id)
                             .expect("the layout pane exists"),
@@ -98,7 +98,7 @@ impl Fixture {
                     assert!(lc.is_some(), "there was no room to lay out");
                     window.assign_pane_layout(
                         lc.as_ref().unwrap(),
-                        &crate::window::window_pane_find_by_id(pane.pane_id())
+                        &crate::window::window_pane_find_by_id(pane.id())
                             .expect("the layout pane exists"),
                         0,
                     );
@@ -209,7 +209,7 @@ fn joining_in_front_of_a_later_pane_relinks_the_pane_behind_it() {
                 .iter()
                 .map(|pane| pane.id())
                 .collect::<Vec<_>>(),
-            vec![front.pane_id(), moved.pane_id(), back.pane_id()],
+            vec![front.id(), moved.id(), back.id()],
             "and so was its z link"
         );
         assert_eq!(

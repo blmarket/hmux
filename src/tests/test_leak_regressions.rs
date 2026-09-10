@@ -373,7 +373,7 @@ impl SpawnRig {
             let mut sc = Box::new(spawn_context::default());
             sc.item = Some(item.handle().downgrade());
             sc.s = Some(self.session.reference());
-            sc.wl_idx = Some((*self.wl).idx);
+            sc.wl = Some((*self.wl).idx);
             sc.wp0 = crate::window::window_pane_find_by_id((*self.pane).pane_id());
             sc.idx = -1;
             sc.flags = SPAWN_RESPAWN;

@@ -271,7 +271,7 @@ unsafe fn cmd_display_menu_get_pos(
         }
         let (_bigger, ox, oy, _off_sx, _off_sy) = tc.cached_window_offset();
         let geometry = pane.geometry()?;
-        n = ((top + geometry.y) as u_int)
+        n = ((top + geometry.yoff) as u_int)
             .wrapping_sub(oy)
             .wrapping_add(h) as core::ffi::c_long;
         if n >= sy as core::ffi::c_long {
@@ -289,8 +289,8 @@ unsafe fn cmd_display_menu_get_pos(
             c"popup_pane_bottom",
             c"%u",
             fmt_args![
-                ((top + geometry.y) as u_int)
-                    .wrapping_add(geometry.height)
+                ((top + geometry.yoff) as u_int)
+                    .wrapping_add(geometry.sy)
                     .wrapping_sub(oy)
             ],
         );
@@ -298,9 +298,9 @@ unsafe fn cmd_display_menu_get_pos(
             &mut ft,
             c"popup_pane_left",
             c"%u",
-            fmt_args![(geometry.x as u_int).wrapping_sub(ox)],
+            fmt_args![(geometry.xoff as u_int).wrapping_sub(ox)],
         );
-        n = geometry.x as core::ffi::c_long + geometry.width as core::ffi::c_long
+        n = geometry.xoff as core::ffi::c_long + geometry.sx as core::ffi::c_long
             - ox as core::ffi::c_long
             - w as core::ffi::c_long;
         if n < 0 as core::ffi::c_long {

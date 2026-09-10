@@ -31,12 +31,12 @@ use ::std::rc::Rc;
 
 #[repr(C)]
 pub struct cmd_run_shell_data {
-    pub(crate) client_ref: Option<ClientRef>,
+    pub(crate) client: Option<ClientRef>,
     pub cmd: Option<CString>,
     pub state: Option<Box<args_command_state>>,
     pub cwd: Option<CString>,
     pub(crate) item: Option<CmdqItemWeak>,
-    pub(crate) session_ref: Option<SessionRef>,
+    pub(crate) s: Option<SessionRef>,
     pub wp_id: core::ffi::c_int,
     pub timer: TimerHandle,
     pub flags: core::ffi::c_int,
@@ -115,12 +115,12 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, msg: &CStr) {
 unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let args: &RustArguments = cmd_get_args(self_0);
     let mut cdata = Box::new(cmd_run_shell_data {
-        client_ref: None,
+        client: None,
         cmd: None,
         state: None,
         cwd: None,
         item: None,
-        session_ref: None,
+        s: None,
         wp_id: -1,
         timer: TimerHandle(0),
         flags: 0,
@@ -193,10 +193,10 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         cdata.wp_id = -(1 as core::ffi::c_int);
     }
     if wait != 0 {
-        cdata.client_ref = cmdq_client;
+        cdata.client = cmdq_client;
         cdata.item = cmdq_item_weak_of(item);
     } else {
-        cdata.client_ref = target_client;
+        cdata.client = target_client;
         cdata.flags |= JOB_NOWAIT;
     }
     if let Some(cflag) = {
@@ -219,7 +219,7 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     {
         cdata.flags |= JOB_SHOWSTDERR;
     }
-    cdata.session_ref = target_session;
+    cdata.s = target_session;
     let cdata = Rc::new(RefCell::new(Some(cdata)));
     let callback_data = Rc::clone(&cdata);
     cdata
@@ -261,7 +261,7 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
     unsafe {
-        let mut c_opt = cdata.client_ref.clone();
+        let mut c_opt = cdata.client.clone();
         let cmd = cdata.cmd.clone();
         let cmd_for_error = cmd.clone();
         let item = cdata.item.as_ref().and_then(CmdqItemWeak::upgrade);
@@ -274,7 +274,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
                 }
                 return;
             }
-            let state_opt = cdata.session_ref.clone();
+            let state_opt = cdata.s.clone();
             let cwd = cdata.cwd.clone();
             let flags = cdata.flags;
             if job_run_for_session(
@@ -425,12 +425,12 @@ mod tests {
 
     fn output_state(pane_id: core::ffi::c_int) -> cmd_run_shell_data {
         cmd_run_shell_data {
-            client_ref: None,
+            client: None,
             cmd: None,
             state: None,
             cwd: None,
             item: None,
-            session_ref: None,
+            s: None,
             wp_id: pane_id,
             timer: TimerHandle(0),
             flags: 0,

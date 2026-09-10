@@ -99,7 +99,7 @@ impl CommandParseInput for crate::types::cmd_parse_input {
     }
 
     fn set_command_parse_client(&mut self, client: Option<ClientRef>) {
-        self.c = client.map(|client| client.downgrade());
+        self.c = client.map(|client| client.downgrade().into());
     }
 
     fn command_parse_find_state(&self) -> &cmd_find_state {

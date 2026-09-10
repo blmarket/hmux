@@ -188,7 +188,7 @@ fn parser_window_observation_follows_moves_and_preserves_transfer_context() {
             &crate::window::window_pane_find_by_id(id).expect("the pane exists"),
         )
         .unwrap();
-        assert!(pane.window().is_none());
+        assert!(pane.window().unwrap().ptr_eq(&original));
         assert!(parser.ictx.borrow().window_ref().unwrap().ptr_eq(&original));
         parser.ictx.borrow_mut().input_buf = b"renamed-original\0".to_vec();
         input_exit_rename(&mut parser.ictx.borrow_mut());
@@ -213,7 +213,7 @@ fn parser_window_observation_follows_moves_and_preserves_transfer_context() {
             &crate::window::window_pane_find_by_id(id).expect("the pane exists"),
         )
         .unwrap();
-        assert!(pane.window().is_none());
+        assert!(pane.window().unwrap().ptr_eq(&destination));
         assert!(
             parser
                 .ictx

@@ -6,7 +6,7 @@ use ::std::alloc::{Layout, alloc, dealloc, handle_alloc_error, realloc};
 
 /// An entry with nothing in it, the way a freshly taken cell reads.
 const EMPTY_ENTRY: grid_cell_entry = grid_cell_entry {
-    c2rust_unnamed: grid_cell_entry_union { offset: 0 },
+    value: grid_cell_entry_union { offset: 0 },
     flags: 0,
 };
 

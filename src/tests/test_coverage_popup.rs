@@ -238,10 +238,10 @@ fn a_jobless_popup_wires_the_overlay_and_answers_present() {
         assert_eq!(pd.borrow().psy, pd.borrow().sy);
         assert_eq!(pd.borrow().dragging, OFF);
         assert_eq!(pd.borrow().close, 0);
-        assert!(pd.borrow().job_id.is_none());
+        assert!(pd.borrow().job.is_none());
         assert!(pd.borrow().ictx.is_some());
         assert!(pd.borrow().item.is_none());
-        assert!(pd.borrow().close_cb.is_none());
+        assert!(pd.borrow().cb.is_none());
         assert_eq!(pd.borrow().palette.fg, 8);
         assert_eq!(pd.borrow().palette.bg, 8);
 

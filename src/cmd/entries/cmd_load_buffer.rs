@@ -20,7 +20,7 @@ use ::core::ffi::CStr;
 #[derive(Clone, Default)]
 #[repr(C)]
 pub struct cmd_load_buffer_data {
-    pub(crate) client_ref: Option<ClientRef>,
+    pub(crate) client: Option<ClientRef>,
     pub(crate) item: Option<CmdqItemWeak>,
     pub name: Option<std::ffi::CString>,
 }
@@ -28,7 +28,7 @@ pub struct cmd_load_buffer_data {
 impl cmd_load_buffer_data {
     /// The client the buffer is set for, if one was named.
     pub(crate) fn client(&self) -> Option<ClientRef> {
-        self.client_ref.clone()
+        self.client.clone()
     }
 }
 
@@ -107,7 +107,7 @@ pub(crate) fn cmd_load_buffer_done(event: ClientFileEvent<'_>) {
                 tc.set_clipboard(&bytes);
             }
         }
-        let _ = cdata.client_ref.take();
+        let _ = cdata.client.take();
         drop(item);
         item_ref.resume();
     }
@@ -127,7 +127,7 @@ unsafe fn cmd_load_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         args.argument_flag_count(flag)
     }) != 0
     {
-        cdata.client_ref = target_client;
+        cdata.client = target_client;
     }
     let path = unsafe {
         format_single_from_target(

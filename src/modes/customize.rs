@@ -57,7 +57,7 @@ impl CustomizeOptionScope {
                     .expect("a window option has a window")
                     .window_id(),
                 WINDOW_CUSTOMIZE_PANE => fs
-                    .wp_ref
+                    .wp
                     .as_ref()
                     .map(|pane| pane.id())
                     .expect("a pane option has a pane"),
@@ -116,8 +116,8 @@ impl CustomizeTag {
 #[repr(C)]
 pub struct window_customize_modedata {
     /// The pane the mode is running in.
-    pub wp_ref: Option<RustWindowPaneWeak>,
-    pub(crate) data: Option<ModeTreeDataWeak>,
+    pub wp: Option<RustWindowPaneWeak>,
+    pub(crate) data: Option<ModeTreeDataRef>,
     pub format: Option<CString>,
     pub hide_global: core::ffi::c_int,
     pub prompt_flags: core::ffi::c_int,
@@ -161,7 +161,7 @@ impl window_customize_modedata {
 
     /// The pane the mode is running in, retained directly until this reference is dropped.
     pub(crate) fn pane(&self) -> Option<RustWindowPaneWeak> {
-        self.wp_ref.as_ref().filter(|pane| pane.is_alive()).cloned()
+        self.wp.as_ref().filter(|pane| pane.is_alive()).cloned()
     }
 
     /// The mode tree the mode is showing, as a handle. Only ever asked of a
@@ -169,7 +169,7 @@ impl window_customize_modedata {
     pub(crate) fn tree_ref(&self) -> ModeTreeDataRef {
         self.data
             .as_ref()
-            .and_then(ModeTreeDataWeak::upgrade)
+            .cloned()
             .expect("the mode is showing a tree")
     }
 }
@@ -206,7 +206,7 @@ pub struct window_customize_itemdata {
     pub idx: core::ffi::c_int,
     /// Reaches the customize mode from an item made only for a prompt, and
     /// finds nothing once that mode has closed.
-    pub(crate) prompt_owner: Option<WindowCustomizeModeDataWeak>,
+    pub(crate) data: Option<WindowCustomizeModeDataWeak>,
 }
 impl window_customize_itemdata {
     /// The key table the row's binding is in, for a row that stands for a key
@@ -334,7 +334,7 @@ unsafe fn window_customize_scope_text(
             ),
             WINDOW_CUSTOMIZE_WINDOW => xasprintf(
                 c"window %u",
-                fmt_args![fs.wl_idx.expect("the state names a window link")],
+                fmt_args![fs.wl.expect("the state names a window link")],
             ),
             _ => CString::default(),
         }
@@ -855,7 +855,7 @@ pub(crate) unsafe fn window_customize_init(
 ) {
     unsafe {
         let data_ref = WindowCustomizeModeDataRef::new(window_customize_modedata {
-            wp_ref: Some(pane.clone()),
+            wp: Some(pane.clone()),
             data: None,
             format: None,
             hide_global: 0,
@@ -869,7 +869,7 @@ pub(crate) unsafe fn window_customize_init(
         });
         let mut data_guard = data_ref.borrow_mut();
         let data = &mut *data_guard;
-        data.wp_ref = Some(pane.clone());
+        data.wp = Some(pane.clone());
         wme.state = WindowModeState::Customize(data_ref.clone());
         data.fs = fs.expect("a choose mode opens from a target").clone();
         data.format = Some(
@@ -912,8 +912,7 @@ pub(crate) unsafe fn window_customize_init(
             WindowModeData::Customize(data_ref.downgrade()),
             &window_customize_menu_items,
         );
-        data_ref.borrow_mut().data = Some(mtd.downgrade());
-        wme.mode_tree_ref = Some(mtd);
+        data_ref.borrow_mut().data = Some(mtd.clone());
         (data_ref.tree_ref()).zoom(args);
         (data_ref.tree_ref()).build();
         (data_ref.tree_ref()).draw();
@@ -921,7 +920,8 @@ pub(crate) unsafe fn window_customize_init(
 }
 pub(crate) unsafe fn window_customize_free(wme: &mut window_mode_entry) {
     if let Some(data) = wme.state.customize() {
-        unsafe { (data.tree_ref()).close() };
+        let tree = data.borrow_mut().data.take().expect("the mode is showing a tree");
+        unsafe { tree.close() };
     }
 }
 pub(crate) unsafe fn window_customize_resize(wme: &mut window_mode_entry, sx: u_int, sy: u_int) {
@@ -939,7 +939,7 @@ pub(crate) unsafe fn window_customize_set_option_callback(
         let current_block: u64;
         let item = itemdata;
         let Some(owner) = item
-            .prompt_owner
+            .data
             .as_ref()
             .and_then(WindowCustomizeModeDataWeak::upgrade)
         else {
@@ -1045,7 +1045,7 @@ pub(crate) unsafe fn window_customize_set_command_callback(
 ) -> core::ffi::c_int {
     unsafe {
         let Some(owner) = item
-            .prompt_owner
+            .data
             .as_ref()
             .and_then(WindowCustomizeModeDataWeak::upgrade)
         else {
@@ -1098,7 +1098,7 @@ pub(crate) unsafe fn window_customize_set_note_callback(
 ) -> core::ffi::c_int {
     unsafe {
         let Some(owner) = item
-            .prompt_owner
+            .data
             .as_ref()
             .and_then(WindowCustomizeModeDataWeak::upgrade)
         else {
@@ -1550,7 +1550,7 @@ impl WindowCustomizeModeDataRef {
                         &grid_default_cell,
                         c"Window value (from window %u): %s%s%s",
                         fmt_args![
-                            fs.wl_idx.expect("the state names a window link"),
+                            fs.wl.expect("the state names a window link"),
                             value.as_c_str(),
                             space,
                             unit
@@ -1767,7 +1767,7 @@ impl WindowCustomizeModeDataRef {
                     oo,
                     name: Some(name.to_owned()),
                     idx,
-                    prompt_owner: Some(data_ref),
+                    data: Some(data_ref),
                     ..Default::default()
                 });
                 status_prompt_set(
@@ -1866,7 +1866,7 @@ impl WindowCustomizeModeDataRef {
                     scope: item.scope,
                     table: item.table.clone(),
                     key,
-                    prompt_owner: Some(data_ref),
+                    data: Some(data_ref),
                     ..Default::default()
                 });
                 status_prompt_set(
@@ -1887,7 +1887,7 @@ impl WindowCustomizeModeDataRef {
                     scope: item.scope,
                     table: item.table.clone(),
                     key,
-                    prompt_owner: Some(data_ref),
+                    data: Some(data_ref),
                     ..Default::default()
                 });
                 status_prompt_set(

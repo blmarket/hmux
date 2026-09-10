@@ -178,21 +178,21 @@ pub(crate) fn screen_redraw_pane_border(
         let w = window.as_window();
         let oo = (*w).options_ref();
         let ex: core::ffi::c_int =
-            (wp.geometry().x as u_int).wrapping_add(wp.geometry().width) as core::ffi::c_int;
+            (wp.geometry().xoff as u_int).wrapping_add(wp.geometry().sx) as core::ffi::c_int;
         let ey: core::ffi::c_int =
-            (wp.geometry().y as u_int).wrapping_add(wp.geometry().height) as core::ffi::c_int;
+            (wp.geometry().yoff as u_int).wrapping_add(wp.geometry().sy) as core::ffi::c_int;
         let mut hsplit: core::ffi::c_int = 0 as core::ffi::c_int;
         let mut vsplit: core::ffi::c_int = 0 as core::ffi::c_int;
         let pane_status: core::ffi::c_int = ctx.pane_status;
         let mut sb_w: core::ffi::c_int = 0 as core::ffi::c_int;
-        let sx: core::ffi::c_int = wp.geometry().width as core::ffi::c_int;
-        let sy: core::ffi::c_int = wp.geometry().height as core::ffi::c_int;
+        let sx: core::ffi::c_int = wp.geometry().sx as core::ffi::c_int;
+        let sy: core::ffi::c_int = wp.geometry().sy as core::ffi::c_int;
         let mut left: core::ffi::c_int;
         let mut right: core::ffi::c_int;
-        if px >= wp.geometry().x && px < ex && py >= wp.geometry().y && py < ey {
+        if px >= wp.geometry().xoff && px < ex && py >= wp.geometry().yoff && py < ey {
             return SCREEN_REDRAW_INSIDE;
         }
-        if window_pane_show_scrollbar(wp, (*w).scrollbar_settings().mode) != 0 {
+        if window_pane_show_scrollbar(wp, (*w).scrollbar_settings().sb) != 0 {
             sb_w = wp.scrollbar_style().width + wp.scrollbar_style().padding;
         }
         if window_pane_is_floating(
@@ -200,16 +200,16 @@ pub(crate) fn screen_redraw_pane_border(
             &{ crate::window::window_pane_ref_of(wp) }.expect("the pane allocation exists"),
         ) != 0
         {
-            left = wp.geometry().x - 1 as core::ffi::c_int;
-            right = wp.geometry().x + sx;
-            if (*w).scrollbar_settings().mode != PANE_SCROLLBARS_OFF
-                && (*w).scrollbar_settings().position == PANE_SCROLLBARS_LEFT
+            left = wp.geometry().xoff - 1 as core::ffi::c_int;
+            right = wp.geometry().xoff + sx;
+            if (*w).scrollbar_settings().sb != PANE_SCROLLBARS_OFF
+                && (*w).scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT
             {
                 left -= sb_w;
             } else {
                 right += sb_w;
             }
-            if py >= wp.geometry().y - 1 as core::ffi::c_int && py <= wp.geometry().y + sy {
+            if py >= wp.geometry().yoff - 1 as core::ffi::c_int && py <= wp.geometry().yoff + sy {
                 if px == left {
                     return SCREEN_REDRAW_BORDER_LEFT;
                 }
@@ -218,10 +218,10 @@ pub(crate) fn screen_redraw_pane_border(
                 }
             }
             if px > left && px <= right {
-                if py == wp.geometry().y - 1 as core::ffi::c_int {
+                if py == wp.geometry().yoff - 1 as core::ffi::c_int {
                     return SCREEN_REDRAW_BORDER_TOP;
                 }
-                if py == wp.geometry().y + sy {
+                if py == wp.geometry().yoff + sy {
                     return SCREEN_REDRAW_BORDER_BOTTOM;
                 }
             }
@@ -240,70 +240,70 @@ pub(crate) fn screen_redraw_pane_border(
             }
             _ => {}
         }
-        if (wp.geometry().y == 0 as core::ffi::c_int
-            || py >= wp.geometry().y - 1 as core::ffi::c_int)
+        if (wp.geometry().yoff == 0 as core::ffi::c_int
+            || py >= wp.geometry().yoff - 1 as core::ffi::c_int)
             && py <= ey
         {
-            if (*w).scrollbar_settings().mode != PANE_SCROLLBARS_OFF
-                && (*w).scrollbar_settings().position == PANE_SCROLLBARS_LEFT
+            if (*w).scrollbar_settings().sb != PANE_SCROLLBARS_OFF
+                && (*w).scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT
             {
-                if wp.geometry().x - sb_w == 0 as core::ffi::c_int
+                if wp.geometry().xoff - sb_w == 0 as core::ffi::c_int
                     && px == sx + sb_w
                     && (hsplit == 0 || hsplit != 0 && py <= sy / 2 as core::ffi::c_int)
                 {
                     return SCREEN_REDRAW_BORDER_RIGHT;
                 }
-                if wp.geometry().x - sb_w != 0 as core::ffi::c_int {
-                    if px == wp.geometry().x - sb_w - 1 as core::ffi::c_int
+                if wp.geometry().xoff - sb_w != 0 as core::ffi::c_int {
+                    if px == wp.geometry().xoff - sb_w - 1 as core::ffi::c_int
                         && (hsplit == 0 || hsplit != 0 && py > sy / 2 as core::ffi::c_int)
                     {
                         return SCREEN_REDRAW_BORDER_LEFT;
                     }
-                    if px == wp.geometry().x + sx + sb_w - 1 as core::ffi::c_int {
+                    if px == wp.geometry().xoff + sx + sb_w - 1 as core::ffi::c_int {
                         return SCREEN_REDRAW_BORDER_RIGHT;
                     }
                 }
             } else {
-                if wp.geometry().x == 0 as core::ffi::c_int
+                if wp.geometry().xoff == 0 as core::ffi::c_int
                     && px == sx + sb_w
                     && (hsplit == 0 || hsplit != 0 && py <= sy / 2 as core::ffi::c_int)
                 {
                     return SCREEN_REDRAW_BORDER_RIGHT;
                 }
-                if wp.geometry().x != 0 as core::ffi::c_int {
-                    if px == wp.geometry().x - 1 as core::ffi::c_int
+                if wp.geometry().xoff != 0 as core::ffi::c_int {
+                    if px == wp.geometry().xoff - 1 as core::ffi::c_int
                         && (hsplit == 0 || hsplit != 0 && py > sy / 2 as core::ffi::c_int)
                     {
                         return SCREEN_REDRAW_BORDER_LEFT;
                     }
-                    if px == wp.geometry().x + sx + sb_w {
+                    if px == wp.geometry().xoff + sx + sb_w {
                         return SCREEN_REDRAW_BORDER_RIGHT;
                     }
                 }
             }
         }
         if vsplit != 0 && pane_status == PANE_STATUS_OFF {
-            if wp.geometry().y == 0 as core::ffi::c_int
+            if wp.geometry().yoff == 0 as core::ffi::c_int
                 && py == sy
                 && px <= sx / 2 as core::ffi::c_int
             {
                 return SCREEN_REDRAW_BORDER_BOTTOM;
             }
-            if wp.geometry().y != 0 as core::ffi::c_int
-                && py == wp.geometry().y - 1 as core::ffi::c_int
+            if wp.geometry().yoff != 0 as core::ffi::c_int
+                && py == wp.geometry().yoff - 1 as core::ffi::c_int
                 && px > sx / 2 as core::ffi::c_int
             {
                 return SCREEN_REDRAW_BORDER_TOP;
             }
-        } else if (*w).scrollbar_settings().mode != PANE_SCROLLBARS_OFF
-            && (*w).scrollbar_settings().position == PANE_SCROLLBARS_LEFT
+        } else if (*w).scrollbar_settings().sb != PANE_SCROLLBARS_OFF
+            && (*w).scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT
         {
-            if (wp.geometry().x - sb_w == 0 as core::ffi::c_int || px >= wp.geometry().x - sb_w)
+            if (wp.geometry().xoff - sb_w == 0 as core::ffi::c_int || px >= wp.geometry().xoff - sb_w)
                 && (px <= ex || sb_w != 0 as core::ffi::c_int && px < ex + sb_w)
             {
                 if pane_status != PANE_STATUS_BOTTOM
-                    && wp.geometry().y != 0 as core::ffi::c_int
-                    && py == wp.geometry().y - 1 as core::ffi::c_int
+                    && wp.geometry().yoff != 0 as core::ffi::c_int
+                    && py == wp.geometry().yoff - 1 as core::ffi::c_int
                 {
                     return SCREEN_REDRAW_BORDER_TOP;
                 }
@@ -311,12 +311,12 @@ pub(crate) fn screen_redraw_pane_border(
                     return SCREEN_REDRAW_BORDER_BOTTOM;
                 }
             }
-        } else if (wp.geometry().x == 0 as core::ffi::c_int || px >= wp.geometry().x)
+        } else if (wp.geometry().xoff == 0 as core::ffi::c_int || px >= wp.geometry().xoff)
             && (px <= ex || sb_w != 0 as core::ffi::c_int && px < ex + sb_w)
         {
             if pane_status != PANE_STATUS_BOTTOM
-                && wp.geometry().y != 0 as core::ffi::c_int
-                && py == wp.geometry().y - 1 as core::ffi::c_int
+                && wp.geometry().yoff != 0 as core::ffi::c_int
+                && py == wp.geometry().yoff - 1 as core::ffi::c_int
             {
                 return SCREEN_REDRAW_BORDER_TOP;
             }
@@ -345,17 +345,17 @@ fn screen_redraw_cell_border1(
 ) -> core::ffi::c_int {
     {
         if sb_pos == PANE_SCROLLBARS_LEFT {
-            if (px < wp.geometry().x - 1 as core::ffi::c_int - sb_w
-                || px > wp.geometry().x + wp.geometry().width as core::ffi::c_int)
-                && (py < wp.geometry().y - 1 as core::ffi::c_int
-                    || py > wp.geometry().y + wp.geometry().height as core::ffi::c_int)
+            if (px < wp.geometry().xoff - 1 as core::ffi::c_int - sb_w
+                || px > wp.geometry().xoff + wp.geometry().sx as core::ffi::c_int)
+                && (py < wp.geometry().yoff - 1 as core::ffi::c_int
+                    || py > wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int)
             {
                 return -(1 as core::ffi::c_int);
             }
-        } else if (px < wp.geometry().x - 1 as core::ffi::c_int
-            || px > wp.geometry().x + wp.geometry().width as core::ffi::c_int + sb_w)
-            && (py < wp.geometry().y - 1 as core::ffi::c_int
-                || py > wp.geometry().y + wp.geometry().height as core::ffi::c_int)
+        } else if (px < wp.geometry().xoff - 1 as core::ffi::c_int
+            || px > wp.geometry().xoff + wp.geometry().sx as core::ffi::c_int + sb_w)
+            && (py < wp.geometry().yoff - 1 as core::ffi::c_int
+                || py > wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int)
         {
             return -(1 as core::ffi::c_int);
         }
@@ -390,8 +390,8 @@ pub(crate) unsafe fn screen_redraw_cell_border(
         {
             n = screen_redraw_cell_border1(
                 ctx,
-                if (*w).scrollbar_settings().mode != PANE_SCROLLBARS_OFF {
-                    (*w).scrollbar_settings().position
+                if (*w).scrollbar_settings().sb != PANE_SCROLLBARS_OFF {
+                    (*w).scrollbar_settings().sb_pos
                 } else {
                     0 as core::ffi::c_int
                 },
@@ -427,8 +427,8 @@ pub(crate) unsafe fn screen_redraw_cell_border(
             {
                 n = screen_redraw_cell_border1(
                     ctx,
-                    if (*w).scrollbar_settings().mode != PANE_SCROLLBARS_OFF {
-                        (*w).scrollbar_settings().position
+                    if (*w).scrollbar_settings().sb != PANE_SCROLLBARS_OFF {
+                        (*w).scrollbar_settings().sb_pos
                     } else {
                         0 as core::ffi::c_int
                     },
@@ -607,21 +607,21 @@ unsafe fn screen_redraw_check_cell(
                 && (px >= sx || py >= sy))
             {
                 sb_w = wp.scrollbar_style().width + wp.scrollbar_style().padding;
-                if (*w).scrollbar_settings().mode != PANE_SCROLLBARS_OFF
-                    && (*w).scrollbar_settings().position == PANE_SCROLLBARS_LEFT
+                if (*w).scrollbar_settings().sb != PANE_SCROLLBARS_OFF
+                    && (*w).scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT
                 {
-                    if px >= wp.geometry().x - 1 as core::ffi::c_int - sb_w
-                        && px <= wp.geometry().x + wp.geometry().width as core::ffi::c_int
-                        && (py >= wp.geometry().y - 1 as core::ffi::c_int
-                            && py <= wp.geometry().y + wp.geometry().height as core::ffi::c_int)
+                    if px >= wp.geometry().xoff - 1 as core::ffi::c_int - sb_w
+                        && px <= wp.geometry().xoff + wp.geometry().sx as core::ffi::c_int
+                        && (py >= wp.geometry().yoff - 1 as core::ffi::c_int
+                            && py <= wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int)
                     {
                         selected = Some(pane.clone());
                         break;
                     }
-                } else if px >= wp.geometry().x - 1 as core::ffi::c_int
-                    && px <= wp.geometry().x + wp.geometry().width as core::ffi::c_int + sb_w
-                    && (py >= wp.geometry().y - 1 as core::ffi::c_int
-                        && py <= wp.geometry().y + wp.geometry().height as core::ffi::c_int)
+                } else if px >= wp.geometry().xoff - 1 as core::ffi::c_int
+                    && px <= wp.geometry().xoff + wp.geometry().sx as core::ffi::c_int + sb_w
+                    && (py >= wp.geometry().yoff - 1 as core::ffi::c_int
+                        && py <= wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int)
                 {
                     selected = Some(pane.clone());
                     break;
@@ -683,22 +683,22 @@ unsafe fn screen_redraw_check_cell(
             {
                 pane_ref = Some(pane.clone());
                 sb_w = wp.scrollbar_style().width + wp.scrollbar_style().padding;
-                if (*w).scrollbar_settings().mode != PANE_SCROLLBARS_OFF
-                    && (*w).scrollbar_settings().position == PANE_SCROLLBARS_LEFT
+                if (*w).scrollbar_settings().sb != PANE_SCROLLBARS_OFF
+                    && (*w).scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT
                 {
-                    if (px < wp.geometry().x - 1 as core::ffi::c_int - sb_w
-                        || px > wp.geometry().x + wp.geometry().width as core::ffi::c_int)
-                        && (py < wp.geometry().y - 1 as core::ffi::c_int
-                            || py > wp.geometry().y + wp.geometry().height as core::ffi::c_int)
+                    if (px < wp.geometry().xoff - 1 as core::ffi::c_int - sb_w
+                        || px > wp.geometry().xoff + wp.geometry().sx as core::ffi::c_int)
+                        && (py < wp.geometry().yoff - 1 as core::ffi::c_int
+                            || py > wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int)
                     {
                         current_block = 13503835911103092327;
                     } else {
                         current_block = 16924917904204750491;
                     }
-                } else if (px < wp.geometry().x - 1 as core::ffi::c_int
-                    || px > wp.geometry().x + wp.geometry().width as core::ffi::c_int + sb_w)
-                    && (py < wp.geometry().y - 1 as core::ffi::c_int
-                        || py > wp.geometry().y + wp.geometry().height as core::ffi::c_int)
+                } else if (px < wp.geometry().xoff - 1 as core::ffi::c_int
+                    || px > wp.geometry().xoff + wp.geometry().sx as core::ffi::c_int + sb_w)
+                    && (py < wp.geometry().yoff - 1 as core::ffi::c_int
+                        || py > wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int)
                 {
                     current_block = 13503835911103092327;
                 } else {
@@ -709,13 +709,13 @@ unsafe fn screen_redraw_check_cell(
                     _ => {
                         if pane_status != PANE_STATUS_OFF {
                             if pane_status == PANE_STATUS_TOP {
-                                pane_status_line = wp.geometry().y - 1 as core::ffi::c_int;
+                                pane_status_line = wp.geometry().yoff - 1 as core::ffi::c_int;
                             } else {
                                 pane_status_line =
-                                    wp.geometry().y + wp.geometry().height as core::ffi::c_int;
+                                    wp.geometry().yoff + wp.geometry().sy as core::ffi::c_int;
                             }
-                            left = wp.geometry().x + 2 as core::ffi::c_int;
-                            right = wp.geometry().x
+                            left = wp.geometry().xoff + 2 as core::ffi::c_int;
+                            right = wp.geometry().xoff
                                 + 2 as core::ffi::c_int
                                 + wp.status_line_width() as core::ffi::c_int
                                 - 1 as core::ffi::c_int;
@@ -726,24 +726,24 @@ unsafe fn screen_redraw_check_cell(
                                 };
                             }
                         }
-                        if window_pane_show_scrollbar(wp, (*w).scrollbar_settings().mode) != 0 {
+                        if window_pane_show_scrollbar(wp, (*w).scrollbar_settings().sb) != 0 {
                             sb_w = wp.scrollbar_style().width + wp.scrollbar_style().padding;
-                            if (wp.geometry().y == 0 as core::ffi::c_int
-                                && py < wp.geometry().height as core::ffi::c_int
-                                || py >= wp.geometry().y
+                            if (wp.geometry().yoff == 0 as core::ffi::c_int
+                                && py < wp.geometry().sy as core::ffi::c_int
+                                || py >= wp.geometry().yoff
                                     && py
-                                        < wp.geometry().y
-                                            + wp.geometry().height as core::ffi::c_int)
-                                && ((*w).scrollbar_settings().position == PANE_SCROLLBARS_RIGHT
+                                        < wp.geometry().yoff
+                                            + wp.geometry().sy as core::ffi::c_int)
+                                && ((*w).scrollbar_settings().sb_pos == PANE_SCROLLBARS_RIGHT
                                     && (px
-                                        >= wp.geometry().x
-                                            + wp.geometry().width as core::ffi::c_int
+                                        >= wp.geometry().xoff
+                                            + wp.geometry().sx as core::ffi::c_int
                                         && px
-                                            < wp.geometry().x
-                                                + wp.geometry().width as core::ffi::c_int
+                                            < wp.geometry().xoff
+                                                + wp.geometry().sx as core::ffi::c_int
                                                 + sb_w)
-                                    || (*w).scrollbar_settings().position == PANE_SCROLLBARS_LEFT
-                                        && (px >= wp.geometry().x - sb_w && px < wp.geometry().x))
+                                    || (*w).scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT
+                                        && (px >= wp.geometry().xoff - sb_w && px < wp.geometry().xoff))
                             {
                                 return ScreenRedrawCell {
                                     cell_type: 13,
@@ -810,7 +810,7 @@ unsafe fn screen_redraw_make_pane_status(
         };
         let Some(wp) = pane.get() else { return 0 };
         let options = wp.options_ref().clone();
-        let sb_w = if window_pane_show_scrollbar(wp, window.scrollbar_settings().mode) != 0 {
+        let sb_w = if window_pane_show_scrollbar(wp, window.scrollbar_settings().sb) != 0 {
             wp.scrollbar_style().width + wp.scrollbar_style().padding
         } else {
             0
@@ -842,13 +842,13 @@ unsafe fn screen_redraw_make_pane_status(
         let expanded = format_expand_time(&mut ft, &fmt);
         let Some(wp) = pane.get() else { return 0 };
         let geometry = wp.geometry();
-        let width = if geometry.width < 4 {
+        let width = if geometry.sx < 4 {
             0
         } else {
-            geometry.width.wrapping_add(sb_w as u_int).wrapping_sub(2)
+            geometry.sx.wrapping_add(sb_w as u_int).wrapping_sub(2)
         };
         let max_width =
-            (window.dimensions().size.width as core::ffi::c_int - (geometry.x + 2)).max(0) as u_int;
+            (window.dimensions().size.width as core::ffi::c_int - (geometry.xoff + 2)).max(0) as u_int;
         let width = width.min(max_width);
         let Some(wp) = pane.get_mut() else { return 0 };
         wp.set_status_line_width(width as usize);
@@ -857,11 +857,11 @@ unsafe fn screen_redraw_make_pane_status(
         let mut ranges = Vec::new();
         let mut writer = screen_write_ctx_on_screen(&mut status_screen);
         for i in 0..width {
-            let px = ((geometry.x + 2) as u_int).wrapping_add(i);
+            let px = ((geometry.xoff + 2) as u_int).wrapping_add(i);
             let py = if rctx.pane_status == PANE_STATUS_TOP {
-                (geometry.y - 1) as u_int
+                (geometry.yoff - 1) as u_int
             } else {
-                (geometry.y as u_int).wrapping_add(geometry.height)
+                (geometry.yoff as u_int).wrapping_add(geometry.sy)
             };
             let Some(wp) = pane.get() else { return 0 };
             let cell_type = screen_redraw_type_of_cell(
@@ -912,12 +912,12 @@ unsafe fn screen_redraw_draw_pane_status(ctx: &mut screen_redraw_ctx) {
             if window_pane_visible(&window.as_window(), wp) != 0 {
                 size = wp.status_line_width() as u_int;
                 if ctx.pane_status == PANE_STATUS_TOP {
-                    yoff = wp.geometry().y - 1 as core::ffi::c_int;
+                    yoff = wp.geometry().yoff - 1 as core::ffi::c_int;
                 } else {
-                    yoff = (wp.geometry().y as u_int).wrapping_add(wp.geometry().height)
+                    yoff = (wp.geometry().yoff as u_int).wrapping_add(wp.geometry().sy)
                         as core::ffi::c_int;
                 }
-                xoff = wp.geometry().x + 2 as core::ffi::c_int;
+                xoff = wp.geometry().xoff + 2 as core::ffi::c_int;
                 if !(xoff + size as core::ffi::c_int <= ctx.ox
                     || xoff >= ctx.ox + ctx.sx as core::ffi::c_int
                     || yoff < ctx.oy
@@ -1134,7 +1134,7 @@ pub unsafe fn screen_redraw_pane(
         }
         let show_scrollbar = pane.get().is_some_and(|wp| {
             pane.window().is_some_and(|window| {
-                window_pane_show_scrollbar(wp, window.scrollbar_settings().mode) != 0
+                window_pane_show_scrollbar(wp, window.scrollbar_settings().sb) != 0
             })
         });
         if show_scrollbar {
@@ -1229,8 +1229,8 @@ unsafe fn screen_redraw_draw_border_arrows(
         let (Some(wp), Some(active)) = (pane.get(), active_pane.get()) else {
             return;
         };
-        if i != wp.geometry().x + 1 as core::ffi::c_int
-            && j != wp.geometry().y + 1 as core::ffi::c_int
+        if i != wp.geometry().xoff + 1 as core::ffi::c_int
+            && j != wp.geometry().yoff + 1 as core::ffi::c_int
         {
             return;
         }
@@ -1254,7 +1254,7 @@ unsafe fn screen_redraw_draw_border_arrows(
         if border == SCREEN_REDRAW_INSIDE as core::ffi::c_int {
             return;
         }
-        if i == wp.geometry().x + 1 as core::ffi::c_int {
+        if i == wp.geometry().xoff + 1 as core::ffi::c_int {
             if border == SCREEN_REDRAW_OUTSIDE as core::ffi::c_int {
                 if screen_redraw_two_panes(&pane_window).is_some() {
                     if w.panes
@@ -1276,7 +1276,7 @@ unsafe fn screen_redraw_draw_border_arrows(
                 arrows = 1 as core::ffi::c_int;
             }
         }
-        if j == wp.geometry().y + 1 as core::ffi::c_int {
+        if j == wp.geometry().yoff + 1 as core::ffi::c_int {
             if border == SCREEN_REDRAW_OUTSIDE as core::ffi::c_int {
                 if screen_redraw_two_panes(&pane_window).is_some() {
                     if w.panes
@@ -1548,8 +1548,8 @@ unsafe fn screen_redraw_draw_pane(ctx: &mut screen_redraw_ctx, pane: &mut RustWi
         let Some(geometry) = pane.get().map(|wp| wp.geometry()) else {
             return;
         };
-        if geometry.x + geometry.width as core::ffi::c_int <= ctx.ox
-            || geometry.x >= ctx.ox + ctx.sx as core::ffi::c_int
+        if geometry.xoff + geometry.sx as core::ffi::c_int <= ctx.ox
+            || geometry.xoff >= ctx.ox + ctx.sx as core::ffi::c_int
         {
             return;
         }
@@ -1563,37 +1563,37 @@ unsafe fn screen_redraw_draw_pane(ctx: &mut screen_redraw_ctx, pane: &mut RustWi
             let Some(geometry) = pane.get().map(|wp| wp.geometry()) else {
                 return;
             };
-            if j >= geometry.height {
+            if j >= geometry.sy {
                 break;
             }
-            let row = geometry.y + j as core::ffi::c_int;
+            let row = geometry.yoff + j as core::ffi::c_int;
             if row < ctx.oy || row >= ctx.oy + ctx.sy as core::ffi::c_int {
                 j += 1;
                 continue;
             }
-            let wy = (geometry.y as u_int).wrapping_add(j);
+            let wy = (geometry.yoff as u_int).wrapping_add(j);
             let py = woy.wrapping_add(wy).wrapping_sub(ctx.oy as u_int);
             if py > client.as_tty().sy {
                 j += 1;
                 continue;
             }
-            let (wx, width) = if geometry.x >= ctx.ox
-                && geometry.x + geometry.width as core::ffi::c_int
+            let (wx, width) = if geometry.xoff >= ctx.ox
+                && geometry.xoff + geometry.sx as core::ffi::c_int
                     <= ctx.ox + ctx.sx as core::ffi::c_int
             {
-                ((geometry.x - ctx.ox) as u_int, geometry.width)
-            } else if geometry.x < ctx.ox
-                && geometry.x + geometry.width as core::ffi::c_int
+                ((geometry.xoff - ctx.ox) as u_int, geometry.sx)
+            } else if geometry.xoff < ctx.ox
+                && geometry.xoff + geometry.sx as core::ffi::c_int
                     > ctx.ox + ctx.sx as core::ffi::c_int
             {
                 (0, ctx.sx)
-            } else if geometry.x < ctx.ox {
+            } else if geometry.xoff < ctx.ox {
                 (
                     0,
-                    geometry.width.wrapping_sub((ctx.ox - geometry.x) as u_int),
+                    geometry.sx.wrapping_sub((ctx.ox - geometry.xoff) as u_int),
                 )
             } else {
-                let wx = (geometry.x - ctx.ox) as u_int;
+                let wx = (geometry.xoff - ctx.ox) as u_int;
                 (wx, ctx.sx.wrapping_sub(wx))
             };
             let ranges = tty_check_overlay_range(client.as_tty_mut(), wx, wy, width);
@@ -1614,7 +1614,7 @@ unsafe fn screen_redraw_draw_pane(ctx: &mut screen_redraw_ctx, pane: &mut RustWi
                     let x = range
                         .px
                         .wrapping_add(ctx.ox as u_int)
-                        .wrapping_sub(wp.geometry().x as u_int);
+                        .wrapping_sub(wp.geometry().xoff as u_int);
                     log_debug(
                         c"%s: %s %%%u range %u (%u,%u) width %u, tty (%u,%u) width %u",
                         fmt_args![
@@ -1665,7 +1665,7 @@ unsafe fn screen_redraw_draw_pane_scrollbars(ctx: &mut screen_redraw_ctx) {
         let panes = window.panes();
         for mut pane in panes {
             let Some(wp) = pane.get() else { continue };
-            if window_pane_show_scrollbar(wp, window.scrollbar_settings().mode) != 0
+            if window_pane_show_scrollbar(wp, window.scrollbar_settings().sb) != 0
                 && window_pane_visible(&window.as_window(), wp) != 0
             {
                 screen_redraw_draw_pane_scrollbar(ctx, &mut pane);
@@ -1682,19 +1682,19 @@ unsafe fn screen_redraw_draw_pane_scrollbar(
         let Some(window) = pane.window() else { return };
         let settings = window.scrollbar_settings();
         let percent_view: core::ffi::c_double;
-        let sb: u_int = settings.mode as u_int;
+        let sb: u_int = settings.sb as u_int;
         let total_height: u_int;
-        let sb_h: u_int = (*wp).geometry().height;
-        let sb_pos: u_int = settings.position as u_int;
+        let sb_h: u_int = (*wp).geometry().sy;
+        let sb_pos: u_int = settings.sb_pos as u_int;
         let mut slider_h: u_int;
         let mut slider_y: u_int;
         let sb_w: core::ffi::c_int = (*wp).scrollbar_style().width;
         let sb_pad: core::ffi::c_int = (*wp).scrollbar_style().padding;
         let cm_y: core::ffi::c_int;
         let cm_size: core::ffi::c_int;
-        let xoff: core::ffi::c_int = (*wp).geometry().x;
+        let xoff: core::ffi::c_int = (*wp).geometry().xoff;
 
-        let sb_y: core::ffi::c_int = (*wp).geometry().y;
+        let sb_y: core::ffi::c_int = (*wp).geometry().yoff;
         if window_pane_mode(wp) == WINDOW_PANE_NO_MODE {
             if sb == PANE_SCROLLBARS_MODAL as u_int {
                 return;
@@ -1725,7 +1725,7 @@ unsafe fn screen_redraw_draw_pane_scrollbar(
         let sb_x: core::ffi::c_int = if sb_pos == PANE_SCROLLBARS_LEFT as u_int {
             xoff - sb_w - sb_pad
         } else {
-            (xoff as u_int).wrapping_add((*wp).geometry().width) as core::ffi::c_int
+            (xoff as u_int).wrapping_add((*wp).geometry().sx) as core::ffi::c_int
         };
         if slider_h < 1 as u_int {
             slider_h = 1 as u_int;
@@ -1745,8 +1745,8 @@ unsafe fn screen_redraw_draw_pane_scrollbar(
         );
         if let Some(wp) = pane.get_mut() {
             wp.set_slider(PaneScrollbarSlider {
-                y: slider_y,
-                height: slider_h,
+                sb_slider_y: slider_y,
+                sb_slider_h: slider_h,
             });
         }
     }
@@ -1785,8 +1785,8 @@ unsafe fn screen_redraw_draw_scrollbar(
 
         let mut sy: core::ffi::c_int;
 
-        let xoff: core::ffi::c_int = geometry.x;
-        let yoff: core::ffi::c_int = geometry.y;
+        let xoff: core::ffi::c_int = geometry.xoff;
+        let yoff: core::ffi::c_int = geometry.yoff;
         let sb_wy: core::ffi::c_int = sb_y;
         let sx: core::ffi::c_int = ctx.sx as core::ffi::c_int;
         sy = client.as_tty().sy.wrapping_sub(ctx.statuslines) as core::ffi::c_int;
@@ -1978,12 +1978,12 @@ impl visible_ranges {
                 if core::ptr::addr_eq(wp, base_wp) {
                     found_self = 1 as core::ffi::c_int;
                 } else {
-                    tb = if wp.geometry().y > 0 as core::ffi::c_int {
-                        wp.geometry().y - 1 as core::ffi::c_int
+                    tb = if wp.geometry().yoff > 0 as core::ffi::c_int {
+                        wp.geometry().yoff - 1 as core::ffi::c_int
                     } else {
                         0 as core::ffi::c_int
                     };
-                    bb = (wp.geometry().y as u_int).wrapping_add(wp.geometry().height)
+                    bb = (wp.geometry().yoff as u_int).wrapping_add(wp.geometry().sy)
                         as core::ffi::c_int;
                     if !(found_self == 0 || window_pane_visible(&w, wp) == 0 || py < tb || py > bb)
                         && !(window_pane_is_floating(
@@ -1994,29 +1994,29 @@ impl visible_ranges {
                             && (py == tb || py == bb))
                     {
                         sb_w = wp.scrollbar_style().width + wp.scrollbar_style().padding;
-                        if window_pane_show_scrollbar(wp, w.scrollbar_settings().mode) == 0 {
+                        if window_pane_show_scrollbar(wp, w.scrollbar_settings().sb) == 0 {
                             sb_w = 0 as core::ffi::c_int;
                         }
                         i = 0 as u_int;
                         while i < r.used {
                             let range = r.ranges[i as usize];
-                            if w.scrollbar_settings().position == PANE_SCROLLBARS_LEFT {
-                                if wp.geometry().x > sb_w {
-                                    lb = wp.geometry().x - 1 as core::ffi::c_int - sb_w;
+                            if w.scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT {
+                                if wp.geometry().xoff > sb_w {
+                                    lb = wp.geometry().xoff - 1 as core::ffi::c_int - sb_w;
                                 } else {
                                     lb = 0 as core::ffi::c_int;
                                 }
-                            } else if wp.geometry().x > 0 as core::ffi::c_int {
-                                lb = wp.geometry().x - 1 as core::ffi::c_int;
+                            } else if wp.geometry().xoff > 0 as core::ffi::c_int {
+                                lb = wp.geometry().xoff - 1 as core::ffi::c_int;
                             } else {
                                 lb = 0 as core::ffi::c_int;
                             }
-                            if w.scrollbar_settings().position == PANE_SCROLLBARS_LEFT {
-                                rb = (wp.geometry().x as u_int).wrapping_add(wp.geometry().width)
+                            if w.scrollbar_settings().sb_pos == PANE_SCROLLBARS_LEFT {
+                                rb = (wp.geometry().xoff as u_int).wrapping_add(wp.geometry().sx)
                                     as core::ffi::c_int;
                             } else {
-                                rb = (wp.geometry().x as u_int)
-                                    .wrapping_add(wp.geometry().width)
+                                rb = (wp.geometry().xoff as u_int)
+                                    .wrapping_add(wp.geometry().sx)
                                     .wrapping_add(sb_w as u_int)
                                     as core::ffi::c_int;
                             }
