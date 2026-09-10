@@ -845,21 +845,19 @@ pub(crate) unsafe fn args_make_commands(
     }
 }
 
-pub unsafe fn args_make_commands_get_command(state: &args_command_state) -> CString {
-    unsafe {
-        if let Some(cmdlist) = state.cmdlist.as_ref() {
-            return match cmdlist.command(0) {
-                Some(first) => crate::CommandEntry::name(cmd_get_entry(&first)).to_owned(),
-                None => CString::default(),
-            };
-        }
-        let cmd = state.cmd.as_deref().map(|c| c.to_bytes()).unwrap_or(b"");
-        let end = cmd
-            .iter()
-            .position(|b| b" ,".contains(b))
-            .unwrap_or(cmd.len());
-        CString::from_vec_unchecked(cmd[..end].to_vec())
+pub fn args_make_commands_get_command(state: &args_command_state) -> CString {
+    if let Some(cmdlist) = state.cmdlist.as_ref() {
+        return match cmdlist.command(0) {
+            Some(first) => crate::CommandEntry::name(cmd_get_entry(&first)).to_owned(),
+            None => CString::default(),
+        };
     }
+    let cmd = state.cmd.as_deref().map(|c| c.to_bytes()).unwrap_or(b"");
+    let end = cmd
+        .iter()
+        .position(|b| b" ,".contains(b))
+        .unwrap_or(cmd.len());
+    unsafe { CString::from_vec_unchecked(cmd[..end].to_vec()) }
 }
 
 /// The number a string holds, or the `strtonum` message saying why it is not

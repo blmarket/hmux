@@ -9,12 +9,12 @@
 //! before the command is ever run. Neither takes an argument or a target, and
 //! both answer `CMD_RETURN_NORMAL`.
 
+use crate::args::args_parse_t;
 use crate::cmd::cmd_get_entry;
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{CMD_FIND_PANE, CMD_RETURN_NORMAL, CMD_STARTSERVER, SIGTERM};
 use crate::ffi::{getpid, kill};
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
-use crate::args::args_parse_t;
 
 pub(crate) static cmd_kill_server_entry: RustCommandEntry = RustCommandEntry {
     name: c"kill-server",
