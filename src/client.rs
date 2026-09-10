@@ -305,11 +305,12 @@ pub(crate) unsafe fn client_exit() {
         }
     }
 }
-pub unsafe fn client_main(
+pub(crate) unsafe fn client_main(
     base: reactor::Base,
     argv: &[std::ffi::CString],
     mut flags: uint64_t,
     feat: core::ffi::c_int,
+    config: crate::cfg::ConfigState,
 ) -> core::ffi::c_int {
     unsafe {
         let ppid: pid_t;
@@ -339,7 +340,9 @@ pub unsafe fn client_main(
                 let _ = pr.error.take();
             }
         }
-        client_proc = Some(proc_start(c"client"));
+        let process = proc_start(c"client");
+        process.borrow_mut().config = config;
+        client_proc = Some(process);
         proc_set_signals(
             &mut client_proc
                 .as_ref()

@@ -323,7 +323,9 @@ pub unsafe fn server_start(
         if !base.reinit() {
             fatalx(c"reactor reinit failed", fmt_args![]);
         }
-        server_proc = Some(proc_start(c"server"));
+        let process = proc_start(c"server");
+        process.borrow_mut().config = core::mem::take(&mut client.borrow_mut().config);
+        server_proc = Some(process);
         proc_set_signals(
             &mut server_proc
                 .as_ref()

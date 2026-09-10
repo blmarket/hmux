@@ -1,4 +1,4 @@
-use crate::cfg::{cfg_files, cfg_quiet};
+use crate::cfg::ConfigState;
 use crate::client::client_main;
 use crate::compat::BSDgetopt;
 use crate::compat::getprogname;
@@ -808,7 +808,8 @@ pub unsafe fn main_0(argv: &mut [CString]) -> core::ffi::c_int {
         if let Some(cwd) = find_cwd() {
             with_global_environment_mut(|env| env.set(c"PWD", 0, &cwd));
         }
-        cfg_files = expand_paths(TMUX_CONF, 1 as core::ffi::c_int);
+        let mut config = ConfigState::default();
+        config.files = expand_paths(TMUX_CONF, 1 as core::ffi::c_int);
         loop {
             opt = BSDgetopt(argv, c"2c:CDdf:hlL:NqS:T:uUvV");
             if !(opt != -(1 as core::ffi::c_int)) {
@@ -838,14 +839,14 @@ pub unsafe fn main_0(argv: &mut [CString]) -> core::ffi::c_int {
                 102 => {
                     if fflag == 0 {
                         fflag = 1 as core::ffi::c_int;
-                        cfg_files.clear();
+                        config.files.clear();
                     }
-                    cfg_files.push(
+                    config.files.push(
                         BSDoptarg(argv)
                             .expect("this option requires an argument")
                             .to_owned(),
                     );
-                    cfg_quiet = 0 as core::ffi::c_int;
+                    config.quiet = false;
                 }
                 104 => {
                     usage(0 as core::ffi::c_int);
@@ -1011,7 +1012,7 @@ pub unsafe fn main_0(argv: &mut [CString]) -> core::ffi::c_int {
             flags |= CLIENT_DEFAULTSOCKET as uint64_t;
         }
         socket_path = Some(path.expect("socket path was selected"));
-        let status = client_main(osdep_event_init(), argv, flags, feat);
+        let status = client_main(osdep_event_init(), argv, flags, feat, config);
         crate::reactor::shutdown();
         std::process::exit(status);
     }

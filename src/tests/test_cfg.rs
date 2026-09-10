@@ -12,8 +12,8 @@ struct Loading(Option<ClientWeak>, bool);
 impl Loading {
     unsafe fn for_client(c: *mut client) -> Loading {
         unsafe {
-            let held = Loading(CFG_CLIENT.take(), replace_configuration_finished(false));
-            CFG_CLIENT = client_ref_of(&*c).map(|c| c.downgrade());
+            let held = Loading(with_config(|config| config.client.take()), replace_configuration_finished(false));
+            with_config(|config| config.client = client_ref_of(&*c).map(|c| c.downgrade()));
             held
         }
     }
@@ -22,7 +22,7 @@ impl Loading {
 impl Drop for Loading {
     fn drop(&mut self) {
         unsafe {
-            CFG_CLIENT = self.0.take();
+            with_config(|config| config.client = self.0.take());
             replace_configuration_finished(self.1);
         }
     }

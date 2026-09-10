@@ -46,19 +46,35 @@ use ::std::fs::File;
 use ::std::io::Read;
 use ::std::os::unix::ffi::OsStrExt;
 
-/// The client the config load is running for, observed rather than held, so
-/// that a client which goes away mid-load leaves nothing behind.
-static mut CFG_CLIENT: Option<ClientWeak> = None;
-
 /// The client the config load is running for, held for as long as the caller
 /// uses it, or nothing once the load has no client or that client has gone.
 pub fn cfg_client() -> Option<ClientRef> {
-    unsafe { CFG_CLIENT.as_ref().and_then(ClientWeak::upgrade) }
+    with_config(|config| config.client.as_ref().and_then(ClientWeak::upgrade))
 }
-#[derive(Default)]
 pub(crate) struct ConfigState {
     causes: Vec<CString>,
     finished: bool,
+    client: Option<ClientWeak>,
+    item: Option<CmdqItemWeak>,
+    pub(crate) quiet: bool,
+    pub(crate) files: Vec<CString>,
+}
+
+impl Default for ConfigState {
+    fn default() -> Self {
+        Self {
+            causes: Vec::new(),
+            finished: false,
+            client: None,
+            item: None,
+            quiet: true,
+            files: Vec::new(),
+        }
+    }
+}
+
+pub(crate) fn configuration_files() -> Vec<CString> {
+    with_config(|config| config.files.clone())
 }
 
 fn with_config<R>(visit: impl FnOnce(&mut ConfigState) -> R) -> R {
@@ -74,11 +90,6 @@ fn with_config<R>(visit: impl FnOnce(&mut ConfigState) -> R) -> R {
 fn take_causes() -> Vec<CString> {
     with_config(|config| core::mem::take(&mut config.causes))
 }
-/// The item the config load has left waiting on the first client, while it
-/// waits.
-static mut cfg_item: Option<CmdqItemWeak> = None;
-pub static mut cfg_quiet: core::ffi::c_int = 1 as core::ffi::c_int;
-pub static mut cfg_files: Vec<CString> = Vec::new();
 fn cfg_client_done(_item: &CmdqItemRef) -> cmd_retval {
     unsafe {
         if !configuration_finished() {
@@ -94,7 +105,7 @@ fn cfg_done(_item: &CmdqItemRef) -> cmd_retval {
         }
         with_config(|config| config.finished = true);
         cfg_show_causes(None);
-        if let Some(item) = cfg_item.as_ref().and_then(CmdqItemWeak::upgrade) {
+        if let Some(item) = with_config(|config| config.item.as_ref().and_then(CmdqItemWeak::upgrade)) {
             item.resume();
         }
         status_prompt_load_history();
@@ -105,18 +116,19 @@ pub fn start_cfg() {
     unsafe {
         let mut flags: core::ffi::c_int = 0 as core::ffi::c_int;
         let c = first_client();
-        CFG_CLIENT = c.as_ref().map(ClientRef::downgrade);
+        with_config(|config| config.client = c.as_ref().map(ClientRef::downgrade));
         if c.is_some() {
-            cfg_item = cmdq_append(
+            let item = cmdq_append(
                 c.as_ref(),
                 CmdqItemRef::callback_items(c"cfg_client_done", cfg_client_done),
             )
             .map(|item| item.downgrade());
+            with_config(|config| config.item = item);
         }
-        if cfg_quiet != 0 {
+        if with_config(|config| config.quiet) {
             flags = CMD_PARSE_QUIET;
         }
-        for file in &cfg_files {
+        for file in &configuration_files() {
             load_cfg(
                 file,
                 c.as_ref().map(|reference| reference.as_client()),
