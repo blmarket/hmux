@@ -1,6 +1,5 @@
 use crate::GlobPaths;
 use crate::args::RustArguments;
-use crate::args::{};
 use crate::cfg::cfg_print_causes;
 use crate::cfg::{configuration_finished, load_cfg_buffer_for_client};
 use crate::cmd::cmdq_item;
@@ -212,13 +211,15 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'q' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         flags |= CMD_PARSE_QUIET;
     }
     if ({
         let flag = 'n' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         flags |= CMD_PARSE_PARSEONLY;
     }
     if unsafe {
@@ -229,7 +230,9 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         if ({
             let flag = 'v' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) != 0 || parse_flags & CMD_PARSE_VERBOSE != 0 {
+        }) != 0
+            || parse_flags & CMD_PARSE_VERBOSE != 0
+        {
             flags |= CMD_PARSE_VERBOSE;
         }
     }

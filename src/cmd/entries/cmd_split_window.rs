@@ -1,19 +1,16 @@
 use crate::args::RustArguments;
-use crate::args::{};
-use crate::cmd::cmdq_item_weak_of;
-
-use crate::cmd::{cmd_get_args, cmd_get_entry};
-use crate::environ::EnvironmentStore;
-use crate::environ::new_environment_box;
-use crate::fmt_args;
-use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};
-
 use crate::cmd::cmdq_item;
+use crate::cmd::cmdq_item_weak_of;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{
     CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_WAIT, SPAWN_BEFORE,
     SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FLOATING, SPAWN_FULLSIZE, SPAWN_ZOOM,
 };
+use crate::environ::EnvironmentStore;
+use crate::environ::new_environment_box;
+use crate::fmt_args;
+use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};
 use crate::spawn::spawn_pane;
 use crate::types::{OptionsRef, args_parse_t, cmd_find_state, spawn_context, u_char, u_int};
 use crate::window::WinlinkRef;
@@ -108,13 +105,15 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'b' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         flags |= SPAWN_BEFORE;
     }
     if ({
         let flag = 'f' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         flags |= SPAWN_FULLSIZE;
     }
     input = {
@@ -133,7 +132,8 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         empty != 0
             && count != 0 as u_int
             && (count != 1 as u_int
-                || !args.argument_string(0)
+                || !args
+                    .argument_string(0)
                     .expect("argument count checked")
                     .is_empty())
     } {
@@ -181,13 +181,15 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'd' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         sc.flags |= SPAWN_DETACHED;
     }
     if ({
         let flag = 'Z' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         sc.flags |= SPAWN_ZOOM;
     }
     let Some(new_pane) = (unsafe { spawn_pane(&mut sc, lc.as_ref(), &mut cause) }) else {
@@ -210,15 +212,18 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         if ({
             let flag = 'k' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) != 0 || ({
-            let flag = 'm' as i32 as u_char;
-            args.argument_flag_count(flag)
-        }) != 0 {
+        }) != 0
+            || ({
+                let flag = 'm' as i32 as u_char;
+                args.argument_flag_count(flag)
+            }) != 0
+        {
             unsafe { (options).set_number(c"remain-on-exit", 3 as core::ffi::c_longlong) };
             if ({
                 let flag = 'm' as i32 as u_char;
                 args.argument_flag_count(flag)
-            }) != 0 {
+            }) != 0
+            {
                 unsafe {
                     (options).set_string(
                         c"remain-on-exit-format",
@@ -250,7 +255,8 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'd' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) == 0 {
+    }) == 0
+    {
         unsafe {
             current_state_ref.update_current_link(&link, Some(&new_pane), 0 as core::ffi::c_int)
         };
@@ -263,7 +269,8 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'P' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         let template = {
             let flag = 'F' as i32 as u_char;
             args.argument_flag_string(flag)

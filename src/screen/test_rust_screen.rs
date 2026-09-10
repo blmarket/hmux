@@ -259,22 +259,20 @@ fn a_title_and_a_path_are_cleaned_before_they_are_kept() {
 fn titles_are_pushed_and_popped_as_a_stack() {
     let _guard = globals();
     let mut s = RustScreen::new_with_server_options(10, 5, 0);
-    unsafe {
-        s.set_title(c"one", 0);
-        s.push_title();
-        s.set_title(c"two", 0);
-        s.push_title();
-        s.set_title(c"three", 0);
-    }
+    s.set_title(c"one", 0);
+    s.push_title();
+    s.set_title(c"two", 0);
+    s.push_title();
+    s.set_title(c"three", 0);
     assert_eq!(s.0.ntitles, 2);
 
-    unsafe { s.pop_title() };
+    s.pop_title();
     assert_eq!(s.title_text(), "two");
     assert_eq!(s.0.ntitles, 1);
-    unsafe { s.pop_title() };
+    s.pop_title();
     assert_eq!(s.title_text(), "one");
     assert_eq!(s.0.ntitles, 0);
-    unsafe { s.pop_title() };
+    s.pop_title();
     assert_eq!(
         s.title_text(),
         "one",
@@ -288,7 +286,7 @@ fn popping_a_title_that_was_never_pushed_does_nothing() {
     let mut s = RustScreen::new_with_server_options(10, 5, 0);
     {
         s.set_title(c"one", 0);
-        unsafe { s.pop_title() };
+        s.pop_title();
     }
     assert_eq!(s.title_text(), "one");
     assert!(s.0.titles.is_none());

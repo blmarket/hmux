@@ -81,44 +81,43 @@ pub(crate) static cmd_display_popup_entry: RustCommandEntry = {
         exec: cmd_display_popup_exec,
     }
 };
-unsafe fn cmd_display_menu_args_parse(
+
+fn cmd_display_menu_args_parse(
     args: &args,
     idx: u_int,
     _cause: &mut Option<CString>,
 ) -> args_parse_type {
     let args = RustArguments::from_ref(args);
-    unsafe {
-        let mut i: u_int = 0 as u_int;
-        let mut type_0: args_parse_type;
-        loop {
-            type_0 = ARGS_PARSE_STRING;
-            if i == idx {
-                break;
-            }
-            let fresh0 = i;
-            i = i.wrapping_add(1);
-            if args
-                .argument_string(fresh0)
-                .expect("argument index checked")
-                .is_empty()
-            {
-                continue;
-            }
-            type_0 = ARGS_PARSE_STRING;
-            let fresh1 = i;
-            i = i.wrapping_add(1);
-            if fresh1 == idx {
-                break;
-            }
-            type_0 = ARGS_PARSE_COMMANDS_OR_STRING;
-            let fresh2 = i;
-            i = i.wrapping_add(1);
-            if fresh2 == idx {
-                break;
-            }
+    let mut i: u_int = 0 as u_int;
+    let mut type_0: args_parse_type;
+    loop {
+        type_0 = ARGS_PARSE_STRING;
+        if i == idx {
+            break;
         }
-        type_0
+        let fresh0 = i;
+        i = i.wrapping_add(1);
+        if args
+            .argument_string(fresh0)
+            .expect("argument index checked")
+            .is_empty()
+        {
+            continue;
+        }
+        type_0 = ARGS_PARSE_STRING;
+        let fresh1 = i;
+        i = i.wrapping_add(1);
+        if fresh1 == idx {
+            break;
+        }
+        type_0 = ARGS_PARSE_COMMANDS_OR_STRING;
+        let fresh2 = i;
+        i = i.wrapping_add(1);
+        if fresh2 == idx {
+            break;
+        }
     }
+    type_0
 }
 unsafe fn cmd_display_menu_get_pos(
     tc: &ClientRef,
@@ -467,10 +466,9 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             }
             let fresh3 = i;
             i = i.wrapping_add(1);
-            let name = unsafe {
-                args.argument_string(fresh3)
-                    .expect("argument index checked")
-            };
+            let name = args
+                .argument_string(fresh3)
+                .expect("argument index checked");
             if name.is_empty() {
                 unsafe {
                     menu_add_item_for_client(&mut menu, None, Some(item), &tc, Some(&target))
@@ -482,10 +480,9 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             } else {
                 let fresh4 = i;
                 i = i.wrapping_add(1);
-                let key = unsafe {
-                    args.argument_string(fresh4)
-                        .expect("argument index checked")
-                };
+                let key = args
+                    .argument_string(fresh4)
+                    .expect("argument index checked");
                 menu_item.name = Some(name);
                 menu_item.key = RustKeyStringCodec.parse_key(key);
                 let fresh5 = i;

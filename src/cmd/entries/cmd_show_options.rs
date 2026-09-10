@@ -1,20 +1,17 @@
 use crate::args::RustArguments;
-use crate::args::{};
-
-use crate::cmd::{cmd_get_args, cmd_get_entry};
-use crate::fmt_args;
-use crate::format::format_single_from_target;
-use crate::options::{OptionsEngine, RustOptionsEngine};
-use crate::{ArgumentTextCodec, RustArgumentTextCodec};
-
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_CANFAIL, CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR,
     CMD_RETURN_NORMAL, OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_NONE,
 };
+use crate::fmt_args;
+use crate::format::format_single_from_target;
+use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::types::{OptionsRef, RustOptionsRef, args_parse_t, options_entry, u_char, u_int};
 use crate::xmalloc::xasprintf;
+use crate::{ArgumentTextCodec, RustArgumentTextCodec};
 use ::std::ffi::CString;
 
 pub(crate) static cmd_show_options_entry: RustCommandEntry = {
@@ -118,7 +115,8 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             if ({
                 let flag = 'q' as i32 as u_char;
                 args.argument_flag_count(flag)
-            }) != 0 {
+            }) != 0
+            {
                 return CMD_RETURN_NORMAL;
             }
             let cause = cause.unwrap();
@@ -145,7 +143,8 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         if ({
             let flag = 'q' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) != 0 {
+        }) != 0
+        {
             current_block = 14351605340212681318;
         } else {
             if ambiguous != 0 {
@@ -174,7 +173,8 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             if ({
                 let flag = 'q' as i32 as u_char;
                 args.argument_flag_count(flag)
-            }) != 0 {
+            }) != 0
+            {
                 current_block = 14351605340212681318;
             } else {
                 let cause = cause.unwrap();
@@ -198,7 +198,8 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 if ({
                     let flag = 'q' as i32 as u_char;
                     args.argument_flag_count(flag)
-                }) != 0 {
+                }) != 0
+                {
                     current_block = 14351605340212681318;
                 } else {
                     unsafe { item.error(c"invalid option: %s", fmt_args![argument.as_c_str()]) };
@@ -281,28 +282,38 @@ unsafe fn cmd_show_options_all(
             if (hooks && !is_hook) || (!hooks && args.argument_flag_count(b'H') == 0 && is_hook) {
                 continue;
             }
-            oo.with_entry(definition.name, args.argument_flag_count(b'A') == 0, |entry| {
-                let Some(entry) = entry else {
-                    return;
-                };
-                let parent = (!RustOptionsEngine.owner(entry).ptr_eq(oo)) as core::ffi::c_int;
-                if RustOptionsEngine.is_array(entry) == 0 {
-                    cmd_show_options_print(self_0, item, entry, -1, parent);
-                    return;
-                }
-                let indices = RustOptionsEngine.array_indices(entry);
-                if indices.is_empty() && args.argument_flag_count(b'v') == 0 {
-                    let name = RustOptionsEngine.name(entry);
-                    if parent != 0 {
-                        item.print(c"%s*", fmt_args![name]);
-                    } else {
-                        item.print(c"%s", fmt_args![name]);
+            oo.with_entry(
+                definition.name,
+                args.argument_flag_count(b'A') == 0,
+                |entry| {
+                    let Some(entry) = entry else {
+                        return;
+                    };
+                    let parent = (!RustOptionsEngine.owner(entry).ptr_eq(oo)) as core::ffi::c_int;
+                    if RustOptionsEngine.is_array(entry) == 0 {
+                        cmd_show_options_print(self_0, item, entry, -1, parent);
+                        return;
                     }
-                }
-                for index in indices {
-                    cmd_show_options_print(self_0, item, entry, index as core::ffi::c_int, parent);
-                }
-            });
+                    let indices = RustOptionsEngine.array_indices(entry);
+                    if indices.is_empty() && args.argument_flag_count(b'v') == 0 {
+                        let name = RustOptionsEngine.name(entry);
+                        if parent != 0 {
+                            item.print(c"%s*", fmt_args![name]);
+                        } else {
+                            item.print(c"%s", fmt_args![name]);
+                        }
+                    }
+                    for index in indices {
+                        cmd_show_options_print(
+                            self_0,
+                            item,
+                            entry,
+                            index as core::ffi::c_int,
+                            parent,
+                        );
+                    }
+                },
+            );
         }
         CMD_RETURN_NORMAL
     }

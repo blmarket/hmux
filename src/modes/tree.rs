@@ -1,18 +1,20 @@
 use super::widget::{ModeTreeItemRef, mode_tree_run_command};
 use crate::WindowPane;
 use crate::args::RustArguments;
-use crate::args::{};
 use crate::cmd::cmd_retval;
 use crate::cmd::{CmdqItemRef, cmdq_append};
 use crate::cmd::{cmd_find_clear_state, cmd_find_from_winlink_pane};
 use crate::compat::tolower;
+pub use crate::consts::{
+    BOX_LINES_DEFAULT, CMD_RETURN_NORMAL, FORMAT_NONE, FORMAT_PANE, FORMAT_WINDOW, KEYC_MASK_KEY,
+    KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_MOUSEDOWN1_PANE, KEYC_NONE, KEYC_RIGHT, KEYC_TYPE_MOUSEMOVE,
+    KEYC_TYPE_TRIPLECLICK, PANE_REDRAW, PROMPT_ACCEPT, PROMPT_NOFORMAT, PROMPT_SINGLE,
+    SORT_ACTIVITY, SORT_END, SORT_INDEX, SORT_NAME, SORT_Z,
+};
 use crate::fmt_args;
 use crate::format::format_true;
 use crate::format::{format_add, format_create, format_defaults, format_expand, format_single};
 use crate::grid::grid_default_cell;
-#[cfg(test)]
-use crate::window::window_pane_current_mode_mut;
-
 use crate::osdep_linux::osdep_get_name;
 use crate::prompt_history::PromptHistoryType;
 use crate::resize::recalculate_sizes;
@@ -21,18 +23,13 @@ use crate::server::server_clear_marked;
 use crate::server::server_renumber_all;
 use crate::server::server_set_marked;
 use crate::server::{server_destroy_session, server_kill_pane, server_redraw_session_group};
-
-pub use crate::consts::{
-    BOX_LINES_DEFAULT, CMD_RETURN_NORMAL, FORMAT_NONE, FORMAT_PANE, FORMAT_WINDOW, KEYC_MASK_KEY,
-    KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_MOUSEDOWN1_PANE, KEYC_NONE, KEYC_RIGHT, KEYC_TYPE_MOUSEMOVE,
-    KEYC_TYPE_TRIPLECLICK, PANE_REDRAW, PROMPT_ACCEPT, PROMPT_NOFORMAT, PROMPT_SINGLE,
-    SORT_ACTIVITY, SORT_END, SORT_INDEX, SORT_NAME, SORT_Z,
-};
 use crate::sort::{SortCriteria, sort_get_sessions, sort_would_window_tree_swap};
 use crate::status::status_prompt_set;
 use crate::style::style_apply;
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
 pub use crate::types::*;
+#[cfg(test)]
+use crate::window::window_pane_current_mode_mut;
 use crate::window::{WinlinkRef, winlink_is};
 use crate::window::{window_pane_find_by_id, window_pane_index, window_pane_reset_mode};
 use crate::xmalloc::xasprintf;

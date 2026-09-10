@@ -1,19 +1,16 @@
 use crate::args::RustArguments;
-use crate::args::{};
-
+use crate::cmd::cmdq_item;
+use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmd_get_args, cmd_get_entry};
-use crate::fmt_args;
-use crate::format::format_single_from_target;
-use crate::notify::notify_hook;
-use crate::options::{OptionsEngine, RustOptionsEngine};
-
 use crate::consts::{
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, CMD_AFTERHOOK, CMD_FIND_CANFAIL,
     CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, OPTIONS_TABLE_NONE,
     OPTIONS_TABLE_WINDOW,
 };
-use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::cmdq_item;
+use crate::fmt_args;
+use crate::format::format_single_from_target;
+use crate::notify::notify_hook;
+use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::types::{
     OptionsRef, RustOptionsRef, args, args_parse_t, args_parse_type, u_char, u_int,
 };
@@ -145,7 +142,8 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         if ({
             let flag = 'q' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) != 0 {
+        }) != 0
+        {
             current_block = 11153144165560816752;
         } else {
             if ambiguous != 0 {
@@ -171,14 +169,21 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             value = expanded.as_deref();
         }
         unsafe {
-            scope =
-                RustOptionsEngine.scope_from_name(args.as_args(), window, &name, &target, &mut oo, &mut cause)
+            scope = RustOptionsEngine.scope_from_name(
+                args.as_args(),
+                window,
+                &name,
+                &target,
+                &mut oo,
+                &mut cause,
+            )
         };
         if scope == OPTIONS_TABLE_NONE {
             if ({
                 let flag = 'q' as i32 as u_char;
                 args.argument_flag_count(flag)
-            }) != 0 {
+            }) != 0
+            {
                 current_block = 11153144165560816752;
             } else {
                 let cause = cause.unwrap();
@@ -224,7 +229,8 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                         if ({
                             let flag = 'q' as i32 as u_char;
                             args.argument_flag_count(flag)
-                        }) != 0 {
+                        }) != 0
+                        {
                             current_block = 11153144165560816752;
                         } else {
                             unsafe {

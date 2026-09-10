@@ -1,17 +1,13 @@
 use crate::args::RustArguments;
-use crate::args::{};
-
-use crate::cmd::{cmd_get_args, cmd_get_entry};
-use crate::fmt_args;
-use crate::layout::layout_set_lookup;
-
-use crate::resize::recalculate_sizes;
-
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
+use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
+use crate::fmt_args;
+use crate::layout::layout_set_lookup;
+use crate::resize::recalculate_sizes;
 use crate::types::{args_parse_t, u_char, u_int};
 
 pub const CMD_TARGET_WINDOW_USAGE: &core::ffi::CStr = c"[-t target-window]";
@@ -104,14 +100,16 @@ unsafe fn cmd_select_layout_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if ({
         let flag = 'n' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         next = 1 as core::ffi::c_int;
     }
     previous = core::ptr::eq(cmd_get_entry(self_0), &cmd_previous_layout_entry) as core::ffi::c_int;
     if ({
         let flag = 'p' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         previous = 1 as core::ffi::c_int;
     }
     let oldlayout: Option<std::ffi::CString> = owner.saved_layout();
@@ -126,7 +124,8 @@ unsafe fn cmd_select_layout_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     } else if ({
         let flag = 'E' as i32 as u_char;
         args.argument_flag_count(flag)
-    }) != 0 {
+    }) != 0
+    {
         if let Some(pane) = pane {
             unsafe { owner.spread_pane_layout(&pane) };
         }
@@ -136,7 +135,8 @@ unsafe fn cmd_select_layout_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         } else if ({
             let flag = 'o' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) != 0 {
+        }) != 0
+        {
             oldlayout.as_deref()
         } else {
             None
@@ -144,7 +144,8 @@ unsafe fn cmd_select_layout_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         if ({
             let flag = 'o' as i32 as u_char;
             args.argument_flag_count(flag)
-        }) == 0 {
+        }) == 0
+        {
             if let Some(layoutname) = layoutname {
                 layout = layout_set_lookup(layoutname);
             } else {
