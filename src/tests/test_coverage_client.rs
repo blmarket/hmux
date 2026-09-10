@@ -50,26 +50,14 @@ use crate::types::*;
 use ::core::ffi::{c_int, c_short, c_void};
 use ::core::ptr::{null, null_mut};
 use ::std::ffi::CString;
-use ::std::sync::{Mutex, MutexGuard};
 
 /// The handler the fixture peer's event is bound with. The fixture never runs
 /// the event loop, so nothing ever reaches it.
 fn never(_fd: c_int, _events: c_short, _arg: *mut c_void) {}
 
-/// A turn at the client's process-wide statics **and** at the rest of the
-/// crate's shared state. Cargo runs tests on parallel threads; everything in
-/// [`crate::client`] shares these statics, and the fixture peer's events
-/// live on the same process-wide ensure_reactor base every other suite uses, so
-/// each test that reaches any of it holds this guard.
-fn turn() -> (
-    MutexGuard<'static, ()>,
-    crate::tests::test_fixtures::GlobalsGuard,
-) {
-    static TURN: Mutex<()> = Mutex::new(());
-    (
-        TURN.lock().unwrap_or_else(|poisoned| poisoned.into_inner()),
-        crate::tests::test_fixtures::globals(),
-    )
+/// Initializes this test thread's client and reactor state.
+fn turn() -> crate::tests::test_fixtures::GlobalsGuard {
+    crate::tests::test_fixtures::globals()
 }
 
 /// Puts every client static back the way a fresh process would find it,

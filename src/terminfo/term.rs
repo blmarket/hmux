@@ -1427,6 +1427,8 @@ pub(crate) fn tty_term_create(
     caps: &[CString],
     feat: &mut core::ffi::c_int,
 ) -> Result<TerminalRef, CString> {
+    #[cfg(test)]
+    crate::test_process::require("ncurses");
     unsafe {
         log_debug(c"adding term %s", fmt_args![name]);
         let mut term = tty_term {
@@ -1573,6 +1575,8 @@ pub(crate) fn tty_term_read_list(
     name: &CStr,
     fd: core::ffi::c_int,
 ) -> Result<Vec<CString>, CString> {
+    #[cfg(test)]
+    crate::test_process::require("ncurses");
     unsafe {
         let mut error: core::ffi::c_int = 0;
         if setupterm(name.as_ptr() as *mut core::ffi::c_char, fd, &raw mut error) != OK {
@@ -1625,6 +1629,8 @@ fn tty_term_has(term: &tty_term, code: tty_code_code) -> core::ffi::c_int {
     !matches!(tty_term_code(term, code), TtyCode::None) as core::ffi::c_int
 }
 unsafe fn tty_term_string_i(term: &tty_term, code: tty_code_code, a: core::ffi::c_int) -> CString {
+    #[cfg(test)]
+    crate::test_process::require("ncurses");
     unsafe {
         let x = term.string(code);
         let s: *const core::ffi::c_char =
@@ -1645,6 +1651,8 @@ unsafe fn tty_term_string_ii(
     a: core::ffi::c_int,
     b: core::ffi::c_int,
 ) -> CString {
+    #[cfg(test)]
+    crate::test_process::require("ncurses");
     unsafe {
         let x = term.string(code);
         let s: *const core::ffi::c_char = tiparm_s(
@@ -1671,6 +1679,8 @@ unsafe fn tty_term_string_iii(
     b: core::ffi::c_int,
     c: core::ffi::c_int,
 ) -> CString {
+    #[cfg(test)]
+    crate::test_process::require("ncurses");
     unsafe {
         let x = term.string(code);
         let s: *const core::ffi::c_char = tiparm_s(
@@ -1692,6 +1702,8 @@ unsafe fn tty_term_string_iii(
     }
 }
 fn tty_term_string_s(term: &tty_term, code: tty_code_code, a: &CStr) -> CString {
+    #[cfg(test)]
+    crate::test_process::require("ncurses");
     unsafe {
         let x = term.string(code);
         let s: *const core::ffi::c_char = tiparm_s(
@@ -1711,6 +1723,8 @@ fn tty_term_string_s(term: &tty_term, code: tty_code_code, a: &CStr) -> CString 
     }
 }
 fn tty_term_string_ss(term: &tty_term, code: tty_code_code, a: &CStr, b: &CStr) -> CString {
+    #[cfg(test)]
+    crate::test_process::require("ncurses");
     unsafe {
         let x = term.string(code);
         let s: *const core::ffi::c_char = tiparm_s(

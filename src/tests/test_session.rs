@@ -338,8 +338,11 @@ impl Linked {
     /// windows apart by it, and two sessions holding windows of the same
     /// id look to it like two sessions holding one window.
     fn attach(&mut self, name: &str, idx: c_int) -> crate::window::WinlinkRef {
-        static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
-        let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as u_int;
+        let id = crate::server::server_proc.with(|state| {
+            let id = state.test_next_window_id.get();
+            state.test_next_window_id.set(id + 1);
+            id
+        }) as u_int;
         let w = Window::new(id, name, 80, 24);
         let session = self.handle().clone();
         let mut cause = None;

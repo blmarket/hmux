@@ -12,23 +12,10 @@ use crate::tests::test_fixtures::{
 use crate::window_timestamps::WindowTimestampState;
 use ::core::ffi::c_int;
 use ::std::ffi::CString;
-use ::std::sync::MutexGuard;
 
-/// A turn at the module's own statics — the criteria pointer every
-/// comparator reads and the answer list each `sort_get_*` hands back — and
-/// at the server-wide state those lists are built from. Cargo runs the
-/// tests on parallel threads, so every test that asks for a list holds
-/// both, always in this order.
-fn sorting() -> (
-    crate::tests::test_fixtures::GlobalsGuard,
-    MutexGuard<'static, ()>,
-) {
-    static LISTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let outer = globals();
-    let inner = LISTS
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    (outer, inner)
+/// Initializes the calling test thread's process state.
+fn sorting() -> crate::tests::test_fixtures::GlobalsGuard {
+    globals()
 }
 
 /// What a caller fills in before asking for a sorted list, with no
@@ -879,10 +866,7 @@ impl Drop for Table {
 /// rather than the tables themselves: a table nobody has bound anything in
 /// contributes nothing to any of these lists, and another module's tests
 /// leave an empty one behind them.
-fn tables() -> (
-    crate::tests::test_fixtures::GlobalsGuard,
-    MutexGuard<'static, ()>,
-) {
+fn tables() -> crate::tests::test_fixtures::GlobalsGuard {
     let guards = sorting();
     {
         let c = crit(SORT_END, 0);

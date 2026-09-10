@@ -394,3 +394,6 @@ pub use options::{OptionsEngine, OptionsRef, RustOptionsEngine, RustOptionsRef};
 
 mod pane_handle;
 mod session_handle;
+
+#[cfg(test)]
+mod test_process;

@@ -502,7 +502,6 @@ mod tests {
     use super::*;
 
     use std::os::unix::fs::PermissionsExt;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use crate::types::u_int;
 
@@ -510,20 +509,22 @@ mod tests {
     /// these functions read.
     ///
     /// Directories are created one component at a time and given their mode
-    /// explicitly, because the umask is process-wide: another test starting a
-    /// server sets one that leaves a new directory without its execute bit,
-    /// and anything created inside it in that window fails.
+    /// explicitly so fixtures do not depend on the inherited process umask.
     struct Scratch {
         root: PathBuf,
     }
 
     impl Scratch {
         fn new() -> Scratch {
-            static NEXT: AtomicUsize = AtomicUsize::new(0);
             let root = std::env::temp_dir().join(format!(
-                "tmux-c2rs-git-{}-{}",
+                "tmux-c2rs-git-{}-{:?}-{}",
                 std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
+                std::thread::current().id(),
+                crate::server::server_proc.with(|state| {
+                    let id = state.test_next_temp_id.get();
+                    state.test_next_temp_id.set(id + 1);
+                    id
+                })
             ));
             let _ = fs::remove_dir_all(&root);
             make_dir(&root);

@@ -18,6 +18,20 @@ thread_local! {
 
 pub(crate) struct ServerState {
     #[cfg(test)]
+    pub(crate) test_next_temp_id: Cell<usize>,
+    #[cfg(test)]
+    pub(crate) test_next_window_id: Cell<u32>,
+    #[cfg(test)]
+    pub(crate) file_test_read_closed: Cell<i32>,
+    #[cfg(test)]
+    pub(crate) file_test_read_seen: Cell<i32>,
+    #[cfg(test)]
+    pub(crate) widget_test_each_count: Cell<usize>,
+    #[cfg(test)]
+    pub(crate) popup_test_close_status: Cell<i32>,
+    #[cfg(test)]
+    pub(crate) menu_test_choice: Cell<usize>,
+    #[cfg(test)]
     pub(crate) file_test_events: RefCell<Vec<(i32, Vec<u8>, Vec<u8>)>>,
     #[cfg(test)]
     pub(crate) prompt_test_answers: RefCell<Vec<(String, c_int)>>,
@@ -129,6 +143,20 @@ impl ServerState {
         Self {
             #[cfg(test)]
             file_test_events: RefCell::new(Vec::new()),
+            #[cfg(test)]
+            test_next_temp_id: Cell::new(0),
+            #[cfg(test)]
+            test_next_window_id: Cell::new(1),
+            #[cfg(test)]
+            file_test_read_closed: Cell::new(-1),
+            #[cfg(test)]
+            file_test_read_seen: Cell::new(0),
+            #[cfg(test)]
+            widget_test_each_count: Cell::new(0),
+            #[cfg(test)]
+            popup_test_close_status: Cell::new(-1),
+            #[cfg(test)]
+            menu_test_choice: Cell::new(usize::MAX),
             #[cfg(test)]
             prompt_test_answers: RefCell::new(Vec::new()),
             citem_pool: Rc::new(RefCell::new(crate::screen::write::CItemPool::new())),

@@ -30,9 +30,16 @@ struct TempDir(PathBuf);
 
 impl TempDir {
     fn new() -> Self {
-        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!("hmux-file-{}-{id}", std::process::id()));
+        let id = crate::server::server_proc.with(|state| {
+            let id = state.test_next_temp_id.get();
+            state.test_next_temp_id.set(id + 1);
+            id
+        });
+        let path = std::env::temp_dir().join(format!(
+            "hmux-file-{}-{:?}-{id}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
         std::fs::create_dir(&path).unwrap();
         Self(path)
     }

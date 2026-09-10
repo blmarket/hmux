@@ -9,26 +9,19 @@ use super::*;
 
 use crate::fmt_args;
 use ::core::ffi::CStr;
-use ::std::sync::MutexGuard;
 
 pub const PR_GET_NAME: c_int = 16 as c_int;
 
-/// A turn at the name of the thread the tests run on, which is what the
-/// title is written to and which is put back afterwards. Cargo runs the
-/// tests on parallel threads; the name belongs to whichever thread asks,
-/// so this is really a turn at asking about it.
+/// Restores this test thread's OS name when the fixture is dropped.
 struct Name {
     was: [u8; 16],
-    _guard: MutexGuard<'static, ()>,
 }
 
 impl Name {
     fn new() -> Name {
-        static NAME: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let guard = NAME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut was = [0; 16];
         unsafe { prctl(PR_GET_NAME, was.as_mut_ptr()) };
-        Name { was, _guard: guard }
+        Name { was }
     }
 
     /// What the thread is called now.

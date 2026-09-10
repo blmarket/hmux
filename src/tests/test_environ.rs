@@ -30,6 +30,9 @@ fn process_environment() -> Vec<(CString, CString)> {
 
 #[test]
 fn process_environment_snapshots_own_bytes_before_iteration() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let saved = process_environment();
     unsafe {
@@ -62,6 +65,9 @@ fn restore_process_environment(saved: &[(CString, CString)]) {
 
 #[test]
 fn process_environment_values_preserve_empty_and_owned_non_utf8_bytes() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let saved = process_environment();
     unsafe {

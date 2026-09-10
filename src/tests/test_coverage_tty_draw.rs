@@ -261,6 +261,9 @@ fn an_el_capable_terminal_clears_to_the_end_of_the_line() {
 
 #[test]
 fn el1_clears_a_run_that_starts_at_home_when_only_it_exists() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut d = Drawer::new(16, 24);
     d.set_string(TTYC_EL1, c"\x1b[1K");
@@ -272,6 +275,9 @@ fn el1_clears_a_run_that_starts_at_home_when_only_it_exists() {
 
 #[test]
 fn ech_erases_a_counted_run_in_place() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut d = Drawer::new(20, 24);
     d.set_string(TTYC_ECH, c"\x1b[%dX");
@@ -297,6 +303,9 @@ fn leading_padding_cells_are_cleared_before_what_follows_them() {
 
 #[test]
 fn a_wrapped_previous_line_clears_without_moving_the_cursor() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
 
     let mut wrapped = Drawer::new(16, 24);
@@ -351,6 +360,9 @@ fn a_blocked_terminal_counts_what_it_discards() {
 
 #[test]
 fn characters_outside_the_codeset_become_acs_keys_or_underscores() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut d = Drawer::new(8, 24);
     let mut s = Screen::new(8, 24, 100);

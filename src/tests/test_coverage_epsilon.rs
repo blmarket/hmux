@@ -191,6 +191,9 @@ fn setblocking_toggles_nonblock() {
 
 #[test]
 fn osdep_event_init_initialises_reactor_and_cleans_env() {
+    if crate::test_process::run() {
+        return;
+    }
     unsafe {
         std::env::remove_var("EVENT_NOEPOLL");
         let _base = osdep_event_init();

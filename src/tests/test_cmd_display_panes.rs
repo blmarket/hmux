@@ -113,6 +113,9 @@ fn colour_option(f: &mut Overlay, name: &CStr) -> c_int {
 /// the cells follow each other, so no further move is needed.
 #[test]
 fn a_pane_filling_the_context_draws_its_number_and_size() {
+    if crate::test_process::run() {
+        return;
+    }
     let mut f = Overlay::new(80, 24);
     let mut ctx = f.ctx();
     f.draw(&mut ctx);
@@ -132,6 +135,9 @@ fn a_pane_filling_the_context_draws_its_number_and_size() {
 /// ones the terminal is left holding.
 #[test]
 fn the_active_pane_and_the_rest_take_their_own_colours() {
+    if crate::test_process::run() {
+        return;
+    }
     let mut f = Overlay::new(80, 24);
     let active = colour_option(&mut f, c"display-panes-active-colour");
     let plain = colour_option(&mut f, c"display-panes-colour");
@@ -151,6 +157,9 @@ fn the_active_pane_and_the_rest_take_their_own_colours() {
 /// left.
 #[test]
 fn a_pane_off_the_left_and_top_keeps_only_what_is_inside() {
+    if crate::test_process::run() {
+        return;
+    }
     let mut f = Overlay::new(80, 24);
     let mut ctx = f.ctx();
     ctx.ox = 10;
@@ -167,6 +176,9 @@ fn a_pane_off_the_left_and_top_keeps_only_what_is_inside() {
 /// exactly the context's size.
 #[test]
 fn a_pane_larger_than_the_context_is_drawn_at_the_context_size() {
+    if crate::test_process::run() {
+        return;
+    }
     let mut f = Overlay::new(80, 24);
     let mut ctx = f.ctx();
     ctx.ox = 10;
@@ -186,6 +198,9 @@ fn a_pane_larger_than_the_context_is_drawn_at_the_context_size() {
 /// stops clipping.
 #[test]
 fn a_pane_running_off_the_right_and_bottom_keeps_its_own_size() {
+    if crate::test_process::run() {
+        return;
+    }
     let mut f = Overlay::new(80, 24);
     unsafe {
         (*f.pane()).set_position(10, 4);
@@ -205,6 +220,9 @@ fn a_pane_running_off_the_right_and_bottom_keeps_its_own_size() {
 /// lines as it has.
 #[test]
 fn a_top_status_line_pushes_the_drawing_down() {
+    if crate::test_process::run() {
+        return;
+    }
     let mut f = Overlay::new(80, 24);
     let mut ctx = f.ctx();
     ctx.statustop = 1;
@@ -234,6 +252,9 @@ fn a_pane_narrower_than_its_number_draws_nothing() {
 /// itself on one line, followed by a space and the pane's letter.
 #[test]
 fn a_small_pane_writes_its_number_beside_its_letter() {
+    if crate::test_process::run() {
+        return;
+    }
     let mut f = Overlay::new(80, 24);
     f.base_index(10);
     let mut ctx = f.ctx();
@@ -247,6 +268,9 @@ fn a_small_pane_writes_its_number_beside_its_letter() {
 /// number goes out, and its own length is what is used.
 #[test]
 fn a_pane_one_column_wide_writes_only_its_number() {
+    if crate::test_process::run() {
+        return;
+    }
     let mut f = Overlay::new(80, 24);
     let mut ctx = f.ctx();
     ctx.ox = 79;
@@ -258,6 +282,9 @@ fn a_pane_one_column_wide_writes_only_its_number() {
 /// size and the letter: they need a seventh row.
 #[test]
 fn a_pane_six_rows_tall_drops_its_size_and_letter() {
+    if crate::test_process::run() {
+        return;
+    }
     let mut f = Overlay::new(80, 6);
     f.base_index(10);
     let mut ctx = f.ctx();
@@ -271,6 +298,9 @@ fn a_pane_six_rows_tall_drops_its_size_and_letter() {
 /// eleventh, written under the right-hand end of the digits.
 #[test]
 fn a_pane_past_the_ninth_gets_a_letter_under_its_number() {
+    if crate::test_process::run() {
+        return;
+    }
     let mut f = Overlay::new(80, 24);
     f.base_index(10);
     let mut ctx = f.ctx();
@@ -286,6 +316,9 @@ fn a_pane_past_the_ninth_gets_a_letter_under_its_number() {
 /// the numbers go over.
 #[test]
 fn a_zoomed_window_numbers_only_its_active_pane() {
+    if crate::test_process::run() {
+        return;
+    }
     let mut f = Overlay::new(80, 24);
     f.add_pane(80, 24);
     unsafe { (*f.t.window(0)).flags |= WINDOW_ZOOMED };
@@ -303,6 +336,9 @@ fn a_zoomed_window_numbers_only_its_active_pane() {
 /// the pane's, the room for it is the visible part's.
 #[test]
 fn a_size_wider_than_the_visible_pane_is_dropped() {
+    if crate::test_process::run() {
+        return;
+    }
     let mut f = Overlay::new(1000, 24);
     let mut ctx = f.ctx();
     ctx.ox = 994;

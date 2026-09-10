@@ -318,3 +318,21 @@ fn automatic_rename_formats_the_active_pane_and_defers_the_next_change() {
         assert_eq!(*pane.get().unwrap().flags() & PANE_CHANGED, 0);
     }
 }
+
+#[test]
+fn destroying_a_window_with_blank_panes_preserves_stdin() {
+    if crate::test_process::run() {
+        return;
+    }
+    let before = unsafe { libc::fcntl(libc::STDIN_FILENO, libc::F_GETFD) };
+    assert!(before >= 0, "the child test has an open stdin");
+    let mut window = blank_window();
+    window.panes.push(RustWindowPaneRef::new(blank_pane()));
+    window.panes.push(RustWindowPaneRef::new(blank_pane()));
+    drop(WindowRef::new(*window));
+    assert_eq!(
+        unsafe { libc::fcntl(libc::STDIN_FILENO, libc::F_GETFD) },
+        before,
+        "blank pane teardown must not close descriptors it does not own",
+    );
+}

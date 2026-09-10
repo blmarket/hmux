@@ -1,15 +1,13 @@
 use super::*;
 use crate::reactor::ByteBuffer;
 use crate::tests::test_fixtures::{Target, globals, zeroed_client, zeroed_term};
-use core::{
-    ffi::c_int,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use core::ffi::c_int;
 
-static CALLBACK_CHOICE: AtomicUsize = AtomicUsize::new(usize::MAX);
+const CALLBACK_CHOICE: crate::server_state::LocalField<std::cell::Cell<usize>> =
+    crate::server_state::LocalField::new(|state| &state.menu_test_choice);
 
 fn record_choice(choice: u_int, _key: key_code) {
-    CALLBACK_CHOICE.store(choice as usize, Ordering::SeqCst);
+    CALLBACK_CHOICE.set(choice as usize);
 }
 
 struct Fixture {
@@ -206,12 +204,12 @@ fn accelerator_and_enter_deliver_exactly_one_choice() {
     let _guard = globals();
     let mut fixture = Fixture::new(100, 40);
     unsafe {
-        CALLBACK_CHOICE.store(usize::MAX, Ordering::SeqCst);
+        CALLBACK_CHOICE.set(usize::MAX);
         let md = fixture.menu(MENU_NOMOUSE, -1);
         md.borrow_mut().cb = Some(Box::new(record_choice));
         let mut accelerator = key(b'7' as key_code);
         assert_eq!(md.key(fixture.client(), &mut accelerator), 1);
-        assert_eq!(CALLBACK_CHOICE.load(Ordering::SeqCst), 7);
+        assert_eq!(CALLBACK_CHOICE.get(), 7);
         assert!(md.borrow().cb.is_none());
 
         let md = fixture.menu(MENU_NOMOUSE | MENU_STAYOPEN, 1);
@@ -259,7 +257,7 @@ fn overlay_range_and_free_callback_are_self_contained() {
     let _guard = globals();
     let mut fixture = Fixture::new(100, 40);
     {
-        CALLBACK_CHOICE.store(0, Ordering::SeqCst);
+        CALLBACK_CHOICE.set(0);
         let md = fixture.menu(0, -1);
         let py = md.borrow().py;
         let mut state = md.borrow_mut();
@@ -269,7 +267,7 @@ fn overlay_range_and_free_callback_are_self_contained() {
         drop(state);
         md.borrow_mut().cb = Some(Box::new(record_choice));
         md.close(fixture.client());
-        assert_eq!(CALLBACK_CHOICE.load(Ordering::SeqCst), UINT_MAX as usize);
+        assert_eq!(CALLBACK_CHOICE.get(), UINT_MAX as usize);
     }
 }
 
@@ -331,6 +329,9 @@ fn adding_items_handles_separators_keys_trimming_and_commands() {
 
 #[test]
 fn drawing_builds_the_menu_screen_for_each_border_mode() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut fixture = Fixture::new(100, 40);
     unsafe {
@@ -363,7 +364,7 @@ fn stayopen_mouse_release_drag_wheel_and_motion_take_distinct_paths() {
     let mut fixture = Fixture::new(100, 40);
     unsafe {
         let md = fixture.menu(MENU_STAYOPEN, 0);
-        CALLBACK_CHOICE.store(usize::MAX, Ordering::SeqCst);
+        CALLBACK_CHOICE.set(usize::MAX);
         md.borrow_mut().cb = Some(Box::new(record_choice));
         let mut event = key(KEYC_MOUSE);
         event.m.x = md.borrow().px + 2;
@@ -379,7 +380,7 @@ fn stayopen_mouse_release_drag_wheel_and_motion_take_distinct_paths() {
 
         event.m.b = MOUSE_BUTTON_1 as u_int;
         assert_eq!(md.key(fixture.client(), &mut event), 1);
-        assert_eq!(CALLBACK_CHOICE.load(Ordering::SeqCst), 5);
+        assert_eq!(CALLBACK_CHOICE.get(), 5);
 
         event.m.x = 0;
         event.m.y = 0;
@@ -399,21 +400,21 @@ fn disabled_entries_unknown_keys_and_flagged_accelerators_do_not_misfire() {
     let _guard = globals();
     let mut fixture = Fixture::new(100, 40);
     unsafe {
-        CALLBACK_CHOICE.store(usize::MAX, Ordering::SeqCst);
+        CALLBACK_CHOICE.set(usize::MAX);
         let md = fixture.menu(MENU_NOMOUSE | MENU_STAYOPEN, 2);
         md.borrow_mut().cb = Some(Box::new(record_choice));
         md.borrow_mut().choice = 2;
         let mut enter = key(13);
         assert_eq!(md.key(fixture.client(), &mut enter), 0);
-        assert_eq!(CALLBACK_CHOICE.load(Ordering::SeqCst), usize::MAX);
+        assert_eq!(CALLBACK_CHOICE.get(), usize::MAX);
 
         let mut unknown = key(b'x' as key_code);
         assert_eq!(md.key(fixture.client(), &mut unknown), 0);
-        assert_eq!(CALLBACK_CHOICE.load(Ordering::SeqCst), usize::MAX);
+        assert_eq!(CALLBACK_CHOICE.get(), usize::MAX);
 
         let mut flagged = key(b'4' as key_code | KEYC_CTRL as key_code);
         assert_eq!(md.key(fixture.client(), &mut flagged), 0);
-        assert_eq!(CALLBACK_CHOICE.load(Ordering::SeqCst), usize::MAX);
+        assert_eq!(CALLBACK_CHOICE.get(), usize::MAX);
         assert!(md.borrow().cb.is_some());
     }
 }
@@ -439,6 +440,9 @@ fn selection_callback_can_reborrow_the_retained_menu() {
 
 #[test]
 fn clearing_an_overlay_cancels_once_and_keeps_retained_menu_state_alive() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut fixture = Fixture::new(100, 40);
     let owner = fixture.menu(MENU_NOMOUSE, 0);

@@ -4,7 +4,6 @@ use crate::server::server_client_clear_overlay;
 use crate::tests::test_fixtures::{
     Clients, Session, Window, ensure_reactor, globals, link, unlink_all, zeroed_term,
 };
-use std::sync::atomic::{AtomicI32, Ordering};
 
 struct Fixture {
     session: Session,
@@ -369,6 +368,9 @@ fn redraw_and_set_client_callbacks_mark_only_the_popup_client() {
 
 #[test]
 fn draw_callback_renders_border_title_and_body_to_buffered_terminal() {
+    if crate::test_process::run() {
+        return;
+    }
     let f = Fixture::new("draw", 10, 6, BOX_LINES_SINGLE);
     unsafe {
         (*f.client).tty.term = Some(zeroed_term());
@@ -523,21 +525,20 @@ fn range_callback_covers_partial_overlap_left_right_and_zero_width() {
     }
 }
 
-static CLOSE_STATUS: AtomicI32 = AtomicI32::new(-1);
+const CLOSE_STATUS: crate::server_state::LocalField<std::cell::Cell<i32>> =
+    crate::server_state::LocalField::new(|state| &state.popup_test_close_status);
 
 #[test]
 fn overlay_clear_releases_popup_and_invokes_close_callback_once() {
     let f = Fixture::new("close", 10, 6, BOX_LINES_NONE);
     unsafe {
-        CLOSE_STATUS.store(-1, Ordering::SeqCst);
+        CLOSE_STATUS.set(-1);
         let pd = f.pd();
         pd.borrow_mut().status = 37;
-        pd.borrow_mut().close_cb = Some(Box::new(|status| {
-            CLOSE_STATUS.store(status, Ordering::SeqCst)
-        }));
+        pd.borrow_mut().close_cb = Some(Box::new(|status| CLOSE_STATUS.set(status)));
         assert!(pd.downgrade().upgrade().is_some());
         server_client_clear_overlay(&mut *f.client);
-        assert_eq!(CLOSE_STATUS.load(Ordering::SeqCst), 37);
+        assert_eq!(CLOSE_STATUS.get(), 37);
         assert!((*f.client).overlay_data().is_none());
     }
 }

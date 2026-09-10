@@ -12,15 +12,14 @@
 //! agent running below the pane's shell, so the observer reported `Unknown` /
 //! `agent=None` forever and logged nothing after startup.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::{CString, OsString};
 use std::io;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
 use tracing_subscriber::fmt::MakeWriter;
+use tracing_subscriber::prelude::*;
 
 use super::status::{AgentStatus, StatusHub};
 use super::*;
@@ -51,7 +50,7 @@ struct FakeProcessSource {
     has_process_table: bool,
     /// Number of full-table scans, so tests can assert the process table is read
     /// once per poll cadence rather than once per pane or per output frame.
-    scans: Arc<AtomicUsize>,
+    scans: Rc<Cell<usize>>,
 }
 
 impl FakeProcessSource {
@@ -73,7 +72,7 @@ impl FakeProcessSource {
             environ: HashMap::new(),
             open_files: HashMap::new(),
             has_process_table,
-            scans: Arc::new(AtomicUsize::new(0)),
+            scans: Rc::new(Cell::new(0)),
         }
     }
 
@@ -132,7 +131,7 @@ impl FakeProcessSource {
 
 impl ProcessSource for FakeProcessSource {
     fn process_table(&self) -> Option<Vec<(u32, u32)>> {
-        self.scans.fetch_add(1, Ordering::Relaxed);
+        self.scans.set(self.scans.get() + 1);
         self.has_process_table.then(|| self.table.clone())
     }
 
@@ -291,16 +290,18 @@ impl ServerObservability for MultiPaneServer {
     }
 }
 
-/// A `MakeWriter` that appends every formatted event to a shared buffer.
-#[derive(Clone)]
-struct CaptureWriter(Arc<Mutex<Vec<u8>>>);
+thread_local! {
+    static CAPTURED_LOGS: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
 
-struct CaptureHandle(Arc<Mutex<Vec<u8>>>);
+/// Sends formatted events to the current test thread's capture buffer.
+#[derive(Clone, Copy)]
+struct CaptureWriter;
 
-impl io::Write for CaptureHandle {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
-        Ok(buf.len())
+impl io::Write for CaptureWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        CAPTURED_LOGS.with_borrow_mut(|buffer| buffer.extend_from_slice(bytes));
+        Ok(bytes.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -309,32 +310,26 @@ impl io::Write for CaptureHandle {
 }
 
 impl<'a> MakeWriter<'a> for CaptureWriter {
-    type Writer = CaptureHandle;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        CaptureHandle(self.0.clone())
+    type Writer = Self;
+    fn make_writer(&'a self) -> Self {
+        *self
     }
 }
 
-/// Serializes the log-capturing tests. `tracing`'s callsite-interest cache is
-/// global, so two scoped subscribers installed on different test threads at once
-/// can race — one capture ends up missing events the other's poll churn emitted
-/// through the shared `info!` callsite. Holding this lock for the whole scoped
-/// subscriber's lifetime keeps those tests from overlapping.
-static LOG_CAPTURE_LOCK: Mutex<()> = Mutex::new(());
-
-/// Run `body` with a scoped subscriber and return everything it logged.
+/// Captures only this thread's events. Dynamic interest keeps tracing's shared
+/// callsite cache from substituting another thread's subscriber decision.
 fn capture_logs(body: impl FnOnce()) -> String {
-    let _guard = LOG_CAPTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let buffer = Arc::new(Mutex::new(Vec::new()));
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(CaptureWriter(buffer.clone()))
-        .with_ansi(false)
-        .with_max_level(tracing::Level::INFO)
-        .finish();
+    let previous = CAPTURED_LOGS.take();
+    let subscriber = tracing_subscriber::registry().with(
+        tracing_subscriber::fmt::layer()
+            .with_writer(CaptureWriter)
+            .with_ansi(false)
+            .with_filter(tracing_subscriber::filter::dynamic_filter_fn(
+                |metadata, _| *metadata.level() <= tracing::Level::INFO,
+            )),
+    );
     tracing::subscriber::with_default(subscriber, body);
-    let bytes = buffer.lock().unwrap().clone();
-    String::from_utf8(bytes).unwrap()
+    String::from_utf8(CAPTURED_LOGS.replace(previous)).unwrap()
 }
 
 /// Assert `haystack` contains each of `needles` in order.
@@ -484,10 +479,7 @@ fn claude_session_id_is_read_from_the_newest_cwd_transcript() {
     let detectors = default_detectors();
 
     let hub = StatusHub::new();
-    // Route the poll through `capture_logs` like every other poll test: it holds
-    // the shared subscriber lock, so the `info!` callsite is evaluated under a
-    // real subscriber rather than poisoning the global interest cache for the
-    // concurrent capture tests.
+    // Route the poll through the calling thread's scoped log capture.
     capture_logs(|| {
         let mut panes = HashMap::new();
         poll(&server, &detectors, &source, Some(&hub), &mut panes);
@@ -1547,7 +1539,7 @@ fn steady_server_scans_proc_once_per_poll_not_per_pane_or_output() {
 
     // One process-table scan per poll — not one per pane, and not one per output frame.
     assert_eq!(
-        scans.load(Ordering::Relaxed),
+        scans.get(),
         POLLS,
         "process table should be scanned once per poll cadence, \
          independent of pane count and output churn"
@@ -1581,4 +1573,41 @@ fn tree_walk_without_process_table_reports_unavailable() {
         find_agent_in_tree(&ProcessSnapshot::capture(&source), 1, &detectors),
         TreeScan::NoProcessTable
     ));
+}
+
+#[test]
+fn log_captures_overlap_without_blocking_or_mixing_threads() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    fn emit(label: &str) {
+        tracing::info!(label);
+    }
+
+    let (ready_tx, ready_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let first = std::thread::spawn(move || {
+        capture_logs(|| {
+            emit("first-thread-marker");
+            ready_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        })
+    });
+    ready_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    let (done_tx, done_rx) = mpsc::channel();
+    let second = std::thread::spawn(move || {
+        let logs = capture_logs(|| emit("second-thread-marker"));
+        done_tx.send(logs).unwrap();
+    });
+    let result = done_rx.recv_timeout(Duration::from_secs(5));
+    // Release the first capture even when the second timed out, so a regression
+    // fails instead of leaving a test thread waiting forever.
+    release_tx.send(()).unwrap();
+    let first_logs = first.join().unwrap();
+    second.join().unwrap();
+    let second_logs = result.expect("another thread's capture must not block this one");
+    assert!(first_logs.contains("first-thread-marker"));
+    assert!(!first_logs.contains("second-thread-marker"));
+    assert!(second_logs.contains("second-thread-marker"));
+    assert!(!second_logs.contains("first-thread-marker"));
 }

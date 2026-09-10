@@ -1,23 +1,11 @@
 use super::*;
 use ::core::ffi::{CStr, c_int};
 use ::std::ffi::CString;
-use ::std::sync::{Mutex, MutexGuard};
 
-/// A turn at the parser's own globals — the index into the argument list,
-/// the argument last read and the place it keeps inside the current
-/// argument — which cargo's parallel threads would otherwise share. Taking
-/// the turn also asks for a fresh start: a zero index is what the parser
-/// reads as one.
-fn parser() -> MutexGuard<'static, ()> {
-    static PARSER: Mutex<()> = Mutex::new(());
-    let guard = PARSER
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    {
-        BSDopterr.set(0)
-    };
+/// Resets the calling test thread's parser state.
+fn parser() {
+    BSDopterr.set(0);
     reset();
-    guard
 }
 
 /// Asks the parser for a fresh start: a zero index is what it reads as
@@ -155,7 +143,7 @@ fn end() -> option_t<'static> {
 
 #[test]
 fn long_option_tables_respect_slice_bounds_and_early_terminators() {
-    let _guard = parser();
+    parser();
     let mut bounded = [long(c"quiet", no_argument, 'q' as c_int)];
     let run = drive(&["tmux", "--quiet"], c"q", &mut bounded, 0);
     assert_eq!(opts(&run), [('q', None)]);
@@ -170,7 +158,7 @@ fn opts(run: &Run) -> Vec<(char, Option<&str>)> {
 
 #[test]
 fn options_and_their_arguments_are_read() {
-    let _guard = parser();
+    parser();
     let run = getopt(&["tmux", "-2", "-f", "conf", "-Lname", "rest"], c"2f:L:");
     assert_eq!(
         opts(&run),
@@ -181,7 +169,7 @@ fn options_and_their_arguments_are_read() {
 
 #[test]
 fn options_written_together_are_read_one_by_one() {
-    let _guard = parser();
+    parser();
     let run = getopt(&["tmux", "-2Cf", "conf"], c"2Cf:");
     assert_eq!(opts(&run), [('2', None), ('C', None), ('f', Some("conf"))]);
     assert_eq!(run.optind, 3);
@@ -189,7 +177,7 @@ fn options_written_together_are_read_one_by_one() {
 
 #[test]
 fn a_double_dash_ends_the_options() {
-    let _guard = parser();
+    parser();
     let run = getopt(&["tmux", "-2", "--", "-f"], c"2f:");
     assert_eq!(opts(&run), [('2', None)]);
     assert_eq!(run.optind, 3);
@@ -197,7 +185,7 @@ fn a_double_dash_ends_the_options() {
 
 #[test]
 fn the_first_plain_argument_ends_the_options() {
-    let _guard = parser();
+    parser();
     let run = getopt(&["tmux", "-2", "rest", "-f", "x"], c"2f:");
     assert_eq!(opts(&run), [('2', None)]);
     assert_eq!(run.optind, 2);
@@ -205,7 +193,7 @@ fn the_first_plain_argument_ends_the_options() {
 
 #[test]
 fn a_lone_dash_is_a_plain_argument() {
-    let _guard = parser();
+    parser();
     let run = getopt(&["tmux", "-", "-2"], c"2");
     assert_eq!(opts(&run), []);
     assert_eq!(run.optind, 1);
@@ -215,7 +203,7 @@ fn a_lone_dash_is_a_plain_argument() {
 /// any other.
 #[test]
 fn a_lone_dash_is_an_option_when_the_string_names_it() {
-    let _guard = parser();
+    parser();
     let run = getopt(&["tmux", "-", "-2"], c"2-");
     assert_eq!(opts(&run), [('-', None), ('2', None)]);
     assert_eq!(run.optind, 3);
@@ -225,7 +213,7 @@ fn a_lone_dash_is_an_option_when_the_string_names_it() {
 /// parse without complaint rather than being read as an unknown option.
 #[test]
 fn a_dash_at_the_end_of_a_group_ends_the_parse() {
-    let _guard = parser();
+    parser();
     let run = getopt(&["tmux", "-2-", "x"], c"2");
     assert_eq!(opts(&run), [('2', None)]);
     assert_eq!(run.optind, 1);
@@ -233,7 +221,7 @@ fn a_dash_at_the_end_of_a_group_ends_the_parse() {
 
 #[test]
 fn an_unknown_option_is_reported() {
-    let _guard = parser();
+    parser();
     {
         BSDopterr.set(1)
     };
@@ -244,7 +232,7 @@ fn an_unknown_option_is_reported() {
 
 #[test]
 fn a_colon_is_never_an_option() {
-    let _guard = parser();
+    parser();
     let run = getopt(&["tmux", "-:"], c":2");
     assert_eq!(opts(&run), [('?', None)]);
     assert_eq!(run.optopt, ':' as c_int);
@@ -252,7 +240,7 @@ fn a_colon_is_never_an_option() {
 
 #[test]
 fn an_option_whose_argument_is_missing_is_reported() {
-    let _guard = parser();
+    parser();
     {
         BSDopterr.set(1)
     };
@@ -267,7 +255,7 @@ fn an_option_whose_argument_is_missing_is_reported() {
 /// silences the parser's own complaints.
 #[test]
 fn a_leading_colon_asks_for_quiet_reporting() {
-    let _guard = parser();
+    parser();
     {
         BSDopterr.set(1)
     };
@@ -278,7 +266,7 @@ fn a_leading_colon_asks_for_quiet_reporting() {
 
 #[test]
 fn an_optional_argument_is_only_taken_from_the_same_word() {
-    let _guard = parser();
+    parser();
     assert_eq!(
         opts(&getopt(&["tmux", "-ox", "y"], c"o::")),
         [('o', Some("x"))]
@@ -292,7 +280,7 @@ fn an_optional_argument_is_only_taken_from_the_same_word() {
 /// back as option 1, in the order they were written.
 #[test]
 fn a_leading_dash_hands_back_every_argument() {
-    let _guard = parser();
+    parser();
     let run = drive(&["tmux", "x", "-2", "y"], c"-2", &mut [], 0);
     assert_eq!(
         opts(&run),
@@ -309,7 +297,7 @@ fn a_leading_dash_hands_back_every_argument() {
 /// the first plain argument, which is what it does anyway here.
 #[test]
 fn a_leading_plus_stops_at_the_first_argument() {
-    let _guard = parser();
+    parser();
     let run = drive(&["tmux", "-2", "x", "-f", "y"], c"+2f:", &mut [], 0);
     assert_eq!(opts(&run), [('2', None)]);
     assert_eq!(run.optind, 2);
@@ -317,7 +305,7 @@ fn a_leading_plus_stops_at_the_first_argument() {
 
 #[test]
 fn an_absent_option_string_reads_nothing() {
-    let _guard = parser();
+    parser();
     reset();
     let mut argv = Argv::new(&["tmux", "-2"]);
     let answer = unsafe { getopt_internal(argv.slice(), None, &mut [], None, 0) };
@@ -326,7 +314,7 @@ fn an_absent_option_string_reads_nothing() {
 
 #[test]
 fn arguments_are_moved_behind_the_options_when_asked() {
-    let _guard = parser();
+    parser();
     let run = drive(
         &["tmux", "x", "-2", "y", "-f", "conf", "z"],
         c"2f:",
@@ -340,7 +328,7 @@ fn arguments_are_moved_behind_the_options_when_asked() {
 
 #[test]
 fn a_double_dash_stops_the_moving_too() {
-    let _guard = parser();
+    parser();
     let run = drive(
         &["tmux", "x", "-2", "--", "-f"],
         c"2f:",
@@ -356,7 +344,7 @@ fn a_double_dash_stops_the_moving_too() {
 /// next option turns up.
 #[test]
 fn arguments_are_moved_when_the_list_runs_out() {
-    let _guard = parser();
+    parser();
     let run = drive(&["tmux", "x", "-2"], c"2", &mut [], FLAG_PERMUTE);
     assert_eq!(opts(&run), [('2', None)]);
     assert_eq!(run.argv, ["tmux", "-2", "x"]);
@@ -365,7 +353,7 @@ fn arguments_are_moved_when_the_list_runs_out() {
 
 #[test]
 fn arguments_alone_are_left_where_they_are() {
-    let _guard = parser();
+    parser();
     let run = drive(&["tmux", "x", "y"], c"2", &mut [], FLAG_PERMUTE);
     assert_eq!(opts(&run), []);
     assert_eq!(run.argv, ["tmux", "x", "y"]);
@@ -374,7 +362,7 @@ fn arguments_alone_are_left_where_they_are() {
 
 #[test]
 fn a_long_option_is_read_by_its_whole_name() {
-    let _guard = parser();
+    parser();
     let mut table = [long(c"file", required_argument, 'f' as c_int), end()];
     let run = drive(&["tmux", "--file", "conf"], c"f:", &mut table, 0);
     assert_eq!(opts(&run), [('f', Some("conf"))]);
@@ -384,7 +372,7 @@ fn a_long_option_is_read_by_its_whole_name() {
 
 #[test]
 fn a_long_option_takes_its_argument_after_an_equals_sign() {
-    let _guard = parser();
+    parser();
     let mut table = [
         long(c"file", required_argument, 'f' as c_int),
         long(c"tag", optional_argument, 't' as c_int),
@@ -406,7 +394,7 @@ fn a_long_option_takes_its_argument_after_an_equals_sign() {
 
 #[test]
 fn a_long_option_may_be_shortened_while_it_stays_the_only_one() {
-    let _guard = parser();
+    parser();
     let mut table = [
         long(c"file", no_argument, 'f' as c_int),
         long(c"quiet", no_argument, 'q' as c_int),
@@ -420,7 +408,7 @@ fn a_long_option_may_be_shortened_while_it_stays_the_only_one() {
 
 #[test]
 fn a_shortened_long_option_that_fits_two_is_refused() {
-    let _guard = parser();
+    parser();
     {
         BSDopterr.set(1)
     };
@@ -436,7 +424,7 @@ fn a_shortened_long_option_that_fits_two_is_refused() {
 
 #[test]
 fn a_long_option_that_takes_no_argument_refuses_one() {
-    let _guard = parser();
+    parser();
     {
         BSDopterr.set(1)
     };
@@ -450,7 +438,7 @@ fn a_long_option_that_takes_no_argument_refuses_one() {
 
 #[test]
 fn a_long_option_whose_argument_is_missing_is_reported() {
-    let _guard = parser();
+    parser();
     {
         BSDopterr.set(1)
     };
@@ -464,7 +452,7 @@ fn a_long_option_whose_argument_is_missing_is_reported() {
 
 #[test]
 fn a_long_option_nobody_declared_is_reported() {
-    let _guard = parser();
+    parser();
     {
         BSDopterr.set(1)
     };
@@ -478,7 +466,7 @@ fn a_long_option_nobody_declared_is_reported() {
 /// rather than the value itself.
 #[test]
 fn a_long_option_may_write_its_value_into_a_flag() {
-    let _guard = parser();
+    parser();
     let mut flag: c_int = 0;
     let mut table = [
         option_t {
@@ -522,7 +510,7 @@ fn a_long_option_may_write_its_value_into_a_flag() {
 /// option stays a short option.
 #[test]
 fn one_dash_may_be_enough_for_a_long_option() {
-    let _guard = parser();
+    parser();
     let mut table = [long(c"file", no_argument, 'F' as c_int), end()];
     assert_eq!(
         opts(&drive(&["tmux", "-file"], c"fq", &mut table, FLAG_LONGONLY)),
@@ -542,7 +530,7 @@ fn one_dash_may_be_enough_for_a_long_option() {
 /// option `name`.
 #[test]
 fn a_w_option_stands_for_a_long_option() {
-    let _guard = parser();
+    parser();
     let mut table = [long(c"file", required_argument, 'f' as c_int), end()];
     assert_eq!(
         opts(&drive(&["tmux", "-W", "file=conf"], c"W;", &mut table, 0)),
@@ -566,7 +554,7 @@ fn a_w_option_stands_for_a_long_option() {
 
 #[test]
 fn argument_positions_follow_replaced_storage_and_preserve_non_utf8_values() {
-    let _guard = parser();
+    parser();
     let mut argv = vec![c"tmux".to_owned(), c"-2Lold".to_owned()];
     unsafe {
         assert_eq!(BSDgetopt(&mut argv, c"2L:"), '2' as c_int);

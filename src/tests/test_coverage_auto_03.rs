@@ -13,7 +13,6 @@ use crate::file::{
 use crate::reactor::Reactor;
 use crate::tests::test_fixtures::{ensure_reactor, globals, zeroed_client};
 use crate::types::*;
-use ::std::sync::atomic::{AtomicI32, Ordering};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -171,22 +170,24 @@ fn file_write_left_is_zero_when_empty_or_event_is_none() {
 // file_fire_read / file_fire_done
 // ---------------------------------------------------------------------------
 
-static FIRE_READ_SEEN: AtomicI32 = AtomicI32::new(0);
-static FIRE_READ_CLOSED: AtomicI32 = AtomicI32::new(-1);
+const FIRE_READ_SEEN: crate::server_state::LocalField<std::cell::Cell<i32>> =
+    crate::server_state::LocalField::new(|state| &state.file_test_read_seen);
+const FIRE_READ_CLOSED: crate::server_state::LocalField<std::cell::Cell<i32>> =
+    crate::server_state::LocalField::new(|state| &state.file_test_read_closed);
 
 fn fire_read_cb(event: ClientFileEvent<'_>) {
-    FIRE_READ_SEEN.fetch_add(1, Ordering::SeqCst);
+    FIRE_READ_SEEN.set(FIRE_READ_SEEN.get() + 1);
     match event {
         ClientFileEvent::Read { buffer, .. } => {
-            FIRE_READ_CLOSED.store(0, Ordering::SeqCst);
+            FIRE_READ_CLOSED.set(0);
             assert_eq!(buffer.len(), 5);
         }
         ClientFileEvent::Done { buffer, .. } => {
-            FIRE_READ_CLOSED.store(1, Ordering::SeqCst);
+            FIRE_READ_CLOSED.set(1);
             assert!(buffer.is_empty());
         }
         ClientFileEvent::CheckExit => {
-            FIRE_READ_CLOSED.store(-1, Ordering::SeqCst);
+            FIRE_READ_CLOSED.set(-1);
         }
     }
 }
@@ -196,8 +197,8 @@ fn file_fire_read_invokes_callback_with_buffer() {
     let _guard = globals();
     unsafe {
         ensure_reactor();
-        FIRE_READ_SEEN.store(0, Ordering::SeqCst);
-        FIRE_READ_CLOSED.store(-1, Ordering::SeqCst);
+        FIRE_READ_SEEN.set(0);
+        FIRE_READ_CLOSED.set(-1);
         let files = std::rc::Rc::new(std::cell::RefCell::new(client_files_t::new()));
         let cf = ClientFileRef::create_with_peer(
             None,
@@ -212,8 +213,8 @@ fn file_fire_read_invokes_callback_with_buffer() {
         cf.borrow_mut().buffer.as_mut().append(msg);
         assert_eq!(cf.borrow().buffer.as_ref().len(), 5);
         cf.fire_read();
-        assert_eq!(FIRE_READ_SEEN.load(Ordering::SeqCst), 1);
-        assert_eq!(FIRE_READ_CLOSED.load(Ordering::SeqCst), 0);
+        assert_eq!(FIRE_READ_SEEN.get(), 1);
+        assert_eq!(FIRE_READ_CLOSED.get(), 0);
         cf.close();
     }
 }
@@ -242,7 +243,7 @@ fn file_fire_done_only_schedules_one_callback() {
     let _guard = globals();
     unsafe {
         ensure_reactor();
-        FIRE_READ_SEEN.store(0, Ordering::SeqCst);
+        FIRE_READ_SEEN.set(0);
         let files = std::rc::Rc::new(std::cell::RefCell::new(client_files_t::new()));
         let cf = ClientFileRef::create_with_peer(
             None,
@@ -255,7 +256,7 @@ fn file_fire_done_only_schedules_one_callback() {
         (cf.clone()).fire_done();
         cf.fire_done();
         crate::reactor::current().run_once();
-        assert_eq!(FIRE_READ_SEEN.load(Ordering::SeqCst), 1);
+        assert_eq!(FIRE_READ_SEEN.get(), 1);
         assert!(file_find_ref(&files.borrow(), 52).is_none());
     }
 }

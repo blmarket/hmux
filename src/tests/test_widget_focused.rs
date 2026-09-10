@@ -3,7 +3,6 @@ use crate::WindowPane;
 use crate::screen::Screen;
 use crate::tests::test_fixtures::{Pane, Window, globals, zeroed_client};
 use crate::window::window_pane_find_by_id;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn enable_rebuild(tree: &ModeTreeDataRef) {
     {
@@ -546,10 +545,11 @@ fn expand_collapse_and_tag_lookup_cover_present_missing_and_empty_trees() {
     }
 }
 
-static EACH_COUNT: AtomicUsize = AtomicUsize::new(0);
+const EACH_COUNT: crate::server_state::LocalField<std::cell::Cell<usize>> =
+    crate::server_state::LocalField::new(|state| &state.widget_test_each_count);
 
 fn count_each(_modedata: WindowModeData, _itemdata: ModeTreeItemData) {
-    EACH_COUNT.fetch_add(1, Ordering::SeqCst);
+    EACH_COUNT.set(EACH_COUNT.get() + 1);
 }
 
 #[test]
@@ -567,14 +567,14 @@ fn each_tagged_visits_tags_or_current_exactly_as_requested() {
         enable_rebuild(&tree);
         rows[0].get_mut().unwrap().tagged = 1;
         rows[3].get_mut().unwrap().tagged = 1;
-        EACH_COUNT.store(0, Ordering::SeqCst);
+        EACH_COUNT.set(0);
         tree.each_tagged(|modedata, itemdata| count_each(modedata, itemdata), 1);
-        assert_eq!(EACH_COUNT.load(Ordering::SeqCst), 2);
+        assert_eq!(EACH_COUNT.get(), 2);
         mode_tree_clear_tagged(&mut tree.borrow_mut().children);
         tree.each_tagged(|modedata, itemdata| count_each(modedata, itemdata), 1);
-        assert_eq!(EACH_COUNT.load(Ordering::SeqCst), 3);
+        assert_eq!(EACH_COUNT.get(), 3);
         tree.each_tagged(|modedata, itemdata| count_each(modedata, itemdata), 0);
-        assert_eq!(EACH_COUNT.load(Ordering::SeqCst), 3);
+        assert_eq!(EACH_COUNT.get(), 3);
     }
 }
 #[test]

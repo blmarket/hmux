@@ -4,6 +4,9 @@ use std::os::unix::fs::FileTypeExt;
 
 #[test]
 fn socket_bind_failure_restores_the_process_umask() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     unsafe {
         let saved_path = socket_path.take();
@@ -28,6 +31,9 @@ fn socket_bind_failure_restores_the_process_umask() {
 
 #[test]
 fn socket_creation_reports_long_paths_and_builds_both_permission_modes() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     unsafe {
         let saved = socket_path.take();

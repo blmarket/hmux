@@ -44,6 +44,9 @@ fn marked_pane_round_trips_through_set_and_clear() {
 
 #[test]
 fn server_create_socket_too_long_path_returns_error() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let long = "a".repeat(200);
     let cs = std::ffi::CString::new(long).unwrap();
@@ -60,6 +63,9 @@ fn server_create_socket_too_long_path_returns_error() {
 
 #[test]
 fn server_create_socket_success_and_cleanup() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let dir = std::env::temp_dir().join(format!("tmux-extra-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);

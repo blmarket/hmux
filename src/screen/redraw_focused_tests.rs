@@ -471,6 +471,9 @@ fn border_style_expands_the_target_pane_and_keeps_separate_cache_entries() {
 
 #[test]
 fn scrollbar_redraw_tracks_owned_panes_and_skips_removed_targets() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut view = View::new(12, 6);
     view.add(1, 1, 4, 3);
@@ -593,6 +596,9 @@ fn pane_drawing_borrows_the_shown_screen_after_style_evaluation_and_clips_rows()
 
 #[test]
 fn pane_status_drawing_preserves_clipping_zoom_and_top_or_bottom_rows() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut view = View::new(12, 6);
     view.add(0, 1, 5, 3);

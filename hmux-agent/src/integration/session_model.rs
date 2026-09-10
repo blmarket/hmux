@@ -121,10 +121,10 @@ fn is_model_identifier(value: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::collections::HashMap;
     use std::ffi::OsString;
     use std::path::{Path, PathBuf};
-    use std::sync::Mutex;
 
     use super::super::ProcessSource;
     use super::{ModelScan, SCAN_CHUNK, last_model_in};
@@ -132,20 +132,19 @@ mod tests {
     /// A [`ProcessSource`] serving only file contents, mutable between polls so
     /// tests can append to a "session file".
     struct FileSource {
-        files: Mutex<HashMap<PathBuf, Vec<u8>>>,
+        files: RefCell<HashMap<PathBuf, Vec<u8>>>,
     }
 
     impl FileSource {
         fn new(path: &str, content: &[u8]) -> Self {
             Self {
-                files: Mutex::new(HashMap::from([(PathBuf::from(path), content.to_vec())])),
+                files: RefCell::new(HashMap::from([(PathBuf::from(path), content.to_vec())])),
             }
         }
 
         fn append(&self, path: &str, content: &[u8]) {
             self.files
-                .lock()
-                .unwrap()
+                .borrow_mut()
                 .get_mut(Path::new(path))
                 .unwrap()
                 .extend_from_slice(content);
@@ -162,7 +161,7 @@ mod tests {
         }
 
         fn read_span(&self, path: &Path, offset: u64, max_len: usize) -> Option<Vec<u8>> {
-            let files = self.files.lock().unwrap();
+            let files = self.files.borrow();
             let content = files.get(path)?;
             let start = (offset as usize).min(content.len());
             let end = (start + max_len).min(content.len());

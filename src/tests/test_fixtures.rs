@@ -1,11 +1,9 @@
 //! Objects the crate's unit tests build on, so that each module's tests do not
 //! hand-roll their own scaffolding.
 //!
-//! Two kinds of thing live here. The first is [`globals`], a turn at the
-//! process-wide state the server keeps in statics — the environment and the
-//! three option trees `main` fills, the command parser's own globals, and the
-//! UTF-8 trees and width cache. Cargo runs the tests on parallel threads, so
-//! every test that reaches any of it holds that guard.
+//! [`globals`] initializes the calling thread's server state, including its
+//! environment, option trees, parser state and UTF-8 caches. Each test thread
+//! owns its state independently, so this fixture never waits for another test.
 //!
 //! The second is a set of owned builders that free what they made when they go
 //! out of scope. [`Grid`], [`Screen`], [`Options`], [`Args`],
@@ -41,8 +39,8 @@ use crate::window::{
 };
 
 /// Every call a [`Prompt::Recorder`] prompt made to its input callback, as the
-/// answer it carried and whether it was the final one. A test holds
-/// [`globals`], so the list is only ever touched by one of them at a time.
+/// answer it carried and whether it was the final one. The list belongs to
+/// the calling thread's server state.
 const PROMPT_ANSWERS: crate::server_state::LocalField<std::cell::RefCell<Vec<(String, c_int)>>> =
     crate::server_state::LocalField::new(|state| &state.prompt_test_answers);
 
@@ -362,7 +360,12 @@ pub(crate) fn zeroed_window() -> Box<window> {
 }
 
 pub(crate) fn zeroed_pane() -> Box<window_pane> {
-    Box::new(window_pane::default())
+    let mut pane = Box::new(window_pane::default());
+    // A fixture owns no descriptors. Zero would make window teardown close
+    // stdin, or a different test's descriptor after that number is reused.
+    *pane.fd_mut() = -1;
+    *pane.pipe_fd_mut() = -1;
+    pane
 }
 
 /// A terminal description the way `tty_term_create` leaves one, near enough:

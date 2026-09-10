@@ -115,6 +115,9 @@ fn output_primitives_buffer_discard_wrap_and_translate_acs() {
 
 #[test]
 fn terminfo_emitters_expand_parameters_and_ignore_negative_numbers() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut t = Terminal::new(80, 24);
     t.set(TTYC_CUF, c"R%p1%d");
@@ -135,6 +138,9 @@ fn terminfo_emitters_expand_parameters_and_ignore_negative_numbers() {
 
 #[test]
 fn titles_paths_selection_and_progress_are_capability_gated() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut t = Terminal::new(80, 24);
     unsafe {
@@ -168,6 +174,9 @@ fn titles_paths_selection_and_progress_are_capability_gated() {
 
 #[test]
 fn repeat_space_and_emulated_repeat_cover_native_and_fallback_paths() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut t = Terminal::new(2000, 2);
     t.set(TTYC_CUF1, c">");
@@ -215,6 +224,9 @@ fn visibility_and_clamping_cover_inside_outside_and_each_edge() {
 
 #[test]
 fn bce_region_margin_invalidation_and_reset_update_cached_state() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut t = Terminal::new(20, 10);
     let mut gc = { grid_default_cell };
@@ -255,6 +267,9 @@ fn bce_region_margin_invalidation_and_reset_update_cached_state() {
 
 #[test]
 fn cursor_chooses_home_relative_absolute_and_clamped_paths() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut t = Terminal::new(20, 10);
     for (code, value) in [
@@ -317,6 +332,9 @@ fn mode_updates_emit_mouse_protocol_and_cursor_visibility() {
 
 #[test]
 fn colour_normalization_and_emitters_cover_basic_256_and_rgb_paths() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut t = Terminal::new(80, 24);
     t.number(TTYC_COLORS, 8);
@@ -364,6 +382,9 @@ fn colour_normalization_and_emitters_cover_basic_256_and_rgb_paths() {
 
 #[test]
 fn attributes_emit_each_supported_decoration_and_reset_removed_ones() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut t = Terminal::new(80, 24);
     for (code, value) in [
@@ -414,6 +435,9 @@ fn attributes_emit_each_supported_decoration_and_reset_removed_ones() {
 
 #[test]
 fn synchronized_output_is_idempotent_and_respects_blocking() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut t = Terminal::new(80, 24);
     t.set(TTYC_SYNC, c"S%p1%d");
@@ -435,6 +459,9 @@ fn synchronized_output_is_idempotent_and_respects_blocking() {
 
 #[test]
 fn cursor_colour_and_shape_cover_reset_and_each_style_code() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut t = Terminal::new(80, 24);
     t.set(TTYC_CS, c"C%p1%s");
@@ -482,6 +509,9 @@ fn cursor_colour_and_shape_cover_reset_and_each_style_code() {
 
 #[test]
 fn colour_emitters_cover_defaults_bright_and_underline_variants() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut t = Terminal::new(80, 24);
     for (code, value) in [
@@ -521,6 +551,9 @@ fn colour_emitters_cover_defaults_bright_and_underline_variants() {
 
 #[test]
 fn region_and_margin_skip_duplicates_and_restore_full_terminal() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut t = Terminal::new(20, 10);
     t.set(TTYC_CSR, c"R%p1%d,%p2%d");
@@ -567,6 +600,9 @@ fn a_cell_command_keeps_its_payload_after_the_source_scope_ends() {
 
 #[test]
 fn cursor_mode_values_remain_usable_after_the_source_screen_is_dropped() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let mut terminal = Terminal::new(6, 3);
     terminal.set(TTYC_CNORM, c"N");

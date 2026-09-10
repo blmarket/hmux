@@ -23,6 +23,9 @@ fn terminal(name: &CStr) -> TerminalRef {
 
 #[test]
 fn terminal_registry_removes_the_last_owner_drop() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let term = terminal(c"registry-test");
     assert_eq!(
@@ -44,6 +47,9 @@ fn terminal_registry_removes_the_last_owner_drop() {
 
 #[test]
 fn terminal_registry_preserves_newest_first_order_and_explicit_cleanup() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let first = terminal(c"registry-first");
     let second = terminal(c"registry-second");
@@ -88,6 +94,9 @@ fn terminal_registry_is_confined_and_cleanup_outlives_the_index_owner() {
 
 #[test]
 fn terminal_registry_removes_failed_construction() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     assert!(terminal_with_caps(c"registry-invalid", &[]).is_err());
     assert!(tty_term_snapshots(None).is_empty());
@@ -113,6 +122,9 @@ fn terminal_overrides_preserve_value_delimiters_and_removal_rules() {
 
 #[test]
 fn terminal_creation_uses_bounded_capability_values() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let term = terminal_with_caps(
         c"bounded-capabilities",
@@ -154,6 +166,9 @@ fn acs_entries_preserve_high_bytes_and_ignore_an_incomplete_pair() {
 
 #[test]
 fn terminal_registry_filters_by_identity_and_snapshots_outlive_owners() {
+    if crate::test_process::run() {
+        return;
+    }
     let _guard = globals();
     let first = terminal(c"same-name");
     let second = terminal(c"same-name");

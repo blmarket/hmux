@@ -219,6 +219,8 @@ pub unsafe fn server_create_socket(
     flags: uint64_t,
     cause: &mut Option<CString>,
 ) -> core::ffi::c_int {
+    #[cfg(test)]
+    crate::test_process::require("process umask");
     unsafe {
         let mut sa = sockaddr_un::default();
         let mask: mode_t;
