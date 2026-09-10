@@ -152,7 +152,7 @@ pub(crate) fn window_has_floating_panes(w: &window) -> core::ffi::c_int {
         .any(|pane| window_pane_is_floating(w, &pane.downgrade()) != 0) as core::ffi::c_int
 }
 
-pub(crate) fn screen_write_sync_callback_for_test(wp: &mut impl crate::WindowPane) {
+pub(crate) fn screen_write_sync_callback_for_test(wp: &mut (impl crate::WindowPane + ?Sized)) {
     screen_write_sync_callback(wp)
 }
 
@@ -166,7 +166,7 @@ pub(crate) fn window_pane_reserve_id(id: u_int) {
 
 /// Makes `wp` the window's active pane, or gives up having one when it is
 /// null.
-pub(crate) unsafe fn window_set_active(w: &mut window, wp: Option<&impl crate::WindowPane>) {
+pub(crate) unsafe fn window_set_active(w: &mut window, wp: Option<&(impl crate::WindowPane + ?Sized)>) {
     w.active = wp.and_then(|wp| {
         w.panes
             .iter()
@@ -179,7 +179,7 @@ pub(crate) unsafe fn window_set_active(w: &mut window, wp: Option<&impl crate::W
 /// it.
 pub(crate) fn window_panes_position(
     w: &window,
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
 ) -> Option<usize> {
     let wp = wp?;
     w.panes
@@ -188,7 +188,7 @@ pub(crate) fn window_panes_position(
 }
 
 /// Puts `wp` on top of a stacking order.
-pub(crate) fn window_pane_zindex_insert_head(w: &mut window, wp: &impl crate::WindowPane) {
+pub(crate) fn window_pane_zindex_insert_head(w: &mut window, wp: &(impl crate::WindowPane + ?Sized)) {
     let pane = w
         .panes
         .iter()

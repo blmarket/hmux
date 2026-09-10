@@ -2029,7 +2029,7 @@ unsafe fn input_parse(
         }
     }
 }
-pub unsafe fn input_parse_pane(wp: &mut impl crate::WindowPane) {
+pub unsafe fn input_parse_pane(wp: &mut (impl crate::WindowPane + ?Sized)) {
     unsafe {
         let input = window_pane_get_new_data(wp, wp.offset());
         let new_size = input.len();
@@ -2039,7 +2039,7 @@ pub unsafe fn input_parse_pane(wp: &mut impl crate::WindowPane) {
         *wp.offset_mut() = offset;
     }
 }
-pub unsafe fn input_parse_buffer(wp: &mut impl crate::WindowPane, mut input: ByteBuffer) {
+pub unsafe fn input_parse_buffer(wp: &mut (impl crate::WindowPane + ?Sized), mut input: ByteBuffer) {
     unsafe {
         let owner = ictx_opt(wp.ictx()).expect("a pane being parsed has a parser");
         let mut ictx = owner.borrow_mut();

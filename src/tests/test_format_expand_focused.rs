@@ -771,7 +771,7 @@ fn an_unattached_client_uses_the_inactive_session_loop_format() {
             Some(client.as_client()),
             None,
             None,
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
         );
         assert_eq!(format_expand(&mut ft, c"#{S:inactive,active}"), c"inactive");
         assert_eq!(format_expand(&mut ft, c"#{client_session}"), c"");

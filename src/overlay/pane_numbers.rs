@@ -90,7 +90,7 @@ fn cmd_display_panes_clip(
 /// does.
 unsafe fn cmd_display_panes_put(
     ctx: &mut screen_redraw_ctx,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     cx: u_int,
     cy: u_int,
     buf: &[u8],

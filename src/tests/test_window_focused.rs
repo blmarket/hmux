@@ -410,7 +410,7 @@ fn resize_modes_visibility_flags_and_fill_character_cover_safe_state_paths() {
         assert_eq!(
             window_pane_is_floating(
                 &*w,
-                &{ crate::window::window_pane_ref_of(&(*wp)) }.expect("the pane allocation exists")
+                &{ (&(*wp)).observation() }.expect("the pane allocation exists")
             ),
             0
         );
@@ -1052,10 +1052,10 @@ fn directional_selection_retains_the_most_recent_candidate_and_preserves_first_t
         panes[1].as_pane_mut().mark_active_at(9);
         let selected = window_pane_find_right(Some(panes[0].as_pane())).unwrap();
         assert!(selected.ptr_eq(&panes[1]));
-        assert!(window_pane_find_up(None::<&crate::types::window_pane>).is_none());
-        assert!(window_pane_find_down(None::<&crate::types::window_pane>).is_none());
-        assert!(window_pane_find_left(None::<&crate::types::window_pane>).is_none());
-        assert!(window_pane_find_right(None::<&crate::types::window_pane>).is_none());
+        assert!(window_pane_find_up(None::<&dyn crate::WindowPane>).is_none());
+        assert!(window_pane_find_down(None::<&dyn crate::WindowPane>).is_none());
+        assert!(window_pane_find_left(None::<&dyn crate::WindowPane>).is_none());
+        assert!(window_pane_find_right(None::<&dyn crate::WindowPane>).is_none());
     }
 }
 
@@ -1315,7 +1315,7 @@ fn pane_theme_uses_client_consensus_only_without_a_known_background() {
         second.set_attached_session(None);
         assert_eq!(window_pane_get_theme(Some(pane)), THEME_UNKNOWN);
         assert_eq!(
-            window_pane_get_theme(None::<&mut crate::types::window_pane>),
+            window_pane_get_theme(None::<&mut dyn crate::WindowPane>),
             THEME_UNKNOWN
         );
     }

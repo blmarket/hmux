@@ -156,7 +156,7 @@ fn state_emoji(pane: PaneId, status: Option<&AgentStatus>) -> CString {
 /// What the pane's pty says about the process holding it: the foreground group
 /// and the session leader, with the pane's own command line as the fallback
 /// for a group whose leader has already exited.
-fn pane_probe(wp: &impl crate::WindowPane) -> Option<PaneProcessProbe> {
+fn pane_probe(wp: &(impl crate::WindowPane + ?Sized)) -> Option<PaneProcessProbe> {
     let fd = *wp.fd();
     if fd == -1 {
         return None;

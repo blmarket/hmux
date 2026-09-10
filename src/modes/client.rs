@@ -370,7 +370,7 @@ impl WindowClientModeDataRef {
                         Some(client.as_client()),
                         None,
                         None,
-                        None::<&crate::types::window_pane>,
+                        None::<&dyn crate::WindowPane>,
                     );
                     if format_true(Some(&value)) == 0 {
                         continue;
@@ -382,7 +382,7 @@ impl WindowClientModeDataRef {
                     Some(client.as_client()),
                     None,
                     None,
-                    None::<&crate::types::window_pane>,
+                    None::<&dyn crate::WindowPane>,
                 );
                 (data.tree_ref())
                     .add_item(
@@ -431,7 +431,7 @@ impl WindowClientModeDataRef {
                 Some(c.as_client()),
                 None,
                 None,
-                None::<&crate::types::window_pane>,
+                None::<&dyn crate::WindowPane>,
             );
             format_add(&mut ft, c"line", c"%u", fmt_args![line]);
             let expanded = format_expand(&mut ft, key_format.as_deref().unwrap_or(c""));

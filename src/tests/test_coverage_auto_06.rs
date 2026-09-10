@@ -86,7 +86,7 @@ fn server_marked_pane_set_check_is_and_clear() {
         assert_eq!(server_is_marked(None, wl.as_ref(), wp.as_ref()), 0);
         assert_eq!(server_is_marked(s.as_ref(), None, wp.as_ref()), 0);
         assert_eq!(
-            server_is_marked(s.as_ref(), wl.as_ref(), None::<&crate::types::window_pane>),
+            server_is_marked(s.as_ref(), wl.as_ref(), None::<&dyn crate::WindowPane>),
             0
         );
 
@@ -102,11 +102,11 @@ fn server_marked_pane_survives_null_session_window() {
     unsafe {
         server_clear_marked();
         // setting with nulls still stores them; check returns 0 because valid_state fails
-        server_set_marked(None, None, None::<&crate::types::window_pane>);
+        server_set_marked(None, None, None::<&dyn crate::WindowPane>);
         assert_eq!(server_check_marked(), 0);
         // is_marked with nulls returns 0 regardless
         assert_eq!(
-            server_is_marked(None, None, None::<&crate::types::window_pane>),
+            server_is_marked(None, None, None::<&dyn crate::WindowPane>),
             0
         );
         server_clear_marked();

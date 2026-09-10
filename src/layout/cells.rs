@@ -200,10 +200,10 @@ pub fn layout_cell_set_pane(lc: &mut layout_cell, pane: Option<RustWindowPaneWea
     lc.wp = pane;
 }
 
-pub fn layout_make_leaf(lc: &mut layout_cell, wp: &impl crate::WindowPane) {
+pub fn layout_make_leaf(lc: &mut layout_cell, wp: &(impl crate::WindowPane + ?Sized)) {
     lc.type_0 = LAYOUT_WINDOWPANE;
     lc.cells.clear();
-    lc.wp = crate::window::window_pane_ref_of(wp);
+    lc.wp = (wp).observation();
 }
 
 pub fn layout_make_node(lc: &mut layout_cell, type_0: layout_type) {

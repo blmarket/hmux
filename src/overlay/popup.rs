@@ -275,7 +275,7 @@ unsafe fn popup_reapply_styles(pd: &mut popup_data) {
             Some(c.as_client()),
             Some(s),
             Some(wl),
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
         );
         pd.defaults = grid_default_cell;
         style_apply(&mut pd.defaults, &o, c"popup-style", Some(&mut ft));

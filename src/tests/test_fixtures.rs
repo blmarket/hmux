@@ -845,7 +845,7 @@ impl Window {
 /// Gives back what [`Pane::new`] made: the two screens, the timers and the
 /// option set. A fixture pane has no process behind it, so this is the whole
 /// of its teardown before its owning registration is dropped.
-fn free_pane(pane: &mut impl crate::WindowPane) {
+fn free_pane(pane: &mut (impl crate::WindowPane + ?Sized)) {
     {
         pane.resize_timer_mut().disarm();
         pane.sync_timer_mut().disarm();
@@ -866,7 +866,7 @@ impl Drop for Window {
             }
             (*w).z_index.clear();
             (*w).last_panes.clear();
-            window_set_active(&mut *w, None::<&crate::types::window_pane>);
+            window_set_active(&mut *w, None::<&dyn crate::WindowPane>);
         }
     }
 }

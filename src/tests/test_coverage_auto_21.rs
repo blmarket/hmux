@@ -75,14 +75,14 @@ fn window_has_floating_panes_and_is_floating() {
         assert_eq!(
             window_pane_is_floating(
                 &*w,
-                &{ crate::window::window_pane_ref_of(&(*p0)) }.expect("the pane allocation exists")
+                &{ (&(*p0)).observation() }.expect("the pane allocation exists")
             ),
             0
         );
         assert_eq!(
             window_pane_is_floating(
                 &*w,
-                &{ crate::window::window_pane_ref_of(&(*p1)) }.expect("the pane allocation exists")
+                &{ (&(*p1)).observation() }.expect("the pane allocation exists")
             ),
             0
         );
@@ -91,7 +91,7 @@ fn window_has_floating_panes_and_is_floating() {
         assert_ne!(
             window_pane_is_floating(
                 &*w,
-                &{ crate::window::window_pane_ref_of(&(*p1)) }.expect("the pane allocation exists")
+                &{ (&(*p1)).observation() }.expect("the pane allocation exists")
             ),
             0
         );

@@ -179,7 +179,7 @@ impl<'a> RustScreenWriteCtx<'a> {
     /// Starts writing to a pane base screen using this context.
     ///
     /// The pane remains exclusively borrowed until the writer is dropped.
-    fn start_pane_base(&mut self, wp: &'a mut impl crate::WindowPane) {
+    fn start_pane_base(&mut self, wp: &'a mut (impl crate::WindowPane + ?Sized)) {
         assert!(!self.active, "screen writer is already active");
         self.state = write::screen_write_start_pane_base(wp);
         self.target = Some(wp.base_mut());
@@ -251,7 +251,7 @@ impl<'a> RustScreenWriteCtx<'a> {
     }
 
     /// Starts writing to the screen currently shown by a pane.
-    pub(crate) fn on_pane(wp: &'a mut impl crate::WindowPane) -> Self {
+    pub(crate) fn on_pane(wp: &'a mut (impl crate::WindowPane + ?Sized)) -> Self {
         if *wp.shown() == PaneScreen::Base || wp.modes().is_empty() {
             return Self::on_pane_base(wp);
         }
@@ -266,7 +266,7 @@ impl<'a> RustScreenWriteCtx<'a> {
     }
 
     /// Starts writing to a pane's base screen.
-    pub(crate) fn on_pane_base(wp: &'a mut impl crate::WindowPane) -> Self {
+    pub(crate) fn on_pane_base(wp: &'a mut (impl crate::WindowPane + ?Sized)) -> Self {
         let mut writer = Self::new();
         writer.start_pane_base(wp);
         writer
@@ -631,12 +631,12 @@ pub(crate) fn screen_write_ctx_on_screen(s: &mut RustScreen) -> RustScreenWriteC
     RustScreenWriteCtx::on_screen(s)
 }
 
-pub(crate) fn screen_write_ctx_on_pane(wp: &mut impl crate::WindowPane) -> RustScreenWriteCtx<'_> {
+pub(crate) fn screen_write_ctx_on_pane(wp: &mut (impl crate::WindowPane + ?Sized)) -> RustScreenWriteCtx<'_> {
     RustScreenWriteCtx::on_pane(wp)
 }
 
 pub(crate) fn screen_write_ctx_on_pane_base(
-    wp: &mut impl crate::WindowPane,
+    wp: &mut (impl crate::WindowPane + ?Sized),
 ) -> RustScreenWriteCtx<'_> {
     RustScreenWriteCtx::on_pane_base(wp)
 }

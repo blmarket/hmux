@@ -684,7 +684,7 @@ fn too_many_floating_panes_dump_nothing() {
             layout_cell_set_pane(
                 &mut *lc_ptr,
                 wp.as_ref()
-                    .and_then(|pane| crate::window::window_pane_ref_of(pane)),
+                    .and_then(|pane| (pane).observation()),
             );
             ids.push((*wp).pane_id());
         }

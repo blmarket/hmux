@@ -30,8 +30,6 @@ use crate::log::{fatal, fatalx, log_debug, log_get_level};
 use crate::notify::{notify_pane, notify_window};
 
 use crate::handle_registry::{HandleRegistration, HandleRegistry};
-#[cfg(test)]
-use crate::pane_command::PaneCommandState;
 use crate::pane_geometry::PaneGeometryState;
 use crate::pane_identity::PaneIdentity;
 use crate::pane_output::{PaneOutputOffset, RustPaneOutputOffset};
@@ -1037,7 +1035,7 @@ pub fn winlink_stack_remove(stack: &mut winlink_stack, wl: Option<&mut winlink>)
     }
 }
 
-pub unsafe fn window_pane_destroy_ready(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+pub unsafe fn window_pane_destroy_ready(wp: &(impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
     unsafe {
         let mut n: core::ffi::c_int = 0;
         if *wp.pipe_fd() != -(1 as core::ffi::c_int) && wp.pipe_event().output_len() != 0 as size_t
@@ -1158,7 +1156,7 @@ pub(crate) fn window_active_pane(w: &window) -> Option<RustWindowPaneWeak> {
 }
 
 fn window_pane_get_palette(
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
     c: core::ffi::c_int,
 ) -> core::ffi::c_int {
     let Some(wp) = wp else {
@@ -1417,7 +1415,7 @@ pub fn window_pane_previous_by_number(
 /// whether the walk found it there at all.
 pub unsafe fn window_pane_index(
     w: &window,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
 ) -> (core::ffi::c_int, u_int) {
     unsafe {
         let mut i = (w.options_ref()).number(c"pane-base-index") as u_int;
@@ -1586,26 +1584,21 @@ pub fn window_pane_find_by_id(id: u_int) -> Option<RustWindowPaneWeak> {
         .flatten()
 }
 
-/// Observes the supplied pane allocation without substituting another pane with the same ID.
-pub(crate) fn window_pane_ref_of(pane: &impl crate::WindowPane) -> Option<RustWindowPaneWeak> {
-    pane.observation()
-}
-
 pub(crate) fn window_pane_set_window_ref(
-    wp: &mut impl crate::WindowPane,
+    wp: &mut (impl crate::WindowPane + ?Sized),
     w_ref: Option<&WindowRef>,
 ) {
     wp.set_window_context(w_ref);
 }
 
-pub(crate) fn window_pane_set_window(wp: &mut impl crate::WindowPane, w: Option<&window>) {
+pub(crate) fn window_pane_set_window(wp: &mut (impl crate::WindowPane + ?Sized), w: Option<&window>) {
     {
         let w_ref = w.and_then(window_ref_of);
         window_pane_set_window_ref(wp, w_ref.as_ref());
     }
 }
 
-fn window_pane_read_callback(wp: &mut impl crate::WindowPane) {
+fn window_pane_read_callback(wp: &mut dyn crate::WindowPane) {
     unsafe {
         let size = wp.event().input_len();
         let new_size: size_t;
@@ -1629,13 +1622,13 @@ fn window_pane_read_callback(wp: &mut impl crate::WindowPane) {
         wp.event().disable(Interest::Read);
     }
 }
-fn window_pane_error_callback(wp: &mut impl crate::WindowPane) {
+fn window_pane_error_callback(wp: &mut dyn crate::WindowPane) {
     unsafe {
         log_debug(c"%%%u error", fmt_args![wp.pane_id()]);
         *wp.flags_mut() |= PANE_EXITED;
         if window_pane_destroy_ready(wp) != 0 {
             server_destroy_pane(
-                &crate::window::window_pane_ref_of(wp).expect("the pane is owned"),
+                &(wp).observation().expect("the pane is owned"),
                 1 as core::ffi::c_int,
             );
         }
@@ -1645,7 +1638,7 @@ fn window_pane_error_callback(wp: &mut impl crate::WindowPane) {
 /// temporarily detached panes without retaining their allocation.
 pub(crate) fn on_pane(
     id: u_int,
-    body: impl Fn(&mut crate::types::window_pane) + 'static,
+    body: impl Fn(&mut dyn crate::WindowPane) + 'static,
 ) -> std::rc::Rc<dyn Fn(Stream)> {
     let observed = window_pane_find_by_id(id);
     std::rc::Rc::new(move |_stream| unsafe {
@@ -1661,7 +1654,7 @@ pub(crate) fn on_pane(
 /// The same, for the callback a failed stream makes.
 pub(crate) fn on_pane_error(
     id: u_int,
-    body: impl Fn(&mut crate::types::window_pane) + 'static,
+    body: impl Fn(&mut dyn crate::WindowPane) + 'static,
 ) -> std::rc::Rc<dyn Fn(Stream, core::ffi::c_short)> {
     let observed = window_pane_find_by_id(id);
     std::rc::Rc::new(move |_stream, _what| unsafe {
@@ -1674,7 +1667,7 @@ pub(crate) fn on_pane_error(
     })
 }
 
-pub unsafe fn window_pane_set_event(wp: &mut impl crate::WindowPane) {
+pub unsafe fn window_pane_set_event(wp: &mut (impl crate::WindowPane + ?Sized)) {
     unsafe {
         setblocking(*wp.fd(), 0 as core::ffi::c_int);
         let id = wp.pane_id();
@@ -1694,7 +1687,7 @@ pub unsafe fn window_pane_set_event(wp: &mut impl crate::WindowPane) {
         wp.event().enable(Interest::ReadWrite);
     }
 }
-fn screen_write_sync_callback(wp: &mut impl crate::WindowPane) {
+fn screen_write_sync_callback(wp: &mut (impl crate::WindowPane + ?Sized)) {
     {
         log_debug(
             c"%s: %%%u sync timer expired",
@@ -1709,7 +1702,7 @@ fn screen_write_sync_callback(wp: &mut impl crate::WindowPane) {
     }
 }
 
-pub(crate) unsafe fn screen_write_start_sync(wp: Option<&mut impl crate::WindowPane>) {
+pub(crate) unsafe fn screen_write_start_sync(wp: Option<&mut (impl crate::WindowPane + ?Sized)>) {
     unsafe {
         let tv = timeval::from_secs(1 as __time_t);
         let Some(wp) = wp else {
@@ -1718,7 +1711,7 @@ pub(crate) unsafe fn screen_write_start_sync(wp: Option<&mut impl crate::WindowP
         let pane_screen_mode = wp.base().mode() | MODE_SYNC;
         wp.base_mut().set_mode(pane_screen_mode);
         if !wp.sync_timer().is_set() {
-            let pane = window_pane_ref_of(wp).expect("a syncing pane is owned");
+            let pane = (wp).observation().expect("a syncing pane is owned");
             wp.sync_timer_mut().set_callback(move || {
                 if let Some(wp) = pane.clone().get_mut() {
                     screen_write_sync_callback(wp);
@@ -1732,7 +1725,7 @@ pub(crate) unsafe fn screen_write_start_sync(wp: Option<&mut impl crate::WindowP
         );
     }
 }
-pub(crate) fn screen_write_stop_sync(wp: Option<&mut impl crate::WindowPane>) {
+pub(crate) fn screen_write_stop_sync(wp: Option<&mut (impl crate::WindowPane + ?Sized)>) {
     {
         let Some(wp) = wp else {
             return;
@@ -1746,7 +1739,7 @@ pub(crate) fn screen_write_stop_sync(wp: Option<&mut impl crate::WindowPane>) {
         );
     }
 }
-pub unsafe fn window_pane_resize(wp: &mut impl crate::WindowPane, sx: u_int, sy: u_int) {
+pub unsafe fn window_pane_resize(wp: &mut (impl crate::WindowPane + ?Sized), sx: u_int, sy: u_int) {
     unsafe {
         let geometry = wp.geometry();
         if sx == geometry.sx && sy == geometry.sy {
@@ -1784,7 +1777,7 @@ pub unsafe fn window_pane_resize(wp: &mut impl crate::WindowPane, sx: u_int, sy:
     }
 }
 pub unsafe fn window_pane_set_mode(
-    wp: &mut impl crate::WindowPane,
+    wp: &mut (impl crate::WindowPane + ?Sized),
     source_pane: Option<RustWindowPaneWeak>,
     mode: WindowMode,
     fs: Option<&cmd_find_state>,
@@ -1806,7 +1799,7 @@ pub unsafe fn window_pane_set_mode(
             let open = wp.modes_mut().remove(at);
             wp.modes_mut().insert(0, open);
         } else {
-            let pane = window_pane_ref_of(wp).expect("a mode opens on an owned pane");
+            let pane = (wp).observation().expect("a mode opens on an owned pane");
             let entry = Box::new(window_mode_entry {
                 wp: Some(pane.clone()),
                 swp: source_pane,
@@ -1827,7 +1820,7 @@ pub unsafe fn window_pane_set_mode(
         0 as core::ffi::c_int
     }
 }
-pub unsafe fn window_pane_reset_mode(wp: &mut impl crate::WindowPane) {
+pub unsafe fn window_pane_reset_mode(wp: &mut (impl crate::WindowPane + ?Sized)) {
     unsafe {
         if wp.modes().is_empty() {
             return;
@@ -1864,14 +1857,14 @@ pub unsafe fn window_pane_reset_mode(wp: &mut impl crate::WindowPane) {
         notify_pane(c"pane-mode-changed", Some(wp));
     }
 }
-pub unsafe fn window_pane_reset_mode_all(wp: &mut impl crate::WindowPane) {
+pub unsafe fn window_pane_reset_mode_all(wp: &mut (impl crate::WindowPane + ?Sized)) {
     unsafe {
         while !wp.modes().is_empty() {
             window_pane_reset_mode(&mut *wp);
         }
     }
 }
-unsafe fn window_pane_copy_paste(wp: &impl crate::WindowPane, buf: ByteBuffer) {
+unsafe fn window_pane_copy_paste(wp: &(impl crate::WindowPane + ?Sized), buf: ByteBuffer) {
     unsafe {
         let Some(window) = wp.window_context() else {
             return;
@@ -1905,7 +1898,7 @@ unsafe fn window_pane_copy_paste(wp: &impl crate::WindowPane, buf: ByteBuffer) {
         }
     }
 }
-unsafe fn window_pane_copy_key(wp: &impl crate::WindowPane, key: key_code) {
+unsafe fn window_pane_copy_key(wp: &(impl crate::WindowPane + ?Sized), key: key_code) {
     unsafe {
         let Some(window) = wp.window_context() else {
             return;
@@ -1927,7 +1920,7 @@ unsafe fn window_pane_copy_key(wp: &impl crate::WindowPane, key: key_code) {
         }
     }
 }
-pub unsafe fn window_pane_paste(wp: &impl crate::WindowPane, key: key_code, mut buf: ByteBuffer) {
+pub unsafe fn window_pane_paste(wp: &(impl crate::WindowPane + ?Sized), key: key_code, mut buf: ByteBuffer) {
     unsafe {
         if !wp.modes().is_empty() {
             return;
@@ -2020,7 +2013,7 @@ pub unsafe fn window_pane_key(
         0 as core::ffi::c_int
     }
 }
-pub unsafe fn window_pane_visible(w: &window, wp: &impl crate::WindowPane) -> core::ffi::c_int {
+pub unsafe fn window_pane_visible(w: &window, wp: &(impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
     unsafe {
         if w.flags & WINDOW_ZOOMED == 0 {
             return 1;
@@ -2033,11 +2026,11 @@ pub unsafe fn window_pane_visible(w: &window, wp: &impl crate::WindowPane) -> co
     }
 }
 
-pub fn window_pane_exited(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+pub fn window_pane_exited(wp: &(impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
     (*wp.fd() == -(1 as core::ffi::c_int) || *wp.flags() & PANE_EXITED != 0) as core::ffi::c_int
 }
 pub unsafe fn window_pane_search(
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     term: &CStr,
     regex: core::ffi::c_int,
     ignore: core::ffi::c_int,
@@ -2099,7 +2092,7 @@ unsafe fn window_pane_choose_best(list: &[&RustWindowPaneRef]) -> Option<RustWin
 /// `(xoff, yoff, sx, sy)`.
 fn window_pane_full_size_offset(
     w: &window,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
 ) -> (core::ffi::c_int, core::ffi::c_int, u_int, u_int) {
     {
         let sb_w: u_int = if window_pane_show_scrollbar(wp, w.scrollbar_settings().sb) != 0 {
@@ -2121,7 +2114,7 @@ fn window_pane_full_size_offset(
     }
 }
 pub unsafe fn window_pane_find_up(
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
 ) -> Option<RustWindowPaneWeak> {
     unsafe {
         let mut list: Vec<&RustWindowPaneRef> = Vec::new();
@@ -2179,7 +2172,7 @@ pub unsafe fn window_pane_find_up(
     }
 }
 pub unsafe fn window_pane_find_down(
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
 ) -> Option<RustWindowPaneWeak> {
     unsafe {
         let mut list: Vec<&RustWindowPaneRef> = Vec::new();
@@ -2235,7 +2228,7 @@ pub unsafe fn window_pane_find_down(
     }
 }
 pub unsafe fn window_pane_find_left(
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
 ) -> Option<RustWindowPaneWeak> {
     unsafe {
         let mut list: Vec<&RustWindowPaneRef> = Vec::new();
@@ -2282,7 +2275,7 @@ pub unsafe fn window_pane_find_left(
     }
 }
 pub unsafe fn window_pane_find_right(
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
 ) -> Option<RustWindowPaneWeak> {
     unsafe {
         let mut list: Vec<&RustWindowPaneRef> = Vec::new();
@@ -2418,12 +2411,12 @@ pub(crate) fn pane_stack(w: &mut window, which: PaneStack) -> &mut Vec<RustWindo
 pub fn window_pane_stack_push(
     w: &mut window,
     which: PaneStack,
-    wp: Option<&mut impl crate::WindowPane>,
+    wp: Option<&mut (impl crate::WindowPane + ?Sized)>,
 ) {
     {
         if let Some(wp) = wp {
             window_pane_stack_remove(&mut *w, which, Some(&mut *wp));
-            let pane = window_pane_ref_of(wp).expect("a stacked pane is owned");
+            let pane = (wp).observation().expect("a stacked pane is owned");
             pane_stack(&mut *w, which).insert(0, pane);
             *wp.flags_mut() |= PANE_VISITED;
         }
@@ -2432,7 +2425,7 @@ pub fn window_pane_stack_push(
 pub fn window_pane_stack_remove(
     w: &mut window,
     which: PaneStack,
-    wp: Option<&mut impl crate::WindowPane>,
+    wp: Option<&mut (impl crate::WindowPane + ?Sized)>,
 ) {
     if let Some(wp) = wp {
         let stack = pane_stack(w, which);
@@ -2445,13 +2438,13 @@ pub fn window_pane_stack_remove(
 }
 /// Takes `wp` off a stacking order. Unlike [`window_pane_stack_remove`] this
 /// carries no membership flag: a pane not on the order is left alone.
-pub fn window_pane_zindex_remove(w: &mut window, wp: &impl crate::WindowPane) {
+pub fn window_pane_zindex_remove(w: &mut window, wp: &(impl crate::WindowPane + ?Sized)) {
     pane_stack(&mut *w, PaneStack::ZIndex).retain(|pane| wp.observation().as_ref() != Some(pane));
 }
 
 /// Puts `wp` at the bottom of a stacking order.
-pub fn window_pane_zindex_insert_tail(w: &mut window, wp: &impl crate::WindowPane) {
-    let pane = window_pane_ref_of(wp).expect("a stacked pane is owned");
+pub fn window_pane_zindex_insert_tail(w: &mut window, wp: &(impl crate::WindowPane + ?Sized)) {
+    let pane = (wp).observation().expect("a stacked pane is owned");
     pane_stack(&mut *w, PaneStack::ZIndex).push(pane);
 }
 /// Puts `wp` directly below `other` on a stacking order, or at the bottom
@@ -2575,7 +2568,7 @@ fn window_pane_input_callback(event: ClientFileEvent<'_>) {
     }
 }
 pub unsafe fn window_pane_start_input(
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     item: &cmdq_item,
 ) -> Result<core::ffi::c_int, CString> {
     unsafe {
@@ -2607,13 +2600,13 @@ pub unsafe fn window_pane_start_input(
     }
 }
 /// How many bytes a reader at `wpo` has not taken yet.
-pub fn window_pane_get_new_size(wp: &impl crate::WindowPane, wpo: &RustPaneOutputOffset) -> size_t {
+pub fn window_pane_get_new_size(wp: &(impl crate::WindowPane + ?Sized), wpo: &RustPaneOutputOffset) -> size_t {
     let used = wpo.position().wrapping_sub(wp.output_base());
     wp.event().input_len().wrapping_sub(used)
 }
 /// An owned view of the bytes a reader at `wpo` has not taken yet.
 pub fn window_pane_get_new_data(
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     wpo: &RustPaneOutputOffset,
 ) -> ByteBuffer {
     let used = wpo.position().wrapping_sub(wp.output_base());
@@ -2623,7 +2616,7 @@ pub fn window_pane_get_new_data(
         .unwrap_or_default()
 }
 pub fn window_pane_update_used_data(
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     wpo: &mut RustPaneOutputOffset,
     mut size: size_t,
 ) {
@@ -2647,7 +2640,7 @@ pub fn window_set_fill_character(w: &mut window) {
         }
     }
 }
-pub fn window_pane_default_cursor(wp: &mut impl crate::WindowPane) {
+pub fn window_pane_default_cursor(wp: &mut (impl crate::WindowPane + ?Sized)) {
     {
         let options = wp.options_ref().clone();
         if matches!(*wp.shown(), PaneScreen::Base) || wp.modes().is_empty() {
@@ -2667,18 +2660,18 @@ pub fn window_pane_default_cursor(wp: &mut impl crate::WindowPane) {
     }
 }
 /// The mode the pane is showing, or `None` when it is on its own screen.
-pub fn window_pane_current_mode(wp: &impl crate::WindowPane) -> Option<&window_mode_entry> {
+pub fn window_pane_current_mode(wp: &(impl crate::WindowPane + ?Sized)) -> Option<&window_mode_entry> {
     wp.modes().first().map(Box::as_ref)
 }
 
 /// Mutably borrows the mode the pane is showing, if any.
 pub fn window_pane_current_mode_mut(
-    wp: &mut impl crate::WindowPane,
+    wp: &mut (impl crate::WindowPane + ?Sized),
 ) -> Option<&mut window_mode_entry> {
     wp.modes_mut().first_mut().map(Box::as_mut)
 }
 
-pub fn window_pane_mode(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+pub fn window_pane_mode(wp: &(impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
     match wp.modes().first().map(|current| current.mode()) {
         Some(WindowMode::Copy) => 1,
         Some(WindowMode::View) => 2,
@@ -2686,7 +2679,7 @@ pub fn window_pane_mode(wp: &impl crate::WindowPane) -> core::ffi::c_int {
     }
 }
 pub fn window_pane_show_scrollbar(
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     mode: core::ffi::c_int,
 ) -> core::ffi::c_int {
     (!wp.base().is_alternate()
@@ -2694,7 +2687,7 @@ pub fn window_pane_show_scrollbar(
             || mode == PANE_SCROLLBARS_MODAL && window_pane_mode(wp) != WINDOW_PANE_NO_MODE))
         as core::ffi::c_int
 }
-pub unsafe fn window_pane_get_bg(wp: &mut impl crate::WindowPane) -> core::ffi::c_int {
+pub unsafe fn window_pane_get_bg(wp: &mut (impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
     unsafe {
         let mut c: core::ffi::c_int;
         let mut defaults = grid_default_cell;
@@ -2711,7 +2704,7 @@ pub unsafe fn window_pane_get_bg(wp: &mut impl crate::WindowPane) -> core::ffi::
     }
 }
 
-pub unsafe fn window_get_bg_client(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+pub unsafe fn window_get_bg_client(wp: &(impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
     with_clients(|clients| unsafe {
         let Some(window) = wp.window_context() else {
             return -1;
@@ -2726,7 +2719,7 @@ pub unsafe fn window_get_bg_client(wp: &impl crate::WindowPane) -> core::ffi::c_
     })
 }
 
-pub fn window_pane_get_bg_control_client(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+pub fn window_pane_get_bg_control_client(wp: &(impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
     with_clients(|clients| {
         let Some(background) = wp.colours().control_bg else {
             return -(1 as core::ffi::c_int);
@@ -2740,7 +2733,7 @@ pub fn window_pane_get_bg_control_client(wp: &impl crate::WindowPane) -> core::f
         -(1 as core::ffi::c_int)
     })
 }
-pub unsafe fn window_pane_get_fg(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+pub unsafe fn window_pane_get_fg(wp: &(impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
     with_clients(|clients| unsafe {
         let Some(window) = wp.window_context() else {
             return -1;
@@ -2755,7 +2748,7 @@ pub unsafe fn window_pane_get_fg(wp: &impl crate::WindowPane) -> core::ffi::c_in
     })
 }
 
-pub fn window_pane_get_fg_control_client(wp: &impl crate::WindowPane) -> core::ffi::c_int {
+pub fn window_pane_get_fg_control_client(wp: &(impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
     with_clients(|clients| {
         let Some(foreground) = wp.colours().control_fg else {
             return -(1 as core::ffi::c_int);
@@ -2769,7 +2762,7 @@ pub fn window_pane_get_fg_control_client(wp: &impl crate::WindowPane) -> core::f
         -(1 as core::ffi::c_int)
     })
 }
-pub unsafe fn window_pane_get_theme(wp: Option<&mut impl crate::WindowPane>) -> client_theme {
+pub unsafe fn window_pane_get_theme(wp: Option<&mut (impl crate::WindowPane + ?Sized)>) -> client_theme {
     with_clients(|clients| unsafe {
         let Some(wp) = wp else {
             return THEME_UNKNOWN;
@@ -2800,7 +2793,7 @@ pub unsafe fn window_pane_get_theme(wp: Option<&mut impl crate::WindowPane>) -> 
         }
     })
 }
-pub unsafe fn window_pane_send_theme_update(wp: Option<&mut impl crate::WindowPane>) {
+pub unsafe fn window_pane_send_theme_update(wp: Option<&mut (impl crate::WindowPane + ?Sized)>) {
     unsafe {
         let Some(wp) = wp else {
             return;
@@ -2845,7 +2838,7 @@ pub unsafe fn window_pane_send_theme_update(wp: Option<&mut impl crate::WindowPa
     }
 }
 pub fn window_pane_border_status_get_range(
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
     x: u_int,
     y: u_int,
 ) -> Option<style_range> {
@@ -2942,12 +2935,12 @@ impl WindowRef {
 
     pub(crate) unsafe fn pane_index(
         &self,
-        pane: &impl crate::WindowPane,
+        pane: &(impl crate::WindowPane + ?Sized),
     ) -> (core::ffi::c_int, u_int) {
         unsafe { window_pane_index(&self.as_window(), pane) }
     }
 
-    pub(crate) unsafe fn pane_visible(&self, pane: &impl crate::WindowPane) -> bool {
+    pub(crate) unsafe fn pane_visible(&self, pane: &(impl crate::WindowPane + ?Sized)) -> bool {
         unsafe { window_pane_visible(&self.as_window(), pane) != 0 }
     }
 

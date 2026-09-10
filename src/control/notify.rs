@@ -34,7 +34,7 @@ pub unsafe fn control_notify_window_layout_changed(w: &WindowRef) {
             None,
             None,
             Some(wl),
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
         );
         for mut owner in client_walk() {
             let Some(session) = owner.attached_session() else {

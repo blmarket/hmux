@@ -157,8 +157,8 @@ impl format_tree {
     }
 
     /// Records `wp` as the pane the tree draws on.
-    pub(crate) fn set_pane(&mut self, wp: Option<&impl crate::WindowPane>) {
-        self.wp = wp.and_then(|wp| crate::window::window_pane_ref_of(wp));
+    pub(crate) fn set_pane(&mut self, wp: Option<&(impl crate::WindowPane + ?Sized)>) {
+        self.wp = wp.and_then(|wp| (wp).observation());
     }
 
     /// The client the tree draws its client formats from, or null when it
@@ -4259,7 +4259,7 @@ fn format_sub(fm: &format_modifier, text: &CStr, pattern: &CStr, with: &CStr) ->
     }
     RustRegsub::substitute(pattern, with, text, flags).unwrap_or_else(|| text.to_owned())
 }
-unsafe fn format_search(fm: &format_modifier, wp: &impl crate::WindowPane, s: &CStr) -> CString {
+unsafe fn format_search(fm: &format_modifier, wp: &(impl crate::WindowPane + ?Sized), s: &CStr) -> CString {
     unsafe {
         let flags = fm.argv.first().map_or(&[][..], |flags| flags.as_bytes());
         let ignore = flags.contains(&b'i') as core::ffi::c_int;
@@ -4406,7 +4406,7 @@ unsafe fn format_loop_sessions(
                 drawn.as_ref(),
                 Some(s.as_session()),
                 None,
-                None::<&crate::types::window_pane>,
+                None::<&dyn crate::WindowPane>,
             );
             next = es.clone();
             next.flags |= 0 as core::ffi::c_int;
@@ -4539,7 +4539,7 @@ unsafe fn format_loop_windows(
                     .as_ref()
                     .map(|reference| reference.as_session()),
                 Some(wl),
-                None::<&crate::types::window_pane>,
+                None::<&dyn crate::WindowPane>,
             );
             let current_index = s.curw().map(|current| current.index());
             format_add(
@@ -5858,7 +5858,7 @@ pub unsafe fn format_single(
     c: Option<&client>,
     s: Option<&session>,
     wl: Option<&winlink>,
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
 ) -> CString {
     unsafe {
         let mut ft = format_create_defaults(item, c, s, wl, wp);
@@ -5900,7 +5900,7 @@ pub unsafe fn format_create_defaults(
     c: Option<&client>,
     s: Option<&session>,
     wl: Option<&winlink>,
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
 ) -> Box<format_tree> {
     unsafe {
         format_create_defaults_for_client(item, c.and_then(client_ref_of).as_ref(), s, wl, wp)
@@ -5911,7 +5911,7 @@ unsafe fn format_create_defaults_for_client(
     c: Option<&ClientRef>,
     s: Option<&session>,
     wl: Option<&winlink>,
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
 ) -> Box<format_tree> {
     unsafe {
         let cmdq_client = item.and_then(cmdq_item::client);
@@ -6029,7 +6029,7 @@ pub(crate) unsafe fn format_defaults_for_session(ft: &mut format_tree, s: &Sessi
             None,
             Some(s.as_session()),
             None,
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
         );
     }
 }
@@ -6066,7 +6066,7 @@ pub(crate) unsafe fn format_defaults_for_link(
             None,
             Some(link.session().as_session()),
             Some(wl),
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
         );
     }
     true
@@ -6164,7 +6164,7 @@ pub unsafe fn format_defaults(
     c: Option<&client>,
     s: Option<&session>,
     wl: Option<&winlink>,
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
 ) {
     unsafe { format_defaults_for_client(ft, c.and_then(client_ref_of).as_ref(), s, wl, wp) }
 }
@@ -6173,7 +6173,7 @@ unsafe fn format_defaults_for_client(
     c: Option<&ClientRef>,
     s: Option<&session>,
     wl: Option<&winlink>,
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
 ) {
     unsafe {
         match c.filter(|c| c.name().is_some()) {
@@ -6263,7 +6263,7 @@ fn format_defaults_winlink(ft: &mut format_tree, wl: &winlink) {
     }
     ft.set_winlink(Some(wl));
 }
-pub unsafe fn format_defaults_pane(ft: &mut format_tree, wp: &impl crate::WindowPane) {
+pub unsafe fn format_defaults_pane(ft: &mut format_tree, wp: &(impl crate::WindowPane + ?Sized)) {
     unsafe {
         let window = wp.window_context();
         if ft.window().is_none()

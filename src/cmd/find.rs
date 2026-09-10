@@ -826,7 +826,7 @@ pub unsafe fn cmd_find_from_window(
 pub unsafe fn cmd_find_from_winlink_pane(
     fs: &mut cmd_find_state,
     wl: &winlink,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     flags: core::ffi::c_int,
 ) {
     unsafe {
@@ -835,13 +835,13 @@ pub unsafe fn cmd_find_from_winlink_pane(
         fs.set_winlink(Some(wl));
         fs.idx = wl.idx;
         fs.set_window_ref(wl.window_handle());
-        fs.wp = crate::window::window_pane_ref_of(wp);
+        fs.wp = (wp).observation();
         cmd_find_log_state(c"cmd_find_from_winlink_pane", fs);
     }
 }
 pub unsafe fn cmd_find_from_pane(
     fs: &mut cmd_find_state,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     flags: core::ffi::c_int,
 ) -> core::ffi::c_int {
     unsafe {
@@ -854,7 +854,7 @@ pub unsafe fn cmd_find_from_pane(
 
 pub(crate) unsafe fn cmd_find_from_pane_in_window(
     fs: &mut cmd_find_state,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     window: &WindowRef,
     flags: core::ffi::c_int,
 ) -> core::ffi::c_int {

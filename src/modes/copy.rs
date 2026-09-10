@@ -488,7 +488,7 @@ pub(crate) unsafe fn window_copy_free(wme: &mut window_mode_entry) {
     }
 }
 pub unsafe fn window_copy_add(
-    wp: &mut impl crate::WindowPane,
+    wp: &mut (impl crate::WindowPane + ?Sized),
     parse: core::ffi::c_int,
     fmt: &CStr,
     args: &[FmtArg],
@@ -505,7 +505,7 @@ fn window_copy_init_ctx_cb(ttyctx: &mut tty_ctx) {
     ttyctx.arg = TtyCtxArg::None;
 }
 pub unsafe fn window_copy_vadd(
-    wp: &mut impl crate::WindowPane,
+    wp: &mut (impl crate::WindowPane + ?Sized),
     parse: core::ffi::c_int,
     fmt: &CStr,
     args: &[FmtArg],
@@ -574,7 +574,7 @@ pub unsafe fn window_copy_vadd(
     }
 }
 pub unsafe fn window_copy_scroll(
-    wp: &mut impl crate::WindowPane,
+    wp: &mut (impl crate::WindowPane + ?Sized),
     sl_mpos: core::ffi::c_int,
     my: u_int,
     tty_oy: u_int,
@@ -736,7 +736,7 @@ unsafe fn window_copy_scroll1(
         false
     }
 }
-pub unsafe fn window_copy_pageup(wp: &mut impl crate::WindowPane, half_page: core::ffi::c_int) {
+pub unsafe fn window_copy_pageup(wp: &mut (impl crate::WindowPane + ?Sized), half_page: core::ffi::c_int) {
     unsafe {
         window_copy_pageup1(
             window_pane_current_mode_mut(&mut *wp).expect("pane is in a mode"),
@@ -822,7 +822,7 @@ unsafe fn window_copy_pageup1(wme: &mut window_mode_entry, half_page: core::ffi:
     }
 }
 pub unsafe fn window_copy_pagedown(
-    wp: &mut impl crate::WindowPane,
+    wp: &mut (impl crate::WindowPane + ?Sized),
     half_page: core::ffi::c_int,
     scroll_exit: core::ffi::c_int,
 ) {
@@ -977,7 +977,7 @@ unsafe fn window_copy_next_paragraph(wme: &mut window_mode_entry) {
     }
 }
 pub unsafe fn window_copy_get_word(
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     x: u_int,
     y: u_int,
 ) -> Option<CString> {
@@ -992,7 +992,7 @@ pub unsafe fn window_copy_get_word(
         format_grid_word(gd, x, gd.hsize.wrapping_add(y).wrapping_sub(data.oy))
     }
 }
-pub fn window_copy_get_line(wp: &impl crate::WindowPane, y: u_int) -> CString {
+pub fn window_copy_get_line(wp: &(impl crate::WindowPane + ?Sized), y: u_int) -> CString {
     {
         let wme = window_pane_current_mode(wp).expect("pane is in a mode");
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
@@ -1005,7 +1005,7 @@ pub fn window_copy_get_line(wp: &impl crate::WindowPane, y: u_int) -> CString {
     }
 }
 pub fn window_copy_get_hyperlink(
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     x: u_int,
     y: u_int,
 ) -> Option<CString> {
@@ -6645,7 +6645,7 @@ fn window_copy_cursor_unoffset(wme: &window_mode_entry, mut vx: u_int, sx: u_int
     }
 }
 pub unsafe fn window_copy_set_line_numbers(
-    wp: &mut impl crate::WindowPane,
+    wp: &mut (impl crate::WindowPane + ?Sized),
     enabled: core::ffi::c_int,
 ) {
     unsafe {
@@ -6667,7 +6667,7 @@ pub unsafe fn window_copy_set_line_numbers(
 }
 /// How far back the pane is scrolled and how much history it has, or
 /// nothing when the pane is not in a copy or view mode.
-pub fn window_copy_get_current_offset(wp: &impl crate::WindowPane) -> Option<(u_int, u_int)> {
+pub fn window_copy_get_current_offset(wp: &(impl crate::WindowPane + ?Sized)) -> Option<(u_int, u_int)> {
     let wme = window_pane_current_mode(wp)?;
     let (WindowModeState::Copy(data) | WindowModeState::View(data)) = &wme.state else {
         return None;

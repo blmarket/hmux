@@ -1025,7 +1025,7 @@ pub unsafe fn status_redraw(c: &mut client) -> core::ffi::c_int {
             Some(c),
             None,
             None,
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
         );
         style_apply(&mut gc, &options, c"status-style", Some(&mut ft));
         let fg: core::ffi::c_int = options.number(c"status-fg") as core::ffi::c_int;
@@ -1265,7 +1265,7 @@ pub unsafe fn status_message_redraw(c: &mut client) -> core::ffi::c_int {
             Some(c),
             None,
             None,
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
         );
         let gc = grid_default_cell;
         if c.message_ignore_styles != 0 {
@@ -1476,7 +1476,7 @@ pub unsafe fn status_prompt_set(
                 Some(c),
                 None,
                 None,
-                None::<&crate::types::window_pane>,
+                None::<&dyn crate::WindowPane>,
             );
             cmd_find_clear_state(&mut c.prompt_state, 0 as core::ffi::c_int);
             ft
@@ -1548,7 +1548,7 @@ pub unsafe fn status_prompt_update(c: &mut client, msg: &CStr, input: Option<&CS
                 Some(c),
                 None,
                 None,
-                None::<&crate::types::window_pane>,
+                None::<&dyn crate::WindowPane>,
             )
         };
         c.prompt_string = Some(msg.to_owned());
@@ -1656,7 +1656,7 @@ pub unsafe fn status_prompt_redraw(c: &mut client) -> core::ffi::c_int {
                 Some(c),
                 None,
                 None,
-                None::<&crate::types::window_pane>,
+                None::<&dyn crate::WindowPane>,
             )
         };
         n = (oo).number(c"prompt-cursor-colour") as u_int;

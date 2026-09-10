@@ -81,11 +81,11 @@ impl<'a> screen_write_ctx<'a> {
         }
     }
 
-    pub(super) fn pane_mut(&mut self) -> Option<&mut impl crate::WindowPane> {
+    pub(super) fn pane_mut(&mut self) -> Option<&mut (impl crate::WindowPane + ?Sized)> {
         unsafe { self.state.wp.as_mut()?.get_mut() }
     }
 
-    pub(super) fn pane(&self) -> Option<&impl crate::WindowPane> {
+    pub(super) fn pane(&self) -> Option<&(impl crate::WindowPane + ?Sized)> {
         unsafe { self.state.wp.as_ref()?.get() }
     }
 
@@ -476,7 +476,7 @@ unsafe fn screen_write_pane_is_obscured(ctx: &mut screen_write_ctx) -> c_int {
             let f_geometry = f.geometry();
             if window_pane_is_floating(
                 &w,
-                &{ crate::window::window_pane_ref_of(f) }.expect("the pane allocation exists"),
+                &{ (f).observation() }.expect("the pane allocation exists"),
             ) != 0
                 && (f_geometry.yoff >= b_geometry.yoff
                     && f_geometry.yoff <= b_geometry.yoff + b_geometry.sy as c_int
@@ -599,10 +599,10 @@ fn screen_write_init(s: &mut RustScreen) -> screen_write_state {
         ..screen_write_state::default()
     }
 }
-pub(super) fn screen_write_start_pane_base(wp: &mut impl crate::WindowPane) -> screen_write_state {
+pub(super) fn screen_write_start_pane_base(wp: &mut (impl crate::WindowPane + ?Sized)) -> screen_write_state {
     {
         let mut state = screen_write_init(wp.base_mut());
-        state.wp = crate::window::window_pane_ref_of(wp);
+        state.wp = (wp).observation();
         if log_get_level() != 0 {
             log_debug(
                 c"%s: size %ux%u, pane %%%u (at %u,%u)",

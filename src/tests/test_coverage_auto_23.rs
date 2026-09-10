@@ -1,5 +1,6 @@
 //! Coverage for [`crate::layout`] – layout helpers with [`Layout`] fixture.
 
+use crate::WindowPane;
 use crate::pane_geometry::PaneGeometryState;
 use crate::pane_identity::PaneIdentity;
 
@@ -213,7 +214,7 @@ fn layout_assign_pane_skip_flag_leaves_skip_pane_size() {
         (l.reference()).fix_layout_panes(
             l.pane(0)
                 .as_ref()
-                .and_then(|pane| crate::window::window_pane_ref_of(pane))
+                .and_then(|pane| (pane).observation())
                 .as_ref(),
         );
         // skipped pane keeps old size, other pane is fixed to its cell

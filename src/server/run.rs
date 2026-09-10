@@ -168,7 +168,7 @@ pub const current_time: crate::server_state::Value<time_t> =
 pub unsafe fn server_set_marked(
     s: Option<&session>,
     wl: Option<&winlink>,
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
 ) {
     {
         marked_pane.with_mut(|global_0| cmd_find_clear_state(global_0, 0 as core::ffi::c_int));
@@ -188,7 +188,7 @@ pub fn server_clear_marked() {
 pub unsafe fn server_is_marked(
     s: Option<&session>,
     wl: Option<&winlink>,
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
 ) -> core::ffi::c_int {
     unsafe {
         let (Some(s), Some(wl), Some(wp)) = (s, wl, wp) else {
@@ -685,7 +685,7 @@ fn server_child_exited(pid: pid_t, status: core::ffi::c_int) {
             log_debug(c"%%%u exited", fmt_args![pane_id]);
             *wp.flags_mut() |= PANE_EXITED;
             if window_pane_destroy_ready(wp) != 0 {
-                let pane = crate::window::window_pane_ref_of(wp).expect("the pane is owned");
+                let pane = (wp).observation().expect("the pane is owned");
                 drop(window);
                 server_destroy_pane(&pane, 1);
             }

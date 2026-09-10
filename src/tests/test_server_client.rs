@@ -936,7 +936,7 @@ fn terminal_metadata_uses_the_session_pane_even_with_a_client_selection() {
         active.base_mut().set_progress_bar(PROGRESS_BAR_NORMAL, 42);
         let other_pane = &*target.pane(other);
         let selection = server_client_add_client_window(client, (*target.window(0)).window_id());
-        selection.pane = crate::window::window_pane_ref_of(other_pane);
+        selection.pane = (other_pane).observation();
         assert_eq!(
             server_client_get_pane(client).unwrap().id(),
             other_pane.pane_id()

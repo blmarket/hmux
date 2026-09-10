@@ -92,10 +92,10 @@ fn client_walk_marked_and_accept_helpers_cover_empty_safe_states() {
         server_clear_marked();
         assert_eq!(server_check_marked(), 0);
         assert_eq!(
-            server_is_marked(None, None, None::<&crate::types::window_pane>),
+            server_is_marked(None, None, None::<&dyn crate::WindowPane>),
             0
         );
-        server_set_marked(None, None, None::<&crate::types::window_pane>);
+        server_set_marked(None, None, None::<&dyn crate::WindowPane>);
         assert_eq!(server_check_marked(), 0);
 
         let old_fd = server_fd.get();

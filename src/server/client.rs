@@ -788,7 +788,7 @@ unsafe fn server_client_check_mouse_in_pane(
                 }
             } else if window_pane_is_floating(
                 &w,
-                &{ crate::window::window_pane_ref_of(wp) }.expect("the pane allocation exists"),
+                &{ (wp).observation() }.expect("the pane allocation exists"),
             ) != 0
                 && (px == bdr_left
                     || py == wp.geometry().yoff - 1 as core::ffi::c_int
@@ -832,7 +832,7 @@ unsafe fn server_client_check_mouse_in_pane(
                         }
                         if window_pane_is_floating(
                             &w,
-                            &{ crate::window::window_pane_ref_of(wp) }
+                            &{ (wp).observation() }
                                 .expect("the pane allocation exists"),
                         ) != 0
                             && px == bdr_left
@@ -1821,7 +1821,7 @@ fn server_client_key_callback(item: &CmdqItemRef, mut event: Box<key_event>) -> 
                                 wp.options_ref()
                                     .set_number(c"remain-on-exit", 0 as core::ffi::c_longlong);
                                 server_destroy_pane(
-                                    &crate::window::window_pane_ref_of(wp)
+                                    &(wp).observation()
                                         .expect("the pane is owned"),
                                     0 as core::ffi::c_int,
                                 );
@@ -1988,7 +1988,7 @@ unsafe fn server_client_check_window_resize(w_ref: &WindowRef) {
         );
     }
 }
-fn server_client_resize_timer(wp: &mut impl crate::WindowPane) {
+fn server_client_resize_timer(wp: &mut (impl crate::WindowPane + ?Sized)) {
     {
         log_debug(
             c"%s: %%%u resize timer expired",
@@ -2027,7 +2027,7 @@ pub(crate) unsafe fn server_client_check_pane_resize(pane: &mut RustWindowPaneWe
         }
     }
 }
-pub(crate) unsafe fn server_client_check_pane_buffer(wp: &mut impl crate::WindowPane) {
+pub(crate) unsafe fn server_client_check_pane_buffer(wp: &mut (impl crate::WindowPane + ?Sized)) {
     unsafe {
         let mut minimum: size_t;
         let mut off: core::ffi::c_int = 1 as core::ffi::c_int;
@@ -2588,7 +2588,7 @@ unsafe fn server_client_set_title(c: &mut client) {
             Some(c),
             None,
             None,
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
         );
         let title = format_expand_time(&mut ft, &template);
         if c.title.as_deref() != Some(title.as_c_str()) {
@@ -3159,7 +3159,7 @@ pub(crate) fn server_client_get_pane_in_window(
         .filter(|pane| unsafe { pane.get().is_some() })
 }
 
-pub fn server_client_set_pane(c: &mut client, wp: &impl crate::WindowPane) {
+pub fn server_client_set_pane(c: &mut client, wp: &(impl crate::WindowPane + ?Sized)) {
     {
         let Some(session) = c.attached_session() else {
             return;
@@ -3168,14 +3168,14 @@ pub fn server_client_set_pane(c: &mut client, wp: &impl crate::WindowPane) {
             return;
         };
         let cw = server_client_add_client_window(c, window.window_id());
-        cw.pane = crate::window::window_pane_ref_of(wp);
+        cw.pane = (wp).observation();
         log_debug(
             c"%s pane now %%%u",
             fmt_args![c.name.as_deref(), wp.pane_id()],
         );
     }
 }
-pub unsafe fn server_client_remove_pane(pane: &impl crate::WindowPane) {
+pub unsafe fn server_client_remove_pane(pane: &(impl crate::WindowPane + ?Sized)) {
     unsafe {
         let Some(window) = pane.window_context() else {
             return;

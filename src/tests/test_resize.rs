@@ -568,7 +568,7 @@ fn a_window_with_no_active_pane_is_not_resized() {
     let _guard = globals();
     let mut w = Win::new(80, 24);
     unsafe {
-        window_set_active(&mut *w.ptr(), None::<&crate::types::window_pane>);
+        window_set_active(&mut *w.ptr(), None::<&dyn crate::WindowPane>);
         (w.handle()).recalculate_size(1);
     }
     assert_eq!(w.size(), (80, 24, 80, 24));

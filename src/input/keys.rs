@@ -281,7 +281,7 @@ fn is_mouse_key(key: key_code) -> bool {
 /// Tells the pane about a key: a mouse key becomes a mouse report if it landed
 /// in this pane, and anything else is written to it as bytes.
 pub unsafe fn input_key_pane(
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     key: key_code,
     m: Option<&mouse_event>,
 ) -> c_int {
@@ -720,7 +720,7 @@ pub fn input_key_get_mouse(s: &RustScreen, m: &mouse_event, x: u_int, y: u_int) 
 
 /// Tells the pane's terminal where the mouse is, if it asked and the mouse is
 /// over a part of it that can be seen.
-unsafe fn input_key_mouse(wp: &impl crate::WindowPane, m: &mouse_event) {
+unsafe fn input_key_mouse(wp: &(impl crate::WindowPane + ?Sized), m: &mouse_event) {
     unsafe {
         let mode = wp.screen_ref().mode();
         if m.ignore != 0 || mode & ALL_MOUSE_MODES == 0 {

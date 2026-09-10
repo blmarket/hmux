@@ -131,28 +131,28 @@ impl RustWindowPaneRef {
     /// # Safety
     /// Exclude mutation for this borrow, including through other owners,
     /// observations, and callbacks.
-    pub(crate) unsafe fn as_pane(&self) -> &window_pane {
+    pub(crate) unsafe fn as_pane(&self) -> &dyn WindowPane {
         unsafe { &*self.0.pane.get() }
     }
 
     /// # Safety
     /// Exclude other payload access for this borrow, including through
     /// observations and callbacks. The registered ID must not change.
-    pub(crate) unsafe fn as_pane_mut(&mut self) -> &mut window_pane {
+    pub(crate) unsafe fn as_pane_mut(&mut self) -> &mut dyn WindowPane {
         unsafe { &mut *self.0.pane.get() }
     }
 
     /// # Safety
     /// Exclude mutation for this borrow, including through other owners,
     /// observations, and callbacks.
-    pub unsafe fn get(&self) -> Option<&window_pane> {
+    pub unsafe fn get(&self) -> Option<&dyn WindowPane> {
         Some(unsafe { self.as_pane() })
     }
 
     /// # Safety
     /// Exclude other payload access for this borrow, including through
     /// observations and callbacks. The registered ID must not change.
-    pub unsafe fn get_mut(&mut self) -> Option<&mut window_pane> {
+    pub unsafe fn get_mut(&mut self) -> Option<&mut dyn WindowPane> {
         Some(unsafe { self.as_pane_mut() })
     }
 }
@@ -202,15 +202,15 @@ impl RustWindowPaneWeak {
     /// # Safety
     /// Prevent mutation and destruction for the returned borrow, including
     /// through other observations and reentrant callbacks.
-    pub(crate) unsafe fn as_pane(&self) -> &window_pane {
+    pub(crate) unsafe fn as_pane(&self) -> &dyn WindowPane {
         unsafe { self.get() }.expect("the pane has been removed")
     }
 
     /// # Safety
     /// Prevent mutation and destruction for the returned borrow, including
     /// through other observations and reentrant callbacks.
-    pub unsafe fn get(&self) -> Option<&window_pane> {
-        unsafe { self.as_ptr().as_ref() }
+    pub unsafe fn get(&self) -> Option<&dyn WindowPane> {
+        unsafe { self.as_ptr().as_ref().map(|pane| pane as &dyn WindowPane) }
     }
 
     pub fn ptr_eq(&self, other: &Self) -> bool {
@@ -220,15 +220,15 @@ impl RustWindowPaneWeak {
     /// # Safety
     /// Exclude all other payload access and destruction for this borrow,
     /// including through observations and callbacks. The ID must not change.
-    pub(crate) unsafe fn as_pane_mut(&mut self) -> &mut window_pane {
+    pub(crate) unsafe fn as_pane_mut(&mut self) -> &mut dyn WindowPane {
         unsafe { self.get_mut() }.expect("the pane has been removed")
     }
 
     /// # Safety
     /// Exclude all other payload access and destruction for this borrow,
     /// including through observations and callbacks. The ID must not change.
-    pub unsafe fn get_mut(&mut self) -> Option<&mut window_pane> {
-        unsafe { self.as_mut_ptr().as_mut() }
+    pub unsafe fn get_mut(&mut self) -> Option<&mut dyn WindowPane> {
+        unsafe { self.as_mut_ptr().as_mut().map(|pane| pane as &mut dyn WindowPane) }
     }
 }
 
@@ -680,7 +680,7 @@ mod tests {
         let mut owner = RustWindowPaneRef::from_pane(Box::default());
         let mut retained = owner.downgrade();
         unsafe {
-            let pane: &mut window_pane = owner.get_mut().unwrap();
+            let pane: &mut dyn WindowPane = owner.get_mut().unwrap();
             pane.set_size(crate::PaneSize {
                 width: 80,
                 height: 24,
@@ -688,7 +688,7 @@ mod tests {
             *pane.flags_mut() = PANE_STYLECHANGED;
         }
         unsafe {
-            let pane: &window_pane = retained.get().unwrap();
+            let pane: &dyn WindowPane = retained.get().unwrap();
             assert_eq!(pane.geometry().sx, 80);
             assert_eq!(pane.geometry().sy, 24);
             assert_eq!(*pane.flags(), PANE_STYLECHANGED);

@@ -232,7 +232,7 @@ fn window_tree_add_item(data: &mut window_tree_modedata) -> &mut window_tree_ite
 unsafe fn window_tree_build_pane(
     s: &mut session,
     wl: &mut winlink,
-    wp: &mut impl crate::WindowPane,
+    wp: &mut (impl crate::WindowPane + ?Sized),
     modedata: WindowModeData,
     parent: Option<&ModeTreeItemRef>,
 ) {
@@ -277,7 +277,7 @@ unsafe fn window_tree_build_pane(
 unsafe fn window_tree_filter_pane(
     s: &mut session,
     wl: &mut winlink,
-    wp: &mut impl crate::WindowPane,
+    wp: &mut (impl crate::WindowPane + ?Sized),
     filter: Option<&CStr>,
 ) -> core::ffi::c_int {
     unsafe {
@@ -318,7 +318,7 @@ unsafe fn window_tree_build_window(
             None,
             Some(&*s),
             Some(&*wl),
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
         );
         let text = format_expand(&mut ft, data.format.as_deref().unwrap_or(c""));
         let name = xasprintf(c"%u", fmt_args![wl.idx]);
@@ -407,7 +407,7 @@ unsafe fn window_tree_build_session(
             None,
             Some(s),
             None,
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
         );
         let text = format_expand(&mut ft, data.format.as_deref().unwrap_or(c""));
         let expanded: core::ffi::c_int = if data.type_0 as core::ffi::c_uint
@@ -643,7 +643,7 @@ unsafe fn window_tree_draw_session(
                 None,
                 Some(s.as_session()),
                 link.get(),
-                None::<&crate::types::window_pane>,
+                None::<&dyn crate::WindowPane>,
             );
             gc = grid_default_cell;
             style_apply(&mut gc, &oo, c"tree-mode-preview-style", Some(&mut ft));
@@ -1395,7 +1395,7 @@ impl WindowTreeModeDataRef {
                     None,
                     session.as_ref().map(|s| s.as_session()),
                     None,
-                    None::<&crate::types::window_pane>,
+                    None::<&dyn crate::WindowPane>,
                 );
             } else if item.type_0 as core::ffi::c_uint
                 == WINDOW_TREE_WINDOW as core::ffi::c_int as core::ffi::c_uint
@@ -1405,7 +1405,7 @@ impl WindowTreeModeDataRef {
                     None,
                     session.as_ref().map(|s| s.as_session()),
                     link.as_ref().and_then(WinlinkRef::get),
-                    None::<&crate::types::window_pane>,
+                    None::<&dyn crate::WindowPane>,
                 );
             } else {
                 format_defaults(

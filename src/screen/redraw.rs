@@ -75,7 +75,7 @@ pub const END_ISOLATE: &core::ffi::CStr = c"\u{2069}";
 pub const BORDER_MARKERS: [u8; 7] = *b"  +,.-\0";
 pub(crate) unsafe fn screen_redraw_border_set(
     owner: &WindowRef,
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
     pane_lines: pane_lines,
     cell_type: core::ffi::c_int,
     gc: &mut grid_cell,
@@ -167,7 +167,7 @@ pub(crate) fn screen_redraw_two_panes(owner: &WindowRef) -> Option<layout_type> 
 }
 pub(crate) fn screen_redraw_pane_border(
     ctx: &screen_redraw_ctx,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     px: core::ffi::c_int,
     py: core::ffi::c_int,
 ) -> screen_redraw_border_type {
@@ -197,7 +197,7 @@ pub(crate) fn screen_redraw_pane_border(
         }
         if window_pane_is_floating(
             &w,
-            &{ crate::window::window_pane_ref_of(wp) }.expect("the pane allocation exists"),
+            &{ (wp).observation() }.expect("the pane allocation exists"),
         ) != 0
         {
             left = wp.geometry().xoff - 1 as core::ffi::c_int;
@@ -339,7 +339,7 @@ fn screen_redraw_cell_border1(
     ctx: &screen_redraw_ctx,
     sb_pos: core::ffi::c_int,
     sb_w: core::ffi::c_int,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     px: core::ffi::c_int,
     py: core::ffi::c_int,
 ) -> core::ffi::c_int {
@@ -368,7 +368,7 @@ fn screen_redraw_cell_border1(
 }
 pub(crate) unsafe fn screen_redraw_cell_border(
     ctx: &screen_redraw_ctx,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     px: core::ffi::c_int,
     py: core::ffi::c_int,
 ) -> core::ffi::c_int {
@@ -385,7 +385,7 @@ pub(crate) unsafe fn screen_redraw_cell_border(
             (*wp).scrollbar_style().width + (*wp).scrollbar_style().padding;
         if window_pane_is_floating(
             &w,
-            &{ crate::window::window_pane_ref_of(wp) }.expect("the pane allocation exists"),
+            &{ (wp).observation() }.expect("the pane allocation exists"),
         ) != 0
         {
             n = screen_redraw_cell_border1(
@@ -421,7 +421,7 @@ pub(crate) unsafe fn screen_redraw_cell_border(
             if !(window_pane_visible(&w, wp2) == 0
                 || window_pane_is_floating(
                     &w,
-                    &{ crate::window::window_pane_ref_of(wp2) }
+                    &{ (wp2).observation() }
                         .expect("the pane allocation exists"),
                 ) != 0)
             {
@@ -447,7 +447,7 @@ pub(crate) unsafe fn screen_redraw_cell_border(
 }
 pub(crate) unsafe fn screen_redraw_type_of_cell(
     ctx: &screen_redraw_ctx,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     px: core::ffi::c_int,
     py: core::ffi::c_int,
 ) -> core::ffi::c_int {
@@ -468,7 +468,7 @@ pub(crate) unsafe fn screen_redraw_type_of_cell(
         }
         if window_pane_is_floating(
             &w,
-            &{ crate::window::window_pane_ref_of(wp) }.expect("the pane allocation exists"),
+            &{ (wp).observation() }.expect("the pane allocation exists"),
         ) == 0
         {
             if px == 0 as core::ffi::c_int
@@ -602,7 +602,7 @@ unsafe fn screen_redraw_check_cell(
             };
             if !(window_pane_is_floating(
                 &w,
-                &{ crate::window::window_pane_ref_of(wp) }.expect("the pane allocation exists"),
+                &{ (wp).observation() }.expect("the pane allocation exists"),
             ) != 0
                 && (px >= sx || py >= sy))
             {
@@ -652,7 +652,7 @@ unsafe fn screen_redraw_check_cell(
         }
         if window_pane_is_floating(
             &w,
-            &{ crate::window::window_pane_ref_of(wp) }.expect("the pane allocation exists"),
+            &{ (wp).observation() }.expect("the pane allocation exists"),
         ) == 0
         {
             tiled_only = 1 as core::ffi::c_int;
@@ -677,7 +677,7 @@ unsafe fn screen_redraw_check_cell(
                 && !(tiled_only != 0
                     && window_pane_is_floating(
                         &w,
-                        &{ crate::window::window_pane_ref_of(wp) }
+                        &{ (wp).observation() }
                             .expect("the pane allocation exists"),
                     ) != 0)
             {
@@ -778,7 +778,7 @@ pub(crate) fn screen_redraw_check_is(
     ctx: &screen_redraw_ctx,
     px: core::ffi::c_int,
     py: core::ffi::c_int,
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
 ) -> core::ffi::c_int {
     {
         let Some(wp) = wp else {
@@ -1364,7 +1364,7 @@ unsafe fn screen_redraw_draw_borders_cell(ctx: &mut screen_redraw_ctx, i: u_int,
                         .curw()
                         .as_ref()
                         .and_then(crate::window::WinlinkRef::get),
-                    None::<&crate::types::window_pane>,
+                    None::<&dyn crate::WindowPane>,
                 );
                 ctx.no_pane_gc = grid_default_cell;
                 style_add(
@@ -1888,7 +1888,7 @@ impl visible_ranges {
     /// in front of it covers, written into `r`.
     pub unsafe fn set_visible_ranges(
         &mut self,
-        base_wp: Option<&impl crate::WindowPane>,
+        base_wp: Option<&(impl crate::WindowPane + ?Sized)>,
         px: core::ffi::c_int,
         py: core::ffi::c_int,
         width: u_int,
@@ -1902,7 +1902,7 @@ impl visible_ranges {
     /// `width` at `px`,`py` an overlay leaves it.
     pub unsafe fn clip_visible_ranges(
         &mut self,
-        base_wp: Option<&impl crate::WindowPane>,
+        base_wp: Option<&(impl crate::WindowPane + ?Sized)>,
         px: core::ffi::c_int,
         py: core::ffi::c_int,
         width: u_int,
@@ -1915,7 +1915,7 @@ impl visible_ranges {
     /// otherwise the ranges the caller handed in are the ones to narrow.
     unsafe fn visible_ranges(
         &mut self,
-        base_wp: Option<&impl crate::WindowPane>,
+        base_wp: Option<&(impl crate::WindowPane + ?Sized)>,
         mut px: core::ffi::c_int,
         py: core::ffi::c_int,
         mut width: u_int,
@@ -1988,7 +1988,7 @@ impl visible_ranges {
                     if !(found_self == 0 || window_pane_visible(&w, wp) == 0 || py < tb || py > bb)
                         && !(window_pane_is_floating(
                             &w,
-                            &{ crate::window::window_pane_ref_of(wp) }
+                            &{ (wp).observation() }
                                 .expect("the pane allocation exists"),
                         ) == 0
                             && (py == tb || py == bb))

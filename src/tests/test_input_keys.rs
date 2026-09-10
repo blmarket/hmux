@@ -474,7 +474,7 @@ fn a_pane_is_given_a_mouse_report_only_for_a_click_inside_it() {
 
         m.wp = 1;
         (*window.ptr()).flags |= WINDOW_ZOOMED;
-        window_set_active(&mut *window.ptr(), None::<&crate::types::window_pane>);
+        window_set_active(&mut *window.ptr(), None::<&dyn crate::WindowPane>);
         assert_eq!(input_key_pane(&*pane.ptr(), key, Some(&m)), 0);
         assert_eq!(shown(&bev.written()), "");
     }

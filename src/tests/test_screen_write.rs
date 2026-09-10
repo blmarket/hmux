@@ -1443,8 +1443,8 @@ fn a_synchronised_pane_is_not_redrawn_line_by_line() {
         screen_write_mode_clear(&mut w.ctx(), MODE_SYNC);
         screen_write_stop_sync(w.wp().as_mut());
         assert_eq!((*w.wp()).base().mode() & MODE_SYNC, 0);
-        screen_write_start_sync(None::<&mut crate::types::window_pane>);
-        screen_write_stop_sync(None::<&mut crate::types::window_pane>);
+        screen_write_start_sync(None::<&mut dyn crate::WindowPane>);
+        screen_write_stop_sync(None::<&mut dyn crate::WindowPane>);
         screen_write_sync_callback_for_test(&mut *w.wp());
         (*w.wp())
             .base_mut()

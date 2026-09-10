@@ -355,7 +355,7 @@ fn a_target_that_is_not_valid_any_more_is_found_from_nothing() {
         world
             .item_mut()
             .target
-            .set_pane(None::<&crate::types::window_pane>);
+            .set_pane(None::<&dyn crate::WindowPane>);
         notify_hook(&world.read(), c"window-linked");
         assert_eq!(world.inserted().len(), 2);
     }

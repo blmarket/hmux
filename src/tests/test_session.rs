@@ -1367,7 +1367,7 @@ fn moving_between_windows_can_carry_the_focus_with_it() {
             .expect("global options are initialized"))
         .set_number(c"focus-events", 0);
         assert_eq!(*(*wp).flags() & PANE_FOCUSED, 0);
-        window_set_active(&mut *w, None::<&crate::types::window_pane>);
+        window_set_active(&mut *w, None::<&dyn crate::WindowPane>);
     }
 }
 

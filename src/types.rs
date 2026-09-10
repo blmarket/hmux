@@ -2531,8 +2531,8 @@ impl cmd_find_state {
     }
 
     /// Records the pane allocation the state found.
-    pub fn set_pane(&mut self, wp: Option<&impl crate::WindowPane>) {
-        self.wp = wp.and_then(|pane| crate::window::window_pane_ref_of(pane));
+    pub fn set_pane(&mut self, wp: Option<&(impl crate::WindowPane + ?Sized)>) {
+        self.wp = wp.and_then(|pane| (pane).observation());
     }
 }
 
@@ -3426,7 +3426,7 @@ impl VisibleRangesRef {
     }
     pub unsafe fn set_visible_ranges(
         &self,
-        pane: Option<&impl crate::WindowPane>,
+        pane: Option<&(impl crate::WindowPane + ?Sized)>,
         x: core::ffi::c_int,
         y: core::ffi::c_int,
         width: u_int,
@@ -3435,7 +3435,7 @@ impl VisibleRangesRef {
     }
     pub unsafe fn clip_visible_ranges(
         &self,
-        pane: Option<&impl crate::WindowPane>,
+        pane: Option<&(impl crate::WindowPane + ?Sized)>,
         x: core::ffi::c_int,
         y: core::ffi::c_int,
         width: u_int,

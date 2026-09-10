@@ -209,7 +209,7 @@ impl RustWindowPaneWeak {
         }
     }
 }
-fn cmd_pipe_pane_read_callback(wp: &mut impl crate::WindowPane) {
+fn cmd_pipe_pane_read_callback(wp: &mut dyn crate::WindowPane) {
     unsafe {
         let data = wp
             .pipe_event()
@@ -220,24 +220,24 @@ fn cmd_pipe_pane_read_callback(wp: &mut impl crate::WindowPane) {
         wp.event().write(&data);
         if window_pane_destroy_ready(wp) != 0 {
             server_destroy_pane(
-                &crate::window::window_pane_ref_of(wp).expect("the pane is owned"),
+                &(wp).observation().expect("the pane is owned"),
                 1 as core::ffi::c_int,
             );
         }
     }
 }
-fn cmd_pipe_pane_write_callback(wp: &mut impl crate::WindowPane) {
+fn cmd_pipe_pane_write_callback(wp: &mut dyn crate::WindowPane) {
     unsafe {
         log_debug(c"%%%u pipe empty", fmt_args![wp.pane_id()]);
         if window_pane_destroy_ready(wp) != 0 {
             server_destroy_pane(
-                &crate::window::window_pane_ref_of(wp).expect("the pane is owned"),
+                &(wp).observation().expect("the pane is owned"),
                 1 as core::ffi::c_int,
             );
         }
     }
 }
-fn cmd_pipe_pane_error_callback(wp: &mut impl crate::WindowPane) {
+fn cmd_pipe_pane_error_callback(wp: &mut dyn crate::WindowPane) {
     unsafe {
         log_debug(c"%%%u pipe error", fmt_args![wp.pane_id()]);
         wp.pipe_event().free();
@@ -245,7 +245,7 @@ fn cmd_pipe_pane_error_callback(wp: &mut impl crate::WindowPane) {
         *wp.pipe_fd_mut() = -(1 as core::ffi::c_int);
         if window_pane_destroy_ready(wp) != 0 {
             server_destroy_pane(
-                &crate::window::window_pane_ref_of(wp).expect("the pane is owned"),
+                &(wp).observation().expect("the pane is owned"),
                 1 as core::ffi::c_int,
             );
         }

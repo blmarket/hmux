@@ -346,15 +346,15 @@ fn a_request_that_covers_nothing_empties_the_caller_ranges() {
         visible_range { px: 5, nx: 2 },
     ]);
     unsafe {
-        rs.r.clip_visible_ranges(None::<&crate::types::window_pane>, 0, -1, 8);
+        rs.r.clip_visible_ranges(None::<&dyn crate::WindowPane>, 0, -1, 8);
         assert_eq!(rs.r.used, 0);
 
         rs.r.used = 2;
-        rs.r.clip_visible_ranges(None::<&crate::types::window_pane>, 0, 0, 0);
+        rs.r.clip_visible_ranges(None::<&dyn crate::WindowPane>, 0, 0, 0);
         assert_eq!(rs.r.used, 0);
 
         rs.r.used = 2;
-        rs.r.clip_visible_ranges(None::<&crate::types::window_pane>, -4, 0, 4);
+        rs.r.clip_visible_ranges(None::<&dyn crate::WindowPane>, -4, 0, 4);
         assert_eq!(rs.r.used, 0);
     }
 }
@@ -372,7 +372,7 @@ fn ranges_survive_unchanged_when_nothing_stands_over_them() {
         visible_range { px: 40, nx: 1 },
     ]);
     unsafe {
-        rs.r.clip_visible_ranges(None::<&crate::types::window_pane>, -1, 2, 6);
+        rs.r.clip_visible_ranges(None::<&dyn crate::WindowPane>, -1, 2, 6);
         assert_eq!(rs.r.used, 2);
         assert_eq!((rs.r.ranges[0].px, rs.r.ranges[0].nx), (3, 5));
         assert_eq!((rs.r.ranges[1].px, rs.r.ranges[1].nx), (40, 1));
@@ -438,7 +438,7 @@ fn seeded_ranges_clip_negative_starts_and_window_edges() {
     let _guard = globals();
     let mut rs = Ranges::new(&[]);
     unsafe {
-        rs.r.set_visible_ranges(None::<&crate::types::window_pane>, -2, 0, 7);
+        rs.r.set_visible_ranges(None::<&dyn crate::WindowPane>, -2, 0, 7);
         assert_eq!(rs.r.used, 1);
         assert_eq!((rs.r.ranges[0].px, rs.r.ranges[0].nx), (0, 5));
 
@@ -658,7 +658,7 @@ fn numbered_lines_show_the_pane_index_or_a_star() {
         let mut star = undressed(0);
         screen_redraw_border_set(
             &p.window.reference(),
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
             PANE_LINES_NUMBER,
             CELL_TOPLEFT,
             &mut star,
@@ -737,7 +737,7 @@ fn check_is_answers_yes_only_on_a_true_edge() {
     let mut ctx = Box::new(screen_redraw_ctx::default());
     unsafe {
         assert_eq!(
-            screen_redraw_check_is(&mut ctx, 5, 3, None::<&crate::types::window_pane>) as c_int,
+            screen_redraw_check_is(&mut ctx, 5, 3, None::<&dyn crate::WindowPane>) as c_int,
             0
         );
         assert_eq!(

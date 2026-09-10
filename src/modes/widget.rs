@@ -905,7 +905,7 @@ impl ModeTreeDataRef {
     }
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn start(
-        wp: &mut impl crate::WindowPane,
+        wp: &mut (impl crate::WindowPane + ?Sized),
         args: Option<&RustArguments>,
         buildcb: mode_tree_build_cb,
         drawcb: mode_tree_draw_cb,
@@ -945,7 +945,7 @@ impl ModeTreeDataRef {
             ModeTreeDataRef::new(
                 mode_tree_data {
                     zoomed: 0,
-                    wp: crate::window::window_pane_ref_of(wp),
+                    wp: (wp).observation(),
                     modedata,
                     menu,
                     sort_crit,

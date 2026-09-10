@@ -235,7 +235,7 @@ fn border_cells_cover_all_line_styles_and_numbered_panes() {
         assert_eq!(gc.data.data[0], b'0');
         screen_redraw_border_set(
             w,
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
             PANE_LINES_NUMBER,
             CELL_INSIDE,
             &mut gc,
@@ -243,7 +243,7 @@ fn border_cells_cover_all_line_styles_and_numbered_panes() {
         assert_eq!(gc.data.data[0], b'*');
         screen_redraw_border_set(
             w,
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
             PANE_LINES_NUMBER,
             CELL_OUTSIDE,
             &mut gc,
@@ -312,7 +312,7 @@ fn border_classification_covers_window_limits_and_status_positions() {
         assert_eq!(screen_redraw_cell_border(&mut ctx, wp, 10, 2), 0);
         assert_eq!(screen_redraw_type_of_cell(&mut ctx, wp, 10, 2), 12);
         assert_eq!(
-            screen_redraw_check_is(&mut ctx, 0, 0, None::<&crate::types::window_pane>),
+            screen_redraw_check_is(&mut ctx, 0, 0, None::<&dyn crate::WindowPane>),
             0
         );
         assert_eq!(screen_redraw_check_is(&mut ctx, 9, 2, Some(wp)), 1);
@@ -378,20 +378,20 @@ fn visible_ranges_cover_empty_clamped_seed_and_clip_inputs() {
     let _guard = globals();
     unsafe {
         let mut r = visible_ranges::default();
-        r.set_visible_ranges(None::<&crate::types::window_pane>, 3, -1, 5);
+        r.set_visible_ranges(None::<&dyn crate::WindowPane>, 3, -1, 5);
         assert_eq!(r.used, 0);
-        r.set_visible_ranges(None::<&crate::types::window_pane>, 3, 2, 0);
+        r.set_visible_ranges(None::<&dyn crate::WindowPane>, 3, 2, 0);
         assert_eq!(r.used, 0);
-        r.set_visible_ranges(None::<&crate::types::window_pane>, -6, 2, 5);
+        r.set_visible_ranges(None::<&dyn crate::WindowPane>, -6, 2, 5);
         assert_eq!(r.used, 0);
-        r.set_visible_ranges(None::<&crate::types::window_pane>, -2, 2, 7);
+        r.set_visible_ranges(None::<&dyn crate::WindowPane>, -2, 2, 7);
         assert_eq!(r.used, 1);
         assert_eq!((r.ranges[0].px, r.ranges[0].nx), (0, 5));
 
         r.ranges[0].px = 4;
         r.ranges[0].nx = 3;
         r.used = 1;
-        r.clip_visible_ranges(None::<&crate::types::window_pane>, 0, 2, 20);
+        r.clip_visible_ranges(None::<&dyn crate::WindowPane>, 0, 2, 20);
         assert_eq!((r.used, r.ranges[0].px, r.ranges[0].nx), (1, 4, 3));
     }
 }

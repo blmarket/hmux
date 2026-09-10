@@ -527,7 +527,7 @@ impl WindowBufferModeDataRef {
                 None,
                 None,
                 None,
-                None::<&crate::types::window_pane>,
+                None::<&dyn crate::WindowPane>,
             );
             format_defaults(
                 &mut ft,

@@ -679,7 +679,7 @@ pub unsafe fn cmd_print(cmd: &cmd) -> CString {
 /// Where in `wp` the mouse event happened, or nothing when it fell outside
 /// the pane.
 pub fn cmd_mouse_at(
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     m: &mouse_event,
     last: c_int,
 ) -> Option<(u_int, u_int)> {

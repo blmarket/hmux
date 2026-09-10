@@ -21,7 +21,7 @@ struct Layout {
     next_id: u_int,
 }
 
-fn set_scrollbar_dimensions(wp: &mut impl crate::WindowPane, width: c_int, padding: c_int) {
+fn set_scrollbar_dimensions(wp: &mut (impl crate::WindowPane + ?Sized), width: c_int, padding: c_int) {
     let mut style = wp.scrollbar_style();
     style.width = width;
     style.padding = padding;
@@ -753,7 +753,7 @@ fn a_status_line_leaves_the_pane_it_is_told_to_skip_alone() {
         with_status(&mut l, PANE_STATUS_TOP, |l| {
             (l.reference()).fix_layout_panes(
                 skip.as_ref()
-                    .and_then(|pane| crate::window::window_pane_ref_of(pane))
+                    .and_then(|pane| (pane).observation())
                     .as_ref(),
             );
             assert_eq!(l.panes(), vec!["%1 80x12+0+0", "%2 80x11+0+13"]);
@@ -942,7 +942,7 @@ fn a_floating_cell_hangs_off_the_root_and_is_left_out_of_the_sums() {
         assert_eq!(
             window_pane_is_floating(
                 &*l.w(),
-                &{ crate::window::window_pane_ref_of(&(*l.pane(1))) }
+                &{ (&(*l.pane(1))).observation() }
                     .expect("the pane allocation exists")
             ),
             1
@@ -950,7 +950,7 @@ fn a_floating_cell_hangs_off_the_root_and_is_left_out_of_the_sums() {
         assert_eq!(
             window_pane_is_floating(
                 &*l.w(),
-                &{ crate::window::window_pane_ref_of(&(*l.pane(0))) }
+                &{ (&(*l.pane(0))).observation() }
                     .expect("the pane allocation exists")
             ),
             0

@@ -129,14 +129,14 @@ fn control_insert_block(cs: &mut control_state, mut block: Box<control_block>) -
 }
 fn control_get_pane<'a>(
     cs: &'a mut control_state,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
 ) -> Option<&'a mut control_pane> {
     cs.panes.get_mut(&wp.pane_id()).map(Box::as_mut)
 }
 
 fn control_add_pane<'a>(
     cs: &'a mut control_state,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
 ) -> &'a mut control_pane {
     cs.panes.entry(wp.pane_id()).or_insert_with(|| {
         Box::new(control_pane {
@@ -192,7 +192,7 @@ pub fn control_reset_offsets(c: &mut client) {
 /// what it has already queued is enough to stop reading more.
 pub fn control_pane_offset<'a>(
     c: &'a client,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
 ) -> (Option<&'a RustPaneOutputOffset>, core::ffi::c_int) {
     if c.flags & CLIENT_CONTROL_NOOUTPUT as uint64_t != 0 {
         return (None, 0);
@@ -217,7 +217,7 @@ pub fn control_pane_offset<'a>(
 /// Mutably borrows an active control offset with the same output-limit status.
 pub fn control_pane_offset_mut<'a>(
     c: &'a mut client,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
 ) -> (Option<&'a mut RustPaneOutputOffset>, core::ffi::c_int) {
     let (offset, off) = control_pane_offset(c, wp);
     if offset.is_none() {
@@ -232,7 +232,7 @@ pub fn control_pane_offset_mut<'a>(
         .expect("the active control pane is present");
     (Some(&mut cp.offset), off)
 }
-pub fn control_set_pane_on(c: &mut client, wp: &impl crate::WindowPane) {
+pub fn control_set_pane_on(c: &mut client, wp: &(impl crate::WindowPane + ?Sized)) {
     if let Some(cp) = control_get_pane(control_state_mut(c), wp)
         && cp.flags & CONTROL_PANE_OFF != 0
     {
@@ -241,7 +241,7 @@ pub fn control_set_pane_on(c: &mut client, wp: &impl crate::WindowPane) {
         cp.queued = *wp.offset();
     }
 }
-pub fn control_set_pane_off(c: &mut client, wp: &impl crate::WindowPane) {
+pub fn control_set_pane_off(c: &mut client, wp: &(impl crate::WindowPane + ?Sized)) {
     let cs = control_state_mut(c);
     let cp = control_add_pane(cs, wp);
     cp.offset = *wp.offset();
@@ -249,7 +249,7 @@ pub fn control_set_pane_off(c: &mut client, wp: &impl crate::WindowPane) {
     cp.flags |= CONTROL_PANE_OFF;
     control_discard_pane(cs, wp.pane_id());
 }
-pub fn control_continue_pane(c: &mut client, wp: &impl crate::WindowPane) {
+pub fn control_continue_pane(c: &mut client, wp: &(impl crate::WindowPane + ?Sized)) {
     if let Some(cp) = control_get_pane(control_state_mut(c), wp)
         && cp.flags & CONTROL_PANE_PAUSED != 0
     {
@@ -259,7 +259,7 @@ pub fn control_continue_pane(c: &mut client, wp: &impl crate::WindowPane) {
         control_write(c, c"%%continue %%%u", fmt_args![wp.pane_id()]);
     }
 }
-pub fn control_pause_pane(c: &mut client, wp: &impl crate::WindowPane) {
+pub fn control_pause_pane(c: &mut client, wp: &(impl crate::WindowPane + ?Sized)) {
     let cs = control_state_mut(c);
     let cp = control_add_pane(cs, wp);
     if cp.flags & CONTROL_PANE_PAUSED == 0 {
@@ -308,7 +308,7 @@ pub fn control_write(c: &mut client, fmt: &CStr, args: &[FmtArg]) {
         cs.write_event.enable(Interest::Write);
     }
 }
-fn control_check_age(c: &mut client, wp: &impl crate::WindowPane) -> core::ffi::c_int {
+fn control_check_age(c: &mut client, wp: &(impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
     {
         let cs = control_state_mut(c);
         let cp = cs
@@ -359,7 +359,7 @@ fn control_check_age(c: &mut client, wp: &impl crate::WindowPane) -> core::ffi::
         1 as core::ffi::c_int
     }
 }
-pub unsafe fn control_write_output(c: &mut client, wp: &impl crate::WindowPane) {
+pub unsafe fn control_write_output(c: &mut client, wp: &(impl crate::WindowPane + ?Sized)) {
     unsafe {
         let Some(session) = c.attached_session() else {
             return;
@@ -563,7 +563,7 @@ fn control_append_data(
     cp: &mut control_pane,
     age: uint64_t,
     message: Option<Box<ByteBuffer>>,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     size: size_t,
 ) -> Option<Box<ByteBuffer>> {
     {
@@ -940,7 +940,7 @@ unsafe fn control_check_subs_all_panes_one(
     csub: &mut control_sub,
     ft: &mut format_tree,
     wl: &winlink,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
 ) {
     unsafe {
         let Some(session) = c.attached_session() else {
@@ -995,7 +995,7 @@ unsafe fn control_check_subs_window(c: &mut client, csub: &mut control_sub) {
                 Some(c),
                 Some(session.as_session()),
                 Some(wl),
-                None::<&crate::types::window_pane>,
+                None::<&dyn crate::WindowPane>,
             );
             let value = format_expand(&mut ft, &csub.format);
             let key = (window_id, index as u_int);
@@ -1094,7 +1094,7 @@ unsafe fn control_check_subs_timer(c: &mut client) {
                 Some(c),
                 Some(session.as_session()),
                 None,
-                None::<&crate::types::window_pane>,
+                None::<&dyn crate::WindowPane>,
             );
             for csub in control_subs_snapshot(c) {
                 let mut csub = csub.borrow_mut();
@@ -1161,7 +1161,7 @@ unsafe fn control_check_subs_timer(c: &mut client) {
                     Some(c),
                     Some(session.as_session()),
                     Some(wl),
-                    None::<&crate::types::window_pane>,
+                    None::<&dyn crate::WindowPane>,
                 );
                 for csub in control_subs_snapshot(c) {
                     let mut csub = csub.borrow_mut();

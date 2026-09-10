@@ -278,7 +278,7 @@ unsafe fn menu_reapply_styles(md: &mut menu_data, c: &client) {
             Some(c),
             Some(s),
             Some(wl),
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
         );
         md.style_gc = grid_default_cell;
         style_apply(&mut md.style_gc, &o, c"menu-style", Some(&mut ft));

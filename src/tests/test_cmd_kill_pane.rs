@@ -1,3 +1,4 @@
+use crate::WindowPane;
 use super::*;
 use crate::pane_identity::PaneIdentity;
 use crate::tests::test_fixtures::{Item, Target, ensure_reactor, globals};
@@ -96,7 +97,7 @@ fn without_a_the_target_pane_alone_is_killed() {
     unsafe {
         let doomed = window_add_pane(
             &mut *w,
-            crate::window::window_pane_ref_of(&*kept).as_ref(),
+            (&*kept).observation().as_ref(),
             100,
             0,
         )

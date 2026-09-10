@@ -68,7 +68,7 @@ fn tiled(owner: &WindowRef) -> Vec<u_int> {
         .collect()
 }
 
-fn pane_for_layout(panes: &mut [RustWindowPaneRef], id: u_int) -> &mut impl crate::WindowPane {
+fn pane_for_layout(panes: &mut [RustWindowPaneRef], id: u_int) -> &mut (impl crate::WindowPane + ?Sized) {
     panes
         .iter_mut()
         .find(|pane| pane.pane_id() == id)

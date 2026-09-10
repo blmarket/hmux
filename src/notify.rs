@@ -263,7 +263,7 @@ unsafe fn notify_add(
     c: Option<&client>,
     s: Option<&session>,
     w: Option<&WindowRef>,
-    wp: Option<&impl crate::WindowPane>,
+    wp: Option<&(impl crate::WindowPane + ?Sized)>,
     pbname: Option<&CStr>,
 ) {
     unsafe {
@@ -401,7 +401,7 @@ pub unsafe fn notify_client(name: &CStr, c: Option<&mut client>) {
                     Some(c),
                     None,
                     None,
-                    None::<&crate::types::window_pane>,
+                    None::<&dyn crate::WindowPane>,
                     None,
                 );
             }
@@ -413,7 +413,7 @@ pub unsafe fn notify_client(name: &CStr, c: Option<&mut client>) {
                     None,
                     None,
                     None,
-                    None::<&crate::types::window_pane>,
+                    None::<&dyn crate::WindowPane>,
                     None,
                 );
             }
@@ -439,7 +439,7 @@ pub unsafe fn notify_session(name: &CStr, s: Option<&session>) {
             None,
             s,
             None,
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
             None,
         );
     }
@@ -459,7 +459,7 @@ pub unsafe fn notify_winlink(name: &CStr, wl: &winlink) {
                 .as_ref()
                 .map(|reference| reference.as_session()),
             wl.window_handle(),
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
             None,
         );
     }
@@ -476,7 +476,7 @@ pub unsafe fn notify_session_window(name: &CStr, s: &session, w: &WindowRef) {
             None,
             Some(s),
             Some(w),
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
             None,
         );
     }
@@ -493,14 +493,14 @@ pub unsafe fn notify_window(name: &CStr, w: Option<&WindowRef>) {
             None,
             None,
             w,
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
             None,
         );
     }
 }
 
 /// Raises `name` against a pane.
-pub unsafe fn notify_pane(name: &CStr, wp: Option<&impl crate::WindowPane>) {
+pub unsafe fn notify_pane(name: &CStr, wp: Option<&(impl crate::WindowPane + ?Sized)>) {
     unsafe {
         let mut fs = cmd_find_state::default();
         cmd_find_from_pane(&mut fs, wp.expect("the hook names a pane"), 0);
@@ -510,7 +510,7 @@ pub unsafe fn notify_pane(name: &CStr, wp: Option<&impl crate::WindowPane>) {
 
 pub(crate) unsafe fn notify_pane_in_window(
     name: &CStr,
-    wp: &impl crate::WindowPane,
+    wp: &(impl crate::WindowPane + ?Sized),
     window: &WindowRef,
 ) {
     unsafe {
@@ -543,7 +543,7 @@ pub unsafe fn notify_paste_buffer(pbname: &CStr, deleted: c_int) {
             None,
             None,
             None,
-            None::<&crate::types::window_pane>,
+            None::<&dyn crate::WindowPane>,
             Some(pbname),
         );
     }
