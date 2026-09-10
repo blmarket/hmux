@@ -74,7 +74,9 @@ pub use entries::cmd_run_shell::cmd_run_shell_data;
 pub use entries::cmd_source_file::cmd_source_file_data;
 pub use entries::cmd_wait_for::cmd_wait_for_flush;
 
-use crate::args::{args_parse, args_print};
+use crate::args::{args_make_commands, args_parse, args_print};
+use crate::format::format_single_from_target;
+use crate::types::{ClientRef, args_command_state, cmd_parse_input};
 use crate::cmd::entries::cmd_attach_session::cmd_attach_session_entry;
 use crate::cmd::entries::cmd_bind_key::cmd_bind_key_entry;
 use crate::cmd::entries::cmd_break_pane::cmd_break_pane_entry;
@@ -155,7 +157,7 @@ use crate::cmd::entries::cmd_unbind_key::cmd_unbind_key_entry;
 use crate::cmd::entries::cmd_wait_for::cmd_wait_for_entry;
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
-use crate::log::log_debug;
+use crate::log::{fatalx, log_debug};
 
 pub use crate::consts::{
     ARGS_PARSE_COMMANDS, ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_INVALID, ARGS_PARSE_STRING,
@@ -484,6 +486,84 @@ pub(crate) fn cmd_stringify_argv_impl(argv: &[CString]) -> CString {
 
 pub fn cmd_get_entry(cmd: &cmd) -> &'static RustCommandEntry {
     crate::Command::command_entry(cmd)
+}
+
+pub(crate) unsafe fn cmd_make_commands_now(
+    command: &cmd,
+    item: &cmdq_item,
+    idx: u_int,
+    expand: core::ffi::c_int,
+) -> Option<CmdListRef> {
+    unsafe {
+        let mut state = cmd_make_commands_prepare(command, item, idx, None, 0, |cmd| {
+            if expand != 0 {
+                format_single_from_target(item, cmd)
+            } else {
+                cmd.to_owned()
+            }
+        });
+        let mut error = None;
+        let cmdlist = args_make_commands(&mut state, &[], &mut error);
+        if let Some(error) = error.as_ref() {
+            item.error(c"%s", fmt_args![error.as_ptr()]);
+        }
+        cmdlist
+    }
+}
+
+/// Prepares a command list or owned command text for later argument substitution.
+/// The expander runs once for text (including a default), and never for an
+/// already parsed command list. Pass `CStr::to_owned` to preserve literal text.
+pub fn cmd_make_commands_prepare(
+    command: &cmd,
+    item: &cmdq_item,
+    idx: u_int,
+    default_command: Option<&CStr>,
+    wait: core::ffi::c_int,
+    expand: impl FnOnce(&CStr) -> CString,
+) -> Box<args_command_state> {
+    let args = cmd_get_args(command);
+    let target = &item.target;
+    let tc = item.target_client();
+    let mut state = Box::new(args_command_state {
+        cmdlist: None,
+        cmd: None,
+        pi: cmd_parse_input::default(),
+        source_file: None,
+        client_ref: None,
+    });
+    let cmd = match args.argument_value(idx) {
+        Some(value) => {
+            if let ArgsValue::Commands { cmdlist, .. } = value {
+                state.cmdlist = cmdlist.clone();
+                return state;
+            }
+            let ArgsValue::String(string) = value else {
+                unsafe { fatalx(c"unexpected argument type", fmt_args![]) };
+            };
+            Some(string.as_c_str())
+        }
+        None => default_command,
+    };
+    let Some(cmd) = cmd else {
+        unsafe { fatalx(c"argument out of range", fmt_args![]) };
+    };
+    state.cmd = Some(expand(cmd));
+    log_debug(
+        c"%s: %s",
+        fmt_args![c"cmd_make_commands_prepare", state.cmd.as_deref()],
+    );
+    let (file, line) = cmd_get_source(command);
+    state.pi.line = line;
+    state.source_file = file.map(CStr::to_owned);
+    state.pi.file = state.source_file.clone();
+    state.pi.c = tc.as_ref().map(ClientRef::downgrade);
+    state.client_ref = tc;
+    cmd_find_copy_state(&mut state.pi.fs, target);
+    if wait != 0 {
+        state.pi.item = cmdq_item_ref_of(item).map(|item| item.downgrade());
+    }
+    state
 }
 
 pub fn cmd_get_args(cmd: &cmd) -> &RustArguments {

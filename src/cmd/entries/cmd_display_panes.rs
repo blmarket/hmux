@@ -13,7 +13,8 @@
 //! key handling and whether the queue waits for selection.
 
 use crate::args::RustArguments;
-use crate::args::{args_make_commands, args_make_commands_prepare, args_strtonum};
+use crate::args::{args_make_commands, args_strtonum};
+use crate::cmd::cmd_make_commands_prepare;
 use crate::cmd::CmdqItemRef;
 use crate::cmd::cmd_get_args;
 use crate::cmd::{CmdqItemWeak, cmdq_append, cmdq_item_weak_of};
@@ -176,7 +177,7 @@ unsafe fn cmd_display_panes_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if wait {
         cdata.item = cmdq_item_weak_of(item);
     }
-    cdata.state = Some(args_make_commands_prepare(
+    cdata.state = Some(cmd_make_commands_prepare(
         self_0,
         item,
         0,

@@ -2,7 +2,7 @@
 //! from what is typed into it.
 //!
 //! The command line's template — `%1`, `%2`, … standing for the answers — is
-//! prepared once by the argument layer and kept in the command's own state
+//! prepared once by the command layer and kept in the command's own state
 //! until every prompt has been answered. `-p` names the prompts, one per
 //! comma, `-I` the text each starts out holding, again one per comma, and `-l`
 //! takes both whole instead of splitting them. Without `-p` the prompt is the
@@ -31,9 +31,8 @@
 //! hand.
 
 use crate::args::RustArguments;
-use crate::args::{
-    args_make_commands, args_make_commands_get_command, args_make_commands_prepare,
-};
+use crate::args::{args_make_commands, args_make_commands_get_command};
+use crate::cmd::cmd_make_commands_prepare;
 use crate::cmd::CmdqItemRef;
 use crate::cmd::CmdqItemWeak;
 use crate::cmd::cmd_get_args;
@@ -175,7 +174,7 @@ unsafe fn cmd_command_prompt_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
                 true => cmdq_item_weak_of(item),
                 false => None,
             },
-            state: Some(args_make_commands_prepare(
+            state: Some(cmd_make_commands_prepare(
                 self_0,
                 item,
                 0,

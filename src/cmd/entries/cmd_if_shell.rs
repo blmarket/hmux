@@ -1,6 +1,6 @@
 use crate::args::RustArguments;
-use crate::args::args_make_commands_now;
-use crate::args::{args_make_commands, args_make_commands_prepare};
+use crate::args::args_make_commands;
+use crate::cmd::{cmd_make_commands_now, cmd_make_commands_prepare};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -98,11 +98,11 @@ unsafe fn cmd_if_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             .is_some_and(|&byte| byte != b'0')
         {
             unsafe {
-                cmdlist = args_make_commands_now(self_0, item, 1 as u_int, 0 as core::ffi::c_int)
+                cmdlist = cmd_make_commands_now(self_0, item, 1 as u_int, 0 as core::ffi::c_int)
             };
         } else if count == 3 as u_int {
             unsafe {
-                cmdlist = args_make_commands_now(self_0, item, 2 as u_int, 0 as core::ffi::c_int)
+                cmdlist = cmd_make_commands_now(self_0, item, 2 as u_int, 0 as core::ffi::c_int)
             };
         } else {
             return CMD_RETURN_NORMAL;
@@ -115,7 +115,7 @@ unsafe fn cmd_if_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { item.insert_after(cmdlist.queue_items(Some(&state))) };
         return CMD_RETURN_NORMAL;
     }
-    cdata.cmd_if = Some(args_make_commands_prepare(
+    cdata.cmd_if = Some(cmd_make_commands_prepare(
         self_0,
         item,
         1 as u_int,
@@ -124,7 +124,7 @@ unsafe fn cmd_if_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         ::core::ffi::CStr::to_owned,
     ));
     if count == 3 as u_int {
-        cdata.cmd_else = Some(args_make_commands_prepare(
+        cdata.cmd_else = Some(cmd_make_commands_prepare(
             self_0,
             item,
             2 as u_int,

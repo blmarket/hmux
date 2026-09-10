@@ -1,3 +1,4 @@
+use crate::cmd::{cmd_make_commands_now, cmd_make_commands_prepare};
 use super::*;
 
 use crate::cmd::cmd_parse_from_string;
@@ -898,7 +899,7 @@ fn a_command_list_argument_is_prepared_as_it_is() {
         runner.with_args(&mut values);
         let source_list = runner.cmdlist.clone();
         let command = source_list.command(0).expect("the prepared command");
-        let mut state = args_make_commands_prepare(&command, &runner.item(), 0, None, 0, |_| {
+        let mut state = cmd_make_commands_prepare(&command, &runner.item(), 0, None, 0, |_| {
             panic!("parsed commands must bypass text expansion")
         });
         assert_eq!(
@@ -933,7 +934,7 @@ fn an_empty_command_list_argument_has_no_command_name() {
         let source_list = runner.cmdlist.clone();
         let command = source_list.command(0).expect("the prepared command");
         let state =
-            args_make_commands_prepare(&command, &runner.item(), 0, None, 0, CStr::to_owned);
+            cmd_make_commands_prepare(&command, &runner.item(), 0, None, 0, CStr::to_owned);
         assert_eq!(args_make_commands_get_command(&state).as_c_str(), c"");
     }
 }
@@ -948,7 +949,7 @@ fn a_string_argument_is_parsed_when_the_commands_are_made() {
         let source_list = runner.cmdlist.clone();
         let command = source_list.command(0).expect("the prepared command");
         let mut state =
-            args_make_commands_prepare(&command, &runner.item(), 0, None, 0, CStr::to_owned);
+            cmd_make_commands_prepare(&command, &runner.item(), 0, None, 0, CStr::to_owned);
         assert_eq!(
             args_make_commands_get_command(&state).as_c_str(),
             c"display-message"
@@ -974,7 +975,7 @@ fn a_string_argument_that_is_not_a_command_gives_the_parse_error() {
         let source_list = runner.cmdlist.clone();
         let command = source_list.command(0).expect("the prepared command");
         let mut state =
-            args_make_commands_prepare(&command, &runner.item(), 0, None, 0, CStr::to_owned);
+            cmd_make_commands_prepare(&command, &runner.item(), 0, None, 0, CStr::to_owned);
         let mut error = None;
         let cmdlist = args_make_commands(&mut state, &[], &mut error);
         assert!(cmdlist.is_none());
@@ -994,7 +995,7 @@ fn a_default_command_stands_in_for_a_missing_argument() {
         runner.with_args(&mut values);
         let source_list = runner.cmdlist.clone();
         let command = source_list.command(0).expect("the prepared command");
-        let state = args_make_commands_prepare(
+        let state = cmd_make_commands_prepare(
             &command,
             &runner.item(),
             0,
@@ -1019,7 +1020,7 @@ fn a_prepared_command_can_be_expanded_first() {
         runner.with_args(&mut values);
         let source_list = runner.cmdlist.clone();
         let command = source_list.command(0).expect("the prepared command");
-        let state = args_make_commands_prepare(
+        let state = cmd_make_commands_prepare(
             &command,
             &runner.item(),
             0,
@@ -1050,7 +1051,7 @@ fn making_the_commands_at_once_reports_a_parse_error_to_the_queue() {
         runner.with_args(&mut values);
         let source_list = runner.cmdlist.clone();
         let command = source_list.command(0).expect("the prepared command");
-        let cmdlist = args_make_commands_now(&command, &runner.item(), 0, 0);
+        let cmdlist = cmd_make_commands_now(&command, &runner.item(), 0, 0);
         assert!(cmdlist.is_some());
         assert_eq!(
             (cmdlist.as_ref().unwrap()).print(0).to_string_lossy(),
@@ -1058,7 +1059,7 @@ fn making_the_commands_at_once_reports_a_parse_error_to_the_queue() {
         );
         drop(cmdlist);
 
-        assert!(args_make_commands_now(&command, &runner.item(), 1, 0).is_none());
+        assert!(cmd_make_commands_now(&command, &runner.item(), 1, 0).is_none());
     }
 }
 
@@ -1085,7 +1086,7 @@ fn command_preparation_accepts_a_consuming_expander_in_safe_code() {
     let source_list = runner.cmdlist.clone();
     let command = source_list.command(0).expect("the prepared command");
     let replacement = c"display-message expanded".to_owned();
-    let state = args_make_commands_prepare(&command, &runner.item(), 0, None, 0, |text| {
+    let state = cmd_make_commands_prepare(&command, &runner.item(), 0, None, 0, |text| {
         assert_eq!(text, c"display-message %1");
         replacement
     });

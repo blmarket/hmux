@@ -36,7 +36,7 @@
 //! which gives that same refusal without the overread.
 
 use crate::args::RustArguments;
-use crate::args::{args_make_commands_now};
+use crate::cmd::cmd_make_commands_now;
 use crate::cmd::CmdqItemWeak;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -149,7 +149,7 @@ unsafe fn cmd_confirm_before_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval 
     let wait = args.argument_flag_count(b'b') == 0;
 
     let mut cdata = Box::<cmd_confirm_before_data>::default();
-    unsafe { cdata.cmdlist = args_make_commands_now(self_0, item, 0 as u_int, 1) };
+    unsafe { cdata.cmdlist = cmd_make_commands_now(self_0, item, 0 as u_int, 1) };
     if cdata.cmdlist.is_none() {
         return CMD_RETURN_ERROR;
     }

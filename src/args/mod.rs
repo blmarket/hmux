@@ -5,12 +5,10 @@ pub mod argument_text;
 pub mod argument_value;
 pub mod arguments_trait;
 
-use crate::cmd::cmd_find_copy_state;
 use crate::cmd::cmd_parse_from_string;
 use crate::cmd::cmdq_item;
-use crate::cmd::cmdq_item_ref_of;
-use crate::cmd::{CmdListRef, cmd};
-use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_source};
+use crate::cmd::CmdListRef;
+use crate::cmd::cmd_get_entry;
 use crate::cmd::{cmd_log_argv, cmd_template_replace};
 use crate::compat::strtonum;
 use crate::fmt_args;
@@ -765,84 +763,6 @@ pub unsafe fn args_set(
         return;
     }
     entry.values.push(value);
-}
-
-pub(crate) unsafe fn args_make_commands_now(
-    self_0: &cmd,
-    item: &cmdq_item,
-    idx: u_int,
-    expand: core::ffi::c_int,
-) -> Option<CmdListRef> {
-    unsafe {
-        let mut state = args_make_commands_prepare(self_0, item, idx, None, 0, |cmd| {
-            if expand != 0 {
-                format_single_from_target(item, cmd)
-            } else {
-                cmd.to_owned()
-            }
-        });
-        let mut error = None;
-        let cmdlist = args_make_commands(&mut state, &[], &mut error);
-        if let Some(error) = error.as_ref() {
-            item.error(c"%s", fmt_args![error.as_ptr()]);
-        }
-        cmdlist
-    }
-}
-
-/// Prepares a command list or owned command text for later argument substitution.
-/// The expander runs once for text (including a default), and never for an
-/// already parsed command list. Pass `CStr::to_owned` to preserve literal text.
-pub fn args_make_commands_prepare(
-    self_0: &cmd,
-    item: &cmdq_item,
-    idx: u_int,
-    default_command: Option<&CStr>,
-    wait: core::ffi::c_int,
-    expand: impl FnOnce(&CStr) -> CString,
-) -> Box<args_command_state> {
-    let args = cmd_get_args(self_0);
-    let target = &item.target;
-    let tc = item.target_client();
-    let mut state = Box::new(args_command_state {
-        cmdlist: None,
-        cmd: None,
-        pi: cmd_parse_input::default(),
-        source_file: None,
-        client_ref: None,
-    });
-    let cmd = match args.argument_value(idx) {
-        Some(value) => {
-            if let ArgsValue::Commands { cmdlist, .. } = value {
-                state.cmdlist = cmdlist.clone();
-                return state;
-            }
-            let ArgsValue::String(string) = value else {
-                unsafe { fatalx(c"unexpected argument type", fmt_args![]) };
-            };
-            Some(string.as_c_str())
-        }
-        None => default_command,
-    };
-    let Some(cmd) = cmd else {
-        unsafe { fatalx(c"argument out of range", fmt_args![]) };
-    };
-    state.cmd = Some(expand(cmd));
-    log_debug(
-        c"%s: %s",
-        fmt_args![c"args_make_commands_prepare", state.cmd.as_deref()],
-    );
-    let (file, line) = cmd_get_source(self_0);
-    state.pi.line = line;
-    state.source_file = file.map(CStr::to_owned);
-    state.pi.file = state.source_file.clone();
-    state.pi.c = tc.as_ref().map(ClientRef::downgrade);
-    state.client_ref = tc;
-    cmd_find_copy_state(&mut state.pi.fs, target);
-    if wait != 0 {
-        state.pi.item = cmdq_item_ref_of(item).map(|item| item.downgrade());
-    }
-    state
 }
 
 pub(crate) unsafe fn args_make_commands(

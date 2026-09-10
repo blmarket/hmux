@@ -1,5 +1,6 @@
 use crate::args::RustArguments;
-use crate::args::{args_make_commands, args_make_commands_prepare};
+use crate::args::args_make_commands;
+use crate::cmd::cmd_make_commands_prepare;
 use crate::cmd::cmd_find_from_nothing;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
@@ -171,7 +172,7 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             unsafe { cdata.cmd = Some(format_expand(&mut ft, cmd)) };
         }
     } else {
-        cdata.state = Some(args_make_commands_prepare(
+        cdata.state = Some(cmd_make_commands_prepare(
             self_0,
             item,
             0 as u_int,
