@@ -2,8 +2,6 @@
 
 use super::*;
 use crate::WindowPane;
-use crate::pane_geometry::PaneGeometryState;
-use crate::pane_identity::PaneIdentity;
 
 use crate::layout::layout_cell_pane;
 use crate::layout::{

@@ -1,7 +1,6 @@
-use crate::pane_identity::PaneIdentity;
 use crate::window_dimensions::WindowDimensionsState;
 
-use crate::pane_geometry::PaneGeometryState;
+use crate::WindowPane;
 
 use super::*;
 use crate::layout::layout_cell_set_pane;

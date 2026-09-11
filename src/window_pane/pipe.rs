@@ -11,7 +11,6 @@ use crate::ffi::{
 };
 use crate::fmt_args;
 use crate::log::{fatalx, log_debug};
-use crate::pane_identity::PaneIdentity;
 use crate::proc::proc_clear_signals;
 use crate::reactor::Interest;
 use crate::server::server_destroy_pane;

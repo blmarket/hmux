@@ -1,5 +1,5 @@
 use crate::options::OptionsRef;
-use crate::pane_geometry::PaneGeometryState;
+use crate::WindowPane;
 
 use super::*;
 use crate::cmd::{CmdqListOps, cmdq_next};

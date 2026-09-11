@@ -22,10 +22,8 @@
 
 use crate::grid::Grid as _;
 use crate::WindowPane;
-use crate::pane_identity::PaneIdentity;
 use crate::window_dimensions::WindowDimensionsState;
 
-use crate::pane_geometry::PaneGeometryState;
 
 use crate::screen::{RustScreen, Screen as ScreenBoundary};
 

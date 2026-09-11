@@ -5,7 +5,7 @@ use crate::fmt_args;
 use crate::format::format_true;
 use crate::format::{format_add, format_create, format_defaults, format_expand, format_single};
 #[cfg(test)]
-use crate::pane_identity::PaneIdentity;
+use crate::WindowPane;
 #[cfg(test)]
 use crate::screen::RustScreen;
 use crate::screen::ScreenWriteCtx;

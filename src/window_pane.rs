@@ -6,7 +6,7 @@ use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::reactor::Timer;
 use crate::style::{ColourEngine, RustColourEngine, pane_scrollbar_style_from_option, style_ranges_free};
 use crate::window::{PANE_STYLECHANGED, PANE_THEMECHANGED};
-use crate::{WindowPane, PaneIdentity, PaneGeometryState, PaneResizeQueue};
+use crate::WindowPane;
 use std::cell::Cell;
 use libc::SIGCHLD;
 use std::cell::{RefCell, UnsafeCell};
@@ -335,7 +335,6 @@ impl window_pane {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PaneGeometryState;
     use crate::window::PANE_STYLECHANGED;
 
     #[test]

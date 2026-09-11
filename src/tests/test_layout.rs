@@ -1,7 +1,6 @@
 use super::*;
 use crate::options::OptionsRef;
-use crate::pane_geometry::PaneGeometryState;
-use crate::pane_identity::PaneIdentity;
+use crate::WindowPane;
 use crate::screen::PANE_SCROLLBARS_RIGHT;
 use crate::tests::test_fixtures::{Item, Pane, Window, globals};
 use crate::window::PANE_SCROLLBARS_ALWAYS;

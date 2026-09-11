@@ -25,8 +25,7 @@
 //! probe needs carries its session chain but never draws.
 
 use crate::options::OptionsRef;
-use crate::pane_geometry::PaneGeometryState;
-use crate::pane_identity::PaneIdentity;
+use crate::WindowPane;
 use crate::window_fill_character::WindowFillCharacterState;
 
 use crate::grid::grid_default_cell;

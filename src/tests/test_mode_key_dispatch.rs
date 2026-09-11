@@ -2,7 +2,6 @@ use crate::screen::Screen as _;
 use crate::grid::Grid as _;
 use super::*;
 use crate::WindowPane;
-use crate::pane_identity::PaneIdentity;
 use crate::tests::test_fixtures::{Target, globals, zeroed_client};
 
 #[test]

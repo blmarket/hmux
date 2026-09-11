@@ -416,7 +416,6 @@ mod tests {
     use super::*;
     use crate::cfg::WindowMode;
     use crate::format::format_grid_line;
-    use crate::pane_identity::PaneIdentity;
     use crate::tests::test_fixtures::{Target, globals};
     use crate::window_pane_trait::WindowPane;
 

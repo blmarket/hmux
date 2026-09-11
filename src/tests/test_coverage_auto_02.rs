@@ -36,11 +36,10 @@ use crate::control::{
     control_remove_sub, control_reset_offsets, control_set_pane_off, control_set_pane_on,
     control_state, control_write,
 };
-use crate::pane_identity::PaneIdentity;
 use crate::reactor::Timer;
 use crate::tests::test_fixtures::{StreamBuffer, globals, zeroed_client, zeroed_pane};
 use crate::types::*;
-use crate::{PaneOutputOffset, RustPaneOutputOffset};
+use crate::RustPaneOutputOffset;
 use ::std::ffi::CString;
 
 // ---------------------------------------------------------------------------

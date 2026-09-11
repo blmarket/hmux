@@ -1,5 +1,4 @@
 use crate::WindowPane;
-use crate::pane_identity::PaneIdentity;
 use crate::window_dimensions::WindowDimensionsState;
 
 use super::RustScreen;
@@ -12,7 +11,6 @@ use super::state::{screen_reset_tabs};
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::grid::{Grid, grid_default_cell};
-use crate::pane_geometry::PaneGeometryState;
 
 pub(super) struct screen_write_state {
     pub(super) wp: Option<RustWindowPaneWeak>,

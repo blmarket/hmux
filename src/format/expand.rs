@@ -2128,7 +2128,7 @@ unsafe fn format_cb_pane_search_string(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        let query = wp.query();
+        let query = wp.search_query();
         if query.is_none() {
             return Some(format_callback_copy(c""));
         }

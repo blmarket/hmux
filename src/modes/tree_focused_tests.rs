@@ -1,6 +1,5 @@
 use super::*;
 use crate::WindowPane;
-use crate::pane_identity::PaneIdentity;
 use crate::tests::test_fixtures::{Pane, Target, globals, zeroed_client};
 
 unsafe fn items(
@@ -238,7 +237,7 @@ fn real_tree_mode_builds_draws_resizes_updates_and_exposes_current_item() {
         let wl = target.winlink(0);
         let mut fs = cmd_find_state::default();
         cmd_find_from_winlink_pane(&mut fs, &*wl, &*pane, 0);
-        let source_pane_id = crate::PaneIdentity::pane_id(&*pane);
+        let source_pane_id = (*pane).pane_id();
         assert_eq!(
             (&mut *pane).set_mode(
                 crate::window::window_pane_find_by_id(source_pane_id),
@@ -281,7 +280,7 @@ fn multi_level_builds_cover_sort_filter_type_and_tag_selection_paths() {
         let wl = target.winlink(0);
         let mut fs = cmd_find_state::default();
         cmd_find_from_winlink_pane(&mut fs, &*wl, &*pane, 0);
-        let source_pane_id = crate::PaneIdentity::pane_id(&*pane);
+        let source_pane_id = (*pane).pane_id();
         assert_eq!(
             (&mut *pane).set_mode(
                 crate::window::window_pane_find_by_id(source_pane_id),
@@ -349,7 +348,7 @@ fn keyboard_navigation_preview_offsets_tags_and_marking_stay_inside_fixture() {
         let wl = target.winlink(0);
         let mut fs = cmd_find_state::default();
         cmd_find_from_winlink_pane(&mut fs, &*wl, &*pane, 0);
-        let source_pane_id = crate::PaneIdentity::pane_id(&*pane);
+        let source_pane_id = (*pane).pane_id();
         assert_eq!(
             (&mut *pane).set_mode(
                 crate::window::window_pane_find_by_id(source_pane_id),

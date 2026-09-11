@@ -43,12 +43,12 @@ lifetime.
 
 Borrowed pane interfaces use `&dyn WindowPane` and `&mut dyn WindowPane`.
 The payload's fields are private to its owning module; consumers use the trait
-and its state capabilities for process, I/O, screen, mode, and window-context
-access. `RustWindowPaneWeak::get` and `get_mut` expose these trait borrows and
-return `None` after destruction. Both calls remain unsafe: the caller must
-exclude conflicting access and teardown for the borrow's lifetime. Concrete
-pane storage implements `Default`; the borrowed capability traits do not
-require construction support.
+for identity, geometry, remembered-search, process, I/O, screen, mode, and
+window-context access. Resize queues and output offsets remain concrete values
+owned by the pane and control-reader state. `RustWindowPaneWeak::get` and
+`get_mut` expose these trait borrows and return `None` after destruction. Both
+calls remain unsafe: the caller must exclude conflicting access and teardown
+for the borrow's lifetime. Concrete pane storage implements `Default`.
 
 Some registries and server state remain process globals. Global collection
 wrappers bind to their first accessing thread and reject other threads before

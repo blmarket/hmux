@@ -12,12 +12,3 @@ pub struct PaneGeometry {
     pub sy: u_int,
 }
 
-/// Pane rectangle observation and layout placement.
-pub trait PaneGeometryState {
-    /// Returns the complete pane rectangle.
-    fn geometry(&self) -> PaneGeometry;
-
-    /// Moves the pane without changing its size.
-    fn set_position(&mut self, x: c_int, y: c_int);
-}
-

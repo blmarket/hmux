@@ -1,8 +1,6 @@
 use crate::grid::Grid as _;
 use crate::WindowPane;
 use crate::options::OptionsRef;
-use crate::pane_geometry::PaneGeometryState;
-use crate::pane_identity::PaneIdentity;
 use crate::pane_scrollbar::{PaneScrollbarSlider};
 
 use super::*;
@@ -1250,7 +1248,7 @@ fn copy_search_and_word_motion_follow_the_panes_current_window() {
             assert_eq!(window_copy_search(entry, 1, 0), 1);
             let data = entry.state.copy_mode_data_ref().unwrap();
             assert_eq!((data.cx, data.cy), (search_end, 0));
-            assert_eq!(pane.get().unwrap().query(), Some(c"beta"));
+            assert_eq!(pane.get().unwrap().search_query(), Some(c"beta"));
         }
         (pane.get_mut().unwrap()).reset_mode();
     }

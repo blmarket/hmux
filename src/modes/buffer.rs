@@ -14,7 +14,7 @@ use crate::format::{
 use crate::grid::grid_default_cell;
 use crate::overlay::popup_editor;
 #[cfg(test)]
-use crate::pane_identity::PaneIdentity;
+use crate::WindowPane;
 use crate::paste::{PasteBufferStore, with_paste_buffers, with_paste_buffers_mut};
 use crate::screen::ScreenWriteCtx;
 use crate::sort::{SortCriteria, sort_get_buffers};

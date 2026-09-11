@@ -1,9 +1,8 @@
 use crate::options::OptionsRef;
-use crate::pane_identity::PaneIdentity;
+use crate::WindowPane;
 use crate::window_dimensions::WindowDimensionsState;
 use crate::window_layout_selection::WindowLayoutSelectionState;
 
-use crate::pane_geometry::PaneGeometryState;
 
 use super::*;
 use crate::fmt_args;

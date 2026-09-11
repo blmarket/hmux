@@ -19,7 +19,6 @@ use crate::modes::{
     WINDOW_COPY_SEARCHUP, window_copy_get_current_offset,
 };
 use crate::options::OptionsRef;
-use crate::pane_identity::PaneIdentity;
 use crate::tests::test_fixtures::{Pane, Target, Window, globals, zeroed};
 use crate::types::WindowMode;
 use crate::types::WindowRef;

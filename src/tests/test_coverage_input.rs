@@ -23,7 +23,6 @@
 
 use crate::grid::Grid as _;
 use crate::WindowPane;
-use crate::pane_identity::PaneIdentity;
 use crate::screen::{RustScreen, Screen};
 use crate::types::*;
 

@@ -1,31 +1,20 @@
 use super::*;
 
-impl crate::pane_identity::PaneIdentity for window_pane {
-    fn pane_id(&self) -> u32 {
-        self.id
-    }
+impl crate::WindowPane for window_pane {
 
-}
-
-impl crate::pane_search::PaneSearchState for window_pane {
-    fn query(&self) -> Option<&CStr> { self.searchstr.as_deref() }
-    fn is_regex(&self) -> bool { self.searchregex }
-    fn set(&mut self, query: &CStr, regex: bool) {
-        self.searchstr = Some(query.to_owned()); self.searchregex = regex;
-    }
-    fn matches(&self, query: &CStr, regex: bool) -> bool {
-        self.searchregex == regex && self.searchstr.as_deref() == Some(query)
-    }
-}
-
-impl crate::pane_geometry::PaneGeometryState for window_pane {
+    fn pane_id(&self) -> u32 { self.id }
     fn geometry(&self) -> PaneGeometry {
         PaneGeometry { xoff: self.xoff, yoff: self.yoff, sx: self.sx, sy: self.sy }
     }
     fn set_position(&mut self, x: c_int, y: c_int) { self.xoff = x; self.yoff = y; }
-}
-
-impl crate::WindowPane for window_pane {
+    fn search_query(&self) -> Option<&CStr> { self.searchstr.as_deref() }
+    fn search_is_regex(&self) -> bool { self.searchregex }
+    fn set_search(&mut self, query: &CStr, regex: bool) {
+        self.searchstr = Some(query.to_owned()); self.searchregex = regex;
+    }
+    fn search_matches(&self, query: &CStr, regex: bool) -> bool {
+        self.searchregex == regex && self.searchstr.as_deref() == Some(query)
+    }
 
     fn activity_point(&self) -> u_int { self.active_point }
     fn mark_active_at(&mut self, point: u_int) { self.active_point = point; self.name_changed(); }
@@ -216,17 +205,14 @@ impl crate::WindowPane for window_pane {
     fn pipe_process(&self) -> Option<pid_t> { (self.pipe_fd != -1).then_some(self.pipe_pid) }
     fn output_position(&self) -> crate::RustPaneOutputOffset { self.offset }
     fn unread_output_len(&self, position: &crate::RustPaneOutputOffset) -> usize {
-        use crate::PaneOutputOffset;
         self.event.input_len().wrapping_sub(position.position().wrapping_sub(self.base_offset))
     }
     fn unread_output(&self, position: &crate::RustPaneOutputOffset) -> crate::reactor::ByteBuffer {
-        use crate::PaneOutputOffset;
         let used = position.position().wrapping_sub(self.base_offset);
         let size = self.unread_output_len(position);
         self.event.with_input(|buffer| buffer.slice(used, size)).unwrap_or_default()
     }
     fn advance_output(&self, position: &mut crate::RustPaneOutputOffset, size: usize) {
-        use crate::PaneOutputOffset;
         position.advance(size.min(self.unread_output_len(position)));
     }
     unsafe fn maintain_output(&mut self) { unsafe { output::maintain_output(self) } }

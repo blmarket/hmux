@@ -273,7 +273,7 @@ fn join_cstrings(values: impl IntoIterator<Item = CString>, separator: u8) -> CS
 mod tests {
     use super::*;
 
-    use crate::PaneIdentity;
+    use crate::WindowPane;
     use crate::fmt_args;
 
     use crate::screen::{ScreenWriteCtx, screen_write_ctx_on_screen};

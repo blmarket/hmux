@@ -2,7 +2,6 @@ use crate::screen::Screen as _;
 use crate::grid::Grid as _;
 use crate::WindowPane;
 use crate::options::OptionsRef;
-use crate::pane_geometry::PaneGeometryState;
 use crate::window_scrollbar::{WindowScrollbarSettings, WindowScrollbarState};
 
 use super::*;

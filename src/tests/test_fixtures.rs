@@ -24,11 +24,10 @@ use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdListRef, cmd, cmd_entry, cmd_entry_flag, cmd_retval};
 use crate::options::{OptionsEngine, RustOptionsEngine};
-use crate::pane_identity::PaneIdentity;
+use crate::WindowPane;
 use crate::window_dimensions::WindowDimensionsState;
 use crate::window_name::WindowNameState;
 
-use crate::pane_geometry::PaneGeometryState;
 
 use crate::cmd::CmdqItemRef;
 

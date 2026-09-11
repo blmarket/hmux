@@ -1,47 +1,29 @@
 //! Absolute cursors into a pane's retained output stream.
 
-/// A copyable position in a pane's output coordinate space.
-pub trait PaneOutputOffset: Copy + Default {
-    /// Makes an offset at `position`.
-    fn at(position: usize) -> Self;
-
-    /// Returns the absolute byte position.
-    fn position(&self) -> usize;
-
-    /// Moves the cursor to an absolute byte position.
-    fn set_position(&mut self, position: usize);
-
-    /// Advances the cursor with wrapping arithmetic.
-    fn advance(&mut self, amount: usize);
-
-    /// Subtracts a discarded base with wrapping arithmetic.
-    fn rebase(&mut self, old_base: usize);
-}
-
 /// The pane output offset used by hmux.
 #[derive(Clone, Copy, Default)]
 pub struct RustPaneOutputOffset {
     used: usize,
 }
 
-impl PaneOutputOffset for RustPaneOutputOffset {
-    fn at(position: usize) -> Self {
+impl RustPaneOutputOffset {
+    pub fn at(position: usize) -> Self {
         Self { used: position }
     }
 
-    fn position(&self) -> usize {
+    pub fn position(&self) -> usize {
         self.used
     }
 
-    fn set_position(&mut self, position: usize) {
+    pub fn set_position(&mut self, position: usize) {
         self.used = position;
     }
 
-    fn advance(&mut self, amount: usize) {
+    pub fn advance(&mut self, amount: usize) {
         self.used = self.used.wrapping_add(amount);
     }
 
-    fn rebase(&mut self, old_base: usize) {
+    pub fn rebase(&mut self, old_base: usize) {
         self.used = self.used.wrapping_sub(old_base);
     }
 }

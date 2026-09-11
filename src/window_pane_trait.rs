@@ -1,7 +1,5 @@
 //! Capabilities used by pane consumers.
 
-use crate::{PaneGeometryState, PaneIdentity, PaneSearchState};
-
 /// State and engine capabilities used to interact with a window pane.
 ///
 /// Pane allocations and their shared lifetime are managed by owning handles.
@@ -22,7 +20,28 @@ use crate::{PaneGeometryState, PaneIdentity, PaneSearchState};
 /// use tmux_c2rs::WindowPane;
 /// fn replace_parent(pane: &mut dyn WindowPane) { pane.set_window_context(None); }
 /// ```
-pub trait WindowPane: PaneIdentity + PaneGeometryState + PaneSearchState {
+pub trait WindowPane {
+    /// Returns the immutable numeric pane identity.
+    fn pane_id(&self) -> u32;
+
+    /// Returns the complete pane rectangle.
+    fn geometry(&self) -> crate::PaneGeometry;
+
+    /// Moves the pane without changing its size.
+    fn set_position(&mut self, x: core::ffi::c_int, y: core::ffi::c_int);
+
+    /// Returns the retained search text, if any.
+    fn search_query(&self) -> Option<&core::ffi::CStr>;
+
+    /// Returns whether the retained search text is a regular expression.
+    fn search_is_regex(&self) -> bool;
+
+    /// Replaces the retained search text and interpretation atomically.
+    fn set_search(&mut self, query: &core::ffi::CStr, regex: bool);
+
+    /// Returns whether both retained search properties match the arguments.
+    fn search_matches(&self, query: &core::ffi::CStr, regex: bool) -> bool;
+
     /// Returns the activity sequence number.
     fn activity_point(&self) -> core::ffi::c_uint;
 

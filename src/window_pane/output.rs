@@ -5,7 +5,6 @@ use crate::log::log_get_level;
 use crate::control::{control_pane_offset, control_pane_offset_mut, control_write_output};
 use crate::server::{client_walk, server_destroy_pane};
 use crate::reactor::Interest;
-use crate::pane_output::PaneOutputOffset;
 use crate::fmt_args;
 use crate::log::log_debug;
 use crate::consts::{CLIENT_CONTROL, SIZE_MAX};
@@ -227,4 +226,3 @@ pub(super) unsafe fn parse_bytes(wp: &mut window_pane, mut input: ByteBuffer) {
         crate::input::parser::input_parse(&mut ictx, &mut sctx, input);
     }
 }
-

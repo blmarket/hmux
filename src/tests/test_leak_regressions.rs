@@ -47,7 +47,6 @@ use crate::cmd::{CmdqType, KEYC_NONE, cmdq_append, cmdq_next};
 use crate::cmd::{cmd_entry, cmd_entry_flag, cmd_retval};
 use crate::file::CLIENT_DEAD;
 use crate::overlay::{menu_add_item, menu_create};
-use crate::pane_identity::PaneIdentity;
 use crate::reactor::{self, Reactor};
 use crate::spawn::{SPAWN_RESPAWN, spawn_pane};
 use crate::tests::test_fixtures::{

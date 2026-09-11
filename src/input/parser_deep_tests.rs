@@ -1,6 +1,5 @@
 use super::*;
 use crate::WindowPane;
-use crate::pane_identity::PaneIdentity;
 use crate::style::{ColourEngine, RustColourEngine};
 use crate::tests::test_fixtures::{Pane, Window, ensure_reactor, globals};
 

@@ -2,8 +2,6 @@ use super::*;
 use crate::WindowPane;
 use crate::consts::{LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM};
 use crate::options::OptionsRef;
-use crate::pane_geometry::PaneGeometryState;
-use crate::pane_identity::PaneIdentity;
 use crate::server::server_client_add_client_window;
 use crate::tests::test_fixtures::{
     Clients, Pane, Registry, Session, Window, globals, link, unlink,

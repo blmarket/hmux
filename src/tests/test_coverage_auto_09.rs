@@ -11,12 +11,10 @@
 //! under `globals()`. Nothing here hits `fatal`.
 
 use crate::WindowPane;
-use crate::pane_identity::PaneIdentity;
 use crate::window_dimensions::WindowDimensionsState;
 use crate::window_name::WindowNameState;
 use crate::window_trait::Window as _;
 
-use crate::pane_geometry::PaneGeometryState;
 
 use crate::modes::{
     WINDOW_CUSTOMIZE_DEFAULT_FORMAT, WINDOW_CUSTOMIZE_GLOBAL_SESSION,

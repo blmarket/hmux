@@ -29,8 +29,7 @@
 
 use crate::cmd::{CmdListRef, cmd};
 use crate::options::{OptionsEngine, RustOptionsEngine};
-use crate::pane_geometry::PaneGeometryState;
-use crate::pane_identity::PaneIdentity;
+use crate::WindowPane;
 
 use crate::client::CMD_STARTSERVER;
 use crate::cmd::CMD_AFTERHOOK;

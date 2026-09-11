@@ -1,8 +1,6 @@
 use super::*;
 use crate::WindowPane;
 use crate::options::OptionsRef;
-use crate::pane_geometry::PaneGeometryState;
-use crate::pane_identity::PaneIdentity;
 use crate::tests::test_fixtures::{Pane, Target, Window, globals};
 use crate::window_dimensions::WindowPixelSize;
 use crate::window_fill_character::WindowFillCharacterState;

@@ -2,7 +2,6 @@
 //! (window/pane helpers, zoom bookkeeping, resize, floating, search etc).
 
 use crate::WindowPane;
-use crate::pane_identity::PaneIdentity;
 
 use crate::consts::{LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM};
 use crate::tests::test_fixtures::{Layout, Pane, Window, globals};
@@ -245,11 +244,11 @@ fn window_pane_find_directional() {
         let p1 = l.pane(j);
         assert_eq!(
             window_pane_find_right(p0.as_ref()).map(|pane| pane.id()),
-            Some(crate::PaneIdentity::pane_id(&*p1))
+            Some((*p1).pane_id())
         );
         assert_eq!(
             window_pane_find_left(p1.as_ref()).map(|pane| pane.id()),
-            Some(crate::PaneIdentity::pane_id(&*p0))
+            Some((*p0).pane_id())
         );
         let _ = window_pane_find_up(p0.as_ref());
         let _ = window_pane_find_down(p0.as_ref());
@@ -264,11 +263,11 @@ fn window_pane_find_directional() {
         let q1 = l2.pane(k);
         assert_eq!(
             window_pane_find_down(q0.as_ref()).map(|pane| pane.id()),
-            Some(crate::PaneIdentity::pane_id(&*q1))
+            Some((*q1).pane_id())
         );
         assert_eq!(
             window_pane_find_up(q1.as_ref()).map(|pane| pane.id()),
-            Some(crate::PaneIdentity::pane_id(&*q0))
+            Some((*q0).pane_id())
         );
         let _ = window_pane_find_left(q0.as_ref());
         let _ = window_pane_find_right(q1.as_ref());

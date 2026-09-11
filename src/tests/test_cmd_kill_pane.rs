@@ -1,6 +1,5 @@
 use crate::WindowPane;
 use super::*;
-use crate::pane_identity::PaneIdentity;
 use crate::tests::test_fixtures::{Item, Target, ensure_reactor, globals};
 use crate::window::window_active_pane;
 use crate::window::{window_add_pane, window_count_panes};

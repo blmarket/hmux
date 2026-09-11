@@ -12,7 +12,6 @@ use crate::input::{
     INPUT_LAST, INPUT_REQUEST_CLIPBOARD, INPUT_REQUEST_PALETTE, INPUT_REQUEST_QUEUE,
     INPUT_REQUEST_TIMEOUT, input_cancel_requests, input_set_buffer_size,
 };
-use crate::pane_identity::PaneIdentity;
 use crate::reactor::{ByteBuffer, Stream};
 use crate::screen::Screen;
 use crate::style::{ColourEngine, RustColourEngine};

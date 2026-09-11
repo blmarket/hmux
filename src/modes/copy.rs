@@ -290,9 +290,9 @@ unsafe fn window_copy_common_init(
         data.cursordrag = CURSORDRAG_NONE;
         data.lineflag = LINE_SEL_NONE;
         data.selflag = SEL_CHAR;
-        if let Some(query) = wp.query() {
+        if let Some(query) = wp.search_query() {
             data.searchtype = WINDOW_COPY_SEARCHUP as core::ffi::c_int;
-            data.searchregex = core::ffi::c_int::from(wp.is_regex());
+            data.searchregex = core::ffi::c_int::from(wp.search_is_regex());
             data.searchstr = Some(query.to_owned());
         } else {
             data.searchtype = WINDOW_COPY_OFF as core::ffi::c_int;
@@ -5735,14 +5735,14 @@ unsafe fn window_copy_search(
         let search_all = data.searchall != 0;
         let mut pane = wme.pane_ref().expect("mode has a pane");
         let wp = pane.get().expect("mode pane is live");
-        if search_all || wp.query().is_none() || wp.is_regex() != (regex != 0) {
+        if search_all || wp.search_query().is_none() || wp.search_is_regex() != (regex != 0) {
             visible_only = 0 as core::ffi::c_int;
             wme.state
                 .copy_mode_data_mut()
                 .expect("copy mode has state")
                 .searchall = 0;
         } else {
-            visible_only = wp.matches(&search, regex != 0) as core::ffi::c_int;
+            visible_only = wp.search_matches(&search, regex != 0) as core::ffi::c_int;
         }
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         if visible_only == 0 as core::ffi::c_int && !data.searchmark.is_empty() {
@@ -5750,7 +5750,7 @@ unsafe fn window_copy_search(
         }
         pane.get_mut()
             .expect("mode pane is live")
-            .set(&search, regex != 0);
+            .set_search(&search, regex != 0);
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         fx = data.cx;
         fy = RustScreen::grid(

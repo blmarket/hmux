@@ -4,9 +4,7 @@ use crate::WindowPane;
 use crate::cmd::CmdListRef;
 use crate::environ::new_environment_box;
 use crate::options::OptionsRef;
-use crate::pane_geometry::PaneGeometryState;
-use crate::pane_output::PaneOutputOffset;
-use crate::pane_resize::{PaneResizeQueue, PaneSize};
+use crate::pane_resize::PaneSize;
 use crate::tests::test_fixtures::{Clients, Target, globals, zeroed_term};
 use crate::window_dimensions::WindowDimensionsState;
 

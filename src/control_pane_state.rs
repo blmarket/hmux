@@ -54,8 +54,8 @@ impl ControlPaneState for crate::control::control_pane {
     ) -> Self {
         Self {
             pane: pane_id,
-            offset: <crate::RustPaneOutputOffset as crate::PaneOutputOffset>::at(written_position),
-            queued: <crate::RustPaneOutputOffset as crate::PaneOutputOffset>::at(queued_position),
+            offset: crate::RustPaneOutputOffset::at(written_position),
+            queued: crate::RustPaneOutputOffset::at(queued_position),
             flags,
             pending_flag: i32::from(pending),
             blocks: Vec::new(),
@@ -68,16 +68,16 @@ impl ControlPaneState for crate::control::control_pane {
         self.pane = pane_id;
     }
     fn control_pane_written_position(&self) -> usize {
-        crate::PaneOutputOffset::position(&self.offset)
+        self.offset.position()
     }
     fn set_control_pane_written_position(&mut self, position: usize) {
-        crate::PaneOutputOffset::set_position(&mut self.offset, position);
+        self.offset.set_position(position);
     }
     fn control_pane_queued_position(&self) -> usize {
-        crate::PaneOutputOffset::position(&self.queued)
+        self.queued.position()
     }
     fn set_control_pane_queued_position(&mut self, position: usize) {
-        crate::PaneOutputOffset::set_position(&mut self.queued, position);
+        self.queued.set_position(position);
     }
     fn control_pane_flags(&self) -> i32 {
         self.flags

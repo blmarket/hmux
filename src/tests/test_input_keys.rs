@@ -2,7 +2,6 @@ use super::*;
 use crate::WindowPane;
 use crate::log::log_add_level;
 use crate::options::OptionsRef;
-use crate::pane_identity::PaneIdentity;
 
 use crate::resize::WINDOW_ZOOMED;
 use crate::screen::Screen as ScreenBoundary;

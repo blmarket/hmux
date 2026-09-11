@@ -25,21 +25,6 @@ pub struct PaneResizeStep {
     pub retry_after: Duration,
 }
 
-/// Pending pane resizes and their coalescing policy.
-pub trait PaneResizeQueue {
-    /// Returns whether no resize is pending.
-    fn is_empty(&self) -> bool;
-
-    /// Discards every pending resize.
-    fn clear(&mut self);
-
-    /// Records a transition from `old` to `new`.
-    fn record(&mut self, old: PaneSize, new: PaneSize);
-
-    /// Removes and returns the next size that should be delivered.
-    fn next_step(&mut self) -> Option<PaneResizeStep>;
-}
-
 #[derive(Clone, Copy)]
 struct PaneResize {
     sx: u_int,
@@ -59,20 +44,20 @@ pub struct RustPaneResizeQueue {
     queue: VecDeque<PaneResize>,
 }
 
-impl PaneResizeQueue for RustPaneResizeQueue {
-    fn is_empty(&self) -> bool {
+impl RustPaneResizeQueue {
+    pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }
 
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.queue.clear();
     }
 
-    fn record(&mut self, old: PaneSize, new: PaneSize) {
+    pub fn record(&mut self, old: PaneSize, new: PaneSize) {
         self.queue.push_back(PaneResize { sx: new.width, sy: new.height, osx: old.width, osy: old.height });
     }
 
-    fn next_step(&mut self) -> Option<PaneResizeStep> {
+    pub fn next_step(&mut self) -> Option<PaneResizeStep> {
         let first = *self.queue.front()?;
         let last = *self.queue.back()?;
         if self.queue.len() == 1 {

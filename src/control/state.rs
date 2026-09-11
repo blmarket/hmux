@@ -1224,8 +1224,7 @@ pub fn control_remove_sub(c: &mut client, name: &CStr) {
 #[cfg(test)]
 mod focused_tests {
     use super::*;
-    use crate::pane_identity::PaneIdentity;
-    use crate::pane_output::PaneOutputOffset;
+    use crate::WindowPane;
     use crate::tests::test_fixtures::{StreamBuffer, globals, zeroed_client, zeroed_pane};
 
     struct ControlCtx {

@@ -4,7 +4,6 @@ use crate::WindowPane;
 use crate::fmt_args;
 use crate::options::OptionsRef;
 
-use crate::pane_identity::PaneIdentity;
 use crate::screen::Screen as ScreenBoundary;
 use crate::tests::test_fixtures::{Pane, Screen, Window, ascii, globals};
 use ::core::ffi::c_int;
