@@ -207,10 +207,10 @@ fn layout_assign_pane_skip_flag_leaves_skip_pane_size() {
     let mut l = Layout::new(80, 24);
     let j = split(&mut l, 0, LAYOUT_LEFTRIGHT);
     unsafe {
-        (*l.pane(0)).set_size(crate::pane_resize::PaneSize {
+        (*l.pane(0)).configure_test(crate::window_pane::PaneTestSetup::Size(crate::pane_resize::PaneSize {
             width: 5,
             height: 5,
-        });
+        }));
         (l.reference()).fix_layout_panes(
             l.pane(0)
                 .as_ref()

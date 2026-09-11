@@ -143,18 +143,18 @@ fn window_pane_exited_reports_fd_and_flag() {
         // fd == -1 counts as exited
         assert_ne!(window_pane_exited(&*wp), 0);
         // give it a fake fd and clear exited flag -> not exited
-        (*wp).configure_test_io(crate::window_pane::PaneTestIo::Descriptor(99));
+        (*wp).configure_test(crate::window_pane::PaneTestSetup::Descriptor(99));
         *(*wp).flags_mut() &= !PANE_EXITED;
         assert_eq!(window_pane_exited(&*wp), 0);
         // exited flag alone counts too
         *(*wp).flags_mut() |= PANE_EXITED;
         assert_ne!(window_pane_exited(&*wp), 0);
-        (*wp).configure_test_io(crate::window_pane::PaneTestIo::Descriptor(-1));
+        (*wp).configure_test(crate::window_pane::PaneTestSetup::Descriptor(-1));
         *(*wp).flags_mut() &= !PANE_EXITED;
         // back to exited via fd
         assert_ne!(window_pane_exited(&*wp), 0);
         // avoid close on drop
-        (*wp).configure_test_io(crate::window_pane::PaneTestIo::Descriptor(-1));
+        (*wp).configure_test(crate::window_pane::PaneTestSetup::Descriptor(-1));
     }
 }
 

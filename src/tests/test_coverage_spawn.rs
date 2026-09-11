@@ -94,7 +94,7 @@ impl Rig {
                 .map(|pane| pane.downgrade())
                 .unwrap()
         };
-        unsafe { p.as_pane_mut().configure_test_io(crate::window_pane::PaneTestIo::Descriptor(FAKE_FD))};
+        unsafe { p.as_pane_mut().configure_test(crate::window_pane::PaneTestSetup::Descriptor(FAKE_FD))};
         link(&mut session, &mut window, idx);
         let wl = WinlinkRef::new(session.reference(), idx).unwrap();
         Rig {

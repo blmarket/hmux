@@ -7,8 +7,8 @@ use crate::tests::test_fixtures::{Args, Item, Paste, StreamBuffer, Target, globa
 /// going to `bev`. The descriptor number is only ever read.
 unsafe fn attach(wp: *mut (dyn crate::WindowPane + 'static), bev: &StreamBuffer) {
     unsafe {
-        (*wp).configure_test_io(crate::window_pane::PaneTestIo::Descriptor(1000));
-        (*wp).configure_test_io(crate::window_pane::PaneTestIo::Stream(bev.ptr()));
+        (*wp).configure_test(crate::window_pane::PaneTestSetup::Descriptor(1000));
+        (*wp).configure_test(crate::window_pane::PaneTestSetup::Stream(bev.ptr()));
     }
 }
 

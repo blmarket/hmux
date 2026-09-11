@@ -287,7 +287,6 @@ struct window_pane {
     control_bg: Option<c_int>,
     control_fg: Option<c_int>,
     scrollbar_style: PaneScrollbarStyle,
-    r: visible_ranges,
 }
 
 impl crate::pane_identity::PaneIdentity for window_pane {
@@ -362,11 +361,7 @@ impl crate::pane_geometry::PaneGeometryState for window_pane {
     fn geometry(&self) -> PaneGeometry {
         PaneGeometry { xoff: self.xoff, yoff: self.yoff, sx: self.sx, sy: self.sy }
     }
-    fn set_geometry(&mut self, geometry: PaneGeometry) {
-        self.xoff = geometry.xoff; self.yoff = geometry.yoff; self.sx = geometry.sx; self.sy = geometry.sy;
-    }
     fn set_position(&mut self, x: c_int, y: c_int) { self.xoff = x; self.yoff = y; }
-    fn set_size(&mut self, size: PaneSize) { self.sx = size.width; self.sy = size.height; }
 }
 
 impl crate::pane_exit::PaneExitState for window_pane {
@@ -427,15 +422,6 @@ impl crate::WindowPane for window_pane {
     fn flags_mut(&mut self) -> &mut core::ffi::c_int {
         &mut self.flags
     }
-    fn options(&self) -> &Option<crate::options::RustOptionsRef> {
-        &self.options
-    }
-    fn options_mut(&mut self) -> &mut Option<crate::options::RustOptionsRef> {
-        &mut self.options
-    }
-
-
-
     unsafe fn resize(&mut self, size: PaneSize) {
         let old = PaneSize { width: self.sx, height: self.sy };
         if old == size { return; }
@@ -468,15 +454,21 @@ impl crate::WindowPane for window_pane {
 
 
     #[cfg(test)]
-    unsafe fn configure_test_io(&mut self, setting: PaneTestIo) {
+    unsafe fn configure_test(&mut self, setting: PaneTestSetup) {
         match setting {
-            PaneTestIo::Descriptor(fd) => self.fd = fd,
-            PaneTestIo::Stream(stream) => self.event = stream,
-            PaneTestIo::Parser(parser) => {
+            PaneTestSetup::Descriptor(fd) => self.fd = fd,
+            PaneTestSetup::Geometry(rect) => { self.xoff = rect.xoff; self.yoff = rect.yoff; self.sx = rect.sx; self.sy = rect.sy; }
+            PaneTestSetup::Size(size) => { self.sx = size.width; self.sy = size.height; }
+            PaneTestSetup::Options(options) => {
+                if let Some(old) = self.options.take() { RustOptionsEngine.destroy(old); }
+                self.options = options;
+            }
+            PaneTestSetup::Stream(stream) => self.event = stream,
+            PaneTestSetup::Parser(parser) => {
                 if let Some(old) = self.ictx.take() { unsafe { old.close() }; }
                 self.ictx = parser;
             }
-            PaneTestIo::Terminal(name) => self.tty = name,
+            PaneTestSetup::Terminal(name) => self.tty = name,
         }
     }
     fn process_id(&self) -> pid_t { self.pid }
@@ -618,12 +610,6 @@ impl crate::WindowPane for window_pane {
         &self.status_screen
     }
 
-    fn r(&self) -> &crate::types::visible_ranges {
-        &self.r
-    }
-    fn r_mut(&mut self) -> &mut crate::types::visible_ranges {
-        &mut self.r
-    }
     /// Retains the recorded window context, including during pane transfers.
     fn window_context(&self) -> Option<WindowRef> {
         self.window.as_ref().and_then(WindowWeak::upgrade)
@@ -698,10 +684,7 @@ mod tests {
         let mut retained = owner.downgrade();
         unsafe {
             let pane: &mut dyn WindowPane = owner.get_mut().unwrap();
-            pane.set_size(crate::PaneSize {
-                width: 80,
-                height: 24,
-            });
+            pane.configure_test(PaneTestSetup::Size(PaneSize { width: 80, height: 24 }));
             *pane.flags_mut() = PANE_STYLECHANGED;
         }
         unsafe {
@@ -776,14 +759,12 @@ pub(crate) unsafe fn window_pane_create(
         let wp_box = Box::new(UnsafeCell::new(window_pane::new()));
         let wp = wp_box.get();
         window_pane_set_window(&mut *wp, Some(w));
-        *(*wp).options_mut() = Some(RustOptionsEngine.create(Some((*w).options_ref())));
+        (*wp).options = Some(RustOptionsEngine.create(Some((*w).options_ref())));
         *(*wp).flags_mut() = PANE_STYLECHANGED;
         (*wp).id = fresh2;
         (*wp).fd = -(1 as core::ffi::c_int);
-        (*wp).set_size(PaneSize {
-            width: sx,
-            height: sy,
-        });
+        (*wp).sx = sx;
+        (*wp).sy = sy;
         (*wp).pipe_fd = -(1 as core::ffi::c_int);
         let scrollbar_style = pane_scrollbar_style_from_option((*wp).options_ref());
         (*wp).set_scrollbar_style(scrollbar_style);
@@ -817,7 +798,6 @@ pub(crate) unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
         if let Some(ictx) = wp.ictx.take() {
             ictx.close();
         }
-        wp.r_mut().ranges.clear();
         if wp.pipe_fd != -(1 as core::ffi::c_int) {
             wp.pipe_event.free();
             close(wp.pipe_fd);
@@ -827,7 +807,7 @@ pub(crate) unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
         wp.sync_timer.disarm();
         wp.resize_queue.clear();
         pane.unregister();
-        if let Some(oo) = wp.options_mut().take() {
+        if let Some(oo) = wp.options.take() {
             RustOptionsEngine.destroy(oo);
         }
         wp.clear_pane_command();
@@ -988,8 +968,11 @@ mod io;
 pub(crate) use io::send_line;
 
 #[cfg(test)]
-pub enum PaneTestIo {
+pub enum PaneTestSetup {
     Descriptor(c_int),
+    Geometry(PaneGeometry),
+    Size(PaneSize),
+    Options(Option<RustOptionsRef>),
     Stream(Stream),
     Parser(Option<crate::input::InputCtxRef>),
     Terminal([u8; 32]),

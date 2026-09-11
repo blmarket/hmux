@@ -848,9 +848,7 @@ fn free_pane(pane: &mut dyn crate::WindowPane) {
             crate::window_pane::resize_timer_for_test(pane).disarm();
         }
         pane.stop_sync();
-        if let Some(oo) = pane.options_mut().take() {
-            RustOptionsEngine.destroy(oo);
-        }
+        unsafe { pane.configure_test(crate::window_pane::PaneTestSetup::Options(None)) };
     }
 }
 
@@ -892,11 +890,8 @@ impl Pane {
         let mut pane = zeroed_pane();
         pane.set_pane_id(id);
         crate::window::window_pane_reserve_id(id);
-        *pane.options_mut() = Some(Options::pane().owned());
-        pane.set_size(crate::pane_resize::PaneSize {
-            width: sx,
-            height: sy,
-        });
+        unsafe { pane.configure_test(crate::window_pane::PaneTestSetup::Options(Some(Options::pane().owned()))) };
+        unsafe { pane.configure_test(crate::window_pane::PaneTestSetup::Size(crate::pane_resize::PaneSize { width: sx, height: sy })) };
         {
             *pane.base_mut() = RustScreen::new_with_server_options(sx, sy, hlimit);
             pane.publish_border_status(0, RustScreen::new_with_server_options(1, 1, 0), Vec::new(), c"".to_owned());

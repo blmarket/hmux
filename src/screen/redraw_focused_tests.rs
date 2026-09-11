@@ -139,10 +139,10 @@ fn check_cell_selects_scrollbar_and_front_floating_pane() {
         });
         set_scrollbar_dimensions(view.pane(base), 1, 1);
         let geometry = (*view.pane(base)).geometry();
-        (*view.pane(base)).set_size(crate::pane_resize::PaneSize {
+        (*view.pane(base)).configure_test(crate::window_pane::PaneTestSetup::Size(crate::pane_resize::PaneSize {
             width: 10,
             height: geometry.sy,
-        });
+        }));
         let checked = screen_redraw_check_cell(&mut ctx, 10, 5);
         assert_eq!(checked.cell_type, CELL_SCROLLBAR);
         assert_eq!(checked.pane_ref.as_ref().map(|pane| pane.id()), Some(51));
@@ -810,10 +810,10 @@ fn pane_status_generation_tracks_formats_widths_and_owner_lifetime() {
         assert_eq!(pane.get().unwrap().status_line_width(), 2);
         pane.get_mut()
             .unwrap()
-            .set_size(crate::pane_resize::PaneSize {
+            .configure_test(crate::window_pane::PaneTestSetup::Size(crate::pane_resize::PaneSize {
                 width: 3,
                 height: 3,
-            });
+            }));
         screen_redraw_make_pane_status(view.client.as_client(), &mut pane, &ctx, PANE_LINES_SINGLE);
         assert_eq!(pane.get().unwrap().status_line_width(), 0);
         assert_eq!(

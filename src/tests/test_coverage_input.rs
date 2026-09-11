@@ -87,7 +87,7 @@ impl Parser {
                 crate::input::InputOwner::Pane((*wp).pane_id()),
                 bev.as_ref().map_or(Stream::NONE, |b| b.ptr()),
             );
-            (*wp).configure_test_io(crate::window_pane::PaneTestIo::Parser(Some(context.clone())));
+            (*wp).configure_test(crate::window_pane::PaneTestSetup::Parser(Some(context.clone())));
             context
         };
         Parser {
@@ -170,7 +170,7 @@ impl Parser {
 impl Drop for Parser {
     fn drop(&mut self) {
         unsafe {
-            (*self.wp()).configure_test_io(crate::window_pane::PaneTestIo::Parser(None));
+            (*self.wp()).configure_test(crate::window_pane::PaneTestSetup::Parser(None));
             RustColourEngine.free_palette(Some((*self.wp()).palette_mut()));
         }
     }

@@ -289,12 +289,12 @@ impl Floating {
         unsafe {
             let above = f.pane.hand_to(w);
             (*w).z_index.retain(|pane| pane.id() != (*above).pane_id());
-            (*above).set_geometry(crate::pane_geometry::PaneGeometry {
+            (*above).configure_test(crate::window_pane::PaneTestSetup::Geometry(crate::pane_geometry::PaneGeometry {
                 xoff: xoff,
                 yoff: yoff,
                 sx: sx,
                 sy: sy,
-            });
+            }));
             crate::tests::test_fixtures::set_pane_floating(&mut *w, (*above).pane_id(), true);
             let at = (*w)
                 .z_index

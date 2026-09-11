@@ -478,12 +478,12 @@ fn a_command_lists_flags_are_read_across_every_command_in_it() {
 fn a_mouse_event_lands_at_a_pane_offset_or_outside_the_pane_altogether() {
     unsafe {
         let mut wp = zeroed_pane();
-        wp.set_geometry(crate::pane_geometry::PaneGeometry {
+        wp.configure_test(crate::window_pane::PaneTestSetup::Geometry(crate::pane_geometry::PaneGeometry {
             xoff: 10,
             yoff: 5,
             sx: 20,
             sy: 8,
-        });
+        }));
         let wp = &raw mut *wp;
 
         let mut m = *Box::new(mouse_event::default());

@@ -565,12 +565,12 @@ fn mouse_location_in_pane_covers_inside_outside_and_each_plain_border() {
     unsafe {
         let mut pane = target.state().pane_ref().unwrap();
         pane.as_pane_mut()
-            .set_geometry(crate::pane_geometry::PaneGeometry {
+            .configure_test(crate::window_pane::PaneTestSetup::Geometry(crate::pane_geometry::PaneGeometry {
                 xoff: 2,
                 yoff: 2,
                 sx: 20,
                 sy: 6,
-            });
+            }));
         let mut slider = 0;
         assert_eq!(
             server_client_check_mouse_in_pane(&pane, 4, 4, &mut slider),
@@ -602,10 +602,10 @@ fn pane_terminal_names_borrow_only_the_initialized_string() {
     let pane = unsafe { &mut *target.pane(0) };
     let mut name = [b'x'; 32];
     name[..5].copy_from_slice(b"/\xfe/1\0");
-    unsafe { pane.configure_test_io(crate::window_pane::PaneTestIo::Terminal(name)) };
+    unsafe { pane.configure_test(crate::window_pane::PaneTestSetup::Terminal(name)) };
     assert_eq!(pane.terminal_name().to_bytes(), b"/\xfe/1");
     name[0] = 0;
-    unsafe { pane.configure_test_io(crate::window_pane::PaneTestIo::Terminal(name)) };
+    unsafe { pane.configure_test(crate::window_pane::PaneTestSetup::Terminal(name)) };
     assert_eq!(pane.terminal_name(), c"");
 }
 
@@ -627,7 +627,7 @@ fn nested_detection_covers_missing_empty_nonmatching_and_matching_tty() {
         let bytes = b"/dev/pts/focused\0";
         let mut name = [0; 32];
         name[..bytes.len()].copy_from_slice(bytes);
-        wp.configure_test_io(crate::window_pane::PaneTestIo::Terminal(name));
+        wp.configure_test(crate::window_pane::PaneTestSetup::Terminal(name));
         assert_eq!(server_client_check_nested(c), 1);
     }
 }
@@ -1197,8 +1197,8 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
         let mut item = Item::with_client();
         item.set_client(c);
         let item = item.handle();
-        pane.get_mut().unwrap().configure_test_io(crate::window_pane::PaneTestIo::Descriptor(0));
-        pane.get_mut().unwrap().configure_test_io(crate::window_pane::PaneTestIo::Stream(output.ptr()));
+        pane.get_mut().unwrap().configure_test(crate::window_pane::PaneTestSetup::Descriptor(0));
+        pane.get_mut().unwrap().configure_test(crate::window_pane::PaneTestSetup::Stream(output.ptr()));
         let send = |key, bytes: &[u8]| {
             server_client_key_callback(
                 &item,
@@ -1218,7 +1218,7 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
         assert_eq!(send(b'z' as key_code, b"ignored"), CMD_RETURN_NORMAL);
         assert!(output.written().is_empty());
         c.flags &= !(CLIENT_READONLY as uint64_t);
-        pane.get_mut().unwrap().configure_test_io(crate::window_pane::PaneTestIo::Descriptor(-1));
+        pane.get_mut().unwrap().configure_test(crate::window_pane::PaneTestSetup::Descriptor(-1));
         let window = pane.window().unwrap();
         let pane_options = pane.get().unwrap().options_ref().clone();
         window.remove_pane(
@@ -1230,9 +1230,9 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
         let mut payload = crate::tests::test_fixtures::PaneAllocation::default();
         payload.set_pane_id(99);
         *payload.base_mut() = RustScreen::new_with_server_options(20, 6, 0);
-        *payload.options_mut() = Some(pane_options);
-        payload.configure_test_io(crate::window_pane::PaneTestIo::Descriptor(0));
-        payload.configure_test_io(crate::window_pane::PaneTestIo::Stream(output.ptr()));
+        unsafe { payload.configure_test(crate::window_pane::PaneTestSetup::Options(Some(pane_options))) };
+        payload.configure_test(crate::window_pane::PaneTestSetup::Descriptor(0));
+        payload.configure_test(crate::window_pane::PaneTestSetup::Stream(output.ptr()));
         let unregistered = (payload).into_owner();
         let observed = unregistered.downgrade();
         crate::window::window_panes_insert_tail(&mut window.as_window_mut(), unregistered);
@@ -1255,7 +1255,7 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
             CMD_RETURN_NORMAL
         );
         assert_eq!(output.written(), b"listed pane paste");
-        unregistered.get_mut().unwrap().configure_test_io(crate::window_pane::PaneTestIo::Descriptor(-1));
+        unregistered.get_mut().unwrap().configure_test(crate::window_pane::PaneTestSetup::Descriptor(-1));
         c.set_attached_session(None);
         assert_eq!(send(b'z' as key_code, b"detached"), CMD_RETURN_NORMAL);
         assert!(output.written().is_empty());
@@ -1345,12 +1345,12 @@ fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_pane
     let window = pane.window().unwrap();
     unsafe {
         pane.as_pane_mut()
-            .set_geometry(crate::pane_geometry::PaneGeometry {
+            .configure_test(crate::window_pane::PaneTestSetup::Geometry(crate::pane_geometry::PaneGeometry {
                 xoff: 4,
                 yoff: 2,
                 sx: 20,
                 sy: 6,
-            });
+            }));
         pane.as_pane_mut()
             .set_slider(crate::pane_scrollbar::PaneScrollbarSlider { sb_slider_y: 2, sb_slider_h: 2 });
         pane.as_pane_mut()
@@ -1386,13 +1386,13 @@ fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_pane
         let mut payload = crate::tests::test_fixtures::PaneAllocation::default();
         payload.set_pane_id(99);
         *payload.base_mut() = RustScreen::new_with_server_options(4, 2, 0);
-        *payload.options_mut() = Some(pane.as_pane().options_ref().clone());
-        payload.set_geometry(crate::pane_geometry::PaneGeometry {
+        unsafe { payload.configure_test(crate::window_pane::PaneTestSetup::Options(Some(pane.as_pane().options_ref().clone()))) };
+        payload.configure_test(crate::window_pane::PaneTestSetup::Geometry(crate::pane_geometry::PaneGeometry {
             xoff: 30,
             yoff: 8,
             sx: 4,
             sy: 2,
-        });
+        }));
         let listed = (payload).into_owner();
         let observed = listed.downgrade();
         crate::window::window_panes_insert_tail(&mut window.as_window_mut(), listed);
@@ -1438,20 +1438,20 @@ fn mouse_events_follow_focus_and_keep_drag_targets_across_current_window_changes
         let mut second = window_pane_find_by_id(second_id).unwrap();
         first
             .as_pane_mut()
-            .set_geometry(crate::pane_geometry::PaneGeometry {
+            .configure_test(crate::window_pane::PaneTestSetup::Geometry(crate::pane_geometry::PaneGeometry {
                 xoff: 0,
                 yoff: 0,
                 sx: 19,
                 sy: 12,
-            });
+            }));
         second
             .as_pane_mut()
-            .set_geometry(crate::pane_geometry::PaneGeometry {
+            .configure_test(crate::window_pane::PaneTestSetup::Geometry(crate::pane_geometry::PaneGeometry {
                 xoff: 20,
                 yoff: 0,
                 sx: 20,
                 sy: 12,
-            });
+            }));
         {
             let mut payload = window.as_window_mut();
             payload.active = payload

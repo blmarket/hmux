@@ -42,12 +42,6 @@ pub trait WindowPane:
     /// Mutably borrows the pane's server flags.
     fn flags_mut(&mut self) -> &mut core::ffi::c_int;
 
-    /// Borrows the pane's optional option handle.
-    fn options(&self) -> &Option<crate::options::RustOptionsRef>;
-
-    /// Mutably borrows the pane's optional option handle.
-    fn options_mut(&mut self) -> &mut Option<crate::options::RustOptionsRef>;
-
     /// Resizes the base and active mode screens and queues the process resize,
     /// cancelling synchronized output. An unchanged size does nothing.
     /// # Safety
@@ -64,7 +58,7 @@ pub trait WindowPane:
     /// # Safety
     /// Prevent conflicting stream/parser use and keep injected resources alive.
     #[cfg(test)]
-    unsafe fn configure_test_io(&mut self, setting: crate::window_pane::PaneTestIo);
+    unsafe fn configure_test(&mut self, setting: crate::window_pane::PaneTestSetup);
 
     /// Returns the pane's child process ID.
     fn process_id(&self) -> crate::types::pid_t;
@@ -206,11 +200,6 @@ pub trait WindowPane:
     /// Borrows the pane's status screen.
     fn status_screen(&self) -> &crate::screen::RustScreen;
 
-    /// Borrows the pane's visible ranges.
-    fn r(&self) -> &crate::types::visible_ranges;
-
-    /// Mutably borrows the pane's visible ranges.
-    fn r_mut(&mut self) -> &mut crate::types::visible_ranges;
     /// Retains the recorded window context, including during pane transfers.
     fn window_context(&self) -> Option<crate::types::WindowRef>;
 

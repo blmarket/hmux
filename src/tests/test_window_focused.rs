@@ -881,7 +881,7 @@ fn retained_pane_does_not_keep_its_window_alive_or_delay_window_teardown() {
     drop(owner);
     assert!(weak_window.upgrade().is_some());
     assert!(window_pane_find_by_id(id).is_some());
-    assert!(unsafe { pane.get().unwrap().options().is_some() });
+    assert!(unsafe { pane.options().is_some() });
     drop(last_owner);
     assert!(weak_window.upgrade().is_none());
     assert!(window_pane_find_by_id(id).is_none());
@@ -906,7 +906,7 @@ fn fixture_cleanup_retires_panes_without_closing_borrowed_descriptors() {
     let owner = fixture.reference();
     let retained = window_pane_find_by_id(953).unwrap();
     unsafe {
-        (*pane.ptr()).configure_test_io(crate::window_pane::PaneTestIo::Descriptor(borrowed.as_raw_fd()));
+        (*pane.ptr()).configure_test(crate::window_pane::PaneTestSetup::Descriptor(borrowed.as_raw_fd()));
         crate::window_pane::install_pipe_for_test(&mut *pane.ptr(), peer.as_raw_fd());
     }
     drop(fixture);
@@ -940,8 +940,8 @@ fn synchronized_key_and_paste_skip_the_source_and_unavailable_destinations() {
         let mut panes = window.handle().panes();
         for (pane, stream) in panes.iter_mut().zip(&streams) {
             let wp = pane.as_pane_mut();
-            wp.configure_test_io(crate::window_pane::PaneTestIo::Descriptor(1000));
-            wp.configure_test_io(crate::window_pane::PaneTestIo::Stream(stream.ptr()));
+            wp.configure_test(crate::window_pane::PaneTestSetup::Descriptor(1000));
+            wp.configure_test(crate::window_pane::PaneTestSetup::Stream(stream.ptr()));
             wp.options_ref().set_number(c"synchronize-panes", 1);
         }
         *panes[2].as_pane_mut().flags_mut() |= PANE_INPUTOFF;
@@ -949,7 +949,7 @@ fn synchronized_key_and_paste_skip_the_source_and_unavailable_destinations() {
             .as_pane()
             .options_ref()
             .set_number(c"synchronize-panes", 0);
-        panes[4].as_pane_mut().configure_test_io(crate::window_pane::PaneTestIo::Descriptor(-1));
+        panes[4].as_pane_mut().configure_test(crate::window_pane::PaneTestSetup::Descriptor(-1));
         window_pane_copy_key(panes[0].as_pane(), b'x' as key_code);
         window_pane_copy_paste(panes[0].as_pane(), ByteBuffer::from(b"paste".to_vec()));
         assert!(streams[0].written().is_empty());
@@ -987,24 +987,24 @@ fn directional_selection_retains_the_most_recent_candidate_and_preserves_first_t
     }
     unsafe {
         let mut panes = window.handle().panes();
-        panes[0].as_pane_mut().set_geometry(PaneGeometry {
+        panes[0].as_pane_mut().configure_test(crate::window_pane::PaneTestSetup::Geometry(PaneGeometry {
             xoff: 0,
             yoff: 0,
             sx: 19,
             sy: 20,
-        });
-        panes[1].as_pane_mut().set_geometry(PaneGeometry {
+        }));
+        panes[1].as_pane_mut().configure_test(crate::window_pane::PaneTestSetup::Geometry(PaneGeometry {
             xoff: 20,
             yoff: 0,
             sx: 20,
             sy: 9,
-        });
-        panes[2].as_pane_mut().set_geometry(PaneGeometry {
+        }));
+        panes[2].as_pane_mut().configure_test(crate::window_pane::PaneTestSetup::Geometry(PaneGeometry {
             xoff: 20,
             yoff: 10,
             sx: 20,
             sy: 10,
-        });
+        }));
         panes[1].as_pane_mut().mark_active_at(7);
         panes[2].as_pane_mut().mark_active_at(9);
         let selected = window_pane_find_right(Some(panes[0].as_pane())).unwrap();
@@ -1136,7 +1136,7 @@ fn focus_updates_emit_only_transitions_and_preserve_exited_panes() {
         let mut pane = window.as_window().panes[0].downgrade();
         {
             let wp = pane.get_mut().unwrap();
-            wp.configure_test_io(crate::window_pane::PaneTestIo::Stream(output.ptr()));
+            wp.configure_test(crate::window_pane::PaneTestSetup::Stream(output.ptr()));
             let pane_screen_mode = wp.base().mode() | MODE_FOCUSON;
             wp.base_mut().set_mode(pane_screen_mode);
         }
@@ -1288,8 +1288,8 @@ fn theme_notifications_follow_the_shown_screen_and_only_emit_changed_themes() {
     let output = StreamBuffer::new();
     unsafe {
         let pane = &mut *target.pane(0);
-        pane.configure_test_io(crate::window_pane::PaneTestIo::Descriptor(1000));
-        pane.configure_test_io(crate::window_pane::PaneTestIo::Stream(output.ptr()));
+        pane.configure_test(crate::window_pane::PaneTestSetup::Descriptor(1000));
+        pane.configure_test(crate::window_pane::PaneTestSetup::Stream(output.ptr()));
         let pane_screen_mode = pane.base().mode() | MODE_THEME_UPDATES;
         pane.base_mut().set_mode(pane_screen_mode);
         assert_eq!(
@@ -1352,7 +1352,7 @@ fn theme_notifications_follow_the_shown_screen_and_only_emit_changed_themes() {
         window_pane_send_theme_update(Some(pane));
         assert!(output.written().is_empty());
         assert_eq!(pane.theme(), THEME_DARK);
-        pane.configure_test_io(crate::window_pane::PaneTestIo::Descriptor(-1));
+        pane.configure_test(crate::window_pane::PaneTestSetup::Descriptor(-1));
     }
 }
 
@@ -1541,7 +1541,7 @@ fn pane_stacking_and_flags_follow_physical_owners_and_skip_retired_targets() {
     unsafe {
         let mut payload = crate::tests::test_fixtures::PaneAllocation::default();
         payload.set_pane_id(99);
-        *payload.options_mut() = Some(pane.as_pane().options_ref().clone());
+        unsafe { payload.configure_test(crate::window_pane::PaneTestSetup::Options(Some(pane.as_pane().options_ref().clone()))) };
         *payload.flags_mut() = PANE_ZOOMED;
         let listed = (payload).into_owner();
         let observed = listed.downgrade();
@@ -1628,7 +1628,7 @@ fn terminal_resize_uses_the_panes_current_window_pixels_and_skips_missing_owners
         let slave = OwnedFd::from_raw_fd(slave);
         let pane_fd = libc::dup(master.as_raw_fd());
         assert!(pane_fd >= 0);
-        pane.as_pane_mut().configure_test_io(crate::window_pane::PaneTestIo::Descriptor(pane_fd));
+        pane.as_pane_mut().configure_test(crate::window_pane::PaneTestSetup::Descriptor(pane_fd));
         let size = || {
             let mut size = libc::winsize {
                 ws_col: 0,

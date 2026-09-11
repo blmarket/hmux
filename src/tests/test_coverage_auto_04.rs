@@ -90,7 +90,7 @@ impl Ctx {
                 crate::input::InputOwner::Pane((*wp).pane_id()),
                 Stream::NONE,
             );
-            (*wp).configure_test_io(crate::window_pane::PaneTestIo::Parser(Some(ctx.clone())));
+            (*wp).configure_test(crate::window_pane::PaneTestSetup::Parser(Some(ctx.clone())));
             ctx
         };
         Self {
@@ -110,7 +110,7 @@ impl Drop for Ctx {
     fn drop(&mut self) {
         unsafe {
             let wp = self.wp();
-            (*wp).configure_test_io(crate::window_pane::PaneTestIo::Parser(None));
+            (*wp).configure_test(crate::window_pane::PaneTestSetup::Parser(None));
             RustColourEngine.free_palette(Some((*wp).palette_mut()));
         }
     }
