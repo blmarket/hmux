@@ -1018,6 +1018,6 @@ impl RustScreen {
         self.grid_mut().scroll_history(bg);
     }
     pub(crate) fn mark_test_wrapped(&mut self, line: u_int) {
-        crate::grid::grid_mark_wrapped(self.grid_mut(), line);
+        (self.grid_mut()).mark_wrapped(line);
     }
 }

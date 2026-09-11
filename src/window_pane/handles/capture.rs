@@ -4,7 +4,7 @@ pub use crate::consts::{
     GRID_LINE_START_PROMPT, GRID_LINE_WRAPPED, GRID_STRING_EMPTY_CELLS,
     GRID_STRING_ESCAPE_SEQUENCES, GRID_STRING_TRIM_SPACES, GRID_STRING_WITH_SEQUENCES,
 };
-use crate::grid::{Grid, Hyperlinks, grid_default_cell, grid_peek_info};
+use crate::grid::{Grid, Hyperlinks, grid_default_cell};
 use crate::screen::RustScreen as screen;
 use core::ffi::{c_char, c_int};
 
@@ -21,7 +21,7 @@ fn cmd_capture_pane_hyperlinks(
 ) -> Vec<u8> {
     let mut line = Vec::new();
     let hyperlinks = s.hyperlinks();
-    let Some(gl) = grid_peek_info(gd, py) else {
+    let Some(gl) = (gd).peek_line(py) else {
         return line;
     };
     if gl.flags & GRID_LINE_HYPERLINK == 0 {
@@ -169,7 +169,7 @@ impl RustWindowPaneWeak {
                     buf.extend_from_slice(format!("{n} ").as_bytes());
                 }
                 if show_flags {
-                    let gl = grid_peek_info(gd, i);
+                    let gl = (gd).peek_line(i);
                     let mut letters: Vec<u8> = Vec::new();
                     for (bit, letter) in [
                         (GRID_LINE_DEAD, b'D'),
@@ -190,7 +190,7 @@ impl RustWindowPaneWeak {
                     buf.extend_from_slice(&letters);
                 }
                 buf.extend_from_slice(&line);
-                let gl = grid_peek_info(gd, i);
+                let gl = (gd).peek_line(i);
                 if !join_lines || !gl.is_some_and(|gl| gl.flags & GRID_LINE_WRAPPED != 0) {
                     buf.push(b'\n');
                 }

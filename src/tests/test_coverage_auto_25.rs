@@ -1,5 +1,6 @@
 //! Coverage for screen initialization and owned teardown.
 
+use crate::grid::Grid as _;
 use crate::grid::Hyperlinks;
 use crate::screen::{RustScreen, Screen as ScreenBoundary};
 use crate::tests::test_fixtures::{Screen, globals, zeroed_screen};

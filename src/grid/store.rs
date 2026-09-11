@@ -1,6 +1,6 @@
-use super::view::grid_view_delete_lines;
 use super::grid_line;
 use super::line::{grid_cell_entry, grid_cell_entry_data, grid_cell_entry_union, grid_extd_entry};
+use super::view::grid_view_delete_lines;
 pub use crate::consts::{
     COLOUR_FLAG_256, COLOUR_FLAG_RGB, GRID_ATTR_BLINK, GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET,
     GRID_ATTR_DIM, GRID_ATTR_HIDDEN, GRID_ATTR_ITALICS, GRID_ATTR_OVERLINE, GRID_ATTR_REVERSE,
@@ -94,9 +94,220 @@ pub trait Grid {
         flags: c_int,
         screen: Option<&Self::Screen>,
     ) -> CString;
+    /// Returns text for one stored cell: padding is empty and a tab stays a tab.
+    fn cell_bytes(&self, px: u_int, py: u_int) -> std::borrow::Cow<'_, [u8]>;
+    /// Tests the compact representation using the writer's redraw-elision rules.
+    fn can_skip_cell(&self, px: u_int, py: u_int, gc: &grid_cell) -> bool;
+    /// Returns line, compact-cell and extended-cell counts and byte costs.
+    fn storage_usage(&self) -> [(u_int, usize); 3];
+    /// Returns the bytes allocated to lines and both kinds of stored cell.
+    fn storage_bytes(&self) -> usize;
+    /// Records a prompt or output start marker for a visible line.
+    fn mark_prompt(&mut self, py: u_int, output: bool);
+    /// Resizes visible rows and columns, preserving the selected cursor cell.
+    #[allow(clippy::too_many_arguments)]
+    fn resize_screen(
+        &mut self,
+        sx: u_int,
+        sy: u_int,
+        reflow: bool,
+        eat_empty: bool,
+        cursor: bool,
+        position: (u_int, u_int),
+    ) -> (u_int, u_int);
+    /// Copies the chosen source lines and their history coordinates for copy mode.
+    fn copy_from_history(&mut self, source: &Self, lines: u_int)
+    where
+        Self: Sized;
+    /// Applies a new history limit and collects the excess history immediately.
+    fn set_history_limit(&mut self, limit: u_int);
+    /// Reports whether scrolling retains history.
+    fn history_enabled(&self) -> bool;
+    /// Enables or suspends history retention without discarding retained lines.
+    fn set_history_enabled(&mut self, enabled: bool);
+    /// The visible width of this grid.
+    fn width(&self) -> u_int;
+    /// The visible height of this grid.
+    fn height(&self) -> u_int;
+    /// The number of retained history lines.
+    fn history_size(&self) -> u_int;
+    /// The maximum history size.
+    fn history_limit(&self) -> u_int;
+    /// Observes a line using underlying storage bounds, including reserved lines.
+    fn line_info(&self, py: u_int) -> GridLineInfo;
+    /// Observes a line within the history and visible grid bounds.
+    fn peek_line(&self, py: u_int) -> Option<GridLineInfo>;
+    /// Marks a stored line as continuing onto the next line.
+    fn mark_wrapped(&mut self, py: u_int);
 }
 
 impl Grid for grid {
+    fn cell_bytes(&self, px: u_int, py: u_int) -> std::borrow::Cow<'_, [u8]> {
+        use std::borrow::Cow;
+        let gl = line_at(self, py);
+        unsafe {
+            let mut ud = utf8_data::default();
+            if px >= gl.cellsize() {
+                return Cow::Borrowed(b" ");
+            }
+            let gce = &(*gl).celldata()[px as usize];
+            if gce.flags as core::ffi::c_int & GRID_FLAG_PADDING != 0 {
+                return Cow::Borrowed(&[]);
+            }
+            if !(gce.flags as core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
+                return Cow::Borrowed(core::slice::from_ref(&gce.value.data.data));
+            }
+            if gce.flags as core::ffi::c_int & GRID_FLAG_TAB != 0 {
+                return Cow::Borrowed(b"\t");
+            }
+            utf8_to_data((*gl).extddata()[gce.value.offset as usize].data, &mut ud);
+            if ud.size as core::ffi::c_int == 0 as core::ffi::c_int {
+                return Cow::Borrowed(&[]);
+            }
+            Cow::Owned(ud.data[..ud.size as usize].to_vec())
+        }
+    }
+    fn can_skip_cell(&self, px: u_int, py: u_int, gc: &grid_cell) -> bool {
+        let gl = line_at(self, py);
+        if px >= gl.cellsize() {
+            grid_cells_equal(gc, &grid_default_cell) != 0
+        } else {
+            cell_matches_entry(gc, &gl.celldata()[px as usize])
+        }
+    }
+    fn storage_usage(&self) -> [(u_int, usize); 3] {
+        let lines = self.hsize.wrapping_add(self.sy);
+        let (mut cells, mut extended) = (0_u32, 0_u32);
+        for line in &self.linedata[..lines as usize] {
+            cells = cells.wrapping_add(line.cellsize());
+            extended = extended.wrapping_add(line.extdsize());
+        }
+        [
+            (lines, (lines as usize).wrapping_mul(size_of::<grid_line>())),
+            (
+                cells,
+                (cells as usize).wrapping_mul(size_of::<grid_cell_entry>()),
+            ),
+            (
+                extended,
+                (extended as usize).wrapping_mul(size_of::<grid_extd_entry>()),
+            ),
+        ]
+    }
+    fn storage_bytes(&self) -> usize {
+        let lines = self.hsize.wrapping_add(self.sy);
+        self.linedata[..lines as usize].iter().fold(
+            (lines as usize).wrapping_mul(size_of::<grid_line>()),
+            |size, line| {
+                size.wrapping_add(
+                    (line.cellsize() as usize).wrapping_mul(size_of::<grid_cell_entry>()),
+                )
+                .wrapping_add((line.extdsize() as usize).wrapping_mul(size_of::<grid_extd_entry>()))
+            },
+        )
+    }
+    fn mark_prompt(&mut self, py: u_int, output: bool) {
+        let line = py.wrapping_add(self.hsize);
+        if line > self.hsize.wrapping_add(self.sy).wrapping_sub(1) {
+            return;
+        }
+        line_at_mut(self, line).flags |= if output {
+            crate::consts::GRID_LINE_START_OUTPUT
+        } else {
+            crate::consts::GRID_LINE_START_PROMPT
+        };
+    }
+    fn resize_screen(
+        &mut self,
+        sx: u_int,
+        sy: u_int,
+        reflow: bool,
+        eat_empty: bool,
+        cursor: bool,
+        position: (u_int, u_int),
+    ) -> (u_int, u_int) {
+        let (mut cx, mut cy) = (position.0, self.hsize + position.1);
+        let sx = sx.max(1);
+        let sy = sy.max(1);
+        let reflow = reflow && sx != self.sx;
+        self.sx = sx;
+        if sy != self.sy {
+            resize_height(self, sy, eat_empty, position.1, &mut cy);
+        }
+        if reflow {
+            let wrapped = if cursor {
+                self.wrap_position(cx, cy)
+            } else {
+                (0, 0)
+            };
+            if cursor {
+                log_debug(
+                    c"%s: cursor %u,%u is %u,%u",
+                    fmt_args![c"screen_reflow".as_ptr(), cx, cy, wrapped.0, wrapped.1],
+                );
+            }
+            self.reflow(sx);
+            (cx, cy) = if cursor {
+                self.unwrap_position(wrapped.0, wrapped.1)
+            } else {
+                (0, self.hsize)
+            };
+            if cursor {
+                log_debug(
+                    c"%s: new cursor is %u,%u",
+                    fmt_args![c"screen_reflow".as_ptr(), cx, cy],
+                );
+            }
+        }
+        if cy >= self.hsize {
+            (cx, cy - self.hsize)
+        } else {
+            (0, 0)
+        }
+    }
+    fn copy_from_history(&mut self, source: &Self, lines: u_int) {
+        self.flags |= GRID_HISTORY;
+        self.duplicate_lines(0, source, 0, lines);
+        self.sy = lines.wrapping_sub(source.hsize);
+        self.hsize = source.hsize;
+        self.hscrolled = source.hscrolled;
+    }
+    fn set_history_limit(&mut self, limit: u_int) {
+        self.hlimit = limit;
+        self.collect_history(true);
+    }
+    fn history_enabled(&self) -> bool {
+        self.flags & GRID_HISTORY != 0
+    }
+    fn set_history_enabled(&mut self, enabled: bool) {
+        if enabled {
+            self.flags |= GRID_HISTORY;
+        } else {
+            self.flags &= !GRID_HISTORY;
+        }
+    }
+    fn width(&self) -> u_int {
+        self.sx
+    }
+    fn height(&self) -> u_int {
+        self.sy
+    }
+    fn history_size(&self) -> u_int {
+        self.hsize
+    }
+    fn history_limit(&self) -> u_int {
+        self.hlimit
+    }
+    fn line_info(&self, py: u_int) -> GridLineInfo {
+        grid_line_info(self, py)
+    }
+    fn peek_line(&self, py: u_int) -> Option<GridLineInfo> {
+        grid_peek_info(self, py)
+    }
+    fn mark_wrapped(&mut self, py: u_int) {
+        grid_mark_wrapped(self, py)
+    }
+
     type Cell = grid_cell;
     type Screen = crate::screen::RustScreen;
 
@@ -1686,72 +1897,6 @@ fn cell_matches_entry(gc: &grid_cell, gce: &grid_cell_entry) -> bool {
     }
 }
 
-
-impl grid {
-    /// Returns text for one stored cell: padding is empty and a tab stays a tab.
-pub(crate) fn cell_bytes(&self, px: u_int, py: u_int) -> std::borrow::Cow<'_, [u8]> {
-    use std::borrow::Cow;
-    let gl = line_at(self, py);
-    unsafe {
-        let mut ud = utf8_data::default();
-        if px >= gl.cellsize() {
-            return Cow::Borrowed(b" ");
-        }
-        let gce = &(*gl).celldata()[px as usize];
-        if gce.flags as core::ffi::c_int & GRID_FLAG_PADDING != 0 {
-            return Cow::Borrowed(&[]);
-        }
-        if !(gce.flags as core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
-            return Cow::Borrowed(core::slice::from_ref(&gce.value.data.data));
-        }
-        if gce.flags as core::ffi::c_int & GRID_FLAG_TAB != 0 {
-            return Cow::Borrowed(b"\t");
-        }
-        utf8_to_data(
-            (*gl).extddata()[gce.value.offset as usize].data,
-            &mut ud,
-        );
-        if ud.size as core::ffi::c_int == 0 as core::ffi::c_int {
-            return Cow::Borrowed(&[]);
-        }
-        Cow::Owned(ud.data[..ud.size as usize].to_vec())
-    }
-}
-
-    /// Tests the compact representation using the writer's redraw-elision rules.
-    pub(crate) fn can_skip_cell(&self, px: u_int, py: u_int, gc: &grid_cell) -> bool {
-        let gl = line_at(self, py);
-        if px >= gl.cellsize() {
-            grid_cells_equal(gc, &grid_default_cell) != 0
-        } else {
-            cell_matches_entry(gc, &gl.celldata()[px as usize])
-        }
-    }
-
-    /// Returns line, compact-cell and extended-cell counts and byte costs.
-    pub(crate) fn storage_usage(&self) -> [(u_int, usize); 3] {
-        let lines = self.hsize.wrapping_add(self.sy);
-        let (mut cells, mut extended) = (0_u32, 0_u32);
-        for line in &self.linedata[..lines as usize] {
-            cells = cells.wrapping_add(line.cellsize());
-            extended = extended.wrapping_add(line.extdsize());
-        }
-        [(lines, (lines as usize).wrapping_mul(size_of::<grid_line>())),
-         (cells, (cells as usize).wrapping_mul(size_of::<grid_cell_entry>())),
-         (extended, (extended as usize).wrapping_mul(size_of::<grid_extd_entry>()))]
-    }
-
-    /// Returns the bytes allocated to lines and both kinds of stored cell.
-    pub(crate) fn storage_bytes(&self) -> usize {
-        let lines = self.hsize.wrapping_add(self.sy);
-        self.linedata[..lines as usize].iter().fold(
-            (lines as usize).wrapping_mul(size_of::<grid_line>()),
-            |size, line| size.wrapping_add((line.cellsize() as usize).wrapping_mul(size_of::<grid_cell_entry>()))
-                .wrapping_add((line.extdsize() as usize).wrapping_mul(size_of::<grid_extd_entry>()))
-        )
-    }
-}
-
 /// Immutable observations of a stored line; no cell allocation leaves the grid.
 ///
 /// ```compile_fail
@@ -1770,31 +1915,27 @@ pub struct GridLineInfo {
 }
 
 fn line_info(line: &grid_line) -> GridLineInfo {
-    GridLineInfo { cellused: line.cellused, flags: line.flags, time: line.time, cells: line.cellsize() }
+    GridLineInfo {
+        cellused: line.cellused,
+        flags: line.flags,
+        time: line.time,
+        cells: line.cellsize(),
+    }
 }
 
 /// Observes a line using underlying storage bounds, including reserved lines.
-pub fn grid_line_info(gd: &grid, py: u_int) -> GridLineInfo {
+fn grid_line_info(gd: &grid, py: u_int) -> GridLineInfo {
     line_info(line_at(gd, py))
 }
 
 /// Observes a line only if it belongs to the history or visible grid.
-pub fn grid_peek_info(gd: &grid, py: u_int) -> Option<GridLineInfo> {
+fn grid_peek_info(gd: &grid, py: u_int) -> Option<GridLineInfo> {
     grid_peek_line(gd, py).map(line_info)
 }
 
 /// Marks a stored line as continuing onto the following line.
-pub fn grid_mark_wrapped(gd: &mut grid, py: u_int) {
+fn grid_mark_wrapped(gd: &mut grid, py: u_int) {
     line_at_mut(gd, py).flags |= GRID_LINE_WRAPPED;
-}
-
-impl grid {
-    /// Records a prompt or output start marker for a visible line.
-    pub(crate) fn mark_prompt(&mut self, py: u_int, output: bool) {
-        let line = py.wrapping_add(self.hsize);
-        if line > self.hsize.wrapping_add(self.sy).wrapping_sub(1) { return; }
-        line_at_mut(self, line).flags |= if output { crate::consts::GRID_LINE_START_OUTPUT } else { crate::consts::GRID_LINE_START_PROMPT };
-    }
 }
 
 /// Give the screen a new height, moving lines into and out of the history as
@@ -1859,63 +2000,10 @@ fn resize_height(gd: &mut grid, sy: u_int, eat_empty: bool, cursor_y: u_int, cy:
     }
 }
 
-
 impl grid {
-    /// Resizes visible rows and columns, preserving the selected cursor cell.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn resize_screen(&mut self, sx: u_int, sy: u_int, reflow: bool, eat_empty: bool, cursor: bool, position: (u_int, u_int)) -> (u_int, u_int) {
-        let (mut cx, mut cy) = (position.0, self.hsize + position.1);
-        let sx = sx.max(1);
-        let sy = sy.max(1);
-        let reflow = reflow && sx != self.sx;
-        self.sx = sx;
-        if sy != self.sy { resize_height(self, sy, eat_empty, position.1, &mut cy); }
-        if reflow {
-            let wrapped = if cursor { self.wrap_position(cx, cy) } else { (0, 0) };
-            if cursor {
-                log_debug(c"%s: cursor %u,%u is %u,%u", fmt_args![c"screen_reflow".as_ptr(), cx, cy, wrapped.0, wrapped.1]);
-            }
-            self.reflow(sx);
-            (cx, cy) = if cursor { self.unwrap_position(wrapped.0, wrapped.1) } else { (0, self.hsize) };
-            if cursor {
-                log_debug(c"%s: new cursor is %u,%u", fmt_args![c"screen_reflow".as_ptr(), cx, cy]);
-            }
-        }
-        if cy >= self.hsize { (cx, cy - self.hsize) } else { (0, 0) }
-    }
-
-    /// Copies the chosen source lines and their history coordinates for copy mode.
-    pub(crate) fn copy_from_history(&mut self, source: &Self, lines: u_int) {
-        self.flags |= GRID_HISTORY;
-        self.duplicate_lines(0, source, 0, lines);
-        self.sy = lines.wrapping_sub(source.hsize);
-        self.hsize = source.hsize;
-        self.hscrolled = source.hscrolled;
-    }
-
-    /// Applies a new history limit and collects the excess history immediately.
-    pub(crate) fn set_history_limit(&mut self, limit: u_int) {
-        self.hlimit = limit;
-        self.collect_history(true);
-    }
-
-    /// Reports whether scrolling retains history.
-    pub(crate) fn history_enabled(&self) -> bool { self.flags & GRID_HISTORY != 0 }
-
-    /// Enables or suspends history retention without discarding retained lines.
-    pub(crate) fn set_history_enabled(&mut self, enabled: bool) {
-        if enabled { self.flags |= GRID_HISTORY; } else { self.flags &= !GRID_HISTORY; }
-    }
-
-    /// The visible width of this grid.
-    pub(crate) fn width(&self) -> u_int { self.sx }
-    /// The visible height of this grid.
-    pub(crate) fn height(&self) -> u_int { self.sy }
-    /// The number of retained history lines.
-    pub(crate) fn history_size(&self) -> u_int { self.hsize }
-    /// The maximum history size.
-    pub(crate) fn history_limit(&self) -> u_int { self.hlimit }
     /// The retained lines available for restoring visible height.
     #[cfg(test)]
-    pub(crate) fn scrolled_history(&self) -> u_int { self.hscrolled }
+    pub(crate) fn scrolled_history(&self) -> u_int {
+        self.hscrolled
+    }
 }

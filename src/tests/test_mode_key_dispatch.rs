@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 use super::*;
 use crate::WindowPane;
 use crate::pane_identity::PaneIdentity;

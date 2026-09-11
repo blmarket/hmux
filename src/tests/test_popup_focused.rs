@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 use super::*;
 use crate::reactor::ByteBuffer;
 use crate::server::server_client_clear_overlay;

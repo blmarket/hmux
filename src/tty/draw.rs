@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 use super::driver::tty_client;
 use super::driver::{
     tty_attributes, tty_check_codeset, tty_cursor, tty_default_attributes, tty_fake_bce,
@@ -11,7 +12,7 @@ pub use crate::consts::{
 use crate::fmt_args;
 use crate::grid::grid_cells_look_equal;
 use crate::grid::grid_view_get_cell;
-use crate::grid::{grid_default_cell, grid_peek_info};
+use crate::grid::{grid_default_cell};
 use crate::log::{fatalx, log_debug, log_get_level};
 use crate::screen::Screen;
 use crate::terminfo::{TerminalCapabilities, tty_term_of};
@@ -125,7 +126,7 @@ pub unsafe fn tty_draw_line(
         }
         let gd = s.grid();
         let line_y = gd.history_size().wrapping_add(py);
-        let cellsize: u_int = grid_peek_info(gd, line_y)
+        let cellsize: u_int = (gd).peek_line(line_y)
             .expect("a drawn line belongs to the screen")
             .cells;
         let ex: u_int = if s.grid().width() > cellsize {
@@ -206,7 +207,7 @@ pub unsafe fn tty_draw_line(
             if py != 0 as u_int && atx == 0 as u_int && tty.cx >= tty.sx && nx == tty.sx {
                 let gd = s.grid();
                 let previous_y = gd.history_size().wrapping_add(py).wrapping_sub(1);
-                let gl = grid_peek_info(gd, previous_y)
+                let gl = (gd).peek_line(previous_y)
                     .expect("the preceding line belongs to the screen");
                 if gl.flags & GRID_LINE_WRAPPED != 0 {
                     wrapped = 1 as core::ffi::c_int;

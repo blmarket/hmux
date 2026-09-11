@@ -20,6 +20,7 @@
 //! flag, a pane sitting outside its own window making a width subtraction wrap
 //! — the oddity is pinned, not fixed.
 
+use crate::grid::Grid as _;
 use crate::WindowPane;
 use crate::pane_identity::PaneIdentity;
 use crate::window_dimensions::WindowDimensionsState;
@@ -1214,7 +1215,7 @@ fn a_collected_line_moves_up_with_the_scroll() {
         screen_write_collect_end(&mut w.ctx());
         w.move_to(0, 2);
         screen_write_linefeed(&mut w.ctx(), 0, 8);
-        let gl = crate::grid::grid_line_info(w.grid(), w.grid().history_size());
+        let gl = (w.grid()).line_info(w.grid().history_size());
         assert_eq!(gl.flags & crate::screen::GRID_LINE_WRAPPED, 0);
     }
     assert_eq!(w.lines(), ["", "", ""]);

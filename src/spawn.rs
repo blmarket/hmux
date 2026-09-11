@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 use crate::WindowPane as _;
 use crate::compat::error_message;
 

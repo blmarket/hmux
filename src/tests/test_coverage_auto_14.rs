@@ -8,6 +8,7 @@
 //! Every test builds a [`Grid`] or [`Screen`] fixture and holds
 //! [`globals`] where global state might be touched.
 
+use crate::grid::Grid as _;
 use crate::grid::{
     GRID_FLAG_PADDING, GRID_HISTORY, GRID_STRING_EMPTY_CELLS, GRID_STRING_TRIM_SPACES,
     grid_cells_equal, grid_cells_look_equal, grid_clear, grid_clear_history, grid_clear_lines,
@@ -50,7 +51,7 @@ fn grid_create_dimensions_and_flags() {
         assert_eq!(g.history_size(), 0);
         assert_eq!(g.scrolled_history(), 0);
         assert!(g.history_enabled());
-        assert!(crate::grid::grid_peek_info(&g, 0).is_some());
+        assert!((&g).peek_line(0).is_some());
     }
     let plain = Grid::new(8, 4, 0);
     {

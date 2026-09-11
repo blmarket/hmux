@@ -5,7 +5,7 @@ use crate::pane_identity::PaneIdentity;
 use crate::pane_scrollbar::{PaneScrollbarSlider};
 
 use super::*;
-use crate::grid::{grid_create, grid_get_cell, grid_line_info, grid_scroll_history, grid_set_cell};
+use crate::grid::{grid_create, grid_get_cell, grid_scroll_history, grid_set_cell};
 use crate::tests::test_fixtures::{Args, Pane, Target, Window, ascii, globals};
 
 unsafe fn open_copy(target: &mut Target) -> &mut window_mode_entry {

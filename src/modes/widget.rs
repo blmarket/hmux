@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 use crate::WindowPane;
 use crate::args::RustArguments;
 use crate::cmd::CmdqStateRef;

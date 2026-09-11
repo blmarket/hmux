@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 #[cfg(test)]
 pub(crate) use crate::window_pane::{on_pane, on_pane_error};
 use crate::window_pane::{GLOBAL_PANE_INDEX, window_pane_create, window_pane_destroy};

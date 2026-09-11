@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 use super::*;
 use crate::consts::{PANE_STATUSREADY, PANE_STATUSDRAWN, PANE_REDRAW, MODE_CURSOR};
 use crate::format::format_single;

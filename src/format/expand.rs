@@ -22,7 +22,7 @@ use crate::ffi::{
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc, format_buf};
 use crate::grid::{Grid, Hyperlinks, grid_view_get_cell};
-use crate::grid::{grid_default_cell, grid_peek_info};
+use crate::grid::{grid_default_cell};
 use crate::job::{job_free, job_run};
 
 use crate::log::{log_debug, log_get_level};
@@ -6269,7 +6269,7 @@ pub unsafe fn format_grid_word(gd: &grid, mut x: u_int, mut y: u_int) -> Option<
                     if y == 0 as u_int {
                         break;
                     }
-                    gl = grid_peek_info(gd, y.wrapping_sub(1 as u_int));
+                    gl = (gd).peek_line(y.wrapping_sub(1 as u_int));
                     if !gl.is_some_and(|gl| gl.flags & GRID_LINE_WRAPPED != 0) {
                         break;
                     }
@@ -6289,7 +6289,7 @@ pub unsafe fn format_grid_word(gd: &grid, mut x: u_int, mut y: u_int) -> Option<
                     if y == gd.history_size().wrapping_add(gd.height()).wrapping_sub(1 as u_int) {
                         break;
                     }
-                    gl = grid_peek_info(gd, y);
+                    gl = (gd).peek_line(y);
                     if !gl.is_some_and(|gl| gl.flags & GRID_LINE_WRAPPED != 0) {
                         break;
                     }

@@ -12,7 +12,7 @@ use super::state::{screen_alternate_off, screen_alternate_on, screen_reset_tabs}
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::grid::grid_cells_equal;
-use crate::grid::{Grid, grid_default_cell, grid_line_info, grid_peek_info};
+use crate::grid::{Grid, grid_default_cell};
 use crate::pane_geometry::PaneGeometryState;
 
 pub(super) struct screen_write_state {
@@ -921,10 +921,10 @@ pub(super) unsafe fn screen_write_fast_copy(
             );
             let mut xx = px;
             while xx < px.wrapping_add(nx) {
-                let gl = grid_peek_info(gd, yy).expect("a copied line is in the grid");
+                let gl = (gd).peek_line(yy).expect("a copied line is in the grid");
                 let s = ctx.screen_mut();
                 let (sx, sy) = s.cursor();
-                let sgl = grid_line_info(RustScreen::grid_mut(s), sy);
+                let sgl = (RustScreen::grid_mut(s)).line_info(sy);
                 if xx >= gl.cells && sx >= sgl.cells {
                     break;
                 }
@@ -1342,7 +1342,7 @@ pub(super) unsafe fn screen_write_backspace(ctx: &mut screen_write_ctx) {
             }
             let grid = RustScreen::grid_mut(ctx.screen_mut());
             let previous = grid.history_size().wrapping_add(cy).wrapping_sub(1);
-            if grid_line_info(grid, previous).flags & GRID_LINE_WRAPPED != 0 {
+            if (grid).line_info(previous).flags & GRID_LINE_WRAPPED != 0 {
                 cy = cy.wrapping_sub(1);
                 cx = grid.width().wrapping_sub(1);
             }
@@ -1684,7 +1684,7 @@ pub(super) fn screen_write_clearline(ctx: &mut screen_write_ctx, bg: u_int) {
         let grid = RustScreen::grid_mut(ctx.screen_mut());
         let sx = grid.width();
         let line = grid.history_size().wrapping_add(cy);
-        if grid_line_info(grid, line).cells == 0 && (bg == 8 || bg == 9) {
+        if (grid).line_info(line).cells == 0 && (bg == 8 || bg == 9) {
             return;
         }
         grid_view_clear(grid, 0, cy, sx, 1, bg);
@@ -1710,7 +1710,7 @@ pub(super) fn screen_write_clearendofline(ctx: &mut screen_write_ctx, bg: u_int)
         let grid = RustScreen::grid_mut(ctx.screen_mut());
         let sx = grid.width();
         let line = grid.history_size().wrapping_add(cy);
-        let used = grid_line_info(grid, line).cells;
+        let used = (grid).line_info(line).cells;
         if cx > sx.wrapping_sub(1) || cx >= used && (bg == 8 || bg == 9) {
             return;
         }
@@ -1833,7 +1833,7 @@ pub(super) unsafe fn screen_write_linefeed(ctx: &mut screen_write_ctx, wrapped: 
         let grid = RustScreen::grid_mut(s);
         let line = grid.history_size().wrapping_add(cy);
         if wrapped != 0 {
-            crate::grid::grid_mark_wrapped(grid, line);
+            (grid).mark_wrapped(line);
         }
         log_debug(
             c"%s: at %u,%u (region %u-%u)",
@@ -2733,7 +2733,7 @@ pub(super) unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cel
         let (cx, cy) = s.cursor();
         let gd = RustScreen::grid_mut(s);
         let line_y = gd.history_size().wrapping_add(cy);
-        let extended = grid_line_info(gd, line_y).flags & GRID_LINE_EXTENDED != 0;
+        let extended = (gd).line_info(line_y).flags & GRID_LINE_EXTENDED != 0;
         if extended {
             now_gc = grid_view_get_cell(gd, cx, cy);
             if screen_write_overwrite(ctx, &mut now_gc, width) != 0 {

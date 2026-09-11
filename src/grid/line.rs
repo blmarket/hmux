@@ -30,7 +30,7 @@ pub(super) struct grid_cell_entry {
     pub(super) flags: u_char,
 }
 const _: () = assert!(size_of::<grid_cell_entry>() == 5);
-use crate::types::{time_t, u_int, u_char, u_short, utf8_char};
+use crate::types::{time_t, u_char, u_int, u_short, utf8_char};
 use ::core::ffi::c_int;
 use ::core::ptr::NonNull;
 use ::core::slice;

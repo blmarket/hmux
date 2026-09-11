@@ -1023,7 +1023,7 @@ pub(crate) unsafe fn screen_print(s: &RustScreen, line: c_int) -> CString {
             buf[last..last + header.len()].copy_from_slice(header.as_bytes());
             last += header.len();
 
-            let gl = crate::grid::grid_line_info(gd, y);
+            let gl = (gd).line_info(y);
             for x in 0..gl.cellused {
                 let bytes = gd.cell_bytes(x, y);
                 if bytes.is_empty() {

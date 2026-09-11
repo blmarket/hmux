@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 use super::*;
 use crate::reactor::ByteBuffer;
 use crate::tests::test_fixtures::{Target, globals, zeroed_client, zeroed_term};
