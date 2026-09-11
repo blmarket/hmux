@@ -1,7 +1,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::args::args_strtonum_and_expand;
 use crate::cmd::{CmdqItemRef, cmdq_item_ref_of};
 use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::ffi::strtol;
@@ -215,14 +214,14 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }) != 0
     {
         unsafe {
-            np = args_strtonum_and_expand(
-                args,
-                'N' as i32 as u_char,
-                1 as core::ffi::c_longlong,
-                UINT_MAX as core::ffi::c_longlong,
-                item,
-                &mut cause,
-            ) as u_int
+            np = args
+                .strtonum_and_expand(
+                    'N' as i32 as u_char,
+                    1 as core::ffi::c_longlong,
+                    UINT_MAX as core::ffi::c_longlong,
+                    item,
+                    &mut cause,
+                ) as u_int
         };
         if let Some(cause) = cause.as_ref() {
             unsafe { item.error(c"repeat count %s", fmt_args![cause.as_c_str()]) };

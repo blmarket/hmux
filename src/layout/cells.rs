@@ -7,7 +7,6 @@ use crate::window_scrollbar::WindowScrollbarState;
 
 use crate::window_dimensions::WindowDimensionsState;
 
-use crate::args::{args_percentage_and_expand, args_strtonum_and_expand};
 use crate::fmt_args;
 use crate::log::{fatalx, log_debug};
 use crate::notify::notify_window;
@@ -1757,8 +1756,7 @@ impl WindowRef {
             let mut size = -1;
             let mut parser_cause = None;
             if args.argument_flag_count(b'l') != 0 {
-                size = args_percentage_and_expand(
-                    args,
+                size = args.percentage_and_expand(
                     b'l',
                     0,
                     INT_MAX as core::ffi::c_longlong,
@@ -1768,7 +1766,7 @@ impl WindowRef {
                 ) as c_int;
             } else if args.argument_flag_count(b'p') != 0 {
                 size =
-                    args_strtonum_and_expand(args, b'p', 0, 100, item, &mut parser_cause) as c_int;
+                    args.strtonum_and_expand( b'p', 0, 100, item, &mut parser_cause) as c_int;
                 if parser_cause.is_none() {
                     size = curval.wrapping_mul(size as u_int).wrapping_div(100) as c_int;
                 }
@@ -1812,8 +1810,7 @@ impl WindowRef {
             let mut oy = INT_MAX;
 
             if args.argument_flag_count(b'x') != 0 {
-                sx = args_percentage_and_expand(
-                    args,
+                sx = args.percentage_and_expand(
                     b'x',
                     0,
                     size.width.wrapping_sub(1) as core::ffi::c_longlong,
@@ -1826,8 +1823,7 @@ impl WindowRef {
                 }
             }
             if args.argument_flag_count(b'y') != 0 {
-                sy = args_percentage_and_expand(
-                    args,
+                sy = args.percentage_and_expand(
                     b'y',
                     0,
                     size.height.wrapping_sub(1) as core::ffi::c_longlong,
@@ -1840,8 +1836,7 @@ impl WindowRef {
                 }
             }
             if args.argument_flag_count(b'X') != 0 {
-                ox = args_percentage_and_expand(
-                    args,
+                ox = args.percentage_and_expand(
                     b'X',
                     -sx as core::ffi::c_longlong,
                     size.width as core::ffi::c_longlong,
@@ -1854,8 +1849,7 @@ impl WindowRef {
                 }
             }
             if args.argument_flag_count(b'Y') != 0 {
-                oy = args_percentage_and_expand(
-                    args,
+                oy = args.percentage_and_expand(
                     b'Y',
                     -sy as core::ffi::c_longlong,
                     size.height as core::ffi::c_longlong,

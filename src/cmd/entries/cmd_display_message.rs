@@ -38,7 +38,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::args::args_strtonum;
 use crate::cmd::cmd_find_best_client_for_session;
 use crate::cmd::cmd_get_args;
 
@@ -128,7 +127,7 @@ fn cmd_display_message_delay(args: &RustArguments) -> Result<c_int, std::ffi::CS
         return Ok(-1);
     }
     let mut cause = None;
-    let delay = args_strtonum(args, b'd', 0, UINT_MAX as c_longlong, &mut cause);
+    let delay = args.strtonum(b'd', 0, UINT_MAX as c_longlong, &mut cause);
     match cause {
         None => Ok(delay as c_int),
         Some(cause) => Err(cause),

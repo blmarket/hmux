@@ -15,7 +15,7 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::args::{args_make_commands, args_strtonum};
+use crate::args::args_make_commands;
 use crate::cmd::CmdqItemRef;
 use crate::cmd::cmd_get_args;
 use crate::args::cmd_make_commands_prepare;
@@ -149,7 +149,7 @@ unsafe fn cmd_display_panes_delay(
             return Some(s.options().number(c"display-panes-time") as u_int);
         }
         let mut cause = None;
-        let delay = args_strtonum(args, b'd', 0, UINT_MAX as c_longlong, &mut cause) as u_int;
+        let delay = args.strtonum(b'd', 0, UINT_MAX as c_longlong, &mut cause) as u_int;
         if let Some(cause) = cause.as_ref() {
             item.error(c"delay %s", fmt_args![cause.as_c_str()]);
             return None;

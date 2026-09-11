@@ -84,7 +84,7 @@ impl RustArguments {
     }
 
     /// Copies arguments while expanding positional templates with the supplied words.
-    pub unsafe fn copy_with_arguments(&self, argv: &[CString]) -> Box<Self> {
+    pub(crate) unsafe fn copy_with_arguments(&self, argv: &[CString]) -> Box<Self> {
         unsafe {
             cmd_log_argv(argv, c"%s", fmt_args![c"args_copy".as_ptr()]);
             let mut new_args = Box::<Self>::default();
@@ -116,7 +116,7 @@ impl RustArguments {
     }
 
     /// Returns positional arguments as strings, printing command lists and skipping empty values.
-    pub unsafe fn to_vector(&self) -> Vec<CString> {
+    pub(crate) unsafe fn to_vector(&self) -> Vec<CString> {
         unsafe {
             let mut argv = Vec::new();
             for value in self.values.iter() {
@@ -185,6 +185,65 @@ impl Arguments for RustArguments {
             Some(entry) => entry.values.iter().collect(),
             None => Vec::new(),
         }
+    }
+
+    unsafe fn copy_with_arguments(&self, argv: &[CString]) -> Box<Self>
+    where
+        Self: Sized,
+    {
+        unsafe { RustArguments::copy_with_arguments(self, argv) }
+    }
+
+    unsafe fn to_vector(&self) -> Vec<CString> {
+        unsafe { RustArguments::to_vector(self) }
+    }
+
+    unsafe fn print(&self) -> CString {
+        unsafe { args_print(self) }
+    }
+
+    fn strtonum(
+        &self,
+        flag: u_char,
+        minimum: core::ffi::c_longlong,
+        maximum: core::ffi::c_longlong,
+        cause: &mut Option<CString>,
+    ) -> core::ffi::c_longlong {
+        args_strtonum(self, flag, minimum, maximum, cause)
+    }
+
+    unsafe fn strtonum_and_expand(
+        &self,
+        flag: u_char,
+        minimum: core::ffi::c_longlong,
+        maximum: core::ffi::c_longlong,
+        item: &crate::cmd::cmdq_item,
+        cause: &mut Option<CString>,
+    ) -> core::ffi::c_longlong {
+        unsafe { args_strtonum_and_expand(self, flag, minimum, maximum, item, cause) }
+    }
+
+    fn percentage(
+        &self,
+        flag: u_char,
+        minimum: core::ffi::c_longlong,
+        maximum: core::ffi::c_longlong,
+        current: core::ffi::c_longlong,
+        cause: &mut Option<CString>,
+    ) -> core::ffi::c_longlong {
+        args_percentage(self, flag, minimum, maximum, current, cause)
+    }
+
+    unsafe fn percentage_and_expand(
+        &self,
+        flag: u_char,
+        minimum: core::ffi::c_longlong,
+        maximum: core::ffi::c_longlong,
+        current: core::ffi::c_longlong,
+        item: &crate::cmd::cmdq_item,
+        cause: &mut Option<CString>,
+    ) -> core::ffi::c_longlong {
+        unsafe { args_percentage_and_expand(self, flag, minimum, maximum, current, item, cause) }
     }
 
 }
@@ -437,7 +496,7 @@ unsafe fn args_parse_flags(
     }
 }
 
-pub unsafe fn args_parse(
+pub(crate) unsafe fn args_parse(
     parse: &args_parse_t,
     values: &[ArgsValue],
     cause: &mut Option<CString>,
@@ -548,7 +607,7 @@ unsafe fn args_copy_copy_value(to: &mut ArgsValue, from: &ArgsValue, argv: &[CSt
     }
 }
 
-pub fn args_from_vector(argv: &[CString]) -> Vec<ArgsValue> {
+pub(crate) fn args_from_vector(argv: &[CString]) -> Vec<ArgsValue> {
     argv.iter()
         .map(|arg| ArgsValue::String(arg.clone()))
         .collect()
@@ -587,7 +646,7 @@ unsafe fn args_print_add_value(out: &mut Vec<u8>, value: &ArgsValue) {
     }
 }
 
-pub unsafe fn args_print(args: &RustArguments) -> CString {
+pub(crate) unsafe fn args_print(args: &RustArguments) -> CString {
     unsafe {
         let mut out: Vec<u8> = Vec::new();
         for entry in args.tree.values() {
@@ -631,7 +690,7 @@ pub unsafe fn args_print(args: &RustArguments) -> CString {
     }
 }
 
-pub fn args_set(
+pub(crate) fn args_set(
     args: &mut RustArguments,
     flag: u_char,
     value: Option<ArgsValue>,
@@ -705,7 +764,7 @@ pub(crate) unsafe fn args_make_commands(
     }
 }
 
-pub fn args_make_commands_get_command(state: &args_command_state) -> CString {
+pub(crate) fn args_make_commands_get_command(state: &args_command_state) -> CString {
     if let Some(cmdlist) = state.cmdlist.as_ref() {
         return match cmdlist.command(0) {
             Some(first) => crate::CommandEntry::name(cmd_get_entry(&first)).to_owned(),
@@ -736,7 +795,7 @@ fn no_number(cause: &mut Option<CString>, errstr: &CStr) -> core::ffi::c_longlon
     0
 }
 
-pub fn args_strtonum(
+pub(crate) fn args_strtonum(
     args: &RustArguments,
     flag: u_char,
     minval: core::ffi::c_longlong,
@@ -755,7 +814,7 @@ pub fn args_strtonum(
     }
 }
 
-pub unsafe fn args_strtonum_and_expand(
+pub(crate) unsafe fn args_strtonum_and_expand(
     args: &RustArguments,
     flag: u_char,
     minval: core::ffi::c_longlong,
@@ -779,7 +838,7 @@ pub unsafe fn args_strtonum_and_expand(
     }
 }
 
-pub fn args_percentage(
+pub(crate) fn args_percentage(
     args: &RustArguments,
     flag: u_char,
     minval: core::ffi::c_longlong,
@@ -824,7 +883,7 @@ fn share_of(
     ll
 }
 
-pub fn args_string_percentage(
+pub(crate) fn args_string_percentage(
     value: &CStr,
     minval: core::ffi::c_longlong,
     maxval: core::ffi::c_longlong,
@@ -837,7 +896,7 @@ pub fn args_string_percentage(
 /// Like `args_string_percentage`, but expanding the value as a format first.
 /// An empty value is read as a plain number here, which is what reading the
 /// byte in front of the string used to come to.
-pub unsafe fn args_string_percentage_and_expand(
+pub(crate) unsafe fn args_string_percentage_and_expand(
     value: &CStr,
     minval: core::ffi::c_longlong,
     maxval: core::ffi::c_longlong,
@@ -866,7 +925,7 @@ pub unsafe fn args_string_percentage_and_expand(
     }
 }
 
-pub unsafe fn args_percentage_and_expand(
+pub(crate) unsafe fn args_percentage_and_expand(
     args: &RustArguments,
     flag: u_char,
     minval: core::ffi::c_longlong,

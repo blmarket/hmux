@@ -1,7 +1,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::args::args_strtonum;
 use crate::cmd::cmd_get_args;
 
 use crate::compat::strtonum;
@@ -76,13 +75,13 @@ unsafe fn cmd_resize_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         args.argument_flag_count(flag)
     }) != 0
     {
-        sx = args_strtonum(
-            args,
-            'x' as i32 as u_char,
-            WINDOW_MINIMUM as core::ffi::c_longlong,
-            WINDOW_MAXIMUM as core::ffi::c_longlong,
-            &mut cause,
-        ) as u_int;
+        sx = args
+            .strtonum(
+                'x' as i32 as u_char,
+                WINDOW_MINIMUM as core::ffi::c_longlong,
+                WINDOW_MAXIMUM as core::ffi::c_longlong,
+                &mut cause,
+            ) as u_int;
         if let Some(cause) = cause.as_ref() {
             unsafe { item.error(c"width %s", fmt_args![cause.as_c_str()]) };
             return CMD_RETURN_ERROR;
@@ -93,13 +92,13 @@ unsafe fn cmd_resize_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         args.argument_flag_count(flag)
     }) != 0
     {
-        sy = args_strtonum(
-            args,
-            'y' as i32 as u_char,
-            WINDOW_MINIMUM as core::ffi::c_longlong,
-            WINDOW_MAXIMUM as core::ffi::c_longlong,
-            &mut cause,
-        ) as u_int;
+        sy = args
+            .strtonum(
+                'y' as i32 as u_char,
+                WINDOW_MINIMUM as core::ffi::c_longlong,
+                WINDOW_MAXIMUM as core::ffi::c_longlong,
+                &mut cause,
+            ) as u_int;
         if let Some(cause) = cause.as_ref() {
             unsafe { item.error(c"height %s", fmt_args![cause.as_c_str()]) };
             return CMD_RETURN_ERROR;

@@ -4,7 +4,7 @@ use super::{
     cmd_find_target, cmd_find_valid_state,
 };
 
-use crate::args::{RustArguments, args_print};
+use crate::args::RustArguments;
 use crate::cfg::cfg_add_cause;
 use crate::cfg::configuration_finished;
 use crate::cmd::{CommandEntry, RustCommandContext};
@@ -1093,7 +1093,7 @@ impl CmdqItemRef {
                 fmt_args![name.as_c_str(), item.as_ptr()],
             );
             new_state.add_format(c"hook", c"%s", fmt_args![name.as_c_str()]);
-            let arguments = args_print(args_0);
+            let arguments = unsafe { args_0.print() };
             new_state.add_format(c"hook_arguments", c"%s", fmt_args![arguments.as_c_str()]);
             let arguments = args_0;
             i = 0 as u_int;

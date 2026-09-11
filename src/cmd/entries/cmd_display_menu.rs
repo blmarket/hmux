@@ -1,7 +1,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::args::{args_percentage, args_strtonum};
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::cmdq_item_ref_of;
@@ -428,8 +427,7 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             starting_choice = -(1 as core::ffi::c_int);
             current_block = 4166486009154926805;
         } else {
-            starting_choice = args_strtonum(
-                args,
+            starting_choice = args.strtonum(
                 'C' as i32 as u_char,
                 0 as core::ffi::c_longlong,
                 UINT_MAX as core::ffi::c_longlong,
@@ -660,8 +658,7 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }) != 0
         {
             {
-                h = args_percentage(
-                    args,
+                h = args.percentage(
                     'h' as i32 as u_char,
                     1 as core::ffi::c_longlong,
                     sy as core::ffi::c_longlong,
@@ -688,8 +685,7 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 }) != 0
                 {
                     {
-                        w = args_percentage(
-                            args,
+                        w = args.percentage(
                             'w' as i32 as u_char,
                             1 as core::ffi::c_longlong,
                             sx as core::ffi::c_longlong,

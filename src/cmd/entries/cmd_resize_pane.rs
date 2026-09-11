@@ -1,7 +1,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::args::args_percentage;
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -101,8 +100,7 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }) != 0
     {
         {
-            x = args_percentage(
-                args,
+            x = args.percentage(
                 'x' as i32 as u_char,
                 0 as core::ffi::c_longlong,
                 INT_MAX as core::ffi::c_longlong,
@@ -122,8 +120,7 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     }) != 0
     {
         {
-            y = args_percentage(
-                args,
+            y = args.percentage(
                 'y' as i32 as u_char,
                 0 as core::ffi::c_longlong,
                 INT_MAX as core::ffi::c_longlong,

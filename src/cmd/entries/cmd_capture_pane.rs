@@ -26,7 +26,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::args::args_strtonum_and_expand;
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -98,14 +97,15 @@ unsafe fn cmd_capture_pane_edge(
             return CapturePaneEdge::Dash;
         }
         let mut cause = None;
-        let n = args_strtonum_and_expand(
-            args,
-            flag,
-            INT_MIN as c_longlong,
-            SHRT_MAX as c_longlong,
-            item,
-            &mut cause,
-        ) as c_int;
+        let n = unsafe {
+            args.strtonum_and_expand(
+                flag,
+                INT_MIN as c_longlong,
+                SHRT_MAX as c_longlong,
+                item,
+                &mut cause,
+            )
+        } as c_int;
         if cause.is_some() {
             CapturePaneEdge::Default
         } else {

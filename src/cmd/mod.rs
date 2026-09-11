@@ -75,7 +75,7 @@ pub use entries::cmd_run_shell::cmd_run_shell_data;
 pub use entries::cmd_source_file::cmd_source_file_data;
 pub use entries::cmd_wait_for::cmd_wait_for_flush;
 
-use crate::args::{args_make_commands, args_parse, args_print, cmd_make_commands_prepare};
+use crate::args::{args_make_commands, args_parse, cmd_make_commands_prepare};
 use crate::cmd::entries::cmd_attach_session::cmd_attach_session_entry;
 use crate::cmd::entries::cmd_bind_key::cmd_bind_key_entry;
 use crate::cmd::entries::cmd_break_pane::cmd_break_pane_entry;
@@ -616,7 +616,7 @@ pub unsafe fn cmd_copy(from: &cmd, argv: &[CString]) -> Box<cmd> {
 
 pub unsafe fn cmd_print(cmd: &cmd) -> CString {
     unsafe {
-        let s = args_print(cmd_get_args(cmd));
+        let s = cmd_get_args(cmd).print();
 
         if !s.as_bytes().is_empty() {
             xasprintf(c"%s %s", fmt_args![cmd.entry.name(), s.as_c_str()])
