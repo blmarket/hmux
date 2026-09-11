@@ -1,3 +1,4 @@
+use super::{layout_cell, LayoutAccess};
 use super::cells::{
     LAYOUT_CELL_FLOATING, LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, LAYOUT_WINDOWPANE, LayoutCellPath,
     layout_cell_for_pane, layout_count_cells, layout_create_cell, layout_free_cell,
@@ -318,7 +319,7 @@ impl WindowRef {
     /// does not fit in the eight kilobytes this writes into. Any floating panes
     /// follow the tree inside angle brackets — and are written twice, since the
     /// tree they hang in carries them too.
-    pub fn dump_layout_cell(&self, root: Option<&layout_cell>) -> Option<CString> {
+    pub(super) fn dump_layout_cell(&self, root: Option<&layout_cell>) -> Option<CString> {
         let owner = self;
 
         let payload = owner.as_window();
@@ -336,7 +337,7 @@ impl WindowRef {
             if !pane.is_alive() {
                 break;
             }
-            let Some((cell, _)) = layout_cell_for_pane(w.layout_root.as_deref(), pane) else {
+            let Some((cell, _)) = layout_cell_for_pane(w.layout().root.as_deref(), pane) else {
                 break;
             };
             if cell.flags & LAYOUT_CELL_FLOATING == 0 {
@@ -451,11 +452,12 @@ impl WindowRef {
             }
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
-            let root = w.layout_root.take();
+            let root = w.layout_mut(LayoutAccess(())).root.take();
             layout_free_cell(root);
-            w.layout_root = tree.take();
+            w.layout_mut(LayoutAccess(())).root = tree.take();
 
-            layout_assign(&mut w.panes.iter_mut(), w.layout_root.as_deref_mut(), 0);
+            let (layout, panes) = w.layout_and_panes_mut(LayoutAccess(()));
+            layout_assign(&mut panes.iter_mut(), layout.root.as_deref_mut(), 0);
 
             w.z_index.clear();
             drop(payload);
@@ -465,10 +467,17 @@ impl WindowRef {
             recalculate_sizes();
             let payload = owner.as_window();
             let w = &*payload;
-            layout_print_cell(w.layout_root.as_deref(), c"layout_parse", 0);
+            layout_print_cell(w.layout().root.as_deref(), c"layout_parse", 0);
             drop(payload);
             notify_window(c"window-layout-changed", Some(owner));
             Ok(())
         }
+    }
+}
+
+impl WindowRef {
+    pub(crate) fn dump_unzoomed_layout(&self) -> Option<CString> {
+        let w = self.as_window();
+        self.dump_layout_cell(w.layout().saved.as_deref().or(w.layout().root.as_deref()))
     }
 }

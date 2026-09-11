@@ -399,18 +399,7 @@ pub(crate) unsafe fn spawn_pane(
                 window.init_layout(&new_pane);
             }
             if sc.flags & SPAWN_FLOATING != 0 {
-                let mut payload = window.as_window_mut();
-                let root = payload
-                    .layout_root
-                    .as_deref_mut()
-                    .expect("the spawned pane has a layout");
-                let path = LayoutCellPath::for_pane(
-                    root,
-                    &crate::window::window_pane_find_by_id(new_id)
-                        .expect("the pane allocation exists"),
-                )
-                .expect("the spawned pane has a cell");
-                path.get_mut(root).unwrap().flags |= LAYOUT_CELL_FLOATING;
+                window.mark_layout_pane_floating(&new_pane);
             }
         }
         let pixels = window.dimensions().pixels;

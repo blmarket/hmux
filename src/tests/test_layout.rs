@@ -38,7 +38,7 @@ impl Layout {
         let w = { self.window.handle().as_window() };
         std::cell::Ref::filter_map(w, |w| {
             crate::layout::layout_cell_for_pane(
-                w.layout_root.as_deref(),
+                w.layout().root.as_deref(),
                 &crate::window::window_pane_find_by_id(id).expect("the pane allocation exists"),
             )
             .map(|(cell, _)| cell)
@@ -50,7 +50,7 @@ impl Layout {
         let id = unsafe { (*self.pane(pane)).pane_id() };
         let w = { self.window.handle().as_window() };
         LayoutCellPath::for_pane(
-            w.layout_root.as_deref().unwrap(),
+            w.layout().root.as_deref().unwrap(),
             &crate::window::window_pane_find_by_id(id).expect("the pane allocation exists"),
         )
         .unwrap()
@@ -60,9 +60,9 @@ impl Layout {
         let id = unsafe { (*self.pane(pane)).pane_id() };
         let w = { self.window.handle().as_window() };
         layout_add_horizontal_border(
-            w.layout_root.as_deref(),
+            w.layout().root.as_deref(),
             layout_cell_for_pane(
-                w.layout_root.as_deref(),
+                w.layout().root.as_deref(),
                 &crate::window::window_pane_find_by_id(id).expect("the pane allocation exists"),
             )
             .unwrap()
@@ -186,7 +186,7 @@ impl Layout {
     /// The tree as one line: each node is its type, size and offset, with
     /// its children in brackets.
     fn dump(&mut self) -> String {
-        unsafe { dump_cell((*self.w()).layout_root.as_deref()) }
+        unsafe { dump_cell((*self.w()).layout().root.as_deref()) }
     }
 
     /// The sizes and offsets the panes themselves were given.
@@ -278,12 +278,12 @@ fn a_new_layout_is_one_cell_filling_the_window() {
     assert_eq!(l.panes(), vec!["%1 80x24+0+0"]);
     unsafe {
         assert_eq!(
-            layout_count_cells(&mut *(*l.w()).layout_root.as_deref_mut().unwrap()),
+            layout_count_cells(&mut *(*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap()),
             1
         );
         assert_eq!(
             (*l.w())
-                .layout_root
+                .layout().root
                 .as_deref()
                 .unwrap()
                 .wp
@@ -377,7 +377,7 @@ fn a_third_split_of_the_same_kind_joins_the_same_node() {
     );
     unsafe {
         assert_eq!(
-            layout_count_cells(&mut *(*l.w()).layout_root.as_deref_mut().unwrap()),
+            layout_count_cells(&mut *(*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap()),
             3
         )
     };
@@ -404,7 +404,7 @@ fn splitting_resolves_siblings_from_the_owned_tree() {
     {
         owner
             .as_window_mut()
-            .layout_root
+            .layout_mut(LayoutAccess(())).root
             .as_deref_mut()
             .unwrap()
             .cells[1]
@@ -434,7 +434,6 @@ fn closing_a_pane_gives_its_room_back_to_its_neighbour() {
 
 #[test]
 fn parent_presence_follows_splitting_and_root_promotion() {
-    use crate::layout_cell::LayoutCell;
 
     let _g = guard();
     let mut layout = Layout::new(80, 24);
@@ -442,19 +441,19 @@ fn parent_presence_follows_splitting_and_root_promotion() {
     let owner = layout.window.reference();
     {
         let payload = owner.as_window();
-        let root = payload.layout_root.as_deref().unwrap();
-        assert!(!root.layout_cell_has_parent());
-        assert!(root.cells.iter().all(|cell| cell.layout_cell_has_parent()));
+        let root = payload.layout().root.as_deref().unwrap();
+        assert!(!root.parent);
+        assert!(root.cells.iter().all(|cell| cell.parent));
     }
     layout.close(1);
     {
         assert!(
             !owner
                 .as_window()
-                .layout_root
+                .layout().root
                 .as_deref()
                 .unwrap()
-                .layout_cell_has_parent()
+                .parent
         );
     }
 }
@@ -497,7 +496,7 @@ fn closing_resolves_parent_and_neighbor_from_the_owned_tree() {
     {
         owner
             .as_window_mut()
-            .layout_root
+            .layout_mut(LayoutAccess(())).root
             .as_deref_mut()
             .unwrap()
             .cells[1]
@@ -622,7 +621,7 @@ fn spreading_resolves_ancestors_from_the_owned_tree() {
     {
         owner
             .as_window_mut()
-            .layout_root
+            .layout_mut(LayoutAccess(())).root
             .as_deref_mut()
             .unwrap()
             .cells[0]
@@ -682,7 +681,7 @@ fn the_border_search_finds_the_cell_a_click_is_next_to() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert!(
             layout_search_by_border(&mut *root, 40, 5).is_some_and(|path| path
                 .get(&*root)
@@ -700,7 +699,7 @@ fn the_border_search_works_top_to_bottom_and_through_nodes() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert!(
             layout_search_by_border(&mut *root, 5, 12).is_some_and(|path| path
                 .get(&*root)
@@ -714,7 +713,7 @@ fn the_border_search_works_top_to_bottom_and_through_nodes() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert!(
             layout_search_by_border(&mut *root, 50, 12).is_some_and(|path| path
                 .get(&*root)
@@ -852,7 +851,7 @@ fn a_scrollbar_is_kept_out_of_the_room_a_pane_can_give_up() {
         });
         let mut active = window_active_pane(&*l.w()).unwrap();
         set_scrollbar_dimensions(active.as_pane_mut(), 3, 1);
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert_eq!(
             (l.reference()).layout_resize_check(&mut *root, LAYOUT_LEFTRIGHT),
             69
@@ -979,12 +978,12 @@ fn a_floating_root_is_left_out_of_resizing_and_offsets() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        (*(*l.w()).layout_root.as_deref_mut().unwrap()).flags |= LAYOUT_CELL_FLOATING;
+        (*(*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap()).flags |= LAYOUT_CELL_FLOATING;
         (l.reference()).resize_layout(100, 30);
         assert_eq!(l.dump(), "%1* 80x24+0+0");
         (l.reference()).fix_layout_offsets();
         assert_eq!(l.dump(), "%1* 80x24+0+0");
-        (*(*l.w()).layout_root.as_deref_mut().unwrap()).flags &= !LAYOUT_CELL_FLOATING;
+        (*(*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap()).flags &= !LAYOUT_CELL_FLOATING;
     }
 }
 
@@ -1021,7 +1020,7 @@ fn the_z_index_follows_the_tree_from_left_to_right() {
             .map(|pane| pane.id())
             .collect::<Vec<_>>();
         assert_eq!(order, vec![1, 3, 2]);
-        let root = (*l.w()).layout_root.take();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.take();
         (l.reference()).fix_layout_zindexes();
         assert_eq!(
             (*l.w())
@@ -1031,7 +1030,7 @@ fn the_z_index_follows_the_tree_from_left_to_right() {
                 .collect::<Vec<_>>(),
             order
         );
-        (*l.w()).layout_root = root;
+        (*l.w()).layout_mut(LayoutAccess(())).root = root;
     }
 }
 
@@ -1063,7 +1062,7 @@ fn printing_a_cell_walks_the_whole_tree() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        layout_print_cell((*l.w()).layout_root.as_deref(), c"test", 0);
+        layout_print_cell((*l.w()).layout().root.as_deref(), c"test", 0);
         layout_print_cell(None, c"test", 0);
         let mut lc = layout_create_cell(None);
         lc.type_0 = 99;
@@ -1251,7 +1250,7 @@ fn a_floating_cell_walks_along_when_it_is_not_told_where_to_go() {
         let first =
             (l.window.reference()).floating_layout_cell(&*item.ptr(), &*item.args(), &mut cause);
         let first = first.unwrap();
-        let first = first.get((*l.w()).layout_root.as_deref().unwrap()).unwrap();
+        let first = first.get((*l.w()).layout().root.as_deref().unwrap()).unwrap();
         assert_eq!(
             ((*first).sx, (*first).sy, (*first).xoff, (*first).yoff),
             (40, 6, 4, 2)
@@ -1260,7 +1259,7 @@ fn a_floating_cell_walks_along_when_it_is_not_told_where_to_go() {
             (l.window.reference()).floating_layout_cell(&*item.ptr(), &*item.args(), &mut cause);
         let second = second.unwrap();
         let second = second
-            .get((*l.w()).layout_root.as_deref().unwrap())
+            .get((*l.w()).layout().root.as_deref().unwrap())
             .unwrap();
         assert_eq!(((*second).xoff, (*second).yoff), (8, 4));
 
@@ -1268,7 +1267,7 @@ fn a_floating_cell_walks_along_when_it_is_not_told_where_to_go() {
         let third =
             (l.window.reference()).floating_layout_cell(&*item.ptr(), &*item.args(), &mut cause);
         let third = third.unwrap();
-        let third = third.get((*l.w()).layout_root.as_deref().unwrap()).unwrap();
+        let third = third.get((*l.w()).layout().root.as_deref().unwrap()).unwrap();
         assert_eq!(((*third).xoff, (*third).yoff), (4, 2));
     }
 }
@@ -1302,7 +1301,7 @@ fn printing_a_cell_names_every_kind_of_node() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
-    unsafe { layout_print_cell((*l.w()).layout_root.as_deref(), c"test", 0) };
+    unsafe { layout_print_cell((*l.w()).layout().root.as_deref(), c"test", 0) };
 }
 
 #[test]
@@ -1322,7 +1321,7 @@ fn the_border_search_walks_past_a_gap_that_is_not_the_one_clicked() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert!(
             layout_search_by_border(&mut *root, 60, 5).is_some_and(|path| path
                 .get(&*root)
@@ -1341,7 +1340,7 @@ fn the_border_search_walks_past_a_gap_that_is_not_the_one_clicked() {
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert!(
             layout_search_by_border(&mut *root, 5, 18).is_some_and(|path| path
                 .get(&*root)
@@ -1357,7 +1356,7 @@ fn the_border_search_ignores_a_parent_of_an_unknown_kind() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         (*root).type_0 = 99;
         assert!(layout_search_by_border(&mut *root, 40, 5).is_none());
         (*root).type_0 = LAYOUT_LEFTRIGHT;
@@ -1388,7 +1387,7 @@ fn a_cell_with_no_parent_that_is_not_the_root_is_neither_top_nor_bottom() {
         let lc = &raw mut *lc;
         assert_eq!(
             layout_add_horizontal_border(
-                (*l.w()).layout_root.as_deref(),
+                (*l.w()).layout().root.as_deref(),
                 &mut *lc,
                 PANE_STATUS_TOP
             ),
@@ -1396,14 +1395,14 @@ fn a_cell_with_no_parent_that_is_not_the_root_is_neither_top_nor_bottom() {
         );
         assert_eq!(
             layout_add_horizontal_border(
-                (*l.w()).layout_root.as_deref(),
+                (*l.w()).layout().root.as_deref(),
                 &mut *lc,
                 PANE_STATUS_BOTTOM
             ),
             0
         );
         assert_eq!(
-            layout_add_horizontal_border((*l.w()).layout_root.as_deref(), &mut *lc, 0),
+            layout_add_horizontal_border((*l.w()).layout().root.as_deref(), &mut *lc, 0),
             0
         );
     }
@@ -1439,13 +1438,13 @@ fn a_status_line_is_kept_out_of_the_room_a_pane_can_give_up() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert_eq!(
             (l.reference()).layout_resize_check(&mut *root, LAYOUT_TOPBOTTOM),
             21
         );
         with_status(&mut l, PANE_STATUS_TOP, |l| {
-            let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+            let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
             assert_eq!(
                 (l.reference()).layout_resize_check(&mut *root, LAYOUT_TOPBOTTOM),
                 20
@@ -1459,7 +1458,7 @@ fn adjusting_a_cell_as_a_pane_only_changes_its_size() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         layout_resize_adjust(&l.reference(), &mut *root, LAYOUT_WINDOWPANE, 5);
         assert_eq!(l.dump(), "%1 80x29+0+0");
         layout_resize_adjust(&l.reference(), &mut *root, LAYOUT_WINDOWPANE, -5);
@@ -1618,7 +1617,7 @@ fn a_new_pane_size_is_held_between_what_is_left_and_the_minimum() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert_eq!(
             (l.reference()).layout_new_pane_size(80, &mut *root, LAYOUT_LEFTRIGHT, 80, 1, 30),
             30
@@ -1641,7 +1640,7 @@ fn a_new_pane_size_is_held_between_what_is_left_and_the_minimum() {
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert_eq!(
             (l.reference()).layout_new_pane_size(24, &mut *root, LAYOUT_TOPBOTTOM, 24, 2, 12),
             7
@@ -1660,7 +1659,7 @@ fn a_size_check_turns_down_what_will_not_fit() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert_eq!(
             (l.reference()).layout_set_size_check(&mut *root, LAYOUT_LEFTRIGHT, 40),
             1
@@ -1691,7 +1690,7 @@ fn a_size_check_turns_down_what_will_not_fit() {
     l.split(0, LAYOUT_TOPBOTTOM, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert_eq!(
             (l.reference()).layout_set_size_check(&mut *root, LAYOUT_TOPBOTTOM, 24),
             1
@@ -1710,7 +1709,7 @@ fn a_size_check_walks_into_nodes_of_the_other_kind() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert_eq!(
             (l.reference()).layout_set_size_check(&mut *root, LAYOUT_TOPBOTTOM, 24),
             1
@@ -1763,7 +1762,7 @@ fn spreading_a_node_of_an_unknown_kind_answers_no() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         (*root).type_0 = 99;
         assert_eq!(
             (l.reference()).spread_layout_cell(&LayoutCellPath::root()),
@@ -1839,7 +1838,7 @@ fn a_new_pane_size_is_never_smaller_than_one_column() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert_eq!(
             (l.reference()).layout_new_pane_size(80, &mut *root, LAYOUT_LEFTRIGHT, 0, 2, 40),
             1
@@ -1854,7 +1853,7 @@ fn spreading_a_node_with_no_room_for_its_borders_answers_no() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         (*root).sx = 1;
         assert_eq!(
             (l.reference()).spread_layout_cell(&LayoutCellPath::root()),
@@ -1973,7 +1972,7 @@ fn a_cell_of_an_unknown_kind_prints_as_unknown() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         (*root).type_0 = 99;
         assert_eq!(l.dump(), "? 80x24+0+0");
         (*root).type_0 = LAYOUT_WINDOWPANE;
@@ -2012,23 +2011,23 @@ fn border_edges_follow_tree_ownership_instead_of_parent_back_pointers() {
         let mut root = layout_create_cell(None);
         root.type_0 = LAYOUT_LEFTRIGHT;
         root.cells.push(layout_create_cell(None));
-        w.layout_root = Some(root);
-        let foreign = layout_create_cell(w.layout_root.as_deref_mut());
-        let child = &w.layout_root.as_deref().unwrap().cells[0];
+        w.layout_mut(LayoutAccess(())).root = Some(root);
+        let foreign = layout_create_cell(w.layout_mut(LayoutAccess(())).root.as_deref_mut());
+        let child = &w.layout().root.as_deref().unwrap().cells[0];
         assert_eq!(
-            layout_add_horizontal_border(w.layout_root.as_deref(), child, PANE_STATUS_TOP),
+            layout_add_horizontal_border(w.layout().root.as_deref(), child, PANE_STATUS_TOP),
             1
         );
         assert_eq!(
-            layout_add_horizontal_border(w.layout_root.as_deref(), child, PANE_STATUS_BOTTOM),
+            layout_add_horizontal_border(w.layout().root.as_deref(), child, PANE_STATUS_BOTTOM),
             1
         );
         assert_eq!(
-            layout_add_horizontal_border(w.layout_root.as_deref(), &foreign, PANE_STATUS_TOP),
+            layout_add_horizontal_border(w.layout().root.as_deref(), &foreign, PANE_STATUS_TOP),
             0
         );
         assert_eq!(
-            layout_add_horizontal_border(w.layout_root.as_deref(), &foreign, PANE_STATUS_BOTTOM),
+            layout_add_horizontal_border(w.layout().root.as_deref(), &foreign, PANE_STATUS_BOTTOM),
             0
         );
     }
@@ -2083,13 +2082,13 @@ fn unzoom_restores_geometry_from_the_owned_saved_tree() {
             ),
             0
         );
-        let saved = owner.as_window_mut().saved_layout_root.take().unwrap();
-        owner.as_window_mut().saved_layout_root = Some(rebuild(&saved, None));
+        let saved = owner.as_window_mut().layout_mut(LayoutAccess(())).saved.take().unwrap();
+        owner.as_window_mut().layout_mut(LayoutAccess(())).saved = Some(rebuild(&saved, None));
         assert_eq!(owner.unzoom(0), 0);
         let w = owner.as_window();
         for pane in &w.panes {
             let (cell, _) =
-                layout_cell_for_pane(w.layout_root.as_deref(), &pane.downgrade()).unwrap();
+                layout_cell_for_pane(w.layout().root.as_deref(), &pane.downgrade()).unwrap();
             let geometry = pane.as_pane().geometry();
             assert_eq!(
                 (geometry.sx, geometry.sy, geometry.xoff, geometry.yoff),
@@ -2138,7 +2137,7 @@ fn a_new_slot_survives_removing_a_pane_from_the_same_window() {
                                 Some(&mut slot),
                             );
                             assert!(
-                                slot.get(w.layout_root.as_deref().unwrap())
+                                slot.get(w.layout().root.as_deref().unwrap())
                                     .unwrap()
                                     .wp
                                     .as_ref()
@@ -2154,14 +2153,14 @@ fn a_new_slot_survives_removing_a_pane_from_the_same_window() {
                             for pane in &w.panes {
                                 assert!(
                                     layout_cell_for_pane(
-                                        w.layout_root.as_deref(),
+                                        w.layout().root.as_deref(),
                                         &pane.downgrade()
                                     )
                                     .is_some()
                                 );
                             }
                             assert_eq!(
-                                layout_count_cells(w.layout_root.as_deref_mut().unwrap()),
+                                layout_count_cells(w.layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap()),
                                 count as u_int
                             );
                         }

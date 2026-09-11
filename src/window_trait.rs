@@ -34,10 +34,8 @@ mod tests {
 
     #[test]
     fn server_window_implements_the_aggregate_contract() {
-        let window = crate::types::window {
-            id: 42,
-            ..Default::default()
-        };
+        let mut window = crate::types::window::default();
+        window.id = 42;
         assert_eq!(window_id(&window), 42);
     }
 }

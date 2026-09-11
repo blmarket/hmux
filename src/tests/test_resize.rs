@@ -1,6 +1,6 @@
 use super::*;
 use crate::WindowPane;
-use crate::layout::{LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM};
+use crate::consts::{LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM};
 use crate::options::OptionsRef;
 use crate::pane_geometry::PaneGeometryState;
 use crate::pane_identity::PaneIdentity;
@@ -99,8 +99,8 @@ impl Win {
             (
                 (*w).dimensions().size.width,
                 (*w).dimensions().size.height,
-                (*(*w).layout_root.as_deref_mut().unwrap()).sx,
-                (*(*w).layout_root.as_deref_mut().unwrap()).sy,
+                (*w).layout().size().unwrap().width,
+                (*w).layout().size().unwrap().height,
             )
         }
     }

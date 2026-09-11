@@ -123,7 +123,7 @@ impl Layout {
     fn dump(&mut self) -> String {
         unsafe {
             (self.reference())
-                .dump_layout_cell((*self.w()).layout_root.as_deref())
+                .dump_layout_cell((*self.w()).layout().root.as_deref())
                 .expect("layout dump")
                 .to_string_lossy()
                 .into_owned()
@@ -413,7 +413,7 @@ fn the_bottom_right_cell_is_the_last_one_all_the_way_down() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     l.split(1, LAYOUT_TOPBOTTOM, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         let found = layout_find_bottomright(&mut *root);
         assert_eq!(
             found
@@ -426,7 +426,7 @@ fn the_bottom_right_cell_is_the_last_one_all_the_way_down() {
         );
         let pane_id = (*l.pane(0)).pane_id();
         let leaf = layout_cell_for_pane(
-            (*l.w()).layout_root.as_deref(),
+            (*l.w()).layout().root.as_deref(),
             &crate::window::window_pane_find_by_id(pane_id).expect("the pane allocation exists"),
         )
         .unwrap()
@@ -455,7 +455,7 @@ fn appending_stops_when_the_buffer_is_full() {
     let mut l = Layout::new(80, 24);
     unsafe {
         let mut buf: Vec<u8> = Vec::new();
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         assert_eq!(layout_append(Some(root), &mut buf, 0), -1);
         assert_eq!(layout_append(None, &mut buf, 8), 0);
         assert_eq!(layout_append(Some(root), &mut buf, 8), -1);
@@ -468,7 +468,7 @@ fn appending_a_tree_stops_when_the_buffer_is_full() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         for len in [12, 14, 24, 26] {
             let mut buf: Vec<u8> = Vec::new();
             assert_eq!(layout_append(Some(root), &mut buf, len), -1, "{len}");
@@ -481,7 +481,7 @@ fn a_dump_that_does_not_fit_answers_nothing() {
     let _g = guard();
     let mut l = Layout::new(80, 24);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         (*root).sx = u_int::MAX;
         (*root).sy = u_int::MAX;
         (*root).xoff = c_int::MIN;
@@ -497,12 +497,13 @@ fn assigning_panes_walks_the_tree_in_order() {
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
         let w = &mut *l.w();
-        let root = w.layout_root.as_deref_mut().unwrap();
-        let mut panes = w.panes.iter_mut();
+        let (layout, pane_list) = w.layout_and_panes_mut(LayoutAccess(()));
+        let root = layout.root.as_deref_mut().unwrap();
+        let mut panes = pane_list.iter_mut();
         layout_assign(&mut panes, Some(root), LAYOUT_CELL_FLOATING);
         assert_eq!(panes.len(), 0);
         layout_assign(&mut panes, None, 0);
-        for (pane, cell) in w.panes.iter().zip(&mut root.cells) {
+        for (pane, cell) in pane_list.iter().zip(&mut root.cells) {
             assert_eq!(
                 cell.wp.as_ref().map(|pane| pane.id()),
                 Some(pane.pane_id())
@@ -519,9 +520,10 @@ fn a_cell_of_an_unknown_kind_is_walked_past() {
     let mut l = Layout::new(80, 24);
     unsafe {
         let w = &mut *l.w();
-        let root = w.layout_root.as_deref_mut().unwrap();
+        let (layout, pane_list) = w.layout_and_panes_mut(LayoutAccess(()));
+        let root = layout.root.as_deref_mut().unwrap();
         root.type_0 = 99;
-        let mut panes = w.panes.iter_mut();
+        let mut panes = pane_list.iter_mut();
         layout_assign(&mut panes, Some(root), 0);
         assert_eq!(panes.len(), 1);
         assert_eq!(layout_check(root), 1);
@@ -630,7 +632,7 @@ fn appending_a_node_stops_when_the_bracket_will_not_fit() {
     let mut l = Layout::new(80, 24);
     l.split(0, LAYOUT_LEFTRIGHT, -1, 0);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         for len in [10, 11, 22, 23] {
             let mut buf: Vec<u8> = Vec::new();
             assert_eq!(layout_append(Some(root), &mut buf, len), -1, "{len}");
@@ -693,7 +695,7 @@ fn too_many_floating_panes_dump_nothing() {
             ids.into_iter()
                 .filter_map(crate::window::window_pane_find_by_id),
         );
-        (*l.w()).layout_root.as_mut().unwrap().cells.extend(cells);
+        (*l.w()).layout_mut(LayoutAccess(())).root.as_mut().unwrap().cells.extend(cells);
         assert!((l.reference()).dump_layout_cell(None).is_none());
     }
 }

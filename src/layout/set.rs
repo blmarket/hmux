@@ -1,3 +1,4 @@
+use super::LayoutAccess;
 use crate::{
     args::argument_text::{ArgumentTextCodec as _, RustArgumentTextCodec},
     window_dimensions::WindowDimensionsState,
@@ -108,9 +109,9 @@ unsafe fn finish(owner: &WindowRef, name: &CStr) {
         owner.fix_layout_panes(None);
         let mut payload = owner.as_window_mut();
         let w = &mut *payload;
-        layout_print_cell(w.layout_root.as_deref(), name, 1);
+        layout_print_cell(w.layout().root.as_deref(), name, 1);
         let root = w
-            .layout_root
+            .layout().root
             .as_deref()
             .expect("an arranged window has a layout");
         let size = (root.sx, root.sy);
@@ -223,14 +224,14 @@ fn main_cell(owner: &WindowRef, axis: &Axis, main: u_int, across: u_int) {
             .expect("the main pane exists");
         let mut payload = owner.as_window_mut();
         let w = &mut *payload;
-        let root = w
-            .layout_root
+        let (layout, pane_list) = w.layout_and_panes_mut(LayoutAccess(()));
+        let root = layout.root
             .as_deref_mut()
             .expect("the main layout has a root");
         let lcmain = insert_new_tail(root);
         let (sx, sy) = axis.size(main, across);
         layout_set_size(lcmain, sx, sy, 0, 0);
-        layout_make_leaf(lcmain, pane_for_layout(&mut w.panes, id));
+        layout_make_leaf(lcmain, pane_for_layout(pane_list, id));
     }
 }
 
@@ -241,8 +242,8 @@ unsafe fn other_cells(owner: &WindowRef, axis: &Axis, n: u_int, other: u_int, ac
         let panes = tiled(owner);
         let mut payload = owner.as_window_mut();
         let w = &mut *payload;
-        let root = w
-            .layout_root
+        let (layout, pane_list) = w.layout_and_panes_mut(LayoutAccess(()));
+        let root = layout.root
             .as_deref_mut()
             .expect("the main layout has a root");
         let path = LayoutCellPath::root().child(root.cells.len());
@@ -250,7 +251,7 @@ unsafe fn other_cells(owner: &WindowRef, axis: &Axis, n: u_int, other: u_int, ac
         let (sx, sy) = axis.size(other, across);
         layout_set_size(lcother, sx, sy, 0, 0);
         if n == 1 {
-            layout_make_leaf(lcother, pane_for_layout(&mut w.panes, panes[1]));
+            layout_make_leaf(lcother, pane_for_layout(pane_list, panes[1]));
             return;
         }
         lcother.type_0 = axis.others;
@@ -258,7 +259,7 @@ unsafe fn other_cells(owner: &WindowRef, axis: &Axis, n: u_int, other: u_int, ac
             let lcchild = insert_new_tail(lcother);
             let (sx, sy) = axis.size(other, MINIMUM);
             layout_set_size(lcchild, sx, sy, 0, 0);
-            layout_make_leaf(lcchild, pane_for_layout(&mut w.panes, id));
+            layout_make_leaf(lcchild, pane_for_layout(pane_list, id));
         }
         drop(payload);
         owner.spread_layout_cell(&path);
@@ -322,7 +323,7 @@ impl WindowRef {
         unsafe {
             let payload = owner.as_window();
             let w = &*payload;
-            layout_print_cell(w.layout_root.as_deref(), c"layout_set_even", 1);
+            layout_print_cell(w.layout().root.as_deref(), c"layout_set_even", 1);
             let n = window_count_panes(w, 0);
             if n <= 1 {
                 return;
@@ -345,12 +346,13 @@ impl WindowRef {
                 )
             };
             let (wsx, wsy) = (w.dimensions().size.width, w.dimensions().size.height);
-            let root = w.layout_root.insert(layout_create_cell(None));
+            let (layout, pane_list) = w.layout_and_panes_mut(LayoutAccess(()));
+            let root = layout.root.insert(layout_create_cell(None));
             layout_set_size(root, sx, sy, 0, 0);
             root.type_0 = type_0;
             for id in panes {
                 let lcnew = insert_new_tail(root);
-                layout_make_leaf(lcnew, pane_for_layout(&mut w.panes, id));
+                layout_make_leaf(lcnew, pane_for_layout(pane_list, id));
                 lcnew.sx = wsx;
                 lcnew.sy = wsy;
             }
@@ -377,7 +379,7 @@ impl WindowRef {
         unsafe {
             let payload = owner.as_window();
             let w = &*payload;
-            layout_print_cell(w.layout_root.as_deref(), name, 1);
+            layout_print_cell(w.layout().root.as_deref(), name, 1);
             let n = window_count_panes(w, 0);
             if n <= 1 {
                 return;
@@ -396,7 +398,8 @@ impl WindowRef {
             owner.free_layout();
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
-            let root = w.layout_root.insert(layout_create_cell(None));
+            let layout = w.layout_mut(LayoutAccess(()));
+            let root = layout.root.insert(layout_create_cell(None));
             let (sx, sy) = axis.size(main.wrapping_add(other).wrapping_add(1), across);
             layout_set_size(root, sx, sy, 0, 0);
             root.type_0 = axis.root;
@@ -444,7 +447,7 @@ impl WindowRef {
         unsafe {
             let payload = owner.as_window();
             let w = &*payload;
-            layout_print_cell(w.layout_root.as_deref(), c"layout_set_tiled", 1);
+            layout_print_cell(w.layout().root.as_deref(), c"layout_set_tiled", 1);
             let n = window_count_panes(w, 0);
             if n <= 1 {
                 return;
@@ -489,7 +492,8 @@ impl WindowRef {
                 .wrapping_mul(rows)
                 .wrapping_sub(1)
                 .max(w.dimensions().size.height);
-            let root = w.layout_root.insert(layout_create_cell(None));
+            let layout = w.layout_mut(LayoutAccess(()));
+            let root = layout.root.insert(layout_create_cell(None));
             layout_set_size(root, sx, sy, 0, 0);
             root.type_0 = LAYOUT_TOPBOTTOM;
 
@@ -500,8 +504,8 @@ impl WindowRef {
                 if panes.peek().is_none() {
                     break;
                 }
-                let root = w
-                    .layout_root
+                let (layout, pane_list) = w.layout_and_panes_mut(LayoutAccess(()));
+                let root = layout.root
                     .as_deref_mut()
                     .expect("the tiled layout has a root");
                 let row_path = LayoutCellPath::root().child(root.cells.len());
@@ -509,7 +513,7 @@ impl WindowRef {
                 layout_set_size(lcrow, size.width, height, 0, 0);
                 if n.wrapping_sub(j.wrapping_mul(columns)) == 1 || columns == 1 {
                     let id = panes.next().expect("the row has a pane");
-                    layout_make_leaf(lcrow, pane_for_layout(&mut w.panes, id));
+                    layout_make_leaf(lcrow, pane_for_layout(pane_list, id));
                     continue;
                 }
                 lcrow.type_0 = LAYOUT_LEFTRIGHT;
@@ -518,7 +522,7 @@ impl WindowRef {
                     let lcchild = insert_new_tail(lcrow);
                     layout_set_size(lcchild, width, height, 0, 0);
                     let id = panes.next().expect("the row has another pane");
-                    layout_make_leaf(lcchild, pane_for_layout(&mut w.panes, id));
+                    layout_make_leaf(lcchild, pane_for_layout(pane_list, id));
                     if panes.peek().is_none() {
                         break;
                     }
@@ -546,7 +550,7 @@ impl WindowRef {
                 let payload = owner.as_window();
                 let w = &*payload;
                 let root = w
-                    .layout_root
+                    .layout().root
                     .as_deref()
                     .expect("the tiled layout has a root");
                 let last = LayoutCellPath::root().child(root.cells.len() - 1);

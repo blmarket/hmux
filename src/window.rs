@@ -25,7 +25,6 @@ use crate::grid::grid_view_string_cells;
 use crate::grid::{grid_cells_look_equal, grid_default_cell};
 use crate::input::InputOwner;
 use crate::input::input_key_pane;
-use crate::layout::layout_free_cell;
 use crate::log::{fatal, fatalx, log_debug, log_get_level};
 use crate::notify::{notify_pane, notify_window};
 
@@ -772,7 +771,6 @@ pub const WINDOW_PANE_VIEW_MODE: core::ffi::c_int = 2 as core::ffi::c_int;
 pub const PANE_FOCUSED: core::ffi::c_int = 0x4 as core::ffi::c_int;
 pub const PANE_VISITED: core::ffi::c_int = 0x8 as core::ffi::c_int;
 
-pub const WINDOW_WASZOOMED: core::ffi::c_int = 0x10 as core::ffi::c_int;
 
 pub const PANE_SCROLLBARS_ALWAYS: core::ffi::c_int = 2 as core::ffi::c_int;
 
@@ -814,17 +812,9 @@ impl Drop for WindowStorage {
         unsafe {
             let w = &raw mut self.value;
             log_debug(c"window @%u destroyed", fmt_args![(*w).window_id()]);
-            if window_restore_layout(&mut *w) {
-                crate::layout::layout_fix_panes_on_drop(
-                    (*w).layout_root.as_deref(),
-                    (*w).scrollbar_settings(),
-                    &(*w).panes,
-                    (*w).options_ref().number(c"pane-border-status") as core::ffi::c_int,
-                );
-            }
+            (*w).restore_layout_on_drop();
             drop(self.id_registration.take());
-            layout_free_cell((*w).layout_root.take());
-            layout_free_cell((*w).saved_layout_root.take());
+            (*w).clear_layout_tree();
             (*w).set_saved_layout(None);
             for pane in window_panes_take_all(&mut *w) {
                 window_pane_destroy(pane);
@@ -1112,8 +1102,7 @@ pub unsafe fn window_redraw_active_switch(w: &mut window, selected: &RustWindowP
             .flatten()
         {
             let raise = reference.ptr_eq(selected)
-                && crate::layout::layout_cell_for_pane(w.layout_root.as_deref(), &reference)
-                    .is_some_and(|(cell, _)| cell.flags & LAYOUT_CELL_FLOATING != 0);
+                && w.layout().is_floating(&reference);
             let Some(pane) = reference.get_mut() else {
                 continue;
             };
@@ -1148,8 +1137,7 @@ pub unsafe fn window_get_active_at(w: &window, x: u_int, y: u_int) -> Option<Rus
                 })
                 .map(|pane| {
                     let floating =
-                        crate::layout::layout_cell_for_pane(w.layout_root.as_deref(), pane)
-                            .is_some_and(|(cell, _)| cell.flags & LAYOUT_CELL_FLOATING != 0);
+                        w.layout().is_floating(pane);
                     (
                         pane.clone(),
                         floating,
@@ -1229,21 +1217,7 @@ pub unsafe fn window_find_string(w: &window, s: &CStr) -> Option<RustWindowPaneW
     }
 }
 
-unsafe fn window_restore_layout(w: &mut window) -> bool {
-    unsafe {
-        if w.flags & WINDOW_ZOOMED == 0 {
-            return false;
-        }
-        w.flags &= !WINDOW_ZOOMED;
-        layout_free_cell(w.layout_root.take());
-        w.layout_root = w.saved_layout_root.take();
-        for pane in &mut w.panes {
-            let pane = pane.as_pane_mut();
-            pane.set_window_zoomed(false);
-        }
-        true
-    }
-}
+
 
 pub unsafe fn window_add_pane(
     w: &mut window,
@@ -2434,8 +2408,7 @@ pub fn window_pane_border_status_get_range(
     }
 }
 pub fn window_pane_is_floating(w: &window, pane: &RustWindowPaneWeak) -> core::ffi::c_int {
-    crate::layout::layout_cell_for_pane(w.layout_root.as_deref(), pane)
-        .is_some_and(|(cell, _)| cell.flags & LAYOUT_CELL_FLOATING != 0) as core::ffi::c_int
+    w.layout().is_floating(pane) as core::ffi::c_int
 }
 
 #[cfg(test)]
@@ -2478,10 +2451,7 @@ impl WindowRef {
         self.as_window().saved_layout().map(CStr::to_owned)
     }
 
-    pub(crate) fn dump_layout(&self) -> Option<CString> {
-        let window = self.as_window();
-        self.dump_layout_cell(window.layout_root.as_deref())
-    }
+
 
     pub(crate) fn set_manual_size(&self, size: crate::pane_resize::PaneSize) {
         self.as_window_mut().set_manual_size(size);
@@ -2661,74 +2631,7 @@ impl WindowRef {
         }
     }
 
-    /// Exchanges two distinct panes' ownership, layout membership and geometry.
-    ///
-    /// Returns their pre-exchange active states for caller selection policy.
-    /// Floating panes are rejected before client cleanup or mutation. Both layout
-    /// paths must exist. Pane and z-order positions, option parents and appearance
-    /// flags follow the destination; registration and allocation identity survive.
-    /// Client cleanup and source-then-destination resizing retain their order.
-    /// The caller applies selection, then uses `finish_pane_exchange` for a
-    /// cross-window exchange before layout repair, redraw and notification.
-    ///
-    /// # Safety
-    /// Panes must be distinct live members of the supplied unzoomed windows,
-    /// resolved immediately before this call. Run on the server thread without
-    /// conflicting pane, window, option, client or TTY payload access. Resizing
-    /// invokes existing pane-mode callbacks; those must not move or remove either
-    /// target. No window borrow crosses those callbacks. Do not dispatch queue
-    /// hooks or unrelated callbacks before selection and exchange completion.
-    pub(crate) unsafe fn exchange_pane_geometry(
-        &self,
-        source_pane: &RustWindowPaneWeak,
-        destination: &Self,
-        destination_pane: &RustWindowPaneWeak,
-    ) -> Result<(bool, bool), &'static CStr> {
-        let src_path = self
-            .pane_layout_path(source_pane)
-            .expect("the source has a cell");
-        let dst_path = destination
-            .pane_layout_path(destination_pane)
-            .expect("the destination has a cell");
-        if self.pane_is_floating(source_pane) || destination.pane_is_floating(destination_pane) {
-            return Err(c"cannot swap floating panes");
-        }
-        let src_was_active = self.active_pane().as_ref() == Some(source_pane);
-        let dst_was_active = destination.active_pane().as_ref() == Some(destination_pane);
-        unsafe { crate::server::server_client_remove_pane(source_pane.as_pane()) };
-        unsafe { crate::server::server_client_remove_pane(destination_pane.as_pane()) };
-        let src_geometry = unsafe { source_pane.get().unwrap().geometry() };
-        let dst_geometry = unsafe { destination_pane.get().unwrap().geometry() };
-        unsafe {
-            self.clone()
-                .swap_panes(source_pane, &mut destination.clone(), destination_pane)
-        };
-        self.swap_pane_z_order(source_pane, destination, destination_pane);
-        self.bind_layout_pane(Some(&src_path), destination_pane);
-        destination.bind_layout_pane(Some(&dst_path), source_pane);
 
-        let mut source_observation = source_pane.clone();
-        let mut destination_observation = destination_pane.clone();
-        {
-            let pane = unsafe { source_observation.get_mut().unwrap() };
-            pane.inherit_window_context(destination);
-        }
-        {
-            let pane = unsafe { destination_observation.get_mut().unwrap() };
-            pane.inherit_window_context(self);
-        }
-        {
-            let pane = unsafe { source_observation.get_mut().unwrap() };
-            pane.set_position(dst_geometry.xoff, dst_geometry.yoff);
-            unsafe { pane.resize(PaneSize { width: dst_geometry.sx, height: dst_geometry.sy }) };
-        }
-        {
-            let pane = unsafe { destination_observation.get_mut().unwrap() };
-            pane.set_position(src_geometry.xoff, src_geometry.yoff);
-            unsafe { pane.resize(PaneSize { width: src_geometry.sx, height: src_geometry.sy }) };
-        }
-        Ok((src_was_active, dst_was_active))
-    }
 
     /// Removes departed panes from history and reloads colours after selection.
     ///
@@ -2801,23 +2704,9 @@ impl WindowRef {
 }
 
 impl WindowRef {
-    pub(crate) fn pane_layout_path(
-        &self,
-        pane: &RustWindowPaneWeak,
-    ) -> Option<crate::layout::LayoutCellPath> {
-        self.as_window()
-            .layout_root
-            .as_deref()
-            .and_then(|root| crate::layout::LayoutCellPath::for_pane(root, pane))
-    }
 
-    pub(crate) fn bind_layout_pane(
-        &self,
-        path: Option<&crate::layout::LayoutCellPath>,
-        pane: &RustWindowPaneWeak,
-    ) {
-        crate::layout::layout_bind_pane(self, path, pane);
-    }
+
+
 
     pub(crate) fn swap_pane_z_order(
         &self,
@@ -2867,60 +2756,13 @@ impl WindowRef {
         self.as_window().flags & WINDOW_ZOOMED != 0
     }
 
-    pub(crate) fn layout_cell_geometry(
-        &self,
-        path: &crate::layout::LayoutCellPath,
-    ) -> Option<crate::pane_geometry::PaneGeometry> {
-        let window = self.as_window();
-        let cell = path.get(window.layout_root.as_deref()?)?;
-        Some(crate::pane_geometry::PaneGeometry {
-            xoff: cell.xoff,
-            yoff: cell.yoff,
-            sx: cell.sx,
-            sy: cell.sy,
-        })
-    }
 
-    pub(crate) fn set_layout_cell_geometry(
-        &self,
-        path: &crate::layout::LayoutCellPath,
-        geometry: crate::pane_geometry::PaneGeometry,
-    ) {
-        let mut window = self.as_window_mut();
-        let cell = window
-            .layout_root
-            .as_deref_mut()
-            .and_then(|root| path.get_mut(root))
-            .expect("the resized cell path is unchanged");
-        {
-            crate::layout::layout_set_size(
-                cell,
-                geometry.sx,
-                geometry.sy,
-                geometry.xoff,
-                geometry.yoff,
-            )
-        };
-    }
 
-    pub(crate) fn layout_border_at(
-        &self,
-        x: u_int,
-        y: u_int,
-    ) -> Option<crate::layout::LayoutCellPath> {
-        self.as_window()
-            .layout_root
-            .as_deref()
-            .and_then(|root| crate::layout::layout_search_by_border(root, x, y))
-    }
 
-    pub(crate) fn layout_parent_type(
-        &self,
-        path: &crate::layout::LayoutCellPath,
-    ) -> Option<layout_type> {
-        let window = self.as_window();
-        Some(path.parent()?.get(window.layout_root.as_deref()?)?.type_0)
-    }
+
+
+
+
 }
 
 unsafe fn window_find_best_session(fs: &mut cmd_find_state, w: &WindowRef) -> core::ffi::c_int {
@@ -3187,18 +3029,16 @@ impl WindowRef {
                 ypixel = DEFAULT_YPIXEL as u_int;
             }
             let fresh0 = next_entity_id(&next_window_id);
-            let value = window {
-                id: fresh0,
-                name: Some(c"".to_owned()),
-                sx,
-                sy,
-                manual_sx: sx,
-                manual_sy: sy,
-                xpixel,
-                ypixel,
-                options: Some(RustOptionsEngine.create(global_w_options.get().as_ref())),
-                ..Default::default()
-            };
+            let mut value = window::default();
+            value.id = fresh0;
+            value.name = Some(c"".to_owned());
+            value.sx = sx;
+            value.sy = sy;
+            value.manual_sx = sx;
+            value.manual_sy = sy;
+            value.xpixel = xpixel;
+            value.ypixel = ypixel;
+            value.options = Some(RustOptionsEngine.create(global_w_options.get().as_ref()));
             let reference = WindowRef::new(value);
             reference.register_id();
             let mut w = reference.as_window_mut();
@@ -3323,113 +3163,10 @@ impl WindowRef {
             1
         }
     }
-    pub unsafe fn zoom(&self, pane: &RustWindowPaneWeak) -> core::ffi::c_int {
-        let owner = self;
 
-        unsafe {
-            let payload = owner.as_window();
-            let w = &*payload;
-            if w.flags & WINDOW_ZOOMED != 0
-                || !w
-                    .panes
-                    .iter()
-                    .any(|candidate| candidate.downgrade().ptr_eq(pane))
-            {
-                return -1;
-            }
-            if window_count_panes(w, 1) == 1 {
-                return -1;
-            }
-            let activate = w.active.as_ref() != Some(pane);
-            drop(payload);
-            if activate {
-                owner.set_active_pane(pane, 1);
-            }
-            if let Some(payload) = pane.clone().get_mut() {
-                payload.set_window_zoomed(true);
-            }
-            let mut payload = owner.as_window_mut();
-            let w = &mut *payload;
-            w.saved_layout_root = w.layout_root.take();
-            drop(payload);
-            owner.init_layout(
-                &crate::window::window_pane_find_by_id(pane.id()).expect("the layout pane exists"),
-            );
-            owner.as_window_mut().flags |= WINDOW_ZOOMED;
-            notify_window(c"window-layout-changed", Some(owner));
-            0
-        }
-    }
-    pub unsafe fn unzoom(&self, notify: core::ffi::c_int) -> core::ffi::c_int {
-        let owner = self;
 
-        unsafe {
-            let mut payload = owner.as_window_mut();
-            if !window_restore_layout(&mut payload) {
-                return -1;
-            }
-            drop(payload);
-            owner.fix_layout_panes(None);
-            if notify != 0 {
-                notify_window(c"window-layout-changed", Some(owner));
-            }
-            0
-        }
-    }
-    pub unsafe fn push_zoom(
-        &self,
-        always: core::ffi::c_int,
-        flag: core::ffi::c_int,
-    ) -> core::ffi::c_int {
-        let owner = self;
 
-        unsafe {
-            let mut payload = owner.as_window_mut();
-            let w = &mut *payload;
-            log_debug(
-                c"%s: @%u %d",
-                fmt_args![
-                    c"window_push_zoom".as_ptr(),
-                    w.window_id(),
-                    (flag != 0 && w.flags & WINDOW_ZOOMED != 0) as core::ffi::c_int
-                ],
-            );
-            if flag != 0 && (always != 0 || w.flags & WINDOW_ZOOMED != 0) {
-                w.flags |= WINDOW_WASZOOMED;
-            } else {
-                w.flags &= !WINDOW_WASZOOMED;
-            }
-            drop(payload);
-            (owner.unzoom(1 as core::ffi::c_int) == 0 as core::ffi::c_int) as core::ffi::c_int
-        }
-    }
-    pub unsafe fn pop_zoom(&self) -> core::ffi::c_int {
-        let owner = self;
 
-        unsafe {
-            let mut payload = owner.as_window_mut();
-            let w = &mut *payload;
-            log_debug(
-                c"%s: @%u %d",
-                fmt_args![
-                    c"window_pop_zoom".as_ptr(),
-                    w.window_id(),
-                    (w.flags & WINDOW_WASZOOMED != 0) as core::ffi::c_int
-                ],
-            );
-            if w.flags & WINDOW_WASZOOMED != 0 {
-                let Some(active_id) = w.active_pane_id() else {
-                    return 0 as core::ffi::c_int;
-                };
-                drop(payload);
-                return (owner.zoom(
-                    &crate::window::window_pane_find_by_id(active_id)
-                        .expect("the selected pane exists"),
-                ) == 0 as core::ffi::c_int) as core::ffi::c_int;
-            }
-            0 as core::ffi::c_int
-        }
-    }
     /// Gives up `wp`: takes it off the most-recently-used stack and, when it was
     /// the active pane, hands that over to the pane the window falls back on.
     ///
@@ -3678,41 +3415,7 @@ impl WindowRef {
         }
     }
 
-    /// Rotates pane membership through the existing layout slots and geometries.
-    /// Returns the rotated identities for immediate caller selection policy.
-    /// Empty windows return an empty list without mutation. Z-order is unchanged.
-    ///
-    /// # Safety
-    /// The window must be unzoomed, with stable live pane membership. Exclude
-    /// conflicting pane/window/layout/TTY access on the server thread. Existing
-    /// resize mode callbacks must not move or remove any pane during rotation.
-    /// No window borrow crosses those callbacks; hooks and selection are deferred
-    /// to the caller. The geometry snapshot is required across list mutation.
-    pub(crate) unsafe fn rotate_pane_geometry(&self, down: bool) -> Vec<RustWindowPaneWeak> {
-        unsafe {
-            let slots: Vec<_> = self
-                .panes()
-                .iter()
-                .map(|pane| (self.pane_layout_path(pane), pane.as_pane().geometry()))
-                .collect();
-            let count = slots.len();
-            if count == 0 {
-                return Vec::new();
-            }
-            self.rotate_pane_order(down);
-            let panes = self.panes();
-            for offset in 0..count {
-                let index = if down { offset } else { count - offset - 1 };
-                let (path, geometry) = &slots[index];
-                let mut pane = panes[index].clone();
-                self.bind_layout_pane(path.as_ref(), &pane);
-                let payload = pane.as_pane_mut();
-                payload.set_position(geometry.xoff, geometry.yoff);
-                payload.resize(PaneSize { width: geometry.sx, height: geometry.sy });
-            }
-            panes
-        }
-    }
+
 }
 
 impl WindowRef {

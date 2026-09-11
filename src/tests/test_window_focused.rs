@@ -1497,20 +1497,9 @@ fn floating_checks_and_counts_read_the_supplied_layout_without_pane_back_referen
         pane.set_pane_id(id);
         w.panes.push((pane).into_owner());
     }
-    w.layout_root = Some(Box::new(layout_cell {
-        cells: vec![
-            Box::new(layout_cell {
-                wp: Some(w.panes[0].downgrade()),
-                flags: LAYOUT_CELL_FLOATING,
-                ..Default::default()
-            }),
-            Box::new(layout_cell {
-                wp: Some(w.panes[1].downgrade()),
-                ..Default::default()
-            }),
-        ],
-        ..Default::default()
-    }));
+    let observations: Vec<_> = w.panes.iter().map(|pane| pane.downgrade()).collect();
+    w.test_layout_panes(&observations, Some(LAYOUT_LEFTRIGHT));
+    crate::layout::test_support::set_layout_floating(&mut w, &observations[0], true);
     assert_eq!(window_pane_is_floating(&w, &w.panes[0].downgrade()), 1);
     assert_eq!(window_pane_is_floating(&w, &w.panes[1].downgrade()), 0);
     assert_eq!(
@@ -1525,7 +1514,9 @@ fn floating_checks_and_counts_read_the_supplied_layout_without_pane_back_referen
     assert_eq!(window_count_panes(&w, 1), 2);
     let mut other = window::default();
     assert_eq!(window_pane_is_floating(&other, &w.panes[0].downgrade()), 0);
-    other.layout_root = w.layout_root.take();
+    other.test_layout_panes(&observations, Some(LAYOUT_LEFTRIGHT));
+    crate::layout::test_support::set_layout_floating(&mut other, &observations[0], true);
+    w.clear_layout_tree();
     assert_eq!(window_pane_is_floating(&other, &w.panes[0].downgrade()), 1);
     assert_eq!(window_has_floating_panes(&w), 0);
     assert_eq!(window_count_panes(&w, 0), 2);
@@ -1546,11 +1537,8 @@ fn pane_stacking_and_flags_follow_physical_owners_and_skip_retired_targets() {
         let observed = listed.downgrade();
         window_panes_insert_tail(&mut window.as_window_mut(), listed);
         let listed = observed;
-        window.as_window_mut().layout_root = Some(Box::new(layout_cell {
-            wp: Some(pane.clone()),
-            flags: LAYOUT_CELL_FLOATING,
-            ..Default::default()
-        }));
+        window.as_window_mut().test_layout_panes(&[pane.clone()], None);
+        crate::layout::test_support::set_layout_floating(&mut window.as_window_mut(), &pane, true);
         window.as_window_mut().z_index = vec![pane.clone(), listed.clone()];
         {
             let mut payload = window.as_window_mut();

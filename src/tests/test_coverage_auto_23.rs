@@ -1,5 +1,6 @@
 //! Coverage for [`crate::layout`] – layout helpers with [`Layout`] fixture.
 
+use super::*;
 use crate::WindowPane;
 use crate::pane_geometry::PaneGeometryState;
 use crate::pane_identity::PaneIdentity;
@@ -93,21 +94,21 @@ fn layout_count_cells_tracks_splits() {
     let mut l = Layout::new(80, 24);
     unsafe {
         assert_eq!(
-            layout_count_cells(&mut *(*l.w()).layout_root.as_deref_mut().unwrap()),
+            layout_count_cells(&mut *(*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap()),
             1
         )
     };
     split(&mut l, 0, LAYOUT_LEFTRIGHT);
     unsafe {
         assert_eq!(
-            layout_count_cells(&mut *(*l.w()).layout_root.as_deref_mut().unwrap()),
+            layout_count_cells(&mut *(*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap()),
             2
         )
     };
     split(&mut l, 0, LAYOUT_TOPBOTTOM);
     unsafe {
         assert_eq!(
-            layout_count_cells(&mut *(*l.w()).layout_root.as_deref_mut().unwrap()),
+            layout_count_cells(&mut *(*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap()),
             3
         )
     };
@@ -134,7 +135,7 @@ fn layout_search_by_border_inside_vs_between() {
     let mut l = Layout::new(80, 24);
     split(&mut l, 0, LAYOUT_LEFTRIGHT);
     unsafe {
-        let root = (*l.w()).layout_root.as_deref_mut().unwrap();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap();
         // between panes at x=40 is the vertical border
         assert!(
             layout_search_by_border(&mut *root, 40, 5).is_some_and(|path| path
@@ -187,7 +188,7 @@ fn layout_fix_zindexes_follows_left_to_right_depth_first() {
         // left side top-bottom children first, then right pane
         assert_eq!(order, vec![1, 3, 2]);
         // null root is safe
-        let root = (*l.w()).layout_root.take();
+        let root = (*l.w()).layout_mut(LayoutAccess(())).root.take();
         (l.reference()).fix_layout_zindexes();
         assert_eq!(
             (*l.w())
@@ -197,7 +198,7 @@ fn layout_fix_zindexes_follows_left_to_right_depth_first() {
                 .collect::<Vec<_>>(),
             order
         );
-        (*l.w()).layout_root = root;
+        (*l.w()).layout_mut(LayoutAccess(())).root = root;
     }
 }
 

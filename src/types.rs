@@ -2014,8 +2014,7 @@ pub struct window {
     pub z_index: window_pane_stack_t,
     pub(crate) panes: window_panes_t,
     pub(crate) lastlayout: Option<core::ffi::c_int>,
-    pub layout_root: Option<Box<layout_cell>>,
-    pub saved_layout_root: Option<Box<layout_cell>>,
+    layout: crate::layout::LayoutTree,
     pub(crate) old_layout: Option<std::ffi::CString>,
     pub(crate) sx: u_int,
     pub(crate) sy: u_int,
@@ -2281,20 +2280,6 @@ impl ModeScreen {
 
 pub use crate::modes::window_mode_entry;
 
-#[derive(Default)]
-#[repr(C)]
-pub struct layout_cell {
-    pub type_0: layout_type,
-    pub flags: core::ffi::c_int,
-    pub(crate) parent: bool,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub xoff: core::ffi::c_int,
-    pub yoff: core::ffi::c_int,
-    /// The pane allocation held by this leaf, or nothing for a branch cell.
-    pub wp: Option<RustWindowPaneWeak>,
-    pub cells: layout_cells,
-}
 #[derive(Default)]
 #[repr(C)]
 pub struct client {
@@ -2757,7 +2742,7 @@ pub(crate) type window_panes_t = Vec<RustWindowPaneRef>;
 pub type window_pane_stack_t = Vec<RustWindowPaneWeak>;
 /// The cells directly under one layout cell, left to right or top to bottom.
 /// A cell belongs to the list it hangs in.
-pub type layout_cells = Vec<Box<layout_cell>>;
+
 pub(crate) type client_files_t = std::collections::BTreeMap<core::ffi::c_int, ClientFileRef>;
 
 /// Which set of files a file belongs to: one client's, the whole process's,
@@ -3479,5 +3464,21 @@ impl ClientRef {
                 crate::fmt_args![name, self.as_ptr()],
             );
         }
+    }
+}
+
+impl window {
+    pub(crate) fn layout(&self) -> &crate::layout::LayoutTree {
+        &self.layout
+    }
+
+    pub(crate) fn layout_mut(&mut self, _: crate::layout::LayoutAccess) -> &mut crate::layout::LayoutTree {
+        &mut self.layout
+    }
+}
+
+impl window {
+    pub(crate) fn layout_and_panes_mut(&mut self, _: crate::layout::LayoutAccess) -> (&mut crate::layout::LayoutTree, &mut window_panes_t) {
+        (&mut self.layout, &mut self.panes)
     }
 }

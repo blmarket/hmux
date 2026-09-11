@@ -445,23 +445,19 @@ impl WindowRef {
             owner.resize_layout(sx, sy);
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
-            let root = w
-                .layout_root
-                .as_deref()
+            let root = w.layout().size()
                 .expect("a resized window has a layout");
-            sx = sx.max(root.sx);
-            sy = sy.max(root.sy);
+            sx = sx.max(root.width);
+            sy = sy.max(root.height);
             drop(payload);
             owner.resize(sx, sy, xpixel, ypixel);
             let payload = owner.as_window();
             let w = &*payload;
-            let root = w
-                .layout_root
-                .as_deref()
+            let root = w.layout().size()
                 .expect("window resizing keeps its layout");
             log_debug(
                 c"%s: @%u resized to %ux%u; layout %ux%u",
-                fmt_args![c"resize_window", w.window_id(), sx, sy, root.sx, root.sy],
+                fmt_args![c"resize_window", w.window_id(), sx, sy, root.width, root.height],
             );
 
             let active_id = w.active_pane_id();

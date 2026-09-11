@@ -110,7 +110,6 @@ use crate::grid::{
     grid_view_insert_lines, grid_view_insert_lines_region, grid_view_scroll_region_down,
     grid_view_scroll_region_up, grid_view_set_cell, grid_view_set_cells, grid_view_set_padding,
 };
-use crate::layout::layout_cell_for_pane;
 use crate::log::{fatalx, log_debug, log_get_level};
 
 use crate::reactor::Timer;
@@ -399,7 +398,7 @@ unsafe fn screen_write_set_client_cb(ttyctx: &mut tty_ctx, c: &mut client) -> c_
         if !visible {
             return 0;
         }
-        if layout_cell_for_pane(window.as_window().layout_root.as_deref(), &pane_ref).is_none() {
+        if !window.as_window().layout().contains(&pane_ref) {
             return 0;
         }
         let pane = pane_ref

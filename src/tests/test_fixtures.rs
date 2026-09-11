@@ -972,19 +972,6 @@ impl Layout {
         self.window.reference()
     }
 
-    pub(crate) fn cell(&mut self, pane: usize) -> Option<std::cell::Ref<'_, layout_cell>> {
-        let id = unsafe { (*self.pane(pane)).pane_id() };
-        let w = { self.window.handle().as_window() };
-        std::cell::Ref::filter_map(w, |w| {
-            crate::layout::layout_cell_for_pane(
-                w.layout_root.as_deref(),
-                &crate::window::window_pane_find_by_id(id).expect("the pane allocation exists"),
-            )
-            .map(|(cell, _)| cell)
-        })
-        .ok()
-    }
-
     /// A window of `sx` by `sy` with one pane filling it, as `layout_init`
     /// leaves a freshly created window.
     pub(crate) fn new(sx: u_int, sy: u_int) -> Layout {
@@ -1032,7 +1019,7 @@ impl Layout {
     /// The tree as one line: each node is its type, size and offset, with its
     /// children in brackets.
     pub(crate) fn dump(&mut self) -> String {
-        unsafe { dump_cell((*self.w()).layout_root.as_deref()) }
+        self.reference().test_layout_dump()
     }
 
     /// The sizes and offsets the panes themselves were given.
@@ -1063,46 +1050,6 @@ impl Layout {
 impl Drop for Layout {
     fn drop(&mut self) {
         (self.window.reference()).free_layout();
-    }
-}
-
-/// One cell of a layout tree as a string, with its children in brackets. A
-/// floating cell is marked with a star.
-pub(crate) fn dump_cell(lc: Option<&layout_cell>) -> String {
-    use crate::layout::{
-        LAYOUT_CELL_FLOATING, LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, LAYOUT_WINDOWPANE,
-    };
-    let Some(lc) = lc else {
-        return "-".to_string();
-    };
-    let here = format!("{}x{}+{}+{}", lc.sx, lc.sy, lc.xoff, lc.yoff);
-    let floating = if lc.flags & LAYOUT_CELL_FLOATING != 0 {
-        "*"
-    } else {
-        ""
-    };
-    match lc.type_0 {
-        LAYOUT_WINDOWPANE => format!(
-            "%{}{floating} {here}",
-            lc.wp
-                .as_ref()
-                .map(|pane| pane.id())
-                .unwrap_or(u_int::MAX)
-        ),
-        LAYOUT_LEFTRIGHT | LAYOUT_TOPBOTTOM => {
-            let kids: Vec<String> = lc
-                .cells
-                .iter()
-                .map(|child| dump_cell(Some(child)))
-                .collect();
-            let name = if lc.type_0 == LAYOUT_LEFTRIGHT {
-                "LR"
-            } else {
-                "TB"
-            };
-            format!("{name}{floating} {here} [{}]", kids.join(" | "))
-        }
-        _ => format!("?{floating} {here}"),
     }
 }
 
@@ -2134,60 +2081,4 @@ mod tests {
 }
 
 /// Gives a test pane an owned layout cell without changing its geometry or z-order.
-pub(crate) fn set_pane_floating(w: &mut window, pane_id: u_int, floating: bool) {
-    use crate::layout::{
-        LAYOUT_CELL_FLOATING, LAYOUT_LEFTRIGHT, LayoutCellPath, layout_create_cell,
-    };
-
-    let path = w.layout_root.as_deref().and_then(|root| {
-        LayoutCellPath::for_pane(
-            root,
-            &crate::window::window_pane_find_by_id(pane_id).expect("the pane allocation exists"),
-        )
-    });
-    if path.is_none() {
-        let geometry = unsafe {
-            w.panes
-                .iter()
-                .find(|pane| pane.pane_id() == pane_id)
-                .unwrap()
-                .as_pane()
-        }
-        .geometry();
-        let mut cell = layout_create_cell(None);
-        cell.wp = w
-            .panes
-            .iter()
-            .find(|pane| pane.pane_id() == pane_id)
-            .map(|pane| pane.downgrade());
-        (cell.sx, cell.sy, cell.xoff, cell.yoff) =
-            (geometry.sx, geometry.sy, geometry.xoff, geometry.yoff);
-        if let Some(root) = w.layout_root.as_deref() {
-            if root.wp.as_ref().map(|pane| pane.id()).is_some() {
-                let mut parent = layout_create_cell(None);
-                parent.type_0 = LAYOUT_LEFTRIGHT;
-                let size = w.dimensions().size;
-                (parent.sx, parent.sy, parent.xoff, parent.yoff) = (size.width, size.height, 0, 0);
-                let mut only = w.layout_root.replace(parent).unwrap();
-                only.parent = true;
-                w.layout_root.as_deref_mut().unwrap().cells.push(only);
-            }
-            cell.parent = true;
-            w.layout_root.as_deref_mut().unwrap().cells.push(cell);
-        } else {
-            w.layout_root = Some(cell);
-        }
-    }
-    let root = w.layout_root.as_deref_mut().unwrap();
-    let path = LayoutCellPath::for_pane(
-        root,
-        &crate::window::window_pane_find_by_id(pane_id).expect("the pane allocation exists"),
-    )
-    .unwrap();
-    let cell = path.get_mut(root).unwrap();
-    if floating {
-        cell.flags |= LAYOUT_CELL_FLOATING;
-    } else {
-        cell.flags &= !LAYOUT_CELL_FLOATING;
-    }
-}
+pub(crate) use crate::layout::test_support::set_pane_floating;

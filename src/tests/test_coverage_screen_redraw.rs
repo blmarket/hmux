@@ -30,7 +30,7 @@ use crate::pane_identity::PaneIdentity;
 use crate::window_fill_character::WindowFillCharacterState;
 
 use crate::grid::grid_default_cell;
-use crate::layout::LAYOUT_CELL_FLOATING;
+use crate::consts::LAYOUT_CELL_FLOATING;
 
 use crate::screen::{
     BORDER_MARKERS, CELL_BORDERS, CELL_BOTTOMJOIN, CELL_BOTTOMLEFT, CELL_BOTTOMRIGHT, CELL_INSIDE,
@@ -52,7 +52,7 @@ use crate::server::client_ref_of;
 use crate::terminfo::{tty_acs_double_borders, tty_acs_heavy_borders};
 use crate::tests::test_fixtures::{Pane, Session, Window, globals, link, unlink, zeroed_client};
 use crate::types::{
-    ClientRef, client, grid_cell, layout_cell, screen_redraw_ctx, u_char, u_int, u_short,
+    ClientRef, client, grid_cell, screen_redraw_ctx, u_char, u_int, u_short,
     utf8_data, visible_range, visible_ranges, window, winlink,
 };
 use ::core::ffi::c_int;
@@ -690,38 +690,30 @@ fn two_panes_answers_only_for_exactly_two_sharing_a_parent() {
         let w = &mut *pair.w();
         assert_eq!(screen_redraw_two_panes(pair.window.handle()), None);
 
-        let mut parent = Box::new(layout_cell::default());
-        parent.type_0 = LAYOUT_LEFTRIGHT;
-        for pane in w.panes.iter().take(2) {
-            let mut cell = Box::new(layout_cell::default());
-            cell.wp = Some(pane.downgrade());
-            parent.cells.push(cell);
-        }
-        w.layout_root = Some(parent);
+        let panes: Vec<_> = w.panes.iter().map(|pane| pane.downgrade()).collect();
+        w.test_layout_panes(&panes[..2], Some(LAYOUT_LEFTRIGHT));
         assert_eq!(
             screen_redraw_two_panes(pair.window.handle()),
             Some(LAYOUT_LEFTRIGHT)
         );
 
-        w.layout_root.as_mut().unwrap().type_0 = LAYOUT_TOPBOTTOM;
+        w.test_layout_panes(&panes[..2], Some(LAYOUT_TOPBOTTOM));
         assert_eq!(
             screen_redraw_two_panes(pair.window.handle()),
             Some(LAYOUT_TOPBOTTOM)
         );
 
-        w.layout_root.as_mut().unwrap().cells[1].flags |= LAYOUT_CELL_FLOATING;
+        crate::tests::test_fixtures::set_pane_floating(w, panes[1].id(), true);
         assert_eq!(screen_redraw_two_panes(pair.window.handle()), None);
-        w.layout_root.as_mut().unwrap().cells[1].flags = 0;
+        crate::tests::test_fixtures::set_pane_floating(w, panes[1].id(), false);
 
-        let mut third = Box::new(layout_cell::default());
-        third.wp = Some(w.panes[2].downgrade());
-        w.layout_root.as_mut().unwrap().cells.push(third);
+        w.test_layout_panes(&panes, Some(LAYOUT_TOPBOTTOM));
         assert_eq!(screen_redraw_two_panes(pair.window.handle()), None);
 
-        w.layout_root.as_mut().unwrap().cells.truncate(1);
+        w.test_layout_panes(&panes[..1], Some(LAYOUT_TOPBOTTOM));
         assert_eq!(screen_redraw_two_panes(pair.window.handle()), None);
 
-        w.layout_root = w.layout_root.take().unwrap().cells.pop();
+        w.test_layout_panes(&panes[..1], None);
         assert_eq!(screen_redraw_two_panes(pair.window.handle()), None);
     }
 }

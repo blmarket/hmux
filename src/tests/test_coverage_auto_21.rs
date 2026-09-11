@@ -4,7 +4,7 @@
 use crate::WindowPane;
 use crate::pane_identity::PaneIdentity;
 
-use crate::layout::{LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM};
+use crate::consts::{LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM};
 use crate::tests::test_fixtures::{Layout, Pane, Window, globals};
 use crate::types::layout_type;
 use crate::window::{

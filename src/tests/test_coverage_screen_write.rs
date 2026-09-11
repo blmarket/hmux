@@ -21,7 +21,6 @@
 //! — the oddity is pinned, not fixed.
 
 use crate::WindowPane;
-use crate::layout::layout_make_leaf;
 use crate::pane_identity::PaneIdentity;
 use crate::window_dimensions::WindowDimensionsState;
 
@@ -374,7 +373,6 @@ fn the_client_callback_turns_a_client_down_before_working_out_offsets() {
     let _guard = globals();
     let mut w = PaneWriter::new(6, 3);
     let mut a = Attached::new(&mut w.window, 20, 6);
-    let mut layout = Box::new(layout_cell::default());
     let mut elsewhere = Window::new(2, "elsewhere", 6, 3);
     let cb = test_hooks::set_client_cb();
     unsafe {
@@ -387,11 +385,10 @@ fn the_client_callback_turns_a_client_down_before_working_out_offsets() {
             TtyCtxArg::Pane(crate::window::window_pane_find_by_id((*wp).pane_id()).unwrap())
         );
 
-        (*w.w()).layout_root = None;
+        (*w.w()).clear_layout_tree();
         assert_eq!(cb(&mut ttyctx, &mut *c), 0);
 
-        layout_make_leaf(&mut layout, &mut *wp);
-        (*w.w()).layout_root = Some(layout);
+        (*w.w()).test_layout_panes(&[(*wp).observation().unwrap()], None);
         *(*wp).flags_mut() |= PANE_REDRAW;
         assert_eq!(cb(&mut ttyctx, &mut *c), -1);
         *(*wp).flags_mut() &= !PANE_REDRAW;
@@ -424,12 +421,10 @@ fn the_client_callback_fills_in_the_offsets_it_answers_with() {
     let _guard = globals();
     let mut w = PaneWriter::new(6, 3);
     let mut a = Attached::new(&mut w.window, 20, 6);
-    let mut layout = Box::new(layout_cell::default());
     let cb = test_hooks::set_client_cb();
     unsafe {
         let (wp, c) = (w.wp(), a.c());
-        layout_make_leaf(&mut layout, &mut *wp);
-        (*w.w()).layout_root = Some(layout);
+        (*w.w()).test_layout_panes(&[(*wp).observation().unwrap()], None);
         (*wp).set_position(3, 4);
         let mut ttyctx = Box::new(tty_ctx::default());
         test_hooks::initctx(&mut w.ctx(), &mut ttyctx, 0, 0);
@@ -467,7 +462,7 @@ fn the_client_callback_only_asks_about_the_session_for_an_invisible_pane() {
     let cb = test_hooks::set_client_cb();
     unsafe {
         let (wp, c) = (w.wp(), a.c());
-        (*w.w()).layout_root = None;
+        (*w.w()).clear_layout_tree();
         *(*wp).flags_mut() |= PANE_REDRAW;
         let mut ttyctx = Box::new(tty_ctx::default());
         test_hooks::initctx(&mut w.ctx(), &mut ttyctx, 0, 0);
@@ -490,11 +485,9 @@ fn a_client_is_written_to_through_the_callback() {
     let _guard = globals();
     let mut w = PaneWriter::new(6, 3);
     let mut a = Attached::new(&mut w.window, 20, 6);
-    let mut layout = Box::new(layout_cell::default());
     unsafe {
         let (wp, c) = (w.wp(), a.c());
-        layout_make_leaf(&mut layout, &mut *wp);
-        (*w.w()).layout_root = Some(layout);
+        (*w.w()).test_layout_panes(&[(*wp).observation().unwrap()], None);
         screen_write_rawstring(&mut w.ctx(), b"hello", 1);
         let mut out = (*c).tty.out.as_ref().unwrap().clone();
         assert_eq!(out.as_slice(), b"hello");
@@ -1232,11 +1225,9 @@ fn a_partially_hidden_wide_cell_emits_spaces_for_its_visible_columns() {
     let _guard = globals();
     let mut writer = PaneWriter::new(6, 3);
     let mut attached = Attached::new(&mut writer.window, 6, 3);
-    let mut layout = Box::new(layout_cell::default());
     let (pane, window) = (writer.wp(), writer.w());
     unsafe {
-        layout_make_leaf(&mut layout, &mut *pane);
-        (*window).layout_root = Some(layout);
+        (*window).test_layout_panes(&[(*pane).observation().unwrap()], None);
     }
     let _over = Floating::over(pane, window, 2, 0, 1, 1);
     unsafe {

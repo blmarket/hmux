@@ -11,7 +11,7 @@ use super::writer::{ScreenWriteCtx, screen_write_ctx_on_screen};
 use crate::fmt_args;
 use crate::format::{format_create, format_create_defaults, format_defaults, format_expand_time};
 use crate::grid::{Grid, grid_default_cell};
-use crate::layout::{LAYOUT_CELL_FLOATING, layout_cell_for_pane};
+
 use crate::log::log_debug;
 use crate::modes::window_copy_get_current_offset;
 
@@ -142,26 +142,9 @@ pub(crate) unsafe fn screen_redraw_border_set(
 /// The way the window is split when it holds exactly two laid-out panes under
 /// one parent, or `None` when it does not.
 pub(crate) fn screen_redraw_two_panes(owner: &WindowRef) -> Option<layout_type> {
-    let w = owner.as_window();
-    let mut count = 0;
-    let mut split_type = None;
-    for pane in &w.panes {
-        let Some((cell, parent)) =
-            layout_cell_for_pane(w.layout_root.as_deref(), &pane.downgrade())
-        else {
-            continue;
-        };
-        if cell.flags & LAYOUT_CELL_FLOATING != 0 {
-            continue;
-        }
-        count += 1;
-        if count > 2 {
-            return None;
-        }
-        split_type = Some(parent?.type_0);
-    }
-    if count == 2 { split_type } else { None }
+    owner.two_pane_layout()
 }
+
 pub(crate) fn screen_redraw_pane_border(
     ctx: &screen_redraw_ctx,
     wp: &(impl crate::WindowPane + ?Sized),

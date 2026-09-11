@@ -896,13 +896,11 @@ unsafe fn format_cb_window_active_clients_list(ft: &format_tree) -> Option<CStri
 }
 fn format_cb_window_layout(ft: &format_tree) -> Option<CString> {
     let owner = ft.window()?;
-    let w = owner.as_window();
-    owner.dump_layout_cell(w.saved_layout_root.as_deref().or(w.layout_root.as_deref()))
+    owner.dump_unzoomed_layout()
 }
 fn format_cb_window_visible_layout(ft: &format_tree) -> Option<CString> {
     let owner = ft.window()?;
-    let w = owner.as_window();
-    owner.dump_layout_cell(w.layout_root.as_deref())
+    owner.dump_layout()
 }
 unsafe fn format_cb_start_command(ft: &format_tree) -> Option<CString> {
     unsafe {

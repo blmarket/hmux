@@ -1,3 +1,4 @@
+use super::{layout_cell, layout_cells, LayoutAccess};
 use crate::WindowPane;
 use crate::args::RustArguments;
 use crate::cmd::cmdq_item;
@@ -102,6 +103,16 @@ pub unsafe fn layout_print_cell(lc: Option<&layout_cell>, hdr: &CStr, n: u_int) 
 }
 
 /// A position in one layout tree, valid while its child ordering is unchanged.
+/// Node storage and path resolution stay inside the layout owner.
+///
+/// ```compile_fail
+/// use tmux_c2rs::types::layout_cell;
+/// ```
+///
+/// ```compile_fail
+/// let path = tmux_c2rs::layout::LayoutCellPath::root();
+/// path.get(&Default::default());
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LayoutCellPath(Vec<usize>);
 
@@ -110,31 +121,31 @@ impl LayoutCellPath {
         Self(Vec::new())
     }
 
-    pub(crate) fn child(&self, index: usize) -> Self {
+    pub(super) fn child(&self, index: usize) -> Self {
         let mut path = self.clone();
         path.0.push(index);
         path
     }
 
-    pub fn get<'a>(&self, root: &'a layout_cell) -> Option<&'a layout_cell> {
+    pub(super) fn get<'a>(&self, root: &'a layout_cell) -> Option<&'a layout_cell> {
         self.0
             .iter()
             .try_fold(root, |cell, &index| cell.cells.get(index).map(Box::as_ref))
     }
 
-    pub(crate) fn get_mut<'a>(&self, root: &'a mut layout_cell) -> Option<&'a mut layout_cell> {
+    pub(super) fn get_mut<'a>(&self, root: &'a mut layout_cell) -> Option<&'a mut layout_cell> {
         self.0.iter().try_fold(root, |cell, &index| {
             cell.cells.get_mut(index).map(Box::as_mut)
         })
     }
 
-    pub(crate) fn parent(&self) -> Option<Self> {
+    pub(super) fn parent(&self) -> Option<Self> {
         let mut path = self.clone();
         path.0.pop()?;
         Some(path)
     }
 
-    pub(crate) fn for_pane(root: &layout_cell, pane: &RustWindowPaneWeak) -> Option<Self> {
+    pub(super) fn for_pane(root: &layout_cell, pane: &RustWindowPaneWeak) -> Option<Self> {
         if root.wp.as_ref() == Some(pane) {
             return Some(Self(Vec::new()));
         }
@@ -313,7 +324,7 @@ pub(crate) fn layout_bind_pane(
     );
     if let Some(path) = path {
         let cell = w
-            .layout_root
+            .layout_mut(LayoutAccess(())).root
             .as_deref_mut()
             .and_then(|root| path.get_mut(root))
             .expect("the layout slot exists");
@@ -479,7 +490,7 @@ impl LayoutResizeLimits {
                 PANE_MINIMUM as u_int
             };
             let status = w.options_ref().number(c"pane-border-status") as c_int;
-            Self::collect(w.layout_root.as_deref(), cell, minimum_width, status)
+            Self::collect(w.layout().root.as_deref(), cell, minimum_width, status)
         }
     }
 
@@ -778,7 +789,7 @@ impl WindowRef {
             }
         }
         let mut order = Vec::new();
-        if let Some(root) = w.layout_root.as_deref() {
+        if let Some(root) = w.layout().root.as_deref() {
             collect(root, &mut order);
         }
         w.z_index.extend(order);
@@ -789,7 +800,7 @@ impl WindowRef {
         unsafe {
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
-            let Some(root) = w.layout_root.as_deref_mut() else {
+            let Some(root) = w.layout_mut(LayoutAccess(())).root.as_deref_mut() else {
                 return;
             };
             if floating(root) {
@@ -815,7 +826,7 @@ impl WindowRef {
                 let geometry = {
                     let w = owner.as_window();
                     layout_pane_geometry(
-                        w.layout_root.as_deref(),
+                        w.layout().root.as_deref(),
                         w.scrollbar_settings(),
                         &pane,
                         status,
@@ -835,7 +846,7 @@ impl WindowRef {
     }
     /// Removes the cell at `path` from a separately owned tree, giving its room
     /// to a neighbor and folding away a parent left with one child.
-    pub unsafe fn destroy_layout_cell(
+    pub(super) unsafe fn destroy_layout_cell(
         &self,
         root: &mut Option<Box<layout_cell>>,
         path: &LayoutCellPath,
@@ -861,7 +872,7 @@ impl WindowRef {
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
             let size = w.dimensions().size;
-            let root = w.layout_root.insert(layout_create_cell(None));
+            let root = w.layout_mut(LayoutAccess(())).root.insert(layout_create_cell(None));
             layout_set_size(root, size.width, size.height, 0, 0);
             layout_make_leaf(root, pane.as_pane());
             drop(payload);
@@ -873,7 +884,7 @@ impl WindowRef {
 
         let mut payload = owner.as_window_mut();
         let w = &mut *payload;
-        layout_free_cell(w.layout_root.take());
+        layout_free_cell(w.layout_mut(LayoutAccess(())).root.take());
     }
     /// Resizes the window to `sx` by `sy`, shrinking only as far as its panes
     /// allow.
@@ -883,7 +894,7 @@ impl WindowRef {
         unsafe {
             let payload = owner.as_window();
             let w = &*payload;
-            let Some(root) = w.layout_root.as_deref() else {
+            let Some(root) = w.layout().root.as_deref() else {
                 return;
             };
             if root.type_0 == LAYOUT_WINDOWPANE && floating(root) {
@@ -894,7 +905,7 @@ impl WindowRef {
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
             let root = w
-                .layout_root
+                .layout_mut(LayoutAccess(())).root
                 .as_deref_mut()
                 .expect("the resized root is unchanged");
             for (axis, target) in [(LAYOUT_LEFTRIGHT, sx), (LAYOUT_TOPBOTTOM, sy)] {
@@ -937,10 +948,10 @@ impl WindowRef {
         unsafe {
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
-            let Some(path) = layout_pane_cell(w.layout_root.as_deref(), pane, type_0) else {
+            let Some(path) = layout_pane_cell(w.layout().root.as_deref(), pane, type_0) else {
                 return;
             };
-            let root = w.layout_root.as_deref().expect("the pane path has a root");
+            let root = w.layout().root.as_deref().expect("the pane path has a root");
             let cell = path.get(root).expect("the pane path was just found");
             let parent = path
                 .parent()
@@ -975,7 +986,7 @@ impl WindowRef {
         unsafe {
             let payload = owner.as_window();
             let w = &*payload;
-            if w.layout_root
+            if w.layout().root
                 .as_deref()
                 .and_then(|root| path.get(root))
                 .is_none()
@@ -1015,10 +1026,10 @@ impl WindowRef {
         unsafe {
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
-            let Some(mut path) = layout_pane_cell(w.layout_root.as_deref(), pane, type_0) else {
+            let Some(mut path) = layout_pane_cell(w.layout().root.as_deref(), pane, type_0) else {
                 return;
             };
-            let root = w.layout_root.as_deref().expect("the pane path has a root");
+            let root = w.layout().root.as_deref().expect("the pane path has a root");
             let parent = path
                 .parent()
                 .and_then(|parent| parent.get(root))
@@ -1045,7 +1056,7 @@ impl WindowRef {
         unsafe {
             let payload = owner.as_window();
             let w = &*payload;
-            let Some(cell) = w.layout_root.as_deref().and_then(|root| path.get(root)) else {
+            let Some(cell) = w.layout().root.as_deref().and_then(|root| path.get(root)) else {
                 return;
             };
             let limits = LayoutResizeLimits::for_adjustment(owner, cell, type_0, change);
@@ -1053,7 +1064,7 @@ impl WindowRef {
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
             let cell = w
-                .layout_root
+                .layout_mut(LayoutAccess(())).root
                 .as_deref_mut()
                 .and_then(|root| path.get_mut(root))
                 .expect("the resize path is unchanged");
@@ -1078,7 +1089,7 @@ impl WindowRef {
                 return 0;
             };
             let Some(parent) = w
-                .layout_root
+                .layout().root
                 .as_deref()
                 .and_then(|root| parent_path.get(root))
             else {
@@ -1122,7 +1133,7 @@ impl WindowRef {
                 return 0;
             };
             let Some(parent) = w
-                .layout_root
+                .layout().root
                 .as_deref()
                 .and_then(|root| parent_path.get(root))
             else {
@@ -1167,7 +1178,7 @@ impl WindowRef {
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
             let cell = w
-                .layout_root
+                .layout_mut(LayoutAccess(())).root
                 .as_deref_mut()
                 .and_then(|root| path.get_mut(root))
                 .expect("the assigned slot is in the owned layout");
@@ -1279,7 +1290,7 @@ impl WindowRef {
             let mut children = cell.cells.iter().filter(|child| !floating(child));
             children.clone().count() > 1 || children.any(|child| needs_limits(child))
         }
-        let Some(cell) = w.layout_root.as_deref().and_then(|root| path.get(root)) else {
+        let Some(cell) = w.layout().root.as_deref().and_then(|root| path.get(root)) else {
             return;
         };
         let limits = if needs_limits(cell) {
@@ -1291,7 +1302,7 @@ impl WindowRef {
         let mut payload = owner.as_window_mut();
         let w = &mut *payload;
         let cell = w
-            .layout_root
+            .layout_mut(LayoutAccess(())).root
             .as_deref_mut()
             .and_then(|root| path.get_mut(root))
             .expect("resizing preserves the cell path");
@@ -1320,7 +1331,7 @@ impl WindowRef {
             let sb_style = w.panes[pane_index].as_pane().scrollbar_style();
             let full_size = flags & SPAWN_FULLSIZE != 0;
             let before = flags & SPAWN_BEFORE != 0;
-            let root = w.layout_root.as_deref()?;
+            let root = w.layout().root.as_deref()?;
             let mut path = (if full_size {
                 Some(LayoutCellPath::root())
             } else {
@@ -1338,7 +1349,7 @@ impl WindowRef {
                     }
                 }
                 LAYOUT_TOPBOTTOM => {
-                    if layout_add_horizontal_border(w.layout_root.as_deref(), cell, status) != 0 {
+                    if layout_add_horizontal_border(w.layout().root.as_deref(), cell, status) != 0 {
                         (PANE_MINIMUM * 2 + 2) as u_int
                     } else {
                         (PANE_MINIMUM * 2 + 1) as u_int
@@ -1381,7 +1392,7 @@ impl WindowRef {
             if matching_parent {
                 let parent_path = parent_path.expect("the matching parent exists");
                 let parent = parent_path
-                    .get_mut(w.layout_root.as_deref_mut().unwrap())
+                    .get_mut(w.layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap())
                     .unwrap();
                 let index = *path.0.last().unwrap();
                 let new_index = index + usize::from(!before);
@@ -1390,7 +1401,7 @@ impl WindowRef {
                 path = parent_path.child(index + usize::from(before));
                 new_path = parent_path.child(new_index);
             } else if resize_first {
-                let cell = path.get_mut(w.layout_root.as_deref_mut().unwrap()).unwrap();
+                let cell = path.get_mut(w.layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap()).unwrap();
                 if type_0 == LAYOUT_LEFTRIGHT {
                     cell.sx = new_size;
                 } else {
@@ -1400,7 +1411,7 @@ impl WindowRef {
                 owner.layout_resize_child_cells(&path);
                 payload = owner.as_window_mut();
                 w = &mut *payload;
-                let cell = path.get_mut(w.layout_root.as_deref_mut().unwrap()).unwrap();
+                let cell = path.get_mut(w.layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap()).unwrap();
                 if type_0 == LAYOUT_LEFTRIGHT {
                     cell.sx = saved_size;
                 } else {
@@ -1422,17 +1433,17 @@ impl WindowRef {
                 layout_set_size(&mut node, sx, sy, xoff as c_int, yoff as c_int);
                 let mut only = if let Some(parent_path) = parent_path {
                     let parent = parent_path
-                        .get_mut(w.layout_root.as_deref_mut().unwrap())
+                        .get_mut(w.layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap())
                         .unwrap();
                     node.parent = true;
                     let index = *path.0.last().unwrap();
                     core::mem::replace(&mut parent.cells[index], node)
                 } else {
-                    w.layout_root
+                    w.layout_mut(LayoutAccess(())).root
                         .replace(node)
                         .expect("the split cell is the root")
                 };
-                let node = path.get_mut(w.layout_root.as_deref_mut().unwrap()).unwrap();
+                let node = path.get_mut(w.layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap()).unwrap();
                 only.parent = true;
                 node.cells.push(only);
                 let new = layout_create_cell(Some(node));
@@ -1448,12 +1459,12 @@ impl WindowRef {
                     (&path, &new_path)
                 };
                 let cell = first
-                    .get_mut(w.layout_root.as_deref_mut().unwrap())
+                    .get_mut(w.layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap())
                     .unwrap();
                 if type_0 == LAYOUT_LEFTRIGHT {
                     layout_set_size(cell, size1, sy, xoff as c_int, yoff as c_int);
                     let cell = second
-                        .get_mut(w.layout_root.as_deref_mut().unwrap())
+                        .get_mut(w.layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap())
                         .unwrap();
                     layout_set_size(
                         cell,
@@ -1465,7 +1476,7 @@ impl WindowRef {
                 } else {
                     layout_set_size(cell, sx, size1, xoff as c_int, yoff as c_int);
                     let cell = second
-                        .get_mut(w.layout_root.as_deref_mut().unwrap())
+                        .get_mut(w.layout_mut(LayoutAccess(())).root.as_deref_mut().unwrap())
                         .unwrap();
                     layout_set_size(
                         cell,
@@ -1483,8 +1494,9 @@ impl WindowRef {
                 }
                 owner.fix_layout_offsets();
             } else {
-                let cell = path.get_mut(w.layout_root.as_deref_mut().unwrap()).unwrap();
-                layout_make_leaf(cell, w.panes[pane_index].as_pane_mut());
+                let (layout, panes) = w.layout_and_panes_mut(LayoutAccess(()));
+                let cell = path.get_mut(layout.root.as_deref_mut().unwrap()).unwrap();
+                layout_make_leaf(cell, panes[pane_index].as_pane_mut());
             }
             Some(new_path)
         }
@@ -1497,7 +1509,7 @@ impl WindowRef {
         {
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
-            if w.layout_root
+            if w.layout().root
                 .as_deref()
                 .expect("a floating pane needs a layout")
                 .type_0
@@ -1512,13 +1524,13 @@ impl WindowRef {
                     0,
                     0,
                 );
-                let mut only = w.layout_root.take().expect("the window has a root");
+                let mut only = w.layout_mut(LayoutAccess(())).root.take().expect("the window has a root");
                 only.parent = true;
                 node.cells.push(only);
-                w.layout_root = Some(node);
+                w.layout_mut(LayoutAccess(())).root = Some(node);
             }
             let parent = w
-                .layout_root
+                .layout_mut(LayoutAccess(())).root
                 .as_deref_mut()
                 .expect("the floating pane has a parent");
             let cell = insert_new_tail(parent);
@@ -1543,7 +1555,7 @@ impl WindowRef {
         unsafe {
             let payload = owner.as_window();
             let w = &*payload;
-            let Some(removal) = w.layout_root.as_deref().and_then(|root| {
+            let Some(removal) = w.layout().root.as_deref().and_then(|root| {
                 let path = LayoutCellPath::for_pane(root, pane)?;
                 LayoutCellRemoval::new(owner, root, &path)
             }) else {
@@ -1552,10 +1564,10 @@ impl WindowRef {
             drop(payload);
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
-            for cell in removal.apply(&mut w.layout_root, slot) {
+            for cell in removal.apply(&mut w.layout_mut(LayoutAccess(())).root, slot) {
                 layout_free_cell(Some(cell));
             }
-            let has_layout = w.layout_root.is_some();
+            let has_layout = w.layout().root.is_some();
             drop(payload);
             if has_layout {
                 owner.fix_layout_offsets();
@@ -1574,7 +1586,7 @@ impl WindowRef {
         unsafe {
             let payload = owner.as_window();
             let w = &*payload;
-            let Some(parent) = w.layout_root.as_deref().and_then(|root| path.get(root)) else {
+            let Some(parent) = w.layout().root.as_deref().and_then(|root| path.get(root)) else {
                 return 0;
             };
             let number = parent.cells.len() as u_int;
@@ -1590,7 +1602,7 @@ impl WindowRef {
 
             let size = if leftright {
                 parent.sx
-            } else if layout_add_horizontal_border(w.layout_root.as_deref(), parent, status) != 0 {
+            } else if layout_add_horizontal_border(w.layout().root.as_deref(), parent, status) != 0 {
                 parent.sy.wrapping_sub(1)
             } else {
                 parent.sy
@@ -1621,7 +1633,7 @@ impl WindowRef {
                 let w = &*payload;
                 let child_path = path.child(index);
                 let cell = child_path
-                    .get(w.layout_root.as_deref().expect("the spread root exists"))
+                    .get(w.layout().root.as_deref().expect("the spread root exists"))
                     .expect("spreading preserves child positions");
                 let change =
                     if leftright {
@@ -1633,7 +1645,7 @@ impl WindowRef {
                         change
                     } else {
                         let mut this =
-                            if layout_add_horizontal_border(w.layout_root.as_deref(), cell, status)
+                            if layout_add_horizontal_border(w.layout().root.as_deref(), cell, status)
                                 != 0
                             {
                                 each.wrapping_add(1)
@@ -1652,7 +1664,7 @@ impl WindowRef {
                 let w = &mut *payload;
                 let cell = child_path
                     .get_mut(
-                        w.layout_root
+                        w.layout_mut(LayoutAccess(())).root
                             .as_deref_mut()
                             .expect("the spread root exists"),
                     )
@@ -1673,7 +1685,7 @@ impl WindowRef {
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
             let mut parent = w
-                .layout_root
+                .layout().root
                 .as_deref()
                 .and_then(|root| LayoutCellPath::for_pane(root, pane))
                 .and_then(|path| path.parent());
@@ -1703,7 +1715,7 @@ impl WindowRef {
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
             *cause = CString::default();
-            if layout_cell_for_pane(w.layout_root.as_deref(), pane)
+            if layout_cell_for_pane(w.layout().root.as_deref(), pane)
                 .is_some_and(|(cell, _)| floating(cell))
             {
                 *cause = c"can't split a floating pane".to_owned();

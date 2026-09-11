@@ -24,7 +24,7 @@ pub unsafe fn control_notify_window_layout_changed(w: &WindowRef) {
         let Some(wl) = held.get() else {
             return;
         };
-        if w.as_window().layout_root.is_none() {
+        if w.as_window().layout().size().is_none() {
             return;
         }
         let template = c"%layout-change #{window_id} #{window_layout} #{window_visible_layout} #{window_raw_flags}";
