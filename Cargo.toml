@@ -26,7 +26,6 @@ path = "src/main.rs"
 name = "hmux"
 
 [dependencies]
-c2rust-bitfields = "0.22.1"
 libc = "0.2"
 lalrpop-util = { version = "0.23.1", default-features = false, features = ["std"] }
 hmux-agent = { path = "hmux-agent" }

@@ -67,27 +67,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "c2rust-bitfields"
-version = "0.22.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e91b9a85391b09c224053f3c45344f0639822e641f9d2b4f351bb3152600742d"
-dependencies = [
- "c2rust-bitfields-derive",
-]
-
-[[package]]
-name = "c2rust-bitfields-derive"
-version = "0.22.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "153187c06ed005d5cb75ed9f0a2f274836f54f6b2efdc1f45136e728764875f9"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
- "unicode-ident",
-]
-
-[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -214,7 +193,6 @@ version = "0.0.0"
 dependencies = [
  "bytes",
  "bytes-utils",
- "c2rust-bitfields",
  "hashlink",
  "hmux-agent",
  "hmux-rt",

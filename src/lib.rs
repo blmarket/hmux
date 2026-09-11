@@ -6,8 +6,6 @@
 #![feature(native_link_modifiers_as_needed)]
 #![feature(local_waker)]
 
-#[macro_use]
-extern crate c2rust_bitfields;
 extern crate libc;
 
 pub mod alerts;
