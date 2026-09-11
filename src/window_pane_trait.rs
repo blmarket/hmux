@@ -1,7 +1,7 @@
 //! Capabilities used by pane consumers.
 
 use crate::{
-    PaneActivityState, PaneBorderCache, PaneCommandState, PaneControlColours, PaneExitState,
+    PaneActivityState, PaneCommandState, PaneControlColours, PaneExitState,
     PaneGeometryState, PaneIdentity, PaneScrollbar,
     PaneScrollbarStyleState, PaneSearchState, PaneStyleCache, PaneThemeState,
 };
@@ -27,7 +27,6 @@ pub trait WindowPane:
     + PaneStyleCache
     + PaneThemeState
     + PaneSearchState
-    + PaneBorderCache
     + PaneControlColours
     + PaneScrollbarStyleState
 {

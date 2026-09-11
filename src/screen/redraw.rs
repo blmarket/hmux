@@ -15,7 +15,6 @@ use crate::layout::{LAYOUT_CELL_FLOATING, layout_cell_for_pane};
 use crate::log::log_debug;
 use crate::modes::window_copy_get_current_offset;
 
-use crate::pane_border_cache::{PaneBorderCache, PaneBorderKind};
 use crate::pane_geometry::PaneGeometryState;
 use crate::pane_scrollbar::{PaneScrollbar, PaneScrollbarSlider};
 use crate::pane_scrollbar_style::PaneScrollbarStyleState;
@@ -1136,8 +1135,29 @@ pub unsafe fn screen_redraw_pane(
         tty_reset(&mut c.tty);
     }
 }
+#[derive(Default)]
+struct BorderPassCache(Vec<(RustWindowPaneWeak, [Option<grid_cell>; 2])>);
+
+impl BorderPassCache {
+    fn cell(&self, pane: &RustWindowPaneWeak, active: bool) -> Option<grid_cell> {
+        self.0.iter().find(|(cached, _)| cached.ptr_eq(pane))
+            .and_then(|(_, cells)| cells[usize::from(active)])
+    }
+
+    fn store(&mut self, pane: &RustWindowPaneWeak, active: bool, cell: grid_cell) {
+        if let Some((_, cells)) = self.0.iter_mut().find(|(cached, _)| cached.ptr_eq(pane)) {
+            cells[usize::from(active)] = Some(cell);
+        } else {
+            let mut cells = [None; 2];
+            cells[usize::from(active)] = Some(cell);
+            self.0.push((pane.clone(), cells));
+        }
+    }
+}
+
 unsafe fn screen_redraw_draw_borders_style(
     ctx: &screen_redraw_ctx,
+    cache: &mut BorderPassCache,
     x: u_int,
     y: u_int,
     pane: &mut RustWindowPaneWeak,
@@ -1165,12 +1185,8 @@ unsafe fn screen_redraw_draw_borders_style(
                 active.as_ref().and_then(|active| active.get()),
             ) != 0
         };
-        let (kind, option) = if is_active {
-            (PaneBorderKind::Active, c"pane-active-border-style")
-        } else {
-            (PaneBorderKind::Normal, c"pane-border-style")
-        };
-        if let Some(cell) = PaneBorderCache::get(wp, kind) {
+        let option = if is_active { c"pane-active-border-style" } else { c"pane-border-style" };
+        if let Some(cell) = cache.cell(pane, is_active) {
             *ngc = cell;
             return;
         }
@@ -1187,9 +1203,7 @@ unsafe fn screen_redraw_draw_borders_style(
         );
         let mut cell = grid_default_cell;
         style_apply(&mut cell, &options, option, Some(&mut ft));
-        if let Some(wp) = pane.get_mut() {
-            PaneBorderCache::insert(wp, kind, cell);
-        }
+        cache.store(pane, is_active, cell);
         *ngc = cell;
     }
 }
@@ -1297,7 +1311,7 @@ unsafe fn screen_redraw_draw_border_arrows(
         }
     }
 }
-unsafe fn screen_redraw_draw_borders_cell(ctx: &mut screen_redraw_ctx, i: u_int, j: u_int) {
+unsafe fn screen_redraw_draw_borders_cell(ctx: &mut screen_redraw_ctx, cache: &mut BorderPassCache, i: u_int, j: u_int) {
     unsafe {
         let mut client = ctx.c.clone().expect("the redraw context has a client");
         let Some(session) = client.attached_session() else {
@@ -1327,7 +1341,7 @@ unsafe fn screen_redraw_draw_borders_cell(ctx: &mut screen_redraw_ctx, i: u_int,
         if let Some(pane) = pane.as_mut()
             && cell_type != CELL_OUTSIDE as u_int
         {
-            screen_redraw_draw_borders_style(ctx, x, y, pane, &mut gc);
+            screen_redraw_draw_borders_style(ctx, cache, x, y, pane, &mut gc);
             let marked = marked_pane.get().pane_ref();
             if server_is_marked(
                 Some(session.as_session()),
@@ -1423,16 +1437,12 @@ unsafe fn screen_redraw_draw_borders(ctx: &mut screen_redraw_ctx) {
                 window.window_id()
             ],
         );
-        for mut pane in window.panes() {
-            if let Some(wp) = pane.get_mut() {
-                PaneBorderCache::clear(wp);
-            }
-        }
+        let mut cache = BorderPassCache::default();
         let mut j = 0;
         while j < client.as_tty().sy.wrapping_sub(ctx.statuslines) {
             let mut i = 0;
             while i < client.as_tty().sx {
-                screen_redraw_draw_borders_cell(ctx, i, j);
+                screen_redraw_draw_borders_cell(ctx, &mut cache, i, j);
                 i = i.wrapping_add(1);
             }
             j = j.wrapping_add(1);

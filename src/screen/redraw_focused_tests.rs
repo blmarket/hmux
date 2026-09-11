@@ -453,18 +453,30 @@ fn border_style_expands_the_target_pane_and_keeps_separate_cache_entries() {
         );
         options.set_string(c"pane-border-style", 0, c"fg=blue", fmt_args![]);
         let mut cell = grid_default_cell;
-        screen_redraw_draw_borders_style(&ctx, 9, 2, &mut pane, &mut cell);
+        let mut cache = BorderPassCache::default();
+        screen_redraw_draw_borders_style(&ctx, &mut cache, 9, 2, &mut pane, &mut cell);
         assert_eq!(cell.fg, 2);
-        screen_redraw_draw_borders_style(&ctx, 19, 2, &mut pane, &mut cell);
+        screen_redraw_draw_borders_style(&ctx, &mut cache, 19, 2, &mut pane, &mut cell);
         assert_eq!(cell.fg, 4);
         options.set_string(c"pane-active-border-style", 0, c"fg=yellow", fmt_args![]);
-        screen_redraw_draw_borders_style(&ctx, 9, 2, &mut pane, &mut cell);
+        screen_redraw_draw_borders_style(&ctx, &mut cache, 9, 2, &mut pane, &mut cell);
         assert_eq!(cell.fg, 2);
         screen_redraw_draw_borders(&mut ctx);
-        assert!(PaneBorderCache::get(pane.get().unwrap(), PaneBorderKind::Normal).is_none());
-        assert!(PaneBorderCache::get(pane.get().unwrap(), PaneBorderKind::Active).is_none());
-        screen_redraw_draw_borders_style(&ctx, 9, 2, &mut pane, &mut cell);
+        let mut cache = BorderPassCache::default();
+        screen_redraw_draw_borders_style(&ctx, &mut cache, 9, 2, &mut pane, &mut cell);
         assert_eq!(cell.fg, 3);
+        options.set_string(c"pane-active-border-style", 0,
+            c"#{?#{==:#{client_width},30},fg=red,fg=green}", fmt_args![]);
+        let mut cache = BorderPassCache::default();
+        screen_redraw_draw_borders_style(&ctx, &mut cache, 9, 2, &mut pane, &mut cell);
+        assert_eq!(cell.fg, 2);
+        let mut other = zeroed_client();
+        other.as_client_mut().set_attached_session(Some(view.session.handle()));
+        other.as_client_mut().tty.sx = 30;
+        let other_ctx = screen_redraw_ctx { c: Some(other), ..Default::default() };
+        let mut other_cache = BorderPassCache::default();
+        screen_redraw_draw_borders_style(&other_ctx, &mut other_cache, 9, 2, &mut pane, &mut cell);
+        assert_eq!(cell.fg, 1);
     }
 }
 

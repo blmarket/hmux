@@ -19,7 +19,7 @@ use crate::fmt_args;
 use crate::log::log_debug;
 use crate::types::*;
 use crate::{
-    PaneBorderKind, PaneCommand, PaneControlColourPair, PaneGeometry, PaneScrollbarSlider,
+    PaneCommand, PaneControlColourPair, PaneGeometry, PaneScrollbarSlider,
     PaneScrollbarStyle, PaneSize, PaneStyleCells,
 };
 use core::ffi::{c_int, CStr};
@@ -282,8 +282,6 @@ struct window_pane {
     modes: window_modes,
     searchstr: Option<CString>,
     searchregex: bool,
-    border_gc: Option<grid_cell>,
-    active_border_gc: Option<grid_cell>,
     control_bg: Option<c_int>,
     control_fg: Option<c_int>,
     scrollbar_style: PaneScrollbarStyle,
@@ -306,16 +304,6 @@ impl crate::pane_style_cache::PaneStyleCache for window_pane {
         crate::PaneStyleCache::styles(self)
     }
 
-}
-
-impl crate::pane_border_cache::PaneBorderCache for window_pane {
-    fn get(&self, kind: PaneBorderKind) -> Option<grid_cell> {
-        match kind { PaneBorderKind::Normal => self.border_gc, PaneBorderKind::Active => self.active_border_gc }
-    }
-    fn insert(&mut self, kind: PaneBorderKind, cell: grid_cell) {
-        match kind { PaneBorderKind::Normal => self.border_gc = Some(cell), PaneBorderKind::Active => self.active_border_gc = Some(cell) }
-    }
-    fn clear(&mut self) { self.border_gc = None; self.active_border_gc = None; }
 }
 
 impl crate::pane_control_colours::PaneControlColours for window_pane {
