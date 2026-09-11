@@ -16,28 +16,4 @@ pub trait PaneScrollbarStyleState {
     /// Returns the cached scrollbar style.
     fn scrollbar_style(&self) -> PaneScrollbarStyle;
 
-    /// Replaces the cached scrollbar style.
-    fn set_scrollbar_style(&mut self, style: PaneScrollbarStyle);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn style_is_replaced_as_one_snapshot() {
-        let mut state = crate::tests::test_fixtures::PaneAllocation::default();
-        let style = PaneScrollbarStyle {
-            cell: grid_cell {
-                fg: 3,
-                ..Default::default()
-            },
-            width: 4,
-            padding: 2,
-        };
-        state.set_scrollbar_style(style);
-        assert_eq!(state.scrollbar_style().cell.fg, 3);
-        assert_eq!(state.scrollbar_style().width, 4);
-        assert_eq!(state.scrollbar_style().padding, 2);
-    }
 }

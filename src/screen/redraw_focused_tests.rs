@@ -23,7 +23,7 @@ unsafe fn set_scrollbar_dimensions(wp: *mut (dyn crate::WindowPane + 'static), w
         let mut style = (*wp).scrollbar_style();
         style.width = width;
         style.padding = padding;
-        (*wp).set_scrollbar_style(style);
+        (*wp).configure_test(crate::window_pane::PaneTestSetup::ScrollbarStyle(style));
     }
 }
 
@@ -508,7 +508,7 @@ fn scrollbar_redraw_tracks_owned_panes_and_skips_removed_targets() {
             let mut style = pane.scrollbar_style();
             style.width = 1;
             style.padding = 0;
-            pane.set_scrollbar_style(style);
+            pane.configure_test(crate::window_pane::PaneTestSetup::ScrollbarStyle(style));
             pane.set_slider(PaneScrollbarSlider { sb_slider_y: 99, sb_slider_h: 99 });
         }
         let mut ctx = view.ctx();

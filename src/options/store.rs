@@ -1294,22 +1294,11 @@ pub(super) unsafe fn options_push_changes(name: &CStr) {
         if name == c"monitor-silence" {
             alerts_reset_all();
         }
-        if name == c"window-style" || name == c"window-active-style" {
+        if name == c"window-style" || name == c"window-active-style"
+            || name.to_bytes().first() == Some(&b'@') || name == c"pane-colours"
+        {
             for mut pane in pane_walk() {
-                let wp = pane.get_mut().expect("registered pane");
-                *wp.flags_mut() |= PANE_STYLECHANGED | PANE_THEMECHANGED;
-            }
-        }
-        if name.to_bytes().first() == Some(&b'@') {
-            for mut pane in pane_walk() {
-                let wp = pane.get_mut().expect("registered pane");
-                *wp.flags_mut() |= PANE_STYLECHANGED;
-            }
-        }
-        if name == c"pane-colours" {
-            for mut pane in pane_walk() {
-                let wp = pane.get_mut().expect("registered pane");
-                wp.reload_palette();
+                pane.get_mut().expect("registered pane").option_changed(name);
             }
         }
         if name == c"pane-border-status"
@@ -1332,8 +1321,7 @@ pub(super) unsafe fn options_push_changes(name: &CStr) {
         if name == c"pane-scrollbars-style" {
             for mut pane in pane_walk() {
                 let wp = pane.get_mut().expect("registered pane");
-                let scrollbar_style = pane_scrollbar_style_from_option(wp.options_ref());
-                wp.set_scrollbar_style(scrollbar_style);
+                wp.option_changed(name);
             }
             for owner in windows.iter().filter_map(|(_, window)| window.upgrade()) {
                 owner.fix_layout_panes(None);

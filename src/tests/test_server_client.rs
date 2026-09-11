@@ -1354,11 +1354,11 @@ fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_pane
         pane.as_pane_mut()
             .set_slider(crate::pane_scrollbar::PaneScrollbarSlider { sb_slider_y: 2, sb_slider_h: 2 });
         pane.as_pane_mut()
-            .set_scrollbar_style(crate::pane_scrollbar_style::PaneScrollbarStyle {
+            .configure_test(crate::window_pane::PaneTestSetup::ScrollbarStyle(crate::pane_scrollbar_style::PaneScrollbarStyle {
                 width: 2,
                 padding: 1,
                 ..Default::default()
-            });
+            }));
         let mut offset = 99;
         for (position, x) in [(PANE_SCROLLBARS_RIGHT, 25), (PANE_SCROLLBARS_LEFT, 1)] {
             window.set_scrollbar_settings(crate::window_scrollbar::WindowScrollbarSettings {

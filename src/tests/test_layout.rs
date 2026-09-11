@@ -25,7 +25,7 @@ fn set_scrollbar_dimensions(wp: &mut (impl crate::WindowPane + ?Sized), width: c
     let mut style = wp.scrollbar_style();
     style.width = width;
     style.padding = padding;
-    wp.set_scrollbar_style(style);
+    unsafe { wp.configure_test(crate::window_pane::PaneTestSetup::ScrollbarStyle(style)) };
 }
 
 impl Layout {

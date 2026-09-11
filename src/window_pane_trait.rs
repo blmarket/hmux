@@ -167,6 +167,11 @@ pub trait WindowPane:
     #[cfg(test)]
     fn theme(&self) -> crate::types::client_theme;
 
+    /// Applies pane cache policy after an option changes: window styles invalidate
+    /// style/theme, user options invalidate style, pane colours reload their defaults,
+    /// and scrollbar style is recomputed. Window redraw/layout policy stays with callers.
+    fn option_changed(&mut self, name: &core::ffi::CStr);
+
     /// Copies the palette for a rendering context without sharing mutable storage.
     fn palette_snapshot(&self) -> crate::types::colour_palette;
     /// Resolves a colour through the chosen palette engine.

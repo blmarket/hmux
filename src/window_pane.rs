@@ -367,7 +367,6 @@ impl crate::pane_activity::PaneActivityState for window_pane {
 
 impl crate::pane_scrollbar_style::PaneScrollbarStyleState for window_pane {
     fn scrollbar_style(&self) -> PaneScrollbarStyle { self.scrollbar_style }
-    fn set_scrollbar_style(&mut self, style: PaneScrollbarStyle) { self.scrollbar_style = style; }
 }
 
 impl window_pane {
@@ -442,6 +441,7 @@ impl crate::WindowPane for window_pane {
     unsafe fn configure_test(&mut self, setting: PaneTestSetup) {
         match setting {
             PaneTestSetup::Descriptor(fd) => self.fd = fd,
+            PaneTestSetup::ScrollbarStyle(style) => self.scrollbar_style = style,
             PaneTestSetup::Styles(styles) => { self.cached_gc = styles.cached_gc; self.cached_active_gc = styles.cached_active_gc; }
             PaneTestSetup::Palette(palette) => self.palette = palette,
             PaneTestSetup::Geometry(rect) => { self.xoff = rect.xoff; self.yoff = rect.yoff; self.sx = rect.sx; self.sy = rect.sy; }
@@ -573,6 +573,17 @@ impl crate::WindowPane for window_pane {
     #[cfg(test)]
     fn theme(&self) -> client_theme { self.last_theme }
 
+    fn option_changed(&mut self, name: &CStr) {
+        if name == c"window-style" || name == c"window-active-style" {
+            self.flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
+        } else if name.to_bytes().first() == Some(&b'@') {
+            self.flags |= PANE_STYLECHANGED;
+        } else if name == c"pane-colours" {
+            self.reload_palette();
+        } else if name == c"pane-scrollbars-style" {
+            self.scrollbar_style = unsafe { pane_scrollbar_style_from_option(self.options_ref()) };
+        }
+    }
     fn palette_snapshot(&self) -> colour_palette { self.palette.clone() }
     fn palette_colour(&self, colour: c_int) -> c_int { RustColourEngine.get_palette(Some(&self.palette), colour) }
     fn set_palette_colour(&mut self, index: c_int, colour: c_int) -> c_int { RustColourEngine.set_palette(Some(&mut self.palette), index, colour) }
@@ -782,8 +793,7 @@ pub(crate) unsafe fn window_pane_create(
         (*wp).sx = sx;
         (*wp).sy = sy;
         (*wp).pipe_fd = -(1 as core::ffi::c_int);
-        let scrollbar_style = pane_scrollbar_style_from_option((*wp).options_ref());
-        (*wp).set_scrollbar_style(scrollbar_style);
+        (*wp).scrollbar_style = pane_scrollbar_style_from_option((*wp).options_ref());
         RustColourEngine.init_palette(&mut (*wp).palette);
         (*wp).reload_palette();
         *(*wp).base_mut() = RustScreen::new_with_server_options(sx, sy, hlimit);
@@ -987,6 +997,7 @@ pub(crate) use io::send_line;
 pub enum PaneTestSetup {
     Descriptor(c_int),
     Styles(PaneStyleCells),
+    ScrollbarStyle(PaneScrollbarStyle),
     Palette(colour_palette),
     Geometry(PaneGeometry),
     Size(PaneSize),
