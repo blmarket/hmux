@@ -1,5 +1,4 @@
 use crate::screen::Screen as _;
-use crate::screen::Screen as _;
 use crate::cmd::cmd_confirm_before_callback;
 use crate::cmd::cmd_retval;
 use crate::cmd::cmdq_item;

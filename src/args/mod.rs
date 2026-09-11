@@ -6,7 +6,6 @@ use crate::args::argument_text::ArgumentTextCodec;
 use crate::args::argument_text::RustArgumentTextCodec;
 use crate::args::arguments_trait::Arguments;
 use crate::cmd::CmdListRef;
-use crate::Command as _;
 use crate::cmd::cmd_parse_from_string;
 use crate::cmd::cmdq_item;
 use crate::cmd::{cmd_log_argv, cmd_template_replace};

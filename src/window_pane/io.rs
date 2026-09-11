@@ -7,9 +7,8 @@ impl RustWindowPaneWeak {
     /// # Safety
     /// Exclude conflicting palette and input access while resetting the terminal.
     pub(crate) unsafe fn reset_terminal(&self) -> bool {
-        use crate::style::ColourEngine;
         let context = {
-            let Some(mut owner) = self.upgrade() else {
+            let Some(owner) = self.upgrade() else {
                 return false;
             };
             let pane = unsafe { &mut *owner.0.pane.get() };
@@ -119,7 +118,7 @@ impl RustWindowPaneWeak {
         use crate::screen::{RustScreenWriteCtx, ScreenWriteCtx};
         unsafe {
             let restore = {
-                let Some(mut owner) = self.upgrade() else { return; };
+                let Some(owner) = self.upgrade() else { return; };
                 let pane = &mut *owner.0.pane.get();
                 let restore = line_numbers && pane.flags & PANE_REDRAW != 0;
                 if restore { pane.flags &= !PANE_REDRAW; }

@@ -1,6 +1,4 @@
 use crate::screen::Screen as _;
-use crate::WindowPane;
-use crate::pane_identity::PaneIdentity;
 use crate::window_scrollbar::WindowScrollbarState;
 use crate::window_trait::Window as _;
 
@@ -16,7 +14,6 @@ use crate::grid::{Grid, grid_default_cell};
 use crate::log::log_debug;
 use crate::modes::window_copy_get_current_offset;
 
-use crate::pane_geometry::PaneGeometryState;
 use crate::pane_scrollbar::{PaneScrollbarSlider};
 use crate::server::client_ref_of;
 use crate::server::server_client_get_pane;

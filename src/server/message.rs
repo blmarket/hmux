@@ -1,23 +1,16 @@
 use super::client::{server_client_remove_pane, server_client_set_session};
 use super::run::client_walk;
 use super::run::marked_pane;
-use crate::WindowPane;
-use crate::ffi::{close, getpid, kill, utempter_remove_record};
 use crate::fmt_args;
-use crate::format::format_single;
-use crate::grid::grid_default_cell;
 
-use crate::notify::{notify_pane, notify_session_window};
+use crate::notify::notify_session_window;
 
 
 use crate::resize::recalculate_sizes;
-use crate::screen::Screen;
-use crate::screen::{ScreenWriteCtx, screen_write_ctx_on_pane_base};
 
 pub use crate::consts::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_CONTROL, CLIENT_EXIT, CLIENT_NO_DETACH_ON_DESTROY,
-    CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS, CLIENT_SUSPENDED, IMSG_HEADER_SIZE, MAX_IMSGSIZE,
-    MODE_CURSOR, MSG_LOCK, PANE_REDRAW, PANE_STATUSDRAWN, PANE_STATUSREADY, SIGCHLD, SORT_NAME,
+    CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS, CLIENT_SUSPENDED, IMSG_HEADER_SIZE, MAX_IMSGSIZE, MSG_LOCK, SORT_NAME,
     TTYC_CLEAR, TTYC_SMCUP, WINLINK_ALERTFLAGS,
 };
 use crate::session::SESSIONS_FIELD;

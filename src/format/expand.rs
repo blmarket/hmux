@@ -1,10 +1,7 @@
-use crate::grid::Grid as _;
-use crate::WindowPane;
 use crate::args::argument_text::{ArgumentTextCodec as _, RustArgumentTextCodec};
 use crate::cmd::cmdq_item;
 use crate::format_modifier::FormatModifier;
 use crate::options::{OptionsEngine, RustOptionsEngine};
-use crate::pane_identity::PaneIdentity;
 
 use crate::window::WinlinkRef;
 use crate::window_dimensions::WindowDimensionsState;
@@ -22,7 +19,7 @@ use crate::ffi::{
 };
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc, format_buf};
-use crate::grid::{Grid, Hyperlinks};
+use crate::grid::Grid;
 use crate::grid::{grid_default_cell};
 use crate::job::{job_free, job_run};
 
@@ -30,9 +27,6 @@ use crate::log::{log_debug, log_get_level};
 use crate::modes::{window_copy_get_hyperlink, window_copy_get_line, window_copy_get_word};
 use crate::names::{RustWindowNameParser, WindowNameParser};
 
-use crate::osdep_linux::{osdep_get_cwd, osdep_get_name};
-use crate::pane_geometry::PaneGeometryState;
-use crate::pane_search::PaneSearchState;
 use crate::paste::{PasteBufferStore, with_paste_buffers};
 
 use crate::regsub::{RegsubEngine, RustRegsub};

@@ -15,7 +15,6 @@ use crate::fmt_args;
 use crate::log::log_debug;
 use crate::notify::notify_window;
 use crate::pane_resize::PaneSize;
-use crate::types::*;
 use crate::window::window_count_panes;
 use crate::window_scrollbar::WindowScrollbarState;
 pub use cells::LayoutCellPath;

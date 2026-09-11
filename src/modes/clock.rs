@@ -1,6 +1,4 @@
-use crate::screen::Screen as _;
 use crate::grid::Grid as _;
-use crate::WindowPane;
 use crate::args::RustArguments;
 use crate::screen::Screen;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -18,7 +16,7 @@ pub struct window_clock_mode_data {
     pub tim: time_t,
     pub timer: TimerHandle,
 }
-pub use crate::consts::{GRID_FLAG_NOPALETTE, MODE_CURSOR, PANE_REDRAW};
+pub use crate::consts::{GRID_FLAG_NOPALETTE, MODE_CURSOR};
 
 /// One 5x5 glyph, read off the picture its rows draw: a `#` lights the cell
 /// and anything else leaves it blank.

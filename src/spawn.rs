@@ -1,17 +1,15 @@
 use crate::grid::Grid as _;
-use crate::WindowPane as _;
 use crate::compat::error_message;
 
 use crate::cmd::CmdqItemRef;
 use crate::cmd::cmd_log_argv;
 
-use crate::compat::fdforkpty;
 use crate::compat::systemd_move_to_new_cgroup;
 use crate::environ::EnvironmentStore;
 use crate::environ::{environment_for_session, log_environment, push_environment_to_process};
 use crate::ffi::{
-    __errno_location, _exit, chdir, close, closefrom, execl, execvp, getcwd, getpid, kill,
-    sigfillset, sigprocmask, tcgetattr, tcsetattr, utempter_add_record,
+    __errno_location, _exit, chdir, closefrom, execl, execvp, getcwd,
+    sigfillset, sigprocmask, tcgetattr, tcsetattr,
 };
 use crate::fmt_args;
 use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};

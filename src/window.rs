@@ -18,38 +18,30 @@ use crate::window_trait::Window as _;
 
 use crate::cmd::{CmdqItemWeak, cmdq_item_ref_of};
 use crate::compat::{cstr_eq_ignore_case, strtonum};
-use crate::control::control_write_output;
-use crate::ffi::{fnmatch, ioctl};
+use crate::ffi::fnmatch;
 use crate::file::file_read;
 use crate::fmt_args;
 use crate::grid::{grid_cells_look_equal, grid_default_cell};
-use crate::input::InputOwner;
 use crate::input::input_key_pane;
-use crate::log::{fatal, fatalx, log_debug, log_get_level};
-use crate::notify::{notify_pane, notify_window};
+use crate::log::{log_debug, log_get_level};
+use crate::notify::notify_window;
 
 use crate::handle_registry::{HandleRegistration, HandleRegistry};
-use crate::pane_geometry::PaneGeometryState;
-use crate::pane_identity::PaneIdentity;
-use crate::pane_output::{PaneOutputOffset, RustPaneOutputOffset};
-use crate::pane_resize::{PaneResizeQueue, PaneSize};
-use crate::pane_search::PaneSearchState;
+use crate::pane_resize::PaneSize;
 #[cfg(test)]
 use crate::pane_style_cache::PaneStyleCells;
-use crate::reactor::{Interest, Timer};
+use crate::reactor::Timer;
 use crate::screen::Screen;
-use crate::screen::{MODE_SYNC, };
 use crate::server::client_ref_of;
 use crate::server::marked_pane;
-use crate::server::{client_walk, with_clients};
+use crate::server::with_clients;
 use crate::server::{server_check_marked, server_clear_marked};
-use crate::server::{server_destroy_pane, server_status_session};
+use crate::server::server_status_session;
 
 use crate::server_state::LocalField;
 use crate::style::{ColourEngine, RustColourEngine};
-use crate::style::style_ranges_get_range;
 use crate::text::{RustUtf8VisModel, Utf8VisModel, utf8_fromcstr};
-use crate::tmux::{clean_name, setblocking};
+use crate::tmux::clean_name;
 use crate::tmux::{global_options, global_w_options};
 use crate::tty::tty_default_colours;
 pub use crate::types::*;
@@ -1327,7 +1319,7 @@ pub unsafe fn window_pane_index(
     w: &window,
     wp: &(impl crate::WindowPane + ?Sized),
 ) -> (core::ffi::c_int, u_int) {
-    unsafe {
+    {
         let mut i = (w.options_ref()).number(c"pane-base-index") as u_int;
         for pane in &w.panes {
             if wp.observation().as_ref() == Some(&pane.downgrade())
@@ -1660,7 +1652,7 @@ pub unsafe fn window_pane_key(
     }
 }
 pub unsafe fn window_pane_visible(w: &window, wp: &(impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
-    unsafe {
+    {
         if w.flags & WINDOW_ZOOMED == 0 {
             return 1;
         }
@@ -3073,7 +3065,7 @@ impl WindowRef {
             }
         }
     }
-    pub unsafe fn update_pane_focus(&self, mut pane: RustWindowPaneWeak) {
+    pub unsafe fn update_pane_focus(&self, pane: RustWindowPaneWeak) {
         let w = self;
 
         unsafe {
@@ -3480,4 +3472,3 @@ impl WindowRef {
         }
     }
 }
-

@@ -18,7 +18,6 @@
 //! which cannot be reached and says so where it sits. Everything else is
 //! covered by the tests below and by `test_coverage_alpha`.
 use crate::screen::Screen as _;
-use crate::WindowPane as _;
 use crate::compat::strtonum;
 use crate::environ::RustEnvironment;
 use crate::fmt_args;
@@ -27,7 +26,6 @@ use crate::log::{fatalx, log_debug};
 use crate::notify::{notify_session, notify_session_window};
 use crate::options::{OptionsEngine, RustOptionsEngine};
 
-use crate::pane_identity::PaneIdentity;
 use crate::reactor;
 use crate::reactor::{Reactor, Timer};
 use crate::resize::recalculate_sizes;

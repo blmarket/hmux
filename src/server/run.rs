@@ -4,7 +4,6 @@ use super::client::server_client_loop;
 
 use super::defaults::server_default_options;
 use super::message::server_destroy_pane;
-use crate::WindowPane;
 use crate::cmd::cmd_wait_for_flush;
 use crate::cmd::cmdq_next;
 use crate::cmd::{cmd_find_clear_state, cmd_find_valid_state};
@@ -24,7 +23,6 @@ use crate::log::{fatal, fatalx, log_debug, log_get_level};
 use crate::message_log::{MessageLogStore, with_message_log_mut};
 use crate::socket_address::UnixSocketAddress;
 
-use crate::pane_identity::PaneIdentity;
 use crate::proc::proc_fork_and_daemon;
 use crate::proc::{proc_clear_signals, proc_loop, proc_set_signals, proc_start, proc_toggle_log};
 use crate::reactor;
@@ -47,8 +45,7 @@ use ::std::os::unix::fs::PermissionsExt;
 pub type mode_t = __mode_t;
 pub use crate::consts::{
     __S_IEXEC, __S_IREAD, AF_UNIX, CLIENT_DEFAULTSOCKET, CLIENT_EXIT, CLIENT_EXIT_SHUTDOWN,
-    CLIENT_IDENTIFIED, CLIENT_NOFORK, CLIENT_SUSPENDED, EAGAIN, ECHILD, EINTR, ENAMETOOLONG,
-    PANE_EXITED, PANE_STATUSREADY, S_IRWXU, SIG_BLOCK, SIG_SETMASK, SIGCHLD, SIGCONT, SIGINT,
+    CLIENT_IDENTIFIED, CLIENT_NOFORK, CLIENT_SUSPENDED, EAGAIN, ECHILD, EINTR, ENAMETOOLONG, S_IRWXU, SIG_BLOCK, SIG_SETMASK, SIGCHLD, SIGCONT, SIGINT,
     SIGTERM, SIGTTIN, SIGTTOU, SIGUSR1, SIGUSR2, SOCK_STREAM, WAIT_ANY, WNOHANG,
 };
 

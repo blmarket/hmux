@@ -1,4 +1,3 @@
-use crate::WindowPane as _;
 use crate::cmd::CmdqStateRef;
 use crate::cmd::cmd_retval;
 use crate::cmd::cmdq_item;

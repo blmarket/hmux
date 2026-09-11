@@ -1,7 +1,5 @@
 use crate::args::arguments_trait::Arguments as _;
-use crate::screen::Screen as _;
 use crate::grid::Grid as _;
-use crate::WindowPane;
 use crate::args::RustArguments;
 use crate::cmd::CmdqStateRef;
 use crate::cmd::cmd_mouse_at;
@@ -143,7 +141,7 @@ pub struct mode_tree_line {
 pub use crate::consts::{
     BOX_LINES_DEFAULT, GRID_ATTR_BRIGHT, KEYC_DOUBLECLICK1_PANE, KEYC_MASK_KEY, KEYC_MASK_TYPE,
     KEYC_META, KEYC_MOUSE, KEYC_MOUSEDOWN1_PANE, KEYC_MOUSEDOWN3_PANE, KEYC_NONE,
-    KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK, KEYC_UNKNOWN, PANE_REDRAW, POPUP_CLOSEANYKEY,
+    KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK, KEYC_UNKNOWN, POPUP_CLOSEANYKEY,
     POPUP_NOJOB, PROMPT_NOFORMAT, SORT_NAME, WINDOW_ZOOMED,
 };
 pub type mode_tree_menu_cb = Option<std::rc::Rc<dyn Fn(&mut client, key_code)>>;

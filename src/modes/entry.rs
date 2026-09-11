@@ -1,5 +1,5 @@
 use crate::types::*;
-use crate::screen::{RustScreen, Screen};
+use crate::screen::Screen;
 use crate::options::RustOptionsRef;
 
 macro_rules! mode_entry {

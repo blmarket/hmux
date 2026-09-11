@@ -91,7 +91,7 @@ unsafe fn cmd_capture_pane_edge(
     item: &cmdq_item,
     flag: u_char,
 ) -> CapturePaneEdge {
-    unsafe {
+    {
         if args.argument_flag_string(flag) == Some(c"-") {
             return CapturePaneEdge::Dash;
         }

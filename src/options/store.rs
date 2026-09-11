@@ -4,7 +4,6 @@ use crate::cmd::CmdListRef;
 use crate::window_scrollbar::WindowScrollbarState;
 
 use super::table::{options_other_names, options_table};
-use crate::WindowPane;
 use crate::alerts::alerts_reset_all;
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
 use crate::compat::strtonum;
@@ -23,7 +22,7 @@ use crate::server::server_redraw_client;
 use crate::session::SESSIONS_FIELD;
 use crate::status::status_timer_start_all;
 use crate::style::{ColourEngine, RustColourEngine};
-use crate::style::{RustStyleCodec, StyleCodec, pane_scrollbar_style_from_option};
+use crate::style::{RustStyleCodec, StyleCodec};
 use crate::text::utf8_update_width_cache;
 use crate::text::{KEYC_UNKNOWN, KeyStringCodec, RustKeyStringCodec};
 use crate::tmux::{checkshell, global_options, global_s_options, global_w_options};
@@ -41,7 +40,7 @@ pub use crate::consts::{
     OPTIONS_TABLE_CHOICE, OPTIONS_TABLE_COLOUR, OPTIONS_TABLE_COMMAND, OPTIONS_TABLE_FLAG,
     OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_KEY, OPTIONS_TABLE_NONE,
     OPTIONS_TABLE_NUMBER, OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION,
-    OPTIONS_TABLE_STRING, OPTIONS_TABLE_WINDOW, PANE_CHANGED, PANE_STYLECHANGED, PANE_THEMECHANGED,
+    OPTIONS_TABLE_STRING, OPTIONS_TABLE_WINDOW,
     TTY_OPENED,
 };
 

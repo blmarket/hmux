@@ -1,6 +1,5 @@
 use crate::args::arguments_trait::Arguments as _;
 use super::widget::{ModeTreeItemRef, mode_tree_run_command};
-use crate::WindowPane;
 use crate::args::RustArguments;
 use crate::cmd::cmd_retval;
 use crate::cmd::{CmdqItemRef, cmdq_append};
@@ -9,14 +8,13 @@ use crate::compat::tolower;
 pub use crate::consts::{
     BOX_LINES_DEFAULT, CMD_RETURN_NORMAL, FORMAT_NONE, FORMAT_PANE, FORMAT_WINDOW, KEYC_MASK_KEY,
     KEYC_MASK_TYPE, KEYC_MOUSE, KEYC_MOUSEDOWN1_PANE, KEYC_NONE, KEYC_RIGHT, KEYC_TYPE_MOUSEMOVE,
-    KEYC_TYPE_TRIPLECLICK, PANE_REDRAW, PROMPT_ACCEPT, PROMPT_NOFORMAT, PROMPT_SINGLE,
+    KEYC_TYPE_TRIPLECLICK, PROMPT_ACCEPT, PROMPT_NOFORMAT, PROMPT_SINGLE,
     SORT_ACTIVITY, SORT_END, SORT_INDEX, SORT_NAME, SORT_Z,
 };
 use crate::fmt_args;
 use crate::format::format_true;
 use crate::format::{format_add, format_create, format_defaults, format_expand, format_single};
 use crate::grid::grid_default_cell;
-use crate::osdep_linux::osdep_get_name;
 use crate::prompt_history::PromptHistoryType;
 use crate::resize::recalculate_sizes;
 use crate::screen::ScreenWriteCtx;

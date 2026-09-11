@@ -1,6 +1,4 @@
-use crate::screen::Screen as _;
 use super::menu::{menu_add_items, menu_check_cb, menu_create, menu_mode_cb, menu_prepare};
-use crate::WindowPane;
 use crate::cmd::{CmdqItemRef, CmdqItemWeak};
 use crate::environ::RustEnvironment;
 use crate::ffi::mkstemp;
@@ -9,11 +7,10 @@ use crate::format::format_create_defaults;
 use crate::grid::grid_default_cell;
 use crate::input::InputOwner;
 use crate::input::{MouseInputEncoder, RustMouseInputEncoder, input_key};
-use crate::job::{job_event_by_id, job_free, job_resize, job_run, job_transfer};
+use crate::job::{job_event_by_id, job_free, job_resize, job_run};
 
 use crate::log::fatalx;
 
-use crate::pane_geometry::PaneGeometryState;
 use crate::paste::{PasteBufferStore, with_paste_buffers};
 use crate::screen::{Screen, ScreenModeState};
 use crate::screen::{
@@ -27,8 +24,7 @@ pub use crate::consts::{
     JOB_KEEPWRITE, JOB_NOWAIT, JOB_PTY, KEYC_CTRL, KEYC_MASK_KEY, KEYC_MASK_TYPE, KEYC_MOUSE,
     KEYC_NONE, KEYC_PASTE_END, KEYC_PASTE_START, KEYC_TYPE_FUNCTION, KEYC_TYPE_MOUSEMOVE,
     KEYC_TYPE_TRIPLECLICK, LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, MOUSE_BUTTON_1, MOUSE_BUTTON_3,
-    MOUSE_MASK_BUTTONS, MOUSE_MASK_CTRL, MOUSE_MASK_DRAG, MOUSE_MASK_META, MOUSE_MASK_SHIFT,
-    PANE_CHANGED, POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO, POPUP_NOJOB, SIGHUP,
+    MOUSE_MASK_BUTTONS, MOUSE_MASK_CTRL, MOUSE_MASK_DRAG, MOUSE_MASK_META, MOUSE_MASK_SHIFT, POPUP_CLOSEANYKEY, POPUP_CLOSEEXIT, POPUP_CLOSEEXITZERO, POPUP_NOJOB, SIGHUP,
     TTY_CTX_WINDOW_BIGGER,
 };
 use crate::style::{ColourEngine, RustColourEngine};

@@ -1,6 +1,5 @@
 use crate::args::arguments_trait::Arguments as _;
 use super::{layout_cell, layout_cells, LayoutAccess};
-use crate::WindowPane;
 use crate::args::RustArguments;
 use crate::cmd::cmdq_item;
 use crate::window_scrollbar::WindowScrollbarState;
@@ -11,7 +10,6 @@ use crate::fmt_args;
 use crate::log::{fatalx, log_debug};
 use crate::notify::notify_window;
 
-use crate::pane_geometry::PaneGeometryState;
 pub use crate::types::*;
 use crate::window::{window_pane_show_scrollbar};
 use ::core::ffi::{CStr, c_int};
@@ -19,7 +17,7 @@ use ::std::ffi::CString;
 
 pub use crate::consts::{
     INT_MAX, LAYOUT_CELL_FLOATING, LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, LAYOUT_WINDOWPANE,
-    PANE_MINIMUM, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_OFF,
+    PANE_MINIMUM, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_OFF,
     PANE_STATUS_BOTTOM, PANE_STATUS_TOP, SPAWN_BEFORE, SPAWN_FULLSIZE, UINT_MAX,
 };
 

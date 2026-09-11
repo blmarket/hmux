@@ -1,10 +1,9 @@
 use super::RustScreen;
 use super::write::{screen_write_cline, screen_write_free_list, screen_write_make_list};
 use crate::fmt_args;
-use crate::grid::Grid as _;
 use crate::grid::{Grid, RustGrid, grid_create, grid_default_cell};
 use crate::grid::{Hyperlinks, RustHyperlinks};
-use crate::log::{fatalx, log_debug};
+use crate::log::log_debug;
 
 use crate::text::utf8_copy;
 use crate::tmux::clean_name;
@@ -159,7 +158,7 @@ pub trait Screen {
     fn reinit_with_extended_keys(&mut self, extended_keys: c_longlong);
 }
 pub use crate::consts::{
-    ALL_MODES, EXTENDED_KEY_MODES, GRID_ATTR_CHARSET, GRID_ATTR_NOATTR, GRID_HISTORY,
+    ALL_MODES, EXTENDED_KEY_MODES, GRID_ATTR_CHARSET, GRID_ATTR_NOATTR,
     MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET,
     MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON, MODE_INSERT, MODE_KCURSOR, MODE_KEYS_EXTENDED,
     MODE_KEYS_EXTENDED_2, MODE_KKEYPAD, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR,
@@ -481,8 +480,8 @@ pub fn screen_resize_cursor(
     cursor: c_int,
 ) {
     {
-        let mut cx = s.0.cx;
-        let mut cy = s.grid().history_size() + s.0.cy;
+        let cx = s.0.cx;
+        let cy = s.grid().history_size() + s.0.cy;
 
         let collecting = !s.0.write_list.is_empty();
         if collecting {

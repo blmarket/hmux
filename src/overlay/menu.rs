@@ -9,7 +9,7 @@ use crate::format::{format_create_defaults, format_create_from_state_for_client,
 use crate::grid::grid_default_cell;
 
 use crate::screen::{Screen, ScreenModeState};
-use crate::screen::{ScreenWriteCtx, screen_write_ctx_on_screen};
+use crate::screen::ScreenWriteCtx;
 
 use crate::server::{client_ref_of, server_client_set_overlay};
 

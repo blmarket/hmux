@@ -11,7 +11,6 @@
 //! Values are computed on the tick and `resolve` reads what the last one
 //! published, so expanding a status format never touches the filesystem.
 
-use crate::WindowPane;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs;
@@ -19,7 +18,6 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use crate::osdep_linux::osdep_get_cwd;
 use crate::window::window_pane_find_by_id;
 
 use super::{Host, PaneId, Plugin};

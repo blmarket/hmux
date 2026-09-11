@@ -11,7 +11,6 @@ pub use crate::consts::{
     GRID_STRING_TRIM_SPACES, GRID_STRING_WITH_SEQUENCES, UINT_MAX,
 };
 use crate::fmt_args;
-use crate::grid::Hyperlinks;
 use crate::log::{fatalx, log_debug};
 use crate::screen::Screen;
 use crate::server::current_time;

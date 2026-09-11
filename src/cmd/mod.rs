@@ -157,8 +157,7 @@ use crate::cmd::entries::cmd_wait_for::cmd_wait_for_entry;
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::format::format_single_from_target;
-use crate::log::{fatalx, log_debug};
-use crate::types::{args_command_state, cmd_parse_input};
+use crate::log::log_debug;
 
 pub use crate::consts::{
     ARGS_PARSE_COMMANDS, ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_INVALID, ARGS_PARSE_STRING,

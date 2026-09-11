@@ -1,10 +1,6 @@
 use crate::args::RustArguments;
-use crate::grid::Grid;
 use crate::screen::Screen;
-use crate::text::{RustUtf8VisModel, Utf8VisModel};
 use crate::types::*;
-use crate::window::{PANE_REDRAW, PANE_STYLECHANGED, PANE_THEMECHANGED};
-use crate::{PaneGeometryState, WindowPane};
 use std::ffi::{CStr, CString};
 
 impl RustWindowPaneWeak {
@@ -172,7 +168,6 @@ impl RustWindowPaneWeak {
 mod capture;
 pub(crate) use capture::{CapturePaneEdge, PaneCapture};
 
-pub(crate) use crate::window_pane::PanePipePair;
 
 impl RustWindowPaneWeak {
     /// # Safety

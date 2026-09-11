@@ -5,7 +5,6 @@
 //! and answers as if the pane were gone once it is, so plugin state can never
 //! reach a destroyed pane through a pointer it kept.
 
-use crate::WindowPane;
 use crate::screen::Screen;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};

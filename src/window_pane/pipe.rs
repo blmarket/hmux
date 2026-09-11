@@ -60,7 +60,7 @@ impl RustWindowPaneWeak {
     /// # Safety
     /// Exclude conflicting pane and pipe access. Destruction runs after releasing the pane owner.
     pub(crate) unsafe fn close_pipe(&self) -> Option<PanePipeClosed> {
-        let mut owner = self.upgrade()?;
+        let owner = self.upgrade()?;
         let pane = unsafe { &mut *owner.0.pane.get() };
         let was_open = pane.pipe_fd != -1;
         let mut removed = false;
@@ -68,7 +68,7 @@ impl RustWindowPaneWeak {
             pane.pipe_event.free();
             unsafe { close(pane.pipe_fd) };
             pane.pipe_fd = -1;
-            removed = unsafe { pane.destroy_ready() };
+            removed = pane.destroy_ready();
         }
         drop(owner);
         if removed {
@@ -86,7 +86,7 @@ impl RustWindowPaneWeak {
         in_0: core::ffi::c_int,
         out: core::ffi::c_int,
     ) -> Result<(), std::ffi::CString> {
-        let Some(mut owner) = self.upgrade() else {
+        let Some(owner) = self.upgrade() else {
             return Ok(());
         };
         let wp = unsafe { &mut *owner.0.pane.get() };

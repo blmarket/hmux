@@ -1,4 +1,3 @@
-use crate::WindowPane;
 use crate::compat::error_message;
 
 use super::draw::tty_draw_line;
@@ -8,14 +7,11 @@ use crate::ffi::{
     tcsetattr, time, usleep, write,
 };
 use crate::fmt_args;
-use crate::format::{format_create, format_defaults};
 use crate::grid::grid_cells_equal;
 use crate::grid::grid_default_cell;
-use crate::grid::{Hyperlinks, RustHyperlinks};
+use crate::grid::Hyperlinks;
 use crate::log::{fatal, fatalx, log_debug, log_get_level};
 
-use crate::pane_geometry::PaneGeometryState;
-use crate::pane_style_cache::PaneStyleCells;
 use crate::reactor::{Interest, IoWatch, Timer, WatchMode};
 use crate::screen::screen_mode_to_string;
 use crate::screen::{Screen, ScreenModeState};
@@ -25,14 +21,13 @@ use crate::server::client_walk;
 
 pub use crate::consts::{
     ALL_MODES, ALL_MOUSE_MODES, CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW,
-    CLIENT_SUSPENDED, CLIENT_TERMINAL, CLIENT_UTF8, COLOUR_FLAG_256, COLOUR_FLAG_RGB, EAGAIN,
-    FORMAT_NOJOBS, FORMAT_PANE, GRID_ATTR_ALL_UNDERSCORE, GRID_ATTR_BLINK, GRID_ATTR_BRIGHT,
+    CLIENT_SUSPENDED, CLIENT_TERMINAL, CLIENT_UTF8, COLOUR_FLAG_256, COLOUR_FLAG_RGB, EAGAIN, GRID_ATTR_ALL_UNDERSCORE, GRID_ATTR_BLINK, GRID_ATTR_BRIGHT,
     GRID_ATTR_CHARSET, GRID_ATTR_DIM, GRID_ATTR_HIDDEN, GRID_ATTR_ITALICS, GRID_ATTR_OVERLINE,
     GRID_ATTR_REVERSE, GRID_ATTR_STRIKETHROUGH, GRID_ATTR_UNDERSCORE, GRID_ATTR_UNDERSCORE_2,
     GRID_ATTR_UNDERSCORE_3, GRID_ATTR_UNDERSCORE_4, GRID_ATTR_UNDERSCORE_5, GRID_FLAG_NOPALETTE,
     GRID_FLAG_PADDING, GRID_FLAG_TAB, ICRNL, MODE_CURSOR, MODE_CURSOR_BLINKING,
     MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON,
-    MODE_MOUSE_STANDARD, O_CREAT, O_TRUNC, O_WRONLY, ONLCR, OPOST, PANE_STYLECHANGED,
+    MODE_MOUSE_STANDARD, O_CREAT, O_TRUNC, O_WRONLY, ONLCR, OPOST,
     SCREEN_CURSOR_BAR, SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_DEFAULT, SCREEN_CURSOR_UNDERLINE,
     TCSANOW, TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_NOAM, TERM_RGBCOLOURS,
     TERM_VT100LIKE, TTY_ALL_REQUEST_FLAGS, TTY_BLOCK, TTY_CTX_CELL_INVALIDATE,
@@ -44,7 +39,6 @@ pub use crate::consts::{
     TTYC_SMCUP, UINT_MAX, UTF8_SIZE, VMIN, VTIME,
 };
 use crate::status::status_line_size;
-use crate::style::style_add;
 use crate::style::{ColourEngine, RustColourEngine};
 use crate::terminfo::{
     AlternateCharacterSet, RustAlternateCharacterSet, tty_acs_get, tty_acs_needed,

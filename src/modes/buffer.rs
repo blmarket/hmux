@@ -1,10 +1,9 @@
 use crate::args::arguments_trait::Arguments as _;
 use super::widget::mode_tree_run_command;
-use crate::WindowPane;
 use crate::args::RustArguments;
 use crate::cmd::{cmd_find_copy_state, cmd_find_valid_state};
 pub use crate::consts::{
-    FORMAT_NONE, KEYC_NONE, PANE_REDRAW, SORT_CREATION, SORT_END, SORT_NAME, SORT_SIZE, VIS_CSTYLE,
+    FORMAT_NONE, KEYC_NONE, SORT_CREATION, SORT_END, SORT_NAME, SORT_SIZE, VIS_CSTYLE,
     VIS_OCTAL, VIS_TAB,
 };
 use crate::fmt_args;

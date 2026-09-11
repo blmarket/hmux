@@ -1,7 +1,5 @@
 use crate::args::arguments_trait::Arguments as _;
-use crate::screen::Screen as _;
 use crate::CompiledRegex;
-use crate::WindowPane;
 use crate::args::RustArguments;
 use crate::args::args_parse;
 use crate::args::args_parse_t;
@@ -24,8 +22,6 @@ use crate::notify::notify_pane;
 #[cfg(test)]
 use crate::window::window_pane_find_by_id;
 
-use crate::pane_geometry::PaneGeometryState;
-use crate::pane_search::PaneSearchState;
 use crate::paste::{
     PasteBufferStore, paste_buffer_limit, with_paste_buffers, with_paste_buffers_mut,
 };
@@ -34,12 +30,11 @@ use crate::screen::Screen;
 use crate::screen::{
     RustScreenWriteCtx, ScreenWriteCtx, screen_write_ctx_on_screen, screen_write_strlen,
 };
-use crate::screen::{};
 
 use crate::status::status_message_set;
 use crate::style::style_apply;
 use crate::terminfo::{AlternateCharacterSet, RustAlternateCharacterSet};
-use crate::text::{utf8_copy, utf8_fromcstr, utf8_set, utf8_to_data};
+use crate::text::{utf8_copy, utf8_fromcstr, utf8_set};
 use crate::tmux::get_timer;
 use crate::tmux::{global_options, global_w_options};
 use crate::tty::tty_window_offset;
@@ -176,10 +171,10 @@ pub type window_copy_search_type = core::ffi::c_uint;
 pub type window_copy_rel_pos = core::ffi::c_uint;
 pub type window_copy_line_numbers = core::ffi::c_uint;
 pub use crate::consts::{
-    CLIENT_READONLY, GRID_ATTR_CHARSET, GRID_FLAG_EXTENDED, GRID_FLAG_NOPALETTE, GRID_FLAG_PADDING,
-    GRID_FLAG_TAB, GRID_HISTORY, GRID_LINE_START_OUTPUT, GRID_LINE_START_PROMPT, GRID_LINE_WRAPPED,
+    CLIENT_READONLY, GRID_ATTR_CHARSET, GRID_FLAG_NOPALETTE, GRID_FLAG_PADDING,
+    GRID_FLAG_TAB, GRID_LINE_START_OUTPUT, GRID_LINE_START_PROMPT, GRID_LINE_WRAPPED,
     INT_MAX, JOB_NOWAIT, MODEKEY_EMACS, MODEKEY_VI, MOUSE_MASK_BUTTONS, MOUSE_WHEEL_DOWN,
-    MOUSE_WHEEL_UP, PANE_REDRAW, PANE_REDRAWSCROLLBAR, REG_EXTENDED, REG_ICASE, UCHAR_MAX,
+    MOUSE_WHEEL_UP, REG_EXTENDED, REG_ICASE, UCHAR_MAX,
     UINT_MAX,
 };
 
@@ -5319,7 +5314,7 @@ unsafe fn window_copy_stringify(
     last: u_int,
     buf: &mut Vec<u8>,
 ) {
-    unsafe {
+    {
         let mut ax: u_int;
 
         let gl: Option<crate::grid::GridLineInfo> = (gd).peek_line(py);
@@ -5342,7 +5337,7 @@ unsafe fn window_copy_cstrtocellpos(
     ppy: &mut u_int,
     str: &CStr,
 ) {
-    unsafe {
+    {
         let mut cell: u_int;
         let mut ccell: u_int;
         let mut px: u_int;
@@ -7360,7 +7355,7 @@ unsafe fn window_copy_copy_buffer(
     set_clip: core::ffi::c_int,
 ) {
     unsafe {
-        let mut pane = wme.pane_ref().expect("mode has a pane");
+        let pane = wme.pane_ref().expect("mode has a pane");
         if set_clip != 0
             && (global_options
                 .get()

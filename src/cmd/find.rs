@@ -1,4 +1,3 @@
-use crate::WindowPane;
 
 use crate::cmd::{cmd_mouse_pane, cmd_mouse_window};
 use crate::compat::strtonum;

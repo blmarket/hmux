@@ -1,6 +1,5 @@
 use crate::args::arguments_trait::Arguments as _;
 use super::widget::ModeTreeItemRef;
-use crate::WindowPane;
 use crate::args::RustArguments;
 
 use crate::cmd::cmd_parse_from_string;
@@ -26,7 +25,7 @@ pub use crate::consts::{
     CMD_PARSE_ERROR, INT_MAX, KEY_BINDING_REPEAT, KEYC_NONE, KEYC_RIGHT, OPTIONS_TABLE_CHOICE,
     OPTIONS_TABLE_COLOUR, OPTIONS_TABLE_FLAG, OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_HOOK,
     OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION,
-    OPTIONS_TABLE_STRING, OPTIONS_TABLE_WINDOW, PANE_REDRAW, PROMPT_ACCEPT, PROMPT_NOFORMAT,
+    OPTIONS_TABLE_STRING, OPTIONS_TABLE_WINDOW, PROMPT_ACCEPT, PROMPT_NOFORMAT,
     PROMPT_SINGLE,
 };
 use crate::status::{status_message_set, status_prompt_set};

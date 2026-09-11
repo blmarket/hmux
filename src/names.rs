@@ -1,4 +1,3 @@
-use crate::WindowPane as _;
 use crate::fmt_args;
 use crate::format::{format_create, format_defaults_pane, format_defaults_window, format_expand};
 use crate::log::log_debug;

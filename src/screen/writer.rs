@@ -2,7 +2,6 @@ use super::Screen;
 use super::handles::ScreenWriteLease;
 use super::write;
 use super::write::{screen_write_ctx, screen_write_state};
-use crate::WindowPane;
 use crate::fmt_engine::FmtArg;
 use crate::types::*;
 use core::ffi::{CStr, c_int};

@@ -4,9 +4,9 @@ pub use crate::consts::{
     GRID_LINE_START_PROMPT, GRID_LINE_WRAPPED, GRID_STRING_EMPTY_CELLS,
     GRID_STRING_ESCAPE_SEQUENCES, GRID_STRING_TRIM_SPACES, GRID_STRING_WITH_SEQUENCES,
 };
-use crate::grid::{Grid, Hyperlinks, grid_default_cell};
+use crate::grid::{Grid, grid_default_cell};
 use crate::screen::RustScreen as screen;
-use core::ffi::{c_char, c_int};
+use core::ffi::c_int;
 
 /// The hyperlink URIs line `py` carries that `links` has not seen yet, joined
 /// with spaces, which is what `-H` captures in place of the line's text. Each

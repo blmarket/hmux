@@ -36,7 +36,6 @@ use crate::fmt_args;
 use crate::grid::grid_default_cell;
 use crate::log::{fatalx, log_debug};
 use crate::modes::window_clock_table;
-use crate::pane_geometry::PaneGeometryState;
 use crate::tty::{tty_attributes, tty_cursor, tty_putn};
 use crate::types::*;
 use core::ffi::c_int;

@@ -1,6 +1,5 @@
 use crate::args::arguments_trait::Arguments as _;
 use super::widget::mode_tree_run_command;
-use crate::WindowPane;
 use crate::args::RustArguments;
 use crate::fmt_args;
 use crate::format::format_true;
@@ -14,8 +13,7 @@ use crate::server::server_client_how_many;
 use crate::server::{server_client_detach, server_client_suspend};
 
 pub use crate::consts::{
-    BOX_LINES_DEFAULT, CLIENT_UNATTACHEDFLAGS, FORMAT_NONE, KEYC_NONE, MSG_DETACH, MSG_DETACHKILL,
-    PANE_REDRAW, SORT_ACTIVITY, SORT_CREATION, SORT_END, SORT_NAME, SORT_SIZE,
+    BOX_LINES_DEFAULT, CLIENT_UNATTACHEDFLAGS, FORMAT_NONE, KEYC_NONE, MSG_DETACH, MSG_DETACHKILL, SORT_ACTIVITY, SORT_CREATION, SORT_END, SORT_NAME, SORT_SIZE,
 };
 use crate::sort::{SortCriteria, sort_get_clients};
 use crate::status::{status_at_line, status_line_size};

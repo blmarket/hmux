@@ -6,7 +6,6 @@ use crate::fmt_args;
 use crate::log::{log_debug, log_get_level};
 use crate::notify::notify_client;
 use crate::options::{OptionsEngine, RustOptionsEngine};
-use crate::pane_control_colours::{PaneControlColourPair};
 
 use crate::paste::{PasteBufferStore, paste_buffer_limit, with_paste_buffers_mut};
 use crate::reactor::Timer;

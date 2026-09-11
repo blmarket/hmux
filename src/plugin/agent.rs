@@ -8,7 +8,6 @@
 //! changed pane asks for.
 
 use crate::screen::Screen as _;
-use crate::WindowPane;
 use std::ffi::CString;
 use std::time::Duration;
 

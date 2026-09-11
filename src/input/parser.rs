@@ -1,20 +1,17 @@
 use core::ffi::c_int;
-use crate::WindowPane;
 use crate::compat::strtonum;
 use crate::ffi::{__b64_ntop, __b64_pton};
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
-use crate::grid::{Grid, Hyperlinks, grid_cells_look_equal, grid_set_tab};
+use crate::grid::{Grid, grid_cells_look_equal, grid_set_tab};
 use crate::grid::{grid_default_cell};
-use crate::log::{fatalx, log_debug, log_get_level};
+use crate::log::{fatalx, log_debug};
 use crate::notify::notify_pane;
 use crate::options::{OptionsEngine, RustOptionsEngine};
-use crate::pane_identity::PaneIdentity;
 use crate::paste::{
     PasteBufferStore, paste_buffer_limit, with_paste_buffers, with_paste_buffers_mut,
 };
 use crate::reactor::Timer;
-use crate::screen::Screen;
 use crate::screen::screen_write_init_ctx;
 use crate::screen::{RustScreenWriteCtx, ScreenWriteCtx, screen_write_ctx_on_pane};
 use crate::server::client_walk;
@@ -24,13 +21,12 @@ pub use crate::consts::{
     GRID_ATTR_ALL_UNDERSCORE, GRID_ATTR_BLINK, GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_ATTR_DIM,
     GRID_ATTR_HIDDEN, GRID_ATTR_ITALICS, GRID_ATTR_OVERLINE, GRID_ATTR_REVERSE,
     GRID_ATTR_STRIKETHROUGH, GRID_ATTR_UNDERSCORE, GRID_ATTR_UNDERSCORE_2, GRID_ATTR_UNDERSCORE_3,
-    GRID_ATTR_UNDERSCORE_4, GRID_ATTR_UNDERSCORE_5, GRID_LINE_START_OUTPUT, GRID_LINE_START_PROMPT,
+    GRID_ATTR_UNDERSCORE_4, GRID_ATTR_UNDERSCORE_5,
     INPUT_BUF_DEFAULT_SIZE, INPUT_REQUEST_CLIPBOARD, INPUT_REQUEST_PALETTE, INT_MAX,
     MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET,
     MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON, MODE_INSERT, MODE_KCURSOR, MODE_KEYS_EXTENDED,
     MODE_KEYS_EXTENDED_2, MODE_KKEYPAD, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR,
     MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8, MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
-    PANE_CHANGED, PANE_REDRAW, PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES,
     SCREEN_CURSOR_BAR, SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_DEFAULT, SCREEN_CURSOR_UNDERLINE,
     THEME_DARK, THEME_LIGHT, THEME_UNKNOWN, TTY_STARTED, TTYC_MS, UTF8_ERROR, UTF8_MORE,
     WINDOW_BELL,
@@ -43,7 +39,7 @@ use crate::tty::{tty_default_colours, tty_putcode_ss, tty_puts, tty_set_selectio
 pub use crate::types::*;
 use crate::window::{
     window_pane_get_bg, window_pane_get_fg,
-    window_pane_get_fg_control_client, window_pane_get_theme,
+    window_pane_get_fg_control_client,
 };
 use crate::xmalloc::xasprintf;
 use ::core::cell::{Ref, RefCell, RefMut};
@@ -4377,7 +4373,7 @@ unsafe fn input_osc_10(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, 
 }
 unsafe fn input_osc_110(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &CStr) {
     unsafe {
-        let mut pane = ictx.pane_ref();
+        let _pane = ictx.pane_ref();
         if !p.is_empty() {
             return;
         }
@@ -4417,7 +4413,7 @@ unsafe fn input_osc_11(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, 
 }
 unsafe fn input_osc_111(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &CStr) {
     unsafe {
-        let mut pane = ictx.pane_ref();
+        let _pane = ictx.pane_ref();
         if !p.is_empty() {
             return;
         }

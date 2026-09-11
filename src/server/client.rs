@@ -2,8 +2,6 @@ use crate::ImsgMessage;
 use crate::cmd::cmdq_item;
 use crate::cmd::{DisplayPanesRef, cmd_retval};
 
-use crate::WindowPane;
-use crate::pane_identity::PaneIdentity;
 use crate::window_scrollbar::WindowScrollbarState;
 use crate::window_trait::Window as _;
 
@@ -24,7 +22,7 @@ use crate::cmd::{CmdqItemRef, cmdq_append};
 use crate::cmd::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::compat::imsg_get_fd;
 use crate::control::{
-    control_all_done, control_discard, control_pane_offset, control_pane_offset_mut, control_ready,
+    control_all_done, control_discard, control_ready,
     control_reset_offsets, control_start, control_stop, control_write,
 };
 use crate::environ::EnvironmentStore;
@@ -46,12 +44,9 @@ use crate::notify::notify_client;
 
 use crate::overlay::{menu_check_cb, menu_mode_cb, menu_resize_cb};
 use crate::overlay::{popup_check_cb, popup_mode_cb};
-use crate::pane_geometry::PaneGeometryState;
-use crate::pane_output::PaneOutputOffset;
-use crate::pane_resize::PaneResizeQueue;
 use crate::proc::PeerDispatch;
 use crate::reactor;
-use crate::reactor::{Interest, IoWatch, Reactor, Timer};
+use crate::reactor::{IoWatch, Reactor, Timer};
 use crate::resize::recalculate_sizes;
 
 use crate::screen::screen_mode_to_string;
@@ -87,7 +82,7 @@ pub use crate::consts::{
     MSG_READY, MSG_RESIZE, MSG_SHELL, MSG_SHUTDOWN, MSG_SUSPEND, MSG_UNLOCK, MSG_WAKEUP,
     MSG_WRITE_READY, PANE_EXITED, PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_LEFT,
     PANE_SCROLLBARS_RIGHT, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STYLECHANGED,
-    PANE_ZOOMED, SIZE_MAX, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, STYLE_RANGE_CONTROL,
+    PANE_ZOOMED, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, STYLE_RANGE_CONTROL,
     STYLE_RANGE_LEFT, STYLE_RANGE_NONE, STYLE_RANGE_PANE, STYLE_RANGE_RIGHT, STYLE_RANGE_SESSION,
     STYLE_RANGE_USER, STYLE_RANGE_WINDOW, THEME_DARK, THEME_LIGHT, THEME_UNKNOWN, TTY_BLOCK,
     TTY_FREEZE, TTY_NOCURSOR, TTYC_ENBP, VIS_CSTYLE, VIS_NOSLASH, VIS_OCTAL, WINDOW_RESIZE,
