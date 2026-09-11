@@ -209,7 +209,7 @@ unsafe fn window_copy_scroll_timer(mut pane: RustWindowPaneWeak, mode: WindowMod
             window_copy_cursor_up(wme, 1 as core::ffi::c_int);
         } else if data.cy
             == RustScreen::grid(&data.screen.borrow())
-                .sy
+                .height()
                 .wrapping_sub(1 as u_int)
         {
             data.dragtimer.arm(tv);
@@ -234,10 +234,10 @@ fn window_copy_clone_screen(
         let mut wy: u_int = 0;
         let reflow: core::ffi::c_int;
         sy = RustScreen::grid(src)
-            .hsize
-            .wrapping_add(RustScreen::grid(src).sy);
+            .history_size()
+            .wrapping_add(RustScreen::grid(src).height());
         if trim != 0 {
-            while sy > RustScreen::grid(src).hsize {
+            while sy > RustScreen::grid(src).history_size() {
                 gl = grid_peek_info(RustScreen::grid(src), sy.wrapping_sub(1 as u_int));
                 if !gl.is_some_and(|gl| gl.cellused == 0 as u_int) {
                     break;
@@ -249,27 +249,23 @@ fn window_copy_clone_screen(
             c"%s: target screen is %ux%u, source %ux%u",
             fmt_args![
                 c"window_copy_clone_screen",
-                RustScreen::grid(src).sx,
+                RustScreen::grid(src).width(),
                 sy,
-                RustScreen::grid(hint).sx,
+                RustScreen::grid(hint).width(),
                 RustScreen::grid(src)
-                    .hsize
-                    .wrapping_add(RustScreen::grid(src).sy)
+                    .history_size()
+                    .wrapping_add(RustScreen::grid(src).height())
             ],
         );
         dst = Box::new(RustScreen::new_with_server_options(
-            RustScreen::grid(src).sx,
+            RustScreen::grid(src).width(),
             sy,
             src.history_limit(),
         ));
-        RustScreen::grid_mut(&mut dst).flags |= GRID_HISTORY;
-        RustScreen::grid_mut(&mut dst).duplicate_lines(0, RustScreen::grid(src), 0, sy);
-        RustScreen::grid_mut(&mut dst).sy = sy.wrapping_sub(RustScreen::grid(src).hsize);
-        RustScreen::grid_mut(&mut dst).hsize = RustScreen::grid(src).hsize;
-        RustScreen::grid_mut(&mut dst).hscrolled = RustScreen::grid(src).hscrolled;
+        RustScreen::grid_mut(&mut dst).copy_from_history(RustScreen::grid(src), sy);
         let (src_cx, src_cy) = src.cursor();
-        if src_cy > RustScreen::grid(&dst).sy.wrapping_sub(1 as u_int) {
-            let dst_cy = RustScreen::grid(&dst).sy.wrapping_sub(1 as u_int);
+        if src_cy > RustScreen::grid(&dst).height().wrapping_sub(1 as u_int) {
+            let dst_cy = RustScreen::grid(&dst).height().wrapping_sub(1 as u_int);
             dst.set_cursor(0 as u_int, dst_cy);
         } else {
             dst.set_cursor(src_cx, src_cy);
@@ -279,8 +275,8 @@ fn window_copy_clone_screen(
         if want_cursor {
             let (dst_cx, dst_cy) = dst.cursor();
             cx = dst_cx;
-            cy = RustScreen::grid(&dst).hsize.wrapping_add(dst_cy);
-            reflow = (RustScreen::grid(hint).sx != RustScreen::grid(&dst).sx) as core::ffi::c_int;
+            cy = RustScreen::grid(&dst).history_size().wrapping_add(dst_cy);
+            reflow = (RustScreen::grid(hint).width() != RustScreen::grid(&dst).width()) as core::ffi::c_int;
         } else {
             reflow = 0 as core::ffi::c_int;
         }
@@ -289,8 +285,8 @@ fn window_copy_clone_screen(
         }
         screen_resize_cursor(
             &mut dst,
-            RustScreen::grid(hint).sx,
-            RustScreen::grid(hint).sy,
+            RustScreen::grid(hint).width(),
+            RustScreen::grid(hint).height(),
             1 as core::ffi::c_int,
             0 as core::ffi::c_int,
             0 as core::ffi::c_int,
@@ -374,7 +370,7 @@ pub(crate) unsafe fn window_copy_init(
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
         {
             data.cy = 0 as u_int;
             data.oy = RustScreen::grid(
@@ -382,7 +378,7 @@ pub(crate) unsafe fn window_copy_init(
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_sub(cy);
         } else {
             data.cy = cy.wrapping_sub(
@@ -391,7 +387,7 @@ pub(crate) unsafe fn window_copy_init(
                         .as_deref()
                         .expect("copy mode has a backing screen"),
                 )
-                .hsize,
+                .history_size(),
             );
             data.oy = 0 as u_int;
         }
@@ -400,7 +396,7 @@ pub(crate) unsafe fn window_copy_init(
         wme.state = WindowModeState::Copy(data);
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let cx_offset =
-            window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&data.screen.borrow()).sx);
+            window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&data.screen.borrow()).width());
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
         data.screen.borrow_mut().set_cursor(cx_offset, data.cy);
         data.mx = data.cx;
@@ -409,13 +405,13 @@ pub(crate) unsafe fn window_copy_init(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         data.showmark = 0 as core::ffi::c_int;
-        let sy = RustScreen::grid(&data.screen.borrow()).sy;
+        let sy = RustScreen::grid(&data.screen.borrow()).height();
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
-        let x = window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&data.screen.borrow()).sx);
+        let x = window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&data.screen.borrow()).width());
         let display = data.screen.clone();
         let mut writer = RustScreenWriteCtx::on_shared_screen(&display);
         i = 0 as u_int;
@@ -464,7 +460,7 @@ pub(crate) unsafe fn window_copy_view_init(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         data.showmark = 0 as core::ffi::c_int;
@@ -518,7 +514,7 @@ pub unsafe fn window_copy_vadd(
         let gc;
 
         let old_cy: u_int;
-        let old_hsize: u_int = RustScreen::grid(backing).hsize;
+        let old_hsize: u_int = RustScreen::grid(backing).history_size();
         let append = data.backing_written != 0;
         if !append {
             data.backing_written = 1 as core::ffi::c_int;
@@ -555,8 +551,8 @@ pub unsafe fn window_copy_vadd(
         }
         data.oy = data
             .oy
-            .wrapping_add(RustScreen::grid(backing).hsize.wrapping_sub(old_hsize));
-        if RustScreen::grid(backing).hsize != 0 {
+            .wrapping_add(RustScreen::grid(backing).history_size().wrapping_sub(old_hsize));
+        if RustScreen::grid(backing).history_size() != 0 {
             window_copy_redraw_lines(wme, 0 as u_int, 1 as u_int);
         }
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
@@ -636,7 +632,7 @@ unsafe fn window_copy_scroll1(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .sy;
+        .height();
 
         let my_w: u_int = my.wrapping_add(tty_oy);
         let new_slider_y: core::ffi::c_int = if my_w <= sb_top.wrapping_add(sl_mpos as u_int) {
@@ -658,7 +654,7 @@ unsafe fn window_copy_scroll1(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         let ox: u_int = window_copy_find_length(wme, oy);
@@ -676,14 +672,14 @@ unsafe fn window_copy_scroll1(
                         .as_deref()
                         .expect("copy mode has a backing screen"),
                 )
-                .hsize
+                .history_size()
             {
                 data.oy = RustScreen::grid(
                     data.backing
                         .as_deref()
                         .expect("copy mode has a backing screen"),
                 )
-                .hsize;
+                .history_size();
                 if data.cy < n {
                     data.cy = 0 as u_int;
                 } else {
@@ -713,7 +709,7 @@ unsafe fn window_copy_scroll1(
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_add(data.cy)
             .wrapping_sub(data.oy);
             px = window_copy_find_length(wme, py);
@@ -754,7 +750,7 @@ unsafe fn window_copy_pageup1(wme: &mut window_mode_entry, half_page: core::ffi:
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         let ox: u_int = window_copy_find_length(wme, oy);
@@ -766,11 +762,11 @@ unsafe fn window_copy_pageup1(wme: &mut window_mode_entry, half_page: core::ffi:
         }
         data.cx = data.lastcx;
         n = 1 as u_int;
-        if RustScreen::grid(&s.borrow()).sy > 2 as u_int {
+        if RustScreen::grid(&s.borrow()).height() > 2 as u_int {
             if half_page != 0 {
-                n = RustScreen::grid(&s.borrow()).sy.wrapping_div(2 as u_int);
+                n = RustScreen::grid(&s.borrow()).height().wrapping_div(2 as u_int);
             } else {
-                n = RustScreen::grid(&s.borrow()).sy.wrapping_sub(2 as u_int);
+                n = RustScreen::grid(&s.borrow()).height().wrapping_sub(2 as u_int);
             }
         }
         if data.oy.wrapping_add(n)
@@ -779,14 +775,14 @@ unsafe fn window_copy_pageup1(wme: &mut window_mode_entry, half_page: core::ffi:
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
         {
             data.oy = RustScreen::grid(
                 data.backing
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize;
+            .history_size();
             if data.cy < n {
                 data.cy = 0 as u_int;
             } else {
@@ -802,7 +798,7 @@ unsafe fn window_copy_pageup1(wme: &mut window_mode_entry, half_page: core::ffi:
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_add(data.cy)
             .wrapping_sub(data.oy);
             px = window_copy_find_length(wme, py);
@@ -851,7 +847,7 @@ unsafe fn window_copy_pagedown1(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         let ox: u_int = window_copy_find_length(wme, oy);
@@ -863,11 +859,11 @@ unsafe fn window_copy_pagedown1(
         }
         data.cx = data.lastcx;
         n = 1 as u_int;
-        if RustScreen::grid(&s.borrow()).sy > 2 as u_int {
+        if RustScreen::grid(&s.borrow()).height() > 2 as u_int {
             if half_page != 0 {
-                n = RustScreen::grid(&s.borrow()).sy.wrapping_div(2 as u_int);
+                n = RustScreen::grid(&s.borrow()).height().wrapping_div(2 as u_int);
             } else {
-                n = RustScreen::grid(&s.borrow()).sy.wrapping_sub(2 as u_int);
+                n = RustScreen::grid(&s.borrow()).height().wrapping_sub(2 as u_int);
             }
         }
         if data.oy < n {
@@ -878,14 +874,14 @@ unsafe fn window_copy_pagedown1(
                         .as_deref()
                         .expect("copy mode has a backing screen"),
                 )
-                .sy
+                .height()
             {
                 data.cy = RustScreen::grid(
                     data.backing
                         .as_deref()
                         .expect("copy mode has a backing screen"),
                 )
-                .sy
+                .height()
                 .wrapping_sub(1 as u_int);
             } else {
                 data.cy = data.cy.wrapping_add(n.wrapping_sub(data.oy));
@@ -900,7 +896,7 @@ unsafe fn window_copy_pagedown1(
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_add(data.cy)
             .wrapping_sub(data.oy);
             px = window_copy_find_length(wme, py);
@@ -930,7 +926,7 @@ unsafe fn window_copy_previous_paragraph(wme: &mut window_mode_entry) {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         while oy > 0 as u_int && window_copy_find_length(wme, oy) == 0 as u_int {
@@ -953,7 +949,7 @@ unsafe fn window_copy_next_paragraph(wme: &mut window_mode_entry) {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         let maxy: u_int = RustScreen::grid(
@@ -961,8 +957,8 @@ unsafe fn window_copy_next_paragraph(wme: &mut window_mode_entry) {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
-        .wrapping_add(RustScreen::grid(&s.borrow()).sy)
+        .history_size()
+        .wrapping_add(RustScreen::grid(&s.borrow()).height())
         .wrapping_sub(1 as u_int);
         while oy < maxy && window_copy_find_length(wme, oy) == 0 as u_int {
             oy = oy.wrapping_add(1);
@@ -987,7 +983,7 @@ pub unsafe fn window_copy_get_word(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         );
-        format_grid_word(gd, x, gd.hsize.wrapping_add(y).wrapping_sub(data.oy))
+        format_grid_word(gd, x, gd.history_size().wrapping_add(y).wrapping_sub(data.oy))
     }
 }
 pub fn window_copy_get_line(wp: &(impl crate::WindowPane + ?Sized), y: u_int) -> CString {
@@ -999,7 +995,7 @@ pub fn window_copy_get_line(wp: &(impl crate::WindowPane + ?Sized), y: u_int) ->
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         );
-        format_grid_line(gd, gd.hsize.wrapping_add(y).wrapping_sub(data.oy))
+        format_grid_line(gd, gd.history_size().wrapping_add(y).wrapping_sub(data.oy))
     }
 }
 pub fn window_copy_get_hyperlink(
@@ -1012,7 +1008,7 @@ pub fn window_copy_get_hyperlink(
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let display = data.screen.borrow();
         let gd = RustScreen::grid(&display);
-        format_grid_hyperlink(gd, x, gd.hsize.wrapping_add(y), &wp.screen_ref())
+        format_grid_hyperlink(gd, x, gd.history_size().wrapping_add(y), &wp.screen_ref())
     }
 }
 unsafe fn window_copy_cursor_hyperlink_cb(ft: &format_tree) -> Option<CString> {
@@ -1023,7 +1019,7 @@ unsafe fn window_copy_cursor_hyperlink_cb(ft: &format_tree) -> Option<CString> {
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let display = data.screen.borrow();
         let gd = RustScreen::grid(&display);
-        format_grid_hyperlink(gd, data.cx, gd.hsize.wrapping_add(data.cy), &display)
+        format_grid_hyperlink(gd, data.cx, gd.history_size().wrapping_add(data.cy), &display)
     }
 }
 unsafe fn window_copy_cursor_word_cb(ft: &format_tree) -> Option<CString> {
@@ -1061,7 +1057,7 @@ pub(crate) fn window_copy_formats(wme: &window_mode_entry, ft: &mut format_tree)
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize;
+        .history_size();
         let position: u_int;
         let limit: u_int;
         let gl = grid_line_info(
@@ -1087,7 +1083,7 @@ pub(crate) fn window_copy_formats(wme: &window_mode_entry, ft: &mut format_tree)
                         .as_deref()
                         .expect("copy mode has a backing screen"),
                 )
-                .sy,
+                .height(),
             );
         } else {
             position = data.oy;
@@ -1204,11 +1200,11 @@ pub(crate) unsafe fn window_copy_resize(wme: &mut window_mode_entry, sx: u_int, 
         screen_resize(&mut s, sx, sy, 0 as core::ffi::c_int);
         drop(s);
         cx = data.cx;
-        if data.oy > gd.hsize.wrapping_add(data.cy) {
-            data.oy = gd.hsize.wrapping_add(data.cy);
+        if data.oy > gd.history_size().wrapping_add(data.cy) {
+            data.oy = gd.history_size().wrapping_add(data.cy);
         }
-        cy = gd.hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
-        let reflow: core::ffi::c_int = (gd.sx != sx) as core::ffi::c_int;
+        cy = gd.history_size().wrapping_add(data.cy).wrapping_sub(data.oy);
+        let reflow: core::ffi::c_int = (gd.width() != sx) as core::ffi::c_int;
         if reflow != 0 {
             (wx, wy) = (*gd).wrap_position(cx, cy);
         }
@@ -1232,11 +1228,11 @@ pub(crate) unsafe fn window_copy_resize(wme: &mut window_mode_entry, sx: u_int, 
             (cx, cy) = gd.unwrap_position(wx, wy);
         }
         data.cx = cx;
-        if cy < gd.hsize {
+        if cy < gd.history_size() {
             data.cy = 0 as u_int;
-            data.oy = gd.hsize.wrapping_sub(cy);
+            data.oy = gd.history_size().wrapping_sub(cy);
         } else {
-            data.cy = cy.wrapping_sub(gd.hsize);
+            data.cy = cy.wrapping_sub(gd.history_size());
             data.oy = 0 as u_int;
         }
         window_copy_size_changed(wme);
@@ -1355,7 +1351,7 @@ unsafe fn window_copy_cmd_bottom_line(
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
         data.cx = 0 as u_int;
         data.cy = RustScreen::grid(&data.screen.borrow())
-            .sy
+            .height()
             .wrapping_sub(1 as u_int);
         window_copy_update_selection(&mut *wme, 1 as core::ffi::c_int, 0 as core::ffi::c_int);
         WINDOW_COPY_CMD_REDRAW
@@ -1719,7 +1715,7 @@ unsafe fn window_copy_cmd_scroll_to(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_sub(data.oy);
         if scroll_up > 0 as core::ffi::c_int && data.oy >= delta {
             window_copy_scroll_up(&mut *wme, delta);
@@ -1745,7 +1741,7 @@ unsafe fn window_copy_cmd_scroll_bottom(
             .expect("copy mode has state");
 
         let bottom: u_int = RustScreen::grid(&data.screen.borrow())
-            .sy
+            .height()
             .wrapping_sub(1 as u_int);
         window_copy_cmd_scroll_to(cs, bottom)
     }
@@ -1761,7 +1757,7 @@ unsafe fn window_copy_cmd_scroll_middle(
             .expect("copy mode has state");
 
         let mid_value: u_int = RustScreen::grid(&data.screen.borrow())
-            .sy
+            .height()
             .wrapping_sub(1 as u_int)
             .wrapping_div(2 as u_int);
         window_copy_cmd_scroll_to(cs, mid_value)
@@ -1909,7 +1905,7 @@ unsafe fn window_copy_cmd_history_bottom(
             .expect("copy mode has a backing screen");
 
         let oy: u_int = RustScreen::grid(s)
-            .hsize
+            .history_size()
             .wrapping_add(data.cy)
             .wrapping_sub(data.oy);
         if data.lineflag as core::ffi::c_uint
@@ -1920,14 +1916,14 @@ unsafe fn window_copy_cmd_history_bottom(
         }
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
         data.cy = RustScreen::grid(&data.screen.borrow())
-            .sy
+            .height()
             .wrapping_sub(1 as u_int);
         let row = RustScreen::grid(
             data.backing
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy);
         let cx = window_copy_cursor_limit(wme, row, 0);
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
@@ -1953,7 +1949,7 @@ unsafe fn window_copy_cmd_history_top(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         if data.lineflag as core::ffi::c_uint
@@ -1970,7 +1966,7 @@ unsafe fn window_copy_cmd_history_top(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize;
+        .history_size();
         if !data.searchmark.is_empty() && data.timeout == 0 {
             let regex = data.searchregex;
             window_copy_search_marks(wme, None, regex, 1);
@@ -2059,7 +2055,7 @@ unsafe fn window_copy_cmd_middle_line(
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
         data.cx = 0 as u_int;
         data.cy = RustScreen::grid(&data.screen.borrow())
-            .sy
+            .height()
             .wrapping_sub(1 as u_int)
             .wrapping_div(2 as u_int);
         window_copy_update_selection(&mut *wme, 1 as core::ffi::c_int, 0 as core::ffi::c_int);
@@ -2095,7 +2091,7 @@ unsafe fn window_copy_previous_matching_bracket(wme: &mut window_mode_entry) {
                 .expect("copy mode has a backing screen");
             px = data.cx;
             py = RustScreen::grid(s)
-                .hsize
+                .history_size()
                 .wrapping_add(data.cy)
                 .wrapping_sub(data.oy);
             xx = window_copy_find_length(wme, py);
@@ -2206,13 +2202,13 @@ unsafe fn window_copy_cmd_next_matching_bracket(
                 .expect("copy mode has a backing screen");
             px = data.cx;
             py = RustScreen::grid(s)
-                .hsize
+                .history_size()
                 .wrapping_add(data.cy)
                 .wrapping_sub(data.oy);
             xx = window_copy_find_length(wme, py);
             yy = RustScreen::grid(s)
-                .hsize
-                .wrapping_add(RustScreen::grid(s).sy)
+                .history_size()
+                .wrapping_add(RustScreen::grid(s).height())
                 .wrapping_sub(1 as u_int);
             if xx == 0 as u_int {
                 break;
@@ -2230,7 +2226,7 @@ unsafe fn window_copy_cmd_next_matching_bracket(
                     if cp.is_some() && data.modekeys == MODEKEY_VI {
                         sx = data.cx;
                         sy = RustScreen::grid(s)
-                            .hsize
+                            .history_size()
                             .wrapping_add(data.cy)
                             .wrapping_sub(data.oy);
                         window_copy_scroll_to(&mut *wme, px, py, 0 as core::ffi::c_int);
@@ -2242,7 +2238,7 @@ unsafe fn window_copy_cmd_next_matching_bracket(
                             .expect("copy mode has a backing screen");
                         px = data.cx;
                         py = RustScreen::grid(s)
-                            .hsize
+                            .history_size()
                             .wrapping_add(data.cy)
                             .wrapping_sub(data.oy);
                         gc = RustScreen::grid(s).cell(px, py);
@@ -2278,7 +2274,7 @@ unsafe fn window_copy_cmd_next_matching_bracket(
                         if !gl.flags & GRID_LINE_WRAPPED != 0 {
                             break;
                         }
-                        if gl.cells > RustScreen::grid(s).sx {
+                        if gl.cells > RustScreen::grid(s).width() {
                             break;
                         }
                         px = 0 as u_int;
@@ -2725,7 +2721,7 @@ unsafe fn window_copy_cmd_select_line(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         window_copy_cursor_start_of_line(wme);
@@ -2736,7 +2732,7 @@ unsafe fn window_copy_cmd_select_line(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         data.endselry = data.selry;
@@ -2748,7 +2744,7 @@ unsafe fn window_copy_cmd_select_line(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         let row = data.endselry;
@@ -2786,7 +2782,7 @@ unsafe fn window_copy_cmd_select_word(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         let separators = so.string_ref(c"word-separators");
@@ -2799,7 +2795,7 @@ unsafe fn window_copy_cmd_select_word(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         data.selrx = px;
@@ -2825,7 +2821,7 @@ unsafe fn window_copy_cmd_select_word(
                         .as_deref()
                         .expect("copy mode has a backing screen"),
                 )
-                .sx
+                .width()
                 .wrapping_sub(1 as u_int)
         {
             nextx = 0 as u_int;
@@ -2861,7 +2857,7 @@ unsafe fn window_copy_cmd_select_word(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         if data.dy > data.endselry {
@@ -2886,7 +2882,7 @@ fn window_copy_cmd_set_mark(cs: &mut window_copy_cmd_state<'_>) -> window_copy_c
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         data.showmark = 1 as core::ffi::c_int;
@@ -3291,7 +3287,7 @@ unsafe fn window_copy_cmd_search_backward_incremental(
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_add(data.cy)
             .wrapping_sub(data.oy);
             let cx = window_copy_cursor_limit(wme, row, 0);
@@ -3369,7 +3365,7 @@ unsafe fn window_copy_cmd_search_forward_incremental(
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_add(data.cy)
             .wrapping_sub(data.oy);
             let cx = window_copy_cursor_limit(wme, row, 0);
@@ -3433,21 +3429,21 @@ unsafe fn window_copy_cmd_refresh_from_pane(
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
         {
             data.oy = RustScreen::grid(
                 data.backing
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize;
+            .history_size();
         }
         let oy_from_top: u_int = RustScreen::grid(
             data.backing
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_sub(data.oy);
         window_copy_free_backing(&mut *data);
         data.backing =
@@ -3458,14 +3454,14 @@ unsafe fn window_copy_cmd_refresh_from_pane(
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
         {
             data.oy = RustScreen::grid(
                 data.backing
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_sub(oy_from_top);
         } else {
             data.cy = 0 as u_int;
@@ -3474,7 +3470,7 @@ unsafe fn window_copy_cmd_refresh_from_pane(
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize;
+            .history_size();
         }
         window_copy_size_changed(&mut *wme);
         WINDOW_COPY_CMD_REDRAW
@@ -3489,7 +3485,7 @@ unsafe fn window_copy_cmd_recentre_top_bottom(
         let cy: u_int = data.cy;
 
         let sy: u_int = RustScreen::grid(&data.screen.borrow())
-            .sy
+            .height()
             .wrapping_sub(1 as u_int);
         let sm: u_int = sy.wrapping_div(2 as u_int);
 
@@ -3498,7 +3494,7 @@ unsafe fn window_copy_cmd_recentre_top_bottom(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(cy)
         .wrapping_sub(data.oy);
         if data.recentre_line != backing_row {
@@ -4994,23 +4990,23 @@ unsafe fn window_copy_scroll_to(
         let offset: u_int;
         let gap: u_int;
         data.cx = px;
-        if py >= gd.hsize.wrapping_sub(data.oy)
-            && py < gd.hsize.wrapping_sub(data.oy).wrapping_add(gd.sy)
+        if py >= gd.history_size().wrapping_sub(data.oy)
+            && py < gd.history_size().wrapping_sub(data.oy).wrapping_add(gd.height())
         {
-            data.cy = py.wrapping_sub(gd.hsize.wrapping_sub(data.oy));
+            data.cy = py.wrapping_sub(gd.history_size().wrapping_sub(data.oy));
         } else {
-            gap = gd.sy.wrapping_div(4 as u_int);
-            if py < gd.sy {
+            gap = gd.height().wrapping_div(4 as u_int);
+            if py < gd.height() {
                 offset = 0 as u_int;
                 data.cy = py;
-            } else if py > gd.hsize.wrapping_add(gd.sy).wrapping_sub(gap) {
-                offset = gd.hsize;
-                data.cy = py.wrapping_sub(gd.hsize);
+            } else if py > gd.history_size().wrapping_add(gd.height()).wrapping_sub(gap) {
+                offset = gd.history_size();
+                data.cy = py.wrapping_sub(gd.history_size());
             } else {
-                offset = py.wrapping_add(gap).wrapping_sub(gd.sy);
+                offset = py.wrapping_add(gap).wrapping_sub(gd.height());
                 data.cy = py.wrapping_sub(offset);
             }
-            data.oy = gd.hsize.wrapping_sub(offset);
+            data.oy = gd.history_size().wrapping_sub(offset);
         }
         if no_redraw == 0 && !data.searchmark.is_empty() && data.timeout == 0 {
             let regex = data.searchregex;
@@ -5065,23 +5061,23 @@ fn window_copy_search_lr(
 
         let mut padding: u_int;
         let mut gc;
-        let endline: u_int = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
+        let endline: u_int = gd.history_size().wrapping_add(gd.height()).wrapping_sub(1 as u_int);
         ax = first;
         while ax < last {
             padding = 0 as u_int;
             bx = 0 as u_int;
-            while bx < sgd.sx {
+            while bx < sgd.width() {
                 px = ax.wrapping_add(bx).wrapping_add(padding);
                 pywrap = py;
-                while px >= gd.sx && pywrap < endline {
+                while px >= gd.width() && pywrap < endline {
                     let gl = grid_peek_info(gd, pywrap).expect("a line inside the grid");
                     if !gl.flags & GRID_LINE_WRAPPED != 0 {
                         break;
                     }
-                    px = px.wrapping_sub(gd.sx);
+                    px = px.wrapping_sub(gd.width());
                     pywrap = pywrap.wrapping_add(1);
                 }
-                if px.wrapping_sub(padding) >= gd.sx {
+                if px.wrapping_sub(padding) >= gd.width() {
                     break;
                 }
                 gc = gd.cell(px, pywrap);
@@ -5095,7 +5091,7 @@ fn window_copy_search_lr(
                 }
                 bx = bx.wrapping_add(1);
             }
-            if bx == sgd.sx {
+            if bx == sgd.width() {
                 return Some(ax);
             }
             ax = ax.wrapping_add(1);
@@ -5118,26 +5114,26 @@ fn window_copy_search_rl(
 
     let mut padding: u_int;
     let mut gc;
-    let endline: u_int = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
+    let endline: u_int = gd.history_size().wrapping_add(gd.height()).wrapping_sub(1 as u_int);
     ax = last;
     while ax > first {
         padding = 0 as u_int;
         bx = 0 as u_int;
-        while bx < sgd.sx {
+        while bx < sgd.width() {
             px = ax
                 .wrapping_sub(1 as u_int)
                 .wrapping_add(bx)
                 .wrapping_add(padding);
             pywrap = py;
-            while px >= gd.sx && pywrap < endline {
+            while px >= gd.width() && pywrap < endline {
                 let gl = grid_peek_info(gd, pywrap).expect("a line inside the grid");
                 if !gl.flags & GRID_LINE_WRAPPED != 0 {
                     break;
                 }
-                px = px.wrapping_sub(gd.sx);
+                px = px.wrapping_sub(gd.width());
                 pywrap = pywrap.wrapping_add(1);
             }
-            if px.wrapping_sub(padding) >= gd.sx {
+            if px.wrapping_sub(padding) >= gd.width() {
                 break;
             }
             gc = gd.cell(px, pywrap);
@@ -5151,7 +5147,7 @@ fn window_copy_search_rl(
             }
             bx = bx.wrapping_add(1);
         }
-        if bx == sgd.sx {
+        if bx == sgd.width() {
             return Some(ax.wrapping_sub(1 as u_int));
         }
         ax = ax.wrapping_sub(1);
@@ -5181,9 +5177,9 @@ unsafe fn window_copy_search_lr_regex(
             eflags |= REG_NOTBOL;
         }
         let mut buf: Vec<u8> = vec![b'\0'];
-        window_copy_stringify(gd, py, first, gd.sx, &mut buf);
-        len = gd.sx.wrapping_sub(first);
-        let endline: u_int = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
+        window_copy_stringify(gd, py, first, gd.width(), &mut buf);
+        len = gd.width().wrapping_sub(first);
+        let endline: u_int = gd.history_size().wrapping_add(gd.height()).wrapping_sub(1 as u_int);
         pywrap = py;
         while pywrap < endline && len < WINDOW_COPY_SEARCH_MAX_LINE as u_int {
             let gl = grid_line_info(gd, pywrap);
@@ -5191,8 +5187,8 @@ unsafe fn window_copy_search_lr_regex(
                 break;
             }
             pywrap = pywrap.wrapping_add(1);
-            window_copy_stringify(gd, pywrap, 0 as u_int, gd.sx, &mut buf);
-            len = len.wrapping_add(gd.sx);
+            window_copy_stringify(gd, pywrap, 0 as u_int, gd.width(), &mut buf);
+            len = len.wrapping_add(gd.width());
         }
         let text = CStr::from_bytes_until_nul(&buf).expect("a terminated search line");
         if let Some([regmatch]) = reg
@@ -5220,7 +5216,7 @@ unsafe fn window_copy_search_lr_regex(
                 );
                 psx = foundx;
                 while foundy > py {
-                    psx = psx.wrapping_add(gd.sx);
+                    psx = psx.wrapping_add(gd.width());
                     foundy = foundy.wrapping_sub(1);
                 }
                 psx = psx.wrapping_sub(ppx);
@@ -5246,9 +5242,9 @@ unsafe fn window_copy_search_rl_regex(
             eflags |= REG_NOTBOL;
         }
         let mut buf: Vec<u8> = vec![b'\0'];
-        window_copy_stringify(gd, py, first, gd.sx, &mut buf);
-        len = gd.sx.wrapping_sub(first);
-        let endline: u_int = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
+        window_copy_stringify(gd, py, first, gd.width(), &mut buf);
+        len = gd.width().wrapping_sub(first);
+        let endline: u_int = gd.history_size().wrapping_add(gd.height()).wrapping_sub(1 as u_int);
         pywrap = py;
         while pywrap < endline && len < WINDOW_COPY_SEARCH_MAX_LINE as u_int {
             let gl = grid_line_info(gd, pywrap);
@@ -5256,8 +5252,8 @@ unsafe fn window_copy_search_rl_regex(
                 break;
             }
             pywrap = pywrap.wrapping_add(1);
-            window_copy_stringify(gd, pywrap, 0 as u_int, gd.sx, &mut buf);
-            len = len.wrapping_add(gd.sx);
+            window_copy_stringify(gd, pywrap, 0 as u_int, gd.width(), &mut buf);
+            len = len.wrapping_add(gd.width());
         }
         window_copy_last_regex(
             gd,
@@ -5319,7 +5315,7 @@ unsafe fn window_copy_last_regex(
                 ppx = savepx;
                 psx = foundx;
                 while foundy > py {
-                    psx = psx.wrapping_add(gd.sx);
+                    psx = psx.wrapping_add(gd.width());
                     foundy = foundy.wrapping_sub(1);
                 }
                 psx = psx.wrapping_sub(ppx);
@@ -5390,7 +5386,7 @@ unsafe fn window_copy_cstrtocellpos(
             });
             cell = cell.wrapping_add(1);
             px = px.wrapping_add(1);
-            if !(px == gd.sx) {
+            if !(px == gd.width()) {
                 continue;
             }
             px = 0 as u_int;
@@ -5436,8 +5432,8 @@ unsafe fn window_copy_cstrtocellpos(
         }
         px = (*ppx).wrapping_add(cell);
         pywrap = *ppy;
-        while px >= gd.sx {
-            px = px.wrapping_sub(gd.sx);
+        while px >= gd.width() {
+            px = px.wrapping_sub(gd.width());
             pywrap = pywrap.wrapping_add(1);
         }
         *ppx = px;
@@ -5454,15 +5450,15 @@ fn window_copy_move_left(
         if *fx == 0 as u_int {
             if *fy == 0 as u_int {
                 if wrapflag != 0 {
-                    *fx = RustScreen::grid(s).sx.wrapping_sub(1 as u_int);
+                    *fx = RustScreen::grid(s).width().wrapping_sub(1 as u_int);
                     *fy = RustScreen::grid(s)
-                        .hsize
-                        .wrapping_add(RustScreen::grid(s).sy)
+                        .history_size()
+                        .wrapping_add(RustScreen::grid(s).height())
                         .wrapping_sub(1 as u_int);
                 }
                 return;
             }
-            *fx = RustScreen::grid(s).sx.wrapping_sub(1 as u_int);
+            *fx = RustScreen::grid(s).width().wrapping_sub(1 as u_int);
             *fy = (*fy).wrapping_sub(1 as u_int);
         } else {
             *fx = (*fx).wrapping_sub(1 as u_int);
@@ -5476,11 +5472,11 @@ fn window_copy_move_right(
     wrapflag: core::ffi::c_int,
 ) {
     {
-        if *fx == RustScreen::grid(s).sx.wrapping_sub(1 as u_int) {
+        if *fx == RustScreen::grid(s).width().wrapping_sub(1 as u_int) {
             if *fy
                 == RustScreen::grid(s)
-                    .hsize
-                    .wrapping_add(RustScreen::grid(s).sy)
+                    .history_size()
+                    .wrapping_add(RustScreen::grid(s).height())
                     .wrapping_sub(1 as u_int)
             {
                 if wrapflag != 0 {
@@ -5523,8 +5519,8 @@ unsafe fn window_copy_search_back_overlap(
         let mut found: core::ffi::c_int = 1 as core::ffi::c_int;
         oldendx = (*ppx).wrapping_add(*psx);
         oldendy = (*ppy).wrapping_sub(1 as u_int);
-        while oldendx > gd.sx.wrapping_sub(1 as u_int) {
-            oldendx = oldendx.wrapping_sub(gd.sx);
+        while oldendx > gd.width().wrapping_sub(1 as u_int) {
+            oldendx = oldendx.wrapping_sub(gd.width());
             oldendy = oldendy.wrapping_add(1);
         }
         endx = oldendx;
@@ -5539,7 +5535,7 @@ unsafe fn window_copy_search_back_overlap(
             && endy == oldendy
         {
             py = py.wrapping_sub(1);
-            let width = gd.sx;
+            let width = gd.width();
             (px, sx, found) = match window_copy_search_rl_regex(
                 gd,
                 py.wrapping_sub(1 as u_int),
@@ -5553,8 +5549,8 @@ unsafe fn window_copy_search_back_overlap(
             if found != 0 {
                 endx = px.wrapping_add(sx);
                 endy = py.wrapping_sub(1 as u_int);
-                while endx > gd.sx.wrapping_sub(1 as u_int) {
-                    endx = endx.wrapping_sub(gd.sx);
+                while endx > gd.width().wrapping_sub(1 as u_int) {
+                    endx = endx.wrapping_sub(gd.width());
                     endy = endy.wrapping_add(1);
                 }
                 if endx == oldendx && endy == oldendy {
@@ -5580,7 +5576,7 @@ unsafe fn window_copy_search_position(
 ) -> Option<(u_int, u_int)> {
     unsafe {
         let (cis, wrap, direction, regex) = search;
-        let gd_sx = gd.sx;
+        let gd_sx = gd.width();
         let mut i: u_int;
         let mut px: u_int = 0;
         let mut sx: u_int;
@@ -5589,7 +5585,7 @@ unsafe fn window_copy_search_position(
         let mut reg: Option<CompiledRegex> = None;
         if regex != 0 {
             let mut sbuf: Vec<u8> = vec![b'\0'];
-            window_copy_stringify(sgd, 0 as u_int, 0 as u_int, sgd.sx, &mut sbuf);
+            window_copy_stringify(sgd, 0 as u_int, 0 as u_int, sgd.width(), &mut sbuf);
             if cis != 0 {
                 cflags |= REG_ICASE;
             }
@@ -5612,7 +5608,7 @@ unsafe fn window_copy_search_position(
                         None => (0 as u_int, 0 as u_int, 0),
                     };
                 } else {
-                    (px, found) = match window_copy_search_lr(gd, sgd, i, fx, gd.sx, cis) {
+                    (px, found) = match window_copy_search_lr(gd, sgd, i, fx, gd.width(), cis) {
                         Some(found_px) => (found_px, 1),
                         None => (px, 0),
                     };
@@ -5664,7 +5660,7 @@ unsafe fn window_copy_search_position(
                     i = i.wrapping_sub(1);
                     break;
                 } else {
-                    fx = gd.sx.wrapping_sub(1 as u_int);
+                    fx = gd.width().wrapping_sub(1 as u_int);
                     i = i.wrapping_sub(1);
                 }
             }
@@ -5680,12 +5676,12 @@ unsafe fn window_copy_search_position(
                 if direction != 0 {
                     0 as u_int
                 } else {
-                    gd.sx.wrapping_sub(1 as u_int)
+                    gd.width().wrapping_sub(1 as u_int)
                 },
                 if direction != 0 {
                     0 as u_int
                 } else {
-                    gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int)
+                    gd.history_size().wrapping_add(gd.height()).wrapping_sub(1 as u_int)
                 },
                 fy,
                 (cis, 0 as core::ffi::c_int, direction, regex),
@@ -5717,11 +5713,11 @@ fn window_copy_move_after_search_mark(
                     break;
                 }
                 if wrapflag == 0
-                    && *fx == RustScreen::grid(s).sx.wrapping_sub(1 as u_int)
+                    && *fx == RustScreen::grid(s).width().wrapping_sub(1 as u_int)
                     && *fy
                         == RustScreen::grid(s)
-                            .hsize
-                            .wrapping_add(RustScreen::grid(s).sy)
+                            .history_size()
+                            .wrapping_add(RustScreen::grid(s).height())
                             .wrapping_sub(1 as u_int)
                 {
                     break;
@@ -5788,7 +5784,7 @@ unsafe fn window_copy_search(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_sub(data.oy)
         .wrapping_add(data.cy);
         let ssx: u_int = screen_write_strlen(c"%s", fmt_args![search.as_c_str()]) as u_int;
@@ -5829,7 +5825,7 @@ unsafe fn window_copy_search(
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             );
-            gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int)
+            gd.history_size().wrapping_add(gd.height()).wrapping_sub(1 as u_int)
         } else {
             window_copy_move_left(
                 data.backing
@@ -5867,7 +5863,7 @@ unsafe fn window_copy_search(
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_sub(data.oy)
             .wrapping_add(data.cy);
             if direction != 0
@@ -5901,7 +5897,7 @@ unsafe fn window_copy_search(
                         .as_deref()
                         .expect("copy mode has a backing screen"),
                 )
-                .hsize
+                .history_size()
                 .wrapping_sub(data.oy)
                 .wrapping_add(data.cy);
             }
@@ -5917,7 +5913,7 @@ unsafe fn window_copy_search(
                                     .as_deref()
                                     .expect("copy mode has a backing screen"),
                             )
-                            .hsize,
+                            .history_size(),
                         )
                         .wrapping_add(data.oy);
                 }
@@ -5935,7 +5931,7 @@ unsafe fn window_copy_search(
                                     .as_deref()
                                     .expect("copy mode has a backing screen"),
                             )
-                            .hsize,
+                            .history_size(),
                         )
                         .wrapping_add(data.oy);
                     if at == 0 as u_int {
@@ -5966,7 +5962,7 @@ fn window_copy_visible_lines(data: &window_copy_mode_data) -> (u_int, u_int) {
                 .expect("copy mode has a backing screen"),
         );
         let mut gl: Option<crate::grid::GridLineInfo>;
-        let mut start = gd.hsize.wrapping_sub(data.oy);
+        let mut start = gd.history_size().wrapping_sub(data.oy);
         while start > 0 as u_int {
             gl = grid_peek_info(gd, start.wrapping_sub(1 as u_int));
             if !gl.is_some_and(|gl| gl.flags & GRID_LINE_WRAPPED != 0) {
@@ -5974,7 +5970,7 @@ fn window_copy_visible_lines(data: &window_copy_mode_data) -> (u_int, u_int) {
             }
             start = start.wrapping_sub(1);
         }
-        let end = gd.hsize.wrapping_sub(data.oy).wrapping_add(gd.sy);
+        let end = gd.history_size().wrapping_sub(data.oy).wrapping_add(gd.height());
         (start, end)
     }
 }
@@ -5987,20 +5983,20 @@ fn window_copy_search_mark_at(data: &window_copy_mode_data, px: u_int, py: u_int
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         );
-        if py < gd.hsize.wrapping_sub(data.oy) {
+        if py < gd.history_size().wrapping_sub(data.oy) {
             return None;
         }
         if py
-            > gd.hsize
+            > gd.history_size()
                 .wrapping_sub(data.oy)
-                .wrapping_add(gd.sy)
+                .wrapping_add(gd.height())
                 .wrapping_sub(1 as u_int)
         {
             return None;
         }
         Some(
-            py.wrapping_sub(gd.hsize.wrapping_sub(data.oy))
-                .wrapping_mul(gd.sx)
+            py.wrapping_sub(gd.history_size().wrapping_sub(data.oy))
+                .wrapping_mul(gd.width())
                 .wrapping_add(px),
         )
     }
@@ -6028,8 +6024,8 @@ fn window_copy_search_mark_match(
         let mut gc;
         let mut i: u_int;
         let mut w: u_int = width;
-        let sx: u_int = gd.sx;
-        let sy: u_int = gd.sy;
+        let sx: u_int = gd.width();
+        let sy: u_int = gd.height();
         if let Some(b) = window_copy_search_mark_at(data, px, py) {
             width = window_copy_clip_width(width, b, sx, sy);
             w = width;
@@ -6083,8 +6079,8 @@ unsafe fn window_copy_search_marks(
         let mut width: u_int;
         let mut start: u_int;
         let mut end: u_int;
-        let sx: u_int = gd.sx;
-        let sy: u_int = gd.sy;
+        let sx: u_int = gd.width();
+        let sy: u_int = gd.height();
         let mut reg: Option<CompiledRegex> = None;
         let mut stop: uint64_t = 0 as uint64_t;
 
@@ -6107,7 +6103,7 @@ unsafe fn window_copy_search_marks(
                 &ss
             }
             Some(ssp) => {
-                width = RustScreen::grid(ssp).sx;
+                width = RustScreen::grid(ssp).width();
                 ssp
             }
         };
@@ -6119,7 +6115,7 @@ unsafe fn window_copy_search_marks(
                 RustScreen::grid(ssp),
                 0 as u_int,
                 0 as u_int,
-                RustScreen::grid(ssp).sx,
+                RustScreen::grid(ssp).width(),
                 &mut sbuf,
             );
             if cis != 0 {
@@ -6136,7 +6132,7 @@ unsafe fn window_copy_search_marks(
             (start, end) = window_copy_visible_lines(&*data);
         } else {
             start = 0 as u_int;
-            end = gd.hsize.wrapping_add(sy);
+            end = gd.history_size().wrapping_add(sy);
             stop = get_timer().wrapping_add(WINDOW_COPY_SEARCH_ALL_TIMEOUT as uint64_t);
         }
         loop {
@@ -6260,7 +6256,7 @@ unsafe fn window_copy_goto_line(wme: &mut window_mode_entry, linestr: &CStr) {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize;
+        .history_size();
         let line: u_int;
         let Ok(lineno) = strtonum(
             linestr,
@@ -6299,7 +6295,7 @@ fn window_copy_match_start_end(data: &window_copy_mode_data, at: u_int) -> (u_in
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         );
-        let last: u_int = gd.sy.wrapping_mul(gd.sx).wrapping_sub(1 as u_int);
+        let last: u_int = gd.height().wrapping_mul(gd.width()).wrapping_sub(1 as u_int);
         let mark: u_char = (&data.searchmark)[at as usize];
         let mut end = at;
         let mut start = end;
@@ -6335,13 +6331,13 @@ unsafe fn window_copy_match_at_cursor(data: &window_copy_mode_data) -> Option<CS
         let mut at: u_int;
         let start: u_int;
         let end: u_int;
-        let sx: u_int = gd.sx;
+        let sx: u_int = gd.width();
         if data.searchmark.is_empty() {
             return None;
         }
         // The grid's own numbers are read off it before the walk that hands
         // the mode data on, which is the same values read once.
-        let (hsize, oy, cx) = (gd.hsize, data.oy, data.cx);
+        let (hsize, oy, cx) = (gd.history_size(), data.oy, data.cx);
         let cy = hsize.wrapping_sub(oy).wrapping_add(data.cy);
         let found_at = window_copy_search_mark_at(data, cx, cy)?;
         at = found_at;
@@ -6443,7 +6439,7 @@ fn window_copy_update_style(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_sub(data.oy)
         .wrapping_add(data.cy);
         if let Some(found_at) = window_copy_search_mark_at(data, data.cx, cy) {
@@ -6554,14 +6550,14 @@ fn window_copy_line_number_width(wme: &window_mode_entry) -> u_int {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(
             RustScreen::grid(
                 data.backing
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .sy,
+            .height(),
         )
         .wrapping_add(1 as u_int);
         digits = 1 as u_int;
@@ -6648,7 +6644,7 @@ pub fn window_copy_get_current_offset(wp: &(impl crate::WindowPane + ?Sized)) ->
             .as_deref()
             .expect("copy mode has a backing screen"),
     )
-    .hsize;
+    .history_size();
     Some((hsize.wrapping_sub(data.oy), hsize))
 }
 
@@ -6666,13 +6662,13 @@ unsafe fn window_copy_write_line(
         let mut mkgc = grid_default_cell;
         let mut ln_gc = grid_default_cell;
         let mut cur_ln_gc = grid_default_cell;
-        let sx: u_int = RustScreen::grid(&data.screen.borrow()).sx;
+        let sx: u_int = RustScreen::grid(&data.screen.borrow()).width();
         let hsize: u_int = RustScreen::grid(
             data.backing
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize;
+        .history_size();
 
         let absolute: u_int;
         let line_number: u_int;
@@ -6798,7 +6794,7 @@ unsafe fn window_copy_write_line(
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         if py == data.cy && data.cx >= content_sx {
             let x =
-                window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&data.screen.borrow()).sx)
+                window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&data.screen.borrow()).width())
                     as core::ffi::c_int;
             writer.cursormove(x, py as core::ffi::c_int, 0 as core::ffi::c_int);
             writer.putc(&grid_default_cell, '$' as i32 as u_char);
@@ -6840,7 +6836,7 @@ unsafe fn window_copy_redraw_selection(wme: &mut window_mode_entry, old_y: u_int
             end = old_y;
         }
         if data.selflag as core::ffi::c_uint == SEL_WORD as core::ffi::c_int as core::ffi::c_uint
-            && end < gd.sy.wrapping_add(data.oy).wrapping_sub(1 as u_int)
+            && end < gd.height().wrapping_add(data.oy).wrapping_sub(1 as u_int)
         {
             end = end.wrapping_add(1);
         }
@@ -6860,7 +6856,7 @@ unsafe fn window_copy_redraw_lines(wme: &mut window_mode_entry, py: u_int, ny: u
         let s = data.screen.clone();
         let mut i: u_int;
         if window_copy_line_number_width(wme) != 0 as u_int {
-            let x = window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&s.borrow()).sx);
+            let x = window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&s.borrow()).width());
             let mut writer = RustScreenWriteCtx::on_shared_screen(&s);
             i = py;
             while i < py.wrapping_add(ny) {
@@ -6883,7 +6879,7 @@ unsafe fn window_copy_redraw_lines(wme: &mut window_mode_entry, py: u_int, ny: u
             }
             return;
         }
-        let x = window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&s.borrow()).sx);
+        let x = window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&s.borrow()).width());
         let mut writer = RustScreenWriteCtx::on_shared_pane_screen(&s, Some(pane.clone()));
         i = py;
         while i < py.wrapping_add(ny) {
@@ -6909,7 +6905,7 @@ unsafe fn window_copy_redraw_lines(wme: &mut window_mode_entry, py: u_int, ny: u
 unsafe fn window_copy_redraw_screen(wme: &mut window_mode_entry) {
     unsafe {
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
-        let sy = RustScreen::grid(&data.screen.borrow()).sy;
+        let sy = RustScreen::grid(&data.screen.borrow()).height();
         window_copy_redraw_lines(wme, 0, sy);
     }
 }
@@ -6937,7 +6933,7 @@ fn window_copy_synchronize_cursor_end(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         match data.selflag {
@@ -7023,7 +7019,7 @@ unsafe fn window_copy_update_cursor(wme: &mut window_mode_entry, mut cx: u_int, 
         let content_sx: u_int;
         let maxx: u_int;
         let allow_onemore: core::ffi::c_int;
-        if data.rectflag == 0 && cy < RustScreen::grid(&s.borrow()).sy {
+        if data.rectflag == 0 && cy < RustScreen::grid(&s.borrow()).height() {
             allow_onemore =
                 (data.screen.borrow().has_selection() && data.rectflag != 0) as core::ffi::c_int;
             py = RustScreen::grid(
@@ -7031,7 +7027,7 @@ unsafe fn window_copy_update_cursor(wme: &mut window_mode_entry, mut cx: u_int, 
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_add(cy)
             .wrapping_sub(data.oy);
             maxx = window_copy_cursor_limit(wme, py, allow_onemore);
@@ -7056,16 +7052,16 @@ unsafe fn window_copy_update_cursor(wme: &mut window_mode_entry, mut cx: u_int, 
                 window_copy_redraw_screen(wme);
                 return;
             }
-            if width >= RustScreen::grid(&s.borrow()).sx {
+            if width >= RustScreen::grid(&s.borrow()).width() {
                 content_sx = 1 as u_int;
             } else {
-                content_sx = RustScreen::grid(&s.borrow()).sx.wrapping_sub(width);
+                content_sx = RustScreen::grid(&s.borrow()).width().wrapping_sub(width);
             }
             if old_cx >= content_sx || data.cx >= content_sx {
                 window_copy_redraw_screen(wme);
                 return;
             }
-            let x = window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&s.borrow()).sx)
+            let x = window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&s.borrow()).width())
                 as core::ffi::c_int;
             let y = data.cy as core::ffi::c_int;
             let display = wme
@@ -7080,16 +7076,16 @@ unsafe fn window_copy_update_cursor(wme: &mut window_mode_entry, mut cx: u_int, 
             writer.finish();
             return;
         }
-        if old_cx == RustScreen::grid(&s.borrow()).sx {
+        if old_cx == RustScreen::grid(&s.borrow()).width() {
             window_copy_redraw_lines(wme, old_cy, 1 as u_int);
         }
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let s = &data.screen;
-        if data.cx == RustScreen::grid(&s.borrow()).sx {
+        if data.cx == RustScreen::grid(&s.borrow()).width() {
             let cy = data.cy;
             window_copy_redraw_lines(wme, cy, 1 as u_int);
         } else {
-            let x = window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&s.borrow()).sx)
+            let x = window_copy_cursor_offset(wme, data.cx, RustScreen::grid(&s.borrow()).width())
                 as core::ffi::c_int;
             let y = data.cy as core::ffi::c_int;
             let display = wme
@@ -7114,7 +7110,7 @@ unsafe fn window_copy_start_selection(wme: &mut window_mode_entry) {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         data.endselx = data.selx;
@@ -7142,7 +7138,7 @@ fn window_copy_adjust_selection(
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_sub(data.oy);
         if sy < ty {
             relpos = WINDOW_COPY_REL_POS_ABOVE as core::ffi::c_int;
@@ -7151,14 +7147,14 @@ fn window_copy_adjust_selection(
             }
             sy = 0 as u_int;
         } else if sy
-            > ty.wrapping_add(RustScreen::grid(&s.borrow()).sy)
+            > ty.wrapping_add(RustScreen::grid(&s.borrow()).height())
                 .wrapping_sub(1 as u_int)
         {
             relpos = WINDOW_COPY_REL_POS_BELOW as core::ffi::c_int;
             if data.rectflag == 0 {
-                sx = RustScreen::grid(&s.borrow()).sx.wrapping_sub(1 as u_int);
+                sx = RustScreen::grid(&s.borrow()).width().wrapping_sub(1 as u_int);
             }
-            sy = RustScreen::grid(&s.borrow()).sy.wrapping_sub(1 as u_int);
+            sy = RustScreen::grid(&s.borrow()).height().wrapping_sub(1 as u_int);
         } else {
             relpos = WINDOW_COPY_REL_POS_ON_SCREEN as core::ffi::c_int;
             sy = sy.wrapping_sub(ty);
@@ -7225,12 +7221,12 @@ unsafe fn window_copy_set_selection(
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let s = &data.screen;
         clipx = window_copy_line_number_width(wme);
-        if clipx >= RustScreen::grid(&s.borrow()).sx {
-            clipx = RustScreen::grid(&s.borrow()).sx.wrapping_sub(1 as u_int);
+        if clipx >= RustScreen::grid(&s.borrow()).width() {
+            clipx = RustScreen::grid(&s.borrow()).width().wrapping_sub(1 as u_int);
         }
         if window_copy_line_numbers_active(wme) != 0 {
-            sx = window_copy_cursor_offset(wme, sx, RustScreen::grid(&s.borrow()).sx);
-            endsx = window_copy_cursor_offset(wme, endsx, RustScreen::grid(&s.borrow()).sx);
+            sx = window_copy_cursor_offset(wme, sx, RustScreen::grid(&s.borrow()).width());
+            endsx = window_copy_cursor_offset(wme, endsx, RustScreen::grid(&s.borrow()).width());
         }
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
         data.screen.borrow_mut().set_selection(
@@ -7310,7 +7306,7 @@ unsafe fn window_copy_get_selection(wme: &window_mode_entry) -> Option<Vec<u8>> 
         if ex > ey_last {
             ex = ey_last;
         }
-        xx = RustScreen::grid(&s.borrow()).sx;
+        xx = RustScreen::grid(&s.borrow()).width();
         let pane = wme.pane_ref().expect("mode has a pane");
         let window = pane.window().expect("mode pane has a window");
         let keys: core::ffi::c_int = window.options().number(c"mode-keys") as core::ffi::c_int;
@@ -7546,7 +7542,7 @@ fn window_copy_copy_line(
             return;
         }
         let gl = grid_line_info(gd, sy);
-        if gl.flags & GRID_LINE_WRAPPED != 0 && gl.cells <= gd.sx {
+        if gl.flags & GRID_LINE_WRAPPED != 0 && gl.cells <= gd.width() {
             wrapped = 1 as u_int;
         }
         let xx: u_int = if wrapped != 0 {
@@ -7603,7 +7599,7 @@ unsafe fn window_copy_clear_selection(wme: &mut window_mode_entry) {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         let (cx, cy, rectangle) = (data.cx, data.cy, data.rectflag);
@@ -7669,7 +7665,7 @@ unsafe fn window_copy_cursor_start_of_line(wme: &mut window_mode_entry) {
         let mut py: u_int;
 
         px = data.cx;
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let oldy: u_int = data.cy;
         let mut gr = RustGridReader::start(RustScreen::grid(back_s), px, py);
@@ -7690,7 +7686,7 @@ unsafe fn window_copy_cursor_back_to_indentation(wme: &mut window_mode_entry) {
         let mut py: u_int;
 
         px = data.cx;
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let oldy: u_int = data.cy;
         let mut gr = RustGridReader::start(RustScreen::grid(back_s), px, py);
@@ -7711,7 +7707,7 @@ unsafe fn window_copy_cursor_end_of_line(wme: &mut window_mode_entry) {
         let mut py: u_int;
 
         px = data.cx;
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let oldy: u_int = data.cy;
         let mut gr = RustGridReader::start(RustScreen::grid(back_s), px, py);
@@ -7725,7 +7721,7 @@ unsafe fn window_copy_cursor_end_of_line(wme: &mut window_mode_entry) {
             px = window_copy_cursor_limit(wme, py, 0 as core::ffi::c_int);
         }
         let oy = data.oy;
-        let sy = RustScreen::grid(back_s).sy;
+        let sy = RustScreen::grid(back_s).height();
         window_copy_acquire_cursor_down(wme, hsize, sy, oy, oldy, px, py, 0 as core::ffi::c_int);
     }
 }
@@ -7776,7 +7772,7 @@ unsafe fn window_copy_other_end(wme: &mut window_mode_entry) {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         data.cx = selx;
@@ -7785,20 +7781,20 @@ unsafe fn window_copy_other_end(wme: &mut window_mode_entry) {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize;
+        .history_size();
         if sely < hsize.wrapping_sub(data.oy) {
             data.oy = hsize.wrapping_sub(sely);
             data.cy = 0 as u_int;
         } else if sely
             > hsize
                 .wrapping_sub(data.oy)
-                .wrapping_add(RustScreen::grid(&s.borrow()).sy)
+                .wrapping_add(RustScreen::grid(&s.borrow()).height())
         {
             data.oy = hsize
                 .wrapping_sub(sely)
-                .wrapping_add(RustScreen::grid(&s.borrow()).sy)
+                .wrapping_add(RustScreen::grid(&s.borrow()).height())
                 .wrapping_sub(1 as u_int);
-            data.cy = RustScreen::grid(&s.borrow()).sy.wrapping_sub(1 as u_int);
+            data.cy = RustScreen::grid(&s.borrow()).height().wrapping_sub(1 as u_int);
         } else {
             data.cy = cy.wrapping_add(sely).wrapping_sub(yy);
         }
@@ -7807,7 +7803,7 @@ unsafe fn window_copy_other_end(wme: &mut window_mode_entry) {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         let rectangle = data.rectflag;
@@ -7831,7 +7827,7 @@ unsafe fn window_copy_cursor_left(wme: &mut window_mode_entry) {
         let mut py: u_int;
 
         px = data.cx;
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let oldy: u_int = data.cy;
         let mut gr = RustGridReader::start(RustScreen::grid(back_s), px, py);
@@ -7855,7 +7851,7 @@ unsafe fn window_copy_cursor_right(wme: &mut window_mode_entry, all: core::ffi::
         let mut py: u_int;
 
         px = data.cx;
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let oldy: u_int = data.cy;
         let onemore: core::ffi::c_int =
@@ -7864,7 +7860,7 @@ unsafe fn window_copy_cursor_right(wme: &mut window_mode_entry, all: core::ffi::
         gr.right(true, all != 0, onemore != 0);
         (px, py) = gr.cursor();
         let oy = data.oy;
-        let sy = RustScreen::grid(back_s).sy;
+        let sy = RustScreen::grid(back_s).height();
         window_copy_acquire_cursor_down(wme, hsize, sy, oy, oldy, px, py, 0 as core::ffi::c_int);
     }
 }
@@ -7882,7 +7878,7 @@ unsafe fn window_copy_cursor_up(wme: &mut window_mode_entry, scroll_only: core::
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         let ox: u_int = window_copy_find_length(wme, oy);
@@ -7908,7 +7904,7 @@ unsafe fn window_copy_cursor_up(wme: &mut window_mode_entry, scroll_only: core::
             if scroll_only != 0 {
                 if data.cy
                     == RustScreen::grid(&data.screen.borrow())
-                        .sy
+                        .height()
                         .wrapping_sub(1 as u_int)
                 {
                     let cy = data.cy;
@@ -7935,7 +7931,7 @@ unsafe fn window_copy_cursor_up(wme: &mut window_mode_entry, scroll_only: core::
                 let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
                 if data.cy
                     == RustScreen::grid(&data.screen.borrow())
-                        .sy
+                        .height()
                         .wrapping_sub(1 as u_int)
                 {
                     let cy = data.cy;
@@ -7953,7 +7949,7 @@ unsafe fn window_copy_cursor_up(wme: &mut window_mode_entry, scroll_only: core::
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_add(data.cy)
             .wrapping_sub(data.oy);
             px = window_copy_find_length(wme, py);
@@ -7978,7 +7974,7 @@ unsafe fn window_copy_cursor_up(wme: &mut window_mode_entry, scroll_only: core::
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_add(data.cy)
             .wrapping_sub(data.oy);
             if data.rectflag != 0 {
@@ -7987,7 +7983,7 @@ unsafe fn window_copy_cursor_up(wme: &mut window_mode_entry, scroll_only: core::
                         .as_deref()
                         .expect("copy mode has a backing screen"),
                 )
-                .sx;
+                .width();
             } else {
                 px = window_copy_find_length(wme, py);
             }
@@ -8027,7 +8023,7 @@ unsafe fn window_copy_cursor_down(wme: &mut window_mode_entry, scroll_only: core
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         let ox: u_int = window_copy_find_length(wme, oy);
@@ -8047,7 +8043,7 @@ unsafe fn window_copy_cursor_down(wme: &mut window_mode_entry, scroll_only: core
         if scroll_only != 0
             || data.cy
                 == RustScreen::grid(&data.screen.borrow())
-                    .sy
+                    .height()
                     .wrapping_sub(1 as u_int)
         {
             if norectsel != 0 {
@@ -8086,7 +8082,7 @@ unsafe fn window_copy_cursor_down(wme: &mut window_mode_entry, scroll_only: core
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_add(data.cy)
             .wrapping_sub(data.oy);
             px = window_copy_find_length(wme, py);
@@ -8111,7 +8107,7 @@ unsafe fn window_copy_cursor_down(wme: &mut window_mode_entry, scroll_only: core
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_add(data.cy)
             .wrapping_sub(data.oy);
             if data.rectflag != 0 {
@@ -8120,7 +8116,7 @@ unsafe fn window_copy_cursor_down(wme: &mut window_mode_entry, scroll_only: core
                         .as_deref()
                         .expect("copy mode has a backing screen"),
                 )
-                .sx;
+                .width();
             } else {
                 px = window_copy_find_length(wme, py);
             }
@@ -8160,14 +8156,14 @@ unsafe fn window_copy_cursor_jump(wme: &mut window_mode_entry) {
         let mut py: u_int;
 
         px = data.cx.wrapping_add(1 as u_int);
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let oldy: u_int = data.cy;
         let mut gr = RustGridReader::start(RustScreen::grid(back_s), px, py);
         if gr.jump(&jc.data[..jc.size as usize]) {
             (px, py) = gr.cursor();
             let oy = data.oy;
-            let sy = RustScreen::grid(back_s).sy;
+            let sy = RustScreen::grid(back_s).height();
             window_copy_acquire_cursor_down(
                 wme,
                 hsize,
@@ -8195,7 +8191,7 @@ unsafe fn window_copy_cursor_jump_back(wme: &mut window_mode_entry) {
         let mut py: u_int;
 
         px = data.cx;
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let oldy: u_int = data.cy;
         let mut gr = RustGridReader::start(RustScreen::grid(back_s), px, py);
@@ -8221,7 +8217,7 @@ unsafe fn window_copy_cursor_jump_to(wme: &mut window_mode_entry) {
         let mut py: u_int;
 
         px = data.cx.wrapping_add(2 as u_int);
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let oldy: u_int = data.cy;
         let mut gr = RustGridReader::start(RustScreen::grid(back_s), px, py);
@@ -8229,7 +8225,7 @@ unsafe fn window_copy_cursor_jump_to(wme: &mut window_mode_entry) {
             gr.left(true);
             (px, py) = gr.cursor();
             let oy = data.oy;
-            let sy = RustScreen::grid(back_s).sy;
+            let sy = RustScreen::grid(back_s).height();
             window_copy_acquire_cursor_down(
                 wme,
                 hsize,
@@ -8260,7 +8256,7 @@ unsafe fn window_copy_cursor_jump_to_back(wme: &mut window_mode_entry) {
         let mut py: u_int;
 
         px = data.cx;
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let oldy: u_int = data.cy;
         let onemore: core::ffi::c_int =
@@ -8287,14 +8283,14 @@ unsafe fn window_copy_cursor_next_word(wme: &mut window_mode_entry, separators: 
         let mut py: u_int;
 
         px = data.cx;
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let oldy: u_int = data.cy;
         let mut gr = RustGridReader::start(RustScreen::grid(back_s), px, py);
         gr.next_word(separators);
         (px, py) = gr.cursor();
         let oy = data.oy;
-        let sy = RustScreen::grid(back_s).sy;
+        let sy = RustScreen::grid(back_s).height();
         window_copy_acquire_cursor_down(wme, hsize, sy, oy, oldy, px, py, 0 as core::ffi::c_int);
     }
 }
@@ -8313,7 +8309,7 @@ fn window_copy_cursor_next_word_end_pos(
         let mut py: u_int;
 
         px = data.cx;
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let mut gr = RustGridReader::start(RustScreen::grid(back_s), px, py);
         if (oo).number(c"mode-keys") == MODEKEY_VI as core::ffi::c_longlong {
@@ -8347,7 +8343,7 @@ unsafe fn window_copy_cursor_next_word_end(
         let mut py: u_int;
 
         px = data.cx;
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let oldy: u_int = data.cy;
         let mut gr = RustGridReader::start(RustScreen::grid(back_s), px, py);
@@ -8362,7 +8358,7 @@ unsafe fn window_copy_cursor_next_word_end(
         }
         (px, py) = gr.cursor();
         let oy = data.oy;
-        let sy = RustScreen::grid(back_s).sy;
+        let sy = RustScreen::grid(back_s).height();
         window_copy_acquire_cursor_down(wme, hsize, sy, oy, oldy, px, py, no_reset);
     }
 }
@@ -8380,7 +8376,7 @@ fn window_copy_cursor_previous_word_pos(
         let mut py: u_int;
 
         px = data.cx;
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let mut gr = RustGridReader::start(RustScreen::grid(back_s), px, py);
         gr.previous_word(separators, false, true);
@@ -8411,7 +8407,7 @@ unsafe fn window_copy_cursor_previous_word(
                 0 as core::ffi::c_int
             };
         px = data.cx;
-        let hsize: u_int = RustScreen::grid(back_s).hsize;
+        let hsize: u_int = RustScreen::grid(back_s).history_size();
         py = hsize.wrapping_add(data.cy).wrapping_sub(data.oy);
         let oldy: u_int = data.cy;
         let mut gr = RustGridReader::start(RustScreen::grid(back_s), px, py);
@@ -8434,7 +8430,7 @@ unsafe fn window_copy_cursor_prompt(
             .expect("copy mode has a backing screen");
         let gd = RustScreen::grid(s);
         let end_line: u_int;
-        let mut line: u_int = gd.hsize.wrapping_sub(data.oy).wrapping_add(data.cy);
+        let mut line: u_int = gd.history_size().wrapping_sub(data.oy).wrapping_add(data.cy);
         let add: core::ffi::c_int;
 
         let line_flag: core::ffi::c_int = if start_output != 0 {
@@ -8447,7 +8443,7 @@ unsafe fn window_copy_cursor_prompt(
             end_line = 0 as u_int;
         } else {
             add = 1 as core::ffi::c_int;
-            end_line = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
+            end_line = gd.history_size().wrapping_add(gd.height()).wrapping_sub(1 as u_int);
         }
         if line == end_line {
             return;
@@ -8462,12 +8458,12 @@ unsafe fn window_copy_cursor_prompt(
             }
         }
         data.cx = 0 as u_int;
-        if line > gd.hsize {
-            data.cy = line.wrapping_sub(gd.hsize);
+        if line > gd.history_size() {
+            data.cy = line.wrapping_sub(gd.history_size());
             data.oy = 0 as u_int;
         } else {
             data.cy = 0 as u_int;
-            data.oy = gd.hsize.wrapping_sub(line);
+            data.oy = gd.history_size().wrapping_sub(line);
         }
         window_copy_update_selection(wme, 1 as core::ffi::c_int, 0 as core::ffi::c_int);
         window_copy_redraw_screen(wme);
@@ -8573,7 +8569,7 @@ unsafe fn window_copy_scroll_down(wme: &mut window_mode_entry, mut ny: u_int) {
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
         {
             return;
         }
@@ -8583,7 +8579,7 @@ unsafe fn window_copy_scroll_down(wme: &mut window_mode_entry, mut ny: u_int) {
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_sub(ny)
         {
             ny = RustScreen::grid(
@@ -8591,7 +8587,7 @@ unsafe fn window_copy_scroll_down(wme: &mut window_mode_entry, mut ny: u_int) {
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_sub(data.oy);
         }
         if ny == 0 as u_int {
@@ -8669,7 +8665,7 @@ unsafe fn window_copy_rectangle_set(wme: &mut window_mode_entry, rectflag: core:
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         let (cx, cy) = (data.cx, data.cy);
@@ -8708,7 +8704,7 @@ unsafe fn window_copy_move_mouse(m: &mouse_event) {
             return;
         }
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
-        x = window_copy_cursor_unoffset(wme, x, RustScreen::grid(&data.screen.borrow()).sx);
+        x = window_copy_cursor_unoffset(wme, x, RustScreen::grid(&data.screen.borrow()).width());
         window_copy_update_cursor(wme, x, y);
     }
 }
@@ -8745,14 +8741,14 @@ pub unsafe fn window_copy_start_drag(c: Option<&mut client>, m: &mouse_event) {
         c.tty.mouse_drag_update = Some(std::rc::Rc::new(|c, m| window_copy_drag_update(c, m)));
         c.tty.mouse_drag_release = Some(std::rc::Rc::new(|c, m| window_copy_drag_release(c, m)));
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
-        x = window_copy_cursor_unoffset(wme, x, RustScreen::grid(&data.screen.borrow()).sx);
+        x = window_copy_cursor_unoffset(wme, x, RustScreen::grid(&data.screen.borrow()).width());
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
         let yg: u_int = RustScreen::grid(
             data.backing
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(y)
         .wrapping_sub(data.oy);
         if x < data.selrx || x > data.endselrx || yg != data.selry {
@@ -8773,7 +8769,7 @@ pub unsafe fn window_copy_start_drag(c: Option<&mut client>, m: &mouse_event) {
                                 .as_deref()
                                 .expect("copy mode has a backing screen"),
                         )
-                        .hsize
+                        .history_size()
                         .wrapping_sub(data.oy),
                     );
                 }
@@ -8822,7 +8818,7 @@ unsafe fn window_copy_drag_update(_c: &mut client, m: &mouse_event) {
         } {
             return;
         }
-        let sx = RustScreen::grid(&data.screen.borrow()).sx;
+        let sx = RustScreen::grid(&data.screen.borrow()).width();
         let old_cx: u_int = data.cx;
         let old_cy: u_int = data.cy;
         x = window_copy_cursor_unoffset(wme, x, sx);
@@ -8837,7 +8833,7 @@ unsafe fn window_copy_drag_update(_c: &mut client, m: &mouse_event) {
                 window_copy_cursor_up(wme, 1 as core::ffi::c_int);
             } else if y
                 == RustScreen::grid(&data.screen.borrow())
-                    .sy
+                    .height()
                     .wrapping_sub(1 as u_int)
             {
                 data.dragtimer.arm(tv);
@@ -8886,7 +8882,7 @@ unsafe fn window_copy_jump_to_mark(wme: &mut window_mode_entry) {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize
+        .history_size()
         .wrapping_add(data.cy)
         .wrapping_sub(data.oy);
         data.cx = data.mx;
@@ -8896,7 +8892,7 @@ unsafe fn window_copy_jump_to_mark(wme: &mut window_mode_entry) {
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
         {
             data.cy = 0 as u_int;
             data.oy = RustScreen::grid(
@@ -8904,7 +8900,7 @@ unsafe fn window_copy_jump_to_mark(wme: &mut window_mode_entry) {
                     .as_deref()
                     .expect("copy mode has a backing screen"),
             )
-            .hsize
+            .history_size()
             .wrapping_sub(data.my);
         } else {
             data.cy = data.my.wrapping_sub(
@@ -8913,7 +8909,7 @@ unsafe fn window_copy_jump_to_mark(wme: &mut window_mode_entry) {
                         .as_deref()
                         .expect("copy mode has a backing screen"),
                 )
-                .hsize,
+                .history_size(),
             );
             data.oy = 0 as u_int;
         }

@@ -189,8 +189,8 @@ fn lifecycle_initializes_resizes_updates_and_frees_an_empty_mode() {
             let screen = entry
                 .screen.as_ref().unwrap().shared().unwrap()
                 .borrow();
-            assert_eq!(RustScreen::grid(&screen).sx, 32);
-            assert_eq!(RustScreen::grid(&screen).sy, 8);
+            assert_eq!(RustScreen::grid(&screen).width(), 32);
+            assert_eq!(RustScreen::grid(&screen).height(), 8);
         }
         (entry.state.client().unwrap()).update();
         assert_ne!(*(*pane).flags() & PANE_REDRAW, 0);
@@ -259,7 +259,7 @@ fn preview_uses_the_clients_current_window_and_skips_missing_active_panes() {
             }
             let grid = RustScreen::grid(&output);
             assert!(
-                crate::grid::grid_string_cells(grid, 0, 0, grid.sx, None, 0, None)
+                crate::grid::grid_string_cells(grid, 0, 0, grid.width(), None, 0, None)
                     .to_string_lossy()
                     .trim()
                     .is_empty()

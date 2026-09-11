@@ -59,9 +59,9 @@ impl Writer {
         self.flush();
         {
             let gd = self.grid();
-            (0..(*gd).sy)
+            (0..(*gd).height())
                 .map(|y| {
-                    let p = grid_string_cells(&*gd, 0, (*gd).hsize + y, (*gd).sx, None, 0, None);
+                    let p = grid_string_cells(&*gd, 0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -73,9 +73,9 @@ impl Writer {
         self.flush();
         {
             let gd = self.grid();
-            (0..(*gd).hsize)
+            (0..(*gd).history_size())
                 .map(|y| {
-                    let p = grid_string_cells(&*gd, 0, y, (*gd).sx, None, 0, None);
+                    let p = grid_string_cells(&*gd, 0, y, (*gd).width(), None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -94,7 +94,7 @@ impl Writer {
         self.flush();
         {
             let gd = self.grid();
-            (0..(*gd).sx)
+            (0..(*gd).width())
                 .map(|x| {
                     let gc = grid_view_get_cell(&*gd, x, py);
                     gc.bg
@@ -133,9 +133,9 @@ impl Writer {
     fn peek(&mut self) -> Vec<String> {
         {
             let gd = self.grid();
-            (0..(*gd).sy)
+            (0..(*gd).height())
                 .map(|y| {
-                    let p = grid_string_cells(&*gd, 0, (*gd).hsize + y, (*gd).sx, None, 0, None);
+                    let p = grid_string_cells(&*gd, 0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -248,7 +248,7 @@ fn backspace_steps_back_and_over_a_wrapped_line() {
     assert_eq!(w.cursor(), (0, 1));
     unsafe {
         let gd = w.grid_mut();
-        let hsize = gd.hsize;
+        let hsize = gd.history_size();
         crate::grid::grid_mark_wrapped(gd, hsize);
         screen_write_backspace(&mut w.ctx());
     }
@@ -1284,9 +1284,9 @@ impl PaneWriter {
             screen_write_collect_end(&mut self.ctx());
             screen_write_collect_flush(&mut self.ctx(), 0, c"test");
             let gd = RustScreen::grid_mut(self.pane.base_mut());
-            (0..(*gd).sy)
+            (0..(*gd).height())
                 .map(|y| {
-                    let p = grid_string_cells(&*gd, 0, (*gd).hsize + y, (*gd).sx, None, 0, None);
+                    let p = grid_string_cells(&*gd, 0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -1618,7 +1618,7 @@ fn clearing_from_the_top_of_a_pane_scrolls_it_into_the_history() {
     assert_eq!(w.lines(), ["", ""]);
     {
         let gd = RustScreen::grid_mut(w.pane.base_mut());
-        assert_eq!((*gd).hsize, 1);
+        assert_eq!((*gd).history_size(), 1);
     }
 }
 

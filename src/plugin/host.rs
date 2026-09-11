@@ -131,7 +131,7 @@ impl PaneObservability for PaneView {
 
     fn scrollback_rows(&self) -> io::Result<usize> {
         let pane = self.pane()?;
-        unsafe { Ok(pane.get().expect("resolved pane").base().grid().hsize as usize) }
+        unsafe { Ok(pane.get().expect("resolved pane").base().grid().history_size() as usize) }
     }
 
     fn title(&self) -> io::Result<Option<CString>> {
@@ -195,7 +195,7 @@ fn row_text(gd: &grid, py: u_int, trim: bool) -> CString {
     } else {
         GRID_STRING_EMPTY_CELLS
     };
-    gd.string_cells(0, py, gd.sx, None, flags, None)
+    gd.string_cells(0, py, gd.width(), None, flags, None)
 }
 
 /// Whether a row runs on into the next one because the text reached the right
@@ -211,9 +211,9 @@ fn screen_text(gd: &grid, source: ScreenSource, lines: usize) -> CString {
     if lines == 0 {
         return CString::default();
     }
-    let total = gd.hsize.wrapping_add(gd.sy);
+    let total = gd.history_size().wrapping_add(gd.height());
     let floor = match source {
-        ScreenSource::Visible => gd.hsize,
+        ScreenSource::Visible => gd.history_size(),
         _ => 0,
     };
     let mut end = total;

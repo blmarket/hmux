@@ -470,8 +470,8 @@ pub(crate) unsafe fn spawn_pane(
         cmd_log_argv(&pane_command.argv, c"%s", fmt_args![c"spawn_pane"]);
         log_environment(&child, c"%s: environment ", fmt_args![c"spawn_pane"]);
         ws = core::mem::zeroed();
-        ws.ws_col = new_wp.base().grid().sx as core::ffi::c_ushort;
-        ws.ws_row = new_wp.base().grid().sy as core::ffi::c_ushort;
+        ws.ws_col = new_wp.base().grid().width() as core::ffi::c_ushort;
+        ws.ws_row = new_wp.base().grid().height() as core::ffi::c_ushort;
         ws.ws_xpixel = pixels.width.wrapping_mul(ws.ws_col as u_int) as core::ffi::c_ushort;
         ws.ws_ypixel = pixels.height.wrapping_mul(ws.ws_row as u_int) as core::ffi::c_ushort;
         sigfillset(&raw mut set);

@@ -270,8 +270,8 @@ unsafe fn window_clock_draw_screen(data: &mut window_clock_mode_data, options: &
             length += suffix.len();
         }
         let digits = &tim[..length];
-        let sx = RustScreen::grid(&*s).sx;
-        let sy = RustScreen::grid(&*s).sy;
+        let sx = RustScreen::grid(&*s).width();
+        let sy = RustScreen::grid(&*s).height();
         let mut writer = screen_write_ctx_on_screen(s);
         writer.clearscreen(8 as u_int);
         if (sx as size_t) < (6 as size_t).wrapping_mul(digits.len()) || sy < 6 as u_int {

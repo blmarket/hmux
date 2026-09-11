@@ -37,7 +37,7 @@ fn cmd_capture_pane_hyperlinks(
         let Some((uri, _, _)) = hyperlinks.get(gc.link) else {
             continue;
         };
-        if links.len() as u_int == gd.sx {
+        if links.len() as u_int == gd.width() {
             break;
         }
         links.push(gc.link);
@@ -62,10 +62,10 @@ fn cmd_capture_pane_line(edge: CapturePaneEdge, gd: &grid, dash: u_int, fallback
     let line = match edge {
         CapturePaneEdge::Dash => return dash,
         CapturePaneEdge::Default => fallback,
-        CapturePaneEdge::Line(n) if n < 0 && n.wrapping_neg() as u_int > gd.hsize => 0,
-        CapturePaneEdge::Line(n) => gd.hsize.wrapping_add(n as u_int),
+        CapturePaneEdge::Line(n) if n < 0 && n.wrapping_neg() as u_int > gd.history_size() => 0,
+        CapturePaneEdge::Line(n) => gd.history_size().wrapping_add(n as u_int),
     };
-    line.min(gd.hsize.wrapping_add(gd.sy).wrapping_sub(1))
+    line.min(gd.history_size().wrapping_add(gd.height()).wrapping_sub(1))
 }
 
 pub(crate) struct PaneCapture {
@@ -100,7 +100,7 @@ impl RustWindowPaneWeak {
         {
             let owner = self.upgrade()?;
             let wp = unsafe { owner.as_pane() };
-            let sx = screen::grid(wp.base()).sx;
+            let sx = screen::grid(wp.base()).width();
             let (s, gd) = if capture.alternate {
                 let Some(gd) = wp.base().saved_grid() else {
                     return Some(Err(()));
@@ -118,8 +118,8 @@ impl RustWindowPaneWeak {
                 (wp.base(), screen::grid(wp.base()))
             };
 
-            let last = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1);
-            let mut top = cmd_capture_pane_line(capture.start, gd, 0, gd.hsize);
+            let last = gd.history_size().wrapping_add(gd.height()).wrapping_sub(1);
+            let mut top = cmd_capture_pane_line(capture.start, gd, 0, gd.history_size());
             let mut bottom = cmd_capture_pane_line(capture.end, gd, last, last);
             if bottom < top {
                 core::mem::swap(&mut top, &mut bottom);
@@ -145,7 +145,7 @@ impl RustWindowPaneWeak {
 
             let mut links: Vec<u_int> = Vec::new();
             if hyperlinks {
-                links.reserve(gd.sx as usize);
+                links.reserve(gd.width() as usize);
             }
             let mut lastgc: grid_cell = grid_default_cell;
             let mut buf: Vec<u8> = Vec::new();
@@ -161,10 +161,10 @@ impl RustWindowPaneWeak {
                         .into_bytes()
                 };
                 if number_lines {
-                    let n = if i >= gd.hsize {
-                        i.wrapping_sub(gd.hsize) as c_int
+                    let n = if i >= gd.history_size() {
+                        i.wrapping_sub(gd.history_size()) as c_int
                     } else {
-                        i as c_int - gd.hsize as c_int
+                        i as c_int - gd.history_size() as c_int
                     };
                     buf.extend_from_slice(format!("{n} ").as_bytes());
                 }

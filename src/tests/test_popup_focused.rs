@@ -157,8 +157,8 @@ fn resize_clamps_geometry_and_resizes_bordered_and_borderless_screens() {
         );
         assert_eq!(
             (
-                RustScreen::grid(&pd.borrow().s.borrow()).sx,
-                RustScreen::grid(&pd.borrow().s.borrow()).sy
+                RustScreen::grid(&pd.borrow().s.borrow()).width(),
+                RustScreen::grid(&pd.borrow().s.borrow()).height()
             ),
             (10, 5)
         );
@@ -180,8 +180,8 @@ fn resize_clamps_geometry_and_resizes_bordered_and_borderless_screens() {
         );
         assert_eq!(
             (
-                RustScreen::grid(&pd.borrow().s.borrow()).sx,
-                RustScreen::grid(&pd.borrow().s.borrow()).sy
+                RustScreen::grid(&pd.borrow().s.borrow()).width(),
+                RustScreen::grid(&pd.borrow().s.borrow()).height()
             ),
             (8, 4)
         );
@@ -225,8 +225,8 @@ fn drag_handler_moves_clamps_resizes_and_stops_on_release() {
         assert_eq!((pd.borrow().sx, pd.borrow().sy), (16, 9));
         assert_eq!(
             (
-                RustScreen::grid(&pd.borrow().s.borrow()).sx,
-                RustScreen::grid(&pd.borrow().s.borrow()).sy
+                RustScreen::grid(&pd.borrow().s.borrow()).width(),
+                RustScreen::grid(&pd.borrow().s.borrow()).height()
             ),
             (14, 7)
         );
@@ -453,8 +453,8 @@ fn borderless_and_tiny_resize_drag_paths_clamp_without_jobs() {
         assert_eq!((pd.borrow().sx, pd.borrow().sy), (6, 7));
         assert_eq!(
             (
-                RustScreen::grid(&pd.borrow().s.borrow()).sx,
-                RustScreen::grid(&pd.borrow().s.borrow()).sy
+                RustScreen::grid(&pd.borrow().s.borrow()).width(),
+                RustScreen::grid(&pd.borrow().s.borrow()).height()
             ),
             (6, 7)
         );

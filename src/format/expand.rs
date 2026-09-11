@@ -975,7 +975,7 @@ unsafe fn format_cb_pane_tabs(ft: &format_tree) -> Option<CString> {
         let mut buffer = ByteBuffer::new();
         let mut i: u_int;
         i = 0 as u_int;
-        while i < RustScreen::grid(wp.base()).sx {
+        while i < RustScreen::grid(wp.base()).width() {
             if wp.base().tab_is_set(i) {
                 if !buffer.is_empty() {
                     buffer.append(b",");
@@ -1145,7 +1145,7 @@ unsafe fn format_cb_mouse_word(ft: &format_tree) -> Option<CString> {
             return None;
         }
         let grid = wp.base().grid();
-        format_grid_word(grid, x, grid.hsize.wrapping_add(y))
+        format_grid_word(grid, x, grid.history_size().wrapping_add(y))
     }
 }
 unsafe fn format_cb_mouse_hyperlink(ft: &format_tree) -> Option<CString> {
@@ -1160,7 +1160,7 @@ unsafe fn format_cb_mouse_hyperlink(ft: &format_tree) -> Option<CString> {
             return None;
         }
         let grid = wp.base().grid();
-        format_grid_hyperlink(grid, x, grid.hsize.wrapping_add(y), &wp.screen_ref())
+        format_grid_hyperlink(grid, x, grid.history_size().wrapping_add(y), &wp.screen_ref())
     }
 }
 unsafe fn format_cb_mouse_line(ft: &format_tree) -> Option<CString> {
@@ -1175,7 +1175,7 @@ unsafe fn format_cb_mouse_line(ft: &format_tree) -> Option<CString> {
             return None;
         }
         let grid = wp.base().grid();
-        Some(format_grid_line(grid, grid.hsize.wrapping_add(y)))
+        Some(format_grid_line(grid, grid.history_size().wrapping_add(y)))
     }
 }
 unsafe fn format_cb_mouse_status_line(ft: &format_tree) -> Option<CString> {
@@ -1622,7 +1622,7 @@ unsafe fn format_cb_history_size(ft: &format_tree) -> Option<CString> {
         let wp = pane.get()?;
         Some(format_printf(
             c"%u",
-            fmt_args![RustScreen::grid(wp.base()).hsize],
+            fmt_args![RustScreen::grid(wp.base()).history_size()],
         ))
     }
 }
@@ -6286,7 +6286,7 @@ pub unsafe fn format_grid_word(gd: &grid, mut x: u_int, mut y: u_int) -> Option<
             if found != 0 {
                 end = gd.line_length(y);
                 if end == 0 as u_int || x == end.wrapping_sub(1 as u_int) {
-                    if y == gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int) {
+                    if y == gd.history_size().wrapping_add(gd.height()).wrapping_sub(1 as u_int) {
                         break;
                     }
                     gl = grid_peek_info(gd, y);

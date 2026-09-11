@@ -1041,7 +1041,7 @@ pub unsafe fn status_redraw(c: &mut client) -> core::ffi::c_int {
             c.status.style = gc;
         }
         let current_grid = RustScreen::grid(&c.status.screen);
-        if current_grid.sx != width || current_grid.sy != lines {
+        if current_grid.width() != width || current_grid.height() != lines {
             screen_resize(&mut c.status.screen, width, lines, 0 as core::ffi::c_int);
             force = 1 as core::ffi::c_int;
             changed = force;

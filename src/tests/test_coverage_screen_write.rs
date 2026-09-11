@@ -169,9 +169,9 @@ impl Drop for Writer {
 /// The visible screen, one string per line with trailing blanks cut.
 fn lines_of(gd: &grid) -> Vec<String> {
     {
-        (0..(*gd).sy)
+        (0..(*gd).height())
             .map(|y| {
-                let p = grid_string_cells(&*gd, 0, (*gd).hsize + y, (*gd).sx, None, 0, None);
+                let p = grid_string_cells(&*gd, 0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
                 p.to_string_lossy().trim_end().to_string()
             })
             .collect()
@@ -642,7 +642,7 @@ fn a_fast_copy_stops_at_a_character_that_would_not_fit() {
             &mut dst.ctx(),
             &*from,
             0,
-            RustScreen::grid(&*from).hsize,
+            RustScreen::grid(&*from).history_size(),
             3,
             1,
         );
@@ -1214,7 +1214,7 @@ fn a_collected_line_moves_up_with_the_scroll() {
         screen_write_collect_end(&mut w.ctx());
         w.move_to(0, 2);
         screen_write_linefeed(&mut w.ctx(), 0, 8);
-        let gl = crate::grid::grid_line_info(w.grid(), w.grid().hsize);
+        let gl = crate::grid::grid_line_info(w.grid(), w.grid().history_size());
         assert_eq!(gl.flags & crate::screen::GRID_LINE_WRAPPED, 0);
     }
     assert_eq!(w.lines(), ["", "", ""]);

@@ -140,9 +140,9 @@ impl Parser {
     fn lines(&mut self) -> Vec<String> {
         let gd = { RustScreen::grid_mut(&mut *self.s()) };
         {
-            (0..(*gd).sy)
+            (0..(*gd).height())
                 .map(|y| {
-                    let p = grid_string_cells(&*gd, 0, (*gd).hsize + y, (*gd).sx, None, 0, None);
+                    let p = grid_string_cells(&*gd, 0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -236,9 +236,9 @@ fn linefeeds_eventually_scroll_lines_into_history() {
     for i in 0..23 {
         p.feed_str(&format!("{i}\r\n"));
     }
-    assert_eq!({ RustScreen::grid(&*p.s()).hsize }, 0);
+    assert_eq!({ RustScreen::grid(&*p.s()).history_size() }, 0);
     p.feed_str("23\n");
-    assert_eq!({ RustScreen::grid(&*p.s()).hsize }, 1);
+    assert_eq!({ RustScreen::grid(&*p.s()).history_size() }, 1);
     assert_eq!(p.lines()[0], "1");
     assert_eq!(p.lines()[21], "22");
     assert_eq!(p.lines()[22], "23");
@@ -382,7 +382,7 @@ fn erase_display_and_erase_line_cover_every_variant() {
     p.feed_str("\x1b[J");
     assert_eq!(p.lines()[0], "zzzz");
     p.feed_str("\x1b[3J");
-    assert_eq!({ RustScreen::grid(&*p.s()).hsize }, 0);
+    assert_eq!({ RustScreen::grid(&*p.s()).history_size() }, 0);
 }
 
 #[test]

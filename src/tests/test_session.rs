@@ -1293,15 +1293,15 @@ fn the_history_limit_reaches_every_pane_of_the_session() {
         for _ in 0..20 {
             grid_scroll_history(&mut *gd, 8);
         }
-        assert_eq!((*gd).hsize, 20);
+        assert_eq!((*gd).history_size(), 20);
 
         (*(*linked.ptr()).options_ref()).set_number(c"history-limit", 5);
         linked.handle().update_history();
-        assert_eq!((*gd).hlimit, 5);
-        assert_eq!((*gd).hsize, 5);
+        assert_eq!((*gd).history_limit(), 5);
+        assert_eq!((*gd).history_size(), 5);
 
         linked.handle().update_history();
-        assert_eq!((*gd).hsize, 4);
+        assert_eq!((*gd).history_size(), 4);
     }
 }
 

@@ -123,12 +123,12 @@ fn every_mode_initializes_resizes_and_releases_its_own_state() {
             assert!(pane.active_mode().unwrap().screen.is_some());
             let shown = pane.screen_ref();
             let size = RustScreen::grid(&shown);
-            assert_eq!((size.sx, size.sy), (80, 24));
+            assert_eq!((size.width(), size.height()), (80, 24));
             drop(shown);
             pane.resize(crate::PaneSize { width: 40, height: 12 });
             let shown = pane.screen_ref();
             let size = RustScreen::grid(&shown);
-            assert_eq!((size.sx, size.sy), (40, 12));
+            assert_eq!((size.width(), size.height()), (40, 12));
             drop(shown);
             (pane).reset_modes();
             assert!(pane.active_mode().is_none());

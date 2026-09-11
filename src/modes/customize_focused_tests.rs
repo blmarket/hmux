@@ -560,7 +560,7 @@ fn key_preview_preserves_empty_notes_and_sentence_punctuation() {
             window_customize_draw_key(Some(&item), &mut writer, 60, 12);
         }
         let grid = RustScreen::grid(&output);
-        let row = crate::grid::grid_string_cells(grid, 0, grid.hsize, grid.sx, None, 0, None);
+        let row = crate::grid::grid_string_cells(grid, 0, grid.history_size(), grid.width(), None, 0, None);
         assert_eq!(row.to_string_lossy().trim_end(), expected);
     }
 }

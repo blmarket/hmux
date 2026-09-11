@@ -14,15 +14,15 @@ unsafe fn open_copy(target: &mut Target) -> &mut window_mode_entry {
         for _ in 0..24 {
             grid_scroll_history(RustScreen::grid_mut((*pane).base_mut()), 8);
         }
-        for y in 0..RustScreen::grid((*pane).base()).sy {
+        for y in 0..RustScreen::grid((*pane).base()).height() {
             for (x, byte) in b"one two three four".iter().copied().enumerate() {
-                if x >= RustScreen::grid((*pane).base()).sx as usize {
+                if x >= RustScreen::grid((*pane).base()).width() as usize {
                     break;
                 }
                 grid_set_cell(
                     RustScreen::grid_mut((*pane).base_mut()),
                     x as u_int,
-                    RustScreen::grid((*pane).base()).hsize + y,
+                    RustScreen::grid((*pane).base()).history_size() + y,
                     &ascii(byte),
                 );
             }
@@ -133,41 +133,41 @@ fn search_primitives_cover_plain_regex_wrapped_and_cell_position_paths() {
             grid_set_cell(&mut needle, x as u_int, 0, &ascii(byte));
         }
         assert_eq!(
-            window_copy_search_lr(gd, &needle, gd.hsize, 0, gd.sx, 0),
+            window_copy_search_lr(gd, &needle, gd.history_size(), 0, gd.width(), 0),
             Some(4)
         );
         assert_eq!(
-            window_copy_search_rl(gd, &needle, gd.hsize, 0, gd.sx, 0),
+            window_copy_search_rl(gd, &needle, gd.history_size(), 0, gd.width(), 0),
             Some(4)
         );
-        assert!(window_copy_search_lr(gd, &needle, gd.hsize, 5, gd.sx, 0).is_none());
+        assert!(window_copy_search_lr(gd, &needle, gd.history_size(), 5, gd.width(), 0).is_none());
         let mut upper = ascii(b'T');
         grid_set_cell(&mut needle, 0, 0, &upper);
-        assert!(window_copy_search_lr(gd, &needle, gd.hsize, 0, gd.sx, 1).is_none());
+        assert!(window_copy_search_lr(gd, &needle, gd.history_size(), 0, gd.width(), 1).is_none());
         upper.data.width = 2;
         grid_set_cell(&mut needle, 0, 0, &upper);
-        assert!(window_copy_search_lr(gd, &needle, gd.hsize, 0, gd.sx, 0).is_none());
+        assert!(window_copy_search_lr(gd, &needle, gd.history_size(), 0, gd.width(), 0).is_none());
 
-        let sx = gd.sx;
-        assert_eq!(gd.cell_bytes(sx + 2, gd.hsize).as_ref(), b" ");
+        let sx = gd.width();
+        assert_eq!(gd.cell_bytes(sx + 2, gd.history_size()).as_ref(), b" ");
         let mut bytes = vec![0];
-        window_copy_stringify(gd, gd.hsize, 0, gd.sx, &mut bytes);
+        window_copy_stringify(gd, gd.history_size(), 0, gd.width(), &mut bytes);
         assert_eq!(
             CStr::from_bytes_with_nul(&bytes).unwrap().to_bytes(),
             b"one two thre"
         );
         let mut px = 0;
-        let mut py = gd.hsize;
-        window_copy_cstrtocellpos(gd, gd.sx, &mut px, &mut py, c"one two");
-        assert_eq!((px, py), (0, gd.hsize + 1));
+        let mut py = gd.history_size();
+        window_copy_cstrtocellpos(gd, gd.width(), &mut px, &mut py, c"one two");
+        assert_eq!((px, py), (0, gd.history_size() + 1));
 
         let reg = CompiledRegex::compile(c"t[a-z]+", REG_EXTENDED).unwrap();
         assert_eq!(
-            window_copy_search_lr_regex(gd, gd.hsize, 0, gd.sx, &reg),
+            window_copy_search_lr_regex(gd, gd.history_size(), 0, gd.width(), &reg),
             Some((4, 3))
         );
         assert_eq!(
-            window_copy_search_rl_regex(gd, gd.hsize, 0, gd.sx, &reg),
+            window_copy_search_rl_regex(gd, gd.history_size(), 0, gd.width(), &reg),
             Some((8, 4))
         );
     }
@@ -358,7 +358,7 @@ fn search_motion_and_mark_helpers_cover_wrap_edges_and_match_extraction() {
             .as_deref()
             .expect("copy mode has a backing screen");
         let gd = RustScreen::grid(backing);
-        let last = gd.hsize + gd.sy - 1;
+        let last = gd.history_size() + gd.height() - 1;
 
         let (mut x, mut y) = (0, 0);
         window_copy_move_left(backing, &mut x, &mut y, 0);
@@ -366,12 +366,12 @@ fn search_motion_and_mark_helpers_cover_wrap_edges_and_match_extraction() {
         window_copy_move_left(backing, &mut x, &mut y, 1);
         assert_eq!(y, last);
         window_copy_move_right(backing, &mut x, &mut y, 1);
-        x = gd.sx - 1;
+        x = gd.width() - 1;
         y = last;
         window_copy_move_right(backing, &mut x, &mut y, 0);
-        assert_eq!((x, y), (gd.sx - 1, last));
+        assert_eq!((x, y), (gd.width() - 1, last));
 
-        let hsize = gd.hsize;
+        let hsize = gd.history_size();
         data.searchstr = Some(c"two".to_owned());
         data.searchtype = WINDOW_COPY_SEARCHDOWN as core::ffi::c_int;
         assert_ne!(window_copy_search(wme, 1, 0), 0);
@@ -409,7 +409,7 @@ fn selection_extraction_covers_forward_reverse_rectangle_and_line_modes() {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize;
+        .history_size();
         data.oy = 0;
 
         window_copy_update_cursor(wme, 1, 0);
@@ -479,7 +479,7 @@ fn dynamic_backing_addition_covers_literal_parsed_and_history_growth_paths() {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         )
-        .hsize;
+        .history_size();
         window_copy_add(
             &mut *pane,
             0,
@@ -496,7 +496,7 @@ fn dynamic_backing_addition_covers_literal_parsed_and_history_growth_paths() {
                     .as_deref()
                     .expect("copy mode has a backing screen")
             )
-            .hsize
+            .history_size()
                 >= before
         );
 
@@ -504,7 +504,7 @@ fn dynamic_backing_addition_covers_literal_parsed_and_history_growth_paths() {
         window_copy_resize(wme, 30, 8);
         window_copy_style_changed(wme);
         let data = wme.state.copy_mode_data_ref().unwrap();
-        assert_eq!(RustScreen::grid(&data.screen.borrow()).sx, 30);
+        assert_eq!(RustScreen::grid(&data.screen.borrow()).width(), 30);
     }
 }
 
@@ -541,7 +541,7 @@ fn scrollbar_motion_covers_slider_clamps_both_directions_and_selection_updates()
                         .as_deref()
                         .expect("copy mode has a backing screen")
                 )
-                .hsize
+                .history_size()
         );
     }
 }
@@ -835,7 +835,7 @@ fn repositioning_the_viewport_keeps_the_absolute_cursor_line() {
         let data = wme.state.copy_mode_data_mut().unwrap();
         data.cy = 2;
         data.oy = 5;
-        let absolute = RustScreen::grid(data.backing.as_deref().unwrap()).hsize + data.cy - data.oy;
+        let absolute = RustScreen::grid(data.backing.as_deref().unwrap()).history_size() + data.cy - data.oy;
         let parsed = Args::parse(c"display-message");
         let mut state = window_copy_cmd_state {
             wme,
@@ -854,7 +854,7 @@ fn repositioning_the_viewport_keeps_the_absolute_cursor_line() {
             let data = state.wme.state.copy_mode_data_ref().unwrap();
             assert_eq!(data.cy, row);
             assert_eq!(
-                RustScreen::grid(data.backing.as_deref().unwrap()).hsize + data.cy - data.oy,
+                RustScreen::grid(data.backing.as_deref().unwrap()).history_size() + data.cy - data.oy,
                 absolute
             );
         }
@@ -1095,7 +1095,7 @@ fn recentre_cycles_preserve_the_history_line_before_jumping_to_live_output() {
         let data = wme.state.copy_mode_data_mut().unwrap();
         data.cy = 1;
         data.oy = 8;
-        let absolute = RustScreen::grid(data.backing.as_deref().unwrap()).hsize + data.cy - data.oy;
+        let absolute = RustScreen::grid(data.backing.as_deref().unwrap()).history_size() + data.cy - data.oy;
         let parsed = Args::parse(c"display-message");
         let mut state = window_copy_cmd_state {
             wme,
@@ -1114,7 +1114,7 @@ fn recentre_cycles_preserve_the_history_line_before_jumping_to_live_output() {
             let data = state.wme.state.copy_mode_data_ref().unwrap();
             assert_eq!(data.cy, row);
             assert_eq!(
-                RustScreen::grid(data.backing.as_deref().unwrap()).hsize + data.cy - data.oy,
+                RustScreen::grid(data.backing.as_deref().unwrap()).history_size() + data.cy - data.oy,
                 absolute
             );
         }
@@ -1191,7 +1191,7 @@ fn a_copy_display_owner_survives_mode_teardown_during_a_write() {
             b'r'
         );
         let base = RustScreen::grid((*pane).base());
-        assert_eq!(base.cell(0, base.hsize).data.data[0], b'o');
+        assert_eq!(base.cell(0, base.history_size()).data.data[0], b'o');
         drop(display);
         assert!(weak.upgrade().is_none());
     }

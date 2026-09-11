@@ -1745,7 +1745,7 @@ mod tests {
         let _guard = globals();
         let mut grid = Grid::new(10, 5, 100);
         grid.write(0, 0, "abc");
-        assert_eq!(grid.sx, 10);
+        assert_eq!(grid.width(), 10);
         assert_eq!(grid.cell(1, 0).data.data[0], b'b');
         {
             let p = grid_string_cells(&grid, 0, 0, 10, None, 0, None);
@@ -1759,8 +1759,8 @@ mod tests {
         let mut s = Screen::new(10, 5, 100);
         assert!(!s.ptr().is_null());
         {
-            assert_eq!((*s.grid()).sx, 10);
-            assert_eq!((*s.grid()).sy, 5);
+            assert_eq!((*s.grid()).width(), 10);
+            assert_eq!((*s.grid()).height(), 5);
         }
     }
 

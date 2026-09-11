@@ -245,8 +245,8 @@ fn a_jobless_popup_wires_the_overlay_and_answers_present() {
         assert_eq!(pd.borrow().palette.fg, 8);
         assert_eq!(pd.borrow().palette.bg, 8);
 
-        assert_eq!(RustScreen::grid(&pd.borrow().s.borrow()).sx, 8);
-        assert_eq!(RustScreen::grid(&pd.borrow().s.borrow()).sy, 4);
+        assert_eq!(RustScreen::grid(&pd.borrow().s.borrow()).width(), 8);
+        assert_eq!(RustScreen::grid(&pd.borrow().s.borrow()).height(), 4);
 
         assert_eq!((*p.c).overlay_check(), OverlayCheck::Popup);
         assert_eq!((*p.c).overlay(), Overlay::Popup);

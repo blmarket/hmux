@@ -1694,8 +1694,8 @@ pub unsafe fn window_pane_search(
         };
         let glob = (regex == 0).then(|| xasprintf(c"*%s*", fmt_args![term]));
         let flags = if ignore != 0 { FNM_CASEFOLD } else { 0 };
-        for i in 0..grid.sy {
-            let mut bytes = grid_view_string_cells(grid, 0, i, grid.sx).into_bytes();
+        for i in 0..grid.height() {
+            let mut bytes = grid_view_string_cells(grid, 0, i, grid.width()).into_bytes();
             while bytes
                 .last()
                 .is_some_and(|&last| libc::isspace(last.into()) != 0)

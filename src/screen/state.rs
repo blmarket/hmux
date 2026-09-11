@@ -2,7 +2,7 @@ use super::RustScreen;
 use super::write::{screen_write_free_list, screen_write_make_list};
 use crate::fmt_args;
 use crate::grid::{
-    Grid, RustGrid, grid_adjust_lines, grid_create, grid_default_cell, grid_empty_line,
+    Grid, RustGrid, grid_create, grid_default_cell,
 };
 use crate::grid::{Hyperlinks, RustHyperlinks};
 use crate::grid::{grid_view_clear, grid_view_delete_lines};
@@ -121,7 +121,7 @@ pub(super) struct screen {
     pub saved_cy: u_int,
     pub(super) saved_grid: Option<Box<RustGrid>>,
     pub saved_cell: grid_cell,
-    pub saved_flags: c_int,
+    pub saved_history: bool,
     pub tabs: Vec<u8>,
     pub(super) sel: Option<Box<screen_sel>>,
     pub write_list: Vec<screen_write_cline>,
@@ -186,7 +186,7 @@ impl Default for screen {
             saved_cy: 0,
             saved_grid: None,
             saved_cell: grid_default_cell,
-            saved_flags: 0,
+            saved_history: false,
             tabs: Vec::new(),
             sel: None,
             write_list: Vec::new(),
@@ -364,7 +364,7 @@ fn screen_reinit_with_extended_keys(s: &mut RustScreen, extended_keys: c_longlon
         s.0.cx = 0;
         s.0.cy = 0;
         s.0.rupper = 0;
-        s.0.rlower = s.grid().sy.wrapping_sub(1);
+        s.0.rlower = s.grid().height().wrapping_sub(1);
 
         s.0.mode = MODE_CURSOR | MODE_WRAP | (s.0.mode & MODE_CRLF);
 
@@ -381,7 +381,7 @@ fn screen_reinit_with_extended_keys(s: &mut RustScreen, extended_keys: c_longlon
         screen_reset_tabs(s);
 
         let gd = s.grid_mut();
-        gd.clear_lines(gd.hsize, gd.sy, 8);
+        gd.clear_lines(gd.history_size(), gd.height(), 8);
 
         s.clear_selection();
         screen_free_titles(s);
@@ -413,7 +413,7 @@ impl Drop for RustScreen {
 
 /// Put a tab stop every eight columns.
 pub fn screen_reset_tabs(s: &mut RustScreen) {
-    let sx = RustScreen::grid(s).sx;
+    let sx = RustScreen::grid(s).width();
     s.0.tabs = vec![0; ((sx + 7) >> 3) as usize];
     let mut i = 8;
     while i < sx {
@@ -456,7 +456,7 @@ pub fn screen_resize_cursor(
 ) {
     {
         let mut cx = s.0.cx;
-        let mut cy = s.grid().hsize + s.0.cy;
+        let mut cy = s.grid().history_size() + s.0.cy;
 
         let collecting = !s.0.write_list.is_empty();
         if collecting {
@@ -469,8 +469,8 @@ pub fn screen_resize_cursor(
                 c"screen_resize_cursor".as_ptr(),
                 sx,
                 sy,
-                s.grid().sx,
-                s.grid().sy,
+                s.grid().width(),
+                s.grid().height(),
                 s.0.cx,
                 s.0.cy,
                 cx,
@@ -481,28 +481,15 @@ pub fn screen_resize_cursor(
         let sx = sx.max(1);
         let sy = sy.max(1);
 
-        let mut reflow = reflow;
-        if sx != s.grid().sx {
-            s.grid_mut().sx = sx;
-            screen_reset_tabs(s);
-        } else {
-            reflow = 0;
+        if sy != s.grid().height() {
+            s.0.rupper = 0;
+            s.0.rlower = sy.wrapping_sub(1);
         }
-        if sy != s.grid().sy {
-            screen_resize_y(s, sy, eat_empty, &mut cy);
-        }
-
-        if reflow != 0 {
-            screen_reflow(s, sx, &mut cx, &mut cy, cursor);
-        }
-
-        if cy >= s.grid().hsize {
-            s.0.cx = cx;
-            s.0.cy = cy - s.grid().hsize;
-        } else {
-            s.0.cx = 0;
-            s.0.cy = 0;
-        }
+        let (old_width, old_cursor) = (s.grid().width(), (s.0.cx, s.0.cy));
+        let position = s.grid_mut().resize_screen(sx, sy, reflow != 0, eat_empty != 0, cursor != 0, old_cursor);
+        s.0.cx = position.0;
+        s.0.cy = position.1;
+        if sx != old_width { screen_reset_tabs(s); }
 
         log_debug(
             c"%s: cursor finished at %u,%u = %u,%u",
@@ -519,77 +506,6 @@ pub fn screen_resize(s: &mut RustScreen, sx: u_int, sy: u_int, reflow: c_int) {
     screen_resize_cursor(s, sx, sy, reflow, 1, 1)
 }
 
-/// Give the screen a new height, moving lines into and out of the history as
-/// the new size needs.
-fn screen_resize_y(s: &mut RustScreen, sy: u_int, eat_empty: c_int, cy: &mut u_int) {
-    {
-        let gd = s.0.grid.as_deref_mut().expect("a screen holds a grid");
-        if sy == 0 {
-            fatalx(c"zero size", fmt_args![]);
-        }
-        let oldy = gd.sy;
-
-        /*
-         * When getting smaller, nuke any empty lines at the bottom of the
-         * screen, then move the rest into the history or delete them.
-         */
-        if sy < oldy {
-            let mut needed = oldy - sy;
-
-            if eat_empty != 0 {
-                let mut available = oldy.wrapping_sub(1).wrapping_sub(s.0.cy);
-                if available > 0 {
-                    if available > needed {
-                        available = needed;
-                    }
-                    grid_view_delete_lines(gd, oldy - available, available, 8);
-                }
-                needed -= available;
-            }
-
-            let mut available = s.0.cy;
-            if gd.flags & GRID_HISTORY != 0 {
-                gd.hscrolled += needed;
-                gd.hsize += needed;
-            } else if needed > 0 && available > 0 {
-                if available > needed {
-                    available = needed;
-                }
-                grid_view_delete_lines(gd, 0, available, 8);
-                *cy = cy.wrapping_sub(available);
-            }
-        }
-
-        /* Resize the historic data. */
-        let line_count = gd.hsize + sy;
-        grid_adjust_lines(gd, line_count);
-
-        /* When getting larger, take lines from the history if there are any. */
-        if sy > oldy {
-            let mut needed = sy - oldy;
-            let mut available = gd.hscrolled;
-            if gd.flags & GRID_HISTORY != 0 && available > 0 {
-                if available > needed {
-                    available = needed;
-                }
-                gd.hscrolled -= available;
-                gd.hsize -= available;
-            } else {
-                available = 0;
-            }
-            needed -= available;
-
-            for i in gd.hsize + sy - needed..gd.hsize + sy {
-                grid_empty_line(gd, i, 8);
-            }
-        }
-
-        gd.sy = sy;
-        s.0.rupper = 0;
-        s.0.rlower = gd.sy.wrapping_sub(1);
-    }
-}
-
 impl Screen for RustScreen {
     type Hyperlinks = RustHyperlinks;
 
@@ -598,11 +514,11 @@ impl Screen for RustScreen {
     }
 
     fn size(&self) -> (u_int, u_int) {
-        (self.grid().sx, self.grid().sy)
+        (self.grid().width(), self.grid().height())
     }
 
     fn history_limit(&self) -> u_int {
-        self.grid().hlimit
+        self.grid().history_limit()
     }
 
     fn hyperlinks(&self) -> Self::Hyperlinks {
@@ -912,32 +828,6 @@ fn in_selection(s: &RustScreen, px: u_int, py: u_int) -> bool {
     px >= sel.sx && px <= selection_end(sel, sel.ex)
 }
 
-/// Reflow the grid to a new width, following the cell the cursor is on.
-fn screen_reflow(s: &mut RustScreen, new_x: u_int, cx: &mut u_int, cy: &mut u_int, cursor: c_int) {
-    let gd = s.grid_mut();
-    let (mut wx, mut wy) = (0, 0);
-    if cursor != 0 {
-        (wx, wy) = gd.wrap_position(*cx, *cy);
-        log_debug(
-            c"%s: cursor %u,%u is %u,%u",
-            fmt_args![c"screen_reflow".as_ptr(), *cx, *cy, wx, wy],
-        );
-    }
-
-    gd.reflow(new_x);
-
-    if cursor != 0 {
-        (*cx, *cy) = gd.unwrap_position(wx, wy);
-        log_debug(
-            c"%s: new cursor is %u,%u",
-            fmt_args![c"screen_reflow".as_ptr(), *cx, *cy],
-        );
-    } else {
-        *cx = 0;
-        *cy = gd.hsize;
-    }
-}
-
 /// Put the screen aside and start on an empty one.
 pub fn screen_alternate_on(s: &mut RustScreen, gc: &grid_cell, cursor: c_int) {
     {
@@ -945,11 +835,11 @@ pub fn screen_alternate_on(s: &mut RustScreen, gc: &grid_cell, cursor: c_int) {
             return;
         }
         let gd = s.0.grid.as_deref_mut().expect("a screen holds a grid");
-        let sx = gd.sx;
-        let sy = gd.sy;
+        let sx = gd.width();
+        let sy = gd.height();
 
         let mut saved_gd = grid_create(sx, sy, 0);
-        saved_gd.duplicate_lines(0, gd, gd.hsize, sy);
+        saved_gd.duplicate_lines(0, gd, gd.history_size(), sy);
         s.0.saved_grid = Some(saved_gd);
         if cursor != 0 {
             s.0.saved_cx = s.0.cx;
@@ -959,21 +849,21 @@ pub fn screen_alternate_on(s: &mut RustScreen, gc: &grid_cell, cursor: c_int) {
 
         grid_view_clear(gd, 0, 0, sx, sy, 8);
 
-        s.0.saved_flags = gd.flags;
-        gd.flags &= !GRID_HISTORY;
+        s.0.saved_history = gd.history_enabled();
+        gd.set_history_enabled(false);
     }
 }
 
 /// Take the screen that was put aside back.
 pub fn screen_alternate_off(s: &mut RustScreen, gc: Option<&mut grid_cell>, cursor: c_int) {
     {
-        let (sx, sy) = (s.grid().sx, s.grid().sy);
+        let (sx, sy) = (s.grid().width(), s.grid().height());
 
         /*
          * If the current size is different, temporarily resize to the old
          * size before copying back.
          */
-        if let Some((saved_sx, saved_sy)) = s.0.saved_grid.as_ref().map(|g| (g.sx, g.sy)) {
+        if let Some((saved_sx, saved_sy)) = s.0.saved_grid.as_ref().map(|g| (g.width(), g.height())) {
             screen_resize(s, saved_sx, saved_sy, 0);
         }
 
@@ -1001,14 +891,14 @@ pub fn screen_alternate_off(s: &mut RustScreen, gc: Option<&mut grid_cell>, curs
                 .as_deref()
                 .expect("the saved grid is present");
         let gd = s.0.grid.as_deref_mut().expect("a screen holds a grid");
-        gd.duplicate_lines(gd.hsize, saved_gd, 0, saved_gd.sy);
+        gd.duplicate_lines(gd.history_size(), saved_gd, 0, saved_gd.height());
 
         /*
          * Turn history back on (so resize can use it) and then resize back to
          * the current size.
          */
-        if s.0.saved_flags & GRID_HISTORY != 0 {
-            gd.flags |= GRID_HISTORY;
+        if s.0.saved_history {
+            gd.set_history_enabled(true);
         }
         screen_resize(s, sx, sy, 1);
 
@@ -1021,7 +911,7 @@ pub fn screen_alternate_off(s: &mut RustScreen, gc: Option<&mut grid_cell>, curs
 /// Keep the cursor inside the screen.
 fn screen_clamp_cursor(s: &mut RustScreen) {
     let gd = RustScreen::grid(s);
-    let (sx, sy) = (gd.sx, gd.sy);
+    let (sx, sy) = (gd.width(), gd.height());
     if s.0.cx > sx - 1 {
         s.0.cx = sx - 1;
     }

@@ -343,7 +343,7 @@ fn drawing_builds_the_menu_screen_for_each_border_mode() {
             md.borrow_mut().border_style = Some(c"fg=yellow".to_owned());
             md.draw(fixture.client(), &mut screen_redraw_ctx::default());
             assert_eq!(
-                RustScreen::grid(&md.borrow().s.borrow()).sx,
+                RustScreen::grid(&md.borrow().s.borrow()).width(),
                 md.borrow().menu.width + 4
             );
             assert!(

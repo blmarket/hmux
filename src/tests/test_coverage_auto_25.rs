@@ -13,10 +13,10 @@ fn screen_init_creates_grid_with_requested_dimensions() {
     let _g = globals();
     let s = Screen::new(80, 24, 100);
     {
-        assert_eq!((*s.grid()).sx, 80);
-        assert_eq!((*s.grid()).sy, 24);
-        assert_eq!((*s.grid()).hlimit, 100);
-        assert_eq!((*s.grid()).hsize, 0);
+        assert_eq!((*s.grid()).width(), 80);
+        assert_eq!((*s.grid()).height(), 24);
+        assert_eq!((*s.grid()).history_limit(), 100);
+        assert_eq!((*s.grid()).history_size(), 0);
         assert!(s.is_initialized());
     }
 }
@@ -64,8 +64,8 @@ fn screen_init_single_cell_screen_is_valid() {
     let _g = globals();
     let s = Screen::new(1, 1, 0);
     {
-        assert_eq!((*s.grid()).sx, 1);
-        assert_eq!((*s.grid()).sy, 1);
+        assert_eq!((*s.grid()).width(), 1);
+        assert_eq!((*s.grid()).height(), 1);
         assert_eq!(s.region(), (0, 0));
         assert_eq!(s.cursor(), (0, 0));
         // tabs is allocated even for 1 column
@@ -78,12 +78,12 @@ fn screen_init_with_zero_hlimit_has_no_history() {
     let _g = globals();
     let s = Screen::new(20, 10, 0);
     {
-        assert_eq!((*s.grid()).hlimit, 0);
-        assert_eq!((*s.grid()).flags & crate::screen::GRID_HISTORY, 0);
+        assert_eq!((*s.grid()).history_limit(), 0);
+        assert!(!s.grid().history_enabled());
     }
     let s2 = Screen::new(20, 10, 200);
     {
-        assert_eq!((*s2.grid()).hlimit, 200);
+        assert_eq!((*s2.grid()).history_limit(), 200);
     }
 }
 
@@ -92,7 +92,7 @@ fn screen_init_tabs_every_eight_columns() {
     let _g = globals();
     let s = Screen::new(24, 5, 0);
     {
-        for i in 0..(*s.grid()).sx {
+        for i in 0..(*s.grid()).width() {
             let is_set = s.tab_is_set(i);
             assert_eq!(is_set, i != 0 && i % 8 == 0, "column {i}");
         }
@@ -124,9 +124,9 @@ fn screen_init_free_multiple_cycles_no_leak() {
         let mut s: Box<RustScreen> = zeroed_screen();
         {
             *s = RustScreen::new_with_server_options(sx, sy, hlimit);
-            assert_eq!(RustScreen::grid(&s).sx, sx);
-            assert_eq!(RustScreen::grid(&s).sy, sy);
-            assert_eq!(RustScreen::grid(&s).hlimit, hlimit);
+            assert_eq!(RustScreen::grid(&s).width(), sx);
+            assert_eq!(RustScreen::grid(&s).height(), sy);
+            assert_eq!(RustScreen::grid(&s).history_limit(), hlimit);
             *s = RustScreen::default();
         }
     }
@@ -141,8 +141,8 @@ fn screen_fixture_drop_matches_manual_init_free() {
     for (sx, sy, hlimit) in sizes {
         let s = Screen::new(sx, sy, hlimit);
         {
-            assert_eq!((*s.grid()).sx, sx);
-            assert_eq!((*s.grid()).sy, sy);
+            assert_eq!((*s.grid()).width(), sx);
+            assert_eq!((*s.grid()).height(), sy);
         }
         // drop here
     }

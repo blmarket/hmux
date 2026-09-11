@@ -327,14 +327,14 @@ unsafe fn screen_write_set_cursor(ctx: &mut screen_write_ctx, mut cx: c_int, mut
             return;
         }
         if cx != -1 {
-            if cx as u_int > RustScreen::grid(s).sx {
-                cx = RustScreen::grid(s).sx.wrapping_sub(1) as c_int;
+            if cx as u_int > RustScreen::grid(s).width() {
+                cx = RustScreen::grid(s).width().wrapping_sub(1) as c_int;
             }
             s.0.cx = cx as u_int;
         }
         if cy != -1 {
-            if cy as u_int > RustScreen::grid(s).sy.wrapping_sub(1) {
-                cy = RustScreen::grid(s).sy.wrapping_sub(1) as c_int;
+            if cy as u_int > RustScreen::grid(s).height().wrapping_sub(1) {
+                cy = RustScreen::grid(s).height().wrapping_sub(1) as c_int;
             }
             s.0.cy = cy as u_int;
         }
@@ -507,8 +507,8 @@ unsafe fn screen_write_initctx(
     unsafe {
         *ttyctx = tty_ctx::default();
         let s = ctx.screen();
-        ttyctx.sx = RustScreen::grid(s).sx;
-        ttyctx.sy = RustScreen::grid(s).sy;
+        ttyctx.sx = RustScreen::grid(s).width();
+        ttyctx.sy = RustScreen::grid(s).height();
         ttyctx.ocx = s.0.cx;
         ttyctx.ocy = s.0.cy;
         ttyctx.orlower = s.0.rlower;
@@ -567,7 +567,7 @@ unsafe fn screen_write_initctx(
 
 /// Makes the screen's collect lists, one for each line of its grid.
 pub(super) fn screen_write_make_list(s: &mut RustScreen) {
-    let sy = RustScreen::grid(s).sy as usize;
+    let sy = RustScreen::grid(s).height() as usize;
     let mut list: Vec<screen_write_cline> = Vec::with_capacity(sy);
     for _ in 0..sy {
         list.push(screen_write_cline {
@@ -607,8 +607,8 @@ pub(super) fn screen_write_start_pane_base(wp: &mut (impl crate::WindowPane + ?S
                 c"%s: size %ux%u, pane %%%u (at %u,%u)",
                 fmt_args![
                     c"screen_write_start_pane_base",
-                    RustScreen::grid(wp.base()).sx,
-                    RustScreen::grid(wp.base()).sy,
+                    RustScreen::grid(wp.base()).width(),
+                    RustScreen::grid(wp.base()).height(),
                     wp.pane_id(),
                     wp.geometry().xoff,
                     wp.geometry().yoff
@@ -629,8 +629,8 @@ pub(super) fn screen_write_start_callback(
             c"%s: size %ux%u, with callback",
             fmt_args![
                 c"screen_write_start_callback",
-                RustScreen::grid(s).sx,
-                RustScreen::grid(s).sy
+                RustScreen::grid(s).width(),
+                RustScreen::grid(s).height()
             ],
         );
     }
@@ -643,8 +643,8 @@ pub(super) fn screen_write_start(s: &mut RustScreen) -> screen_write_state {
             c"%s: size %ux%u, no pane",
             fmt_args![
                 c"screen_write_start",
-                RustScreen::grid(s).sx,
-                RustScreen::grid(s).sy
+                RustScreen::grid(s).width(),
+                RustScreen::grid(s).height()
             ],
         );
     }
@@ -661,7 +661,7 @@ pub(super) unsafe fn screen_write_reset(ctx: &mut screen_write_ctx) {
     unsafe {
         let s = ctx.screen_mut();
         screen_reset_tabs(s);
-        let lower = RustScreen::grid(s).sy.wrapping_sub(1);
+        let lower = RustScreen::grid(s).height().wrapping_sub(1);
         screen_write_scrollregion(ctx, 0, lower);
         let s = ctx.screen_mut();
         s.0.mode = MODE_CURSOR | MODE_WRAP;
@@ -906,7 +906,7 @@ pub(super) unsafe fn screen_write_fast_copy(
         });
         let mut yy = py;
         while yy < py.wrapping_add(ny) {
-            if yy >= gd.hsize.wrapping_add(gd.sy) {
+            if yy >= gd.history_size().wrapping_add(gd.height()) {
                 break;
             }
             ctx.screen_mut().0.cx = cx;
@@ -1198,8 +1198,8 @@ pub(super) unsafe fn screen_write_preview(
         let mut gc;
         let (px, py) = if src.0.mode & MODE_CURSOR != 0 {
             (
-                preview_offset(src.0.cx, nx, RustScreen::grid(src).sx),
-                preview_offset(src.0.cy, ny, RustScreen::grid(src).sy),
+                preview_offset(src.0.cx, nx, RustScreen::grid(src).width()),
+                preview_offset(src.0.cy, ny, RustScreen::grid(src).height()),
             )
         } else {
             (0, 0)
@@ -1208,7 +1208,7 @@ pub(super) unsafe fn screen_write_preview(
             ctx,
             src,
             px,
-            RustScreen::grid(src).hsize.wrapping_add(py),
+            RustScreen::grid(src).history_size().wrapping_add(py),
             nx,
             ny,
         );
@@ -1266,7 +1266,7 @@ pub(super) unsafe fn screen_write_cursorup(ctx: &mut screen_write_ctx, mut ny: u
         } else if ny > cy.wrapping_sub(s.0.rupper) {
             ny = cy.wrapping_sub(s.0.rupper);
         }
-        if cx == RustScreen::grid(&*s).sx {
+        if cx == RustScreen::grid(&*s).width() {
             cx = cx.wrapping_sub(1);
         }
         cy = cy.wrapping_sub(ny);
@@ -1282,13 +1282,13 @@ pub(super) unsafe fn screen_write_cursordown(ctx: &mut screen_write_ctx, mut ny:
             ny = 1;
         }
         if cy > s.0.rlower {
-            if ny > RustScreen::grid(&*s).sy.wrapping_sub(1).wrapping_sub(cy) {
-                ny = RustScreen::grid(&*s).sy.wrapping_sub(1).wrapping_sub(cy);
+            if ny > RustScreen::grid(&*s).height().wrapping_sub(1).wrapping_sub(cy) {
+                ny = RustScreen::grid(&*s).height().wrapping_sub(1).wrapping_sub(cy);
             }
         } else if ny > s.0.rlower.wrapping_sub(cy) {
             ny = s.0.rlower.wrapping_sub(cy);
         }
-        if cx == RustScreen::grid(&*s).sx {
+        if cx == RustScreen::grid(&*s).width() {
             cx = cx.wrapping_sub(1);
         } else if ny == 0 {
             return;
@@ -1305,8 +1305,8 @@ pub(super) unsafe fn screen_write_cursorright(ctx: &mut screen_write_ctx, mut nx
         if nx == 0 {
             nx = 1;
         }
-        if nx > RustScreen::grid(&*s).sx.wrapping_sub(1).wrapping_sub(cx) {
-            nx = RustScreen::grid(&*s).sx.wrapping_sub(1).wrapping_sub(cx);
+        if nx > RustScreen::grid(&*s).width().wrapping_sub(1).wrapping_sub(cx) {
+            nx = RustScreen::grid(&*s).width().wrapping_sub(1).wrapping_sub(cx);
         }
         if nx == 0 {
             return;
@@ -1341,10 +1341,10 @@ pub(super) unsafe fn screen_write_backspace(ctx: &mut screen_write_ctx) {
                 return;
             }
             let grid = RustScreen::grid_mut(ctx.screen_mut());
-            let previous = grid.hsize.wrapping_add(cy).wrapping_sub(1);
+            let previous = grid.history_size().wrapping_add(cy).wrapping_sub(1);
             if grid_line_info(grid, previous).flags & GRID_LINE_WRAPPED != 0 {
                 cy = cy.wrapping_sub(1);
-                cx = grid.sx.wrapping_sub(1);
+                cx = grid.width().wrapping_sub(1);
             }
         } else {
             cx = cx.wrapping_sub(1);
@@ -1378,7 +1378,7 @@ unsafe fn screen_write_redraw_line(ctx: &mut screen_write_ctx, ttyctx: &mut tty_
     unsafe {
         let mut gc;
         let mut ngc = grid_cell::default();
-        let sx: u_int = RustScreen::grid(ctx.screen()).sx;
+        let sx: u_int = RustScreen::grid(ctx.screen()).width();
         let geometry = ctx
             .pane()
             .expect("a redrawn line belongs to a pane")
@@ -1439,7 +1439,7 @@ unsafe fn screen_write_redraw_pane(ctx: &mut screen_write_ctx, ttyctx: &mut tty_
     unsafe {
         let mut yy: u_int;
         yy = 0;
-        while yy < RustScreen::grid(ctx.screen()).sy {
+        while yy < RustScreen::grid(ctx.screen()).height() {
             screen_write_redraw_line(ctx, ttyctx, yy);
             yy = yy.wrapping_add(1);
         }
@@ -1491,12 +1491,12 @@ pub(super) unsafe fn screen_write_alignmenttest(ctx: &mut screen_write_ctx) {
         let mut gc = grid_default_cell;
         utf8_set(&mut gc.data, b'E');
         let grid = RustScreen::grid_mut(ctx.screen_mut());
-        for yy in 0..grid.sy {
-            for xx in 0..grid.sx {
+        for yy in 0..grid.height() {
+            for xx in 0..grid.width() {
                 grid_view_set_cell(grid, xx, yy, &gc);
             }
         }
-        let lower = grid.sy.wrapping_sub(1);
+        let lower = grid.height().wrapping_sub(1);
         screen_write_set_cursor(ctx, 0, 0);
         let s = ctx.screen_mut();
         s.0.rupper = 0;
@@ -1518,7 +1518,7 @@ pub(super) unsafe fn screen_write_alignmenttest(ctx: &mut screen_write_ctx) {
 /// on.
 fn columns_left(s: &RustScreen, nx: u_int) -> u_int {
     let nx = if nx == 0 { 1 } else { nx };
-    let left = RustScreen::grid(s).sx.wrapping_sub(s.0.cx);
+    let left = RustScreen::grid(s).width().wrapping_sub(s.0.cx);
     if nx > left { left } else { nx }
 }
 
@@ -1597,7 +1597,7 @@ pub(super) unsafe fn screen_write_clearcharacter(ctx: &mut screen_write_ctx, nx:
 /// least one.
 fn lines_left(s: &RustScreen, ny: u_int) -> u_int {
     let ny = if ny == 0 { 1 } else { ny };
-    let left = RustScreen::grid(s).sy.wrapping_sub(s.0.cy);
+    let left = RustScreen::grid(s).height().wrapping_sub(s.0.cy);
     if ny > left { left } else { ny }
 }
 
@@ -1682,8 +1682,8 @@ pub(super) fn screen_write_clearline(ctx: &mut screen_write_ctx, bg: u_int) {
         let ci = ctx.item;
         let cy = ctx.screen().0.cy;
         let grid = RustScreen::grid_mut(ctx.screen_mut());
-        let sx = grid.sx;
-        let line = grid.hsize.wrapping_add(cy);
+        let sx = grid.width();
+        let line = grid.history_size().wrapping_add(cy);
         if grid_line_info(grid, line).cells == 0 && (bg == 8 || bg == 9) {
             return;
         }
@@ -1708,8 +1708,8 @@ pub(super) fn screen_write_clearendofline(ctx: &mut screen_write_ctx, bg: u_int)
             return;
         }
         let grid = RustScreen::grid_mut(ctx.screen_mut());
-        let sx = grid.sx;
-        let line = grid.hsize.wrapping_add(cy);
+        let sx = grid.width();
+        let line = grid.history_size().wrapping_add(cy);
         let used = grid_line_info(grid, line).cells;
         if cx > sx.wrapping_sub(1) || cx >= used && (bg == 8 || bg == 9) {
             return;
@@ -1734,7 +1734,7 @@ pub(super) fn screen_write_clearstartofline(ctx: &mut screen_write_ctx, bg: u_in
     {
         let ci = ctx.item;
         let (cx, cy) = ctx.screen().cursor();
-        let sx = RustScreen::grid(ctx.screen()).sx;
+        let sx = RustScreen::grid(ctx.screen()).width();
         if cx >= sx.wrapping_sub(1) {
             screen_write_clearline(ctx, bg);
             return;
@@ -1772,11 +1772,11 @@ pub(super) unsafe fn screen_write_cursormove(
                 py = (py as u_int).wrapping_add(s.0.rupper) as c_int;
             }
         }
-        if px != -1 && px as u_int > RustScreen::grid(s).sx.wrapping_sub(1) {
-            px = RustScreen::grid(s).sx.wrapping_sub(1) as c_int;
+        if px != -1 && px as u_int > RustScreen::grid(s).width().wrapping_sub(1) {
+            px = RustScreen::grid(s).width().wrapping_sub(1) as c_int;
         }
-        if py != -1 && py as u_int > RustScreen::grid(s).sy.wrapping_sub(1) {
-            py = RustScreen::grid(s).sy.wrapping_sub(1) as c_int;
+        if py != -1 && py as u_int > RustScreen::grid(s).height().wrapping_sub(1) {
+            py = RustScreen::grid(s).height().wrapping_sub(1) as c_int;
         }
         log_debug(
             c"%s: from %u,%u to %u,%u",
@@ -1809,7 +1809,7 @@ pub(super) unsafe fn screen_write_scrollregion(
     mut rlower: u_int,
 ) {
     unsafe {
-        let bottom = RustScreen::grid(ctx.screen()).sy.wrapping_sub(1);
+        let bottom = RustScreen::grid(ctx.screen()).height().wrapping_sub(1);
         if rupper > bottom {
             rupper = bottom;
         }
@@ -1831,7 +1831,7 @@ pub(super) unsafe fn screen_write_linefeed(ctx: &mut screen_write_ctx, wrapped: 
         let s = ctx.screen_mut();
         let (cx, cy, upper, lower) = (s.0.cx, s.0.cy, s.0.rupper, s.0.rlower);
         let grid = RustScreen::grid_mut(s);
-        let line = grid.hsize.wrapping_add(cy);
+        let line = grid.history_size().wrapping_add(cy);
         if wrapped != 0 {
             crate::grid::grid_mark_wrapped(grid, line);
         }
@@ -1849,7 +1849,7 @@ pub(super) unsafe fn screen_write_linefeed(ctx: &mut screen_write_ctx, wrapped: 
             grid_view_scroll_region_up(RustScreen::grid_mut(s), upper, lower, bg);
             screen_write_collect_scroll(ctx, bg);
             ctx.scrolled = ctx.scrolled.wrapping_add(1);
-        } else if cy < RustScreen::grid(s).sy.wrapping_sub(1) {
+        } else if cy < RustScreen::grid(s).height().wrapping_sub(1) {
             screen_write_set_cursor(ctx, -1, cy.wrapping_add(1) as c_int);
         }
     }
@@ -1951,14 +1951,14 @@ unsafe fn collect_visible_clear(
 pub(super) unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, bg: u_int) {
     unsafe {
         let mut ttyctx = tty_ctx::default();
-        let sx: u_int = RustScreen::grid(ctx.screen()).sx;
-        let sy: u_int = RustScreen::grid(ctx.screen()).sy;
+        let sx: u_int = RustScreen::grid(ctx.screen()).width();
+        let sy: u_int = RustScreen::grid(ctx.screen()).height();
         screen_write_initctx(ctx, &mut ttyctx, 1, 1);
         ttyctx.bg = bg;
         let (cx, cy) = ctx.screen().cursor();
         if cx == 0
             && cy == 0
-            && RustScreen::grid(ctx.screen()).flags & GRID_HISTORY != 0
+            && RustScreen::grid(ctx.screen()).history_enabled()
             && ctx
                 .pane()
                 .is_some_and(|pane| (pane.options_ref()).number(c"scroll-on-clear") != 0)
@@ -2015,7 +2015,7 @@ pub(super) unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, b
 pub(super) unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx, bg: u_int) {
     unsafe {
         let mut ttyctx = tty_ctx::default();
-        let sx: u_int = RustScreen::grid(ctx.screen()).sx;
+        let sx: u_int = RustScreen::grid(ctx.screen()).width();
         screen_write_initctx(ctx, &mut ttyctx, 1, 1);
         ttyctx.bg = bg;
         let (cx, cy) = ctx.screen().cursor();
@@ -2060,11 +2060,11 @@ pub(super) unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx,
 pub(super) unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, bg: u_int) {
     unsafe {
         let mut ttyctx = tty_ctx::default();
-        let sx: u_int = RustScreen::grid(ctx.screen()).sx;
-        let sy: u_int = RustScreen::grid(ctx.screen()).sy;
+        let sx: u_int = RustScreen::grid(ctx.screen()).width();
+        let sy: u_int = RustScreen::grid(ctx.screen()).height();
         screen_write_initctx(ctx, &mut ttyctx, 1, 1);
         ttyctx.bg = bg;
-        if RustScreen::grid(ctx.screen()).flags & GRID_HISTORY != 0
+        if RustScreen::grid(ctx.screen()).history_enabled()
             && ctx
                 .pane()
                 .is_some_and(|pane| (pane.options_ref()).number(c"scroll-on-clear") != 0)
@@ -2263,7 +2263,7 @@ fn screen_write_collect_scroll(ctx: &mut screen_write_ctx, bg: u_int) {
         );
         screen_write_collect_clear(ctx, s.0.rupper, 1);
         let s = ctx.screen();
-        let (rupper, rlower, sx) = (s.0.rupper, s.0.rlower, RustScreen::grid(s).sx);
+        let (rupper, rlower, sx) = (s.0.rupper, s.0.rlower, RustScreen::grid(s).width());
         let wl = write_list(ctx.screen_mut());
         let saved = wl[rupper as usize].data.take();
         let mut y = rupper;
@@ -2360,8 +2360,8 @@ unsafe fn screen_write_collect_flush_line(ctx: &mut screen_write_ctx, y: u_int) 
                 (size.width, size.height, geometry.xoff, geometry.yoff)
             }
             None => (
-                RustScreen::grid(ctx.screen()).sx,
-                RustScreen::grid(ctx.screen()).sy,
+                RustScreen::grid(ctx.screen()).width(),
+                RustScreen::grid(ctx.screen()).height(),
                 0,
                 0,
             ),
@@ -2466,7 +2466,7 @@ unsafe fn screen_write_collect_flush(ctx: &mut screen_write_ctx, scroll_only: c_
             }
             let (cx, cy) = ctx.screen().cursor();
             let mut items: u_int = 0;
-            for y in 0..RustScreen::grid(ctx.screen()).sy {
+            for y in 0..RustScreen::grid(ctx.screen()).height() {
                 items = items.wrapping_add(screen_write_collect_flush_line(ctx, y));
             }
             let s = ctx.screen_mut();
@@ -2604,7 +2604,7 @@ pub(super) unsafe fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
         let s = ctx.screen_mut();
         let cy = s.0.cy;
         let mut xx = s.0.cx;
-        while xx < RustScreen::grid(s).sx {
+        while xx < RustScreen::grid(s).width() {
             gc = grid_view_get_cell(RustScreen::grid(s), xx, s.0.cy);
             if !(gc.flags as c_int) & GRID_FLAG_PADDING != 0 {
                 break;
@@ -2638,7 +2638,7 @@ pub(super) unsafe fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
 pub(super) unsafe fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &grid_cell) {
     unsafe {
         let s = ctx.screen();
-        let sx: u_int = RustScreen::grid(s).sx;
+        let sx: u_int = RustScreen::grid(s).width();
         let collect = gc.data.width == 1
             && gc.data.size == 1
             && gc.data.data[0] < 0x7f
@@ -2691,8 +2691,8 @@ pub(super) unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cel
         let mut tmp_gc = grid_cell::default();
         let mut now_gc;
         let mut ttyctx = tty_ctx::default();
-        let sx: u_int = RustScreen::grid(ctx.screen()).sx;
-        let sy: u_int = RustScreen::grid(ctx.screen()).sy;
+        let sx: u_int = RustScreen::grid(ctx.screen()).width();
+        let sy: u_int = RustScreen::grid(ctx.screen()).height();
         let width: u_int = ud.width as u_int;
         let mut skip = true;
         let mut redraw = false;
@@ -2732,7 +2732,7 @@ pub(super) unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cel
         let s = ctx.screen_mut();
         let (cx, cy) = s.cursor();
         let gd = RustScreen::grid_mut(s);
-        let line_y = gd.hsize.wrapping_add(cy);
+        let line_y = gd.history_size().wrapping_add(cy);
         let extended = grid_line_info(gd, line_y).flags & GRID_LINE_EXTENDED != 0;
         if extended {
             now_gc = grid_view_get_cell(gd, cx, cy);
@@ -3008,7 +3008,7 @@ fn screen_write_overwrite(ctx: &mut screen_write_ctx, gc: &mut grid_cell, width:
     }
     if width != 1 || gc.data.width as c_int != 1 || gc.flags as c_int & GRID_FLAG_PADDING != 0 {
         let mut xx = cx.wrapping_add(width);
-        while xx < gd.sx {
+        while xx < gd.width() {
             tmp_gc = grid_view_get_cell(gd, xx, cy);
             if tmp_gc.flags as c_int & GRID_FLAG_PADDING == 0 {
                 break;

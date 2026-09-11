@@ -1011,7 +1011,7 @@ impl ModeTreeDataRef {
             let owner = mtd.clone();
             let heightcb = owner.borrow().heightcb.clone();
             let reserved_height = heightcb.map(|heightcb| heightcb());
-            let sy = RustScreen::grid(&owner.screen_handle().borrow()).sy;
+            let sy = RustScreen::grid(&owner.screen_handle().borrow()).height();
             let mut tree = owner.borrow_mut();
             if let Some(height) = reserved_height {
                 if height < sy {

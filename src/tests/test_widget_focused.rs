@@ -652,8 +652,8 @@ fn resize_height_selection_and_free_cover_clamps_and_saved_children() {
         tree.borrow_mut().preview = MODE_TREE_PREVIEW_OFF as core::ffi::c_int;
         tree.borrow_mut().current = 7;
         tree.resize(20, 4);
-        assert_eq!(RustScreen::grid(&tree.screen_handle().borrow()).sx, 20);
-        assert_eq!(RustScreen::grid(&tree.screen_handle().borrow()).sy, 4);
+        assert_eq!(RustScreen::grid(&tree.screen_handle().borrow()).width(), 20);
+        assert_eq!(RustScreen::grid(&tree.screen_handle().borrow()).height(), 4);
         assert!(tree.borrow().offset <= tree.borrow().current);
         tree.resize(1, 1);
         tree.close();
@@ -1053,8 +1053,8 @@ fn widget_screens_are_retained_independently_of_tree_state() {
         assert!(weak_tree.upgrade().is_none());
         assert_eq!(
             (
-                RustScreen::grid(&screen.borrow()).sx,
-                RustScreen::grid(&screen.borrow()).sy
+                RustScreen::grid(&screen.borrow()).width(),
+                RustScreen::grid(&screen.borrow()).height()
             ),
             (17, 9)
         );
@@ -1121,7 +1121,7 @@ fn drawing_preserves_nested_prefixes_alignment_and_tag_labels() {
         let grid = RustScreen::grid(&screen);
         let rows: Vec<_> = (0..6)
             .map(|y| {
-                crate::grid::grid_string_cells(grid, 0, grid.hsize + y, grid.sx, None, 0, None)
+                crate::grid::grid_string_cells(grid, 0, grid.history_size() + y, grid.width(), None, 0, None)
                     .to_string_lossy()
                     .trim_end()
                     .to_owned()
@@ -1176,7 +1176,7 @@ fn preview_callbacks_can_read_the_screen_and_release_tree_items() {
         let screen = tree.screen_handle().borrow();
         let grid = RustScreen::grid(&screen);
         assert_eq!(
-            crate::grid::grid_string_cells(grid, 2, grid.hsize + 7, 16, None, 0, None).as_c_str(),
+            crate::grid::grid_string_cells(grid, 2, grid.history_size() + 7, 16, None, 0, None).as_c_str(),
             c"retained preview"
         );
     }

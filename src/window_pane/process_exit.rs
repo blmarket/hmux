@@ -8,8 +8,8 @@ pub(super) unsafe fn finish_process(wp: &mut window_pane, notify: bool) -> bool 
     unsafe {
         let gc;
 
-        let sx = wp.base().grid().sx;
-        let sy = wp.base().grid().sy;
+        let sx = wp.base().grid().width();
+        let sy = wp.base().grid().height();
         wp.close_process();
         let remain_on_exit: core::ffi::c_int =
             ((*wp).options_ref()).number(c"remain-on-exit") as core::ffi::c_int;

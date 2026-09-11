@@ -1686,8 +1686,8 @@ unsafe fn screen_redraw_draw_pane_scrollbar(
             }
             let screen = wp.screen_ref();
             total_height = RustScreen::grid(&screen)
-                .sy
-                .wrapping_add(RustScreen::grid(&screen).hsize);
+                .height()
+                .wrapping_add(RustScreen::grid(&screen).history_size());
             percent_view = sb_h as core::ffi::c_double / total_height as core::ffi::c_double;
             slider_h = (sb_h as core::ffi::c_double * percent_view) as u_int;
             slider_y = sb_h.wrapping_sub(slider_h);

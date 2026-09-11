@@ -591,13 +591,12 @@ impl SessionRef {
                     let Some(wp) = pane.get_mut() else { continue };
                     let pane_id = wp.pane_id();
                     let gd = wp.base_mut().grid_mut();
-                    let osize = gd.hsize;
-                    gd.hlimit = limit;
-                    gd.collect_history(true);
-                    if gd.hsize != osize {
+                    let osize = gd.history_size();
+                    gd.set_history_limit(limit);
+                    if gd.history_size() != osize {
                         log_debug(
                             c"%s: %%%u %u -> %u",
-                            fmt_args![c"session_update_history".as_ptr(), pane_id, osize, gd.hsize],
+                            fmt_args![c"session_update_history".as_ptr(), pane_id, osize, gd.history_size()],
                         );
                     }
                 }

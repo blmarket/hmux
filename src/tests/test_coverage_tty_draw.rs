@@ -311,7 +311,7 @@ fn a_wrapped_previous_line_clears_without_moving_the_cursor() {
     let mut wrapped = Drawer::new(16, 24);
     let mut ws = Screen::new(16, 4, 100);
     unsafe {
-        let hsize = ws.grid().hsize;
+        let hsize = ws.grid().history_size();
         crate::grid::grid_mark_wrapped(ws.grid_mut(), hsize);
         (*wrapped.ptr()).cx = 16;
         (*wrapped.ptr()).cy = 3;

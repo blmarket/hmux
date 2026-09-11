@@ -1,3 +1,4 @@
+use super::view::grid_view_delete_lines;
 use super::grid_line;
 use super::line::{grid_cell_entry, grid_cell_entry_data, grid_cell_entry_union, grid_extd_entry};
 pub use crate::consts::{
@@ -22,12 +23,12 @@ use ::std::ffi::CString;
 
 #[repr(C)]
 pub struct grid {
-    pub flags: core::ffi::c_int,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub hscrolled: u_int,
-    pub hsize: u_int,
-    pub hlimit: u_int,
+    pub(super) flags: core::ffi::c_int,
+    pub(super) sx: u_int,
+    pub(super) sy: u_int,
+    pub(super) hscrolled: u_int,
+    pub(super) hsize: u_int,
+    pub(super) hlimit: u_int,
     pub(super) linedata: Vec<grid_line>,
 }
 
@@ -1794,4 +1795,127 @@ impl grid {
         if line > self.hsize.wrapping_add(self.sy).wrapping_sub(1) { return; }
         line_at_mut(self, line).flags |= if output { crate::consts::GRID_LINE_START_OUTPUT } else { crate::consts::GRID_LINE_START_PROMPT };
     }
+}
+
+/// Give the screen a new height, moving lines into and out of the history as
+/// the new size needs.
+fn resize_height(gd: &mut grid, sy: u_int, eat_empty: bool, cursor_y: u_int, cy: &mut u_int) {
+    {
+        if sy == 0 {
+            fatalx(c"zero size", fmt_args![]);
+        }
+        let oldy = gd.sy;
+
+        if sy < oldy {
+            let mut needed = oldy - sy;
+
+            if eat_empty {
+                let mut available = oldy.wrapping_sub(1).wrapping_sub(cursor_y);
+                if available > 0 {
+                    if available > needed {
+                        available = needed;
+                    }
+                    grid_view_delete_lines(gd, oldy - available, available, 8);
+                }
+                needed -= available;
+            }
+
+            let mut available = cursor_y;
+            if gd.flags & GRID_HISTORY != 0 {
+                gd.hscrolled += needed;
+                gd.hsize += needed;
+            } else if needed > 0 && available > 0 {
+                if available > needed {
+                    available = needed;
+                }
+                grid_view_delete_lines(gd, 0, available, 8);
+                *cy = cy.wrapping_sub(available);
+            }
+        }
+
+        let line_count = gd.hsize + sy;
+        grid_adjust_lines(gd, line_count);
+
+        if sy > oldy {
+            let mut needed = sy - oldy;
+            let mut available = gd.hscrolled;
+            if gd.flags & GRID_HISTORY != 0 && available > 0 {
+                if available > needed {
+                    available = needed;
+                }
+                gd.hscrolled -= available;
+                gd.hsize -= available;
+            } else {
+                available = 0;
+            }
+            needed -= available;
+
+            for i in gd.hsize + sy - needed..gd.hsize + sy {
+                grid_empty_line(gd, i, 8);
+            }
+        }
+
+        gd.sy = sy;
+    }
+}
+
+
+impl grid {
+    /// Resizes visible rows and columns, preserving the selected cursor cell.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn resize_screen(&mut self, sx: u_int, sy: u_int, reflow: bool, eat_empty: bool, cursor: bool, position: (u_int, u_int)) -> (u_int, u_int) {
+        let (mut cx, mut cy) = (position.0, self.hsize + position.1);
+        let sx = sx.max(1);
+        let sy = sy.max(1);
+        let reflow = reflow && sx != self.sx;
+        self.sx = sx;
+        if sy != self.sy { resize_height(self, sy, eat_empty, position.1, &mut cy); }
+        if reflow {
+            let wrapped = if cursor { self.wrap_position(cx, cy) } else { (0, 0) };
+            if cursor {
+                log_debug(c"%s: cursor %u,%u is %u,%u", fmt_args![c"screen_reflow".as_ptr(), cx, cy, wrapped.0, wrapped.1]);
+            }
+            self.reflow(sx);
+            (cx, cy) = if cursor { self.unwrap_position(wrapped.0, wrapped.1) } else { (0, self.hsize) };
+            if cursor {
+                log_debug(c"%s: new cursor is %u,%u", fmt_args![c"screen_reflow".as_ptr(), cx, cy]);
+            }
+        }
+        if cy >= self.hsize { (cx, cy - self.hsize) } else { (0, 0) }
+    }
+
+    /// Copies the chosen source lines and their history coordinates for copy mode.
+    pub(crate) fn copy_from_history(&mut self, source: &Self, lines: u_int) {
+        self.flags |= GRID_HISTORY;
+        self.duplicate_lines(0, source, 0, lines);
+        self.sy = lines.wrapping_sub(source.hsize);
+        self.hsize = source.hsize;
+        self.hscrolled = source.hscrolled;
+    }
+
+    /// Applies a new history limit and collects the excess history immediately.
+    pub(crate) fn set_history_limit(&mut self, limit: u_int) {
+        self.hlimit = limit;
+        self.collect_history(true);
+    }
+
+    /// Reports whether scrolling retains history.
+    pub(crate) fn history_enabled(&self) -> bool { self.flags & GRID_HISTORY != 0 }
+
+    /// Enables or suspends history retention without discarding retained lines.
+    pub(crate) fn set_history_enabled(&mut self, enabled: bool) {
+        if enabled { self.flags |= GRID_HISTORY; } else { self.flags &= !GRID_HISTORY; }
+    }
+
+    /// The visible width of this grid.
+    pub(crate) fn width(&self) -> u_int { self.sx }
+    /// The visible height of this grid.
+    pub(crate) fn height(&self) -> u_int { self.sy }
+    /// The number of retained history lines.
+    pub(crate) fn history_size(&self) -> u_int { self.hsize }
+    /// The maximum history size.
+    pub(crate) fn history_limit(&self) -> u_int { self.hlimit }
+    /// The retained lines available for restoring visible height.
+    #[cfg(test)]
+    pub(crate) fn scrolled_history(&self) -> u_int { self.hscrolled }
 }

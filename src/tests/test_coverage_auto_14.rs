@@ -44,18 +44,18 @@ fn grid_create_dimensions_and_flags() {
     let _guard = globals();
     let g = Grid::new(10, 5, 100);
     {
-        assert_eq!(g.sx, 10);
-        assert_eq!(g.sy, 5);
-        assert_eq!(g.hlimit, 100);
-        assert_eq!(g.hsize, 0);
-        assert_eq!(g.hscrolled, 0);
-        assert_ne!(g.flags & GRID_HISTORY, 0);
+        assert_eq!(g.width(), 10);
+        assert_eq!(g.height(), 5);
+        assert_eq!(g.history_limit(), 100);
+        assert_eq!(g.history_size(), 0);
+        assert_eq!(g.scrolled_history(), 0);
+        assert!(g.history_enabled());
         assert!(crate::grid::grid_peek_info(&g, 0).is_some());
     }
     let plain = Grid::new(8, 4, 0);
     {
-        assert_eq!(plain.flags & GRID_HISTORY, 0);
-        assert_eq!(plain.hlimit, 0);
+        assert!(!plain.history_enabled());
+        assert_eq!(plain.history_limit(), 0);
     }
     // default cell is a single space
     {
@@ -250,29 +250,29 @@ fn grid_history_scroll_and_remove_and_collect() {
     g.write(0, 0, "first");
     g.write(0, 1, "second");
     {
-        assert_eq!(g.hsize, 0);
+        assert_eq!(g.history_size(), 0);
         grid_scroll_history(&mut *g, 8);
-        assert_eq!(g.hsize, 1);
-        assert_eq!(g.hscrolled, 1);
+        assert_eq!(g.history_size(), 1);
+        assert_eq!(g.scrolled_history(), 1);
         // after scroll, history line 0 holds the old line 0
         assert_eq!(line_text(&g, 0), "first");
         grid_remove_history(&mut *g, 1);
-        assert_eq!(g.hsize, 0);
+        assert_eq!(g.history_size(), 0);
         // ask to remove more than exists is a no-op
         grid_remove_history(&mut *g, 99);
-        assert_eq!(g.hsize, 0);
+        assert_eq!(g.history_size(), 0);
         // fill history to limit and collect
         for _ in 0..10 {
             grid_scroll_history(&mut *g, 8);
         }
-        assert!(g.hsize <= 10);
+        assert!(g.history_size() <= 10);
         grid_collect_history(&mut *g, 0);
         // collect with all=1 drops everything over limit; here nothing over
         // so hsize may stay or shrink by ~hlimit/10 if at limit — just check no panic
-        assert!(g.hsize <= 10);
+        assert!(g.history_size() <= 10);
         grid_clear_history(&mut *g);
-        assert_eq!(g.hsize, 0);
-        assert_eq!(g.hscrolled, 0);
+        assert_eq!(g.history_size(), 0);
+        assert_eq!(g.scrolled_history(), 0);
     }
 }
 
@@ -285,14 +285,14 @@ fn grid_reflow_via_screen_fixture_preserves_content() {
         let mut gc = grid_default_cell;
         for (i, b) in b"abcdefghij".iter().enumerate() {
             gc.data.data[0] = *b;
-            let hsize = s.grid().hsize;
+            let hsize = s.grid().history_size();
             grid_set_cell(s.grid_mut(), i as u32, hsize, &gc);
         }
         // initial: one screen line used
-        assert_eq!(line_text(s.grid(), (*s.grid()).hsize), "abcdefghij");
+        assert_eq!(line_text(s.grid(), (*s.grid()).history_size()), "abcdefghij");
         grid_reflow(s.grid_mut(), 5);
         // width reduced to 5: line should have split and be wrapped
-        let total = (*s.grid()).hsize + (*s.grid()).sy;
+        let total = (*s.grid()).history_size() + (*s.grid()).height();
         let mut all = String::new();
         for py in 0..total {
             all.push_str(&line_text(s.grid(), py));
@@ -301,11 +301,11 @@ fn grid_reflow_via_screen_fixture_preserves_content() {
         assert!(
             compact.contains("abcdefghij"),
             "reflow kept bytes, got {all:?} compact {compact:?} total {total} hsize {}",
-            (*s.grid()).hsize
+            (*s.grid()).history_size()
         );
         // reflow back wider should join again
         grid_reflow(s.grid_mut(), 10);
-        let total2 = (*s.grid()).hsize + (*s.grid()).sy;
+        let total2 = (*s.grid()).history_size() + (*s.grid()).height();
         let mut all2 = String::new();
         for py in 0..total2 {
             all2.push_str(&line_text(s.grid(), py));

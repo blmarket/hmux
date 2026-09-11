@@ -124,14 +124,14 @@ pub unsafe fn tty_draw_line(
             return;
         }
         let gd = s.grid();
-        let line_y = gd.hsize.wrapping_add(py);
+        let line_y = gd.history_size().wrapping_add(py);
         let cellsize: u_int = grid_peek_info(gd, line_y)
             .expect("a drawn line belongs to the screen")
             .cells;
-        let ex: u_int = if s.grid().sx > cellsize {
+        let ex: u_int = if s.grid().width() > cellsize {
             cellsize
         } else {
-            s.grid().sx
+            s.grid().width()
         };
         log_debug(
             c"%s: drawing %u-%u,%u (end %u) at %u,%u; defaults: fg=%d, bg=%d",
@@ -205,7 +205,7 @@ pub unsafe fn tty_draw_line(
         if current_block == 7226443171521532240 {
             if py != 0 as u_int && atx == 0 as u_int && tty.cx >= tty.sx && nx == tty.sx {
                 let gd = s.grid();
-                let previous_y = gd.hsize.wrapping_add(py).wrapping_sub(1);
+                let previous_y = gd.history_size().wrapping_add(py).wrapping_sub(1);
                 let gl = grid_peek_info(gd, previous_y)
                     .expect("the preceding line belongs to the screen");
                 if gl.flags & GRID_LINE_WRAPPED != 0 {
