@@ -210,40 +210,6 @@ pub struct cmd {
     pub parse_flags: c_int,
 }
 
-impl crate::CommandGroupState for cmd {
-    fn command_group(&self) -> u_int {
-        self.group
-    }
-
-    fn set_command_group(&mut self, group: u_int) {
-        self.group = group;
-    }
-}
-
-impl crate::CommandSourceState for cmd {
-    fn command_source(&self) -> crate::CommandSource<'_> {
-        crate::CommandSource {
-            file: self.file.as_deref(),
-            line: self.line,
-        }
-    }
-
-    fn set_command_source(&mut self, source: crate::CommandSource<'_>) {
-        self.file = source.file.map(CStr::to_owned);
-        self.line = source.line;
-    }
-}
-
-impl crate::CommandParseFlagsState for cmd {
-    fn command_parse_flags(&self) -> c_int {
-        self.parse_flags
-    }
-
-    fn set_command_parse_flags(&mut self, flags: c_int) {
-        self.parse_flags = flags;
-    }
-}
-
 impl crate::Command for cmd {
     type Arguments = RustArguments;
     type Entry = RustCommandEntry;
@@ -258,6 +224,34 @@ impl crate::Command for cmd {
 
     fn command_arguments_mut(&mut self) -> Option<&mut Self::Arguments> {
         self.args.as_deref_mut()
+    }
+
+    fn command_group(&self) -> u_int {
+        self.group
+    }
+
+    fn set_command_group(&mut self, group: u_int) {
+        self.group = group;
+    }
+
+    fn command_source(&self) -> crate::CommandSource<'_> {
+        crate::CommandSource {
+            file: self.file.as_deref(),
+            line: self.line,
+        }
+    }
+
+    fn set_command_source(&mut self, source: crate::CommandSource<'_>) {
+        self.file = source.file.map(CStr::to_owned);
+        self.line = source.line;
+    }
+
+    fn command_parse_flags(&self) -> c_int {
+        self.parse_flags
+    }
+
+    fn set_command_parse_flags(&mut self, flags: c_int) {
+        self.parse_flags = flags;
     }
 }
 
@@ -526,18 +520,18 @@ pub fn cmd_get_args_mut(cmd: &mut cmd) -> &mut RustArguments {
 }
 
 pub fn cmd_get_group(cmd: &cmd) -> u_int {
-    crate::CommandGroupState::command_group(cmd)
+    crate::Command::command_group(cmd)
 }
 
 /// Where the command was parsed from: the file, if it came from one, and
 /// the line in it.
 pub fn cmd_get_source(cmd: &cmd) -> (Option<&CStr>, u_int) {
-    let source = crate::CommandSourceState::command_source(cmd);
+    let source = crate::Command::command_source(cmd);
     (source.file, source.line)
 }
 
 pub fn cmd_get_parse_flags(cmd: &cmd) -> c_int {
-    crate::CommandParseFlagsState::command_parse_flags(cmd)
+    crate::Command::command_parse_flags(cmd)
 }
 
 pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
@@ -911,16 +905,6 @@ pub struct cmd_list {
     pub list: Option<Box<cmds>>,
 }
 
-impl crate::CommandListGroupState for cmd_list {
-    fn command_list_group(&self) -> u_int {
-        self.group
-    }
-
-    fn set_command_list_group(&mut self, group: u_int) {
-        self.group = group;
-    }
-}
-
 impl crate::CommandList for cmd_list {
     type Command = cmd;
 
@@ -934,6 +918,14 @@ impl crate::CommandList for cmd_list {
 
     fn command_at_mut(&mut self, index: usize) -> Option<&mut Self::Command> {
         self.list.as_deref_mut()?.get_mut(index).map(Box::as_mut)
+    }
+
+    fn command_list_group(&self) -> u_int {
+        self.group
+    }
+
+    fn set_command_list_group(&mut self, group: u_int) {
+        self.group = group;
     }
 }
 

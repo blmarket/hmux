@@ -1,9 +1,9 @@
 //! Stable value-state capabilities of a command list.
 
-use crate::CommandListGroupState;
+use crate::types::u_int;
 
 /// Shared access to a parsed command list.
-pub trait CommandList: CommandListGroupState {
+pub trait CommandList {
     /// The command implementation stored in the list.
     type Command: crate::Command;
 
@@ -15,6 +15,12 @@ pub trait CommandList: CommandListGroupState {
 
     /// Returns a mutable command by its execution-order index.
     fn command_at_mut(&mut self, index: usize) -> Option<&mut Self::Command>;
+
+    /// Returns the list's current group.
+    fn command_list_group(&self) -> u_int;
+
+    /// Replaces the list's current group.
+    fn set_command_list_group(&mut self, group: u_int);
 }
 
 #[cfg(test)]
