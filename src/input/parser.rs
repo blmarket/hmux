@@ -2286,12 +2286,12 @@ unsafe fn input_c0_dispatch(
                 let s = sctx.screen_mut();
                 let (current_cx, current_cy) = s.cursor();
                 cx = current_cx;
-                if !(cx >= RustScreen::grid(s).width().wrapping_sub(1 as u_int)) {
-                    line = current_cy.wrapping_add(RustScreen::grid(s).history_size());
-                    first_gc = RustScreen::grid(&*s).cell(cx, line);
+                if !(cx >= s.grid().width().wrapping_sub(1 as u_int)) {
+                    line = current_cy.wrapping_add(s.grid().history_size());
+                    first_gc = s.grid().cell(cx, line);
                     loop {
                         if has_content == 0 {
-                            gc = RustScreen::grid(&*s).cell(cx, line);
+                            gc = s.grid().cell(cx, line);
                             if gc.data.size as core::ffi::c_int != 1 as core::ffi::c_int
                                 || gc.data.data[0] != b' '
                                 || grid_cells_look_equal(&gc, &first_gc) == 0
@@ -2303,7 +2303,7 @@ unsafe fn input_c0_dispatch(
                         if s.tab_is_set(cx) {
                             break;
                         }
-                        if !(cx < RustScreen::grid(s).width().wrapping_sub(1 as u_int)) {
+                        if !(cx < s.grid().width().wrapping_sub(1 as u_int)) {
                             break;
                         }
                     }
@@ -2311,7 +2311,7 @@ unsafe fn input_c0_dispatch(
                     if has_content != 0 || width as usize > size_of::<[u_char; 32]>() {
                         s.set_cursor(cx, current_cy);
                     } else {
-                        gc = RustScreen::grid(&*s).cell(current_cx, line);
+                        gc = s.grid().cell(current_cx, line);
                         grid_set_tab(&mut gc, width);
                         sctx.collect_add(&gc);
                     }
@@ -2384,7 +2384,7 @@ unsafe fn input_esc_dispatch(
             5 => {
                 let s = sctx.screen_mut();
                 let (cx, _) = s.cursor();
-                if cx < RustScreen::grid(s).width() {
+                if cx < s.grid().width() {
                     s.set_tab(cx);
                 }
             }
@@ -5124,8 +5124,8 @@ mod focused_tests {
             ctx.parse(b"\x1b(0q\x1b(Bx\x1b)0\x0eq\x0f\x1b)B\x1b#8");
             let s = ctx.pane.base();
             let (cx, cy) = (*s).cursor();
-            assert!(cx < RustScreen::grid(&*s).width());
-            assert!(cy < RustScreen::grid(&*s).height());
+            assert!(cx < s.grid().width());
+            assert!(cy < s.grid().height());
             assert_eq!(ctx.ictx.borrow().state.name, c"ground");
         }
     }

@@ -95,7 +95,7 @@ pub(crate) trait ScreenWriteCtx {
     fn reverseindex(&mut self, bg: u_int);
     fn insertline(&mut self, ny: u_int, bg: u_int);
     fn cursor_position(&self) -> (u_int, u_int);
-    fn screen_mut(&mut self) -> &mut RustScreen;
+    fn screen_mut(&mut self) -> &mut dyn Screen<Grid = crate::grid::RustGrid>;
     fn size(&self) -> (u_int, u_int);
     fn format_draw(
         &mut self,
@@ -545,10 +545,10 @@ impl ScreenWriteCtx for RustScreenWriteCtx<'_> {
     ///
     /// The returned screen must not be used to bypass writer operations that
     /// maintain the terminal output collection.
-    fn screen_mut(&mut self) -> &mut RustScreen {
+    fn screen_mut(&mut self) -> &mut dyn Screen<Grid = crate::grid::RustGrid> {
         assert!(self.active, "screen writer is inactive");
         if let Some(target) = self.shared_target.as_ref() {
-            self.screen_access
+            &mut **self.screen_access
                 .get_or_insert_with(|| target.borrow_mut())
         } else {
             self.target
