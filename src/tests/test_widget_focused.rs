@@ -1,3 +1,4 @@
+use crate::screen::Screen as _;
 use crate::grid::Grid as _;
 use super::*;
 use crate::WindowPane;
@@ -1048,7 +1049,7 @@ fn widget_screens_are_retained_independently_of_tree_state() {
         {
             let mut drawing = screen.borrow_mut();
             tree.borrow_mut().filter = Some(c"independent".to_owned());
-            screen_resize(&mut drawing, 17, 9, 0);
+            (&mut drawing).resize(17, 9, 0);
         }
         drop(tree);
         assert!(weak_tree.upgrade().is_none());

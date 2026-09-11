@@ -1,3 +1,4 @@
+use crate::screen::Screen as _;
 use super::menu::{menu_add_items, menu_check_cb, menu_create, menu_mode_cb, menu_prepare};
 use crate::WindowPane;
 use crate::cmd::{CmdqItemRef, CmdqItemWeak};
@@ -16,7 +17,7 @@ use crate::pane_geometry::PaneGeometryState;
 use crate::paste::{PasteBufferStore, with_paste_buffers};
 use crate::screen::{Screen, ScreenModeState};
 use crate::screen::{
-    ScreenWriteCtx, screen_resize, screen_write_ctx_on_screen, screen_write_init_ctx,
+    ScreenWriteCtx, screen_write_ctx_on_screen, screen_write_init_ctx,
 };
 use crate::server::server_redraw_client;
 use crate::server::{client_ref_of, server_client_clear_overlay, server_client_set_overlay};
@@ -481,7 +482,7 @@ unsafe fn popup_make_pane(pd: &mut popup_data, type_0: layout_type) {
             RustScreen::new_with_server_options(1, 1, 0),
         );
         let geometry = new.geometry();
-        screen_resize(new.base_mut(), geometry.sx, geometry.sy, 1);
+        (new.base_mut()).resize(geometry.sx, geometry.sy, 1);
         let configured = session.options().string_ref(c"default-shell");
         let shell = if checkshell(Some(&configured)) == 0 {
             _PATH_BSHELL
@@ -612,17 +613,14 @@ unsafe fn popup_handle_drag(c: &mut client, pd: &mut popup_data, m: &mouse_event
             pd.psx = pd.sx;
             pd.psy = pd.sy;
             if pd.border_lines as core::ffi::c_int == BOX_LINES_NONE as core::ffi::c_int {
-                screen_resize(&mut pd.s.borrow_mut(), pd.sx, pd.sy, 0 as core::ffi::c_int);
+                (&mut pd.s.borrow_mut()).resize(pd.sx, pd.sy, 0 as core::ffi::c_int);
                 if let Some(id) = pd.job {
                     job_resize(id, pd.sx, pd.sy);
                 }
             } else {
-                screen_resize(
-                    &mut pd.s.borrow_mut(),
-                    pd.sx.wrapping_sub(2 as u_int),
+                (&mut pd.s.borrow_mut()).resize(pd.sx.wrapping_sub(2 as u_int),
                     pd.sy.wrapping_sub(2 as u_int),
-                    0 as core::ffi::c_int,
-                );
+                    0 as core::ffi::c_int);
                 if let Some(id) = pd.job {
                     job_resize(
                         id,
@@ -752,19 +750,16 @@ pub unsafe fn popup_modify(
             if lines as core::ffi::c_int == BOX_LINES_NONE as core::ffi::c_int
                 && pd.border_lines as core::ffi::c_int != lines as core::ffi::c_int
             {
-                screen_resize(&mut pd.s.borrow_mut(), pd.sx, pd.sy, 1 as core::ffi::c_int);
+                (&mut pd.s.borrow_mut()).resize(pd.sx, pd.sy, 1 as core::ffi::c_int);
                 if let Some(id) = pd.job {
                     job_resize(id, pd.sx, pd.sy);
                 }
             } else if pd.border_lines as core::ffi::c_int == BOX_LINES_NONE as core::ffi::c_int
                 && pd.border_lines as core::ffi::c_int != lines as core::ffi::c_int
             {
-                screen_resize(
-                    &mut pd.s.borrow_mut(),
-                    pd.sx.wrapping_sub(2 as u_int),
+                (&mut pd.s.borrow_mut()).resize(pd.sx.wrapping_sub(2 as u_int),
                     pd.sy.wrapping_sub(2 as u_int),
-                    1 as core::ffi::c_int,
-                );
+                    1 as core::ffi::c_int);
                 if let Some(id) = pd.job {
                     job_resize(
                         id,
@@ -1229,17 +1224,14 @@ impl PopupDataRef {
                 pd.px = pd.ppx;
             }
             if pd.border_lines as core::ffi::c_int == BOX_LINES_NONE as core::ffi::c_int {
-                screen_resize(&mut pd.s.borrow_mut(), pd.sx, pd.sy, 0 as core::ffi::c_int);
+                (&mut pd.s.borrow_mut()).resize(pd.sx, pd.sy, 0 as core::ffi::c_int);
                 if let Some(id) = pd.job {
                     job_resize(id, pd.sx, pd.sy);
                 }
             } else if pd.sx > 2 as u_int && pd.sy > 2 as u_int {
-                screen_resize(
-                    &mut pd.s.borrow_mut(),
-                    pd.sx.wrapping_sub(2 as u_int),
+                (&mut pd.s.borrow_mut()).resize(pd.sx.wrapping_sub(2 as u_int),
                     pd.sy.wrapping_sub(2 as u_int),
-                    0 as core::ffi::c_int,
-                );
+                    0 as core::ffi::c_int);
                 if let Some(id) = pd.job {
                     job_resize(
                         id,

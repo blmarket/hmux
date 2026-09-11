@@ -16,6 +16,7 @@
 //! branches the fixtures can reach. Nothing here opens a descriptor, touches
 //! a live terminal or runs the event loop.
 
+use crate::screen::Screen as _;
 use crate::grid::Grid as _;
 use crate::grid::{grid_default_cell};
 use crate::reactor::ByteBuffer;

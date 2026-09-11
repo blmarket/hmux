@@ -8,6 +8,7 @@
 //! Every test builds a [`Grid`] or [`Screen`] fixture and holds
 //! [`globals`] where global state might be touched.
 
+use crate::screen::Screen as _;
 use crate::grid::Grid as _;
 use crate::grid::{
     GRID_FLAG_PADDING, GRID_HISTORY, GRID_STRING_EMPTY_CELLS, GRID_STRING_TRIM_SPACES,
@@ -287,7 +288,7 @@ fn grid_reflow_via_screen_fixture_preserves_content() {
         }
         // initial: one screen line used
         assert_eq!(line_text(s.grid(), (*s.grid()).history_size()), "abcdefghij");
-        crate::screen::screen_resize(&mut s, 5, 3, 1);
+        (&mut s).resize(5, 3, 1);
         // width reduced to 5: line should have split and be wrapped
         let total = (*s.grid()).history_size() + (*s.grid()).height();
         let mut all = String::new();
@@ -301,7 +302,7 @@ fn grid_reflow_via_screen_fixture_preserves_content() {
             (*s.grid()).history_size()
         );
         // reflow back wider should join again
-        crate::screen::screen_resize(&mut s, 10, 3, 1);
+        (&mut s).resize(10, 3, 1);
         let total2 = (*s.grid()).history_size() + (*s.grid()).height();
         let mut all2 = String::new();
         for py in 0..total2 {

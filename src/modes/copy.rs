@@ -1,3 +1,4 @@
+use crate::screen::Screen as _;
 use crate::CompiledRegex;
 use crate::WindowPane;
 use crate::args::RustArguments;
@@ -32,7 +33,7 @@ use crate::screen::Screen;
 use crate::screen::{
     RustScreenWriteCtx, ScreenWriteCtx, screen_write_ctx_on_screen, screen_write_strlen,
 };
-use crate::screen::{screen_resize, screen_resize_cursor};
+use crate::screen::{};
 
 use crate::status::status_message_set;
 use crate::style::style_apply;
@@ -256,12 +257,8 @@ fn window_copy_clone_screen(
                     .wrapping_add(RustScreen::grid(src).height())
             ],
         );
-        dst = Box::new(RustScreen::new_with_server_options(
-            RustScreen::grid(src).width(),
-            sy,
-            src.history_limit(),
-        ));
-        dst.copy_history_from(src, sy);
+        let extended_keys = global_options.get().as_ref().expect("global options are initialized").number(c"extended-keys");
+        dst = Box::new(src.copy_history(sy, extended_keys));
         let mut cx = 0 as u_int;
         let mut cy = 0 as u_int;
         if want_cursor {
@@ -275,14 +272,11 @@ fn window_copy_clone_screen(
         if reflow != 0 {
             (wx, wy) = RustScreen::grid(&dst).wrap_position(cx, cy);
         }
-        screen_resize_cursor(
-            &mut dst,
-            RustScreen::grid(hint).width(),
+        (&mut dst).resize_cursor(RustScreen::grid(hint).width(),
             RustScreen::grid(hint).height(),
             1 as core::ffi::c_int,
             0 as core::ffi::c_int,
-            0 as core::ffi::c_int,
-        );
+            0 as core::ffi::c_int);
         if reflow != 0 {
             (cx, cy) = RustScreen::grid(&dst).unwrap_position(wx, wy);
         }
@@ -1186,7 +1180,7 @@ pub(crate) unsafe fn window_copy_resize(wme: &mut window_mode_entry, sx: u_int, 
         let mut wx: u_int = 0;
         let mut wy: u_int = 0;
 
-        screen_resize(&mut s, sx, sy, 0 as core::ffi::c_int);
+        (&mut s).resize(sx, sy, 0 as core::ffi::c_int);
         drop(s);
         cx = data.cx;
         if data.oy > gd.history_size().wrapping_add(data.cy) {
@@ -1197,17 +1191,14 @@ pub(crate) unsafe fn window_copy_resize(wme: &mut window_mode_entry, sx: u_int, 
         if reflow != 0 {
             (wx, wy) = (*gd).wrap_position(cx, cy);
         }
-        screen_resize_cursor(
-            &mut *data
+        (&mut *data
                 .backing
                 .as_deref_mut()
-                .expect("copy mode has a backing screen"),
-            sx,
+                .expect("copy mode has a backing screen")).resize_cursor(sx,
             sy,
             1 as core::ffi::c_int,
             0 as core::ffi::c_int,
-            0 as core::ffi::c_int,
-        );
+            0 as core::ffi::c_int);
         let gd = RustScreen::grid(
             data.backing
                 .as_deref()

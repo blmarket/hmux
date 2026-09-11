@@ -120,6 +120,43 @@ pub trait Screen {
     fn clear_tab(&mut self, x: u_int);
     /// Removes every tab stop.
     fn clear_tabs(&mut self);
+    /// The opaque grid capability used by this screen.
+    type Grid: Grid<Cell = grid_cell>;
+    /// Borrows the current grid immutably; screen callers cannot replace or resize it directly.
+    fn grid(&self) -> &Self::Grid;
+    /// Borrows the original grid saved for alternate-screen restoration.
+    fn saved_grid(&self) -> Option<&Self::Grid>;
+    /// Clears retained history and optionally resets its hyperlink store.
+    fn clear_history(&mut self, hyperlinks: bool);
+    /// Trims unused history and adjusts the cursor in the same transition.
+    fn trim_history(&mut self);
+    /// Applies a new history limit and immediately collects excess lines.
+    fn set_history_limit(&mut self, limit: u_int);
+    /// Records a prompt or output marker at the cursor line.
+    fn mark_prompt(&mut self, output: bool);
+    /// Constructs a copy-mode snapshot of the requested source lines with history coordinates and cursor.
+    fn copy_history(&self, lines: u_int, extended_keys: c_longlong) -> Self
+    where
+        Self: Sized;
+    /// Resizes the screen, reflowing when requested and preserving its cursor cell.
+    fn resize(&mut self, sx: u_int, sy: u_int, reflow: c_int) {
+        self.resize_cursor(sx, sy, reflow, 1, 1);
+    }
+    /// Resizes with explicit empty-row consumption and cursor-tracking behavior.
+    fn resize_cursor(
+        &mut self,
+        sx: u_int,
+        sy: u_int,
+        reflow: c_int,
+        eat_empty: c_int,
+        cursor: c_int,
+    );
+    /// Saves the current screen and enters the alternate screen.
+    fn alternate_on(&mut self, gc: &grid_cell, cursor: c_int);
+    /// Restores the saved screen and optionally its cursor and drawing cell.
+    fn alternate_off(&mut self, gc: Option<&mut grid_cell>, cursor: c_int);
+    /// Resets using the extended-key setting selected by the calling context.
+    fn reinit_with_extended_keys(&mut self, extended_keys: c_longlong);
 }
 pub use crate::consts::{
     ALL_MODES, EXTENDED_KEY_MODES, GRID_ATTR_CHARSET, GRID_ATTR_NOATTR, GRID_HISTORY,
@@ -258,10 +295,6 @@ impl Default for screen {
 }
 
 impl RustScreen {
-    pub(crate) fn grid(&self) -> &RustGrid {
-        self.0.grid.as_deref().expect("a screen holds a grid")
-    }
-
     pub(super) fn grid_mut(&mut self) -> &mut RustGrid {
         self.0.grid.as_deref_mut().expect("a screen holds a grid")
     }
@@ -340,6 +373,7 @@ fn screen_new_standalone(sx: u_int, sy: u_int, hlimit: u_int) -> RustScreen {
 }
 
 /// Reset a screen to what a new one is, keeping its size and its history.
+#[cfg(test)]
 pub unsafe fn screen_reinit(s: &mut RustScreen) {
     {
         let extended_keys = (global_options
@@ -508,6 +542,74 @@ pub fn screen_resize(s: &mut RustScreen, sx: u_int, sy: u_int, reflow: c_int) {
 }
 
 impl Screen for RustScreen {
+    type Grid = RustGrid;
+    fn grid(&self) -> &RustGrid {
+        self.0.grid.as_deref().expect("a screen holds a grid")
+    }
+    fn saved_grid(&self) -> Option<&RustGrid> {
+        self.0.saved_grid.as_deref()
+    }
+    fn clear_history(&mut self, hyperlinks: bool) {
+        self.grid_mut().clear_history();
+        if hyperlinks {
+            self.reset_hyperlinks();
+        }
+    }
+    fn trim_history(&mut self) {
+        let (cx, cy) = self.cursor();
+        let grid = self.grid_mut();
+        let adjust = grid
+            .height()
+            .wrapping_sub(1)
+            .wrapping_sub(cy)
+            .min(grid.history_size());
+        grid.remove_history(adjust);
+        self.set_cursor(cx, cy.wrapping_add(adjust));
+    }
+    fn set_history_limit(&mut self, limit: u_int) {
+        self.grid_mut().set_history_limit(limit);
+    }
+    fn mark_prompt(&mut self, output: bool) {
+        let cy = self.cursor().1;
+        self.grid_mut().mark_prompt(cy, output);
+    }
+    fn copy_history(&self, lines: u_int, extended_keys: c_longlong) -> Self {
+        let mut copy = screen_new_with_extended_keys(
+            self.grid().width(),
+            lines,
+            self.history_limit(),
+            extended_keys,
+        );
+        copy.grid_mut().copy_from_history(self.grid(), lines);
+        let (cx, cy) = self.cursor();
+        let height = copy.grid().height();
+        if cy > height.wrapping_sub(1) {
+            copy.set_cursor(0, height.wrapping_sub(1));
+        } else {
+            copy.set_cursor(cx, cy);
+        }
+        copy
+    }
+    fn resize_cursor(
+        &mut self,
+        sx: u_int,
+        sy: u_int,
+        reflow: c_int,
+        eat_empty: c_int,
+        cursor: c_int,
+    ) {
+        screen_resize_cursor(self, sx, sy, reflow, eat_empty, cursor);
+    }
+    fn alternate_on(&mut self, gc: &grid_cell, cursor: c_int) {
+        screen_alternate_on(self, gc, cursor);
+    }
+    fn alternate_off(&mut self, gc: Option<&mut grid_cell>, cursor: c_int) {
+        screen_alternate_off(self, gc, cursor);
+    }
+    fn reinit_with_extended_keys(&mut self, extended_keys: c_longlong) {
+        screen_reinit_with_extended_keys(self, extended_keys);
+    }
+
     fn saved_cursor(&self) -> (u_int, u_int) {
         (self.0.saved_cx, self.0.saved_cy)
     }
@@ -759,10 +861,6 @@ impl RustScreen {
     pub(crate) fn is_collecting(&self) -> bool {
         !self.0.write_list.is_empty()
     }
-
-    pub fn saved_grid(&self) -> Option<&RustGrid> {
-        self.0.saved_grid.as_deref()
-    }
 }
 
 /// Where a selection ends: with emacs keys the cell the cursor is on is not
@@ -1001,52 +1099,6 @@ pub fn screen_mode_to_string(mode: c_int) -> CString {
 pub use crate::consts::{
     GRID_FLAG_EXTENDED, GRID_FLAG_PADDING, GRID_FLAG_TAB, PROGRESS_BAR_ERROR, PROGRESS_BAR_NORMAL,
 };
-
-impl RustScreen {
-    /// Clears retained history and optionally resets the associated hyperlink set.
-    pub(crate) fn clear_history(&mut self, hyperlinks: bool) {
-        self.grid_mut().clear_history();
-        if hyperlinks {
-            self.reset_hyperlinks();
-        }
-    }
-
-    /// Removes history below the cursor's remaining visible space and adjusts it.
-    pub(crate) fn trim_history(&mut self) {
-        let (cx, cy) = self.cursor();
-        let grid = self.grid_mut();
-        let adjust = grid
-            .height()
-            .wrapping_sub(1)
-            .wrapping_sub(cy)
-            .min(grid.history_size());
-        grid.remove_history(adjust);
-        self.set_cursor(cx, cy.wrapping_add(adjust));
-    }
-
-    /// Applies a history limit and collects excess history immediately.
-    pub(crate) fn set_history_limit(&mut self, limit: u_int) {
-        self.grid_mut().set_history_limit(limit);
-    }
-
-    /// Records a prompt or command-output marker at the cursor's line.
-    pub(crate) fn mark_prompt(&mut self, output: bool) {
-        let cy = self.cursor().1;
-        self.grid_mut().mark_prompt(cy, output);
-    }
-
-    /// Copies retained lines into a new copy-mode screen and initializes its cursor.
-    pub(crate) fn copy_history_from(&mut self, source: &Self, lines: u_int) {
-        self.grid_mut().copy_from_history(source.grid(), lines);
-        let (cx, cy) = source.cursor();
-        let height = self.grid().height();
-        if cy > height.wrapping_sub(1) {
-            self.set_cursor(0, height.wrapping_sub(1));
-        } else {
-            self.set_cursor(cx, cy);
-        }
-    }
-}
 
 #[cfg(test)]
 impl RustScreen {

@@ -24,7 +24,6 @@ use crate::notify::{notify_session_window, notify_window};
 use crate::proc::proc_clear_signals;
 use crate::resize::default_window_size;
 use crate::screen::Screen;
-use crate::screen::screen_reinit;
 use crate::server::server_process;
 use crate::server::{server_client_get_cwd, server_client_remove_pane};
 

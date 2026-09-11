@@ -1,3 +1,4 @@
+use crate::screen::Screen as _;
 use crate::entity_id::next_entity_id;
 use crate::ffi::{gethostname, getpid, kill, close, utempter_remove_record};
 use crate::handle_registry::HandleRegistry;
@@ -449,7 +450,7 @@ impl crate::WindowPane for window_pane {
         self.sx = size.width;
         self.sy = size.height;
         let reflow = !self.base.is_alternate();
-        unsafe { crate::screen::screen_resize(&mut self.base, size.width, size.height, reflow as c_int) };
+        unsafe { (&mut self.base).resize(size.width, size.height, reflow as c_int) };
         if let Some(mode) = self.modes.first_mut() {
             unsafe { mode.resize(size.width, size.height) };
         }
@@ -523,7 +524,9 @@ impl crate::WindowPane for window_pane {
             self.fd = -1;
         }
         unsafe { self.reset_modes() };
-        unsafe { crate::screen::screen_reinit(&mut self.base) };
+        let extended_keys = crate::tmux::global_options.get().as_ref()
+            .expect("global options are initialized").number(c"extended-keys");
+        self.base.reinit_with_extended_keys(extended_keys);
         if let Some(context) = self.ictx.take() { unsafe { context.close() }; }
         self.flags &= !(crate::consts::PANE_STATUSREADY | crate::consts::PANE_STATUSDRAWN);
     }

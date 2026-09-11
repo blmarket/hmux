@@ -1,3 +1,4 @@
+use crate::screen::Screen as _;
 use crate::grid::Grid as _;
 use crate::WindowPane;
 use crate::args::RustArguments;
@@ -10,7 +11,7 @@ use crate::grid::grid_default_cell;
 use crate::overlay::{menu_add_items, menu_display};
 use crate::overlay::{popup_display, popup_write};
 use crate::prompt_history::PromptHistoryType;
-use crate::screen::{RustScreenWriteCtx, Screen, ScreenWriteCtx, screen_resize};
+use crate::screen::{RustScreenWriteCtx, Screen, ScreenWriteCtx, };
 use crate::server::client_ref_of;
 
 use crate::sort::{RustSortCriteria, SortCriteria};
@@ -1142,7 +1143,7 @@ impl ModeTreeDataRef {
             if owner.borrow().pane().is_none() {
                 return;
             }
-            screen_resize(&mut owner.screen_handle().borrow_mut(), sx, sy, 0);
+            (&mut owner.screen_handle().borrow_mut()).resize(sx, sy, 0);
             owner.build();
             owner.draw();
             owner.borrow().redraw_pane();

@@ -1,4 +1,5 @@
 use crate::screen::Screen as _;
+use crate::screen::Screen as _;
 use crate::cmd::cmd_confirm_before_callback;
 use crate::cmd::cmd_retval;
 use crate::cmd::cmdq_item;
@@ -708,7 +709,6 @@ use crate::prompt_history::{
     PromptHistoryStore, PromptHistoryType, with_prompt_history, with_prompt_history_mut,
 };
 use crate::reactor::Timer;
-use crate::screen::screen_resize;
 use crate::screen::{ScreenWriteCtx, screen_write_ctx_on_screen};
 use crate::server::client_walk;
 use crate::server::server_add_message;
@@ -1043,7 +1043,7 @@ pub unsafe fn status_redraw(c: &mut client) -> core::ffi::c_int {
         }
         let current_grid = RustScreen::grid(&c.status.screen);
         if current_grid.width() != width || current_grid.height() != lines {
-            screen_resize(&mut c.status.screen, width, lines, 0 as core::ffi::c_int);
+            (&mut c.status.screen).resize(width, lines, 0 as core::ffi::c_int);
             force = 1 as core::ffi::c_int;
             changed = force;
         }

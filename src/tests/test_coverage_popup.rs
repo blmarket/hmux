@@ -15,6 +15,7 @@
 //! client. The private free path is reached here both directly and after a
 //! popup menu selection.
 
+use crate::screen::Screen as _;
 use crate::grid::Grid as _;
 use crate::fmt_args;
 

@@ -36,9 +36,7 @@ pub use state::{
     MODE_CURSOR, MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, SCREEN_CURSOR_BAR,
     SCREEN_CURSOR_BLOCK, SCREEN_CURSOR_UNDERLINE, Screen, ScreenModeState,
 };
-pub(crate) use state::{
-    MODE_SYNC, screen_mode_to_string, screen_reinit, screen_resize, screen_resize_cursor,
-};
+pub(crate) use state::{MODE_SYNC, screen_mode_to_string};
 pub(crate) use write::screen_write_init_ctx;
 pub use write::{CItem, screen_write_citem, screen_write_cline};
 #[cfg(test)]

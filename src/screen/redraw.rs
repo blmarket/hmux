@@ -1,3 +1,4 @@
+use crate::screen::Screen as _;
 use crate::WindowPane;
 use crate::pane_identity::PaneIdentity;
 use crate::window_scrollbar::WindowScrollbarState;

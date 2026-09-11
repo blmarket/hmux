@@ -1,3 +1,4 @@
+use crate::screen::Screen as _;
 use crate::grid::Grid as _;
 use super::*;
 use super::{screen_write_ctx, screen_write_start, screen_write_stop};

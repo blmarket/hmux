@@ -38,7 +38,7 @@ use crate::pane_search::PaneSearchState;
 use crate::pane_style_cache::PaneStyleCells;
 use crate::reactor::{Interest, Timer};
 use crate::screen::Screen;
-use crate::screen::{MODE_SYNC, screen_resize};
+use crate::screen::{MODE_SYNC, };
 use crate::server::client_ref_of;
 use crate::server::marked_pane;
 use crate::server::{client_walk, with_clients};

@@ -17,6 +17,7 @@
 //! process; and the `server_clear_marked` guard in `SessionRef::renumber_windows`,
 //! which cannot be reached and says so where it sits. Everything else is
 //! covered by the tests below and by `test_coverage_alpha`.
+use crate::screen::Screen as _;
 use crate::WindowPane as _;
 use crate::compat::strtonum;
 use crate::environ::RustEnvironment;

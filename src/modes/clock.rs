@@ -1,3 +1,4 @@
+use crate::screen::Screen as _;
 use crate::grid::Grid as _;
 use crate::WindowPane;
 use crate::args::RustArguments;
@@ -9,7 +10,6 @@ use crate::fmt_args;
 use crate::grid::grid_default_cell;
 
 use crate::reactor::Timer;
-use crate::screen::screen_resize;
 use crate::screen::{ScreenWriteCtx, screen_write_ctx_on_screen};
 pub use crate::types::*;
 #[repr(C)]
@@ -219,7 +219,7 @@ pub(crate) unsafe fn window_clock_resize(wme: &mut window_mode_entry, sx: u_int,
     unsafe {
         let window = wme.pane_ref().and_then(|pane| pane.window());
         let data = wme.state.clock().expect("the mode holds its state");
-        screen_resize(&mut data.screen, sx, sy, 0 as core::ffi::c_int);
+        (&mut data.screen).resize(sx, sy, 0 as core::ffi::c_int);
         if let Some(window) = window {
             let options = window.options();
             window_clock_draw_screen(data, &options);

@@ -1,3 +1,4 @@
+use crate::screen::Screen as _;
 use crate::grid::Grid as _;
 use crate::WindowPane;
 use crate::pane_identity::PaneIdentity;
@@ -9,7 +10,7 @@ use super::draw::format_draw;
 
 use super::redraw::screen_redraw_is_visible;
 use super::state::screen_mode_to_string;
-use super::state::{screen_alternate_off, screen_alternate_on, screen_reset_tabs};
+use super::state::{screen_reset_tabs};
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::grid::grid_cells_equal;
@@ -3064,9 +3065,9 @@ unsafe fn screen_write_alternate(
         }
         screen_write_collect_flush(ctx, 0, from);
         if on {
-            screen_alternate_on(ctx.screen_mut(), gc, cursor);
+            (ctx.screen_mut()).alternate_on(gc, cursor);
         } else {
-            screen_alternate_off(ctx.screen_mut(), Some(gc), cursor);
+            (ctx.screen_mut()).alternate_off(Some(gc), cursor);
         }
         if let Some(pane) = ctx.pane() {
             let window = pane
