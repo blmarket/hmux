@@ -118,7 +118,7 @@ use crate::window::winlinks_into;
 use crate::window::{
     WINDOWS, window_get_active_at, window_pane_border_status_get_range, window_pane_find_by_id,
     window_pane_is_floating, window_pane_key, window_pane_paste,
-    window_pane_send_theme_update, window_pane_show_scrollbar, window_redraw_active_switch, window_update_focus,
+    window_pane_show_scrollbar, window_redraw_active_switch, window_update_focus,
 };
 use crate::window::{window_get_latest, window_set_latest};
 use crate::xmalloc::xasprintf;
@@ -1947,7 +1947,7 @@ pub fn server_client_loop() {
         for window in windows.iter().filter_map(|(_, window)| window.upgrade()) {
             let panes = window.panes();
             for mut pane in panes {
-                window_pane_send_theme_update(pane.get_mut());
+                if let Some(wp) = pane.get_mut() { wp.send_theme_update(); }
             }
         }
     });

@@ -39,8 +39,6 @@ use crate::pane_search::PaneSearchState;
 use crate::pane_style_cache::PaneStyleCache;
 #[cfg(test)]
 use crate::pane_style_cache::PaneStyleCells;
-#[cfg(test)]
-use crate::pane_theme::PaneThemeState;
 use crate::reactor::{Interest, Timer};
 use crate::screen::Screen;
 use crate::screen::{MODE_SYNC, screen_resize};
@@ -2408,50 +2406,6 @@ pub unsafe fn window_pane_get_theme(wp: Option<&mut (impl crate::WindowPane + ?S
             _ => THEME_UNKNOWN,
         }
     })
-}
-pub unsafe fn window_pane_send_theme_update(wp: Option<&mut (impl crate::WindowPane + ?Sized)>) {
-    unsafe {
-        let Some(wp) = wp else {
-            return;
-        };
-        if window_pane_exited(wp) != 0 {
-            return;
-        }
-        if *wp.flags() & PANE_THEMECHANGED == 0 {
-            return;
-        }
-        if wp.screen_ref().mode() & MODE_THEME_UPDATES == 0 {
-            return;
-        }
-        let theme = window_pane_get_theme(Some(wp));
-        if !wp.replace(theme) {
-            return;
-        }
-        *wp.flags_mut() &= !PANE_THEMECHANGED;
-        match theme {
-            THEME_LIGHT => {
-                log_debug(
-                    c"%s: %%%u light theme",
-                    fmt_args![c"window_pane_send_theme_update", wp.pane_id()],
-                );
-                wp.write_terminal(b"\x1B[?997;2n");
-            }
-            THEME_DARK => {
-                log_debug(
-                    c"%s: %%%u dark theme",
-                    fmt_args![c"window_pane_send_theme_update", wp.pane_id()],
-                );
-                wp.write_terminal(b"\x1B[?997;1n");
-            }
-            THEME_UNKNOWN => {
-                log_debug(
-                    c"%s: %%%u unknown theme",
-                    fmt_args![c"window_pane_send_theme_update", wp.pane_id()],
-                );
-            }
-            _ => {}
-        };
-    }
 }
 pub fn window_pane_border_status_get_range(
     wp: Option<&(impl crate::WindowPane + ?Sized)>,

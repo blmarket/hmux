@@ -4,7 +4,7 @@ use crate::handle_registry::HandleRegistry;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::reactor::Timer;
 use crate::style::{ColourEngine, RustColourEngine, pane_scrollbar_style_from_option, style_ranges_free};
-use crate::window::{window_pane_set_window, window_pane_set_window_ref, PANE_STYLECHANGED};
+use crate::window::{window_pane_set_window, window_pane_set_window_ref, PANE_STYLECHANGED, PANE_THEMECHANGED};
 use crate::{WindowPane, PaneIdentity, PaneGeometryState, PaneScrollbarStyleState, PaneSearchState, PaneResizeQueue, PaneCommandState};
 use std::cell::Cell;
 use libc::SIGCHLD;
@@ -316,16 +316,6 @@ impl crate::pane_control_colours::PaneControlColours for window_pane {
     fn clear(&mut self) { self.control_fg = None; self.control_bg = None; }
 }
 
-impl crate::pane_theme::PaneThemeState for window_pane {
-    fn theme(&self) -> client_theme { self.last_theme }
-    fn set_theme(&mut self, theme: client_theme) { self.last_theme = theme; }
-    fn replace(&mut self, theme: client_theme) -> bool {
-        let changed = self.last_theme != theme;
-        self.last_theme = theme;
-        changed
-    }
-}
-
 impl crate::pane_search::PaneSearchState for window_pane {
     fn query(&self) -> Option<&CStr> { self.searchstr.as_deref() }
     fn is_regex(&self) -> bool { self.searchregex }
@@ -550,6 +540,23 @@ impl crate::WindowPane for window_pane {
         if unsafe { crate::ffi::ioctl(self.fd, crate::window::FIONREAD as core::ffi::c_ulong, &raw mut remaining) } != -1 && remaining > 0 { return false; }
         self.flags & crate::window::PANE_EXITED != 0
     }
+    unsafe fn acknowledge_theme(&mut self) -> client_theme {
+        let theme = unsafe { crate::window::window_pane_get_theme(Some(self)) };
+        self.last_theme = theme;
+        self.flags &= !PANE_THEMECHANGED;
+        theme
+    }
+    unsafe fn set_theme_updates(&mut self, enabled: bool) {
+        let mode = self.base.mode();
+        self.base.set_mode(if enabled { mode | crate::consts::MODE_THEME_UPDATES }
+            else { mode & !crate::consts::MODE_THEME_UPDATES });
+        if enabled { unsafe { self.acknowledge_theme() }; }
+        else { self.flags &= !PANE_THEMECHANGED; }
+    }
+    unsafe fn send_theme_update(&mut self) { unsafe { render::send_theme_update(self) }; }
+    #[cfg(test)]
+    fn theme(&self) -> client_theme { self.last_theme }
+
     fn palette_snapshot(&self) -> colour_palette { self.palette.clone() }
     fn palette_colour(&self, colour: c_int) -> c_int { RustColourEngine.get_palette(Some(&self.palette), colour) }
     fn set_palette_colour(&mut self, index: c_int, colour: c_int) -> c_int { RustColourEngine.set_palette(Some(&mut self.palette), index, colour) }

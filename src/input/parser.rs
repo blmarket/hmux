@@ -10,7 +10,6 @@ use crate::log::{fatalx, log_debug, log_get_level};
 use crate::notify::notify_pane;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::pane_identity::PaneIdentity;
-use crate::pane_theme::PaneThemeState;
 use crate::paste::{
     PasteBufferStore, paste_buffer_limit, with_paste_buffers, with_paste_buffers_mut,
 };
@@ -3294,11 +3293,10 @@ unsafe fn input_csi_dispatch_rm_private(ictx: &mut input_ctx, sctx: &mut RustScr
                     }
                 }
                 2031 => {
-                    sctx.mode_clear(MODE_THEME_UPDATES);
                     let mut pane = ictx.pane_ref();
                     if let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut()) {
-                        *wp.flags_mut() &= !PANE_THEMECHANGED;
-                    }
+                        wp.set_theme_updates(false);
+                    } else { sctx.mode_clear(MODE_THEME_UPDATES); }
                 }
                 _ => {
                     log_debug(
@@ -3402,13 +3400,10 @@ unsafe fn input_csi_dispatch_sm_private(ictx: &mut input_ctx, sctx: &mut RustScr
                     sctx.mode_set(MODE_BRACKETPASTE);
                 }
                 2031 => {
-                    sctx.mode_set(MODE_THEME_UPDATES);
                     let mut pane = ictx.pane_ref();
                     if let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut()) {
-                        let theme = window_pane_get_theme(Some(&mut *wp));
-                        wp.set_theme(theme);
-                        *wp.flags_mut() &= !PANE_THEMECHANGED;
-                    }
+                        wp.set_theme_updates(true);
+                    } else { sctx.mode_set(MODE_THEME_UPDATES); }
                 }
                 2026 => {
                     let mut pane = ictx.pane_ref();
@@ -4963,9 +4958,7 @@ unsafe fn input_report_current_theme(ictx: &mut input_ctx) {
     unsafe {
         let mut pane = ictx.pane_ref();
         if let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut()) {
-            let theme = window_pane_get_theme(Some(&mut *wp));
-            wp.set_theme(theme);
-            *wp.flags_mut() &= !PANE_THEMECHANGED;
+            let theme = wp.acknowledge_theme();
             match theme {
                 THEME_DARK => {
                     log_debug(

@@ -1316,7 +1316,7 @@ fn theme_notifications_follow_the_shown_screen_and_only_emit_changed_themes() {
             cached_gc: light,
             cached_active_gc: light,
         }));
-        window_pane_send_theme_update(Some(pane));
+        pane.send_theme_update();
         assert!(output.written().is_empty());
         assert_eq!(pane.theme(), THEME_UNKNOWN);
         assert_ne!(*pane.flags() & PANE_THEMECHANGED, 0);
@@ -1325,12 +1325,12 @@ fn theme_notifications_follow_the_shown_screen_and_only_emit_changed_themes() {
             let mode = screen.mode() | MODE_THEME_UPDATES;
             screen.set_mode(mode);
         }
-        window_pane_send_theme_update(Some(pane));
+        pane.send_theme_update();
         assert_eq!(output.written(), b"\x1b[?997;2n");
         assert_eq!(pane.theme(), THEME_LIGHT);
         assert_eq!(*pane.flags() & PANE_THEMECHANGED, 0);
         *pane.flags_mut() |= PANE_THEMECHANGED;
-        window_pane_send_theme_update(Some(pane));
+        pane.send_theme_update();
         assert!(output.written().is_empty());
         assert_ne!(*pane.flags() & PANE_THEMECHANGED, 0);
         let dark = grid_cell {
@@ -1341,7 +1341,7 @@ fn theme_notifications_follow_the_shown_screen_and_only_emit_changed_themes() {
             cached_gc: dark,
             cached_active_gc: dark,
         }));
-        window_pane_send_theme_update(Some(pane));
+        pane.send_theme_update();
         assert_eq!(output.written(), b"\x1b[?997;1n");
         assert_eq!(pane.theme(), THEME_DARK);
         *pane.flags_mut() |= PANE_THEMECHANGED | PANE_EXITED;
@@ -1349,7 +1349,7 @@ fn theme_notifications_follow_the_shown_screen_and_only_emit_changed_themes() {
             cached_gc: light,
             cached_active_gc: light,
         }));
-        window_pane_send_theme_update(Some(pane));
+        pane.send_theme_update();
         assert!(output.written().is_empty());
         assert_eq!(pane.theme(), THEME_DARK);
         pane.configure_test(crate::window_pane::PaneTestSetup::Descriptor(-1));

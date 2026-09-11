@@ -3,7 +3,7 @@
 use crate::{
     PaneActivityState, PaneCommandState, PaneControlColours, PaneExitState,
     PaneGeometryState, PaneIdentity, PaneScrollbar,
-    PaneScrollbarStyleState, PaneSearchState, PaneStyleCache, PaneThemeState,
+    PaneScrollbarStyleState, PaneSearchState, PaneStyleCache,
 };
 
 /// State and engine capabilities used to interact with a window pane.
@@ -25,7 +25,6 @@ pub trait WindowPane:
     + PaneCommandState
     + PaneExitState
     + PaneStyleCache
-    + PaneThemeState
     + PaneSearchState
     + PaneControlColours
     + PaneScrollbarStyleState
@@ -134,6 +133,22 @@ pub trait WindowPane:
 
     /// Tests whether exited process and pipe output have both drained.
     fn destroy_ready(&self) -> bool;
+
+    /// Derives and acknowledges the current terminal theme, clearing pending updates.
+    /// # Safety
+    /// Exclude conflicting pane/client access during style and theme evaluation.
+    unsafe fn acknowledge_theme(&mut self) -> crate::types::client_theme;
+    /// Enables or disables base-screen theme updates and acknowledges pending state.
+    /// # Safety
+    /// Exclude conflicting pane/client access during theme evaluation.
+    unsafe fn set_theme_updates(&mut self, enabled: bool);
+    /// Sends a changed terminal theme when the selected screen enables updates.
+    /// An unchanged theme, exited process or disabled mode leaves the update pending.
+    /// # Safety
+    /// Exclude conflicting pane/client access during style evaluation and terminal writes.
+    unsafe fn send_theme_update(&mut self);
+    #[cfg(test)]
+    fn theme(&self) -> crate::types::client_theme;
 
     /// Copies the palette for a rendering context without sharing mutable storage.
     fn palette_snapshot(&self) -> crate::types::colour_palette;
