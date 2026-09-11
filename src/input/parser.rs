@@ -4463,10 +4463,9 @@ fn input_osc_112(_ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &C
 fn input_osc_133(_ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &CStr) {
     {
         let screen = sctx.screen_mut();
-        let cy = screen.cursor().1;
         match p.to_bytes().first().copied() {
-            Some(b'A') => RustScreen::grid_mut(screen).mark_prompt(cy, false),
-            Some(b'C') => RustScreen::grid_mut(screen).mark_prompt(cy, true),
+            Some(b'A') => screen.mark_prompt(false),
+            Some(b'C') => screen.mark_prompt(true),
             _ => {},
         }
     }

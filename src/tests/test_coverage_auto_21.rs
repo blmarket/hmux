@@ -212,7 +212,7 @@ fn window_pane_search_finds_written_text() {
     unsafe {
         let wp = p.ptr();
         // write "hello world" on first line via grid
-        let grid = RustScreen::grid_mut((*wp).base_mut());
+        let screen = (*wp).base_mut();
         let hello = b"hello world";
         for (i, &ch) in hello.iter().enumerate() {
             let mut gc = crate::grid::grid_default_cell;
@@ -220,7 +220,7 @@ fn window_pane_search_finds_written_text() {
             gc.data.have = 1;
             gc.data.size = 1;
             gc.data.width = 1;
-            crate::grid::grid_set_cell(&mut *grid, i as u32, 0, &gc);
+            screen.write_test_cell(i as u32, 0, &gc);
         }
         // fnmatch search (regex=0) with ignore=0
         let n = window_pane_search(&mut *wp, c"hello", 0, 0);

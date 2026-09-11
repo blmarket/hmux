@@ -590,9 +590,9 @@ impl SessionRef {
                 for mut pane in panes_of(&window) {
                     let Some(wp) = pane.get_mut() else { continue };
                     let pane_id = wp.pane_id();
-                    let gd = wp.base_mut().grid_mut();
-                    let osize = gd.history_size();
-                    gd.set_history_limit(limit);
+                    let osize = wp.base().grid().history_size();
+                    wp.base_mut().set_history_limit(limit);
+                    let gd = wp.base().grid();
                     if gd.history_size() != osize {
                         log_debug(
                             c"%s: %%%u %u -> %u",

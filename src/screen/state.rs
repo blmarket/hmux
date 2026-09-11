@@ -204,7 +204,7 @@ impl RustScreen {
         self.0.grid.as_deref().expect("a screen holds a grid")
     }
 
-    pub(crate) fn grid_mut(&mut self) -> &mut RustGrid {
+    pub(super) fn grid_mut(&mut self) -> &mut RustGrid {
         self.0.grid.as_deref_mut().expect("a screen holds a grid")
     }
 
@@ -964,3 +964,60 @@ pub fn screen_mode_to_string(mode: c_int) -> CString {
 pub use crate::consts::{
     GRID_FLAG_EXTENDED, GRID_FLAG_PADDING, GRID_FLAG_TAB, PROGRESS_BAR_ERROR, PROGRESS_BAR_NORMAL,
 };
+
+impl RustScreen {
+    /// Clears retained history and optionally resets the associated hyperlink set.
+    pub(crate) fn clear_history(&mut self, hyperlinks: bool) {
+        self.grid_mut().clear_history();
+        if hyperlinks { self.reset_hyperlinks(); }
+    }
+
+    /// Removes history below the cursor's remaining visible space and adjusts it.
+    pub(crate) fn trim_history(&mut self) {
+        let (cx, cy) = self.cursor();
+        let grid = self.grid_mut();
+        let adjust = grid.height().wrapping_sub(1).wrapping_sub(cy).min(grid.history_size());
+        grid.remove_history(adjust);
+        self.set_cursor(cx, cy.wrapping_add(adjust));
+    }
+
+    /// Applies a history limit and collects excess history immediately.
+    pub(crate) fn set_history_limit(&mut self, limit: u_int) {
+        self.grid_mut().set_history_limit(limit);
+    }
+
+    /// Records a prompt or command-output marker at the cursor's line.
+    pub(crate) fn mark_prompt(&mut self, output: bool) {
+        let cy = self.cursor().1;
+        self.grid_mut().mark_prompt(cy, output);
+    }
+
+    /// Copies retained lines into a new copy-mode screen and initializes its cursor.
+    pub(crate) fn copy_history_from(&mut self, source: &Self, lines: u_int) {
+        self.grid_mut().copy_from_history(source.grid(), lines);
+        let (cx, cy) = source.cursor();
+        let height = self.grid().height();
+        if cy > height.wrapping_sub(1) {
+            self.set_cursor(0, height.wrapping_sub(1));
+        } else { self.set_cursor(cx, cy); }
+    }
+}
+
+#[cfg(test)]
+impl RustScreen {
+    pub(crate) fn write_test_cell(&mut self, x: u_int, y: u_int, cell: &grid_cell) {
+        self.grid_mut().set_cell(x, y, cell);
+    }
+    pub(crate) fn write_test_visible_cell(&mut self, x: u_int, y: u_int, cell: &grid_cell) {
+        crate::grid::grid_view_set_cell(self.grid_mut(), x, y, cell);
+    }
+    pub(crate) fn write_test_visible_padding(&mut self, x: u_int, y: u_int) {
+        crate::grid::grid_view_set_padding(self.grid_mut(), x, y);
+    }
+    pub(crate) fn scroll_test_history(&mut self, bg: u_int) {
+        self.grid_mut().scroll_history(bg);
+    }
+    pub(crate) fn mark_test_wrapped(&mut self, line: u_int) {
+        crate::grid::grid_mark_wrapped(self.grid_mut(), line);
+    }
+}

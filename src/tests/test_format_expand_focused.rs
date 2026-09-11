@@ -409,12 +409,9 @@ fn format_search_rechecks_its_pane_after_expanding_the_search_text() {
     unsafe {
         let wp = &mut *pane.ptr();
         for (x, byte) in b"needle".iter().copied().enumerate() {
-            crate::grid::grid_set_cell(
-                RustScreen::grid_mut(wp.base_mut()),
-                x as u_int,
+            (wp.base_mut()).write_test_cell(x as u_int,
                 0,
-                &ascii(byte),
-            );
+                &ascii(byte),);
         }
         ft.tree().set_window(Some(&window.reference()));
         ft.tree().set_pane(Some(wp));

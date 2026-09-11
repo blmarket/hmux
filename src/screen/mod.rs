@@ -52,5 +52,11 @@ pub(crate) use writer::{
 use state::screen;
 
 /// The Rust screen implementation used by hmux.
+///
+/// ```compile_fail
+/// use tmux_c2rs::{RustScreen, Screen};
+/// let mut screen = RustScreen::new(80, 24, 100);
+/// screen.grid_mut();
+/// ```
 #[derive(Default)]
 pub struct RustScreen(screen);

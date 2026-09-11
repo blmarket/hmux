@@ -286,11 +286,11 @@ fn grid_reflow_via_screen_fixture_preserves_content() {
         for (i, b) in b"abcdefghij".iter().enumerate() {
             gc.data.data[0] = *b;
             let hsize = s.grid().history_size();
-            grid_set_cell(s.grid_mut(), i as u32, hsize, &gc);
+            (s).write_test_cell(i as u32, hsize, &gc);
         }
         // initial: one screen line used
         assert_eq!(line_text(s.grid(), (*s.grid()).history_size()), "abcdefghij");
-        grid_reflow(s.grid_mut(), 5);
+        crate::screen::screen_resize(&mut s, 5, 3, 1);
         // width reduced to 5: line should have split and be wrapped
         let total = (*s.grid()).history_size() + (*s.grid()).height();
         let mut all = String::new();
@@ -304,7 +304,7 @@ fn grid_reflow_via_screen_fixture_preserves_content() {
             (*s.grid()).history_size()
         );
         // reflow back wider should join again
-        grid_reflow(s.grid_mut(), 10);
+        crate::screen::screen_resize(&mut s, 10, 3, 1);
         let total2 = (*s.grid()).history_size() + (*s.grid()).height();
         let mut all2 = String::new();
         for py in 0..total2 {

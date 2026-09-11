@@ -12,19 +12,16 @@ unsafe fn open_copy(target: &mut Target) -> &mut window_mode_entry {
     unsafe {
         let pane = target.pane(0);
         for _ in 0..24 {
-            grid_scroll_history(RustScreen::grid_mut((*pane).base_mut()), 8);
+            ((*pane).base_mut()).scroll_test_history(8);
         }
         for y in 0..RustScreen::grid((*pane).base()).height() {
             for (x, byte) in b"one two three four".iter().copied().enumerate() {
                 if x >= RustScreen::grid((*pane).base()).width() as usize {
                     break;
                 }
-                grid_set_cell(
-                    RustScreen::grid_mut((*pane).base_mut()),
-                    x as u_int,
+                ((*pane).base_mut()).write_test_cell(x as u_int,
                     RustScreen::grid((*pane).base()).history_size() + y,
-                    &ascii(byte),
-                );
+                    &ascii(byte),);
             }
         }
         let source_pane_id = (*pane).pane_id();
@@ -62,12 +59,9 @@ fn refresh_keeps_the_snapshot_after_its_source_pane_is_destroyed() {
         source.add_pane(&mut source_pane);
         let source_ptr = source_pane.ptr();
         let source_id = (*source_ptr).pane_id();
-        grid_set_cell(
-            RustScreen::grid_mut((*source_ptr).base_mut()),
+        ((*source_ptr).base_mut()).write_test_cell(0,
             0,
-            0,
-            &ascii(b'X'),
-        );
+            &ascii(b'X'),);
         let pane = target.pane(0);
         assert_eq!(
             (&mut *pane).set_mode(
@@ -122,7 +116,7 @@ fn search_primitives_cover_plain_regex_wrapped_and_cell_position_paths() {
         let mut target = Target::new(12, 4);
         let wme = open_copy(&mut target);
         let data = wme.state.copy_mode_data_mut().unwrap();
-        let gd = RustScreen::grid_mut(
+        let gd = RustScreen::grid(
             &mut *(*data)
                 .backing
                 .as_deref_mut()
@@ -981,12 +975,9 @@ fn replace_copy_text(wme: &mut window_mode_entry, lines: &[&[u8]]) {
     let mut backing = Box::new(RustScreen::new_with_server_options(sx, sy, 0));
     for (y, line) in lines.iter().enumerate() {
         for (x, byte) in line.iter().copied().enumerate() {
-            grid_set_cell(
-                RustScreen::grid_mut(&mut backing),
-                x as u32,
+            (&mut backing).write_test_cell(x as u32,
                 y as u32,
-                &ascii(byte),
-            );
+                &ascii(byte),);
         }
     }
     data.backing = Some(backing);
@@ -1061,9 +1052,7 @@ fn vi_bracket_scanning_crosses_only_wrapped_lines_and_reverses_on_a_closer() {
             wme.prefix = 1;
             if wrapped {
                 let data = wme.state.copy_mode_data_mut().unwrap();
-                crate::grid::grid_mark_wrapped(
-                    RustScreen::grid_mut(data.backing.as_deref_mut().unwrap()), 0,
-                );
+                (data.backing.as_deref_mut().unwrap()).mark_test_wrapped(0,);
             }
             let mut state = window_copy_cmd_state {
                 wme,

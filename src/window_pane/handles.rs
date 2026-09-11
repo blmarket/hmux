@@ -185,11 +185,7 @@ impl RustWindowPaneWeak {
         if !pane.active_mode().is_none() {
             return true;
         }
-        let (cx, cy) = pane.base().cursor();
-        let grid = pane.base_mut().grid_mut();
-        let adjust = grid.height().wrapping_sub(1).wrapping_sub(cy).min(grid.history_size());
-        grid.remove_history(adjust);
-        pane.base_mut().set_cursor(cx, cy.wrapping_add(adjust));
+        pane.base_mut().trim_history();
         pane.request_redraw();
         true
     }

@@ -49,7 +49,7 @@ fn cell(bytes: &[u8], width: u8) -> grid_cell {
 fn write_text(screen: &mut Screen, px: u_int, py: u_int, text: &str) {
     for (i, &byte) in text.as_bytes().iter().enumerate() {
         let gc = ascii(byte);
-        grid_view_set_cell(screen.grid_mut(), px + i as u_int, py, &gc);
+        (screen).write_test_visible_cell(px + i as u_int, py, &gc);
     }
 }
 
@@ -293,7 +293,7 @@ fn leading_padding_cells_are_cleared_before_what_follows_them() {
     let mut d = Drawer::new(8, 24);
     let mut s = Screen::new(8, 24, 100);
     for px in 0..3 {
-        grid_view_set_padding(s.grid_mut(), px, 0);
+        (s).write_test_visible_padding(px, 0);
     }
     write_text(&mut s, 3, 0, "xy");
     draw(&mut d, &mut s, 0, 8, 0, 0);
@@ -312,7 +312,7 @@ fn a_wrapped_previous_line_clears_without_moving_the_cursor() {
     let mut ws = Screen::new(16, 4, 100);
     unsafe {
         let hsize = ws.grid().history_size();
-        crate::grid::grid_mark_wrapped(ws.grid_mut(), hsize);
+        (ws).mark_test_wrapped(hsize);
         (*wrapped.ptr()).cx = 16;
         (*wrapped.ptr()).cy = 3;
     }
@@ -367,7 +367,7 @@ fn characters_outside_the_codeset_become_acs_keys_or_underscores() {
     let mut d = Drawer::new(8, 24);
     let mut s = Screen::new(8, 24, 100);
     let gc = cell(&[0xe2, 0x94, 0x80], 1);
-    grid_view_set_cell(s.grid_mut(), 0, 0, &gc);
+    (s).write_test_visible_cell(0, 0, &gc);
 
     draw(&mut d, &mut s, 0, 8, 0, 0);
     assert_eq!(d.written(), b"q       ", "the ACS key was not drawn");
@@ -377,7 +377,7 @@ fn characters_outside_the_codeset_become_acs_keys_or_underscores() {
     assert_eq!(d.written(), b"A       ", "the translation was not applied");
 
     let latin = cell(&[0xc3, 0xa9], 1);
-    grid_view_set_cell(s.grid_mut(), 0, 0, &latin);
+    (s).write_test_visible_cell(0, 0, &latin);
     draw(&mut d, &mut s, 0, 8, 0, 0);
     assert_eq!(
         d.written(),

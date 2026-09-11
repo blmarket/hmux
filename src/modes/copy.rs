@@ -262,14 +262,7 @@ fn window_copy_clone_screen(
             sy,
             src.history_limit(),
         ));
-        RustScreen::grid_mut(&mut dst).copy_from_history(RustScreen::grid(src), sy);
-        let (src_cx, src_cy) = src.cursor();
-        if src_cy > RustScreen::grid(&dst).height().wrapping_sub(1 as u_int) {
-            let dst_cy = RustScreen::grid(&dst).height().wrapping_sub(1 as u_int);
-            dst.set_cursor(0 as u_int, dst_cy);
-        } else {
-            dst.set_cursor(src_cx, src_cy);
-        }
+        dst.copy_history_from(src, sy);
         let mut cx = 0 as u_int;
         let mut cy = 0 as u_int;
         if want_cursor {

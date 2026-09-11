@@ -207,10 +207,7 @@ impl RustWindowPaneWeak {
             return false;
         };
         let pane = unsafe { owner.as_pane_mut() };
-        screen::grid_mut(pane.base_mut()).clear_history();
-        if hyperlinks {
-            pane.base_mut().reset_hyperlinks();
-        }
+        pane.base_mut().clear_history(hyperlinks);
         true
     }
 }

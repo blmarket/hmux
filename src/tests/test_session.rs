@@ -1289,10 +1289,10 @@ fn the_history_limit_reaches_every_pane_of_the_session() {
     unsafe {
         let w = linked.window(0);
         pane.hand_to(w);
-        let gd = RustScreen::grid_mut((*pane.ptr()).base_mut());
         for _ in 0..20 {
-            grid_scroll_history(&mut *gd, 8);
+            (*pane.ptr()).base_mut().scroll_test_history(8);
         }
+        let gd = RustScreen::grid((*pane.ptr()).base());
         assert_eq!((*gd).history_size(), 20);
 
         (*(*linked.ptr()).options_ref()).set_number(c"history-limit", 5);
