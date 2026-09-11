@@ -161,7 +161,7 @@ fn a_reset_comes_out_of_the_alternate_screen() {
 fn the_hyperlinks_of_a_screen_are_made_once_and_then_emptied() {
     let _guard = globals();
     let mut s = RustScreen::new_with_server_options(10, 5, 0);
-    let first = s.hyperlinks();
+    let first = s.hyperlinks_ref().unwrap().clone();
     let inner = first.put(c"https://example.com/", Some(c"id"));
     s.reset_hyperlinks();
     assert!(first.get(inner).is_none(), "the same table was emptied");

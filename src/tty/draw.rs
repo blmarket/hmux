@@ -154,7 +154,7 @@ pub unsafe fn tty_draw_line(
         tty_margin_off(tty);
         last = grid_default_cell;
         last.bg = defaults.bg;
-        tty_default_attributes(tty, defaults, palette, 8 as u_int, Some(&s.hyperlinks()));
+        tty_default_attributes(tty, defaults, palette, 8 as u_int, Some(s.hyperlinks()));
         cx = 0 as u_int;
         i = px;
         while i < px.wrapping_add(nx) {
@@ -185,7 +185,7 @@ pub unsafe fn tty_draw_line(
                     }
                 }
             }
-            tty_attributes(tty, &last, defaults, palette, Some(&s.hyperlinks()));
+            tty_attributes(tty, &last, defaults, palette, Some(s.hyperlinks()));
             log_debug(
                 c"%s: clearing %u padding cells",
                 fmt_args![c"tty_draw_line".as_ptr(), cx],
@@ -294,7 +294,7 @@ pub unsafe fn tty_draw_line(
                     if current_state as core::ffi::c_uint
                         == TTY_DRAW_LINE_EMPTY as core::ffi::c_int as core::ffi::c_uint
                     {
-                        tty_attributes(tty, &last, defaults, palette, Some(&s.hyperlinks()));
+                        tty_attributes(tty, &last, defaults, palette, Some(s.hyperlinks()));
                         tty_draw_line_clear(
                             tty,
                             atx.wrapping_add(last_i),
@@ -309,7 +309,7 @@ pub unsafe fn tty_draw_line(
                         != TTY_DRAW_LINE_SAME as core::ffi::c_int as core::ffi::c_uint
                         && len != 0 as size_t
                     {
-                        tty_attributes(tty, &last, defaults, palette, Some(&s.hyperlinks()));
+                        tty_attributes(tty, &last, defaults, palette, Some(s.hyperlinks()));
                         if atx.wrapping_add(i).wrapping_sub(width) != 0 as u_int || wrapped == 0 {
                             tty_cursor(tty, atx.wrapping_add(i).wrapping_sub(width), aty);
                         }

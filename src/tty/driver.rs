@@ -1972,7 +1972,7 @@ pub unsafe fn tty_cmd_insertcharacter(tty: &mut tty, ctx: &tty_ctx, s: &RustScre
             &ctx.defaults,
             ctx.palette.as_ref(),
             ctx.bg,
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         tty_cursor_pane(tty, ctx, ctx.ocx, ctx.ocy);
         tty_emulate_repeat(tty, TTYC_ICH, TTYC_ICH1, tty_ctx_num(ctx));
@@ -1997,7 +1997,7 @@ pub unsafe fn tty_cmd_deletecharacter(tty: &mut tty, ctx: &tty_ctx, s: &RustScre
             &ctx.defaults,
             ctx.palette.as_ref(),
             ctx.bg,
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         tty_cursor_pane(tty, ctx, ctx.ocx, ctx.ocy);
         tty_emulate_repeat(tty, TTYC_DCH, TTYC_DCH1, tty_ctx_num(ctx));
@@ -2010,7 +2010,7 @@ pub unsafe fn tty_cmd_clearcharacter(tty: &mut tty, ctx: &tty_ctx, s: &RustScree
             &ctx.defaults,
             ctx.palette.as_ref(),
             ctx.bg,
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         tty_clear_pane_line(tty, ctx, ctx.ocy, ctx.ocx, tty_ctx_num(ctx), ctx.bg);
     }
@@ -2037,7 +2037,7 @@ pub unsafe fn tty_cmd_insertline(tty: &mut tty, ctx: &tty_ctx, s: &RustScreen) {
             &ctx.defaults,
             ctx.palette.as_ref(),
             ctx.bg,
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
         tty_margin_off(tty);
@@ -2069,7 +2069,7 @@ pub unsafe fn tty_cmd_deleteline(tty: &mut tty, ctx: &tty_ctx, s: &RustScreen) {
             &ctx.defaults,
             ctx.palette.as_ref(),
             ctx.bg,
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
         tty_margin_off(tty);
@@ -2105,7 +2105,7 @@ pub unsafe fn tty_cmd_reverseindex(tty: &mut tty, ctx: &tty_ctx, s: &RustScreen)
             &ctx.defaults,
             ctx.palette.as_ref(),
             ctx.bg,
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
         tty_margin_pane(tty, ctx);
@@ -2140,7 +2140,7 @@ pub unsafe fn tty_cmd_scrollup(tty: &mut tty, ctx: &tty_ctx, s: &RustScreen) {
             &ctx.defaults,
             ctx.palette.as_ref(),
             ctx.bg,
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
         tty_margin_pane(tty, ctx);
@@ -2189,7 +2189,7 @@ pub unsafe fn tty_cmd_scrolldown(tty: &mut tty, ctx: &tty_ctx, s: &RustScreen) {
             &ctx.defaults,
             ctx.palette.as_ref(),
             ctx.bg,
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
         tty_margin_pane(tty, ctx);
@@ -2216,7 +2216,7 @@ pub unsafe fn tty_cmd_clearendofscreen(tty: &mut tty, ctx: &tty_ctx, s: &RustScr
             &ctx.defaults,
             ctx.palette.as_ref(),
             ctx.bg,
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         tty_region_pane(tty, ctx, 0 as u_int, ctx.sy.wrapping_sub(1 as u_int));
         tty_margin_off(tty);
@@ -2242,7 +2242,7 @@ pub unsafe fn tty_cmd_clearstartofscreen(tty: &mut tty, ctx: &tty_ctx, s: &RustS
             &ctx.defaults,
             ctx.palette.as_ref(),
             ctx.bg,
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         tty_region_pane(tty, ctx, 0 as u_int, ctx.sy.wrapping_sub(1 as u_int));
         tty_margin_off(tty);
@@ -2264,7 +2264,7 @@ pub unsafe fn tty_cmd_clearscreen(tty: &mut tty, ctx: &tty_ctx, s: &RustScreen) 
             &ctx.defaults,
             ctx.palette.as_ref(),
             ctx.bg,
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         tty_region_pane(tty, ctx, 0 as u_int, ctx.sy.wrapping_sub(1 as u_int));
         tty_margin_off(tty);
@@ -2293,7 +2293,7 @@ pub unsafe fn tty_cmd_alignmenttest(tty: &mut tty, ctx: &tty_ctx, s: &RustScreen
             &grid_default_cell,
             &ctx.defaults,
             ctx.palette.as_ref(),
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         tty_region_pane(tty, ctx, 0 as u_int, ctx.sy.wrapping_sub(1 as u_int));
         tty_margin_off(tty);
@@ -2370,7 +2370,7 @@ pub unsafe fn tty_cmd_cell(tty: &mut tty, ctx: &tty_ctx, s: &RustScreen) {
             gc,
             &ctx.defaults,
             ctx.palette.as_ref(),
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         if ctx.flags & TTY_CTX_CELL_INVALIDATE != 0 {
             tty_invalidate(tty);
@@ -2414,7 +2414,7 @@ pub unsafe fn tty_cmd_cells(tty: &mut tty, ctx: &tty_ctx, s: &RustScreen) {
             ctx.cell.as_ref().expect("a text command carries a cell"),
             &ctx.defaults,
             ctx.palette.as_ref(),
-            Some(&s.hyperlinks()),
+            Some(s.hyperlinks()),
         );
         let px: u_int = (ctx.xoff as u_int)
             .wrapping_add(ctx.ocx)
@@ -2494,7 +2494,7 @@ pub(crate) unsafe fn tty_cell(
     gc: &grid_cell,
     defaults: &grid_cell,
     palette: Option<&colour_palette>,
-    hl: Option<&RustHyperlinks>,
+    hl: Option<&dyn Hyperlinks>,
 ) {
     unsafe {
         if tty_term_of(tty).flags() & TERM_NOAM != 0
@@ -2830,7 +2830,7 @@ pub unsafe fn tty_cursor(tty: &mut tty, mut cx: u_int, cy: u_int) {
         tty.cy = cy;
     }
 }
-fn tty_hyperlink(tty: &mut tty, gc: &grid_cell, hl: Option<&RustHyperlinks>) {
+fn tty_hyperlink(tty: &mut tty, gc: &grid_cell, hl: Option<&dyn Hyperlinks>) {
     if gc.link == tty.cell.link {
         return;
     }
@@ -2853,7 +2853,7 @@ pub(crate) unsafe fn tty_attributes(
     gc: &grid_cell,
     defaults: &grid_cell,
     palette: Option<&colour_palette>,
-    hl: Option<&RustHyperlinks>,
+    hl: Option<&dyn Hyperlinks>,
 ) {
     unsafe {
         let mut gc2;
@@ -3246,7 +3246,7 @@ pub unsafe fn tty_default_attributes(
     defaults: &grid_cell,
     palette: Option<&colour_palette>,
     bg: u_int,
-    hl: Option<&RustHyperlinks>,
+    hl: Option<&dyn Hyperlinks>,
 ) {
     unsafe {
         let mut gc;

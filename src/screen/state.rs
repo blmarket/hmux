@@ -15,18 +15,18 @@ pub use crate::types::*;
 use ::core::ffi::{CStr, c_int, c_longlong};
 
 /// A screen that can be exercised independently of its implementation.
-pub trait Screen: Sized {
-    /// The screen's hyperlink-store implementation.
-    type Hyperlinks: Hyperlinks;
+pub trait Screen {
 
     /// Makes a screen with the given visible size and history limit.
-    fn new(sx: u_int, sy: u_int, hlimit: u_int) -> Self;
+    fn new(sx: u_int, sy: u_int, hlimit: u_int) -> Self
+    where
+        Self: Sized;
     /// Returns the visible width and height.
     fn size(&self) -> (u_int, u_int);
     /// Returns the maximum number of history lines.
     fn history_limit(&self) -> u_int;
-    /// Returns a handle to the screen's hyperlink store.
-    fn hyperlinks(&self) -> Self::Hyperlinks;
+    /// Borrows the screen's hyperlink capability without retaining its store.
+    fn hyperlinks(&self) -> &dyn Hyperlinks;
     /// Removes every hyperlink from the screen.
     fn reset_hyperlinks(&mut self);
     /// Sets the cursor position.
@@ -240,7 +240,7 @@ impl RustScreen {
         source: &RustScreen,
     ) -> RustScreen {
         let mut screen = RustScreen::new_with_server_options(sx, sy, hlimit);
-        screen.0.hyperlinks = Some(Screen::hyperlinks(source));
+        screen.0.hyperlinks = Some(source.hyperlinks_ref().expect("a screen has hyperlinks").clone());
         screen
     }
 
@@ -507,8 +507,6 @@ pub fn screen_resize(s: &mut RustScreen, sx: u_int, sy: u_int, reflow: c_int) {
 }
 
 impl Screen for RustScreen {
-    type Hyperlinks = RustHyperlinks;
-
     fn new(sx: u_int, sy: u_int, hlimit: u_int) -> Self {
         screen_new_standalone(sx, sy, hlimit)
     }
@@ -521,10 +519,8 @@ impl Screen for RustScreen {
         self.grid().history_limit()
     }
 
-    fn hyperlinks(&self) -> Self::Hyperlinks {
-        self.hyperlinks_ref()
-            .expect("a screen has hyperlinks")
-            .clone()
+    fn hyperlinks(&self) -> &dyn Hyperlinks {
+        self.hyperlinks_ref().expect("a screen has hyperlinks")
     }
 
     fn reset_hyperlinks(&mut self) {

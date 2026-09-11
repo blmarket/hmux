@@ -9,9 +9,11 @@ use ::std::ffi::CString;
 use ::std::rc::{Rc, Weak};
 
 /// A hyperlink store that can be exercised independently of its implementation.
-pub trait Hyperlinks: Clone + Sized {
+pub trait Hyperlinks {
     /// Makes an empty hyperlink store.
-    fn new() -> Self;
+    fn new() -> Self
+    where
+        Self: Sized;
 
     /// Stores a URI and optional internal id and returns its inner id.
     fn put(&self, uri: &CStr, internal_id: Option<&CStr>) -> u_int;

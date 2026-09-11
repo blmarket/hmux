@@ -5257,7 +5257,7 @@ mod focused_tests {
             }
             ctx.parse(b"\x1b]8;id=:id=;https://anonymous.invalid\x07");
             let anonymous = ctx.ictx.borrow().cell.cell.link;
-            let (uri, id, _) = links.get(anonymous).unwrap();
+            let (uri, id, _) = ctx.pane.base().hyperlinks().get(anonymous).unwrap();
             assert_eq!(uri.as_c_str(), c"https://anonymous.invalid");
             assert!(id.is_empty());
             ctx.parse(b"\x1b]8;;\x07");
