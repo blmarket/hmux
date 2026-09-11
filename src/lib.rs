@@ -227,7 +227,6 @@ pub mod window_timestamps;
 pub mod window_trait;
 pub mod winlink_flags;
 pub mod winlink_identity;
-pub mod winlink_trait;
 pub mod xmalloc;
 
 pub use alternate_character_entry::*;
@@ -373,7 +372,6 @@ pub use window_timestamps::{WindowTimestampState, WindowTimestamps};
 pub use window_trait::Window;
 pub use winlink_flags::WinlinkFlagsState;
 pub use winlink_identity::WinlinkIdentity;
-pub use winlink_trait::Winlink;
 
 pub use options::{OptionsEngine, OptionsRef, RustOptionsEngine, RustOptionsRef};
 
