@@ -1,5 +1,3 @@
-#[cfg(test)]
-use crate::PaneCommandState;
 use crate::args::RustArguments;
 use crate::grid::Grid;
 use crate::screen::Screen;
@@ -224,7 +222,7 @@ mod lifetime_tests {
             let geometry = pane.geometry().unwrap();
             let command = pane.command().unwrap();
             pane.set_position(8, 9);
-            owner.as_pane_mut().clear_pane_command();
+            owner.as_pane_mut().set_pane_command(&crate::PaneCommand::default());
             assert_eq!((geometry.xoff, geometry.yoff), (2, 4));
             assert_eq!(command.argv, [c"before".to_owned()]);
             drop(owner);

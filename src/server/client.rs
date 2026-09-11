@@ -49,8 +49,6 @@ use crate::overlay::{popup_check_cb, popup_mode_cb};
 use crate::pane_geometry::PaneGeometryState;
 use crate::pane_output::PaneOutputOffset;
 use crate::pane_resize::PaneResizeQueue;
-use crate::pane_scrollbar::PaneScrollbar;
-use crate::pane_scrollbar_style::PaneScrollbarStyleState;
 use crate::proc::PeerDispatch;
 use crate::reactor;
 use crate::reactor::{Interest, IoWatch, Reactor, Timer};

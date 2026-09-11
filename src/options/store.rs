@@ -15,7 +15,6 @@ use crate::grid::grid_default_cell;
 use crate::input::input_set_buffer_size;
 
 use crate::log::{fatalx, log_debug};
-use crate::pane_scrollbar_style::PaneScrollbarStyleState;
 use crate::resize::recalculate_sizes;
 use crate::server::client_walk;
 use crate::server::server_client_set_key_table;

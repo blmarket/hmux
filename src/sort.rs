@@ -22,7 +22,6 @@ use crate::window_timestamps::WindowTimestampState;
 use crate::key_bindings::{
     key_binding as KeyBinding, key_binding_key, key_binding_tablename, key_tables,
 };
-use crate::pane_activity::PaneActivityState;
 use crate::pane_geometry::PaneGeometryState;
 use crate::paste::{PasteBufferStore, with_paste_buffers};
 use crate::server::with_clients;

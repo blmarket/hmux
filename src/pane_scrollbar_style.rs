@@ -10,10 +10,3 @@ pub struct PaneScrollbarStyle {
     pub width: c_int,
     pub padding: c_int,
 }
-
-/// Storage for a pane's cached scrollbar style.
-pub trait PaneScrollbarStyleState {
-    /// Returns the cached scrollbar style.
-    fn scrollbar_style(&self) -> PaneScrollbarStyle;
-
-}

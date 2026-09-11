@@ -4,7 +4,6 @@ use crate::input::{KEYC_CTRL, KEYC_META};
 use crate::key_bindings::{
     key_binding_key, key_bindings_add, key_bindings_get_table, key_bindings_remove,
 };
-use crate::pane_activity::PaneActivityState;
 use crate::paste::{PasteBufferStore, with_paste_buffers, with_paste_buffers_mut};
 use crate::tests::test_fixtures::{
     Clients, Pane, Registry, Session, Window, globals, link, unlink,

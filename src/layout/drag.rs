@@ -1,7 +1,6 @@
 use crate::cmd::{cmd_mouse_pane, cmd_mouse_window};
 
 use crate::pane_geometry::PaneGeometryState;
-use crate::pane_scrollbar_style::PaneScrollbarStyleState;
 pub use crate::types::*;
 use crate::window::window_pane_show_scrollbar;
 

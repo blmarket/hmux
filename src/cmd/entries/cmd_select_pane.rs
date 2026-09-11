@@ -166,13 +166,13 @@ unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         return CMD_RETURN_NORMAL;
     }
     let direction = if args.argument_flag_count(b'L') != 0 {
-        Some(crate::pane_handle::PaneDirection::Left)
+        Some(crate::window_pane::PaneDirection::Left)
     } else if args.argument_flag_count(b'R') != 0 {
-        Some(crate::pane_handle::PaneDirection::Right)
+        Some(crate::window_pane::PaneDirection::Right)
     } else if args.argument_flag_count(b'U') != 0 {
-        Some(crate::pane_handle::PaneDirection::Up)
+        Some(crate::window_pane::PaneDirection::Up)
     } else if args.argument_flag_count(b'D') != 0 {
-        Some(crate::pane_handle::PaneDirection::Down)
+        Some(crate::window_pane::PaneDirection::Down)
     } else {
         None
     };

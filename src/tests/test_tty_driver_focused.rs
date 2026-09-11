@@ -1,6 +1,5 @@
 use super::*;
 use crate::WindowPane;
-use crate::pane_style_cache::PaneStyleCache;
 use crate::reactor::ByteBuffer;
 use crate::terminfo::TerminalCapabilities;
 use crate::tests::test_fixtures::{globals, zeroed_client, zeroed_term, zeroed_tty};

@@ -15,8 +15,6 @@ use crate::server::client_ref_of;
 use crate::tmux::{get_timer, setblocking};
 pub use crate::types::*;
 use crate::window::{RustWindowPaneWeak, window_pane_find_by_id, winlinks_in};
-use crate::window::{
-};
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
 use std::cell::RefCell;

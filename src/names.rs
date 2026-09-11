@@ -3,7 +3,6 @@ use crate::fmt_args;
 use crate::format::{format_create, format_defaults_pane, format_defaults_window, format_expand};
 use crate::log::log_debug;
 
-use crate::pane_command::PaneCommandState;
 use crate::reactor::Timer;
 
 use crate::tmux::clean_name;

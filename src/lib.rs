@@ -91,10 +91,8 @@ pub mod option_table_entry;
 pub mod options;
 pub mod osdep_linux;
 pub mod overlay;
-pub mod pane_activity;
 pub mod pane_command;
 pub mod pane_control_colours;
-pub mod pane_exit;
 pub mod pane_geometry;
 pub mod pane_identity;
 pub mod pane_output;
@@ -296,20 +294,17 @@ pub use message_log::{MessageLogEntryRef, MessageLogStore, MessageLogTime, RustM
 pub use names::{RustWindowNameParser, WindowNameParser};
 pub use option_name_map::*;
 pub use option_table_entry::*;
-pub use pane_activity::{PaneActivityState, };
-pub use pane_command::{PaneCommand, PaneCommandState, };
-pub use pane_control_colours::{PaneControlColourPair, PaneControlColours, };
-pub use pane_exit::{PaneExitState, };
+pub use pane_command::{PaneCommand, };
+pub use pane_control_colours::{PaneControlColourPair, };
 pub use pane_geometry::{PaneGeometry, PaneGeometryState, };
 pub use pane_identity::PaneIdentity;
 pub use pane_output::{PaneOutputOffset, RustPaneOutputOffset};
 pub use pane_resize::{PaneResizeQueue, PaneResizeStep, PaneSize, RustPaneResizeQueue};
-pub use pane_scrollbar::{PaneScrollbar, PaneScrollbarSlider, };
+pub use pane_scrollbar::{PaneScrollbarSlider, };
 pub use pane_scrollbar_style::{
-    PaneScrollbarStyle, PaneScrollbarStyleState,
-};
+    PaneScrollbarStyle, };
 pub use pane_search::{PaneSearchState, };
-pub use pane_style_cache::{PaneStyleCache, PaneStyleCells, };
+pub use pane_style_cache::{PaneStyleCells, };
 pub use paste::{PasteBufferRef, PasteBufferStore, RustPasteBufferStore};
 pub use progress_bar::*;
 pub use prompt_history::{PromptHistoryStore, PromptHistoryType, RustPromptHistoryStore};
@@ -384,7 +379,6 @@ pub use winlink_trait::Winlink;
 
 pub use options::{OptionsEngine, OptionsRef, RustOptionsEngine, RustOptionsRef};
 
-mod pane_handle;
 mod session_handle;
 
 #[cfg(test)]

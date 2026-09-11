@@ -24,7 +24,6 @@ use crate::log::{fatal, fatalx, log_debug, log_get_level};
 use crate::message_log::{MessageLogStore, with_message_log_mut};
 use crate::socket_address::UnixSocketAddress;
 
-use crate::pane_exit::PaneExitState;
 use crate::pane_identity::PaneIdentity;
 use crate::proc::proc_fork_and_daemon;
 use crate::proc::{proc_clear_signals, proc_loop, proc_set_signals, proc_start, proc_toggle_log};

@@ -16,8 +16,7 @@ use crate::log::log_debug;
 use crate::modes::window_copy_get_current_offset;
 
 use crate::pane_geometry::PaneGeometryState;
-use crate::pane_scrollbar::{PaneScrollbar, PaneScrollbarSlider};
-use crate::pane_scrollbar_style::PaneScrollbarStyleState;
+use crate::pane_scrollbar::{PaneScrollbarSlider};
 use crate::server::client_ref_of;
 use crate::server::server_client_get_pane;
 use crate::server::{marked_pane, server_is_marked};
@@ -1747,7 +1746,7 @@ unsafe fn screen_redraw_draw_pane_scrollbar(
             slider_y,
         );
         if let Some(wp) = pane.get_mut() {
-            wp.set_slider(PaneScrollbarSlider {
+            wp.publish_slider(PaneScrollbarSlider {
                 sb_slider_y: slider_y,
                 sb_slider_h: slider_h,
             });

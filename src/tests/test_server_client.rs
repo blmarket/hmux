@@ -1336,8 +1336,6 @@ fn latest_client_updates_follow_the_current_window_and_tolerate_missing_links() 
 
 #[test]
 fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_panes() {
-    use crate::pane_scrollbar::PaneScrollbar;
-    use crate::pane_scrollbar_style::PaneScrollbarStyleState;
 
     let _guard = globals();
     let mut target = Target::new(40, 12);
@@ -1352,7 +1350,7 @@ fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_pane
                 sy: 6,
             }));
         pane.as_pane_mut()
-            .set_slider(crate::pane_scrollbar::PaneScrollbarSlider { sb_slider_y: 2, sb_slider_h: 2 });
+            .publish_slider(crate::pane_scrollbar::PaneScrollbarSlider { sb_slider_y: 2, sb_slider_h: 2 });
         pane.as_pane_mut()
             .configure_test(crate::window_pane::PaneTestSetup::ScrollbarStyle(crate::pane_scrollbar_style::PaneScrollbarStyle {
                 width: 2,

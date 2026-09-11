@@ -1,7 +1,7 @@
 use super::*;
 use crate::WindowPane;
 use crate::options::OptionsRef;
-use crate::pane_command::{PaneCommand, PaneCommandState};
+use crate::pane_command::{PaneCommand};
 use crate::tests::test_fixtures::{Target, globals, zeroed_pane, zeroed_window};
 use crate::window_timestamps::WindowTimestampState;
 use ::core::ffi::{CStr, c_int};

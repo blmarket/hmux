@@ -62,7 +62,7 @@ unsafe fn cmd_pipe_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         } else {
             (0, 1)
         };
-        let pair = match crate::pane_handle::PanePipePair::open() {
+        let pair = match crate::window_pane::PanePipePair::open() {
             Ok(pair) => pair,
             Err(cause) => {
                 item.error(c"%s", fmt_args![cause.as_c_str()]);

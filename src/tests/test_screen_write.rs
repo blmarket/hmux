@@ -8,8 +8,6 @@ use crate::options::OptionsRef;
 use crate::pane_identity::PaneIdentity;
 use crate::screen::Screen as ScreenBoundary;
 use crate::tests::test_fixtures::{Pane, Screen, Window, ascii, globals};
-use crate::window::{
-};
 use ::core::ffi::c_int;
 
 /// A screen with a writing context over it and no pane behind it, which is

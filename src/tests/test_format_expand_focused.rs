@@ -1,6 +1,5 @@
 use super::*;
 use crate::WindowPane;
-use crate::pane_exit::PaneExitState;
 use crate::tests::test_fixtures::{Clients, Format, Pane, Target, Window, ascii, globals};
 
 fn text(value: CString) -> String {

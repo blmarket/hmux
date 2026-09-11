@@ -12,7 +12,6 @@ use crate::job::{job_event_by_id, job_free, job_resize, job_run, job_transfer};
 
 use crate::log::fatalx;
 
-use crate::pane_command::PaneCommandState;
 use crate::pane_geometry::PaneGeometryState;
 use crate::paste::{PasteBufferStore, with_paste_buffers};
 use crate::screen::{Screen, ScreenModeState};

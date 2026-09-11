@@ -6,7 +6,7 @@ use crate::fmt_args;
 use crate::log::{log_debug, log_get_level};
 use crate::notify::notify_client;
 use crate::options::{OptionsEngine, RustOptionsEngine};
-use crate::pane_control_colours::{PaneControlColourPair, PaneControlColours};
+use crate::pane_control_colours::{PaneControlColourPair};
 
 use crate::paste::{PasteBufferStore, paste_buffer_limit, with_paste_buffers_mut};
 use crate::reactor::Timer;
@@ -3211,21 +3211,7 @@ impl ClientRef {
         report: &[u8],
     ) {
         unsafe {
-            let current = pane.as_pane().colours();
-            let mut foreground = current.control_fg.unwrap_or(-1);
-            let mut background = current.control_bg.unwrap_or(-1);
-            let mut size = 0;
-            tty_keys_colours(
-                self.as_tty_mut(),
-                report,
-                &mut size,
-                &mut foreground,
-                &mut background,
-            );
-            pane.as_pane_mut().set_colours(PaneControlColourPair {
-                control_fg: (foreground != -1).then_some(foreground),
-                control_bg: (background != -1).then_some(background),
-            });
+            pane.as_pane_mut().report_control_colours(self.as_tty_mut(), report);
         }
     }
 

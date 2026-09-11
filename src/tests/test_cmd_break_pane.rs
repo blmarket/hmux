@@ -1,7 +1,6 @@
 use super::*;
 use crate::cmd::cmd_find_from_winlink;
 use crate::options::OptionsRef;
-use crate::pane_command::PaneCommandState;
 use crate::tests::test_fixtures::{
     Item, Pane, Registry, Session, Window, ensure_reactor, globals, link,
 };

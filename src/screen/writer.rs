@@ -791,9 +791,7 @@ mod tests {
     fn pane_writers_borrow_shown_mode_screens_and_keep_base_writes_separate() {
         use crate::options::OptionsRef;
         use crate::tests::test_fixtures::Target;
-        use crate::window::{
-            };
-        let _guard = globals();
+                let _guard = globals();
         let mut target = Target::new(40, 12);
         let state = target.state();
         let mut pane = state.pane_ref().unwrap();

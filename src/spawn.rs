@@ -20,7 +20,6 @@ use crate::log::{log_close, log_debug};
 use crate::names::default_window_name;
 use crate::notify::{notify_session_window, notify_window};
 
-use crate::pane_command::PaneCommandState;
 use crate::proc::proc_clear_signals;
 use crate::resize::default_window_size;
 use crate::screen::Screen;

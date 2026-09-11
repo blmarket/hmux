@@ -1979,10 +1979,6 @@ pub fn ictx_mut(value: &Option<InputCtxRef>) -> RefMut<'_, input_ctx> {
         .borrow_mut()
 }
 
-pub fn ictx_opt(value: &Option<InputCtxRef>) -> Option<InputCtxRef> {
-    value.clone()
-}
-
 unsafe fn input_set_state(
     ictx: &mut input_ctx,
     sctx: &mut RustScreenWriteCtx<'_>,

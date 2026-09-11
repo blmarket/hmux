@@ -4,8 +4,8 @@ use crate::handle_registry::HandleRegistry;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::reactor::Timer;
 use crate::style::{ColourEngine, RustColourEngine, pane_scrollbar_style_from_option, style_ranges_free};
-use crate::window::{window_pane_set_window, window_pane_set_window_ref, PANE_STYLECHANGED, PANE_THEMECHANGED};
-use crate::{WindowPane, PaneIdentity, PaneGeometryState, PaneScrollbarStyleState, PaneSearchState, PaneResizeQueue, PaneCommandState};
+use crate::window::{PANE_STYLECHANGED, PANE_THEMECHANGED};
+use crate::{WindowPane, PaneIdentity, PaneGeometryState, PaneSearchState, PaneResizeQueue};
 use std::cell::Cell;
 use libc::SIGCHLD;
 use std::cell::{RefCell, UnsafeCell};
@@ -294,46 +294,15 @@ impl crate::pane_identity::PaneIdentity for window_pane {
 
 }
 
-
-impl crate::pane_style_cache::PaneStyleCache for window_pane {
-    fn styles(&self) -> PaneStyleCells {
-        PaneStyleCells { cached_gc: self.cached_gc, cached_active_gc: self.cached_active_gc }
-    }
-    unsafe fn refresh_styles(&mut self) -> PaneStyleCells {
-        if self.flags & PANE_STYLECHANGED != 0 { unsafe { render::refresh_styles(self) }; }
-        crate::PaneStyleCache::styles(self)
-    }
-
-}
-
-impl crate::pane_control_colours::PaneControlColours for window_pane {
-    fn colours(&self) -> PaneControlColourPair {
-        PaneControlColourPair { control_fg: self.control_fg, control_bg: self.control_bg }
-    }
-    fn set_colours(&mut self, colours: PaneControlColourPair) {
-        self.control_fg = colours.control_fg; self.control_bg = colours.control_bg;
-    }
-    fn clear(&mut self) { self.control_fg = None; self.control_bg = None; }
-}
-
 impl crate::pane_search::PaneSearchState for window_pane {
     fn query(&self) -> Option<&CStr> { self.searchstr.as_deref() }
     fn is_regex(&self) -> bool { self.searchregex }
     fn set(&mut self, query: &CStr, regex: bool) {
         self.searchstr = Some(query.to_owned()); self.searchregex = regex;
     }
-    fn clear(&mut self) { self.searchstr = None; self.searchregex = false; }
     fn matches(&self, query: &CStr, regex: bool) -> bool {
         self.searchregex == regex && self.searchstr.as_deref() == Some(query)
     }
-}
-
-impl crate::pane_scrollbar::PaneScrollbar for window_pane {
-    fn slider(&self) -> PaneScrollbarSlider {
-        PaneScrollbarSlider { sb_slider_y: self.sb_slider_y, sb_slider_h: self.sb_slider_h }
-    }
-    fn set_slider(&mut self, slider: PaneScrollbarSlider) { self.sb_slider_y = slider.sb_slider_y; self.sb_slider_h = slider.sb_slider_h; }
-    fn clear(&mut self) { self.sb_slider_y = 0; self.sb_slider_h = 0; }
 }
 
 impl crate::pane_geometry::PaneGeometryState for window_pane {
@@ -343,33 +312,31 @@ impl crate::pane_geometry::PaneGeometryState for window_pane {
     fn set_position(&mut self, x: c_int, y: c_int) { self.xoff = x; self.yoff = y; }
 }
 
-impl crate::pane_exit::PaneExitState for window_pane {
-    fn exit_status(&self) -> c_int { self.status }
-    fn death_time(&self) -> timeval { self.dead_time }
-}
-
-impl crate::pane_command::PaneCommandState for window_pane {
-    fn pane_command(&self) -> PaneCommand {
-        PaneCommand { argv: self.argv.clone(), shell: self.shell.clone(), cwd: self.cwd.clone() }
-    }
-    fn set_pane_command(&mut self, command: &PaneCommand) {
-        self.argv.clone_from(&command.argv); self.shell.clone_from(&command.shell); self.cwd.clone_from(&command.cwd);
-    }
-    fn clear_pane_command(&mut self) { self.argv.clear(); self.shell = None; self.cwd = None; }
-}
-
-
-impl crate::pane_activity::PaneActivityState for window_pane {
-    fn activity_point(&self) -> u_int { self.active_point }
-    fn mark_active_at(&mut self, point: u_int) { self.active_point = point; self.name_changed(); }
-}
-
-
-impl crate::pane_scrollbar_style::PaneScrollbarStyleState for window_pane {
-    fn scrollbar_style(&self) -> PaneScrollbarStyle { self.scrollbar_style }
-}
-
 impl window_pane {
+    unsafe fn close_process(&mut self) {
+        if self.fd != -1 {
+            unsafe { utempter_remove_record(self.fd); kill(getpid(), SIGCHLD); }
+            self.event.free();
+            self.event = Stream::NONE;
+            unsafe { close(self.fd) };
+            self.fd = -1;
+        }
+    }
+    unsafe fn parse_output(&mut self) {
+        let input = self.unread_output(&self.offset);
+        let size = input.len();
+        unsafe { self.parse_bytes(input) };
+        let mut offset = self.offset;
+        self.advance_output(&mut offset, size);
+        self.offset = offset;
+    }
+    fn destroy_ready(&self) -> bool {
+        let mut remaining: c_int = 0;
+        if self.pipe_fd != -1 && self.pipe_event.output_len() != 0 { return false; }
+        if unsafe { crate::ffi::ioctl(self.fd, crate::window::FIONREAD as core::ffi::c_ulong, &raw mut remaining) } != -1 && remaining > 0 { return false; }
+        self.flags & crate::window::PANE_EXITED != 0
+    }
+
     fn flags_mut(&mut self) -> &mut c_int { &mut self.flags }
 
     pub(crate) fn new() -> Self {
@@ -390,6 +357,47 @@ impl window_pane {
 }
 
 impl crate::WindowPane for window_pane {
+
+    fn activity_point(&self) -> u_int { self.active_point }
+    fn mark_active_at(&mut self, point: u_int) { self.active_point = point; self.name_changed(); }
+
+    fn pane_command(&self) -> PaneCommand {
+        PaneCommand { argv: self.argv.clone(), shell: self.shell.clone(), cwd: self.cwd.clone() }
+    }
+    fn set_pane_command(&mut self, command: &PaneCommand) {
+        self.argv.clone_from(&command.argv); self.shell.clone_from(&command.shell); self.cwd.clone_from(&command.cwd);
+    }
+
+    fn exit_status(&self) -> c_int { self.status }
+    fn death_time(&self) -> timeval { self.dead_time }
+
+    fn styles(&self) -> PaneStyleCells {
+        PaneStyleCells { cached_gc: self.cached_gc, cached_active_gc: self.cached_active_gc }
+    }
+    unsafe fn refresh_styles(&mut self) -> PaneStyleCells {
+        if self.flags & PANE_STYLECHANGED != 0 { unsafe { render::refresh_styles(self) }; }
+        self.styles()
+    }
+
+    fn colours(&self) -> PaneControlColourPair {
+        PaneControlColourPair { control_fg: self.control_fg, control_bg: self.control_bg }
+    }
+    unsafe fn report_control_colours(&mut self, tty: &mut tty, report: &[u8]) {
+        let mut foreground = self.control_fg.unwrap_or(-1);
+        let mut background = self.control_bg.unwrap_or(-1);
+        let mut size = 0;
+        unsafe { crate::tty::tty_keys_colours(tty, report, &mut size, &mut foreground, &mut background) };
+        self.control_fg = (foreground != -1).then_some(foreground);
+        self.control_bg = (background != -1).then_some(background);
+    }
+
+    fn slider(&self) -> PaneScrollbarSlider {
+        PaneScrollbarSlider { sb_slider_y: self.sb_slider_y, sb_slider_h: self.sb_slider_h }
+    }
+    fn publish_slider(&mut self, slider: PaneScrollbarSlider) { self.sb_slider_y = slider.sb_slider_y; self.sb_slider_h = slider.sb_slider_h; }
+
+    fn scrollbar_style(&self) -> PaneScrollbarStyle { self.scrollbar_style }
+
     fn observation(&self) -> Option<RustWindowPaneWeak> {
         self.observation.clone()
     }
@@ -429,7 +437,7 @@ impl crate::WindowPane for window_pane {
         self.base.set_mode((self.base.mode() & !crate::consts::MODE_CURSOR) | crate::consts::MODE_CRLF);
     }
     fn inherit_window_context(&mut self, window: &WindowRef) {
-        self.set_window_context(Some(window));
+        self.window = Some(window.downgrade());
         self.options_ref().set_parent(Some(&window.options()));
         self.flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
     }
@@ -462,7 +470,6 @@ impl crate::WindowPane for window_pane {
         self.sync_timer.disarm();
         self.base.set_mode(self.base.mode() & !crate::screen::MODE_SYNC);
     }
-
 
     #[cfg(test)]
     unsafe fn configure_test(&mut self, setting: PaneTestSetup) {
@@ -520,15 +527,7 @@ impl crate::WindowPane for window_pane {
         if let Some(context) = self.ictx.take() { unsafe { context.close() }; }
         self.flags &= !(crate::consts::PANE_STATUSREADY | crate::consts::PANE_STATUSDRAWN);
     }
-    unsafe fn close_process(&mut self) {
-        if self.fd != -1 {
-            unsafe { utempter_remove_record(self.fd); kill(getpid(), SIGCHLD); }
-            self.event.free();
-            self.event = Stream::NONE;
-            unsafe { close(self.fd) };
-            self.fd = -1;
-        }
-    }
+
     unsafe fn activate_spawned_process(&mut self, signal_mask: &sigset_t) {
         if self.flags & crate::window::PANE_EMPTY == 0 {
             let name = crate::xmalloc::xasprintf(c"tmux(%lu).%%%u", crate::fmt_args![unsafe { getpid() } as core::ffi::c_long, self.id]);
@@ -559,20 +558,7 @@ impl crate::WindowPane for window_pane {
         position.advance(size.min(self.unread_output_len(position)));
     }
     unsafe fn maintain_output(&mut self) { unsafe { output::maintain_output(self) } }
-    unsafe fn parse_output(&mut self) {
-        let input = self.unread_output(&self.offset);
-        let size = input.len();
-        unsafe { self.parse_bytes(input) };
-        let mut offset = self.offset;
-        self.advance_output(&mut offset, size);
-        self.offset = offset;
-    }
-    fn destroy_ready(&self) -> bool {
-        let mut remaining: c_int = 0;
-        if self.pipe_fd != -1 && self.pipe_event.output_len() != 0 { return false; }
-        if unsafe { crate::ffi::ioctl(self.fd, crate::window::FIONREAD as core::ffi::c_ulong, &raw mut remaining) } != -1 && remaining > 0 { return false; }
-        self.flags & crate::window::PANE_EXITED != 0
-    }
+
     fn record_process_exit(&mut self, status: c_int) -> bool {
         self.status = status;
         self.flags |= crate::consts::PANE_STATUSREADY | crate::window::PANE_EXITED;
@@ -693,6 +679,7 @@ impl crate::WindowPane for window_pane {
         self.modes.first()?.shown_screen()
     }
 
+    #[cfg(test)]
     fn set_window_context(&mut self, window: Option<&WindowRef>) {
         self.window = window.map(WindowRef::downgrade);
     }
@@ -812,7 +799,7 @@ pub(crate) unsafe fn window_pane_create(
         let mut host: [core::ffi::c_char; 65] = [0; 65];
         let wp_box = Box::new(UnsafeCell::new(window_pane::new()));
         let wp = wp_box.get();
-        window_pane_set_window(&mut *wp, Some(w));
+        (*wp).window = crate::window::window_ref_of(w).map(|window| window.downgrade());
         (*wp).options = Some(RustOptionsEngine.create(Some((*w).options_ref())));
         *(*wp).flags_mut() = PANE_STYLECHANGED;
         (*wp).id = fresh2;
@@ -846,7 +833,7 @@ pub(crate) unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
     unsafe {
         let wp = &mut *pane.0.pane.get();
         (*wp).reset_modes();
-        PaneSearchState::clear(wp);
+        wp.searchstr = None; wp.searchregex = false;
         wp.close_process();
         if let Some(ictx) = wp.ictx.take() {
             ictx.close();
@@ -863,11 +850,11 @@ pub(crate) unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
         if let Some(oo) = wp.options.take() {
             RustOptionsEngine.destroy(oo);
         }
-        wp.clear_pane_command();
+        wp.argv.clear(); wp.shell = None; wp.cwd = None;
         RustColourEngine.free_palette(Some(&mut wp.palette));
         style_ranges_free(&mut wp.border_status_line.ranges);
         wp.border_status_line.expanded = None;
-        window_pane_set_window_ref(wp, None);
+        wp.window = None;
         drop(pane.into_pane());
     }
 }
@@ -1003,9 +990,11 @@ fn on_pane_error_owned(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn on_pane(id: u_int, body: impl Fn(&mut dyn WindowPane) + 'static) -> Rc<dyn Fn(Stream)> {
     on_pane_owned(id, move |pane| body(pane))
 }
+#[cfg(test)]
 pub(crate) fn on_pane_error(id: u_int, body: impl Fn(&mut dyn WindowPane) + 'static) -> Rc<dyn Fn(Stream, core::ffi::c_short)> {
     on_pane_error_owned(id, move |pane| body(pane))
 }
@@ -1096,5 +1085,19 @@ enum PaneScreen {
     Mode,
 }
 
+mod handles;
+pub(crate) use handles::{CapturePaneEdge, PaneCapture, PaneDirection};
 mod render;
 mod process_exit;
+
+impl RustWindowPaneRef {
+    /// Records the association while the window owner inserts or swaps owned panes.
+    /// Option/layout finalization remains part of that window transition; this operation
+    /// does not expose association mutation through an ordinary pane capability.
+    /// # Safety
+    /// The caller must own the pane through the window membership transition, exclude
+    /// conflicting pane access, and complete inherited options before dispatching callbacks.
+    pub(crate) unsafe fn record_window_context(&mut self, window: Option<&WindowRef>) {
+        unsafe { (*self.0.pane.get()).window = window.map(WindowRef::downgrade); }
+    }
+}

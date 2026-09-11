@@ -34,7 +34,7 @@ use crate::consts::{
     __INT_MAX__, CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, SHRT_MAX,
 };
 use crate::fmt_args;
-use crate::pane_handle::{CapturePaneEdge, PaneCapture};
+use crate::window_pane::{CapturePaneEdge, PaneCapture};
 use crate::paste::{PasteBufferStore, paste_buffer_limit, with_paste_buffers_mut};
 use crate::types::{RustWindowPaneWeak, size_t, u_char};
 use ::core::ffi::{c_char, c_int, c_longlong};

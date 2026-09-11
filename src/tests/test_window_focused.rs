@@ -976,8 +976,7 @@ fn synchronized_key_and_paste_skip_the_source_and_unavailable_destinations() {
 
 #[test]
 fn directional_selection_retains_the_most_recent_candidate_and_preserves_first_ties() {
-    use crate::pane_activity::PaneActivityState;
-    use crate::pane_geometry::PaneGeometry;
+        use crate::pane_geometry::PaneGeometry;
 
     let _guard = globals();
     let mut window = Window::new(950, "direction", 40, 20);

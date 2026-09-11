@@ -1,10 +1,6 @@
 //! Capabilities used by pane consumers.
 
-use crate::{
-    PaneActivityState, PaneCommandState, PaneControlColours, PaneExitState,
-    PaneGeometryState, PaneIdentity, PaneScrollbar,
-    PaneScrollbarStyleState, PaneSearchState, PaneStyleCache,
-};
+use crate::{PaneGeometryState, PaneIdentity, PaneSearchState};
 
 /// State and engine capabilities used to interact with a window pane.
 ///
@@ -17,18 +13,61 @@ use crate::{
 ///     (pane.pane_id(), pane.geometry())
 /// }
 /// ```
-pub trait WindowPane:
-    PaneIdentity
-    + PaneActivityState
-    + PaneGeometryState
-    + PaneScrollbar
-    + PaneCommandState
-    + PaneExitState
-    + PaneStyleCache
-    + PaneSearchState
-    + PaneControlColours
-    + PaneScrollbarStyleState
-{
+/// ```compile_fail
+/// use tmux_c2rs::WindowPane;
+/// fn change_flags(pane: &mut dyn WindowPane) { pane.flags_mut(); }
+/// ```
+///
+/// ```compile_fail
+/// use tmux_c2rs::WindowPane;
+/// fn replace_parent(pane: &mut dyn WindowPane) { pane.set_window_context(None); }
+/// ```
+pub trait WindowPane: PaneIdentity + PaneGeometryState + PaneSearchState {
+    /// Returns the activity sequence number.
+    fn activity_point(&self) -> core::ffi::c_uint;
+
+    /// Records the pane as active and schedules automatic naming reconsideration.
+    fn mark_active_at(&mut self, point: core::ffi::c_uint);
+
+    /// Returns an owned snapshot of the command metadata.
+    fn pane_command(&self) -> crate::PaneCommand;
+
+    /// Copies a complete replacement command.
+    fn set_pane_command(&mut self, command: &crate::PaneCommand);
+
+    /// Returns the raw wait status.
+    fn exit_status(&self) -> core::ffi::c_int;
+
+    /// Returns the recorded death time.
+    fn death_time(&self) -> crate::types::timeval;
+
+    /// Returns both cached style cells.
+    fn styles(&self) -> crate::PaneStyleCells;
+
+    /// Refreshes both cached styles if invalid, clearing the invalidation before
+    /// evaluating formats so recursive observations retain the existing ordering.
+    /// # Safety
+    /// Exclude conflicting pane access while format callbacks execute.
+    unsafe fn refresh_styles(&mut self) -> crate::PaneStyleCells;
+
+    /// Returns both reported colours.
+    fn colours(&self) -> crate::PaneControlColourPair;
+
+    /// Parses a control-client colour report and publishes its pair. Malformed reports
+    /// retain existing values; terminal query flags follow the parser and no redraw is requested.
+    /// # Safety
+    /// Exclude conflicting pane/TTY access while the report parser reads client identity.
+    unsafe fn report_control_colours(&mut self, tty: &mut crate::types::tty, report: &[u8]);
+
+    /// Returns a copy of the current slider.
+    fn slider(&self) -> crate::PaneScrollbarSlider;
+
+    /// Publishes the rendered slider for subsequent scrollbar hit-testing.
+    fn publish_slider(&mut self, slider: crate::PaneScrollbarSlider);
+
+    /// Returns the cached scrollbar style.
+    fn scrollbar_style(&self) -> crate::PaneScrollbarStyle;
+
     /// Observes this allocation without retaining it. Unowned implementations return None.
     /// The observation retains its allocation identity after destruction and never
     /// resolves another allocation with the same pane ID.
@@ -105,10 +144,6 @@ pub trait WindowPane:
     /// # Safety
     /// Exclude conflicting access while mode teardown callbacks run.
     unsafe fn prepare_respawn(&mut self);
-    /// Removes the session record, closes the PTY stream and descriptor, and marks it closed.
-    /// # Safety
-    /// Exclude conflicting process and stream access.
-    unsafe fn close_process(&mut self);
     /// Records the spawned terminal, clears exit state, restores the pre-fork
     /// signal mask, then installs the stream and parser (also for an empty pane).
     /// # Safety
@@ -152,14 +187,6 @@ pub trait WindowPane:
     /// # Safety
     /// Exclude conflicting pane and client access while retained offsets change.
     unsafe fn maintain_output(&mut self);
-
-    /// Parses newly retained output and advances the pane's parser position.
-    /// # Safety
-    /// Exclude conflicting pane and parser access during input callbacks.
-    unsafe fn parse_output(&mut self);
-
-    /// Tests whether exited process and pipe output have both drained.
-    fn destroy_ready(&self) -> bool;
 
     /// Records a child wait result and exit flags, returning whether output has drained.
     fn record_process_exit(&mut self, status: core::ffi::c_int) -> bool;
@@ -267,7 +294,8 @@ pub trait WindowPane:
     /// Retains the recorded window context, including during pane transfers.
     fn window_context(&self) -> Option<crate::types::WindowRef>;
 
-    /// Records window context without retaining the window allocation.
+    /// Initializes window context only in unit fixtures.
+    #[cfg(test)]
     fn set_window_context(&mut self, window: Option<&crate::types::WindowRef>);
 
     /// Borrows the terminal device name within the pane's fixed storage.

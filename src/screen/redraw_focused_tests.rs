@@ -1,7 +1,6 @@
 use crate::WindowPane;
 use crate::options::OptionsRef;
 use crate::pane_geometry::PaneGeometryState;
-use crate::pane_scrollbar_style::PaneScrollbarStyleState;
 use crate::window_scrollbar::{WindowScrollbarSettings, WindowScrollbarState};
 
 use super::*;
@@ -509,7 +508,7 @@ fn scrollbar_redraw_tracks_owned_panes_and_skips_removed_targets() {
             style.width = 1;
             style.padding = 0;
             pane.configure_test(crate::window_pane::PaneTestSetup::ScrollbarStyle(style));
-            pane.set_slider(PaneScrollbarSlider { sb_slider_y: 99, sb_slider_h: 99 });
+            pane.publish_slider(PaneScrollbarSlider { sb_slider_y: 99, sb_slider_h: 99 });
         }
         let mut ctx = view.ctx();
         ctx.sx = 12;
@@ -526,7 +525,7 @@ fn scrollbar_redraw_tracks_owned_panes_and_skips_removed_targets() {
         panes[0]
             .get_mut()
             .unwrap()
-            .set_slider(PaneScrollbarSlider { sb_slider_y: 7, sb_slider_h: 8 });
+            .publish_slider(PaneScrollbarSlider { sb_slider_y: 7, sb_slider_h: 8 });
         screen_redraw_draw_pane_scrollbars(&mut ctx);
         assert_eq!(panes[0].get().unwrap().slider().sb_slider_y, 7);
         let id = panes[1].id();

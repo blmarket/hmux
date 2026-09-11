@@ -3,8 +3,6 @@ use crate::WindowPane;
 use crate::options::{OptionsEngine, OptionsRef, RustOptionsEngine};
 
 use crate::tests::test_fixtures::{KeyTable, Target, globals, zeroed_client};
-use crate::window::{
-    };
 use core::ffi::c_int;
 
 struct Chain {

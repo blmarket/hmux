@@ -1,3 +1,4 @@
+#[cfg(test)]
 pub(crate) use crate::window_pane::{on_pane, on_pane_error};
 use crate::window_pane::{GLOBAL_PANE_INDEX, window_pane_create, window_pane_destroy};
 #[cfg(test)]
@@ -6,7 +7,6 @@ use crate::args::RustArguments;
 use crate::cmd::cmdq_item;
 use crate::entity_id::next_entity_id;
 use crate::options::{OptionsEngine, RustOptionsEngine};
-use crate::pane_activity::PaneActivityState;
 use crate::window_dimensions::WindowDimensionsState;
 use crate::window_fill_character::{WindowFillCharacterState};
 use crate::window_name::{WindowNameState};
@@ -34,9 +34,7 @@ use crate::pane_geometry::PaneGeometryState;
 use crate::pane_identity::PaneIdentity;
 use crate::pane_output::{PaneOutputOffset, RustPaneOutputOffset};
 use crate::pane_resize::{PaneResizeQueue, PaneSize};
-use crate::pane_scrollbar_style::PaneScrollbarStyleState;
 use crate::pane_search::PaneSearchState;
-use crate::pane_style_cache::PaneStyleCache;
 #[cfg(test)]
 use crate::pane_style_cache::PaneStyleCells;
 use crate::reactor::{Interest, Timer};
@@ -1522,6 +1520,7 @@ pub fn window_pane_find_by_id(id: u_int) -> Option<RustWindowPaneWeak> {
         .flatten()
 }
 
+#[cfg(test)]
 pub(crate) fn window_pane_set_window_ref(
     wp: &mut (impl crate::WindowPane + ?Sized),
     w_ref: Option<&WindowRef>,
@@ -1529,6 +1528,7 @@ pub(crate) fn window_pane_set_window_ref(
     wp.set_window_context(w_ref);
 }
 
+#[cfg(test)]
 pub(crate) fn window_pane_set_window(wp: &mut (impl crate::WindowPane + ?Sized), w: Option<&window>) {
     {
         let w_ref = w.and_then(window_ref_of);
@@ -1999,7 +1999,7 @@ fn window_panes_insert_at(
 ) -> RustWindowPaneWeak {
     let pane = wp.downgrade();
     let window = window_ref_of(w);
-    unsafe { window_pane_set_window_ref(wp.as_pane_mut(), window.as_ref()) };
+    unsafe { wp.record_window_context(window.as_ref()) };
     w.panes.insert(at, wp);
     pane
 }
@@ -2709,8 +2709,6 @@ impl WindowRef {
 
         let mut source_observation = source_pane.clone();
         let mut destination_observation = destination_pane.clone();
-        let src_options = { self.options() };
-        let dst_options = { destination.options() };
         {
             let pane = unsafe { source_observation.get_mut().unwrap() };
             pane.inherit_window_context(destination);
@@ -3551,8 +3549,8 @@ impl WindowRef {
                 let mut src_w = src.as_window_mut();
                 let mut dst_w = dst.as_window_mut();
                 core::mem::swap(&mut src_w.panes[src_at], &mut dst_w.panes[dst_at]);
-                window_pane_set_window_ref(src_w.panes[src_at].as_pane_mut(), Some(&src_context));
-                window_pane_set_window_ref(dst_w.panes[dst_at].as_pane_mut(), Some(&dst_context));
+                src_w.panes[src_at].record_window_context(Some(&src_context));
+                dst_w.panes[dst_at].record_window_context(Some(&dst_context));
             }
         }
     }

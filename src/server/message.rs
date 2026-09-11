@@ -9,7 +9,6 @@ use crate::grid::grid_default_cell;
 
 use crate::notify::{notify_pane, notify_session_window};
 
-use crate::pane_exit::PaneExitState;
 
 use crate::resize::recalculate_sizes;
 use crate::screen::Screen;

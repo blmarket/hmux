@@ -11,7 +11,6 @@ use crate::log::{fatalx, log_debug};
 use crate::notify::notify_window;
 
 use crate::pane_geometry::PaneGeometryState;
-use crate::pane_scrollbar_style::PaneScrollbarStyleState;
 pub use crate::types::*;
 use crate::window::{window_pane_show_scrollbar};
 use ::core::ffi::{CStr, c_int};
