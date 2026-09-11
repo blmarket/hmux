@@ -1,3 +1,4 @@
+use core::ffi::c_int;
 use crate::WindowPane;
 use crate::compat::strtonum;
 use crate::ffi::{__b64_ntop, __b64_pton};
@@ -1875,30 +1876,56 @@ impl input_ctx {
         unsafe { pane.get()?.window_context() }
     }
 
-    /// Runs an operation against the owner's palette.
-    ///
+    /// Resolves a colour using this input context's palette.
     /// # Safety
-    /// The operation must not destroy the owning pane or access its palette
-    /// through another reference while the palette borrow is in use.
-    pub unsafe fn with_palette_mut<R>(
-        &mut self,
-        operation: impl FnOnce(Option<&mut colour_palette>) -> R,
-    ) -> R {
+    /// Prevent conflicting access to the input owner while resolving its palette.
+    pub unsafe fn palette_colour(&self, colour: c_int) -> c_int {
         unsafe {
             match &self.owner_of {
-                InputOwner::Detached => operation(None),
-                InputOwner::Pane(_) => {
-                    let mut pane = self.pane_ref();
-                    operation(
-                        pane.as_mut()
-                            .and_then(|pane| pane.get_mut())
-                            .map(|pane| pane.palette_mut()),
-                    )
+                InputOwner::Detached => -1,
+                InputOwner::Pane(_) => self.pane_ref().and_then(|pane| pane.get().map(|pane| pane.palette_colour(colour))).unwrap_or(-1),
+                InputOwner::Popup(held, _) => held.upgrade().map_or(-1, |held| RustColourEngine.get_palette(Some(&held.borrow().palette), colour)),
+            }
+        }
+    }
+    /// Updates an indexed colour through the input owner's palette engine.
+    /// # Safety
+    /// Prevent conflicting access to the input owner and its palette.
+    pub unsafe fn set_palette_colour(&mut self, index: c_int, colour: c_int) -> c_int {
+        unsafe {
+            match &self.owner_of {
+                InputOwner::Detached => 0,
+                InputOwner::Pane(_) => self.pane_ref().and_then(|mut pane| pane.get_mut().map(|pane| pane.set_palette_colour(index, colour))).unwrap_or(0),
+                InputOwner::Popup(held, _) => held.upgrade().map_or(0, |held| RustColourEngine.set_palette(Some(&mut held.borrow_mut().palette), index, colour)),
+            }
+        }
+    }
+    /// Clears application palette overrides in this input context.
+    /// # Safety
+    /// Prevent conflicting access to the input owner and its palette.
+    pub unsafe fn clear_palette(&mut self) {
+        unsafe {
+            match &self.owner_of {
+                InputOwner::Detached => {},
+                InputOwner::Pane(_) => { if let Some(mut pane) = self.pane_ref() && let Some(pane) = pane.get_mut() { pane.clear_palette(); } }
+                InputOwner::Popup(held, _) => { if let Some(held) = held.upgrade() { RustColourEngine.clear_palette(Some(&mut held.borrow_mut().palette)); } }
+            }
+        }
+    }
+    /// Updates a default colour, preserving the owner's context-specific invalidation.
+    /// # Safety
+    /// Prevent conflicting access to the input owner and its palette.
+    pub unsafe fn set_palette_default(&mut self, foreground: bool, colour: c_int) -> bool {
+        unsafe {
+            match &self.owner_of {
+                InputOwner::Detached => false,
+                InputOwner::Pane(_) => self.pane_ref().and_then(|mut pane| pane.get_mut().map(|pane| pane.set_palette_default(foreground, colour))).is_some(),
+                InputOwner::Popup(held, _) => {
+                    let Some(held) = held.upgrade() else { return false };
+                    let mut popup = held.borrow_mut();
+                    if foreground { popup.palette.fg = colour; } else { popup.palette.bg = colour; }
+                    true
                 }
-                InputOwner::Popup(held, _) => match held.upgrade() {
-                    Some(held) => operation(Some(&mut held.borrow_mut().palette)),
-                    None => operation(None),
-                },
             }
         }
     }
@@ -2347,7 +2374,7 @@ unsafe fn input_esc_dispatch(
         };
         match entry.type_0 {
             9 => {
-                ictx.with_palette_mut(|palette| RustColourEngine.clear_palette(palette));
+                ictx.clear_palette();
                 input_reset_cell(ictx);
                 sctx.reset();
                 sctx.fullredraw();
@@ -4215,9 +4242,7 @@ unsafe fn input_osc_4(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p
                 idx as core::ffi::c_int
             };
             if value == c"?" {
-                let colour = ictx.with_palette_mut(|palette| {
-                    RustColourEngine.get_palette(palette.as_deref(), idx | COLOUR_FLAG_256)
-                });
+                let colour = ictx.palette_colour(idx | COLOUR_FLAG_256);
                 if colour != -1 {
                     input_osc_colour_reply(ictx, 1, 4, idx, colour, ictx.input_end);
                 } else {
@@ -4226,9 +4251,7 @@ unsafe fn input_osc_4(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p
             } else {
                 let colour = RustColourEngine.parse_x11(value);
                 if colour != -1
-                    && ictx.with_palette_mut(|palette| {
-                        RustColourEngine.set_palette(palette, idx, colour)
-                    }) != 0
+                    && ictx.set_palette_colour(idx, colour) != 0
                 {
                     redraw = true;
                 }
@@ -4356,16 +4379,7 @@ unsafe fn input_osc_10(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, 
             log_debug(c"bad OSC 10: %s", fmt_args![p]);
             return;
         }
-        if (*ictx).with_palette_mut(|palette| {
-            let Some(palette) = palette else {
-                return false;
-            };
-            palette.fg = c;
-            true
-        }) {
-            if let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut()) {
-                *wp.flags_mut() |= PANE_STYLECHANGED;
-            }
+        if ictx.set_palette_default(true, c) {
             sctx.fullredraw();
         }
     }
@@ -4376,16 +4390,7 @@ unsafe fn input_osc_110(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>,
         if !p.is_empty() {
             return;
         }
-        if ictx.with_palette_mut(|palette| {
-            let Some(palette) = palette else {
-                return false;
-            };
-            palette.fg = 8 as core::ffi::c_int;
-            true
-        }) {
-            if let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut()) {
-                *wp.flags_mut() |= PANE_STYLECHANGED;
-            }
+        if ictx.set_palette_default(true, 8 as core::ffi::c_int) {
             sctx.fullredraw();
         }
     }
@@ -4414,16 +4419,7 @@ unsafe fn input_osc_11(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, 
             log_debug(c"bad OSC 11: %s", fmt_args![p]);
             return;
         }
-        if (*ictx).with_palette_mut(|palette| {
-            let Some(palette) = palette else {
-                return false;
-            };
-            palette.bg = c;
-            true
-        }) {
-            if let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut()) {
-                *wp.flags_mut() |= PANE_STYLECHANGED | PANE_THEMECHANGED;
-            }
+        if ictx.set_palette_default(false, c) {
             sctx.fullredraw();
         }
     }
@@ -4434,16 +4430,7 @@ unsafe fn input_osc_111(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>,
         if !p.is_empty() {
             return;
         }
-        if ictx.with_palette_mut(|palette| {
-            let Some(palette) = palette else {
-                return false;
-            };
-            palette.bg = 8 as core::ffi::c_int;
-            true
-        }) {
-            if let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut()) {
-                *wp.flags_mut() |= PANE_STYLECHANGED | PANE_THEMECHANGED;
-            }
+        if ictx.set_palette_default(false, 8 as core::ffi::c_int) {
             sctx.fullredraw();
         }
     }
@@ -4623,7 +4610,7 @@ unsafe fn input_osc_52(ictx: &mut input_ctx, p: &CStr) {
 unsafe fn input_osc_104(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &CStr) {
     unsafe {
         if p.is_empty() {
-            ictx.with_palette_mut(|palette| RustColourEngine.clear_palette(palette));
+            ictx.clear_palette();
             sctx.fullredraw();
             return;
         }
@@ -4644,7 +4631,7 @@ unsafe fn input_osc_104(ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>,
                 };
                 idx as core::ffi::c_int
             };
-            if ictx.with_palette_mut(|palette| RustColourEngine.set_palette(palette, idx, -1)) != 0
+            if ictx.set_palette_colour(idx, -1) != 0
             {
                 redraw = true;
             }
@@ -5030,7 +5017,7 @@ mod focused_tests {
             window.add_pane(&mut pane);
             let wp = pane.ptr();
             let ictx = unsafe {
-                RustColourEngine.init_palette((*wp).palette_mut());
+                (*wp).configure_test(crate::window_pane::PaneTestSetup::Palette(RustColourEngine.new_palette()));
                 let context = InputCtxRef::create(
                     InputOwner::Pane((*wp).pane_id()),
                     Stream::NONE,
@@ -5060,7 +5047,7 @@ mod focused_tests {
             unsafe {
                 let wp = self.pane.ptr();
                 (*wp).configure_test(crate::window_pane::PaneTestSetup::Parser(None));
-                RustColourEngine.free_palette(Some((*wp).palette_mut()));
+                (*wp).configure_test(crate::window_pane::PaneTestSetup::Palette(Default::default()));
             }
         }
     }
@@ -5259,9 +5246,7 @@ mod focused_tests {
             }
             for index in [0, 1, 2, 255] {
                 let actual = unsafe {
-                    ctx.ictx.borrow_mut().with_palette_mut(|palette| {
-                        RustColourEngine.get_palette(palette.as_deref(), index | COLOUR_FLAG_256)
-                    })
+                    ctx.ictx.borrow_mut().palette_colour(index | COLOUR_FLAG_256)
                 };
                 let expected = changed
                     .iter()
@@ -5355,9 +5340,7 @@ mod focused_tests {
             }
             for index in [0, 1, 2] {
                 let actual = unsafe {
-                    ctx.ictx.borrow_mut().with_palette_mut(|palette| {
-                        RustColourEngine.get_palette(palette.as_deref(), index | COLOUR_FLAG_256)
-                    })
+                    ctx.ictx.borrow_mut().palette_colour(index | COLOUR_FLAG_256)
                 };
                 let expected = if cleared.contains(&index) {
                     -1

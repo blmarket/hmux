@@ -20,7 +20,7 @@ impl Parser {
         window.add_pane(&mut pane);
         let wp = pane.ptr();
         let ictx = unsafe {
-            RustColourEngine.init_palette((*wp).palette_mut());
+            (*wp).configure_test(crate::window_pane::PaneTestSetup::Palette(RustColourEngine.new_palette()));
             let context = InputCtxRef::create(
                 InputOwner::Pane((*wp).pane_id()),
                 Stream::NONE,
@@ -50,7 +50,7 @@ impl Drop for Parser {
         unsafe {
             let wp = self.pane.ptr();
             (*wp).configure_test(crate::window_pane::PaneTestSetup::Parser(None));
-            RustColourEngine.free_palette(Some((*wp).palette_mut()));
+            (*wp).configure_test(crate::window_pane::PaneTestSetup::Palette(Default::default()));
         }
     }
 }
@@ -150,16 +150,14 @@ fn palette_access_observes_immediate_pane_destruction() {
     unsafe {
         parser
             .borrow_mut()
-            .with_palette_mut(|palette| palette.unwrap().fg = 42);
-        assert_eq!(pane.get().unwrap().palette().fg, 42);
+            .set_palette_default(true, 42);
+        assert_eq!(pane.get().unwrap().palette_snapshot().fg, 42);
     }
     drop(pane);
     assert!(observer.upgrade().is_none());
     assert!(parser.borrow().pane_ref().is_none());
     unsafe {
-        parser
-            .borrow_mut()
-            .with_palette_mut(|palette| assert!(palette.is_none()));
+        assert!(!parser.borrow_mut().set_palette_default(true, 42));
         parser.close();
     }
 }

@@ -301,10 +301,11 @@ impl crate::pane_style_cache::PaneStyleCache for window_pane {
     fn styles(&self) -> PaneStyleCells {
         PaneStyleCells { cached_gc: self.cached_gc, cached_active_gc: self.cached_active_gc }
     }
-    fn set_styles(&mut self, styles: PaneStyleCells) {
-        self.cached_gc = styles.cached_gc;
-        self.cached_active_gc = styles.cached_active_gc;
+    unsafe fn refresh_styles(&mut self) -> PaneStyleCells {
+        if self.flags & PANE_STYLECHANGED != 0 { unsafe { render::refresh_styles(self) }; }
+        crate::PaneStyleCache::styles(self)
     }
+
 }
 
 impl crate::pane_border_cache::PaneBorderCache for window_pane {
@@ -457,6 +458,8 @@ impl crate::WindowPane for window_pane {
     unsafe fn configure_test(&mut self, setting: PaneTestSetup) {
         match setting {
             PaneTestSetup::Descriptor(fd) => self.fd = fd,
+            PaneTestSetup::Styles(styles) => { self.cached_gc = styles.cached_gc; self.cached_active_gc = styles.cached_active_gc; }
+            PaneTestSetup::Palette(palette) => self.palette = palette,
             PaneTestSetup::Geometry(rect) => { self.xoff = rect.xoff; self.yoff = rect.yoff; self.sx = rect.sx; self.sy = rect.sy; }
             PaneTestSetup::Size(size) => { self.sx = size.width; self.sy = size.height; }
             PaneTestSetup::Options(options) => {
@@ -559,13 +562,15 @@ impl crate::WindowPane for window_pane {
         if unsafe { crate::ffi::ioctl(self.fd, crate::window::FIONREAD as core::ffi::c_ulong, &raw mut remaining) } != -1 && remaining > 0 { return false; }
         self.flags & crate::window::PANE_EXITED != 0
     }
-    fn palette(&self) -> &crate::types::colour_palette {
-        &self.palette
+    fn palette_snapshot(&self) -> colour_palette { self.palette.clone() }
+    fn palette_colour(&self, colour: c_int) -> c_int { RustColourEngine.get_palette(Some(&self.palette), colour) }
+    fn set_palette_colour(&mut self, index: c_int, colour: c_int) -> c_int { RustColourEngine.set_palette(Some(&mut self.palette), index, colour) }
+    fn clear_palette(&mut self) { RustColourEngine.clear_palette(Some(&mut self.palette)); }
+    fn reload_palette(&mut self) { self.options_ref().clone().load_pane_colours(Some(&mut self.palette)); }
+    fn set_palette_default(&mut self, foreground: bool, colour: c_int) {
+        if foreground { self.palette.fg = colour; } else { self.palette.bg = colour; self.flags |= crate::window::PANE_THEMECHANGED; }
+        self.flags |= PANE_STYLECHANGED;
     }
-    fn palette_mut(&mut self) -> &mut crate::types::colour_palette {
-        &mut self.palette
-    }
-
     fn status_line_width(&self) -> usize { self.status_size }
     fn publish_border_status(&mut self, width: usize, screen: crate::screen::RustScreen,
         ranges: style_ranges, expanded: std::ffi::CString) -> bool {
@@ -768,8 +773,8 @@ pub(crate) unsafe fn window_pane_create(
         (*wp).pipe_fd = -(1 as core::ffi::c_int);
         let scrollbar_style = pane_scrollbar_style_from_option((*wp).options_ref());
         (*wp).set_scrollbar_style(scrollbar_style);
-        RustColourEngine.init_palette((*wp).palette_mut());
-        ((*wp).options_ref()).load_pane_colours(Some((*wp).palette_mut()));
+        RustColourEngine.init_palette(&mut (*wp).palette);
+        (*wp).reload_palette();
         *(*wp).base_mut() = RustScreen::new_with_server_options(sx, sy, hlimit);
         (*wp).screen = PaneScreen::Base;
         (*wp).update_default_cursor();
@@ -811,7 +816,7 @@ pub(crate) unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
             RustOptionsEngine.destroy(oo);
         }
         wp.clear_pane_command();
-        RustColourEngine.free_palette(Some(wp.palette_mut()));
+        RustColourEngine.free_palette(Some(&mut wp.palette));
         style_ranges_free(&mut wp.border_status_line.ranges);
         wp.border_status_line.expanded = None;
         window_pane_set_window_ref(wp, None);
@@ -970,6 +975,8 @@ pub(crate) use io::send_line;
 #[cfg(test)]
 pub enum PaneTestSetup {
     Descriptor(c_int),
+    Styles(PaneStyleCells),
+    Palette(colour_palette),
     Geometry(PaneGeometry),
     Size(PaneSize),
     Options(Option<RustOptionsRef>),
@@ -1039,3 +1046,5 @@ enum PaneScreen {
     /// The screen the mode at the front of the pane's mode list draws on.
     Mode,
 }
+
+mod render;

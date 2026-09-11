@@ -1632,7 +1632,7 @@ unsafe fn screen_redraw_draw_pane(ctx: &mut screen_redraw_ctx, pane: &mut RustWi
                         range.px,
                         py,
                         &defaults,
-                        Some(wp.palette()),
+                        Some(&wp.palette_snapshot()),
                     );
                 }
                 k += 1;

@@ -14,30 +14,9 @@ pub trait PaneStyleCache {
     /// Returns both cached style cells.
     fn styles(&self) -> PaneStyleCells;
 
-    /// Replaces both cached style cells.
-    fn set_styles(&mut self, styles: PaneStyleCells);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pair_is_replaced_together() {
-        let mut cache = crate::tests::test_fixtures::PaneAllocation::default();
-        assert_eq!(cache.styles().cached_gc.data.data[0], 0);
-        assert_eq!(cache.styles().cached_active_gc.data.data[0], 0);
-        cache.set_styles(PaneStyleCells {
-            cached_gc: grid_cell {
-                fg: 3,
-                ..Default::default()
-            },
-            cached_active_gc: grid_cell {
-                bg: 4,
-                ..Default::default()
-            },
-        });
-        assert_eq!(cache.styles().cached_gc.fg, 3);
-        assert_eq!(cache.styles().cached_active_gc.bg, 4);
-    }
+    /// Refreshes both cached styles if invalid, clearing the invalidation before
+    /// evaluating formats so recursive observations retain the existing ordering.
+    /// # Safety
+    /// Exclude conflicting pane access while format callbacks execute.
+    unsafe fn refresh_styles(&mut self) -> PaneStyleCells;
 }

@@ -1309,8 +1309,7 @@ pub(super) unsafe fn options_push_changes(name: &CStr) {
         if name == c"pane-colours" {
             for mut pane in pane_walk() {
                 let wp = pane.get_mut().expect("registered pane");
-                let options = wp.options_ref().clone();
-                options_load_pane_colours(&options, Some(wp.palette_mut()));
+                wp.reload_palette();
             }
         }
         if name == c"pane-border-status"

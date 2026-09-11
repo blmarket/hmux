@@ -136,11 +136,21 @@ pub trait WindowPane:
     /// Tests whether exited process and pipe output have both drained.
     fn destroy_ready(&self) -> bool;
 
-    /// Borrows the pane's colour palette.
-    fn palette(&self) -> &crate::types::colour_palette;
-
-    /// Mutably borrows the pane's colour palette.
-    fn palette_mut(&mut self) -> &mut crate::types::colour_palette;
+    /// Copies the palette for a rendering context without sharing mutable storage.
+    fn palette_snapshot(&self) -> crate::types::colour_palette;
+    /// Resolves a colour through the chosen palette engine.
+    fn palette_colour(&self, colour: core::ffi::c_int) -> core::ffi::c_int;
+    /// Updates an indexed palette entry, reporting the engine's change result.
+    /// Drawing-context redraw policy remains with the caller; no pane flags change.
+    fn set_palette_colour(&mut self, index: core::ffi::c_int, colour: core::ffi::c_int) -> core::ffi::c_int;
+    /// Clears application palette overrides with the chosen engine's reset semantics.
+    /// Drawing-context redraw policy remains with the caller; no pane flags change.
+    fn clear_palette(&mut self);
+    /// Reloads palette defaults from the pane's current options without changing flags;
+    /// option and window transitions schedule their own redraws.
+    fn reload_palette(&mut self);
+    /// Updates a default colour and marks style/theme refresh as appropriate.
+    fn set_palette_default(&mut self, foreground: bool, colour: core::ffi::c_int);
 
     /// Returns the displayed width of the cached border status.
     fn status_line_width(&self) -> usize;

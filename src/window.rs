@@ -1104,15 +1104,6 @@ pub(crate) fn window_active_pane(w: &window) -> Option<RustWindowPaneWeak> {
         .cloned()
 }
 
-fn window_pane_get_palette(
-    wp: Option<&(impl crate::WindowPane + ?Sized)>,
-    c: core::ffi::c_int,
-) -> core::ffi::c_int {
-    let Some(wp) = wp else {
-        return -(1 as core::ffi::c_int);
-    };
-    RustColourEngine.get_palette(Some(wp.palette()), c)
-}
 pub unsafe fn window_redraw_active_switch(w: &mut window, selected: &RustWindowPaneWeak) {
     unsafe {
         if w.active.as_ref() == Some(selected)
@@ -1134,10 +1125,10 @@ pub unsafe fn window_redraw_active_switch(w: &mut window, selected: &RustWindowP
             let normal = &styles.cached_gc;
             let active = &styles.cached_active_gc;
             if grid_cells_look_equal(normal, active) == 0
-                || window_pane_get_palette(Some(pane), normal.fg)
-                    != window_pane_get_palette(Some(pane), active.fg)
-                || window_pane_get_palette(Some(pane), normal.bg)
-                    != window_pane_get_palette(Some(pane), active.bg)
+                || pane.palette_colour(normal.fg)
+                    != pane.palette_colour(active.fg)
+                || pane.palette_colour(normal.bg)
+                    != pane.palette_colour(active.bg)
                 || raise
             {
                 *pane.flags_mut() |= PANE_REDRAW;
@@ -2654,8 +2645,7 @@ impl WindowRef {
             self.assign_pane_layout(&slot, source_pane, 0);
             let mut moved = source_pane.clone();
             let pane = moved.get_mut().expect("the moved pane is still present");
-            let options = pane.options_ref().clone();
-            options.load_pane_colours(Some(pane.palette_mut()));
+            pane.reload_palette();
             Ok(())
         }
     }
@@ -2721,8 +2711,7 @@ impl WindowRef {
             let mut moved = pane.clone();
             let pane = moved.get_mut().expect("the moved pane is present");
             *pane.flags_mut() |= PANE_CHANGED;
-            let options = pane.options_ref().clone();
-            options.load_pane_colours(Some(pane.palette_mut()));
+            pane.reload_palette();
         }
     }
 
@@ -2823,8 +2812,7 @@ impl WindowRef {
             destination.forget_last_pane(destination_pane);
             for mut observed in [source_pane.clone(), destination_pane.clone()] {
                 let pane = observed.get_mut().expect("the exchanged pane is present");
-                let options = pane.options_ref().clone();
-                options.load_pane_colours(Some(pane.palette_mut()));
+                pane.reload_palette();
             }
         }
     }

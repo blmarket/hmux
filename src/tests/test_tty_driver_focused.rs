@@ -673,7 +673,7 @@ fn default_colours_follow_active_pane_identity_and_per_colour_fallbacks() {
         for pane in &mut panes {
             let wp = pane.get_mut().unwrap();
             *wp.flags_mut() &= !PANE_STYLECHANGED;
-            wp.set_styles(PaneStyleCells {
+            wp.configure_test(crate::window_pane::PaneTestSetup::Styles(PaneStyleCells {
                 cached_gc: grid_cell {
                     fg: 1,
                     bg: 2,
@@ -684,7 +684,7 @@ fn default_colours_follow_active_pane_identity_and_per_colour_fallbacks() {
                     bg: 8,
                     ..grid_default_cell
                 },
-            });
+            }));
         }
         let mut colours = grid_default_cell;
         tty_default_colours(&mut colours, panes[0].get_mut().unwrap());
@@ -699,7 +699,7 @@ fn default_colours_follow_active_pane_identity_and_per_colour_fallbacks() {
                 .find(|pane| pane.pane_id() == panes[1].id())
                 .map(|pane| pane.downgrade());
         }
-        panes[1].get_mut().unwrap().set_styles(PaneStyleCells {
+        panes[1].get_mut().unwrap().configure_test(crate::window_pane::PaneTestSetup::Styles(PaneStyleCells {
             cached_gc: grid_cell {
                 fg: 1,
                 bg: 2,
@@ -710,7 +710,7 @@ fn default_colours_follow_active_pane_identity_and_per_colour_fallbacks() {
                 bg: 4,
                 ..grid_default_cell
             },
-        });
+        }));
         tty_default_colours(&mut colours, panes[1].get_mut().unwrap());
         assert_eq!((colours.fg, colours.bg), (1, 4));
         tty_default_colours(&mut colours, panes[0].get_mut().unwrap());

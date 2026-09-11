@@ -532,7 +532,7 @@ unsafe fn screen_write_initctx(
             ttyctx.redraw_cb = Some(screen_write_redraw_cb);
             if let Some(pane) = ctx.pane_mut() {
                 tty_default_colours(&mut ttyctx.defaults, pane);
-                ttyctx.palette = Some(pane.palette().clone());
+                ttyctx.palette = Some(pane.palette_snapshot());
                 ttyctx.set_client_cb = Some(screen_write_set_client_cb);
                 ttyctx.arg = TtyCtxArg::Pane(
                     ctx.wp

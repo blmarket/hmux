@@ -13,7 +13,7 @@ impl RustWindowPaneWeak {
                 return false;
             };
             let pane = unsafe { &mut *owner.0.pane.get() };
-            crate::style::RustColourEngine.clear_palette(Some(pane.palette_mut()));
+            pane.clear_palette();
             pane.ictx.clone()
         };
         unsafe {

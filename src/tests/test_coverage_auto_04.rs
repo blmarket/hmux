@@ -85,7 +85,7 @@ impl Ctx {
         window.add_pane(&mut pane);
         let wp = pane.ptr();
         let ictx = unsafe {
-            RustColourEngine.init_palette((*wp).palette_mut());
+            (*wp).configure_test(crate::window_pane::PaneTestSetup::Palette(RustColourEngine.new_palette()));
             let ctx = InputCtxRef::create(
                 crate::input::InputOwner::Pane((*wp).pane_id()),
                 Stream::NONE,
@@ -111,7 +111,7 @@ impl Drop for Ctx {
         unsafe {
             let wp = self.wp();
             (*wp).configure_test(crate::window_pane::PaneTestSetup::Parser(None));
-            RustColourEngine.free_palette(Some((*wp).palette_mut()));
+            (*wp).configure_test(crate::window_pane::PaneTestSetup::Palette(Default::default()));
         }
     }
 }

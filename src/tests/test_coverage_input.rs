@@ -82,7 +82,7 @@ impl Parser {
         window.add_pane(&mut pane);
         let wp = pane.ptr();
         let ictx = unsafe {
-            RustColourEngine.init_palette((*wp).palette_mut());
+            (*wp).configure_test(crate::window_pane::PaneTestSetup::Palette(RustColourEngine.new_palette()));
             let context = InputCtxRef::create(
                 crate::input::InputOwner::Pane((*wp).pane_id()),
                 bev.as_ref().map_or(Stream::NONE, |b| b.ptr()),
@@ -171,7 +171,7 @@ impl Drop for Parser {
     fn drop(&mut self) {
         unsafe {
             (*self.wp()).configure_test(crate::window_pane::PaneTestSetup::Parser(None));
-            RustColourEngine.free_palette(Some((*self.wp()).palette_mut()));
+            (*self.wp()).configure_test(crate::window_pane::PaneTestSetup::Palette(Default::default()));
         }
     }
 }
@@ -274,11 +274,11 @@ fn full_reset_empties_the_screen_and_the_palette() {
     let mut p = Parser::new();
     let red = RustColourEngine.parse_x11(c"red");
     p.feed_str("junk\x1b]10;red\x07");
-    assert_eq!(unsafe { (*p.wp()).palette().fg }, red);
+    assert_eq!(unsafe { (*p.wp()).palette_snapshot().fg }, red);
     p.feed_str("\x1bc");
     assert_eq!(p.lines()[0], "");
     assert_eq!(p.cursor(), (0, 0));
-    assert_eq!(unsafe { (*p.wp()).palette().fg }, 8);
+    assert_eq!(unsafe { (*p.wp()).palette_snapshot().fg }, 8);
 }
 
 #[test]
@@ -598,11 +598,11 @@ fn osc_colour_settings_land_in_the_pane_palette() {
     let red = RustColourEngine.parse_x11(c"red");
     let blue = RustColourEngine.parse_x11(c"blue");
     p.feed_str("\x1b]10;red\x07\x1b]11;blue\x07");
-    assert_eq!(unsafe { (*p.wp()).palette().fg }, red);
-    assert_eq!(unsafe { (*p.wp()).palette().bg }, blue);
+    assert_eq!(unsafe { (*p.wp()).palette_snapshot().fg }, red);
+    assert_eq!(unsafe { (*p.wp()).palette_snapshot().bg }, blue);
     p.feed_str("\x1b]110;\x07\x1b]111;\x07");
-    assert_eq!(unsafe { (*p.wp()).palette().fg }, 8);
-    assert_eq!(unsafe { (*p.wp()).palette().bg }, 8);
+    assert_eq!(unsafe { (*p.wp()).palette_snapshot().fg }, 8);
+    assert_eq!(unsafe { (*p.wp()).palette_snapshot().bg }, 8);
 }
 
 #[test]
@@ -611,7 +611,7 @@ fn osc_palette_entries_are_settable_queryable_and_resettable() {
     let red = RustColourEngine.parse_x11(c"red");
     p.feed_str("\x1b]4;1;red\x07");
     assert_eq!(
-        unsafe { RustColourEngine.get_palette(Some((*p.wp()).palette()), COLOUR_FLAG_256 | 1) },
+        unsafe { (*p.wp()).palette_colour(COLOUR_FLAG_256 | 1) },
         red
     );
     p.feed_str("\x1b]4;1;?\x1b\\");
@@ -620,7 +620,7 @@ fn osc_palette_entries_are_settable_queryable_and_resettable() {
     assert_eq!(p.replies(), b"");
     p.feed_str("\x1b]104;1\x07");
     assert_eq!(
-        unsafe { RustColourEngine.get_palette(Some((*p.wp()).palette()), COLOUR_FLAG_256 | 1) },
+        unsafe { (*p.wp()).palette_colour(COLOUR_FLAG_256 | 1) },
         -1
     );
 }

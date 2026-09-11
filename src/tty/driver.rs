@@ -3220,39 +3220,10 @@ fn tty_try_colour(
         -(1 as core::ffi::c_int)
     }
 }
-fn tty_window_default_style(gc: &mut grid_cell, wp: &(impl crate::WindowPane + ?Sized)) {
-    *gc = grid_default_cell;
-    gc.fg = wp.palette().fg;
-    gc.bg = wp.palette().bg;
-}
-unsafe fn tty_style_changed(wp: &mut (impl crate::WindowPane + ?Sized)) {
-    unsafe {
-        let oo = wp.options_ref().clone();
-        log_debug(c"%%%u: style changed", fmt_args![wp.pane_id()]);
-        *wp.flags_mut() &= !PANE_STYLECHANGED;
-        let mut ft = format_create(
-            None,
-            None,
-            (FORMAT_PANE | wp.pane_id()) as core::ffi::c_int,
-            FORMAT_NOJOBS,
-        );
-        format_defaults(&mut ft, None, None, None, Some(wp));
-        let mut active = grid_default_cell;
-        tty_window_default_style(&mut active, wp);
-        style_add(&mut active, &oo, c"window-active-style", Some(&mut ft));
-        let mut normal = grid_default_cell;
-        tty_window_default_style(&mut normal, wp);
-        style_add(&mut normal, &oo, c"window-style", Some(&mut ft));
-        wp.set_styles(PaneStyleCells { cached_gc: normal, cached_active_gc: active });
-    }
-}
 pub unsafe fn tty_default_colours(gc: &mut grid_cell, wp: &mut (impl crate::WindowPane + ?Sized)) {
     unsafe {
-        if *wp.flags() & PANE_STYLECHANGED != 0 {
-            tty_style_changed(wp);
-        }
+        let styles = wp.refresh_styles();
         *gc = grid_default_cell;
-        let styles = wp.styles();
         let active = wp.window_context().is_some_and(|window| {
             window
                 .active_pane()
