@@ -557,7 +557,7 @@ fn registered_target_defaults_expand_dense_session_window_and_pane_callback_matr
         assert_eq!(fields[14], b"%0");
 
         *(*wp).flags_mut() |= crate::window::PANE_EXITED | PANE_UNSEENCHANGES;
-        (*wp).set_exit_status(7);
+        (*wp).record_process_exit(7);
         (*wp).base_mut().set_cursor(4, 3);
         let changed = format_expand(
             &mut ft,

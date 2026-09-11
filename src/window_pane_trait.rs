@@ -134,6 +134,14 @@ pub trait WindowPane:
     /// Tests whether exited process and pipe output have both drained.
     fn destroy_ready(&self) -> bool;
 
+    /// Records a child wait result and exit flags, returning whether output has drained.
+    fn record_process_exit(&mut self, status: core::ffi::c_int) -> bool;
+    /// Closes the process and applies remain-on-exit policy, rendering retained status
+    /// once. Returns true when the window should remove this pane.
+    /// # Safety
+    /// Exclude conflicting pane access during close, notifications and rendering.
+    unsafe fn finish_process(&mut self, notify: bool) -> bool;
+
     /// Derives and acknowledges the current terminal theme, clearing pending updates.
     /// # Safety
     /// Exclude conflicting pane/client access during style and theme evaluation.

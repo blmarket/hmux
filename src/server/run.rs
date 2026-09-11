@@ -679,12 +679,7 @@ fn server_child_exited(pid: pid_t, status: core::ffi::c_int) {
                 continue;
             };
             let wp = pane.as_pane_mut();
-            let pane_id = wp.pane_id();
-            wp.set_exit_status(status);
-            *wp.flags_mut() |= PANE_STATUSREADY;
-            log_debug(c"%%%u exited", fmt_args![pane_id]);
-            *wp.flags_mut() |= PANE_EXITED;
-            if wp.destroy_ready() {
+            if wp.record_process_exit(status) {
                 let pane = (wp).observation().expect("the pane is owned");
                 drop(window);
                 server_destroy_pane(&pane, 1);

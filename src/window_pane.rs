@@ -345,9 +345,7 @@ impl crate::pane_geometry::PaneGeometryState for window_pane {
 
 impl crate::pane_exit::PaneExitState for window_pane {
     fn exit_status(&self) -> c_int { self.status }
-    fn set_exit_status(&mut self, status: c_int) { self.status = status; }
     fn death_time(&self) -> timeval { self.dead_time }
-    fn set_death_time(&mut self, time: timeval) { self.dead_time = time; }
 }
 
 impl crate::pane_command::PaneCommandState for window_pane {
@@ -540,6 +538,16 @@ impl crate::WindowPane for window_pane {
         if unsafe { crate::ffi::ioctl(self.fd, crate::window::FIONREAD as core::ffi::c_ulong, &raw mut remaining) } != -1 && remaining > 0 { return false; }
         self.flags & crate::window::PANE_EXITED != 0
     }
+    fn record_process_exit(&mut self, status: c_int) -> bool {
+        self.status = status;
+        self.flags |= crate::consts::PANE_STATUSREADY | crate::window::PANE_EXITED;
+        log_debug(c"%%%u exited", fmt_args![self.id]);
+        self.destroy_ready()
+    }
+    unsafe fn finish_process(&mut self, notify: bool) -> bool {
+        unsafe { process_exit::finish_process(self, notify) }
+    }
+
     unsafe fn acknowledge_theme(&mut self) -> client_theme {
         let theme = unsafe { crate::window::window_pane_get_theme(Some(self)) };
         self.last_theme = theme;
@@ -1043,3 +1051,4 @@ enum PaneScreen {
 }
 
 mod render;
+mod process_exit;
