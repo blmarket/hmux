@@ -407,12 +407,12 @@ fn borrowed_stored_lines_preserve_the_mutable_accessors_storage_bounds() {
     grid_get_line(&mut grid, 2).flags = GRID_LINE_WRAPPED;
     assert!(grid_peek_line(&grid, 2).is_none());
     assert_eq!(
-        crate::grid::grid_get_line_ref(&grid, 2).flags,
+        grid_get_line_ref(&grid, 2).flags,
         GRID_LINE_WRAPPED
     );
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::grid::grid_get_line_ref(&grid, 3)
+            grid_get_line_ref(&grid, 3)
         }))
         .is_err()
     );

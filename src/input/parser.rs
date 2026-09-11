@@ -5,7 +5,7 @@ use crate::ffi::{__b64_ntop, __b64_pton};
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc};
 use crate::grid::{Grid, Hyperlinks, grid_cells_look_equal, grid_set_tab};
-use crate::grid::{grid_default_cell, grid_get_line};
+use crate::grid::{grid_default_cell};
 use crate::log::{fatalx, log_debug, log_get_level};
 use crate::notify::notify_pane;
 use crate::options::{OptionsEngine, RustOptionsEngine};
@@ -4464,21 +4464,11 @@ fn input_osc_133(_ictx: &mut input_ctx, sctx: &mut RustScreenWriteCtx<'_>, p: &C
     {
         let screen = sctx.screen_mut();
         let cy = screen.cursor().1;
-        let gd = RustScreen::grid_mut(screen);
-        let line = cy.wrapping_add(gd.hsize);
-        if line > gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int) {
-            return;
-        }
-        let gl = grid_get_line(&mut *gd, line);
         match p.to_bytes().first().copied() {
-            Some(b'A') => {
-                gl.flags |= GRID_LINE_START_PROMPT;
-            }
-            Some(b'C') => {
-                gl.flags |= GRID_LINE_START_OUTPUT;
-            }
-            _ => {}
-        };
+            Some(b'A') => RustScreen::grid_mut(screen).mark_prompt(cy, false),
+            Some(b'C') => RustScreen::grid_mut(screen).mark_prompt(cy, true),
+            _ => {},
+        }
     }
 }
 unsafe fn input_osc_52_reply(ictx: &mut input_ctx, clip: core::ffi::c_char) {

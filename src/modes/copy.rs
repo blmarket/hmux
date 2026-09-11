@@ -14,7 +14,7 @@ use crate::format::{
     format_grid_line, format_grid_word, format_single,
 };
 use crate::grid::{
-    Grid, GridReader, RustGridReader, grid_default_cell, grid_get_line_ref, grid_peek_line,
+    Grid, GridReader, RustGridReader, grid_default_cell, grid_line_info, grid_peek_info,
 };
 use crate::input::InputOwner;
 use crate::job::job_run;
@@ -228,7 +228,7 @@ fn window_copy_clone_screen(
 ) -> (Box<RustScreen>, u_int, u_int) {
     {
         let mut dst: Box<RustScreen>;
-        let mut gl: Option<&grid_line>;
+        let mut gl: Option<crate::grid::GridLineInfo>;
         let mut sy: u_int;
         let mut wx: u_int = 0;
         let mut wy: u_int = 0;
@@ -238,7 +238,7 @@ fn window_copy_clone_screen(
             .wrapping_add(RustScreen::grid(src).sy);
         if trim != 0 {
             while sy > RustScreen::grid(src).hsize {
-                gl = grid_peek_line(RustScreen::grid(src), sy.wrapping_sub(1 as u_int));
+                gl = grid_peek_info(RustScreen::grid(src), sy.wrapping_sub(1 as u_int));
                 if !gl.is_some_and(|gl| gl.cellused == 0 as u_int) {
                     break;
                 }
@@ -1064,7 +1064,7 @@ pub(crate) fn window_copy_formats(wme: &window_mode_entry, ft: &mut format_tree)
         .hsize;
         let position: u_int;
         let limit: u_int;
-        let gl = grid_get_line_ref(
+        let gl = grid_line_info(
             RustScreen::grid(
                 data.backing
                     .as_deref()
@@ -2274,11 +2274,11 @@ unsafe fn window_copy_cmd_next_matching_bracket(
                         if py == yy {
                             break;
                         }
-                        let gl = grid_get_line_ref(RustScreen::grid(s), py);
+                        let gl = grid_line_info(RustScreen::grid(s), py);
                         if !gl.flags & GRID_LINE_WRAPPED != 0 {
                             break;
                         }
-                        if (*gl).cellsize() > RustScreen::grid(s).sx {
+                        if gl.cells > RustScreen::grid(s).sx {
                             break;
                         }
                         px = 0 as u_int;
@@ -2808,7 +2808,7 @@ unsafe fn window_copy_cmd_select_word(
         nextx = px.wrapping_add(1 as u_int);
         nexty = py;
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
-        if grid_get_line_ref(
+        if grid_line_info(
             RustScreen::grid(
                 data.backing
                     .as_deref()
@@ -5074,7 +5074,7 @@ fn window_copy_search_lr(
                 px = ax.wrapping_add(bx).wrapping_add(padding);
                 pywrap = py;
                 while px >= gd.sx && pywrap < endline {
-                    let gl = grid_peek_line(gd, pywrap).expect("a line inside the grid");
+                    let gl = grid_peek_info(gd, pywrap).expect("a line inside the grid");
                     if !gl.flags & GRID_LINE_WRAPPED != 0 {
                         break;
                     }
@@ -5130,7 +5130,7 @@ fn window_copy_search_rl(
                 .wrapping_add(padding);
             pywrap = py;
             while px >= gd.sx && pywrap < endline {
-                let gl = grid_peek_line(gd, pywrap).expect("a line inside the grid");
+                let gl = grid_peek_info(gd, pywrap).expect("a line inside the grid");
                 if !gl.flags & GRID_LINE_WRAPPED != 0 {
                     break;
                 }
@@ -5186,7 +5186,7 @@ unsafe fn window_copy_search_lr_regex(
         let endline: u_int = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
         pywrap = py;
         while pywrap < endline && len < WINDOW_COPY_SEARCH_MAX_LINE as u_int {
-            let gl = grid_get_line_ref(gd, pywrap);
+            let gl = grid_line_info(gd, pywrap);
             if !gl.flags & GRID_LINE_WRAPPED != 0 {
                 break;
             }
@@ -5251,7 +5251,7 @@ unsafe fn window_copy_search_rl_regex(
         let endline: u_int = gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int);
         pywrap = py;
         while pywrap < endline && len < WINDOW_COPY_SEARCH_MAX_LINE as u_int {
-            let gl = grid_get_line_ref(gd, pywrap);
+            let gl = grid_line_info(gd, pywrap);
             if !gl.flags & GRID_LINE_WRAPPED != 0 {
                 break;
             }
@@ -5348,7 +5348,7 @@ unsafe fn window_copy_stringify(
     unsafe {
         let mut ax: u_int;
 
-        let gl: Option<&grid_line> = grid_peek_line(gd, py);
+        let gl: Option<crate::grid::GridLineInfo> = grid_peek_info(gd, py);
         if gl.is_none() {
             return;
         }
@@ -5375,12 +5375,12 @@ unsafe fn window_copy_cstrtocellpos(
         let mut pywrap: u_int;
         let mut pos: u_int;
         let mut match_0: core::ffi::c_int;
-        let mut gl: Option<&grid_line>;
+        let mut gl: Option<crate::grid::GridLineInfo>;
         let mut cells: Vec<window_copy_search_cell> = Vec::with_capacity(ncells as usize);
         cell = 0 as u_int;
         px = *ppx;
         pywrap = *ppy;
-        gl = grid_peek_line(gd, pywrap);
+        gl = grid_peek_info(gd, pywrap);
         if gl.is_none() {
             return;
         }
@@ -5395,7 +5395,7 @@ unsafe fn window_copy_cstrtocellpos(
             }
             px = 0 as u_int;
             pywrap = pywrap.wrapping_add(1);
-            gl = grid_peek_line(gd, pywrap);
+            gl = grid_peek_info(gd, pywrap);
             if gl.is_none() {
                 break;
             }
@@ -5534,7 +5534,7 @@ unsafe fn window_copy_search_back_overlap(
         while found != 0
             && px == 0 as u_int
             && py.wrapping_sub(1 as u_int) > endline
-            && grid_get_line_ref(gd, py.wrapping_sub(2 as u_int)).flags & GRID_LINE_WRAPPED != 0
+            && grid_line_info(gd, py.wrapping_sub(2 as u_int)).flags & GRID_LINE_WRAPPED != 0
             && endx == oldendx
             && endy == oldendy
         {
@@ -5965,10 +5965,10 @@ fn window_copy_visible_lines(data: &window_copy_mode_data) -> (u_int, u_int) {
                 .as_deref()
                 .expect("copy mode has a backing screen"),
         );
-        let mut gl: Option<&grid_line>;
+        let mut gl: Option<crate::grid::GridLineInfo>;
         let mut start = gd.hsize.wrapping_sub(data.oy);
         while start > 0 as u_int {
-            gl = grid_peek_line(gd, start.wrapping_sub(1 as u_int));
+            gl = grid_peek_info(gd, start.wrapping_sub(1 as u_int));
             if !gl.is_some_and(|gl| gl.flags & GRID_LINE_WRAPPED != 0) {
                 break;
             }
@@ -7363,7 +7363,7 @@ unsafe fn window_copy_get_selection(wme: &window_mode_entry) -> Option<Vec<u8>> 
             return None;
         }
         if (keys == MODEKEY_EMACS || lastex <= ey_last)
-            && (!grid_get_line_ref(
+            && (!grid_line_info(
                 RustScreen::grid(
                     data.backing
                         .as_deref()
@@ -7545,12 +7545,12 @@ fn window_copy_copy_line(
         if sx > ex {
             return;
         }
-        let gl = grid_get_line_ref(gd, sy);
-        if gl.flags & GRID_LINE_WRAPPED != 0 && (*gl).cellsize() <= gd.sx {
+        let gl = grid_line_info(gd, sy);
+        if gl.flags & GRID_LINE_WRAPPED != 0 && gl.cells <= gd.sx {
             wrapped = 1 as u_int;
         }
         let xx: u_int = if wrapped != 0 {
-            (*gl).cellsize()
+            gl.cells
         } else {
             window_copy_find_length(wme, sy)
         };
@@ -8457,7 +8457,7 @@ unsafe fn window_copy_cursor_prompt(
                 return;
             }
             line = line.wrapping_add(add as u_int);
-            if grid_get_line_ref(gd, line).flags & line_flag != 0 {
+            if grid_line_info(gd, line).flags & line_flag != 0 {
                 break;
             }
         }

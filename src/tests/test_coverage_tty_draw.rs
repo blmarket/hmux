@@ -16,7 +16,7 @@
 //! branches the fixtures can reach. Nothing here opens a descriptor, touches
 //! a live terminal or runs the event loop.
 
-use crate::grid::{grid_default_cell, grid_get_line};
+use crate::grid::{grid_default_cell, grid_line_info};
 use crate::grid::{grid_view_set_cell, grid_view_set_padding};
 use crate::reactor::ByteBuffer;
 use crate::terminfo::TerminalCapabilities;
@@ -312,7 +312,7 @@ fn a_wrapped_previous_line_clears_without_moving_the_cursor() {
     let mut ws = Screen::new(16, 4, 100);
     unsafe {
         let hsize = ws.grid().hsize;
-        grid_get_line(ws.grid_mut(), hsize).flags |= GRID_LINE_WRAPPED;
+        crate::grid::grid_mark_wrapped(ws.grid_mut(), hsize);
         (*wrapped.ptr()).cx = 16;
         (*wrapped.ptr()).cy = 3;
     }

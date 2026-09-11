@@ -1902,7 +1902,7 @@ pub struct format_modifier {
     pub size: u_int,
     pub argv: Vec<std::ffi::CString>,
 }
-pub use crate::grid::{grid, grid_line};
+pub use crate::grid::grid;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct style_range {

@@ -50,7 +50,7 @@ fn grid_create_dimensions_and_flags() {
         assert_eq!(g.hsize, 0);
         assert_eq!(g.hscrolled, 0);
         assert_ne!(g.flags & GRID_HISTORY, 0);
-        assert!(!g.linedata.is_empty());
+        assert!(crate::grid::grid_peek_info(&g, 0).is_some());
     }
     let plain = Grid::new(8, 4, 0);
     {

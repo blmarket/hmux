@@ -201,7 +201,7 @@ fn row_text(gd: &grid, py: u_int, trim: bool) -> CString {
 /// Whether a row runs on into the next one because the text reached the right
 /// margin rather than ending there.
 fn wrapped(gd: &grid, py: u_int) -> bool {
-    crate::grid::grid_peek_line(gd, py).is_some_and(|gl| gl.flags & GRID_LINE_WRAPPED != 0)
+    crate::grid::grid_peek_info(gd, py).is_some_and(|gl| gl.flags & GRID_LINE_WRAPPED != 0)
 }
 
 /// The last `lines` rows of the requested slice of a pane's buffer, rendered

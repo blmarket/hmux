@@ -52,14 +52,14 @@ const EMPTY_ENTRY: grid_cell_entry = grid_cell_entry {
 /// `cellsize` and `extdsize` are therefore the allocation as well as the
 /// length, exactly as they are in the C, which is also what makes
 /// `#{history_bytes}` able to price a line as `size_of::<grid_line>()`.
-pub struct grid_line {
+pub(super) struct grid_line {
     celldata: NonNull<grid_cell_entry>,
     extddata: NonNull<grid_extd_entry>,
     cellsize: u_int,
     extdsize: u_int,
-    pub cellused: u_int,
-    pub flags: c_int,
-    pub time: time_t,
+    pub(super) cellused: u_int,
+    pub(super) flags: c_int,
+    pub(super) time: time_t,
 }
 
 /// The line holds what tmux's does, in the order that leaves no padding: the
@@ -97,7 +97,7 @@ unsafe fn resize<T>(ptr: NonNull<T>, from: u_int, to: u_int) -> NonNull<T> {
 
 impl grid_line {
     /// A line with nothing in it.
-    pub fn new() -> grid_line {
+    pub(super) fn new() -> grid_line {
         grid_line {
             celldata: NonNull::dangling(),
             extddata: NonNull::dangling(),
@@ -110,12 +110,12 @@ impl grid_line {
     }
 
     /// How many cells the line has room for, tmux's `cellsize`.
-    pub fn cellsize(&self) -> u_int {
+    pub(super) fn cellsize(&self) -> u_int {
         self.cellsize
     }
 
     /// How many extended cells the line holds, tmux's `extdsize`.
-    pub fn extdsize(&self) -> u_int {
+    pub(super) fn extdsize(&self) -> u_int {
         self.extdsize
     }
 
@@ -149,7 +149,7 @@ impl grid_line {
 
     /// Give the line room for `sx` cells. Any it gains read as empty; any it
     /// loses are given back, which the C left to the next line-wide free.
-    pub fn resize_cells(&mut self, sx: u_int) {
+    pub(super) fn resize_cells(&mut self, sx: u_int) {
         let from = self.cellsize;
         self.celldata = unsafe { resize(self.celldata, from, sx) };
         self.cellsize = sx;
@@ -159,7 +159,7 @@ impl grid_line {
     }
 
     /// Take one more extended cell, at the end, and answer where it went.
-    pub fn push_extended(&mut self) -> u_int {
+    pub(super) fn push_extended(&mut self) -> u_int {
         let at = self.extdsize;
         self.extddata = unsafe { resize(self.extddata, at, at + 1) };
         self.extdsize = at + 1;

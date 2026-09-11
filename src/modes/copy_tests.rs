@@ -5,7 +5,7 @@ use crate::pane_identity::PaneIdentity;
 use crate::pane_scrollbar::{PaneScrollbarSlider};
 
 use super::*;
-use crate::grid::{grid_create, grid_get_cell, grid_get_line, grid_scroll_history, grid_set_cell};
+use crate::grid::{grid_create, grid_get_cell, grid_line_info, grid_scroll_history, grid_set_cell};
 use crate::tests::test_fixtures::{Args, Pane, Target, Window, ascii, globals};
 
 unsafe fn open_copy(target: &mut Target) -> &mut window_mode_entry {
@@ -1061,11 +1061,9 @@ fn vi_bracket_scanning_crosses_only_wrapped_lines_and_reverses_on_a_closer() {
             wme.prefix = 1;
             if wrapped {
                 let data = wme.state.copy_mode_data_mut().unwrap();
-                grid_get_line(
-                    RustScreen::grid_mut(data.backing.as_deref_mut().unwrap()),
-                    0,
-                )
-                .flags |= GRID_LINE_WRAPPED;
+                crate::grid::grid_mark_wrapped(
+                    RustScreen::grid_mut(data.backing.as_deref_mut().unwrap()), 0,
+                );
             }
             let mut state = window_copy_cmd_state {
                 wme,

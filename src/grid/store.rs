@@ -1,3 +1,4 @@
+use super::grid_line;
 use super::line::{grid_cell_entry, grid_cell_entry_data, grid_cell_entry_union, grid_extd_entry};
 pub use crate::consts::{
     COLOUR_FLAG_256, COLOUR_FLAG_RGB, GRID_ATTR_BLINK, GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET,
@@ -27,7 +28,7 @@ pub struct grid {
     pub hscrolled: u_int,
     pub hsize: u_int,
     pub hlimit: u_int,
-    pub linedata: Vec<grid_line>,
+    pub(super) linedata: Vec<grid_line>,
 }
 
 pub const GRID_FLAG_FG256: c_int = 0x1 as c_int;
@@ -370,12 +371,13 @@ fn grid_compact_line(gl: &mut grid_line) {
 }
 
 /// The line at `line`, to write to.
-pub fn grid_get_line(gd: &mut grid, line: u_int) -> &mut grid_line {
+pub(super) fn grid_get_line(gd: &mut grid, line: u_int) -> &mut grid_line {
     line_at_mut(gd, line)
 }
 
 /// Borrows a stored line by index, using the same storage bounds as `grid_get_line`.
-pub fn grid_get_line_ref(gd: &grid, line: u_int) -> &grid_line {
+#[cfg(test)]
+pub(super) fn grid_get_line_ref(gd: &grid, line: u_int) -> &grid_line {
     line_at(gd, line)
 }
 
@@ -649,7 +651,7 @@ pub fn grid_empty_line(gd: &mut grid, py: u_int, bg: u_int) {
 }
 
 /// The line at `py`, or nothing when the grid does not reach it.
-pub fn grid_peek_line(gd: &grid, py: u_int) -> Option<&grid_line> {
+pub(super) fn grid_peek_line(gd: &grid, py: u_int) -> Option<&grid_line> {
     if !grid_check_y(gd, c"grid_peek_line", py) {
         return None;
     }
@@ -1746,5 +1748,50 @@ pub(crate) fn cell_bytes(&self, px: u_int, py: u_int) -> std::borrow::Cow<'_, [u
             |size, line| size.wrapping_add((line.cellsize() as usize).wrapping_mul(size_of::<grid_cell_entry>()))
                 .wrapping_add((line.extdsize() as usize).wrapping_mul(size_of::<grid_extd_entry>()))
         )
+    }
+}
+
+/// Immutable observations of a stored line; no cell allocation leaves the grid.
+///
+/// ```compile_fail
+/// use tmux_c2rs::grid::grid_line;
+/// ```
+///
+/// ```compile_fail
+/// use tmux_c2rs::types::grid_cell_entry;
+/// ```
+#[derive(Clone, Copy)]
+pub struct GridLineInfo {
+    pub cellused: u_int,
+    pub flags: c_int,
+    pub time: time_t,
+    pub cells: u_int,
+}
+
+fn line_info(line: &grid_line) -> GridLineInfo {
+    GridLineInfo { cellused: line.cellused, flags: line.flags, time: line.time, cells: line.cellsize() }
+}
+
+/// Observes a line using underlying storage bounds, including reserved lines.
+pub fn grid_line_info(gd: &grid, py: u_int) -> GridLineInfo {
+    line_info(line_at(gd, py))
+}
+
+/// Observes a line only if it belongs to the history or visible grid.
+pub fn grid_peek_info(gd: &grid, py: u_int) -> Option<GridLineInfo> {
+    grid_peek_line(gd, py).map(line_info)
+}
+
+/// Marks a stored line as continuing onto the following line.
+pub fn grid_mark_wrapped(gd: &mut grid, py: u_int) {
+    line_at_mut(gd, py).flags |= GRID_LINE_WRAPPED;
+}
+
+impl grid {
+    /// Records a prompt or output start marker for a visible line.
+    pub(crate) fn mark_prompt(&mut self, py: u_int, output: bool) {
+        let line = py.wrapping_add(self.hsize);
+        if line > self.hsize.wrapping_add(self.sy).wrapping_sub(1) { return; }
+        line_at_mut(self, line).flags |= if output { crate::consts::GRID_LINE_START_OUTPUT } else { crate::consts::GRID_LINE_START_PROMPT };
     }
 }

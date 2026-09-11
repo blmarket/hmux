@@ -2,7 +2,7 @@ use super::*;
 use crate::WindowPane;
 use crate::fmt_args;
 use crate::grid::grid_view_get_cell;
-use crate::grid::{grid_get_line, grid_string_cells};
+use crate::grid::{grid_line_info, grid_string_cells};
 use crate::options::OptionsRef;
 
 use crate::pane_identity::PaneIdentity;
@@ -249,7 +249,7 @@ fn backspace_steps_back_and_over_a_wrapped_line() {
     unsafe {
         let gd = w.grid_mut();
         let hsize = gd.hsize;
-        grid_get_line(gd, hsize).flags |= GRID_LINE_WRAPPED;
+        crate::grid::grid_mark_wrapped(gd, hsize);
         screen_write_backspace(&mut w.ctx());
     }
     assert_eq!(w.cursor(), (9, 0));

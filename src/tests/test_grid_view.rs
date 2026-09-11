@@ -1,6 +1,7 @@
+use crate::grid::store::grid_peek_line;
 use super::*;
 use crate::grid::{
-    GRID_FLAG_PADDING, grid_create, grid_default_cell, grid_peek_line, grid_scroll_history,
+    GRID_FLAG_PADDING, grid_create, grid_default_cell, grid_scroll_history,
 };
 use crate::tests::test_fixtures::globals;
 

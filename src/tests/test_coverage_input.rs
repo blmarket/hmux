@@ -32,7 +32,7 @@ use crate::format::{
     MODE_MOUSE_STANDARD, MODE_SYNC, MODE_WRAP,
 };
 use crate::grid::{
-    GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_FLAG_PADDING, grid_get_cell, grid_get_line,
+    GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET, GRID_FLAG_PADDING, grid_get_cell, grid_line_info,
     grid_string_cells,
 };
 use crate::input::{
@@ -629,7 +629,7 @@ fn osc_palette_entries_are_settable_queryable_and_resettable() {
 fn osc_prompt_marks_tag_the_lines_they_arrive_on() {
     let mut p = Parser::new();
     p.feed_str("$ \x1b]133;A\x07output\x1b]133;C\x07");
-    let flags = { grid_get_line(RustScreen::grid_mut(&mut *p.s()), 0).flags };
+    let flags = { grid_line_info(RustScreen::grid_mut(&mut *p.s()), 0).flags };
     assert_ne!(flags & GRID_LINE_START_PROMPT, 0);
     assert_ne!(flags & GRID_LINE_START_OUTPUT, 0);
 }

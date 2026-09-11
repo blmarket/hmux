@@ -22,7 +22,7 @@ use crate::ffi::{
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc, format_buf};
 use crate::grid::{Grid, Hyperlinks, grid_view_get_cell};
-use crate::grid::{grid_default_cell, grid_peek_line};
+use crate::grid::{grid_default_cell, grid_peek_info};
 use crate::job::{job_free, job_run};
 
 use crate::log::{log_debug, log_get_level};
@@ -6246,7 +6246,7 @@ fn format_is_word_separator(ws: &CStr, gc: &grid_cell) -> core::ffi::c_int {
 }
 pub unsafe fn format_grid_word(gd: &grid, mut x: u_int, mut y: u_int) -> Option<CString> {
     {
-        let mut gl: Option<&grid_line>;
+        let mut gl: Option<crate::grid::GridLineInfo>;
         let mut gc;
         let mut ud: Vec<utf8_data> = Vec::new();
         let mut end: u_int;
@@ -6269,7 +6269,7 @@ pub unsafe fn format_grid_word(gd: &grid, mut x: u_int, mut y: u_int) -> Option<
                     if y == 0 as u_int {
                         break;
                     }
-                    gl = grid_peek_line(gd, y.wrapping_sub(1 as u_int));
+                    gl = grid_peek_info(gd, y.wrapping_sub(1 as u_int));
                     if !gl.is_some_and(|gl| gl.flags & GRID_LINE_WRAPPED != 0) {
                         break;
                     }
@@ -6289,7 +6289,7 @@ pub unsafe fn format_grid_word(gd: &grid, mut x: u_int, mut y: u_int) -> Option<
                     if y == gd.hsize.wrapping_add(gd.sy).wrapping_sub(1 as u_int) {
                         break;
                     }
-                    gl = grid_peek_line(gd, y);
+                    gl = grid_peek_info(gd, y);
                     if !gl.is_some_and(|gl| gl.flags & GRID_LINE_WRAPPED != 0) {
                         break;
                     }

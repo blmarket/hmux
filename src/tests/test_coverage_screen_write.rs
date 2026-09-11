@@ -1214,7 +1214,7 @@ fn a_collected_line_moves_up_with_the_scroll() {
         screen_write_collect_end(&mut w.ctx());
         w.move_to(0, 2);
         screen_write_linefeed(&mut w.ctx(), 0, 8);
-        let gl = crate::grid::grid_get_line_ref(w.grid(), w.grid().hsize);
+        let gl = crate::grid::grid_line_info(w.grid(), w.grid().hsize);
         assert_eq!(gl.flags & crate::screen::GRID_LINE_WRAPPED, 0);
     }
     assert_eq!(w.lines(), ["", "", ""]);
