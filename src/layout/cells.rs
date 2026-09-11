@@ -337,7 +337,7 @@ impl PaneLayout {
         unsafe {
             if let Some(pane) = self.pane.get_mut() {
                 if self.redraw_scrollbar {
-                    *pane.flags_mut() |= PANE_REDRAWSCROLLBAR;
+                    pane.request_scrollbar_redraw();
                 }
                 pane.set_position(self.x, self.y);
                 pane.resize(crate::PaneSize { width: self.sx, height: self.sy });

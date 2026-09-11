@@ -1129,7 +1129,7 @@ pub unsafe fn window_redraw_active_switch(w: &mut window, selected: &RustWindowP
                     != pane.palette_colour(active.bg)
                 || raise
             {
-                *pane.flags_mut() |= PANE_REDRAW;
+                pane.request_redraw();
             }
             if raise {
                 w.z_index.retain(|pane| !pane.ptr_eq(&reference));

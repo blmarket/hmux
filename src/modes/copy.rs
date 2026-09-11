@@ -6906,7 +6906,7 @@ unsafe fn window_copy_redraw_lines(wme: &mut window_mode_entry, py: u_int, ny: u
             );
             writer.finish();
             if let Some(pane) = pane.get_mut() {
-                *pane.flags_mut() |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
+                pane.request_full_redraw();
             }
             return;
         }
@@ -6929,7 +6929,7 @@ unsafe fn window_copy_redraw_lines(wme: &mut window_mode_entry, py: u_int, ny: u
         );
         writer.finish();
         if let Some(pane) = pane.get_mut() {
-            *pane.flags_mut() |= PANE_REDRAWSCROLLBAR;
+            pane.request_scrollbar_redraw();
         }
     }
 }
@@ -7417,7 +7417,6 @@ unsafe fn window_copy_copy_buffer(
 ) {
     unsafe {
         let mut pane = wme.pane_ref().expect("mode has a pane");
-        let mut redraw: core::ffi::c_int = 0 as core::ffi::c_int;
         if set_clip != 0
             && (global_options
                 .get()
@@ -7426,24 +7425,13 @@ unsafe fn window_copy_copy_buffer(
             .number(c"set-clipboard")
                 != 0 as core::ffi::c_longlong
         {
-            if window_copy_line_numbers_active(wme) != 0
-                && *pane.get().expect("mode pane is live").flags() & PANE_REDRAW != 0
-            {
-                redraw = PANE_REDRAW;
-                *pane.get_mut().expect("mode pane is live").flags_mut() &= !PANE_REDRAW;
-            }
             let display = wme
                 .state
                 .copy_mode_data_ref()
                 .expect("copy mode has state")
                 .screen
                 .clone();
-            let mut writer =
-                RustScreenWriteCtx::on_shared_pane_screen(&display, Some(pane.clone()));
-            writer.setselection(c"", &buf);
-            writer.finish();
-            *pane.get_mut().expect("mode pane is live").flags_mut() |= redraw;
-            notify_pane(c"pane-set-clipboard", pane.get());
+            pane.write_clipboard_selection(&display, &buf, window_copy_line_numbers_active(wme) != 0);
         }
         if set_paste != 0 {
             let limit = paste_buffer_limit();
@@ -8569,8 +8557,7 @@ unsafe fn window_copy_scroll_up(wme: &mut window_mode_entry, mut ny: u_int) {
             let y = data.cy as core::ffi::c_int;
             writer.cursormove(x, y, 0 as core::ffi::c_int);
             writer.finish();
-            *pane.get_mut().expect("mode pane is live").flags_mut() |=
-                PANE_REDRAW | PANE_REDRAWSCROLLBAR;
+            pane.get_mut().expect("mode pane is live").request_full_redraw();
             return;
         }
         let mut writer = RustScreenWriteCtx::on_shared_pane_screen(&s, Some(pane.clone()));
@@ -8600,7 +8587,7 @@ unsafe fn window_copy_scroll_up(wme: &mut window_mode_entry, mut ny: u_int) {
         let y = data.cy as core::ffi::c_int;
         writer.cursormove(x, y, 0 as core::ffi::c_int);
         writer.finish();
-        *pane.get_mut().expect("mode pane is live").flags_mut() |= PANE_REDRAWSCROLLBAR;
+        pane.get_mut().expect("mode pane is live").request_scrollbar_redraw();
     }
 }
 unsafe fn window_copy_scroll_down(wme: &mut window_mode_entry, mut ny: u_int) {
@@ -8675,8 +8662,7 @@ unsafe fn window_copy_scroll_down(wme: &mut window_mode_entry, mut ny: u_int) {
             let y = data.cy as core::ffi::c_int;
             writer.cursormove(x, y, 0 as core::ffi::c_int);
             writer.finish();
-            *pane.get_mut().expect("mode pane is live").flags_mut() |=
-                PANE_REDRAW | PANE_REDRAWSCROLLBAR;
+            pane.get_mut().expect("mode pane is live").request_full_redraw();
             return;
         }
         let mut writer = RustScreenWriteCtx::on_shared_pane_screen(&s, Some(pane.clone()));
@@ -8697,7 +8683,7 @@ unsafe fn window_copy_scroll_down(wme: &mut window_mode_entry, mut ny: u_int) {
         let y = data.cy as core::ffi::c_int;
         writer.cursormove(x, y, 0 as core::ffi::c_int);
         writer.finish();
-        *pane.get_mut().expect("mode pane is live").flags_mut() |= PANE_REDRAWSCROLLBAR;
+        pane.get_mut().expect("mode pane is live").request_scrollbar_redraw();
     }
 }
 unsafe fn window_copy_rectangle_set(wme: &mut window_mode_entry, rectflag: core::ffi::c_int) {

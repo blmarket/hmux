@@ -1939,7 +1939,7 @@ pub fn server_client_loop() {
                     }
                 }
                 if let Some(wp) = pane.get_mut() {
-                    *wp.flags_mut() &= !(PANE_REDRAW | PANE_REDRAWSCROLLBAR);
+                    wp.finish_redraw();
                 }
             }
             window.check_name();

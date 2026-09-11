@@ -401,7 +401,7 @@ unsafe fn window_buffer_edit_close_cb(mut buf: Vec<u8>, ed: Box<window_buffer_ed
                 tree.draw();
             }
             if let Some(pane) = pane.get_mut() {
-                *pane.flags_mut() |= PANE_REDRAW;
+                pane.request_redraw();
             }
         }
         drop(ed);
@@ -550,7 +550,7 @@ impl WindowBufferModeDataRef {
             if let Some(mut pane) = owner.borrow().pane()
                 && let Some(pane) = pane.get_mut()
             {
-                *pane.flags_mut() |= PANE_REDRAW;
+                pane.request_redraw();
             }
         }
     }
@@ -619,7 +619,7 @@ impl WindowBufferModeDataRef {
                 if let Some(mut pane) = pane
                     && let Some(pane) = pane.get_mut()
                 {
-                    *pane.flags_mut() |= PANE_REDRAW;
+                    pane.request_redraw();
                 }
             };
         }

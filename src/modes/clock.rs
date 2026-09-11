@@ -176,7 +176,7 @@ unsafe fn window_clock_timer_callback(mut pane: RustWindowPaneWeak) {
         }
         window_clock_start_timer(data);
         if redraw {
-            *wp.flags_mut() |= PANE_REDRAW;
+            wp.request_redraw();
         }
     }
 }

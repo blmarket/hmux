@@ -190,7 +190,7 @@ impl RustWindowPaneWeak {
         let adjust = grid.sy.wrapping_sub(1).wrapping_sub(cy).min(grid.hsize);
         grid.remove_history(adjust);
         pane.base_mut().set_cursor(cx, cy.wrapping_add(adjust));
-        *pane.flags_mut() |= PANE_REDRAW;
+        pane.request_redraw();
         true
     }
 }
@@ -287,6 +287,8 @@ impl RustWindowPaneWeak {
     /// # Safety
     /// Exclude conflicting pane flag access during this synchronous operation.
     pub(crate) unsafe fn request_redraw(&self) -> bool {
-        unsafe { self.add_flags(PANE_REDRAW) }
+        let Some(mut owner) = self.upgrade() else { return false; };
+        unsafe { owner.as_pane_mut().request_redraw() };
+        true
     }
 }

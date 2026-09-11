@@ -399,6 +399,14 @@ impl crate::WindowPane for window_pane {
     fn flags_mut(&mut self) -> &mut core::ffi::c_int {
         &mut self.flags
     }
+    fn request_redraw(&mut self) { self.flags |= crate::consts::PANE_REDRAW; }
+    fn request_scrollbar_redraw(&mut self) { self.flags |= crate::consts::PANE_REDRAWSCROLLBAR; }
+    fn request_full_redraw(&mut self) {
+        self.flags |= crate::consts::PANE_REDRAW | crate::consts::PANE_REDRAWSCROLLBAR;
+    }
+    fn finish_redraw(&mut self) {
+        self.flags &= !(crate::consts::PANE_REDRAW | crate::consts::PANE_REDRAWSCROLLBAR);
+    }
     unsafe fn resize(&mut self, size: PaneSize) {
         let old = PaneSize { width: self.sx, height: self.sy };
         if old == size { return; }

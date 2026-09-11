@@ -1200,7 +1200,7 @@ fn window_tree_command_done(_item: &CmdqItemRef, data_weak: WindowTreeModeDataWe
             if let Some(mut pane) = data.pane()
                 && let Some(pane) = pane.get_mut()
             {
-                *pane.flags_mut() |= PANE_REDRAW;
+                pane.request_redraw();
             }
         }
         CMD_RETURN_NORMAL
@@ -1432,7 +1432,7 @@ impl WindowTreeModeDataRef {
             if let Some(mut pane) = data.pane()
                 && let Some(pane) = pane.get_mut()
             {
-                *pane.flags_mut() |= PANE_REDRAW;
+                pane.request_redraw();
             }
         }
     }
@@ -1787,7 +1787,7 @@ impl WindowTreeModeDataRef {
             } else {
                 tree.draw();
                 if let Some(pane) = pane.get_mut() {
-                    *pane.flags_mut() |= PANE_REDRAW;
+                    pane.request_redraw();
                 }
             };
         }

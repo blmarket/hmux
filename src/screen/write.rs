@@ -366,7 +366,7 @@ unsafe fn screen_write_redraw_cb(ttyctx: &tty_ctx) {
             return;
         };
         if let Some(pane) = pane_ref.get_mut() {
-            *pane.flags_mut() |= PANE_REDRAW;
+            pane.request_redraw();
         }
     }
 }
@@ -413,7 +413,7 @@ unsafe fn screen_write_set_client_cb(ttyctx: &mut tty_ctx, c: &mut client) -> c_
                 c"%s: adding %%%u to deferred redraw",
                 fmt_args![c"screen_write_set_client_cb", id],
             );
-            *pane.flags_mut() |= PANE_REDRAW | PANE_REDRAWSCROLLBAR;
+            pane.request_full_redraw();
             return -1;
         }
         let (bigger, ox, oy, sx, sy) = tty_window_offset(&c.tty);
@@ -2331,7 +2331,7 @@ unsafe fn screen_write_collect_flush_scrolled(ctx: &mut screen_write_ctx) -> c_i
             &mut ttyctx,
         );
         if let Some(pane) = ctx.pane_mut() {
-            *pane.flags_mut() |= PANE_REDRAWSCROLLBAR;
+            pane.request_scrollbar_redraw();
         }
         1
     }

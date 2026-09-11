@@ -448,7 +448,7 @@ impl WindowClientModeDataRef {
             if let Some(mut pane) = owner.borrow().pane()
                 && let Some(pane) = pane.get_mut()
             {
-                *pane.flags_mut() |= PANE_REDRAW;
+                pane.request_redraw();
             }
         }
     }
@@ -512,7 +512,7 @@ impl WindowClientModeDataRef {
                 if let Some(mut pane) = pane
                     && let Some(pane) = pane.get_mut()
                 {
-                    *pane.flags_mut() |= PANE_REDRAW;
+                    pane.request_redraw();
                 }
             };
         }

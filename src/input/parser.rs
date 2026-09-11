@@ -3289,7 +3289,7 @@ unsafe fn input_csi_dispatch_rm_private(ictx: &mut input_ctx, sctx: &mut RustScr
                     let mut pane = ictx.pane_ref();
                     if let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut()) { wp.stop_sync(); }
                     if let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut()) {
-                        *wp.flags_mut() |= PANE_REDRAW;
+                        wp.request_redraw();
                     }
                 }
                 2031 => {

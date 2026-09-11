@@ -187,7 +187,7 @@ impl WindowCustomizeModeDataRef {
         if let Some(mut pane) = self.pane()
             && let Some(pane) = unsafe { pane.get_mut() }
         {
-            *pane.flags_mut() |= PANE_REDRAW;
+            pane.request_redraw();
         }
     }
 }
@@ -2194,7 +2194,7 @@ impl WindowCustomizeModeDataRef {
                 if let Some(mut pane) = pane
                     && let Some(pane) = pane.get_mut()
                 {
-                    *pane.flags_mut() |= PANE_REDRAW;
+                    pane.request_redraw();
                 }
             };
         }

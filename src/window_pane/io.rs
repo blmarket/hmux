@@ -108,3 +108,28 @@ impl RustWindowPaneWeak {
     }
 
 }
+
+impl RustWindowPaneWeak {
+    /// Writes a mode selection to clients, restoring content redraw after temporary
+    /// line-number suppression and notifying only after the writer finishes.
+    /// # Safety
+    /// Exclude conflicting pane/screen access. Writer callbacks must not retain a
+    /// pane borrow; this operation keeps only an allocation observation across them.
+    pub(crate) unsafe fn write_clipboard_selection(&self, display: &ScreenRef, bytes: &[u8], line_numbers: bool) {
+        use crate::screen::{RustScreenWriteCtx, ScreenWriteCtx};
+        unsafe {
+            let restore = {
+                let Some(mut owner) = self.upgrade() else { return; };
+                let pane = &mut *owner.0.pane.get();
+                let restore = line_numbers && pane.flags & PANE_REDRAW != 0;
+                if restore { pane.flags &= !PANE_REDRAW; }
+                restore
+            };
+            let mut writer = RustScreenWriteCtx::on_shared_pane_screen(display, Some(self.clone()));
+            writer.setselection(c"", bytes);
+            writer.finish();
+            if restore { self.request_redraw(); }
+            crate::notify::notify_pane(c"pane-set-clipboard", self.get());
+        }
+    }
+}

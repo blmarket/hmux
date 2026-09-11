@@ -40,6 +40,15 @@ pub trait WindowPane:
     /// Mutably borrows the pane's server flags.
     fn flags_mut(&mut self) -> &mut core::ffi::c_int;
 
+    /// Schedules content redraw without changing border or status policy.
+    fn request_redraw(&mut self);
+    /// Schedules scrollbar redraw without requesting a content redraw.
+    fn request_scrollbar_redraw(&mut self);
+    /// Schedules both pane content and scrollbar redraw.
+    fn request_full_redraw(&mut self);
+    /// Acknowledges content and scrollbar redraw after all client passes complete.
+    fn finish_redraw(&mut self);
+
     /// Resizes the base and active mode screens and queues the process resize,
     /// cancelling synchronized output. An unchanged size does nothing.
     /// # Safety
