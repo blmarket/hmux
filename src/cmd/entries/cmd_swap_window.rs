@@ -1,7 +1,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
 use crate::resize::recalculate_sizes;
@@ -39,7 +38,7 @@ pub(crate) static cmd_swap_window_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_swap_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let src = item.source.session().expect("swap source session");
     let dst = item.target.session().expect("swap target session");
     let same_session = src.ptr_eq(&dst);

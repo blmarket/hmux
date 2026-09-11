@@ -1,5 +1,4 @@
 use crate::args::arguments_trait::Arguments as _;
-use crate::cmd::cmd_get_args;
 
 use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
@@ -33,7 +32,7 @@ pub(crate) static cmd_rotate_window_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_rotate_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let current_state_ref = item.state_ref();
     let link = WinlinkRef::new(
         item.target

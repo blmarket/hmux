@@ -4,7 +4,6 @@ use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
 use crate::cmd::cmdq_item_weak_of;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::compat::error_message;
 use crate::consts::{
     CLIENT_CONTROL, CMD_AFTERHOOK, CMD_BUFFER_USAGE, CMD_FIND_PANE, CMD_RETURN_ERROR,
@@ -93,7 +92,7 @@ fn cmd_save_buffer_done(event: ClientFileEvent<'_>) {
     }
 }
 unsafe fn cmd_save_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let c = item.client();
     let bufdata = if let Some(bufname) = {
         let flag = 'b' as i32 as u_char;
@@ -115,7 +114,7 @@ unsafe fn cmd_save_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         data
     }
     .expect("the selected paste buffer was checked");
-    let path: CString = if core::ptr::eq(cmd_get_entry(self_0), &cmd_show_buffer_entry) {
+    let path: CString = if core::ptr::eq(crate::Command::command_entry(self_0), &cmd_show_buffer_entry) {
         let c = c.as_ref().expect("the command has a client");
         if unsafe { !c.attached_session().is_none() || c.flags() & CLIENT_CONTROL as uint64_t != 0 }
         {

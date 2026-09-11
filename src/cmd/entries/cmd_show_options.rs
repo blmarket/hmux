@@ -5,7 +5,6 @@ use crate::args::argument_text::ArgumentTextCodec as _;
 use crate::args::argument_text::RustArgumentTextCodec;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_CANFAIL, CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR,
     CMD_RETURN_NORMAL, OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_NONE,
@@ -94,7 +93,7 @@ pub(crate) static cmd_show_hooks_entry: RustCommandEntry = {
 };
 unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let current_block: u64;
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let target = item.target.clone();
     let mut oo: Option<RustOptionsRef> = None;
     let mut cause: Option<CString> = None;
@@ -103,7 +102,7 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut ambiguous: core::ffi::c_int = 0;
     let scope: core::ffi::c_int;
     let window: core::ffi::c_int =
-        core::ptr::eq(cmd_get_entry(self_0), &cmd_show_window_options_entry) as core::ffi::c_int;
+        core::ptr::eq(crate::Command::command_entry(self_0), &cmd_show_window_options_entry) as core::ffi::c_int;
     if args.argument_count() == 0 as u_int {
         unsafe {
             scope = RustOptionsEngine.scope_from_flags(
@@ -225,7 +224,7 @@ unsafe fn cmd_show_options_print(
     parent: core::ffi::c_int,
 ) {
     unsafe {
-        let args = cmd_get_args(self_0);
+        let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
         let name = RustOptionsEngine.name(entry);
         if index == -1 && RustOptionsEngine.is_array(entry) != 0 {
             let indices = RustOptionsEngine.array_indices(entry);
@@ -263,8 +262,8 @@ unsafe fn cmd_show_options_all(
     oo: &RustOptionsRef,
 ) -> cmd_retval {
     unsafe {
-        let args = cmd_get_args(self_0);
-        let hooks = core::ptr::eq(cmd_get_entry(self_0), &cmd_show_hooks_entry);
+        let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
+        let hooks = core::ptr::eq(crate::Command::command_entry(self_0), &cmd_show_hooks_entry);
         if !hooks {
             for name in oo.local_names() {
                 oo.with_entry(&name, true, |entry| {

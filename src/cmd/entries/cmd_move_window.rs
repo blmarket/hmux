@@ -22,7 +22,6 @@ use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_find_target;
 
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
 
 use crate::resize::recalculate_sizes;
@@ -126,7 +125,7 @@ unsafe fn room_for(
 }
 
 unsafe fn cmd_move_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let tflag = args.argument_flag_string(b't');
     if args.argument_flag_count(b'r') != 0 {
         let Some(target) = (unsafe { resolve(item, tflag, CMD_FIND_SESSION, CMD_FIND_QUIET) })
@@ -181,7 +180,7 @@ unsafe fn cmd_move_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         unsafe { item.error(c"%s", fmt_args![cause.as_deref()]) };
         return CMD_RETURN_ERROR;
     }
-    if cmd_get_entry(self_0).name == cmd_move_window_entry.name {
+    if crate::Command::command_entry(self_0).name == cmd_move_window_entry.name {
         unsafe { source.unlink_window(source_index) };
     }
     if sflag == 0 && source.options().number(c"renumber-windows") != 0 {

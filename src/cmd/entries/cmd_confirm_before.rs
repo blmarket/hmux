@@ -42,7 +42,6 @@ use crate::cmd::CmdqItemWeak;
 use crate::cmd::cmd_make_commands_now;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::cmd::{cmdq_append, cmdq_item_weak_of};
 use crate::fmt_args;
 use crate::prompt_history::PromptHistoryType;
@@ -133,7 +132,7 @@ fn cmd_confirm_before_prompt(args: &RustArguments, cdata: &cmd_confirm_before_da
             .unwrap()
             .command(0)
             .expect("the confirmed command");
-        let name = crate::CommandEntry::name(cmd_get_entry(&command));
+        let name = crate::CommandEntry::name(crate::Command::command_entry(&*command));
         prompt.extend_from_slice(b"Confirm '");
         prompt.extend_from_slice(name.to_bytes());
         prompt.extend_from_slice(b"'? (");
@@ -145,7 +144,7 @@ fn cmd_confirm_before_prompt(args: &RustArguments, cdata: &cmd_confirm_before_da
 }
 
 unsafe fn cmd_confirm_before_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let wait = args.argument_flag_count(b'b') == 0;
 
     let mut cdata = Box::<cmd_confirm_before_data>::default();

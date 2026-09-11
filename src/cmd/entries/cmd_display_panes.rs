@@ -17,7 +17,6 @@ use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::args::args_make_commands;
 use crate::cmd::CmdqItemRef;
-use crate::cmd::cmd_get_args;
 use crate::args::cmd_make_commands_prepare;
 use crate::cmd::{CmdqItemWeak, cmdq_append, cmdq_item_weak_of};
 use crate::fmt_args;
@@ -159,7 +158,7 @@ unsafe fn cmd_display_panes_delay(
 }
 
 unsafe fn cmd_display_panes_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let mut tc = item
         .target_client()
         .expect("the command has a target client");

@@ -1,7 +1,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::cmdq_item_ref_of;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -376,7 +375,7 @@ unsafe fn cmd_display_menu_get_pos(
 }
 unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut current_block: u64;
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let event_state_ref = item.state_ref();
     let event = event_state_ref.event_snapshot();
     let mut tc = item.target_client().expect("the command has a client");
@@ -603,7 +602,7 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
 }
 unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut current_block: u64;
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let target = &item.target;
     let s = target.session().expect("popup target has a session");
     let mut tc = item.target_client().expect("the command has a client");

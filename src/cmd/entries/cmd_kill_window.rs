@@ -19,7 +19,6 @@ use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL};
 use crate::fmt_args;
 use crate::resize::recalculate_sizes;
@@ -76,7 +75,7 @@ pub(crate) static cmd_unlink_window_entry: RustCommandEntry = RustCommandEntry {
 };
 
 unsafe fn cmd_kill_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let mut session = item
         .target
         .session()
@@ -87,7 +86,7 @@ unsafe fn cmd_kill_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         .expect("a kill-window target has a window");
     let index = item.target.wl.expect("a kill-window target has a link");
 
-    if cmd_get_entry(self_0).name == cmd_unlink_window_entry.name {
+    if crate::Command::command_entry(self_0).name == cmd_unlink_window_entry.name {
         if args.argument_flag_count(b'k') == 0 && !session.is_linked(&window) {
             unsafe { item.error(c"window only linked to one session", fmt_args![]) };
             return CMD_RETURN_ERROR;

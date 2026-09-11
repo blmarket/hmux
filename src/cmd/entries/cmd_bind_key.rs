@@ -16,7 +16,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 use crate::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 
 use crate::cmd::cmdq_item;
@@ -130,7 +129,7 @@ fn cmd_bind_key_args_parse(
 }
 
 unsafe fn cmd_bind_key_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let note = args.argument_flag_string(b'N');
     let count = args.argument_count();
 

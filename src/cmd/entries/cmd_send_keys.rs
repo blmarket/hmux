@@ -2,7 +2,7 @@ use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::cmd::{CmdqItemRef, cmdq_item_ref_of};
-use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
+use crate::cmd::{  cmd_mouse_pane};
 use crate::ffi::strtol;
 use crate::fmt_args;
 use crate::key_bindings::key_bindings_get_table_ref;
@@ -183,7 +183,7 @@ unsafe fn cmd_send_keys_inject_string(
     }
 }
 unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let mut tc = item.target_client();
     let session = item.target.session();
     let link = item.target.winlink_ref();
@@ -264,7 +264,7 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             CMD_RETURN_NORMAL
         });
     }
-    if core::ptr::eq(cmd_get_entry(self_0), &cmd_send_prefix_entry) {
+    if core::ptr::eq(crate::Command::command_entry(self_0), &cmd_send_prefix_entry) {
         let session = session
             .as_ref()
             .expect("a send-prefix target has a session");

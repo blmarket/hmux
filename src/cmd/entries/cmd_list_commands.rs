@@ -13,7 +13,6 @@
 
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -87,7 +86,7 @@ unsafe fn cmd_list_single_command(
 }
 
 unsafe fn cmd_list_commands(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let template = args
         .argument_flag_string(b'F')
         .unwrap_or(LIST_COMMANDS_TEMPLATE);

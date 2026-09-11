@@ -26,7 +26,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item_weak_of;
 
 use crate::environ::EnvironmentStore;
@@ -112,7 +111,7 @@ fn free_spawn_context(sc: &mut spawn_context) {
 }
 
 unsafe fn cmd_new_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let c = item.client();
     let current_state_ref = item.state_ref();
     let target_client = item.target_client();

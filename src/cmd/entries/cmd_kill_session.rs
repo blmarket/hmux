@@ -17,7 +17,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{CMD_FIND_PANE, CMD_FIND_SESSION, CMD_RETURN_NORMAL};
@@ -80,7 +79,7 @@ unsafe fn destroy(session: &mut SessionRef) {
 unsafe fn cmd_kill_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let SESSIONS = SESSIONS_FIELD.get();
 
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let mut session = item.target.session().expect("kill target session");
 
     if args.argument_flag_count(b'C') != 0 {

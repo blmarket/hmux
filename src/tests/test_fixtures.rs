@@ -324,14 +324,7 @@ fn placeholder_exec(_cmd: &cmd, _item: &cmdq_item) -> cmd_retval {
 
 /// A command with no arguments, waiting for a parsed one to fill it in.
 pub(crate) fn empty_cmd() -> Box<cmd> {
-    Box::new(cmd {
-        entry: &PLACEHOLDER_ENTRY,
-        args: None,
-        group: 0,
-        file: None,
-        line: 0,
-        parse_flags: 0,
-    })
+    Box::new(cmd::test_placeholder(&PLACEHOLDER_ENTRY))
 }
 
 pub(crate) fn zeroed_cmdq_item(state: CmdqStateRef) -> CmdqItemRef {
@@ -522,7 +515,7 @@ impl Args {
     pub(crate) fn borrow(&self) -> std::cell::Ref<'_, crate::RustArguments> {
         std::cell::Ref::map(
             self.cmdlist.command(0).expect("the parsed command"),
-            |command| command.args.as_deref().expect("the parsed arguments"),
+            |command| crate::Command::command_arguments(command).expect("the parsed arguments"),
         )
     }
 
@@ -595,8 +588,7 @@ impl Item {
     pub(crate) fn with_file(self, file: &'static CStr, line: u_int) -> Item {
         {
             let mut command = self.cmdlist.command_mut(0).expect("the fixture command");
-            command.file = Some(file.to_owned());
-            command.line = line;
+            command.set_source_for_test(Some(file.to_owned()), line);
         }
         self
     }
@@ -608,8 +600,8 @@ impl Item {
         {
             let mut source = args.cmdlist.command_mut(0).expect("the parsed command");
             let mut target = self.cmdlist.command_mut(0).expect("the fixture command");
-            target.entry = source.entry;
-            target.args = source.args.take();
+            target.set_entry_for_test(crate::Command::command_entry(&*source));
+            target.set_args_for_test(source.take_args_for_test());
         }
         self.args = Some(args);
         self
@@ -672,7 +664,7 @@ impl Item {
     pub(crate) fn args(&self) -> std::cell::Ref<'_, crate::RustArguments> {
         std::cell::Ref::map(
             self.cmdlist.command(0).expect("the fixture command"),
-            |command| command.args.as_deref().expect("the fixture arguments"),
+            |command| crate::Command::command_arguments(command).expect("the fixture arguments"),
         )
     }
 
@@ -1654,8 +1646,14 @@ mod tests {
                 .is_err()
         );
         drop(shared);
-        other.command_mut(0).unwrap().line = 42;
-        assert_eq!(list.command(0).unwrap().line, 42);
+        other
+            .command_mut(0)
+            .unwrap()
+            .set_source_for_test(None, 42);
+        assert_eq!(
+            crate::Command::command_source(&*list.command(0).unwrap()).line,
+            42
+        );
         assert!(other.command_mut(1).is_none());
         assert!(list.command(0).is_some());
     }
@@ -1670,7 +1668,10 @@ mod tests {
         drop(queue);
         assert!(weak.upgrade().is_some());
         fixture.with_command(|command, item| {
-            assert_eq!(command.file.as_deref(), Some(c"queued.conf"));
+            assert_eq!(
+                crate::Command::command_source(command).file,
+                Some(c"queued.conf")
+            );
             assert!(item.queue.as_ref().unwrap().upgrade().is_none());
         });
         drop(fixture);
@@ -1690,8 +1691,11 @@ mod tests {
         assert!(item.command().is_none());
         drop(item);
         drop(fixture);
-        assert_eq!(command.file.as_deref(), Some(c"retained.conf"));
-        assert_eq!(command.line, 17);
+        assert_eq!(
+            crate::Command::command_source(&*command).file,
+            Some(c"retained.conf")
+        );
+        assert_eq!(crate::Command::command_source(&*command).line, 17);
     }
     use crate::environ::EnvironmentStore;
     
@@ -1806,10 +1810,15 @@ mod tests {
                     .is_some_and(|client| client.ptr_eq(&item.client))
             );
             assert_eq!(
-                seen_str(item.cmdlist.command(0).unwrap().file.as_deref()),
+                seen_str(
+                    crate::Command::command_source(&*item.cmdlist.command(0).unwrap()).file
+                ),
                 "fixture.conf"
             );
-            assert_eq!((*item.command()).line, 7);
+            assert_eq!(
+                crate::Command::command_source(&*item.command()).line,
+                7
+            );
             assert_eq!(seen_str(item.args().argument_string(0)), "hello");
         }
     }

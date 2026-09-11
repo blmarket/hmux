@@ -1,6 +1,5 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{
@@ -36,7 +35,7 @@ pub(crate) static cmd_pipe_pane_entry: RustCommandEntry = {
 };
 unsafe fn cmd_pipe_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     unsafe {
-        let args = cmd_get_args(self_0);
+        let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
         let tc = item.target_client();
         let target = &item.target;
         let session = target.session().expect("pipe target session");

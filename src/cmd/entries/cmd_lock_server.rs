@@ -11,7 +11,6 @@
 //! size of the windows it was showing, and all three answer
 //! `CMD_RETURN_NORMAL`.
 
-use crate::cmd::cmd_get_entry;
 
 use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
@@ -95,7 +94,7 @@ pub(crate) static cmd_lock_client_entry: RustCommandEntry = RustCommandEntry {
 };
 
 unsafe fn cmd_lock_server_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let entry = cmd_get_entry(self_0);
+    let entry = crate::Command::command_entry(self_0);
     if core::ptr::eq(entry, &cmd_lock_server_entry) {
         server_lock();
     } else if core::ptr::eq(entry, &cmd_lock_session_entry) {

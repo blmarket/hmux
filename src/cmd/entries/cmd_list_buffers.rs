@@ -10,7 +10,6 @@
 
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -71,7 +70,7 @@ fn sorted_buffers(sort_crit: &mut sort_criteria_t) -> Vec<SortedPasteBuffer> {
 }
 
 unsafe fn cmd_list_buffers_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
 
     let template = args
         .argument_flag_string(b'F')

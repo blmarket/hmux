@@ -134,7 +134,9 @@ impl CmdqLeakRig {
         (unsafe { client.as_client_mut() }).environ = Some(crate::environ::new_environment_box());
         let command = Args::parse(c"display-message");
         unsafe {
-            command.command_mut().entry = &LEAK_ENTRY;
+            command
+                .command_mut()
+                .set_entry_for_test(&LEAK_ENTRY);
             let state = CmdqStateRef::create(None, None, 0);
             let command_item = zeroed_cmdq_item(state);
             command_item.item().name = Some(c"leak-command".to_owned());

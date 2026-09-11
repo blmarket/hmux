@@ -1,6 +1,5 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
 use crate::format::format_single_from_target;
 
@@ -73,8 +72,8 @@ unsafe fn cmd_select_pane_redraw(w: &WindowRef) {
     }
 }
 unsafe fn cmd_select_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
-    let entry = cmd_get_entry(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
+    let entry = crate::Command::command_entry(self_0);
     let current_state_ref = item.state_ref();
     let mut c = item.client();
     let link = item

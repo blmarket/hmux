@@ -4,7 +4,6 @@ use crate::args::RustArguments;
 use crate::args::args_make_commands;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_find_from_nothing;
-use crate::cmd::cmd_get_args;
 use crate::args::cmd_make_commands_prepare;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -114,7 +113,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, msg: &CStr) {
     }
 }
 unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let mut cdata = Box::new(cmd_run_shell_data {
         client: None,
         cmd: None,

@@ -28,7 +28,6 @@ use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::args::args_set;
-use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::types::{ArgsValue, WindowMode};
@@ -128,7 +127,7 @@ fn cmd_find_window_filter(args: &RustArguments) -> Vec<u8> {
 }
 
 unsafe fn cmd_find_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let target = &item.target;
     let pane = target.pane_ref().expect("the command target has a pane");
 

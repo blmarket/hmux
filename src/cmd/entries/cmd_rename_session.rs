@@ -1,7 +1,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
 use crate::format::format_single_from_target;
@@ -40,7 +39,7 @@ pub(crate) static cmd_rename_session_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_rename_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let target = &item.target;
     let session = target.session().expect("the target retains its session");
     let tmp = unsafe {

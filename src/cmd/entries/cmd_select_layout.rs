@@ -3,7 +3,6 @@ use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
 };
@@ -90,7 +89,7 @@ pub(crate) static cmd_previous_layout_entry: RustCommandEntry = {
 };
 unsafe fn cmd_select_layout_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let current_block: u64;
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let owner = item.target.window().expect("a layout target has a window");
     let pane = item.target.pane_ref();
 
@@ -98,7 +97,7 @@ unsafe fn cmd_select_layout_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut previous: core::ffi::c_int;
     let layout: core::ffi::c_int;
     unsafe { owner.unzoom_and_redraw() };
-    next = core::ptr::eq(cmd_get_entry(self_0), &cmd_next_layout_entry) as core::ffi::c_int;
+    next = core::ptr::eq(crate::Command::command_entry(self_0), &cmd_next_layout_entry) as core::ffi::c_int;
     if ({
         let flag = 'n' as i32 as u_char;
         args.argument_flag_count(flag)
@@ -106,7 +105,7 @@ unsafe fn cmd_select_layout_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     {
         next = 1 as core::ffi::c_int;
     }
-    previous = core::ptr::eq(cmd_get_entry(self_0), &cmd_previous_layout_entry) as core::ffi::c_int;
+    previous = core::ptr::eq(crate::Command::command_entry(self_0), &cmd_previous_layout_entry) as core::ffi::c_int;
     if ({
         let flag = 'p' as i32 as u_char;
         args.argument_flag_count(flag)

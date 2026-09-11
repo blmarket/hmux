@@ -8,7 +8,7 @@ use crate::args::RustArguments;
 use crate::cfg::cfg_add_cause;
 use crate::cfg::configuration_finished;
 use crate::cmd::{CommandEntry, RustCommandContext};
-use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_print};
+use crate::cmd::{    cmd_print};
 use crate::compat::toupper;
 use crate::control::control_write;
 use crate::ffi::{getuid, time};
@@ -382,7 +382,7 @@ unsafe fn cmdq_find_flag(item: &cmdq_item, flag: &cmd_entry_flag) -> (cmd_retval
         let list = list.clone();
         let command = list.command(at).expect("the target command is in its list");
         let value = {
-            let args = cmd_get_args(&command);
+            let args = crate::Command::command_arguments(&*command).expect("the command carries arguments");
             let flag = flag.flag as u_char;
             args.argument_flag_string(flag)
         };
@@ -893,7 +893,7 @@ impl CmdListRef {
             let state = state
                 .cloned()
                 .unwrap_or_else(|| CmdqStateRef::create(None, None, 0));
-            let commands = cmdlist.map(|cmd| (cmd_get_entry(cmd), cmd_get_group(cmd)));
+            let commands = cmdlist.map(|cmd| (crate::Command::command_entry(cmd), crate::Command::command_group(cmd)));
             if commands.is_empty() {
                 return CmdqItemRef::callback_items(c"cmdq_empty_command", cmdq_empty_command);
             }
@@ -1057,7 +1057,7 @@ impl CmdqItemRef {
             let cmd = list
                 .command(at)
                 .expect("the hook parent command is in its list");
-            let args_0: &RustArguments = cmd_get_args(&cmd);
+            let args_0: &RustArguments = crate::Command::command_arguments(&*cmd).expect("the command carries arguments");
             let mut i: u_int;
             let event = state.state().event.clone();
             let new_state = CmdqStateRef::create(current, Some(&event), CMDQ_STATE_NOHOOKS);
@@ -1191,7 +1191,7 @@ impl cmdq_item {
 
         {
             if let Some(cmd) = item.command() {
-                let entry = cmd_get_entry(&cmd);
+                let entry = crate::Command::command_entry(&*cmd);
                 format_add(ft, c"command", c"%s", fmt_args![entry.name]);
             }
             if let Some(state) = item.state.as_ref()
@@ -1252,7 +1252,7 @@ impl cmdq_item {
                 let cmd = item
                     .command()
                     .expect("a configuration error belongs to a command");
-                let (file, line) = cmd_get_source(&cmd);
+                let (file, line) = { let __src = crate::Command::command_source(&*cmd); (__src.file, __src.line) };
                 cfg_add_cause(c"%s:%u: %s", fmt_args![file, line, msg.as_c_str()]);
                 return;
             };
@@ -1318,8 +1318,8 @@ impl CmdqItemRef {
             });
             let name = cmdq_name(saved.as_ref());
             let cmd = list.command(at).expect("the fired command is in its list");
-            let args = cmd_get_args(&cmd);
-            let entry = cmd_get_entry(&cmd);
+            let args = crate::Command::command_arguments(&*cmd).expect("the command carries arguments");
+            let entry = crate::Command::command_entry(&*cmd);
             if configuration_finished() {
                 fired.with_item(|item| cmdq_add_message(item));
             }

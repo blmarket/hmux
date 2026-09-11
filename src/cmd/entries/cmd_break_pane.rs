@@ -18,7 +18,6 @@
 
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
 use crate::format::{format_create_for_client, format_defaults_for_handles, format_expand};
@@ -73,7 +72,7 @@ pub(crate) static cmd_break_pane_entry: RustCommandEntry = RustCommandEntry {
 /// sessions sharing a group. Group synchronization skips the source itself.
 /// So a winlink for `w` remains in `dst_s->windows` when it is looked up.
 unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let current_state_ref = item.state_ref();
     let tc = item.target_client();
     let mut source = item.source.session().expect("a break source has a session");

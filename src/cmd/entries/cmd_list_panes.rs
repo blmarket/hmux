@@ -23,7 +23,6 @@
 
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -116,7 +115,7 @@ unsafe fn passes(ft: &mut format_tree, filter: Option<&CStr>) -> bool {
 }
 
 unsafe fn cmd_list_panes_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
 
     let order = RustSortCriteria::parse_order(args.argument_flag_string(b'O'));
     if order == SORT_END && args.argument_flag_count(b'O') != 0 {
@@ -158,7 +157,7 @@ unsafe fn cmd_list_panes_session(self_0: &cmd, s: &SessionRef, item: &cmdq_item,
 
 unsafe fn cmd_list_panes_window(self_0: &cmd, link: &WinlinkRef, item: &cmdq_item, level: Level) {
     unsafe {
-        let args = cmd_get_args(self_0);
+        let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
         let template = match args.argument_flag_string(b'F') {
             Some(given) => given,
             None => level.template(),

@@ -15,7 +15,6 @@ use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{
     CLIENT_READONLY, CMD_CLIENT_TFLAG, CMD_FIND_CANFAIL, CMD_FIND_PANE, CMD_FIND_SESSION,
     CMD_READONLY, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_STOP, CMD_TARGET_CLIENT_USAGE,
@@ -85,13 +84,13 @@ unsafe fn detach_or_exec(c: &mut ClientRef, cmd: Option<&CStr>, msgtype: msgtype
 }
 
 unsafe fn cmd_detach_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let c = item.client();
     let mut tc = item.target_client();
     let source = &item.source;
     let cmd = args.argument_flag_string(b'E');
 
-    if core::ptr::eq(cmd_get_entry(self_0), &cmd_suspend_client_entry) {
+    if core::ptr::eq(crate::Command::command_entry(self_0), &cmd_suspend_client_entry) {
         unsafe { tc.as_mut().expect("the command has a client").suspend() };
         return CMD_RETURN_NORMAL;
     }

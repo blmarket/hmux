@@ -4,7 +4,6 @@ use crate::args::args_parse_t;
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL};
 use crate::fmt_args;
 use crate::prompt_history::{
@@ -64,7 +63,7 @@ pub(crate) static cmd_clear_prompt_history_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_show_prompt_history_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let typestr = {
         let flag = 'T' as i32 as u_char;
         args.argument_flag_string(flag)
@@ -82,7 +81,7 @@ unsafe fn cmd_show_prompt_history_exec(self_0: &cmd, item: &cmdq_item) -> cmd_re
         Some(Some(kind)) => Some(kind),
         None => None,
     };
-    if core::ptr::eq(cmd_get_entry(self_0), &cmd_clear_prompt_history_entry) {
+    if core::ptr::eq(crate::Command::command_entry(self_0), &cmd_clear_prompt_history_entry) {
         with_prompt_history_mut(|history| match kind {
             Some(kind) => history.clear(kind),
             None => history.clear_all(),

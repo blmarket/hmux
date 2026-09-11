@@ -7,7 +7,6 @@ use crate::cfg::{configuration_finished, load_cfg_buffer_for_client};
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdqItemRef, CmdqItemWeak, cmdq_item_weak_of};
 use crate::cmd::{RustCommandEntry, SourceFileRef, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_parse_flags};
 use crate::compat::error_message;
 use crate::consts::{
     CLIENT_CONTROL, CMD_FIND_CANFAIL, CMD_FIND_PANE, CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET,
@@ -185,7 +184,7 @@ fn cmd_source_file_quote_for_glob(path: &CStr) -> CString {
     CString::new(quoted).expect("glob quoting does not introduce NUL")
 }
 unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let mut c = item.client();
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
     let parse_flags: core::ffi::c_int;
@@ -236,7 +235,7 @@ unsafe fn cmd_source_file_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         c.as_ref()
             .is_none_or(|c| !c.flags() & CLIENT_CONTROL as uint64_t != 0)
     } {
-        parse_flags = cmd_get_parse_flags(self_0);
+        parse_flags = crate::Command::command_parse_flags(self_0);
         if ({
             let flag = 'v' as i32 as u_char;
             args.argument_flag_count(flag)

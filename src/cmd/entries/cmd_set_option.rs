@@ -3,7 +3,6 @@ use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, CMD_AFTERHOOK, CMD_FIND_CANFAIL,
     CMD_FIND_PANE, CMD_FIND_WINDOW, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, OPTIONS_TABLE_NONE,
@@ -103,7 +102,7 @@ fn cmd_set_option_args_parse(
 }
 unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut current_block: u64;
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let append: core::ffi::c_int = {
         let flag = 'a' as i32 as u_char;
         args.argument_flag_count(flag)
@@ -121,14 +120,14 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut ambiguous: core::ffi::c_int = 0;
     let scope: core::ffi::c_int;
     let window: core::ffi::c_int =
-        core::ptr::eq(cmd_get_entry(self_0), &cmd_set_window_option_entry) as core::ffi::c_int;
+        core::ptr::eq(crate::Command::command_entry(self_0), &cmd_set_window_option_entry) as core::ffi::c_int;
     let argument = unsafe {
         format_single_from_target(
             item,
             args.argument_string(0).expect("argument count checked"),
         )
     };
-    if core::ptr::eq(cmd_get_entry(self_0), &cmd_set_hook_entry)
+    if core::ptr::eq(crate::Command::command_entry(self_0), &cmd_set_hook_entry)
         && ({
             let flag = 'R' as i32 as u_char;
             args.argument_flag_count(flag)

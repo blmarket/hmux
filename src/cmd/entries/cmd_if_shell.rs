@@ -2,7 +2,6 @@ use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_make_commands;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{CmdqItemWeak, cmdq_append, cmdq_item_ref_of, cmdq_item_weak_of};
@@ -73,7 +72,7 @@ fn cmd_if_shell_args_parse(
     ARGS_PARSE_STRING
 }
 unsafe fn cmd_if_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let mut cdata = Box::<cmd_if_shell_data>::default();
     let target_client = item.target_client();
     let target_session = item.target.session();

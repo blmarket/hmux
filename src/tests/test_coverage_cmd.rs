@@ -36,7 +36,7 @@ use crate::client::CMD_STARTSERVER;
 use crate::cmd::CMD_AFTERHOOK;
 use crate::cmd::{
     CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS, cmd_copy, cmd_find, cmd_get_alias,
-    cmd_get_parse_flags, cmd_get_source, cmd_mouse_at, cmd_mouse_pane, cmd_mouse_window, cmd_parse,
+    cmd_mouse_at, cmd_mouse_pane, cmd_mouse_window, cmd_parse,
     cmd_print, cmd_table, cmd_template_replace,
 };
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
@@ -230,8 +230,8 @@ fn parsing_keeps_the_parse_flags_and_where_the_command_came_from() {
             .expect("list-buffers parses");
         let cmd_ptr = &raw mut *cmd;
 
-        assert_eq!(cmd_get_parse_flags(&*cmd_ptr), 0x3);
-        let (file, line) = cmd_get_source(&*cmd_ptr);
+        assert_eq!(crate::Command::command_parse_flags(&*cmd_ptr), 0x3);
+        let (file, line) = { let __src = crate::Command::command_source(&*cmd_ptr); (__src.file, __src.line) };
         assert_eq!(file, Some(c"/etc/tmux.conf"));
         assert_eq!(line, 17);
 
@@ -239,14 +239,14 @@ fn parsing_keeps_the_parse_flags_and_where_the_command_came_from() {
         // arguments of its own. The parse flags are not copied.
         let mut copy = cmd_copy(&cmd, &[]);
         let copy_ptr = &raw mut *copy;
-        let (copied_file, copied_line) = cmd_get_source(&*copy_ptr);
+        let (copied_file, copied_line) = { let __src = crate::Command::command_source(&*copy_ptr); (__src.file, __src.line) };
         assert_eq!(copied_file, Some(c"/etc/tmux.conf"));
         assert!(
             !core::ptr::eq(copied_file.unwrap().as_ptr(), file.unwrap().as_ptr()),
             "the copy has a file name of its own"
         );
         assert_eq!(copied_line, 17);
-        assert_eq!(cmd_get_parse_flags(&*copy_ptr), 0);
+        assert_eq!(crate::Command::command_parse_flags(&*copy_ptr), 0);
         assert_eq!(cmd_print(&*copy_ptr).to_string_lossy(), "list-buffers");
 
         cmd_free(copy);

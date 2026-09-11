@@ -1,7 +1,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdqItemWeak, cmdq_item_weak_of};
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -114,7 +113,7 @@ pub(crate) fn cmd_load_buffer_done(event: ClientFileEvent<'_>) {
     }
 }
 unsafe fn cmd_load_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let target_client = item.target_client();
     let mut cdata = Box::<cmd_load_buffer_data>::default();
     cdata.item = cmdq_item_weak_of(item);

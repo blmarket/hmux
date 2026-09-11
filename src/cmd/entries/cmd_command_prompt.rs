@@ -36,7 +36,6 @@ use crate::args::args_parse_t;
 use crate::args::{args_make_commands, args_make_commands_get_command};
 use crate::cmd::CmdqItemRef;
 use crate::cmd::CmdqItemWeak;
-use crate::cmd::cmd_get_args;
 use crate::args::cmd_make_commands_prepare;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -160,7 +159,7 @@ fn mode_flag(args: &RustArguments) -> c_int {
 }
 
 unsafe fn cmd_command_prompt_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let mut tc = item
         .target_client()
         .expect("the command has a target client");

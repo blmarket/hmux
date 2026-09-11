@@ -10,7 +10,6 @@
 //! both answer `CMD_RETURN_NORMAL`.
 
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_entry;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::consts::{CMD_FIND_PANE, CMD_RETURN_NORMAL, CMD_STARTSERVER, SIGTERM};
@@ -64,7 +63,7 @@ pub(crate) static cmd_start_server_entry: RustCommandEntry = RustCommandEntry {
 };
 
 fn cmd_kill_server_exec(self_0: &cmd, _item: &cmdq_item) -> cmd_retval {
-    if core::ptr::eq(cmd_get_entry(self_0), &cmd_kill_server_entry) {
+    if core::ptr::eq(crate::Command::command_entry(self_0), &cmd_kill_server_entry) {
         unsafe {
             kill(getpid(), SIGTERM);
         }

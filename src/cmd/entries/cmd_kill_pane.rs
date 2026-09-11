@@ -17,7 +17,6 @@
 
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
 
@@ -59,7 +58,7 @@ unsafe fn remove(owner: &WindowRef, pane: &RustWindowPaneWeak) {
 }
 
 unsafe fn cmd_kill_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let owner = item.target.window().expect("a kill target has a window");
     let target = item.target.pane_ref();
     if args.argument_flag_count(b'a') != 0 {

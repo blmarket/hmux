@@ -93,10 +93,7 @@ mod tests {
     fn succeeds(result: &cmd_parse_result, count: usize) {
         assert_eq!(result.command_parse_status(), 1);
         assert_eq!(
-            result
-                .command_parse_list()
-                .unwrap()
-                .with(CommandList::command_count),
+            result.command_parse_list().unwrap().command_count(),
             count
         );
         assert!(result.command_parse_error().is_none());

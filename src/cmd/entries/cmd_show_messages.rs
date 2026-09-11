@@ -1,7 +1,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -47,7 +46,7 @@ unsafe fn cmd_show_messages_terminals(
     mut blank: core::ffi::c_int,
 ) -> core::ffi::c_int {
     unsafe {
-        let args: &RustArguments = cmd_get_args(self_0);
+        let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
         let target_client = item.target_client();
         let mut n: u_int;
         n = 0 as u_int;
@@ -77,7 +76,7 @@ unsafe fn cmd_show_messages_terminals(
     }
 }
 unsafe fn cmd_show_messages_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let mut done: core::ffi::c_int;
     let mut blank: core::ffi::c_int;
     blank = 0 as core::ffi::c_int;

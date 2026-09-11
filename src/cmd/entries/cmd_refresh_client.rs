@@ -1,7 +1,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::compat::strtonum;
@@ -79,7 +78,7 @@ unsafe fn cmd_refresh_client_update_subscription(tc: &mut ClientRef, value: &CSt
 }
 unsafe fn cmd_refresh_client_control_client_size(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     unsafe {
-        let args: &RustArguments = cmd_get_args(self_0);
+        let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
         let mut tc = item
             .target_client()
             .expect("the command has a target client");
@@ -199,7 +198,7 @@ unsafe fn cmd_refresh_report(tc: &mut ClientRef, value: &CStr) {
     }
 }
 unsafe fn cmd_refresh_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let mut tc = item
         .target_client()
         .expect("the command has a target client");

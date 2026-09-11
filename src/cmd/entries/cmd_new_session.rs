@@ -6,7 +6,6 @@ use crate::cmd::cmd_find_from_session_ref;
 use crate::cmd::cmdq_item_weak_of;
 use crate::cmd::entries::cmd_attach_session::cmd_attach_session;
 
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::compat::strtonum;
 use crate::environ::EnvironmentStore;
 use crate::environ::{RustEnvironment, new_environment_box};
@@ -106,7 +105,7 @@ fn join_session_group(
 
 unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut current_block: u64;
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let current_state_ref = item.state_ref();
     let cmdq_client = item.client();
     let mut c = cmdq_client.clone();
@@ -134,7 +133,7 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut sc = spawn_context::default();
     let retval: cmd_retval;
     let mut fs = cmd_find_state::default();
-    if core::ptr::eq(cmd_get_entry(self_0), &cmd_has_session_entry) {
+    if core::ptr::eq(crate::Command::command_entry(self_0), &cmd_has_session_entry) {
         return CMD_RETURN_NORMAL;
     }
     if ({

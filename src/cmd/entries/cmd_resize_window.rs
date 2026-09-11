@@ -1,7 +1,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 
 use crate::compat::strtonum;
 use crate::fmt_args;
@@ -42,7 +41,7 @@ pub(crate) static cmd_resize_window_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_resize_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let target = item
         .target
         .winlink_ref()

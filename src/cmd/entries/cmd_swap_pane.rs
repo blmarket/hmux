@@ -1,5 +1,4 @@
 use crate::args::arguments_trait::Arguments as _;
-use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;
 
@@ -34,7 +33,7 @@ pub(crate) static cmd_swap_pane_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_swap_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let dst_owner = item
         .target
         .window()

@@ -39,7 +39,6 @@ use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_find_best_client_for_session;
-use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
@@ -175,7 +174,7 @@ unsafe fn cmd_display_message_show(
 }
 
 unsafe fn cmd_display_message_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let target_client = item.target_client();
     let mut tc = target_client.clone();
     let session = item.target.session();

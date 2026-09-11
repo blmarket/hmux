@@ -1,4 +1,4 @@
-use crate::cmd::{cmd, cmd_get_args, cmd_get_source, cmd_find_copy_state, cmdq_item_ref_of};
+use crate::cmd::{cmd, cmd_find_copy_state, cmdq_item_ref_of};
 pub mod argument_text;
 pub mod arguments_trait;
 
@@ -6,7 +6,7 @@ use crate::args::argument_text::ArgumentTextCodec;
 use crate::args::argument_text::RustArgumentTextCodec;
 use crate::args::arguments_trait::Arguments;
 use crate::cmd::CmdListRef;
-use crate::cmd::cmd_get_entry;
+use crate::Command as _;
 use crate::cmd::cmd_parse_from_string;
 use crate::cmd::cmdq_item;
 use crate::cmd::{cmd_log_argv, cmd_template_replace};
@@ -83,8 +83,7 @@ impl RustArguments {
         arguments
     }
 
-    /// Copies arguments while expanding positional templates with the supplied words.
-    pub(crate) unsafe fn copy_with_arguments(&self, argv: &[CString]) -> Box<Self> {
+    unsafe fn copy_with_arguments_inner(&self, argv: &[CString]) -> Box<Self> {
         unsafe {
             cmd_log_argv(argv, c"%s", fmt_args![c"args_copy".as_ptr()]);
             let mut new_args = Box::<Self>::default();
@@ -115,8 +114,7 @@ impl RustArguments {
         }
     }
 
-    /// Returns positional arguments as strings, printing command lists and skipping empty values.
-    pub(crate) unsafe fn to_vector(&self) -> Vec<CString> {
+    unsafe fn to_vector_inner(&self) -> Vec<CString> {
         unsafe {
             let mut argv = Vec::new();
             for value in self.values.iter() {
@@ -191,11 +189,11 @@ impl Arguments for RustArguments {
     where
         Self: Sized,
     {
-        unsafe { RustArguments::copy_with_arguments(self, argv) }
+        unsafe { RustArguments::copy_with_arguments_inner(self, argv) }
     }
 
     unsafe fn to_vector(&self) -> Vec<CString> {
-        unsafe { RustArguments::to_vector(self) }
+        unsafe { RustArguments::to_vector_inner(self) }
     }
 
     unsafe fn print(&self) -> CString {
@@ -767,7 +765,7 @@ pub(crate) unsafe fn args_make_commands(
 pub(crate) fn args_make_commands_get_command(state: &args_command_state) -> CString {
     if let Some(cmdlist) = state.cmdlist.as_ref() {
         return match cmdlist.command(0) {
-            Some(first) => crate::CommandEntry::name(cmd_get_entry(&first)).to_owned(),
+            Some(first) => crate::CommandEntry::name(crate::Command::command_entry(&*first)).to_owned(),
             None => CString::default(),
         };
     }
@@ -963,7 +961,7 @@ pub fn cmd_make_commands_prepare(
     wait: core::ffi::c_int,
     expand: impl FnOnce(&CStr) -> CString,
 ) -> Box<args_command_state> {
-    let args = cmd_get_args(command);
+    let args = crate::Command::command_arguments(command).expect("the command carries arguments");
     let target = &item.target;
     let tc = item.target_client();
     let mut state = Box::new(args_command_state {
@@ -992,7 +990,7 @@ pub fn cmd_make_commands_prepare(
         c"%s: %s",
         fmt_args![c"cmd_make_commands_prepare", state.cmd.as_deref()],
     );
-    let (file, line) = cmd_get_source(command);
+    let (file, line) = { let __src = crate::Command::command_source(command); (__src.file, __src.line) };
     state.pi.line = line;
     state.pi.file = file.map(CStr::to_owned);
     state.pi.c = tc.map(crate::types::ParseClient::Owned);

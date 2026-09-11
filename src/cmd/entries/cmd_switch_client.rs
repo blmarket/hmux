@@ -2,7 +2,6 @@ use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_find_target;
-use crate::cmd::cmd_get_args;
 
 use crate::ffi::getuid;
 use crate::fmt_args;
@@ -44,7 +43,7 @@ pub(crate) static cmd_switch_client_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_switch_client_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let current_state_ref = item.state_ref();
     let mut target = cmd_find_state::default();
     let tflag = {

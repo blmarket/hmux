@@ -29,7 +29,6 @@ use crate::args::args_parse_t;
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{
     __INT_MAX__, CMD_AFTERHOOK, CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, SHRT_MAX,
 };
@@ -158,13 +157,13 @@ unsafe fn cmd_capture_pane_history(
 }
 
 unsafe fn cmd_capture_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let mut c = item.client();
     let pane = item
         .target
         .pane_ref()
         .expect("the command target has a pane");
-    if core::ptr::eq(cmd_get_entry(self_0), &cmd_clear_history_entry) {
+    if core::ptr::eq(crate::Command::command_entry(self_0), &cmd_clear_history_entry) {
         unsafe { pane.clear_history(args.argument_flag_count(b'H') != 0) };
         return CMD_RETURN_NORMAL;
     }

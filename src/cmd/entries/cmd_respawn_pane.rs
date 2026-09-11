@@ -1,7 +1,6 @@
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
-use crate::cmd::cmd_get_args;
 
 use crate::cmd::cmdq_item_weak_of;
 use crate::environ::EnvironmentStore;
@@ -43,7 +42,7 @@ pub(crate) static cmd_respawn_pane_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_respawn_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let mut sc = spawn_context::default();
     let mut cause: Option<CString> = None;
     sc.item = cmdq_item_weak_of(item);

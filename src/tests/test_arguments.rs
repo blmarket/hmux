@@ -816,9 +816,8 @@ impl Runner {
         unsafe {
             let state = CmdqStateRef::create(None, None, 0);
             let mut cmd = crate::tests::test_fixtures::empty_cmd();
-            cmd.entry = crate::cmd::cmd_find(c"display-message").unwrap();
-            cmd.file = Some(c"args.conf".to_owned());
-            cmd.line = 7;
+            cmd.set_entry_for_test(crate::cmd::cmd_find(c"display-message").unwrap());
+            cmd.set_source_for_test(Some(c"args.conf".to_owned()), 7);
             let cmdlist = CmdListRef::empty();
             cmdlist.append(cmd);
             let client = zeroed_client();
@@ -846,7 +845,7 @@ impl Runner {
         self.cmdlist
             .command_mut(0)
             .expect("the fixture command")
-            .args = Some(args);
+            .set_args_for_test(Some(args));
     }
 }
 

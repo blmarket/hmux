@@ -198,16 +198,62 @@ use ::std::ffi::CString;
 
 /// The commands of one command list, in the order they run. Each command
 /// belongs to the list it sits in.
-pub type cmds = Vec<Box<cmd>>;
+type cmds = Vec<Box<cmd>>;
 
+/// ```compile_fail
+/// use tmux_c2rs::cmd::cmd;
+/// let cmd = unsafe { std::mem::zeroed::<cmd>() };
+/// let _ = cmd.entry;
+/// ```
+///
+/// ```compile_fail
+/// use tmux_c2rs::cmd::cmd;
+/// let cmd = unsafe { std::mem::zeroed::<cmd>() };
+/// let _ = cmd.group;
+/// ```
 #[repr(C)]
 pub struct cmd {
-    pub entry: &'static RustCommandEntry,
-    pub args: Option<Box<RustArguments>>,
-    pub group: u_int,
-    pub file: Option<CString>,
-    pub line: u_int,
-    pub parse_flags: c_int,
+    entry: &'static RustCommandEntry,
+    args: Option<Box<RustArguments>>,
+    group: u_int,
+    file: Option<CString>,
+    line: u_int,
+    parse_flags: c_int,
+}
+
+impl cmd {
+    #[cfg(test)]
+    pub(crate) fn test_placeholder(entry: &'static RustCommandEntry) -> Self {
+        Self {
+            entry,
+            args: None,
+            group: 0,
+            file: None,
+            line: 0,
+            parse_flags: 0,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_entry_for_test(&mut self, entry: &'static RustCommandEntry) {
+        self.entry = entry;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_args_for_test(&mut self, args: Option<Box<RustArguments>>) {
+        self.args = args;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_source_for_test(&mut self, file: Option<CString>, line: u_int) {
+        self.file = file;
+        self.line = line;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_args_for_test(&mut self) -> Option<Box<RustArguments>> {
+        self.args.take()
+    }
 }
 
 impl crate::Command for cmd {
@@ -483,10 +529,6 @@ pub(crate) fn cmd_stringify_argv_impl(argv: &[CString]) -> CString {
     CString::new(out).expect("escaped arguments contain no NUL bytes")
 }
 
-pub fn cmd_get_entry(cmd: &cmd) -> &'static RustCommandEntry {
-    crate::Command::command_entry(cmd)
-}
-
 pub(crate) unsafe fn cmd_make_commands_now(
     command: &cmd,
     item: &cmdq_item,
@@ -508,30 +550,6 @@ pub(crate) unsafe fn cmd_make_commands_now(
         }
         cmdlist
     }
-}
-
-pub fn cmd_get_args(cmd: &cmd) -> &RustArguments {
-    crate::Command::command_arguments(cmd).expect("the command carries arguments")
-}
-
-/// The same, for a caller that means to change what the command carries.
-pub fn cmd_get_args_mut(cmd: &mut cmd) -> &mut RustArguments {
-    crate::Command::command_arguments_mut(cmd).expect("the command carries arguments")
-}
-
-pub fn cmd_get_group(cmd: &cmd) -> u_int {
-    crate::Command::command_group(cmd)
-}
-
-/// Where the command was parsed from: the file, if it came from one, and
-/// the line in it.
-pub fn cmd_get_source(cmd: &cmd) -> (Option<&CStr>, u_int) {
-    let source = crate::Command::command_source(cmd);
-    (source.file, source.line)
-}
-
-pub fn cmd_get_parse_flags(cmd: &cmd) -> c_int {
-    crate::Command::command_parse_flags(cmd)
 }
 
 pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
@@ -599,7 +617,7 @@ pub unsafe fn cmd_copy(from: &cmd, argv: &[CString]) -> Box<cmd> {
     unsafe {
         Box::new(cmd {
             entry: from.entry,
-            args: Some(cmd_get_args(from).copy_with_arguments(argv)),
+            args: Some(crate::Command::command_arguments(from).expect("the command carries arguments").copy_with_arguments(argv)),
             group: 0,
             file: from.file.clone(),
             line: from.line,
@@ -610,7 +628,7 @@ pub unsafe fn cmd_copy(from: &cmd, argv: &[CString]) -> Box<cmd> {
 
 pub unsafe fn cmd_print(cmd: &cmd) -> CString {
     unsafe {
-        let s = cmd_get_args(cmd).print();
+        let s = crate::Command::command_arguments(cmd).expect("the command carries arguments").print();
 
         if !s.as_bytes().is_empty() {
             xasprintf(c"%s %s", fmt_args![cmd.entry.name(), s.as_c_str()])
@@ -899,10 +917,21 @@ pub type cmd_retval = core::ffi::c_int;
 pub use command_entry::{CommandEntry, CommandResult, RustCommandContext, RustCommandEntry};
 pub type cmd_entry = RustCommandEntry;
 
+/// ```compile_fail
+/// use tmux_c2rs::cmd::cmd_list;
+/// let list = unsafe { std::mem::zeroed::<cmd_list>() };
+/// let _ = list.group;
+/// ```
+///
+/// ```compile_fail
+/// use tmux_c2rs::cmd::cmd_list;
+/// let list = unsafe { std::mem::zeroed::<cmd_list>() };
+/// let _ = list.list;
+/// ```
 #[repr(C)]
 pub struct cmd_list {
-    pub group: u_int,
-    pub list: Option<Box<cmds>>,
+    group: u_int,
+    list: Option<Box<cmds>>,
 }
 
 impl crate::CommandList for cmd_list {
@@ -934,20 +963,42 @@ impl crate::CommandList for cmd_list {
 /// A shared owner of a command list. Commands remain borrowed through the
 /// list's guard, and callers can clone the owner to retain a command while
 /// mutating the queue item that selected it.
+///
+/// ```compile_fail
+/// use tmux_c2rs::cmd::CmdListRef;
+/// let list: CmdListRef = unsafe { std::mem::zeroed() };
+/// let _ = list.with(|_| ());
+/// ```
+///
+/// ```compile_fail
+/// use tmux_c2rs::cmd::CmdListRef;
+/// let list: CmdListRef = unsafe { std::mem::zeroed() };
+/// let _ = list.with_mut(|_| ());
+/// ```
+///
+/// ```compile_fail
+/// use tmux_c2rs::cmd::cmds;
+/// let _ = std::mem::size_of::<cmds>();
+/// ```
 #[derive(Clone)]
 pub struct CmdListRef(Rc<RefCell<cmd_list>>);
 
 impl CmdListRef {
-    pub(crate) fn new(value: cmd_list) -> Self {
+    fn new(value: cmd_list) -> Self {
         Self(Rc::new(RefCell::new(value)))
     }
 
-    pub(crate) fn with<R>(&self, operation: impl FnOnce(&cmd_list) -> R) -> R {
+    fn with<R>(&self, operation: impl FnOnce(&cmd_list) -> R) -> R {
         operation(&self.0.borrow())
     }
 
-    pub(crate) fn with_mut<R>(&self, operation: impl FnOnce(&mut cmd_list) -> R) -> R {
+    fn with_mut<R>(&self, operation: impl FnOnce(&mut cmd_list) -> R) -> R {
         operation(&mut self.0.borrow_mut())
+    }
+
+    /// Returns the number of commands in the list.
+    pub fn command_count(&self) -> usize {
+        self.with(|list| crate::CommandList::command_count(list))
     }
 
     /// Borrows one command while retaining the list's shared borrow guard.

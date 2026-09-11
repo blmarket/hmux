@@ -27,7 +27,7 @@ use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
+use crate::cmd::{  cmd_mouse_pane};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_FIND_PANE, CMD_READONLY, CMD_RETURN_NORMAL, KEYC_MASK_KEY, KEYC_MASK_TYPE,
     KEYC_MOUSE, KEYC_TYPE_MOUSEMOVE, KEYC_TYPE_TRIPLECLICK,
@@ -93,7 +93,7 @@ fn key_is_mouse(key: key_code) -> bool {
 }
 
 unsafe fn cmd_copy_mode_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let event_state_ref = item.state_ref();
     let event = event_state_ref.event_snapshot();
     let mut c = item.client();
@@ -123,7 +123,7 @@ unsafe fn cmd_copy_mode_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     } else {
         Some(pane.clone())
     };
-    if core::ptr::eq(cmd_get_entry(self_0), &cmd_clock_mode_entry) {
+    if core::ptr::eq(crate::Command::command_entry(self_0), &cmd_clock_mode_entry) {
         unsafe {
             pane.set_mode(None, WindowMode::Clock, None, None)
                 .expect("mode target is present")

@@ -3,7 +3,6 @@ use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{
     CMD_AFTERHOOK, CMD_BUFFER_USAGE, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG, CMD_FIND_PANE,
     CMD_RETURN_ERROR, CMD_RETURN_NORMAL,
@@ -66,7 +65,7 @@ pub(crate) static cmd_delete_buffer_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_set_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let mut tc = item.target_client();
     let mut bufname = args.argument_flag_string(b'b').map(CStr::to_owned);
     let mut bufdata: Vec<u8> = Vec::new();
@@ -77,7 +76,7 @@ unsafe fn cmd_set_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                 .map(|buffer| (buffer.name.to_owned(), buffer.data.to_vec()))
         })
     });
-    if core::ptr::eq(cmd_get_entry(self_0), &cmd_delete_buffer_entry) {
+    if core::ptr::eq(crate::Command::command_entry(self_0), &cmd_delete_buffer_entry) {
         if existing.is_none() && bufname.is_none() {
             existing = with_paste_buffers(|buffers| {
                 buffers

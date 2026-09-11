@@ -31,7 +31,6 @@ use crate::args::args_parse_t;
 
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
 use crate::paste::{PasteBufferStore, with_paste_buffers};
 use crate::server::server_client_how_many;
@@ -166,7 +165,7 @@ fn cmd_choose_tree_args_parse(
 /// The comparison is against the entry statics themselves, so `choose-tree`
 /// and any future entry sharing this exec fall through to the window tree.
 fn cmd_choose_tree_mode(self_0: &cmd) -> Option<WindowMode> {
-    let entry = cmd_get_entry(self_0);
+    let entry = crate::Command::command_entry(self_0);
     if core::ptr::eq(entry, &cmd_choose_buffer_entry) {
         match with_paste_buffers(PasteBufferStore::is_empty) {
             false => Some(WindowMode::Buffer),
@@ -193,7 +192,7 @@ fn cmd_choose_tree_order_is_known(args: &RustArguments) -> bool {
 }
 
 unsafe fn cmd_choose_tree_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     if !cmd_choose_tree_order_is_known(args) {
         unsafe { item.error(c"invalid sort order", fmt_args![]) };
         return CMD_RETURN_ERROR;

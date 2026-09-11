@@ -4,7 +4,6 @@ use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
 use crate::cmd::cmdq_item_weak_of;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::consts::{
     CMD_FIND_PANE, CMD_RETURN_ERROR, CMD_RETURN_NORMAL, CMD_RETURN_WAIT, SPAWN_BEFORE,
     SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FLOATING, SPAWN_FULLSIZE, SPAWN_ZOOM,
@@ -71,7 +70,7 @@ pub(crate) static cmd_split_window_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let current_state_ref = item.state_ref();
     let mut sc = spawn_context::default();
     let tc = item.target_client();
@@ -91,7 +90,7 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut cause: Option<CString> = None;
     let mut floating_cause = None;
     let count: u_int = args.argument_count();
-    let is_floating: core::ffi::c_int = if cmd_get_entry(self_0).name == cmd_new_pane_entry.name {
+    let is_floating: core::ffi::c_int = if crate::Command::command_entry(self_0).name == cmd_new_pane_entry.name {
         (({
             let flag = 'L' as i32 as u_char;
             args.argument_flag_count(flag)

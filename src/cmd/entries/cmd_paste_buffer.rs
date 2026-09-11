@@ -25,7 +25,6 @@
 
 use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
-use crate::cmd::cmd_get_args;
 
 use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
@@ -101,7 +100,7 @@ unsafe fn wanted_buffer(
 }
 
 unsafe fn cmd_paste_buffer_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args = cmd_get_args(self_0);
+    let args = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let pane = item
         .target
         .pane_ref()

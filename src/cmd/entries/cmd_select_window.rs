@@ -3,7 +3,6 @@ use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_find_from_session_ref;
 
-use crate::cmd::{cmd_get_args, cmd_get_entry};
 use crate::fmt_args;
 use crate::resize::recalculate_sizes;
 
@@ -116,7 +115,7 @@ pub(crate) static cmd_last_window_entry: RustCommandEntry = {
     }
 };
 unsafe fn cmd_select_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
-    let args: &RustArguments = cmd_get_args(self_0);
+    let args: &RustArguments = crate::Command::command_arguments(self_0).expect("the command carries arguments");
     let c = item.client();
     let current_state_ref = item.state_ref();
     let mut current = current_state_ref.current_snapshot();
@@ -129,7 +128,7 @@ unsafe fn cmd_select_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     let mut previous: core::ffi::c_int;
     let mut last: core::ffi::c_int;
     let activity: core::ffi::c_int;
-    next = core::ptr::eq(cmd_get_entry(self_0), &cmd_next_window_entry) as core::ffi::c_int;
+    next = core::ptr::eq(crate::Command::command_entry(self_0), &cmd_next_window_entry) as core::ffi::c_int;
     if ({
         let flag = 'n' as i32 as u_char;
         args.argument_flag_count(flag)
@@ -137,7 +136,7 @@ unsafe fn cmd_select_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     {
         next = 1 as core::ffi::c_int;
     }
-    previous = core::ptr::eq(cmd_get_entry(self_0), &cmd_previous_window_entry) as core::ffi::c_int;
+    previous = core::ptr::eq(crate::Command::command_entry(self_0), &cmd_previous_window_entry) as core::ffi::c_int;
     if ({
         let flag = 'p' as i32 as u_char;
         args.argument_flag_count(flag)
@@ -145,7 +144,7 @@ unsafe fn cmd_select_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     {
         previous = 1 as core::ffi::c_int;
     }
-    last = core::ptr::eq(cmd_get_entry(self_0), &cmd_last_window_entry) as core::ffi::c_int;
+    last = core::ptr::eq(crate::Command::command_entry(self_0), &cmd_last_window_entry) as core::ffi::c_int;
     if ({
         let flag = 'l' as i32 as u_char;
         args.argument_flag_count(flag)
