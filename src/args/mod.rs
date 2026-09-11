@@ -1,7 +1,5 @@
 pub mod argument_command_state;
-pub mod argument_entry;
 pub mod argument_text;
-pub mod argument_value;
 pub mod arguments_trait;
 
 use crate::args::argument_command_state::ArgumentCommandState;
@@ -47,6 +45,15 @@ impl args_parse_t {
         }
     }
 }
+
+struct args_entry {
+    flag: u_char,
+    values: Vec<ArgsValue>,
+    count: u_int,
+    flags: c_int,
+}
+
+type args_tree = std::collections::BTreeMap<u_char, Box<args_entry>>;
 
 #[repr(C)]
 #[derive(Default)]

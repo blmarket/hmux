@@ -3181,14 +3181,6 @@ pub struct imsg {
     /// it is given up or handed on to a queue.
     pub buf: Option<Box<ibuf>>,
 }
-#[repr(C)]
-pub struct args_entry {
-    pub flag: u_char,
-    pub values: Vec<ArgsValue>,
-    pub count: u_int,
-    pub flags: core::ffi::c_int,
-}
-pub type args_tree = std::collections::BTreeMap<u_char, Box<args_entry>>;
 /// The children of one tree item, or the tree's own top level, in the order
 /// they were added. An item belongs to the list it sits on.
 pub type mode_tree_list = Vec<Box<mode_tree_item>>;
