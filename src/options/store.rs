@@ -1261,7 +1261,7 @@ pub(super) unsafe fn options_push_changes(name: &CStr) {
                     .position(|pane| Some(pane.pane_id()) == window.active_pane_id())
                     && options_get_number(window.options_ref(), name) != 0
                 {
-                    *window.panes[index].as_pane_mut().flags_mut() |= PANE_CHANGED;
+                    window.panes[index].as_pane_mut().name_changed();
                 }
             }
         }

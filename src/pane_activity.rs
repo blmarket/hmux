@@ -7,7 +7,7 @@ pub trait PaneActivityState {
     /// Returns the activity sequence number.
     fn activity_point(&self) -> c_uint;
 
-    /// Records the pane as active at the given sequence number.
+    /// Records the pane as active and schedules automatic naming reconsideration.
     fn mark_active_at(&mut self, point: c_uint);
 }
 

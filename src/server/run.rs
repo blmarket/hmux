@@ -750,11 +750,7 @@ pub(crate) unsafe fn server_toggle_marked_pane(
             .into_iter()
             .flatten()
         {
-            marked.add_flags(
-                crate::window::PANE_REDRAW
-                    | crate::window::PANE_STYLECHANGED
-                    | crate::window::PANE_THEMECHANGED,
-            );
+            marked.appearance_changed();
             if let Some(window) = marked.window() {
                 window.redraw_borders();
                 window.redraw_status();

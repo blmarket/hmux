@@ -37,7 +37,8 @@ pub trait WindowPane:
     /// Borrows the pane's server flags.
     fn flags(&self) -> &core::ffi::c_int;
 
-    /// Mutably borrows the pane's server flags.
+    /// Changes flags only for explicit unit fixtures; unavailable in production.
+    #[cfg(test)]
     fn flags_mut(&mut self) -> &mut core::ffi::c_int;
 
     /// Schedules content redraw without changing border or status policy.
@@ -48,6 +49,23 @@ pub trait WindowPane:
     fn request_full_redraw(&mut self);
     /// Acknowledges content and scrollbar redraw after all client passes complete.
     fn finish_redraw(&mut self);
+
+    /// Requests reconsideration of automatic naming after pane content/context changes.
+    fn name_changed(&mut self);
+    /// Acknowledges the naming request after the window's throttle permits evaluation.
+    fn finish_name_update(&mut self);
+    /// Schedules terminal theme evaluation after attached-client context changes.
+    fn request_theme_update(&mut self);
+    /// Records the membership marker maintained by the window's stack operations.
+    fn set_stack_member(&mut self, member: bool);
+    /// Records zoom state selected by the window's complete zoom transition.
+    fn set_window_zoomed(&mut self, zoomed: bool);
+    /// Changes pane input acceptance; the owning window updates border/status policy.
+    fn set_input_enabled(&mut self, enabled: bool);
+    /// Configures a process-free pane with hidden cursor and CRLF output semantics.
+    fn prepare_empty(&mut self);
+    /// Adopts window context and option parent together, invalidating inherited styles/theme.
+    fn inherit_window_context(&mut self, window: &crate::types::WindowRef);
 
     /// Resizes the base and active mode screens and queues the process resize,
     /// cancelling synchronized output. An unchanged size does nothing.

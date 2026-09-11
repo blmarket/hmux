@@ -489,9 +489,7 @@ pub(crate) unsafe fn spawn_pane(
         sigfillset(&raw mut set);
         sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
         if sc.flags & SPAWN_EMPTY != 0 {
-            *new_wp.flags_mut() |= PANE_EMPTY;
-            let pane_screen_mode = (new_wp.base().mode() & !MODE_CURSOR) | MODE_CRLF;
-            new_wp.base_mut().set_mode(pane_screen_mode);
+            new_wp.prepare_empty();
         } else {
             if !getcwd(path.as_mut_ptr(), path.len()).is_null() {
                 if let Some(cwd) = pane_command.cwd.as_deref()

@@ -919,7 +919,7 @@ impl SessionRef {
             for window in linked_windows(s) {
                 for mut pane in panes_of(&window) {
                     let Some(wp) = pane.get_mut() else { continue };
-                    *wp.flags_mut() |= PANE_THEMECHANGED;
+                    wp.request_theme_update();
                 }
             }
         }

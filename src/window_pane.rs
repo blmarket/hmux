@@ -361,7 +361,7 @@ impl crate::pane_command::PaneCommandState for window_pane {
 
 impl crate::pane_activity::PaneActivityState for window_pane {
     fn activity_point(&self) -> u_int { self.active_point }
-    fn mark_active_at(&mut self, point: u_int) { self.active_point = point; }
+    fn mark_active_at(&mut self, point: u_int) { self.active_point = point; self.name_changed(); }
 }
 
 
@@ -370,6 +370,8 @@ impl crate::pane_scrollbar_style::PaneScrollbarStyleState for window_pane {
 }
 
 impl window_pane {
+    fn flags_mut(&mut self) -> &mut c_int { &mut self.flags }
+
     pub(crate) fn new() -> Self {
         window_pane {
             fd: -1,
@@ -395,6 +397,7 @@ impl crate::WindowPane for window_pane {
     fn flags(&self) -> &core::ffi::c_int {
         &self.flags
     }
+    #[cfg(test)]
     fn flags_mut(&mut self) -> &mut core::ffi::c_int {
         &mut self.flags
     }
@@ -405,6 +408,30 @@ impl crate::WindowPane for window_pane {
     }
     fn finish_redraw(&mut self) {
         self.flags &= !(crate::consts::PANE_REDRAW | crate::consts::PANE_REDRAWSCROLLBAR);
+    }
+    fn name_changed(&mut self) { self.flags |= crate::consts::PANE_CHANGED; }
+    fn finish_name_update(&mut self) { self.flags &= !crate::consts::PANE_CHANGED; }
+    fn request_theme_update(&mut self) { self.flags |= PANE_THEMECHANGED; }
+    fn set_stack_member(&mut self, member: bool) {
+        if member { self.flags |= crate::window::PANE_VISITED; }
+        else { self.flags &= !crate::window::PANE_VISITED; }
+    }
+    fn set_window_zoomed(&mut self, zoomed: bool) {
+        if zoomed { self.flags |= crate::consts::PANE_ZOOMED; }
+        else { self.flags &= !crate::consts::PANE_ZOOMED; }
+    }
+    fn set_input_enabled(&mut self, enabled: bool) {
+        if enabled { self.flags &= !crate::consts::PANE_INPUTOFF; }
+        else { self.flags |= crate::consts::PANE_INPUTOFF; }
+    }
+    fn prepare_empty(&mut self) {
+        self.flags |= crate::consts::PANE_EMPTY;
+        self.base.set_mode((self.base.mode() & !crate::consts::MODE_CURSOR) | crate::consts::MODE_CRLF);
+    }
+    fn inherit_window_context(&mut self, window: &WindowRef) {
+        self.set_window_context(Some(window));
+        self.options_ref().set_parent(Some(&window.options()));
+        self.flags |= PANE_STYLECHANGED | PANE_THEMECHANGED;
     }
     unsafe fn resize(&mut self, size: PaneSize) {
         let old = PaneSize { width: self.sx, height: self.sy };

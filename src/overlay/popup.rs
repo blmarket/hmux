@@ -497,10 +497,7 @@ unsafe fn popup_make_pane(pd: &mut popup_data, type_0: layout_type) {
             &crate::window::window_pane_find_by_id(new_id).expect("the selected pane exists"),
             1,
         );
-        *pane
-            .get_mut()
-            .expect("the converted pane is present")
-            .flags_mut() |= PANE_CHANGED;
+        pane.get_mut().expect("the converted pane is present").name_changed();
         pd.close = 1;
     }
 }

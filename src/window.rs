@@ -1241,7 +1241,7 @@ unsafe fn window_restore_layout(w: &mut window) -> bool {
         w.layout_root = w.saved_layout_root.take();
         for pane in &mut w.panes {
             let pane = pane.as_pane_mut();
-            *pane.flags_mut() &= !PANE_ZOOMED;
+            pane.set_window_zoomed(false);
         }
         true
     }
@@ -1401,7 +1401,7 @@ unsafe fn window_panes_take_all(w: &mut window) -> Vec<RustWindowPaneRef> {
     unsafe {
         for mut pane in core::mem::take(&mut w.last_panes) {
             if let Some(pane) = pane.get_mut() {
-                *pane.flags_mut() &= !PANE_VISITED;
+                pane.set_stack_member(false);
             }
         }
         w.z_index.clear();
@@ -2090,7 +2090,7 @@ pub fn window_pane_stack_push(
             window_pane_stack_remove(&mut *w, which, Some(&mut *wp));
             let pane = (wp).observation().expect("a stacked pane is owned");
             pane_stack(&mut *w, which).insert(0, pane);
-            *wp.flags_mut() |= PANE_VISITED;
+            wp.set_stack_member(true);
         }
     }
 }
@@ -2104,7 +2104,7 @@ pub fn window_pane_stack_remove(
         let previous_len = stack.len();
         stack.retain(|pane| wp.observation().as_ref() != Some(pane));
         if stack.len() != previous_len {
-            *wp.flags_mut() &= !PANE_VISITED;
+            wp.set_stack_member(false);
         }
     }
 }
@@ -2589,12 +2589,7 @@ impl WindowRef {
             let mut pane = source
                 .release_pane(source_pane)
                 .expect("the source pane belongs to its window");
-            let parent_options = self.options();
-            window_pane_set_window_ref(pane.as_pane_mut(), Some(self));
-            pane.as_pane()
-                .options_ref()
-                .set_parent(Some(&parent_options));
-            *pane.as_pane_mut().flags_mut() |= PANE_STYLECHANGED | PANE_THEMECHANGED;
+            pane.as_pane_mut().inherit_window_context(self);
             self.insert_pane_after(destination_pane, pane);
             self.assign_pane_layout(&slot, source_pane, 0);
             let mut moved = source_pane.clone();
@@ -2639,10 +2634,7 @@ impl WindowRef {
                 dimensions.pixels.width,
                 dimensions.pixels.height,
             );
-            let options = window.options();
-            window_pane_set_window_ref(held.as_pane_mut(), Some(&window));
-            held.as_pane().options_ref().set_parent(Some(&options));
-            *held.as_pane_mut().flags_mut() |= PANE_STYLECHANGED | PANE_THEMECHANGED;
+            held.as_pane_mut().inherit_window_context(&window);
             window.insert_first_pane(held);
             window
         }
@@ -2664,7 +2656,7 @@ impl WindowRef {
             self.init_layout(pane);
             let mut moved = pane.clone();
             let pane = moved.get_mut().expect("the moved pane is present");
-            *pane.flags_mut() |= PANE_CHANGED;
+            pane.name_changed();
             pane.reload_palette();
         }
     }
@@ -2721,15 +2713,11 @@ impl WindowRef {
         let dst_options = { destination.options() };
         {
             let pane = unsafe { source_observation.get_mut().unwrap() };
-            window_pane_set_window_ref(pane, Some(destination));
-            pane.options_ref().set_parent(Some(&dst_options));
-            *pane.flags_mut() |= PANE_STYLECHANGED | PANE_THEMECHANGED;
+            pane.inherit_window_context(destination);
         }
         {
             let pane = unsafe { destination_observation.get_mut().unwrap() };
-            window_pane_set_window_ref(pane, Some(self));
-            pane.options_ref().set_parent(Some(&src_options));
-            *pane.flags_mut() |= PANE_STYLECHANGED | PANE_THEMECHANGED;
+            pane.inherit_window_context(self);
         }
         {
             let pane = unsafe { source_observation.get_mut().unwrap() };
@@ -3272,33 +3260,7 @@ impl WindowRef {
                             && client.overlay().is_none()
                     })
                 });
-            if focused == (*wp.flags() & PANE_FOCUSED != 0) {
-                log_debug(
-                    c"%s: %%%u focus unchanged",
-                    fmt_args![c"window_pane_update_focus", pane.id()],
-                );
-                return;
-            }
-            let (description, event, sequence): (&CStr, &CStr, &[u8]) = if focused {
-                (c"focus in", c"pane-focus-in", b"\x1B[I")
-            } else {
-                (c"focus out", c"pane-focus-out", b"\x1B[O")
-            };
-            log_debug(
-                c"%s: %%%u %s",
-                fmt_args![c"window_pane_update_focus", pane.id(), description],
-            );
-            if wp.base().mode() & MODE_FOCUSON != 0 {
-                wp.write_terminal(sequence);
-            }
-            crate::notify::notify_pane_in_window(event, wp, w);
-            if let Some(wp) = pane.get_mut() {
-                if focused {
-                    *wp.flags_mut() |= PANE_FOCUSED;
-                } else {
-                    *wp.flags_mut() &= !PANE_FOCUSED;
-                }
-            }
+            pane.update_focus(w, focused);
         }
     }
     pub unsafe fn set_active_pane(
@@ -3343,7 +3305,6 @@ impl WindowRef {
                 .get_mut()
                 .expect("the window owns the selected pane");
             selected.mark_active_at(next_id(&next_active_point));
-            *selected.flags_mut() |= PANE_CHANGED;
             drop(payload);
             if global_options
                 .get()
@@ -3387,7 +3348,7 @@ impl WindowRef {
                 owner.set_active_pane(pane, 1);
             }
             if let Some(payload) = pane.clone().get_mut() {
-                *payload.flags_mut() |= PANE_ZOOMED;
+                payload.set_window_zoomed(true);
             }
             let mut payload = owner.as_window_mut();
             let w = &mut *payload;
@@ -3506,7 +3467,7 @@ impl WindowRef {
             let mut lost = pane.clone();
             let lost_payload = lost.get_mut().expect("the window owns the lost pane");
             if *lost_payload.flags() & PANE_VISITED != 0 {
-                *lost_payload.flags_mut() &= !PANE_VISITED;
+                lost_payload.set_stack_member(false);
                 w.last_panes.retain(|candidate| !candidate.ptr_eq(pane));
             }
             if w.active
@@ -3521,10 +3482,10 @@ impl WindowRef {
                     let selected_ref = selected.clone();
                     let active = selected.get_mut().expect("the replacement pane exists");
                     if *active.flags() & PANE_VISITED != 0 {
-                        *active.flags_mut() &= !PANE_VISITED;
+                        active.set_stack_member(false);
                         w.last_panes.retain(|pane| !pane.ptr_eq(&selected_ref));
                     }
-                    *active.flags_mut() |= PANE_CHANGED;
+                    active.name_changed();
                     drop(payload);
                     notify_window(c"window-pane-changed", Some(owner));
                     (owner).update_focus();
@@ -3812,11 +3773,7 @@ impl WindowRef {
     /// window and client/TTY access on the server thread. No callbacks run inline.
     pub(crate) unsafe fn set_pane_input_enabled(&self, pane: &RustWindowPaneWeak, enabled: bool) {
         unsafe {
-            if enabled {
-                pane.remove_flags(PANE_INPUTOFF);
-            } else {
-                pane.add_flags(PANE_INPUTOFF);
-            }
+            if let Some(wp) = pane.clone().get_mut() { wp.set_input_enabled(enabled); }
             self.redraw_borders();
             self.redraw_status();
         }

@@ -192,7 +192,7 @@ impl WindowRef {
                 w.name_event.disarm();
             }
             if let Some(pane) = active.get_mut() {
-                *pane.flags_mut() &= !PANE_CHANGED;
+                pane.finish_name_update();
             }
             let name = window.format_name();
             if window.window_name().as_deref() != Some(name.as_c_str()) {

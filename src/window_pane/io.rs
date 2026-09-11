@@ -18,7 +18,7 @@ impl RustWindowPaneWeak {
         };
         unsafe {
             context.as_ref().expect("pane input initialized").reset(1);
-            self.add_flags(PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW);
+            self.appearance_changed();
         }
         true
     }
@@ -130,6 +130,80 @@ impl RustWindowPaneWeak {
             writer.finish();
             if restore { self.request_redraw(); }
             crate::notify::notify_pane(c"pane-set-clipboard", self.get());
+        }
+    }
+}
+
+impl RustWindowPaneWeak {
+    /// Invalidates pane content, style and theme after an appearance-context change.
+    /// # Safety
+    /// Exclude conflicting pane access while scheduling the refresh.
+    pub(crate) unsafe fn appearance_changed(&self) {
+        if let Some(owner) = self.allocation.upgrade() {
+            unsafe { (*owner.pane.get()).flags |= PANE_STYLECHANGED | PANE_THEMECHANGED | PANE_REDRAW; }
+        }
+    }
+    /// Delivers focus protocol and notification before recording the window's focus state.
+    /// # Safety
+    /// Exclude conflicting pane/client access; callbacks must not retain pane borrows.
+    pub(crate) unsafe fn update_focus(&self, w: &WindowRef, focused: bool) {
+        use crate::consts::MODE_FOCUSON;
+        use crate::window::{PANE_FOCUSED, PANE_EXITED};
+        unsafe {
+            let pane = self;
+            let Some(wp) = pane.get() else { return; };
+            if *wp.flags() & PANE_EXITED != 0 { return; }
+            if focused == (*wp.flags() & PANE_FOCUSED != 0) {
+                log_debug(
+                    c"%s: %%%u focus unchanged",
+                    fmt_args![c"window_pane_update_focus", pane.id()],
+                );
+                return;
+            }
+            let (description, event, sequence): (&CStr, &CStr, &[u8]) = if focused {
+                (c"focus in", c"pane-focus-in", b"\x1B[I")
+            } else {
+                (c"focus out", c"pane-focus-out", b"\x1B[O")
+            };
+            log_debug(
+                c"%s: %%%u %s",
+                fmt_args![c"window_pane_update_focus", pane.id(), description],
+            );
+            if wp.base().mode() & MODE_FOCUSON != 0 {
+                wp.write_terminal(sequence);
+            }
+            crate::notify::notify_pane_in_window(event, wp, w);
+            if let Some(owner) = pane.allocation.upgrade() {
+                let wp = &mut *owner.pane.get();
+                if focused {
+                    wp.flags |= PANE_FOCUSED;
+                } else {
+                    wp.flags &= !PANE_FOCUSED;
+                }
+            }
+        }
+    }
+}
+
+impl RustWindowPaneWeak {
+    /// Sets both pane window styles and invalidates its appearance.
+    ///
+    /// # Safety
+    /// Resolve a live pane immediately before this call and exclude conflicting
+    /// pane and option access. This operation dispatches no callbacks.
+    pub(crate) unsafe fn set_window_style(&self, style: &CStr) {
+        unsafe {
+            let mut observed = self.clone();
+            let pane = observed.get_mut().expect("the styled pane is present");
+            pane.options_ref()
+                .set_string(c"window-style", 0, c"%s", crate::fmt_args![style]);
+            pane.options_ref().set_string(
+                c"window-active-style",
+                0,
+                c"%s",
+                crate::fmt_args![style],
+            );
+            self.appearance_changed();
         }
     }
 }

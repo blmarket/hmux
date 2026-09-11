@@ -39,6 +39,7 @@ impl RustWindowPaneWeak {
 impl RustWindowPaneWeak {
     /// # Safety
     /// Exclude other pane flag access during the update.
+    #[cfg(test)]
     pub(crate) unsafe fn add_flags(&self, flags: core::ffi::c_int) -> bool {
         let Some(mut owner) = self.upgrade() else {
             return false;
@@ -49,6 +50,7 @@ impl RustWindowPaneWeak {
 
     /// # Safety
     /// Exclude other pane flag access during the update.
+    #[cfg(test)]
     pub(crate) unsafe fn remove_flags(&self, flags: core::ffi::c_int) -> bool {
         let Some(mut owner) = self.upgrade() else {
             return false;
@@ -235,28 +237,6 @@ mod lifetime_tests {
     }
 }
 
-impl RustWindowPaneWeak {
-    /// Sets both pane window styles and invalidates its appearance.
-    ///
-    /// # Safety
-    /// Resolve a live pane immediately before this call and exclude conflicting
-    /// pane and option access. This operation dispatches no callbacks.
-    pub(crate) unsafe fn set_window_style(&self, style: &CStr) {
-        unsafe {
-            let mut observed = self.clone();
-            let pane = observed.get_mut().expect("the styled pane is present");
-            pane.options_ref()
-                .set_string(c"window-style", 0, c"%s", crate::fmt_args![style]);
-            pane.options_ref().set_string(
-                c"window-active-style",
-                0,
-                c"%s",
-                crate::fmt_args![style],
-            );
-            *pane.flags_mut() |= PANE_REDRAW | PANE_STYLECHANGED | PANE_THEMECHANGED;
-        }
-    }
-}
 
 impl RustWindowPaneWeak {
     /// Appends a line to view mode, opening it if necessary. A missing pane is a
