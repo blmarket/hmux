@@ -187,7 +187,7 @@ borrows through `recvmsg`; the send path borrows immutable regions through
 bounds on length changes. Raw libc socket headers are local to syscall adapters;
 the exported header copies and the ancillary-storage union are removed.
 
-`RegexBuffer` compiles owned libc patterns and returns match offsets for bounded
+`CompiledRegex` compiles owned libc patterns and returns match offsets for bounded
 borrowed strings. The automaton and lookup-table pointers are no longer exposed:
 callers use matching operations instead of inspecting opaque libc storage.
 Substitutions, format matching, pane search, and copy-mode search share the same
