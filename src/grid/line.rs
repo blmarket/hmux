@@ -1,4 +1,36 @@
-use crate::types::{grid_cell_entry, grid_cell_entry_union, grid_extd_entry, time_t, u_int};
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+pub(super) struct grid_extd_entry {
+    pub(super) data: utf8_char,
+    pub(super) attr: u_short,
+    pub(super) flags: u_char,
+    pub(super) fg: core::ffi::c_int,
+    pub(super) bg: core::ffi::c_int,
+    pub(super) us: core::ffi::c_int,
+    pub(super) link: u_int,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub(super) struct grid_cell_entry_data {
+    pub(super) attr: u_char,
+    pub(super) fg: u_char,
+    pub(super) bg: u_char,
+    pub(super) data: u_char,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub(super) union grid_cell_entry_union {
+    pub(super) offset: u_int,
+    pub(super) data: grid_cell_entry_data,
+}
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+pub(super) struct grid_cell_entry {
+    pub(super) value: grid_cell_entry_union,
+    pub(super) flags: u_char,
+}
+const _: () = assert!(size_of::<grid_cell_entry>() == 5);
+use crate::types::{time_t, u_int, u_char, u_short, utf8_char};
 use ::core::ffi::c_int;
 use ::core::ptr::NonNull;
 use ::core::slice;
@@ -87,26 +119,26 @@ impl grid_line {
         self.extdsize
     }
 
-    pub fn celldata(&self) -> &[grid_cell_entry] {
+    pub(super) fn celldata(&self) -> &[grid_cell_entry] {
         unsafe { slice::from_raw_parts(self.celldata.as_ptr(), self.cellsize as usize) }
     }
 
-    pub fn celldata_mut(&mut self) -> &mut [grid_cell_entry] {
+    pub(super) fn celldata_mut(&mut self) -> &mut [grid_cell_entry] {
         unsafe { slice::from_raw_parts_mut(self.celldata.as_ptr(), self.cellsize as usize) }
     }
 
-    pub fn extddata(&self) -> &[grid_extd_entry] {
+    pub(super) fn extddata(&self) -> &[grid_extd_entry] {
         unsafe { slice::from_raw_parts(self.extddata.as_ptr(), self.extdsize as usize) }
     }
 
-    pub fn extddata_mut(&mut self) -> &mut [grid_extd_entry] {
+    pub(super) fn extddata_mut(&mut self) -> &mut [grid_extd_entry] {
         unsafe { slice::from_raw_parts_mut(self.extddata.as_ptr(), self.extdsize as usize) }
     }
 
     /// The cells and the extended cells together. They are separate
     /// allocations, so a walk over the entries can read and rewrite the
     /// extended cells they point at.
-    pub fn parts_mut(&mut self) -> (&mut [grid_cell_entry], &mut [grid_extd_entry]) {
+    pub(super) fn parts_mut(&mut self) -> (&mut [grid_cell_entry], &mut [grid_extd_entry]) {
         unsafe {
             (
                 slice::from_raw_parts_mut(self.celldata.as_ptr(), self.cellsize as usize),
@@ -144,7 +176,7 @@ impl grid_line {
     }
 
     /// Keep exactly these extended cells and give back the rest.
-    pub fn set_extended(&mut self, entries: &[grid_extd_entry]) {
+    pub(super) fn set_extended(&mut self, entries: &[grid_extd_entry]) {
         let to = entries.len() as u_int;
         self.extddata = unsafe { resize(self.extddata, self.extdsize, to) };
         self.extdsize = to;

@@ -1430,17 +1430,6 @@ pub struct grid_cell {
     pub link: u_int,
 }
 pub use crate::text::utf8_char;
-#[derive(Copy, Clone)]
-#[repr(C, packed)]
-pub struct grid_extd_entry {
-    pub data: utf8_char,
-    pub attr: u_short,
-    pub flags: u_char,
-    pub fg: core::ffi::c_int,
-    pub bg: core::ffi::c_int,
-    pub us: core::ffi::c_int,
-    pub link: u_int,
-}
 pub use crate::text::hanguljamo_state;
 pub type uint32_t = __uint32_t;
 #[derive(Copy, Clone, Default)]
@@ -1913,27 +1902,6 @@ pub struct format_modifier {
     pub size: u_int,
     pub argv: Vec<std::ffi::CString>,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid_cell_entry_data {
-    pub attr: u_char,
-    pub fg: u_char,
-    pub bg: u_char,
-    pub data: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union grid_cell_entry_union {
-    pub offset: u_int,
-    pub data: grid_cell_entry_data,
-}
-#[derive(Copy, Clone)]
-#[repr(C, packed)]
-pub struct grid_cell_entry {
-    pub value: grid_cell_entry_union,
-    pub flags: u_char,
-}
-const _: () = assert!(size_of::<grid_cell_entry>() == 5);
 pub use crate::grid::{grid, grid_line};
 #[derive(Copy, Clone)]
 #[repr(C)]

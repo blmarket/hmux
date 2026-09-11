@@ -22,7 +22,7 @@ use crate::ffi::{
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc, format_buf};
 use crate::grid::{Grid, Hyperlinks, grid_view_get_cell};
-use crate::grid::{grid_default_cell, grid_get_line_ref, grid_peek_line};
+use crate::grid::{grid_default_cell, grid_peek_line};
 use crate::job::{job_free, job_run};
 
 use crate::log::{log_debug, log_get_level};
@@ -954,27 +954,8 @@ unsafe fn format_cb_history_bytes(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        let mut size: size_t = 0 as size_t;
-        let mut i: u_int;
         let gd = RustScreen::grid(wp.base());
-        i = 0 as u_int;
-        while i < gd.hsize.wrapping_add(gd.sy) {
-            let gl = grid_get_line_ref(gd, i);
-            size = (size as core::ffi::c_ulong).wrapping_add(
-                ((*gl).cellsize() as usize).wrapping_mul(size_of::<grid_cell_entry>())
-                    as core::ffi::c_ulong,
-            ) as size_t as size_t;
-            size = (size as core::ffi::c_ulong).wrapping_add(
-                ((*gl).extdsize() as usize).wrapping_mul(size_of::<grid_extd_entry>())
-                    as core::ffi::c_ulong,
-            ) as size_t as size_t;
-            i = i.wrapping_add(1);
-        }
-        size = (size as core::ffi::c_ulong).wrapping_add(
-            (gd.hsize.wrapping_add(gd.sy) as usize).wrapping_mul(size_of::<grid_line>())
-                as core::ffi::c_ulong,
-        ) as size_t as size_t;
-        let value = xasprintf(c"%zu", fmt_args![size]);
+        let value = xasprintf(c"%zu", fmt_args![gd.storage_bytes()]);
         Some(value)
     }
 }
@@ -982,30 +963,8 @@ unsafe fn format_cb_history_all_bytes(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        let mut i: u_int;
-
-        let mut cells: u_int = 0 as u_int;
-        let mut extended_cells: u_int = 0 as u_int;
-        let gd = RustScreen::grid(wp.base());
-        let lines: u_int = gd.hsize.wrapping_add(gd.sy);
-        i = 0 as u_int;
-        while i < lines {
-            let gl = grid_get_line_ref(gd, i);
-            cells = cells.wrapping_add((*gl).cellsize());
-            extended_cells = extended_cells.wrapping_add((*gl).extdsize());
-            i = i.wrapping_add(1);
-        }
-        let value = xasprintf(
-            c"%u,%zu,%u,%zu,%u,%zu",
-            fmt_args![
-                lines,
-                (lines as usize).wrapping_mul(size_of::<grid_line>()),
-                cells,
-                (cells as usize).wrapping_mul(size_of::<grid_cell_entry>()),
-                extended_cells,
-                (extended_cells as usize).wrapping_mul(size_of::<grid_extd_entry>())
-            ],
-        );
+        let usage = RustScreen::grid(wp.base()).storage_usage();
+        let value = xasprintf(c"%u,%zu,%u,%zu,%u,%zu", fmt_args![usage[0].0, usage[0].1, usage[1].0, usage[1].1, usage[2].0, usage[2].1]);
         Some(value)
     }
 }

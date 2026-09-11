@@ -149,8 +149,7 @@ fn search_primitives_cover_plain_regex_wrapped_and_cell_position_paths() {
         assert!(window_copy_search_lr(gd, &needle, gd.hsize, 0, gd.sx, 0).is_none());
 
         let sx = gd.sx;
-        let line = grid_get_line(gd, gd.hsize);
-        assert_eq!(window_copy_cellstring(&*line, sx + 2).as_ref(), b" ");
+        assert_eq!(gd.cell_bytes(sx + 2, gd.hsize).as_ref(), b" ");
         let mut bytes = vec![0];
         window_copy_stringify(gd, gd.hsize, 0, gd.sx, &mut bytes);
         assert_eq!(

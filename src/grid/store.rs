@@ -1,3 +1,4 @@
+use super::line::{grid_cell_entry, grid_cell_entry_data, grid_cell_entry_union, grid_extd_entry};
 pub use crate::consts::{
     COLOUR_FLAG_256, COLOUR_FLAG_RGB, GRID_ATTR_BLINK, GRID_ATTR_BRIGHT, GRID_ATTR_CHARSET,
     GRID_ATTR_DIM, GRID_ATTR_HIDDEN, GRID_ATTR_ITALICS, GRID_ATTR_OVERLINE, GRID_ATTR_REVERSE,
@@ -1665,3 +1666,85 @@ pub fn grid_in_set(gd: &grid, px: u_int, py: u_int, set: &CStr) -> c_int {
 #[path = "../tests/test_grid.rs"]
 mod tests;
 use crate::screen::RustScreen;
+
+/// Whether the cell is already what the packed entry holds, which is what
+/// lets a write be skipped.
+fn cell_matches_entry(gc: &grid_cell, gce: &grid_cell_entry) -> bool {
+    unsafe {
+        let data = &gce.value.data;
+        gce.flags as c_int & GRID_FLAG_EXTENDED == 0
+            && gc.flags as c_int == gce.flags as c_int
+            && gc.attr as c_int == data.attr as c_int
+            && gc.fg == data.fg as c_int
+            && gc.bg == data.bg as c_int
+            && gc.data.width as c_int == 1
+            && gc.data.size as c_int == 1
+            && data.data == gc.data.data[0]
+    }
+}
+
+
+impl grid {
+    /// Returns text for one stored cell: padding is empty and a tab stays a tab.
+pub(crate) fn cell_bytes(&self, px: u_int, py: u_int) -> std::borrow::Cow<'_, [u8]> {
+    use std::borrow::Cow;
+    let gl = line_at(self, py);
+    unsafe {
+        let mut ud = utf8_data::default();
+        if px >= gl.cellsize() {
+            return Cow::Borrowed(b" ");
+        }
+        let gce = &(*gl).celldata()[px as usize];
+        if gce.flags as core::ffi::c_int & GRID_FLAG_PADDING != 0 {
+            return Cow::Borrowed(&[]);
+        }
+        if !(gce.flags as core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
+            return Cow::Borrowed(core::slice::from_ref(&gce.value.data.data));
+        }
+        if gce.flags as core::ffi::c_int & GRID_FLAG_TAB != 0 {
+            return Cow::Borrowed(b"\t");
+        }
+        utf8_to_data(
+            (*gl).extddata()[gce.value.offset as usize].data,
+            &mut ud,
+        );
+        if ud.size as core::ffi::c_int == 0 as core::ffi::c_int {
+            return Cow::Borrowed(&[]);
+        }
+        Cow::Owned(ud.data[..ud.size as usize].to_vec())
+    }
+}
+
+    /// Tests the compact representation using the writer's redraw-elision rules.
+    pub(crate) fn can_skip_cell(&self, px: u_int, py: u_int, gc: &grid_cell) -> bool {
+        let gl = line_at(self, py);
+        if px >= gl.cellsize() {
+            grid_cells_equal(gc, &grid_default_cell) != 0
+        } else {
+            cell_matches_entry(gc, &gl.celldata()[px as usize])
+        }
+    }
+
+    /// Returns line, compact-cell and extended-cell counts and byte costs.
+    pub(crate) fn storage_usage(&self) -> [(u_int, usize); 3] {
+        let lines = self.hsize.wrapping_add(self.sy);
+        let (mut cells, mut extended) = (0_u32, 0_u32);
+        for line in &self.linedata[..lines as usize] {
+            cells = cells.wrapping_add(line.cellsize());
+            extended = extended.wrapping_add(line.extdsize());
+        }
+        [(lines, (lines as usize).wrapping_mul(size_of::<grid_line>())),
+         (cells, (cells as usize).wrapping_mul(size_of::<grid_cell_entry>())),
+         (extended, (extended as usize).wrapping_mul(size_of::<grid_extd_entry>()))]
+    }
+
+    /// Returns the bytes allocated to lines and both kinds of stored cell.
+    pub(crate) fn storage_bytes(&self) -> usize {
+        let lines = self.hsize.wrapping_add(self.sy);
+        self.linedata[..lines as usize].iter().fold(
+            (lines as usize).wrapping_mul(size_of::<grid_line>()),
+            |size, line| size.wrapping_add((line.cellsize() as usize).wrapping_mul(size_of::<grid_cell_entry>()))
+                .wrapping_add((line.extdsize() as usize).wrapping_mul(size_of::<grid_extd_entry>()))
+        )
+    }
+}

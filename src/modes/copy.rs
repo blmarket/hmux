@@ -5270,32 +5270,6 @@ unsafe fn window_copy_search_rl_regex(
         )
     }
 }
-unsafe fn window_copy_cellstring(gl: &grid_line, px: u_int) -> Cow<'_, [u8]> {
-    unsafe {
-        let mut ud = utf8_data::default();
-        if px >= gl.cellsize() {
-            return Cow::Borrowed(b" ");
-        }
-        let gce = &(*gl).celldata()[px as usize];
-        if gce.flags as core::ffi::c_int & GRID_FLAG_PADDING != 0 {
-            return Cow::Borrowed(&[]);
-        }
-        if !(gce.flags as core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
-            return Cow::Borrowed(core::slice::from_ref(&gce.value.data.data));
-        }
-        if gce.flags as core::ffi::c_int & GRID_FLAG_TAB != 0 {
-            return Cow::Borrowed(b"\t");
-        }
-        utf8_to_data(
-            (*gl).extddata()[gce.value.offset as usize].data,
-            &mut ud,
-        );
-        if ud.size as core::ffi::c_int == 0 as core::ffi::c_int {
-            return Cow::Borrowed(&[]);
-        }
-        Cow::Owned(ud.data[..ud.size as usize].to_vec())
-    }
-}
 unsafe fn window_copy_last_regex(
     gd: &grid,
     py: u_int,
@@ -5375,13 +5349,13 @@ unsafe fn window_copy_stringify(
         let mut ax: u_int;
 
         let gl: Option<&grid_line> = grid_peek_line(gd, py);
-        let Some(gl) = gl else {
+        if gl.is_none() {
             return;
-        };
+        }
         buf.pop();
         ax = first;
         while ax < last {
-            buf.extend_from_slice(&window_copy_cellstring(gl, ax));
+            buf.extend_from_slice(&gd.cell_bytes(ax, py));
             ax = ax.wrapping_add(1);
         }
         buf.push(b'\0');
@@ -5407,12 +5381,12 @@ unsafe fn window_copy_cstrtocellpos(
         px = *ppx;
         pywrap = *ppy;
         gl = grid_peek_line(gd, pywrap);
-        let Some(mut line) = gl else {
+        if gl.is_none() {
             return;
-        };
+        }
         while cell < ncells {
             cells.push(window_copy_search_cell {
-                d: window_copy_cellstring(line, px),
+                d: gd.cell_bytes(px, pywrap),
             });
             cell = cell.wrapping_add(1);
             px = px.wrapping_add(1);
@@ -5422,9 +5396,8 @@ unsafe fn window_copy_cstrtocellpos(
             px = 0 as u_int;
             pywrap = pywrap.wrapping_add(1);
             gl = grid_peek_line(gd, pywrap);
-            match gl {
-                Some(next) => line = next,
-                None => break,
+            if gl.is_none() {
+                break;
             }
         }
         ncells = cells.len() as u_int;

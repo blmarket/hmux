@@ -2684,22 +2684,6 @@ pub(super) unsafe fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &g
     }
 }
 
-/// Whether the cell is already what the packed entry holds, which is what
-/// lets a write be skipped.
-fn cell_matches_entry(gc: &grid_cell, gce: &grid_cell_entry) -> bool {
-    unsafe {
-        let data = &gce.value.data;
-        gce.flags as c_int & GRID_FLAG_EXTENDED == 0
-            && gc.flags as c_int == gce.flags as c_int
-            && gc.attr as c_int == data.attr as c_int
-            && gc.fg == data.fg as c_int
-            && gc.bg == data.bg as c_int
-            && gc.data.width as c_int == 1
-            && gc.data.size as c_int == 1
-            && data.data == gc.data.data[0]
-    }
-}
-
 /// Writes one character at the cursor, wrapping to the next line first when
 /// it does not fit and putting padding cells behind a wide one.
 pub(super) unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cell) {
@@ -2772,12 +2756,7 @@ pub(super) unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cel
             xx = xx.wrapping_add(1);
         }
         if skip {
-            let gl = grid_get_line(gd, line_y);
-            skip = if cx >= gl.cellsize() {
-                grid_cells_equal(gc, &grid_default_cell) != 0
-            } else {
-                cell_matches_entry(gc, &gl.celldata()[cx as usize])
-            };
+            skip = gd.can_skip_cell(cx, line_y, gc);
         }
         let (cx, cy) = s.cursor();
         let selected = s.check_selection(cx, cy) as c_int;

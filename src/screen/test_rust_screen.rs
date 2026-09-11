@@ -1025,43 +1025,15 @@ pub(crate) unsafe fn screen_print(s: &RustScreen, line: c_int) -> CString {
 
             let gl = &gd.linedata[y as usize];
             for x in 0..gl.cellused {
-                let gce = gl.celldata()[x as usize];
-                if gce.flags as c_int & GRID_FLAG_PADDING != 0 {
+                let bytes = gd.cell_bytes(x, y);
+                if bytes.is_empty() {
                     continue;
                 }
-
-                if gce.flags as c_int & GRID_FLAG_EXTENDED == 0 {
-                    if last + 2 >= PRINT_SIZE {
-                        break 'out;
-                    }
-                    buf[last] = gce.value.data.data;
-                    last += 1;
-                } else if gce.flags as c_int & GRID_FLAG_TAB != 0 {
-                    /*
-                     * The arm for the alternate character set that came next
-                     * in the C is gone: it tested the same bit as the tab
-                     * above it, so it was never reached.
-                     */
-                    if last + 2 >= PRINT_SIZE {
-                        break 'out;
-                    }
-                    buf[last] = b'\t';
-                    last += 1;
-                } else {
-                    let mut ud = utf8_data::default();
-                    utf8_to_data(
-                        gl.extddata()[gce.value.offset as usize].data,
-                        &mut ud,
-                    );
-                    let size = ud.size as usize;
-                    if size > 0 {
-                        if last + size + 1 >= PRINT_SIZE {
-                            break 'out;
-                        }
-                        buf[last..last + size].copy_from_slice(&ud.data[..size]);
-                        last += size;
-                    }
+                if last + bytes.len() + 1 >= PRINT_SIZE {
+                    break 'out;
                 }
+                buf[last..last + bytes.len()].copy_from_slice(&bytes);
+                last += bytes.len();
             }
 
             if last + 3 >= PRINT_SIZE {
