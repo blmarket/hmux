@@ -18,7 +18,7 @@ use crate::args::args_parse_t;
 use crate::args::{args_make_commands, args_strtonum};
 use crate::cmd::CmdqItemRef;
 use crate::cmd::cmd_get_args;
-use crate::cmd::cmd_make_commands_prepare;
+use crate::args::cmd_make_commands_prepare;
 use crate::cmd::{CmdqItemWeak, cmdq_append, cmdq_item_weak_of};
 use crate::fmt_args;
 

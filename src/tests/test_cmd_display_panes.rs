@@ -355,7 +355,7 @@ fn a_size_wider_than_the_visible_pane_is_dropped() {
 #[test]
 fn a_template_that_will_not_parse_queues_its_error_on_the_client() {
     let mut f = Overlay::new(80, 24);
-    let mut state = Box::new(args_command_state::default());
+    let state = args_command_state::test_template(c"not-a-command");
     let mut cdata = zeroed::<cmd_display_panes_data>();
     let mut event = key_event::default();
     unsafe {
@@ -364,7 +364,6 @@ fn a_template_that_will_not_parse_queues_its_error_on_the_client() {
                 .queue
                 .insert(CmdqListRef::empty())
                 .clone();
-        state.cmd = Some(CString::new("not-a-command").unwrap());
         cdata.state = Some(state);
         event.key = '0' as i32 as key_code;
 

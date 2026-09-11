@@ -1,8 +1,7 @@
-pub mod argument_command_state;
+use crate::cmd::{cmd, cmd_get_args, cmd_get_source, cmd_find_copy_state, cmdq_item_ref_of};
 pub mod argument_text;
 pub mod arguments_trait;
 
-use crate::args::argument_command_state::ArgumentCommandState;
 use crate::args::argument_text::ArgumentTextCodec;
 use crate::args::argument_text::RustArgumentTextCodec;
 use crate::args::arguments_trait::Arguments;
@@ -190,50 +189,21 @@ impl Arguments for RustArguments {
 
 }
 
-#[repr(C)]
+/// Owned deferred command text or parsed commands with their retained parse context.
+///
+/// ```compile_fail
+/// use tmux_c2rs::args::args_command_state;
+/// fn replace(state: &mut args_command_state) {
+///     state.pi = Default::default();
+/// }
+/// ```
 #[derive(Default)]
 pub struct args_command_state {
-    pub(crate) cmdlist: Option<CmdListRef>,
-    pub cmd: Option<CString>,
-    pub pi: cmd_parse_input,
+    cmdlist: Option<CmdListRef>,
+    cmd: Option<CString>,
+    pi: cmd_parse_input,
 }
 
-impl ArgumentCommandState for args_command_state {
-    fn prepared_command_list(&self) -> Option<&CmdListRef> {
-        self.cmdlist.as_ref()
-    }
-    fn set_prepared_command_list(&mut self, command_list: Option<CmdListRef>) {
-        self.cmdlist = command_list;
-    }
-    fn take_prepared_command_list(&mut self) -> Option<CmdListRef> {
-        self.cmdlist.take()
-    }
-    fn prepared_command_text(&self) -> Option<&CStr> {
-        self.cmd.as_deref()
-    }
-    fn set_prepared_command_text(&mut self, command: Option<CString>) {
-        self.cmd = command;
-    }
-    fn prepared_command_parse_input(&self) -> &cmd_parse_input {
-        &self.pi
-    }
-    fn prepared_command_parse_input_mut(&mut self) -> &mut cmd_parse_input {
-        &mut self.pi
-    }
-    fn set_prepared_command_source(&mut self, file: Option<&CStr>, line: u_int) {
-        self.pi.file = file.map(CStr::to_owned);
-        self.pi.line = line;
-    }
-    fn set_prepared_command_client(&mut self, client: Option<ClientRef>) {
-        self.pi.c = client.map(crate::types::ParseClient::Owned);
-    }
-    fn prepared_command_client(&self) -> Option<&ClientRef> {
-        match self.pi.c.as_ref()? {
-            crate::types::ParseClient::Owned(client) => Some(client),
-            crate::types::ParseClient::Observed(_) => None,
-        }
-    }
-}
 impl Clone for args_command_state {
     fn clone(&self) -> Self {
 
@@ -922,3 +892,93 @@ pub unsafe fn args_percentage_and_expand(
 #[cfg(test)]
 #[path = "../tests/test_arguments.rs"]
 mod tests;
+
+/// Prepares a command list or owned command text for later argument substitution.
+/// The expander runs once for text (including a default), and never for an
+/// already parsed command list. Pass `CStr::to_owned` to preserve literal text.
+pub fn cmd_make_commands_prepare(
+    command: &cmd,
+    item: &cmdq_item,
+    idx: u_int,
+    default_command: Option<&CStr>,
+    wait: core::ffi::c_int,
+    expand: impl FnOnce(&CStr) -> CString,
+) -> Box<args_command_state> {
+    let args = cmd_get_args(command);
+    let target = &item.target;
+    let tc = item.target_client();
+    let mut state = Box::new(args_command_state {
+        cmdlist: None,
+        cmd: None,
+        pi: cmd_parse_input::default(),
+    });
+    let cmd = match args.argument_value(idx) {
+        Some(value) => {
+            if let ArgsValue::Commands { cmdlist, .. } = value {
+                state.cmdlist = cmdlist.clone();
+                return state;
+            }
+            let ArgsValue::String(string) = value else {
+                fatalx(c"unexpected argument type", fmt_args![]);
+            };
+            Some(string.as_c_str())
+        }
+        None => default_command,
+    };
+    let Some(cmd) = cmd else {
+        fatalx(c"argument out of range", fmt_args![]);
+    };
+    state.cmd = Some(expand(cmd));
+    log_debug(
+        c"%s: %s",
+        fmt_args![c"cmd_make_commands_prepare", state.cmd.as_deref()],
+    );
+    let (file, line) = cmd_get_source(command);
+    state.pi.line = line;
+    state.pi.file = file.map(CStr::to_owned);
+    state.pi.c = tc.map(crate::types::ParseClient::Owned);
+    cmd_find_copy_state(&mut state.pi.fs, target);
+    if wait != 0 {
+        state.pi.item = cmdq_item_ref_of(item).map(|item| item.downgrade());
+    }
+    state
+}
+
+#[cfg(test)]
+impl args_command_state {
+    pub(crate) fn test_template(text: &CStr) -> Box<Self> {
+        Box::new(Self { cmd: Some(text.to_owned()), ..Self::default() })
+    }
+}
+
+#[cfg(test)]
+mod retained_context_tests {
+    use super::*;
+    use crate::CommandParseInput;
+    #[test]
+    fn prepared_parse_context_retains_and_releases_its_client() {
+        let client = ClientRef::new(crate::types::client::default());
+        let weak = client.downgrade();
+        let mut state = args_command_state::default();
+        state.pi.c = Some(crate::types::ParseClient::Owned(client));
+        let mut context = state.pi.clone();
+        assert!(context.command_parse_client().is_some());
+        state.pi.c = None;
+        assert!(state.pi.c.is_none());
+        assert!(state.pi.command_parse_client().is_none());
+        assert!(weak.upgrade().is_some());
+        context.set_command_parse_client(None);
+        assert!(weak.upgrade().is_none());
+    }
+
+    #[test]
+    fn ordinary_parse_context_does_not_retain_its_client() {
+        let client = ClientRef::new(crate::types::client::default());
+        let weak = client.downgrade();
+        let mut context = cmd_parse_input::default();
+        context.set_command_parse_client(Some(client));
+        assert!(weak.upgrade().is_none());
+        assert!(context.command_parse_client().is_none());
+    }
+
+}

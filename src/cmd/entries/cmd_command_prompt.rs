@@ -37,7 +37,7 @@ use crate::args::{args_make_commands, args_make_commands_get_command};
 use crate::cmd::CmdqItemRef;
 use crate::cmd::CmdqItemWeak;
 use crate::cmd::cmd_get_args;
-use crate::cmd::cmd_make_commands_prepare;
+use crate::args::cmd_make_commands_prepare;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{cmdq_append, cmdq_item_weak_of};

@@ -75,7 +75,7 @@ pub use entries::cmd_run_shell::cmd_run_shell_data;
 pub use entries::cmd_source_file::cmd_source_file_data;
 pub use entries::cmd_wait_for::cmd_wait_for_flush;
 
-use crate::args::{args_make_commands, args_parse, args_print};
+use crate::args::{args_make_commands, args_parse, args_print, cmd_make_commands_prepare};
 use crate::cmd::entries::cmd_attach_session::cmd_attach_session_entry;
 use crate::cmd::entries::cmd_bind_key::cmd_bind_key_entry;
 use crate::cmd::entries::cmd_break_pane::cmd_break_pane_entry;
@@ -514,57 +514,6 @@ pub(crate) unsafe fn cmd_make_commands_now(
         }
         cmdlist
     }
-}
-
-/// Prepares a command list or owned command text for later argument substitution.
-/// The expander runs once for text (including a default), and never for an
-/// already parsed command list. Pass `CStr::to_owned` to preserve literal text.
-pub fn cmd_make_commands_prepare(
-    command: &cmd,
-    item: &cmdq_item,
-    idx: u_int,
-    default_command: Option<&CStr>,
-    wait: core::ffi::c_int,
-    expand: impl FnOnce(&CStr) -> CString,
-) -> Box<args_command_state> {
-    let args = cmd_get_args(command);
-    let target = &item.target;
-    let tc = item.target_client();
-    let mut state = Box::new(args_command_state {
-        cmdlist: None,
-        cmd: None,
-        pi: cmd_parse_input::default(),
-    });
-    let cmd = match args.argument_value(idx) {
-        Some(value) => {
-            if let ArgsValue::Commands { cmdlist, .. } = value {
-                state.cmdlist = cmdlist.clone();
-                return state;
-            }
-            let ArgsValue::String(string) = value else {
-                fatalx(c"unexpected argument type", fmt_args![]);
-            };
-            Some(string.as_c_str())
-        }
-        None => default_command,
-    };
-    let Some(cmd) = cmd else {
-        fatalx(c"argument out of range", fmt_args![]);
-    };
-    state.cmd = Some(expand(cmd));
-    log_debug(
-        c"%s: %s",
-        fmt_args![c"cmd_make_commands_prepare", state.cmd.as_deref()],
-    );
-    let (file, line) = cmd_get_source(command);
-    state.pi.line = line;
-    state.pi.file = file.map(CStr::to_owned);
-    state.pi.c = tc.map(crate::types::ParseClient::Owned);
-    cmd_find_copy_state(&mut state.pi.fs, target);
-    if wait != 0 {
-        state.pi.item = cmdq_item_ref_of(item).map(|item| item.downgrade());
-    }
-    state
 }
 
 pub fn cmd_get_args(cmd: &cmd) -> &RustArguments {

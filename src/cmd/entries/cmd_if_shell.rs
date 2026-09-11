@@ -6,7 +6,8 @@ use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;
 use crate::cmd::{CmdListRef, RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};
 use crate::cmd::{CmdqItemWeak, cmdq_append, cmdq_item_ref_of, cmdq_item_weak_of};
-use crate::cmd::{cmd_make_commands_now, cmd_make_commands_prepare};
+use crate::cmd::cmd_make_commands_now;
+use crate::args::cmd_make_commands_prepare;
 use crate::compat::toupper;
 use crate::consts::{
     ARGS_PARSE_COMMANDS_OR_STRING, ARGS_PARSE_STRING, CMD_FIND_CANFAIL, CMD_FIND_PANE,
