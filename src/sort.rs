@@ -14,6 +14,7 @@
 //!
 //! Coverage exemptions: none. Every line of the module is covered by the tests
 //! below and by `test_coverage_alpha`.
+use crate::screen::Screen as _;
 use crate::pane_identity::PaneIdentity;
 use crate::window_dimensions::WindowDimensionsState;
 use crate::window_name::WindowNameState;

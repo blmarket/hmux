@@ -1,3 +1,4 @@
+use crate::screen::Screen as _;
 use super::*;
 use crate::cmd::{CMD_PARSE_SUCCESS, cmd_parse_from_string};
 use crate::input::{KEYC_CTRL, KEYC_META};

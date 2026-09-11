@@ -2626,7 +2626,7 @@ pub(super) unsafe fn screen_write_collect_add(ctx: &mut screen_write_ctx, gc: &g
             && gc.attr as c_int & GRID_ATTR_CHARSET == 0
             && s.0.mode & MODE_WRAP != 0
             && s.0.mode & MODE_INSERT == 0
-            && s.0.sel.is_none();
+            && !s.has_selection();
         if !collect {
             screen_write_collect_end(ctx);
             screen_write_collect_flush(ctx, 0, c"screen_write_collect_add");

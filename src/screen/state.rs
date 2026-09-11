@@ -1,9 +1,8 @@
-use crate::grid::Grid as _;
 use super::RustScreen;
 use super::write::{screen_write_free_list, screen_write_make_list};
 use crate::fmt_args;
-use crate::grid::{
-    Grid, RustGrid, grid_create, grid_default_cell};
+use crate::grid::Grid as _;
+use crate::grid::{Grid, RustGrid, grid_create, grid_default_cell};
 use crate::grid::{Hyperlinks, RustHyperlinks};
 use crate::log::{fatalx, log_debug};
 
@@ -15,7 +14,6 @@ use ::core::ffi::{CStr, c_int, c_longlong};
 
 /// A screen that can be exercised independently of its implementation.
 pub trait Screen {
-
     /// Makes a screen with the given visible size and history limit.
     fn new(sx: u_int, sy: u_int, hlimit: u_int) -> Self
     where
@@ -61,6 +59,67 @@ pub trait Screen {
     fn has_selection(&self) -> bool;
     /// Draws a cell the way the selection asks for, returning whether it changed.
     fn select_cell(&self, dst: &mut grid_cell, src: &grid_cell) -> bool;
+    /// Returns the cursor saved for alternate-screen restoration.
+    fn saved_cursor(&self) -> (u_int, u_int);
+    /// Returns the current progress-bar observation.
+    fn progress_bar(&self) -> progress_bar;
+    /// Sets progress state, retaining the previous progress when the input is indeterminate.
+    fn set_progress_bar(&mut self, pbs: progress_bar_state, progress: c_int);
+    /// Validates and replaces the title, returning whether it was accepted.
+    fn set_title(&mut self, title: &CStr, untrusted: c_int) -> c_int;
+    /// Validates and replaces the path, returning whether it was accepted.
+    fn set_path(&mut self, path: &CStr, untrusted: c_int) -> c_int;
+    /// Borrows the current title.
+    fn title(&self) -> Option<&CStr>;
+    /// Borrows the current path.
+    fn path(&self) -> Option<&CStr>;
+    /// Pushes the current title, evicting the oldest entry at the stack limit.
+    fn push_title(&mut self);
+    /// Restores the most recently pushed title, if one exists.
+    fn pop_title(&mut self);
+    /// Returns the mode and cursor settings used by terminal rendering.
+    fn mode_state(&self) -> ScreenModeState {
+        ScreenModeState {
+            mode: self.mode(),
+            cursor: self.cursor(),
+            cursor_style: self.cursor_style(),
+            default_cursor_style: self.default_cursor_style(),
+            cursor_colour: self.cursor_colour(),
+            default_cursor_mode: self.default_cursor_mode(),
+        }
+    }
+    /// Returns the current cursor style.
+    fn cursor_style(&self) -> screen_cursor_style;
+    /// Returns the default cursor style.
+    fn default_cursor_style(&self) -> screen_cursor_style;
+    /// Returns the default cursor mode.
+    fn default_cursor_mode(&self) -> c_int;
+    /// Returns the effective cursor colour, including its default.
+    fn cursor_colour(&self) -> c_int;
+    /// Sets the cursor colour override; minus one selects its default.
+    fn set_cursor_colour(&mut self, colour: c_int);
+    /// Applies a cursor style and its blinking-mode transition.
+    fn set_cursor_style(&mut self, style: u_int);
+    /// Updates the default cursor colour.
+    fn set_default_cursor_colour(&mut self, colour: c_int);
+    /// Applies a default cursor style and its blinking-mode transition.
+    fn set_default_cursor_style(&mut self, style: u_int);
+    /// Applies cursor defaults from the option engine.
+    fn set_default_cursor(&mut self, oo: &RustOptionsRef);
+    /// Returns the upper and lower scrolling margins.
+    fn region(&self) -> (u_int, u_int);
+    /// Reports whether the original screen is saved for alternate-screen use.
+    fn is_alternate(&self) -> bool;
+    /// Reports whether a grid has been installed by construction.
+    fn is_initialized(&self) -> bool;
+    /// Tests the tab stop at a column within the screen width.
+    fn tab_is_set(&self, x: u_int) -> bool;
+    /// Installs a tab stop at a column within the screen width.
+    fn set_tab(&mut self, x: u_int);
+    /// Removes a tab stop at a column within the screen width.
+    fn clear_tab(&mut self, x: u_int);
+    /// Removes every tab stop.
+    fn clear_tabs(&mut self);
 }
 pub use crate::consts::{
     ALL_MODES, EXTENDED_KEY_MODES, GRID_ATTR_CHARSET, GRID_ATTR_NOATTR, GRID_HISTORY,
@@ -76,7 +135,7 @@ use ::std::ffi::CString;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct screen_sel {
+struct screen_sel {
     pub hidden: c_int,
     pub rectangle: c_int,
     pub modekeys: c_int,
@@ -103,7 +162,7 @@ pub struct ScreenModeState {
 pub(super) struct screen {
     pub title: Option<CString>,
     pub path: Option<CString>,
-    pub titles: Option<Box<screen_titles>>,
+    titles: Option<Box<screen_titles>>,
     pub ntitles: u_int,
     pub(super) grid: Option<Box<RustGrid>>,
     pub(super) cx: u_int,
@@ -122,14 +181,14 @@ pub(super) struct screen {
     pub saved_cell: grid_cell,
     pub saved_history: bool,
     pub tabs: Vec<u8>,
-    pub(super) sel: Option<Box<screen_sel>>,
+    sel: Option<Box<screen_sel>>,
     pub write_list: Vec<screen_write_cline>,
     pub(super) hyperlinks: Option<RustHyperlinks>,
     pub progress_bar: progress_bar,
 }
 
 /// The titles a screen has pushed, most recently pushed first.
-pub struct screen_titles {
+struct screen_titles {
     stack: VecDeque<CString>,
 }
 
@@ -239,7 +298,12 @@ impl RustScreen {
         source: &RustScreen,
     ) -> RustScreen {
         let mut screen = RustScreen::new_with_server_options(sx, sy, hlimit);
-        screen.0.hyperlinks = Some(source.hyperlinks_ref().expect("a screen has hyperlinks").clone());
+        screen.0.hyperlinks = Some(
+            source
+                .hyperlinks_ref()
+                .expect("a screen has hyperlinks")
+                .clone(),
+        );
         screen
     }
 
@@ -249,77 +313,6 @@ impl RustScreen {
         } else {
             self.0.hyperlinks = Some(RustHyperlinks::new());
         }
-    }
-
-    pub(crate) fn saved_cursor(&self) -> (u_int, u_int) {
-        (self.0.saved_cx, self.0.saved_cy)
-    }
-
-    pub(crate) fn progress_bar(&self) -> progress_bar {
-        self.0.progress_bar
-    }
-
-    pub fn set_progress_bar(&mut self, pbs: progress_bar_state, progress: c_int) {
-        self.0.progress_bar.state = pbs;
-        if progress >= 0 && pbs != PROGRESS_BAR_INDETERMINATE {
-            self.0.progress_bar.progress = progress;
-        }
-    }
-
-    pub fn set_title(&mut self, title: &CStr, untrusted: c_int) -> c_int {
-        let Some(new_title) = (unsafe { clean_name(title, untrusted) }) else {
-            return 0;
-        };
-        self.0.title = Some(new_title);
-        1
-    }
-
-    pub fn set_path(&mut self, path: &CStr, untrusted: c_int) -> c_int {
-        let Some(new_path) = (unsafe { clean_name(path, untrusted) }) else {
-            return 0;
-        };
-        self.0.path = Some(new_path);
-        1
-    }
-
-    pub(crate) fn title(&self) -> Option<&CStr> {
-        self.0.title.as_deref()
-    }
-
-    pub(crate) fn path(&self) -> Option<&CStr> {
-        self.0.path.as_deref()
-    }
-
-    pub fn push_title(&mut self) {
-        log_debug(
-            c"%s: %u",
-            fmt_args![c"screen_push_title".as_ptr(), self.0.ntitles],
-        );
-
-        while self.0.ntitles >= TITLE_LIMIT {
-            screen_titles_of(self).stack.pop_back();
-            self.0.ntitles -= 1;
-        }
-
-        let title = self
-            .0
-            .title
-            .clone()
-            .expect("a screen always carries a title");
-        screen_titles_of(self).stack.push_front(title);
-        self.0.ntitles += 1;
-    }
-
-    pub fn pop_title(&mut self) {
-        let Some(text) = screen_titles_ptr(self).and_then(|titles| titles.stack.pop_front()) else {
-            return;
-        };
-        log_debug(
-            c"%s: %u",
-            fmt_args![c"screen_pop_title".as_ptr(), self.0.ntitles],
-        );
-        self.0.title = Some(text);
-        self.0.ntitles -= 1;
     }
 }
 
@@ -485,10 +478,19 @@ pub fn screen_resize_cursor(
             s.0.rlower = sy.wrapping_sub(1);
         }
         let (old_width, old_cursor) = (s.grid().width(), (s.0.cx, s.0.cy));
-        let position = s.grid_mut().resize_screen(sx, sy, reflow != 0, eat_empty != 0, cursor != 0, old_cursor);
+        let position = s.grid_mut().resize_screen(
+            sx,
+            sy,
+            reflow != 0,
+            eat_empty != 0,
+            cursor != 0,
+            old_cursor,
+        );
         s.0.cx = position.0;
         s.0.cy = position.1;
-        if sx != old_width { screen_reset_tabs(s); }
+        if sx != old_width {
+            screen_reset_tabs(s);
+        }
 
         log_debug(
             c"%s: cursor finished at %u,%u = %u,%u",
@@ -506,6 +508,124 @@ pub fn screen_resize(s: &mut RustScreen, sx: u_int, sy: u_int, reflow: c_int) {
 }
 
 impl Screen for RustScreen {
+    fn saved_cursor(&self) -> (u_int, u_int) {
+        (self.0.saved_cx, self.0.saved_cy)
+    }
+    fn progress_bar(&self) -> progress_bar {
+        self.0.progress_bar
+    }
+    fn set_progress_bar(&mut self, pbs: progress_bar_state, progress: c_int) {
+        self.0.progress_bar.state = pbs;
+        if progress >= 0 && pbs != PROGRESS_BAR_INDETERMINATE {
+            self.0.progress_bar.progress = progress;
+        }
+    }
+    fn set_title(&mut self, title: &CStr, untrusted: c_int) -> c_int {
+        let Some(new_title) = (unsafe { clean_name(title, untrusted) }) else {
+            return 0;
+        };
+        self.0.title = Some(new_title);
+        1
+    }
+    fn set_path(&mut self, path: &CStr, untrusted: c_int) -> c_int {
+        let Some(new_path) = (unsafe { clean_name(path, untrusted) }) else {
+            return 0;
+        };
+        self.0.path = Some(new_path);
+        1
+    }
+    fn title(&self) -> Option<&CStr> {
+        self.0.title.as_deref()
+    }
+    fn path(&self) -> Option<&CStr> {
+        self.0.path.as_deref()
+    }
+    fn push_title(&mut self) {
+        log_debug(
+            c"%s: %u",
+            fmt_args![c"screen_push_title".as_ptr(), self.0.ntitles],
+        );
+
+        while self.0.ntitles >= TITLE_LIMIT {
+            screen_titles_of(self).stack.pop_back();
+            self.0.ntitles -= 1;
+        }
+
+        let title = self
+            .0
+            .title
+            .clone()
+            .expect("a screen always carries a title");
+        screen_titles_of(self).stack.push_front(title);
+        self.0.ntitles += 1;
+    }
+    fn pop_title(&mut self) {
+        let Some(text) = screen_titles_ptr(self).and_then(|titles| titles.stack.pop_front()) else {
+            return;
+        };
+        log_debug(
+            c"%s: %u",
+            fmt_args![c"screen_pop_title".as_ptr(), self.0.ntitles],
+        );
+        self.0.title = Some(text);
+        self.0.ntitles -= 1;
+    }
+    fn cursor_style(&self) -> screen_cursor_style {
+        self.0.cstyle
+    }
+    fn default_cursor_style(&self) -> screen_cursor_style {
+        self.0.default_cstyle
+    }
+    fn default_cursor_mode(&self) -> c_int {
+        self.0.default_mode
+    }
+    fn cursor_colour(&self) -> c_int {
+        if self.0.ccolour != -1 {
+            self.0.ccolour
+        } else {
+            self.0.default_ccolour
+        }
+    }
+    fn set_cursor_colour(&mut self, colour: c_int) {
+        self.0.ccolour = colour;
+    }
+    fn set_cursor_style(&mut self, style: u_int) {
+        screen_set_cursor_style(style, &mut self.0.cstyle, &mut self.0.mode);
+    }
+    fn set_default_cursor_colour(&mut self, colour: c_int) {
+        self.0.default_ccolour = colour;
+    }
+    fn set_default_cursor_style(&mut self, style: u_int) {
+        screen_set_cursor_style(style, &mut self.0.default_cstyle, &mut self.0.default_mode);
+    }
+    fn set_default_cursor(&mut self, oo: &RustOptionsRef) {
+        {
+            self.0.default_ccolour = (oo).number(c"cursor-colour") as c_int;
+            self.0.default_mode = 0;
+            self.set_default_cursor_style((oo).number(c"cursor-style") as u_int);
+        }
+    }
+    fn region(&self) -> (u_int, u_int) {
+        (self.0.rupper, self.0.rlower)
+    }
+    fn is_alternate(&self) -> bool {
+        self.0.saved_grid.is_some()
+    }
+    fn is_initialized(&self) -> bool {
+        self.0.grid.is_some()
+    }
+    fn tab_is_set(&self, x: u_int) -> bool {
+        self.0.tabs[(x >> 3) as usize] as c_int & (1 << (x & 0x7)) != 0
+    }
+    fn set_tab(&mut self, x: u_int) {
+        self.0.tabs[(x >> 3) as usize] |= 1 << (x & 0x7);
+    }
+    fn clear_tab(&mut self, x: u_int) {
+        self.0.tabs[(x >> 3) as usize] &= !(1 << (x & 0x7));
+    }
+    fn clear_tabs(&mut self) {
+        self.0.tabs.fill(0);
+    }
     fn new(sx: u_int, sy: u_int, hlimit: u_int) -> Self {
         screen_new_standalone(sx, sy, hlimit)
     }
@@ -620,76 +740,9 @@ impl Screen for RustScreen {
 }
 
 impl RustScreen {
-    pub fn mode_state(&self) -> ScreenModeState {
-        ScreenModeState {
-            mode: self.mode(),
-            cursor: self.cursor(),
-            cursor_style: self.cursor_style(),
-            default_cursor_style: self.default_cursor_style(),
-            cursor_colour: self.cursor_colour(),
-            default_cursor_mode: self.default_cursor_mode(),
-        }
-    }
-
-    pub fn cursor_style(&self) -> screen_cursor_style {
-        self.0.cstyle
-    }
-
-    pub fn default_cursor_style(&self) -> screen_cursor_style {
-        self.0.default_cstyle
-    }
-
-    pub fn default_cursor_mode(&self) -> c_int {
-        self.0.default_mode
-    }
-
-    pub fn cursor_colour(&self) -> c_int {
-        if self.0.ccolour != -1 {
-            self.0.ccolour
-        } else {
-            self.0.default_ccolour
-        }
-    }
-
     #[cfg(test)]
     pub(crate) fn default_cursor_colour(&self) -> c_int {
         self.0.default_ccolour
-    }
-
-    pub fn set_cursor_colour(&mut self, colour: c_int) {
-        self.0.ccolour = colour;
-    }
-
-    pub fn set_cursor_style(&mut self, style: u_int) {
-        screen_set_cursor_style(style, &mut self.0.cstyle, &mut self.0.mode);
-    }
-
-    pub fn set_default_cursor_colour(&mut self, colour: c_int) {
-        self.0.default_ccolour = colour;
-    }
-
-    pub fn set_default_cursor_style(&mut self, style: u_int) {
-        screen_set_cursor_style(style, &mut self.0.default_cstyle, &mut self.0.default_mode);
-    }
-
-    pub fn set_default_cursor(&mut self, oo: &RustOptionsRef) {
-        {
-            self.0.default_ccolour = (oo).number(c"cursor-colour") as c_int;
-            self.0.default_mode = 0;
-            self.set_default_cursor_style((oo).number(c"cursor-style") as u_int);
-        }
-    }
-
-    pub fn region(&self) -> (u_int, u_int) {
-        (self.0.rupper, self.0.rlower)
-    }
-
-    pub fn is_alternate(&self) -> bool {
-        self.0.saved_grid.is_some()
-    }
-
-    pub fn is_initialized(&self) -> bool {
-        self.0.grid.is_some()
     }
 
     #[cfg(test)]
@@ -705,22 +758,6 @@ impl RustScreen {
     #[cfg(test)]
     pub(crate) fn is_collecting(&self) -> bool {
         !self.0.write_list.is_empty()
-    }
-
-    pub fn tab_is_set(&self, x: u_int) -> bool {
-        self.0.tabs[(x >> 3) as usize] as c_int & (1 << (x & 0x7)) != 0
-    }
-
-    pub fn set_tab(&mut self, x: u_int) {
-        self.0.tabs[(x >> 3) as usize] |= 1 << (x & 0x7);
-    }
-
-    pub fn clear_tab(&mut self, x: u_int) {
-        self.0.tabs[(x >> 3) as usize] &= !(1 << (x & 0x7));
-    }
-
-    pub fn clear_tabs(&mut self) {
-        self.0.tabs.fill(0);
     }
 
     pub fn saved_grid(&self) -> Option<&RustGrid> {
@@ -858,7 +895,8 @@ pub fn screen_alternate_off(s: &mut RustScreen, gc: Option<&mut grid_cell>, curs
          * If the current size is different, temporarily resize to the old
          * size before copying back.
          */
-        if let Some((saved_sx, saved_sy)) = s.0.saved_grid.as_ref().map(|g| (g.width(), g.height())) {
+        if let Some((saved_sx, saved_sy)) = s.0.saved_grid.as_ref().map(|g| (g.width(), g.height()))
+        {
             screen_resize(s, saved_sx, saved_sy, 0);
         }
 
@@ -968,14 +1006,20 @@ impl RustScreen {
     /// Clears retained history and optionally resets the associated hyperlink set.
     pub(crate) fn clear_history(&mut self, hyperlinks: bool) {
         self.grid_mut().clear_history();
-        if hyperlinks { self.reset_hyperlinks(); }
+        if hyperlinks {
+            self.reset_hyperlinks();
+        }
     }
 
     /// Removes history below the cursor's remaining visible space and adjusts it.
     pub(crate) fn trim_history(&mut self) {
         let (cx, cy) = self.cursor();
         let grid = self.grid_mut();
-        let adjust = grid.height().wrapping_sub(1).wrapping_sub(cy).min(grid.history_size());
+        let adjust = grid
+            .height()
+            .wrapping_sub(1)
+            .wrapping_sub(cy)
+            .min(grid.history_size());
         grid.remove_history(adjust);
         self.set_cursor(cx, cy.wrapping_add(adjust));
     }
@@ -998,7 +1042,9 @@ impl RustScreen {
         let height = self.grid().height();
         if cy > height.wrapping_sub(1) {
             self.set_cursor(0, height.wrapping_sub(1));
-        } else { self.set_cursor(cx, cy); }
+        } else {
+            self.set_cursor(cx, cy);
+        }
     }
 }
 

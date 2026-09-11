@@ -1,3 +1,4 @@
+use crate::screen::Screen as _;
 use super::*;
 use crate::options::OptionsRef;
 use crate::server::client_ref_of;

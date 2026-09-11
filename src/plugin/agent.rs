@@ -7,6 +7,7 @@
 //! by the six format variables of `PROTOCOL.md`, and the status-line redraw a
 //! changed pane asks for.
 
+use crate::screen::Screen as _;
 use crate::WindowPane;
 use std::ffi::CString;
 use std::time::Duration;
