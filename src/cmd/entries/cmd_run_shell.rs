@@ -82,7 +82,6 @@ fn cmd_run_shell_args_parse(
     _idx: u_int,
     _cause: &mut Option<CString>,
 ) -> args_parse_type {
-    let args = RustArguments::from_ref(args);
     if ({
         let flag = 'C' as i32 as u_char;
         args.argument_flag_count(flag)

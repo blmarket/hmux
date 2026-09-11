@@ -88,7 +88,6 @@ fn cmd_display_menu_args_parse(
     idx: u_int,
     _cause: &mut Option<CString>,
 ) -> args_parse_type {
-    let args = RustArguments::from_ref(args);
     let mut i: u_int = 0 as u_int;
     let mut type_0: args_parse_type;
     loop {

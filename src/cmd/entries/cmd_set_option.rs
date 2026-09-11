@@ -169,7 +169,7 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
         unsafe {
             scope = RustOptionsEngine.scope_from_name(
-                args.as_args(),
+                args,
                 window,
                 &name,
                 &target,

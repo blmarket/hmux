@@ -302,7 +302,6 @@ fn the_callback_says_what_each_argument_must_be() {
 #[test]
 fn the_callback_observes_flags_and_preceding_arguments() {
     fn inspect(arguments: &args, index: u_int, _cause: &mut Option<CString>) -> args_parse_type {
-        let arguments = RustArguments::from_ref(arguments);
         assert_eq!(arguments.argument_flag_string(b'f'), Some(c"value"));
         assert_eq!(arguments.argument_count(), index);
         if index == 1 {
@@ -1040,20 +1039,13 @@ fn command_preparation_accepts_a_consuming_expander_in_safe_code() {
 }
 
 #[test]
-fn rust_arguments_borrows_existing_state_in_place() {
-    let mut raw = RustArguments::from_strings(&[c"before"]).into_args();
-    let address = &raw as *const args;
-    {
-        let arguments = RustArguments::from_mut(&mut raw);
-        assert_eq!(arguments.as_args() as *const args, address);
-        assert!(arguments.set_argument_string(0, c"after"));
-        assert!(!arguments.set_argument_string(1, c"missing"));
-        arguments.set_argument_flag(b'x', None, 0);
-    }
-    assert_eq!(Arguments::argument_flag_count(&raw, b'x'), 1);
-    let arguments = RustArguments::from_ref(&raw);
+fn positional_replacement_preserves_bounds_and_flags() {
+    let mut arguments = RustArguments::from_strings(&[c"before"]);
+    assert!(arguments.set_argument_string(0, c"after"));
+    assert!(!arguments.set_argument_string(1, c"missing"));
+    arguments.set_argument_flag(b'x', None, 0);
     assert_eq!(arguments.argument_string(0), Some(c"after"));
     assert_eq!(arguments.argument_count(), 1);
     assert!(arguments.argument_value(1).is_none());
-    assert_eq!(Arguments::argument_flag_count(&raw, b'x'), 1);
+    assert_eq!(Arguments::argument_flag_count(&arguments, b'x'), 1);
 }

@@ -106,7 +106,7 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
     if args.argument_count() == 0 as u_int {
         unsafe {
             scope = RustOptionsEngine.scope_from_flags(
-                args.as_args(),
+                args,
                 window,
                 &target,
                 &mut oo,
@@ -163,7 +163,7 @@ unsafe fn cmd_show_options_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         };
         unsafe {
             scope = RustOptionsEngine.scope_from_name(
-                args.as_args(),
+                args,
                 window,
                 &name,
                 &target,

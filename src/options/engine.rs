@@ -247,7 +247,7 @@ impl OptionsEngine for RustOptionsEngine {
     ) -> c_int {
         unsafe {
             store::options_scope_from_name(
-                crate::RustArguments::from_ref(args),
+                args,
                 window,
                 name,
                 fs,
@@ -266,7 +266,7 @@ impl OptionsEngine for RustOptionsEngine {
     ) -> c_int {
         unsafe {
             store::options_scope_from_flags(
-                crate::RustArguments::from_ref(args),
+                args,
                 window,
                 fs,
                 oo,
