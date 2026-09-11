@@ -134,7 +134,6 @@ pub mod terminal_command_payload;
 pub mod terminal_default_key;
 pub mod terminal_feature;
 pub mod terminal_size;
-pub mod time_spec;
 pub mod time_value;
 pub mod user_account;
 pub mod variadic_arguments;
@@ -340,7 +339,6 @@ pub use text::{
     KeyStringCodec, RustKeyStringCodec, RustUtf8Compositor, RustUtf8VisModel, Utf8Compositor,
     Utf8VisModel,
 };
-pub use time_spec::*;
 pub use time_value::*;
 pub use user_account::*;
 pub use utf8_data::Utf8Data;
