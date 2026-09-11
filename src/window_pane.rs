@@ -475,6 +475,7 @@ impl crate::WindowPane for window_pane {
     #[cfg(test)]
     unsafe fn configure_test(&mut self, setting: PaneTestSetup) {
         match setting {
+            PaneTestSetup::Screen(screen) => self.base = screen,
             PaneTestSetup::Descriptor(fd) => self.fd = fd,
             PaneTestSetup::ScrollbarStyle(style) => self.scrollbar_style = style,
             PaneTestSetup::Styles(styles) => { self.cached_gc = styles.cached_gc; self.cached_active_gc = styles.cached_active_gc; }
@@ -645,8 +646,12 @@ impl crate::WindowPane for window_pane {
     fn base(&self) -> &crate::screen::RustScreen {
         &self.base
     }
-    fn base_mut(&mut self) -> &mut crate::screen::RustScreen {
-        &mut self.base
+    fn adopt_popup_screen(&mut self, screen: RustScreen) {
+        self.base = screen;
+        self.base.resize(self.sx, self.sy, 1);
+    }
+    fn base_mut(&mut self) -> crate::screen::ScreenMut<'_> {
+        crate::screen::ScreenMut::new(&mut self.base)
     }
 
     fn status_screen(&self) -> &crate::screen::RustScreen {
@@ -813,7 +818,7 @@ pub(crate) unsafe fn window_pane_create(
         (*wp).scrollbar_style = pane_scrollbar_style_from_option((*wp).options_ref());
         RustColourEngine.init_palette(&mut (*wp).palette);
         (*wp).reload_palette();
-        *(*wp).base_mut() = RustScreen::new_with_server_options(sx, sy, hlimit);
+        (*wp).base = RustScreen::new_with_server_options(sx, sy, hlimit);
         (*wp).screen = PaneScreen::Base;
         (*wp).update_default_cursor();
         (*wp).status_screen =
@@ -1014,6 +1019,7 @@ pub(crate) use io::send_line;
 
 #[cfg(test)]
 pub enum PaneTestSetup {
+    Screen(RustScreen),
     Descriptor(c_int),
     Styles(PaneStyleCells),
     ScrollbarStyle(PaneScrollbarStyle),

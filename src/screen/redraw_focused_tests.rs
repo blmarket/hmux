@@ -554,9 +554,11 @@ fn pane_drawing_borrows_the_shown_screen_after_style_evaluation_and_clips_rows()
         let mut pane = view.window.handle().as_window().panes[0].downgrade();
         {
             let wp = pane.get_mut().unwrap();
-            let mut writer = screen_write_ctx_on_screen(wp.base_mut());
+            let mut screen = wp.base_mut();
+            let mut writer = crate::screen::RustScreenWriteCtx::on_borrowed_screen(&mut screen);
             writer.puts(&grid_default_cell, c"abcdef", fmt_args![]);
             writer.finish();
+            drop(screen);
             let pane_screen_mode = wp.base().mode() | MODE_SYNC;
             wp.base_mut().set_mode(pane_screen_mode);
         }
@@ -584,8 +586,7 @@ fn pane_drawing_borrows_the_shown_screen_after_style_evaluation_and_clips_rows()
             .screen
             .clone();
         {
-            let mut screen = display.borrow_mut();
-            let mut writer = screen_write_ctx_on_screen(&mut screen);
+            let mut writer = crate::screen::RustScreenWriteCtx::on_shared_screen(&display);
             writer.puts(&grid_default_cell, c"uvwxyz", fmt_args![]);
             writer.finish();
         }

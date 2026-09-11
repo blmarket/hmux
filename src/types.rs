@@ -152,108 +152,8 @@ impl fmt::Debug for PaneInputRef {
     }
 }
 
-/// A screen read that keeps a shared screen's borrow checked until it ends.
-pub enum ScreenBorrow<'a> {
-    Owned(&'a RustScreen),
-    Shared(std::cell::Ref<'a, RustScreen>),
-}
-
-impl core::ops::Deref for ScreenBorrow<'_> {
-    type Target = RustScreen;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Owned(screen) => screen,
-            Self::Shared(screen) => screen,
-        }
-    }
-}
-
-/// A strong owner of a screen with checked shared and exclusive borrows.
-#[derive(Clone)]
-pub(crate) struct ScreenRef(Rc<SharedScreen>);
-
-struct SharedScreen {
-    screen: RefCell<RustScreen>,
-    writing: std::cell::Cell<bool>,
-}
-
-pub(crate) struct ScreenWriteLease<'a> {
-    target: &'a ScreenRef,
-}
-
-impl<'a> ScreenWriteLease<'a> {
-    pub(crate) fn borrow(&self) -> std::cell::Ref<'a, RustScreen> {
-        self.target.0.screen.borrow()
-    }
-
-    pub(crate) fn borrow_mut(&self) -> std::cell::RefMut<'a, RustScreen> {
-        self.target.0.screen.borrow_mut()
-    }
-}
-
-impl Drop for ScreenWriteLease<'_> {
-    fn drop(&mut self) {
-        self.target.0.writing.set(false);
-    }
-}
-
-impl Default for ScreenRef {
-    fn default() -> Self {
-        Self::new(RustScreen::default())
-    }
-}
-
-impl ScreenRef {
-    pub(crate) fn new(value: RustScreen) -> Self {
-        Self(Rc::new(SharedScreen {
-            screen: RefCell::new(value),
-            writing: std::cell::Cell::new(false),
-        }))
-    }
-
-    pub(crate) fn borrow(&self) -> std::cell::Ref<'_, RustScreen> {
-        self.0.screen.borrow()
-    }
-
-    pub(crate) fn borrow_mut(&self) -> std::cell::RefMut<'_, RustScreen> {
-        assert!(!self.0.writing.get(), "screen has an active writer");
-        self.0.screen.borrow_mut()
-    }
-
-    pub(crate) fn begin_write(&self) -> ScreenWriteLease<'_> {
-        assert!(!self.0.writing.replace(true), "screen has an active writer");
-        ScreenWriteLease { target: self }
-    }
-
-    pub(crate) fn is_unique(&self) -> bool {
-        Rc::strong_count(&self.0) == 1
-    }
-
-    #[cfg(test)]
-    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
-    }
-
-    /// Makes a non-owning observation of this screen.
-    pub(crate) fn downgrade(&self) -> ScreenWeak {
-        ScreenWeak(Rc::downgrade(&self.0))
-    }
-}
-
-/// A non-owning observation of a screen. The status line watches the
-/// overlay it is drawing on this way, so that the message and prompt slots
-/// alone decide how long the screen lives.
-#[derive(Clone)]
-pub(crate) struct ScreenWeak(Weak<SharedScreen>);
-
-impl ScreenWeak {
-    /// The screen if the slots that held it still do, as the handle that
-    /// keeps it alive rather than a pointer into one that has gone.
-    pub(crate) fn upgrade(&self) -> Option<ScreenRef> {
-        self.0.upgrade().map(ScreenRef)
-    }
-}
+pub use crate::screen::ScreenBorrow;
+pub(crate) use crate::screen::{ScreenRef, ScreenWeak};
 
 /// A strong owner of a window allocation. The raw pointer returned by
 /// [`as_ptr`](Self::as_ptr) is a borrowed compatibility view; an owning edge
@@ -2519,11 +2419,11 @@ pub(crate) enum StatusActive {
 impl status_line {
     /// Runs `use_screen` with the screen currently displayed by this status
     /// line, checking overlay borrows and keeping its owner alive for the call.
-    pub(crate) fn with_active<R>(&mut self, use_screen: impl FnOnce(&mut RustScreen) -> R) -> R {
+    pub(crate) fn with_active<R>(&mut self, use_screen: impl FnOnce(&RustScreen) -> R) -> R {
         match &self.active {
             StatusActive::Own => use_screen(&mut self.screen),
             StatusActive::Overlay(watched) => match watched.upgrade() {
-                Some(held) => use_screen(&mut held.borrow_mut()),
+                Some(held) => use_screen(&held.borrow()),
                 None => use_screen(&mut self.screen),
             },
         }
@@ -2534,23 +2434,21 @@ impl status_line {
     pub(crate) fn replace_active_with<R>(
         &mut self,
         replacement: RustScreen,
-        use_screen: impl FnOnce(&mut RustScreen, RustScreen, Option<&RustScreen>) -> R,
+        use_screen: impl FnOnce(crate::screen::ScreenMut<'_>, RustScreen, Option<&RustScreen>) -> R,
     ) -> R {
         match &self.active {
             StatusActive::Overlay(watched) => match watched.upgrade() {
                 Some(held) => {
-                    let mut active = held.borrow_mut();
-                    let old = core::mem::replace(&mut *active, replacement);
-                    use_screen(&mut active, old, Some(&self.screen))
+                    held.redraw(replacement, |active, old| use_screen(active, old, Some(&self.screen)))
                 }
                 None => {
                     let old = core::mem::replace(&mut self.screen, replacement);
-                    use_screen(&mut self.screen, old, None)
+                    use_screen(crate::screen::ScreenMut::new(&mut self.screen), old, None)
                 }
             },
             StatusActive::Own => {
                 let old = core::mem::replace(&mut self.screen, replacement);
-                use_screen(&mut self.screen, old, None)
+                use_screen(crate::screen::ScreenMut::new(&mut self.screen), old, None)
             }
         }
     }

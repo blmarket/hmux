@@ -1271,7 +1271,7 @@ impl PaneWriter {
     }
 
     fn ctx(&mut self) -> screen_write_ctx<'_> {
-        screen_write_ctx::new(&mut self.state, self.pane.base_mut())
+        screen_write_ctx::new(&mut self.state, self.pane.base_mut().into_inner())
     }
 
     fn wp(&mut self) -> *mut (dyn crate::WindowPane + 'static) {
@@ -1282,7 +1282,7 @@ impl PaneWriter {
         unsafe {
             screen_write_collect_end(&mut self.ctx());
             screen_write_collect_flush(&mut self.ctx(), 0, c"test");
-            let gd = RustScreen::grid_mut(self.pane.base_mut());
+            let gd = RustScreen::grid_mut(self.pane.base_mut().into_inner());
             (0..(*gd).height())
                 .map(|y| {
                     let p = (&*gd).string_cells(0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
@@ -1616,7 +1616,7 @@ fn clearing_from_the_top_of_a_pane_scrolls_it_into_the_history() {
     unsafe { screen_write_clearendofscreen(&mut w.ctx(), 8) };
     assert_eq!(w.lines(), ["", ""]);
     {
-        let gd = RustScreen::grid_mut(w.pane.base_mut());
+        let gd = RustScreen::grid_mut(w.pane.base_mut().into_inner());
         assert_eq!((*gd).history_size(), 1);
     }
 }
@@ -1985,7 +1985,7 @@ fn a_pane_one_column_wide_is_redrawn_cell_by_cell() {
             .set_selection(0, 0, 1, 0, false, 0, 0, &gc);
         w.puts("a");
         screen_write_insertcharacter(&mut w.ctx(), 1, 8);
-        w.pane.base_mut().clear_selection();
+        w.pane.base_mut().into_inner().clear_selection();
     }
 }
 

@@ -596,7 +596,7 @@ fn screen_write_init(s: &mut RustScreen) -> screen_write_state {
 }
 pub(super) fn screen_write_start_pane_base(wp: &mut (impl crate::WindowPane + ?Sized)) -> screen_write_state {
     {
-        let mut state = screen_write_init(wp.base_mut());
+        let mut state = screen_write_init(wp.base_mut().into_inner());
         state.wp = (wp).observation();
         if log_get_level() != 0 {
             log_debug(

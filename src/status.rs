@@ -1291,8 +1291,8 @@ pub unsafe fn status_message_redraw(c: &mut client) -> core::ffi::c_int {
         let tty_sx = c.tty.sx;
         c.status.replace_active_with(
             RustScreen::new_with_server_options(tty_sx, lines, 0 as u_int),
-            |active, old_screen, base| {
-                let mut writer = screen_write_ctx_on_screen(active);
+            |mut active, old_screen, base| {
+                let mut writer = crate::screen::RustScreenWriteCtx::on_borrowed_screen(&mut active);
                 if let Some(base) = base {
                     writer.fast_copy(base, 0 as u_int, 0 as u_int, tty_sx, lines);
                 }
@@ -1303,7 +1303,7 @@ pub unsafe fn status_message_redraw(c: &mut client) -> core::ffi::c_int {
                 );
                 writer.format_draw(&gc, aw, expanded.as_bytes(), None, 0 as core::ffi::c_int);
                 writer.finish();
-                (!RustScreen::grid(active).content_eq(RustScreen::grid(&old_screen)))
+                (!active.grid().content_eq(RustScreen::grid(&old_screen)))
                     as core::ffi::c_int
             },
         )
@@ -1709,10 +1709,10 @@ pub unsafe fn status_prompt_redraw(c: &mut client) -> core::ffi::c_int {
         let prompt_cursor = &mut c.prompt_cursor;
         c.status.replace_active_with(
             RustScreen::new_with_server_options(tty_sx, lines, 0 as u_int),
-            |active, old_screen, base| {
+            |mut active, old_screen, base| {
                 active.set_default_cursor_colour(cursor_colour);
                 active.set_default_cursor_style(cursor_style);
-                let mut writer = screen_write_ctx_on_screen(active);
+                let mut writer = crate::screen::RustScreenWriteCtx::on_borrowed_screen(&mut active);
                 if let Some(base) = base {
                     writer.fast_copy(base, 0 as u_int, 0 as u_int, tty_sx, lines);
                 }
@@ -1786,7 +1786,7 @@ pub unsafe fn status_prompt_redraw(c: &mut client) -> core::ffi::c_int {
                     );
                 }
                 writer.finish();
-                (!RustScreen::grid(active).content_eq(RustScreen::grid(&old_screen)))
+                (!active.grid().content_eq(RustScreen::grid(&old_screen)))
                     as core::ffi::c_int
             },
         )

@@ -286,7 +286,9 @@ pub trait WindowPane: PaneIdentity + PaneGeometryState + PaneSearchState {
     fn base(&self) -> &crate::screen::RustScreen;
 
     /// Mutably borrows the pane's base screen.
-    fn base_mut(&mut self) -> &mut crate::screen::RustScreen;
+    /// Installs a transferred popup screen and sizes it to the pane.
+    fn adopt_popup_screen(&mut self, screen: crate::screen::RustScreen);
+    fn base_mut(&mut self) -> crate::screen::ScreenMut<'_>;
 
     /// Borrows the pane's status screen.
     fn status_screen(&self) -> &crate::screen::RustScreen;

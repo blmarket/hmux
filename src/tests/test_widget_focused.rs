@@ -854,7 +854,7 @@ fn rebuild_callbacks_own_inputs_and_keep_the_unfiltered_fallback() {
             if filter.is_some() {
                 tree.borrow_mut().filter = Some(c"replacement".to_owned());
                 tree.borrow_mut().sort_crit.set_order(SORT_ACTIVITY);
-                *tree.screen_handle().borrow_mut() = RustScreen::new_with_server_options(40, 12, 0);
+                tree.screen_handle().borrow_mut().resize(40, 12, 1);
                 assert_eq!(filter, Some(c"missing"));
                 assert_eq!(sort.order(), SORT_NAME);
             } else {
@@ -869,7 +869,7 @@ fn rebuild_callbacks_own_inputs_and_keep_the_unfiltered_fallback() {
             let tree = weak.upgrade().unwrap();
             assert_eq!(tree.borrow().width, 40);
             assert_eq!(tree.borrow().children.len(), 1);
-            *tree.screen_handle().borrow_mut() = RustScreen::new_with_server_options(40, 16, 0);
+            tree.screen_handle().borrow_mut().resize(40, 16, 1);
             4
         }));
         tree.build();

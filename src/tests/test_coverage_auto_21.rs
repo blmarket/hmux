@@ -212,7 +212,7 @@ fn window_pane_search_finds_written_text() {
     unsafe {
         let wp = p.ptr();
         // write "hello world" on first line via grid
-        let screen = (*wp).base_mut();
+        let mut screen = (*wp).base_mut();
         let hello = b"hello world";
         for (i, &ch) in hello.iter().enumerate() {
             let mut gc = crate::grid::grid_default_cell;

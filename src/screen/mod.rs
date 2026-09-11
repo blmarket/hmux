@@ -5,6 +5,9 @@
 //! use is exactly what is re-exported here.
 
 mod draw;
+mod handles;
+pub use handles::{ScreenBorrow, ScreenMut};
+pub(crate) use handles::{ScreenRef, ScreenWeak};
 mod redraw;
 mod state;
 pub(crate) mod write;

@@ -206,7 +206,7 @@ impl PaneWriter {
     }
 
     fn ctx(&mut self) -> screen_write_ctx<'_> {
-        screen_write_ctx::new(&mut self.state, self.pane.base_mut())
+        screen_write_ctx::new(&mut self.state, self.pane.base_mut().into_inner())
     }
 
     fn wp(&mut self) -> *mut (dyn crate::WindowPane + 'static) {
@@ -222,7 +222,7 @@ impl PaneWriter {
     }
 
     fn grid_mut(&mut self) -> &mut grid {
-        RustScreen::grid_mut(self.pane.base_mut())
+        RustScreen::grid_mut(self.pane.base_mut().into_inner())
     }
 
     fn move_to(&mut self, px: u_int, py: u_int) {
@@ -719,7 +719,7 @@ fn a_single_visible_column_is_redrawn_by_what_the_cell_holds() {
             .base_mut()
             .set_selection(0, 0, 0, 0, false, 0, 0, &sel);
         screen_write_clearcharacter(&mut w.ctx(), 1, 8);
-        w.pane.base_mut().clear_selection();
+        w.pane.base_mut().into_inner().clear_selection();
         gc = (&*w.grid()).view_cell(0, 0);
         assert_eq!(gc.flags as c_int & GRID_FLAG_SELECTED, GRID_FLAG_SELECTED);
 

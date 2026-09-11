@@ -224,8 +224,8 @@ fn preview_uses_the_clients_current_window_and_skips_missing_active_panes() {
     unsafe {
         for (id, text) in [(0, c"A"), (1, c"B")] {
             let mut pane = window_pane_find_by_id(id).unwrap();
-            let mut writer =
-                crate::screen::screen_write_ctx_on_screen(pane.get_mut().unwrap().base_mut());
+            let mut screen = pane.get_mut().unwrap().base_mut();
+            let mut writer = crate::screen::RustScreenWriteCtx::on_borrowed_screen(&mut screen);
             writer.nputs(1, &crate::grid::grid_default_cell, c"%s", fmt_args![text]);
         }
         let mut session = target.state().session().unwrap();

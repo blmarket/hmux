@@ -539,13 +539,11 @@ impl MenuDataRef {
                 let data = &mut *guard;
                 menu_reapply_styles(data, c);
                 let screen = data.s.clone();
-                let mut screen_guard = screen.borrow_mut();
-                let s = &mut *screen_guard;
                 let menu = &data.menu;
                 let width = menu.width.wrapping_add(4);
                 let px: u_int = data.px;
                 let py: u_int = data.py;
-                let mut writer = screen_write_ctx_on_screen(s);
+                let mut writer = crate::screen::RustScreenWriteCtx::on_shared_screen(&screen);
                 writer.clearscreen(8 as u_int);
                 if data.border_lines as core::ffi::c_int != BOX_LINES_NONE as core::ffi::c_int {
                     writer.box_(
@@ -565,7 +563,6 @@ impl MenuDataRef {
                     &data.selected_style_gc,
                 );
                 writer.finish();
-                drop(screen_guard);
                 (screen, width, px, py)
             };
             let screen = screen.borrow();

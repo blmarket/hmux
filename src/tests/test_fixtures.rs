@@ -895,7 +895,7 @@ impl Pane {
         unsafe { pane.configure_test(crate::window_pane::PaneTestSetup::Options(Some(Options::pane().owned()))) };
         unsafe { pane.configure_test(crate::window_pane::PaneTestSetup::Size(crate::pane_resize::PaneSize { width: sx, height: sy })) };
         {
-            *pane.base_mut() = RustScreen::new_with_server_options(sx, sy, hlimit);
+            unsafe { pane.configure_test(crate::window_pane::PaneTestSetup::Screen(RustScreen::new_with_server_options(sx, sy, hlimit))) };
             pane.publish_border_status(0, RustScreen::new_with_server_options(1, 1, 0), Vec::new(), c"".to_owned());
         }
 
@@ -941,7 +941,7 @@ impl Pane {
         unsafe { (*self.ptr).base() }
     }
 
-    pub(crate) fn base_mut(&mut self) -> &mut RustScreen {
+    pub(crate) fn base_mut(&mut self) -> crate::screen::ScreenMut<'_> {
         unsafe { (*self.ptr).base_mut() }
     }
 

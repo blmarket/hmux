@@ -1,4 +1,5 @@
 use super::Screen;
+use super::handles::ScreenWriteLease;
 use super::write;
 use super::write::{screen_write_ctx, screen_write_state};
 use crate::WindowPane;
@@ -182,7 +183,7 @@ impl<'a> RustScreenWriteCtx<'a> {
     fn start_pane_base(&mut self, wp: &'a mut (impl crate::WindowPane + ?Sized)) {
         assert!(!self.active, "screen writer is already active");
         self.state = write::screen_write_start_pane_base(wp);
-        self.target = Some(wp.base_mut());
+        self.target = Some(wp.base_mut().into_inner());
         self.active = true;
     }
 
@@ -212,6 +213,10 @@ impl<'a> RustScreenWriteCtx<'a> {
         let mut writer = Self::new();
         writer.start(s);
         writer
+    }
+
+    pub(crate) fn on_borrowed_screen(screen: &'a mut super::ScreenMut<'_>) -> Self {
+        Self::on_screen(screen.as_inner())
     }
 
     /// Writes to a shared screen, checking exclusive access for each operation.
@@ -258,7 +263,7 @@ impl<'a> RustScreenWriteCtx<'a> {
         let pane = wp.observation();
         let mode = wp.active_mode_mut().expect("pane has a mode");
         let mut writer = match mode.screen_target() {
-            crate::modes::ModeScreenTarget::Owned(screen) => Self::on_screen(screen),
+            crate::modes::ModeScreenTarget::Owned(screen) => Self::on_screen(screen.into_inner()),
             crate::modes::ModeScreenTarget::Shared(screen) => Self::on_shared_screen(screen),
         };
         writer.state.wp = pane;
@@ -766,7 +771,7 @@ mod tests {
         writer.putc(&crate::grid::grid_default_cell, b'x');
         writer.finish();
         let mut screen = target.borrow_mut();
-        assert_eq!(RustScreen::grid(&screen).cell(2, 1).data.data[0], b'x');
+        assert_eq!(screen.grid().cell(2, 1).data.data[0], b'x');
         screen.set_cursor(0, 0);
     }
 

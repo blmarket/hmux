@@ -102,7 +102,7 @@ impl Parser {
         self.pane.ptr()
     }
 
-    fn s(&mut self) -> &mut RustScreen {
+    fn s(&mut self) -> crate::screen::ScreenMut<'_> {
         self.pane.base_mut()
     }
 
@@ -137,7 +137,8 @@ impl Parser {
     }
 
     fn lines(&mut self) -> Vec<String> {
-        let gd = { RustScreen::grid(&mut *self.s()) };
+        let screen = self.s();
+        let gd = screen.grid();
         {
             (0..(*gd).height())
                 .map(|y| {
@@ -149,7 +150,8 @@ impl Parser {
     }
 
     fn cell(&mut self, px: u_int, py: u_int) -> grid_cell {
-        let gd = { RustScreen::grid(&mut *self.s()) };
+        let screen = self.s();
+        let gd = screen.grid();
         (&*gd).cell(px, py)
     }
 
@@ -235,9 +237,9 @@ fn linefeeds_eventually_scroll_lines_into_history() {
     for i in 0..23 {
         p.feed_str(&format!("{i}\r\n"));
     }
-    assert_eq!({ RustScreen::grid(&*p.s()).history_size() }, 0);
+    assert_eq!({ p.s().grid().history_size() }, 0);
     p.feed_str("23\n");
-    assert_eq!({ RustScreen::grid(&*p.s()).history_size() }, 1);
+    assert_eq!({ p.s().grid().history_size() }, 1);
     assert_eq!(p.lines()[0], "1");
     assert_eq!(p.lines()[21], "22");
     assert_eq!(p.lines()[22], "23");
@@ -381,7 +383,7 @@ fn erase_display_and_erase_line_cover_every_variant() {
     p.feed_str("\x1b[J");
     assert_eq!(p.lines()[0], "zzzz");
     p.feed_str("\x1b[3J");
-    assert_eq!({ RustScreen::grid(&*p.s()).history_size() }, 0);
+    assert_eq!({ p.s().grid().history_size() }, 0);
 }
 
 #[test]
@@ -628,7 +630,7 @@ fn osc_palette_entries_are_settable_queryable_and_resettable() {
 fn osc_prompt_marks_tag_the_lines_they_arrive_on() {
     let mut p = Parser::new();
     p.feed_str("$ \x1b]133;A\x07output\x1b]133;C\x07");
-    let flags = { (RustScreen::grid(&mut *p.s())).line_info(0).flags };
+    let flags = { (p.s().grid()).line_info(0).flags };
     assert_ne!(flags & GRID_LINE_START_PROMPT, 0);
     assert_ne!(flags & GRID_LINE_START_OUTPUT, 0);
 }

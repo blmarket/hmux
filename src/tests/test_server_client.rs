@@ -1227,7 +1227,7 @@ fn queued_keys_and_pastes_use_live_panes_and_skip_missing_targets() {
         assert!(output.written().is_empty());
         let mut payload = crate::tests::test_fixtures::PaneAllocation::default();
         payload.set_pane_id(99);
-        *payload.base_mut() = RustScreen::new_with_server_options(20, 6, 0);
+        unsafe { payload.configure_test(crate::window_pane::PaneTestSetup::Screen(RustScreen::new_with_server_options(20, 6, 0))) };
         unsafe { payload.configure_test(crate::window_pane::PaneTestSetup::Options(Some(pane_options))) };
         payload.configure_test(crate::window_pane::PaneTestSetup::Descriptor(0));
         payload.configure_test(crate::window_pane::PaneTestSetup::Stream(output.ptr()));
@@ -1381,7 +1381,7 @@ fn mouse_hit_testing_reads_scrollbars_and_listed_borders_then_skips_retired_pane
         });
         let mut payload = crate::tests::test_fixtures::PaneAllocation::default();
         payload.set_pane_id(99);
-        *payload.base_mut() = RustScreen::new_with_server_options(4, 2, 0);
+        unsafe { payload.configure_test(crate::window_pane::PaneTestSetup::Screen(RustScreen::new_with_server_options(4, 2, 0))) };
         unsafe { payload.configure_test(crate::window_pane::PaneTestSetup::Options(Some(pane.as_pane().options_ref().clone()))) };
         payload.configure_test(crate::window_pane::PaneTestSetup::Geometry(crate::pane_geometry::PaneGeometry {
             xoff: 30,

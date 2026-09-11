@@ -476,13 +476,7 @@ unsafe fn popup_make_pane(pd: &mut popup_data, type_0: layout_type) {
                 .expect("a new pane screen always carries a title"),
             0,
         );
-        *new.base_mut() = RustScreen::default();
-        *new.base_mut() = core::mem::replace(
-            &mut *pd.s.borrow_mut(),
-            RustScreen::new_with_server_options(1, 1, 0),
-        );
-        let geometry = new.geometry();
-        (new.base_mut()).resize(geometry.sx, geometry.sy, 1);
+        new.adopt_popup_screen(pd.s.take_for_pane());
         let configured = session.options().string_ref(c"default-shell");
         let shell = if checkshell(Some(&configured)) == 0 {
             _PATH_BSHELL

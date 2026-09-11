@@ -1331,10 +1331,12 @@ fn copy_cursor_and_line_number_options_follow_the_owning_pane_window() {
         source_options.set_number(c"mode-keys", MODEKEY_EMACS as i64);
         source_options.set_number(c"copy-mode-line-numbers", 4);
         let source = &mut *target.pane(source_index);
-        let mut writer = RustScreenWriteCtx::on_screen(source.base_mut());
+        let mut screen = source.base_mut();
+        let mut writer = RustScreenWriteCtx::on_borrowed_screen(&mut screen);
         writer.puts(&grid_default_cell, c"abcd ef", fmt_args![]);
         writer.cursormove(0, 0, 0);
         writer.finish();
+        drop(screen);
         let source_id = source.pane_id();
         assert_eq!(
             (pane.get_mut().unwrap()).set_mode(

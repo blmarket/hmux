@@ -217,10 +217,12 @@ pub(super) unsafe fn parse_bytes(wp: &mut window_pane, mut input: ByteBuffer) {
                 ],
             );
         }
+        let mut base_guard;
         let mut sctx = if wp.modes.is_empty() {
             RustScreenWriteCtx::on_pane_base(wp)
         } else {
-            RustScreenWriteCtx::on_screen(wp.base_mut())
+            base_guard = wp.base_mut();
+            RustScreenWriteCtx::on_borrowed_screen(&mut base_guard)
         };
         crate::input::parser::input_parse(&mut ictx, &mut sctx, input);
     }

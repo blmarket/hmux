@@ -83,7 +83,7 @@ impl window_mode_entry {
 pub struct ModeContext<'a>(&'a mut window_mode_entry);
 
 pub(crate) enum ModeScreenTarget<'a> {
-    Owned(&'a mut RustScreen),
+    Owned(crate::screen::ScreenMut<'a>),
     Shared(&'a ScreenRef),
 }
 
@@ -99,7 +99,7 @@ impl<'a> ModeContext<'a> {
     pub unsafe fn style_changed(self) { unsafe { self.0.mode().style_changed(self.0) }; }
     pub(crate) fn screen_target(self) -> ModeScreenTarget<'a> {
         match self.0.screen.as_ref().expect("shown mode has a screen") {
-            ModeScreen::Clock => ModeScreenTarget::Owned(&mut self.0.state.clock().expect("clock mode has state").screen),
+            ModeScreen::Clock => ModeScreenTarget::Owned(crate::screen::ScreenMut::new(&mut self.0.state.clock().expect("clock mode has state").screen)),
             ModeScreen::Shared(screen) => ModeScreenTarget::Shared(screen),
         }
     }

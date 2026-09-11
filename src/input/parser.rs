@@ -5554,10 +5554,12 @@ impl input_ctx {
             if clear != 0
                 && let Some(wp) = pane.as_mut().and_then(|pane| pane.get_mut())
             {
+                let mut base_guard;
                 let mut sctx = if wp.active_mode().is_none() {
                     RustScreenWriteCtx::on_pane_base(wp)
                 } else {
-                    RustScreenWriteCtx::on_screen(wp.base_mut())
+                    base_guard = wp.base_mut();
+                    RustScreenWriteCtx::on_borrowed_screen(&mut base_guard)
                 };
                 sctx.reset();
             }
