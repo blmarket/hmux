@@ -21,7 +21,7 @@
 //!   than as text to look for.
 //! * There is no error branch at all: the routine always answers
 //!   [`CMD_RETURN_NORMAL`], and it builds the filter and the arguments even
-//!   when [`window_pane_set_mode`] is going to refuse them because the pane is
+//!   when [`WindowPane::set_mode`](crate::WindowPane::set_mode) is going to refuse them because the pane is
 //!   already in that mode.
 
 use crate::args::RustArguments;

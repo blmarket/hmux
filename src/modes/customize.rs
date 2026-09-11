@@ -34,7 +34,7 @@ use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::tmux::{global_options, global_s_options, global_w_options};
 pub use crate::types::*;
 use crate::window::RustWindowPaneWeak;
-use crate::window::{window_pane_index, window_pane_reset_mode};
+use crate::window::{window_pane_index};
 use crate::xmalloc::xasprintf;
 use ::core::ffi::CStr;
 use ::std::ffi::CString;
@@ -1608,7 +1608,7 @@ impl WindowCustomizeModeDataRef {
             let Some(pane) = held.pane() else {
                 return;
             };
-            let current = pane.get().and_then(|pane| crate::window::window_pane_current_mode(pane))
+            let current = pane.get().and_then(|pane| (pane).active_mode())
                 .is_some_and(|mode| matches!(&mode.state, WindowModeState::Customize(data) if data.ptr_eq(&held)));
             if current {
                 held.key(c, key, None);
@@ -2186,7 +2186,7 @@ impl WindowCustomizeModeDataRef {
                 if let Some(mut pane) = pane
                     && let Some(pane) = pane.get_mut()
                 {
-                    window_pane_reset_mode(pane);
+                    (pane).reset_mode();
                 }
             } else {
                 ((*data).tree_ref()).draw();

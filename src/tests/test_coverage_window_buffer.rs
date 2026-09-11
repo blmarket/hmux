@@ -5,8 +5,6 @@ use crate::paste::{PasteBufferStore, with_paste_buffers, with_paste_buffers_mut}
 use crate::status::{status_init, status_prompt_clear};
 use crate::tests::test_fixtures::{Clients, Item, Target, globals, seen};
 use crate::types::*;
-use crate::window::window_pane_reset_mode_all;
-use crate::window::{window_pane_current_mode, window_pane_current_mode_mut};
 use ::core::ffi::CStr;
 
 const FILE: &CStr = c"test_coverage_window_buffer.rs";
@@ -54,14 +52,14 @@ fn test_window_buffer_mode_lifecycle_and_keys() {
             CMD_RETURN_NORMAL
         );
 
-        let wme = window_pane_current_mode_mut(&mut *wp).expect("pane is in a mode");
+        let wme = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
         assert_eq!(wme.mode(), WindowMode::Buffer);
         assert_eq!(seen(wme.mode().name().as_ptr()), "buffer-mode");
         assert!(wme.mode().default_format().is_some());
 
         // Update and resize
         wme.update_target().unwrap().dispatch();
-        let wme = window_pane_current_mode_mut(&mut *wp).expect("pane is in a mode");
+        let wme = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
         wme.mode().resize(wme, 90, 28);
 
         // Key interactions
@@ -79,8 +77,8 @@ fn test_window_buffer_mode_lifecycle_and_keys() {
             b'\r' as key_code,
             b'q' as key_code,
         ] {
-            if !(*wp).modes().is_empty() {
-                let cur_wme = window_pane_current_mode_mut(&mut *wp).expect("pane is in a mode");
+            if !(*wp).active_mode().is_none() {
+                let cur_wme = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
                 cur_wme.key_target().unwrap().dispatch(&mut *c1, key, None);
             }
         }
@@ -96,8 +94,8 @@ fn test_window_buffer_mode_lifecycle_and_keys() {
         let queue = (*c1).queue.take().expect("client carries its queue");
         assert!(queue.is_empty());
         drop(queue);
-        window_pane_reset_mode_all(&mut *wp);
-        assert!((*wp).modes().is_empty());
+        (&mut *wp).reset_modes();
+        assert!((*wp).active_mode().is_none());
         clear_buffers();
     }
 }
@@ -133,7 +131,7 @@ fn a_filter_prompt_outliving_buffer_mode_answers_without_the_tree() {
             CMD_RETURN_NORMAL
         );
 
-        let wme = window_pane_current_mode_mut(&mut *wp).expect("pane is in a mode");
+        let wme = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
         wme.key_target()
             .unwrap()
             .dispatch(&mut *c1, b'f' as key_code, None);
@@ -143,9 +141,9 @@ fn a_filter_prompt_outliving_buffer_mode_answers_without_the_tree() {
         };
         assert!(held.upgrade().is_some(), "the prompt reaches no live tree");
 
-        window_pane_reset_mode_all(&mut *wp);
+        (&mut *wp).reset_modes();
         assert!(
-            (*wp).modes().is_empty(),
+            (*wp).active_mode().is_none(),
             "buffer-mode outlived its pane entry"
         );
         let PromptData::ModeTree(held) = &(*c1).prompt_data else {
@@ -203,9 +201,9 @@ fn test_window_buffer_custom_format_and_sort() {
             CMD_RETURN_NORMAL
         );
 
-        assert!(window_pane_current_mode(&*wp).is_some());
+        assert!((&*wp).active_mode().is_some());
 
-        window_pane_reset_mode_all(&mut *wp);
+        (&mut *wp).reset_modes();
         clear_buffers();
     }
 }

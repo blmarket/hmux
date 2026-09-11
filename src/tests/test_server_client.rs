@@ -707,7 +707,7 @@ fn attached_client_print_preserves_parsed_lines_and_escaped_bytes() {
         let mut literal = ByteBuffer::from(b"one\x01".to_vec());
         server_client_print(Some(c), 0, &mut literal);
         assert_eq!(literal.as_slice(), b"one\x01");
-        let mode = pane.get().unwrap().modes().first().unwrap();
+        let mode = pane.get().unwrap().active_mode().unwrap();
         assert_eq!(mode.mode(), WindowMode::View);
         let data = mode.state.copy_mode_data_ref().unwrap();
         let grid = data.backing.as_ref().unwrap().grid();
@@ -880,7 +880,7 @@ fn maintenance_refreshes_mode_styles_and_clears_each_windows_pane_redraw_flags()
         other_window.options().set_number(c"automatic-rename", 0);
         let mut other = other_window.as_window().panes[0].downgrade();
         assert_eq!(
-            window_pane_set_mode(pane.get_mut().unwrap(), None, WindowMode::View, None, None),
+            (pane.get_mut().unwrap()).set_mode( None, WindowMode::View, None, None),
             0
         );
         *pane.get_mut().unwrap().flags_mut() =
@@ -896,7 +896,7 @@ fn maintenance_refreshes_mode_styles_and_clears_each_windows_pane_redraw_flags()
             0
         );
         assert_eq!(
-            pane.get().unwrap().modes().first().unwrap().mode(),
+            pane.get().unwrap().active_mode().unwrap().mode(),
             WindowMode::View
         );
     }
@@ -1012,8 +1012,7 @@ fn reset_state_reads_mouse_tracking_from_every_shown_pane_screen() {
         server_client_reset_state(c);
         assert_ne!(c.tty.mode & MODE_MOUSE_ALL, 0);
         assert_eq!(
-            crate::window::window_pane_set_mode(
-                pane.get_mut().unwrap(),
+            (pane.get_mut().unwrap()).set_mode(
                 None,
                 WindowMode::View,
                 None,
@@ -1021,7 +1020,7 @@ fn reset_state_reads_mouse_tracking_from_every_shown_pane_screen() {
             ),
             0
         );
-        let shown = pane.get().unwrap().modes()[0]
+        let shown = pane.get().unwrap().active_mode().unwrap()
             .state
             .copy_mode_data_ref()
             .unwrap()
@@ -1103,15 +1102,14 @@ fn status_redraw_refreshes_owned_list_modes_only_in_the_current_window() {
                 .zip([WindowMode::Buffer, WindowMode::Client, WindowMode::Tree])
         {
             assert_eq!(
-                window_pane_set_mode(pane.get_mut().unwrap(), None, mode, Some(&state), None),
+                (pane.get_mut().unwrap()).set_mode( None, mode, Some(&state), None),
                 0
             );
             *pane.get_mut().unwrap().flags_mut() &= !PANE_REDRAW;
         }
         let mut foreign_pane = window_pane_find_by_id((*target.pane(foreign)).pane_id()).unwrap();
         assert_eq!(
-            window_pane_set_mode(
-                foreign_pane.get_mut().unwrap(),
+            (foreign_pane.get_mut().unwrap()).set_mode(
                 None,
                 WindowMode::Buffer,
                 Some(&state),

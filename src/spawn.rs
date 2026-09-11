@@ -59,8 +59,7 @@ use crate::tmux::{global_options, ptm_fd};
 pub use crate::types::*;
 use crate::window::{WinlinkRef, window_set_latest};
 use crate::window::{
-    window_add_pane, window_pane_reset_mode_all, 
-    window_panes_insert_head, winlink_remove, winlink_stack_remove,
+    window_add_pane, window_panes_insert_head, winlink_remove, winlink_stack_remove,
 };
 use crate::xmalloc::xasprintf;
 use crate::{CommandTextCodec, RustCommandTextCodec};

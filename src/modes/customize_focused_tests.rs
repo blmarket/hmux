@@ -4,9 +4,7 @@ use crate::options::{OptionsEngine, OptionsRef, RustOptionsEngine};
 
 use crate::tests::test_fixtures::{KeyTable, Target, globals, zeroed_client};
 use crate::window::{
-    window_pane_current_mode, window_pane_current_mode_mut, window_pane_reset_mode_all,
-    window_pane_set_mode,
-};
+    };
 use core::ffi::c_int;
 
 struct Chain {
@@ -301,10 +299,10 @@ fn full_mode_rebuilds_with_filters_and_hide_global_toggles() {
     unsafe {
         let wp = target.pane(0);
         assert_eq!(
-            window_pane_set_mode(&mut *wp, None, WindowMode::Customize, Some(&fs), None),
+            (&mut *wp).set_mode( None, WindowMode::Customize, Some(&fs), None),
             0
         );
-        let wme = window_pane_current_mode_mut(&mut *wp).expect("pane is in a mode");
+        let wme = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
         let data = wme.state.customize().unwrap();
         assert!(!data.borrow().item_list.is_empty());
         let original = {
@@ -354,8 +352,8 @@ fn full_mode_rebuilds_with_filters_and_hide_global_toggles() {
             assert!(!std::rc::Rc::ptr_eq(&original, replacement));
         }
 
-        window_pane_reset_mode_all(&mut *wp);
-        assert!((*wp).modes().is_empty());
+        (&mut *wp).reset_modes();
+        assert!((*wp).active_mode().is_none());
         assert_eq!(original.table(), Some(c"retained-customize"));
         assert!(window_customize_get_key(&original).is_some());
         drop(original);
@@ -455,10 +453,10 @@ fn rebuilding_tracks_user_option_precedence_filters_and_global_visibility() {
         let fs = target.state();
         let wp = target.pane(0);
         assert_eq!(
-            window_pane_set_mode(&mut *wp, None, WindowMode::Customize, Some(&fs), None),
+            (&mut *wp).set_mode( None, WindowMode::Customize, Some(&fs), None),
             0
         );
-        let wme = window_pane_current_mode(&*wp).expect("pane is in a mode");
+        let wme = (&*wp).active_mode().expect("pane is in a mode");
         let data = wme.state.customize().unwrap();
         assert!(
             data.borrow()
@@ -489,7 +487,7 @@ fn rebuilding_tracks_user_option_precedence_filters_and_global_visibility() {
                 | WINDOW_CUSTOMIZE_GLOBAL_SESSION
                 | WINDOW_CUSTOMIZE_GLOBAL_WINDOW
         )));
-        window_pane_reset_mode_all(&mut *wp);
+        (&mut *wp).reset_modes();
         RustOptionsEngine.remove_or_default(
             global_w_options
                 .get()
@@ -513,10 +511,10 @@ fn mode_tree_navigation_tags_information_and_boundaries_without_prompts() {
     unsafe {
         let wp = target.pane(0);
         assert_eq!(
-            window_pane_set_mode(&mut *wp, None, WindowMode::Customize, Some(&fs), None),
+            (&mut *wp).set_mode( None, WindowMode::Customize, Some(&fs), None),
             0
         );
-        let wme = window_pane_current_mode_mut(&mut *wp).expect("pane is in a mode");
+        let wme = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
         let data = wme.state.customize().unwrap();
         for key in [
             KEYC_DOWN,
@@ -533,7 +531,7 @@ fn mode_tree_navigation_tags_information_and_boundaries_without_prompts() {
         }
         assert!(!data.borrow().item_list.is_empty());
         assert!(*(*wp).flags() & PANE_REDRAW != 0);
-        window_pane_reset_mode_all(&mut *wp);
+        (&mut *wp).reset_modes();
     }
 }
 
@@ -584,8 +582,7 @@ fn key_selection_and_expansion_survive_inserting_earlier_tables_and_bindings() {
             .pane_by_id(fs.wp.as_ref().map(|pane| pane.id()).unwrap())
             .unwrap();
         assert_eq!(
-            window_pane_set_mode(
-                pane.get_mut().unwrap(),
+            (pane.get_mut().unwrap()).set_mode(
                 None,
                 WindowMode::Customize,
                 Some(&fs),
@@ -593,7 +590,7 @@ fn key_selection_and_expansion_survive_inserting_earlier_tables_and_bindings() {
             ),
             0
         );
-        let data = window_pane_current_mode(pane.get().unwrap())
+        let data = (pane.get().unwrap()).active_mode()
             .unwrap()
             .state
             .customize()
@@ -655,7 +652,7 @@ fn key_selection_and_expansion_survive_inserting_earlier_tables_and_bindings() {
         table.bind(b'z' as key_code, c"display-message replacement", None);
         tree.build();
         assert_ne!(data.borrow().tags[&key], binding_tag);
-        window_pane_reset_mode_all(pane.get_mut().unwrap());
+        (pane.get_mut().unwrap()).reset_modes();
     }
 }
 

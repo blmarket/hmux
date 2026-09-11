@@ -98,39 +98,6 @@ fn window_borrows_are_checked_across_cloned_handles() {
 }
 
 #[test]
-fn shown_screen_borrows_handle_pending_modes_and_base_fallback() {
-    let mut pane = crate::tests::test_fixtures::PaneAllocation::default();
-    assert!(core::ptr::eq(&*pane.try_screen_ref().unwrap(), pane.base()));
-    *pane.shown_mut() = PaneScreen::Mode;
-    assert!(core::ptr::eq(&*pane.try_screen_ref().unwrap(), pane.base()));
-    pane.modes_mut().push(Box::new(window_mode_entry {
-        wp: None,
-        swp: None,
-        state: WindowModeState::None,
-        screen: None,
-        prefix: 1,
-    }));
-    assert!(pane.try_screen_ref().is_none());
-    pane.modes_mut()[0].state =
-        WindowModeState::Clock(Box::new(crate::modes::window_clock_mode_data {
-            screen: RustScreen::default(),
-            tim: 0,
-            timer: TimerHandle::ZERO,
-        }));
-    assert!(pane.try_screen_ref().is_none());
-    pane.modes_mut()[0].screen = Some(ModeScreen::Clock);
-    let WindowModeState::Clock(data) = &pane.modes()[0].state else {
-        unreachable!()
-    };
-    assert!(core::ptr::eq(&*pane.screen_ref(), &data.screen));
-    *pane.shown_mut() = PaneScreen::Base;
-    assert!(core::ptr::eq(&*pane.screen_ref(), pane.base()));
-    *pane.shown_mut() = PaneScreen::Mode;
-    pane.modes_mut().clear();
-    assert!(core::ptr::eq(&*pane.screen_ref(), pane.base()));
-}
-
-#[test]
 fn window_observer_expires_when_its_last_owner_drops() {
     std::thread::spawn(|| {
         let reference = WindowRef::new(window::default());
@@ -370,11 +337,10 @@ fn resize_modes_visibility_flags_and_fill_character_cover_safe_state_paths() {
         let w = target.window(0);
         let wp = target.pane(0);
         assert_eq!(window_pane_mode(&*wp), 0);
-        assert!(window_pane_current_mode(&*wp).is_none());
+        assert!((&*wp).active_mode().is_none());
         let source_pane_id = (*wp).pane_id();
         assert_eq!(
-            window_pane_set_mode(
-                &mut *wp,
+            (&mut *wp).set_mode(
                 crate::window::window_pane_find_by_id(source_pane_id),
                 WindowMode::Copy,
                 None,
@@ -383,10 +349,9 @@ fn resize_modes_visibility_flags_and_fill_character_cover_safe_state_paths() {
             0
         );
         assert_ne!(window_pane_mode(&*wp), 0);
-        assert!(window_pane_current_mode(&*wp).is_some());
+        assert!((&*wp).active_mode().is_some());
         assert_eq!(
-            window_pane_set_mode(
-                &mut *wp,
+            (&mut *wp).set_mode(
                 crate::window::window_pane_find_by_id(source_pane_id),
                 WindowMode::Copy,
                 None,
@@ -396,8 +361,8 @@ fn resize_modes_visibility_flags_and_fill_character_cover_safe_state_paths() {
         );
         (*wp).resize(crate::PaneSize { width: 30, height: 8 });
         assert_eq!(((*wp).geometry().sx, (*wp).geometry().sy), (30, 8));
-        window_pane_reset_mode_all(&mut *wp);
-        assert!(window_pane_current_mode(&*wp).is_none());
+        (&mut *wp).reset_modes();
+        assert!((&*wp).active_mode().is_none());
 
         assert_eq!(window_pane_visible(&*w, &*wp), 1);
         *(*wp).flags_mut() |= PANE_EXITED;
@@ -902,8 +867,7 @@ fn retained_pane_does_not_keep_its_window_alive_or_delay_window_teardown() {
     let mut pane = window_pane_find_by_id(id).unwrap();
     unsafe {
         assert_eq!(
-            window_pane_set_mode(
-                pane.as_pane_mut(),
+            (pane.as_pane_mut()).set_mode(
                 crate::window::window_pane_find_by_id(id),
                 WindowMode::Copy,
                 None,
@@ -1329,10 +1293,10 @@ fn theme_notifications_follow_the_shown_screen_and_only_emit_changed_themes() {
         let pane_screen_mode = pane.base().mode() | MODE_THEME_UPDATES;
         pane.base_mut().set_mode(pane_screen_mode);
         assert_eq!(
-            window_pane_set_mode(pane, None, WindowMode::View, None, None),
+            (pane).set_mode( None, WindowMode::View, None, None),
             0
         );
-        let shown = pane.modes()[0]
+        let shown = pane.active_mode().unwrap()
             .state
             .copy_mode_data_ref()
             .unwrap()
@@ -1402,7 +1366,7 @@ fn default_cursor_updates_borrow_each_modes_display_screen() {
         let options = pane.options_ref().clone();
         options.set_number(c"cursor-colour", 2);
         options.set_number(c"cursor-style", 3);
-        window_pane_default_cursor(pane);
+        (pane).update_default_cursor();
         assert_eq!(pane.base().default_cursor_colour(), 2);
         let base_style = pane.base().default_cursor_style();
         for mode in [
@@ -1416,8 +1380,7 @@ fn default_cursor_updates_borrow_each_modes_display_screen() {
         ] {
             let source = pane.pane_id();
             assert_eq!(
-                window_pane_set_mode(
-                    pane,
+                (pane).set_mode(
                     crate::window::window_pane_find_by_id(source),
                     mode,
                     Some(&state),
@@ -1426,7 +1389,7 @@ fn default_cursor_updates_borrow_each_modes_display_screen() {
                 0
             );
             let backing_defaults = if matches!(mode, WindowMode::Copy | WindowMode::View) {
-                pane.modes()[0]
+                pane.active_mode().unwrap()
                     .state
                     .copy_mode_data_ref()
                     .unwrap()
@@ -1444,14 +1407,14 @@ fn default_cursor_updates_borrow_each_modes_display_screen() {
             };
             options.set_number(c"cursor-colour", 5);
             options.set_number(c"cursor-style", 5);
-            window_pane_default_cursor(pane);
+            (pane).update_default_cursor();
             let shown = pane.screen_ref();
             assert_eq!(shown.default_cursor_colour(), 5);
             assert_eq!(shown.default_cursor_style(), SCREEN_CURSOR_BAR);
             assert_eq!(pane.base().default_cursor_colour(), 2);
             assert_eq!(pane.base().default_cursor_style(), base_style);
             if let Some(expected) = backing_defaults {
-                let backing = pane.modes()[0]
+                let backing = pane.active_mode().unwrap()
                     .state
                     .copy_mode_data_ref()
                     .unwrap()
@@ -1468,13 +1431,13 @@ fn default_cursor_updates_borrow_each_modes_display_screen() {
                 );
             }
             drop(shown);
-            window_pane_reset_mode_all(pane);
+            (pane).reset_modes();
             options.set_number(c"cursor-colour", 2);
             options.set_number(c"cursor-style", 3);
         }
-        *pane.shown_mut() = PaneScreen::Mode;
+
         options.set_number(c"cursor-colour", 6);
-        window_pane_default_cursor(pane);
+        (pane).update_default_cursor();
         assert_eq!(pane.base().default_cursor_colour(), 6);
     }
 }
@@ -1496,8 +1459,7 @@ fn shown_mode_screen_reads_hold_the_shared_screen_borrow() {
         ] {
             let source = (mode == WindowMode::Copy).then_some(pane.id());
             assert_eq!(
-                window_pane_set_mode(
-                    pane.get_mut().unwrap(),
+                (pane.get_mut().unwrap()).set_mode(
                     source.and_then(crate::window::window_pane_find_by_id),
                     mode,
                     Some(&state),
@@ -1505,7 +1467,7 @@ fn shown_mode_screen_reads_hold_the_shared_screen_borrow() {
                 ),
                 0
             );
-            let entry = window_pane_current_mode(pane.get().unwrap()).unwrap();
+            let entry = (pane.get().unwrap()).active_mode().unwrap();
             let display = match &entry.state {
                 WindowModeState::Copy(data) | WindowModeState::View(data) => data.screen.clone(),
                 _ => entry
@@ -1523,7 +1485,7 @@ fn shown_mode_screen_reads_hold_the_shared_screen_borrow() {
             drop(shown);
             display.borrow_mut().set_cursor(1, 1);
             assert_eq!(pane.get().unwrap().screen_ref().cursor(), (1, 1));
-            window_pane_reset_mode_all(pane.get_mut().unwrap());
+            (pane.get_mut().unwrap()).reset_modes();
         }
     }
 }

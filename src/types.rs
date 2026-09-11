@@ -2136,15 +2136,7 @@ impl window {
 pub use crate::WindowPane;
 pub use crate::window_pane::{RustWindowPaneRef, RustWindowPaneWeak};
 
-/// Which screen a pane is showing.
-#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
-pub enum PaneScreen {
-    /// The pane's own screen, which it holds itself.
-    #[default]
-    Base,
-    /// The screen the mode at the front of the pane's mode list draws on.
-    Mode,
-}
+
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -2287,31 +2279,7 @@ impl ModeScreen {
     }
 }
 
-#[repr(C)]
-pub struct window_mode_entry {
-    pub(crate) wp: Option<RustWindowPaneWeak>,
-    pub(crate) swp: Option<RustWindowPaneWeak>,
-    pub(crate) state: WindowModeState,
-    pub(crate) screen: Option<ModeScreen>,
-    pub prefix: u_int,
-}
-impl window_mode_entry {
-    /// Observes the pane while its owner still exists.
-    pub(crate) fn pane_ref(&self) -> Option<RustWindowPaneWeak> {
-        self.wp
-            .as_ref()
-            .filter(|pane| pane.is_alive())
-            .cloned()
-    }
-
-    /// Observes the source pane directly until it is destroyed.
-    pub(crate) fn source_pane_ref(&self) -> Option<crate::window::RustWindowPaneWeak> {
-        self.swp
-            .as_ref()
-            .filter(|pane| pane.is_alive())
-            .cloned()
-    }
-}
+pub use crate::modes::window_mode_entry;
 
 #[derive(Default)]
 #[repr(C)]
@@ -2764,7 +2732,7 @@ pub struct tty_term {
 }
 pub type winlinks = std::collections::BTreeMap<core::ffi::c_int, Box<winlink>>;
 /// The modes a pane has open, the one it is showing first. A mode belongs to
-/// the pane until `window_pane_reset_mode` takes it off.
+/// the pane until `WindowPane::reset_mode` takes it off.
 pub type window_modes = Vec<Box<window_mode_entry>>;
 /// The links to one window, in the order they were made.
 /// The sessions' links to a window, in the order they were made, named by

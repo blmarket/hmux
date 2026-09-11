@@ -109,18 +109,18 @@ fn editor_completion_after_buffer_mode_closes_updates_the_buffer() {
         with_paste_buffers_mut(|buffers| buffers.set_named(c"edited", b"original\n".to_vec()))
             .expect("the buffer is set");
         assert_eq!(
-            crate::window::window_pane_set_mode(pane, None, WindowMode::Buffer, Some(&fs), None),
+            (pane).set_mode( None, WindowMode::Buffer, Some(&fs), None),
             0,
         );
         let mut ed = editing(c"edited");
         ed.wp_id = pane.pane_id();
-        window_pane_reset_mode(pane);
-        assert!(window_pane_current_mode(pane).is_none());
+        (pane).reset_mode();
+        assert!((pane).active_mode().is_none());
 
         window_buffer_edit_close_cb(b"updated\n".to_vec(), ed);
 
         assert_eq!(contents(c"edited"), Some(b"updated\n".to_vec()));
-        assert!(window_pane_current_mode(pane).is_none());
+        assert!((pane).active_mode().is_none());
         with_paste_buffers_mut(|buffers| buffers.remove(c"edited"));
     }
 }
@@ -139,8 +139,7 @@ fn retained_rows_survive_rebuild_and_close_and_resolve_replaced_buffers_by_name(
         with_paste_buffers_mut(|buffers| buffers.set_named(c"retained", b"original".to_vec()))
             .unwrap();
         assert_eq!(
-            crate::window::window_pane_set_mode(
-                pane.get_mut().unwrap(),
+            (pane.get_mut().unwrap()).set_mode(
                 None,
                 WindowMode::Buffer,
                 Some(&fs),
@@ -148,7 +147,7 @@ fn retained_rows_survive_rebuild_and_close_and_resolve_replaced_buffers_by_name(
             ),
             0,
         );
-        let owner = window_pane_current_mode(pane.get().unwrap())
+        let owner = (pane.get().unwrap()).active_mode()
             .unwrap()
             .state
             .buffer()
@@ -163,7 +162,7 @@ fn retained_rows_survive_rebuild_and_close_and_resolve_replaced_buffers_by_name(
             &original,
             &tree.current_item().buffer().unwrap()
         ));
-        window_pane_reset_mode(pane.get_mut().unwrap());
+        (pane.get_mut().unwrap()).reset_mode();
         drop(tree);
         drop(owner);
         assert_eq!(original.name(), Some(c"retained"));
@@ -199,8 +198,7 @@ fn editor_and_menu_callbacks_handle_a_removed_pane() {
         with_paste_buffers_mut(|buffers| buffers.set_named(c"edited", b"original\n".to_vec()))
             .unwrap();
         assert_eq!(
-            crate::window::window_pane_set_mode(
-                pane.get_mut().unwrap(),
+            (pane.get_mut().unwrap()).set_mode(
                 None,
                 WindowMode::Buffer,
                 Some(&fs),
@@ -208,7 +206,7 @@ fn editor_and_menu_callbacks_handle_a_removed_pane() {
             ),
             0
         );
-        let data = window_pane_current_mode(pane.get().unwrap())
+        let data = (pane.get().unwrap()).active_mode()
             .unwrap()
             .state
             .buffer()
@@ -237,8 +235,7 @@ fn row_and_key_formats_use_the_resolved_target_and_drop_invalid_context() {
         crate::cmd::cmd_find_from_pane(&mut fs, pane.get().unwrap(), 0);
         with_paste_buffers_mut(|buffers| buffers.set_named(c"context", b"text".to_vec())).unwrap();
         assert_eq!(
-            crate::window::window_pane_set_mode(
-                pane.get_mut().unwrap(),
+            (pane.get_mut().unwrap()).set_mode(
                 None,
                 WindowMode::Buffer,
                 Some(&fs),
@@ -246,7 +243,7 @@ fn row_and_key_formats_use_the_resolved_target_and_drop_invalid_context() {
             ),
             0
         );
-        let owner = window_pane_current_mode(pane.get().unwrap())
+        let owner = (pane.get().unwrap()).active_mode()
             .unwrap()
             .state
             .buffer()

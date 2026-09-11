@@ -558,14 +558,13 @@ fn pane_drawing_borrows_the_shown_screen_after_style_evaluation_and_clips_rows()
         );
         assert_eq!(pane.get().unwrap().base().mode() & MODE_SYNC, 0);
         view.client.as_tty_mut().out.as_mut().unwrap().clear();
-        crate::window::window_pane_set_mode(
-            pane.get_mut().unwrap(),
+        (pane.get_mut().unwrap()).set_mode(
             None,
             WindowMode::View,
             None,
             None,
         );
-        let display = pane.get().unwrap().modes()[0]
+        let display = pane.get().unwrap().active_mode().unwrap()
             .state
             .copy_mode_data_ref()
             .unwrap()

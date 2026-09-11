@@ -214,14 +214,13 @@ fn window_copy_get_current_offset_returns_zero_without_copy_mode() {
     unsafe {
         // pane with a wme whose data is null -> returns 0 (null-data guard)
         (*p.ptr())
-            .modes_mut()
-            .push(zeroed::<crate::types::window_mode_entry>());
+            .insert_test_mode(zeroed::<crate::types::window_mode_entry>());
         // state is None by zeroed
         assert!(matches!(
-            (*(*p.ptr()).modes())[0].state,
+            (*p.ptr()).active_mode().unwrap().state,
             crate::types::WindowModeState::None
         ));
         assert!(window_copy_get_current_offset(&mut *p.ptr()).is_none());
-        (*p.ptr()).modes_mut().clear();
+        (*p.ptr()).take_test_mode();
     }
 }

@@ -1700,7 +1700,7 @@ unsafe fn screen_redraw_draw_pane_scrollbar(
             slider_h = (sb_h as core::ffi::c_double * percent_view) as u_int;
             slider_y = sb_h.wrapping_sub(slider_h);
         } else {
-            if wp.modes().is_empty() {
+            if wp.active_mode().is_none() {
                 return;
             }
             let Some((offset, size)) = window_copy_get_current_offset(wp) else {

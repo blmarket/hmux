@@ -3,8 +3,7 @@ use crate::WindowPane;
 use crate::grid::grid_get_cell;
 use crate::tests::test_fixtures::{Target, Window, globals};
 use crate::window::{
-    window_pane_current_mode_mut, window_pane_find_by_id, window_pane_set_mode,
-    window_pane_set_window_ref, window_panes_insert_tail, window_panes_take,
+    window_pane_find_by_id, window_pane_set_window_ref, window_panes_insert_tail, window_panes_take,
 };
 
 fn assert_clock_colour(screen: &RustScreen, colour: i32) {
@@ -29,9 +28,9 @@ fn clock_resize_and_timer_follow_the_panes_current_window_options() {
         let options = pane.window().unwrap().options();
         options.set_number(c"clock-mode-colour", 1);
         options.set_number(c"clock-mode-style", 1);
-        window_pane_set_mode(pane.get_mut().unwrap(), None, WindowMode::Clock, None, None);
+        (pane.get_mut().unwrap()).set_mode( None, WindowMode::Clock, None, None);
         {
-            let entry = window_pane_current_mode_mut(pane.get_mut().unwrap()).unwrap();
+            let entry = (pane.get_mut().unwrap()).active_mode_mut().map(|mode| mode.into_entry()).unwrap();
             let data = entry.state.clock().unwrap();
             assert_clock_colour(&data.screen, 1);
             assert!(data.timer.is_armed());
@@ -51,7 +50,7 @@ fn clock_resize_and_timer_follow_the_panes_current_window_options() {
         destination.options().set_number(c"clock-mode-colour", 2);
         destination.options().set_number(c"clock-mode-style", 1);
         {
-            let entry = window_pane_current_mode_mut(moved.get_mut().unwrap()).unwrap();
+            let entry = (moved.get_mut().unwrap()).active_mode_mut().map(|mode| mode.into_entry()).unwrap();
             window_clock_resize(entry, 22, 5);
             assert_clock_colour(&entry.state.clock().unwrap().screen, 2);
         }
@@ -59,20 +58,20 @@ fn clock_resize_and_timer_follow_the_panes_current_window_options() {
         {
             let wp = moved.get_mut().unwrap();
             *wp.flags_mut() &= !PANE_REDRAW;
-            let entry = window_pane_current_mode_mut(wp).unwrap();
+            let entry = (wp).active_mode_mut().map(|mode| mode.into_entry()).unwrap();
             entry.state.clock().unwrap().tim = window_clock_now().as_secs() as time_t + 30;
         }
         window_clock_timer_callback(moved.clone());
         let timer = {
             let wp = moved.get_mut().unwrap();
             assert_ne!(*wp.flags() & PANE_REDRAW, 0);
-            let entry = window_pane_current_mode_mut(wp).unwrap();
+            let entry = (wp).active_mode_mut().map(|mode| mode.into_entry()).unwrap();
             let data = entry.state.clock().unwrap();
             assert_clock_colour(&data.screen, 3);
             assert!(data.timer.is_armed());
             data.timer
         };
-        window_pane_reset_mode(moved.get_mut().unwrap());
+        (moved.get_mut().unwrap()).reset_mode();
         assert!(!timer.is_armed());
         *moved.get_mut().unwrap().flags_mut() &= !PANE_REDRAW;
         window_clock_timer_callback(moved.clone());

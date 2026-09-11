@@ -6,7 +6,6 @@ pub use crate::consts::{
 };
 use crate::grid::{Grid, Hyperlinks, grid_default_cell, grid_peek_line};
 use crate::screen::RustScreen as screen;
-use crate::window::window_pane_current_mode;
 use core::ffi::{c_char, c_int};
 
 /// The hyperlink URIs line `py` carries that `links` has not seen yet, joined
@@ -108,7 +107,7 @@ impl RustWindowPaneWeak {
                 };
                 (wp.base(), gd)
             } else if capture.mode {
-                if let Some(wme) = window_pane_current_mode(wp)
+                if let Some(wme) = (wp).active_mode()
                     && let Some(s) = wme.mode().get_screen(wme)
                 {
                     (s, screen::grid(s))

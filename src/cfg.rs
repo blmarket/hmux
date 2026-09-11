@@ -40,7 +40,6 @@ pub use crate::consts::{
 };
 use crate::status::status_prompt_load_history;
 pub use crate::types::*;
-use crate::window::window_pane_set_mode;
 use ::std::ffi::{CStr, CString, OsStr};
 use ::std::fs::File;
 use ::std::io::Read;
@@ -320,11 +319,10 @@ pub unsafe fn cfg_show_causes(s: Option<&session>) {
                 return;
             };
             if active
-                .modes()
-                .first()
+                .active_mode()
                 .is_none_or(|current| current.mode() != WindowMode::View)
             {
-                window_pane_set_mode(pane.as_pane_mut(), None, WindowMode::View, None, None);
+                (pane.as_pane_mut()).set_mode( None, WindowMode::View, None, None);
             }
             for msg in take_causes() {
                 window_copy_add(pane.as_pane_mut(), 0, c"%s", fmt_args![msg.as_ptr()]);

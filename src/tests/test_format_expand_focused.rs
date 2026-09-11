@@ -716,8 +716,7 @@ fn defaults_collect_mode_fields_while_its_screen_is_shared() {
         let session = state.session().unwrap();
         let link = state.winlink_ref().unwrap();
         assert_eq!(
-            crate::window::window_pane_set_mode(
-                pane.get_mut().unwrap(),
+            (pane.get_mut().unwrap()).set_mode(
                 None,
                 WindowMode::View,
                 None,
@@ -726,7 +725,7 @@ fn defaults_collect_mode_fields_while_its_screen_is_shared() {
             0
         );
         let wp = pane.get().unwrap();
-        let mode = wp.modes().first().unwrap();
+        let mode = wp.active_mode().unwrap();
         let data = mode.state.copy_mode_data_ref().unwrap();
         let screen = data.screen.borrow();
         let cursor = screen.cursor();

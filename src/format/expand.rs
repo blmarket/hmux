@@ -74,7 +74,6 @@ use crate::tmux::{global_options, global_s_options, global_w_options, socket_pat
 use crate::tree::GlobalTree;
 use crate::tty::{tty_default_colours, tty_window_offset};
 pub use crate::types::*;
-use crate::window::window_pane_current_mode;
 use crate::window::{
     window_count_panes, window_pane_index, window_pane_is_floating, window_pane_mode,
     window_pane_printable_flags, window_pane_search, window_pane_zindex, window_printable_flags,
@@ -1108,7 +1107,7 @@ unsafe fn format_cb_pane_in_mode(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        let n: u_int = wp.modes().len() as u_int;
+        let n: u_int = wp.mode_count() as u_int;
         let value = xasprintf(c"%u", fmt_args![n]);
         Some(value)
     }
@@ -1184,7 +1183,7 @@ unsafe fn format_cb_mouse_word(ft: &format_tree) -> Option<CString> {
         let (_, _, mut pane) = cmd_mouse_pane(&ft.m)?;
         let wp = pane.get_mut()?;
         let (x, y) = cmd_mouse_at(wp, &ft.m, 0)?;
-        if !wp.modes().is_empty() {
+        if !wp.active_mode().is_none() {
             if window_pane_mode(wp) != WINDOW_PANE_NO_MODE {
                 return window_copy_get_word(wp, x, y);
             }
@@ -1199,7 +1198,7 @@ unsafe fn format_cb_mouse_hyperlink(ft: &format_tree) -> Option<CString> {
         let (_, _, mut pane) = cmd_mouse_pane(&ft.m)?;
         let wp = pane.get_mut()?;
         let (x, y) = cmd_mouse_at(wp, &ft.m, 0)?;
-        if !wp.modes().is_empty() {
+        if !wp.active_mode().is_none() {
             if window_pane_mode(wp) != WINDOW_PANE_NO_MODE {
                 return window_copy_get_hyperlink(wp, x, y);
             }
@@ -1214,7 +1213,7 @@ unsafe fn format_cb_mouse_line(ft: &format_tree) -> Option<CString> {
         let (_, _, mut pane) = cmd_mouse_pane(&ft.m)?;
         let wp = pane.get_mut()?;
         let (_, y) = cmd_mouse_at(wp, &ft.m, 0)?;
-        if !wp.modes().is_empty() {
+        if !wp.active_mode().is_none() {
             if window_pane_mode(wp) != WINDOW_PANE_NO_MODE {
                 return Some(window_copy_get_line(wp, y));
             }
@@ -2084,7 +2083,7 @@ unsafe fn format_cb_pane_mode(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        let wme = wp.modes().first()?;
+        let wme = wp.active_mode()?;
         Some(format_callback_copy(wme.mode().name()))
     }
 }
@@ -6272,7 +6271,7 @@ pub unsafe fn format_defaults_pane(ft: &mut format_tree, wp: &(impl crate::Windo
             format_defaults_window(ft, window);
         }
         ft.set_pane(Some(wp));
-        if let Some(wme) = window_pane_current_mode(wp) {
+        if let Some(wme) = (wp).active_mode() {
             wme.mode().formats(wme, ft);
         }
     }

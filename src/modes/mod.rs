@@ -55,3 +55,7 @@ pub(crate) use tree::{
     WINDOW_TREE_DEFAULT_COMMAND, WINDOW_TREE_DEFAULT_FORMAT, WINDOW_TREE_DEFAULT_KEY_FORMAT,
     WINDOW_TREE_NONE, WINDOW_TREE_PANE, WINDOW_TREE_SESSION, WINDOW_TREE_WINDOW,
 };
+
+mod entry;
+pub use entry::{ModeContext, window_mode_entry};
+pub(crate) use entry::ModeScreenTarget;

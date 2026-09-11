@@ -159,11 +159,43 @@ pub trait WindowPane:
     /// Looks up the cached border-status hit range at a status-relative column.
     fn border_status_range(&self, x: u32) -> Option<crate::types::style_range>;
 
-    /// Borrows the pane's screen selector.
-    fn shown(&self) -> &crate::types::PaneScreen;
+    /// Takes a fixture mode to exercise delayed callbacks after pane destruction.
+    /// # Safety
+    /// Unit fixtures must complete teardown; unavailable in production builds.
+    #[cfg(test)]
+    unsafe fn take_test_mode(&mut self) -> Option<Box<crate::types::window_mode_entry>>;
+    /// Installs an uninitialized fixture mode for parser guard tests.
+    /// # Safety
+    /// Unit fixtures must remove it before normal teardown.
+    #[cfg(test)]
+    unsafe fn insert_test_mode(&mut self, entry: Box<crate::types::window_mode_entry>);
 
-    /// Mutably borrows the pane's screen selector.
-    fn shown_mut(&mut self) -> &mut crate::types::PaneScreen;
+    /// Reports whether the base screen is selected, including an empty mode stack.
+    fn showing_base(&self) -> bool;
+
+    /// Returns the number of open modes without exposing their stack.
+    fn mode_count(&self) -> usize;
+    /// Borrows the active mode's engine state, including pending initialization.
+    fn active_mode(&self) -> Option<&crate::types::window_mode_entry>;
+    /// Borrows the active mode engine without granting stack membership control.
+    fn active_mode_mut(&mut self) -> Option<crate::modes::ModeContext<'_>>;
+    /// Finds an open mode engine for its context-specific callbacks.
+    fn find_mode_mut(&mut self, mode: crate::types::WindowMode) -> Option<crate::modes::ModeContext<'_>>;
+    /// Starts a mode or promotes an existing one, then updates layout and notifications.
+    /// # Safety
+    /// Exclude conflicting pane/mode access during initialization and notifications.
+    unsafe fn set_mode(&mut self, source: Option<crate::types::RustWindowPaneWeak>, mode: crate::types::WindowMode,
+        target: Option<&crate::types::cmd_find_state>, args: Option<&crate::args::RustArguments>) -> core::ffi::c_int;
+    /// Frees the active mode, selects/resizes its successor, and updates layout.
+    /// # Safety
+    /// Exclude conflicting access during mode teardown and notifications.
+    unsafe fn reset_mode(&mut self);
+    /// Frees all modes through the same transition sequence as individual removals.
+    /// # Safety
+    /// Exclude conflicting access during mode teardown and notifications.
+    unsafe fn reset_modes(&mut self);
+    /// Updates the default cursor on the selected screen from pane options.
+    fn update_default_cursor(&mut self);
 
     /// Borrows the pane's base screen.
     fn base(&self) -> &crate::screen::RustScreen;
@@ -173,12 +205,6 @@ pub trait WindowPane:
 
     /// Borrows the pane's status screen.
     fn status_screen(&self) -> &crate::screen::RustScreen;
-
-    /// Borrows the pane's mode stack.
-    fn modes(&self) -> &crate::types::window_modes;
-
-    /// Mutably borrows the pane's mode stack.
-    fn modes_mut(&mut self) -> &mut crate::types::window_modes;
 
     /// Borrows the pane's visible ranges.
     fn r(&self) -> &crate::types::visible_ranges;

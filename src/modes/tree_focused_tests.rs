@@ -2,7 +2,6 @@ use super::*;
 use crate::WindowPane;
 use crate::pane_identity::PaneIdentity;
 use crate::tests::test_fixtures::{Pane, Target, globals, zeroed_client};
-use crate::window::window_pane_current_mode;
 
 unsafe fn items(
     target: &mut Target,
@@ -241,8 +240,7 @@ fn real_tree_mode_builds_draws_resizes_updates_and_exposes_current_item() {
         cmd_find_from_winlink_pane(&mut fs, &*wl, &*pane, 0);
         let source_pane_id = crate::PaneIdentity::pane_id(&*pane);
         assert_eq!(
-            crate::window::window_pane_set_mode(
-                &mut *pane,
+            (&mut *pane).set_mode(
                 crate::window::window_pane_find_by_id(source_pane_id),
                 WindowMode::Tree,
                 Some(&fs),
@@ -250,7 +248,7 @@ fn real_tree_mode_builds_draws_resizes_updates_and_exposes_current_item() {
             ),
             0
         );
-        let wme = window_pane_current_mode_mut(&mut *pane).expect("pane is in a mode");
+        let wme = (&mut *pane).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
         assert_eq!(wme.mode(), WindowMode::Tree);
         let data = wme.state.tree().unwrap();
         drop(data.tree_ref());
@@ -265,7 +263,7 @@ fn real_tree_mode_builds_draws_resizes_updates_and_exposes_current_item() {
         assert_eq!(found, 1);
         let key = (data.clone()).get_key(ModeTreeItemData::Tree(item), 1);
         assert_ne!(key, KEYC_NONE);
-        window_pane_reset_mode(&mut *pane);
+        (&mut *pane).reset_mode();
         drop(data);
         assert_eq!(window_tree_search(current, c"", 1), 1);
     }
@@ -285,8 +283,7 @@ fn multi_level_builds_cover_sort_filter_type_and_tag_selection_paths() {
         cmd_find_from_winlink_pane(&mut fs, &*wl, &*pane, 0);
         let source_pane_id = crate::PaneIdentity::pane_id(&*pane);
         assert_eq!(
-            crate::window::window_pane_set_mode(
-                &mut *pane,
+            (&mut *pane).set_mode(
                 crate::window::window_pane_find_by_id(source_pane_id),
                 WindowMode::Tree,
                 Some(&fs),
@@ -294,7 +291,7 @@ fn multi_level_builds_cover_sort_filter_type_and_tag_selection_paths() {
             ),
             0
         );
-        let wme = window_pane_current_mode(&*pane).expect("pane is in a mode");
+        let wme = (&*pane).active_mode().expect("pane is in a mode");
         let data = wme.state.tree().unwrap();
         assert!(
             data.borrow()
@@ -336,7 +333,7 @@ fn multi_level_builds_cover_sort_filter_type_and_tag_selection_paths() {
         );
         owner.build(&sort_criteria_t::default(), &mut tag, None);
         assert!(!data.borrow().item_list.is_empty());
-        crate::window::window_pane_reset_mode(&mut *pane);
+        (&mut *pane).reset_mode();
     }
 }
 
@@ -354,8 +351,7 @@ fn keyboard_navigation_preview_offsets_tags_and_marking_stay_inside_fixture() {
         cmd_find_from_winlink_pane(&mut fs, &*wl, &*pane, 0);
         let source_pane_id = crate::PaneIdentity::pane_id(&*pane);
         assert_eq!(
-            crate::window::window_pane_set_mode(
-                &mut *pane,
+            (&mut *pane).set_mode(
                 crate::window::window_pane_find_by_id(source_pane_id),
                 WindowMode::Tree,
                 Some(&fs),
@@ -363,7 +359,7 @@ fn keyboard_navigation_preview_offsets_tags_and_marking_stay_inside_fixture() {
             ),
             0
         );
-        let wme = window_pane_current_mode_mut(&mut *pane).expect("pane is in a mode");
+        let wme = (&mut *pane).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
         let data = wme.state.tree().unwrap();
         for key in [
             b'<' as key_code,
@@ -384,7 +380,7 @@ fn keyboard_navigation_preview_offsets_tags_and_marking_stay_inside_fixture() {
         }
         assert!(!data.borrow().item_list.is_empty());
         assert!(*(*pane).flags() & PANE_REDRAW != 0);
-        crate::window::window_pane_reset_mode(&mut *pane);
+        (&mut *pane).reset_mode();
     }
 }
 

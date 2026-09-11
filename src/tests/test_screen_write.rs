@@ -1658,7 +1658,7 @@ fn a_pane_writer_falls_back_to_the_panes_own_screen() {
         let wp = pane.ptr();
         unsafe {
             use crate::screen::ScreenWriteCtx;
-            *(*wp).shown_mut() = PaneScreen::Mode;
+
             let mut writer = crate::screen::RustScreenWriteCtx::on_pane(&mut *wp);
             writer.cell(&ascii(b'x'));
             writer.finish();

@@ -4,7 +4,7 @@ use crate::handle_registry::HandleRegistry;
 use crate::options::{OptionsEngine, RustOptionsEngine};
 use crate::reactor::Timer;
 use crate::style::{ColourEngine, RustColourEngine, pane_scrollbar_style_from_option, style_ranges_free};
-use crate::window::{window_pane_set_window, window_pane_set_window_ref, window_pane_reset_mode_all, window_pane_default_cursor, PANE_STYLECHANGED};
+use crate::window::{window_pane_set_window, window_pane_set_window_ref, PANE_STYLECHANGED};
 use crate::{WindowPane, PaneIdentity, PaneGeometryState, PaneScrollbarStyleState, PaneSearchState, PaneResizeQueue, PaneCommandState};
 use std::cell::Cell;
 use libc::SIGCHLD;
@@ -446,7 +446,7 @@ impl crate::WindowPane for window_pane {
         let reflow = !self.base.is_alternate();
         unsafe { crate::screen::screen_resize(&mut self.base, size.width, size.height, reflow as c_int) };
         if let Some(mode) = self.modes.first_mut() {
-            unsafe { mode.mode().resize(mode, size.width, size.height) };
+            unsafe { mode.resize(size.width, size.height) };
         }
     }
     fn start_sync(&mut self) {
@@ -509,7 +509,7 @@ impl crate::WindowPane for window_pane {
             unsafe { close(self.fd) };
             self.fd = -1;
         }
-        unsafe { crate::window::window_pane_reset_mode_all(self) };
+        unsafe { self.reset_modes() };
         unsafe { crate::screen::screen_reinit(&mut self.base) };
         if let Some(context) = self.ictx.take() { unsafe { context.close() }; }
         self.flags &= !(crate::consts::PANE_STATUSREADY | crate::consts::PANE_STATUSDRAWN);
@@ -587,13 +587,26 @@ impl crate::WindowPane for window_pane {
     fn border_status_range(&self, x: u32) -> Option<style_range> {
         crate::style::style_ranges_get_range(&self.border_status_line.ranges, x)
     }
-    fn shown(&self) -> &crate::types::PaneScreen {
-        &self.screen
+    #[cfg(test)]
+    unsafe fn take_test_mode(&mut self) -> Option<Box<window_mode_entry>> {
+        if self.modes.is_empty() { None } else { Some(self.modes.remove(0)) }
     }
-    fn shown_mut(&mut self) -> &mut crate::types::PaneScreen {
-        &mut self.screen
+    #[cfg(test)]
+    unsafe fn insert_test_mode(&mut self, entry: Box<window_mode_entry>) { self.modes.insert(0, entry); }
+    fn showing_base(&self) -> bool { self.screen == PaneScreen::Base || self.modes.is_empty() }
+    fn mode_count(&self) -> usize { self.modes.len() }
+    fn active_mode(&self) -> Option<&window_mode_entry> { self.modes.first().map(Box::as_ref) }
+    fn active_mode_mut(&mut self) -> Option<crate::modes::ModeContext<'_>> { self.modes.first_mut().map(|entry| crate::modes::ModeContext::new(entry)) }
+    fn find_mode_mut(&mut self, mode: WindowMode) -> Option<crate::modes::ModeContext<'_>> {
+        self.modes.iter_mut().find(|entry| entry.mode() == mode).map(|entry| crate::modes::ModeContext::new(entry))
     }
-
+    unsafe fn set_mode(&mut self, source: Option<RustWindowPaneWeak>, mode: WindowMode,
+        target: Option<&cmd_find_state>, args: Option<&crate::args::RustArguments>) -> c_int {
+        unsafe { modes::set_mode(self, source, mode, target, args) }
+    }
+    unsafe fn reset_mode(&mut self) { unsafe { modes::reset_mode(self) }; }
+    unsafe fn reset_modes(&mut self) { unsafe { modes::reset_modes(self) }; }
+    fn update_default_cursor(&mut self) { modes::update_default_cursor(self); }
     fn base(&self) -> &crate::screen::RustScreen {
         &self.base
     }
@@ -603,13 +616,6 @@ impl crate::WindowPane for window_pane {
 
     fn status_screen(&self) -> &crate::screen::RustScreen {
         &self.status_screen
-    }
-
-    fn modes(&self) -> &crate::types::window_modes {
-        &self.modes
-    }
-    fn modes_mut(&mut self) -> &mut crate::types::window_modes {
-        &mut self.modes
     }
 
     fn r(&self) -> &crate::types::visible_ranges {
@@ -644,14 +650,7 @@ impl crate::WindowPane for window_pane {
         if self.screen == PaneScreen::Base || self.modes.is_empty() {
             return Some(ScreenBorrow::Owned(&self.base));
         }
-        let mode = self.modes.first()?;
-        match mode.screen.as_ref()? {
-            ModeScreen::Clock => {
-                let WindowModeState::Clock(data) = &mode.state else { return None };
-                Some(ScreenBorrow::Owned(&data.screen))
-            }
-            ModeScreen::Shared(screen) => Some(ScreenBorrow::Shared(screen.borrow())),
-        }
+        self.modes.first()?.shown_screen()
     }
 
     fn set_window_context(&mut self, window: Option<&WindowRef>) {
@@ -791,8 +790,8 @@ pub(crate) unsafe fn window_pane_create(
         RustColourEngine.init_palette((*wp).palette_mut());
         ((*wp).options_ref()).load_pane_colours(Some((*wp).palette_mut()));
         *(*wp).base_mut() = RustScreen::new_with_server_options(sx, sy, hlimit);
-        *(*wp).shown_mut() = PaneScreen::Base;
-        window_pane_default_cursor(&mut *wp);
+        (*wp).screen = PaneScreen::Base;
+        (*wp).update_default_cursor();
         (*wp).status_screen =
             RustScreen::new_with_server_options(1 as u_int, 1 as u_int, 0 as u_int);
         if gethostname(
@@ -812,7 +811,7 @@ pub(crate) unsafe fn window_pane_create(
 pub(crate) unsafe fn window_pane_destroy(pane: RustWindowPaneRef) {
     unsafe {
         let wp = &mut *pane.0.pane.get();
-        window_pane_reset_mode_all(&mut *wp);
+        (*wp).reset_modes();
         PaneSearchState::clear(wp);
         wp.close_process();
         if let Some(ictx) = wp.ictx.take() {
@@ -1044,4 +1043,16 @@ impl window_pane {
         self.ictx = Some(unsafe { crate::input::InputCtxRef::create(crate::input::InputOwner::Pane(self.id), self.event) });
         self.event.enable(crate::reactor::Interest::ReadWrite);
     }
+}
+
+mod modes;
+
+/// Which screen a pane is showing.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+enum PaneScreen {
+    /// The pane's own screen, which it holds itself.
+    #[default]
+    Base,
+    /// The screen the mode at the front of the pane's mode list draws on.
+    Mode,
 }

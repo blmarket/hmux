@@ -3,7 +3,7 @@
 //!
 //! All four share one exec routine and differ only in which
 //! [`WindowMode`](WindowMode) they hand
-//! [`window_pane_set_mode`], which is picked by comparing the command's own
+//! [`WindowPane::set_mode`](crate::WindowPane::set_mode), which is picked by comparing the command's own
 //! entry against the three named statics — anything else, `choose-tree`
 //! included, opens the window tree. The arguments the command was given are
 //! passed straight through to the mode, which is what reads `-F`, `-K`, `-O`,

@@ -200,7 +200,7 @@ pub(super) unsafe fn parse_bytes(wp: &mut window_pane, mut input: ByteBuffer) {
         window.update_activity();
         crate::plugin::note_pane_output(wp.pane_id());
         *wp.flags_mut() |= PANE_CHANGED;
-        if !wp.modes().is_empty() {
+        if !wp.modes.is_empty() {
             *wp.flags_mut() |= PANE_UNSEENCHANGES;
         }
         if log_get_level() != 0 {
@@ -217,7 +217,7 @@ pub(super) unsafe fn parse_bytes(wp: &mut window_pane, mut input: ByteBuffer) {
                 ],
             );
         }
-        let mut sctx = if wp.modes().is_empty() {
+        let mut sctx = if wp.modes.is_empty() {
             RustScreenWriteCtx::on_pane_base(wp)
         } else {
             RustScreenWriteCtx::on_screen(wp.base_mut())

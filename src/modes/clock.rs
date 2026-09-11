@@ -11,7 +11,6 @@ use crate::reactor::Timer;
 use crate::screen::screen_resize;
 use crate::screen::{ScreenWriteCtx, screen_write_ctx_on_screen};
 pub use crate::types::*;
-use crate::window::window_pane_reset_mode;
 #[repr(C)]
 pub struct window_clock_mode_data {
     pub screen: RustScreen,
@@ -161,11 +160,7 @@ unsafe fn window_clock_timer_callback(mut pane: RustWindowPaneWeak) {
         let Some(wp) = pane.get_mut() else {
             return;
         };
-        let Some(wme) = wp
-            .modes_mut()
-            .iter_mut()
-            .find(|wme| wme.mode() == WindowMode::Clock)
-            .map(Box::as_mut)
+        let Some(wme) = wp.find_mode_mut(WindowMode::Clock).map(|mode| mode.into_entry())
         else {
             return;
         };
@@ -233,7 +228,7 @@ pub(crate) unsafe fn window_clock_resize(wme: &mut window_mode_entry, sx: u_int,
 
 pub(crate) unsafe fn window_clock_key(mut pane: crate::window::RustWindowPaneWeak) {
     if let Some(pane) = unsafe { pane.get_mut() } {
-        unsafe { window_pane_reset_mode(pane) };
+        unsafe { (pane).reset_mode() };
     }
 }
 /// The 5x5 glyph the clock face draws a character with: one per digit, and

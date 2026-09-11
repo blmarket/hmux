@@ -449,8 +449,8 @@ mod tests {
             data.wp_id = 9999;
             cmd_run_shell_print(&data, c"fallback");
             let wp = pane.get().unwrap();
-            assert_eq!(wp.modes().len(), 1);
-            let mode = wp.modes().first().unwrap();
+            assert_eq!(wp.mode_count(), 1);
+            let mode = wp.active_mode().unwrap();
             assert_eq!(mode.mode(), WindowMode::View);
             let data = mode.state.copy_mode_data_ref().unwrap();
             let grid = crate::screen::RustScreen::grid(data.backing.as_deref().unwrap());

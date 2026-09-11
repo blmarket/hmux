@@ -1547,95 +1547,6 @@ pub(crate) fn window_pane_set_window(wp: &mut (impl crate::WindowPane + ?Sized),
     }
 }
 
-/// Starts a pane mode or brings an existing mode to the front.
-pub unsafe fn window_pane_set_mode(
-    wp: &mut (impl crate::WindowPane + ?Sized),
-    source_pane: Option<RustWindowPaneWeak>,
-    mode: WindowMode,
-    fs: Option<&cmd_find_state>,
-    args: Option<&RustArguments>,
-) -> core::ffi::c_int {
-    unsafe {
-        if wp
-            .modes()
-            .first()
-            .is_some_and(|current| current.mode() == mode)
-        {
-            return 1 as core::ffi::c_int;
-        }
-        let window = wp
-            .window_context()
-            .expect("a pane mode has a window context");
-        let already = wp.modes().iter().position(|open| open.mode() == mode);
-        if let Some(at) = already {
-            let open = wp.modes_mut().remove(at);
-            wp.modes_mut().insert(0, open);
-        } else {
-            let pane = (wp).observation().expect("a mode opens on an owned pane");
-            let entry = Box::new(window_mode_entry {
-                wp: Some(pane.clone()),
-                swp: source_pane,
-                state: WindowModeState::None,
-                screen: None,
-                prefix: 1,
-            });
-            wp.modes_mut().insert(0, entry);
-            let wme = window_pane_current_mode_mut(wp).expect("mode was just inserted");
-            mode.init(wme, pane, fs, args);
-        }
-        *wp.shown_mut() = PaneScreen::Mode;
-        *wp.flags_mut() |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
-        window.fix_layout_panes(None);
-        window.redraw_borders();
-        window.redraw_status();
-        notify_pane(c"pane-mode-changed", Some(wp));
-        0 as core::ffi::c_int
-    }
-}
-pub unsafe fn window_pane_reset_mode(wp: &mut (impl crate::WindowPane + ?Sized)) {
-    unsafe {
-        if wp.modes().is_empty() {
-            return;
-        }
-        let window = wp.window_context();
-        let mut open = wp.modes_mut().remove(0);
-        open.mode().free(&mut open);
-        drop(open);
-        let geometry = wp.geometry();
-        *wp.shown_mut() = if wp.modes().is_empty() {
-            PaneScreen::Base
-        } else {
-            PaneScreen::Mode
-        };
-        if let Some(next) = window_pane_current_mode_mut(wp) {
-            log_debug(
-                c"%s: next mode is %s",
-                fmt_args![c"window_pane_reset_mode".as_ptr(), next.mode().name()],
-            );
-            next.mode().resize(next, geometry.sx, geometry.sy);
-        } else {
-            *wp.flags_mut() &= !PANE_UNSEENCHANGES;
-            log_debug(
-                c"%s: no next mode",
-                fmt_args![c"window_pane_reset_mode".as_ptr()],
-            );
-        }
-        *wp.flags_mut() |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
-        if let Some(window) = window {
-            window.fix_layout_panes(None);
-            window.redraw_borders();
-            window.redraw_status();
-        }
-        notify_pane(c"pane-mode-changed", Some(wp));
-    }
-}
-pub unsafe fn window_pane_reset_mode_all(wp: &mut (impl crate::WindowPane + ?Sized)) {
-    unsafe {
-        while !wp.modes().is_empty() {
-            window_pane_reset_mode(&mut *wp);
-        }
-    }
-}
 unsafe fn window_pane_copy_paste(wp: &(impl crate::WindowPane + ?Sized), buf: ByteBuffer) {
     unsafe {
         let Some(window) = wp.window_context() else {
@@ -1647,7 +1558,7 @@ unsafe fn window_pane_copy_paste(wp: &(impl crate::WindowPane + ?Sized), buf: By
                 continue;
             }
             let Some(target) = pane.get() else { continue };
-            if target.modes().is_empty()
+            if target.active_mode().is_none()
                 && target.process_active()
                 && *target.flags() & PANE_INPUTOFF == 0
                 && window_pane_visible(&window.as_window(), target) != 0
@@ -1681,7 +1592,7 @@ unsafe fn window_pane_copy_key(wp: &(impl crate::WindowPane + ?Sized), key: key_
                 continue;
             }
             let Some(target) = pane.get() else { continue };
-            if target.modes().is_empty()
+            if target.active_mode().is_none()
                 && target.process_active()
                 && *target.flags() & PANE_INPUTOFF == 0
                 && window_pane_visible(&window.as_window(), target) != 0
@@ -1694,7 +1605,7 @@ unsafe fn window_pane_copy_key(wp: &(impl crate::WindowPane + ?Sized), key: key_
 }
 pub unsafe fn window_pane_paste(wp: &(impl crate::WindowPane + ?Sized), key: key_code, mut buf: ByteBuffer) {
     unsafe {
-        if !wp.modes().is_empty() {
+        if !wp.active_mode().is_none() {
             return;
         }
         if !wp.process_active() || *wp.flags() & PANE_INPUTOFF != 0 {
@@ -1748,7 +1659,7 @@ pub unsafe fn window_pane_key(
             let Some(pane) = pane.get() else {
                 return -1;
             };
-            window_pane_current_mode(pane).map(window_mode_entry::key_target)
+            (pane).active_mode().map(window_mode_entry::key_target)
         };
         if let Some(target) = target {
             if let Some(target) = target
@@ -2385,39 +2296,8 @@ pub fn window_set_fill_character(w: &mut window) {
         }
     }
 }
-pub fn window_pane_default_cursor(wp: &mut (impl crate::WindowPane + ?Sized)) {
-    {
-        let options = wp.options_ref().clone();
-        if matches!(*wp.shown(), PaneScreen::Base) || wp.modes().is_empty() {
-            wp.base_mut().set_default_cursor(&options);
-            return;
-        }
-        let mode = wp
-            .modes_mut()
-            .first_mut()
-            .expect("the shown mode is present");
-        match mode.screen.as_ref().expect("the shown mode has a screen") {
-            ModeScreen::Clock => {
-                mode.state.clock().expect("clock mode has state").screen.set_default_cursor(&options);
-            }
-            ModeScreen::Shared(screen) => screen.borrow_mut().set_default_cursor(&options),
-        }
-    }
-}
-/// The mode the pane is showing, or `None` when it is on its own screen.
-pub fn window_pane_current_mode(wp: &(impl crate::WindowPane + ?Sized)) -> Option<&window_mode_entry> {
-    wp.modes().first().map(Box::as_ref)
-}
-
-/// Mutably borrows the mode the pane is showing, if any.
-pub fn window_pane_current_mode_mut(
-    wp: &mut (impl crate::WindowPane + ?Sized),
-) -> Option<&mut window_mode_entry> {
-    wp.modes_mut().first_mut().map(Box::as_mut)
-}
-
 pub fn window_pane_mode(wp: &(impl crate::WindowPane + ?Sized)) -> core::ffi::c_int {
-    match wp.modes().first().map(|current| current.mode()) {
+    match wp.active_mode().map(|current| current.mode()) {
         Some(WindowMode::Copy) => 1,
         Some(WindowMode::View) => 2,
         _ => 0,

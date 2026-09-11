@@ -86,7 +86,7 @@ fn causes_wait_for_an_active_pane_and_append_to_view_mode() {
         cfg_add_cause(c"pending configuration error", fmt_args![]);
         cfg_show_causes(Some(session.as_session()));
         assert_eq!(with_config(|config| config.causes.len()), 1);
-        assert!(pane.get().unwrap().modes().is_empty());
+        assert!(pane.get().unwrap().active_mode().is_none());
 
         {
             let mut payload = window.as_window_mut();
@@ -102,7 +102,7 @@ fn causes_wait_for_an_active_pane_and_append_to_view_mode() {
         cfg_show_causes(Some(session.as_session()));
         assert!(with_config(|config| config.causes.is_empty()));
         let active = pane.get().unwrap();
-        let mode = active.modes().first().unwrap();
+        let mode = active.active_mode().unwrap();
         assert_eq!(mode.mode(), WindowMode::View);
         let WindowModeState::View(data) = &mode.state else {
             panic!("configuration errors use view mode");

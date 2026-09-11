@@ -43,8 +43,6 @@ use crate::tmux::get_timer;
 use crate::tmux::{global_options, global_w_options};
 use crate::tty::tty_window_offset;
 pub use crate::types::*;
-use crate::window::window_pane_reset_mode;
-use crate::window::{window_pane_current_mode, window_pane_current_mode_mut};
 use ::core::ffi::CStr;
 use ::std::borrow::Cow;
 use ::std::ffi::CString;
@@ -196,7 +194,7 @@ unsafe fn window_copy_scroll_timer(mut pane: RustWindowPaneWeak, mode: WindowMod
     unsafe {
         let Some(wme) = pane
             .get_mut()
-            .and_then(|pane| window_pane_current_mode_mut(pane))
+            .and_then(|pane| (pane).active_mode_mut().map(|mode| mode.into_entry()))
         else {
             return;
         };
@@ -511,7 +509,7 @@ pub unsafe fn window_copy_vadd(
     args: &[FmtArg],
 ) {
     unsafe {
-        let wme = window_pane_current_mode_mut(&mut *wp).expect("pane is in a mode");
+        let wme = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
         let backing = &mut *data
             .backing
@@ -581,7 +579,7 @@ pub unsafe fn window_copy_scroll(
     scroll_exit: core::ffi::c_int,
 ) {
     unsafe {
-        if window_pane_current_mode(wp).is_none() {
+        if (wp).active_mode().is_none() {
             return;
         }
         let selected_id = wp.pane_id();
@@ -597,7 +595,7 @@ pub unsafe fn window_copy_scroll(
         let Some((offset, size)) = window_copy_get_current_offset(wp) else {
             return;
         };
-        let wme = window_pane_current_mode_mut(wp).expect("pane is in a copy or view mode");
+        let wme = (wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a copy or view mode");
         if window_copy_scroll1(
             wme,
             slider_height,
@@ -610,7 +608,7 @@ pub unsafe fn window_copy_scroll(
             tty_oy,
             scroll_exit,
         ) {
-            window_pane_reset_mode(wp);
+            (wp).reset_mode();
         }
     }
 }
@@ -739,7 +737,7 @@ unsafe fn window_copy_scroll1(
 pub unsafe fn window_copy_pageup(wp: &mut (impl crate::WindowPane + ?Sized), half_page: core::ffi::c_int) {
     unsafe {
         window_copy_pageup1(
-            window_pane_current_mode_mut(&mut *wp).expect("pane is in a mode"),
+            (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode"),
             half_page,
         );
     }
@@ -828,12 +826,12 @@ pub unsafe fn window_copy_pagedown(
 ) {
     unsafe {
         if window_copy_pagedown1(
-            window_pane_current_mode_mut(wp).expect("pane is in a mode"),
+            (wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode"),
             half_page,
             scroll_exit,
         ) != 0
         {
-            window_pane_reset_mode(wp);
+            (wp).reset_mode();
         }
     }
 }
@@ -982,7 +980,7 @@ pub unsafe fn window_copy_get_word(
     y: u_int,
 ) -> Option<CString> {
     unsafe {
-        let wme = window_pane_current_mode(wp).expect("pane is in a mode");
+        let wme = (wp).active_mode().expect("pane is in a mode");
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let gd = RustScreen::grid(
             data.backing
@@ -994,7 +992,7 @@ pub unsafe fn window_copy_get_word(
 }
 pub fn window_copy_get_line(wp: &(impl crate::WindowPane + ?Sized), y: u_int) -> CString {
     {
-        let wme = window_pane_current_mode(wp).expect("pane is in a mode");
+        let wme = (wp).active_mode().expect("pane is in a mode");
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let gd = RustScreen::grid(
             data.backing
@@ -1010,7 +1008,7 @@ pub fn window_copy_get_hyperlink(
     y: u_int,
 ) -> Option<CString> {
     {
-        let wme = window_pane_current_mode(wp).expect("pane is in a mode");
+        let wme = (wp).active_mode().expect("pane is in a mode");
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let display = data.screen.borrow();
         let gd = RustScreen::grid(&display);
@@ -1021,7 +1019,7 @@ unsafe fn window_copy_cursor_hyperlink_cb(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        let wme = window_pane_current_mode(wp).expect("pane is in a mode");
+        let wme = (wp).active_mode().expect("pane is in a mode");
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         let display = data.screen.borrow();
         let gd = RustScreen::grid(&display);
@@ -1032,7 +1030,7 @@ unsafe fn window_copy_cursor_word_cb(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        let wme = window_pane_current_mode(wp).expect("pane is in a mode");
+        let wme = (wp).active_mode().expect("pane is in a mode");
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         window_copy_get_word(wp, data.cx, data.cy)
     }
@@ -1041,7 +1039,7 @@ unsafe fn window_copy_cursor_line_cb(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        let wme = window_pane_current_mode(wp).expect("pane is in a mode");
+        let wme = (wp).active_mode().expect("pane is in a mode");
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         Some(window_copy_get_line(wp, data.cy))
     }
@@ -1050,7 +1048,7 @@ unsafe fn window_copy_search_match_cb(ft: &format_tree) -> Option<CString> {
     unsafe {
         let pane = ft.pane_handle()?;
         let wp = pane.get()?;
-        let wme = window_pane_current_mode(wp).expect("pane is in a mode");
+        let wme = (wp).active_mode().expect("pane is in a mode");
         let data = wme.state.copy_mode_data_ref().expect("copy mode has state");
         window_copy_match_at_cursor(data)
     }
@@ -4968,7 +4966,7 @@ pub(crate) unsafe fn window_copy_command(
             == WINDOW_COPY_CMD_CANCEL as core::ffi::c_int as core::ffi::c_uint
         {
             let mut pane = wme.pane_ref().expect("mode has a pane");
-            window_pane_reset_mode(pane.get_mut().expect("mode pane is live"));
+            (pane.get_mut().expect("mode pane is live")).reset_mode();
         } else if action as core::ffi::c_uint
             == WINDOW_COPY_CMD_REDRAW as core::ffi::c_int as core::ffi::c_uint
         {
@@ -6649,7 +6647,7 @@ pub unsafe fn window_copy_set_line_numbers(
     enabled: core::ffi::c_int,
 ) {
     unsafe {
-        let Some(wme) = window_pane_current_mode_mut(&mut *wp) else {
+        let Some(wme) = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()) else {
             return;
         };
         if wme.mode() != WindowMode::Copy {
@@ -6668,7 +6666,7 @@ pub unsafe fn window_copy_set_line_numbers(
 /// How far back the pane is scrolled and how much history it has, or
 /// nothing when the pane is not in a copy or view mode.
 pub fn window_copy_get_current_offset(wp: &(impl crate::WindowPane + ?Sized)) -> Option<(u_int, u_int)> {
-    let wme = window_pane_current_mode(wp)?;
+    let wme = (wp).active_mode()?;
     let (WindowModeState::Copy(data) | WindowModeState::View(data)) = &wme.state else {
         return None;
     };
@@ -8735,7 +8733,7 @@ unsafe fn window_copy_move_mouse(m: &mouse_event) {
             return;
         };
         let mouse_at = cmd_mouse_at(wp, m, 0);
-        let Some(wme) = window_pane_current_mode_mut(&mut *wp) else {
+        let Some(wme) = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()) else {
             return;
         };
         if wme.mode() != WindowMode::Copy && wme.mode() != WindowMode::View {
@@ -8770,7 +8768,7 @@ pub unsafe fn window_copy_start_drag(c: Option<&mut client>, m: &mouse_event) {
             return;
         };
         let mouse_at = cmd_mouse_at(wp, m, 1);
-        let Some(wme) = window_pane_current_mode_mut(&mut *wp) else {
+        let Some(wme) = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()) else {
             return;
         };
         if wme.mode() != WindowMode::Copy && wme.mode() != WindowMode::View {
@@ -8848,7 +8846,7 @@ unsafe fn window_copy_drag_update(_c: &mut client, m: &mouse_event) {
             return;
         };
         let mouse_at = cmd_mouse_at(wp, m, 0);
-        let Some(wme) = window_pane_current_mode_mut(&mut *wp) else {
+        let Some(wme) = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()) else {
             return;
         };
         if wme.mode() != WindowMode::Copy && wme.mode() != WindowMode::View {
@@ -8895,7 +8893,7 @@ unsafe fn window_copy_drag_release(c: &mut client, m: &mouse_event) {
             return;
         };
         let update = {
-            let Some(wme) = pane.get().and_then(|pane| window_pane_current_mode(pane)) else {
+            let Some(wme) = pane.get().and_then(|pane| (pane).active_mode()) else {
                 return;
             };
             if !matches!(wme.mode(), WindowMode::Copy | WindowMode::View) {
@@ -8908,7 +8906,7 @@ unsafe fn window_copy_drag_release(c: &mut client, m: &mouse_event) {
         }
         if let Some(wme) = pane
             .get_mut()
-            .and_then(|pane| window_pane_current_mode_mut(pane))
+            .and_then(|pane| (pane).active_mode_mut().map(|mode| mode.into_entry()))
             && matches!(wme.mode(), WindowMode::Copy | WindowMode::View)
         {
             wme.state

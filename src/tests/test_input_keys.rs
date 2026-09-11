@@ -592,8 +592,7 @@ fn a_pane_told_about_a_mouse_key_with_no_report_behind_it_writes_nothing() {
 fn pane_input_encodes_keys_and_mouse_from_the_shared_shown_screen() {
     use crate::tests::test_fixtures::Target;
     use crate::types::WindowMode;
-    use crate::window::window_pane_set_mode;
-
+    
     let _guard = globals();
     let mut target = Target::new(20, 6);
     let output = StreamBuffer::new();
@@ -603,10 +602,10 @@ fn pane_input_encodes_keys_and_mouse_from_the_shared_shown_screen() {
         let pane_screen_mode = MODE_KCURSOR | MODE_MOUSE_STANDARD;
         pane.base_mut().set_mode(pane_screen_mode);
         assert_eq!(
-            window_pane_set_mode(pane, None, WindowMode::View, None, None),
+            (pane).set_mode( None, WindowMode::View, None, None),
             0
         );
-        let shown_screen = pane.modes()[0]
+        let shown_screen = pane.active_mode().unwrap()
             .state
             .copy_mode_data_ref()
             .unwrap()

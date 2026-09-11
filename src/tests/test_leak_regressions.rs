@@ -59,9 +59,7 @@ use crate::types::{
     ClientFileData, ClientFileEvent, WindowMode, key_code, key_event, menu_item, mouse_event,
     spawn_context, u_int, winlink,
 };
-use crate::window::window_pane_current_mode_mut;
 use crate::window::window_pane_input_data;
-use crate::window::window_pane_set_mode;
 use ::core::ffi::CStr;
 
 /// A descriptor number the spawn rig's pane claims to hold. Nothing opens or
@@ -305,14 +303,13 @@ unsafe fn send_keys_x(t: &mut Target, line: &CStr, values: u_int) {
         let fs = t.state();
         let open = Args::parse(c"copy-mode");
         let source_pane_id = (*wp).pane_id();
-        window_pane_set_mode(
-            &mut *wp,
+        (&mut *wp).set_mode(
             crate::window::window_pane_find_by_id(source_pane_id),
             WindowMode::Copy,
             Some(&fs),
             Some(&*open.borrow()),
         );
-        let wme = window_pane_current_mode_mut(&mut *wp).expect("the pane did not open copy mode");
+        let wme = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("the pane did not open copy mode");
 
         let args = Args::parse(line);
         assert_eq!(

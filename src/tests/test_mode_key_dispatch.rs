@@ -2,8 +2,6 @@ use super::*;
 use crate::WindowPane;
 use crate::pane_identity::PaneIdentity;
 use crate::tests::test_fixtures::{Target, globals, zeroed_client};
-use crate::window::{window_pane_current_mode, window_pane_reset_mode, window_pane_set_mode};
-use crate::window::{window_pane_reset_mode_all};
 
 #[test]
 fn stale_key_targets_leave_replacement_modes_open_and_current_targets_can_close_them() {
@@ -27,31 +25,31 @@ fn stale_key_targets_leave_replacement_modes_open_and_current_targets_can_close_
             WindowMode::Customize,
         ] {
             assert_eq!(
-                window_pane_set_mode(pane.get_mut().unwrap(), None, mode, Some(&fs), None),
+                (pane.get_mut().unwrap()).set_mode( None, mode, Some(&fs), None),
                 0
             );
-            let stale = window_pane_current_mode(pane.get().unwrap())
+            let stale = (pane.get().unwrap()).active_mode()
                 .unwrap()
                 .key_target()
                 .unwrap();
-            window_pane_reset_mode(pane.get_mut().unwrap());
+            (pane.get_mut().unwrap()).reset_mode();
             assert_eq!(
-                window_pane_set_mode(pane.get_mut().unwrap(), None, mode, Some(&fs), None),
+                (pane.get_mut().unwrap()).set_mode( None, mode, Some(&fs), None),
                 0
             );
-            let current = window_pane_current_mode(pane.get().unwrap())
+            let current = (pane.get().unwrap()).active_mode()
                 .unwrap()
                 .key_target()
                 .unwrap();
             stale.dispatch(client.as_client_mut(), b'q' as key_code, None);
             assert_eq!(
-                window_pane_current_mode(pane.get().unwrap())
+                (pane.get().unwrap()).active_mode()
                     .unwrap()
                     .mode(),
                 mode
             );
             current.dispatch(client.as_client_mut(), b'q' as key_code, None);
-            assert!(window_pane_current_mode(pane.get().unwrap()).is_none());
+            assert!((pane.get().unwrap()).active_mode().is_none());
         }
         pane_options.set_parent(None);
         window_options.set_parent(None);
@@ -67,8 +65,7 @@ fn a_key_target_outliving_its_pane_does_nothing() {
     let mut pane = fs.pane_ref().unwrap();
     unsafe {
         assert_eq!(
-            window_pane_set_mode(
-                pane.get_mut().unwrap(),
+            (pane.get_mut().unwrap()).set_mode(
                 None,
                 WindowMode::Clock,
                 Some(&fs),
@@ -76,7 +73,7 @@ fn a_key_target_outliving_its_pane_does_nothing() {
             ),
             0
         );
-        let key_target = window_pane_current_mode(pane.get().unwrap())
+        let key_target = (pane.get().unwrap()).active_mode()
             .unwrap()
             .key_target()
             .unwrap();
@@ -113,8 +110,7 @@ fn every_mode_initializes_resizes_and_releases_its_own_state() {
                 .set_parent(crate::tmux::global_s_options.get().as_ref());
             let source = (mode == WindowMode::Copy).then_some(pane.pane_id());
             assert_eq!(
-                window_pane_set_mode(
-                    pane,
+                (pane).set_mode(
                     source.and_then(crate::window::window_pane_find_by_id),
                     mode,
                     Some(&state),
@@ -123,8 +119,8 @@ fn every_mode_initializes_resizes_and_releases_its_own_state() {
                 0
             );
             assert_eq!(mode.name(), name);
-            assert_eq!(pane.modes()[0].mode(), mode);
-            assert!(pane.modes()[0].screen.is_some());
+            assert_eq!(pane.active_mode().unwrap().mode(), mode);
+            assert!(pane.active_mode().unwrap().screen.is_some());
             let shown = pane.screen_ref();
             let size = RustScreen::grid(&shown);
             assert_eq!((size.sx, size.sy), (80, 24));
@@ -134,8 +130,8 @@ fn every_mode_initializes_resizes_and_releases_its_own_state() {
             let size = RustScreen::grid(&shown);
             assert_eq!((size.sx, size.sy), (40, 12));
             drop(shown);
-            window_pane_reset_mode_all(pane);
-            assert!(pane.modes().is_empty());
+            (pane).reset_modes();
+            assert!(pane.active_mode().is_none());
             assert!(core::ptr::eq(&*pane.screen_ref(), pane.base()));
         }
     }
@@ -150,28 +146,28 @@ fn update_targets_refresh_current_lists_and_skip_replaced_or_retired_modes() {
         let mut pane = state.pane_ref().unwrap();
         unsafe {
             assert_eq!(
-                window_pane_set_mode(pane.get_mut().unwrap(), None, mode, Some(&state), None),
+                (pane.get_mut().unwrap()).set_mode( None, mode, Some(&state), None),
                 0
             );
-            let stale = window_pane_current_mode(pane.get().unwrap())
+            let stale = (pane.get().unwrap()).active_mode()
                 .unwrap()
                 .update_target()
                 .unwrap();
-            window_pane_reset_mode(pane.get_mut().unwrap());
+            (pane.get_mut().unwrap()).reset_mode();
             assert_eq!(
-                window_pane_set_mode(pane.get_mut().unwrap(), None, mode, Some(&state), None),
+                (pane.get_mut().unwrap()).set_mode( None, mode, Some(&state), None),
                 0
             );
             *pane.get_mut().unwrap().flags_mut() &= !crate::window::PANE_REDRAW;
             stale.dispatch();
             assert_eq!(*pane.get().unwrap().flags() & crate::window::PANE_REDRAW, 0);
-            let current = window_pane_current_mode(pane.get().unwrap())
+            let current = (pane.get().unwrap()).active_mode()
                 .unwrap()
                 .update_target()
                 .unwrap();
             current.dispatch();
             assert_ne!(*pane.get().unwrap().flags() & crate::window::PANE_REDRAW, 0);
-            let retired = window_pane_current_mode(pane.get().unwrap())
+            let retired = (pane.get().unwrap()).active_mode()
                 .unwrap()
                 .update_target()
                 .unwrap();

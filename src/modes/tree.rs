@@ -28,10 +28,8 @@ use crate::status::status_prompt_set;
 use crate::style::style_apply;
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
 pub use crate::types::*;
-#[cfg(test)]
-use crate::window::window_pane_current_mode_mut;
 use crate::window::{WinlinkRef, winlink_is};
-use crate::window::{window_pane_find_by_id, window_pane_index, window_pane_reset_mode};
+use crate::window::{window_pane_find_by_id, window_pane_index};
 use crate::xmalloc::xasprintf;
 use crate::{FormatText, RustFormatText};
 use ::core::ffi::CStr;
@@ -1367,7 +1365,7 @@ impl WindowTreeModeDataRef {
             };
             let current = pane
                 .get()
-                .and_then(|pane| crate::window::window_pane_current_mode(pane))
+                .and_then(|pane| (pane).active_mode())
                 .is_some_and(
                     |mode| matches!(&mode.state, WindowModeState::Tree(data) if data.ptr_eq(&held)),
                 );
@@ -1784,7 +1782,7 @@ impl WindowTreeModeDataRef {
             }
             if finished != 0 {
                 if let Some(pane) = pane.get_mut() {
-                    window_pane_reset_mode(pane);
+                    (pane).reset_mode();
                 }
             } else {
                 tree.draw();

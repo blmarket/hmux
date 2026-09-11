@@ -114,13 +114,11 @@ use crate::tty::{
 };
 pub use crate::types::*;
 use crate::window::pane_walk;
-use crate::window::window_pane_current_mode_mut;
 use crate::window::winlinks_into;
 use crate::window::{
     WINDOWS, window_get_active_at, window_pane_border_status_get_range, window_pane_find_by_id,
     window_pane_is_floating, window_pane_key, window_pane_paste,
-    window_pane_send_theme_update, window_pane_set_mode,
-    window_pane_show_scrollbar, window_redraw_active_switch, window_update_focus,
+    window_pane_send_theme_update, window_pane_show_scrollbar, window_redraw_active_switch, window_update_focus,
 };
 use crate::window::{window_get_latest, window_set_latest};
 use crate::xmalloc::xasprintf;
@@ -1535,7 +1533,7 @@ fn server_client_key_callback(item: &CmdqItemRef, mut event: Box<key_event>) -> 
                                 &keytable.borrow(),
                             ) != 0
                                 && let Some(wp) = pane.as_ref().and_then(|pane| pane.get())
-                                && let Some(wme) = crate::window::window_pane_current_mode(wp)
+                                && let Some(wme) = (wp).active_mode()
                                 && let Some(name) = wme.mode().key_table(wme)
                             {
                                 table =
@@ -1913,9 +1911,9 @@ pub fn server_client_loop() {
                     continue;
                 };
                 if *wp.flags() & PANE_STYLECHANGED != 0
-                    && let Some(wme) = window_pane_current_mode_mut(wp)
+                    && let Some(wme) = (wp).active_mode_mut()
                 {
-                    wme.mode().style_changed(wme);
+                    wme.style_changed();
                 }
             }
         }
@@ -2229,7 +2227,7 @@ unsafe fn server_client_check_modes(c: &client) {
         for pane in panes {
             let target = pane
                 .get()
-                .and_then(crate::window::window_pane_current_mode)
+                .and_then(|pane| pane.active_mode())
                 .and_then(window_mode_entry::update_target);
             if let Some(target) = target {
                 target.dispatch();
@@ -3105,12 +3103,11 @@ pub unsafe fn server_client_print(
             return;
         };
         if wp
-            .modes()
-            .first()
+            .active_mode()
             .is_none_or(|current| current.mode() != WindowMode::View)
             && let Some(wp) = pane.get_mut()
         {
-            window_pane_set_mode(wp, None, WindowMode::View, None, None);
+            (wp).set_mode( None, WindowMode::View, None, None);
         }
         if parse != 0 {
             while let Some(line) = buffer.read_line() {

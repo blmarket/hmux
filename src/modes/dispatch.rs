@@ -394,7 +394,7 @@ impl ModeUpdateTarget {
             let current = pane
                 .as_ref()
                 .and_then(|pane| pane.get())
-                .and_then(crate::window::window_pane_current_mode)
+                .and_then(|pane| pane.active_mode())
                 .is_some_and(|mode| match (&self, &mode.state) {
                     (Self::Buffer(left), WindowModeState::Buffer(right)) => left.ptr_eq(right),
                     (Self::Client(left), WindowModeState::Client(right)) => left.ptr_eq(right),
@@ -426,7 +426,7 @@ impl ModeKeyTarget {
             let current = pane
                 .as_ref()
                 .and_then(|pane| pane.get())
-                .and_then(|pane| crate::window::window_pane_current_mode(pane))
+                .and_then(|pane| (pane).active_mode())
                 .is_some_and(|mode| match (&self, &mode.state) {
                     (Self::Clock(_, timer), WindowModeState::Clock(data)) => *timer == data.timer,
                     (Self::Buffer(left), WindowModeState::Buffer(right)) => left.ptr_eq(right),
@@ -461,7 +461,7 @@ impl RustWindowPaneWeak {
     pub(crate) unsafe fn mode_key_table(&self) -> Option<&'static core::ffi::CStr> {
         let owner = self.upgrade()?;
         unsafe {
-            let mode = crate::window::window_pane_current_mode(owner.as_pane())?;
+            let mode = (owner.as_pane()).active_mode()?;
             mode.mode().key_table(mode)
         }
     }
@@ -470,7 +470,7 @@ impl RustWindowPaneWeak {
     pub(crate) unsafe fn set_mode_prefix(&self, prefix: u_int) -> Option<bool> {
         let mut owner = self.upgrade()?;
         unsafe {
-            let mode = crate::window::window_pane_current_mode_mut(owner.as_pane_mut())?;
+            let mode = (owner.as_pane_mut()).active_mode_mut().map(|mode| mode.into_entry())?;
             if !mode.mode().has_command() {
                 return Some(false);
             }
@@ -493,7 +493,7 @@ impl RustWindowPaneWeak {
             let mut target = self.clone();
             let Some(mode) = target
                 .get_mut()
-                .and_then(crate::window::window_pane_current_mode_mut)
+                .and_then(|pane| pane.active_mode_mut().map(|mode| mode.into_entry()))
                 .filter(|mode| mode.mode().has_command())
             else {
                 return false;

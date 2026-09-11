@@ -35,7 +35,7 @@ pub use crate::types::*;
 use crate::window::winlinks_into;
 use crate::window::{window_active_pane, window_set_active};
 use crate::window::{
-    window_pane_reset_mode_all, window_panes_insert_tail, window_ref_of, winlink_insert,
+    window_panes_insert_tail, window_ref_of, winlink_insert,
 };
 
 /// Every call a [`Prompt::Recorder`] prompt made to its input callback, as the
@@ -901,7 +901,7 @@ impl Pane {
             *pane.base_mut() = RustScreen::new_with_server_options(sx, sy, hlimit);
             pane.publish_border_status(0, RustScreen::new_with_server_options(1, 1, 0), Vec::new(), c"".to_owned());
         }
-        *pane.shown_mut() = PaneScreen::Base;
+
         let ptr = &raw mut *pane;
         Pane {
             pane: Some(pane),
@@ -1516,7 +1516,7 @@ impl Drop for Target {
         for p in &mut self.panes {
             unsafe {
                 if p.observer.as_ref().is_none_or(RustWindowPaneWeak::is_alive) {
-                    window_pane_reset_mode_all(&mut *p.ptr());
+                    (&mut *p.ptr()).reset_modes();
                 }
             }
         }

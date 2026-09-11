@@ -8,7 +8,6 @@ use crate::pane_style_cache::PaneStyleCache;
 use super::*;
 use crate::grid::{grid_create, grid_get_cell, grid_get_line, grid_scroll_history, grid_set_cell};
 use crate::tests::test_fixtures::{Args, Pane, Target, Window, ascii, globals};
-use crate::window::{window_pane_current_mode_mut, window_pane_set_mode};
 
 unsafe fn open_copy(target: &mut Target) -> &mut window_mode_entry {
     unsafe {
@@ -31,8 +30,7 @@ unsafe fn open_copy(target: &mut Target) -> &mut window_mode_entry {
         }
         let source_pane_id = (*pane).pane_id();
         assert_eq!(
-            window_pane_set_mode(
-                &mut *pane,
+            (&mut *pane).set_mode(
                 crate::window::window_pane_find_by_id(source_pane_id),
                 WindowMode::Copy,
                 None,
@@ -40,7 +38,7 @@ unsafe fn open_copy(target: &mut Target) -> &mut window_mode_entry {
             ),
             0
         );
-        window_pane_current_mode_mut(&mut *pane).expect("pane is in copy mode")
+        (&mut *pane).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in copy mode")
     }
 }
 
@@ -73,8 +71,7 @@ fn refresh_keeps_the_snapshot_after_its_source_pane_is_destroyed() {
         );
         let pane = target.pane(0);
         assert_eq!(
-            window_pane_set_mode(
-                &mut *pane,
+            (&mut *pane).set_mode(
                 crate::window::window_pane_find_by_id(source_id),
                 WindowMode::Copy,
                 None,
@@ -82,7 +79,7 @@ fn refresh_keeps_the_snapshot_after_its_source_pane_is_destroyed() {
             ),
             0
         );
-        let entry = window_pane_current_mode_mut(&mut *pane).expect("pane is in a mode");
+        let entry = (&mut *pane).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
         let backing_address = core::ptr::from_ref(window_copy_get_screen(entry).unwrap());
         drop(source);
         assert!(window_pane_find_by_id(source_id).is_none());
@@ -336,7 +333,7 @@ fn goto_line_and_page_helpers_cover_absolute_relative_and_clamped_positions() {
             .unwrap()
             .options()
             .set_number(c"copy-mode-line-numbers", 2);
-        let wme = window_pane_current_mode_mut(&mut *target.pane(0)).expect("pane is in copy mode");
+        let wme = (&mut *target.pane(0)).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in copy mode");
         window_copy_goto_line(wme, c"1");
         let data = wme.state.copy_mode_data_ref().unwrap();
         assert_eq!(data.oy, 24);
@@ -560,7 +557,7 @@ fn scrollbar_exit_restores_the_previous_mode_then_the_base_screen() {
         assert!(window_copy_get_current_offset(pane).is_none());
         window_copy_scroll(pane, 0, 100, 0, 1);
         assert_eq!(
-            window_pane_set_mode(pane, None, WindowMode::View, None, None),
+            (pane).set_mode( None, WindowMode::View, None, None),
             0
         );
         let wme = open_copy(&mut target);
@@ -570,19 +567,19 @@ fn scrollbar_exit_restores_the_previous_mode_then_the_base_screen() {
         pane.set_slider(PaneScrollbarSlider { sb_slider_y: 0, sb_slider_h: 1 });
         window_copy_scroll(pane, 0, 100, 0, 1);
         assert_eq!(
-            window_pane_current_mode(pane).unwrap().mode(),
+            (pane).active_mode().unwrap().mode(),
             WindowMode::View
         );
-        assert_eq!(*pane.shown(), PaneScreen::Mode);
+        assert_eq!(pane.showing_base(), false);
 
         window_copy_scroll(pane, 0, 100, 0, 1);
-        assert!(window_pane_current_mode(pane).is_none());
-        assert!(window_pane_current_mode_mut(pane).is_none());
+        assert!((pane).active_mode().is_none());
+        assert!((pane).active_mode_mut().map(|mode| mode.into_entry()).is_none());
         assert!(window_copy_get_current_offset(pane).is_none());
-        assert_eq!(*pane.shown(), PaneScreen::Base);
+        assert_eq!(pane.showing_base(), true);
 
         assert_eq!(
-            window_pane_set_mode(pane, None, WindowMode::Clock, None, None),
+            (pane).set_mode( None, WindowMode::Clock, None, None),
             0
         );
         assert!(window_copy_get_current_offset(pane).is_none());
@@ -609,10 +606,10 @@ fn drag_scroll_timers_leave_covering_modes_and_their_state_untouched() {
             if under == WindowMode::Copy {
                 open_copy(&mut target);
             } else {
-                window_pane_set_mode(pane.get_mut().unwrap(), None, under, None, None);
+                (pane.get_mut().unwrap()).set_mode( None, under, None, None);
             }
             let timer = {
-                let entry = window_pane_current_mode_mut(pane.get_mut().unwrap()).unwrap();
+                let entry = (pane.get_mut().unwrap()).active_mode_mut().map(|mode| mode.into_entry()).unwrap();
                 let data = entry.state.copy_mode_data_mut().unwrap();
                 data.cy = 0;
                 data.oy = 0;
@@ -620,8 +617,7 @@ fn drag_scroll_timers_leave_covering_modes_and_their_state_untouched() {
                 data.dragtimer
             };
             let source_pane = (over == WindowMode::Copy).then(|| source.id());
-            window_pane_set_mode(
-                pane.get_mut().unwrap(),
+            (pane.get_mut().unwrap()).set_mode(
                 source_pane.and_then(crate::window::window_pane_find_by_id),
                 over,
                 None,
@@ -629,16 +625,16 @@ fn drag_scroll_timers_leave_covering_modes_and_their_state_untouched() {
             );
             current().run_once();
             assert!(!timer.is_armed());
-            let wp = pane.get().unwrap();
-            assert_eq!(wp.modes()[0].mode(), over);
-            assert_eq!(wp.modes()[1].mode(), under);
-            let data = wp.modes()[1].state.copy_mode_data_ref().unwrap();
+            let wp = pane.get_mut().unwrap();
+            assert_eq!(wp.active_mode().unwrap().mode(), over);
+            assert_eq!(wp.find_mode_mut(under).map(|mode| mode.into_entry()).unwrap().mode(), under);
+            let data = wp.find_mode_mut(under).map(|mode| mode.into_entry()).unwrap().state.copy_mode_data_ref().unwrap();
             assert_eq!((data.cy, data.oy), (0, 0));
             if over != WindowMode::Clock {
-                let data = wp.modes()[0].state.copy_mode_data_ref().unwrap();
+                let data = wp.active_mode().unwrap().state.copy_mode_data_ref().unwrap();
                 assert!(!data.dragtimer.is_armed());
             }
-            crate::window::window_pane_reset_mode_all(pane.get_mut().unwrap());
+            (pane.get_mut().unwrap()).reset_modes();
         }
     }
 }
@@ -657,7 +653,7 @@ fn drag_scroll_timer_moves_an_active_copy_mode_and_rearms() {
         data.dragtimer.arm(timeval::from_secs(0));
         current().run_once();
         let mut pane = target.state().pane_ref().unwrap();
-        let entry = window_pane_current_mode_mut(pane.get_mut().unwrap()).unwrap();
+        let entry = (pane.get_mut().unwrap()).active_mode_mut().map(|mode| mode.into_entry()).unwrap();
         let data = entry.state.copy_mode_data_mut().unwrap();
         assert_eq!(data.oy, 1);
         assert!(data.dragtimer.is_armed());
@@ -695,14 +691,14 @@ fn mouse_drag_callbacks_release_the_timer_and_tolerate_a_closed_mode() {
         mouse.y = 0;
         update(client.as_client_mut(), &mouse);
         {
-            let entry = window_pane_current_mode_mut(pane.get_mut().unwrap()).unwrap();
+            let entry = (pane.get_mut().unwrap()).active_mode_mut().map(|mode| mode.into_entry()).unwrap();
             let data = entry.state.copy_mode_data_ref().unwrap();
             assert!(data.screen.borrow().has_selection());
             assert!(data.dragtimer.is_armed());
             assert_eq!(data.oy, 1);
         }
         release(client.as_client_mut(), &mouse);
-        let entry = window_pane_current_mode_mut(pane.get_mut().unwrap()).unwrap();
+        let entry = (pane.get_mut().unwrap()).active_mode_mut().map(|mode| mode.into_entry()).unwrap();
         assert!(
             !entry
                 .state
@@ -711,7 +707,7 @@ fn mouse_drag_callbacks_release_the_timer_and_tolerate_a_closed_mode() {
                 .dragtimer
                 .is_armed()
         );
-        window_pane_reset_mode(pane.get_mut().unwrap());
+        (pane.get_mut().unwrap()).reset_mode();
         update(client.as_client_mut(), &mouse);
         release(client.as_client_mut(), &mouse);
         drop(target);
@@ -1189,8 +1185,8 @@ fn a_copy_display_owner_survives_mode_teardown_during_a_write() {
         let display = entry.state.copy_mode_data_ref().unwrap().screen.clone();
         let weak = display.downgrade();
         let mut writer = RustScreenWriteCtx::on_shared_screen(&display);
-        window_pane_reset_mode(&mut *pane);
-        assert!(window_pane_current_mode_mut(&mut *pane).is_none());
+        (&mut *pane).reset_mode();
+        assert!((&mut *pane).active_mode_mut().map(|mode| mode.into_entry()).is_none());
         writer.cursormove(0, 0, 0);
         writer.puts(&grid_default_cell, c"retained display", &[]);
         writer.finish();
@@ -1259,7 +1255,7 @@ fn copy_search_and_word_motion_follow_the_panes_current_window() {
             (MODEKEY_EMACS, c"copy-mode", 5, 10),
         ] {
             destination.options().set_number(c"mode-keys", keys as i64);
-            let entry = window_pane_current_mode_mut(pane.get_mut().unwrap()).unwrap();
+            let entry = (pane.get_mut().unwrap()).active_mode_mut().map(|mode| mode.into_entry()).unwrap();
             assert_eq!(window_copy_key_table(entry), table);
             let data = entry.state.copy_mode_data_mut().unwrap();
             (data.cx, data.cy, data.oy) = (0, 0, 0);
@@ -1273,7 +1269,7 @@ fn copy_search_and_word_motion_follow_the_panes_current_window() {
             assert_eq!((data.cx, data.cy), (search_end, 0));
             assert_eq!(pane.get().unwrap().query(), Some(c"beta"));
         }
-        window_pane_reset_mode(pane.get_mut().unwrap());
+        (pane.get_mut().unwrap()).reset_mode();
     }
 }
 
@@ -1297,22 +1293,21 @@ fn retire_covered_copy_mode(all: bool) {
         window
             .options()
             .set_number(c"mode-keys", MODEKEY_EMACS as i64);
-        window_pane_set_mode(
-            pane.get_mut().unwrap(),
+        (pane.get_mut().unwrap()).set_mode(
             crate::window::window_pane_find_by_id(100),
             WindowMode::Copy,
             None,
             None,
         );
-        let entry = window_pane_current_mode_mut(pane.get_mut().unwrap()).unwrap();
+        let entry = (pane.get_mut().unwrap()).active_mode_mut().map(|mode| mode.into_entry()).unwrap();
         replace_copy_text(entry, &[b"hello"]);
         let data = entry.state.copy_mode_data_mut().unwrap();
         data.cx = 10;
         data.line_numbers = 0;
         let display = data.screen.clone();
         let observer = display.downgrade();
-        window_pane_set_mode(pane.get_mut().unwrap(), None, WindowMode::Clock, None, None);
-        assert_eq!(pane.get().unwrap().modes().len(), 2);
+        (pane.get_mut().unwrap()).set_mode( None, WindowMode::Clock, None, None);
+        assert_eq!(pane.get().unwrap().mode_count(), 2);
         window.options().set_number(c"mode-keys", MODEKEY_VI as i64);
         window.options().set_string(
             c"copy-mode-position-format",
@@ -1359,8 +1354,7 @@ fn copy_cursor_and_line_number_options_follow_the_owning_pane_window() {
         writer.finish();
         let source_id = source.pane_id();
         assert_eq!(
-            window_pane_set_mode(
-                pane.get_mut().unwrap(),
+            (pane.get_mut().unwrap()).set_mode(
                 crate::window::window_pane_find_by_id(source_id),
                 WindowMode::Copy,
                 Some(&state),
@@ -1368,7 +1362,7 @@ fn copy_cursor_and_line_number_options_follow_the_owning_pane_window() {
             ),
             0
         );
-        let entry = window_pane_current_mode_mut(pane.get_mut().unwrap()).unwrap();
+        let entry = (pane.get_mut().unwrap()).active_mode_mut().map(|mode| mode.into_entry()).unwrap();
         let data = entry.state.copy_mode_data_mut().unwrap();
         data.line_numbers = 1;
         data.cx = 0;
@@ -1393,8 +1387,7 @@ fn a_copy_redraw_ignores_a_retired_pane_before_borrowing_its_screen() {
     unsafe {
         let pane_id = pane.id();
         assert_eq!(
-            window_pane_set_mode(
-                pane.get_mut().unwrap(),
+            (pane.get_mut().unwrap()).set_mode(
                 crate::window::window_pane_find_by_id(pane_id),
                 WindowMode::Copy,
                 Some(&state),
@@ -1402,7 +1395,7 @@ fn a_copy_redraw_ignores_a_retired_pane_before_borrowing_its_screen() {
             ),
             0
         );
-        let mut entry = pane.get_mut().unwrap().modes_mut().remove(0);
+        let mut entry = pane.get_mut().unwrap().take_test_mode().unwrap();
         let display = entry.state.copy_mode_data_ref().unwrap().screen.clone();
         drop(target);
         assert!(pane.get().is_none());

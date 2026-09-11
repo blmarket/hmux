@@ -30,7 +30,7 @@ use crate::tmux::{checkshell, global_options, global_s_options, global_w_options
 use crate::tty::tty_keys_build;
 pub use crate::types::*;
 use crate::window::pane_walk;
-use crate::window::{WINDOWS, window_pane_default_cursor, window_set_fill_character};
+use crate::window::{WINDOWS, window_set_fill_character};
 use crate::xmalloc::xasprintf;
 use ::core::ffi::{CStr, c_int, c_longlong};
 use ::std::ffi::CString;
@@ -1268,7 +1268,7 @@ pub(super) unsafe fn options_push_changes(name: &CStr) {
         if name == c"cursor-colour" || name == c"cursor-style" {
             for mut pane in pane_walk() {
                 let wp = pane.get_mut().expect("registered pane");
-                window_pane_default_cursor(wp);
+                (wp).update_default_cursor();
             }
         }
         if name == c"fill-character" {

@@ -74,7 +74,7 @@ impl RustWindowPaneWeak {
         let Some(pane) = (unsafe { observed.get_mut() }) else {
             return false;
         };
-        unsafe { crate::window::window_pane_reset_mode_all(pane) };
+        unsafe { (pane).reset_modes() };
         true
     }
 
@@ -89,7 +89,7 @@ impl RustWindowPaneWeak {
     ) -> Option<core::ffi::c_int> {
         let mut observed = self.clone();
         let pane = unsafe { observed.get_mut()? };
-        Some(unsafe { crate::window::window_pane_set_mode(pane, source, mode, target, args) })
+        Some(unsafe { (pane).set_mode( source, mode, target, args) })
     }
 
     /// # Safety
@@ -182,7 +182,7 @@ impl RustWindowPaneWeak {
             return false;
         };
         let pane = unsafe { owner.as_pane_mut() };
-        if !pane.modes().is_empty() {
+        if !pane.active_mode().is_none() {
             return true;
         }
         let (cx, cy) = pane.base().cursor();
@@ -268,8 +268,7 @@ impl RustWindowPaneWeak {
         unsafe {
             let Some(pane) = self.get() else { return };
             if pane
-                .modes()
-                .first()
+                .active_mode()
                 .is_none_or(|mode| mode.mode() != WindowMode::View)
             {
                 self.set_mode(None, WindowMode::View, None, None);

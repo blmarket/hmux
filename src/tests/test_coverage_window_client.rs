@@ -2,8 +2,6 @@ use crate::WindowPane;
 use crate::cmd::CMD_RETURN_NORMAL;
 use crate::tests::test_fixtures::{Clients, Item, Target, globals, seen};
 use crate::types::*;
-use crate::window::window_pane_current_mode_mut;
-use crate::window::window_pane_reset_mode_all;
 use ::core::ffi::CStr;
 
 const FILE: &CStr = c"test_coverage_window_client.rs";
@@ -33,14 +31,14 @@ fn test_window_client_mode_lifecycle_and_keys() {
             CMD_RETURN_NORMAL
         );
 
-        let wme = window_pane_current_mode_mut(&mut *wp).expect("pane is in a mode");
+        let wme = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
         assert_eq!(wme.mode(), WindowMode::Client);
         assert_eq!(seen(wme.mode().name().as_ptr()), "client-mode");
         assert!(wme.mode().default_format().is_some());
 
         // Update and resize
         wme.update_target().unwrap().dispatch();
-        let wme = window_pane_current_mode_mut(&mut *wp).expect("pane is in a mode");
+        let wme = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
         wme.mode().resize(wme, 90, 28);
 
         // Key interactions
@@ -60,14 +58,14 @@ fn test_window_client_mode_lifecycle_and_keys() {
             b'\r' as key_code,
             b'q' as key_code,
         ] {
-            if !(*wp).modes().is_empty() {
-                let cur_wme = window_pane_current_mode_mut(&mut *wp).expect("pane is in a mode");
+            if !(*wp).active_mode().is_none() {
+                let cur_wme = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
                 cur_wme.key_target().unwrap().dispatch(&mut *c1, key, None);
             }
         }
 
-        window_pane_reset_mode_all(&mut *wp);
-        assert!((*wp).modes().is_empty());
+        (&mut *wp).reset_modes();
+        assert!((*wp).active_mode().is_none());
     }
 }
 
@@ -94,12 +92,12 @@ fn test_window_client_custom_format_and_detach() {
             CMD_RETURN_NORMAL
         );
 
-        let wme = window_pane_current_mode_mut(&mut *wp).expect("pane is in a mode");
+        let wme = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
 
         wme.key_target()
             .unwrap()
             .dispatch(&mut *c1, b'd' as key_code, None);
 
-        window_pane_reset_mode_all(&mut *wp);
+        (&mut *wp).reset_modes();
     }
 }

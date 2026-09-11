@@ -252,14 +252,14 @@ impl<'a> RustScreenWriteCtx<'a> {
 
     /// Starts writing to the screen currently shown by a pane.
     pub(crate) fn on_pane(wp: &'a mut (impl crate::WindowPane + ?Sized)) -> Self {
-        if *wp.shown() == PaneScreen::Base || wp.modes().is_empty() {
+        if wp.showing_base() {
             return Self::on_pane_base(wp);
         }
-        let pane = crate::window::window_pane_find_by_id(crate::PaneIdentity::pane_id(wp));
-        let mode = wp.modes_mut().first_mut().expect("pane has a mode");
-        let mut writer = match mode.screen.as_ref().expect("shown mode has a screen") {
-            ModeScreen::Clock => Self::on_screen(&mut mode.state.clock().expect("clock mode has state").screen),
-            ModeScreen::Shared(screen) => Self::on_shared_screen(screen),
+        let pane = wp.observation();
+        let mode = wp.active_mode_mut().expect("pane has a mode");
+        let mut writer = match mode.screen_target() {
+            crate::modes::ModeScreenTarget::Owned(screen) => Self::on_screen(screen),
+            crate::modes::ModeScreenTarget::Shared(screen) => Self::on_shared_screen(screen),
         };
         writer.state.wp = pane;
         writer
@@ -792,8 +792,7 @@ mod tests {
         use crate::options::OptionsRef;
         use crate::tests::test_fixtures::Target;
         use crate::window::{
-            window_pane_current_mode, window_pane_reset_mode_all, window_pane_set_mode,
-        };
+            };
         let _guard = globals();
         let mut target = Target::new(40, 12);
         let state = target.state();
@@ -811,8 +810,7 @@ mod tests {
                 pane.get_mut().unwrap().base_mut().set_cursor(0, 0);
                 let source = (mode == WindowMode::Copy).then_some(pane.id());
                 assert_eq!(
-                    window_pane_set_mode(
-                        pane.get_mut().unwrap(),
+                    (pane.get_mut().unwrap()).set_mode(
                         source.and_then(crate::window::window_pane_find_by_id),
                         mode,
                         Some(&state),
@@ -820,7 +818,7 @@ mod tests {
                     ),
                     0
                 );
-                let entry = window_pane_current_mode(pane.get().unwrap()).unwrap();
+                let entry = (pane.get().unwrap()).active_mode().unwrap();
                 let shared = match &entry.state {
                     WindowModeState::Clock(_) => None,
                     WindowModeState::Copy(data) | WindowModeState::View(data) => {
@@ -865,7 +863,7 @@ mod tests {
                 if let Some(shared) = shared.as_ref() {
                     shared.borrow_mut().set_cursor(0, 0);
                 }
-                window_pane_reset_mode_all(pane.get_mut().unwrap());
+                (pane.get_mut().unwrap()).reset_modes();
             }
         }
     }

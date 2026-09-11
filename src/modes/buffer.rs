@@ -21,10 +21,8 @@ use crate::sort::{SortCriteria, sort_get_buffers};
 use crate::text::{KeyStringCodec, RustKeyStringCodec};
 use crate::text::{RustUtf8VisModel, Utf8VisModel};
 pub use crate::types::*;
-use crate::window::window_pane_current_mode;
 use crate::window::{
-    RustWindowPaneWeak, WinlinkRef, window_pane_find_by_id, window_pane_reset_mode,
-};
+    RustWindowPaneWeak, WinlinkRef, window_pane_find_by_id, };
 use ::core::ffi::CStr;
 
 #[repr(C)]
@@ -394,7 +392,7 @@ unsafe fn window_buffer_edit_close_cb(mut buf: Vec<u8>, ed: Box<window_buffer_ed
         if let Some(mut pane) = window_pane_find_by_id(ed.wp_id) {
             let tree = pane
                 .get()
-                .and_then(|pane| window_pane_current_mode(pane))
+                .and_then(|pane| (pane).active_mode())
                 .filter(|mode| mode.mode() == WindowMode::Buffer)
                 .and_then(|mode| mode.state.buffer())
                 .map(|owner| owner.borrow().tree_ref());
@@ -497,7 +495,7 @@ impl WindowBufferModeDataRef {
             };
             let current = pane
                 .get()
-                .and_then(|pane| crate::window::window_pane_current_mode(pane))
+                .and_then(|pane| (pane).active_mode())
                 .is_some_and(
                     |mode| matches!(&mode.state, WindowModeState::Buffer(data) if data.ptr_eq(&held)),
                 );
@@ -613,7 +611,7 @@ impl WindowBufferModeDataRef {
                 if let Some(mut pane) = pane
                     && let Some(pane) = pane.get_mut()
                 {
-                    window_pane_reset_mode(pane);
+                    (pane).reset_mode();
                 }
             } else {
                 tree.draw();
