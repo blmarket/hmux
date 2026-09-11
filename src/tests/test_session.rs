@@ -1,7 +1,6 @@
 use super::*;
 use crate::WindowPane;
 use crate::environ::new_environment_box;
-use crate::grid::grid_scroll_history;
 use crate::options::OptionsRef;
 use crate::sort::{RustSortCriteria, SortCriteria};
 use crate::tests::test_fixtures::seen_str;

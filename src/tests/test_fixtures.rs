@@ -81,7 +81,7 @@ use crate::file::CLIENT_DEAD;
 use crate::format::{
     FORMAT_NONE, format_create, format_defaults, format_expand, format_expand_time,
 };
-use crate::grid::{grid_create, grid_default_cell, grid_get_cell, grid_set_cell};
+use crate::grid::{grid_create, grid_default_cell};
 use crate::key_bindings::{
     key_binding_cmdlist_ref, key_binding_note, key_bindings_add, key_bindings_get_table,
     key_bindings_remove,
@@ -390,12 +390,12 @@ impl Grid {
     pub(crate) fn write(&mut self, px: u_int, py: u_int, s: &str) {
         for (i, byte) in s.bytes().enumerate() {
             let gc = ascii(byte);
-            grid_set_cell(&mut *self, px + i as u_int, py, &gc);
+            (&mut *self).set_cell(px + i as u_int, py, &gc);
         }
     }
 
     pub(crate) fn cell(&self, px: u_int, py: u_int) -> grid_cell {
-        grid_get_cell(&*self, px, py)
+        self.0.cell(px, py)
     }
 }
 
@@ -1692,8 +1692,7 @@ mod tests {
         assert_eq!(command.line, 17);
     }
     use crate::environ::EnvironmentStore;
-    use crate::grid::grid_string_cells;
-
+    
     use crate::window::winlink_count;
 
     #[test]
@@ -1749,7 +1748,7 @@ mod tests {
         assert_eq!(grid.width(), 10);
         assert_eq!(grid.cell(1, 0).data.data[0], b'b');
         {
-            let p = grid_string_cells(&grid, 0, 0, 10, None, 0, None);
+            let p = (&grid).string_cells(0, 0, 10, None, 0, None);
             assert_eq!(p.to_string_lossy(), "abc");
         }
     }

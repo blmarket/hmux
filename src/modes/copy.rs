@@ -14,7 +14,7 @@ use crate::format::{
     format_grid_line, format_grid_word, format_single,
 };
 use crate::grid::{
-    Grid, GridReader, RustGridReader, grid_default_cell, };
+    Grid, GridReader, RustGridReader, grid_default_cell};
 use crate::input::InputOwner;
 use crate::job::job_run;
 use crate::log::{fatalx, log_debug};

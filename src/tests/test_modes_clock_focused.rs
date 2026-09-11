@@ -1,6 +1,6 @@
+use crate::grid::Grid as _;
 use super::*;
 use crate::WindowPane;
-use crate::grid::grid_get_cell;
 use crate::tests::test_fixtures::{Target, Window, globals};
 use crate::window::{
     window_pane_find_by_id, window_pane_set_window_ref, window_panes_insert_tail, window_panes_take,
@@ -9,7 +9,7 @@ use crate::window::{
 fn assert_clock_colour(screen: &RustScreen, colour: i32) {
     let (sx, sy) = screen.size();
     let cells: Vec<_> = (0..sx)
-        .map(|x| grid_get_cell(RustScreen::grid(screen), x, sy / 2))
+        .map(|x| (RustScreen::grid(screen)).cell(x, sy / 2))
         .filter(|cell| cell.data.data[0] != b' ')
         .collect();
     assert!(cells.iter().any(|cell| cell.data.data[0] == b':'));

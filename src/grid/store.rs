@@ -37,7 +37,7 @@ pub const GRID_FLAG_BG256: c_int = 0x2 as c_int;
 
 /// Storage and transformation operations of a terminal grid.
 pub trait Grid {
-    /// The cell representation stored by this grid implementation.
+    /// The decoded cell value read and written through this grid.
     type Cell: crate::GridCell;
     /// The screen representation used while rendering selected cells.
     type Screen: Screen;
@@ -97,7 +97,7 @@ pub trait Grid {
     /// Returns text for one stored cell: padding is empty and a tab stays a tab.
     fn cell_bytes(&self, px: u_int, py: u_int) -> std::borrow::Cow<'_, [u8]>;
     /// Tests the compact representation using the writer's redraw-elision rules.
-    fn can_skip_cell(&self, px: u_int, py: u_int, gc: &grid_cell) -> bool;
+    fn can_skip_cell(&self, px: u_int, py: u_int, gc: &Self::Cell) -> bool;
     /// Returns line, compact-cell and extended-cell counts and byte costs.
     fn storage_usage(&self) -> [(u_int, usize); 3];
     /// Returns the bytes allocated to lines and both kinds of stored cell.
@@ -139,9 +139,84 @@ pub trait Grid {
     fn peek_line(&self, py: u_int) -> Option<GridLineInfo>;
     /// Marks a stored line as continuing onto the next line.
     fn mark_wrapped(&mut self, py: u_int);
+    /// Reads a cell in visible-grid coordinates below retained history.
+    fn view_cell(&self, px: u_int, py: u_int) -> Self::Cell;
+    /// Writes a cell in visible-grid coordinates below retained history.
+    fn view_set_cell(&mut self, px: u_int, py: u_int, gc: &Self::Cell);
+    /// Writes visible-cell padding for a wide character.
+    fn view_set_padding(&mut self, px: u_int, py: u_int);
+    /// Writes one-byte visible cells using a shared style.
+    fn view_set_cells(&mut self, px: u_int, py: u_int, gc: &Self::Cell, s: &[u8]);
+    /// Scrolls nonempty visible lines into history and clears the remaining visible cells.
+    fn view_clear_history(&mut self, bg: u_int);
+    /// Clears a rectangle in visible-grid coordinates.
+    fn view_clear(&mut self, px: u_int, py: u_int, nx: u_int, ny: u_int, bg: u_int);
+    /// Scrolls a visible region upward, retaining history when enabled.
+    fn view_scroll_region_up(&mut self, rupper: u_int, rlower: u_int, bg: u_int);
+    /// Scrolls a visible region downward.
+    fn view_scroll_region_down(&mut self, rupper: u_int, rlower: u_int, bg: u_int);
+    /// Inserts visible lines and pushes later lines off the bottom.
+    fn view_insert_lines(&mut self, py: u_int, ny: u_int, bg: u_int);
+    /// Inserts visible lines within a region and discards lines past its lower edge.
+    fn view_insert_lines_region(&mut self, rlower: u_int, py: u_int, ny: u_int, bg: u_int);
+    /// Deletes visible lines and pulls later lines upward.
+    fn view_delete_lines(&mut self, py: u_int, ny: u_int, bg: u_int);
+    /// Deletes visible lines within a region and clears its uncovered cells.
+    fn view_delete_lines_region(&mut self, rlower: u_int, py: u_int, ny: u_int, bg: u_int);
+    /// Inserts visible cells and pushes later cells off the right edge.
+    fn view_insert_cells(&mut self, px: u_int, py: u_int, nx: u_int, bg: u_int);
+    /// Deletes visible cells and clears the uncovered right edge.
+    fn view_delete_cells(&mut self, px: u_int, py: u_int, nx: u_int, bg: u_int);
+    /// Renders a run of visible cells as plain text.
+    fn view_string_cells(&self, px: u_int, py: u_int, nx: u_int) -> CString;
 }
 
 impl Grid for grid {
+    fn view_cell(&self, px: u_int, py: u_int) -> grid_cell {
+        super::view::grid_view_get_cell(self, px, py)
+    }
+    fn view_set_cell(&mut self, px: u_int, py: u_int, gc: &grid_cell) {
+        super::view::grid_view_set_cell(self, px, py, gc)
+    }
+    fn view_set_padding(&mut self, px: u_int, py: u_int) {
+        super::view::grid_view_set_padding(self, px, py)
+    }
+    fn view_set_cells(&mut self, px: u_int, py: u_int, gc: &grid_cell, s: &[u8]) {
+        super::view::grid_view_set_cells(self, px, py, gc, s)
+    }
+    fn view_clear_history(&mut self, bg: u_int) {
+        super::view::grid_view_clear_history(self, bg)
+    }
+    fn view_clear(&mut self, px: u_int, py: u_int, nx: u_int, ny: u_int, bg: u_int) {
+        super::view::grid_view_clear(self, px, py, nx, ny, bg)
+    }
+    fn view_scroll_region_up(&mut self, rupper: u_int, rlower: u_int, bg: u_int) {
+        super::view::grid_view_scroll_region_up(self, rupper, rlower, bg)
+    }
+    fn view_scroll_region_down(&mut self, rupper: u_int, rlower: u_int, bg: u_int) {
+        super::view::grid_view_scroll_region_down(self, rupper, rlower, bg)
+    }
+    fn view_insert_lines(&mut self, py: u_int, ny: u_int, bg: u_int) {
+        super::view::grid_view_insert_lines(self, py, ny, bg)
+    }
+    fn view_insert_lines_region(&mut self, rlower: u_int, py: u_int, ny: u_int, bg: u_int) {
+        super::view::grid_view_insert_lines_region(self, rlower, py, ny, bg)
+    }
+    fn view_delete_lines(&mut self, py: u_int, ny: u_int, bg: u_int) {
+        super::view::grid_view_delete_lines(self, py, ny, bg)
+    }
+    fn view_delete_lines_region(&mut self, rlower: u_int, py: u_int, ny: u_int, bg: u_int) {
+        super::view::grid_view_delete_lines_region(self, rlower, py, ny, bg)
+    }
+    fn view_insert_cells(&mut self, px: u_int, py: u_int, nx: u_int, bg: u_int) {
+        super::view::grid_view_insert_cells(self, px, py, nx, bg)
+    }
+    fn view_delete_cells(&mut self, px: u_int, py: u_int, nx: u_int, bg: u_int) {
+        super::view::grid_view_delete_cells(self, px, py, nx, bg)
+    }
+    fn view_string_cells(&self, px: u_int, py: u_int, nx: u_int) -> CString {
+        super::view::grid_view_string_cells(self, px, py, nx)
+    }
     fn cell_bytes(&self, px: u_int, py: u_int) -> std::borrow::Cow<'_, [u8]> {
         use std::borrow::Cow;
         let gl = line_at(self, py);

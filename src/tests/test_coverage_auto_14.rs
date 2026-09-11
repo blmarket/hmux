@@ -11,11 +11,7 @@
 use crate::grid::Grid as _;
 use crate::grid::{
     GRID_FLAG_PADDING, GRID_HISTORY, GRID_STRING_EMPTY_CELLS, GRID_STRING_TRIM_SPACES,
-    grid_cells_equal, grid_cells_look_equal, grid_clear, grid_clear_history, grid_clear_lines,
-    grid_collect_history, grid_compare, grid_default_cell, grid_duplicate_lines, grid_get_cell,
-    grid_move_cells, grid_move_lines, grid_reflow, grid_remove_history, grid_scroll_history,
-    grid_set_cell, grid_set_cells, grid_set_padding, grid_string_cells,
-};
+    grid_cells_equal, grid_cells_look_equal, grid_default_cell, };
 use crate::tests::test_fixtures::{Grid, Screen, ascii, globals};
 
 // ---------------------------------------------------------------------------
@@ -24,14 +20,14 @@ use crate::tests::test_fixtures::{Grid, Screen, ascii, globals};
 
 fn line_text(gd: &crate::types::grid, py: u32) -> String {
     {
-        let p = grid_string_cells(&*gd, 0, py, 100, None, 0, None);
+        let p = (&*gd).string_cells(0, py, 100, None, 0, None);
         p.to_string_lossy().into_owned()
     }
 }
 
 fn text_with_flags(gd: &crate::types::grid, py: u32, nx: u32, flags: i32) -> String {
     {
-        let p = grid_string_cells(&*gd, 0, py, nx, None, flags, None);
+        let p = (&*gd).string_cells(0, py, nx, None, flags, None);
         p.to_string_lossy().into_owned()
     }
 }
@@ -73,13 +69,13 @@ fn grid_get_cell_out_of_range_returns_default() {
     let mut g = Grid::new(4, 3, 0);
     g.write(0, 0, "hi");
     {
-        let mut gc = grid_get_cell(&*g, 100, 0);
+        let mut gc = (&*g).cell(100, 0);
         assert_eq!(gc.data.data[0], b' ');
         // out-of-range y
-        gc = grid_get_cell(&*g, 0, 99);
+        gc = (&*g).cell(0, 99);
         assert_eq!(gc.data.data[0], b' ');
         // unwritten cell in range still default
-        gc = grid_get_cell(&*g, 3, 0);
+        gc = (&*g).cell(3, 0);
         assert_eq!(gc.data.data[0], b' ');
     }
 }
@@ -94,29 +90,29 @@ fn grid_compare_equal_and_unequal() {
     let mut a = Grid::new(6, 2, 0);
     let mut b = Grid::new(6, 2, 0);
     {
-        assert_eq!(grid_compare(&*a, &*b), 0);
-        assert_eq!(grid_compare(&*b, &*a), 0);
+        assert_eq!(i32::from(!(&*a).content_eq(&*b)), 0);
+        assert_eq!(i32::from(!(&*b).content_eq(&*a)), 0);
     }
     a.write(0, 0, "hello");
     {
-        assert_ne!(grid_compare(&*a, &*b), 0);
+        assert_ne!(i32::from(!(&*a).content_eq(&*b)), 0);
     }
     b.write(0, 0, "hello");
     {
-        assert_eq!(grid_compare(&*a, &*b), 0);
+        assert_eq!(i32::from(!(&*a).content_eq(&*b)), 0);
     }
     b.write(0, 1, "x");
     {
-        assert_ne!(grid_compare(&*a, &*b), 0);
+        assert_ne!(i32::from(!(&*a).content_eq(&*b)), 0);
     }
     // different dimensions compare as not equal
     let wide = Grid::new(7, 2, 0);
     {
-        assert_ne!(grid_compare(&*a, &*wide), 0);
+        assert_ne!(i32::from(!(&*a).content_eq(&*wide)), 0);
     }
     let tall = Grid::new(6, 3, 0);
     {
-        assert_ne!(grid_compare(&*a, &*tall), 0);
+        assert_ne!(i32::from(!(&*a).content_eq(&*tall)), 0);
     }
 }
 
@@ -157,23 +153,23 @@ fn grid_clear_and_clear_lines_edge_cases() {
     g.write(0, 1, "0123456789");
     {
         // zero-size clear is a no-op
-        grid_clear(&mut *g, 0, 0, 0, 1, 8);
+        (&mut *g).clear(0, 0, 0, 1, 8);
         assert_eq!(line_text(&g, 0), "abcdefghij");
-        grid_clear(&mut *g, 0, 0, 5, 0, 8);
+        (&mut *g).clear(0, 0, 5, 0, 8);
         assert_eq!(line_text(&g, 0), "abcdefghij");
         // clear middle of a line
-        grid_clear(&mut *g, 2, 0, 3, 1, 8);
+        (&mut *g).clear(2, 0, 3, 1, 8);
         assert_eq!(line_text(&g, 0), "ab   fghij");
         // clear whole lines via fast path (px==0 && nx==sx)
-        grid_clear(&mut *g, 0, 1, 10, 1, 8);
+        (&mut *g).clear(0, 1, 10, 1, 8);
         assert_eq!(line_text(&g, 1), "");
         // clear_lines directly
         g.write(0, 2, "xyz");
         assert_eq!(line_text(&g, 2), "xyz");
-        grid_clear_lines(&mut *g, 2, 1, 8);
+        (&mut *g).clear_lines(2, 1, 8);
         assert_eq!(line_text(&g, 2), "");
         // zero-line clear_lines is a no-op
-        grid_clear_lines(&mut *g, 0, 0, 8);
+        (&mut *g).clear_lines(0, 0, 8);
         assert_eq!(line_text(&g, 0), "ab   fghij");
     }
 }
@@ -186,14 +182,14 @@ fn grid_set_cells_and_padding_round_trip() {
         let mut gc = grid_default_cell;
         gc.fg = 2;
         // set_cells writes run of bytes sharing one style
-        grid_set_cells(&mut *g, 0, 0, &gc, b"hello");
+        (&mut *g).set_cells(0, 0, &gc, b"hello");
         assert_eq!(line_text(&g, 0), "hello");
-        let out = grid_get_cell(&*g, 2, 0);
+        let out = (&*g).cell(2, 0);
         assert_eq!(out.data.data[0], b'l');
         assert_eq!(out.fg, 2);
         // padding cell is a distinct flag
-        grid_set_padding(&mut *g, 5, 0);
-        let pad = grid_get_cell(&*g, 5, 0);
+        (&mut *g).set_padding(5, 0);
+        let pad = (&*g).cell(5, 0);
         assert_ne!(pad.flags as i32 & GRID_FLAG_PADDING, 0);
         // grid_string_cells skips padding by default
         let s = line_text(&g, 0);
@@ -215,17 +211,17 @@ fn grid_move_cells_and_move_lines() {
     g.write(0, 3, "333");
     {
         // move cells right within a line
-        grid_move_cells(&mut *g, 3, 0, 0, 3, 8);
+        (&mut *g).move_cells(3, 0, 0, 3, 8);
         // 0..3 ("abc") moved to 3..6, source cleared to spaces
-        let mut gc = grid_get_cell(&*g, 0, 0);
+        let mut gc = (&*g).cell(0, 0);
         assert_eq!(gc.data.data[0], b' ');
-        gc = grid_get_cell(&*g, 3, 0);
+        gc = (&*g).cell(3, 0);
         assert_eq!(gc.data.data[0], b'a');
-        gc = grid_get_cell(&*g, 5, 0);
+        gc = (&*g).cell(5, 0);
         assert_eq!(gc.data.data[0], b'c');
 
         // move lines down
-        grid_move_lines(&mut *g, 4, 1, 2, 8);
+        (&mut *g).move_lines(4, 1, 2, 8);
         assert_eq!(line_text(&g, 4), "111");
         assert_eq!(line_text(&g, 5), "222");
         // source lines were emptied
@@ -234,7 +230,7 @@ fn grid_move_cells_and_move_lines() {
 
         // duplicate_lines copies without freeing source
         let mut dst = Grid::new(10, 6, 0);
-        grid_duplicate_lines(&mut *dst, 0, &*g, 0, 6);
+        (&mut *dst).duplicate_lines(0, &*g, 0, 6);
         assert_eq!(line_text(&dst, 4), "111");
         assert_eq!(line_text(&g, 4), "111");
     }
@@ -252,26 +248,26 @@ fn grid_history_scroll_and_remove_and_collect() {
     g.write(0, 1, "second");
     {
         assert_eq!(g.history_size(), 0);
-        grid_scroll_history(&mut *g, 8);
+        (&mut *g).scroll_history(8);
         assert_eq!(g.history_size(), 1);
         assert_eq!(g.scrolled_history(), 1);
         // after scroll, history line 0 holds the old line 0
         assert_eq!(line_text(&g, 0), "first");
-        grid_remove_history(&mut *g, 1);
+        (&mut *g).remove_history(1);
         assert_eq!(g.history_size(), 0);
         // ask to remove more than exists is a no-op
-        grid_remove_history(&mut *g, 99);
+        (&mut *g).remove_history(99);
         assert_eq!(g.history_size(), 0);
         // fill history to limit and collect
         for _ in 0..10 {
-            grid_scroll_history(&mut *g, 8);
+            (&mut *g).scroll_history(8);
         }
         assert!(g.history_size() <= 10);
-        grid_collect_history(&mut *g, 0);
+        (&mut *g).collect_history((0) != 0);
         // collect with all=1 drops everything over limit; here nothing over
         // so hsize may stay or shrink by ~hlimit/10 if at limit — just check no panic
         assert!(g.history_size() <= 10);
-        grid_clear_history(&mut *g);
+        (&mut *g).clear_history();
         assert_eq!(g.history_size(), 0);
         assert_eq!(g.scrolled_history(), 0);
     }

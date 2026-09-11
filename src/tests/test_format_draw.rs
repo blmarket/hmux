@@ -1,6 +1,7 @@
+use crate::grid::Grid as _;
 use super::*;
 use super::{screen_write_ctx, screen_write_start, screen_write_stop};
-use crate::grid::{grid_default_cell, grid_string_cells};
+use crate::grid::{grid_default_cell};
 use crate::tests::test_fixtures::{Screen, globals};
 use ::core::ffi::{CStr, c_char, c_int};
 
@@ -40,7 +41,7 @@ fn draw_over(
         screen_write_stop(&mut ctx);
         drop(ctx);
 
-        let line = grid_string_cells(&*s.grid(), 0, 0, available.max(1), None, 0, None)
+        let line = (&*s.grid()).string_cells(0, 0, available.max(1), None, 0, None)
             .to_string_lossy()
             .into_owned();
         let ranges = srs

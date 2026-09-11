@@ -1,11 +1,10 @@
+use crate::grid::Grid as _;
 use super::*;
 use crate::text::utf8_to_data;
 
 const PRINT_SIZE: usize = 16384;
 use crate::grid::{
-    grid_default_cell, grid_scroll_history, grid_set_cell, grid_set_cells, grid_set_padding,
-    grid_set_tab, grid_string_cells,
-};
+    grid_default_cell, grid_set_tab};
 use crate::options::OptionsRef;
 
 use crate::tests::test_fixtures::globals;
@@ -39,14 +38,14 @@ impl RustScreen {
             gc.data.have = 1;
             gc.data.size = 1;
             gc.data.width = 1;
-            grid_set_cell(self.grid_mut(), px + i as u_int, py, &gc);
+            (self.grid_mut()).set_cell(px + i as u_int, py, &gc);
         }
     }
 
     /// The text of one line of the whole grid, history included.
     fn text(&self, py: u_int) -> String {
         {
-            let p = grid_string_cells(self.grid(), 0, py, 1000, None, 0, None);
+            let p = (self.grid()).string_cells(0, py, 1000, None, 0, None);
 
             p.to_string_lossy().into_owned()
         }
@@ -381,7 +380,7 @@ fn a_taller_screen_takes_back_the_history_it_scrolled() {
     let _guard = globals();
     let mut s = RustScreen::new_with_server_options(10, 2, 100);
     s.write(0, 0, "one");
-    grid_scroll_history(s.grid_mut(), 8);
+    (s.grid_mut()).scroll_history(8);
     assert_eq!((s.grid().history_size(), s.grid().scrolled_history()), (1, 1));
     screen_resize(&mut s, 10, 3, 0);
     assert_eq!(
@@ -807,7 +806,7 @@ fn a_taller_screen_only_takes_back_as_much_history_as_it_needs() {
     let mut s = RustScreen::new_with_server_options(10, 2, 100);
     for text in ["one", "two", "three"] {
         s.write(0, 0, text);
-        grid_scroll_history(s.grid_mut(), 8);
+        (s.grid_mut()).scroll_history(8);
     }
     assert_eq!((s.grid().history_size(), s.grid().scrolled_history()), (3, 3));
     screen_resize(&mut s, 10, 3, 0);
@@ -865,7 +864,7 @@ fn long_line(n: u_int) -> RustScreen {
     let mut s = RustScreen::new_with_server_options(n + 10, 2, 0);
     let gc = { grid_default_cell };
     let text = vec![b'a'; n as usize];
-    grid_set_cells(s.grid_mut(), 0, 0, &gc, &text);
+    (s.grid_mut()).set_cells(0, 0, &gc, &text);
     s
 }
 
@@ -903,7 +902,7 @@ fn printing_stops_when_a_tab_or_a_wide_character_no_longer_fits() {
     let mut gc = { grid_default_cell };
     {
         grid_set_tab(&mut gc, 2);
-        grid_set_cell(tab.grid_mut(), 16376, 0, &gc);
+        (tab.grid_mut()).set_cell(16376, 0, &gc);
     }
     assert_eq!(printed(&tab).len(), 16382);
 
@@ -913,7 +912,7 @@ fn printing_stops_when_a_tab_or_a_wide_character_no_longer_fits() {
     gc.data.have = 3;
     gc.data.size = 3;
     gc.data.width = 2;
-    grid_set_cell(wide.grid_mut(), 16376, 0, &gc);
+    (wide.grid_mut()).set_cell(16376, 0, &gc);
     assert_eq!(printed(&wide).len(), 16382);
 }
 
@@ -926,7 +925,7 @@ fn a_cell_with_no_character_at_all_prints_as_nothing() {
     gc.data.have = 0;
     gc.data.size = 0;
     gc.data.width = 0;
-    grid_set_cell(s.grid_mut(), 0, 0, &gc);
+    (s.grid_mut()).set_cell(0, 0, &gc);
     assert_eq!(printed(&s), "0000 \"\"\n");
 }
 
@@ -987,8 +986,8 @@ fn printing_leaves_out_padding_and_writes_tabs_and_wide_characters() {
     let mut gc = { grid_default_cell };
     {
         grid_set_tab(&mut gc, 2);
-        grid_set_cell(s.grid_mut(), 0, 0, &gc);
-        grid_set_padding(s.grid_mut(), 1, 0);
+        (s.grid_mut()).set_cell(0, 0, &gc);
+        (s.grid_mut()).set_padding(1, 0);
     }
     let mut wide = { grid_default_cell };
     wide.data.data[..3].copy_from_slice("\u{4e2d}".as_bytes());
@@ -996,8 +995,8 @@ fn printing_leaves_out_padding_and_writes_tabs_and_wide_characters() {
     wide.data.size = 3;
     wide.data.width = 2;
     {
-        grid_set_cell(s.grid_mut(), 2, 0, &wide);
-        grid_set_padding(s.grid_mut(), 3, 0);
+        (s.grid_mut()).set_cell(2, 0, &wide);
+        (s.grid_mut()).set_padding(3, 0);
     }
     let printed = unsafe { String::from_utf8_lossy(screen_print(&s, 0).to_bytes()).into_owned() };
     assert_eq!(printed, "0000 \"\t\u{4e2d}\"\n");

@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 use crate::WindowPane;
 use crate::args::argument_text::{ArgumentTextCodec as _, RustArgumentTextCodec};
 use crate::cmd::cmdq_item;
@@ -21,7 +22,7 @@ use crate::ffi::{
 };
 use crate::fmt_args;
 use crate::fmt_engine::{FmtArg, format_alloc, format_buf};
-use crate::grid::{Grid, Hyperlinks, grid_view_get_cell};
+use crate::grid::{Grid, Hyperlinks};
 use crate::grid::{grid_default_cell};
 use crate::job::{job_free, job_run};
 
@@ -1113,7 +1114,7 @@ unsafe fn format_cb_cursor_character(ft: &format_tree) -> Option<CString> {
 
         let mut value: Option<CString> = None;
         let (cx, cy) = wp.base().cursor();
-        let gc = grid_view_get_cell(RustScreen::grid(wp.base()), cx, cy);
+        let gc = (RustScreen::grid(wp.base())).view_cell(cx, cy);
         if !(gc.flags as core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
             value = Some(xasprintf(
                 c"%.*s",

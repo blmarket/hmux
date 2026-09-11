@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 use super::*;
 use crate::WindowPane;
 use crate::cmd::CmdListRef;
@@ -716,15 +717,12 @@ fn attached_client_print_preserves_parsed_lines_and_escaped_bytes() {
             .enumerate()
         {
             assert_eq!(
-                crate::grid::grid_string_cells(
-                    grid,
-                    0,
+                (grid).string_cells(0,
                     row as u_int,
                     40,
                     None,
                     crate::grid::GRID_STRING_TRIM_SPACES,
-                    None
-                )
+                    None)
                 .as_c_str(),
                 expected
             );

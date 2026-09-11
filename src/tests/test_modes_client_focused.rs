@@ -243,7 +243,7 @@ fn preview_uses_the_clients_current_window_and_skips_missing_active_panes() {
                 window_client_draw(metadata.clone(), &mut writer, 40, 12);
             }
             assert_eq!(
-                crate::grid::grid_get_cell(RustScreen::grid(&output), 0, 0)
+                (RustScreen::grid(&output)).cell(0, 0)
                     .data
                     .data[0],
                 expected
@@ -260,7 +260,7 @@ fn preview_uses_the_clients_current_window_and_skips_missing_active_panes() {
             }
             let grid = RustScreen::grid(&output);
             assert!(
-                crate::grid::grid_string_cells(grid, 0, 0, grid.width(), None, 0, None)
+                (grid).string_cells(0, 0, grid.width(), None, 0, None)
                     .to_string_lossy()
                     .trim()
                     .is_empty()

@@ -46,8 +46,7 @@ use super::{
 };
 use super::{screen_write_ctx, screen_write_state};
 use crate::fmt_args;
-use crate::grid::{grid_default_cell, grid_string_cells};
-use crate::grid::{grid_view_get_cell, grid_view_set_cell, grid_view_set_padding};
+use crate::grid::{grid_default_cell};
 use crate::tests::test_fixtures::{
     Clients, Pane, Screen, Session, Tty, Window, ascii, globals, link, unlink, unlink_all,
 };
@@ -157,7 +156,7 @@ impl Writer {
     }
 
     fn cell_at(&mut self, px: u_int, py: u_int) -> grid_cell {
-        grid_view_get_cell(&*self.grid(), px, py)
+        (&*self.grid()).view_cell(px, py)
     }
 }
 
@@ -172,7 +171,7 @@ fn lines_of(gd: &grid) -> Vec<String> {
     {
         (0..(*gd).height())
             .map(|y| {
-                let p = grid_string_cells(&*gd, 0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
+                let p = (&*gd).string_cells(0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
                 p.to_string_lossy().trim_end().to_string()
             })
             .collect()
@@ -706,27 +705,27 @@ fn a_single_visible_column_is_redrawn_by_what_the_cell_holds() {
     let _over = Floating::over(base, window, 2, 0, 2, 1);
     unsafe {
         let two_bytes = cell(&[0xc3, 0xa9], 1);
-        grid_view_set_cell(w.grid_mut(), 0, 0, &two_bytes);
+        (w.grid_mut()).view_set_cell(0, 0, &two_bytes);
         w.move_to(3, 0);
         screen_write_clearcharacter(&mut w.ctx(), 1, 8);
-        let mut gc = grid_view_get_cell(&*w.grid(), 0, 0);
+        let mut gc = (&*w.grid()).view_cell(0, 0);
         assert_eq!(gc.data.size, 2);
 
         let mut chosen = ascii(b'a');
         chosen.flags |= GRID_FLAG_SELECTED as u_char;
-        grid_view_set_cell(w.grid_mut(), 0, 0, &chosen);
+        (w.grid_mut()).view_set_cell(0, 0, &chosen);
         let sel = grid_default_cell;
         w.pane
             .base_mut()
             .set_selection(0, 0, 0, 0, false, 0, 0, &sel);
         screen_write_clearcharacter(&mut w.ctx(), 1, 8);
         w.pane.base_mut().clear_selection();
-        gc = grid_view_get_cell(&*w.grid(), 0, 0);
+        gc = (&*w.grid()).view_cell(0, 0);
         assert_eq!(gc.flags as c_int & GRID_FLAG_SELECTED, GRID_FLAG_SELECTED);
 
         let mut plain = ascii(b'a');
         plain.flags = 0;
-        grid_view_set_cell(w.grid_mut(), 0, 0, &plain);
+        (w.grid_mut()).view_set_cell(0, 0, &plain);
         screen_write_clearcharacter(&mut w.ctx(), 1, 8);
     }
 }
@@ -974,8 +973,8 @@ fn padding_in_front_of_collected_text_is_erased_back_to_a_plain_cell() {
     w.puts("ab");
     w.flush();
     {
-        grid_view_set_padding(w.grid_mut(), 2, 0);
-        grid_view_set_padding(w.grid_mut(), 3, 0);
+        (w.grid_mut()).view_set_padding(2, 0);
+        (w.grid_mut()).view_set_padding(3, 0);
     }
     w.move_to(3, 0);
     w.collect("z");
@@ -1183,7 +1182,7 @@ fn a_join_in_a_row_nobody_can_see_is_made_but_not_written() {
     let acute = cell(ACUTE, 0);
     unsafe { screen_write_cell(&mut w.ctx(), &acute) };
     {
-        let gc = grid_view_get_cell(&*w.grid(), 0, 3);
+        let gc = (&*w.grid()).view_cell(0, 3);
         assert_eq!(gc.data.size, 3);
     }
 }

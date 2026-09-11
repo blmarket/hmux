@@ -11,7 +11,6 @@ pub use crate::consts::{
 };
 use crate::fmt_args;
 use crate::grid::grid_cells_look_equal;
-use crate::grid::grid_view_get_cell;
 use crate::grid::{grid_default_cell};
 use crate::log::{fatalx, log_debug, log_get_level};
 use crate::screen::Screen;
@@ -159,7 +158,7 @@ pub unsafe fn tty_draw_line(
         cx = 0 as u_int;
         i = px;
         while i < px.wrapping_add(nx) {
-            gc = grid_view_get_cell(s.grid(), i, py);
+            gc = (s.grid()).view_cell(i, py);
             if !(gc.flags as core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
                 break;
             }
@@ -169,7 +168,7 @@ pub unsafe fn tty_draw_line(
         if cx != 0 as u_int {
             i = px.wrapping_add(1 as u_int);
             while i > 0 as u_int {
-                gc = grid_view_get_cell(s.grid(), i.wrapping_sub(1 as u_int), py);
+                gc = (s.grid()).view_cell(i.wrapping_sub(1 as u_int), py);
                 if !(gc.flags as core::ffi::c_int) & GRID_FLAG_PADDING != 0 {
                     break;
                 }
@@ -228,7 +227,7 @@ pub unsafe fn tty_draw_line(
                     if i > nx {
                         fatalx(c"position %u > width %u", fmt_args![i, nx]);
                     }
-                    gc = grid_view_get_cell(s.grid(), px.wrapping_add(i), py);
+                    gc = (s.grid()).view_cell(px.wrapping_add(i), py);
                     gc = tty_check_codeset(tty, &gc);
                     gcp = &gc;
                     if gcp.flags as core::ffi::c_int & GRID_FLAG_SELECTED != 0 {

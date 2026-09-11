@@ -18,7 +18,6 @@
 
 use crate::grid::Grid as _;
 use crate::grid::{grid_default_cell};
-use crate::grid::{grid_view_set_cell, grid_view_set_padding};
 use crate::reactor::ByteBuffer;
 use crate::terminfo::TerminalCapabilities;
 use crate::tests::test_fixtures::{Screen, ascii, globals, zeroed_client, zeroed_term, zeroed_tty};

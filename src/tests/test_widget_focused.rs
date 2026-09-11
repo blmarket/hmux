@@ -1122,7 +1122,7 @@ fn drawing_preserves_nested_prefixes_alignment_and_tag_labels() {
         let grid = RustScreen::grid(&screen);
         let rows: Vec<_> = (0..6)
             .map(|y| {
-                crate::grid::grid_string_cells(grid, 0, grid.history_size() + y, grid.width(), None, 0, None)
+                (grid).string_cells(0, grid.history_size() + y, grid.width(), None, 0, None)
                     .to_string_lossy()
                     .trim_end()
                     .to_owned()
@@ -1177,7 +1177,7 @@ fn preview_callbacks_can_read_the_screen_and_release_tree_items() {
         let screen = tree.screen_handle().borrow();
         let grid = RustScreen::grid(&screen);
         assert_eq!(
-            crate::grid::grid_string_cells(grid, 2, grid.history_size() + 7, 16, None, 0, None).as_c_str(),
+            (grid).string_cells(2, grid.history_size() + 7, 16, None, 0, None).as_c_str(),
             c"retained preview"
         );
     }

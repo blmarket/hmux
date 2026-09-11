@@ -753,7 +753,7 @@ fn popup_screen_remains_owned_after_the_overlay_releases_it() {
         assert!(weak.upgrade().is_some());
         {
             let borrowed = screen.borrow();
-            let cell = crate::grid::grid_get_cell(RustScreen::grid(&borrowed), 0, 0);
+            let cell = (RustScreen::grid(&borrowed)).cell(0, 0);
             assert_eq!(cell.data.data[0], b'r');
             assert_eq!(borrowed.cursor().0, 8);
         }
@@ -803,7 +803,7 @@ fn popup_output_parsing_borrows_palette_metadata_separately_from_the_screen() {
         );
         let screen = owner.borrow().s.clone();
         let screen = screen.borrow();
-        let cell = crate::grid::grid_get_cell(RustScreen::grid(&screen), 0, 0);
+        let cell = (RustScreen::grid(&screen)).cell(0, 0);
         assert_eq!(cell.data.data[0], b'A');
     }
 }

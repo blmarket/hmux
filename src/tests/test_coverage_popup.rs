@@ -17,7 +17,6 @@
 
 use crate::grid::Grid as _;
 use crate::fmt_args;
-use crate::grid::grid_get_cell;
 
 use crate::overlay::{
     _PATH_BSHELL, _PATH_TMP, BOTTOM, BOX_LINES_DEFAULT, BOX_LINES_DOUBLE, BOX_LINES_HEAVY,
@@ -273,9 +272,9 @@ fn popup_write_feeds_the_job_stream_into_the_popup_screen_while_it_is_up() {
         assert!((*p.c).overlay_check().is_some());
         assert_eq!((*p.c).overlay_data().data().popup(), pd);
 
-        let mut gc = grid_get_cell(RustScreen::grid(&pd.borrow().s.borrow()), 0, 0);
+        let mut gc = (RustScreen::grid(&pd.borrow().s.borrow())).cell(0, 0);
         assert_eq!(gc.data.data[0], b'h');
-        gc = grid_get_cell(RustScreen::grid(&pd.borrow().s.borrow()), 1, 0);
+        gc = (RustScreen::grid(&pd.borrow().s.borrow())).cell(1, 0);
         assert_eq!(gc.data.data[0], b'i');
 
         server_client_clear_overlay(&mut *p.c);

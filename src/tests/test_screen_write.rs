@@ -1,8 +1,7 @@
+use crate::grid::Grid as _;
 use super::*;
 use crate::WindowPane;
 use crate::fmt_args;
-use crate::grid::grid_view_get_cell;
-use crate::grid::{grid_string_cells};
 use crate::options::OptionsRef;
 
 use crate::pane_identity::PaneIdentity;
@@ -61,7 +60,7 @@ impl Writer {
             let gd = self.grid();
             (0..(*gd).height())
                 .map(|y| {
-                    let p = grid_string_cells(&*gd, 0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
+                    let p = (&*gd).string_cells(0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -75,7 +74,7 @@ impl Writer {
             let gd = self.grid();
             (0..(*gd).history_size())
                 .map(|y| {
-                    let p = grid_string_cells(&*gd, 0, y, (*gd).width(), None, 0, None);
+                    let p = (&*gd).string_cells(0, y, (*gd).width(), None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -85,7 +84,7 @@ impl Writer {
     /// One cell of the visible screen.
     fn cell(&mut self, px: u_int, py: u_int) -> grid_cell {
         self.flush();
-        grid_view_get_cell(&*self.grid(), px, py)
+        (&*self.grid()).view_cell(px, py)
     }
 
     /// The background colour each cell of a line carries, which is what a
@@ -96,7 +95,7 @@ impl Writer {
             let gd = self.grid();
             (0..(*gd).width())
                 .map(|x| {
-                    let gc = grid_view_get_cell(&*gd, x, py);
+                    let gc = (&*gd).view_cell(x, py);
                     gc.bg
                 })
                 .collect()
@@ -135,7 +134,7 @@ impl Writer {
             let gd = self.grid();
             (0..(*gd).height())
                 .map(|y| {
-                    let p = grid_string_cells(&*gd, 0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
+                    let p = (&*gd).string_cells(0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -1286,7 +1285,7 @@ impl PaneWriter {
             let gd = RustScreen::grid_mut(self.pane.base_mut());
             (0..(*gd).height())
                 .map(|y| {
-                    let p = grid_string_cells(&*gd, 0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
+                    let p = (&*gd).string_cells(0, (*gd).history_size() + y, (*gd).width(), None, 0, None);
                     p.to_string_lossy().trim_end().to_string()
                 })
                 .collect()
@@ -1662,7 +1661,7 @@ fn a_pane_writer_falls_back_to_the_panes_own_screen() {
             writer.finish();
             assert_eq!((*wp).base().cursor(), (1, 0));
             assert_eq!(
-                grid_view_get_cell((*wp).base().grid(), 0, 0).data.data[0],
+                ((*wp).base().grid()).view_cell(0, 0).data.data[0],
                 b'x'
             );
             (*window.ptr()).offset_timer.disarm();

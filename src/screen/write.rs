@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 use crate::WindowPane;
 use crate::pane_identity::PaneIdentity;
 use crate::window_dimensions::WindowDimensionsState;
@@ -104,12 +105,6 @@ impl<'a> screen_write_ctx<'a> {
     }
 }
 
-use crate::grid::{
-    grid_view_clear, grid_view_clear_history, grid_view_delete_cells, grid_view_delete_lines,
-    grid_view_delete_lines_region, grid_view_get_cell, grid_view_insert_cells,
-    grid_view_insert_lines, grid_view_insert_lines_region, grid_view_scroll_region_down,
-    grid_view_scroll_region_up, grid_view_set_cell, grid_view_set_cells, grid_view_set_padding,
-};
 use crate::log::{fatalx, log_debug, log_get_level};
 
 use crate::reactor::Timer;
@@ -932,7 +927,7 @@ pub(super) unsafe fn screen_write_fast_copy(
                 if xx.wrapping_add(gc.data.width as u_int) > px.wrapping_add(nx) {
                     break;
                 }
-                grid_view_set_cell(RustScreen::grid_mut(s), sx, sy, &gc);
+                (RustScreen::grid_mut(s)).view_set_cell(sx, sy, &gc);
                 if !screen_redraw_is_visible(Some(&ranges), (xoff as u_int).wrapping_add(s.0.cx)) {
                     break;
                 }
@@ -1213,7 +1208,7 @@ pub(super) unsafe fn screen_write_preview(
             ny,
         );
         if src.0.mode & MODE_CURSOR != 0 {
-            gc = grid_view_get_cell(RustScreen::grid(src), src.0.cx, src.0.cy);
+            gc = (RustScreen::grid(src)).view_cell(src.0.cx, src.0.cy);
             gc.attr = (gc.attr as c_int | GRID_ATTR_REVERSE) as u_short;
             screen_write_set_cursor(
                 ctx,
@@ -1414,7 +1409,7 @@ unsafe fn screen_write_redraw_line(ctx: &mut screen_write_ctx, ttyctx: &mut tty_
                 );
                 continue;
             }
-            gc = grid_view_get_cell(RustScreen::grid(ctx.screen()), cx, yy);
+            gc = (RustScreen::grid(ctx.screen())).view_cell(cx, yy);
             if screen_write_cell_is_single(&gc) == 0 {
                 tty_write(
                     |tty, ttyctx| tty_cmd_redrawline(tty, ttyctx, ctx.screen()),
@@ -1493,7 +1488,7 @@ pub(super) unsafe fn screen_write_alignmenttest(ctx: &mut screen_write_ctx) {
         let grid = RustScreen::grid_mut(ctx.screen_mut());
         for yy in 0..grid.height() {
             for xx in 0..grid.width() {
-                grid_view_set_cell(grid, xx, yy, &gc);
+                (grid).view_set_cell(xx, yy, &gc);
             }
         }
         let lower = grid.height().wrapping_sub(1);
@@ -1537,7 +1532,7 @@ pub(super) unsafe fn screen_write_insertcharacter(
         ttyctx.bg = bg;
         let s = ctx.screen_mut();
         let (cx, cy) = s.cursor();
-        grid_view_insert_cells(RustScreen::grid_mut(s), cx, cy, nx, bg);
+        (RustScreen::grid_mut(s)).view_insert_cells(cx, cy, nx, bg);
         screen_write_collect_flush(ctx, 0, c"screen_write_insertcharacter");
         ttyctx.value = TtyCtxValue::Num(nx);
         write_or_redraw_line(ctx, &mut ttyctx, |tty, ctx, screen| {
@@ -1560,7 +1555,7 @@ pub(super) unsafe fn screen_write_deletecharacter(
         ttyctx.bg = bg;
         let s = ctx.screen_mut();
         let (cx, cy) = s.cursor();
-        grid_view_delete_cells(RustScreen::grid_mut(s), cx, cy, nx, bg);
+        (RustScreen::grid_mut(s)).view_delete_cells(cx, cy, nx, bg);
         screen_write_collect_flush(ctx, 0, c"screen_write_deletecharacter");
         ttyctx.value = TtyCtxValue::Num(nx);
         write_or_redraw_line(ctx, &mut ttyctx, |tty, ctx, screen| {
@@ -1579,7 +1574,7 @@ pub(super) unsafe fn screen_write_clearcharacter(ctx: &mut screen_write_ctx, nx:
         ttyctx.bg = bg;
         let s = ctx.screen_mut();
         let (cx, cy) = s.cursor();
-        grid_view_clear(RustScreen::grid_mut(s), cx, cy, nx, 1, bg);
+        (RustScreen::grid_mut(s)).view_clear(cx, cy, nx, 1, bg);
         screen_write_collect_flush(ctx, 0, c"screen_write_clearcharacter");
         ttyctx.value = TtyCtxValue::Num(nx);
         write_or_redraw_line(ctx, &mut ttyctx, |tty, ctx, screen| {
@@ -1626,7 +1621,7 @@ pub(super) unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, ny: u_i
             ttyctx.bg = bg;
             let s = ctx.screen_mut();
             let cy = s.0.cy;
-            grid_view_insert_lines(RustScreen::grid_mut(s), cy, ny, bg);
+            (RustScreen::grid_mut(s)).view_insert_lines(cy, ny, bg);
             screen_write_collect_flush(ctx, 0, c"screen_write_insertline");
             ttyctx.value = TtyCtxValue::Num(ny);
             write_or_redraw_pane(ctx, &mut ttyctx, |tty, ctx, screen| {
@@ -1639,7 +1634,7 @@ pub(super) unsafe fn screen_write_insertline(ctx: &mut screen_write_ctx, ny: u_i
         ttyctx.bg = bg;
         let s = ctx.screen_mut();
         let (cy, lower) = (s.0.cy, s.0.rlower);
-        grid_view_insert_lines_region(RustScreen::grid_mut(s), lower, cy, ny, bg);
+        (RustScreen::grid_mut(s)).view_insert_lines_region(lower, cy, ny, bg);
         screen_write_collect_flush(ctx, 0, c"screen_write_insertline");
         ttyctx.value = TtyCtxValue::Num(ny);
         write_or_redraw_pane(ctx, &mut ttyctx, |tty, ctx, screen| {
@@ -1656,7 +1651,7 @@ pub(super) unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, ny: u_i
             ttyctx.bg = bg;
             let s = ctx.screen_mut();
             let cy = s.0.cy;
-            grid_view_delete_lines(RustScreen::grid_mut(s), cy, ny, bg);
+            (RustScreen::grid_mut(s)).view_delete_lines(cy, ny, bg);
             screen_write_collect_flush(ctx, 0, c"screen_write_deleteline");
             ttyctx.value = TtyCtxValue::Num(ny);
             write_or_redraw_pane(ctx, &mut ttyctx, |tty, ctx, screen| {
@@ -1669,7 +1664,7 @@ pub(super) unsafe fn screen_write_deleteline(ctx: &mut screen_write_ctx, ny: u_i
         ttyctx.bg = bg;
         let s = ctx.screen_mut();
         let (cy, lower) = (s.0.cy, s.0.rlower);
-        grid_view_delete_lines_region(RustScreen::grid_mut(s), lower, cy, ny, bg);
+        (RustScreen::grid_mut(s)).view_delete_lines_region(lower, cy, ny, bg);
         screen_write_collect_flush(ctx, 0, c"screen_write_deleteline");
         ttyctx.value = TtyCtxValue::Num(ny);
         write_or_redraw_pane(ctx, &mut ttyctx, |tty, ctx, screen| {
@@ -1687,7 +1682,7 @@ pub(super) fn screen_write_clearline(ctx: &mut screen_write_ctx, bg: u_int) {
         if (grid).line_info(line).cells == 0 && (bg == 8 || bg == 9) {
             return;
         }
-        grid_view_clear(grid, 0, cy, sx, 1, bg);
+        (grid).view_clear(0, cy, sx, 1, bg);
         screen_write_collect_clear(ctx, cy, 1);
         with_citem(ci, |item| {
             item.x = 0;
@@ -1714,7 +1709,7 @@ pub(super) fn screen_write_clearendofline(ctx: &mut screen_write_ctx, bg: u_int)
         if cx > sx.wrapping_sub(1) || cx >= used && (bg == 8 || bg == 9) {
             return;
         }
-        grid_view_clear(grid, cx, cy, sx.wrapping_sub(cx), 1, bg);
+        (grid).view_clear(cx, cy, sx.wrapping_sub(cx), 1, bg);
         with_citem(ci, |item| {
             item.x = cx;
             item.used = sx.wrapping_sub(cx);
@@ -1739,14 +1734,11 @@ pub(super) fn screen_write_clearstartofline(ctx: &mut screen_write_ctx, bg: u_in
             screen_write_clearline(ctx, bg);
             return;
         }
-        grid_view_clear(
-            RustScreen::grid_mut(ctx.screen_mut()),
-            0,
+        (RustScreen::grid_mut(ctx.screen_mut())).view_clear(0,
             cy,
             cx.wrapping_add(1),
             1,
-            bg,
-        );
+            bg);
         with_citem(ci, |item| {
             item.x = 0;
             item.used = cx.wrapping_add(1);
@@ -1790,7 +1782,7 @@ pub(super) unsafe fn screen_write_reverseindex(ctx: &mut screen_write_ctx, bg: u
         let s = ctx.screen_mut();
         let (cy, upper, lower) = (s.0.cy, s.0.rupper, s.0.rlower);
         if cy == upper {
-            grid_view_scroll_region_down(RustScreen::grid_mut(s), upper, lower, bg);
+            (RustScreen::grid_mut(s)).view_scroll_region_down(upper, lower, bg);
             screen_write_collect_flush(ctx, 0, c"screen_write_reverseindex");
             let mut ttyctx = tty_ctx::default();
             screen_write_initctx(ctx, &mut ttyctx, 1, 1);
@@ -1846,7 +1838,7 @@ pub(super) unsafe fn screen_write_linefeed(ctx: &mut screen_write_ctx, wrapped: 
         let s = ctx.screen_mut();
         let (cy, upper, lower) = (s.0.cy, s.0.rupper, s.0.rlower);
         if cy == lower {
-            grid_view_scroll_region_up(RustScreen::grid_mut(s), upper, lower, bg);
+            (RustScreen::grid_mut(s)).view_scroll_region_up(upper, lower, bg);
             screen_write_collect_scroll(ctx, bg);
             ctx.scrolled = ctx.scrolled.wrapping_add(1);
         } else if cy < RustScreen::grid(s).height().wrapping_sub(1) {
@@ -1878,7 +1870,7 @@ pub(super) unsafe fn screen_write_scrollup(ctx: &mut screen_write_ctx, lines: u_
         for _ in 0..lines {
             let s = ctx.screen_mut();
             let (upper, lower) = (s.0.rupper, s.0.rlower);
-            grid_view_scroll_region_up(RustScreen::grid_mut(s), upper, lower, bg);
+            (RustScreen::grid_mut(s)).view_scroll_region_up(upper, lower, bg);
             screen_write_collect_scroll(ctx, bg);
         }
         ctx.scrolled = ctx.scrolled.wrapping_add(lines);
@@ -1893,7 +1885,7 @@ pub(super) unsafe fn screen_write_scrolldown(ctx: &mut screen_write_ctx, lines: 
         for _ in 0..lines {
             let s = ctx.screen_mut();
             let (upper, lower) = (s.0.rupper, s.0.rlower);
-            grid_view_scroll_region_down(RustScreen::grid_mut(s), upper, lower, bg);
+            (RustScreen::grid_mut(s)).view_scroll_region_down(upper, lower, bg);
         }
         screen_write_collect_flush(ctx, 0, c"screen_write_scrolldown");
         ttyctx.value = TtyCtxValue::Num(lines);
@@ -1963,26 +1955,20 @@ pub(super) unsafe fn screen_write_clearendofscreen(ctx: &mut screen_write_ctx, b
                 .pane()
                 .is_some_and(|pane| (pane.options_ref()).number(c"scroll-on-clear") != 0)
         {
-            grid_view_clear_history(RustScreen::grid_mut(ctx.screen_mut()), bg);
+            (RustScreen::grid_mut(ctx.screen_mut())).view_clear_history(bg);
         } else {
             if cx <= sx.wrapping_sub(1) {
-                grid_view_clear(
-                    RustScreen::grid_mut(ctx.screen_mut()),
-                    cx,
+                (RustScreen::grid_mut(ctx.screen_mut())).view_clear(cx,
                     cy,
                     sx.wrapping_sub(cx),
                     1,
-                    bg,
-                );
+                    bg);
             }
-            grid_view_clear(
-                RustScreen::grid_mut(ctx.screen_mut()),
-                0,
+            (RustScreen::grid_mut(ctx.screen_mut())).view_clear(0,
                 cy.wrapping_add(1),
                 sx,
                 sy.wrapping_sub(cy.wrapping_add(1)),
-                bg,
-            );
+                bg);
         }
         screen_write_collect_clear(ctx, cy.wrapping_add(1), sy.wrapping_sub(cy.wrapping_add(1)));
         screen_write_collect_flush(ctx, 0, c"screen_write_clearendofscreen");
@@ -2020,19 +2006,16 @@ pub(super) unsafe fn screen_write_clearstartofscreen(ctx: &mut screen_write_ctx,
         ttyctx.bg = bg;
         let (cx, cy) = ctx.screen().cursor();
         if cy > 0 {
-            grid_view_clear(RustScreen::grid_mut(ctx.screen_mut()), 0, 0, sx, cy, bg);
+            (RustScreen::grid_mut(ctx.screen_mut())).view_clear(0, 0, sx, cy, bg);
         }
         if cx > sx.wrapping_sub(1) {
-            grid_view_clear(RustScreen::grid_mut(ctx.screen_mut()), 0, cy, sx, 1, bg);
+            (RustScreen::grid_mut(ctx.screen_mut())).view_clear(0, cy, sx, 1, bg);
         } else {
-            grid_view_clear(
-                RustScreen::grid_mut(ctx.screen_mut()),
-                0,
+            (RustScreen::grid_mut(ctx.screen_mut())).view_clear(0,
                 cy,
                 cx.wrapping_add(1),
                 1,
-                bg,
-            );
+                bg);
         }
         screen_write_collect_clear(ctx, 0, cy);
         screen_write_collect_flush(ctx, 0, c"screen_write_clearstartofscreen");
@@ -2069,9 +2052,9 @@ pub(super) unsafe fn screen_write_clearscreen(ctx: &mut screen_write_ctx, bg: u_
                 .pane()
                 .is_some_and(|pane| (pane.options_ref()).number(c"scroll-on-clear") != 0)
         {
-            grid_view_clear_history(RustScreen::grid_mut(ctx.screen_mut()), bg);
+            (RustScreen::grid_mut(ctx.screen_mut())).view_clear_history(bg);
         } else {
-            grid_view_clear(RustScreen::grid_mut(ctx.screen_mut()), 0, 0, sx, sy, bg);
+            (RustScreen::grid_mut(ctx.screen_mut())).view_clear(0, 0, sx, sy, bg);
         }
         screen_write_collect_clear(ctx, 0, sy);
         if !pane_obscured(&ttyctx) {
@@ -2553,11 +2536,11 @@ pub(super) unsafe fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
         if s.0.cx != 0 {
             let mut xx = s.0.cx;
             while xx > 0 {
-                gc = grid_view_get_cell(RustScreen::grid(s), xx, s.0.cy);
+                gc = (RustScreen::grid(s)).view_cell(xx, s.0.cy);
                 if !(gc.flags as c_int) & GRID_FLAG_PADDING != 0 {
                     break;
                 }
-                grid_view_set_cell(RustScreen::grid_mut(s), xx, cy, &grid_default_cell);
+                (RustScreen::grid_mut(s)).view_set_cell(xx, cy, &grid_default_cell);
                 log_debug(
                     c"%s: padding erased (before) at %u (cx %u)",
                     fmt_args![name, xx, s.0.cx],
@@ -2566,10 +2549,10 @@ pub(super) unsafe fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
             }
             if xx != s.0.cx {
                 if xx == 0 {
-                    gc = grid_view_get_cell(RustScreen::grid(s), 0, s.0.cy);
+                    gc = (RustScreen::grid(s)).view_cell(0, s.0.cy);
                 }
                 if gc.data.width as c_int > 1 || gc.flags as c_int & GRID_FLAG_PADDING != 0 {
-                    grid_view_set_cell(RustScreen::grid_mut(s), xx, cy, &grid_default_cell);
+                    (RustScreen::grid_mut(s)).view_set_cell(xx, cy, &grid_default_cell);
                     log_debug(
                         c"%s: padding erased (before) at %u (cx %u)",
                         fmt_args![name, xx, s.0.cx],
@@ -2589,13 +2572,10 @@ pub(super) unsafe fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
                 );
             }
         }
-        grid_view_set_cells(
-            s.0.grid.as_deref_mut().expect("a screen holds a grid"),
-            s.0.cx,
+        (s.0.grid.as_deref_mut().expect("a screen holds a grid")).view_set_cells(s.0.cx,
             s.0.cy,
             &item.gc,
-            &line_text(&s.0.write_list[cy as usize])[item.x as usize..][..item.used as usize],
-        );
+            &line_text(&s.0.write_list[cy as usize])[item.x as usize..][..item.used as usize]);
         if bci != CITEM_NONE {
             screen_write_collect_insert(ctx, bci);
         }
@@ -2605,11 +2585,11 @@ pub(super) unsafe fn screen_write_collect_end(ctx: &mut screen_write_ctx) {
         let cy = s.0.cy;
         let mut xx = s.0.cx;
         while xx < RustScreen::grid(s).width() {
-            gc = grid_view_get_cell(RustScreen::grid(s), xx, s.0.cy);
+            gc = (RustScreen::grid(s)).view_cell(xx, s.0.cy);
             if !(gc.flags as c_int) & GRID_FLAG_PADDING != 0 {
                 break;
             }
-            grid_view_set_cell(RustScreen::grid_mut(s), xx, cy, &grid_default_cell);
+            (RustScreen::grid_mut(s)).view_set_cell(xx, cy, &grid_default_cell);
             log_debug(
                 c"%s: padding erased (after) at %u (cx %u)",
                 fmt_args![name, xx, s.0.cx],
@@ -2712,7 +2692,7 @@ pub(super) unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cel
         }
         if s.0.mode & MODE_INSERT != 0 {
             let (cx, cy) = s.cursor();
-            grid_view_insert_cells(RustScreen::grid_mut(s), cx, cy, width, 8);
+            (RustScreen::grid_mut(s)).view_insert_cells(cx, cy, width, 8);
             skip = false;
         }
         if s.0.mode & MODE_WRAP != 0 && s.0.cx > sx.wrapping_sub(width) {
@@ -2735,7 +2715,7 @@ pub(super) unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cel
         let line_y = gd.history_size().wrapping_add(cy);
         let extended = (gd).line_info(line_y).flags & GRID_LINE_EXTENDED != 0;
         if extended {
-            now_gc = grid_view_get_cell(gd, cx, cy);
+            now_gc = (gd).view_cell(cx, cy);
             if screen_write_overwrite(ctx, &mut now_gc, width) != 0 {
                 redraw = true;
                 skip = false;
@@ -2750,7 +2730,7 @@ pub(super) unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cel
                 c"%s: new padding at %u,%u",
                 fmt_args![c"screen_write_cell", xx, cy],
             );
-            grid_view_set_padding(gd, xx, cy);
+            (gd).view_set_padding(xx, cy);
             skip = false;
             xx = xx.wrapping_add(1);
         }
@@ -2763,13 +2743,13 @@ pub(super) unsafe fn screen_write_cell(ctx: &mut screen_write_ctx, gc: &grid_cel
         if selected != 0 && gc.flags as c_int & GRID_FLAG_SELECTED == 0 {
             tmp_gc = *gc;
             tmp_gc.flags = (tmp_gc.flags as c_int | GRID_FLAG_SELECTED) as u_char;
-            grid_view_set_cell(gd, cx, cy, &tmp_gc);
+            (gd).view_set_cell(cx, cy, &tmp_gc);
         } else if selected == 0 && gc.flags as c_int & GRID_FLAG_SELECTED != 0 {
             tmp_gc = *gc;
             tmp_gc.flags = (tmp_gc.flags as c_int & !GRID_FLAG_SELECTED) as u_char;
-            grid_view_set_cell(gd, cx, cy, &tmp_gc);
+            (gd).view_set_cell(cx, cy, &tmp_gc);
         } else if !skip {
-            grid_view_set_cell(gd, cx, cy, gc);
+            (gd).view_set_cell(cx, cy, gc);
         }
         if selected != 0 {
             skip = false;
@@ -2889,10 +2869,10 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> c_
         );
         n = 1;
         let gd = RustScreen::grid(ctx.screen());
-        last = grid_view_get_cell(gd, cx.wrapping_sub(n), cy);
+        last = (gd).view_cell(cx.wrapping_sub(n), cy);
         if cx != 1 && last.flags as c_int & GRID_FLAG_PADDING != 0 {
             n = 2;
-            last = grid_view_get_cell(gd, cx.wrapping_sub(n), cy);
+            last = (gd).view_cell(cx.wrapping_sub(n), cy);
         }
         if n != last.data.width as u_int || last.flags as c_int & GRID_FLAG_PADDING != 0 {
             return zero_width as c_int;
@@ -2944,9 +2924,9 @@ unsafe fn screen_write_combine(ctx: &mut screen_write_ctx, gc: &grid_cell) -> c_
             force_wide = false;
         }
         let gd = RustScreen::grid_mut(ctx.screen_mut());
-        grid_view_set_cell(gd, cx.wrapping_sub(n), cy, &last);
+        (gd).view_set_cell(cx.wrapping_sub(n), cy, &last);
         if force_wide {
-            grid_view_set_padding(gd, cx.wrapping_sub(1), cy);
+            (gd).view_set_padding(cx.wrapping_sub(1), cy);
         }
         let yoff = ctx.pane().map_or(0, |pane| pane.geometry().yoff as u_int);
         let mut ranges = visible_ranges::default();
@@ -2988,7 +2968,7 @@ fn screen_write_overwrite(ctx: &mut screen_write_ctx, gc: &mut grid_cell, width:
     if gc.flags as c_int & GRID_FLAG_PADDING != 0 {
         let mut xx = cx;
         while xx > 0 {
-            tmp_gc = grid_view_get_cell(gd, xx, cy);
+            tmp_gc = (gd).view_cell(xx, cy);
             if tmp_gc.flags as c_int & GRID_FLAG_PADDING == 0 {
                 break;
             }
@@ -2996,20 +2976,20 @@ fn screen_write_overwrite(ctx: &mut screen_write_ctx, gc: &mut grid_cell, width:
                 c"%s: padding at %u,%u",
                 fmt_args![c"screen_write_overwrite", xx, cy],
             );
-            grid_view_set_cell(gd, xx, cy, &grid_default_cell);
+            (gd).view_set_cell(xx, cy, &grid_default_cell);
             xx = xx.wrapping_sub(1);
         }
         log_debug(
             c"%s: character at %u,%u",
             fmt_args![c"screen_write_overwrite", xx, cy],
         );
-        grid_view_set_cell(gd, xx, cy, &grid_default_cell);
+        (gd).view_set_cell(xx, cy, &grid_default_cell);
         done = 1;
     }
     if width != 1 || gc.data.width as c_int != 1 || gc.flags as c_int & GRID_FLAG_PADDING != 0 {
         let mut xx = cx.wrapping_add(width);
         while xx < gd.width() {
-            tmp_gc = grid_view_get_cell(gd, xx, cy);
+            tmp_gc = (gd).view_cell(xx, cy);
             if tmp_gc.flags as c_int & GRID_FLAG_PADDING == 0 {
                 break;
             }
@@ -3024,9 +3004,9 @@ fn screen_write_overwrite(ctx: &mut screen_write_ctx, gc: &mut grid_cell, width:
                 tmp_gc.data.have = 1;
                 tmp_gc.data.size = tmp_gc.data.have;
                 tmp_gc.data.width = tmp_gc.data.size;
-                grid_view_set_cell(gd, xx, cy, &tmp_gc);
+                (gd).view_set_cell(xx, cy, &tmp_gc);
             } else {
-                grid_view_set_cell(gd, xx, cy, &grid_default_cell);
+                (gd).view_set_cell(xx, cy, &grid_default_cell);
             }
             done = 1;
             xx = xx.wrapping_add(1);

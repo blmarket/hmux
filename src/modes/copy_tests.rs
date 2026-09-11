@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 use crate::WindowPane;
 use crate::options::OptionsRef;
 use crate::pane_geometry::PaneGeometryState;
@@ -5,7 +6,7 @@ use crate::pane_identity::PaneIdentity;
 use crate::pane_scrollbar::{PaneScrollbarSlider};
 
 use super::*;
-use crate::grid::{grid_create, grid_get_cell, grid_scroll_history, grid_set_cell};
+use crate::grid::{grid_create};
 use crate::tests::test_fixtures::{Args, Pane, Target, Window, ascii, globals};
 
 unsafe fn open_copy(target: &mut Target) -> &mut window_mode_entry {
@@ -97,11 +98,8 @@ fn refresh_keeps_the_snapshot_after_its_source_pane_is_destroyed() {
             backing_address
         );
         assert_eq!(
-            grid_get_cell(
-                RustScreen::grid(window_copy_get_screen(state.wme).unwrap()),
-                0,
-                0
-            )
+            (RustScreen::grid(window_copy_get_screen(state.wme).unwrap())).cell(0,
+                0)
             .data
             .data[0],
             b'X'
@@ -124,7 +122,7 @@ fn search_primitives_cover_plain_regex_wrapped_and_cell_position_paths() {
         );
         let mut needle = grid_create(3, 1, 0);
         for (x, byte) in b"two".iter().copied().enumerate() {
-            grid_set_cell(&mut needle, x as u_int, 0, &ascii(byte));
+            (&mut needle).set_cell(x as u_int, 0, &ascii(byte));
         }
         assert_eq!(
             window_copy_search_lr(gd, &needle, gd.history_size(), 0, gd.width(), 0),
@@ -136,10 +134,10 @@ fn search_primitives_cover_plain_regex_wrapped_and_cell_position_paths() {
         );
         assert!(window_copy_search_lr(gd, &needle, gd.history_size(), 5, gd.width(), 0).is_none());
         let mut upper = ascii(b'T');
-        grid_set_cell(&mut needle, 0, 0, &upper);
+        (&mut needle).set_cell(0, 0, &upper);
         assert!(window_copy_search_lr(gd, &needle, gd.history_size(), 0, gd.width(), 1).is_none());
         upper.data.width = 2;
-        grid_set_cell(&mut needle, 0, 0, &upper);
+        (&mut needle).set_cell(0, 0, &upper);
         assert!(window_copy_search_lr(gd, &needle, gd.history_size(), 0, gd.width(), 0).is_none());
 
         let sx = gd.width();
@@ -1311,7 +1309,7 @@ fn retire_covered_copy_mode(all: bool) {
         assert!(window_pane_find_by_id(100).is_none());
         assert_eq!(display.borrow().cursor(), (4, 0));
         assert_eq!(display.borrow().size(), (18, 6));
-        let text = crate::grid::grid_string_cells(display.borrow().grid(), 0, 0, 10, None, 0, None);
+        let text = (display.borrow().grid()).string_cells(0, 0, 10, None, 0, None);
         assert_eq!(text.as_c_str(), c"4:retiring");
         drop(display);
         assert!(observer.upgrade().is_none());

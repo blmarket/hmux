@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 use crate::WindowPane;
 use crate::options::OptionsRef;
 use crate::pane_geometry::PaneGeometryState;
@@ -777,7 +778,7 @@ fn pane_status_generation_tracks_formats_widths_and_owner_lifetime() {
         assert_eq!(wp.status_line_width(), 8);
         assert!(wp.border_status_range(0).is_some());
         assert_eq!(
-            crate::grid::grid_string_cells(wp.status_screen().grid(), 0, 0, 7, None, 0, None)
+            (wp.status_screen().grid()).string_cells(0, 0, 7, None, 0, None)
                 .as_bytes(),
             b"0:alpha"
         );
@@ -804,7 +805,7 @@ fn pane_status_generation_tracks_formats_widths_and_owner_lifetime() {
         let wp = pane.get().unwrap();
         assert!(wp.border_status_range(0).is_none());
         assert_eq!(
-            crate::grid::grid_string_cells(wp.status_screen().grid(), 0, 0, 4, None, 0, None)
+            (wp.status_screen().grid()).string_cells(0, 0, 4, None, 0, None)
                 .as_bytes(),
             b"beta"
         );

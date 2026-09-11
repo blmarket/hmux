@@ -1,3 +1,4 @@
+use crate::grid::Grid as _;
 use super::*;
 use crate::WindowPane;
 use crate::server::client_ref_of;
@@ -69,8 +70,7 @@ fn a_load_names_no_client_once_the_one_it_ran_for_has_gone() {
 
 #[test]
 fn causes_wait_for_an_active_pane_and_append_to_view_mode() {
-    use crate::grid::grid_string_cells;
-
+    
     use crate::tests::test_fixtures::{Target, ensure_reactor};
 
     let _guard = globals();
@@ -109,11 +109,11 @@ fn causes_wait_for_an_active_pane_and_append_to_view_mode() {
         };
         let backing = data.backing.as_deref().unwrap();
         assert_eq!(
-            grid_string_cells(backing.grid(), 0, 0, 80, None, 0, None).as_c_str(),
+            (backing.grid()).string_cells(0, 0, 80, None, 0, None).as_c_str(),
             c"pending configuration error"
         );
         assert_eq!(
-            grid_string_cells(backing.grid(), 0, 1, 80, None, 0, None).as_c_str(),
+            (backing.grid()).string_cells(0, 1, 80, None, 0, None).as_c_str(),
             c"another configuration error"
         );
         drop(target);

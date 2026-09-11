@@ -1,11 +1,10 @@
+use crate::grid::Grid as _;
 use super::RustScreen;
 use super::write::{screen_write_free_list, screen_write_make_list};
 use crate::fmt_args;
 use crate::grid::{
-    Grid, RustGrid, grid_create, grid_default_cell,
-};
+    Grid, RustGrid, grid_create, grid_default_cell};
 use crate::grid::{Hyperlinks, RustHyperlinks};
-use crate::grid::{grid_view_clear, grid_view_delete_lines};
 use crate::log::{fatalx, log_debug};
 
 use crate::text::utf8_copy;
@@ -843,7 +842,7 @@ pub fn screen_alternate_on(s: &mut RustScreen, gc: &grid_cell, cursor: c_int) {
         }
         s.0.saved_cell = *gc;
 
-        grid_view_clear(gd, 0, 0, sx, sy, 8);
+        (gd).view_clear(0, 0, sx, sy, 8);
 
         s.0.saved_history = gd.history_enabled();
         gd.set_history_enabled(false);
@@ -1009,10 +1008,10 @@ impl RustScreen {
         self.grid_mut().set_cell(x, y, cell);
     }
     pub(crate) fn write_test_visible_cell(&mut self, x: u_int, y: u_int, cell: &grid_cell) {
-        crate::grid::grid_view_set_cell(self.grid_mut(), x, y, cell);
+        (self.grid_mut()).view_set_cell(x, y, cell);
     }
     pub(crate) fn write_test_visible_padding(&mut self, x: u_int, y: u_int) {
-        crate::grid::grid_view_set_padding(self.grid_mut(), x, y);
+        (self.grid_mut()).view_set_padding(x, y);
     }
     pub(crate) fn scroll_test_history(&mut self, bg: u_int) {
         self.grid_mut().scroll_history(bg);
