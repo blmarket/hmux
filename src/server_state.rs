@@ -35,7 +35,7 @@ pub(crate) struct ServerState {
     pub(crate) file_test_events: RefCell<Vec<(i32, Vec<u8>, Vec<u8>)>>,
     #[cfg(test)]
     pub(crate) prompt_test_answers: RefCell<Vec<(String, c_int)>>,
-    pub(crate) citem_pool: Rc<RefCell<crate::screen::write::CItemPool>>,
+    citem_pool: Rc<RefCell<crate::screen::CItemPool>>,
     pub(crate) clients: RefCell<clients_t>,
     pub(crate) process: RefCell<Option<ProcessRef>>,
     pub(crate) server_fd: RefCell<c_int>,
@@ -159,7 +159,7 @@ impl ServerState {
             menu_test_choice: Cell::new(usize::MAX),
             #[cfg(test)]
             prompt_test_answers: RefCell::new(Vec::new()),
-            citem_pool: Rc::new(RefCell::new(crate::screen::write::CItemPool::new())),
+            citem_pool: Rc::new(RefCell::new(crate::screen::CItemPool::new())),
             clients: const { RefCell::new(Vec::new()) },
             process: RefCell::new(None),
             server_fd: RefCell::new(-1),
@@ -390,5 +390,11 @@ mod tests {
             assert_eq!(*state.bsdoptind.borrow(), 4);
             assert_eq!(state.log_level.get(), 2);
         });
+    }
+}
+
+impl ServerState {
+    pub(crate) fn citem_pool(&self, _: crate::screen::CItemPoolAccess) -> &Rc<RefCell<crate::screen::CItemPool>> {
+        &self.citem_pool
     }
 }

@@ -1,5 +1,5 @@
 use super::RustScreen;
-use super::write::{screen_write_free_list, screen_write_make_list};
+use super::write::{screen_write_cline, screen_write_free_list, screen_write_make_list};
 use crate::fmt_args;
 use crate::grid::Grid as _;
 use crate::grid::{Grid, RustGrid, grid_create, grid_default_cell};

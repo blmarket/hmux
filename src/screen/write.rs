@@ -130,7 +130,7 @@ pub use crate::types::*;
 use crate::window::{window_pane_is_floating, window_ref_of};
 use ::core::ffi::{CStr, c_int, c_uint};
 #[repr(C)]
-pub struct screen_write_cline {
+pub(crate) struct screen_write_cline {
     pub data: Option<Box<[u8]>>,
     /// What the line has collected, left to right. The items belong to the
     /// line until they go back to the free list.
@@ -141,7 +141,7 @@ pub struct screen_write_cline {
 pub type citems = Vec<CItem>;
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
-pub struct screen_write_citem {
+pub(crate) struct screen_write_citem {
     pub x: u_int,
     pub wrapped: c_int,
     pub type_0: screen_write_citem_type,
@@ -176,11 +176,13 @@ pub const PANE_DROP: c_int = 0x2;
 /// given back to the allocator, so an index stays good for the life of the
 /// server — which is what lets `screen_write_collect_trim` read the wrapped
 /// flag of an item it has just given up.
-pub type CItem = u32;
+pub(super) type CItem = u32;
 
 /// The index no item has, which a context carries before it is started and
 /// after it is stopped.
 pub const CITEM_NONE: CItem = CItem::MAX;
+
+pub(crate) struct CItemPoolAccess(());
 
 pub(crate) struct CItemPool {
     items: std::collections::VecDeque<screen_write_citem>,
@@ -215,7 +217,7 @@ fn next_citem_index(len: usize) -> CItem {
 
 const CITEM_POOL_FIELD: crate::server_state::LocalField<
     std::rc::Rc<std::cell::RefCell<CItemPool>>,
-> = crate::server_state::LocalField::new(|state| &state.citem_pool);
+> = crate::server_state::LocalField::new(|state| state.citem_pool(CItemPoolAccess(())));
 
 /// The items of one line, as a snapshot that a walk may take from.
 fn citem_list(head: &citems) -> Vec<CItem> {

@@ -55,8 +55,8 @@ pub use crate::overlay::{PopupDataRef, PopupDataWeak, popup_data};
 pub use crate::proc::tmuxpeer;
 pub use crate::proc::{PeerRef, ProcessRef, tmuxproc};
 use crate::prompt_history::PromptHistoryType;
-pub use crate::screen::screen_write_citem;
-pub use crate::screen::screen_write_cline;
+#[cfg(test)]
+pub(crate) use crate::screen::screen_write_cline;
 pub use crate::session::session;
 pub use crate::session::{session_group, session_groups_t};
 pub use crate::status::status_prompt_menu;

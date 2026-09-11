@@ -10,7 +10,7 @@ pub use handles::{ScreenBorrow, ScreenMut};
 pub(crate) use handles::{ScreenRef, ScreenWeak};
 mod redraw;
 mod state;
-pub(crate) mod write;
+mod write;
 mod writer;
 
 pub use draw::{format_trim_left, format_trim_right, format_width};
@@ -41,7 +41,9 @@ pub use state::{
 };
 pub(crate) use state::{MODE_SYNC, screen_mode_to_string};
 pub(crate) use write::screen_write_init_ctx;
-pub use write::{CItem, screen_write_citem, screen_write_cline};
+pub(crate) use write::{CItemPool, CItemPoolAccess};
+#[cfg(test)]
+pub(crate) use write::screen_write_cline;
 #[cfg(test)]
 pub(crate) use write::{GRID_LINE_WRAPPED, TTY_CTX_PANE_OBSCURED, citem_snapshot};
 pub(crate) use writer::{
