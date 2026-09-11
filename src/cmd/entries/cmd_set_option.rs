@@ -356,11 +356,9 @@ unsafe fn cmd_set_option_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                     current_block = 16446286653754202049;
                                 } else {
                                     if !has_local {
-                                        {
-                                            store.insert_empty(
-                                                parent_entry.expect("array has a definition"),
-                                            )
-                                        };
+                                        store.insert_empty(
+                                            parent_entry.expect("array has a definition"),
+                                        );
                                     }
                                     let result = store.with_entry_mut(&name, true, |entry| {
                                         let entry = entry.expect("local array was initialized");

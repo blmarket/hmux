@@ -129,15 +129,14 @@ unsafe fn cmd_split_window_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             args.argument_flag_count(flag)
         }
     };
-    if {
-        empty != 0
+    if empty != 0
             && count != 0 as u_int
             && (count != 1 as u_int
                 || !args
                     .argument_string(0)
                     .expect("argument count checked")
                     .is_empty())
-    } {
+    {
         unsafe { item.error(c"command cannot be given for empty pane", fmt_args![]) };
         return CMD_RETURN_ERROR;
     }

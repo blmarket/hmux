@@ -603,12 +603,12 @@ unsafe fn popup_handle_drag(c: &mut client, pd: &mut popup_data, m: &mouse_event
             pd.psx = pd.sx;
             pd.psy = pd.sy;
             if pd.border_lines as core::ffi::c_int == BOX_LINES_NONE as core::ffi::c_int {
-                (&mut pd.s.borrow_mut()).resize(pd.sx, pd.sy, 0 as core::ffi::c_int);
+                pd.s.borrow_mut().resize(pd.sx, pd.sy, 0 as core::ffi::c_int);
                 if let Some(id) = pd.job {
                     job_resize(id, pd.sx, pd.sy);
                 }
             } else {
-                (&mut pd.s.borrow_mut()).resize(pd.sx.wrapping_sub(2 as u_int),
+                pd.s.borrow_mut().resize(pd.sx.wrapping_sub(2 as u_int),
                     pd.sy.wrapping_sub(2 as u_int),
                     0 as core::ffi::c_int);
                 if let Some(id) = pd.job {
@@ -740,14 +740,14 @@ pub unsafe fn popup_modify(
             if lines as core::ffi::c_int == BOX_LINES_NONE as core::ffi::c_int
                 && pd.border_lines as core::ffi::c_int != lines as core::ffi::c_int
             {
-                (&mut pd.s.borrow_mut()).resize(pd.sx, pd.sy, 1 as core::ffi::c_int);
+                pd.s.borrow_mut().resize(pd.sx, pd.sy, 1 as core::ffi::c_int);
                 if let Some(id) = pd.job {
                     job_resize(id, pd.sx, pd.sy);
                 }
             } else if pd.border_lines as core::ffi::c_int == BOX_LINES_NONE as core::ffi::c_int
                 && pd.border_lines as core::ffi::c_int != lines as core::ffi::c_int
             {
-                (&mut pd.s.borrow_mut()).resize(pd.sx.wrapping_sub(2 as u_int),
+                pd.s.borrow_mut().resize(pd.sx.wrapping_sub(2 as u_int),
                     pd.sy.wrapping_sub(2 as u_int),
                     1 as core::ffi::c_int);
                 if let Some(id) = pd.job {
@@ -1214,12 +1214,12 @@ impl PopupDataRef {
                 pd.px = pd.ppx;
             }
             if pd.border_lines as core::ffi::c_int == BOX_LINES_NONE as core::ffi::c_int {
-                (&mut pd.s.borrow_mut()).resize(pd.sx, pd.sy, 0 as core::ffi::c_int);
+                pd.s.borrow_mut().resize(pd.sx, pd.sy, 0 as core::ffi::c_int);
                 if let Some(id) = pd.job {
                     job_resize(id, pd.sx, pd.sy);
                 }
             } else if pd.sx > 2 as u_int && pd.sy > 2 as u_int {
-                (&mut pd.s.borrow_mut()).resize(pd.sx.wrapping_sub(2 as u_int),
+                pd.s.borrow_mut().resize(pd.sx.wrapping_sub(2 as u_int),
                     pd.sy.wrapping_sub(2 as u_int),
                     0 as core::ffi::c_int);
                 if let Some(id) = pd.job {

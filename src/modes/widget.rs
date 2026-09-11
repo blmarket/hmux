@@ -1142,7 +1142,7 @@ impl ModeTreeDataRef {
             if owner.borrow().pane().is_none() {
                 return;
             }
-            (&mut owner.screen_handle().borrow_mut()).resize(sx, sy, 0);
+            owner.screen_handle().borrow_mut().resize(sx, sy, 0);
             owner.build();
             owner.draw();
             owner.borrow().redraw_pane();

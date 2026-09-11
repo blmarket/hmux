@@ -583,7 +583,7 @@ impl WindowBufferModeDataRef {
                     }
                     68 => {
                         tree.each_tagged(
-                            |modedata, itemdata| window_buffer_do_delete(modedata, itemdata),
+                            window_buffer_do_delete,
                             0 as core::ffi::c_int,
                         );
                         tree.build();

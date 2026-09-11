@@ -156,9 +156,7 @@ unsafe fn cmd_break_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         }
         unsafe { window.finish_broken_pane_layout(&source_pane) };
         if index == -1 {
-            {
-                index = (-1 - destination.options().number(c"base-index")) as c_int
-            };
+            index = (-1 - destination.options().number(c"base-index")) as c_int;
         }
         let mut cause = None;
         unsafe {

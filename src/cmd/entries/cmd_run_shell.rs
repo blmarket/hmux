@@ -160,14 +160,12 @@ unsafe fn cmd_run_shell_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             i = 1 as u_int;
             while i < args.argument_count() {
                 let key = xasprintf(c"%u", fmt_args![i]);
-                {
-                    format_add(
+                format_add(
                         &mut ft,
                         &key,
                         c"%s",
                         fmt_args![args.argument_string(i).expect("argument index checked")],
-                    )
-                };
+                    );
                 i = i.wrapping_add(1);
             }
             unsafe { cdata.cmd = Some(format_expand(&mut ft, cmd)) };

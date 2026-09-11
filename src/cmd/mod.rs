@@ -907,7 +907,7 @@ impl cmd_entry_flag {
     ) -> Self {
         Self {
             flag,
-            type_0: type_0,
+            type_0,
             flags,
         }
     }
@@ -997,7 +997,7 @@ impl CmdListRef {
 
     /// Returns the number of commands in the list.
     pub fn command_count(&self) -> usize {
-        self.with(|list| crate::CommandList::command_count(list))
+        self.with(crate::CommandList::command_count)
     }
 
     /// Borrows one command while retaining the list's shared borrow guard.

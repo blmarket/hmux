@@ -532,10 +532,8 @@ unsafe fn cmd_display_menu_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                 .definition(entry)
                                 .expect("menu border option exists")
                         });
-                        {
-                            lines = RustOptionsEngine.find_choice(definition, value, &mut cause)
-                                as box_lines
-                        };
+                        lines = RustOptionsEngine.find_choice(definition, value, &mut cause)
+                            as box_lines;
                         if let Some(cause) = cause.as_ref() {
                             unsafe {
                                 item.error(c"menu-border-lines %s", fmt_args![cause.as_c_str()])
@@ -656,15 +654,13 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             args.argument_flag_count(flag)
         }) != 0
         {
-            {
-                h = args.percentage(
+            h = args.percentage(
                     'h' as i32 as u_char,
                     1 as core::ffi::c_longlong,
                     sy as core::ffi::c_longlong,
                     sy as core::ffi::c_longlong,
                     &mut percentage_cause,
-                ) as u_int
-            };
+                ) as u_int;
             if let Some(cause) = percentage_cause.as_ref() {
                 unsafe { item.error(c"height %s", fmt_args![cause.as_c_str()]) };
                 current_block = 5914453722638945560;
@@ -683,15 +679,13 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                     args.argument_flag_count(flag)
                 }) != 0
                 {
-                    {
-                        w = args.percentage(
+                    w = args.percentage(
                             'w' as i32 as u_char,
                             1 as core::ffi::c_longlong,
                             sx as core::ffi::c_longlong,
                             sx as core::ffi::c_longlong,
                             &mut percentage_cause,
-                        ) as u_int
-                    };
+                        ) as u_int;
                     if let Some(cause) = percentage_cause.as_ref() {
                         unsafe { item.error(c"width %s", fmt_args![cause.as_c_str()]) };
                         current_block = 5914453722638945560;
@@ -733,11 +727,9 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                 default_command = Some(s.options().string_ref(c"default-command"));
                                 shellcmd = default_command.as_deref();
                             } else if count == 1 as u_int {
-                                {
-                                    shellcmd = Some(
-                                        args.argument_string(0).expect("argument count checked"),
-                                    )
-                                };
+                                shellcmd = Some(
+                                    args.argument_string(0).expect("argument count checked"),
+                                );
                             }
                             if count <= 1 as u_int
                                 && shellcmd.is_none_or(|shellcmd| shellcmd.is_empty())
@@ -793,9 +785,7 @@ unsafe fn cmd_display_popup_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                     .definition(entry)
                     .expect("popup border option exists")
             });
-            {
-                lines = RustOptionsEngine.find_choice(definition, value, &mut cause) as box_lines
-            };
+            lines = RustOptionsEngine.find_choice(definition, value, &mut cause) as box_lines;
             if let Some(cause) = cause.as_ref() {
                 unsafe { item.error(c"popup-border-lines %s", fmt_args![cause.as_c_str()]) };
                 current_block = 5914453722638945560;

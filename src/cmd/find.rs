@@ -1342,7 +1342,7 @@ unsafe fn cmd_find_current_client(
                 fs.session()
                     .as_ref()
                     .map(|reference| reference.as_session())
-                    .and_then(|s| cmd_find_best_client(s))
+                    .and_then(cmd_find_best_client)
             } else {
                 None
             }
@@ -1350,7 +1350,7 @@ unsafe fn cmd_find_current_client(
             cmd_find_best_session(&[], CMD_FIND_QUIET)
                 .as_ref()
                 .map(|reference| reference.as_session())
-                .and_then(|s| cmd_find_best_client(s))
+                .and_then(cmd_find_best_client)
         };
         if found.is_none()
             && quiet == 0

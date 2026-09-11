@@ -217,7 +217,7 @@ pub(crate) unsafe fn window_clock_resize(wme: &mut window_mode_entry, sx: u_int,
     unsafe {
         let window = wme.pane_ref().and_then(|pane| pane.window());
         let data = wme.state.clock().expect("the mode holds its state");
-        (&mut data.screen).resize(sx, sy, 0 as core::ffi::c_int);
+        data.screen.resize(sx, sy, 0 as core::ffi::c_int);
         if let Some(window) = window {
             let options = window.options();
             window_clock_draw_screen(data, &options);

@@ -797,7 +797,7 @@ impl CmdqItemRef {
             queue: None,
             client: None,
             target_client: None,
-            type_0: type_0,
+            type_0,
             group: 0,
             number: 0,
             time: 0,

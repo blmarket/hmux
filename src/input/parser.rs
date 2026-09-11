@@ -4723,7 +4723,7 @@ fn input_make_request(ictx: &mut input_ctx, type_0: input_request_type) -> input
             c: None,
             ictx: ictx_weak(&*ictx),
             id,
-            type_0: type_0,
+            type_0,
             t: get_timer(),
             end: INPUT_END_ST,
             idx: 0,

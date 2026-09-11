@@ -273,13 +273,9 @@ unsafe fn cmd_send_keys_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
             args.argument_flag_count(flag)
         }) != 0
         {
-            {
-                key = session.options().number(c"prefix2") as key_code
-            };
+            key = session.options().number(c"prefix2") as key_code;
         } else {
-            {
-                key = session.options().number(c"prefix") as key_code
-            };
+            key = session.options().number(c"prefix") as key_code;
         }
         unsafe { cmd_send_keys_inject_key(&item_ref, Some(item_ref.clone()), args, key) };
         return CMD_RETURN_NORMAL;

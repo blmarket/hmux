@@ -643,14 +643,12 @@ unsafe fn cmd_new_session_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
                                                         };
                                                     } else {
                                                         if let Some(group) = group {
-                                                            {
-                                                                join_session_group(
+                                                            join_session_group(
                                                                     group,
                                                                     group_name.as_deref(),
                                                                     groupwith.as_ref(),
                                                                     &created,
-                                                                )
-                                                            };
+                                                                );
                                                             unsafe {
                                                                 created.synchronize_group_to()
                                                             };

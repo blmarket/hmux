@@ -1670,7 +1670,7 @@ impl WindowTreeModeDataRef {
                 109 => {
                     let target = item
                         .as_ref()
-                        .and_then(|item| window_tree_resolve_item(item));
+                        .and_then(window_tree_resolve_item);
                     server_set_marked(
                         target
                             .as_ref()
@@ -1690,7 +1690,7 @@ impl WindowTreeModeDataRef {
                 120 => {
                     let target = item
                         .as_ref()
-                        .and_then(|item| window_tree_resolve_item(item));
+                        .and_then(window_tree_resolve_item);
                     let prompt = match item.map(|item| item.type_0).unwrap_or(WINDOW_TREE_NONE) {
                         WINDOW_TREE_SESSION => target.as_ref().map(|target| {
                             xasprintf(

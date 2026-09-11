@@ -268,7 +268,7 @@ fn window_copy_clone_screen(
         if reflow != 0 {
             (wx, wy) = RustScreen::grid(&dst).wrap_position(cx, cy);
         }
-        (&mut dst).resize_cursor(RustScreen::grid(hint).width(),
+        dst.resize_cursor(RustScreen::grid(hint).width(),
             RustScreen::grid(hint).height(),
             1 as core::ffi::c_int,
             0 as core::ffi::c_int,
@@ -487,7 +487,7 @@ pub unsafe fn window_copy_vadd(
     args: &[FmtArg],
 ) {
     unsafe {
-        let wme = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
+        let wme = (*wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode");
         let data = wme.state.copy_mode_data_mut().expect("copy mode has state");
         let backing = &mut *data
             .backing
@@ -715,7 +715,7 @@ unsafe fn window_copy_scroll1(
 pub unsafe fn window_copy_pageup(wp: &mut (impl crate::WindowPane + ?Sized), half_page: core::ffi::c_int) {
     unsafe {
         window_copy_pageup1(
-            (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode"),
+            (*wp).active_mode_mut().map(|mode| mode.into_entry()).expect("pane is in a mode"),
             half_page,
         );
     }
@@ -1176,7 +1176,7 @@ pub(crate) unsafe fn window_copy_resize(wme: &mut window_mode_entry, sx: u_int, 
         let mut wx: u_int = 0;
         let mut wy: u_int = 0;
 
-        (&mut s).resize(sx, sy, 0 as core::ffi::c_int);
+        s.resize(sx, sy, 0 as core::ffi::c_int);
         drop(s);
         cx = data.cx;
         if data.oy > gd.history_size().wrapping_add(data.cy) {
@@ -1187,7 +1187,7 @@ pub(crate) unsafe fn window_copy_resize(wme: &mut window_mode_entry, sx: u_int, 
         if reflow != 0 {
             (wx, wy) = (*gd).wrap_position(cx, cy);
         }
-        (&mut *data
+        (*data
                 .backing
                 .as_deref_mut()
                 .expect("copy mode has a backing screen")).resize_cursor(sx,
@@ -1228,11 +1228,12 @@ pub(crate) fn window_copy_key_table(wme: &window_mode_entry) -> &'static CStr {
 unsafe fn window_copy_expand_search_string(cs: &mut window_copy_cmd_state<'_>) -> core::ffi::c_int {
     unsafe {
         let wme = &mut *cs.wme;
-        let ss = match {
+        let result = {
             let args: &RustArguments = cs.wargs;
             let idx = 0 as u_int;
             args.argument_string(idx)
-        } {
+        };
+        let ss = match result {
             Some(ss) if !ss.to_bytes().is_empty() => ss,
             _ => return 0 as core::ffi::c_int,
         };
@@ -6589,7 +6590,7 @@ pub unsafe fn window_copy_set_line_numbers(
     enabled: core::ffi::c_int,
 ) {
     unsafe {
-        let Some(wme) = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()) else {
+        let Some(wme) = (*wp).active_mode_mut().map(|mode| mode.into_entry()) else {
             return;
         };
         if wme.mode() != WindowMode::Copy {
@@ -8658,7 +8659,7 @@ unsafe fn window_copy_move_mouse(m: &mouse_event) {
             return;
         };
         let mouse_at = cmd_mouse_at(wp, m, 0);
-        let Some(wme) = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()) else {
+        let Some(wme) = (*wp).active_mode_mut().map(|mode| mode.into_entry()) else {
             return;
         };
         if wme.mode() != WindowMode::Copy && wme.mode() != WindowMode::View {
@@ -8693,7 +8694,7 @@ pub unsafe fn window_copy_start_drag(c: Option<&mut client>, m: &mouse_event) {
             return;
         };
         let mouse_at = cmd_mouse_at(wp, m, 1);
-        let Some(wme) = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()) else {
+        let Some(wme) = (*wp).active_mode_mut().map(|mode| mode.into_entry()) else {
             return;
         };
         if wme.mode() != WindowMode::Copy && wme.mode() != WindowMode::View {
@@ -8771,7 +8772,7 @@ unsafe fn window_copy_drag_update(_c: &mut client, m: &mouse_event) {
             return;
         };
         let mouse_at = cmd_mouse_at(wp, m, 0);
-        let Some(wme) = (&mut *wp).active_mode_mut().map(|mode| mode.into_entry()) else {
+        let Some(wme) = (*wp).active_mode_mut().map(|mode| mode.into_entry()) else {
             return;
         };
         if wme.mode() != WindowMode::Copy && wme.mode() != WindowMode::View {

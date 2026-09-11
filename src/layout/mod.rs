@@ -100,15 +100,13 @@ impl WindowRef {
             .as_deref_mut()
             .and_then(|root| path.get_mut(root))
             .expect("the resized cell path is unchanged");
-        {
-            crate::layout::layout_set_size(
+        crate::layout::layout_set_size(
                 cell,
                 geometry.sx,
                 geometry.sy,
                 geometry.xoff,
                 geometry.yoff,
-            )
-        };
+            );
     }
 
     pub(crate) fn layout_border_at(

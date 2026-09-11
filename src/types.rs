@@ -1753,7 +1753,7 @@ pub struct tty_term_code_entry {
 impl tty_term_code_entry {
     /// Builds a static terminal capability table entry.
     pub const fn new(type_0: tty_code_type, name: &'static core::ffi::CStr) -> Self {
-        Self { type_0: type_0, name }
+        Self { type_0, name }
     }
 }
 
@@ -2606,7 +2606,6 @@ pub(crate) type window_panes_t = Vec<RustWindowPaneRef>;
 pub type window_pane_stack_t = Vec<RustWindowPaneWeak>;
 /// The cells directly under one layout cell, left to right or top to bottom.
 /// A cell belongs to the list it hangs in.
-
 pub(crate) type client_files_t = std::collections::BTreeMap<core::ffi::c_int, ClientFileRef>;
 
 /// Which set of files a file belongs to: one client's, the whole process's,

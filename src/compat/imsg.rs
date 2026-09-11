@@ -220,7 +220,7 @@ fn imsg_make_hdr(
     len: uint32_t,
 ) -> imsg_hdr {
     imsg_hdr {
-        type_0: type_0,
+        type_0,
         len,
         peerid: id,
         pid: if pid as uint32_t == 0 as uint32_t {

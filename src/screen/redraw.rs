@@ -1516,8 +1516,8 @@ unsafe fn screen_redraw_draw_pane(ctx: &mut screen_redraw_ctx, pane: &mut RustWi
             return;
         };
         let Some(wp) = pane.get() else { return };
-        if wp.base().0.mode & MODE_SYNC != 0 {
-            if let Some(wp) = pane.get_mut() { wp.stop_sync(); }
+        if wp.base().0.mode & MODE_SYNC != 0
+            && let Some(wp) = pane.get_mut() { wp.stop_sync();
         }
         log_debug(
             c"%s: %s @%u %%%u",

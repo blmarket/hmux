@@ -99,15 +99,13 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         args.argument_flag_count(flag)
     }) != 0
     {
-        {
-            x = args.percentage(
+        x = args.percentage(
                 'x' as i32 as u_char,
                 0 as core::ffi::c_longlong,
                 INT_MAX as core::ffi::c_longlong,
                 owner.dimensions().size.width as core::ffi::c_longlong,
                 &mut cause,
-            ) as core::ffi::c_int
-        };
+            ) as core::ffi::c_int;
         if let Some(cause) = cause.as_ref() {
             unsafe { item.error(c"width %s", fmt_args![cause.as_c_str()]) };
             return CMD_RETURN_ERROR;
@@ -119,22 +117,18 @@ unsafe fn cmd_resize_pane_exec(self_0: &cmd, item: &cmdq_item) -> cmd_retval {
         args.argument_flag_count(flag)
     }) != 0
     {
-        {
-            y = args.percentage(
+        y = args.percentage(
                 'y' as i32 as u_char,
                 0 as core::ffi::c_longlong,
                 INT_MAX as core::ffi::c_longlong,
                 owner.dimensions().size.height as core::ffi::c_longlong,
                 &mut cause,
-            ) as core::ffi::c_int
-        };
+            ) as core::ffi::c_int;
         if let Some(cause) = cause.as_ref() {
             unsafe { item.error(c"height %s", fmt_args![cause.as_c_str()]) };
             return CMD_RETURN_ERROR;
         }
-        {
-            status = owner.options().number(c"pane-border-status") as core::ffi::c_int
-        };
+        status = owner.options().number(c"pane-border-status") as core::ffi::c_int;
         let geometry = unsafe { reference.geometry().expect("resize target is present") };
         match status {
             PANE_STATUS_TOP => {

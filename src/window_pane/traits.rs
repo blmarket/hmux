@@ -118,7 +118,7 @@ impl crate::WindowPane for window_pane {
         self.sx = size.width;
         self.sy = size.height;
         let reflow = !self.base.is_alternate();
-        (&mut self.base).resize(size.width, size.height, reflow as c_int);
+        self.base.resize(size.width, size.height, reflow as c_int);
         if let Some(mode) = self.modes.first_mut() {
             unsafe { mode.resize(size.width, size.height) };
         }
