@@ -481,11 +481,11 @@ fn a_value_of_no_type_is_thrown_away_by_args_set() {
 fn the_flags_are_walked_in_order() {
     {
         let mut args = RustArguments::default();
-        assert_eq!(args.argument_flags_iter().next(), None);
+        assert_eq!(args.argument_flags().into_iter().next(), None);
         for flag in *b"cab" {
             args_set(&mut args, flag, None, 0);
         }
-        let walked: Vec<u_char> = args.argument_flags_iter().collect();
+        let walked: Vec<u_char> = args.argument_flags().into_iter().collect();
         assert_eq!(walked, [b'a', b'b', b'c']);
     }
 }

@@ -14,6 +14,7 @@
 //! of lines printed so far, so a client that is skipped leaves a gap in the
 //! numbering of the ones after it.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 

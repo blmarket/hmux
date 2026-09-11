@@ -13,6 +13,7 @@
 //! creates a table that is not there yet and what owns every binding in it;
 //! nothing here reaches into those trees.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;

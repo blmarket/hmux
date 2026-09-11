@@ -6,6 +6,7 @@
 //! server or the command table, so no [`globals`] guard is needed except where
 //! noted.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::argument_text::{ArgumentTextCodec, RustArgumentTextCodec};
 use crate::args::{RustArguments, args_print, args_set};
 use crate::cmd::{cmd_pack_argv, cmd_stringify_argv, cmd_template_replace, cmd_unpack_argv};

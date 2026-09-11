@@ -30,6 +30,7 @@
 //! already been built, which is why the refusal frees the command's state by
 //! hand.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::args::{args_make_commands, args_make_commands_get_command};

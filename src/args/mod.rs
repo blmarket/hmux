@@ -84,66 +84,6 @@ impl RustArguments {
         arguments
     }
 
-    /// Returns one positional value.
-    pub fn argument_value(&self, index: u_int) -> Option<&ArgsValue> {
-        self.argument_values().get(index as usize)
-    }
-
-    pub fn argument_flag_count(&self, flag: u_char) -> c_int {
-        self.tree
-            .get(&flag)
-            .map_or(0, |entry| entry.count as c_int)
-    }
-
-    pub fn set_argument_flag(&mut self, flag: u_char, value: Option<ArgsValue>, flags: c_int) {
-        args_set(self, flag, value, flags)
-    }
-
-    pub fn argument_flag_string(&self, flag: u_char) -> Option<&CStr> {
-        let value = self.tree.get(&flag)?.values.last()?;
-        match value {
-            ArgsValue::String(string) => Some(string.as_c_str()),
-            ArgsValue::None | ArgsValue::Commands { .. } => None,
-        }
-    }
-
-    pub fn argument_flags(&self) -> Vec<u_char> {
-        self.argument_flags_iter().collect()
-    }
-
-    /// Iterates over the flags in flag order without allocating.
-    pub fn argument_flags_iter(&self) -> impl Iterator<Item = u_char> + '_ {
-        self.tree.values().map(|entry| entry.flag)
-    }
-
-    pub fn argument_count(&self) -> u_int {
-        self.count
-    }
-
-    pub fn argument_values(&self) -> &[ArgsValue] {
-        &self.values
-    }
-
-    pub fn set_argument_string(&mut self, index: u_int, value: &CStr) -> bool {
-        let Some(argument) = self.values.get_mut(index as usize) else {
-            return false;
-        };
-        *argument = ArgsValue::String(value.to_owned());
-        true
-    }
-
-    pub fn argument_string(&self, index: u_int) -> Option<&CStr> {
-        self.argument_value(index)
-            .map(|value| unsafe { args_value_as_string(value) })
-    }
-
-    pub fn argument_flag_values(&self, flag: u_char) -> Vec<&ArgsValue> {
-        match self.tree.get(&flag) {
-            Some(entry) => entry.values.iter().collect(),
-            None => Vec::new(),
-        }
-    }
-
     /// Copies arguments while expanding positional templates with the supplied words.
     pub unsafe fn copy_with_arguments(&self, argv: &[CString]) -> Box<Self> {
         unsafe {
@@ -199,40 +139,55 @@ impl RustArguments {
 
 impl Arguments for RustArguments {
     fn argument_flag_count(&self, flag: u_char) -> c_int {
-        RustArguments::argument_flag_count(self, flag)
+        self.tree
+            .get(&flag)
+            .map_or(0, |entry| entry.count as c_int)
     }
 
     fn set_argument_flag(&mut self, flag: u_char, value: Option<ArgsValue>, flags: c_int) {
-        RustArguments::set_argument_flag(self, flag, value, flags)
+        args_set(self, flag, value, flags)
     }
 
     fn argument_flag_string(&self, flag: u_char) -> Option<&CStr> {
-        RustArguments::argument_flag_string(self, flag)
+        let value = self.tree.get(&flag)?.values.last()?;
+        match value {
+            ArgsValue::String(string) => Some(string.as_c_str()),
+            ArgsValue::None | ArgsValue::Commands { .. } => None,
+        }
     }
 
     fn argument_flags(&self) -> Vec<u_char> {
-        RustArguments::argument_flags(self)
+        self.tree.keys().copied().collect()
     }
 
     fn argument_count(&self) -> u_int {
-        RustArguments::argument_count(self)
+        self.count
     }
 
     fn argument_values(&self) -> &[ArgsValue] {
-        RustArguments::argument_values(self)
+        &self.values
     }
 
     fn set_argument_string(&mut self, index: u_int, value: &CStr) -> bool {
-        RustArguments::set_argument_string(self, index, value)
+        let Some(argument) = self.values.get_mut(index as usize) else {
+            return false;
+        };
+        *argument = ArgsValue::String(value.to_owned());
+        true
     }
 
     fn argument_string(&self, index: u_int) -> Option<&CStr> {
-        RustArguments::argument_string(self, index)
+        self.argument_value(index)
+            .map(|value| unsafe { args_value_as_string(value) })
     }
 
     fn argument_flag_values(&self, flag: u_char) -> Vec<&ArgsValue> {
-        RustArguments::argument_flag_values(self, flag)
+        match self.tree.get(&flag) {
+            Some(entry) => entry.values.iter().collect(),
+            None => Vec::new(),
+        }
     }
+
 }
 
 #[repr(C)]

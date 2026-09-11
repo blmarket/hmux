@@ -35,6 +35,7 @@
 //! and not printable. The rewrite reads the length off the string instead,
 //! which gives that same refusal without the overread.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::cmd::CmdqItemWeak;

@@ -11,6 +11,7 @@
 //! The command table stays the array the rest of the crate reads, walked to
 //! the null it ends with.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 

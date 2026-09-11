@@ -31,6 +31,7 @@
 //! left sitting in the front slot — the binding that was first before the
 //! filter ran.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;

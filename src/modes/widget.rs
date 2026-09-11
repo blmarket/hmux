@@ -1,3 +1,4 @@
+use crate::args::arguments_trait::Arguments as _;
 use crate::screen::Screen as _;
 use crate::grid::Grid as _;
 use crate::WindowPane;

@@ -1,3 +1,4 @@
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 use crate::cmd::cmdq_item;

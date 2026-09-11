@@ -14,6 +14,7 @@
 //! Both destruction walks retain ordered session handles before mutation,
 //! since destruction removes sessions from the registry and their groups.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;

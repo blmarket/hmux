@@ -1,3 +1,4 @@
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::cmd::CmdListRef;
 use crate::window_scrollbar::WindowScrollbarState;

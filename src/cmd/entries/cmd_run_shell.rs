@@ -1,3 +1,4 @@
+use crate::args::arguments_trait::Arguments as _;
 use crate::screen::Screen as _;
 use crate::args::RustArguments;
 use crate::args::args_make_commands;

@@ -12,6 +12,7 @@
 //! Rendering is owned by the overlay subsystem; this command chooses delay,
 //! key handling and whether the queue waits for selection.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::args::{args_make_commands, args_strtonum};

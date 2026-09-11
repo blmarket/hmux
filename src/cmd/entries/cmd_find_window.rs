@@ -24,6 +24,7 @@
 //!   when [`WindowPane::set_mode`](crate::WindowPane::set_mode) is going to refuse them because the pane is
 //!   already in that mode.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::args::args_set;

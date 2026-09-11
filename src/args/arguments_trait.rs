@@ -37,24 +37,3 @@ pub trait Arguments {
     /// Returns every value attached to `flag`, in insertion order.
     fn argument_flag_values(&self, flag: u_char) -> Vec<&ArgsValue>;
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::args::RustArguments;
-    use crate::types::ArgsValue;
-    use std::ffi::CString;
-
-    #[test]
-    fn parsed_arguments_implement_the_contract() {
-        let mut arguments = RustArguments::default();
-        arguments.set_argument_flag(b'a', None, 0);
-        arguments.set_argument_flag(
-            b'b',
-            Some(ArgsValue::String(CString::new("value").unwrap())),
-            0,
-        );
-        assert_eq!(arguments.argument_flags(), [b'a', b'b']);
-        assert_eq!(arguments.argument_flag_count(b'a'), 1);
-        assert_eq!(arguments.argument_flag_string(b'b'), Some(c"value"));
-    }
-}

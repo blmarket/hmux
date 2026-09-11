@@ -23,6 +23,7 @@
 //! buffer; and `-p` is read before the exited-pane refusal, which no
 //! observable behaviour depends on.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::cmd::cmd_get_args;
 

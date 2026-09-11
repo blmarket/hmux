@@ -15,6 +15,7 @@
 //! detaches every winlink of that window from every session and so rewrites
 //! the tree being walked.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
 use crate::cmd::cmdq_item;
 use crate::cmd::{RustCommandEntry, cmd, cmd_entry_flag, cmd_retval};

@@ -6,6 +6,7 @@
 //! inherited appearance. The command chooses unzoom, selection, redraw and
 //! empty-source-window policy around that transition.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::cmd::cmd_get_args;
 
 use crate::fmt_args;

@@ -21,6 +21,7 @@
 //! the template null; the three walks pass one of exactly three values, which
 //! [`Level`] now says outright, so that arm is gone with the conversion.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 

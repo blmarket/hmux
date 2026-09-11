@@ -1,3 +1,4 @@
+use crate::args::arguments_trait::Arguments as _;
 use super::{layout_cell, layout_cells, LayoutAccess};
 use crate::WindowPane;
 use crate::args::RustArguments;

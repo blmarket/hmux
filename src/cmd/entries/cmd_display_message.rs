@@ -35,6 +35,7 @@
 //!   without checking that a client asked for anything, and `-p` reads the
 //!   item's own client rather than the target one.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::args::args_strtonum;

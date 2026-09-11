@@ -1,3 +1,4 @@
+use crate::args::arguments_trait::Arguments as _;
 use super::widget::{ModeTreeItemRef, mode_tree_run_command};
 use crate::WindowPane;
 use crate::args::RustArguments;

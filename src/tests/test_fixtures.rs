@@ -17,6 +17,7 @@
 //! is a turn at the paste store and [`KeyTable`] is a key table of the test's
 //! own.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::screen::Screen as _;
 use crate::grid::Grid as _;
 use crate::args::args_parse_t;

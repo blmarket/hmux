@@ -6,6 +6,7 @@
 //! are private. Command behavior is tested through the conformance suites.
 //! What else the rest of the crate may use is re-exported here.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::argument_text::{ArgumentTextCodec as _, RustArgumentTextCodec};
 use crate::options::{OptionsEngine, RustOptionsEngine};

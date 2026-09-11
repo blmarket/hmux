@@ -1,3 +1,4 @@
+use crate::args::arguments_trait::Arguments as _;
 use super::{
     cmd_find_clear_state, cmd_find_client, cmd_find_copy_state, cmd_find_from_client,
     cmd_find_target, cmd_find_valid_state,
@@ -1110,7 +1111,7 @@ impl CmdqItemRef {
                 i = i.wrapping_add(1);
             }
             for flag in arguments
-                .argument_flags_iter()
+                .argument_flags().into_iter()
                 .map(|flag| flag as core::ffi::c_char)
             {
                 let tmp = xasprintf(c"hook_flag_%c", fmt_args![flag as core::ffi::c_int]);

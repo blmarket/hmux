@@ -16,6 +16,7 @@
 //! while retaining the source and destination owners. The index changes
 //! reported by insertion keep the source link current within one session.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 

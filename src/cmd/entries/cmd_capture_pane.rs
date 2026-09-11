@@ -23,6 +23,7 @@
 //! collection came out empty contributes nothing at all, newline included;
 //! and `-p` reads the client's flags without checking that there is a client.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_parse_t;
 use crate::args::args_strtonum_and_expand;

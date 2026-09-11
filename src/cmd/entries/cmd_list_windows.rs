@@ -14,6 +14,7 @@
 //! index of the window being printed, so every line of one run carries the
 //! same value — where `list-sessions` and `list-clients` count from zero.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 

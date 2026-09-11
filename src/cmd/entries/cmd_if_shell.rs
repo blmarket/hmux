@@ -1,3 +1,4 @@
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::RustArguments;
 use crate::args::args_make_commands;
 use crate::args::args_parse_t;

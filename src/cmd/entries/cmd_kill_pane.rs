@@ -15,6 +15,7 @@
 //! The `-a` walk snapshots pane identities before removing any of them, so
 //! no pane borrow survives the operation that frees its storage.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::args::args_parse_t;
 use crate::cmd::cmd_get_args;
 

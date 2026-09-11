@@ -33,6 +33,7 @@
 //! callback-owned `LoadBuffer`, `SourceFile`, `PaneInput` and `KeyEvent`
 //! allocations on a green path.
 
+use crate::args::arguments_trait::Arguments as _;
 use crate::WindowPane;
 use crate::args::args_parse_t;
 use crate::cmd::CMD_FIND_PANE;
