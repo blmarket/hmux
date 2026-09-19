@@ -1,0 +1,466 @@
+extern "C" {
+    pub type hyperlinks;
+    pub type screen_write_cline;
+    pub type screen_sel;
+    pub type screen_titles;
+    fn grid_collect_history(_: *mut grid, _: ::core::ffi::c_int);
+    fn grid_scroll_history(_: *mut grid, _: u_int);
+    fn grid_scroll_history_region(_: *mut grid, _: u_int, _: u_int, _: u_int);
+    fn grid_get_cell(_: *mut grid, _: u_int, _: u_int, _: *mut grid_cell);
+    fn grid_set_cell(_: *mut grid, _: u_int, _: u_int, _: *const grid_cell);
+    fn grid_set_padding(_: *mut grid, _: u_int, _: u_int, _: ::core::ffi::c_int);
+    fn grid_set_cells(
+        _: *mut grid,
+        _: u_int,
+        _: u_int,
+        _: *const grid_cell,
+        _: *const ::core::ffi::c_char,
+        _: size_t,
+    );
+    fn grid_get_line(_: *mut grid, _: u_int) -> *mut grid_line;
+    fn grid_clear(_: *mut grid, _: u_int, _: u_int, _: u_int, _: u_int, _: u_int);
+    fn grid_move_lines(_: *mut grid, _: u_int, _: u_int, _: u_int, _: u_int);
+    fn grid_move_cells(_: *mut grid, _: u_int, _: u_int, _: u_int, _: u_int, _: u_int);
+    fn grid_string_cells(
+        _: *mut grid,
+        _: u_int,
+        _: u_int,
+        _: u_int,
+        _: *mut *mut grid_cell,
+        _: ::core::ffi::c_int,
+        _: *mut screen,
+    ) -> *mut ::core::ffi::c_char;
+}
+pub type __u_char = ::core::ffi::c_uchar;
+pub type __u_short = ::core::ffi::c_ushort;
+pub type __u_int = ::core::ffi::c_uint;
+pub type u_char = __u_char;
+pub type u_short = __u_short;
+pub type u_int = __u_int;
+pub type size_t = usize;
+pub type bitstr_t = ::core::ffi::c_uchar;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct screen {
+    pub title: *mut ::core::ffi::c_char,
+    pub path: *mut ::core::ffi::c_char,
+    pub titles: *mut screen_titles,
+    pub ntitles: u_int,
+    pub grid: *mut grid,
+    pub cx: u_int,
+    pub cy: u_int,
+    pub cstyle: screen_cursor_style,
+    pub default_cstyle: screen_cursor_style,
+    pub ccolour: ::core::ffi::c_int,
+    pub default_ccolour: ::core::ffi::c_int,
+    pub rupper: u_int,
+    pub rlower: u_int,
+    pub mode: ::core::ffi::c_int,
+    pub default_mode: ::core::ffi::c_int,
+    pub saved_cx: u_int,
+    pub saved_cy: u_int,
+    pub saved_grid: *mut grid,
+    pub saved_cell: grid_cell,
+    pub saved_flags: ::core::ffi::c_int,
+    pub tabs: *mut bitstr_t,
+    pub sel: *mut screen_sel,
+    pub write_list: *mut screen_write_cline,
+    pub hyperlinks: *mut hyperlinks,
+    pub progress_bar: progress_bar,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct progress_bar {
+    pub state: progress_bar_state,
+    pub progress: ::core::ffi::c_int,
+}
+pub type progress_bar_state = ::core::ffi::c_uint;
+pub const PROGRESS_BAR_PAUSED: progress_bar_state = 4;
+pub const PROGRESS_BAR_INDETERMINATE: progress_bar_state = 3;
+pub const PROGRESS_BAR_ERROR: progress_bar_state = 2;
+pub const PROGRESS_BAR_NORMAL: progress_bar_state = 1;
+pub const PROGRESS_BAR_HIDDEN: progress_bar_state = 0;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct grid_cell {
+    pub data: utf8_data,
+    pub attr: u_short,
+    pub flags: u_char,
+    pub fg: ::core::ffi::c_int,
+    pub bg: ::core::ffi::c_int,
+    pub us: ::core::ffi::c_int,
+    pub link: u_int,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct utf8_data {
+    pub data: [u_char; 32],
+    pub have: u_char,
+    pub size: u_char,
+    pub width: u_char,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct grid {
+    pub flags: ::core::ffi::c_int,
+    pub sx: u_int,
+    pub sy: u_int,
+    pub hscrolled: u_int,
+    pub hsize: u_int,
+    pub hlimit: u_int,
+    pub scroll_added: u_int,
+    pub scroll_collected: u_int,
+    pub scroll_generation: u_int,
+    pub linedata: *mut grid_line,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct grid_line {
+    pub celldata: *mut grid_cell_entry,
+    pub extddata: *mut grid_extd_entry,
+    pub cellused: u_short,
+    pub cellsize: u_short,
+    pub extdsize: u_int,
+    pub time: u_int,
+    pub osc133_data: osc133_data,
+    pub flags: u_short,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct osc133_data {
+    pub prompt_col: u_short,
+    pub cmd_col: u_short,
+    pub out_start_col: u_short,
+    pub out_end_col: u_short,
+    pub exit_status: u_char,
+}
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+pub struct grid_extd_entry {
+    pub data: utf8_char,
+    pub attr: u_short,
+    pub flags: u_char,
+    pub fg: ::core::ffi::c_int,
+    pub bg: ::core::ffi::c_int,
+    pub us: ::core::ffi::c_int,
+    pub link: u_int,
+}
+pub type utf8_char = u_int;
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+pub struct grid_cell_entry {
+    pub c2rust_unnamed: C2RustUnnamed,
+    pub flags: u_char,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union C2RustUnnamed {
+    pub offset: u_int,
+    pub data: C2RustUnnamed_0,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_0 {
+    pub attr: u_char,
+    pub fg: u_char,
+    pub bg: u_char,
+    pub data: u_char,
+}
+pub type screen_cursor_style = ::core::ffi::c_uint;
+pub const SCREEN_CURSOR_BAR: screen_cursor_style = 3;
+pub const SCREEN_CURSOR_UNDERLINE: screen_cursor_style = 2;
+pub const SCREEN_CURSOR_BLOCK: screen_cursor_style = 1;
+pub const SCREEN_CURSOR_DEFAULT: screen_cursor_style = 0;
+pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
+pub const GRID_HISTORY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_get_cell(
+    mut gd: *mut grid,
+    mut px: u_int,
+    mut py: u_int,
+    mut gc: *mut grid_cell,
+) {
+    grid_get_cell(gd, px, (*gd).hsize.wrapping_add(py), gc);
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_set_cell(
+    mut gd: *mut grid,
+    mut px: u_int,
+    mut py: u_int,
+    mut gc: *const grid_cell,
+) {
+    grid_set_cell(gd, px, (*gd).hsize.wrapping_add(py), gc);
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_set_padding(
+    mut gd: *mut grid,
+    mut px: u_int,
+    mut py: u_int,
+    mut bg: ::core::ffi::c_int,
+) {
+    grid_set_padding(gd, px, (*gd).hsize.wrapping_add(py), bg);
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_set_cells(
+    mut gd: *mut grid,
+    mut px: u_int,
+    mut py: u_int,
+    mut gc: *const grid_cell,
+    mut s: *const ::core::ffi::c_char,
+    mut slen: size_t,
+) {
+    grid_set_cells(gd, px, (*gd).hsize.wrapping_add(py), gc, s, slen);
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_clear_history(mut gd: *mut grid, mut bg: u_int) {
+    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
+    let mut yy: u_int = 0;
+    let mut last: u_int = 0;
+    last = 0 as u_int;
+    yy = 0 as u_int;
+    while yy < (*gd).sy {
+        gl = grid_get_line(gd, (*gd).hsize.wrapping_add(yy));
+        if (*gl).cellused as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
+            last = yy.wrapping_add(1 as u_int);
+        }
+        yy = yy.wrapping_add(1);
+    }
+    if last == 0 as u_int {
+        grid_view_clear(gd, 0 as u_int, 0 as u_int, (*gd).sx, (*gd).sy, bg);
+        return;
+    }
+    yy = 0 as u_int;
+    while yy < last {
+        grid_collect_history(gd, 0 as ::core::ffi::c_int);
+        grid_scroll_history(gd, bg);
+        yy = yy.wrapping_add(1);
+    }
+    if last < (*gd).sy {
+        grid_view_clear(
+            gd,
+            0 as u_int,
+            0 as u_int,
+            (*gd).sx,
+            (*gd).sy.wrapping_sub(last),
+            bg,
+        );
+    }
+    (*gd).hscrolled = 0 as u_int;
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_clear(
+    mut gd: *mut grid,
+    mut px: u_int,
+    mut py: u_int,
+    mut nx: u_int,
+    mut ny: u_int,
+    mut bg: u_int,
+) {
+    px = px;
+    py = (*gd).hsize.wrapping_add(py);
+    grid_clear(gd, px, py, nx, ny, bg);
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_scroll_region_up(
+    mut gd: *mut grid,
+    mut rupper: u_int,
+    mut rlower: u_int,
+    mut bg: u_int,
+) {
+    if (*gd).flags & GRID_HISTORY != 0 {
+        grid_collect_history(gd, 0 as ::core::ffi::c_int);
+        if rupper == 0 as u_int && rlower == (*gd).sy.wrapping_sub(1 as u_int) {
+            grid_scroll_history(gd, bg);
+        } else {
+            rupper = (*gd).hsize.wrapping_add(rupper);
+            rlower = (*gd).hsize.wrapping_add(rlower);
+            grid_scroll_history_region(gd, rupper, rlower, bg);
+        }
+    } else {
+        rupper = (*gd).hsize.wrapping_add(rupper);
+        rlower = (*gd).hsize.wrapping_add(rlower);
+        grid_move_lines(
+            gd,
+            rupper,
+            rupper.wrapping_add(1 as u_int),
+            rlower.wrapping_sub(rupper),
+            bg,
+        );
+    };
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_scroll_region_down(
+    mut gd: *mut grid,
+    mut rupper: u_int,
+    mut rlower: u_int,
+    mut bg: u_int,
+) {
+    rupper = (*gd).hsize.wrapping_add(rupper);
+    rlower = (*gd).hsize.wrapping_add(rlower);
+    grid_move_lines(
+        gd,
+        rupper.wrapping_add(1 as u_int),
+        rupper,
+        rlower.wrapping_sub(rupper),
+        bg,
+    );
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_insert_lines(
+    mut gd: *mut grid,
+    mut py: u_int,
+    mut ny: u_int,
+    mut bg: u_int,
+) {
+    let mut sy: u_int = 0;
+    py = (*gd).hsize.wrapping_add(py);
+    sy = (*gd).hsize.wrapping_add((*gd).sy);
+    grid_move_lines(
+        gd,
+        py.wrapping_add(ny),
+        py,
+        sy.wrapping_sub(py).wrapping_sub(ny),
+        bg,
+    );
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_insert_lines_region(
+    mut gd: *mut grid,
+    mut rlower: u_int,
+    mut py: u_int,
+    mut ny: u_int,
+    mut bg: u_int,
+) {
+    let mut ny2: u_int = 0;
+    rlower = (*gd).hsize.wrapping_add(rlower);
+    py = (*gd).hsize.wrapping_add(py);
+    ny2 = rlower
+        .wrapping_add(1 as u_int)
+        .wrapping_sub(py)
+        .wrapping_sub(ny);
+    grid_move_lines(
+        gd,
+        rlower.wrapping_add(1 as u_int).wrapping_sub(ny2),
+        py,
+        ny2,
+        bg,
+    );
+    grid_clear(
+        gd,
+        0 as u_int,
+        py.wrapping_add(ny2),
+        (*gd).sx,
+        ny.wrapping_sub(ny2),
+        bg,
+    );
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_delete_lines(
+    mut gd: *mut grid,
+    mut py: u_int,
+    mut ny: u_int,
+    mut bg: u_int,
+) {
+    let mut sy: u_int = 0;
+    py = (*gd).hsize.wrapping_add(py);
+    sy = (*gd).hsize.wrapping_add((*gd).sy);
+    grid_move_lines(
+        gd,
+        py,
+        py.wrapping_add(ny),
+        sy.wrapping_sub(py).wrapping_sub(ny),
+        bg,
+    );
+    grid_clear(gd, 0 as u_int, sy.wrapping_sub(ny), (*gd).sx, ny, bg);
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_delete_lines_region(
+    mut gd: *mut grid,
+    mut rlower: u_int,
+    mut py: u_int,
+    mut ny: u_int,
+    mut bg: u_int,
+) {
+    let mut ny2: u_int = 0;
+    rlower = (*gd).hsize.wrapping_add(rlower);
+    py = (*gd).hsize.wrapping_add(py);
+    ny2 = rlower
+        .wrapping_add(1 as u_int)
+        .wrapping_sub(py)
+        .wrapping_sub(ny);
+    grid_move_lines(gd, py, py.wrapping_add(ny), ny2, bg);
+    grid_clear(
+        gd,
+        0 as u_int,
+        py.wrapping_add(ny2),
+        (*gd).sx,
+        ny.wrapping_sub(ny2),
+        bg,
+    );
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_insert_cells(
+    mut gd: *mut grid,
+    mut px: u_int,
+    mut py: u_int,
+    mut nx: u_int,
+    mut bg: u_int,
+) {
+    let mut sx: u_int = 0;
+    px = px;
+    py = (*gd).hsize.wrapping_add(py);
+    sx = (*gd).sx;
+    if px >= sx.wrapping_sub(1 as u_int) {
+        grid_clear(gd, px, py, 1 as u_int, 1 as u_int, bg);
+    } else {
+        grid_move_cells(
+            gd,
+            px.wrapping_add(nx),
+            px,
+            py,
+            sx.wrapping_sub(px).wrapping_sub(nx),
+            bg,
+        );
+    };
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_delete_cells(
+    mut gd: *mut grid,
+    mut px: u_int,
+    mut py: u_int,
+    mut nx: u_int,
+    mut bg: u_int,
+) {
+    let mut sx: u_int = 0;
+    px = px;
+    py = (*gd).hsize.wrapping_add(py);
+    sx = (*gd).sx;
+    grid_move_cells(
+        gd,
+        px,
+        px.wrapping_add(nx),
+        py,
+        sx.wrapping_sub(px).wrapping_sub(nx),
+        bg,
+    );
+    grid_clear(gd, sx.wrapping_sub(nx), py, nx, 1 as u_int, bg);
+}
+#[no_mangle]
+pub unsafe extern "C" fn grid_view_string_cells(
+    mut gd: *mut grid,
+    mut px: u_int,
+    mut py: u_int,
+    mut nx: u_int,
+) -> *mut ::core::ffi::c_char {
+    px = px;
+    py = (*gd).hsize.wrapping_add(py);
+    return grid_string_cells(
+        gd,
+        px,
+        py,
+        nx,
+        ::core::ptr::null_mut::<*mut grid_cell>(),
+        0 as ::core::ffi::c_int,
+        ::core::ptr::null_mut::<screen>(),
+    );
+}

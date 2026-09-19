@@ -1,0 +1,22 @@
+[workspace]
+members = [
+]
+[package]
+name = "hmux2"
+authors = ["C2Rust"]
+version = "0.0.0"
+publish = false
+edition = "2021"
+autobins = false
+
+[lib]
+name = "hmux2"
+path = "lib.rs"
+crate-type = ["staticlib", "rlib"]
+[[bin]]
+path = "src/tmux.rs"
+name = "hmux2"
+[dependencies]
+c2rust-bitfields = "0.22.1"
+libc = "0.2"
+
