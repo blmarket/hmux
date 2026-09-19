@@ -17,3 +17,13 @@ pub unsafe extern "C" fn htonll(mut v: uint64_t) -> uint64_t {
     t = __bswap_32((v >> 32 as ::core::ffi::c_int) as __uint32_t) as uint32_t;
     return (b as uint64_t) << 32 as ::core::ffi::c_int | t as uint64_t;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::htonll;
+
+    #[test]
+    fn converts_to_network_byte_order() {
+        assert_eq!(unsafe { htonll(0x0123_4567_89ab_cdef) }, 0xefcd_ab89_6745_2301);
+    }
+}
