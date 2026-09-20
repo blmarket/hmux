@@ -1,0 +1,91 @@
+src/client.rs::SA_RESTART 268435456 4 4
+src/proc.rs::SA_RESTART 268435456 4 4
+src/client.rs::SIGCHLD 17 4 4
+src/proc.rs::SIGCHLD 17 4 4
+src/server.rs::SIGCHLD 17 4 4
+src/server_fn.rs::SIGCHLD 17 4 4
+src/spawn.rs::SIGCHLD 17 4 4
+src/window.rs::SIGCHLD 17 4 4
+src/client.rs::SIGCONT 18 4 4
+src/job.rs::SIGCONT 18 4 4
+src/proc.rs::SIGCONT 18 4 4
+src/server.rs::SIGCONT 18 4 4
+src/client.rs::SIGHUP 1 4 4
+src/popup.rs::SIGHUP 1 4 4
+src/proc.rs::SIGHUP 1 4 4
+src/spawn.rs::SIGHUP 1 4 4
+src/proc.rs::SIGINT 2 4 4
+src/server.rs::SIGINT 2 4 4
+src/client.rs::SIGTERM 15 4 4
+src/cmd_kill_server.rs::SIGTERM 15 4 4
+src/job.rs::SIGTERM 15 4 4
+src/proc.rs::SIGTERM 15 4 4
+src/server.rs::SIGTERM 15 4 4
+src/client.rs::SIGTSTP 20 4 4
+src/proc.rs::SIGTSTP 20 4 4
+src/job.rs::SIGTTIN 21 4 4
+src/proc.rs::SIGTTIN 21 4 4
+src/server.rs::SIGTTIN 21 4 4
+src/job.rs::SIGTTOU 22 4 4
+src/proc.rs::SIGTTOU 22 4 4
+src/server.rs::SIGTTOU 22 4 4
+src/proc.rs::SIGUSR1 10 4 4
+src/server.rs::SIGUSR1 10 4 4
+src/proc.rs::SIGUSR2 12 4 4
+src/server.rs::SIGUSR2 12 4 4
+src/client.rs::SIGWINCH 28 4 4
+src/proc.rs::SIGWINCH 28 4 4
+src/cmd_pipe_pane.rs::SIG_BLOCK 0 4 4
+src/job.rs::SIG_BLOCK 0 4 4
+src/server.rs::SIG_BLOCK 0 4 4
+src/spawn.rs::SIG_BLOCK 0 4 4
+src/client.rs::SIG_DFL None 8 8
+src/proc.rs::SIG_DFL None 8 8
+src/cmd_pipe_pane.rs::SIG_SETMASK 2 4 4
+src/job.rs::SIG_SETMASK 2 4 4
+src/server.rs::SIG_SETMASK 2 4 4
+src/spawn.rs::SIG_SETMASK 2 4 4
+src/client.rs::__sighandler_t 8 8
+src/proc.rs::__sighandler_t 8 8
+src/client.rs::__sigset_t 128 8 __val=0
+src/cmd_pipe_pane.rs::__sigset_t 128 8 __val=0
+src/job.rs::__sigset_t 128 8 __val=0
+src/proc.rs::__sigset_t 128 8 __val=0
+src/server.rs::__sigset_t 128 8 __val=0
+src/spawn.rs::__sigset_t 128 8 __val=0
+src/client.rs::__sigval_t 8 8
+src/proc.rs::__sigval_t 8 8
+src/client.rs::sigaction 152 8 __sigaction_handler=0 sa_mask=8 sa_flags=136 sa_restorer=144
+src/proc.rs::sigaction 152 8 __sigaction_handler=0 sa_mask=8 sa_flags=136 sa_restorer=144
+src/client.rs::C2RustUnnamed_10 8 8 sa_handler=0 sa_sigaction=0
+src/proc.rs::C2RustUnnamed_9 8 8 sa_handler=0 sa_sigaction=0
+src/client.rs::siginfo_t 128 8 si_signo=0 si_errno=4 si_code=8 __pad0=12 _sifields=16
+src/proc.rs::siginfo_t 128 8 si_signo=0 si_errno=4 si_code=8 __pad0=12 _sifields=16
+src/client.rs::C2RustUnnamed_0 112 8 _pad=0 _kill=0 _timer=0 _rt=0 _sigchld=0 _sigfault=0 _sigpoll=0 _sigsys=0
+src/proc.rs::C2RustUnnamed 112 8 _pad=0 _kill=0 _timer=0 _rt=0 _sigchld=0 _sigfault=0 _sigpoll=0 _sigsys=0
+src/client.rs::C2RustUnnamed_9 8 4 si_pid=0 si_uid=4
+src/proc.rs::C2RustUnnamed_8 8 4 si_pid=0 si_uid=4
+src/client.rs::C2RustUnnamed_7 16 8 si_pid=0 si_uid=4 si_sigval=8
+src/proc.rs::C2RustUnnamed_6 16 8 si_pid=0 si_uid=4 si_sigval=8
+src/client.rs::C2RustUnnamed_6 32 8 si_pid=0 si_uid=4 si_status=8 si_utime=16 si_stime=24
+src/proc.rs::C2RustUnnamed_5 32 8 si_pid=0 si_uid=4 si_status=8 si_utime=16 si_stime=24
+src/client.rs::C2RustUnnamed_3 32 8 si_addr=0 si_addr_lsb=8 _bounds=16
+src/proc.rs::C2RustUnnamed_2 32 8 si_addr=0 si_addr_lsb=8 _bounds=16
+src/client.rs::C2RustUnnamed_4 16 8 _addr_bnd=0 _pkey=0
+src/proc.rs::C2RustUnnamed_3 16 8 _addr_bnd=0 _pkey=0
+src/client.rs::C2RustUnnamed_5 16 8 _lower=0 _upper=8
+src/proc.rs::C2RustUnnamed_4 16 8 _lower=0 _upper=8
+src/client.rs::C2RustUnnamed_2 16 8 si_band=0 si_fd=8
+src/proc.rs::C2RustUnnamed_1 16 8 si_band=0 si_fd=8
+src/client.rs::C2RustUnnamed_1 16 8 _call_addr=0 _syscall=8 _arch=12
+src/proc.rs::C2RustUnnamed_0 16 8 _call_addr=0 _syscall=8 _arch=12
+src/client.rs::C2RustUnnamed_8 16 8 si_tid=0 si_overrun=4 si_sigval=8
+src/proc.rs::C2RustUnnamed_7 16 8 si_tid=0 si_overrun=4 si_sigval=8
+src/client.rs::sigset_t 128 8
+src/cmd_pipe_pane.rs::sigset_t 128 8
+src/job.rs::sigset_t 128 8
+src/proc.rs::sigset_t 128 8
+src/server.rs::sigset_t 128 8
+src/spawn.rs::sigset_t 128 8
+src/client.rs::sigval 8 8 sival_int=0 sival_ptr=0
+src/proc.rs::sigval 8 8 sival_int=0 sival_ptr=0

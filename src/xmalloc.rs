@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX, SIZE_MAX};
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
 use crate::src::shared::abi::*;
 extern "C" {
@@ -35,8 +36,7 @@ extern "C" {
     fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
     fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
 }
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
-pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
+
 #[no_mangle]
 pub unsafe extern "C" fn xmalloc(mut size: size_t) -> *mut ::core::ffi::c_void {
     let mut ptr: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
@@ -205,4 +205,3 @@ pub unsafe extern "C" fn xvsnprintf(
     }
     return i;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

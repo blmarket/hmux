@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__SHRT_MAX__, USHRT_MAX};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
 pub use crate::src::shared::hyperlinks::{hyperlinks};
@@ -937,8 +938,7 @@ pub struct spawn_context {
     pub cwd: *const ::core::ffi::c_char,
     pub flags: ::core::ffi::c_int,
 }
-pub const USHRT_MAX: ::core::ffi::c_int =
-    __SHRT_MAX__ * 2 as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
+
 pub const NEW_SESSION_TEMPLATE: [::core::ffi::c_char; 17] = unsafe {
     ::core::mem::transmute::<[u8; 17], [::core::ffi::c_char; 17]>(*b"#{session_name}:\0")
 };
@@ -1659,4 +1659,3 @@ unsafe extern "C" fn cmd_new_session_exec(
     free(prefix as *mut ::core::ffi::c_void);
     return CMD_RETURN_ERROR;
 }
-pub const __SHRT_MAX__: ::core::ffi::c_int = 32767 as ::core::ffi::c_int;

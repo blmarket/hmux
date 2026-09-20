@@ -1,3 +1,11 @@
+pub use crate::src::shared::errno::E2BIG;
+pub use crate::src::shared::socket::{
+    __socket_type, in6_addr, in6_addr___in6_u, in_addr, in_addr_t, in_port_t, sa_family_t,
+    sockaddr, sockaddr_at, sockaddr_ax25, sockaddr_dl, sockaddr_eon, sockaddr_in, sockaddr_in6,
+    sockaddr_inarp, sockaddr_ipx, sockaddr_iso, sockaddr_ns, sockaddr_un, sockaddr_x25,
+    __SOCKADDR_ARG, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM, SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW,
+    SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
+};
 pub use crate::src::shared::abi::{
     __socklen_t, __uint16_t, __uint32_t, socklen_t, uint16_t, uint32_t,
 };
@@ -6,15 +14,7 @@ extern "C" {
     pub type sd_bus;
     pub type sd_bus_message;
     pub type sd_bus_slot;
-    pub type sockaddr_x25;
-    pub type sockaddr_ns;
-    pub type sockaddr_iso;
-    pub type sockaddr_ipx;
-    pub type sockaddr_inarp;
-    pub type sockaddr_eon;
-    pub type sockaddr_dl;
-    pub type sockaddr_ax25;
-    pub type sockaddr_at;
+
     fn strcmp(
         __s1: *const ::core::ffi::c_char,
         __s2: *const ::core::ffi::c_char,
@@ -105,13 +105,7 @@ extern "C" {
     static mut socket_path: *const ::core::ffi::c_char;
     fn server_create_socket(_: uint64_t, _: *mut *mut ::core::ffi::c_char) -> ::core::ffi::c_int;
 }
-pub type sa_family_t = ::core::ffi::c_ushort;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sockaddr_un {
-    pub sun_family: sa_family_t,
-    pub sun_path: [::core::ffi::c_char; 108],
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct sd_bus_error {
@@ -133,75 +127,7 @@ pub union sd_id128 {
     pub qwords: [uint64_t; 2],
 }
 pub type sd_id128_t = sd_id128;
-pub type __socket_type = ::core::ffi::c_uint;
-pub const SOCK_NONBLOCK: __socket_type = 2048;
-pub const SOCK_CLOEXEC: __socket_type = 524288;
-pub const SOCK_PACKET: __socket_type = 10;
-pub const SOCK_DCCP: __socket_type = 6;
-pub const SOCK_SEQPACKET: __socket_type = 5;
-pub const SOCK_RDM: __socket_type = 4;
-pub const SOCK_RAW: __socket_type = 3;
-pub const SOCK_DGRAM: __socket_type = 2;
-pub const SOCK_STREAM: __socket_type = 1;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sockaddr {
-    pub sa_family: sa_family_t,
-    pub sa_data: [::core::ffi::c_char; 14],
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union __SOCKADDR_ARG {
-    pub __sockaddr__: *mut sockaddr,
-    pub __sockaddr_at__: *mut sockaddr_at,
-    pub __sockaddr_ax25__: *mut sockaddr_ax25,
-    pub __sockaddr_dl__: *mut sockaddr_dl,
-    pub __sockaddr_eon__: *mut sockaddr_eon,
-    pub __sockaddr_in__: *mut sockaddr_in,
-    pub __sockaddr_in6__: *mut sockaddr_in6,
-    pub __sockaddr_inarp__: *mut sockaddr_inarp,
-    pub __sockaddr_ipx__: *mut sockaddr_ipx,
-    pub __sockaddr_iso__: *mut sockaddr_iso,
-    pub __sockaddr_ns__: *mut sockaddr_ns,
-    pub __sockaddr_un__: *mut sockaddr_un,
-    pub __sockaddr_x25__: *mut sockaddr_x25,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sockaddr_in6 {
-    pub sin6_family: sa_family_t,
-    pub sin6_port: in_port_t,
-    pub sin6_flowinfo: uint32_t,
-    pub sin6_addr: in6_addr,
-    pub sin6_scope_id: uint32_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct in6_addr {
-    pub __in6_u: C2RustUnnamed,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed {
-    pub __u6_addr8: [uint8_t; 16],
-    pub __u6_addr16: [uint16_t; 8],
-    pub __u6_addr32: [uint32_t; 4],
-}
-pub type in_port_t = uint16_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sockaddr_in {
-    pub sin_family: sa_family_t,
-    pub sin_port: in_port_t,
-    pub sin_addr: in_addr,
-    pub sin_zero: [::core::ffi::c_uchar; 8],
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct in_addr {
-    pub s_addr: in_addr_t,
-}
-pub type in_addr_t = uint32_t;
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct systemd_job_watch {
@@ -209,7 +135,7 @@ pub struct systemd_job_watch {
     pub done: ::core::ffi::c_int,
 }
 pub const EPFNOSUPPORT: ::core::ffi::c_int = 96 as ::core::ffi::c_int;
-pub const E2BIG: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
+
 pub const SD_BUS_ERROR_NULL: sd_bus_error = sd_bus_error {
     name: ::core::ptr::null::<::core::ffi::c_char>(),
     message: ::core::ptr::null::<::core::ffi::c_char>(),

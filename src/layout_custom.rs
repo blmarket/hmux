@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX};
 pub use crate::src::shared::window::{WINDOW_MAXIMUM};
 pub use crate::src::shared::pane::{
     PANE_MAXIMUM, PANE_MINIMUM, window_pane_offset, window_pane_resize,
@@ -888,7 +889,7 @@ pub struct layout_parse_cell_ctx {
     pub index: ::core::ffi::c_int,
     pub zindex: ::core::ffi::c_int,
 }
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
+
 unsafe extern "C" fn layout_parse_index_cmp(
     mut a: *const ::core::ffi::c_void,
     mut b: *const ::core::ffi::c_void,
@@ -2474,4 +2475,3 @@ unsafe extern "C" fn layout_parse_ctx_check_indexes(
     }
     return 1 as ::core::ffi::c_int;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

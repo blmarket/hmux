@@ -1,3 +1,4 @@
+pub use crate::src::shared::errno::{EINVAL, ENOENT, ENOMEM};
 pub use crate::src::shared::abi::{__size_t, ssize_t};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
@@ -875,9 +876,7 @@ pub struct cmd_source_file_data {
     pub files: *mut *mut ::core::ffi::c_char,
     pub nfiles: u_int,
 }
-pub const ENOENT: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const ENOMEM: ::core::ffi::c_int = 12 as ::core::ffi::c_int;
-pub const EINVAL: ::core::ffi::c_int = 22 as ::core::ffi::c_int;
+
 pub const GLOB_NOSPACE: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const GLOB_NOMATCH: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 static mut cmd_source_file_depth: u_int = 0;

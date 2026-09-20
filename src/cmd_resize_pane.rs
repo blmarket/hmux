@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX, INT_MIN};
 pub use crate::src::shared::window::{WINDOW_ZOOMED};
 pub use crate::src::shared::pane::{
     PANE_MAXIMUM, PANE_MINIMUM, PANE_REDRAW, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_RIGHT,
@@ -839,8 +840,7 @@ pub struct cmd_entry {
     pub flags: ::core::ffi::c_int,
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
-pub const INT_MIN: ::core::ffi::c_int = -__INT_MAX__ - 1 as ::core::ffi::c_int;
+
 #[no_mangle]
 pub static mut cmd_resize_pane_entry: cmd_entry = unsafe {
     cmd_entry {
@@ -1381,4 +1381,3 @@ unsafe extern "C" fn cmd_resize_pane_mouse_resize_tiled(
         server_redraw_window(w);
     }
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

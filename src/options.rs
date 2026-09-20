@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::pane::{
     PANE_CHANGED, PANE_STYLECHANGED, PANE_THEMECHANGED, window_pane_offset, window_pane_resize,
     window_pane_resize_entry, window_pane_resizes,
@@ -993,9 +994,7 @@ pub struct options_name_map {
     pub from: *const ::core::ffi::c_char,
     pub to: *const ::core::ffi::c_char,
 }
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 unsafe extern "C" fn options_array_key_to_number(
     mut key: *const ::core::ffi::c_char,
     mut idx: *mut u_int,
@@ -4120,4 +4119,3 @@ pub unsafe extern "C" fn options_remove_or_default(
     }
     return 0 as ::core::ffi::c_int;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

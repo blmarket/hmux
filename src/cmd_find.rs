@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
 pub use crate::src::shared::hyperlinks::{hyperlinks};
@@ -855,7 +856,7 @@ pub struct clients {
     pub tqh_first: *mut client,
     pub tqh_last: *mut *mut client,
 }
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
+
 pub const _PATH_DEV: [::core::ffi::c_char; 6] =
     unsafe { ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"/dev/\0") };
 static mut cmd_find_session_table: [[*const ::core::ffi::c_char; 2]; 1] = [[
@@ -2585,4 +2586,3 @@ pub unsafe extern "C" fn cmd_find_client(
     );
     return c;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

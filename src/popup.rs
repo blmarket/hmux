@@ -1,3 +1,4 @@
+pub use crate::src::shared::signal::SIGHUP;
 pub use crate::src::shared::abi::{ssize_t};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_citem, screen_write_cline};
@@ -1009,7 +1010,7 @@ pub const BOTTOM: C2RustUnnamed_40 = 4;
 pub const TOP: C2RustUnnamed_40 = 3;
 pub const RIGHT: C2RustUnnamed_40 = 2;
 pub const LEFT: C2RustUnnamed_40 = 1;
-pub const SIGHUP: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+
 pub const JOB_NOWAIT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const JOB_KEEPWRITE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const JOB_PTY: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;

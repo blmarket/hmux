@@ -7,6 +7,8 @@
     unused_mut
 )]
 #![feature(extern_types, raw_ref_op)]
+pub use crate::src::shared::account::passwd;
+pub use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 pub use crate::src::shared::stdio::{
     FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
 };
@@ -173,12 +175,7 @@ extern "C" {
     fn log_add_level();
     fn log_debug(_: *const ::core::ffi::c_char, ...);
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct timespec {
-    pub tv_sec: __time_t,
-    pub tv_nsec: __syscall_slong_t,
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct stat {
@@ -583,17 +580,7 @@ pub const ABDAY_4: C2RustUnnamed = 131075;
 pub const ABDAY_3: C2RustUnnamed = 131074;
 pub const ABDAY_2: C2RustUnnamed = 131073;
 pub const ABDAY_1: C2RustUnnamed = 131072;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct passwd {
-    pub pw_name: *mut ::core::ffi::c_char,
-    pub pw_passwd: *mut ::core::ffi::c_char,
-    pub pw_uid: __uid_t,
-    pub pw_gid: __gid_t,
-    pub pw_gecos: *mut ::core::ffi::c_char,
-    pub pw_dir: *mut ::core::ffi::c_char,
-    pub pw_shell: *mut ::core::ffi::c_char,
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct environ_entry {
@@ -643,7 +630,7 @@ pub const S_IRWXU: ::core::ffi::c_int = __S_IREAD | __S_IWRITE | __S_IEXEC;
 pub const LC_CTYPE: ::core::ffi::c_int = __LC_CTYPE;
 pub const LC_TIME: ::core::ffi::c_int = __LC_TIME;
 pub const X_OK: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const CLOCK_REALTIME: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+
 pub const CLOCK_MONOTONIC: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
     unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };

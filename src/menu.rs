@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::screen::{
     MODE_CURSOR, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, screen, screen_sel, screen_titles,
 };
@@ -948,9 +949,7 @@ pub struct cmd_parse_input {
     pub c: *mut client,
     pub fs: cmd_find_state,
 }
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 #[no_mangle]
 pub unsafe extern "C" fn menu_add_items(
     mut menu: *mut menu,
@@ -3148,4 +3147,3 @@ pub unsafe extern "C" fn menu_display(
     server_redraw_window((*md).w);
     return 0 as ::core::ffi::c_int;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

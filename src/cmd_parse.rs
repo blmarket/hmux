@@ -1,3 +1,5 @@
+pub use crate::src::shared::limits::{__INT_MAX__, SIZE_MAX, UINT_MAX};
+pub use crate::src::shared::account::passwd;
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::stdio::{
     FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
@@ -167,17 +169,7 @@ pub const _ISdigit: C2RustUnnamed = 2048;
 pub const _ISalpha: C2RustUnnamed = 1024;
 pub const _ISlower: C2RustUnnamed = 512;
 pub const _ISupper: C2RustUnnamed = 256;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct passwd {
-    pub pw_name: *mut ::core::ffi::c_char,
-    pub pw_passwd: *mut ::core::ffi::c_char,
-    pub pw_uid: __uid_t,
-    pub pw_gid: __gid_t,
-    pub pw_gecos: *mut ::core::ffi::c_char,
-    pub pw_dir: *mut ::core::ffi::c_char,
-    pub pw_shell: *mut ::core::ffi::c_char,
-}
+
 pub type wchar_t = ::libc::wchar_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -1062,11 +1054,9 @@ pub union yyalloc {
     pub yyss_alloc: yy_state_t,
     pub yyvs_alloc: YYSTYPE,
 }
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 pub const EOF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
+
 pub const ENVIRON_HIDDEN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const FORMAT_NOJOBS: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const FORMAT_NONE: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -4869,4 +4859,3 @@ unsafe extern "C" fn yylex_token(mut ch: ::core::ffi::c_int) -> *mut ::core::ffi
         }
     };
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

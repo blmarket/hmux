@@ -1,0 +1,58 @@
+src/format.rs::REG_EXTENDED 1 4 4
+src/window.rs::REG_EXTENDED 1 4 4
+src/window_copy.rs::REG_EXTENDED 1 4 4
+src/format.rs::REG_ICASE 2 4 4
+src/window.rs::REG_ICASE 2 4 4
+src/window_copy.rs::REG_ICASE 2 4 4
+src/format.rs::__re_long_size_t 8 8
+src/regsub.rs::__re_long_size_t 8 8
+src/window.rs::__re_long_size_t 8 8
+src/window_copy.rs::__re_long_size_t 8 8
+src/format.rs::re_pattern_buffer 64 8 buffer=0 allocated=8 used=16 syntax=24 fastmap=32 translate=40 re_nsub=48 can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor=56 c2rust_padding=57
+src/regsub.rs::re_pattern_buffer 64 8 buffer=0 allocated=8 used=16 syntax=24 fastmap=32 translate=40 re_nsub=48 can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor=56 c2rust_padding=57
+src/window.rs::re_pattern_buffer 64 8 buffer=0 allocated=8 used=16 syntax=24 fastmap=32 translate=40 re_nsub=48 can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor=56 c2rust_padding=57
+src/window_copy.rs::re_pattern_buffer 64 8 buffer=0 allocated=8 used=16 syntax=24 fastmap=32 translate=40 re_nsub=48 can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor=56 c2rust_padding=57
+src/format.rs::reg_syntax_t 8 8
+src/regsub.rs::reg_syntax_t 8 8
+src/window.rs::reg_syntax_t 8 8
+src/window_copy.rs::reg_syntax_t 8 8
+src/format.rs::regex_t 64 8
+src/regsub.rs::regex_t 64 8
+src/window.rs::regex_t 64 8
+src/window_copy.rs::regex_t 64 8
+src/format.rs::regmatch_t 8 4 rm_so=0 rm_eo=4
+src/regsub.rs::regmatch_t 8 4 rm_so=0 rm_eo=4
+src/window.rs::regmatch_t 8 4 rm_so=0 rm_eo=4
+src/window_copy.rs::regmatch_t 8 4 rm_so=0 rm_eo=4
+src/format.rs::regoff_t 4 4
+src/regsub.rs::regoff_t 4 4
+src/window.rs::regoff_t 4 4
+src/window_copy.rs::regoff_t 4 4
+src/format.rs bits 0 [0] [165, 165, 165, 165, 165, 165, 165] [0, 0, 0, 0, 0, 0, 0]
+src/format.rs bits 1 [251] [165, 165, 165, 165, 165, 165, 165] [1, 1, 1, 1, 1, 1, 1]
+src/format.rs bits 2 [4] [165, 165, 165, 165, 165, 165, 165] [0, 2, 0, 0, 0, 0, 0]
+src/format.rs bits 3 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/format.rs bits 7 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/format.rs bits 255 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/format.rs bits 4294967295 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/regsub.rs bits 0 [0] [165, 165, 165, 165, 165, 165, 165] [0, 0, 0, 0, 0, 0, 0]
+src/regsub.rs bits 1 [251] [165, 165, 165, 165, 165, 165, 165] [1, 1, 1, 1, 1, 1, 1]
+src/regsub.rs bits 2 [4] [165, 165, 165, 165, 165, 165, 165] [0, 2, 0, 0, 0, 0, 0]
+src/regsub.rs bits 3 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/regsub.rs bits 7 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/regsub.rs bits 255 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/regsub.rs bits 4294967295 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/window.rs bits 0 [0] [165, 165, 165, 165, 165, 165, 165] [0, 0, 0, 0, 0, 0, 0]
+src/window.rs bits 1 [251] [165, 165, 165, 165, 165, 165, 165] [1, 1, 1, 1, 1, 1, 1]
+src/window.rs bits 2 [4] [165, 165, 165, 165, 165, 165, 165] [0, 2, 0, 0, 0, 0, 0]
+src/window.rs bits 3 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/window.rs bits 7 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/window.rs bits 255 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/window.rs bits 4294967295 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/window_copy.rs bits 0 [0] [165, 165, 165, 165, 165, 165, 165] [0, 0, 0, 0, 0, 0, 0]
+src/window_copy.rs bits 1 [251] [165, 165, 165, 165, 165, 165, 165] [1, 1, 1, 1, 1, 1, 1]
+src/window_copy.rs bits 2 [4] [165, 165, 165, 165, 165, 165, 165] [0, 2, 0, 0, 0, 0, 0]
+src/window_copy.rs bits 3 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/window_copy.rs bits 7 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/window_copy.rs bits 255 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]
+src/window_copy.rs bits 4294967295 [255] [165, 165, 165, 165, 165, 165, 165] [1, 3, 1, 1, 1, 1, 1]

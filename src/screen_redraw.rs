@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::SIZE_MAX;
 pub use crate::src::shared::window::{WINDOW_PANE_NO_MODE};
 pub use crate::src::shared::pane::{
     PANE_BORDER_ARROWS, PANE_BORDER_BOTH, PANE_BORDER_COLOUR, PANE_NEWSTATUS,
@@ -1079,7 +1080,7 @@ pub struct redraw_build_ctx {
     pub ind: ::core::ffi::c_int,
     pub cells: *mut redraw_build_cell,
 }
-pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
+
 pub const CELL_UD: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const CELL_LR: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const CELL_RD: ::core::ffi::c_int = 3 as ::core::ffi::c_int;

@@ -1,3 +1,4 @@
+pub use crate::src::shared::time::{timespec, tm, CLOCK_REALTIME};
 pub use crate::src::shared::pane::{
     PANE_REDRAW, window_pane_offset, window_pane_resize, window_pane_resize_entry,
     window_pane_resizes,
@@ -118,27 +119,7 @@ extern "C" {
         _: *mut format_tree,
     );
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct timespec {
-    pub tv_sec: __time_t,
-    pub tv_nsec: __syscall_slong_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tm {
-    pub tm_sec: ::core::ffi::c_int,
-    pub tm_min: ::core::ffi::c_int,
-    pub tm_hour: ::core::ffi::c_int,
-    pub tm_mday: ::core::ffi::c_int,
-    pub tm_mon: ::core::ffi::c_int,
-    pub tm_year: ::core::ffi::c_int,
-    pub tm_wday: ::core::ffi::c_int,
-    pub tm_yday: ::core::ffi::c_int,
-    pub tm_isdst: ::core::ffi::c_int,
-    pub tm_gmtoff: ::core::ffi::c_long,
-    pub tm_zone: *const ::core::ffi::c_char,
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct client {
@@ -899,7 +880,7 @@ pub struct window_clock_mode_data {
     pub tim: time_t,
     pub timer: event,
 }
-pub const CLOCK_REALTIME: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+
 #[no_mangle]
 pub static mut window_clock_mode: window_mode = unsafe {
     window_mode {

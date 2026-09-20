@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::screen::{
     ALL_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR,
     MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON,
@@ -784,9 +785,7 @@ pub struct C2RustUnnamed_35 {
     pub le_next: *mut tty_term,
     pub le_prev: *mut *mut tty_term,
 }
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 pub const MODEKEY_EMACS: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 unsafe extern "C" fn screen_free_titles(mut s: *mut screen) {
     let mut title_entry: *mut screen_title_entry = ::core::ptr::null_mut::<screen_title_entry>();
@@ -1830,4 +1829,3 @@ pub unsafe extern "C" fn screen_print(
     *buf.offset(last as isize) = '\0' as i32 as ::core::ffi::c_char;
     return buf;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

@@ -1,3 +1,5 @@
+pub use crate::src::shared::errno::{EINVAL, ENOMEM};
+pub use crate::src::shared::limits::SIZE_MAX;
 use crate::src::shared::abi::*;
 extern "C" {
     fn __errno_location() -> *mut ::core::ffi::c_int;
@@ -17,9 +19,7 @@ extern "C" {
     fn calloc(__nmemb: size_t, __size: size_t) -> *mut ::core::ffi::c_void;
     fn free(__ptr: *mut ::core::ffi::c_void);
 }
-pub const ENOMEM: ::core::ffi::c_int = 12 as ::core::ffi::c_int;
-pub const EINVAL: ::core::ffi::c_int = 22 as ::core::ffi::c_int;
-pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
+
 pub const MUL_NO_OVERFLOW: size_t = (1 as ::core::ffi::c_int as size_t)
     << (::core::mem::size_of::<size_t>() as usize).wrapping_mul(4 as usize);
 #[no_mangle]

@@ -1,3 +1,4 @@
+pub use crate::src::shared::posix_terminal::VERASE;
 pub use crate::src::shared::abi::{ssize_t};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
@@ -954,7 +955,7 @@ pub struct tty_default_key_xterm {
     pub key: key_code,
 }
 pub const _POSIX_VDISABLE: ::core::ffi::c_int = '\0' as i32;
-pub const VERASE: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
+
 static mut tty_default_raw_keys: [tty_default_key_raw; 102] = [
     tty_default_key_raw {
         string: b"\x1BO[\0" as *const u8 as *const ::core::ffi::c_char,

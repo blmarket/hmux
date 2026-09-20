@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::pane::{
     PANE_REDRAW, PANE_STYLECHANGED, PANE_THEMECHANGED, window_pane_offset, window_pane_resize,
     window_pane_resize_entry, window_pane_resizes,
@@ -830,9 +831,7 @@ pub struct cmd_entry {
     pub flags: ::core::ffi::c_int,
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 #[no_mangle]
 pub static mut cmd_send_keys_entry: cmd_entry = unsafe {
     cmd_entry {
@@ -1150,4 +1149,3 @@ unsafe extern "C" fn cmd_send_keys_exec(
     }
     return CMD_RETURN_NORMAL;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

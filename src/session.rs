@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::window::{
     WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL, WINLINK_SILENCE, WINLINK_VISITED,
 };
@@ -874,9 +875,7 @@ pub struct session_groups {
 pub struct sessions {
     pub rbh_root: *mut session,
 }
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 #[no_mangle]
 pub static mut sessions: sessions = sessions {
     rbh_root: ::core::ptr::null::<session>() as *mut session,
@@ -3073,4 +3072,3 @@ pub unsafe extern "C" fn session_update_history(mut s: *mut session) {
         wl = winlinks_RB_NEXT(wl);
     }
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

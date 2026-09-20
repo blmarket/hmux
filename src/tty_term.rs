@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
 pub use crate::src::shared::hyperlinks::{hyperlinks};
@@ -902,7 +903,7 @@ pub struct tty_term_code_entry {
     pub name: *const ::core::ffi::c_char,
 }
 pub const OK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
+
 pub const VIS_OCTAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const VIS_CSTYLE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const VIS_TAB: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
@@ -2760,4 +2761,3 @@ pub unsafe extern "C" fn tty_term_describe(
     }
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

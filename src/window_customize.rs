@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX};
 pub use crate::src::shared::pane::{
     PANE_REDRAW, window_pane_offset, window_pane_resize, window_pane_resize_entry,
     window_pane_resizes,
@@ -1360,7 +1361,7 @@ unsafe extern "C" fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int 
         __c
     };
 }
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
+
 pub const ENVIRON_HIDDEN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const KEY_BINDING_REPEAT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const WINDOW_CUSTOMIZE_DEFAULT_FORMAT: [::core::ffi::c_char; 227] = unsafe {
@@ -6402,4 +6403,3 @@ unsafe extern "C" fn window_customize_key(
         (*wp).flags |= PANE_REDRAW;
     };
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

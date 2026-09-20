@@ -1,3 +1,4 @@
+pub use crate::src::shared::signal::SIGCHLD;
 pub use crate::src::shared::window::{
     WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL, WINLINK_SILENCE,
 };
@@ -980,7 +981,7 @@ pub struct clients {
     pub tqh_first: *mut client,
     pub tqh_last: *mut *mut client,
 }
-pub const SIGCHLD: ::core::ffi::c_int = 17 as ::core::ffi::c_int;
+
 pub const IMSG_HEADER_SIZE: usize = ::core::mem::size_of::<imsg_hdr>();
 pub const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
 unsafe extern "C" fn server_fire_pane_exit(

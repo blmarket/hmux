@@ -1,0 +1,7 @@
+src/tmux.rs::CLOCK_REALTIME 0 4 4
+src/window_clock.rs::CLOCK_REALTIME 0 4 4
+src/server.rs::timespec 16 8 tv_sec=0 tv_nsec=8
+src/tmux.rs::timespec 16 8 tv_sec=0 tv_nsec=8
+src/window_clock.rs::timespec 16 8 tv_sec=0 tv_nsec=8
+src/format.rs::tm 56 8 tm_sec=0 tm_min=4 tm_hour=8 tm_mday=12 tm_mon=16 tm_year=20 tm_wday=24 tm_yday=28 tm_isdst=32 tm_gmtoff=40 tm_zone=48
+src/window_clock.rs::tm 56 8 tm_sec=0 tm_min=4 tm_hour=8 tm_mday=12 tm_mon=16 tm_year=20 tm_wday=24 tm_yday=28 tm_isdst=32 tm_gmtoff=40 tm_zone=48

@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::menu::{MENU_NOMOUSE, MENU_STAYOPEN, menu, menu_item};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
@@ -952,9 +953,7 @@ pub struct options_table_entry {
 }
 pub type popup_close_cb =
     Option<unsafe extern "C" fn(::core::ffi::c_int, *mut ::core::ffi::c_void) -> ()>;
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
     unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
 pub const POPUP_CLOSEEXIT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
@@ -2367,4 +2366,3 @@ unsafe extern "C" fn cmd_display_popup_exec(
         }
     };
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

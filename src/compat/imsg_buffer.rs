@@ -1,3 +1,6 @@
+pub use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ERANGE};
+pub use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
+pub use crate::src::shared::socket::SOL_SOCKET;
 pub use crate::src::shared::abi::{
     __socklen_t, __uint16_t, __uint32_t, socklen_t, ssize_t, uint16_t, uint32_t,
 };
@@ -198,21 +201,16 @@ unsafe extern "C" fn __cmsg_nxthdr(
     ) as *mut cmsghdr;
     return __cmsg;
 }
-pub const SOL_SOCKET: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+
 pub const __IOV_MAX: ::core::ffi::c_int = 1024 as ::core::ffi::c_int;
 pub const IOV_MAX: ::core::ffi::c_int = __IOV_MAX;
-pub const EINTR: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
-pub const EAGAIN: ::core::ffi::c_int = 11 as ::core::ffi::c_int;
-pub const EINVAL: ::core::ffi::c_int = 22 as ::core::ffi::c_int;
-pub const ERANGE: ::core::ffi::c_int = 34 as ::core::ffi::c_int;
-pub const EBADMSG: ::core::ffi::c_int = 74 as ::core::ffi::c_int;
+
 pub const EOVERFLOW: ::core::ffi::c_int = 75 as ::core::ffi::c_int;
 pub const EMSGSIZE: ::core::ffi::c_int = 90 as ::core::ffi::c_int;
 pub const ENOBUFS: ::core::ffi::c_int = 105 as ::core::ffi::c_int;
 pub const UINT8_MAX: ::core::ffi::c_int = 255 as ::core::ffi::c_int;
 pub const UINT16_MAX: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
-pub const UINT32_MAX: ::core::ffi::c_uint = 4294967295 as ::core::ffi::c_uint;
-pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
+
 pub const IBUF_READ_SIZE: ::core::ffi::c_int = 65535 as ::core::ffi::c_int;
 pub const IBUF_FD_MARK_ON_STACK: ::core::ffi::c_int = -(2 as ::core::ffi::c_int);
 #[no_mangle]

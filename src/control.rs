@@ -1,3 +1,5 @@
+pub use crate::src::shared::errno::{EAGAIN, EINTR};
+pub use crate::src::shared::limits::SIZE_MAX;
 pub use crate::src::shared::event::{
     EVBUFFER_EOL_ANY, EVBUFFER_EOL_CRLF, EVBUFFER_EOL_CRLF_STRICT, EVBUFFER_EOL_LF,
     EVBUFFER_EOL_NUL, EV_READ, EV_WRITE, evbuffer_eol_style,
@@ -1031,9 +1033,7 @@ pub struct monitor_change {
 }
 pub type monitor_cb =
     Option<unsafe extern "C" fn(*mut monitor_change, *mut ::core::ffi::c_void) -> ()>;
-pub const EINTR: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
-pub const EAGAIN: ::core::ffi::c_int = 11 as ::core::ffi::c_int;
-pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
+
 pub const POLLIN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const INFTIM: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const CONTROL_PANE_OFF: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;

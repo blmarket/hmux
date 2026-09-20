@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::window::{
     WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS, WINDOW_MODE_NO_STACK,
     WINDOW_ZOOMED,
@@ -997,9 +998,7 @@ pub struct window_panes_area {
     pub sx: u_int,
     pub sy: u_int,
 }
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 pub const CELL_UD: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const CELL_LR: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const CELL_RD: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
@@ -2754,4 +2753,3 @@ unsafe extern "C" fn window_panes_key(
     window_panes_run_command(data, c, target);
     window_pane_reset_mode(wp);
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

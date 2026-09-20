@@ -1,3 +1,11 @@
+pub use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
+pub use crate::src::shared::socket::{
+    __socket_type, AF_UNIX, PF_LOCAL, PF_UNIX, PF_UNSPEC, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM,
+    SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
+};
+pub use crate::src::shared::signal::{
+    __sigset_t, sigset_t, SIGCONT, SIGTERM, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
+};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
 pub use crate::src::shared::hyperlinks::{hyperlinks};
@@ -165,30 +173,7 @@ extern "C" {
     fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
     fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct __sigset_t {
-    pub __val: [::core::ffi::c_ulong; 16],
-}
-pub type sigset_t = __sigset_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct winsize {
-    pub ws_row: ::core::ffi::c_ushort,
-    pub ws_col: ::core::ffi::c_ushort,
-    pub ws_xpixel: ::core::ffi::c_ushort,
-    pub ws_ypixel: ::core::ffi::c_ushort,
-}
-pub type __socket_type = ::core::ffi::c_uint;
-pub const SOCK_NONBLOCK: __socket_type = 2048;
-pub const SOCK_CLOEXEC: __socket_type = 524288;
-pub const SOCK_PACKET: __socket_type = 10;
-pub const SOCK_DCCP: __socket_type = 6;
-pub const SOCK_SEQPACKET: __socket_type = 5;
-pub const SOCK_RDM: __socket_type = 4;
-pub const SOCK_RAW: __socket_type = 3;
-pub const SOCK_DGRAM: __socket_type = 2;
-pub const SOCK_STREAM: __socket_type = 1;
+
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const SHUT_RDWR: C2RustUnnamed = 2;
 pub const SHUT_WR: C2RustUnnamed = 1;
@@ -908,17 +893,7 @@ pub const JOB_RUNNING: C2RustUnnamed_37 = 0;
 pub struct joblist {
     pub lh_first: *mut job,
 }
-pub const TIOCSWINSZ: ::core::ffi::c_int = 0x5414 as ::core::ffi::c_int;
-pub const SIGTERM: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
-pub const PF_UNSPEC: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const PF_LOCAL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const PF_UNIX: ::core::ffi::c_int = PF_LOCAL;
-pub const AF_UNIX: ::core::ffi::c_int = PF_UNIX;
-pub const SIGCONT: ::core::ffi::c_int = 18 as ::core::ffi::c_int;
-pub const SIGTTIN: ::core::ffi::c_int = 21 as ::core::ffi::c_int;
-pub const SIGTTOU: ::core::ffi::c_int = 22 as ::core::ffi::c_int;
-pub const SIG_BLOCK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const SIG_SETMASK: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
+
 pub const STDIN_FILENO: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const STDOUT_FILENO: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const STDERR_FILENO: ::core::ffi::c_int = 2 as ::core::ffi::c_int;

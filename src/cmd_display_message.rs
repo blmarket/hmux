@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
 pub use crate::src::shared::hyperlinks::{hyperlinks};
@@ -835,9 +836,7 @@ pub struct cmd_entry {
     pub flags: ::core::ffi::c_int,
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 pub const FORMAT_VERBOSE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const FORMAT_NONE: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const DISPLAY_MESSAGE_TEMPLATE: [::core::ffi::c_char; 96] = unsafe {
@@ -1059,4 +1058,3 @@ unsafe extern "C" fn cmd_display_message_exec(
     format_free(ft);
     return CMD_RETURN_NORMAL;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

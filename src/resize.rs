@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::window::{
     WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_RESIZE, WINDOW_SIZE_LARGEST, WINDOW_SIZE_LATEST,
     WINDOW_SIZE_MANUAL,
@@ -807,9 +808,7 @@ pub struct clients {
     pub tqh_first: *mut client,
     pub tqh_last: *mut *mut client,
 }
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 unsafe extern "C" fn resize_fire_window_resized(
     mut w: *mut window,
     mut old_sx: u_int,
@@ -1414,4 +1413,3 @@ pub unsafe extern "C" fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
         w = windows_RB_NEXT(w);
     }
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

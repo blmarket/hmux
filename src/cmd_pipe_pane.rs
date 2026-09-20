@@ -1,3 +1,8 @@
+pub use crate::src::shared::socket::{
+    __socket_type, AF_UNIX, PF_LOCAL, PF_UNIX, PF_UNSPEC, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM,
+    SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
+};
+pub use crate::src::shared::signal::{__sigset_t, sigset_t, SIG_BLOCK, SIG_SETMASK};
 pub use crate::src::shared::abi::{ssize_t};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
@@ -136,22 +141,7 @@ extern "C" {
     fn log_debug(_: *const ::core::ffi::c_char, ...);
     fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct __sigset_t {
-    pub __val: [::core::ffi::c_ulong; 16],
-}
-pub type sigset_t = __sigset_t;
-pub type __socket_type = ::core::ffi::c_uint;
-pub const SOCK_NONBLOCK: __socket_type = 2048;
-pub const SOCK_CLOEXEC: __socket_type = 524288;
-pub const SOCK_PACKET: __socket_type = 10;
-pub const SOCK_DCCP: __socket_type = 6;
-pub const SOCK_SEQPACKET: __socket_type = 5;
-pub const SOCK_RDM: __socket_type = 4;
-pub const SOCK_RAW: __socket_type = 3;
-pub const SOCK_DGRAM: __socket_type = 2;
-pub const SOCK_STREAM: __socket_type = 1;
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct client {
@@ -862,13 +852,9 @@ pub struct cmd_entry {
     pub flags: ::core::ffi::c_int,
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
-pub const PF_UNSPEC: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const PF_LOCAL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const PF_UNIX: ::core::ffi::c_int = PF_LOCAL;
-pub const AF_UNIX: ::core::ffi::c_int = PF_UNIX;
+
 pub const O_WRONLY: ::core::ffi::c_int = 0o1 as ::core::ffi::c_int;
-pub const SIG_BLOCK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const SIG_SETMASK: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
+
 pub const STDIN_FILENO: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const STDOUT_FILENO: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const STDERR_FILENO: ::core::ffi::c_int = 2 as ::core::ffi::c_int;

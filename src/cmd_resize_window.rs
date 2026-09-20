@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX};
 pub use crate::src::shared::window::{
     WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST, WINDOW_SIZE_MANUAL,
 };
@@ -794,7 +795,7 @@ pub struct cmd_entry {
     pub flags: ::core::ffi::c_int,
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
+
 pub const WINDOW_SIZE_SMALLEST: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 #[no_mangle]
 pub static mut cmd_resize_window_entry: cmd_entry = unsafe {
@@ -943,4 +944,3 @@ unsafe extern "C" fn cmd_resize_window_exec(
     recalculate_size(w, 1 as ::core::ffi::c_int);
     return CMD_RETURN_NORMAL;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

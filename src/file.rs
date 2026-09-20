@@ -1,3 +1,4 @@
+pub use crate::src::shared::errno::{E2BIG, EINVAL, ENOMEM};
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::stdio::{
     FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
@@ -921,10 +922,9 @@ pub struct C2RustUnnamed_35 {
     pub le_prev: *mut *mut tty_term,
 }
 pub const EIO: ::core::ffi::c_int = 5 as ::core::ffi::c_int;
-pub const E2BIG: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
+
 pub const EBADF: ::core::ffi::c_int = 9 as ::core::ffi::c_int;
-pub const ENOMEM: ::core::ffi::c_int = 12 as ::core::ffi::c_int;
-pub const EINVAL: ::core::ffi::c_int = 22 as ::core::ffi::c_int;
+
 pub const O_RDONLY: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const O_WRONLY: ::core::ffi::c_int = 0o1 as ::core::ffi::c_int;
 pub const O_CREAT: ::core::ffi::c_int = 0o100 as ::core::ffi::c_int;

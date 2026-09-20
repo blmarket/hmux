@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::utf8::{
     HANGULJAMO_STATE_CHOSEONG, HANGULJAMO_STATE_COMPOSABLE, HANGULJAMO_STATE_NOT_COMPOSABLE,
     HANGULJAMO_STATE_NOT_HANGULJAMO, hanguljamo_state,
@@ -982,9 +983,7 @@ pub struct C2RustUnnamed_41 {
     pub tqh_first: *mut screen_write_citem,
     pub tqh_last: *mut *mut screen_write_citem,
 }
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 pub const CELL_UD: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const CELL_LR: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const CELL_RD: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
@@ -6279,7 +6278,7 @@ pub unsafe extern "C" fn screen_write_alternateoff(
         ttyctx.redraw_cb.expect("non-null function pointer")(&raw mut ttyctx);
     }
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;
+
 unsafe extern "C" fn run_static_initializers() {
     screen_write_citem_freelist = C2RustUnnamed_41 {
         tqh_first: ::core::ptr::null_mut::<screen_write_citem>(),

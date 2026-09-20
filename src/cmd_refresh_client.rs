@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX};
 pub use crate::src::shared::monitor::{
     MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
     monitor_type,
@@ -849,7 +850,7 @@ pub struct cmd_entry {
     pub flags: ::core::ffi::c_int,
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
+
 #[no_mangle]
 pub static mut cmd_refresh_client_entry: cmd_entry = unsafe {
     cmd_entry {
@@ -1217,4 +1218,3 @@ unsafe extern "C" fn cmd_refresh_client_exec(
     );
     return CMD_RETURN_ERROR;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

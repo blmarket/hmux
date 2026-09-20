@@ -1,3 +1,5 @@
+pub use crate::src::shared::errno::ERANGE;
+pub use crate::src::shared::limits::__LONG_LONG_MAX__;
 pub use crate::src::shared::abi::{ssize_t};
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 use crate::src::shared::abi::*;
@@ -171,7 +173,7 @@ pub struct utf8_data_tree {
 pub struct utf8_index_tree {
     pub rbh_root: *mut utf8_item,
 }
-pub const ERANGE: ::core::ffi::c_int = 34 as ::core::ffi::c_int;
+
 pub const __WCHAR_MAX: ::core::ffi::c_int = __WCHAR_MAX__;
 pub const ULLONG_MAX: ::core::ffi::c_ulonglong = (__LONG_LONG_MAX__ as ::core::ffi::c_ulonglong)
     .wrapping_mul(2 as ::core::ffi::c_ulonglong)
@@ -4001,6 +4003,5 @@ pub unsafe extern "C" fn utf8_cstrhas(
     free(copy as *mut ::core::ffi::c_void);
     return found;
 }
-pub const __LONG_LONG_MAX__: ::core::ffi::c_longlong =
-    9223372036854775807 as ::core::ffi::c_longlong;
+
 pub const __WCHAR_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__SCHAR_MAX__, UCHAR_MAX};
 use crate::src::shared::abi::*;
 extern "C" {
     fn __errno_location() -> *mut ::core::ffi::c_int;
@@ -24,8 +25,7 @@ pub const _ISdigit: C2RustUnnamed = 2048;
 pub const _ISalpha: C2RustUnnamed = 1024;
 pub const _ISlower: C2RustUnnamed = 512;
 pub const _ISupper: C2RustUnnamed = 256;
-pub const UCHAR_MAX: ::core::ffi::c_int =
-    __SCHAR_MAX__ * 2 as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
+
 pub const VIS_OCTAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const VIS_CSTYLE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const VIS_SP: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
@@ -1135,4 +1135,3 @@ pub unsafe extern "C" fn strvisx(
     *dst = '\0' as i32 as ::core::ffi::c_char;
     return dst.offset_from(start) as ::core::ffi::c_long as ::core::ffi::c_int;
 }
-pub const __SCHAR_MAX__: ::core::ffi::c_int = 127 as ::core::ffi::c_int;

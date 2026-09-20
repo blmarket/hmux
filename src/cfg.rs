@@ -1,3 +1,4 @@
+pub use crate::src::shared::errno::ENOENT;
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::stdio::{
     FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
@@ -833,7 +834,7 @@ pub struct clients {
     pub tqh_first: *mut client,
     pub tqh_last: *mut *mut client,
 }
-pub const ENOENT: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
+
 #[no_mangle]
 pub static mut cfg_client: *mut client = ::core::ptr::null::<client>() as *mut client;
 #[no_mangle]

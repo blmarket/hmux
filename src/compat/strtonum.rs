@@ -1,3 +1,5 @@
+pub use crate::src::shared::errno::{EINVAL, ERANGE};
+pub use crate::src::shared::limits::__LONG_LONG_MAX__;
 use crate::src::shared::abi::*;
 extern "C" {
     fn __errno_location() -> *mut ::core::ffi::c_int;
@@ -13,8 +15,7 @@ pub struct errval {
     pub errstr: *const ::core::ffi::c_char,
     pub err: ::core::ffi::c_int,
 }
-pub const EINVAL: ::core::ffi::c_int = 22 as ::core::ffi::c_int;
-pub const ERANGE: ::core::ffi::c_int = 34 as ::core::ffi::c_int;
+
 pub const LLONG_MAX: ::core::ffi::c_longlong = __LONG_LONG_MAX__;
 pub const LLONG_MIN: ::core::ffi::c_longlong = -__LONG_LONG_MAX__ - 1 as ::core::ffi::c_longlong;
 pub const INVALID: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
@@ -71,5 +72,3 @@ pub unsafe extern "C" fn strtonum(
     }
     return ll;
 }
-pub const __LONG_LONG_MAX__: ::core::ffi::c_longlong =
-    9223372036854775807 as ::core::ffi::c_longlong;

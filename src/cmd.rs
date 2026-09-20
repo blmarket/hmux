@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::SIZE_MAX;
 pub use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
@@ -972,7 +973,7 @@ pub const DQ: C2RustUnnamed_38 = 2;
 pub type C2RustUnnamed_38 = ::core::ffi::c_uint;
 pub const SQ: C2RustUnnamed_38 = 1;
 pub const NQ: C2RustUnnamed_38 = 0;
-pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
+
 #[no_mangle]
 pub static mut cmd_table: [*const cmd_entry; 93] = unsafe {
     [

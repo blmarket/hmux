@@ -1,3 +1,5 @@
+pub use crate::src::shared::errno::EINTR;
+pub use crate::src::shared::limits::{__INT_MAX__, SIZE_MAX, UINT_MAX};
 pub use crate::src::shared::event::{
     EVBUFFER_EOL_ANY, EVBUFFER_EOL_CRLF, EVBUFFER_EOL_CRLF_STRICT, EVBUFFER_EOL_LF,
     EVBUFFER_EOL_NUL, EV_READ, EV_TIMEOUT, evbuffer_eol_style,
@@ -1323,10 +1325,7 @@ pub struct clients {
     pub tqh_first: *mut client,
     pub tqh_last: *mut *mut client,
 }
-pub const EINTR: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 pub const STDIN_FILENO: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const STDOUT_FILENO: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const STDERR_FILENO: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
@@ -1335,7 +1334,7 @@ pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
     unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
 pub const _PATH_TTY: [::core::ffi::c_char; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"/dev/tty\0") };
-pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
+
 pub const VIS_OCTAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const VIS_CSTYLE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const VIS_NOSLASH: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
@@ -5915,4 +5914,3 @@ unsafe extern "C" fn server_client_report_theme(mut c: *mut client, mut theme: c
     }
     tty_repeat_requests(&raw mut (*c).tty, 1 as ::core::ffi::c_int);
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

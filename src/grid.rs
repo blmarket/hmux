@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
 pub use crate::src::shared::hyperlinks::{hyperlinks};
@@ -90,9 +91,7 @@ pub struct C2RustUnnamed_1 {
     pub mask: u_int,
     pub code: u_int,
 }
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 #[no_mangle]
 pub static mut grid_default_cell: grid_cell = grid_cell {
     data: utf8_data {
@@ -2799,4 +2798,3 @@ pub unsafe extern "C" fn grid_cell_attr_string(
         '\0' as i32 as ::core::ffi::c_char;
     return &raw mut s as *mut ::core::ffi::c_char;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

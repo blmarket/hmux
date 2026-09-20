@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX};
 pub use crate::src::shared::window::{WINDOW_BELL};
 pub use crate::src::shared::pane::{
     PANE_ACTIVITY, PANE_CHANGED, PANE_CMDRUNNING, PANE_STYLECHANGED, PANE_THEMECHANGED,
@@ -1331,7 +1332,7 @@ pub const INPUT_CSI_CUB: input_csi_type = 3;
 pub const INPUT_CSI_CBT: input_csi_type = 0;
 pub type input_esc_type = ::core::ffi::c_uint;
 pub type input_csi_type = ::core::ffi::c_uint;
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
+
 pub const NULL_0: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 #[inline]
 unsafe extern "C" fn bsearch(
@@ -7296,4 +7297,3 @@ unsafe extern "C" fn input_report_current_theme(mut ictx: *mut input_ctx) {
         }
     }
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, __SHRT_MAX__, INT_MIN, SHRT_MAX};
 pub use crate::src::shared::abi::{ssize_t};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
@@ -843,8 +844,7 @@ pub struct cmd_entry {
     pub flags: ::core::ffi::c_int,
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
-pub const SHRT_MAX: ::core::ffi::c_int = __SHRT_MAX__;
-pub const INT_MIN: ::core::ffi::c_int = -__INT_MAX__ - 1 as ::core::ffi::c_int;
+
 pub const VIS_OCTAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const VIS_CSTYLE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const VIS_TAB: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
@@ -1601,5 +1601,3 @@ unsafe extern "C" fn cmd_capture_pane_exec(
     }
     return CMD_RETURN_NORMAL;
 }
-pub const __SHRT_MAX__: ::core::ffi::c_int = 32767 as ::core::ffi::c_int;
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

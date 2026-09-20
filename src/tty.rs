@@ -1,3 +1,6 @@
+pub use crate::src::shared::errno::EAGAIN;
+pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
+pub use crate::src::shared::posix_terminal::{winsize, ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
 pub use crate::src::shared::pane::{
     PANE_STYLECHANGED, window_pane_offset, window_pane_resize, window_pane_resize_entry,
     window_pane_resizes,
@@ -280,14 +283,7 @@ extern "C" {
     ) -> ::core::ffi::c_int;
 }
 pub type __useconds_t = ::core::ffi::c_uint;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct winsize {
-    pub ws_row: ::core::ffi::c_ushort,
-    pub ws_col: ::core::ffi::c_ushort,
-    pub ws_xpixel: ::core::ffi::c_ushort,
-    pub ws_ypixel: ::core::ffi::c_ushort,
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union C2RustUnnamed {
@@ -1034,27 +1030,22 @@ pub struct clients {
     pub tqh_last: *mut *mut client,
 }
 pub const TIOCGWINSZ: ::core::ffi::c_int = 0x5413 as ::core::ffi::c_int;
-pub const EAGAIN: ::core::ffi::c_int = 11 as ::core::ffi::c_int;
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 pub const O_WRONLY: ::core::ffi::c_int = 0o1 as ::core::ffi::c_int;
 pub const O_CREAT: ::core::ffi::c_int = 0o100 as ::core::ffi::c_int;
 pub const O_TRUNC: ::core::ffi::c_int = 0o1000 as ::core::ffi::c_int;
 pub const F_SETFD: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const FD_CLOEXEC: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const VTIME: ::core::ffi::c_int = 5 as ::core::ffi::c_int;
-pub const VMIN: ::core::ffi::c_int = 6 as ::core::ffi::c_int;
+
 pub const IGNBRK: ::core::ffi::c_int = 0o1 as ::core::ffi::c_int;
 pub const ISTRIP: ::core::ffi::c_int = 0o40 as ::core::ffi::c_int;
 pub const INLCR: ::core::ffi::c_int = 0o100 as ::core::ffi::c_int;
 pub const IGNCR: ::core::ffi::c_int = 0o200 as ::core::ffi::c_int;
-pub const ICRNL: ::core::ffi::c_int = 0o400 as ::core::ffi::c_int;
+
 pub const IXON: ::core::ffi::c_int = 0o2000 as ::core::ffi::c_int;
 pub const IXOFF: ::core::ffi::c_int = 0o10000 as ::core::ffi::c_int;
 pub const IMAXBEL: ::core::ffi::c_int = 0o20000 as ::core::ffi::c_int;
-pub const OPOST: ::core::ffi::c_int = 0o1 as ::core::ffi::c_int;
-pub const ONLCR: ::core::ffi::c_int = 0o4 as ::core::ffi::c_int;
+
 pub const OCRNL: ::core::ffi::c_int = 0o10 as ::core::ffi::c_int;
 pub const ONLRET: ::core::ffi::c_int = 0o40 as ::core::ffi::c_int;
 pub const ISIG: ::core::ffi::c_int = 0o1 as ::core::ffi::c_int;
@@ -1066,7 +1057,7 @@ pub const ECHOCTL: ::core::ffi::c_int = 0o1000 as ::core::ffi::c_int;
 pub const ECHOPRT: ::core::ffi::c_int = 0o2000 as ::core::ffi::c_int;
 pub const ECHOKE: ::core::ffi::c_int = 0o4000 as ::core::ffi::c_int;
 pub const IEXTEN: ::core::ffi::c_int = 0o100000 as ::core::ffi::c_int;
-pub const TCSANOW: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+
 pub const TCOFLUSH: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const UTF8_SIZE: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
 pub const FORMAT_NOJOBS: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
@@ -4695,4 +4686,3 @@ pub unsafe extern "C" fn tty_set_progress_bar(mut tty: *mut tty, mut pb: *mut pr
         );
     }
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

@@ -1,3 +1,16 @@
+pub use crate::src::shared::socket::{
+    __socket_type, AF_UNIX, PF_LOCAL, PF_UNIX, PF_UNSPEC, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM,
+    SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
+};
+pub use crate::src::shared::signal::{
+    __sighandler_t, __sigset_t, __sigval_t, sigaction, sigaction___sigaction_handler, siginfo_t,
+    siginfo_t__sifields, siginfo_t__sifields__kill, siginfo_t__sifields__rt,
+    siginfo_t__sifields__sigchld, siginfo_t__sifields__sigfault,
+    siginfo_t__sifields__sigfault__bounds, siginfo_t__sifields__sigfault__bounds__addr_bnd,
+    siginfo_t__sifields__sigpoll, siginfo_t__sifields__sigsys, siginfo_t__sifields__timer,
+    sigset_t, sigval, SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN,
+    SIGTTOU, SIGUSR1, SIGUSR2, SIGWINCH, SIG_DFL,
+};
 pub use crate::src::shared::abi::{__clock_t, __gid_t, __uid_t, __uint32_t, gid_t, uid_t, uint32_t};
 pub use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
 use crate::src::shared::event::*;
@@ -77,22 +90,7 @@ extern "C" {
     fn log_debug(_: *const ::core::ffi::c_char, ...);
     fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct __sigset_t {
-    pub __val: [::core::ffi::c_ulong; 16],
-}
-pub type sigset_t = __sigset_t;
-pub type __socket_type = ::core::ffi::c_uint;
-pub const SOCK_NONBLOCK: __socket_type = 2048;
-pub const SOCK_CLOEXEC: __socket_type = 524288;
-pub const SOCK_PACKET: __socket_type = 10;
-pub const SOCK_DCCP: __socket_type = 6;
-pub const SOCK_SEQPACKET: __socket_type = 5;
-pub const SOCK_RDM: __socket_type = 4;
-pub const SOCK_RAW: __socket_type = 3;
-pub const SOCK_DGRAM: __socket_type = 2;
-pub const SOCK_STREAM: __socket_type = 1;
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct utsname {
@@ -103,112 +101,7 @@ pub struct utsname {
     pub machine: [::core::ffi::c_char; 65],
     pub domainname: [::core::ffi::c_char; 65],
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union sigval {
-    pub sival_int: ::core::ffi::c_int,
-    pub sival_ptr: *mut ::core::ffi::c_void,
-}
-pub type __sigval_t = sigval;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct siginfo_t {
-    pub si_signo: ::core::ffi::c_int,
-    pub si_errno: ::core::ffi::c_int,
-    pub si_code: ::core::ffi::c_int,
-    pub __pad0: ::core::ffi::c_int,
-    pub _sifields: C2RustUnnamed,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed {
-    pub _pad: [::core::ffi::c_int; 28],
-    pub _kill: C2RustUnnamed_8,
-    pub _timer: C2RustUnnamed_7,
-    pub _rt: C2RustUnnamed_6,
-    pub _sigchld: C2RustUnnamed_5,
-    pub _sigfault: C2RustUnnamed_2,
-    pub _sigpoll: C2RustUnnamed_1,
-    pub _sigsys: C2RustUnnamed_0,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_0 {
-    pub _call_addr: *mut ::core::ffi::c_void,
-    pub _syscall: ::core::ffi::c_int,
-    pub _arch: ::core::ffi::c_uint,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_1 {
-    pub si_band: ::core::ffi::c_long,
-    pub si_fd: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_2 {
-    pub si_addr: *mut ::core::ffi::c_void,
-    pub si_addr_lsb: ::core::ffi::c_short,
-    pub _bounds: C2RustUnnamed_3,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_3 {
-    pub _addr_bnd: C2RustUnnamed_4,
-    pub _pkey: __uint32_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_4 {
-    pub _lower: *mut ::core::ffi::c_void,
-    pub _upper: *mut ::core::ffi::c_void,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_5 {
-    pub si_pid: __pid_t,
-    pub si_uid: __uid_t,
-    pub si_status: ::core::ffi::c_int,
-    pub si_utime: __clock_t,
-    pub si_stime: __clock_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_6 {
-    pub si_pid: __pid_t,
-    pub si_uid: __uid_t,
-    pub si_sigval: __sigval_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_7 {
-    pub si_tid: ::core::ffi::c_int,
-    pub si_overrun: ::core::ffi::c_int,
-    pub si_sigval: __sigval_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_8 {
-    pub si_pid: __pid_t,
-    pub si_uid: __uid_t,
-}
-pub type __sighandler_t = Option<unsafe extern "C" fn(::core::ffi::c_int) -> ()>;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sigaction {
-    pub __sigaction_handler: C2RustUnnamed_9,
-    pub sa_mask: __sigset_t,
-    pub sa_flags: ::core::ffi::c_int,
-    pub sa_restorer: Option<unsafe extern "C" fn() -> ()>,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_9 {
-    pub sa_handler: __sighandler_t,
-    pub sa_sigaction: Option<
-        unsafe extern "C" fn(::core::ffi::c_int, *mut siginfo_t, *mut ::core::ffi::c_void) -> (),
-    >,
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct ibuf {
@@ -291,25 +184,10 @@ pub struct C2RustUnnamed_21 {
     pub tqh_first: *mut tmuxpeer,
     pub tqh_last: *mut *mut tmuxpeer,
 }
-pub const PF_UNSPEC: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const PF_LOCAL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const PF_UNIX: ::core::ffi::c_int = PF_LOCAL;
-pub const AF_UNIX: ::core::ffi::c_int = PF_UNIX;
-pub const SIG_DFL: __sighandler_t = None;
-pub const SIGINT: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const SIGTERM: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
-pub const SIGHUP: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
-pub const SIGTSTP: ::core::ffi::c_int = 20 as ::core::ffi::c_int;
-pub const SIGCONT: ::core::ffi::c_int = 18 as ::core::ffi::c_int;
-pub const SIGCHLD: ::core::ffi::c_int = 17 as ::core::ffi::c_int;
-pub const SIGTTIN: ::core::ffi::c_int = 21 as ::core::ffi::c_int;
-pub const SIGTTOU: ::core::ffi::c_int = 22 as ::core::ffi::c_int;
-pub const SIGUSR1: ::core::ffi::c_int = 10 as ::core::ffi::c_int;
-pub const SIGUSR2: ::core::ffi::c_int = 12 as ::core::ffi::c_int;
-pub const SIGWINCH: ::core::ffi::c_int = 28 as ::core::ffi::c_int;
-pub const SA_RESTART: ::core::ffi::c_int = 0x10000000 as ::core::ffi::c_int;
+
 pub const NCURSES_VERSION_PATCH: ::core::ffi::c_int = 20251230 as ::core::ffi::c_int;
 pub const NCURSES_VERSION: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"6.6\0") };
@@ -574,7 +452,7 @@ pub unsafe extern "C" fn proc_set_signals(
     mut signalcb: Option<unsafe extern "C" fn(::core::ffi::c_int) -> ()>,
 ) {
     let mut sa: sigaction = sigaction {
-        __sigaction_handler: C2RustUnnamed_9 { sa_handler: None },
+        __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },
         sa_mask: __sigset_t { __val: [0; 16] },
         sa_flags: 0,
         sa_restorer: None,
@@ -722,7 +600,7 @@ pub unsafe extern "C" fn proc_clear_signals(
     mut defaults: ::core::ffi::c_int,
 ) {
     let mut sa: sigaction = sigaction {
-        __sigaction_handler: C2RustUnnamed_9 { sa_handler: None },
+        __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },
         sa_mask: __sigset_t { __val: [0; 16] },
         sa_flags: 0,
         sa_restorer: None,

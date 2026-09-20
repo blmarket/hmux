@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX, UINT_MAX};
 pub use crate::src::shared::spawn::{
     SPAWN_BEFORE, SPAWN_FLOATOVERZOOM, SPAWN_FULLSIZE, SPAWN_HORIZONTAL, SPAWN_SPLIT,
     SPAWN_ZOOM,
@@ -773,10 +774,7 @@ pub struct C2RustUnnamed_34 {
     pub le_next: *mut tty_term,
     pub le_prev: *mut *mut tty_term,
 }
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 unsafe extern "C" fn layout_geometry_init(mut lg: *mut layout_geometry) {
     (*lg).sx = UINT_MAX as u_int;
     (*lg).sy = UINT_MAX as u_int;
@@ -3225,4 +3223,3 @@ pub unsafe extern "C" fn layout_insert_tile(
     layout_resize_set_size(w, lc, type_0, size1);
     return 0 as ::core::ffi::c_int;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

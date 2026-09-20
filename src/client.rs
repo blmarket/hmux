@@ -1,3 +1,20 @@
+pub use crate::src::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG, ENOENT};
+pub use crate::src::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
+pub use crate::src::shared::socket::{
+    __socket_type, in6_addr, in6_addr___in6_u, in_addr, in_addr_t, in_port_t, sa_family_t,
+    sockaddr, sockaddr_at, sockaddr_ax25, sockaddr_dl, sockaddr_eon, sockaddr_in, sockaddr_in6,
+    sockaddr_inarp, sockaddr_ipx, sockaddr_iso, sockaddr_ns, sockaddr_un, sockaddr_x25,
+    __CONST_SOCKADDR_ARG, AF_UNIX, PF_LOCAL, PF_UNIX, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM,
+    SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
+};
+pub use crate::src::shared::signal::{
+    __sighandler_t, __sigset_t, __sigval_t, sigaction, sigaction___sigaction_handler, siginfo_t,
+    siginfo_t__sifields, siginfo_t__sifields__kill, siginfo_t__sifields__rt,
+    siginfo_t__sifields__sigchld, siginfo_t__sifields__sigfault,
+    siginfo_t__sifields__sigfault__bounds, siginfo_t__sifields__sigfault__bounds__addr_bnd,
+    siginfo_t__sifields__sigpoll, siginfo_t__sifields__sigsys, siginfo_t__sifields__timer,
+    sigset_t, sigval, SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGTERM, SIGTSTP, SIGWINCH, SIG_DFL,
+};
 pub use crate::src::shared::stdio::{
     FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
 };
@@ -34,15 +51,6 @@ use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 use ::libc;
 extern "C" {
-    pub type sockaddr_x25;
-    pub type sockaddr_ns;
-    pub type sockaddr_iso;
-    pub type sockaddr_ipx;
-    pub type sockaddr_inarp;
-    pub type sockaddr_eon;
-    pub type sockaddr_dl;
-    pub type sockaddr_ax25;
-    pub type sockaddr_at;
     pub type args;
     pub type tmuxpeer;
     pub type environ;
@@ -262,194 +270,7 @@ extern "C" {
     fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
     fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct __sigset_t {
-    pub __val: [::core::ffi::c_ulong; 16],
-}
-pub type sigset_t = __sigset_t;
-pub type __socket_type = ::core::ffi::c_uint;
-pub const SOCK_NONBLOCK: __socket_type = 2048;
-pub const SOCK_CLOEXEC: __socket_type = 524288;
-pub const SOCK_PACKET: __socket_type = 10;
-pub const SOCK_DCCP: __socket_type = 6;
-pub const SOCK_SEQPACKET: __socket_type = 5;
-pub const SOCK_RDM: __socket_type = 4;
-pub const SOCK_RAW: __socket_type = 3;
-pub const SOCK_DGRAM: __socket_type = 2;
-pub const SOCK_STREAM: __socket_type = 1;
-pub type sa_family_t = ::core::ffi::c_ushort;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sockaddr {
-    pub sa_family: sa_family_t,
-    pub sa_data: [::core::ffi::c_char; 14],
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sockaddr_un {
-    pub sun_family: sa_family_t,
-    pub sun_path: [::core::ffi::c_char; 108],
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sockaddr_in6 {
-    pub sin6_family: sa_family_t,
-    pub sin6_port: in_port_t,
-    pub sin6_flowinfo: uint32_t,
-    pub sin6_addr: in6_addr,
-    pub sin6_scope_id: uint32_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct in6_addr {
-    pub __in6_u: C2RustUnnamed,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed {
-    pub __u6_addr8: [uint8_t; 16],
-    pub __u6_addr16: [uint16_t; 8],
-    pub __u6_addr32: [uint32_t; 4],
-}
-pub type in_port_t = uint16_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sockaddr_in {
-    pub sin_family: sa_family_t,
-    pub sin_port: in_port_t,
-    pub sin_addr: in_addr,
-    pub sin_zero: [::core::ffi::c_uchar; 8],
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct in_addr {
-    pub s_addr: in_addr_t,
-}
-pub type in_addr_t = uint32_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union __CONST_SOCKADDR_ARG {
-    pub __sockaddr__: *const sockaddr,
-    pub __sockaddr_at__: *const sockaddr_at,
-    pub __sockaddr_ax25__: *const sockaddr_ax25,
-    pub __sockaddr_dl__: *const sockaddr_dl,
-    pub __sockaddr_eon__: *const sockaddr_eon,
-    pub __sockaddr_in__: *const sockaddr_in,
-    pub __sockaddr_in6__: *const sockaddr_in6,
-    pub __sockaddr_inarp__: *const sockaddr_inarp,
-    pub __sockaddr_ipx__: *const sockaddr_ipx,
-    pub __sockaddr_iso__: *const sockaddr_iso,
-    pub __sockaddr_ns__: *const sockaddr_ns,
-    pub __sockaddr_un__: *const sockaddr_un,
-    pub __sockaddr_x25__: *const sockaddr_x25,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union sigval {
-    pub sival_int: ::core::ffi::c_int,
-    pub sival_ptr: *mut ::core::ffi::c_void,
-}
-pub type __sigval_t = sigval;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct siginfo_t {
-    pub si_signo: ::core::ffi::c_int,
-    pub si_errno: ::core::ffi::c_int,
-    pub si_code: ::core::ffi::c_int,
-    pub __pad0: ::core::ffi::c_int,
-    pub _sifields: C2RustUnnamed_0,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_0 {
-    pub _pad: [::core::ffi::c_int; 28],
-    pub _kill: C2RustUnnamed_9,
-    pub _timer: C2RustUnnamed_8,
-    pub _rt: C2RustUnnamed_7,
-    pub _sigchld: C2RustUnnamed_6,
-    pub _sigfault: C2RustUnnamed_3,
-    pub _sigpoll: C2RustUnnamed_2,
-    pub _sigsys: C2RustUnnamed_1,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_1 {
-    pub _call_addr: *mut ::core::ffi::c_void,
-    pub _syscall: ::core::ffi::c_int,
-    pub _arch: ::core::ffi::c_uint,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_2 {
-    pub si_band: ::core::ffi::c_long,
-    pub si_fd: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_3 {
-    pub si_addr: *mut ::core::ffi::c_void,
-    pub si_addr_lsb: ::core::ffi::c_short,
-    pub _bounds: C2RustUnnamed_4,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_4 {
-    pub _addr_bnd: C2RustUnnamed_5,
-    pub _pkey: __uint32_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_5 {
-    pub _lower: *mut ::core::ffi::c_void,
-    pub _upper: *mut ::core::ffi::c_void,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_6 {
-    pub si_pid: __pid_t,
-    pub si_uid: __uid_t,
-    pub si_status: ::core::ffi::c_int,
-    pub si_utime: __clock_t,
-    pub si_stime: __clock_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_7 {
-    pub si_pid: __pid_t,
-    pub si_uid: __uid_t,
-    pub si_sigval: __sigval_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_8 {
-    pub si_tid: ::core::ffi::c_int,
-    pub si_overrun: ::core::ffi::c_int,
-    pub si_sigval: __sigval_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_9 {
-    pub si_pid: __pid_t,
-    pub si_uid: __uid_t,
-}
-pub type __sighandler_t = Option<unsafe extern "C" fn(::core::ffi::c_int) -> ()>;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sigaction {
-    pub __sigaction_handler: C2RustUnnamed_10,
-    pub sa_mask: __sigset_t,
-    pub sa_flags: ::core::ffi::c_int,
-    pub sa_restorer: Option<unsafe extern "C" fn() -> ()>,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_10 {
-    pub sa_handler: __sighandler_t,
-    pub sa_sigaction: Option<
-        unsafe extern "C" fn(::core::ffi::c_int, *mut siginfo_t, *mut ::core::ffi::c_void) -> (),
-    >,
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct ibuf {
@@ -1204,42 +1025,26 @@ pub struct cmd_parse_input {
     pub c: *mut client,
     pub fs: cmd_find_state,
 }
-pub const SIG_DFL: __sighandler_t = None;
-pub const SIGTERM: ::core::ffi::c_int = 15;
-pub const SIGHUP: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const PF_LOCAL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const PF_UNIX: ::core::ffi::c_int = PF_LOCAL;
-pub const AF_UNIX: ::core::ffi::c_int = PF_UNIX;
+
 pub const WNOHANG: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const SIGTSTP: ::core::ffi::c_int = 20 as ::core::ffi::c_int;
-pub const SIGCONT: ::core::ffi::c_int = 18;
-pub const SIGCHLD: ::core::ffi::c_int = 17 as ::core::ffi::c_int;
-pub const SIGWINCH: ::core::ffi::c_int = 28;
-pub const SA_RESTART: ::core::ffi::c_int = 0x10000000 as ::core::ffi::c_int;
+
 pub const STDIN_FILENO: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const STDOUT_FILENO: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const STDERR_FILENO: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const ENAMETOOLONG: ::core::ffi::c_int = 36 as ::core::ffi::c_int;
+
 pub const ECONNREFUSED: ::core::ffi::c_int = 111 as ::core::ffi::c_int;
 pub const WAIT_ANY: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const O_WRONLY: ::core::ffi::c_int = 0o1 as ::core::ffi::c_int;
 pub const O_CREAT: ::core::ffi::c_int = 0o100 as ::core::ffi::c_int;
 pub const LOCK_EX: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const LOCK_NB: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
-pub const ENOENT: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const EINTR: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
-pub const ECHILD: ::core::ffi::c_int = 10 as ::core::ffi::c_int;
-pub const EAGAIN: ::core::ffi::c_int = 11 as ::core::ffi::c_int;
-pub const VTIME: ::core::ffi::c_int = 5 as ::core::ffi::c_int;
-pub const VMIN: ::core::ffi::c_int = 6 as ::core::ffi::c_int;
-pub const ICRNL: ::core::ffi::c_int = 0o400 as ::core::ffi::c_int;
+
 pub const IXANY: ::core::ffi::c_int = 0o4000 as ::core::ffi::c_int;
-pub const OPOST: ::core::ffi::c_int = 0o1 as ::core::ffi::c_int;
-pub const ONLCR: ::core::ffi::c_int = 0o4 as ::core::ffi::c_int;
+
 pub const CS8: ::core::ffi::c_int = 0o60 as ::core::ffi::c_int;
 pub const CREAD: ::core::ffi::c_int = 0o200 as ::core::ffi::c_int;
 pub const HUPCL: ::core::ffi::c_int = 0o2000 as ::core::ffi::c_int;
-pub const TCSANOW: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+
 pub const TCSAFLUSH: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const IMSG_HEADER_SIZE: usize = ::core::mem::size_of::<imsg_hdr>();
 pub const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
@@ -1919,7 +1724,7 @@ unsafe extern "C" fn client_exec(
 }
 unsafe extern "C" fn client_signal(mut sig: ::core::ffi::c_int) {
     let mut sigact: sigaction = sigaction {
-        __sigaction_handler: C2RustUnnamed_10 { sa_handler: None },
+        __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },
         sa_mask: __sigset_t { __val: [0; 16] },
         sa_flags: 0,
         sa_restorer: None,
@@ -2229,7 +2034,7 @@ unsafe extern "C" fn client_dispatch_wait(mut imsg: *mut imsg) {
 }
 unsafe extern "C" fn client_dispatch_attached(mut imsg: *mut imsg) {
     let mut sigact: sigaction = sigaction {
-        __sigaction_handler: C2RustUnnamed_10 { sa_handler: None },
+        __sigaction_handler: sigaction___sigaction_handler { sa_handler: None },
         sa_mask: __sigset_t { __val: [0; 16] },
         sa_flags: 0,
         sa_restorer: None,

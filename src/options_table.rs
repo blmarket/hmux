@@ -1,3 +1,6 @@
+pub use crate::src::shared::limits::{
+    __INT_MAX__, __SHRT_MAX__, INT_MAX, SHRT_MAX, UINT_MAX, USHRT_MAX,
+};
 pub use crate::src::shared::window::{WINDOW_SIZE_LATEST};
 pub use crate::src::shared::pane::{
     PANE_BORDER_COLOUR, PANE_SCROLLBARS_OFF, PANE_SCROLLBARS_RIGHT, PANE_STATUS_OFF,
@@ -38,13 +41,7 @@ pub struct options_name_map {
     pub from: *const ::core::ffi::c_char,
     pub to: *const ::core::ffi::c_char,
 }
-pub const SHRT_MAX: ::core::ffi::c_int = __SHRT_MAX__;
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
-pub const USHRT_MAX: ::core::ffi::c_int =
-    __SHRT_MAX__ * 2 as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
     unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
 pub const _PATH_VI: [::core::ffi::c_char; 12] =
@@ -305,8 +302,7 @@ pub static mut options_table: [options_table_entry; 273] = [options_table_entry 
     text: ::core::ptr::null::<::core::ffi::c_char>(),
     unit: ::core::ptr::null::<::core::ffi::c_char>(),
 }; 273];
-pub const __SHRT_MAX__: ::core::ffi::c_int = 32767 as ::core::ffi::c_int;
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;
+
 pub const TMUX_LOCK_CMD: [::core::ffi::c_char; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"lock -np\0") };
 pub const TMUX_TERM: [::core::ffi::c_char; 14] =

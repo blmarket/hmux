@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::pane::{
     PANE_SCROLLBARS_CHARACTER, PANE_SCROLLBARS_DEFAULT_PADDING, PANE_SCROLLBARS_DEFAULT_WIDTH,
     window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
@@ -840,9 +841,7 @@ pub struct options_table_entry {
     pub text: *const ::core::ffi::c_char,
     pub unit: *const ::core::ffi::c_char,
 }
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 pub const STYLE_WIDTH_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const STYLE_PAD_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const FORMAT_NOJOBS: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
@@ -2022,4 +2021,3 @@ pub unsafe extern "C" fn style_ranges_get_range(
     }
     return ::core::ptr::null_mut::<style_range>();
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

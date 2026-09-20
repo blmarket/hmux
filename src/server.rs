@@ -1,3 +1,16 @@
+pub use crate::src::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG};
+pub use crate::src::shared::socket::{
+    __socket_type, in6_addr, in6_addr___in6_u, in_addr, in_addr_t, in_port_t, sa_family_t,
+    sockaddr, sockaddr_at, sockaddr_ax25, sockaddr_dl, sockaddr_eon, sockaddr_in, sockaddr_in6,
+    sockaddr_inarp, sockaddr_ipx, sockaddr_iso, sockaddr_ns, sockaddr_un, sockaddr_x25,
+    __CONST_SOCKADDR_ARG, __SOCKADDR_ARG, AF_UNIX, PF_LOCAL, PF_UNIX, SOCK_CLOEXEC, SOCK_DCCP,
+    SOCK_DGRAM, SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
+};
+pub use crate::src::shared::signal::{
+    __sigset_t, sigset_t, SIGCHLD, SIGCONT, SIGINT, SIGTERM, SIGTTIN, SIGTTOU, SIGUSR1, SIGUSR2,
+    SIG_BLOCK, SIG_SETMASK,
+};
+pub use crate::src::shared::time::timespec;
 pub use crate::src::shared::pane::{
     PANE_EXITED, PANE_STATUSREADY, window_pane_offset, window_pane_resize,
     window_pane_resize_entry, window_pane_resizes,
@@ -34,15 +47,6 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 extern "C" {
-    pub type sockaddr_x25;
-    pub type sockaddr_ns;
-    pub type sockaddr_iso;
-    pub type sockaddr_ipx;
-    pub type sockaddr_inarp;
-    pub type sockaddr_eon;
-    pub type sockaddr_dl;
-    pub type sockaddr_ax25;
-    pub type sockaddr_at;
     pub type args;
     pub type tmuxpeer;
     pub type environ;
@@ -216,35 +220,7 @@ extern "C" {
     fn server_acl_join(_: *mut client) -> ::core::ffi::c_int;
 }
 pub type mode_t = __mode_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct __sigset_t {
-    pub __val: [::core::ffi::c_ulong; 16],
-}
-pub type sigset_t = __sigset_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct timespec {
-    pub tv_sec: __time_t,
-    pub tv_nsec: __syscall_slong_t,
-}
-pub type __socket_type = ::core::ffi::c_uint;
-pub const SOCK_NONBLOCK: __socket_type = 2048;
-pub const SOCK_CLOEXEC: __socket_type = 524288;
-pub const SOCK_PACKET: __socket_type = 10;
-pub const SOCK_DCCP: __socket_type = 6;
-pub const SOCK_SEQPACKET: __socket_type = 5;
-pub const SOCK_RDM: __socket_type = 4;
-pub const SOCK_RAW: __socket_type = 3;
-pub const SOCK_DGRAM: __socket_type = 2;
-pub const SOCK_STREAM: __socket_type = 1;
-pub type sa_family_t = ::core::ffi::c_ushort;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sockaddr {
-    pub sa_family: sa_family_t,
-    pub sa_data: [::core::ffi::c_char; 14],
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct sockaddr_storage {
@@ -252,82 +228,7 @@ pub struct sockaddr_storage {
     pub __ss_padding: [::core::ffi::c_char; 118],
     pub __ss_align: ::core::ffi::c_ulong,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union __SOCKADDR_ARG {
-    pub __sockaddr__: *mut sockaddr,
-    pub __sockaddr_at__: *mut sockaddr_at,
-    pub __sockaddr_ax25__: *mut sockaddr_ax25,
-    pub __sockaddr_dl__: *mut sockaddr_dl,
-    pub __sockaddr_eon__: *mut sockaddr_eon,
-    pub __sockaddr_in__: *mut sockaddr_in,
-    pub __sockaddr_in6__: *mut sockaddr_in6,
-    pub __sockaddr_inarp__: *mut sockaddr_inarp,
-    pub __sockaddr_ipx__: *mut sockaddr_ipx,
-    pub __sockaddr_iso__: *mut sockaddr_iso,
-    pub __sockaddr_ns__: *mut sockaddr_ns,
-    pub __sockaddr_un__: *mut sockaddr_un,
-    pub __sockaddr_x25__: *mut sockaddr_x25,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sockaddr_un {
-    pub sun_family: sa_family_t,
-    pub sun_path: [::core::ffi::c_char; 108],
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sockaddr_in6 {
-    pub sin6_family: sa_family_t,
-    pub sin6_port: in_port_t,
-    pub sin6_flowinfo: uint32_t,
-    pub sin6_addr: in6_addr,
-    pub sin6_scope_id: uint32_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct in6_addr {
-    pub __in6_u: C2RustUnnamed,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed {
-    pub __u6_addr8: [uint8_t; 16],
-    pub __u6_addr16: [uint16_t; 8],
-    pub __u6_addr32: [uint32_t; 4],
-}
-pub type in_port_t = uint16_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sockaddr_in {
-    pub sin_family: sa_family_t,
-    pub sin_port: in_port_t,
-    pub sin_addr: in_addr,
-    pub sin_zero: [::core::ffi::c_uchar; 8],
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct in_addr {
-    pub s_addr: in_addr_t,
-}
-pub type in_addr_t = uint32_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union __CONST_SOCKADDR_ARG {
-    pub __sockaddr__: *const sockaddr,
-    pub __sockaddr_at__: *const sockaddr_at,
-    pub __sockaddr_ax25__: *const sockaddr_ax25,
-    pub __sockaddr_dl__: *const sockaddr_dl,
-    pub __sockaddr_eon__: *const sockaddr_eon,
-    pub __sockaddr_in__: *const sockaddr_in,
-    pub __sockaddr_in6__: *const sockaddr_in6,
-    pub __sockaddr_inarp__: *const sockaddr_inarp,
-    pub __sockaddr_ipx__: *const sockaddr_ipx,
-    pub __sockaddr_iso__: *const sockaddr_iso,
-    pub __sockaddr_ns__: *const sockaddr_ns,
-    pub __sockaddr_un__: *const sockaddr_un,
-    pub __sockaddr_x25__: *const sockaddr_x25,
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct stat {
@@ -1071,28 +972,14 @@ pub struct clients {
 pub const __S_IREAD: ::core::ffi::c_int = 0o400 as ::core::ffi::c_int;
 pub const __S_IWRITE: ::core::ffi::c_int = 0o200 as ::core::ffi::c_int;
 pub const __S_IEXEC: ::core::ffi::c_int = 0o100 as ::core::ffi::c_int;
-pub const PF_LOCAL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const PF_UNIX: ::core::ffi::c_int = PF_LOCAL;
-pub const AF_UNIX: ::core::ffi::c_int = PF_UNIX;
-pub const SIGINT: ::core::ffi::c_int = 2;
-pub const SIGTERM: ::core::ffi::c_int = 15;
+
 pub const ACCESSPERMS: ::core::ffi::c_int = S_IRWXU | S_IRWXG | S_IRWXO;
 pub const WNOHANG: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const WUNTRACED: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const SIGCONT: ::core::ffi::c_int = 18 as ::core::ffi::c_int;
-pub const SIGCHLD: ::core::ffi::c_int = 17;
-pub const SIGTTIN: ::core::ffi::c_int = 21 as ::core::ffi::c_int;
-pub const SIGTTOU: ::core::ffi::c_int = 22 as ::core::ffi::c_int;
-pub const SIGUSR1: ::core::ffi::c_int = 10;
-pub const SIGUSR2: ::core::ffi::c_int = 12;
-pub const SIG_BLOCK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const SIG_SETMASK: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const ENAMETOOLONG: ::core::ffi::c_int = 36 as ::core::ffi::c_int;
+
 pub const ECONNABORTED: ::core::ffi::c_int = 103 as ::core::ffi::c_int;
 pub const WAIT_ANY: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-pub const EINTR: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
-pub const ECHILD: ::core::ffi::c_int = 10 as ::core::ffi::c_int;
-pub const EAGAIN: ::core::ffi::c_int = 11 as ::core::ffi::c_int;
+
 pub const ENFILE: ::core::ffi::c_int = 23 as ::core::ffi::c_int;
 pub const EMFILE: ::core::ffi::c_int = 24 as ::core::ffi::c_int;
 pub const S_IRUSR: ::core::ffi::c_int = __S_IREAD;

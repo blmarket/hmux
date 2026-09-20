@@ -1,3 +1,8 @@
+pub use crate::src::shared::limits::SIZE_MAX;
+pub use crate::src::shared::posix_terminal::{winsize, TCSANOW, VERASE};
+pub use crate::src::shared::signal::{
+    __sigset_t, sigset_t, SIGCHLD, SIGHUP, SIG_BLOCK, SIG_SETMASK,
+};
 pub use crate::src::shared::spawn::{
     SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FLOATING, SPAWN_FLOATOVERZOOM, SPAWN_KILL, SPAWN_MODAL,
     SPAWN_NONOTIFY, SPAWN_RESPAWN, SPAWN_ZOOM,
@@ -309,20 +314,7 @@ extern "C" {
     fn log_debug(_: *const ::core::ffi::c_char, ...);
 }
 pub type off_t = __off_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct __sigset_t {
-    pub __val: [::core::ffi::c_ulong; 16],
-}
-pub type sigset_t = __sigset_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct winsize {
-    pub ws_row: ::core::ffi::c_ushort,
-    pub ws_col: ::core::ffi::c_ushort,
-    pub ws_xpixel: ::core::ffi::c_ushort,
-    pub ws_ypixel: ::core::ffi::c_ushort,
-}
+
 pub type uintmax_t = ::libc::uintmax_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -1053,24 +1045,21 @@ pub struct spawn_context {
     pub cwd: *const ::core::ffi::c_char,
     pub flags: ::core::ffi::c_int,
 }
-pub const SIGHUP: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const SIGCHLD: ::core::ffi::c_int = 17 as ::core::ffi::c_int;
-pub const SIG_BLOCK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const SIG_SETMASK: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
+
 pub const STDIN_FILENO: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const STDERR_FILENO: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const SEEK_SET: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const SEEK_END: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const VERASE: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
+
 pub const IUTF8: ::core::ffi::c_int = 0o40000 as ::core::ffi::c_int;
-pub const TCSANOW: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+
 pub const _PATH_DEFPATH: [::core::ffi::c_char; 14] =
     unsafe { ::core::mem::transmute::<[u8; 14], [::core::ffi::c_char; 14]>(*b"/usr/bin:/bin\0") };
 pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
     unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
 pub const _PATH_TMP: [::core::ffi::c_char; 6] =
     unsafe { ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"/tmp/\0") };
-pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
+
 unsafe extern "C" fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_context) {
     let mut s: *mut session = (*sc).s;
     let mut wl: *mut winlink = (*sc).wl;

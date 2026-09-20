@@ -1,3 +1,4 @@
+pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX, INT_MIN, UINT_MAX};
 pub use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FULLSIZE, SPAWN_HORIZONTAL};
 pub use crate::src::shared::window::{WINDOW_ZOOMED};
 pub use crate::src::shared::pane::{
@@ -842,11 +843,7 @@ pub struct cmd_entry {
     pub flags: ::core::ffi::c_int,
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
-pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
-pub const INT_MIN: ::core::ffi::c_int = -__INT_MAX__ - 1 as ::core::ffi::c_int;
-pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
-    .wrapping_mul(2 as ::core::ffi::c_uint)
-    .wrapping_add(1 as ::core::ffi::c_uint);
+
 #[no_mangle]
 pub static mut cmd_join_pane_entry: cmd_entry = unsafe {
     cmd_entry {
@@ -1721,4 +1718,3 @@ unsafe extern "C" fn cmd_join_pane_exec(
     );
     return CMD_RETURN_NORMAL;
 }
-pub const __INT_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;

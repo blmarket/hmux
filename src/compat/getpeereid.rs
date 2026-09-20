@@ -1,3 +1,4 @@
+pub use crate::src::shared::socket::SOL_SOCKET;
 pub use crate::src::shared::abi::{__gid_t, __socklen_t, __uid_t, gid_t, socklen_t, uid_t};
 use crate::src::shared::abi::*;
 extern "C" {
@@ -16,7 +17,7 @@ pub struct ucred {
     pub uid: uid_t,
     pub gid: gid_t,
 }
-pub const SOL_SOCKET: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+
 pub const SO_PEERCRED: ::core::ffi::c_int = 17 as ::core::ffi::c_int;
 #[no_mangle]
 pub unsafe extern "C" fn getpeereid(

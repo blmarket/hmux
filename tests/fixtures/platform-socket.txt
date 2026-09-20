@@ -1,0 +1,114 @@
+src/client.rs::AF_UNIX 1 4 4
+src/cmd_pipe_pane.rs::AF_UNIX 1 4 4
+src/job.rs::AF_UNIX 1 4 4
+src/proc.rs::AF_UNIX 1 4 4
+src/server.rs::AF_UNIX 1 4 4
+src/client.rs::PF_LOCAL 1 4 4
+src/cmd_pipe_pane.rs::PF_LOCAL 1 4 4
+src/job.rs::PF_LOCAL 1 4 4
+src/proc.rs::PF_LOCAL 1 4 4
+src/server.rs::PF_LOCAL 1 4 4
+src/client.rs::PF_UNIX 1 4 4
+src/cmd_pipe_pane.rs::PF_UNIX 1 4 4
+src/job.rs::PF_UNIX 1 4 4
+src/proc.rs::PF_UNIX 1 4 4
+src/server.rs::PF_UNIX 1 4 4
+src/cmd_pipe_pane.rs::PF_UNSPEC 0 4 4
+src/job.rs::PF_UNSPEC 0 4 4
+src/proc.rs::PF_UNSPEC 0 4 4
+src/client.rs::SOCK_CLOEXEC 524288 4 4
+src/cmd_pipe_pane.rs::SOCK_CLOEXEC 524288 4 4
+src/compat/systemd.rs::SOCK_CLOEXEC 524288 4 4
+src/job.rs::SOCK_CLOEXEC 524288 4 4
+src/proc.rs::SOCK_CLOEXEC 524288 4 4
+src/server.rs::SOCK_CLOEXEC 524288 4 4
+src/client.rs::SOCK_DCCP 6 4 4
+src/cmd_pipe_pane.rs::SOCK_DCCP 6 4 4
+src/compat/systemd.rs::SOCK_DCCP 6 4 4
+src/job.rs::SOCK_DCCP 6 4 4
+src/proc.rs::SOCK_DCCP 6 4 4
+src/server.rs::SOCK_DCCP 6 4 4
+src/client.rs::SOCK_DGRAM 2 4 4
+src/cmd_pipe_pane.rs::SOCK_DGRAM 2 4 4
+src/compat/systemd.rs::SOCK_DGRAM 2 4 4
+src/job.rs::SOCK_DGRAM 2 4 4
+src/proc.rs::SOCK_DGRAM 2 4 4
+src/server.rs::SOCK_DGRAM 2 4 4
+src/client.rs::SOCK_NONBLOCK 2048 4 4
+src/cmd_pipe_pane.rs::SOCK_NONBLOCK 2048 4 4
+src/compat/systemd.rs::SOCK_NONBLOCK 2048 4 4
+src/job.rs::SOCK_NONBLOCK 2048 4 4
+src/proc.rs::SOCK_NONBLOCK 2048 4 4
+src/server.rs::SOCK_NONBLOCK 2048 4 4
+src/client.rs::SOCK_PACKET 10 4 4
+src/cmd_pipe_pane.rs::SOCK_PACKET 10 4 4
+src/compat/systemd.rs::SOCK_PACKET 10 4 4
+src/job.rs::SOCK_PACKET 10 4 4
+src/proc.rs::SOCK_PACKET 10 4 4
+src/server.rs::SOCK_PACKET 10 4 4
+src/client.rs::SOCK_RAW 3 4 4
+src/cmd_pipe_pane.rs::SOCK_RAW 3 4 4
+src/compat/systemd.rs::SOCK_RAW 3 4 4
+src/job.rs::SOCK_RAW 3 4 4
+src/proc.rs::SOCK_RAW 3 4 4
+src/server.rs::SOCK_RAW 3 4 4
+src/client.rs::SOCK_RDM 4 4 4
+src/cmd_pipe_pane.rs::SOCK_RDM 4 4 4
+src/compat/systemd.rs::SOCK_RDM 4 4 4
+src/job.rs::SOCK_RDM 4 4 4
+src/proc.rs::SOCK_RDM 4 4 4
+src/server.rs::SOCK_RDM 4 4 4
+src/client.rs::SOCK_SEQPACKET 5 4 4
+src/cmd_pipe_pane.rs::SOCK_SEQPACKET 5 4 4
+src/compat/systemd.rs::SOCK_SEQPACKET 5 4 4
+src/job.rs::SOCK_SEQPACKET 5 4 4
+src/proc.rs::SOCK_SEQPACKET 5 4 4
+src/server.rs::SOCK_SEQPACKET 5 4 4
+src/client.rs::SOCK_STREAM 1 4 4
+src/cmd_pipe_pane.rs::SOCK_STREAM 1 4 4
+src/compat/systemd.rs::SOCK_STREAM 1 4 4
+src/job.rs::SOCK_STREAM 1 4 4
+src/proc.rs::SOCK_STREAM 1 4 4
+src/server.rs::SOCK_STREAM 1 4 4
+src/compat/getpeereid.rs::SOL_SOCKET 1 4 4
+src/compat/imsg_buffer.rs::SOL_SOCKET 1 4 4
+src/client.rs::__CONST_SOCKADDR_ARG 8 8 __sockaddr__=0 __sockaddr_at__=0 __sockaddr_ax25__=0 __sockaddr_dl__=0 __sockaddr_eon__=0 __sockaddr_in__=0 __sockaddr_in6__=0 __sockaddr_inarp__=0 __sockaddr_ipx__=0 __sockaddr_iso__=0 __sockaddr_ns__=0 __sockaddr_un__=0 __sockaddr_x25__=0
+src/server.rs::__CONST_SOCKADDR_ARG 8 8 __sockaddr__=0 __sockaddr_at__=0 __sockaddr_ax25__=0 __sockaddr_dl__=0 __sockaddr_eon__=0 __sockaddr_in__=0 __sockaddr_in6__=0 __sockaddr_inarp__=0 __sockaddr_ipx__=0 __sockaddr_iso__=0 __sockaddr_ns__=0 __sockaddr_un__=0 __sockaddr_x25__=0
+src/compat/systemd.rs::__SOCKADDR_ARG 8 8 __sockaddr__=0 __sockaddr_at__=0 __sockaddr_ax25__=0 __sockaddr_dl__=0 __sockaddr_eon__=0 __sockaddr_in__=0 __sockaddr_in6__=0 __sockaddr_inarp__=0 __sockaddr_ipx__=0 __sockaddr_iso__=0 __sockaddr_ns__=0 __sockaddr_un__=0 __sockaddr_x25__=0
+src/server.rs::__SOCKADDR_ARG 8 8 __sockaddr__=0 __sockaddr_at__=0 __sockaddr_ax25__=0 __sockaddr_dl__=0 __sockaddr_eon__=0 __sockaddr_in__=0 __sockaddr_in6__=0 __sockaddr_inarp__=0 __sockaddr_ipx__=0 __sockaddr_iso__=0 __sockaddr_ns__=0 __sockaddr_un__=0 __sockaddr_x25__=0
+src/client.rs::__socket_type 4 4
+src/cmd_pipe_pane.rs::__socket_type 4 4
+src/compat/systemd.rs::__socket_type 4 4
+src/job.rs::__socket_type 4 4
+src/proc.rs::__socket_type 4 4
+src/server.rs::__socket_type 4 4
+src/client.rs::in6_addr 16 4 __in6_u=0
+src/compat/systemd.rs::in6_addr 16 4 __in6_u=0
+src/server.rs::in6_addr 16 4 __in6_u=0
+src/client.rs::C2RustUnnamed 16 4 __u6_addr8=0 __u6_addr16=0 __u6_addr32=0
+src/compat/systemd.rs::C2RustUnnamed 16 4 __u6_addr8=0 __u6_addr16=0 __u6_addr32=0
+src/server.rs::C2RustUnnamed 16 4 __u6_addr8=0 __u6_addr16=0 __u6_addr32=0
+src/client.rs::in_addr 4 4 s_addr=0
+src/compat/systemd.rs::in_addr 4 4 s_addr=0
+src/server.rs::in_addr 4 4 s_addr=0
+src/client.rs::in_addr_t 4 4
+src/compat/systemd.rs::in_addr_t 4 4
+src/server.rs::in_addr_t 4 4
+src/client.rs::in_port_t 2 2
+src/compat/systemd.rs::in_port_t 2 2
+src/server.rs::in_port_t 2 2
+src/client.rs::sa_family_t 2 2
+src/compat/systemd.rs::sa_family_t 2 2
+src/server.rs::sa_family_t 2 2
+src/client.rs::sockaddr 16 2 sa_family=0 sa_data=2
+src/compat/systemd.rs::sockaddr 16 2 sa_family=0 sa_data=2
+src/server.rs::sockaddr 16 2 sa_family=0 sa_data=2
+src/client.rs::sockaddr_in 16 4 sin_family=0 sin_port=2 sin_addr=4 sin_zero=8
+src/compat/systemd.rs::sockaddr_in 16 4 sin_family=0 sin_port=2 sin_addr=4 sin_zero=8
+src/server.rs::sockaddr_in 16 4 sin_family=0 sin_port=2 sin_addr=4 sin_zero=8
+src/client.rs::sockaddr_in6 28 4 sin6_family=0 sin6_port=2 sin6_flowinfo=4 sin6_addr=8 sin6_scope_id=24
+src/compat/systemd.rs::sockaddr_in6 28 4 sin6_family=0 sin6_port=2 sin6_flowinfo=4 sin6_addr=8 sin6_scope_id=24
+src/server.rs::sockaddr_in6 28 4 sin6_family=0 sin6_port=2 sin6_flowinfo=4 sin6_addr=8 sin6_scope_id=24
+src/client.rs::sockaddr_un 110 2 sun_family=0 sun_path=2
+src/compat/systemd.rs::sockaddr_un 110 2 sun_family=0 sun_path=2
+src/server.rs::sockaddr_un 110 2 sun_family=0 sun_path=2
