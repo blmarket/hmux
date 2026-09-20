@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     fn __errno_location() -> *mut ::core::ffi::c_int;
     fn strtoll(
@@ -16,7 +17,6 @@ pub const EINVAL: ::core::ffi::c_int = 22 as ::core::ffi::c_int;
 pub const ERANGE: ::core::ffi::c_int = 34 as ::core::ffi::c_int;
 pub const LLONG_MAX: ::core::ffi::c_longlong = __LONG_LONG_MAX__;
 pub const LLONG_MIN: ::core::ffi::c_longlong = -__LONG_LONG_MAX__ - 1 as ::core::ffi::c_longlong;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const INVALID: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const TOOSMALL: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const TOOLARGE: ::core::ffi::c_int = 3 as ::core::ffi::c_int;

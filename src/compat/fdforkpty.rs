@@ -1,3 +1,4 @@
+use crate::src::shared::terminal::*;
 use crate::src::shared::abi::*;
 extern "C" {
     fn forkpty(
@@ -14,30 +15,6 @@ pub struct winsize {
     pub ws_col: ::core::ffi::c_ushort,
     pub ws_xpixel: ::core::ffi::c_ushort,
     pub ws_ypixel: ::core::ffi::c_ushort,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct termios {
-    pub c_iflag: tcflag_t,
-    pub c_oflag: tcflag_t,
-    pub c_cflag: tcflag_t,
-    pub c_lflag: tcflag_t,
-    pub c_line: cc_t,
-    pub c_cc: [cc_t; 32],
-    pub c2rust_unnamed: C2RustUnnamed_0,
-    pub c2rust_unnamed_0: C2RustUnnamed,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed {
-    pub __ospeed: speed_t,
-    pub c_ospeed: speed_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_0 {
-    pub __ispeed: speed_t,
-    pub c_ispeed: speed_t,
 }
 pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
 #[no_mangle]

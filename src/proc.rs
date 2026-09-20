@@ -1,7 +1,8 @@
+use crate::src::shared::event::*;
+use crate::src::shared::message::*;
 use crate::src::shared::abi::*;
 use ::libc;
 extern "C" {
-    pub type event_base;
     pub type msgbuf;
     fn socketpair(
         __domain: ::core::ffi::c_int,
@@ -215,93 +216,6 @@ pub union C2RustUnnamed_9 {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct event {
-    pub ev_evcallback: event_callback,
-    pub ev_timeout_pos: C2RustUnnamed_15,
-    pub ev_fd: ::core::ffi::c_int,
-    pub ev_base: *mut event_base,
-    pub ev_: C2RustUnnamed_10,
-    pub ev_events: ::core::ffi::c_short,
-    pub ev_res: ::core::ffi::c_short,
-    pub ev_timeout: timeval,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_10 {
-    pub ev_io: C2RustUnnamed_13,
-    pub ev_signal: C2RustUnnamed_11,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_11 {
-    pub ev_signal_next: C2RustUnnamed_12,
-    pub ev_ncalls: ::core::ffi::c_short,
-    pub ev_pncalls: *mut ::core::ffi::c_short,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_12 {
-    pub le_next: *mut event,
-    pub le_prev: *mut *mut event,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_13 {
-    pub ev_io_next: C2RustUnnamed_14,
-    pub ev_timeout: timeval,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_14 {
-    pub le_next: *mut event,
-    pub le_prev: *mut *mut event,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_15 {
-    pub ev_next_with_common_timeout: C2RustUnnamed_16,
-    pub min_heap_idx: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_16 {
-    pub tqe_next: *mut event,
-    pub tqe_prev: *mut *mut event,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct event_callback {
-    pub evcb_active_next: C2RustUnnamed_18,
-    pub evcb_flags: ::core::ffi::c_short,
-    pub evcb_pri: uint8_t,
-    pub evcb_closure: uint8_t,
-    pub evcb_cb_union: C2RustUnnamed_17,
-    pub evcb_arg: *mut ::core::ffi::c_void,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_17 {
-    pub evcb_callback: Option<
-        unsafe extern "C" fn(
-            ::core::ffi::c_int,
-            ::core::ffi::c_short,
-            *mut ::core::ffi::c_void,
-        ) -> (),
-    >,
-    pub evcb_selfcb:
-        Option<unsafe extern "C" fn(*mut event_callback, *mut ::core::ffi::c_void) -> ()>,
-    pub evcb_evfinalize: Option<unsafe extern "C" fn(*mut event, *mut ::core::ffi::c_void) -> ()>,
-    pub evcb_cbfinalize:
-        Option<unsafe extern "C" fn(*mut event_callback, *mut ::core::ffi::c_void) -> ()>,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_18 {
-    pub tqe_next: *mut event_callback,
-    pub tqe_prev: *mut *mut event_callback,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct ibuf {
     pub entry: C2RustUnnamed_19,
     pub buf: *mut ::core::ffi::c_uchar,
@@ -341,49 +255,6 @@ pub struct imsg {
     pub data: *mut ::core::ffi::c_void,
     pub buf: *mut ibuf,
 }
-pub type msgtype = ::core::ffi::c_uint;
-pub const MSG_WRITE_DONE: msgtype = 308;
-pub const MSG_READ_CANCEL: msgtype = 307;
-pub const MSG_WRITE_CLOSE: msgtype = 306;
-pub const MSG_WRITE_READY: msgtype = 305;
-pub const MSG_WRITE: msgtype = 304;
-pub const MSG_WRITE_OPEN: msgtype = 303;
-pub const MSG_READ_DONE: msgtype = 302;
-pub const MSG_READ: msgtype = 301;
-pub const MSG_READ_OPEN: msgtype = 300;
-pub const MSG_FLAGS: msgtype = 218;
-pub const MSG_EXEC: msgtype = 217;
-pub const MSG_WAKEUP: msgtype = 216;
-pub const MSG_UNLOCK: msgtype = 215;
-pub const MSG_SUSPEND: msgtype = 214;
-pub const MSG_OLDSTDOUT: msgtype = 213;
-pub const MSG_OLDSTDIN: msgtype = 212;
-pub const MSG_OLDSTDERR: msgtype = 211;
-pub const MSG_SHUTDOWN: msgtype = 210;
-pub const MSG_SHELL: msgtype = 209;
-pub const MSG_RESIZE: msgtype = 208;
-pub const MSG_READY: msgtype = 207;
-pub const MSG_LOCK: msgtype = 206;
-pub const MSG_EXITING: msgtype = 205;
-pub const MSG_EXITED: msgtype = 204;
-pub const MSG_EXIT: msgtype = 203;
-pub const MSG_DETACHKILL: msgtype = 202;
-pub const MSG_DETACH: msgtype = 201;
-pub const MSG_COMMAND: msgtype = 200;
-pub const MSG_IDENTIFY_TERMINFO: msgtype = 112;
-pub const MSG_IDENTIFY_LONGFLAGS: msgtype = 111;
-pub const MSG_IDENTIFY_STDOUT: msgtype = 110;
-pub const MSG_IDENTIFY_FEATURES: msgtype = 109;
-pub const MSG_IDENTIFY_CWD: msgtype = 108;
-pub const MSG_IDENTIFY_CLIENTPID: msgtype = 107;
-pub const MSG_IDENTIFY_DONE: msgtype = 106;
-pub const MSG_IDENTIFY_ENVIRON: msgtype = 105;
-pub const MSG_IDENTIFY_STDIN: msgtype = 104;
-pub const MSG_IDENTIFY_OLDCWD: msgtype = 103;
-pub const MSG_IDENTIFY_TTYNAME: msgtype = 102;
-pub const MSG_IDENTIFY_TERM: msgtype = 101;
-pub const MSG_IDENTIFY_FLAGS: msgtype = 100;
-pub const MSG_VERSION: msgtype = 12;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tmuxpeer {
@@ -435,7 +306,6 @@ pub const SIGTERM: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
 pub const SIGHUP: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const SIGTSTP: ::core::ffi::c_int = 20 as ::core::ffi::c_int;
 pub const SIGCONT: ::core::ffi::c_int = 18 as ::core::ffi::c_int;
 pub const SIGCHLD: ::core::ffi::c_int = 17 as ::core::ffi::c_int;

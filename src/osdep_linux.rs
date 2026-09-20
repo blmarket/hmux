@@ -1,10 +1,10 @@
+use crate::src::shared::event::*;
 use crate::src::shared::abi::*;
 use ::c2rust_bitfields;
 extern "C" {
     pub type _IO_wide_data;
     pub type _IO_codecvt;
     pub type _IO_marker;
-    pub type event_base;
     fn readlink(
         __path: *const ::core::ffi::c_char,
         __buf: *mut ::core::ffi::c_char,
@@ -76,7 +76,6 @@ pub struct _IO_FILE {
 pub type _IO_lock_t = ();
 pub type FILE = _IO_FILE;
 pub const MAXPATHLEN: ::core::ffi::c_int = PATH_MAX;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const PATH_MAX: ::core::ffi::c_int = 4096 as ::core::ffi::c_int;
 pub const EOF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const TIOCGSID: ::core::ffi::c_int = 0x5429 as ::core::ffi::c_int;

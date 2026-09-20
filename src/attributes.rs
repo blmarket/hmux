@@ -34,7 +34,6 @@ pub struct C2RustUnnamed {
     pub name: *const ::core::ffi::c_char,
     pub attr: ::core::ffi::c_int,
 }
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 #[no_mangle]
 pub unsafe extern "C" fn attributes_tostring(
     mut attr: ::core::ffi::c_int,

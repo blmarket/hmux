@@ -101,7 +101,6 @@ pub struct imsg {
 pub const EINVAL: ::core::ffi::c_int = 22 as ::core::ffi::c_int;
 pub const ERANGE: ::core::ffi::c_int = 34 as ::core::ffi::c_int;
 pub const EBADMSG: ::core::ffi::c_int = 74 as ::core::ffi::c_int;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const UINT32_MAX: ::core::ffi::c_uint = 4294967295 as ::core::ffi::c_uint;
 pub const IMSG_HEADER_SIZE: usize = ::core::mem::size_of::<imsg_hdr>();
 pub const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;

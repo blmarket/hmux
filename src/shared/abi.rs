@@ -23,6 +23,9 @@ pub type uint8_t = __uint8_t;
 pub type uint64_t = __uint64_t;
 pub type bitstr_t = ::core::ffi::c_uchar;
 
+pub const NULL: *mut ::core::ffi::c_void =
+    ::core::ptr::null_mut::<::core::ffi::c_void>();
+
 pub type cc_t = ::core::ffi::c_uchar;
 pub type speed_t = ::core::ffi::c_uint;
 pub type tcflag_t = ::core::ffi::c_uint;
@@ -36,7 +39,7 @@ pub struct timeval {
 
 #[cfg(test)]
 mod tests {
-    use super::timeval;
+    use super::{timeval, NULL};
     use ::core::mem::{align_of, offset_of, size_of};
 
     #[test]
@@ -45,5 +48,10 @@ mod tests {
         assert_eq!(align_of::<timeval>(), 8);
         assert_eq!(offset_of!(timeval, tv_sec), 0);
         assert_eq!(offset_of!(timeval, tv_usec), 8);
+    }
+
+    #[test]
+    fn null_matches_the_c_null_pointer_constant() {
+        assert!(NULL.is_null());
     }
 }

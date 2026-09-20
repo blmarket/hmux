@@ -1,3 +1,4 @@
+use crate::src::shared::display::*;
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 extern "C" {
@@ -76,24 +77,6 @@ pub struct screen {
     pub hyperlinks: *mut hyperlinks,
     pub progress_bar: progress_bar,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct progress_bar {
-    pub state: progress_bar_state,
-    pub progress: ::core::ffi::c_int,
-}
-pub type progress_bar_state = ::core::ffi::c_uint;
-pub const PROGRESS_BAR_PAUSED: progress_bar_state = 4;
-pub const PROGRESS_BAR_INDETERMINATE: progress_bar_state = 3;
-pub const PROGRESS_BAR_ERROR: progress_bar_state = 2;
-pub const PROGRESS_BAR_NORMAL: progress_bar_state = 1;
-pub const PROGRESS_BAR_HIDDEN: progress_bar_state = 0;
-pub type screen_cursor_style = ::core::ffi::c_uint;
-pub const SCREEN_CURSOR_BAR: screen_cursor_style = 3;
-pub const SCREEN_CURSOR_UNDERLINE: screen_cursor_style = 2;
-pub const SCREEN_CURSOR_BLOCK: screen_cursor_style = 1;
-pub const SCREEN_CURSOR_DEFAULT: screen_cursor_style = 0;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 #[no_mangle]
 pub unsafe extern "C" fn grid_view_get_cell(
     mut gd: *mut grid,

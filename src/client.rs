@@ -1,3 +1,11 @@
+use crate::src::shared::client::*;
+use crate::src::shared::arguments::*;
+use crate::src::shared::command::*;
+use crate::src::shared::terminal::*;
+use crate::src::shared::event::*;
+use crate::src::shared::display::*;
+use crate::src::shared::layout::*;
+use crate::src::shared::message::*;
 use crate::src::shared::abi::*;
 use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
@@ -18,9 +26,6 @@ extern "C" {
     pub type _IO_wide_data;
     pub type _IO_codecvt;
     pub type _IO_marker;
-    pub type event_base;
-    pub type evbuffer;
-    pub type bufferevent_ops;
     pub type args;
     pub type tmuxpeer;
     pub type hyperlinks;
@@ -484,147 +489,6 @@ pub type _IO_lock_t = ();
 pub type FILE = _IO_FILE;
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct termios {
-    pub c_iflag: tcflag_t,
-    pub c_oflag: tcflag_t,
-    pub c_cflag: tcflag_t,
-    pub c_lflag: tcflag_t,
-    pub c_line: cc_t,
-    pub c_cc: [cc_t; 32],
-    pub c2rust_unnamed: C2RustUnnamed_12,
-    pub c2rust_unnamed_0: C2RustUnnamed_11,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_11 {
-    pub __ospeed: speed_t,
-    pub c_ospeed: speed_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_12 {
-    pub __ispeed: speed_t,
-    pub c_ispeed: speed_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct event {
-    pub ev_evcallback: event_callback,
-    pub ev_timeout_pos: C2RustUnnamed_18,
-    pub ev_fd: ::core::ffi::c_int,
-    pub ev_base: *mut event_base,
-    pub ev_: C2RustUnnamed_13,
-    pub ev_events: ::core::ffi::c_short,
-    pub ev_res: ::core::ffi::c_short,
-    pub ev_timeout: timeval,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_13 {
-    pub ev_io: C2RustUnnamed_16,
-    pub ev_signal: C2RustUnnamed_14,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_14 {
-    pub ev_signal_next: C2RustUnnamed_15,
-    pub ev_ncalls: ::core::ffi::c_short,
-    pub ev_pncalls: *mut ::core::ffi::c_short,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_15 {
-    pub le_next: *mut event,
-    pub le_prev: *mut *mut event,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_16 {
-    pub ev_io_next: C2RustUnnamed_17,
-    pub ev_timeout: timeval,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_17 {
-    pub le_next: *mut event,
-    pub le_prev: *mut *mut event,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_18 {
-    pub ev_next_with_common_timeout: C2RustUnnamed_19,
-    pub min_heap_idx: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_19 {
-    pub tqe_next: *mut event,
-    pub tqe_prev: *mut *mut event,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct event_callback {
-    pub evcb_active_next: C2RustUnnamed_21,
-    pub evcb_flags: ::core::ffi::c_short,
-    pub evcb_pri: uint8_t,
-    pub evcb_closure: uint8_t,
-    pub evcb_cb_union: C2RustUnnamed_20,
-    pub evcb_arg: *mut ::core::ffi::c_void,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_20 {
-    pub evcb_callback: Option<
-        unsafe extern "C" fn(
-            ::core::ffi::c_int,
-            ::core::ffi::c_short,
-            *mut ::core::ffi::c_void,
-        ) -> (),
-    >,
-    pub evcb_selfcb:
-        Option<unsafe extern "C" fn(*mut event_callback, *mut ::core::ffi::c_void) -> ()>,
-    pub evcb_evfinalize: Option<unsafe extern "C" fn(*mut event, *mut ::core::ffi::c_void) -> ()>,
-    pub evcb_cbfinalize:
-        Option<unsafe extern "C" fn(*mut event_callback, *mut ::core::ffi::c_void) -> ()>,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_21 {
-    pub tqe_next: *mut event_callback,
-    pub tqe_prev: *mut *mut event_callback,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct bufferevent {
-    pub ev_base: *mut event_base,
-    pub be_ops: *const bufferevent_ops,
-    pub ev_read: event,
-    pub ev_write: event,
-    pub input: *mut evbuffer,
-    pub output: *mut evbuffer,
-    pub wm_read: event_watermark,
-    pub wm_write: event_watermark,
-    pub readcb: bufferevent_data_cb,
-    pub writecb: bufferevent_data_cb,
-    pub errorcb: bufferevent_event_cb,
-    pub cbarg: *mut ::core::ffi::c_void,
-    pub timeout_read: timeval,
-    pub timeout_write: timeval,
-    pub enabled: ::core::ffi::c_short,
-}
-pub type bufferevent_event_cb = Option<
-    unsafe extern "C" fn(*mut bufferevent, ::core::ffi::c_short, *mut ::core::ffi::c_void) -> (),
->;
-pub type bufferevent_data_cb =
-    Option<unsafe extern "C" fn(*mut bufferevent, *mut ::core::ffi::c_void) -> ()>;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct event_watermark {
-    pub low: size_t,
-    pub high: size_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct ibuf {
     pub entry: C2RustUnnamed_22,
     pub buf: *mut ::core::ffi::c_uchar,
@@ -655,49 +519,6 @@ pub struct imsg {
     pub data: *mut ::core::ffi::c_void,
     pub buf: *mut ibuf,
 }
-pub type msgtype = ::core::ffi::c_uint;
-pub const MSG_WRITE_DONE: msgtype = 308;
-pub const MSG_READ_CANCEL: msgtype = 307;
-pub const MSG_WRITE_CLOSE: msgtype = 306;
-pub const MSG_WRITE_READY: msgtype = 305;
-pub const MSG_WRITE: msgtype = 304;
-pub const MSG_WRITE_OPEN: msgtype = 303;
-pub const MSG_READ_DONE: msgtype = 302;
-pub const MSG_READ: msgtype = 301;
-pub const MSG_READ_OPEN: msgtype = 300;
-pub const MSG_FLAGS: msgtype = 218;
-pub const MSG_EXEC: msgtype = 217;
-pub const MSG_WAKEUP: msgtype = 216;
-pub const MSG_UNLOCK: msgtype = 215;
-pub const MSG_SUSPEND: msgtype = 214;
-pub const MSG_OLDSTDOUT: msgtype = 213;
-pub const MSG_OLDSTDIN: msgtype = 212;
-pub const MSG_OLDSTDERR: msgtype = 211;
-pub const MSG_SHUTDOWN: msgtype = 210;
-pub const MSG_SHELL: msgtype = 209;
-pub const MSG_RESIZE: msgtype = 208;
-pub const MSG_READY: msgtype = 207;
-pub const MSG_LOCK: msgtype = 206;
-pub const MSG_EXITING: msgtype = 205;
-pub const MSG_EXITED: msgtype = 204;
-pub const MSG_EXIT: msgtype = 203;
-pub const MSG_DETACHKILL: msgtype = 202;
-pub const MSG_DETACH: msgtype = 201;
-pub const MSG_COMMAND: msgtype = 200;
-pub const MSG_IDENTIFY_TERMINFO: msgtype = 112;
-pub const MSG_IDENTIFY_LONGFLAGS: msgtype = 111;
-pub const MSG_IDENTIFY_STDOUT: msgtype = 110;
-pub const MSG_IDENTIFY_FEATURES: msgtype = 109;
-pub const MSG_IDENTIFY_CWD: msgtype = 108;
-pub const MSG_IDENTIFY_CLIENTPID: msgtype = 107;
-pub const MSG_IDENTIFY_DONE: msgtype = 106;
-pub const MSG_IDENTIFY_ENVIRON: msgtype = 105;
-pub const MSG_IDENTIFY_STDIN: msgtype = 104;
-pub const MSG_IDENTIFY_OLDCWD: msgtype = 103;
-pub const MSG_IDENTIFY_TTYNAME: msgtype = 102;
-pub const MSG_IDENTIFY_TERM: msgtype = 101;
-pub const MSG_IDENTIFY_FLAGS: msgtype = 100;
-pub const MSG_VERSION: msgtype = 12;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct msg_command {
@@ -750,7 +571,7 @@ pub struct client {
     pub theme: client_theme,
     pub input_requests: input_requests,
     pub flags: uint64_t,
-    pub exit_type: C2RustUnnamed_46,
+    pub exit_type: client_exit_type,
     pub exit_msgtype: msgtype,
     pub exit_session: *mut ::core::ffi::c_char,
     pub exit_message: *mut ::core::ffi::c_char,
@@ -925,23 +746,6 @@ pub struct screen {
     pub hyperlinks: *mut hyperlinks,
     pub progress_bar: progress_bar,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct progress_bar {
-    pub state: progress_bar_state,
-    pub progress: ::core::ffi::c_int,
-}
-pub type progress_bar_state = ::core::ffi::c_uint;
-pub const PROGRESS_BAR_PAUSED: progress_bar_state = 4;
-pub const PROGRESS_BAR_INDETERMINATE: progress_bar_state = 3;
-pub const PROGRESS_BAR_ERROR: progress_bar_state = 2;
-pub const PROGRESS_BAR_NORMAL: progress_bar_state = 1;
-pub const PROGRESS_BAR_HIDDEN: progress_bar_state = 0;
-pub type screen_cursor_style = ::core::ffi::c_uint;
-pub const SCREEN_CURSOR_BAR: screen_cursor_style = 3;
-pub const SCREEN_CURSOR_UNDERLINE: screen_cursor_style = 2;
-pub const SCREEN_CURSOR_BLOCK: screen_cursor_style = 1;
-pub const SCREEN_CURSOR_DEFAULT: screen_cursor_style = 0;
 pub type overlay_check_cb = Option<
     unsafe extern "C" fn(
         *mut client,
@@ -1351,10 +1155,6 @@ pub struct layout_geometry {
     pub xoff: ::core::ffi::c_int,
     pub yoff: ::core::ffi::c_int,
 }
-pub type layout_type = ::core::ffi::c_uint;
-pub const LAYOUT_WINDOWPANE: layout_type = 2;
-pub const LAYOUT_TOPBOTTOM: layout_type = 1;
-pub const LAYOUT_LEFTRIGHT: layout_type = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_panes {
@@ -1415,10 +1215,6 @@ pub struct cmd_list {
     pub group: u_int,
     pub list: *mut cmds,
 }
-pub type C2RustUnnamed_46 = ::core::ffi::c_uint;
-pub const CLIENT_EXIT_DETACH: C2RustUnnamed_46 = 2;
-pub const CLIENT_EXIT_SHUTDOWN: C2RustUnnamed_46 = 1;
-pub const CLIENT_EXIT_RETURN: C2RustUnnamed_46 = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct input_requests {
@@ -1506,10 +1302,6 @@ pub struct C2RustUnnamed_47 {
     pub le_next: *mut tty_term,
     pub le_prev: *mut *mut tty_term,
 }
-pub type args_type = ::core::ffi::c_uint;
-pub const ARGS_COMMANDS: args_type = 2;
-pub const ARGS_STRING: args_type = 1;
-pub const ARGS_NONE: args_type = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct args_value {
@@ -1530,9 +1322,6 @@ pub union C2RustUnnamed_49 {
     pub string: *mut ::core::ffi::c_char,
     pub cmdlist: *mut cmd_list,
 }
-pub type cmd_parse_status = ::core::ffi::c_uint;
-pub const CMD_PARSE_SUCCESS: cmd_parse_status = 1;
-pub const CMD_PARSE_ERROR: cmd_parse_status = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct cmd_parse_result {
@@ -1550,16 +1339,6 @@ pub struct cmd_parse_input {
     pub c: *mut client,
     pub fs: cmd_find_state,
 }
-pub const CLIENT_EXIT_MESSAGE_PROVIDED: C2RustUnnamed_50 = 8;
-pub const CLIENT_EXIT_SERVER_EXITED: C2RustUnnamed_50 = 7;
-pub const CLIENT_EXIT_EXITED: C2RustUnnamed_50 = 6;
-pub const CLIENT_EXIT_LOST_SERVER: C2RustUnnamed_50 = 5;
-pub const CLIENT_EXIT_TERMINATED: C2RustUnnamed_50 = 4;
-pub const CLIENT_EXIT_LOST_TTY: C2RustUnnamed_50 = 3;
-pub const CLIENT_EXIT_DETACHED_HUP: C2RustUnnamed_50 = 2;
-pub const CLIENT_EXIT_DETACHED: C2RustUnnamed_50 = 1;
-pub const CLIENT_EXIT_NONE: C2RustUnnamed_50 = 0;
-pub type C2RustUnnamed_50 = ::core::ffi::c_uint;
 pub const SIG_DFL: __sighandler_t = None;
 pub const SIGTERM: ::core::ffi::c_int = 15;
 pub const SIGHUP: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
@@ -1582,7 +1361,6 @@ pub const O_WRONLY: ::core::ffi::c_int = 0o1 as ::core::ffi::c_int;
 pub const O_CREAT: ::core::ffi::c_int = 0o100 as ::core::ffi::c_int;
 pub const LOCK_EX: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const LOCK_NB: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const ENOENT: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const EINTR: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
 pub const ECHILD: ::core::ffi::c_int = 10 as ::core::ffi::c_int;
@@ -1614,7 +1392,7 @@ static mut client_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *mut 
 static mut client_peer: *mut tmuxpeer = ::core::ptr::null::<tmuxpeer>() as *mut tmuxpeer;
 static mut client_flags: uint64_t = 0;
 static mut client_suspended: ::core::ffi::c_int = 0;
-static mut client_exitreason: C2RustUnnamed_50 = CLIENT_EXIT_NONE;
+static mut client_exitreason: client_exit_reason = CLIENT_EXIT_NONE;
 static mut client_exitflag: ::core::ffi::c_int = 0;
 static mut client_exitval: ::core::ffi::c_int = 0;
 static mut client_exittype: msgtype = 0 as msgtype;
@@ -1856,8 +1634,8 @@ pub unsafe extern "C" fn client_main(
         c_lflag: 0,
         c_line: 0,
         c_cc: [0; 32],
-        c2rust_unnamed: C2RustUnnamed_12 { __ispeed: 0 },
-        c2rust_unnamed_0: C2RustUnnamed_11 { __ospeed: 0 },
+        c2rust_unnamed: termios_input_speed { __ispeed: 0 },
+        c2rust_unnamed_0: termios_output_speed { __ospeed: 0 },
     };
     let mut saved_tio: termios = termios {
         c_iflag: 0,
@@ -1866,8 +1644,8 @@ pub unsafe extern "C" fn client_main(
         c_lflag: 0,
         c_line: 0,
         c_cc: [0; 32],
-        c2rust_unnamed: C2RustUnnamed_12 { __ispeed: 0 },
-        c2rust_unnamed_0: C2RustUnnamed_11 { __ospeed: 0 },
+        c2rust_unnamed: termios_input_speed { __ispeed: 0 },
+        c2rust_unnamed_0: termios_output_speed { __ospeed: 0 },
     };
     let mut size: size_t = 0;
     let mut caps: *mut *mut ::core::ffi::c_char =

@@ -1,3 +1,4 @@
+use crate::src::shared::arguments::*;
 use crate::src::shared::abi::*;
 use crate::src::shared::command::*;
 extern "C" {
@@ -8,11 +9,6 @@ extern "C" {
     fn getpid() -> __pid_t;
     fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
 }
-pub type args_parse_type = ::core::ffi::c_uint;
-pub const ARGS_PARSE_COMMANDS: args_parse_type = 3;
-pub const ARGS_PARSE_COMMANDS_OR_STRING: args_parse_type = 2;
-pub const ARGS_PARSE_STRING: args_parse_type = 1;
-pub const ARGS_PARSE_INVALID: args_parse_type = 0;
 pub type args_parse_cb = Option<
     unsafe extern "C" fn(*mut args, u_int, *mut *mut ::core::ffi::c_char) -> args_parse_type,
 >;
@@ -44,7 +40,6 @@ pub struct cmd_entry {
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
 pub const SIGTERM: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const CMD_STARTSERVER: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 #[no_mangle]
 pub static mut cmd_kill_server_entry: cmd_entry = unsafe {

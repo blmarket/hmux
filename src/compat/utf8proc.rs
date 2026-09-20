@@ -52,7 +52,6 @@ pub const UTF8PROC_CATEGORY_LT: utf8proc_category_t = 3;
 pub const UTF8PROC_CATEGORY_LL: utf8proc_category_t = 2;
 pub const UTF8PROC_CATEGORY_LU: utf8proc_category_t = 1;
 pub const UTF8PROC_CATEGORY_CN: utf8proc_category_t = 0;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 #[no_mangle]
 pub unsafe extern "C" fn utf8proc_wcwidth(mut wc: wchar_t) -> ::core::ffi::c_int {
     let mut cat: ::core::ffi::c_int = 0;

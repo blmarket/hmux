@@ -1,3 +1,5 @@
+use crate::src::shared::prompt::*;
+use crate::src::shared::arguments::*;
 use crate::src::shared::abi::*;
 use crate::src::shared::command::*;
 extern "C" {
@@ -15,11 +17,6 @@ extern "C" {
     fn prompt_history_get(_: prompt_type, _: u_int) -> *const ::core::ffi::c_char;
     fn prompt_history_clear(_: prompt_type);
 }
-pub type args_parse_type = ::core::ffi::c_uint;
-pub const ARGS_PARSE_COMMANDS: args_parse_type = 3;
-pub const ARGS_PARSE_COMMANDS_OR_STRING: args_parse_type = 2;
-pub const ARGS_PARSE_STRING: args_parse_type = 1;
-pub const ARGS_PARSE_INVALID: args_parse_type = 0;
 pub type args_parse_cb = Option<
     unsafe extern "C" fn(*mut args, u_int, *mut *mut ::core::ffi::c_char) -> args_parse_type,
 >;
@@ -50,11 +47,6 @@ pub struct cmd_entry {
     pub flags: ::core::ffi::c_int,
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
-pub type prompt_type = ::core::ffi::c_uint;
-pub const PROMPT_TYPE_INVALID: prompt_type = 255;
-pub const PROMPT_TYPE_SEARCH: prompt_type = 1;
-pub const PROMPT_TYPE_COMMAND: prompt_type = 0;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const CMD_AFTERHOOK: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const PROMPT_NTYPES: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 #[no_mangle]

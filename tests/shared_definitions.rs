@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -24,6 +25,29 @@ const AUTHORITATIVE: &[(&str, &str, &str)] = &[
     ("src/shared/abi.rs", "type", "speed_t"),
     ("src/shared/abi.rs", "type", "tcflag_t"),
     ("src/shared/abi.rs", "struct", "timeval"),
+    // Message, layout, display, and terminal scalar domains
+    ("src/shared/message.rs", "type", "msgtype"),
+    ("src/shared/layout.rs", "type", "layout_type"),
+    ("src/shared/layout.rs", "type", "box_lines"),
+    ("src/shared/layout.rs", "type", "pane_lines"),
+    ("src/shared/display.rs", "struct", "progress_bar"),
+    ("src/shared/display.rs", "type", "progress_bar_state"),
+    ("src/shared/display.rs", "type", "screen_cursor_style"),
+    ("src/shared/tty.rs", "type", "tty_code_code"),
+    ("src/shared/terminal.rs", "struct", "termios"),
+    ("src/shared/terminal.rs", "union", "termios_input_speed"),
+    ("src/shared/terminal.rs", "union", "termios_output_speed"),
+    // Client status domains
+    ("src/shared/client.rs", "type", "client_exit_type"),
+    ("src/shared/client.rs", "type", "client_exit_reason"),
+    // Command, argument, option, prompt, and sort domains
+    ("src/shared/command.rs", "type", "cmd_parse_status"),
+    ("src/shared/arguments.rs", "type", "args_type"),
+    ("src/shared/arguments.rs", "type", "args_parse_type"),
+    ("src/shared/options.rs", "type", "options_table_type"),
+    ("src/shared/prompt.rs", "type", "prompt_type"),
+    ("src/shared/prompt.rs", "type", "prompt_key_result"),
+    ("src/shared/sort.rs", "type", "sort_order"),
     // Grid
     ("src/shared/grid.rs", "struct", "utf8_data"),
     ("src/shared/grid.rs", "struct", "grid_cell"),
@@ -51,6 +75,26 @@ const AUTHORITATIVE: &[(&str, &str, &str)] = &[
     // Key domains
     ("src/shared/key.rs", "type", "key_code"),
     ("src/shared/key.rs", "type", "key_code_type"),
+    ("src/shared/key.rs", "type", "key_code_mouse_location"),
+    // Event ABI.  The opaque declarations intentionally stay opaque.
+    ("src/shared/event.rs", "opaque", "event_base"),
+    ("src/shared/event.rs", "opaque", "evbuffer"),
+    ("src/shared/event.rs", "opaque", "bufferevent_ops"),
+    ("src/shared/event.rs", "struct", "event"),
+    ("src/shared/event.rs", "union", "event_io_or_signal"),
+    ("src/shared/event.rs", "struct", "event_signal"),
+    ("src/shared/event.rs", "struct", "event_signal_entry"),
+    ("src/shared/event.rs", "struct", "event_io"),
+    ("src/shared/event.rs", "struct", "event_io_entry"),
+    ("src/shared/event.rs", "union", "event_timeout_pos"),
+    ("src/shared/event.rs", "struct", "event_timeout_entry"),
+    ("src/shared/event.rs", "struct", "event_callback"),
+    ("src/shared/event.rs", "union", "event_callback_union"),
+    ("src/shared/event.rs", "struct", "event_callback_entry"),
+    ("src/shared/event.rs", "struct", "bufferevent"),
+    ("src/shared/event.rs", "type", "bufferevent_event_cb"),
+    ("src/shared/event.rs", "type", "bufferevent_data_cb"),
+    ("src/shared/event.rs", "struct", "event_watermark"),
     // UTF-8 state
     ("src/shared/utf8.rs", "type", "utf8_state"),
     // Colour
@@ -155,6 +199,86 @@ const AUTHORITATIVE_CONSTANTS: &[(&str, &str, &str)] = &[
     ("src/shared/colour.rs", "const", "THEME_DARK"),
     ("src/shared/colour.rs", "const", "THEME_LIGHT"),
     ("src/shared/colour.rs", "const", "THEME_UNKNOWN"),
+    ("src/shared/abi.rs", "const", "NULL"),
+    ("src/shared/command.rs", "const", "CMD_PARSE_SUCCESS"),
+    ("src/shared/command.rs", "const", "CMD_PARSE_ERROR"),
+    ("src/shared/arguments.rs", "const", "ARGS_COMMANDS"),
+    ("src/shared/arguments.rs", "const", "ARGS_STRING"),
+    ("src/shared/arguments.rs", "const", "ARGS_NONE"),
+    ("src/shared/arguments.rs", "const", "ARGS_PARSE_COMMANDS"),
+    (
+        "src/shared/arguments.rs",
+        "const",
+        "ARGS_PARSE_COMMANDS_OR_STRING",
+    ),
+    ("src/shared/arguments.rs", "const", "ARGS_PARSE_STRING"),
+    ("src/shared/arguments.rs", "const", "ARGS_PARSE_INVALID"),
+    ("src/shared/options.rs", "const", "OPTIONS_TABLE_NUMBER"),
+    ("src/shared/options.rs", "const", "OPTIONS_TABLE_KEY"),
+    ("src/shared/options.rs", "const", "OPTIONS_TABLE_COLOUR"),
+    ("src/shared/options.rs", "const", "OPTIONS_TABLE_FLAG"),
+    ("src/shared/options.rs", "const", "OPTIONS_TABLE_CHOICE"),
+    ("src/shared/options.rs", "const", "OPTIONS_TABLE_COMMAND"),
+    ("src/shared/options.rs", "const", "OPTIONS_TABLE_STRING"),
+    ("src/shared/prompt.rs", "const", "PROMPT_TYPE_COMMAND"),
+    ("src/shared/prompt.rs", "const", "PROMPT_TYPE_INVALID"),
+    ("src/shared/prompt.rs", "const", "PROMPT_TYPE_SEARCH"),
+    ("src/shared/prompt.rs", "const", "PROMPT_KEY_NOT_HANDLED"),
+    ("src/shared/prompt.rs", "const", "PROMPT_KEY_HANDLED"),
+    ("src/shared/prompt.rs", "const", "PROMPT_KEY_CLOSE"),
+    ("src/shared/prompt.rs", "const", "PROMPT_KEY_MOVE"),
+    ("src/shared/sort.rs", "const", "SORT_END"),
+    ("src/shared/sort.rs", "const", "SORT_Z"),
+    ("src/shared/sort.rs", "const", "SORT_SIZE"),
+    ("src/shared/sort.rs", "const", "SORT_ORDER"),
+    ("src/shared/sort.rs", "const", "SORT_NAME"),
+    ("src/shared/sort.rs", "const", "SORT_MODIFIER"),
+    ("src/shared/sort.rs", "const", "SORT_INDEX"),
+    ("src/shared/sort.rs", "const", "SORT_CREATION"),
+    ("src/shared/sort.rs", "const", "SORT_ACTIVITY"),
+    ("src/shared/layout.rs", "const", "LAYOUT_WINDOWPANE"),
+    ("src/shared/layout.rs", "const", "LAYOUT_TOPBOTTOM"),
+    ("src/shared/layout.rs", "const", "LAYOUT_LEFTRIGHT"),
+    ("src/shared/layout.rs", "const", "LAYOUT_CELL_FLOATING"),
+    ("src/shared/layout.rs", "const", "LAYOUT_CUSTOM_OLD_FORMAT"),
+    ("src/shared/layout.rs", "const", "LAYOUT_V1_MAX_DEPTH"),
+    ("src/shared/display.rs", "const", "PROGRESS_BAR_PAUSED"),
+    ("src/shared/display.rs", "const", "PROGRESS_BAR_INDETERMINATE"),
+    ("src/shared/display.rs", "const", "PROGRESS_BAR_ERROR"),
+    ("src/shared/display.rs", "const", "PROGRESS_BAR_NORMAL"),
+    ("src/shared/display.rs", "const", "PROGRESS_BAR_HIDDEN"),
+    ("src/shared/display.rs", "const", "SCREEN_CURSOR_BAR"),
+    ("src/shared/display.rs", "const", "SCREEN_CURSOR_UNDERLINE"),
+    ("src/shared/display.rs", "const", "SCREEN_CURSOR_BLOCK"),
+    ("src/shared/display.rs", "const", "SCREEN_CURSOR_DEFAULT"),
+    ("src/shared/client.rs", "const", "CLIENT_EXIT_DETACH"),
+    ("src/shared/client.rs", "const", "CLIENT_EXIT_SHUTDOWN"),
+    ("src/shared/client.rs", "const", "CLIENT_EXIT_RETURN"),
+    ("src/shared/client.rs", "const", "CLIENT_EXIT_MESSAGE_PROVIDED"),
+    ("src/shared/client.rs", "const", "CLIENT_EXIT_SERVER_EXITED"),
+    ("src/shared/client.rs", "const", "CLIENT_EXIT_EXITED"),
+    ("src/shared/client.rs", "const", "CLIENT_EXIT_LOST_SERVER"),
+    ("src/shared/client.rs", "const", "CLIENT_EXIT_TERMINATED"),
+    ("src/shared/client.rs", "const", "CLIENT_EXIT_LOST_TTY"),
+    ("src/shared/client.rs", "const", "CLIENT_EXIT_DETACHED_HUP"),
+    ("src/shared/client.rs", "const", "CLIENT_EXIT_DETACHED"),
+    ("src/shared/client.rs", "const", "CLIENT_EXIT_NONE"),
+];
+
+// Large generated constant families are guarded by prefix so new members cannot
+// be copied back into a translation unit without failing this test.  Prefixes
+// are intentionally narrow: other C constants with the same broad subject
+// prefix remain private until their type identity has been audited.
+const AUTHORITATIVE_CONST_PREFIXES: &[(&str, &str)] = &[
+    ("src/shared/key.rs", "KEYC_"),
+    ("src/shared/message.rs", "MSG_"),
+    ("src/shared/tty.rs", "TTYC_"),
+    ("src/shared/layout.rs", "LAYOUT_"),
+    ("src/shared/layout.rs", "BOX_LINES_"),
+    ("src/shared/layout.rs", "PANE_LINES_"),
+    ("src/shared/display.rs", "PROGRESS_BAR_"),
+    ("src/shared/display.rs", "SCREEN_CURSOR_"),
+    ("src/shared/client.rs", "CLIENT_EXIT_"),
 ];
 
 fn source_files(root: &Path, files: &mut Vec<PathBuf>) {
@@ -172,10 +296,60 @@ fn is_declaration(line: &str, kind: &str, name: &str) -> bool {
     let line = line.trim_start();
     match kind {
         "type" => line.starts_with(&format!("pub type {name} =")),
+        "opaque" => line == format!("pub type {name};"),
         "struct" => line == format!("pub struct {name} {{"),
         "union" => line == format!("pub union {name} {{"),
         "const" => line.starts_with(&format!("pub const {name}:")),
         _ => false,
+    }
+}
+
+fn assert_authoritative_constant_prefixes(root: &Path) {
+    let mut files = Vec::new();
+    source_files(&root.join("src"), &mut files);
+
+    let mut matches: BTreeMap<String, Vec<(PathBuf, usize)>> = BTreeMap::new();
+    let mut prefix_counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for file in &files {
+        let text = fs::read_to_string(file).expect("read Rust source");
+        for (line_number, line) in text.lines().enumerate() {
+            let line = line.trim_start();
+            let Some(rest) = line.strip_prefix("pub const ") else {
+                continue;
+            };
+            let Some(name) = rest.split(':').next() else {
+                continue;
+            };
+            for (_, prefix) in AUTHORITATIVE_CONST_PREFIXES {
+                if name.starts_with(prefix) {
+                    let relative = file.strip_prefix(root).unwrap().to_owned();
+                    matches
+                        .entry(name.to_owned())
+                        .or_default()
+                        .push((relative, line_number + 1));
+                    *prefix_counts.entry(prefix).or_default() += 1;
+                }
+            }
+        }
+    }
+
+    for (expected_file, prefix) in AUTHORITATIVE_CONST_PREFIXES {
+        assert!(
+            prefix_counts.get(prefix).copied().unwrap_or_default() > 0,
+            "authoritative constant prefix {prefix} has no declarations"
+        );
+        for (name, locations) in matches.iter().filter(|(name, _)| name.starts_with(prefix)) {
+            assert_eq!(
+                locations.len(),
+                1,
+                "constant {name} must have exactly one source definition, found {locations:?}"
+            );
+            assert_eq!(
+                locations[0].0.to_string_lossy(),
+                *expected_file,
+                "constant {name} moved outside its authoritative subject module"
+            );
+        }
     }
 }
 
@@ -211,4 +385,5 @@ fn migrated_shared_declarations_are_unique_and_authoritative() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     assert_authoritative(root, AUTHORITATIVE);
     assert_authoritative(root, AUTHORITATIVE_CONSTANTS);
+    assert_authoritative_constant_prefixes(root);
 }

@@ -82,7 +82,6 @@ pub struct paste_time_tree {
 pub struct paste_name_tree {
     pub rbh_root: *mut paste_buffer,
 }
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const RB_BLACK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const RB_RED: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const RB_NEGINF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);

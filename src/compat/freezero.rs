@@ -7,7 +7,6 @@ extern "C" {
     ) -> *mut ::core::ffi::c_void;
     fn free(__ptr: *mut ::core::ffi::c_void);
 }
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 #[no_mangle]
 pub unsafe extern "C" fn freezero(mut ptr: *mut ::core::ffi::c_void, mut size: size_t) {
     if !ptr.is_null() {

@@ -171,7 +171,6 @@ pub struct utf8_index_tree {
     pub rbh_root: *mut utf8_item,
 }
 pub const ERANGE: ::core::ffi::c_int = 34 as ::core::ffi::c_int;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const __WCHAR_MAX: ::core::ffi::c_int = __WCHAR_MAX__;
 pub const ULLONG_MAX: ::core::ffi::c_ulonglong = (__LONG_LONG_MAX__ as ::core::ffi::c_ulonglong)
     .wrapping_mul(2 as ::core::ffi::c_ulonglong)

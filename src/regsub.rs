@@ -56,7 +56,6 @@ pub struct regmatch_t {
     pub rm_so: regoff_t,
     pub rm_eo: regoff_t,
 }
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 unsafe extern "C" fn regsub_copy(
     mut buf: *mut *mut ::core::ffi::c_char,
     mut len: *mut ssize_t,

@@ -1,6 +1,6 @@
+use crate::src::shared::event::*;
 use crate::src::shared::abi::*;
 extern "C" {
-    pub type evbuffer;
     fn __ctype_b_loc() -> *mut *const ::core::ffi::c_ushort;
     fn __errno_location() -> *mut ::core::ffi::c_int;
     fn strtoll(
@@ -143,7 +143,6 @@ pub const TOK_CLOSEARRAY: json_token_type = 3;
 pub const TOK_OPENARRAY: json_token_type = 2;
 pub const TOK_CLOSEOBJECT: json_token_type = 1;
 pub const TOK_OPENOBJECT: json_token_type = 0;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const RB_BLACK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const RB_RED: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const RB_NEGINF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);

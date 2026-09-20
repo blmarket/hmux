@@ -213,7 +213,6 @@ pub struct systemd_job_watch {
 }
 pub const EPFNOSUPPORT: ::core::ffi::c_int = 96 as ::core::ffi::c_int;
 pub const E2BIG: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const SD_BUS_ERROR_NULL: sd_bus_error = sd_bus_error {
     name: ::core::ptr::null::<::core::ffi::c_char>(),
     message: ::core::ptr::null::<::core::ffi::c_char>(),

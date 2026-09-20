@@ -1,3 +1,4 @@
+use crate::src::shared::display::*;
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::utf8::*;
@@ -115,28 +116,10 @@ pub struct screen {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct progress_bar {
-    pub state: progress_bar_state,
-    pub progress: ::core::ffi::c_int,
-}
-pub type progress_bar_state = ::core::ffi::c_uint;
-pub const PROGRESS_BAR_PAUSED: progress_bar_state = 4;
-pub const PROGRESS_BAR_INDETERMINATE: progress_bar_state = 3;
-pub const PROGRESS_BAR_ERROR: progress_bar_state = 2;
-pub const PROGRESS_BAR_NORMAL: progress_bar_state = 1;
-pub const PROGRESS_BAR_HIDDEN: progress_bar_state = 0;
-pub type screen_cursor_style = ::core::ffi::c_uint;
-pub const SCREEN_CURSOR_BAR: screen_cursor_style = 3;
-pub const SCREEN_CURSOR_UNDERLINE: screen_cursor_style = 2;
-pub const SCREEN_CURSOR_BLOCK: screen_cursor_style = 1;
-pub const SCREEN_CURSOR_DEFAULT: screen_cursor_style = 0;
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct C2RustUnnamed_1 {
     pub mask: u_int,
     pub code: u_int,
 }
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
     .wrapping_mul(2 as ::core::ffi::c_uint)
     .wrapping_add(1 as ::core::ffi::c_uint);

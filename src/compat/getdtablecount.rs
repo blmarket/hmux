@@ -40,7 +40,6 @@ pub struct glob_t {
     pub gl_stat:
         Option<unsafe extern "C" fn(*const ::core::ffi::c_char, *mut stat) -> ::core::ffi::c_int>,
 }
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 #[no_mangle]
 pub unsafe extern "C" fn getdtablecount() -> ::core::ffi::c_int {
     let mut path: [::core::ffi::c_char; 4096] = [0; 4096];

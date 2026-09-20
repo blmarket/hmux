@@ -19,7 +19,6 @@ pub struct option {
     pub flag: *mut ::core::ffi::c_int,
     pub val: ::core::ffi::c_int,
 }
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const no_argument: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const required_argument: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const optional_argument: ::core::ffi::c_int = 2 as ::core::ffi::c_int;

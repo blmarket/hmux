@@ -7,12 +7,13 @@
     unused_mut
 )]
 #![feature(extern_types, raw_ref_op)]
+use crate::src::shared::options::*;
+use crate::src::shared::event::*;
 use crate::src::shared::abi::*;
 extern "C" {
     pub type _IO_wide_data;
     pub type _IO_codecvt;
     pub type _IO_marker;
-    pub type event_base;
     pub type environ;
     pub type options;
     pub type options_entry;
@@ -651,14 +652,6 @@ pub struct C2RustUnnamed_0 {
     pub rbe_parent: *mut environ_entry,
     pub rbe_color: ::core::ffi::c_int,
 }
-pub type options_table_type = ::core::ffi::c_uint;
-pub const OPTIONS_TABLE_COMMAND: options_table_type = 6;
-pub const OPTIONS_TABLE_CHOICE: options_table_type = 5;
-pub const OPTIONS_TABLE_FLAG: options_table_type = 4;
-pub const OPTIONS_TABLE_COLOUR: options_table_type = 3;
-pub const OPTIONS_TABLE_KEY: options_table_type = 2;
-pub const OPTIONS_TABLE_NUMBER: options_table_type = 1;
-pub const OPTIONS_TABLE_STRING: options_table_type = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct options_table_entry {
@@ -689,7 +682,6 @@ pub const O_NONBLOCK: ::core::ffi::c_int = 0o4000 as ::core::ffi::c_int;
 pub const F_GETFL: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const F_SETFL: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
 pub const S_IRWXU: ::core::ffi::c_int = __S_IREAD | __S_IWRITE | __S_IEXEC;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const LC_CTYPE: ::core::ffi::c_int = __LC_CTYPE;
 pub const LC_TIME: ::core::ffi::c_int = __LC_TIME;
 pub const X_OK: ::core::ffi::c_int = 1 as ::core::ffi::c_int;

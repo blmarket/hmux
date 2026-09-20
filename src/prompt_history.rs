@@ -1,3 +1,4 @@
+use crate::src::shared::prompt::*;
 use crate::src::shared::abi::*;
 use ::c2rust_bitfields;
 extern "C" {
@@ -99,11 +100,6 @@ pub struct _IO_FILE {
 }
 pub type _IO_lock_t = ();
 pub type FILE = _IO_FILE;
-pub type prompt_type = ::core::ffi::c_uint;
-pub const PROMPT_TYPE_INVALID: prompt_type = 255;
-pub const PROMPT_TYPE_SEARCH: prompt_type = 1;
-pub const PROMPT_TYPE_COMMAND: prompt_type = 0;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 #[inline]
 unsafe extern "C" fn getline(
     mut __lineptr: *mut *mut ::core::ffi::c_char,

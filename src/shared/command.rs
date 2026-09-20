@@ -11,6 +11,10 @@ pub const CMD_FIND_SESSION: cmd_find_type = 2;
 pub const CMD_FIND_WINDOW: cmd_find_type = 1;
 pub const CMD_FIND_PANE: cmd_find_type = 0;
 
+pub type cmd_parse_status = ::core::ffi::c_uint;
+pub const CMD_PARSE_SUCCESS: cmd_parse_status = 1;
+pub const CMD_PARSE_ERROR: cmd_parse_status = 0;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -29,5 +33,9 @@ mod tests {
         assert_eq!(CMD_FIND_PANE, 0);
         assert_eq!(CMD_FIND_WINDOW, 1);
         assert_eq!(CMD_FIND_SESSION, 2);
+        assert_eq!(size_of::<cmd_parse_status>(), 4);
+        assert_eq!(align_of::<cmd_parse_status>(), 4);
+        assert_eq!(CMD_PARSE_ERROR, 0);
+        assert_eq!(CMD_PARSE_SUCCESS, 1);
     }
 }

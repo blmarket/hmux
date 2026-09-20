@@ -19,7 +19,6 @@ extern "C" {
 }
 pub const ENOMEM: ::core::ffi::c_int = 12 as ::core::ffi::c_int;
 pub const EINVAL: ::core::ffi::c_int = 22 as ::core::ffi::c_int;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
 pub const MUL_NO_OVERFLOW: size_t = (1 as ::core::ffi::c_int as size_t)
     << (::core::mem::size_of::<size_t>() as usize).wrapping_mul(4 as usize);

@@ -104,7 +104,6 @@ pub type FILE = _IO_FILE;
 pub type va_list = __gnuc_va_list;
 pub type event_log_cb =
     Option<unsafe extern "C" fn(::core::ffi::c_int, *const ::core::ffi::c_char) -> ()>;
-pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const _IOLBF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const VIS_OCTAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const VIS_CSTYLE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
