@@ -12,7 +12,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -24,10 +26,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATION = ROOT / "target" / "format-validation"
 CHECKPOINTS = VALIDATION / "format-checkpoints"
+ARCHIVES = VALIDATION / "format-checkpoint-archives"
 LOGS = VALIDATION / "format-checkpoint-logs"
 TARGETS = VALIDATION / "format-checkpoint-targets"
-BASELINE_REV = "cc5b93f^"
-FINAL_REV = "HEAD"
+# These are deliberately immutable source points.  The baseline is the last
+# revision before this split, and SPLIT_REV is the commit containing the four
+# moved implementation files.  FINAL_REV is the checked-in source being
+# validated; prepare() records its resolved SHA in the manifest.
+BASELINE_REV = "8d02dca179520da8b25ba6cb1de3e6a54dafd490"
+SPLIT_REV = "cc5b93feb4395cda2edc8de3463bd04a312ec94d"
+FINAL_REV = "71891257f99a81e65037f5fa41d6deb34e44488c"
 STAGES = ("baseline", "tree", "expression", "jobs", "callbacks", "final")
 GROUPS = ("tree", "expression", "jobs", "callbacks")
 
@@ -269,7 +277,18 @@ def facade_stanzas(moved: tuple[str, ...]) -> str:
     return "\n".join(pieces)
 
 
-def format_checkpoint(destination: Path, moved: tuple[str, ...], items: dict[str, list[str]]) -> None:
+def split_source(group: str) -> bytes:
+    return subprocess.check_output(
+        ["git", "show", f"{SPLIT_REV}:src/format/{group}.rs"], cwd=ROOT
+    )
+
+
+def format_checkpoint(
+    destination: Path,
+    moved: tuple[str, ...],
+    items: dict[str, list[str]],
+    implementation_sources: dict[str, bytes],
+) -> None:
     source_path = destination / "src" / "format.rs"
     source = source_path.read_text()
     spans: list[tuple[int, int]] = []
@@ -288,21 +307,55 @@ def format_checkpoint(destination: Path, moved: tuple[str, ...], items: dict[str
     for group in moved:
         target = destination / "src" / "format" / f"{group}.rs"
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / "src" / "format" / f"{group}.rs", target)
+        target.write_bytes(implementation_sources[group])
 
 
-def source_digest(path: Path) -> str:
+def digest_files(path: Path, suffix: str | None = None) -> str:
     digest = hashlib.sha256()
-    for file in sorted(path.rglob("*.rs")):
+    files = sorted(path.rglob("*"))
+    for file in files:
+        if not file.is_file() or suffix is not None and file.suffix != suffix:
+            continue
         digest.update(file.relative_to(path).as_posix().encode())
         digest.update(file.read_bytes())
     return digest.hexdigest()
 
 
+def write_checkpoint_archive(stage: str) -> str:
+    """Write a deterministic tar snapshot and return its digest."""
+
+    ARCHIVES.mkdir(parents=True, exist_ok=True)
+    archive_path = ARCHIVES / f"{stage}.tar"
+    with tarfile.open(archive_path, mode="w") as archive:
+        root = CHECKPOINTS / stage
+        for file in sorted(root.rglob("*")):
+            if not file.is_file():
+                continue
+            relative = file.relative_to(root).as_posix()
+            info = archive.gettarinfo(str(file), arcname=relative)
+            info.uid = 0
+            info.gid = 0
+            info.uname = ""
+            info.gname = ""
+            info.mtime = 0
+            with file.open("rb") as stream:
+                archive.addfile(info, stream)
+    return hashlib.sha256(archive_path.read_bytes()).hexdigest()
+
+
 def prepare() -> dict:
     items = group_items()
+    implementation_sources = {group: split_source(group) for group in GROUPS}
+    for group, expected in implementation_sources.items():
+        actual = (ROOT / "src" / "format" / f"{group}.rs").read_bytes()
+        if actual != expected:
+            raise RuntimeError(
+                f"{group}.rs differs from immutable split revision {SPLIT_REV}"
+            )
     if CHECKPOINTS.exists():
         shutil.rmtree(CHECKPOINTS)
+    if ARCHIVES.exists():
+        shutil.rmtree(ARCHIVES)
     CHECKPOINTS.mkdir(parents=True)
 
     git_archive(BASELINE_REV, CHECKPOINTS / "baseline")
@@ -310,20 +363,34 @@ def prepare() -> dict:
         stage = GROUPS[:index]
         destination = CHECKPOINTS / group
         git_archive(BASELINE_REV, destination)
-        format_checkpoint(destination, stage, items)
+        format_checkpoint(destination, stage, items, implementation_sources)
     git_archive(FINAL_REV, CHECKPOINTS / "final")
 
+    baseline_sha = subprocess.check_output(
+        ["git", "rev-parse", BASELINE_REV], cwd=ROOT, text=True
+    ).strip()
+    split_sha = subprocess.check_output(
+        ["git", "rev-parse", SPLIT_REV], cwd=ROOT, text=True
+    ).strip()
+    final_sha = subprocess.check_output(
+        ["git", "rev-parse", FINAL_REV], cwd=ROOT, text=True
+    ).strip()
+    stage_metadata = {}
+    for stage in STAGES:
+        stage_path = CHECKPOINTS / stage
+        stage_metadata[stage] = {
+            "files_sha256": digest_files(stage_path),
+            "rust_files_sha256": digest_files(stage_path, ".rs"),
+            "archive_sha256": write_checkpoint_archive(stage),
+        }
     manifest = {
-        "baseline_revision": subprocess.check_output(
-            ["git", "rev-parse", BASELINE_REV], cwd=ROOT, text=True
-        ).strip(),
-        "final_revision": subprocess.check_output(
-            ["git", "rev-parse", FINAL_REV], cwd=ROOT, text=True
-        ).strip(),
+        "schema": 2,
+        "baseline_revision": baseline_sha,
+        "split_revision": split_sha,
+        "final_revision": final_sha,
+        "stage_order": STAGES,
         "group_items": items,
-        "stages": {
-            stage: source_digest(CHECKPOINTS / stage) for stage in STAGES
-        },
+        "stages": stage_metadata,
     }
     VALIDATION.mkdir(parents=True, exist_ok=True)
     (VALIDATION / "format-checkpoints.json").write_text(
