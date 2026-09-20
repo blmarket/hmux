@@ -36,10 +36,12 @@ TARGETS = VALIDATION / "format-checkpoint-targets"
 # These are deliberately immutable source points. BASELINE_REV is the last
 # revision before this split. SPLIT_REV is the historical commit containing
 # the four moved implementation files. FINAL_REV is the verified checked-in
-# source revision; prepare() records every resolved SHA in the manifest.
+# source revision; prepare() records every resolved SHA in the manifest.  HEAD
+# is intentional: the final checkpoint must follow the checked-in source being
+# reviewed instead of silently validating an older attempt.
 BASELINE_REV = "8d02dca179520da8b25ba6cb1de3e6a54dafd490"
 SPLIT_REV = "cc5b93feb4395cda2edc8de3463bd04a312ec94d"
-FINAL_REV = "f8e7681"
+FINAL_REV = "HEAD"
 INVENTORY_PATH = ROOT / "docs" / "format-dependency-inventory.json"
 REPORT_PATH = ROOT / "docs" / "format-split-validation.json"
 STAGES = ("baseline", "tree", "expression", "jobs", "callbacks", "final")
@@ -667,20 +669,55 @@ def validate() -> dict[str, dict]:
                 "after_count": results[stage]["clippy_diagnostics"]["count"],
             },
         }
+    failures = [
+        {
+            "stage": stage,
+            "check": check,
+            "exit_code": results[stage][check],
+        }
+        for stage in STAGES
+        for check in COMMANDS
+        if results[stage][check] != 0
+    ]
     report = {
+        "schema": 3,
+        "status": "passed" if not failures else "failed",
+        "failures": failures,
         "baseline_revision": manifest["baseline_revision"],
         "split_revision": manifest["split_revision"],
         "final_revision": manifest["final_revision"],
+        "provenance": {
+            "historical_split_was_monolithic": True,
+            "historical_split_revision": manifest["split_revision"],
+            "staged_checkpoints": (
+                "reconstructed from the pre-split baseline by adding one "
+                "private implementation group at a time; history was not "
+                "rewritten"
+            ),
+        },
         "stage_order": STAGES,
         "commands": {
             name: shlex.join(command) for name, command in COMMANDS.items()
         },
         "stages": results,
     }
+    report["strict_clippy"] = {
+        "command": shlex.join(COMMANDS["clippy"]),
+        "baseline_exit": results["baseline"]["clippy"],
+        "baseline_diagnostics": results["baseline"]["clippy_diagnostics"],
+        "all_stages_match_baseline": all(
+            stage["clippy_diagnostics"]["matches_baseline"]
+            for stage in results.values()
+        ),
+        "policy": (
+            "strict Clippy is a required comparison; a non-zero exit remains "
+            "a validation failure even when every checkpoint matches baseline"
+        ),
+    }
     write_json(VALIDATION / "format-checkpoints-summary.json", report)
     write_json(REPORT_PATH, report)
-    print(json.dumps(results, indent=2))
-    return results
+    print(json.dumps(report, indent=2))
+    return 0 if not failures else 1
 
 
 def inventory() -> None:
@@ -700,7 +737,7 @@ def main() -> int:
     if args.command == "prepare":
         print(json.dumps(prepare(), indent=2))
     elif args.command == "validate":
-        validate()
+        return validate()
     else:
         inventory()
     return 0
