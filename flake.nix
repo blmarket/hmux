@@ -37,7 +37,12 @@
           hmux = rustPlatform.buildRustPackage {
             pname = "hmux";
             version = "0.0.0";
-            src = ./.;
+            src = pkgs.lib.cleanSourceWith {
+              src = ./.;
+              filter = path: type:
+                let name = baseNameOf path; in
+                name != "target" && name != ".git" && name != "result";
+            };
 
             cargoLock.lockFile = ./Cargo.lock;
 
@@ -47,14 +52,13 @@
               pkgs.ncurses
               pkgs.utf8proc
               pkgs.libutempter
-              pkgs.systemd
+              pkgs.systemdLibs
             ];
 
-            # The unit tests reach into the server's process-wide state and
-            # need a process each; `make unit-c2rs` is where they run.
-            doCheck = false;
-
-            meta.mainProgram = "hmux";
+            doCheck = true;
+            dontUseCargoParallelTests = true;
+            cargoTestFlags = [ "--workspace" ];
+            meta.mainProgram = "hmux2";
           };
         in
         {
@@ -76,6 +80,10 @@
           cargoLlvmCov = cargoLlvmCovFor pkgs;
         in
         {
+          minimal = pkgs.mkShell {
+            packages = [ rustNightly pkgs.python3 pkgs.binutils ];
+            buildInputs = [ pkgs.ncurses pkgs.utf8proc pkgs.libutempter pkgs.systemdLibs ];
+          };
           default = pkgs.mkShell ({
             shellHook = ''
               export SHELL="${pkgs.bashInteractive}/bin/bash"
@@ -125,12 +133,13 @@
               llvm.libclang
               llvm.libllvm
             ]
-            ++ (tmuxTarget.buildInputs or [ ]);
+            ++ [ pkgs.ncurses pkgs.utf8proc pkgs.libutempter pkgs.systemdLibs ];
 
-            nativeBuildInputs = tmuxTarget.nativeBuildInputs or [ ];
+            nativeBuildInputs = [ pkgs.pkg-config ];
           } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath
-              (map (p: p.lib or p.out or p) (tmuxTarget.buildInputs or [ ]));
+              (map (p: p.lib or p.out or p)
+                [ pkgs.ncurses pkgs.utf8proc pkgs.libutempter pkgs.systemdLibs ]);
             LOCALE_ARCHIVE = "${pkgs.glibcLocales}/lib/locale/locale-archive";
             LOCALE_ARCHIVE_2_27 = "${pkgs.glibcLocales}/lib/locale/locale-archive";
           });

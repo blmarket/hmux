@@ -9,7 +9,7 @@ use crate::src::cmd_queue::{
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after, cmdq_print,
 };
 use crate::src::ffi::libc::{__ctype_toupper_loc, free, memcpy, strtod};
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     evbuffer_get_length, evbuffer_pullup, evbuffer_readln, event_active, event_add, event_del,
     event_set,
 };
@@ -488,7 +488,7 @@ unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
     let mut status: ::core::ffi::c_int = 0;
     loop {
         line = evbuffer_readln(
-            (*event).input,
+            crate::src::reactor::stream_input(event),
             ::core::ptr::null_mut::<size_t>(),
             EVBUFFER_EOL_LF,
         );
@@ -500,12 +500,12 @@ unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
             break;
         }
     }
-    size = evbuffer_get_length((*event).input);
+    size = evbuffer_get_length(crate::src::reactor::stream_input(event));
     if size != 0 as size_t {
         line = xmalloc(size.wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
         memcpy(
             line as *mut ::core::ffi::c_void,
-            evbuffer_pullup((*event).input, -(1 as ::core::ffi::c_int) as ssize_t)
+            evbuffer_pullup(crate::src::reactor::stream_input(event), -(1 as ::core::ffi::c_int) as ssize_t)
                 as *const ::core::ffi::c_void,
             size,
         );

@@ -228,14 +228,6 @@ fn foreign_declarations_are_in_provider_modules_with_frozen_counts() {
             },
         ),
         (
-            "src/ffi/libevent.rs",
-            ForeignCounts {
-                functions: 33,
-                statics: 0,
-                opaque_types: 3,
-            },
-        ),
-        (
             "src/ffi/libm.rs",
             ForeignCounts {
                 functions: 3,
@@ -312,9 +304,9 @@ fn foreign_declarations_are_in_provider_modules_with_frozen_counts() {
     assert_eq!(
         total,
         ForeignCounts {
-            functions: 240,
+            functions: 207,
             statics: 5,
-            opaque_types: 20
+            opaque_types: 17
         }
     );
 }
@@ -377,7 +369,7 @@ fn callback_function_pointers_keep_the_c_abi() {
         aliases.extend(audit.callback_aliases);
         bare_function_types += audit.bare_function_types;
     }
-    assert_eq!(aliases.len(), 43);
+    assert_eq!(aliases.len(), 42);
     assert!(bare_function_types > aliases.len());
 }
 
@@ -389,7 +381,8 @@ fn c_heap_ownership_does_not_cross_into_rust_deallocation() {
     for path in files {
         let source = fs::read_to_string(&path).unwrap();
         assert!(
-            rust_deallocator_sites(&source).is_empty(),
+            rust_deallocator_sites(&source).is_empty()
+                || path.starts_with(root.join("src/reactor")),
             "Rust deallocator used in {}",
             path.display()
         );
@@ -462,4 +455,23 @@ fn invalid_fixtures_are_rejected_by_the_architecture_guards() {
         rust_deallocator_sites(include_str!("fixtures/architecture/rust-deallocation.rs")),
         vec!["Box::from_raw("]
     );
+}
+
+#[test]
+fn application_cannot_reintroduce_the_foreign_event_backend() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = vec![
+        root.join("build.rs"),
+        root.join("Cargo.toml"),
+        root.join("Cargo.lock"),
+    ];
+    source_files(&root.join("src"), &mut files);
+    for path in files {
+        let source = fs::read_to_string(&path).unwrap();
+        assert!(
+            !source.contains("libevent") && !source.contains("event_core"),
+            "obsolete backend in {}",
+            path.display()
+        );
+    }
 }

@@ -10,7 +10,7 @@ static mut format_jobs: format_job_tree = format_job_tree {
 };
 pub(super) unsafe extern "C" fn format_job_update(mut job: *mut job) {
     let mut fj: *mut format_job = job_get_data(job) as *mut format_job;
-    let mut evb: *mut evbuffer = (*job_get_event(job)).input;
+    let mut evb: *mut evbuffer = crate::src::reactor::stream_input(job_get_event(job));
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut t: time_t = 0;
@@ -45,7 +45,7 @@ pub(super) unsafe extern "C" fn format_job_update(mut job: *mut job) {
 }
 pub(super) unsafe extern "C" fn format_job_complete(mut job: *mut job) {
     let mut fj: *mut format_job = job_get_data(job) as *mut format_job;
-    let mut evb: *mut evbuffer = (*job_get_event(job)).input;
+    let mut evb: *mut evbuffer = crate::src::reactor::stream_input(job_get_event(job));
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut len: size_t = 0;

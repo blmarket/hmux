@@ -5,8 +5,8 @@
 Build and run hmux2 with the copied `hmux-rt` runtime and no libevent link,
 header, package, or runtime dependency. Preserve client/server protocol, terminal
 behavior, command ordering, timers, signal handling, jobs, and control mode.
-This document plans the migration; only the runtime copy/workspace setup is
-implemented so far. No commits or publication are part of this planning task.
+This is the execution plan. The runtime extensions, application switch, lifecycle fixes, and dependency
+removal are implemented. The production backend is hmux-rt. No commits or publication are part of this task.
 
 ## Progress
 
@@ -14,21 +14,70 @@ implemented so far. No commits or publication are part of this planning task.
 - [x] Add the workspace member and required workspace lint settings; update lockfile.
 - [x] Inspect libevent declarations, callers, shared layouts, and upstream adapters.
 - [x] Validate the copied runtime and write this migration plan.
-- [ ] 1. Record baseline behavior and introduce host adapter boundaries.
-- [ ] 2. Replace evbuffer storage and operations.
-- [ ] 3. Implement hmux-rt event and stream adapters with contract tests.
-- [ ] 4. Switch process loops, signals, timers, and all I/O to hmux-rt.
-- [ ] 5. Remove the libevent ABI/dependency and validate a clean build.
+- [x] 1. Record baseline behavior and introduce host adapter boundaries; audit ownership.
+- [x] 2. Extend hmux-rt with reusable buffers and wake/select helpers.
+- [x] 3. Extend hmux-rt with registration and buffered-stream adapters; test contracts.
+- [x] 4. Switch process loops, signals, timers, and all I/O to hmux-rt.
+- [x] 5. Remove the libevent ABI/dependency and validate a clean build.
 
 Each implementation step must leave a working build. Record changed files,
 commands, outcomes, and outstanding problems in the execution log before marking
 it complete. Resume from the first unfinished step.
 
+## Revised strategy: extend hmux-rt, minimize application churn
+
+User direction on 2026-09-20: consider extending hmux-rt with the reusable
+parts of the reference project's `src/reactor/` so the application migration
+requires fewer changes. Adopt that strategy. The original runtime copy is the
+starting point, not an immutable vendor snapshot.
+
+`hmux-rt` replaces event scheduling but does not by itself replace evbuffer or
+bufferevent. Move reusable buffer, wake, registration, and stream behavior into
+that crate. Keep hmux2's `src/reactor/` as a thin compatibility facade so the
+530 translated call sites can keep their existing operation names and mostly
+unchanged arguments. These are ordinary Rust functions, not exported replacement
+libevent symbols. Do not reproduce libevent's C struct layout in hmux-rt.
+
+| Capability | Owner after migration | Boundary |
+| --- | --- | --- |
+| ByteBuffer and line policies | hmux-rt | Safe slices, append/drain/transfer, typed LineEnding, bounded read/write |
+| Notify, yield, race/select helpers | hmux-rt | Wake stream tasks after append, re-enable, watermark change, or shutdown |
+| Timers, I/O watches, signals, deferred work | hmux-rt | Runtime-owned registrations with zero-invalid IDs, cancellation, pending/deadline queries, generations |
+| Buffered stream registry | hmux-rt | Owns buffers/tasks; supports watermarks, bounded I/O, callback thresholds, EOF/errors, and explicit release |
+| Synchronous translated callbacks | hmux2 facade | Converts Rust notifications into existing C callback signatures and flags |
+| C printf/vprintf and malloc-returned lines | hmux2 facade | Preserves varargs and allocation contracts; does not enter generic runtime API |
+| Process owner, proc_loop, fork/exec, logging | hmux2 | Owns TaskRuntime and registries; invokes explicit runtime rebuild/release APIs |
+
+Use the reference reactor implementation as a behavior guide. Its process-global
+`server_state`, tmux types, raw callback owners, and business logic must not enter
+hmux-rt. Make the reusable registries explicit objects driven by a TaskHandle,
+not a singleton. The facade supplies process-local ownership. Runtime-owned
+callbacks must be invoked without registry borrows and invalidated before raw
+application owners can be freed.
+
+The intended reusable surface is ByteBuffer/LineEnding, wake helpers,
+registration IDs and registries, and buffered streams. Exact public types for
+registrations and streams are to be finalized with contract tests before wiring
+application callers. Preserve the existing TaskRuntime/AsyncFd APIs for users
+that only need the lower-level runtime.
+
+Avoid the original plan's mixed Rust-buffer/libevent-stream bridge: it adds
+conversion code and a temporary ownership model. Test Rust buffers independently
+inside hmux-rt, then switch all storage and stream operations through the facade
+together once the replacement backend is complete. Until then, the facade uses
+libevent. This deliberately changes the ordering of storage migration.
+
+Smaller call-site changes do not eliminate necessary owner layout, fork,
+signal-disposition, and cleanup changes. Replace embedded C event structs with
+host handles at the production switch, and update their layout tests honestly.
+Keep protocol and serialization fixtures fixed.
+
 ## Source and design references
 
 The copied runtime comes from the local source tree at repository HEAD
 `3ce9b8f72b1afaa0ef87373d266d7016abc9facf` (runtime subtree clean when inspected).
-Its Rust source, README, example, and manifest are copied verbatim. The root
+Its Rust source, README, example, and manifest were initially copied verbatim;
+the revised strategy intentionally extends the local runtime copy. The root
 workspace supplies its inherited Clippy settings. It requires nightly Rust
 (`local_waker`) and edition 2024; hmux2 can remain edition 2021.
 
@@ -44,8 +93,8 @@ Read these source-project files as implementation references, not drop-in module
 - `~/proj/hmux/hmux/src/tests/test_reactor_registry.rs` and
   `test_reactor_stream.rs`: adapter behavior tests.
 
-Those adapters depend on that project's process owner and types. Port only the
-needed behavior into this project's module tree. Copying hmux-rt alone does not
+Those adapters depend on that project's process owner and types. Port reusable behavior into hmux-rt and keep application-specific glue in
+hmux2's module tree. Copying hmux-rt alone does not
 supply an evbuffer or bufferevent replacement.
 
 ## Inventory and replacement mapping
@@ -79,8 +128,8 @@ they must change with each affected owner, not merely be bypassed.
 
 ## Adapter contracts and migration hazards
 
-Use host-side `ByteBuffer`, timer/watch handles, a buffered-stream registry, and
-one runtime owner. Keep business callbacks synchronous initially. It is not
+Use hmux-rt `ByteBuffer`, registration and stream registries, thin host handles,
+and one application runtime owner. Keep business callbacks synchronous initially. It is not
 necessary to rewrite every translated function as async to remove libevent.
 Expose operations from an ordinary Rust module (suggested `src/reactor/`), not
 new external libevent symbols. Transitional wrappers may keep call sites small,
@@ -149,35 +198,58 @@ Validation: baseline build, existing test suite and CLI checks below; compile
 all targets after each interface/owner change. Keep protocol/serialization
 fixtures fixed; document only intentional internal layout changes.
 
-### 2. Replace byte buffers
+### 2. Extend hmux-rt with buffers and wake helpers
 
-Implement/test `ByteBuffer` independently, then migrate standalone buffers and
-stream-facing buffer APIs. Until streams switch backend, use explicit adapters
-or copies at the libevent boundary; never pass Rust buffer pointers to C evbuffer
-functions. Update callback signatures (notably file/load/save/source paths),
-formatting, line readers, and buffer destruction. Land coherent caller groups.
+Implement/test ByteBuffer inside hmux-rt and export safe operations: contiguous
+slice access, append/drain/transfer, typed line-ending policies, and bounded I/O
+that preserves short-read/write and error results. Keep binary data and partial
+lines intact. There is no C allocation or varargs ABI in this crate.
 
-Validation: append/drain/pullup equivalents, binary data, split line endings,
-empty/partial lines, large formatting, transfer/drain, short reads/writes and
-`EAGAIN`. Run format, argument, file and control-related regressions.
+Port/adapt Notify, yield and select/race helpers from the reference reactor.
+Test wake-before-wait, coalesced notifications, cancellation of a pending wait,
+and competing readiness/control wakes. Document single-threaded use and waiter
+limits. Add no second event loop and no daemon global-state dependency.
 
-### 3. Implement and test the runtime backend
+Production buffer calls still go to libevent through the facade. C formatting
+and malloc-returned line adapters are implemented and tested on the replacement
+side before selection; do not introduce a mixed-storage production bridge.
 
-Implement host turns, timer/watch registry, deferred queue, signal tasks and
-buffered streams against hmux-rt without selecting them for production yet.
-Keep libevent as the active backend until the new backend can drive every
-source; avoid two independently blocking event loops. Test adapters with isolated
-runtime instances and socketpairs/PTYS, taking behavioral expectations from the
-baseline and reference project's adapter tests.
+Validation: binary append/drain and compaction, split terminators and legacy
+readline distinctions, empty/partial lines, large formatting through the facade,
+transfer/drain, short reads/writes, EOF, EINTR and EAGAIN. Strict runtime tests,
+format and Clippy must pass; existing runtime consumers must still compile.
 
-Required cases: rearm/cancel/self-delete, stale callback suppression, deferred
-ordering, wake after append/re-enable, read watermarks, partial writes, EOF/error,
-regular files, large transfers exceeding budgets, and fd/task cleanup. Tests
-must verify behavior, not just mirror the implementation.
+### 3. Extend hmux-rt with registrations and buffered streams
+
+Adapt the reference registry and stream behavior into explicit reusable owners
+inside hmux-rt. They depend on TaskHandle, Rust closures and runtime types, not
+hmux2 modules. Registrations track configured versus armed state, monotonic
+deadlines, generation, cancellation and explicit release. Signals preserve
+identity. Deferred work has cancellable IDs and documented next-turn ordering.
+
+Streams own ByteBuffers, task handles, enabled state and watermarks. Expose
+buffer access without requiring business callbacks to become async. Appending
+output and re-enabling reads wake parked tasks. Preserve readiness when a budget
+or high watermark stops draining early. Distinguish read/write EOF/error and
+invoke callbacks outside mutable registry borrows.
+
+The hmux2 facade adapts existing operation names and callbacks to these APIs.
+Keep raw-owner lifetime obligations and C formatting there. Implement host turns,
+shutdown and fork rebuild using explicit runtime/registry lifecycle methods.
+No production backend switch until every source is supported; libevent remains
+the sole active loop during development.
+
+Required tests: rearm/cancel/self-delete, stale callback suppression, deferred
+ordering/cancellation, wake after append/re-enable, read watermarks, partial writes,
+EOF/error, regular files, PTY EIO/hangup, transfers exceeding budgets, and fd/task
+cleanup. Use isolated registries/runtimes and socketpairs/PTYS. Test fork rebuild
+and disposal of duplicated descriptors as lifecycle contracts, not only source
+shape. Port expectations from reference tests without daemon dependencies.
 
 ### 4. Switch all sources and process lifecycle
 
 Select the hmux-rt backend as one coherent increment once its adapters pass.
+Switch buffer storage and stream operations through the facade together.
 Replace initialization and `proc_loop`, accept and peer watchers, signal setup,
 all timers/deferred work, tty I/O, pane/job/pipe/file/control streams, and their
 cleanup paths. Rebuild after fork; preserve loop callback scheduling and client
@@ -231,9 +303,11 @@ cargo test --locked -p hmux2 -- --test-threads=1
 cargo clippy --locked -p hmux2 --all-targets
 ```
 
-For changed hmux2 Rust files run `rustfmt --edition 2021 --config
-skip_children=true <changed-files>` and the same command with `--check`; avoid
-formatting the entire translated tree. Record existing lint failures separately
+For new adapter files run `rustfmt --edition 2021 --config
+skip_children=true <changed-files>` and the same command with `--check`.
+For mechanical import/accessor edits in translated files, preserve surrounding
+formatting to avoid unrelated formatter churn. Format newly written code and
+record baseline formatting differences separately; do not reformat the tree. Record existing lint failures separately
 and introduce none. If tests touch process globals and fail due to same-process
 state, isolate them with `cargo nextest run -p hmux2` and record the reason.
 
@@ -251,10 +325,9 @@ python3 scripts/style_cli_checks.py
 python3 scripts/check_ffi_exports.py
 ```
 
-`scripts/check_ffi_exports.py` currently requires the absent
-`docs/required-exports.tsv`. Before relying on it, restore the authoritative
-export list or capture and review the baseline archive exports; record this
-existing validation blocker rather than silently skipping export coverage.
+`scripts/check_ffi_exports.py` requires `docs/required-exports.tsv`, restored
+from the authoritative repository history during execution. The other missing
+audit fixtures were restored as well; export and architecture coverage now run.
 The README also links to absent docs, so use checked-in source/tests as the
 current architecture evidence.
 
@@ -300,6 +373,109 @@ outlive owners, and the binary plus staticlib build without libevent present.
   warnings. This baseline still links libevent; no claim of dependency removal.
 - 2026-09-20: recursive comparison confirmed the copied runtime is identical
   to its source. Full application regression execution is deferred to migration.
+
+- Execution: step 1 added the `src/reactor` host boundary, routed application
+  imports through it, migrated stream input/output field access to accessors,
+  added the hmux-rt dependency, and recorded fields in
+  `docs/runtime-owner-audit.md`. Restored three authoritative test audit fixtures
+  from `edc0f22^` (required exports, key enum declarations, mutable scratch).
+- Baseline binary and deterministic CLI transcripts are under
+  `target/migration/baseline`. `/tmp` is not executable in this environment;
+  baseline capture was rerun successfully from the workspace. All eight behavior
+  scripts passed. `cargo build --locked -p hmux2` and the full single-threaded
+  application test suite passed after restoring the missing fixtures.
+- `cargo test --locked -p hmux-rt`, runtime formatting, and strict runtime Clippy
+  passed. Application all-target Clippy reports 30 pre-existing translated-code
+  errors (`eq_op`, `while_immutable_condition`, `self_assignment`); output is in
+  `/tmp/hmux-step1-clippy.log`. Formatter-only translated-tree churn was removed
+  under the revised smaller-change strategy.
+- Superseded experiment: mixed Rust standalone buffers and legacy stream buffers
+  built but failed CLI checks with corrupt output, and the foreign-boundary test
+  rejected duplicate host/foreign operation names. That bridge was removed when
+  the user revised the strategy; it is not part of the active backend.
+- Revised step 2 started: ByteBuffer lives in `hmux-rt/src/buffer.rs` and is
+  re-exported by the thin hmux2 facade. Production buffers still use libevent.
+  Wake helpers, registration/stream extensions, and production selection remain
+  unfinished. Do not mark the migration or dependency removal complete.
+
+- Revised checkpoint validation: `cargo test --locked -p hmux-rt` passed
+  (39 tests); runtime formatting and strict all-target Clippy passed.
+  `cargo build --locked -p hmux2` and the full single-threaded hmux2 test suite
+  passed. Adapter formatting and `git diff --check` passed.
+- Revised CLI checks: cli_regressions, ffi_callbacks, arguments, environment,
+  key, layout, style and required-export checks passed. Both deterministic
+  transcripts exactly match the saved baseline. Logs are under
+  `target/migration/revised`.
+- `format_display_message_checks.py` initially passed during baseline capture,
+  but repeat runs failed on BOTH the saved baseline binary and current binary
+  (format-job initial-response/barrier expectations). Record this as an existing
+  reproducibility issue; do not claim uniformly green behavioral coverage.
+
+- Implementation completed under the revised strategy. Added reusable hmux-rt
+  Notify/select/yield helpers, explicit timer/watch/signal/deferred registries,
+  buffered-stream registry, ByteBuffer fd I/O, and cancellation-only flushing.
+  Registry callbacks execute outside mutable registry borrows; cancellations
+  synchronously invalidate generations and retire entries. Read watermarks,
+  write-drain thresholds, budget continuations, regular files and PTY hangup
+  are covered by contract tests. Runtime tests: **64 passed**; strict all-target
+  runtime Clippy and formatting passed.
+- The hmux2 facade now supplies buffer formatting/malloc-line compatibility,
+  zero-initialized event handles, synchronous callback adaptation, and process
+  runtime ownership. Removed `src/ffi/libevent.rs`, its registration, legacy
+  layouts/initializers, event logging, and the event_core link. Event storage is
+  56 bytes (previously 128), stream facade handles 24 bytes (previously 392).
+  Updated only affected internal owner layout fixtures; required C exports and
+  protocol/serialization fixtures remain unchanged. Restored export coverage
+  confirms all **1,496 required C symbols** in the release static library.
+- Ownership audit: `docs/runtime-owner-audit.md` describes owner creation/release
+  and exported-pointer contracts; `docs/runtime-lifetimes.tsv` indexes allocation,
+  registration and destruction sites. Fixed a stale pointer in
+  server_client_print by reacquiring it after an append. Fork children discard
+  inherited runtime state without deregistering against the parent's epoll fd;
+  server rebuild preserves active registrations/deadlines. Client and server
+  exit paths explicitly shut down runtime registries.
+- Expanded behavior checks in `scripts/runtime_cli_checks.py`: delayed and
+  ordinary jobs, 1 MiB binary load/save, both pipe directions, slow control
+  readers, controlling-PTY attach/resize/escape/detach, status refresh,
+  copy-mode entry/exit, repeated window/job creation with fd counts returning
+  to baseline, no unreaped child zombies, and non-fork startup/shutdown passed.
+  CLI and FFI-callback transcripts match the saved baseline byte-for-byte.
+- Fixed the pre-existing format test harness response offset: consume the
+  control client's startup response before sending commands, then validate each
+  command's own response. A pending format job preserves its literal prefix;
+  an already-completed initial result is also valid. Eventual and cached-repeat
+  expectations remain strict. Corrected checks pass on BOTH the saved libevent
+  baseline and the migrated release binary.
+- All nine behavioral scripts (the original eight plus runtime_cli_checks)
+  passed against `target/no-libevent-final/release/hmux2`; logs are in
+  `target/migration/final`. All 238 workspace tests passed with one test thread.
+  Source/artifact dependency guard, adapter formatting and git diff whitespace
+  checks passed. Application all-target Clippy still reports the same 30
+  translated-code errors as baseline; the new adapter/runtime files introduce
+  no Clippy diagnostics (`/tmp/hmux-final-clippy.log`).
+- Independent build environment: `nix develop ...#minimal --ignore-environment
+  --keep HOME`, CARGO_TARGET_DIR=target/no-libevent-final. Clean locked workspace
+  all-target debug build, release build, and full workspace tests passed.
+  Debug info was disabled for this debug build to reduce artifact size.
+  Source, readelf, ldd and nm checks pass for release binary and staticlib.
+  A C consumer was linked against the staticlib with only the remaining native
+  libraries and successfully called getversion.
+- Nix package build and its full workspace check phase passed. A source snapshot
+  at `target/migration/nix-source` contains the working tree excluding .git,
+  target and result, avoiding copying 18 GiB of build artifacts into the flake.
+  Built with `nix build path:./target/migration/nix-source#hmux`; result is
+  `target/migration/nix-result`. The snapshot's compiled sources match this
+  implementation; subsequent changes are validation-script/docs comments only.
+  Final derivation: `/nix/store/nsq2x3f2n05awnn8j5d4ykaxghfwvk8a-hmux-0.0.0.drv`.
+  The output closure has **51 paths and no libevent**. Direct build/native-input
+  closures also contain no libevent headers/libraries (saved closure audits in
+  target/migration/final). Some transitive *derivation recipes* mention libevent,
+  but no libevent output is in the actual build-input or package closures.
+- The closure audit caught a transitive dependency from full systemd via
+  libmicrohttpd/GnuTLS/Unbound. Switching hmux package and shell inputs to
+  `systemdLibs` removed it. The optional reference tmux stays in the broad dev
+  shell only; the minimal shell and hmux package do not require it. Corrected
+  meta.mainProgram to hmux2 and enabled package tests. No commits or publication.
 
 ## Appendix: direct call inventory
 

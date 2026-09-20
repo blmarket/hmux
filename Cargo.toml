@@ -23,6 +23,7 @@ crate-type = ["staticlib", "rlib"]
 path = "src/main.rs"
 name = "hmux2"
 [dependencies]
+hmux-rt = { path = "hmux-rt" }
 c2rust-bitfields = "0.22.1"
 libc = "0.2"
 

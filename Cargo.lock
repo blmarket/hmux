@@ -47,6 +47,7 @@ name = "hmux2"
 version = "0.0.0"
 dependencies = [
  "c2rust-bitfields",
+ "hmux-rt",
  "libc",
  "syn",
 ]

@@ -4,7 +4,7 @@ use crate::src::ffi::libc::{
     __ctype_b_loc, free, memcmp, memcpy, sscanf, strcspn, strlcpy, strlen, strncmp, strsep,
     strtol, strtoul,
 };
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_add, event_del,
     event_initialized, event_pending, event_set,
 };

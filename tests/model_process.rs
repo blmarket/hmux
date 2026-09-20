@@ -1,4 +1,5 @@
-//! Frozen pre-migration sizes, alignments, and every named field offset.
+//! Sizes, alignments, and every named field offset across re-exported copies.
+//! Internal owner fixtures include the hmux-rt handle migration (128 -> 56 byte events).
 use std::mem::{align_of, offset_of, size_of};
 #[test]
 fn original_copies_match() {

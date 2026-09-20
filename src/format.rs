@@ -15,7 +15,7 @@ use crate::src::ffi::libc::{
     getuid, localtime_r, memcmp, memcpy, memset, regcomp, regexec, regfree, strcasecmp, strchr,
     strcmp, strcspn, strftime, strlcat, strlen, strstr, strtod, time,
 };
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
     evbuffer_pullup, evbuffer_readline, event_add, event_initialized, event_pending, event_set,
 };

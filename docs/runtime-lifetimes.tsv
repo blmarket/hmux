@@ -1,0 +1,1738 @@
+file	function	line	operation	source
+src/alerts.rs	alerts_reset	218	event_set	event_set(
+src/alerts.rs	alerts_reset	234	event_del	event_del(&raw mut (*w).alerts_timer);
+src/alerts.rs	alerts_queue	278	event_once	event_once(
+src/arguments.rs	args_create	695	xcalloc	args = xcalloc(1 as size_t, ::core::mem::size_of::<args>() as size_t) as *mut args;
+src/arguments.rs	args_parse_flag_argument	713	xcalloc	new = xcalloc(1 as size_t, ::core::mem::size_of::<args_value>() as size_t) as *mut args_value;
+src/arguments.rs	args_parse_flag_argument	731	free	free(new as *mut ::core::ffi::c_void);
+src/arguments.rs	args_parse_flag_argument	737	free	free(new as *mut ::core::ffi::c_void);
+src/arguments.rs	args_parse_flag_argument	776	free	free(new as *mut ::core::ffi::c_void);
+src/arguments.rs	args_copy_copy_value	1050	free	free(expanded as *mut ::core::ffi::c_void);
+src/arguments.rs	args_copy	1097	xcalloc	new_value = xcalloc(1 as size_t, ::core::mem::size_of::<args_value>() as size_t)
+src/arguments.rs	args_copy	1110	xcalloc	(*new_args).values = xcalloc(
+src/arguments.rs	args_free_value	1131	free	free((*value).c2rust_unnamed.string as *mut ::core::ffi::c_void);
+src/arguments.rs	args_free_value	1138	free	free((*value).cached as *mut ::core::ffi::c_void);
+src/arguments.rs	args_free	1156	free	free((*args).values as *mut ::core::ffi::c_void);
+src/arguments.rs	args_free	1175	free	free(value as *mut ::core::ffi::c_void);
+src/arguments.rs	args_free	1178	free	free(entry as *mut ::core::ffi::c_void);
+src/arguments.rs	args_free	1181	free	free(args as *mut ::core::ffi::c_void);
+src/arguments.rs	args_to_vector	1209	free	free(s as *mut ::core::ffi::c_void);
+src/arguments.rs	args_from_vector	1223	xcalloc	values = xcalloc(
+src/arguments.rs	args_print_add	1248	xrealloc	*buf = xrealloc(*buf as *mut ::core::ffi::c_void, *len) as *mut ::core::ffi::c_char;
+src/arguments.rs	args_print_add	1250	free	free(s as *mut ::core::ffi::c_void);
+src/arguments.rs	args_print_add_value	1282	free	free(expanded as *mut ::core::ffi::c_void);
+src/arguments.rs	args_print	1294	xcalloc	buf = xcalloc(1 as size_t, len) as *mut ::core::ffi::c_char;
+src/arguments.rs	args_escape	1458	free	free(escaped as *mut ::core::ffi::c_void);
+src/arguments.rs	args_set	1481	xcalloc	xcalloc(1 as size_t, ::core::mem::size_of::<args_entry>() as size_t) as *mut args_entry;
+src/arguments.rs	args_set	1500	free	free(value as *mut ::core::ffi::c_void);
+src/arguments.rs	args_make_commands_now	1594	free	free(error as *mut ::core::ffi::c_void);
+src/arguments.rs	args_make_commands_prepare	1615	xcalloc	state = xcalloc(
+src/arguments.rs	args_make_commands	1698	free	free(cmd as *mut ::core::ffi::c_void);
+src/arguments.rs	args_make_commands	1708	free	free(cmd as *mut ::core::ffi::c_void);
+src/arguments.rs	args_make_commands_free	1727	free	free((*state).pi.file as *mut ::core::ffi::c_void);
+src/arguments.rs	args_make_commands_free	1728	free	free((*state).cmd as *mut ::core::ffi::c_void);
+src/arguments.rs	args_make_commands_free	1729	free	free(state as *mut ::core::ffi::c_void);
+src/arguments.rs	parse_percentage_and_expand	1857	free	free(formatted as *mut ::core::ffi::c_void);
+src/arguments.rs	parse_percentage_and_expand	1862	free	free(formatted as *mut ::core::ffi::c_void);
+src/arguments.rs	args_strtonum_and_expand_result	1904	free	free(formatted as *mut ::core::ffi::c_void);
+src/cfg.rs	load_cfg	240	free	free((*pr).error as *mut ::core::ffi::c_void);
+src/cfg.rs	load_cfg_from_buffer	330	free	free((*pr).error as *mut ::core::ffi::c_void);
+src/cfg.rs	cfg_test_take_causes	388	free	free(cause as *mut ::core::ffi::c_void);
+src/cfg.rs	cfg_test_take_causes	391	free	free(cfg_causes as *mut ::core::ffi::c_void);
+src/cfg.rs	cfg_print_causes	418	free	free(cause as *mut ::core::ffi::c_void);
+src/cfg.rs	cfg_print_causes	421	free	free(cfg_causes as *mut ::core::ffi::c_void);
+src/cfg.rs	cfg_show_causes	444	free	free(cause as *mut ::core::ffi::c_void);
+src/cfg.rs	cfg_show_causes	478	free	free(*cfg_causes.offset(i as isize) as *mut ::core::ffi::c_void);
+src/cfg.rs	cfg_show_causes	482	free	free(cfg_causes as *mut ::core::ffi::c_void);
+src/client.rs	client_connect	275	free	free(lockfile as *mut ::core::ffi::c_void);
+src/client.rs	client_connect	291	free	free(lockfile as *mut ::core::ffi::c_void);
+src/client.rs	client_connect	303	free	free(lockfile as *mut ::core::ffi::c_void);
+src/client.rs	client_connect	311	free	free(lockfile as *mut ::core::ffi::c_void);
+src/client.rs	client_main	429	free	free((*pr).error as *mut ::core::ffi::c_void);
+src/client.rs	client_main	432	free	free(values as *mut ::core::ffi::c_void);
+src/client.rs	client_main	511	free	free(cause as *mut ::core::ffi::c_void);
+src/client.rs	client_main	559	xmalloc	data = xmalloc((::core::mem::size_of::<msg_command>() as size_t).wrapping_add(size))
+src/client.rs	client_main	573	free	free(data as *mut ::core::ffi::c_void);
+src/client.rs	client_main	591	free	free(data as *mut ::core::ffi::c_void);
+src/client.rs	client_main	594	free	free(data as *mut ::core::ffi::c_void);
+src/client.rs	client_dispatch_exit_message	967	xmalloc	client_exitmessage = xmalloc(datalen) as *mut ::core::ffi::c_char;
+src/cmd/core.rs	cmd_log_argv	288	free	free(prefix as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_prepend_argv	312	free	free(*argv as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_unpack_argv	378	xcalloc	*argv = xcalloc(
+src/cmd/core.rs	cmd_copy_argv	415	xcalloc	new_argv = xcalloc(
+src/cmd/core.rs	cmd_free_argv	440	free	free(*argv.offset(i as isize) as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_free_argv	443	free	free(argv as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_stringify_argv	468	xrealloc	buf = xrealloc(buf as *mut ::core::ffi::c_void, len) as *mut ::core::ffi::c_char;
+src/cmd/core.rs	cmd_stringify_argv	475	free	free(s as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_parse	669	free	free(error as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_parse	672	xcalloc	cmd = xcalloc(1 as size_t, ::core::mem::size_of::<cmd>() as size_t) as *mut cmd;
+src/cmd/core.rs	cmd_free	684	free	free((*cmd).file as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_free	686	free	free(cmd as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_copy	695	xcalloc	new_cmd = xcalloc(1 as size_t, ::core::mem::size_of::<cmd>() as size_t) as *mut cmd;
+src/cmd/core.rs	cmd_print	719	free	free(s as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_list_new	725	xcalloc	cmdlist = xcalloc(1 as size_t, ::core::mem::size_of::<cmd_list>() as size_t) as *mut cmd_list;
+src/cmd/core.rs	cmd_list_new	730	xcalloc	(*cmdlist).list = xcalloc(1 as size_t, ::core::mem::size_of::<cmds>() as size_t) as *mut cmds;
+src/cmd/core.rs	cmd_list_free	794	free	free((*cmdlist).list as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_list_free	795	free	free(cmdlist as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_list_copy	814	free	free(s as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_list_copy	834	free	free(s as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_list_print	861	xcalloc	buf = xcalloc(1 as size_t, len) as *mut ::core::ffi::c_char;
+src/cmd/core.rs	cmd_list_print	866	xrealloc	buf = xrealloc(buf as *mut ::core::ffi::c_void, len) as *mut ::core::ffi::c_char;
+src/cmd/core.rs	cmd_list_print	877	free	free(this as *mut ::core::ffi::c_void);
+src/cmd/core.rs	cmd_template_replace	1050	xmalloc	buf = xmalloc(1 as size_t) as *mut ::core::ffi::c_char;
+src/cmd/core.rs	cmd_template_replace	1099	xrealloc	buf = xrealloc(
+src/cmd/core.rs	cmd_template_replace	1152	xrealloc	buf = xrealloc(
+src/cmd/entries/attach_session.rs	cmd_attach_session	197	free	free((*s).cwd as *mut ::core::ffi::c_void);
+src/cmd/entries/attach_session.rs	cmd_attach_session	246	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/bind_key.rs	cmd_bind_key_exec	196	free	free((*pr).error as *mut ::core::ffi::c_void);
+src/cmd/entries/break_pane.rs	cmd_break_pane_float	165	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/break_pane.rs	cmd_break_pane_exec	265	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/break_pane.rs	cmd_break_pane_exec	334	free	free((*w).name as *mut ::core::ffi::c_void);
+src/cmd/entries/break_pane.rs	cmd_break_pane_exec	386	free	free(cp as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_append	152	xrealloc	buf = xrealloc(
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_cell	288	free	free(f as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_cell	289	free	free(b as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_cell	290	free	free(u as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_cell	291	free	free(link as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_cell	292	free	free(linkid as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_cell	293	free	free(data as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_grid	320	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_grid	369	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_grid	374	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_history	663	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_history	758	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_history	762	free	free(links as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_exec	820	free	free(buf as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_exec	826	free	free(buf as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_exec	838	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/capture_pane.rs	cmd_capture_pane_exec	839	free	free(buf as *mut ::core::ffi::c_void);
+src/cmd/entries/command_prompt.rs	cmd_command_prompt_exec	182	xcalloc	cdata = xcalloc(
+src/cmd/entries/command_prompt.rs	cmd_command_prompt_exec	209	free	free(tmp as *mut ::core::ffi::c_void);
+src/cmd/entries/command_prompt.rs	cmd_command_prompt_exec	227	xcalloc	(*cdata).prompts = xcalloc(
+src/cmd/entries/command_prompt.rs	cmd_command_prompt_exec	276	free	free(inputs as *mut ::core::ffi::c_void);
+src/cmd/entries/command_prompt.rs	cmd_command_prompt_exec	277	free	free(prompts as *mut ::core::ffi::c_void);
+src/cmd/entries/command_prompt.rs	cmd_command_prompt_callback	419	free	free(error as *mut ::core::ffi::c_void);
+src/cmd/entries/command_prompt.rs	cmd_command_prompt_free	451	free	free((*(*cdata).prompts.offset(i as isize)).prompt as *mut ::core::ffi::c_void);
+src/cmd/entries/command_prompt.rs	cmd_command_prompt_free	452	free	free((*(*cdata).prompts.offset(i as isize)).input as *mut ::core::ffi::c_void);
+src/cmd/entries/command_prompt.rs	cmd_command_prompt_free	455	free	free((*cdata).prompts as *mut ::core::ffi::c_void);
+src/cmd/entries/command_prompt.rs	cmd_command_prompt_free	458	free	free(cdata as *mut ::core::ffi::c_void);
+src/cmd/entries/confirm_before.rs	cmd_confirm_before_exec	144	xcalloc	cdata = xcalloc(
+src/cmd/entries/confirm_before.rs	cmd_confirm_before_exec	150	free	free(cdata as *mut ::core::ffi::c_void);
+src/cmd/entries/confirm_before.rs	cmd_confirm_before_exec	173	free	free(cdata as *mut ::core::ffi::c_void);
+src/cmd/entries/confirm_before.rs	cmd_confirm_before_exec	214	free	free(new_prompt as *mut ::core::ffi::c_void);
+src/cmd/entries/confirm_before.rs	cmd_confirm_before_free	261	free	free(cdata as *mut ::core::ffi::c_void);
+src/cmd/entries/display_menu.rs	cmd_display_menu_get_popup_pos	549	free	free(p as *mut ::core::ffi::c_void);
+src/cmd/entries/display_menu.rs	cmd_display_menu_get_popup_pos	601	free	free(p as *mut ::core::ffi::c_void);
+src/cmd/entries/display_menu.rs	cmd_display_menu_get_menu_pos	970	free	free(p as *mut ::core::ffi::c_void);
+src/cmd/entries/display_menu.rs	cmd_display_menu_get_menu_pos	1023	free	free(p as *mut ::core::ffi::c_void);
+src/cmd/entries/display_menu.rs	cmd_display_menu_exec	1100	free	free(title as *mut ::core::ffi::c_void);
+src/cmd/entries/display_menu.rs	cmd_display_menu_exec	1229	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/display_menu.rs	cmd_display_popup_exec	1482	free	free(cwd as *mut ::core::ffi::c_void);
+src/cmd/entries/display_menu.rs	cmd_display_popup_exec	1483	free	free(title as *mut ::core::ffi::c_void);
+src/cmd/entries/display_menu.rs	cmd_display_popup_exec	1495	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/display_menu.rs	cmd_display_popup_exec	1498	free	free(cwd as *mut ::core::ffi::c_void);
+src/cmd/entries/display_menu.rs	cmd_display_popup_exec	1499	free	free(title as *mut ::core::ffi::c_void);
+src/cmd/entries/display_menu.rs	cmd_display_popup_exec	1505	free	free(cwd as *mut ::core::ffi::c_void);
+src/cmd/entries/display_menu.rs	cmd_display_popup_exec	1506	free	free(title as *mut ::core::ffi::c_void);
+src/cmd/entries/display_message.rs	cmd_display_message_exec	172	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/display_message.rs	cmd_display_message_exec	259	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/display_message.rs	cmd_display_message_exec	260	free	free(msg as *mut ::core::ffi::c_void);
+src/cmd/entries/display_message.rs	cmd_display_message_exec	264	free	free(msg as *mut ::core::ffi::c_void);
+src/cmd/entries/display_message.rs	cmd_display_message_exec	281	evbuffer_new	evb = evbuffer_new();
+src/cmd/entries/display_message.rs	cmd_display_message_exec	291	evbuffer_free	evbuffer_free(evb);
+src/cmd/entries/display_message.rs	cmd_display_message_exec	303	free	free(msg as *mut ::core::ffi::c_void);
+src/cmd/entries/find_window.rs	cmd_find_window_exec	133	xcalloc	xcalloc(1 as size_t, ::core::mem::size_of::<args_value>() as size_t) as *mut args_value;
+src/cmd/entries/if_shell.rs	cmd_if_shell_exec	168	free	free(shellcmd as *mut ::core::ffi::c_void);
+src/cmd/entries/if_shell.rs	cmd_if_shell_exec	171	free	free(shellcmd as *mut ::core::ffi::c_void);
+src/cmd/entries/if_shell.rs	cmd_if_shell_exec	180	xcalloc	cdata = xcalloc(
+src/cmd/entries/if_shell.rs	cmd_if_shell_exec	233	free	free(shellcmd as *mut ::core::ffi::c_void);
+src/cmd/entries/if_shell.rs	cmd_if_shell_exec	237	free	free(shellcmd as *mut ::core::ffi::c_void);
+src/cmd/entries/if_shell.rs	cmd_if_shell_callback	309	free	free(error as *mut ::core::ffi::c_void);
+src/cmd/entries/if_shell.rs	cmd_if_shell_free	333	free	free(cdata as *mut ::core::ffi::c_void);
+src/cmd/entries/join_pane.rs	cmd_join_pane_exec	893	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/kill_pane.rs	cmd_kill_pane_filter	179	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/kill_session.rs	cmd_kill_session_filter	219	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/kill_window.rs	cmd_kill_window_filter	240	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/list_buffers.rs	cmd_list_buffers_exec	157	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/list_buffers.rs	cmd_list_buffers_exec	168	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/list_clients.rs	cmd_list_clients_exec	182	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/list_clients.rs	cmd_list_clients_exec	193	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/list_commands.rs	cmd_list_single_command	149	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/list_commands.rs	cmd_list_commands	196	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/list_keys.rs	cmd_list_keys_format_add_key_binding	302	free	free(s as *mut ::core::ffi::c_void);
+src/cmd/entries/list_keys.rs	cmd_list_keys_exec	393	free	free(prefix as *mut ::core::ffi::c_void);
+src/cmd/entries/list_keys.rs	cmd_list_keys_exec	457	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/list_keys.rs	cmd_list_keys_exec	464	free	free(prefix as *mut ::core::ffi::c_void);
+src/cmd/entries/list_panes.rs	cmd_list_panes_window	221	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/list_panes.rs	cmd_list_panes_window	232	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/list_sessions.rs	cmd_list_sessions_exec	173	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/list_sessions.rs	cmd_list_sessions_exec	184	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/list_windows.rs	cmd_list_windows_exec	180	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/list_windows.rs	cmd_list_windows_exec	191	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/load_buffer.rs	cmd_load_buffer_done	139	xmalloc	copy = xmalloc(bsize);
+src/cmd/entries/load_buffer.rs	cmd_load_buffer_done	153	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/load_buffer.rs	cmd_load_buffer_done	154	free	free(copy);
+src/cmd/entries/load_buffer.rs	cmd_load_buffer_done	171	free	free((*cdata).name as *mut ::core::ffi::c_void);
+src/cmd/entries/load_buffer.rs	cmd_load_buffer_done	172	free	free(cdata as *mut ::core::ffi::c_void);
+src/cmd/entries/load_buffer.rs	cmd_load_buffer_exec	183	xcalloc	cdata = xcalloc(
+src/cmd/entries/load_buffer.rs	cmd_load_buffer_exec	212	free	free(path as *mut ::core::ffi::c_void);
+src/cmd/entries/move_window.rs	cmd_move_window_exec	213	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	267	free	free(ename as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	271	free	free(ename as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	289	free	free(ename as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	293	free	free(ename as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	318	free	free(wname as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	319	free	free(sname as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	428	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	654	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	759	free	free(
+src/cmd/entries/new_session.rs	cmd_new_session_exec	794	free	free(cwd as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	795	free	free(wname as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	796	free	free(sname as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	797	free	free(
+src/cmd/entries/new_session.rs	cmd_new_session_exec	819	free	free(cwd as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	820	free	free(wname as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	821	free	free(sname as *mut ::core::ffi::c_void);
+src/cmd/entries/new_session.rs	cmd_new_session_exec	822	free	free(prefix as *mut ::core::ffi::c_void);
+src/cmd/entries/new_window.rs	cmd_new_window_exec	199	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/new_window.rs	cmd_new_window_exec	203	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/new_window.rs	cmd_new_window_exec	229	free	free(wname as *mut ::core::ffi::c_void);
+src/cmd/entries/new_window.rs	cmd_new_window_exec	230	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/new_window.rs	cmd_new_window_exec	236	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/new_window.rs	cmd_new_window_exec	240	free	free(wname as *mut ::core::ffi::c_void);
+src/cmd/entries/new_window.rs	cmd_new_window_exec	297	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/new_window.rs	cmd_new_window_exec	302	free	free(wname as *mut ::core::ffi::c_void);
+src/cmd/entries/new_window.rs	cmd_new_window_exec	318	free	free(cp as *mut ::core::ffi::c_void);
+src/cmd/entries/new_window.rs	cmd_new_window_exec	331	free	free(wname as *mut ::core::ffi::c_void);
+src/cmd/entries/paste_buffer.rs	cmd_paste_buffer_paste	111	free	free(cp as *mut ::core::ffi::c_void);
+src/cmd/entries/pipe_pane.rs	cmd_pipe_pane_exec	150	bufferevent_free	bufferevent_free((*wp).pipe_event);
+src/cmd/entries/pipe_pane.rs	cmd_pipe_pane_exec	213	free	free(cmd as *mut ::core::ffi::c_void);
+src/cmd/entries/pipe_pane.rs	cmd_pipe_pane_exec	276	bufferevent_new	(*wp).pipe_event = bufferevent_new(
+src/cmd/entries/pipe_pane.rs	cmd_pipe_pane_exec	305	free	free(cmd as *mut ::core::ffi::c_void);
+src/cmd/entries/pipe_pane.rs	cmd_pipe_pane_error_callback	360	bufferevent_free	bufferevent_free((*wp).pipe_event);
+src/cmd/entries/refresh_client.rs	cmd_refresh_client_update_subscription	146	free	free(name as *mut ::core::ffi::c_void);
+src/cmd/entries/refresh_client.rs	cmd_refresh_client_update_subscription	147	free	free(format as *mut ::core::ffi::c_void);
+src/cmd/entries/refresh_client.rs	cmd_refresh_client_update_offset	290	free	free(copy as *mut ::core::ffi::c_void);
+src/cmd/entries/refresh_client.rs	cmd_refresh_report	337	free	free(copy as *mut ::core::ffi::c_void);
+src/cmd/entries/rename_session.rs	cmd_rename_session_exec	133	free	free(tmp as *mut ::core::ffi::c_void);
+src/cmd/entries/rename_session.rs	cmd_rename_session_exec	137	free	free(tmp as *mut ::core::ffi::c_void);
+src/cmd/entries/rename_session.rs	cmd_rename_session_exec	139	free	free(newname as *mut ::core::ffi::c_void);
+src/cmd/entries/rename_session.rs	cmd_rename_session_exec	148	free	free(newname as *mut ::core::ffi::c_void);
+src/cmd/entries/rename_session.rs	cmd_rename_session_exec	172	free	free((*s).name as *mut ::core::ffi::c_void);
+src/cmd/entries/rename_window.rs	cmd_rename_window_exec	115	free	free(name as *mut ::core::ffi::c_void);
+src/cmd/entries/rename_window.rs	cmd_rename_window_exec	124	free	free(name as *mut ::core::ffi::c_void);
+src/cmd/entries/resize_pane.rs	cmd_resize_pane_exec	202	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/resize_pane.rs	cmd_resize_pane_exec	253	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/resize_pane.rs	cmd_resize_pane_exec	308	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/respawn_pane.rs	cmd_respawn_pane_exec	160	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/respawn_window.rs	cmd_respawn_window_exec	159	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/run_shell.rs	cmd_run_shell_exec	258	xcalloc	cdata = xcalloc(
+src/cmd/entries/run_shell.rs	cmd_run_shell_exec	325	event_set	event_set(
+src/cmd/entries/run_shell.rs	cmd_run_shell_exec	348	event_active	event_active(
+src/cmd/entries/run_shell.rs	cmd_run_shell_timer	464	free	free(error as *mut ::core::ffi::c_void);
+src/cmd/entries/run_shell.rs	cmd_run_shell_callback	497	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/run_shell.rs	cmd_run_shell_callback	505	xmalloc	line = xmalloc(size.wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
+src/cmd/entries/run_shell.rs	cmd_run_shell_callback	514	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/run_shell.rs	cmd_run_shell_callback	546	free	free(msg as *mut ::core::ffi::c_void);
+src/cmd/entries/run_shell.rs	cmd_run_shell_free	556	event_del	event_del(&raw mut (*cdata).timer);
+src/cmd/entries/run_shell.rs	cmd_run_shell_free	569	free	free((*cdata).cwd as *mut ::core::ffi::c_void);
+src/cmd/entries/run_shell.rs	cmd_run_shell_free	570	free	free((*cdata).cmd as *mut ::core::ffi::c_void);
+src/cmd/entries/run_shell.rs	cmd_run_shell_free	571	free	free(cdata as *mut ::core::ffi::c_void);
+src/cmd/entries/save_buffer.rs	cmd_save_buffer_exec	190	evbuffer_new	evb = evbuffer_new();
+src/cmd/entries/save_buffer.rs	cmd_save_buffer_exec	196	evbuffer_free	evbuffer_free(evb);
+src/cmd/entries/save_buffer.rs	cmd_save_buffer_exec	227	free	free(path as *mut ::core::ffi::c_void);
+src/cmd/entries/select_layout.rs	cmd_select_layout_exec	239	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/select_layout.rs	cmd_select_layout_exec	240	free	free((*w).old_layout as *mut ::core::ffi::c_void);
+src/cmd/entries/select_layout.rs	cmd_select_layout_exec	245	free	free(oldlayout as *mut ::core::ffi::c_void);
+src/cmd/entries/select_layout.rs	cmd_select_layout_exec	251	free	free(oldlayout as *mut ::core::ffi::c_void);
+src/cmd/entries/select_pane.rs	cmd_select_pane_exec	450	free	free(title as *mut ::core::ffi::c_void);
+src/cmd/entries/send_keys.rs	cmd_send_keys_inject_key	163	xcalloc	xcalloc(1 as size_t, ::core::mem::size_of::<key_event>() as size_t) as *mut key_event;
+src/cmd/entries/send_keys.rs	cmd_send_keys_inject_key	179	free	free((*event).buf as *mut ::core::ffi::c_void);
+src/cmd/entries/send_keys.rs	cmd_send_keys_inject_key	180	free	free(event as *mut ::core::ffi::c_void);
+src/cmd/entries/send_keys.rs	cmd_send_keys_inject_string	269	free	free(ud as *mut ::core::ffi::c_void);
+src/cmd/entries/server_access.rs	cmd_server_access_exec	178	free	free(arg as *mut ::core::ffi::c_void);
+src/cmd/entries/server_access.rs	cmd_server_access_exec	181	free	free(arg as *mut ::core::ffi::c_void);
+src/cmd/entries/set_buffer.rs	cmd_set_buffer_exec	176	free	free(bufname as *mut ::core::ffi::c_void);
+src/cmd/entries/set_buffer.rs	cmd_set_buffer_exec	217	free	free(bufname as *mut ::core::ffi::c_void);
+src/cmd/entries/set_buffer.rs	cmd_set_buffer_exec	230	free	free(bufname as *mut ::core::ffi::c_void);
+src/cmd/entries/set_buffer.rs	cmd_set_buffer_exec	235	xmalloc	bufdata = xmalloc(bufsize) as *mut ::core::ffi::c_char;
+src/cmd/entries/set_buffer.rs	cmd_set_buffer_exec	242	xrealloc	bufdata = xrealloc(
+src/cmd/entries/set_buffer.rs	cmd_set_buffer_exec	267	free	free(bufname as *mut ::core::ffi::c_void);
+src/cmd/entries/set_buffer.rs	cmd_set_buffer_exec	271	free	free(bufdata as *mut ::core::ffi::c_void);
+src/cmd/entries/set_buffer.rs	cmd_set_buffer_exec	272	free	free(bufname as *mut ::core::ffi::c_void);
+src/cmd/entries/set_buffer.rs	cmd_set_buffer_exec	273	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/set_environment.rs	cmd_set_environment_exec	210	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_hook_event_exec	243	free	free(argument as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_hook_event_exec	291	free	free(argument as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_hook_monitor_exec	342	free	free(format as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_hook_monitor_exec	372	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_hook_monitor_exec	414	free	free(newvalue as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_hook_monitor_exec	415	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_hook_monitor_exec	416	free	free(name as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_hook_monitor_exec	417	free	free(format as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_hook_monitor_exec	421	free	free(newvalue as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_hook_monitor_exec	422	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_hook_monitor_exec	423	free	free(name as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_hook_monitor_exec	424	free	free(format as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	475	free	free(argument as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	518	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	586	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	615	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	656	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	683	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	701	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	724	free	free(argument as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	725	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	726	free	free(name as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	727	free	free(array_key as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	731	free	free(argument as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	732	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	733	free	free(name as *mut ::core::ffi::c_void);
+src/cmd/entries/set_option.rs	cmd_set_option_exec	734	free	free(array_key as *mut ::core::ffi::c_void);
+src/cmd/entries/show_environment.rs	cmd_show_environment_escape	108	xmalloc	ret = xmalloc(
+src/cmd/entries/show_environment.rs	cmd_show_environment_print	176	free	free(escaped as *mut ::core::ffi::c_void);
+src/cmd/entries/show_messages.rs	cmd_show_messages_exec	199	free	free(s as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_options_exec	221	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_options_exec	268	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_options_exec	313	free	free(name as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_options_exec	314	free	free(array_key as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_options_exec	315	free	free(argument as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_options_exec	319	free	free(name as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_options_exec	320	free	free(array_key as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_options_exec	321	free	free(argument as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_options_print	487	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_options_print	488	free	free(value as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_hooks_print_monitor	515	free	free(value as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_hooks_print_monitor	648	free	free(line as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_hooks_print_monitor	649	free	free(target as *mut ::core::ffi::c_void);
+src/cmd/entries/show_options.rs	cmd_show_hooks_print_monitor	650	free	free(value as *mut ::core::ffi::c_void);
+src/cmd/entries/source_file.rs	cmd_source_file_free_data	137	free	free(*(*cdata).files.offset(i as isize) as *mut ::core::ffi::c_void);
+src/cmd/entries/source_file.rs	cmd_source_file_free_data	140	free	free((*cdata).files as *mut ::core::ffi::c_void);
+src/cmd/entries/source_file.rs	cmd_source_file_free_data	144	free	free(cdata as *mut ::core::ffi::c_void);
+src/cmd/entries/source_file.rs	cmd_source_file_quote_for_glob	284	xmalloc	let mut quoted: *mut ::core::ffi::c_char = xmalloc(
+src/cmd/entries/source_file.rs	cmd_source_file_exec	369	xcalloc	cdata = xcalloc(
+src/cmd/entries/source_file.rs	cmd_source_file_exec	398	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/source_file.rs	cmd_source_file_exec	441	free	free(pattern as *mut ::core::ffi::c_void);
+src/cmd/entries/source_file.rs	cmd_source_file_exec	443	free	free(pattern as *mut ::core::ffi::c_void);
+src/cmd/entries/source_file.rs	cmd_source_file_exec	454	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/source_file.rs	cmd_source_file_exec	478	free	free(cwd as *mut ::core::ffi::c_void);
+src/cmd/entries/split_window.rs	cmd_split_window_exec	332	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/split_window.rs	cmd_split_window_exec	347	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/split_window.rs	cmd_split_window_exec	379	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/split_window.rs	cmd_split_window_exec	544	free	free(title as *mut ::core::ffi::c_void);
+src/cmd/entries/split_window.rs	cmd_split_window_exec	562	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/split_window.rs	cmd_split_window_exec	581	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/entries/split_window.rs	cmd_split_window_exec	647	free	free(cp as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_add	674	xmalloc	wc = xmalloc(::core::mem::size_of::<wait_channel>() as size_t) as *mut wait_channel;
+src/cmd/entries/wait_for.rs	cmd_wait_for_remove	701	free	free((*wc).name as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_remove	702	free	free(wc as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_remove_empty	716	free	free((*wc).name as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_remove_empty	717	free	free(wc as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_event_print	798	free	free(value as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_event_cb	825	free	free(expanded as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_event_free	842	free	free((*wei).name as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_event_free	843	free	free((*wei).filter as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_event_free	844	free	free(wei as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_event	874	xcalloc	wei = xcalloc(
+src/cmd/entries/wait_for.rs	cmd_wait_for_wake	1011	free	free(wi as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_wake	1032	free	free(wi as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_signal	1074	free	free(wi as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_wait	1111	xcalloc	wi = xcalloc(1 as size_t, ::core::mem::size_of::<wait_item>() as size_t) as *mut wait_item;
+src/cmd/entries/wait_for.rs	cmd_wait_for_lock	1136	xcalloc	wi = xcalloc(1 as size_t, ::core::mem::size_of::<wait_item>() as size_t) as *mut wait_item;
+src/cmd/entries/wait_for.rs	cmd_wait_for_unlock	1170	free	free(wi as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_flush	1217	free	free(wi as *mut ::core::ffi::c_void);
+src/cmd/entries/wait_for.rs	cmd_wait_for_flush	1233	free	free(wi as *mut ::core::ffi::c_void);
+src/cmd/find.rs	cmd_find_best_session_with_window	356	free	free(slist as *mut ::core::ffi::c_void);
+src/cmd/find.rs	cmd_find_best_session_with_window	360	free	free(slist as *mut ::core::ffi::c_void);
+src/cmd/find.rs	cmd_find_target	1677	free	free(copy as *mut ::core::ffi::c_void);
+src/cmd/find.rs	cmd_find_target	1689	free	free(copy as *mut ::core::ffi::c_void);
+src/cmd/find.rs	cmd_find_client	1809	free	free(copy as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_print_commands	331	free	free(s as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_free_argument	338	free	free((*arg).string as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_free_argument	348	free	free(arg as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_free_command	641	free	free(cmd as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_new_commands	646	xmalloc	xmalloc(::core::mem::size_of::<cmd_parse_commands>() as size_t) as *mut cmd_parse_commands;
+src/cmd/parse.rs	cmd_parse_free_commands	668	free	free(cmds as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_run_parser	692	free	free(scope as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_log_commands	848	free	free(s as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_log_commands	859	free	free(s as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_expand_alias	1036	free	free(alias as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_build_command	1490	free	free(cause as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_build_command	1504	free	free(values as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_build_commands	1619	free	free(s as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_and_insert	1722	free	free((*pr).error as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_and_append	1751	free	free((*pr).error as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yyparse	1918	free	free(yyss1 as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yyparse	2114	free	free(
+src/cmd/parse.rs	yyparse	2121	xmalloc	xmalloc(::core::mem::size_of::<cmd_parse_commands>() as size_t)
+src/cmd/parse.rs	yyparse	2129	xmalloc	xmalloc(::core::mem::size_of::<cmd_parse_commands>() as size_t)
+src/cmd/parse.rs	yyparse	2195	free	free(
+src/cmd/parse.rs	yyparse	2231	free	free(
+src/cmd/parse.rs	yyparse	2269	free	free(
+src/cmd/parse.rs	yyparse	2279	xmalloc	scope_1 = xmalloc(::core::mem::size_of::<cmd_parse_scope>() as size_t)
+src/cmd/parse.rs	yyparse	2285	free	free(
+src/cmd/parse.rs	yyparse	2307	xmalloc	scope_2 = xmalloc(::core::mem::size_of::<cmd_parse_scope>() as size_t)
+src/cmd/parse.rs	yyparse	2310	free	free((*ps_6).scope as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yyparse	2317	xmalloc	scope_3 = xmalloc(::core::mem::size_of::<cmd_parse_scope>() as size_t)
+src/cmd/parse.rs	yyparse	2323	free	free(
+src/cmd/parse.rs	yyparse	2327	free	free((*ps_7).scope as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yyparse	2332	free	free((*ps_8).scope as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yyparse	2558	free	free(
+src/cmd/parse.rs	yyparse	2606	xcalloc	yyval.command = xcalloc(
+src/cmd/parse.rs	yyparse	2620	xcalloc	yyval.command = xcalloc(
+src/cmd/parse.rs	yyparse	2629	xcalloc	arg = xcalloc(
+src/cmd/parse.rs	yyparse	2650	xcalloc	yyval.command = xcalloc(
+src/cmd/parse.rs	yyparse	2688	free	free(
+src/cmd/parse.rs	yyparse	2692	xcalloc	arg_0 = xcalloc(
+src/cmd/parse.rs	yyparse	2857	xcalloc	yyval.arguments = xcalloc(
+src/cmd/parse.rs	yyparse	2938	xcalloc	yyval.argument = xcalloc(
+src/cmd/parse.rs	yyparse	2948	xcalloc	yyval.argument = xcalloc(
+src/cmd/parse.rs	yyparse	2958	xcalloc	yyval.argument = xcalloc(
+src/cmd/parse.rs	yyparse	3008	free	free(
+src/cmd/parse.rs	yyparse	3073	free	free(yyss as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_from_arguments	3125	xcalloc	cmd = xcalloc(
+src/cmd/parse.rs	cmd_parse_from_arguments	3157	xcalloc	arg = xcalloc(
+src/cmd/parse.rs	cmd_parse_from_arguments	3168	free	free(copy as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	cmd_parse_from_arguments	3173	xcalloc	arg = xcalloc(
+src/cmd/parse.rs	cmd_parse_from_arguments	3192	xcalloc	cmd = xcalloc(
+src/cmd/parse.rs	cmd_parse_from_arguments	3208	free	free(cmd as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yyerror	3225	free	free(error as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yylex_append	3262	xrealloc	*buf = xrealloc(
+src/cmd/parse.rs	yylex_get_word	3330	xmalloc	buf = xmalloc(1 as size_t) as *mut ::core::ffi::c_char;
+src/cmd/parse.rs	yylex	3430	free	free(yylval.token as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yylex	3438	free	free(yylval.token as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yylex	3446	free	free(yylval.token as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yylex	3454	free	free(yylval.token as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yylex	3462	free	free(yylval.token as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yylex	3465	free	free(yylval.token as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yylex_format	3500	xmalloc	buf = xmalloc(1 as size_t) as *mut ::core::ffi::c_char;
+src/cmd/parse.rs	yylex_format	3553	free	free(buf as *mut ::core::ffi::c_void);
+src/cmd/parse.rs	yylex_token	3857	xmalloc	buf = xmalloc(1 as size_t) as *mut ::core::ffi::c_char;
+src/cmd/parse.rs	yylex_token	4038	free	free(buf as *mut ::core::ffi::c_void);
+src/cmd/queue.rs	cmdq_new	156	xcalloc	queue = xcalloc(1 as size_t, ::core::mem::size_of::<cmdq_list>() as size_t) as *mut cmdq_list;
+src/cmd/queue.rs	cmdq_free	166	free	free(queue as *mut ::core::ffi::c_void);
+src/cmd/queue.rs	cmdq_new_state	215	xcalloc	state = xcalloc(1 as size_t, ::core::mem::size_of::<cmdq_state>() as size_t) as *mut cmdq_state;
+src/cmd/queue.rs	cmdq_free_state	262	free	free(state as *mut ::core::ffi::c_void);
+src/cmd/queue.rs	cmdq_add_format	289	free	free(value as *mut ::core::ffi::c_void);
+src/cmd/queue.rs	cmdq_insert_hook	434	free	free(arguments as *mut ::core::ffi::c_void);
+src/cmd/queue.rs	cmdq_insert_hook	496	free	free(name as *mut ::core::ffi::c_void);
+src/cmd/queue.rs	cmdq_remove	516	free	free((*item).name as *mut ::core::ffi::c_void);
+src/cmd/queue.rs	cmdq_remove	517	free	free(item as *mut ::core::ffi::c_void);
+src/cmd/queue.rs	cmdq_get_command	573	xcalloc	xcalloc(1 as size_t, ::core::mem::size_of::<cmdq_item>() as size_t) as *mut cmdq_item;
+src/cmd/queue.rs	cmdq_add_message	666	free	free(user as *mut ::core::ffi::c_void);
+src/cmd/queue.rs	cmdq_add_message	673	free	free(tmp as *mut ::core::ffi::c_void);
+src/cmd/queue.rs	cmdq_fire_command	710	free	free(tmp as *mut ::core::ffi::c_void);
+src/cmd/queue.rs	cmdq_get_callback1	841	xcalloc	item = xcalloc(1 as size_t, ::core::mem::size_of::<cmdq_item>() as size_t) as *mut cmdq_item;
+src/cmd/queue.rs	cmdq_error_callback	869	free	free(error as *mut ::core::ffi::c_void);
+src/cmd/queue.rs	cmdq_print	1020	evbuffer_new	evb = evbuffer_new();
+src/cmd/queue.rs	cmdq_print	1027	evbuffer_free	evbuffer_free(evb);
+src/cmd/queue.rs	cmdq_error	1084	free	free(tmp as *mut ::core::ffi::c_void);
+src/cmd/queue.rs	cmdq_error	1124	free	free(msg as *mut ::core::ffi::c_void);
+src/control.rs	control_free_block	1140	free	free((*cb).line as *mut ::core::ffi::c_void);
+src/control.rs	control_free_block	1147	free	free(cb as *mut ::core::ffi::c_void);
+src/control.rs	control_add_pane	1187	xcalloc	cp = xcalloc(
+src/control.rs	control_set_window_size	1242	xcalloc	cw = xcalloc(
+src/control.rs	control_clear_window_size	1278	free	free(cw as *mut ::core::ffi::c_void);
+src/control.rs	control_reset_offsets	1331	free	free(cp as *mut ::core::ffi::c_void);
+src/control.rs	control_write_line	1491	free	free(line as *mut ::core::ffi::c_void);
+src/control.rs	control_write_line	1512	free	free(line as *mut ::core::ffi::c_void);
+src/control.rs	control_write_line	1515	xcalloc	cb = xcalloc(
+src/control.rs	control_flush_deferred	1550	free	free(cl as *mut ::core::ffi::c_void);
+src/control.rs	control_notify_write	1633	xcalloc	cl = xcalloc(
+src/control.rs	control_write_output	1718	xcalloc	cb = xcalloc(
+src/control.rs	control_error	1788	free	free(error as *mut ::core::ffi::c_void);
+src/control.rs	control_read_callback	1822	free	free(line as *mut ::core::ffi::c_void);
+src/control.rs	control_read_callback	1858	free	free(line as *mut ::core::ffi::c_void);
+src/control.rs	control_wait_exit	1880	evbuffer_new	evb = evbuffer_new();
+src/control.rs	control_wait_exit	1888	free	free(line as *mut ::core::ffi::c_void);
+src/control.rs	control_wait_exit	1891	free	free(line as *mut ::core::ffi::c_void);
+src/control.rs	control_wait_exit	1919	evbuffer_free	evbuffer_free(evb);
+src/control.rs	control_append_data	1966	evbuffer_new	message = evbuffer_new();
+src/control.rs	control_write_data	2040	evbuffer_free	evbuffer_free(message);
+src/control.rs	control_write_pending	2078	evbuffer_free	evbuffer_free(message);
+src/control.rs	control_start	2242	xcalloc	(*c).control_state = xcalloc(
+src/control.rs	control_start	2263	bufferevent_new	(*cs).read_event = bufferevent_new(
+src/control.rs	control_start	2289	bufferevent_new	(*cs).write_event = bufferevent_new(
+src/control.rs	control_stop	2385	free	free((*cl).line as *mut ::core::ffi::c_void);
+src/control.rs	control_stop	2386	free	free(cl as *mut ::core::ffi::c_void);
+src/control.rs	control_stop	2390	bufferevent_free	bufferevent_free((*cs).write_event);
+src/control.rs	control_stop	2392	bufferevent_free	bufferevent_free((*cs).read_event);
+src/control.rs	control_stop	2400	free	free(cw as *mut ::core::ffi::c_void);
+src/control.rs	control_stop	2412	free	free(cs as *mut ::core::ffi::c_void);
+src/control_notify.rs	control_pane_mode_changed_cb	125	free	free(value as *mut ::core::ffi::c_void);
+src/control_notify.rs	control_window_layout_changed_cb	169	free	free(cp as *mut ::core::ffi::c_void);
+src/environ.rs	environ_create	841	xcalloc	env = xcalloc(1 as size_t, ::core::mem::size_of::<environ>() as size_t) as *mut environ;
+src/environ.rs	environ_free	858	free	free((*envent).name as *mut ::core::ffi::c_void);
+src/environ.rs	environ_free	859	free	free((*envent).value as *mut ::core::ffi::c_void);
+src/environ.rs	environ_free	860	free	free(envent as *mut ::core::ffi::c_void);
+src/environ.rs	environ_free	863	free	free(env as *mut ::core::ffi::c_void);
+src/environ.rs	environ_set	925	free	free((*envent).value as *mut ::core::ffi::c_void);
+src/environ.rs	environ_set	928	xmalloc	envent = xmalloc(::core::mem::size_of::<environ_entry>() as size_t) as *mut environ_entry;
+src/environ.rs	environ_clear	943	free	free((*envent).value as *mut ::core::ffi::c_void);
+src/environ.rs	environ_clear	946	xmalloc	envent = xmalloc(::core::mem::size_of::<environ_entry>() as size_t) as *mut environ_entry;
+src/environ.rs	environ_put	976	free	free(name as *mut ::core::ffi::c_void);
+src/environ.rs	environ_unset	989	free	free((*envent).name as *mut ::core::ffi::c_void);
+src/environ.rs	environ_unset	990	free	free((*envent).value as *mut ::core::ffi::c_void);
+src/environ.rs	environ_unset	991	free	free(envent as *mut ::core::ffi::c_void);
+src/environ.rs	environ_push	1046	xcalloc	environ = xcalloc(
+src/environ.rs	environ_push	1062	free	free(new_environ as *mut ::core::ffi::c_void);
+src/environ.rs	environ_log	1088	free	free(prefix as *mut ::core::ffi::c_void);
+src/events.rs	events_free_sink	91	free	free((*es).name as *mut ::core::ffi::c_void);
+src/events.rs	events_free_sink	92	free	free(es as *mut ::core::ffi::c_void);
+src/events.rs	events_add_sink	115	xcalloc	es = xcalloc(1 as size_t, ::core::mem::size_of::<events_sink>() as size_t) as *mut events_sink;
+src/events_payload.rs	event_payload_free_value	639	free	free((*epi).c2rust_unnamed.string as *mut ::core::ffi::c_void);
+src/events_payload.rs	event_payload_set_item	687	free	free((*old).name as *mut ::core::ffi::c_void);
+src/events_payload.rs	event_payload_set_item	688	free	free(old as *mut ::core::ffi::c_void);
+src/events_payload.rs	event_payload_create	695	xcalloc	ep = xcalloc(
+src/events_payload.rs	event_payload_free	715	free	free((*epi).name as *mut ::core::ffi::c_void);
+src/events_payload.rs	event_payload_free	716	free	free(epi as *mut ::core::ffi::c_void);
+src/events_payload.rs	event_payload_free	720	free	free(ep as *mut ::core::ffi::c_void);
+src/events_payload.rs	event_payload_set_string	849	xcalloc	epi = xcalloc(
+src/events_payload.rs	event_payload_set_time	864	xcalloc	epi = xcalloc(
+src/events_payload.rs	event_payload_set_int	879	xcalloc	epi = xcalloc(
+src/events_payload.rs	event_payload_set_uint	894	xcalloc	epi = xcalloc(
+src/events_payload.rs	event_payload_set_client	910	xcalloc	epi = xcalloc(
+src/events_payload.rs	event_payload_set_session	929	xcalloc	epi = xcalloc(
+src/events_payload.rs	event_payload_set_window	948	xcalloc	epi = xcalloc(
+src/events_payload.rs	event_payload_set_pane	967	xcalloc	epi = xcalloc(
+src/events_payload.rs	event_payload_set_pointer	984	xcalloc	epi = xcalloc(
+src/events_payload.rs	event_payload_item_print	1097	evbuffer_new	evb = evbuffer_new();
+src/events_payload.rs	event_payload_item_print	1112	evbuffer_free	evbuffer_free(evb);
+src/events_payload.rs	event_payload_add_formats	1157	free	free(name as *mut ::core::ffi::c_void);
+src/events_payload.rs	event_payload_add_formats	1158	free	free(value as *mut ::core::ffi::c_void);
+src/events_payload.rs	event_payload_add_formats	1174	free	free(name as *mut ::core::ffi::c_void);
+src/events_payload.rs	event_payload_add_formats	1190	free	free(name as *mut ::core::ffi::c_void);
+src/events_payload.rs	event_payload_log	1232	evbuffer_new	evb = evbuffer_new();
+src/events_payload.rs	event_payload_log	1257	evbuffer_free	evbuffer_free(evb);
+src/events_payload.rs	event_payload_log	1258	free	free(prefix as *mut ::core::ffi::c_void);
+src/file.rs	file_get_path	725	free	free(path as *mut ::core::ffi::c_void);
+src/file.rs	file_create_with_peer	750	xcalloc	cf = xcalloc(1 as size_t, ::core::mem::size_of::<client_file>() as size_t) as *mut client_file;
+src/file.rs	file_create_with_peer	754	evbuffer_new	(*cf).buffer = evbuffer_new();
+src/file.rs	file_create_with_client	776	xcalloc	cf = xcalloc(1 as size_t, ::core::mem::size_of::<client_file>() as size_t) as *mut client_file;
+src/file.rs	file_create_with_client	780	evbuffer_new	(*cf).buffer = evbuffer_new();
+src/file.rs	file_free	800	evbuffer_free	evbuffer_free((*cf).buffer);
+src/file.rs	file_free	801	free	free((*cf).path as *mut ::core::ffi::c_void);
+src/file.rs	file_free	808	free	free(cf as *mut ::core::ffi::c_void);
+src/file.rs	file_fire_done	833	event_once	event_once(
+src/file.rs	file_write	1120	xmalloc	msg = xmalloc(msglen) as *mut msg_write_open;
+src/file.rs	file_write	1137	free	free(msg as *mut ::core::ffi::c_void);
+src/file.rs	file_write	1140	free	free(msg as *mut ::core::ffi::c_void);
+src/file.rs	file_read	1239	xmalloc	msg = xmalloc(msglen) as *mut msg_read_open;
+src/file.rs	file_read	1255	free	free(msg as *mut ::core::ffi::c_void);
+src/file.rs	file_read	1258	free	free(msg as *mut ::core::ffi::c_void);
+src/file.rs	file_push	1309	xmalloc	msg = xmalloc(::core::mem::size_of::<msg_write_data>() as size_t) as *mut msg_write_data;
+src/file.rs	file_push	1325	xrealloc	msg = xrealloc(msg as *mut ::core::ffi::c_void, msglen) as *mut msg_write_data;
+src/file.rs	file_push	1354	event_once	event_once(
+src/file.rs	file_push	1383	free	free(msg as *mut ::core::ffi::c_void);
+src/file.rs	file_write_finished	1413	bufferevent_free	bufferevent_free((*cf).event);
+src/file.rs	file_write_error_callback	1463	bufferevent_free	bufferevent_free((*cf).event);
+src/file.rs	file_write_open	1582	bufferevent_new	(*cf).event = bufferevent_new(
+src/file.rs	file_read_error_callback	1737	bufferevent_free	bufferevent_free((*cf).event);
+src/file.rs	file_read_callback	1751	xmalloc	msg = xmalloc(::core::mem::size_of::<msg_read_data>() as size_t) as *mut msg_read_data;
+src/file.rs	file_read_callback	1776	xrealloc	msg = xrealloc(msg as *mut ::core::ffi::c_void, msglen) as *mut msg_read_data;
+src/file.rs	file_read_callback	1792	free	free(msg as *mut ::core::ffi::c_void);
+src/file.rs	file_read_open	1874	bufferevent_new	(*cf).event = bufferevent_new(
+src/format/callbacks.rs	format_cb_session_attached_list	67	evbuffer_new	buffer = evbuffer_new();
+src/format/callbacks.rs	format_cb_session_attached_list	97	evbuffer_free	evbuffer_free(buffer);
+src/format/callbacks.rs	format_cb_window_linked_sessions_list	280	evbuffer_new	buffer = evbuffer_new();
+src/format/callbacks.rs	format_cb_window_linked_sessions_list	308	evbuffer_free	evbuffer_free(buffer);
+src/format/callbacks.rs	format_cb_window_active_sessions_list	348	evbuffer_new	buffer = evbuffer_new();
+src/format/callbacks.rs	format_cb_window_active_sessions_list	378	evbuffer_free	evbuffer_free(buffer);
+src/format/callbacks.rs	format_cb_window_active_clients_list	423	evbuffer_new	buffer = evbuffer_new();
+src/format/callbacks.rs	format_cb_window_active_clients_list	457	evbuffer_free	evbuffer_free(buffer);
+src/format/callbacks.rs	format_cb_start_command_list	524	xrealloc	buf = xrealloc(buf as *mut ::core::ffi::c_void, len) as *mut ::core::ffi::c_char;
+src/format/callbacks.rs	format_cb_start_command_list	531	free	free(s as *mut ::core::ffi::c_void);
+src/format/callbacks.rs	format_cb_current_command	558	free	free(cmd as *mut ::core::ffi::c_void);
+src/format/callbacks.rs	format_cb_current_command	561	free	free(cmd as *mut ::core::ffi::c_void);
+src/format/callbacks.rs	format_cb_current_command	566	free	free(cmd as *mut ::core::ffi::c_void);
+src/format/callbacks.rs	format_cb_pane_tabs	663	evbuffer_new	buffer = evbuffer_new();
+src/format/callbacks.rs	format_cb_pane_tabs	699	evbuffer_free	evbuffer_free(buffer);
+src/format/callbacks.rs	format_cb_session_group_list	796	evbuffer_new	buffer = evbuffer_new();
+src/format/callbacks.rs	format_cb_session_group_list	824	evbuffer_free	evbuffer_free(buffer);
+src/format/callbacks.rs	format_cb_session_group_attached_list	845	evbuffer_new	buffer = evbuffer_new();
+src/format/callbacks.rs	format_cb_session_group_attached_list	883	evbuffer_free	evbuffer_free(buffer);
+src/format/callbacks.rs	format_cb_config_files	1546	xrealloc	s = xrealloc(
+src/format/callbacks.rs	format_cb_pane_private_modes	2028	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_quote_shell	22	xmalloc	out = xmalloc(
+src/format/expression.rs	format_quote_shell_single	54	xmalloc	out = xmalloc(
+src/format/expression.rs	format_quote_style	97	xmalloc	out = xmalloc(
+src/format/expression.rs	format_find	391	free	free(array_key as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_find	456	free	free(found as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_find	499	free	free(saved as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_find	504	free	free(saved as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_find	509	free	free(saved as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_find	514	free	free(saved as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_find	519	free	free(saved as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_find	524	free	free(saved as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_unescape	562	xmalloc	out = xmalloc(n.wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
+src/format/expression.rs	format_unescape	566	free	free(out as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_strip	609	xmalloc	out = xmalloc(strlen(s).wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
+src/format/expression.rs	format_strip	613	free	free(out as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_choose	713	free	free(left0 as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_choose	715	free	free(right0 as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_free_modifiers	777	free	free(list as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_build_modifiers	903	xcalloc	argv = xcalloc(
+src/format/expression.rs	format_build_modifiers	915	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_build_modifiers	954	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_match_fuzzy	998	free	free(bs as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_match_fuzzy	1001	evbuffer_new	buffer = evbuffer_new();
+src/format/expression.rs	format_match_fuzzy	1036	evbuffer_free	evbuffer_free(buffer);
+src/format/expression.rs	format_match_fuzzy	1037	free	free(bs as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_bool_op_1	1165	free	free(expanded as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_bool_op_n	1201	free	free(raw as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_bool_op_n	1218	free	free(expanded as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_session_name	1240	free	free(name as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_session_name	1245	free	free(name as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_sessions	1299	evbuffer_new	buffer = evbuffer_new();
+src/format/expression.rs	format_loop_sessions	1351	free	free(expanded as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_sessions	1354	free	free(active as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_sessions	1355	free	free(all as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_sessions	1366	evbuffer_free	evbuffer_free(buffer);
+src/format/expression.rs	format_window_name	1388	free	free(name as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_window_name	1393	free	free(name as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_add_window_neighbour	1418	free	free(key as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_add_window_neighbour	1430	free	free(key as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_add_window_neighbour	1452	free	free(oval as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_add_window_neighbour	1453	free	free(prefixed as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_windows	1519	evbuffer_new	buffer = evbuffer_new();
+src/format/expression.rs	format_loop_windows	1614	free	free(expanded as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_windows	1617	free	free(active as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_windows	1618	free	free(all as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_windows	1629	evbuffer_free	evbuffer_free(buffer);
+src/format/expression.rs	format_loop_panes	1691	evbuffer_new	buffer = evbuffer_new();
+src/format/expression.rs	format_loop_panes	1738	free	free(expanded as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_panes	1741	free	free(active as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_panes	1742	free	free(all as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_panes	1753	evbuffer_free	evbuffer_free(buffer);
+src/format/expression.rs	format_loop_add_option	1815	free	free(s as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_add_option	1900	free	free(expanded as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_add_array_item	1960	free	free(s as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_add_array_item	2058	free	free(expanded as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_options	2109	evbuffer_new	buffer = evbuffer_new();
+src/format/expression.rs	format_loop_options	2147	evbuffer_free	evbuffer_free(buffer);
+src/format/expression.rs	format_loop_environ	2208	evbuffer_new	buffer = evbuffer_new();
+src/format/expression.rs	format_loop_environ	2290	free	free(expanded as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_environ	2304	evbuffer_free	evbuffer_free(buffer);
+src/format/expression.rs	format_loop_clients	2343	evbuffer_new	buffer = evbuffer_new();
+src/format/expression.rs	format_loop_clients	2380	free	free(expanded as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_loop_clients	2393	evbuffer_free	evbuffer_free(buffer);
+src/format/expression.rs	format_replace_expression	2669	free	free(right as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace_expression	2670	free	free(left as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace_expression	2680	free	free(right as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace_expression	2681	free	free(left as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_cycle_start_timer	2703	event_set	event_set(
+src/format/expression.rs	format_replace	3046	free	free(time_format as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3394	free	free(new as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3430	free	free(new as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3508	free	free(new as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3545	free	free(right as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3546	free	free(left as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3547	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3557	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3566	free	free(right as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3567	free	free(left as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3692	free	free(right as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3693	free	free(left as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3724	free	free(found as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3763	free	free(right as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3765	free	free(condition as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3766	free	free(found as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3776	free	free(condition as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3777	free	free(found as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3839	free	free(sub as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3841	free	free(copy0 as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3842	free	free(time_format as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3849	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3854	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3880	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3882	free	free(right as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3883	free	free(left as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3889	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3896	free	free(new as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3898	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3911	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3918	free	free(new as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3920	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3933	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3944	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3960	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	3975	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	4003	free	free(value as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	4004	free	free(sub as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	4006	free	free(copy0 as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_replace	4007	free	free(time_format as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_expand1	4082	xmalloc	buf = xmalloc(len) as *mut ::core::ffi::c_char;
+src/format/expression.rs	format_expand1	4149	free	free(name as *mut ::core::ffi::c_void);
+src/format/expression.rs	format_expand1	4162	free	free(out as *mut ::core::ffi::c_void);
+src/format/jobs.rs	format_job_update	22	free	free(line as *mut ::core::ffi::c_void);
+src/format/jobs.rs	format_job_update	29	free	free((*fj).out as *mut ::core::ffi::c_void);
+src/format/jobs.rs	format_job_complete	57	xmalloc	buf = xmalloc(len.wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
+src/format/jobs.rs	format_job_complete	78	free	free((*fj).out as *mut ::core::ffi::c_void);
+src/format/jobs.rs	format_job_complete	81	free	free(buf as *mut ::core::ffi::c_void);
+src/format/jobs.rs	format_job_get	143	xmalloc	xmalloc(::core::mem::size_of::<format_job_tree>() as size_t) as *mut format_job_tree;
+src/format/jobs.rs	format_job_get	152	xcalloc	xcalloc(1 as size_t, ::core::mem::size_of::<format_job>() as size_t) as *mut format_job;
+src/format/jobs.rs	format_job_get	166	free	free((*fj).expanded as *mut ::core::ffi::c_void);
+src/format/jobs.rs	format_job_get	193	free	free((*fj).out as *mut ::core::ffi::c_void);
+src/format/jobs.rs	format_job_get	209	free	free(expanded as *mut ::core::ffi::c_void);
+src/format/jobs.rs	format_job_tidy	241	free	free((*fj).expanded as *mut ::core::ffi::c_void);
+src/format/jobs.rs	format_job_tidy	242	free	free((*fj).cmd as *mut ::core::ffi::c_void);
+src/format/jobs.rs	format_job_tidy	243	free	free((*fj).out as *mut ::core::ffi::c_void);
+src/format/jobs.rs	format_job_tidy	244	free	free(fj as *mut ::core::ffi::c_void);
+src/format/jobs.rs	format_lost_client	266	free	free((*c).jobs as *mut ::core::ffi::c_void);
+src/format/tree.rs	format_create	1055	xcalloc	ft = xcalloc(1 as size_t, ::core::mem::size_of::<format_tree>() as size_t) as *mut format_tree;
+src/format/tree.rs	format_free	1079	free	free((*fe).value as *mut ::core::ffi::c_void);
+src/format/tree.rs	format_free	1080	free	free((*fe).key as *mut ::core::ffi::c_void);
+src/format/tree.rs	format_free	1081	free	free(fe as *mut ::core::ffi::c_void);
+src/format/tree.rs	format_free	1087	free	free(ft as *mut ::core::ffi::c_void);
+src/format/tree.rs	format_each	1171	free	free(value);
+src/format/tree.rs	format_add	1213	xmalloc	fe = xmalloc(::core::mem::size_of::<format_entry>() as size_t) as *mut format_entry;
+src/format/tree.rs	format_add	1217	free	free((*fe).key as *mut ::core::ffi::c_void);
+src/format/tree.rs	format_add	1218	free	free(fe as *mut ::core::ffi::c_void);
+src/format/tree.rs	format_add	1219	free	free((*fe_now).value as *mut ::core::ffi::c_void);
+src/format/tree.rs	format_add_tv	1235	xmalloc	fe = xmalloc(::core::mem::size_of::<format_entry>() as size_t) as *mut format_entry;
+src/format/tree.rs	format_add_tv	1239	free	free((*fe).key as *mut ::core::ffi::c_void);
+src/format/tree.rs	format_add_tv	1240	free	free(fe as *mut ::core::ffi::c_void);
+src/format/tree.rs	format_add_tv	1241	free	free((*fe_now).value as *mut ::core::ffi::c_void);
+src/format/tree.rs	format_add_cb	1256	xmalloc	fe = xmalloc(::core::mem::size_of::<format_entry>() as size_t) as *mut format_entry;
+src/format/tree.rs	format_add_cb	1260	free	free((*fe).key as *mut ::core::ffi::c_void);
+src/format/tree.rs	format_add_cb	1261	free	free(fe as *mut ::core::ffi::c_void);
+src/format/tree.rs	format_add_cb	1262	free	free((*fe_now).value as *mut ::core::ffi::c_void);
+src/format.rs	format_log1	406	free	free(s as *mut ::core::ffi::c_void);
+src/format.rs	format_grid_word	711	free	free(ud as *mut ::core::ffi::c_void);
+src/format.rs	format_grid_line	769	free	free(ud as *mut ::core::ffi::c_void);
+src/format_draw.rs	format_free_range	140	free	free(fr as *mut ::core::ffi::c_void);
+src/format_draw.rs	format_draw	1373	free	free(tmp as *mut ::core::ffi::c_void);
+src/format_draw.rs	format_draw	1382	free	free(tmp as *mut ::core::ffi::c_void);
+src/format_draw.rs	format_draw	1433	free	free(fr as *mut ::core::ffi::c_void);
+src/format_draw.rs	format_draw	1458	free	free(fr as *mut ::core::ffi::c_void);
+src/format_draw.rs	format_draw	1482	free	free(fr as *mut ::core::ffi::c_void);
+src/format_draw.rs	format_draw	1500	free	free(fr as *mut ::core::ffi::c_void);
+src/format_draw.rs	format_draw	1533	free	free(fr as *mut ::core::ffi::c_void);
+src/format_draw.rs	format_draw	1541	xcalloc	fr = xcalloc(
+src/format_draw.rs	format_draw	1565	free	free(fr as *mut ::core::ffi::c_void);
+src/format_draw.rs	format_draw	1755	xcalloc	sr = xcalloc(1 as size_t, ::core::mem::size_of::<style_range>() as size_t)
+src/format_draw.rs	format_trim_left	1938	xcalloc	copy = xcalloc(2 as size_t, strlen(expanded).wrapping_add(1 as size_t))
+src/format_draw.rs	format_trim_right	2060	xcalloc	copy = xcalloc(2 as size_t, strlen(expanded).wrapping_add(1 as size_t))
+src/hooks.rs	hooks_insert_one	179	free	free(s as *mut ::core::ffi::c_void);
+src/hooks.rs	hooks_parse	211	free	free(expanded as *mut ::core::ffi::c_void);
+src/hooks.rs	hooks_insert	292	free	free((*pr).error as *mut ::core::ffi::c_void);
+src/hooks.rs	hooks_add_event	438	xcalloc	he = xcalloc(1 as size_t, ::core::mem::size_of::<hooks_event>() as size_t) as *mut hooks_event;
+src/hooks.rs	hooks_monitor_free	539	free	free((*hm).format as *mut ::core::ffi::c_void);
+src/hooks.rs	hooks_monitor_free	540	free	free(hm as *mut ::core::ffi::c_void);
+src/hooks.rs	hooks_monitor_add	717	xcalloc	hm = xcalloc(
+src/input.rs	input_start_ground_timer	2125	event_del	event_del(&raw mut (*ictx).ground_timer);
+src/input.rs	input_init	2184	xcalloc	ictx = xcalloc(1 as size_t, ::core::mem::size_of::<input_ctx>() as size_t) as *mut input_ctx;
+src/input.rs	input_init	2190	xmalloc	(*ictx).input_buf = xmalloc(INPUT_BUF_START as size_t) as *mut u_char;
+src/input.rs	input_init	2191	evbuffer_new	(*ictx).since_ground = evbuffer_new();
+src/input.rs	input_init	2195	event_set	event_set(
+src/input.rs	input_init	2211	event_set	event_set(
+src/input.rs	input_free	2238	free	free((*ictx).param_list[i as usize].c2rust_unnamed.str_0 as *mut ::core::ffi::c_void);
+src/input.rs	input_free	2250	event_del	event_del(&raw mut (*ictx).request_timer);
+src/input.rs	input_free	2251	free	free((*ictx).input_buf as *mut ::core::ffi::c_void);
+src/input.rs	input_free	2252	evbuffer_free	evbuffer_free((*ictx).since_ground);
+src/input.rs	input_free	2253	event_del	event_del(&raw mut (*ictx).ground_timer);
+src/input.rs	input_free	2255	free	free(ictx as *mut ::core::ffi::c_void);
+src/input.rs	input_split	2424	free	free((*ictx).param_list[i as usize].c2rust_unnamed.str_0 as *mut ::core::ffi::c_void);
+src/input.rs	input_reply	2564	free	free(reply as *mut ::core::ffi::c_void);
+src/input.rs	input_clear	2568	event_del	event_del(&raw mut (*ictx).ground_timer);
+src/input.rs	input_ground	2579	event_del	event_del(&raw mut (*ictx).ground_timer);
+src/input.rs	input_ground	2586	xrealloc	(*ictx).input_buf = xrealloc(
+src/input.rs	input_input	2652	xrealloc	xrealloc((*ictx).input_buf as *mut ::core::ffi::c_void, available) as *mut u_char;
+src/input.rs	input_csi_dispatch_sgr_colon	4226	free	free(copy as *mut ::core::ffi::c_void);
+src/input.rs	input_csi_dispatch_sgr_colon	4235	free	free(copy as *mut ::core::ffi::c_void);
+src/input.rs	input_csi_dispatch_sgr_colon	4246	free	free(copy as *mut ::core::ffi::c_void);
+src/input.rs	input_osc_4	5047	free	free(copy as *mut ::core::ffi::c_void);
+src/input.rs	input_osc_8	5093	free	free(id as *mut ::core::ffi::c_void);
+src/input.rs	input_osc_8	5112	free	free(id as *mut ::core::ffi::c_void);
+src/input.rs	input_osc_8	5122	free	free(id as *mut ::core::ffi::c_void);
+src/input.rs	input_osc_133_exit_status	5384	free	free(copy as *mut ::core::ffi::c_void);
+src/input.rs	input_osc_133_exit_status	5393	free	free(copy as *mut ::core::ffi::c_void);
+src/input.rs	input_osc_52_parse	5680	xmalloc	*out = xmalloc(len) as *mut u_char;
+src/input.rs	input_osc_52_parse	5683	free	free(*out as *mut ::core::ffi::c_void);
+src/input.rs	input_osc_52	5719	free	free(out as *mut ::core::ffi::c_void);
+src/input.rs	input_osc_104	5797	free	free(copy as *mut ::core::ffi::c_void);
+src/input.rs	input_reply_clipboard	5821	xmalloc	out = xmalloc(outlen as size_t) as *mut ::core::ffi::c_char;
+src/input.rs	input_reply_clipboard	5829	free	free(out as *mut ::core::ffi::c_void);
+src/input.rs	input_reply_clipboard	5854	free	free(out as *mut ::core::ffi::c_void);
+src/input.rs	input_start_request_timer	5899	event_del	event_del(&raw mut (*ictx).request_timer);
+src/input.rs	input_make_request	5907	xcalloc	ir = xcalloc(
+src/input.rs	input_free_request	5941	free	free((*ir).data);
+src/input.rs	input_free_request	5942	free	free(ir as *mut ::core::ffi::c_void);
+src/input.rs	input_request_clipboard_reply	6045	xmalloc	copy = xmalloc((*cd).len) as *mut ::core::ffi::c_char;
+src/input_keys.rs	input_key_build	1245	xcalloc	new = xcalloc(
+src/job.rs	job_run	376	free	free(argv0 as *mut ::core::ffi::c_void);
+src/job.rs	job_run	377	xcalloc	job = xcalloc(1 as size_t, ::core::mem::size_of::<job>() as size_t) as *mut job;
+src/job.rs	job_run	411	bufferevent_new	(*job).event = bufferevent_new(
+src/job.rs	job_run	458	free	free(argv0 as *mut ::core::ffi::c_void);
+src/job.rs	job_transfer	484	free	free((*job).cmd as *mut ::core::ffi::c_void);
+src/job.rs	job_transfer	489	bufferevent_free	bufferevent_free((*job).event);
+src/job.rs	job_transfer	491	free	free(job as *mut ::core::ffi::c_void);
+src/job.rs	job_free	505	free	free((*job).cmd as *mut ::core::ffi::c_void);
+src/job.rs	job_free	513	bufferevent_free	bufferevent_free((*job).event);
+src/job.rs	job_free	518	free	free(job as *mut ::core::ffi::c_void);
+src/json.rs	json_create_tokens	1074	xmalloc	tokens = xmalloc(::core::mem::size_of::<json_tokens>() as size_t) as *mut json_tokens;
+src/json.rs	json_create_tokens	1077	xmalloc	(*tokens).toks = xmalloc(
+src/json.rs	json_destroy_tokens	1083	free	free((*tokens).toks as *mut ::core::ffi::c_void);
+src/json.rs	json_destroy_tokens	1085	free	free(tokens as *mut ::core::ffi::c_void);
+src/json.rs	json_add_token	1097	xrealloc	(*tokens).toks = xrealloc(
+src/json.rs	json_create_node	1117	xcalloc	node = xcalloc(1 as size_t, ::core::mem::size_of::<json_node>() as size_t) as *mut json_node;
+src/json.rs	json_destroy_node	1146	free	free((*node).c2rust_unnamed.str_0 as *mut ::core::ffi::c_void);
+src/json.rs	json_destroy_node	1174	free	free((*node).key as *mut ::core::ffi::c_void);
+src/json.rs	json_destroy_node	1176	free	free(node as *mut ::core::ffi::c_void);
+src/json.rs	json_parse_object	1418	free	free(fkey as *mut ::core::ffi::c_void);
+src/json.rs	json_parse_object	1424	free	free(fkey as *mut ::core::ffi::c_void);
+src/json.rs	json_to_string	1731	evbuffer_new	buffer = evbuffer_new();
+src/json.rs	json_to_string	1741	evbuffer_free	evbuffer_free(buffer);
+src/key_bindings.rs	key_bindings_free	1092	free	free((*bd).note as *mut ::core::ffi::c_void);
+src/key_bindings.rs	key_bindings_free	1093	free	free(bd as *mut ::core::ffi::c_void);
+src/key_bindings.rs	key_bindings_get_table	1126	xmalloc	table = xmalloc(::core::mem::size_of::<key_table>() as size_t) as *mut key_table;
+src/key_bindings.rs	key_bindings_unref_table	1168	free	free((*table).name as *mut ::core::ffi::c_void);
+src/key_bindings.rs	key_bindings_unref_table	1169	free	free(table as *mut ::core::ffi::c_void);
+src/key_bindings.rs	key_bindings_add	1240	free	free((*bd).note as *mut ::core::ffi::c_void);
+src/key_bindings.rs	key_bindings_add	1253	xcalloc	bd = xcalloc(1 as size_t, ::core::mem::size_of::<key_binding>() as size_t) as *mut key_binding;
+src/key_bindings.rs	key_bindings_add	1273	free	free(s as *mut ::core::ffi::c_void);
+src/key_bindings.rs	key_bindings_reset	1329	free	free((*bd).note as *mut ::core::ffi::c_void);
+src/key_bindings.rs	key_bindings_init_done	1387	xcalloc	new_bd = xcalloc(1 as size_t, ::core::mem::size_of::<key_binding>() as size_t)
+src/layout/core.rs	layout_create_cell	85	xcalloc	lc = xcalloc(1 as size_t, ::core::mem::size_of::<layout_cell>() as size_t) as *mut layout_cell;
+src/layout/core.rs	layout_free_cell	136	free	free(lc as *mut ::core::ffi::c_void);
+src/layout/custom.rs	from_slice	142	xmalloc	let data = xmalloc(value.len().wrapping_add(1)) as *mut u8;
+src/layout/custom.rs	drop	217	free	free(self.data as *mut ::core::ffi::c_void);
+src/layout/custom.rs	push	248	xcalloc	xcalloc(
+src/layout/custom.rs	drop	330	free	free(self.nodes as *mut ::core::ffi::c_void);
+src/layout/custom.rs	layout_string_init	578	xmalloc	(*ls).dat = xmalloc((*ls).capacity) as *mut ::core::ffi::c_char;
+src/layout/custom.rs	layout_string_free	583	free	free((*ls).dat as *mut ::core::ffi::c_void);
+src/layout/custom.rs	layout_string_write	618	free	free(s as *mut ::core::ffi::c_void);
+src/layout/custom.rs	layout_parse_init_ctx	630	xcalloc	(*pctx).cctxs = xcalloc(
+src/layout/custom.rs	layout_parse_free_ctx	638	free	free((*pctx).cctxs as *mut ::core::ffi::c_void);
+src/layout/custom.rs	parse_layout_description	1259	free	free(owned as *mut ::core::ffi::c_void);
+src/layout/custom.rs	parse_layout_description	1270	free	free(cause as *mut ::core::ffi::c_void);
+src/layout/custom.rs	parse_layout_description	1275	free	free(cause as *mut ::core::ffi::c_void);
+src/menu.rs	menu_add_item	180	free	free(s as *mut ::core::ffi::c_void);
+src/menu.rs	menu_add_item	222	free	free(trimmed as *mut ::core::ffi::c_void);
+src/menu.rs	menu_add_item	224	free	free(s as *mut ::core::ffi::c_void);
+src/menu.rs	menu_create	255	xcalloc	menu = xcalloc(1 as size_t, ::core::mem::size_of::<menu>() as size_t) as *mut menu;
+src/menu.rs	menu_free	268	free	free((*(*menu).items.offset(i as isize)).name as *mut ::core::ffi::c_void);
+src/menu.rs	menu_free	269	free	free((*(*menu).items.offset(i as isize)).command as *mut ::core::ffi::c_void);
+src/menu.rs	menu_free	272	free	free((*menu).items as *mut ::core::ffi::c_void);
+src/menu.rs	menu_free	273	free	free((*menu).title as *mut ::core::ffi::c_void);
+src/menu.rs	menu_free	274	free	free(menu as *mut ::core::ffi::c_void);
+src/menu.rs	menu_free_data	433	free	free((*md).style as *mut ::core::ffi::c_void);
+src/menu.rs	menu_free_data	434	free	free((*md).selected_style as *mut ::core::ffi::c_void);
+src/menu.rs	menu_free_data	435	free	free((*md).border_style as *mut ::core::ffi::c_void);
+src/menu.rs	menu_free_data	436	free	free(md as *mut ::core::ffi::c_void);
+src/menu.rs	menu_key	2124	free	free(error as *mut ::core::ffi::c_void);
+src/menu.rs	menu_display	2210	xcalloc	md = xcalloc(1 as size_t, ::core::mem::size_of::<menu_data>() as size_t) as *mut menu_data;
+src/mode_tree.rs	mode_tree_free_item	291	free	free((*mti).name as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_free_item	292	free	free((*mti).text as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_free_item	293	free	free((*mti).keystr as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_free_item	294	free	free(mti as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_clear_lines	323	free	free((*mtd).line_list as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_start	665	xcalloc	mtd = xcalloc(
+src/mode_tree.rs	mode_tree_remove_ref	813	free	free(mtd as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_free	826	free	free((*mtd).search as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_free	827	free	free((*mtd).filter as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_add	866	xcalloc	mti = xcalloc(
+src/mode_tree.rs	mode_tree_draw	1348	free	free(text as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_draw	1349	free	free(prefix as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_draw	1477	free	free(text as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_prompt_free_callback	1603	free	free(mtp as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_set_prompt	1677	xcalloc	mtp = xcalloc(
+src/mode_tree.rs	mode_tree_search_callback	1878	free	free((*mtd).search as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_filter_callback	1903	free	free((*mtd).filter as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_clear_filter	1920	free	free((*mtd).filter as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_menu_callback	1941	free	free(mtm as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_display_menu	1981	free	free(title as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_display_menu	1982	xmalloc	mtm = xmalloc(::core::mem::size_of::<mode_tree_menu>() as size_t) as *mut mode_tree_menu;
+src/mode_tree.rs	mode_tree_display_menu	2024	free	free(mtm as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_draw_help_line	2042	free	free(replaced as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_draw_help_line	2064	free	free(expanded as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_run_command	2683	free	free(error as *mut ::core::ffi::c_void);
+src/mode_tree.rs	mode_tree_run_command	2687	free	free(command as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_free_item	1641	free	free((*mp).last as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_free_item	1642	free	free(mp as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_free_item	1651	free	free((*mw).last as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_free_item	1652	free	free(mw as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_free_item	1655	free	free((*me).last as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_free_item	1657	free	free((*me).name as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_free_item	1658	free	free((*me).format as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_free_item	1659	free	free(me as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_check_value	1723	free	free(value as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_check_value	1729	free	free(*last as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_check_pane	1786	xcalloc	mp = xcalloc(
+src/monitor.rs	monitor_check_all_panes_one	1826	xcalloc	mp = xcalloc(
+src/monitor.rs	monitor_sweep_all_panes	1847	free	free((*mp).last as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_sweep_all_panes	1848	free	free(mp as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_check_window	1887	xcalloc	mw = xcalloc(
+src/monitor.rs	monitor_check_all_windows_one	1935	xcalloc	mw = xcalloc(
+src/monitor.rs	monitor_sweep_all_windows	1964	free	free((*mw).last as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_sweep_all_windows	1965	free	free(mw as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_create	2159	xcalloc	ms = xcalloc(1 as size_t, ::core::mem::size_of::<monitor_set>() as size_t) as *mut monitor_set;
+src/monitor.rs	monitor_destroy	2199	event_del	event_del(&raw mut (*ms).timer);
+src/monitor.rs	monitor_destroy	2215	free	free(ms as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_parse	2281	free	free(copy as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_parse	2287	free	free(copy as *mut ::core::ffi::c_void);
+src/monitor.rs	monitor_add	2330	xcalloc	me = xcalloc(
+src/monitor.rs	monitor_add	2343	event_set	event_set(
+src/monitor.rs	monitor_remove	2400	event_del	event_del(&raw mut (*ms).timer);
+src/names.rs	check_window_name	148	event_set	event_set(
+src/names.rs	check_window_name	194	event_del	event_del(&raw mut (*w).name_event);
+src/names.rs	check_window_name	215	free	free(name as *mut ::core::ffi::c_void);
+src/names.rs	default_window_name	230	free	free(cmd as *mut ::core::ffi::c_void);
+src/names.rs	parse_window_name	307	free	free(copy as *mut ::core::ffi::c_void);
+src/options.rs	options_value_free	1214	free	free((*ov).string as *mut ::core::ffi::c_void);
+src/options.rs	options_create	1298	xcalloc	oo = xcalloc(1 as size_t, ::core::mem::size_of::<options>() as size_t) as *mut options;
+src/options.rs	options_free	1315	free	free(oo as *mut ::core::ffi::c_void);
+src/options.rs	options_default	1473	free	free((*pr).error as *mut ::core::ffi::c_void);
+src/options.rs	options_add	1535	xcalloc	o = xcalloc(
+src/options.rs	options_remove	1555	free	free((*o).name as *mut ::core::ffi::c_void);
+src/options.rs	options_remove	1556	free	free(o as *mut ::core::ffi::c_void);
+src/options.rs	options_array_new	1622	xcalloc	a = xcalloc(
+src/options.rs	options_array_free	1633	free	free((*a).key as *mut ::core::ffi::c_void);
+src/options.rs	options_array_free	1634	free	free(a as *mut ::core::ffi::c_void);
+src/options.rs	options_array_get	1667	free	free(new_key as *mut ::core::ffi::c_void);
+src/options.rs	options_array_getv	1685	free	free(key as *mut ::core::ffi::c_void);
+src/options.rs	options_array_set	1723	free	free(new_key as *mut ::core::ffi::c_void);
+src/options.rs	options_array_set	1736	free	free((*pr).error as *mut ::core::ffi::c_void);
+src/options.rs	options_array_set	1738	free	free(new_key as *mut ::core::ffi::c_void);
+src/options.rs	options_array_set	1750	free	free(new_key as *mut ::core::ffi::c_void);
+src/options.rs	options_array_set	1774	free	free(new_key as *mut ::core::ffi::c_void);
+src/options.rs	options_array_set	1787	free	free(new_key as *mut ::core::ffi::c_void);
+src/options.rs	options_array_set	1797	free	free(new_key as *mut ::core::ffi::c_void);
+src/options.rs	options_array_set	1803	free	free(new_key as *mut ::core::ffi::c_void);
+src/options.rs	options_array_assign	1888	free	free(copy as *mut ::core::ffi::c_void);
+src/options.rs	options_array_assign	1892	free	free(copy as *mut ::core::ffi::c_void);
+src/options.rs	options_to_string	1957	free	free(last as *mut ::core::ffi::c_void);
+src/options.rs	options_to_string	1958	free	free(next as *mut ::core::ffi::c_void);
+src/options.rs	options_to_string	1973	free	free(new_key as *mut ::core::ffi::c_void);
+src/options.rs	options_parse	1995	free	free(copy as *mut ::core::ffi::c_void);
+src/options.rs	options_parse	2009	free	free(raw as *mut ::core::ffi::c_void);
+src/options.rs	options_parse	2011	free	free(copy as *mut ::core::ffi::c_void);
+src/options.rs	options_parse_get	2037	free	free(name as *mut ::core::ffi::c_void);
+src/options.rs	options_parse_get	2039	free	free(*key as *mut ::core::ffi::c_void);
+src/options.rs	options_match_command	2118	free	free(parsed as *mut ::core::ffi::c_void);
+src/options.rs	options_match_command	2123	free	free(parsed as *mut ::core::ffi::c_void);
+src/options.rs	options_match_command	2124	free	free(*key as *mut ::core::ffi::c_void);
+src/options.rs	options_match_command	2130	free	free(parsed as *mut ::core::ffi::c_void);
+src/options.rs	options_match_command	2131	free	free(*key as *mut ::core::ffi::c_void);
+src/options.rs	options_match_get	2158	free	free(name as *mut ::core::ffi::c_void);
+src/options.rs	options_match_get	2160	free	free(*key as *mut ::core::ffi::c_void);
+src/options.rs	options_set_string	2281	free	free(s as *mut ::core::ffi::c_void);
+src/options.rs	options_set_string	2302	free	free((*o).value.string as *mut ::core::ffi::c_void);
+src/options.rs	options_string_to_style	2618	free	free(expanded as *mut ::core::ffi::c_void);
+src/options.rs	options_from_string	2864	free	free(old as *mut ::core::ffi::c_void);
+src/options.rs	options_from_string	2867	free	free(old as *mut ::core::ffi::c_void);
+src/osdep_linux.rs	osdep_get_name	40	free	free(path as *mut ::core::ffi::c_void);
+src/osdep_linux.rs	osdep_get_name	43	free	free(path as *mut ::core::ffi::c_void);
+src/osdep_linux.rs	osdep_get_name	54	xrealloc	buf = xrealloc(
+src/osdep_linux.rs	osdep_get_cwd	89	free	free(path as *mut ::core::ffi::c_void);
+src/osdep_linux.rs	osdep_get_cwd	103	free	free(path as *mut ::core::ffi::c_void);
+src/popup.rs	popup_free	160	free	free((*pd).r.ranges as *mut ::core::ffi::c_void);
+src/popup.rs	popup_free	163	free	free((*pd).title as *mut ::core::ffi::c_void);
+src/popup.rs	popup_free	164	free	free((*pd).style as *mut ::core::ffi::c_void);
+src/popup.rs	popup_free	165	free	free((*pd).border_style as *mut ::core::ffi::c_void);
+src/popup.rs	popup_free	166	free	free(pd as *mut ::core::ffi::c_void);
+src/popup.rs	popup_modify	903	free	free((*pd).title as *mut ::core::ffi::c_void);
+src/popup.rs	popup_modify	908	free	free((*pd).border_style as *mut ::core::ffi::c_void);
+src/popup.rs	popup_modify	919	free	free((*pd).style as *mut ::core::ffi::c_void);
+src/popup.rs	popup_display	1044	xcalloc	pd = xcalloc(1 as size_t, ::core::mem::size_of::<popup_data>() as size_t) as *mut popup_data;
+src/proc.rs	proc_update_event	154	event_del	event_del(&raw mut (*peer).event);
+src/proc.rs	proc_update_event	159	event_set	event_set(
+src/proc.rs	proc_start	261	xcalloc	tp = xcalloc(1 as size_t, ::core::mem::size_of::<tmuxproc>() as size_t) as *mut tmuxproc;
+src/proc.rs	proc_set_signals	326	event_set	event_set(
+src/proc.rs	proc_set_signals	341	event_set	event_set(
+src/proc.rs	proc_set_signals	356	event_set	event_set(
+src/proc.rs	proc_set_signals	371	event_set	event_set(
+src/proc.rs	proc_set_signals	386	event_set	event_set(
+src/proc.rs	proc_set_signals	401	event_set	event_set(
+src/proc.rs	proc_set_signals	416	event_set	event_set(
+src/proc.rs	proc_set_signals	431	event_set	event_set(
+src/proc.rs	proc_clear_signals	468	event_del	event_del(&raw mut (*tp).ev_sigint);
+src/proc.rs	proc_clear_signals	469	event_del	event_del(&raw mut (*tp).ev_sighup);
+src/proc.rs	proc_clear_signals	470	event_del	event_del(&raw mut (*tp).ev_sigchld);
+src/proc.rs	proc_clear_signals	471	event_del	event_del(&raw mut (*tp).ev_sigcont);
+src/proc.rs	proc_clear_signals	472	event_del	event_del(&raw mut (*tp).ev_sigterm);
+src/proc.rs	proc_clear_signals	473	event_del	event_del(&raw mut (*tp).ev_sigusr1);
+src/proc.rs	proc_clear_signals	474	event_del	event_del(&raw mut (*tp).ev_sigusr2);
+src/proc.rs	proc_clear_signals	475	event_del	event_del(&raw mut (*tp).ev_sigwinch);
+src/proc.rs	proc_add_peer	497	xcalloc	peer = xcalloc(1 as size_t, ::core::mem::size_of::<tmuxpeer>() as size_t) as *mut tmuxpeer;
+src/proc.rs	proc_add_peer	505	event_set	event_set(
+src/proc.rs	proc_remove_peer	548	event_del	event_del(&raw mut (*peer).event);
+src/proc.rs	proc_remove_peer	551	free	free(peer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_create	318	xcalloc	pr = xcalloc(1 as size_t, ::core::mem::size_of::<prompt>() as size_t) as *mut prompt;
+src/prompt.rs	prompt_create	353	free	free(tmp as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_free	389	free	free((*pr).message_format as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_free	390	free	free((*pr).style_str as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_free	391	free	free((*pr).command_style_str as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_free	392	free	free((*pr).word_separators as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_free	393	free	free((*pr).last as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_free	394	free	free((*pr).string as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_free	395	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_free	396	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_free	398	free	free(pr as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_incremental_start	435	free	free(cp as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_incremental_start	436	free	free(tmp as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_update	462	free	free((*pr).string as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_update	467	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_update	475	free	free(tmp as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_draw_complete	616	free	free(ud as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_format_tree	643	free	free(tmp as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_expand1	685	free	free(prompt as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_effective_style	709	free	free(expanded as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_layout	747	free	free(local as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_layout	817	free	free(local as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_mouse_complete	871	free	free(replace as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_draw	1044	free	free(expanded as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_mouse	1105	free	free(expanded as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_paste	1420	free	free(ud as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_replace_complete	1530	free	free(allocated as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_check_move	1688	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_check_move	1691	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	1747	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	1843	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	1857	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	1894	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	1895	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	2042	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2060	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2150	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2205	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2219	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2256	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2257	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	2404	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2422	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2512	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2567	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2581	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2618	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2619	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	2766	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2784	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2874	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2929	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2943	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2980	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	2981	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	3128	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3146	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3236	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3291	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3305	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3342	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3343	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	3490	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3508	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3598	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3653	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3667	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3704	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3705	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	3852	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3870	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	3960	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4015	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4029	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4066	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4067	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	4214	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4232	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4322	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4377	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4391	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4428	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4429	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	4576	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4594	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4684	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4739	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4753	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4790	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4791	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	4938	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	4956	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5046	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5101	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5115	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5152	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5153	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	5300	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5318	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5408	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5463	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5477	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5514	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5515	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	5662	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5680	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5770	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5825	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5839	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5876	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	5877	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	6024	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6042	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6132	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6187	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6201	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6238	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6239	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	6386	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6404	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6494	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6549	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6563	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6600	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6601	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	6748	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6766	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6856	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6911	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6925	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6962	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	6963	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	7110	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7128	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7218	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7273	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7287	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7324	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7325	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	7472	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7490	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7580	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7635	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7649	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7686	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7687	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	7834	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7852	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7942	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	7997	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8011	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8048	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8049	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	8196	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8214	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8304	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8359	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8373	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8410	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8411	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	8558	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8576	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8666	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8721	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8735	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8772	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8773	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	8920	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	8938	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9028	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9083	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9097	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9134	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9135	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	9282	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9300	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9390	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9445	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9459	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9496	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9497	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	9644	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9662	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9752	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9807	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9821	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9858	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	9859	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	10006	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10024	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10114	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10169	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10183	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10220	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10221	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	10368	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10386	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10476	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10531	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10545	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10582	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10583	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	10730	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10748	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10838	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10893	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10907	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10944	free	free((*pr).copied as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	10945	xcalloc	(*pr).copied = xcalloc(
+src/prompt.rs	prompt_key	11092	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	11110	free	free((*pr).buffer as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	11200	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	11276	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	11297	free	free(cp as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_key	11298	free	free(s as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_complete_commands	11366	free	free(tmp as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_clear_complete	11415	free	free(*(*pr).complete_list.offset(i as isize) as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_clear_complete	11418	free	free((*pr).complete_list as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_clear_complete	11421	free	free((*pr).complete_display as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_store_complete	11444	free	free(display as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_complete	11469	free	free(list as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_complete	11503	free	free(out as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_complete	11509	free	free(*list.offset(i as isize) as *mut ::core::ffi::c_void);
+src/prompt.rs	prompt_complete	11512	free	free(list as *mut ::core::ffi::c_void);
+src/screen.rs	screen_free_titles	99	free	free((*title_entry).text as *mut ::core::ffi::c_void);
+src/screen.rs	screen_free_titles	100	free	free(title_entry as *mut ::core::ffi::c_void);
+src/screen.rs	screen_free_titles	102	free	free((*s).titles as *mut ::core::ffi::c_void);
+src/screen.rs	screen_free	174	free	free((*s).sel as *mut ::core::ffi::c_void);
+src/screen.rs	screen_free	175	free	free((*s).tabs as *mut ::core::ffi::c_void);
+src/screen.rs	screen_free	176	free	free((*s).path as *mut ::core::ffi::c_void);
+src/screen.rs	screen_free	177	free	free((*s).title as *mut ::core::ffi::c_void);
+src/screen.rs	screen_reset_tabs	193	free	free((*s).tabs as *mut ::core::ffi::c_void);
+src/screen.rs	screen_set_title	299	free	free((*s).title as *mut ::core::ffi::c_void);
+src/screen.rs	screen_set_path	314	free	free((*s).path as *mut ::core::ffi::c_void);
+src/screen.rs	screen_push_title	328	free	free((*title_entry).text as *mut ::core::ffi::c_void);
+src/screen.rs	screen_push_title	335	free	free(title_entry as *mut ::core::ffi::c_void);
+src/screen.rs	screen_push_title	340	xmalloc	xmalloc(::core::mem::size_of::<screen_titles>() as size_t) as *mut screen_titles;
+src/screen.rs	screen_push_title	345	xmalloc	xmalloc(::core::mem::size_of::<screen_title_entry>() as size_t) as *mut screen_title_entry;
+src/screen.rs	screen_pop_title	370	free	free((*s).title as *mut ::core::ffi::c_void);
+src/screen.rs	screen_pop_title	378	free	free(title_entry as *mut ::core::ffi::c_void);
+src/screen.rs	screen_set_selection	553	xcalloc	xcalloc(1 as size_t, ::core::mem::size_of::<screen_sel>() as size_t) as *mut screen_sel;
+src/screen.rs	screen_clear_selection	571	free	free((*s).sel as *mut ::core::ffi::c_void);
+src/screen.rs	screen_print	1030	xmalloc	buf = xmalloc(len) as *mut ::core::ffi::c_char;
+src/screen_redraw.rs	redraw_make_scene	1166	xcalloc	scene = xcalloc(
+src/screen_redraw.rs	redraw_make_scene	1172	xcalloc	(*scene).lines = xcalloc(
+src/screen_redraw.rs	redraw_make_scene	1207	xcalloc	span = xcalloc(1 as size_t, ::core::mem::size_of::<redraw_span>() as size_t)
+src/screen_redraw.rs	redraw_free_scene	1253	free	free(span as *mut ::core::ffi::c_void);
+src/screen_redraw.rs	redraw_free_scene	1260	free	free((*scene).lines as *mut ::core::ffi::c_void);
+src/screen_redraw.rs	redraw_free_scene	1261	free	free(scene as *mut ::core::ffi::c_void);
+src/screen_write.rs	screen_write_get_citem	166	xcalloc	return xcalloc(
+src/screen_write.rs	screen_write_set_cursor	221	event_set	event_set(
+src/screen_write.rs	screen_write_should_draw_lines	370	free	free(bs as *mut ::core::ffi::c_void);
+src/screen_write.rs	screen_write_make_list	486	xcalloc	(*s).write_list = xcalloc(
+src/screen_write.rs	screen_write_free_list	522	free	free((*cl).data as *mut ::core::ffi::c_void);
+src/screen_write.rs	screen_write_free_list	525	free	free((*s).write_list as *mut ::core::ffi::c_void);
+src/screen_write.rs	screen_write_strlen	703	free	free(msg as *mut ::core::ffi::c_void);
+src/screen_write.rs	screen_write_text	750	free	free(tmp as *mut ::core::ffi::c_void);
+src/screen_write.rs	screen_write_text	826	free	free(text as *mut ::core::ffi::c_void);
+src/screen_write.rs	screen_write_text	829	free	free(text as *mut ::core::ffi::c_void);
+src/screen_write.rs	screen_write_vnputs	958	free	free(msg as *mut ::core::ffi::c_void);
+src/screen_write.rs	screen_write_sync_callback	1605	event_del	event_del(&raw mut (*wp).sync_timer);
+src/screen_write.rs	screen_write_start_sync	1622	event_set	event_set(
+src/screen_write.rs	screen_write_stop_sync	1650	event_del	event_del(&raw mut (*wp).sync_timer);
+src/screen_write.rs	screen_write_clear_dirty	1998	free	free((*wp).sync_dirty as *mut ::core::ffi::c_void);
+src/screen_write.rs	screen_write_collect_add	4500	xmalloc	*fresh11 = xmalloc((*(*(*ctx).s).grid).sx as size_t) as *mut ::core::ffi::c_char;
+src/screen_write.rs	screen_write_alternateon	5315	event_del	event_del(&raw mut (*wp).resize_timer);
+src/server.rs	server_start	395	free	free(lockfile as *mut ::core::ffi::c_void);
+src/server.rs	server_start	412	event_set	event_set(
+src/server.rs	server_add_accept	645	event_del	event_del(&raw mut server_ev_accept);
+src/server.rs	server_add_accept	648	event_set	event_set(
+src/server.rs	server_add_accept	664	event_set	event_set(
+src/server.rs	server_signal	697	event_del	event_del(&raw mut server_ev_accept);
+src/server.rs	server_add_message	811	xcalloc	msg = xcalloc(
+src/server.rs	server_add_message	836	free	free((*msg).msg as *mut ::core::ffi::c_void);
+src/server.rs	server_add_message	843	free	free(msg as *mut ::core::ffi::c_void);
+src/server_acl.rs	server_acl_allow	734	xcalloc	entry = xcalloc(
+src/server_acl.rs	server_acl_deny	749	free	free(entry as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_set_overlay	263	event_del	event_del(&raw mut (*c).overlay_timer);
+src/server_client.rs	server_client_set_overlay	265	event_set	event_set(
+src/server_client.rs	server_client_clear_overlay	304	event_del	event_del(&raw mut (*c).overlay_timer);
+src/server_client.rs	server_client_create	479	xcalloc	c = xcalloc(1 as size_t, ::core::mem::size_of::<client>() as size_t) as *mut client;
+src/server_client.rs	server_client_create	518	event_set	event_set(
+src/server_client.rs	server_client_create	532	event_set	event_set(
+src/server_client.rs	server_client_create	546	event_set	event_set(
+src/server_client.rs	server_client_lost	888	free	free((*c).ttyname as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_lost	889	free	free((*c).clipboard_panes as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_lost	890	free	free((*c).term_name as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_lost	891	free	free((*c).term_type as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_lost	895	free	free((*c).title as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_lost	896	free	free((*c).path as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_lost	897	free	free((*c).cwd as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_lost	898	free	free((*c).exit_session as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_lost	899	free	free((*c).exit_message as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_lost	900	event_del	event_del(&raw mut (*c).repeat_timer);
+src/server_client.rs	server_client_lost	901	event_del	event_del(&raw mut (*c).click_timer);
+src/server_client.rs	server_client_lost	902	event_del	event_del(&raw mut (*c).exit_timer);
+src/server_client.rs	server_client_lost	904	event_del	event_del(&raw mut (*c).cycle_timer);
+src/server_client.rs	server_client_lost	907	free	free((*c).message_string as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_lost	909	event_del	event_del(&raw mut (*c).message_timer);
+src/server_client.rs	server_client_unref	938	event_once	event_once(
+src/server_client.rs	server_client_free	968	free	free((*c).name as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_free	969	free	free((*c).user as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_free	970	free	free(c as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_exec	1029	xmalloc	msg = xmalloc(cmdsize.wrapping_add(shellsize)) as *mut ::core::ffi::c_char;
+src/server_client.rs	server_client_exec	1047	free	free(msg as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_check_mouse	1423	event_del	event_del(&raw mut (*c).click_timer);
+src/server_client.rs	server_client_check_mouse	1437	event_del	event_del(&raw mut (*c).click_timer);
+src/server_client.rs	server_client_check_mouse	1761	event_del	event_del(&raw mut (*c).click_timer);
+src/server_client.rs	server_client_update_theme_colours	1942	free	free(expanded as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_key_callback	2462	event_del	event_del(&raw mut (*c).repeat_timer);
+src/server_client.rs	server_client_key_callback	2561	free	free((*event).buf as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_key_callback	2562	free	free(event as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_resize_timer	2902	event_del	event_del(&raw mut (*wp).resize_timer);
+src/server_client.rs	server_client_check_pane_resize	2916	event_set	event_set(
+src/server_client.rs	server_client_check_pane_resize	2965	free	free(first as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_click_timer	3323	xcalloc	xcalloc(1 as size_t, ::core::mem::size_of::<key_event>() as size_t) as *mut key_event;
+src/server_client.rs	server_client_click_timer	3331	free	free((*event).buf as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_click_timer	3332	free	free(event as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_check_exit	3410	event_del	event_del(&raw mut (*c).exit_timer);
+src/server_client.rs	server_client_check_exit	3421	xmalloc	data = xmalloc(size) as *mut ::core::ffi::c_char;
+src/server_client.rs	server_client_check_exit	3442	free	free(data as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_check_redraw	3583	event_set	event_set(
+src/server_client.rs	server_client_set_title	3701	free	free((*c).title as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_set_title	3705	free	free(title as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_set_path	3720	free	free((*c).path as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_dispatch_command	4018	free	free(values as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_dispatch_command	4069	free	free(cause as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_dispatch_identify	4271	free	free((*c).term_name as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_set_flags	4486	free	free(copy as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_print	4669	free	free(sanitized as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_print	4698	free	free(line as *mut ::core::ffi::c_void);
+src/server_client.rs	server_client_print	4727	free	free(msg as *mut ::core::ffi::c_void);
+src/server_fn.rs	server_destroy_pane	547	bufferevent_free	bufferevent_free((*wp).event);
+src/server_fn.rs	server_destroy_pane	553	bufferevent_free	bufferevent_free((*wp).pipe_event);
+src/server_fn.rs	server_destroy_pane	633	free	free(expanded as *mut ::core::ffi::c_void);
+src/session.rs	session_create	1304	xcalloc	s = xcalloc(1 as size_t, ::core::mem::size_of::<session>() as size_t) as *mut session;
+src/session.rs	session_create	1316	xmalloc	(*s).tio = xmalloc(::core::mem::size_of::<termios>() as size_t) as *mut termios;
+src/session.rs	session_create	1333	free	free((*s).name as *mut ::core::ffi::c_void);
+src/session.rs	session_remove_ref	1393	event_once	event_once(
+src/session.rs	session_free	1423	free	free((*s).name as *mut ::core::ffi::c_void);
+src/session.rs	session_free	1424	free	free(s as *mut ::core::ffi::c_void);
+src/session.rs	session_destroy	1450	free	free((*s).tio as *mut ::core::ffi::c_void);
+src/session.rs	session_destroy	1452	event_del	event_del(&raw mut (*s).lock_timer);
+src/session.rs	session_destroy	1466	free	free((*s).cwd as *mut ::core::ffi::c_void);
+src/session.rs	session_update_activity	1512	event_del	event_del(&raw mut (*s).lock_timer);
+src/session.rs	session_update_activity	1514	event_set	event_set(
+src/session.rs	session_group_new	1904	xcalloc	sg = xcalloc(
+src/session.rs	session_group_remove	1985	free	free((*sg).name as *mut ::core::ffi::c_void);
+src/session.rs	session_group_remove	1986	free	free(sg as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_fire_pane_created	243	free	free(cmd as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_window	422	free	free((*w).name as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_pane	552	free	free(cwd as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_pane	574	free	free(cwd as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_pane	578	bufferevent_free	bufferevent_free((*(*sc).wp0).event);
+src/spawn.rs	spawn_pane	647	free	free((*new_wp).cwd as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_pane	713	free	free((*new_wp).shell as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_pane	735	free	free(cp as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_pane	827	free	free(*cause as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_pane	940	free	free(cp as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_editor_free	981	free	free((*es).path as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_editor_free	982	free	free(es as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_editor_finish	1052	free	free(buf as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_editor	1132	xcalloc	es = xcalloc(
+src/spawn.rs	spawn_editor	1178	free	free(cmd as *mut ::core::ffi::c_void);
+src/spawn.rs	spawn_editor	1180	free	free(cause as *mut ::core::ffi::c_void);
+src/status.rs	status_timer_callback	135	event_del	event_del(&raw mut (*c).status.timer);
+src/status.rs	status_timer_start	161	event_del	event_del(&raw mut (*c).status.timer);
+src/status.rs	status_timer_start	163	event_set	event_set(
+src/status.rs	status_push_screen	282	xmalloc	(*sl).active = xmalloc(::core::mem::size_of::<screen>() as size_t) as *mut screen;
+src/status.rs	status_pop_screen	292	free	free((*sl).active as *mut ::core::ffi::c_void);
+src/status.rs	status_free	325	free	free((*sl).entries[i as usize].expanded as *mut ::core::ffi::c_void);
+src/status.rs	status_free	329	event_del	event_del(&raw mut (*sl).timer);
+src/status.rs	status_free	333	free	free((*sl).active as *mut ::core::ffi::c_void);
+src/status.rs	status_redraw	470	free	free(expanded as *mut ::core::ffi::c_void);
+src/status.rs	status_redraw	493	free	free((*sle).expanded as *mut ::core::ffi::c_void);
+src/status.rs	status_message_escape	524	xmalloc	out = xmalloc(strlen(s).wrapping_add(n).wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
+src/status.rs	status_message_set	569	free	free(s as *mut ::core::ffi::c_void);
+src/status.rs	status_message_set	591	event_del	event_del(&raw mut (*c).message_timer);
+src/status.rs	status_message_set	593	event_set	event_set(
+src/status.rs	status_message_clear	624	free	free((*c).message_string as *mut ::core::ffi::c_void);
+src/status.rs	status_message_redraw	804	free	free(msg as *mut ::core::ffi::c_void);
+src/status.rs	status_message_redraw	849	free	free(expanded as *mut ::core::ffi::c_void);
+src/status.rs	status_prompt_free_callback	878	free	free(spd as *mut ::core::ffi::c_void);
+src/status.rs	status_prompt_set	960	xcalloc	spd = xcalloc(
+src/style/colour.rs	colour_parseX11_impl	3817	free	free(copy as *mut ::core::ffi::c_void);
+src/style/colour.rs	colour_palette_clear	3833	free	free((*p).palette as *mut ::core::ffi::c_void);
+src/style/colour.rs	colour_palette_free	3840	free	free((*p).palette as *mut ::core::ffi::c_void);
+src/style/colour.rs	colour_palette_free	3842	free	free((*p).default_palette as *mut ::core::ffi::c_void);
+src/style/colour.rs	colour_palette_set	3885	xcalloc	(*p).palette = xcalloc(
+src/style/colour.rs	colour_palette_from_option	3918	free	free((*p).default_palette as *mut ::core::ffi::c_void);
+src/style/colour.rs	colour_palette_from_option	3924	xcalloc	(*p).default_palette = xcalloc(
+src/style/parsing.rs	style_set_scrollbar_style_from_option	1195	free	free(expanded as *mut ::core::ffi::c_void);
+src/style/parsing.rs	style_set_scrollbar_style_from_option	1197	free	free(style as *mut ::core::ffi::c_void);
+src/style/parsing.rs	style_ranges_free	1229	free	free(sr as *mut ::core::ffi::c_void);
+src/tty.rs	tty_read_callback	305	event_del	event_del(&raw mut (*tty).event_in);
+src/tty.rs	tty_open	429	event_set	event_set(
+src/tty.rs	tty_open	443	evbuffer_new	(*tty).in_0 = evbuffer_new();
+src/tty.rs	tty_open	447	event_set	event_set(
+src/tty.rs	tty_open	461	evbuffer_new	(*tty).out = evbuffer_new();
+src/tty.rs	tty_open	465	event_set	event_set(
+src/tty.rs	tty_open	479	event_set	event_set(
+src/tty.rs	tty_open	493	event_set	event_set(
+src/tty.rs	tty_start_start_timer	538	event_del	event_del(&raw mut (*tty).start_timer);
+src/tty.rs	tty_stop_tty	731	event_del	event_del(&raw mut (*tty).start_timer);
+src/tty.rs	tty_stop_tty	732	event_del	event_del(&raw mut (*tty).clipboard_timer);
+src/tty.rs	tty_stop_tty	733	event_del	event_del(&raw mut (*tty).timer);
+src/tty.rs	tty_stop_tty	735	event_del	event_del(&raw mut (*tty).event_in);
+src/tty.rs	tty_stop_tty	736	event_del	event_del(&raw mut (*tty).event_out);
+src/tty.rs	tty_close	825	event_del	event_del(&raw mut (*tty).key_timer);
+src/tty.rs	tty_close	829	evbuffer_free	evbuffer_free((*tty).in_0);
+src/tty.rs	tty_close	830	event_del	event_del(&raw mut (*tty).event_in);
+src/tty.rs	tty_close	831	evbuffer_free	evbuffer_free((*tty).out);
+src/tty.rs	tty_close	832	event_del	event_del(&raw mut (*tty).event_out);
+src/tty.rs	tty_free	841	free	free((*tty).r.ranges as *mut ::core::ffi::c_void);
+src/tty.rs	tty_set_selection	2669	xmalloc	encoded = xmalloc(size) as *mut ::core::ffi::c_char;
+src/tty.rs	tty_set_selection	2673	free	free(encoded as *mut ::core::ffi::c_void);
+src/tty_features.rs	tty_parse_features	532	free	free(copy as *mut ::core::ffi::c_void);
+src/tty_features.rs	tty_feature_present	616	free	free(copy as *mut ::core::ffi::c_void);
+src/tty_features.rs	tty_feature_present	619	free	free(copy as *mut ::core::ffi::c_void);
+src/tty_keys.rs	tty_keys_add1	1330	xcalloc	*tkp = xcalloc(1 as size_t, ::core::mem::size_of::<tty_key>() as size_t) as *mut tty_key;
+src/tty_keys.rs	tty_keys_free1	1452	free	free(tk as *mut ::core::ffi::c_void);
+src/tty_keys.rs	tty_keys_next	2143	event_del	event_del(&raw mut (*tty).key_timer);
+src/tty_keys.rs	tty_keys_next	2162	xcalloc	event = xcalloc(1 as size_t, ::core::mem::size_of::<key_event>() as size_t)
+src/tty_keys.rs	tty_keys_next	2170	xmalloc	(*event).buf = xmalloc(size) as *mut ::core::ffi::c_char;
+src/tty_keys.rs	tty_keys_next	2178	free	free((*event).buf as *mut ::core::ffi::c_void);
+src/tty_keys.rs	tty_keys_next	2179	free	free(event as *mut ::core::ffi::c_void);
+src/tty_keys.rs	tty_keys_next	2244	event_del	event_del(&raw mut (*tty).key_timer);
+src/tty_keys.rs	tty_keys_next	2246	event_set	event_set(
+src/tty_keys.rs	tty_keys_clipboard	2675	xmalloc	copy = xmalloc(end.wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
+src/tty_keys.rs	tty_keys_clipboard	2687	free	free(copy as *mut ::core::ffi::c_void);
+src/tty_keys.rs	tty_keys_clipboard	2690	xmalloc	out = xmalloc(needed) as *mut ::core::ffi::c_char;
+src/tty_keys.rs	tty_keys_clipboard	2693	free	free(out as *mut ::core::ffi::c_void);
+src/tty_keys.rs	tty_keys_clipboard	2694	free	free(copy as *mut ::core::ffi::c_void);
+src/tty_keys.rs	tty_keys_clipboard	2697	free	free(copy as *mut ::core::ffi::c_void);
+src/tty_keys.rs	tty_keys_clipboard	2719	event_del	event_del(&raw mut (*tty).clipboard_timer);
+src/tty_keys.rs	tty_keys_clipboard	2722	free	free(out as *mut ::core::ffi::c_void);
+src/tty_keys.rs	tty_keys_extended_device_attributes	3272	free	free((*c).term_type as *mut ::core::ffi::c_void);
+src/tty_term.rs	tty_term_apply	1163	free	free(value as *mut ::core::ffi::c_void);
+src/tty_term.rs	tty_term_apply	1211	free	free((*code).value.string as *mut ::core::ffi::c_void);
+src/tty_term.rs	tty_term_apply	1238	free	free(value as *mut ::core::ffi::c_void);
+src/tty_term.rs	tty_term_validate	1348	free	free((*code).value.string as *mut ::core::ffi::c_void);
+src/tty_term.rs	tty_term_create	1380	xcalloc	term = xcalloc(1 as size_t, ::core::mem::size_of::<tty_term>() as size_t) as *mut tty_term;
+src/tty_term.rs	tty_term_create	1383	xcalloc	(*term).codes = xcalloc(
+src/tty_term.rs	tty_term_free	1575	free	free((*(*term).codes.offset(i as isize)).value.string as *mut ::core::ffi::c_void);
+src/tty_term.rs	tty_term_free	1579	free	free((*term).codes as *mut ::core::ffi::c_void);
+src/tty_term.rs	tty_term_free	1584	free	free((*term).name as *mut ::core::ffi::c_void);
+src/tty_term.rs	tty_term_free	1585	free	free(term as *mut ::core::ffi::c_void);
+src/tty_term.rs	tty_term_free_list	1717	free	free(*caps.offset(i as isize) as *mut ::core::ffi::c_void);
+src/tty_term.rs	tty_term_free_list	1720	free	free(caps as *mut ::core::ffi::c_void);
+src/window.rs	winlink_add	2165	xcalloc	wl = xcalloc(1 as size_t, ::core::mem::size_of::<winlink>() as size_t) as *mut winlink;
+src/window.rs	winlink_remove	2210	free	free(wl as *mut ::core::ffi::c_void);
+src/window.rs	window_create	2424	xcalloc	w = xcalloc(1 as size_t, ::core::mem::size_of::<window>() as size_t) as *mut window;
+src/window.rs	window_destroy	2483	free	free((*w).old_layout as *mut ::core::ffi::c_void);
+src/window.rs	window_destroy	2487	event_del	event_del(&raw mut (*w).name_event);
+src/window.rs	window_destroy	2490	event_del	event_del(&raw mut (*w).alerts_timer);
+src/window.rs	window_destroy	2493	event_del	event_del(&raw mut (*w).offset_timer);
+src/window.rs	window_destroy	2496	free	free((*w).name as *mut ::core::ffi::c_void);
+src/window.rs	window_destroy	2497	free	free(w as *mut ::core::ffi::c_void);
+src/window.rs	window_set_name	2599	free	free((*w).name as *mut ::core::ffi::c_void);
+src/window.rs	window_set_name	2602	free	free(last as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_create	4098	xcalloc	wp = xcalloc(1 as size_t, ::core::mem::size_of::<window_pane>() as size_t) as *mut window_pane;
+src/window.rs	window_pane_create	4131	event_set	event_set(
+src/window.rs	window_pane_free_modes	4195	free	free(wme as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_destroy	4248	bufferevent_free	bufferevent_free((*wp).event);
+src/window.rs	window_pane_destroy	4258	bufferevent_free	bufferevent_free((*wp).pipe_event);
+src/window.rs	window_pane_destroy	4264	event_del	event_del(&raw mut (*wp).resize_timer);
+src/window.rs	window_pane_destroy	4267	event_del	event_del(&raw mut (*wp).sync_timer);
+src/window.rs	window_pane_destroy	4270	event_del	event_del(&raw mut (*wp).sb_auto_timer);
+src/window.rs	window_pane_free	4284	free	free((*wp).searchstr as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_free	4287	free	free((*wp).r.ranges as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_free	4289	free	free((*wp).cwd as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_free	4290	free	free((*wp).shell as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_free	4294	free	free((*wp).border_status_line.expanded as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_free	4295	free	free(wp as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_set_event	4352	bufferevent_new	(*wp).event = bufferevent_new(
+src/window.rs	window_pane_clear_resizes	4399	free	free(r as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_resize	4426	xmalloc	r = xmalloc(::core::mem::size_of::<window_pane_resize>() as size_t) as *mut window_pane_resize;
+src/window.rs	window_pane_set_mode	4535	xcalloc	wme = xcalloc(
+src/window.rs	window_pane_set_mode	4560	free	free(wme as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_reset_mode	4611	free	free(wme as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_prompt_free_callback	4685	free	free(wpp as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_set_prompt	4755	xcalloc	wpp = xcalloc(
+src/window.rs	window_pane_search	5140	free	free(line as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_search	5147	free	free(new as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_find_up	5270	free	free(list as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_find_down	5342	free	free(list as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_find_left	5404	free	free(list as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_find_right	5466	free	free(list as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_input_callback	5573	free	free(cdata as *mut ::core::ffi::c_void);
+src/window.rs	window_pane_start_input	5597	xmalloc	cdata = xmalloc(::core::mem::size_of::<window_pane_input_data>() as size_t)
+src/window.rs	window_pane_scrollbar_start_timer	5729	event_del	event_del(&raw mut (*wp).sb_auto_timer);
+src/window.rs	window_pane_scrollbar_show	5748	event_del	event_del(&raw mut (*wp).sb_auto_timer);
+src/window.rs	window_pane_scrollbar_hide	5759	event_del	event_del(&raw mut (*wp).sb_auto_timer);
+src/window_border.rs	window_set_fill_cell	214	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_border.rs	window_make_pane_status	491	free	free((*sle).expanded as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_add_item	273	xcalloc	*fresh1 = xcalloc(
+src/window_buffer.rs	window_buffer_free_item	281	free	free((*item).name as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_free_item	282	free	free(item as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_build	307	free	free((*data).item_list as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_build	341	free	free(cp as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_build	345	free	free(cp as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_build	364	free	free(text as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_draw	433	free	free(buf as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_get_key	628	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_init	676	xcalloc	data = xcalloc(
+src/window_buffer.rs	window_buffer_free	776	free	free((*data).item_list as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_free	777	free	free((*data).format as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_free	778	free	free((*data).key_format as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_free	779	free	free((*data).command as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_free	780	free	free(data as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_finish_edit	834	free	free((*ed).name as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_finish_edit	835	free	free(ed as *mut ::core::ffi::c_void);
+src/window_buffer.rs	window_buffer_start_edit	1024	xcalloc	ed = xcalloc(
+src/window_client.rs	window_client_add_item	287	xcalloc	*fresh2 = xcalloc(
+src/window_client.rs	window_client_free_item	296	free	free((*item).ttyname as *mut ::core::ffi::c_void);
+src/window_client.rs	window_client_free_item	297	free	free(item as *mut ::core::ffi::c_void);
+src/window_client.rs	window_client_build	318	free	free((*data).item_list as *mut ::core::ffi::c_void);
+src/window_client.rs	window_client_build	350	free	free(cp as *mut ::core::ffi::c_void);
+src/window_client.rs	window_client_build	353	free	free(cp as *mut ::core::ffi::c_void);
+src/window_client.rs	window_client_build	378	free	free(text as *mut ::core::ffi::c_void);
+src/window_client.rs	window_client_draw_info	464	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_client.rs	window_client_get_key	678	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_client.rs	window_client_init	730	xcalloc	data = xcalloc(
+src/window_client.rs	window_client_free	832	free	free((*data).item_list as *mut ::core::ffi::c_void);
+src/window_client.rs	window_client_free	833	free	free((*data).format as *mut ::core::ffi::c_void);
+src/window_client.rs	window_client_free	834	free	free((*data).key_format as *mut ::core::ffi::c_void);
+src/window_client.rs	window_client_free	835	free	free((*data).command as *mut ::core::ffi::c_void);
+src/window_client.rs	window_client_free	836	free	free(data as *mut ::core::ffi::c_void);
+src/window_clock.rs	window_clock_timer_callback	705	event_del	event_del(&raw mut (*data).timer);
+src/window_clock.rs	window_clock_init	725	xcalloc	data = xcalloc(
+src/window_clock.rs	window_clock_init	731	event_set	event_set(
+src/window_clock.rs	window_clock_free	754	event_del	event_del(&raw mut (*data).timer);
+src/window_clock.rs	window_clock_free	756	free	free(data as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_scroll_timer	398	event_del	event_del(&raw mut (*data).dragtimer);
+src/window_copy.rs	window_copy_clone_screen	423	xcalloc	dst = xcalloc(1 as size_t, ::core::mem::size_of::<screen>() as size_t) as *mut screen;
+src/window_copy.rs	window_copy_common_init	581	xcalloc	data = xcalloc(
+src/window_copy.rs	window_copy_common_init	616	event_set	event_set(
+src/window_copy.rs	window_copy_common_init	630	event_set	event_set(
+src/window_copy.rs	window_copy_view_init	729	xmalloc	(*data).backing = xmalloc(::core::mem::size_of::<screen>() as size_t) as *mut screen;
+src/window_copy.rs	window_copy_free	747	event_del	event_del(&raw mut (*data).dragtimer);
+src/window_copy.rs	window_copy_free	748	event_del	event_del(&raw mut (*data).refresh_timer);
+src/window_copy.rs	window_copy_free	749	free	free((*data).searchmark as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_free	750	free	free((*data).searchstr as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_free	751	free	free((*data).jumpchar as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_free	756	free	free((*data).backing as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_free	758	free	free(data as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_vadd	845	free	free(text as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_expand_search_string	1591	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_expand_search_string	1594	free	free((*data).searchstr as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_expand_search_string	1597	free	free((*data).searchstr as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_do_copy_end_of_line	1729	free	free(prefix as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_do_copy_end_of_line	1730	free	free(command as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_do_copy_end_of_line	1738	free	free(prefix as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_do_copy_end_of_line	1739	free	free(command as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_do_copy_line	1814	free	free(prefix as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_do_copy_line	1815	free	free(command as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_do_copy_line	1823	free	free(prefix as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_do_copy_line	1824	free	free(command as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cmd_copy_selection_no_clear	1867	free	free(prefix as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cmd_copy_pipe_no_clear	3144	free	free(command as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cmd_copy_pipe_no_clear	3145	free	free(prefix as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cmd_pipe_no_clear	3178	free	free(command as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cmd_jump_backward	3216	free	free((*data).jumpchar as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cmd_jump_forward	3234	free	free((*data).jumpchar as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cmd_jump_to_backward	3252	free	free((*data).jumpchar as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cmd_jump_to_forward	3270	free	free((*data).jumpchar as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cmd_search_backward_incremental	3434	free	free((*data).searchstr as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cmd_search_backward_incremental	3444	free	free((*data).searchstr as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cmd_search_forward_incremental	3501	free	free((*data).searchstr as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cmd_search_forward_incremental	3511	free	free((*data).searchstr as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_do_refresh	3535	free	free((*data).backing as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_refresh_stop	3618	event_del	event_del(&raw mut (*data).refresh_timer);
+src/window_copy.rs	window_copy_command	5505	free	free(error as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_search_lr_regex	5866	xmalloc	buf = xmalloc(size as size_t) as *mut ::core::ffi::c_char;
+src/window_copy.rs	window_copy_search_lr_regex	5909	free	free(buf as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_search_lr_regex	5913	free	free(buf as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_search_rl_regex	5937	xmalloc	buf = xmalloc(size as size_t) as *mut ::core::ffi::c_char;
+src/window_copy.rs	window_copy_search_rl_regex	5953	free	free(buf as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_search_rl_regex	5956	free	free(buf as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cellstring	6007	xmalloc	copy = xmalloc(ud.size as size_t) as *mut ::core::ffi::c_char;
+src/window_copy.rs	window_copy_stringify	6112	xrealloc	buf = xrealloc(buf as *mut ::core::ffi::c_void, bufsize) as *mut ::core::ffi::c_char;
+src/window_copy.rs	window_copy_stringify	6125	xrealloc	buf = xrealloc(buf as *mut ::core::ffi::c_void, bufsize) as *mut ::core::ffi::c_char;
+src/window_copy.rs	window_copy_stringify	6140	free	free(d as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cstrtocellpos	6176	free	free(cells as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cstrtocellpos	6255	free	free((*cells.offset(cell as isize)).d as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_cstrtocellpos	6259	free	free(cells as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_search_jump	6433	xmalloc	sbuf = xmalloc(ssize as size_t) as *mut ::core::ffi::c_char;
+src/window_copy.rs	window_copy_search_jump	6440	free	free(sbuf as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_search_jump	6443	free	free(sbuf as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_search	6671	free	free((*wp).searchstr as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_search_marks	7012	xmalloc	sbuf = xmalloc(ssize as size_t) as *mut ::core::ffi::c_char;
+src/window_copy.rs	window_copy_search_marks	7026	free	free(sbuf as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_search_marks	7027	free	free((*data).searchmark as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_search_marks	7031	free	free(sbuf as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_search_marks	7042	free	free((*data).searchmark as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_search_marks	7043	xcalloc	(*data).searchmark = xcalloc(sx as size_t, sy as size_t) as *mut u_char;
+src/window_copy.rs	window_copy_clear_marks	7133	free	free((*data).searchmark as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_match_at_cursor	7274	xrealloc	buf = xrealloc(
+src/window_copy.rs	window_copy_match_at_cursor	7281	xrealloc	buf = xrealloc(
+src/window_copy.rs	window_copy_write_line	7907	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_get_selection	8511	xmalloc	buf = xmalloc(1 as size_t) as *mut ::core::ffi::c_char;
+src/window_copy.rs	window_copy_get_selection	8583	free	free(buf as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_copy_buffer	8646	free	free(buf);
+src/window_copy.rs	window_copy_pipe	8694	free	free(buf);
+src/window_copy.rs	window_copy_append_selection	8774	xrealloc	buf = xrealloc(buf as *mut ::core::ffi::c_void, len.wrapping_add(bufsize))
+src/window_copy.rs	window_copy_append_selection	8795	free	free(buf as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_append_selection	8797	free	free(bufname as *mut ::core::ffi::c_void);
+src/window_copy.rs	window_copy_copy_line	8881	xrealloc	*buf = xrealloc(
+src/window_copy.rs	window_copy_copy_line	8896	xrealloc	*buf = xrealloc(
+src/window_copy.rs	window_copy_drag_update	10129	event_del	event_del(&raw mut (*data).dragtimer);
+src/window_copy.rs	window_copy_drag_release	10179	event_del	event_del(&raw mut (*data).dragtimer);
+src/window_customize.rs	window_customize_write_hook_fire	517	free	free(fire_time_string as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_write_hook_fire	520	free	free(fire_time_string as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_add_item	547	xcalloc	*fresh1 = xcalloc(
+src/window_customize.rs	window_customize_write_value	621	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_free_item	625	free	free((*item).table as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_free_item	626	free	free((*item).name as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_free_item	627	free	free((*item).array_key as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_free_item	628	free	free(item as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_copy_item	635	xcalloc	new_item = xcalloc(
+src/window_customize.rs	window_customize_finish_edit	660	free	free(ed as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_note_value	890	free	free((*bd).note as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_option_is_changed	952	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_option_is_changed	953	free	free(default_value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_option_is_changed	964	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_option_is_changed	965	free	free(default_value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_key_is_changed	994	free	free(cmd as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_key_is_changed	995	free	free(default_cmd as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_array	1061	free	free(text as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_array	1062	free	free(name as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_array	1063	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_option	1175	free	free(text as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_option	1200	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_option	1229	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_option	1234	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_option	1237	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_option	1260	free	free(text as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_options	1370	free	free(list as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_keys	1441	free	free(title as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_keys	1485	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_keys	1489	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_keys	1509	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_keys	1516	free	free(tmp as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_keys	1528	free	free(text as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_keys	1549	free	free(text as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_keys	1571	free	free(text as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_environment	1645	free	free(text as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_environment	1680	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_environment	1681	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_environment	1685	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_environment	1717	free	free(name as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_environment	1718	free	free(text as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build_environment	1719	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_build	1747	free	free((*data).item_list as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_draw_key	2010	free	free(cmd as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_draw_key	2028	free	free(default_cmd as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_draw_key	2029	free	free(cmd as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_draw_key	2032	free	free(default_cmd as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_draw_key	2034	free	free(cmd as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_draw_option	2247	free	free(monitor as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_draw_option	2250	free	free(monitor as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_draw_option	2352	free	free(default_value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_draw_option	2432	free	free(
+src/window_customize.rs	window_customize_draw_option	2446	free	free(
+src/window_customize.rs	window_customize_draw_option	2791	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_draw_option	2792	free	free(default_value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_init	3025	xcalloc	data = xcalloc(
+src/window_customize.rs	window_customize_destroy	3106	free	free((*data).item_list as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_destroy	3107	free	free((*data).format as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_destroy	3108	free	free(data as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_option_callback	3240	free	free(cause as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_environment	3345	free	free(text as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_environment	3346	xcalloc	new_item = xcalloc(
+src/window_customize.rs	window_customize_set_environment	3383	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_add_option_callback	3438	free	free(copy as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_add_option_callback	3456	free	free(name as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_add_option_callback	3457	free	free(array_key as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_add_option_callback	3476	free	free(name as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_add_option_callback	3477	free	free(array_key as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_add_option	3503	xcalloc	new_item = xcalloc(
+src/window_customize.rs	window_customize_add_option	3535	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_add_environment_callback	3595	free	free(name as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_add_environment	3610	xcalloc	new_item = xcalloc(
+src/window_customize.rs	window_customize_edit_close_cb	3668	free	free(buf as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_edit_close_cb	3675	xmalloc	value = xmalloc(len.wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
+src/window_customize.rs	window_customize_edit_close_cb	3682	free	free(buf as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_edit_close_cb	3689	free	free(cause as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_edit_close_cb	3699	free	free(cause as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_edit_close_cb	3734	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_start_edit	3810	xcalloc	ed = xcalloc(
+src/window_customize.rs	window_customize_start_edit	3837	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_option	3999	free	free(text as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_option	4001	xcalloc	new_item = xcalloc(
+src/window_customize.rs	window_customize_set_option	4037	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_option	4038	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_array_key_callback	4080	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_array_key_callback	4111	free	free(cause as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_array_key_callback	4114	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_array_key	4149	xcalloc	new_item = xcalloc(
+src/window_customize.rs	window_customize_set_array_key	4183	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_command_callback	4309	free	free(error as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_note_callback	4340	free	free((*bd).note as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_key	4379	xcalloc	new_item = xcalloc(
+src/window_customize.rs	window_customize_set_key	4411	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_key	4412	free	free(value as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_set_key	4422	xcalloc	new_item = xcalloc(
+src/window_customize.rs	window_customize_set_key	4458	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_add_key_callback	4521	free	free(keystr as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_add_key_callback	4524	free	free(keystr as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_add_key_callback	4560	free	free(error as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_add_key	4591	xcalloc	new_item = xcalloc(
+src/window_customize.rs	window_customize_add_key	4622	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_change_each	4705	free	free(name as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_change_current_callback	4790	free	free(name as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_key	5143	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_key	5180	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_key	5224	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_customize.rs	window_customize_key	5260	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_panes.rs	window_panes_set_preview	238	xmalloc	dst = xmalloc(::core::mem::size_of::<screen>() as size_t) as *mut screen;
+src/window_panes.rs	window_panes_free_areas	249	free	free((*data).areas as *mut ::core::ffi::c_void);
+src/window_panes.rs	window_panes_draw_borders	936	xcalloc	map = xcalloc(dsx as size_t, dsy as size_t) as *mut u_char;
+src/window_panes.rs	window_panes_draw_borders	973	free	free(map as *mut ::core::ffi::c_void);
+src/window_panes.rs	window_panes_draw_floating_border	1023	xcalloc	map = xcalloc(dsx as size_t, dsy as size_t) as *mut u_char;
+src/window_panes.rs	window_panes_draw_floating_border	1061	free	free(map as *mut ::core::ffi::c_void);
+src/window_panes.rs	window_panes_draw_format	1192	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_panes.rs	window_panes_init	1637	xcalloc	data = xcalloc(
+src/window_panes.rs	window_panes_init	1674	event_set	event_set(
+src/window_panes.rs	window_panes_free	1702	event_del	event_del(&raw mut (*data).timer);
+src/window_panes.rs	window_panes_free	1715	free	free((*data).preview as *mut ::core::ffi::c_void);
+src/window_panes.rs	window_panes_free	1718	free	free(data as *mut ::core::ffi::c_void);
+src/window_panes.rs	window_panes_run_command	1751	free	free(error as *mut ::core::ffi::c_void);
+src/window_panes.rs	window_panes_run_command	1757	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_free_item	203	free	free((*item).match_0 as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_free_item	204	free	free((*item).text as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_free_item	205	free	free(item as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_add_item	219	xcalloc	*fresh6 = xcalloc(
+src/window_switch.rs	window_switch_build	333	free	free((*data).item_list as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_build	398	free	free((*data).matches as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_init	658	xcalloc	data = xcalloc(
+src/window_switch.rs	window_switch_free	732	free	free((*data).item_list as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_free	733	free	free((*data).matches as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_free	734	free	free((*data).filter as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_free	736	free	free((*data).format as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_free	737	free	free((*data).command as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_free	739	free	free(data as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_run_command	862	free	free(error as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_run_command	866	free	free(command as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_run_command	867	free	free(target as *mut ::core::ffi::c_void);
+src/window_switch.rs	window_switch_prompt_callback	885	free	free((*data).filter as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_add_item	407	xcalloc	*fresh4 = xcalloc(
+src/window_tree.rs	window_tree_free_item	415	free	free(item as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_build_pane	460	free	free(text as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_build_pane	461	free	free(name as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_filter_pane	484	free	free(cp as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_build_window	553	free	free(text as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_build_window	554	free	free(name as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_build_session	633	free	free(text as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_build	670	free	free((*data).item_list as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_draw_label	789	free	free(new_label as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_draw_session	1063	free	free(label as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_draw_window	1345	free	free(label as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_draw_info	1507	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_search	1614	free	free(cmd as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_search	1624	free	free(cmd as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_get_key	1704	free	free(expanded as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_init	1845	xcalloc	data = xcalloc(
+src/window_tree.rs	window_tree_destroy	1969	free	free((*data).item_list as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_destroy	1970	free	free((*data).format as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_destroy	1971	free	free((*data).key_format as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_destroy	1972	free	free((*data).command as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_destroy	1973	free	free(data as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_command_each	2070	free	free(name as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_key	2518	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_key	2552	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_key	2592	free	free(prompt as *mut ::core::ffi::c_void);
+src/window_tree.rs	window_tree_key	2605	free	free(name as *mut ::core::ffi::c_void);
+src/window_visible.rs	window_visible_ranges	137	xcalloc	sr.ranges = xcalloc(
+src/window_visible.rs	window_visible_ranges	312	xcalloc	sr.ranges = xcalloc(

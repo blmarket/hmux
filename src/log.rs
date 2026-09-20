@@ -3,8 +3,6 @@ use crate::src::ffi::libc::{
     __errno_location, exit, fclose, fflush, fopen, fprintf, free, getpid, gettimeofday, setvbuf,
     snprintf, strerror, vasprintf,
 };
-use crate::src::ffi::libevent::event_set_log_callback;
-pub use crate::src::ffi::libevent::event_log_cb;
 use crate::src::xmalloc::xasprintf;
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
@@ -18,12 +16,6 @@ pub const _IOLBF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
 static mut log_file: *mut FILE = ::core::ptr::null::<FILE>() as *mut FILE;
 static mut log_level: ::core::ffi::c_int = 0;
-unsafe extern "C" fn log_event_cb(
-    mut severity: ::core::ffi::c_int,
-    mut msg: *const ::core::ffi::c_char,
-) {
-    log_debug(b"%s\0" as *const u8 as *const ::core::ffi::c_char, msg);
-}
 #[no_mangle]
 pub unsafe extern "C" fn log_add_level() {
     log_level += 1;
@@ -56,9 +48,6 @@ pub unsafe extern "C" fn log_open(mut name: *const ::core::ffi::c_char) {
         _IOLBF,
         0 as size_t,
     );
-    event_set_log_callback(Some(
-        log_event_cb as unsafe extern "C" fn(::core::ffi::c_int, *const ::core::ffi::c_char) -> (),
-    ));
 }
 #[no_mangle]
 pub unsafe extern "C" fn log_toggle(mut name: *const ::core::ffi::c_char) {
@@ -78,7 +67,6 @@ pub unsafe extern "C" fn log_close() {
         fclose(log_file);
     }
     log_file = ::core::ptr::null_mut::<FILE>();
-    event_set_log_callback(None);
 }
 unsafe extern "C" fn log_vwrite(
     mut msg: *const ::core::ffi::c_char,

@@ -8,7 +8,7 @@ use crate::src::cmd_queue::{
     cmdq_get_target,
 };
 use crate::src::ffi::libc::{free, memcpy};
-use crate::src::ffi::libevent::{event_add, event_del, event_set};
+use crate::src::reactor::{event_add, event_del, event_set};
 use crate::src::format::{format_create_defaults, format_free, format_single};
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;

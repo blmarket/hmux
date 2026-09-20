@@ -196,6 +196,23 @@ impl TaskRuntime {
         Ok(dispatched)
     }
 
+    /// Complete cancellation and descriptor release without polling live tasks.
+    /// Useful before fork/exec and when a host needs close/EOF to be observable.
+    pub fn flush_cancelled(&mut self) -> io::Result<()> {
+        self.adopt_spawned();
+        let cancelled = self
+            .shared
+            .cancelled
+            .borrow()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+        for id in cancelled {
+            self.finish(id);
+        }
+        self.release_dropped_io()
+    }
+
     /// Poll one task, dropping it if it finishes.
     fn poll_task(&mut self, id: TaskId) {
         if self.shared.cancelled.borrow().contains(&id) {

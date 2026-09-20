@@ -9,7 +9,7 @@ use crate::src::ffi::libc::{
     _exit, chdir, close, closefrom, dup2, execl, execvp, fork, free, ioctl, kill, killpg,
     memset, open, setenv, shutdown, sigfillset, sigprocmask, socketpair, strlcpy,
 };
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_free, bufferevent_get_output,
     bufferevent_new, evbuffer_get_length,
 };

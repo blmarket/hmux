@@ -5,7 +5,7 @@ use crate::src::ffi::libc::{
     __errno_location, _exit, close, closefrom, dup2, execl, fork, free, memcpy, open, setpgid,
     sigfillset, sigprocmask, socketpair, strerror,
 };
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     bufferevent_enable, bufferevent_free, bufferevent_new, bufferevent_write, evbuffer_drain,
     evbuffer_get_length, evbuffer_pullup,
 };
@@ -317,7 +317,7 @@ unsafe extern "C" fn cmd_pipe_pane_read_callback(
     if (*wp).pipe_event.is_null() {
         return;
     }
-    evb = (*(*wp).pipe_event).input;
+    evb = crate::src::reactor::stream_input((*wp).pipe_event);
     available = evbuffer_get_length(evb);
     log_debug(
         b"%%%u pipe read %zu\0" as *const u8 as *const ::core::ffi::c_char,

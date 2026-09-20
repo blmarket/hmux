@@ -27,7 +27,7 @@ use crate::src::ffi::libc::{
     access, close, free, gettimeofday, isatty, memcpy, sscanf, strchr, strcmp, strlcat, strlen,
     strsep, ttyname,
 };
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, evbuffer_add, evbuffer_drain, evbuffer_get_length,
     evbuffer_pullup, evbuffer_readln, event_add, event_del, event_initialized, event_once,
     event_pending, event_set,
@@ -2975,7 +2975,7 @@ unsafe extern "C" fn server_client_check_pane_resize(mut wp: *mut window_pane) {
     event_add(&raw mut (*wp).resize_timer, &raw mut tv);
 }
 unsafe extern "C" fn server_client_check_pane_buffer(mut wp: *mut window_pane) {
-    let mut evb: *mut evbuffer = (*(*wp).event).input;
+    let mut evb: *mut evbuffer = crate::src::reactor::stream_input((*wp).event);
     let mut minimum: size_t = 0;
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut wpo: *mut window_pane_offset = ::core::ptr::null_mut::<window_pane_offset>();
@@ -3516,47 +3516,7 @@ unsafe extern "C" fn server_client_check_redraw(mut c: *mut client) {
         tv_sec: 0,
         tv_usec: 1000 as __suseconds_t,
     };
-    static mut ev: event = event {
-        ev_evcallback: event_callback {
-            evcb_active_next: event_callback_entry {
-                tqe_next: ::core::ptr::null::<event_callback>() as *mut event_callback,
-                tqe_prev: ::core::ptr::null::<*mut event_callback>() as *mut *mut event_callback,
-            },
-            evcb_flags: 0,
-            evcb_pri: 0,
-            evcb_closure: 0,
-            evcb_cb_union: event_callback_union {
-                evcb_callback: None,
-            },
-            evcb_arg: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-        },
-        ev_timeout_pos: event_timeout_pos {
-            ev_next_with_common_timeout: event_timeout_entry {
-                tqe_next: ::core::ptr::null::<event>() as *mut event,
-                tqe_prev: ::core::ptr::null::<*mut event>() as *mut *mut event,
-            },
-        },
-        ev_fd: 0,
-        ev_base: ::core::ptr::null::<event_base>() as *mut event_base,
-        ev_: event_io_or_signal {
-            ev_io: event_io {
-                ev_io_next: event_io_entry {
-                    le_next: ::core::ptr::null::<event>() as *mut event,
-                    le_prev: ::core::ptr::null::<*mut event>() as *mut *mut event,
-                },
-                ev_timeout: timeval {
-                    tv_sec: 0,
-                    tv_usec: 0,
-                },
-            },
-        },
-        ev_events: 0,
-        ev_res: 0,
-        ev_timeout: timeval {
-            tv_sec: 0,
-            tv_usec: 0,
-        },
-    };
+    static mut ev: event = event::ZERO;
     let mut n: size_t = 0;
     if (*c).flags & (CLIENT_CONTROL | CLIENT_SUSPENDED) as uint64_t != 0 {
         return;
@@ -4680,6 +4640,8 @@ pub unsafe extern "C" fn server_client_print(
                 b"\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
                 1 as size_t,
             );
+            // Appending may relocate contiguous storage.
+            msg = evbuffer_pullup(evb, -1) as *mut ::core::ffi::c_char;
         }
     }
     log_debug(

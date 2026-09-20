@@ -8,7 +8,7 @@ use crate::src::ffi::libc::{
     killpg, listen, malloc_trim, memset, sigfillset, sigprocmask, socket, stat, stderr,
     strerror, strlcpy, strsignal, time, umask, unlink, waitpid,
 };
-use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_reinit, event_set};
+use crate::src::reactor::{event_add, event_del, event_initialized, event_reinit, event_set};
 use crate::src::format::format_tidy_jobs;
 use crate::src::hooks::hooks_build_events;
 use crate::src::input_keys::input_key_build;
@@ -162,88 +162,8 @@ pub static mut server_proc: *mut tmuxproc = ::core::ptr::null::<tmuxproc>() as *
 static mut server_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 static mut server_client_flags: uint64_t = 0;
 static mut server_exit: ::core::ffi::c_int = 0;
-static mut server_ev_accept: event = event {
-    ev_evcallback: event_callback {
-        evcb_active_next: event_callback_entry {
-            tqe_next: ::core::ptr::null::<event_callback>() as *mut event_callback,
-            tqe_prev: ::core::ptr::null::<*mut event_callback>() as *mut *mut event_callback,
-        },
-        evcb_flags: 0,
-        evcb_pri: 0,
-        evcb_closure: 0,
-        evcb_cb_union: event_callback_union {
-            evcb_callback: None,
-        },
-        evcb_arg: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-    },
-    ev_timeout_pos: event_timeout_pos {
-        ev_next_with_common_timeout: event_timeout_entry {
-            tqe_next: ::core::ptr::null::<event>() as *mut event,
-            tqe_prev: ::core::ptr::null::<*mut event>() as *mut *mut event,
-        },
-    },
-    ev_fd: 0,
-    ev_base: ::core::ptr::null::<event_base>() as *mut event_base,
-    ev_: event_io_or_signal {
-        ev_io: event_io {
-            ev_io_next: event_io_entry {
-                le_next: ::core::ptr::null::<event>() as *mut event,
-                le_prev: ::core::ptr::null::<*mut event>() as *mut *mut event,
-            },
-            ev_timeout: timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            },
-        },
-    },
-    ev_events: 0,
-    ev_res: 0,
-    ev_timeout: timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    },
-};
-static mut server_ev_tidy: event = event {
-    ev_evcallback: event_callback {
-        evcb_active_next: event_callback_entry {
-            tqe_next: ::core::ptr::null::<event_callback>() as *mut event_callback,
-            tqe_prev: ::core::ptr::null::<*mut event_callback>() as *mut *mut event_callback,
-        },
-        evcb_flags: 0,
-        evcb_pri: 0,
-        evcb_closure: 0,
-        evcb_cb_union: event_callback_union {
-            evcb_callback: None,
-        },
-        evcb_arg: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-    },
-    ev_timeout_pos: event_timeout_pos {
-        ev_next_with_common_timeout: event_timeout_entry {
-            tqe_next: ::core::ptr::null::<event>() as *mut event,
-            tqe_prev: ::core::ptr::null::<*mut event>() as *mut *mut event,
-        },
-    },
-    ev_fd: 0,
-    ev_base: ::core::ptr::null::<event_base>() as *mut event_base,
-    ev_: event_io_or_signal {
-        ev_io: event_io {
-            ev_io_next: event_io_entry {
-                le_next: ::core::ptr::null::<event>() as *mut event,
-                le_prev: ::core::ptr::null::<*mut event>() as *mut *mut event,
-            },
-            ev_timeout: timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            },
-        },
-    },
-    ev_events: 0,
-    ev_res: 0,
-    ev_timeout: timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    },
-};
+static mut server_ev_accept: event = event::ZERO;
+static mut server_ev_tidy: event = event::ZERO;
 #[no_mangle]
 pub static mut marked_pane: cmd_find_state = cmd_find_state {
     flags: 0,
@@ -512,6 +432,7 @@ pub unsafe extern "C" fn server_start(
     );
     job_kill_all();
     prompt_save_history();
+    crate::src::reactor::shutdown_runtime();
     exit(0 as ::core::ffi::c_int);
 }
 unsafe extern "C" fn server_loop() -> ::core::ffi::c_int {

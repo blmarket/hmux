@@ -8,7 +8,7 @@ use crate::src::events_payload::{
     event_payload_set_window,
 };
 use crate::src::ffi::libc::{free, gettimeofday, memcpy, strcmp};
-use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_once, event_set};
+use crate::src::reactor::{event_add, event_del, event_initialized, event_once, event_set};
 use crate::src::grid::grid_collect_history;
 use crate::src::log::{fatal, fatalx, log_debug};
 use crate::src::options::{options_free, options_get_number};
@@ -1230,47 +1230,7 @@ pub unsafe extern "C" fn session_find(mut name: *const ::core::ffi::c_char) -> *
             tv_sec: 0,
             tv_usec: 0,
         },
-        lock_timer: event {
-            ev_evcallback: event_callback {
-                evcb_active_next: event_callback_entry {
-                    tqe_next: ::core::ptr::null_mut::<event_callback>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event_callback>(),
-                },
-                evcb_flags: 0,
-                evcb_pri: 0,
-                evcb_closure: 0,
-                evcb_cb_union: event_callback_union {
-                    evcb_callback: None,
-                },
-                evcb_arg: ::core::ptr::null_mut::<::core::ffi::c_void>(),
-            },
-            ev_timeout_pos: event_timeout_pos {
-                ev_next_with_common_timeout: event_timeout_entry {
-                    tqe_next: ::core::ptr::null_mut::<event>(),
-                    tqe_prev: ::core::ptr::null_mut::<*mut event>(),
-                },
-            },
-            ev_fd: 0,
-            ev_base: ::core::ptr::null_mut::<event_base>(),
-            ev_: event_io_or_signal {
-                ev_io: event_io {
-                    ev_io_next: event_io_entry {
-                        le_next: ::core::ptr::null_mut::<event>(),
-                        le_prev: ::core::ptr::null_mut::<*mut event>(),
-                    },
-                    ev_timeout: timeval {
-                        tv_sec: 0,
-                        tv_usec: 0,
-                    },
-                },
-            },
-            ev_events: 0,
-            ev_res: 0,
-            ev_timeout: timeval {
-                tv_sec: 0,
-                tv_usec: 0,
-            },
-        },
+        lock_timer: event::ZERO,
         curw: ::core::ptr::null_mut::<winlink>(),
         lastw: winlink_stack {
             tqh_first: ::core::ptr::null_mut::<winlink>(),

@@ -15,7 +15,7 @@ use crate::src::ffi::libc::{
     free, memcpy, memset, strchr, strcmp, strlen, strncmp, strpbrk, strsep, strstr, strtol,
     time,
 };
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     bufferevent_write, evbuffer_add, evbuffer_drain, evbuffer_free, evbuffer_get_length,
     evbuffer_new, event_add, event_del, event_set,
 };
