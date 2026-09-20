@@ -135,7 +135,7 @@ fn declarations(source: &str) -> Vec<String> {
 #[test]
 fn migrated_shared_declarations_are_unique_and_authoritative() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = vec![root.join("lib.rs"), root.join("build.rs")];
+    let mut files = vec![root.join("build.rs")];
     source_files(&root.join("src"), &mut files); // includes main.rs and future binary modules
     let mut locations: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
     let mut authoritative = BTreeMap::new();
@@ -197,7 +197,7 @@ fn guard_recognizes_visibility_wrapping_and_opaque_copies() {
 #[test]
 fn no_unreviewed_named_duplicates_remain() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = vec![root.join("lib.rs"), root.join("build.rs")];
+    let mut files = vec![root.join("build.rs")];
     source_files(&root.join("src"), &mut files);
     let mut locations: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
     for path in files {
@@ -224,7 +224,7 @@ fn no_unreviewed_named_duplicates_remain() {
         );
         paths.sort();
         let peer = match name.as_str() {
-            "NONE" => "src/cmd_parse.rs",
+            "NONE" => "src/cmd/parse.rs",
             "LEFT" | "RIGHT" => "src/format_draw.rs",
             "TOP" | "BOTTOM" => "src/window_copy.rs",
             _ => unreachable!(),
@@ -280,7 +280,7 @@ fn grid_storage_candidates(source: &str) -> Vec<(String, &'static str)> {
 #[test]
 fn grid_storage_roles_have_only_authoritative_definitions() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = vec![root.join("lib.rs"), root.join("build.rs")];
+    let mut files = vec![root.join("build.rs")];
     source_files(&root.join("src"), &mut files); // Includes binary code.
     let mut count = 0;
     for path in files {
@@ -344,7 +344,7 @@ fn anonymous_key_enum_candidates(source: &str) -> Vec<String> {
 #[test]
 fn audited_key_enum_aliases_have_no_local_definitions() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = vec![root.join("lib.rs"), root.join("build.rs")];
+    let mut files = vec![root.join("build.rs")];
     source_files(&root.join("src"), &mut files); // Includes binary code.
     let audited: Vec<_> = include_str!("../docs/key-enum-declarations.tsv")
         .lines()

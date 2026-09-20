@@ -61,7 +61,7 @@ identical to its original after whitespace normalization, including record
 attributes and field order. Unrelated implementation types remain in place.
 
 `tests/ffi_boundary.rs` parses all Rust source under `src`, including binary,
-compatibility and shared code, plus `lib.rs`. It rejects internal functions or
+compatibility and shared code, including `src/lib.rs`. It rejects internal functions or
 globals redeclared as foreign, duplicate foreign symbols, and foreign blocks
 outside `src/ffi`. It understands `link_name`, `export_name`, unsafe attribute
 wrappers, private definitions, nested modules, callbacks and variadics. Lexer

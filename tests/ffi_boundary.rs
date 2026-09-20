@@ -108,7 +108,7 @@ fn source_files(dir: &Path, paths: &mut Vec<PathBuf>) {
 #[test]
 fn rust_symbols_are_never_foreign_and_foreign_items_stay_at_the_boundary() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = vec![root.join("lib.rs")];
+    let mut files = Vec::new();
     source_files(&root.join("src"), &mut files);
     let mut definitions = BTreeMap::new();
     let mut foreign = Vec::new();
