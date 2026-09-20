@@ -39,7 +39,9 @@ TARGETS = VALIDATION / "format-checkpoint-targets"
 # source revision; prepare() records every resolved SHA in the manifest.
 BASELINE_REV = "8d02dca179520da8b25ba6cb1de3e6a54dafd490"
 SPLIT_REV = "cc5b93feb4395cda2edc8de3463bd04a312ec94d"
-FINAL_REV = "040bde9fdc59bdc0bfa2d2f31d369392daf18346"
+FINAL_REV = "f8e7681"
+INVENTORY_PATH = ROOT / "docs" / "format-dependency-inventory.json"
+REPORT_PATH = ROOT / "docs" / "format-split-validation.json"
 STAGES = ("baseline", "tree", "expression", "jobs", "callbacks", "final")
 GROUPS = ("tree", "expression", "jobs", "callbacks")
 
@@ -665,27 +667,28 @@ def validate() -> dict[str, dict]:
                 "after_count": results[stage]["clippy_diagnostics"]["count"],
             },
         }
-    summary = VALIDATION / "format-checkpoints-summary.json"
-    summary.write_text(
-        json.dumps(
-            {
-                "baseline_revision": manifest["baseline_revision"],
-                "split_revision": manifest["split_revision"],
-                "final_revision": manifest["final_revision"],
-                "stage_order": STAGES,
-                "commands": {name: shlex.join(command) for name, command in COMMANDS.items()},
-                "stages": results,
-            },
-            indent=2,
-        )
-        + "\n"
-    )
+    report = {
+        "baseline_revision": manifest["baseline_revision"],
+        "split_revision": manifest["split_revision"],
+        "final_revision": manifest["final_revision"],
+        "stage_order": STAGES,
+        "commands": {
+            name: shlex.join(command) for name, command in COMMANDS.items()
+        },
+        "stages": results,
+    }
+    write_json(VALIDATION / "format-checkpoints-summary.json", report)
+    write_json(REPORT_PATH, report)
     print(json.dumps(results, indent=2))
     return results
 
 
 def inventory() -> None:
-    items = group_items()
+    sources = {group: implementation_source(group) for group in GROUPS}
+    items = group_items(sources)
+    value = dependency_inventory(sources, items)
+    write_json(INVENTORY_PATH, value)
+    print(f"wrote {INVENTORY_PATH.relative_to(ROOT)}")
     for group in GROUPS:
         print(f"{group}\t{len(items[group])}\t{','.join(items[group])}")
 
