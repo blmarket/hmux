@@ -1,4 +1,6 @@
-use crate::src::arguments::{args_count, args_get, args_has, args_string, args_strtonum};
+use crate::src::arguments::{
+    args_count, args_get, args_has, args_string, args_strtonum_result,
+};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_find::cmd_find_best_client;
 use crate::src::cmd_queue::{
@@ -184,22 +186,22 @@ unsafe extern "C" fn cmd_display_message_exec(
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
-        delay = args_strtonum(
+        delay = match args_strtonum_result(
             args,
             'd' as i32 as u_char,
             0 as ::core::ffi::c_longlong,
             UINT_MAX as ::core::ffi::c_longlong,
-            &raw mut cause,
-        ) as ::core::ffi::c_int;
-        if !cause.is_null() {
-            cmdq_error(
-                item,
-                b"delay %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
-            );
-            free(cause as *mut ::core::ffi::c_void);
-            return CMD_RETURN_ERROR;
-        }
+        ) {
+            Ok(value) => value as ::core::ffi::c_int,
+            Err(error) => {
+                cmdq_error(
+                    item,
+                    b"delay %s\0" as *const u8 as *const ::core::ffi::c_char,
+                    error.message().as_ptr(),
+                );
+                return CMD_RETURN_ERROR;
+            }
+        };
     }
     if count != 0 as u_int {
         template = args_string(args, 0 as u_int);

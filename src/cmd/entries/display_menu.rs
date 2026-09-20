@@ -1,6 +1,6 @@
 use crate::src::arguments::{
-    args_count, args_first_value, args_get, args_has, args_next_value, args_percentage,
-    args_string, args_strtonum, args_to_vector,
+    args_count, args_first_value, args_get, args_has, args_next_value, args_percentage_result,
+    args_string, args_strtonum_result, args_to_vector,
 };
 use crate::src::cmd::{cmd_append_argv, cmd_free_argv, cmd_get_args};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
@@ -1064,22 +1064,25 @@ unsafe extern "C" fn cmd_display_menu_exec(
             starting_choice = -(1 as ::core::ffi::c_int);
             current_block = 1841672684692190573;
         } else {
-            starting_choice = args_strtonum(
+            match args_strtonum_result(
                 args,
                 'C' as i32 as u_char,
                 0 as ::core::ffi::c_longlong,
                 UINT_MAX as ::core::ffi::c_longlong,
-                &raw mut cause,
-            ) as ::core::ffi::c_int;
-            if !cause.is_null() {
-                cmdq_error(
-                    item,
-                    b"starting choice %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause,
-                );
-                current_block = 17658167438033882251;
-            } else {
-                current_block = 1841672684692190573;
+            ) {
+                Ok(value) => {
+                    starting_choice = value as ::core::ffi::c_int;
+                    current_block = 1841672684692190573;
+                }
+                Err(error) => {
+                    cmdq_error(
+                        item,
+                        b"starting choice %s\0" as *const u8
+                            as *const ::core::ffi::c_char,
+                        error.message().as_ptr(),
+                    );
+                    current_block = 17658167438033882251;
+                }
             }
         }
     } else {
@@ -1271,23 +1274,25 @@ unsafe extern "C" fn cmd_display_popup_exec(
     if modify == 0 {
         h = (*tty).sy.wrapping_div(2 as u_int);
         if args_has(args, 'h' as i32 as u_char) != 0 {
-            h = args_percentage(
+            match args_percentage_result(
                 args,
                 'h' as i32 as u_char,
                 1 as ::core::ffi::c_longlong,
                 (*tty).sy as ::core::ffi::c_longlong,
                 (*tty).sy as ::core::ffi::c_longlong,
-                &raw mut cause,
-            ) as u_int;
-            if !cause.is_null() {
-                cmdq_error(
-                    item,
-                    b"height %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause,
-                );
-                current_block = 1988999557336856620;
-            } else {
-                current_block = 17833034027772472439;
+            ) {
+                Ok(value) => {
+                    h = value as u_int;
+                    current_block = 17833034027772472439;
+                }
+                Err(error) => {
+                    cmdq_error(
+                        item,
+                        b"height %s\0" as *const u8 as *const ::core::ffi::c_char,
+                        error.message().as_ptr(),
+                    );
+                    current_block = 1988999557336856620;
+                }
             }
         } else {
             current_block = 17833034027772472439;
@@ -1297,23 +1302,25 @@ unsafe extern "C" fn cmd_display_popup_exec(
             _ => {
                 w = (*tty).sx.wrapping_div(2 as u_int);
                 if args_has(args, 'w' as i32 as u_char) != 0 {
-                    w = args_percentage(
+                    match args_percentage_result(
                         args,
                         'w' as i32 as u_char,
                         1 as ::core::ffi::c_longlong,
                         (*tty).sx as ::core::ffi::c_longlong,
                         (*tty).sx as ::core::ffi::c_longlong,
-                        &raw mut cause,
-                    ) as u_int;
-                    if !cause.is_null() {
-                        cmdq_error(
-                            item,
-                            b"width %s\0" as *const u8 as *const ::core::ffi::c_char,
-                            cause,
-                        );
-                        current_block = 1988999557336856620;
-                    } else {
-                        current_block = 11042950489265723346;
+                    ) {
+                        Ok(value) => {
+                            w = value as u_int;
+                            current_block = 11042950489265723346;
+                        }
+                        Err(error) => {
+                            cmdq_error(
+                                item,
+                                b"width %s\0" as *const u8 as *const ::core::ffi::c_char,
+                                error.message().as_ptr(),
+                            );
+                            current_block = 1988999557336856620;
+                        }
                     }
                 } else {
                     current_block = 11042950489265723346;

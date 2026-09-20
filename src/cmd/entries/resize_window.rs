@@ -1,8 +1,7 @@
-use crate::src::arguments::{args_count, args_has, args_string, args_strtonum};
+use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_result};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target};
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::free;
 use crate::src::options::options_set_number;
 use crate::src::resize::{default_window_size, recalculate_size};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
@@ -112,7 +111,6 @@ unsafe extern "C" fn cmd_resize_window_exec(
     let mut w: *mut window = (*wl).window;
     let mut s: *mut session = (*target).s;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut adjust: u_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
@@ -139,40 +137,40 @@ unsafe extern "C" fn cmd_resize_window_exec(
     sx = (*w).sx;
     sy = (*w).sy;
     if args_has(args, 'x' as i32 as u_char) != 0 {
-        sx = args_strtonum(
+        sx = match args_strtonum_result(
             args,
             'x' as i32 as u_char,
             WINDOW_MINIMUM as ::core::ffi::c_longlong,
             WINDOW_MAXIMUM as ::core::ffi::c_longlong,
-            &raw mut cause,
-        ) as u_int;
-        if !cause.is_null() {
-            cmdq_error(
-                item,
-                b"width %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
-            );
-            free(cause as *mut ::core::ffi::c_void);
-            return CMD_RETURN_ERROR;
-        }
+        ) {
+            Ok(value) => value as u_int,
+            Err(error) => {
+                cmdq_error(
+                    item,
+                    b"width %s\0" as *const u8 as *const ::core::ffi::c_char,
+                    error.message().as_ptr(),
+                );
+                return CMD_RETURN_ERROR;
+            }
+        };
     }
     if args_has(args, 'y' as i32 as u_char) != 0 {
-        sy = args_strtonum(
+        sy = match args_strtonum_result(
             args,
             'y' as i32 as u_char,
             WINDOW_MINIMUM as ::core::ffi::c_longlong,
             WINDOW_MAXIMUM as ::core::ffi::c_longlong,
-            &raw mut cause,
-        ) as u_int;
-        if !cause.is_null() {
-            cmdq_error(
-                item,
-                b"height %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
-            );
-            free(cause as *mut ::core::ffi::c_void);
-            return CMD_RETURN_ERROR;
-        }
+        ) {
+            Ok(value) => value as u_int,
+            Err(error) => {
+                cmdq_error(
+                    item,
+                    b"height %s\0" as *const u8 as *const ::core::ffi::c_char,
+                    error.message().as_ptr(),
+                );
+                return CMD_RETURN_ERROR;
+            }
+        };
     }
     if args_has(args, 'L' as i32 as u_char) != 0 {
         if sx >= adjust {

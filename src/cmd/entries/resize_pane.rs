@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_count, args_get, args_has, args_percentage, args_string};
+use crate::src::arguments::{args_count, args_get, args_has, args_percentage_result, args_string};
 use crate::src::cmd::{cmd_get_args, cmd_mouse_pane, cmd_mouse_window};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_get_target};
 use crate::src::compat::strtonum::strtonum;
@@ -173,23 +173,23 @@ unsafe extern "C" fn cmd_resize_pane_exec(
     server_unzoom_window(w);
     lc = (*wp).layout_cell as *mut layout_cell;
     if args_has(args, 'x' as i32 as u_char) != 0 {
-        x = args_percentage(
+        x = match args_percentage_result(
             args,
             'x' as i32 as u_char,
             0 as ::core::ffi::c_longlong,
             PANE_MAXIMUM as ::core::ffi::c_longlong,
             (*w).sx as ::core::ffi::c_longlong,
-            &raw mut cause,
-        ) as ::core::ffi::c_int;
-        if !cause.is_null() {
-            cmdq_error(
-                item,
-                b"width %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
-            );
-            free(cause as *mut ::core::ffi::c_void);
-            return CMD_RETURN_ERROR;
-        }
+        ) {
+            Ok(value) => value as ::core::ffi::c_int,
+            Err(error) => {
+                cmdq_error(
+                    item,
+                    b"width %s\0" as *const u8 as *const ::core::ffi::c_char,
+                    error.message().as_ptr(),
+                );
+                return CMD_RETURN_ERROR;
+            }
+        };
         if window_pane_is_floating(wp) != 0 {
             if layout_resize_floating_pane_to(wp, LAYOUT_LEFTRIGHT, x as u_int, &raw mut cause)
                 != 0 as ::core::ffi::c_int
@@ -207,23 +207,23 @@ unsafe extern "C" fn cmd_resize_pane_exec(
         }
     }
     if args_has(args, 'y' as i32 as u_char) != 0 {
-        y = args_percentage(
+        y = match args_percentage_result(
             args,
             'y' as i32 as u_char,
             0 as ::core::ffi::c_longlong,
             PANE_MAXIMUM as ::core::ffi::c_longlong,
             (*w).sy as ::core::ffi::c_longlong,
-            &raw mut cause,
-        ) as ::core::ffi::c_int;
-        if !cause.is_null() {
-            cmdq_error(
-                item,
-                b"height %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
-            );
-            free(cause as *mut ::core::ffi::c_void);
-            return CMD_RETURN_ERROR;
-        }
+        ) {
+            Ok(value) => value as ::core::ffi::c_int,
+            Err(error) => {
+                cmdq_error(
+                    item,
+                    b"height %s\0" as *const u8 as *const ::core::ffi::c_char,
+                    error.message().as_ptr(),
+                );
+                return CMD_RETURN_ERROR;
+            }
+        };
         status = window_get_pane_status(w);
         match status {
             PANE_STATUS_TOP => {

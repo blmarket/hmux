@@ -1,6 +1,6 @@
-use crate::src::arguments::args_string_percentage;
+use crate::src::arguments::args_string_percentage_result;
 use crate::src::events::events_fire_window;
-use crate::src::ffi::libc::{free, strcmp, strlen, strncmp};
+use crate::src::ffi::libc::{strcmp, strlen, strncmp};
 use crate::src::layout::{
     layout_cell_is_tiled, layout_create_cell, layout_fix_offsets, layout_fix_panes, layout_free,
     layout_make_node, layout_print_cell, layout_resize_adjust, layout_set_size,
@@ -331,7 +331,6 @@ unsafe extern "C" fn layout_set_main_h(mut w: *mut window) {
     let mut otherh: u_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     layout_print_cell(
         (*w).layout_root,
@@ -348,17 +347,15 @@ unsafe extern "C" fn layout_set_main_h(mut w: *mut window) {
         (*w).options,
         b"main-pane-height\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    mainh = args_string_percentage(
+    mainh = match args_string_percentage_result(
         s,
         0 as ::core::ffi::c_longlong,
         sy as ::core::ffi::c_longlong,
         sy as ::core::ffi::c_longlong,
-        &raw mut cause,
-    ) as u_int;
-    if !cause.is_null() {
-        mainh = 24 as u_int;
-        free(cause as *mut ::core::ffi::c_void);
-    }
+    ) {
+        Ok(value) => value as u_int,
+        Err(_) => 24 as u_int,
+    };
     if mainh.wrapping_add(PANE_MINIMUM as u_int) >= sy {
         if sy <= (PANE_MINIMUM + PANE_MINIMUM) as u_int {
             mainh = PANE_MINIMUM as u_int;
@@ -371,17 +368,16 @@ unsafe extern "C" fn layout_set_main_h(mut w: *mut window) {
             (*w).options,
             b"other-pane-height\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        otherh = args_string_percentage(
+        otherh = match args_string_percentage_result(
             s,
             0 as ::core::ffi::c_longlong,
             sy as ::core::ffi::c_longlong,
             sy as ::core::ffi::c_longlong,
-            &raw mut cause,
-        ) as u_int;
-        if !cause.is_null() || otherh == 0 as u_int {
-            otherh = sy.wrapping_sub(mainh);
-            free(cause as *mut ::core::ffi::c_void);
-        } else if otherh > sy || sy.wrapping_sub(otherh) < mainh {
+        ) {
+            Ok(value) => value as u_int,
+            Err(_) => 0 as u_int,
+        };
+        if otherh == 0 as u_int || otherh > sy || sy.wrapping_sub(otherh) < mainh {
             otherh = sy.wrapping_sub(mainh);
         } else {
             mainh = sy.wrapping_sub(otherh);
@@ -505,7 +501,6 @@ unsafe extern "C" fn layout_set_main_h_mirrored(mut w: *mut window) {
     let mut otherh: u_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     layout_print_cell(
         (*w).layout_root,
@@ -522,17 +517,15 @@ unsafe extern "C" fn layout_set_main_h_mirrored(mut w: *mut window) {
         (*w).options,
         b"main-pane-height\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    mainh = args_string_percentage(
+    mainh = match args_string_percentage_result(
         s,
         0 as ::core::ffi::c_longlong,
         sy as ::core::ffi::c_longlong,
         sy as ::core::ffi::c_longlong,
-        &raw mut cause,
-    ) as u_int;
-    if !cause.is_null() {
-        mainh = 24 as u_int;
-        free(cause as *mut ::core::ffi::c_void);
-    }
+    ) {
+        Ok(value) => value as u_int,
+        Err(_) => 24 as u_int,
+    };
     if mainh.wrapping_add(PANE_MINIMUM as u_int) >= sy {
         if sy <= (PANE_MINIMUM + PANE_MINIMUM) as u_int {
             mainh = PANE_MINIMUM as u_int;
@@ -545,17 +538,16 @@ unsafe extern "C" fn layout_set_main_h_mirrored(mut w: *mut window) {
             (*w).options,
             b"other-pane-height\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        otherh = args_string_percentage(
+        otherh = match args_string_percentage_result(
             s,
             0 as ::core::ffi::c_longlong,
             sy as ::core::ffi::c_longlong,
             sy as ::core::ffi::c_longlong,
-            &raw mut cause,
-        ) as u_int;
-        if !cause.is_null() || otherh == 0 as u_int {
-            otherh = sy.wrapping_sub(mainh);
-            free(cause as *mut ::core::ffi::c_void);
-        } else if otherh > sy || sy.wrapping_sub(otherh) < mainh {
+        ) {
+            Ok(value) => value as u_int,
+            Err(_) => 0 as u_int,
+        };
+        if otherh == 0 as u_int || otherh > sy || sy.wrapping_sub(otherh) < mainh {
             otherh = sy.wrapping_sub(mainh);
         } else {
             mainh = sy.wrapping_sub(otherh);
@@ -688,7 +680,6 @@ unsafe extern "C" fn layout_set_main_v(mut w: *mut window) {
     let mut otherw: u_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     layout_print_cell(
         (*w).layout_root,
@@ -705,17 +696,15 @@ unsafe extern "C" fn layout_set_main_v(mut w: *mut window) {
         (*w).options,
         b"main-pane-width\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    mainw = args_string_percentage(
+    mainw = match args_string_percentage_result(
         s,
         0 as ::core::ffi::c_longlong,
         sx as ::core::ffi::c_longlong,
         sx as ::core::ffi::c_longlong,
-        &raw mut cause,
-    ) as u_int;
-    if !cause.is_null() {
-        mainw = 80 as u_int;
-        free(cause as *mut ::core::ffi::c_void);
-    }
+    ) {
+        Ok(value) => value as u_int,
+        Err(_) => 80 as u_int,
+    };
     if mainw.wrapping_add(PANE_MINIMUM as u_int) >= sx {
         if sx <= (PANE_MINIMUM + PANE_MINIMUM) as u_int {
             mainw = PANE_MINIMUM as u_int;
@@ -728,17 +717,16 @@ unsafe extern "C" fn layout_set_main_v(mut w: *mut window) {
             (*w).options,
             b"other-pane-width\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        otherw = args_string_percentage(
+        otherw = match args_string_percentage_result(
             s,
             0 as ::core::ffi::c_longlong,
             sx as ::core::ffi::c_longlong,
             sx as ::core::ffi::c_longlong,
-            &raw mut cause,
-        ) as u_int;
-        if !cause.is_null() || otherw == 0 as u_int {
-            otherw = sx.wrapping_sub(mainw);
-            free(cause as *mut ::core::ffi::c_void);
-        } else if otherw > sx || sx.wrapping_sub(otherw) < mainw {
+        ) {
+            Ok(value) => value as u_int,
+            Err(_) => 0 as u_int,
+        };
+        if otherw == 0 as u_int || otherw > sx || sx.wrapping_sub(otherw) < mainw {
             otherw = sx.wrapping_sub(mainw);
         } else {
             mainw = sx.wrapping_sub(otherw);
@@ -862,7 +850,6 @@ unsafe extern "C" fn layout_set_main_v_mirrored(mut w: *mut window) {
     let mut otherw: u_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     layout_print_cell(
         (*w).layout_root,
@@ -879,17 +866,15 @@ unsafe extern "C" fn layout_set_main_v_mirrored(mut w: *mut window) {
         (*w).options,
         b"main-pane-width\0" as *const u8 as *const ::core::ffi::c_char,
     );
-    mainw = args_string_percentage(
+    mainw = match args_string_percentage_result(
         s,
         0 as ::core::ffi::c_longlong,
         sx as ::core::ffi::c_longlong,
         sx as ::core::ffi::c_longlong,
-        &raw mut cause,
-    ) as u_int;
-    if !cause.is_null() {
-        mainw = 80 as u_int;
-        free(cause as *mut ::core::ffi::c_void);
-    }
+    ) {
+        Ok(value) => value as u_int,
+        Err(_) => 80 as u_int,
+    };
     if mainw.wrapping_add(PANE_MINIMUM as u_int) >= sx {
         if sx <= (PANE_MINIMUM + PANE_MINIMUM) as u_int {
             mainw = PANE_MINIMUM as u_int;
@@ -902,17 +887,16 @@ unsafe extern "C" fn layout_set_main_v_mirrored(mut w: *mut window) {
             (*w).options,
             b"other-pane-width\0" as *const u8 as *const ::core::ffi::c_char,
         );
-        otherw = args_string_percentage(
+        otherw = match args_string_percentage_result(
             s,
             0 as ::core::ffi::c_longlong,
             sx as ::core::ffi::c_longlong,
             sx as ::core::ffi::c_longlong,
-            &raw mut cause,
-        ) as u_int;
-        if !cause.is_null() || otherw == 0 as u_int {
-            otherw = sx.wrapping_sub(mainw);
-            free(cause as *mut ::core::ffi::c_void);
-        } else if otherw > sx || sx.wrapping_sub(otherw) < mainw {
+        ) {
+            Ok(value) => value as u_int,
+            Err(_) => 0 as u_int,
+        };
+        if otherw == 0 as u_int || otherw > sx || sx.wrapping_sub(otherw) < mainw {
             otherw = sx.wrapping_sub(mainw);
         } else {
             mainw = sx.wrapping_sub(otherw);

@@ -6,7 +6,7 @@ use crate::src::cmd_find::cmd_find_copy_state;
 use crate::src::cmd_parse::cmd_parse_from_string;
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::{__ctype_b_loc, free, strchr, strcspn, strlcat, strlen};
+use crate::src::ffi::libc::{__ctype_b_loc, free, strchr, strcspn, strlcat};
 use crate::src::format::format_single_from_target;
 use crate::src::log::{fatalx, log_debug};
 use crate::src::server_client::server_client_unref;
@@ -82,11 +82,35 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_20;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_21;
 
 pub const ARGS_ENTRY_OPTIONAL_VALUE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum ArgumentValueError {
+    Missing,
+    Empty,
+    Invalid,
+    TooSmall,
+    TooLarge,
+}
+
+impl ArgumentValueError {
+    pub fn message(self) -> &'static CStr {
+        unsafe {
+            CStr::from_bytes_with_nul_unchecked(match self {
+                Self::Missing => b"missing\0",
+                Self::Empty => b"empty\0",
+                Self::Invalid => b"invalid\0",
+                Self::TooSmall => b"too small\0",
+                Self::TooLarge => b"too large\0",
+            })
+        }
+    }
+}
 unsafe extern "C" fn args_tree_RB_INSERT(
     mut head: *mut args_tree,
     mut elm: *mut args_entry,
@@ -600,6 +624,31 @@ unsafe extern "C" fn args_find(mut args: *mut args, mut flag: u_char) -> *mut ar
     };
     entry.flag = flag;
     return args_tree_RB_FIND(&raw mut (*args).tree, &raw mut entry);
+}
+
+unsafe fn args_last_value(args: *mut args, flag: u_char) -> Option<*mut args_value> {
+    let entry = args_find(args, flag);
+    if entry.is_null() {
+        return None;
+    }
+    let mut value = (*entry).values.tqh_first;
+    let mut last = None;
+    while !value.is_null() {
+        last = Some(value);
+        value = (*value).entry.tqe_next;
+    }
+    last
+}
+
+unsafe fn args_last_string(args: *mut args, flag: u_char) -> Option<*const ::core::ffi::c_char> {
+    let value = args_last_value(args, flag)?;
+    if (*value).type_0 as ::core::ffi::c_uint
+        != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
+        || (*value).c2rust_unnamed.string.is_null()
+    {
+        return None;
+    }
+    Some((*value).c2rust_unnamed.string)
 }
 unsafe extern "C" fn args_copy_value(mut to: *mut args_value, mut from: *mut args_value) {
     (*to).type_0 = (*from).type_0;
@@ -1721,6 +1770,265 @@ pub unsafe extern "C" fn args_first_value(
 pub unsafe extern "C" fn args_next_value(mut value: *mut args_value) -> *mut args_value {
     return (*value).entry.tqe_next;
 }
+
+fn strtonum_error(errstr: *const ::core::ffi::c_char) -> ArgumentValueError {
+    match unsafe { CStr::from_ptr(errstr).to_bytes() } {
+        b"invalid" => ArgumentValueError::Invalid,
+        b"too small" => ArgumentValueError::TooSmall,
+        b"too large" => ArgumentValueError::TooLarge,
+        _ => ArgumentValueError::Invalid,
+    }
+}
+
+pub fn parse_number(
+    value: &CStr,
+    minval: i64,
+    maxval: i64,
+) -> Result<i64, ArgumentValueError> {
+    let mut errstr = ::core::ptr::null::<::core::ffi::c_char>();
+    let number = unsafe {
+        strtonum(
+            value.as_ptr(),
+            minval as ::core::ffi::c_longlong,
+            maxval as ::core::ffi::c_longlong,
+            &raw mut errstr,
+        )
+    };
+    if errstr.is_null() {
+        Ok(number as i64)
+    } else {
+        Err(strtonum_error(errstr))
+    }
+}
+
+fn percentage_share(
+    curval: i64,
+    percentage: i64,
+    minval: i64,
+    maxval: i64,
+) -> Result<i64, ArgumentValueError> {
+    let value = (curval as i128 * percentage as i128) / 100;
+    if value < minval as i128 {
+        return Err(ArgumentValueError::TooSmall);
+    }
+    if value > maxval as i128 {
+        return Err(ArgumentValueError::TooLarge);
+    }
+    Ok(value as i64)
+}
+
+pub fn parse_percentage(
+    value: &CStr,
+    minval: i64,
+    maxval: i64,
+    curval: i64,
+) -> Result<i64, ArgumentValueError> {
+    let bytes = value.to_bytes();
+    if bytes.is_empty() {
+        return Err(ArgumentValueError::Empty);
+    }
+    if let Some(percentage) = bytes.strip_suffix(b"%") {
+        let percentage = CString::new(percentage).map_err(|_| ArgumentValueError::Invalid)?;
+        let percentage = parse_number(percentage.as_c_str(), 0, 1000)?;
+        return percentage_share(curval, percentage, minval, maxval);
+    }
+    parse_number(value, minval, maxval)
+}
+
+/// Converts a percentage after expanding format expressions against `item`.
+///
+/// # Safety
+/// `item` must be a valid command-queue item whenever a format expression is
+/// expanded.
+pub unsafe fn parse_percentage_and_expand(
+    value: &CStr,
+    minval: i64,
+    maxval: i64,
+    curval: i64,
+    item: *mut cmdq_item,
+) -> Result<i64, ArgumentValueError> {
+    let bytes = value.to_bytes();
+    if let Some(percentage) = bytes.strip_suffix(b"%") {
+        let percentage = CString::new(percentage).map_err(|_| ArgumentValueError::Invalid)?;
+        let formatted = format_single_from_target(item, percentage.as_ptr());
+        let result = parse_number(CStr::from_ptr(formatted), 0, 1000).and_then(|percentage| {
+            percentage_share(curval, percentage, minval, maxval)
+        });
+        free(formatted as *mut ::core::ffi::c_void);
+        return result;
+    }
+    let formatted = format_single_from_target(item, value.as_ptr());
+    let result = parse_number(CStr::from_ptr(formatted), minval, maxval);
+    free(formatted as *mut ::core::ffi::c_void);
+    result
+}
+
+/// Converts the last string value stored for `flag` to a bounded integer.
+///
+/// # Safety
+/// `args` must point to a valid argument store.
+pub unsafe fn args_strtonum_result(
+    args: *mut args,
+    flag: u_char,
+    minval: ::core::ffi::c_longlong,
+    maxval: ::core::ffi::c_longlong,
+) -> Result<i64, ArgumentValueError> {
+    let value = args_last_string(args, flag).ok_or(ArgumentValueError::Missing)?;
+    parse_number(
+        CStr::from_ptr(value),
+        minval,
+        maxval,
+    )
+}
+
+/// Converts the last string value after format expansion to a bounded integer.
+///
+/// # Safety
+/// `args` must point to a valid argument store and `item` must be valid for
+/// format expansion.
+pub unsafe fn args_strtonum_and_expand_result(
+    args: *mut args,
+    flag: u_char,
+    minval: ::core::ffi::c_longlong,
+    maxval: ::core::ffi::c_longlong,
+    item: *mut cmdq_item,
+) -> Result<i64, ArgumentValueError> {
+    let value = args_last_string(args, flag).ok_or(ArgumentValueError::Missing)?;
+    let value = CStr::from_ptr(value);
+    let formatted = format_single_from_target(item, value.as_ptr());
+    let result = parse_number(
+        CStr::from_ptr(formatted),
+        minval,
+        maxval,
+    );
+    free(formatted as *mut ::core::ffi::c_void);
+    result
+}
+
+/// Converts the last stored string as an integer or percentage.
+///
+/// # Safety
+/// `args` must point to a valid argument store.
+pub unsafe fn args_percentage_result(
+    args: *mut args,
+    flag: u_char,
+    minval: ::core::ffi::c_longlong,
+    maxval: ::core::ffi::c_longlong,
+    curval: ::core::ffi::c_longlong,
+) -> Result<i64, ArgumentValueError> {
+    let entry = args_find(args, flag);
+    if entry.is_null() {
+        return Err(ArgumentValueError::Missing);
+    }
+    let value = args_last_value(args, flag).ok_or(ArgumentValueError::Empty)?;
+    if (*value).type_0 as ::core::ffi::c_uint
+        != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
+        || (*value).c2rust_unnamed.string.is_null()
+    {
+        return Err(ArgumentValueError::Missing);
+    }
+    parse_percentage(
+        CStr::from_ptr((*value).c2rust_unnamed.string),
+        minval,
+        maxval,
+        curval,
+    )
+}
+
+/// Converts the last stored string after format expansion as an integer or percentage.
+///
+/// # Safety
+/// `args` must point to a valid argument store and `item` must be valid for
+/// format expansion.
+pub unsafe fn args_percentage_and_expand_result(
+    args: *mut args,
+    flag: u_char,
+    minval: ::core::ffi::c_longlong,
+    maxval: ::core::ffi::c_longlong,
+    curval: ::core::ffi::c_longlong,
+    item: *mut cmdq_item,
+) -> Result<i64, ArgumentValueError> {
+    let entry = args_find(args, flag);
+    if entry.is_null() {
+        return Err(ArgumentValueError::Missing);
+    }
+    let value = args_last_value(args, flag).ok_or(ArgumentValueError::Empty)?;
+    if (*value).type_0 as ::core::ffi::c_uint
+        != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
+        || (*value).c2rust_unnamed.string.is_null()
+    {
+        return Err(ArgumentValueError::Missing);
+    }
+    parse_percentage_and_expand(
+        CStr::from_ptr((*value).c2rust_unnamed.string),
+        minval,
+        maxval,
+        curval,
+        item,
+    )
+}
+
+/// Converts a C string as an integer or percentage.
+///
+/// # Safety
+/// If non-null, `value` must point to a valid NUL-terminated C string.
+pub unsafe fn args_string_percentage_result(
+    value: *const ::core::ffi::c_char,
+    minval: ::core::ffi::c_longlong,
+    maxval: ::core::ffi::c_longlong,
+    curval: ::core::ffi::c_longlong,
+) -> Result<i64, ArgumentValueError> {
+    if value.is_null() {
+        return Err(ArgumentValueError::Missing);
+    }
+    parse_percentage(
+        CStr::from_ptr(value),
+        minval,
+        maxval,
+        curval,
+    )
+}
+
+/// Converts a C string after format expansion as an integer or percentage.
+///
+/// # Safety
+/// If non-null, `value` must point to a valid NUL-terminated C string and
+/// `item` must be valid for format expansion.
+pub unsafe fn args_string_percentage_and_expand_result(
+    value: *const ::core::ffi::c_char,
+    minval: ::core::ffi::c_longlong,
+    maxval: ::core::ffi::c_longlong,
+    curval: ::core::ffi::c_longlong,
+    item: *mut cmdq_item,
+) -> Result<i64, ArgumentValueError> {
+    if value.is_null() {
+        return Err(ArgumentValueError::Missing);
+    }
+    parse_percentage_and_expand(
+        CStr::from_ptr(value),
+        minval,
+        maxval,
+        curval,
+        item,
+    )
+}
+
+unsafe fn args_result_to_c(
+    result: Result<i64, ArgumentValueError>,
+    cause: *mut *mut ::core::ffi::c_char,
+) -> ::core::ffi::c_longlong {
+    match result {
+        Ok(value) => {
+            *cause = ::core::ptr::null_mut::<::core::ffi::c_char>();
+            value as ::core::ffi::c_longlong
+        }
+        Err(error) => {
+            *cause = xstrdup(error.message().as_ptr());
+            0 as ::core::ffi::c_longlong
+        }
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn args_strtonum(
     mut args: *mut args,
@@ -1729,36 +2037,7 @@ pub unsafe extern "C" fn args_strtonum(
     mut maxval: ::core::ffi::c_longlong,
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_longlong {
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut ll: ::core::ffi::c_longlong = 0;
-    let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    entry = args_find(args, flag);
-    if entry.is_null() {
-        *cause = xstrdup(b"missing\0" as *const u8 as *const ::core::ffi::c_char);
-        return 0 as ::core::ffi::c_longlong;
-    }
-    value = *(*((*entry).values.tqh_last as *mut args_values)).tqh_last;
-    if value.is_null()
-        || (*value).type_0 as ::core::ffi::c_uint
-            != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        || (*value).c2rust_unnamed.string.is_null()
-    {
-        *cause = xstrdup(b"missing\0" as *const u8 as *const ::core::ffi::c_char);
-        return 0 as ::core::ffi::c_longlong;
-    }
-    ll = strtonum(
-        (*value).c2rust_unnamed.string,
-        minval,
-        maxval,
-        &raw mut errstr,
-    );
-    if !errstr.is_null() {
-        *cause = xstrdup(errstr);
-        return 0 as ::core::ffi::c_longlong;
-    }
-    *cause = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    return ll;
+    args_result_to_c(args_strtonum_result(args, flag, minval, maxval), cause)
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_strtonum_and_expand(
@@ -1769,34 +2048,10 @@ pub unsafe extern "C" fn args_strtonum_and_expand(
     mut item: *mut cmdq_item,
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_longlong {
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut formatted: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut ll: ::core::ffi::c_longlong = 0;
-    let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
-    entry = args_find(args, flag);
-    if entry.is_null() {
-        *cause = xstrdup(b"missing\0" as *const u8 as *const ::core::ffi::c_char);
-        return 0 as ::core::ffi::c_longlong;
-    }
-    value = *(*((*entry).values.tqh_last as *mut args_values)).tqh_last;
-    if value.is_null()
-        || (*value).type_0 as ::core::ffi::c_uint
-            != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        || (*value).c2rust_unnamed.string.is_null()
-    {
-        *cause = xstrdup(b"missing\0" as *const u8 as *const ::core::ffi::c_char);
-        return 0 as ::core::ffi::c_longlong;
-    }
-    formatted = format_single_from_target(item, (*value).c2rust_unnamed.string);
-    ll = strtonum(formatted, minval, maxval, &raw mut errstr);
-    free(formatted as *mut ::core::ffi::c_void);
-    if !errstr.is_null() {
-        *cause = xstrdup(errstr);
-        return 0 as ::core::ffi::c_longlong;
-    }
-    *cause = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    return ll;
+    args_result_to_c(
+        args_strtonum_and_expand_result(args, flag, minval, maxval, item),
+        cause,
+    )
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_percentage(
@@ -1807,21 +2062,10 @@ pub unsafe extern "C" fn args_percentage(
     mut curval: ::core::ffi::c_longlong,
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_longlong {
-    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    entry = args_find(args, flag);
-    if entry.is_null() {
-        *cause = xstrdup(b"missing\0" as *const u8 as *const ::core::ffi::c_char);
-        return 0 as ::core::ffi::c_longlong;
-    }
-    if (*entry).values.tqh_first.is_null() {
-        *cause = xstrdup(b"empty\0" as *const u8 as *const ::core::ffi::c_char);
-        return 0 as ::core::ffi::c_longlong;
-    }
-    value = (**(*((*entry).values.tqh_last as *mut args_values)).tqh_last)
-        .c2rust_unnamed
-        .string;
-    return args_string_percentage(value, minval, maxval, curval, cause);
+    args_result_to_c(
+        args_percentage_result(args, flag, minval, maxval, curval),
+        cause,
+    )
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_string_percentage(
@@ -1831,49 +2075,10 @@ pub unsafe extern "C" fn args_string_percentage(
     mut curval: ::core::ffi::c_longlong,
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_longlong {
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut ll: ::core::ffi::c_longlong = 0;
-    let mut valuelen: size_t = strlen(value);
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    if valuelen == 0 as size_t {
-        *cause = xstrdup(b"empty\0" as *const u8 as *const ::core::ffi::c_char);
-        return 0 as ::core::ffi::c_longlong;
-    }
-    if *value.offset(valuelen.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
-        == '%' as i32
-    {
-        copy = xstrdup(value);
-        *copy.offset(valuelen.wrapping_sub(1 as size_t) as isize) =
-            '\0' as i32 as ::core::ffi::c_char;
-        ll = strtonum(
-            copy,
-            0 as ::core::ffi::c_longlong,
-            1000 as ::core::ffi::c_longlong,
-            &raw mut errstr,
-        );
-        free(copy as *mut ::core::ffi::c_void);
-        if !errstr.is_null() {
-            *cause = xstrdup(errstr);
-            return 0 as ::core::ffi::c_longlong;
-        }
-        ll = curval * ll / 100 as ::core::ffi::c_longlong;
-        if ll < minval {
-            *cause = xstrdup(b"too small\0" as *const u8 as *const ::core::ffi::c_char);
-            return 0 as ::core::ffi::c_longlong;
-        }
-        if ll > maxval {
-            *cause = xstrdup(b"too large\0" as *const u8 as *const ::core::ffi::c_char);
-            return 0 as ::core::ffi::c_longlong;
-        }
-    } else {
-        ll = strtonum(value, minval, maxval, &raw mut errstr);
-        if !errstr.is_null() {
-            *cause = xstrdup(errstr);
-            return 0 as ::core::ffi::c_longlong;
-        }
-    }
-    *cause = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    return ll;
+    args_result_to_c(
+        args_string_percentage_result(value, minval, maxval, curval),
+        cause,
+    )
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_percentage_and_expand(
@@ -1885,21 +2090,10 @@ pub unsafe extern "C" fn args_percentage_and_expand(
     mut item: *mut cmdq_item,
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_longlong {
-    let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut entry: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    entry = args_find(args, flag);
-    if entry.is_null() {
-        *cause = xstrdup(b"missing\0" as *const u8 as *const ::core::ffi::c_char);
-        return 0 as ::core::ffi::c_longlong;
-    }
-    if (*entry).values.tqh_first.is_null() {
-        *cause = xstrdup(b"empty\0" as *const u8 as *const ::core::ffi::c_char);
-        return 0 as ::core::ffi::c_longlong;
-    }
-    value = (**(*((*entry).values.tqh_last as *mut args_values)).tqh_last)
-        .c2rust_unnamed
-        .string;
-    return args_string_percentage_and_expand(value, minval, maxval, curval, item, cause);
+    args_result_to_c(
+        args_percentage_and_expand_result(args, flag, minval, maxval, curval, item),
+        cause,
+    )
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_string_percentage_and_expand(
@@ -1910,48 +2104,8 @@ pub unsafe extern "C" fn args_string_percentage_and_expand(
     mut item: *mut cmdq_item,
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_longlong {
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut ll: ::core::ffi::c_longlong = 0;
-    let mut valuelen: size_t = strlen(value);
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut f: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    if *value.offset(valuelen.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
-        == '%' as i32
-    {
-        copy = xstrdup(value);
-        *copy.offset(valuelen.wrapping_sub(1 as size_t) as isize) =
-            '\0' as i32 as ::core::ffi::c_char;
-        f = format_single_from_target(item, copy);
-        ll = strtonum(
-            f,
-            0 as ::core::ffi::c_longlong,
-            1000 as ::core::ffi::c_longlong,
-            &raw mut errstr,
-        );
-        free(f as *mut ::core::ffi::c_void);
-        free(copy as *mut ::core::ffi::c_void);
-        if !errstr.is_null() {
-            *cause = xstrdup(errstr);
-            return 0 as ::core::ffi::c_longlong;
-        }
-        ll = curval * ll / 100 as ::core::ffi::c_longlong;
-        if ll < minval {
-            *cause = xstrdup(b"too small\0" as *const u8 as *const ::core::ffi::c_char);
-            return 0 as ::core::ffi::c_longlong;
-        }
-        if ll > maxval {
-            *cause = xstrdup(b"too large\0" as *const u8 as *const ::core::ffi::c_char);
-            return 0 as ::core::ffi::c_longlong;
-        }
-    } else {
-        f = format_single_from_target(item, value);
-        ll = strtonum(f, minval, maxval, &raw mut errstr);
-        free(f as *mut ::core::ffi::c_void);
-        if !errstr.is_null() {
-            *cause = xstrdup(errstr);
-            return 0 as ::core::ffi::c_longlong;
-        }
-    }
-    *cause = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    return ll;
+    args_result_to_c(
+        args_string_percentage_and_expand_result(value, minval, maxval, curval, item),
+        cause,
+    )
 }

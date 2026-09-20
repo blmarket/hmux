@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_get, args_has, args_strtonum_and_expand};
+use crate::src::arguments::{args_get, args_has, args_strtonum_and_expand_result};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
 use crate::src::colour::colour_format;
@@ -526,7 +526,6 @@ unsafe extern "C" fn cmd_capture_pane_history(
     let mut top: u_int = 0;
     let mut bottom: u_int = 0;
     let mut tmp: u_int = 0;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut b: [::core::ffi::c_char; 64] = [0; 64];
@@ -570,21 +569,24 @@ unsafe extern "C" fn cmd_capture_pane_history(
     {
         top = 0 as u_int;
     } else {
-        n = args_strtonum_and_expand(
+        match args_strtonum_and_expand_result(
             args,
             'S' as i32 as u_char,
             INT_MIN as ::core::ffi::c_longlong,
             SHRT_MAX as ::core::ffi::c_longlong,
             item,
-            &raw mut cause,
-        ) as ::core::ffi::c_int;
-        if !cause.is_null() {
-            top = (*gd).hsize;
-            free(cause as *mut ::core::ffi::c_void);
-        } else if n < 0 as ::core::ffi::c_int && -n as u_int > (*gd).hsize {
-            top = 0 as u_int;
-        } else {
-            top = (*gd).hsize.wrapping_add(n as u_int);
+        ) {
+            Ok(value) => {
+                n = value as ::core::ffi::c_int;
+                if n < 0 as ::core::ffi::c_int && -n as u_int > (*gd).hsize {
+                    top = 0 as u_int;
+                } else {
+                    top = (*gd).hsize.wrapping_add(n as u_int);
+                }
+            }
+            Err(_) => {
+                top = (*gd).hsize;
+            }
         }
         if top > (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int) {
             top = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
@@ -597,21 +599,24 @@ unsafe extern "C" fn cmd_capture_pane_history(
     {
         bottom = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
     } else {
-        n = args_strtonum_and_expand(
+        match args_strtonum_and_expand_result(
             args,
             'E' as i32 as u_char,
             INT_MIN as ::core::ffi::c_longlong,
             SHRT_MAX as ::core::ffi::c_longlong,
             item,
-            &raw mut cause,
-        ) as ::core::ffi::c_int;
-        if !cause.is_null() {
-            bottom = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
-            free(cause as *mut ::core::ffi::c_void);
-        } else if n < 0 as ::core::ffi::c_int && -n as u_int > (*gd).hsize {
-            bottom = 0 as u_int;
-        } else {
-            bottom = (*gd).hsize.wrapping_add(n as u_int);
+        ) {
+            Ok(value) => {
+                n = value as ::core::ffi::c_int;
+                if n < 0 as ::core::ffi::c_int && -n as u_int > (*gd).hsize {
+                    bottom = 0 as u_int;
+                } else {
+                    bottom = (*gd).hsize.wrapping_add(n as u_int);
+                }
+            }
+            Err(_) => {
+                bottom = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);
+            }
         }
         if bottom > (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int) {
             bottom = (*gd).hsize.wrapping_add((*gd).sy).wrapping_sub(1 as u_int);

@@ -1,4 +1,4 @@
-use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_and_expand};
+use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_and_expand_result};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
 use crate::src::colour::colour_palette_clear;
@@ -288,7 +288,6 @@ unsafe extern "C" fn cmd_send_keys_exec(
     let mut i: u_int = 0;
     let mut np: u_int = 1 as u_int;
     let mut count: u_int = args_count(args);
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if !tc.is_null()
         && (*tc).flags & CLIENT_READONLY as uint64_t != 0
         && args_has(args, 'X' as i32 as u_char) == 0
@@ -300,23 +299,23 @@ unsafe extern "C" fn cmd_send_keys_exec(
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'N' as i32 as u_char) != 0 {
-        np = args_strtonum_and_expand(
+        np = match args_strtonum_and_expand_result(
             args,
             'N' as i32 as u_char,
             1 as ::core::ffi::c_longlong,
             UINT_MAX as ::core::ffi::c_longlong,
             item,
-            &raw mut cause,
-        ) as u_int;
-        if !cause.is_null() {
-            cmdq_error(
-                item,
-                b"repeat count %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
-            );
-            free(cause as *mut ::core::ffi::c_void);
-            return CMD_RETURN_ERROR;
-        }
+        ) {
+            Ok(value) => value as u_int,
+            Err(error) => {
+                cmdq_error(
+                    item,
+                    b"repeat count %s\0" as *const u8 as *const ::core::ffi::c_char,
+                    error.message().as_ptr(),
+                );
+                return CMD_RETURN_ERROR;
+            }
+        };
         if !wme.is_null() && (args_has(args, 'X' as i32 as u_char) != 0 || count == 0 as u_int) {
             if (*(*wme).mode).command.is_none() {
                 cmdq_error(

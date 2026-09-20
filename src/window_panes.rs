@@ -1,6 +1,6 @@
 use crate::src::arguments::{
     args_has, args_make_commands, args_make_commands_free, args_make_commands_prepare,
-    args_strtonum,
+    args_strtonum_result,
 };
 use crate::src::cmd::{cmd_list_free, cmd_mouse_at};
 use crate::src::cmd_queue::{
@@ -1598,7 +1598,6 @@ unsafe extern "C" fn window_panes_init(
         tv_sec: 0,
         tv_usec: 0,
     };
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut sx: u_int = (*(*wp).base.grid).sx;
     let mut sy: u_int = (*(*wp).base.grid).sy;
     let mut delay: u_int = 0;
@@ -1618,22 +1617,22 @@ unsafe extern "C" fn window_panes_init(
             b"display-panes-time\0" as *const u8 as *const ::core::ffi::c_char,
         ) as u_int;
     } else {
-        delay = args_strtonum(
+        delay = match args_strtonum_result(
             args,
             'd' as i32 as u_char,
             0 as ::core::ffi::c_longlong,
             UINT_MAX as ::core::ffi::c_longlong,
-            &raw mut cause,
-        ) as u_int;
-        if !cause.is_null() {
-            cmdq_error(
-                item,
-                b"delay %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
-            );
-            free(cause as *mut ::core::ffi::c_void);
-            return ::core::ptr::null_mut::<screen>();
-        }
+        ) {
+            Ok(value) => value as u_int,
+            Err(error) => {
+                cmdq_error(
+                    item,
+                    b"delay %s\0" as *const u8 as *const ::core::ffi::c_char,
+                    error.message().as_ptr(),
+                );
+                return ::core::ptr::null_mut::<screen>();
+            }
+        };
     }
     data = xcalloc(
         1 as size_t,

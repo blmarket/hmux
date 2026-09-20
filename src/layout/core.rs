@@ -1,4 +1,6 @@
-use crate::src::arguments::{args_has, args_percentage_and_expand, args_strtonum_and_expand};
+use crate::src::arguments::{
+    args_has, args_percentage_and_expand_result, args_strtonum_and_expand_result,
+};
 use crate::src::events::events_fire_window;
 use crate::src::ffi::libc::{free, memcpy};
 use crate::src::log::{fatalx, log_debug};
@@ -1942,7 +1944,6 @@ pub unsafe extern "C" fn layout_get_tiled_cell(
     let mut type_0: layout_type = LAYOUT_TOPBOTTOM;
     let mut curval: u_int = 0;
     let mut size: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if window_pane_is_floating(wp) != 0 {
         *cause =
             xstrdup(b"can't split a floating pane\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1969,38 +1970,46 @@ pub unsafe extern "C" fn layout_get_tiled_cell(
         }
     }
     if args_has(args, 'l' as i32 as u_char) != 0 {
-        size = args_percentage_and_expand(
+        size = match args_percentage_and_expand_result(
             args,
             'l' as i32 as u_char,
             0 as ::core::ffi::c_longlong,
             INT_MAX as ::core::ffi::c_longlong,
             curval as ::core::ffi::c_longlong,
             item,
-            &raw mut error,
-        ) as ::core::ffi::c_int;
+        ) {
+            Ok(value) => value as ::core::ffi::c_int,
+            Err(error) => {
+                xasprintf(
+                    cause,
+                    b"invalid tiled geometry %s\0" as *const u8
+                        as *const ::core::ffi::c_char,
+                    error.message().as_ptr(),
+                );
+                return ::core::ptr::null_mut::<layout_cell>();
+            }
+        };
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
-        size = args_strtonum_and_expand(
+        size = match args_strtonum_and_expand_result(
             args,
             'p' as i32 as u_char,
             0 as ::core::ffi::c_longlong,
             100 as ::core::ffi::c_longlong,
             item,
-            &raw mut error,
-        ) as ::core::ffi::c_int;
-        if error.is_null() {
-            size = curval
-                .wrapping_mul(size as u_int)
-                .wrapping_div(100 as u_int) as ::core::ffi::c_int;
-        }
-    }
-    if !error.is_null() {
-        xasprintf(
-            cause,
-            b"invalid tiled geometry %s\0" as *const u8 as *const ::core::ffi::c_char,
-            error,
-        );
-        free(error as *mut ::core::ffi::c_void);
-        return ::core::ptr::null_mut::<layout_cell>();
+        ) {
+            Ok(value) => curval
+                .wrapping_mul(value as u_int)
+                .wrapping_div(100 as u_int) as ::core::ffi::c_int,
+            Err(error) => {
+                xasprintf(
+                    cause,
+                    b"invalid tiled geometry %s\0" as *const u8
+                        as *const ::core::ffi::c_char,
+                    error.message().as_ptr(),
+                );
+                return ::core::ptr::null_mut::<layout_cell>();
+            }
+        };
     }
     if window_active_pane_is_over_zoom(w) != 0 {
         window_push_zoom(w, 0 as ::core::ffi::c_int, 1 as ::core::ffi::c_int);
@@ -2078,7 +2087,6 @@ pub unsafe extern "C" fn layout_floating_args_parse(
     let mut sy: ::core::ffi::c_int = 0;
     let mut ox: ::core::ffi::c_int = 0;
     let mut oy: ::core::ffi::c_int = 0;
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     sx = (if (*lg).sx == UINT_MAX {
         (*w).sx.wrapping_div(2 as u_int)
     } else {
@@ -2092,24 +2100,24 @@ pub unsafe extern "C" fn layout_floating_args_parse(
     ox = (*lg).xoff;
     oy = (*lg).yoff;
     if args_has(args, 'x' as i32 as u_char) != 0 {
-        sx = args_percentage_and_expand(
+        sx = match args_percentage_and_expand_result(
             args,
             'x' as i32 as u_char,
             0 as ::core::ffi::c_longlong,
             PANE_MAXIMUM as ::core::ffi::c_longlong,
             (*w).sx as ::core::ffi::c_longlong,
             item,
-            &raw mut error,
-        ) as ::core::ffi::c_int;
-        if !error.is_null() {
-            xasprintf(
-                cause,
-                b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
-                error,
-            );
-            free(error as *mut ::core::ffi::c_void);
-            return -(1 as ::core::ffi::c_int);
-        }
+        ) {
+            Ok(value) => value as ::core::ffi::c_int,
+            Err(error) => {
+                xasprintf(
+                    cause,
+                    b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
+                    error.message().as_ptr(),
+                );
+                return -(1 as ::core::ffi::c_int);
+            }
+        };
         if lines as ::core::ffi::c_uint
             != PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
@@ -2117,24 +2125,24 @@ pub unsafe extern "C" fn layout_floating_args_parse(
         }
     }
     if args_has(args, 'y' as i32 as u_char) != 0 {
-        sy = args_percentage_and_expand(
+        sy = match args_percentage_and_expand_result(
             args,
             'y' as i32 as u_char,
             0 as ::core::ffi::c_longlong,
             PANE_MAXIMUM as ::core::ffi::c_longlong,
             (*w).sy as ::core::ffi::c_longlong,
             item,
-            &raw mut error,
-        ) as ::core::ffi::c_int;
-        if !error.is_null() {
-            xasprintf(
-                cause,
-                b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
-                error,
-            );
-            free(error as *mut ::core::ffi::c_void);
-            return -(1 as ::core::ffi::c_int);
-        }
+        ) {
+            Ok(value) => value as ::core::ffi::c_int,
+            Err(error) => {
+                xasprintf(
+                    cause,
+                    b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
+                    error.message().as_ptr(),
+                );
+                return -(1 as ::core::ffi::c_int);
+            }
+        };
         if lines as ::core::ffi::c_uint
             != PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
@@ -2142,44 +2150,44 @@ pub unsafe extern "C" fn layout_floating_args_parse(
         }
     }
     if args_has(args, 'X' as i32 as u_char) != 0 {
-        ox = args_percentage_and_expand(
+        ox = match args_percentage_and_expand_result(
             args,
             'X' as i32 as u_char,
             -sx as ::core::ffi::c_longlong,
             (*w).sx as ::core::ffi::c_longlong,
             (*w).sx as ::core::ffi::c_longlong,
             item,
-            &raw mut error,
-        ) as ::core::ffi::c_int;
-        if !error.is_null() {
-            xasprintf(
-                cause,
-                b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
-                error,
-            );
-            free(error as *mut ::core::ffi::c_void);
-            return -(1 as ::core::ffi::c_int);
-        }
+        ) {
+            Ok(value) => value as ::core::ffi::c_int,
+            Err(error) => {
+                xasprintf(
+                    cause,
+                    b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
+                    error.message().as_ptr(),
+                );
+                return -(1 as ::core::ffi::c_int);
+            }
+        };
     }
     if args_has(args, 'Y' as i32 as u_char) != 0 {
-        oy = args_percentage_and_expand(
+        oy = match args_percentage_and_expand_result(
             args,
             'Y' as i32 as u_char,
             -sy as ::core::ffi::c_longlong,
             (*w).sy as ::core::ffi::c_longlong,
             (*w).sy as ::core::ffi::c_longlong,
             item,
-            &raw mut error,
-        ) as ::core::ffi::c_int;
-        if !error.is_null() {
-            xasprintf(
-                cause,
-                b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
-                error,
-            );
-            free(error as *mut ::core::ffi::c_void);
-            return -(1 as ::core::ffi::c_int);
-        }
+        ) {
+            Ok(value) => value as ::core::ffi::c_int,
+            Err(error) => {
+                xasprintf(
+                    cause,
+                    b"position %s\0" as *const u8 as *const ::core::ffi::c_char,
+                    error.message().as_ptr(),
+                );
+                return -(1 as ::core::ffi::c_int);
+            }
+        };
     }
     if ox == INT_MAX {
         if (*w).last_new_pane_x == 0 as u_int {
