@@ -1,5 +1,6 @@
 use hmux2::src::layout_custom::{
-    parse_layout_description, serialize_layout_description, LayoutDescription,
+    parse_layout_description, serialize_layout_description, LayoutDescription, INT_MAX,
+    PANE_MAXIMUM, WINDOW_MAXIMUM,
 };
 use hmux2::src::shared::layout::{LAYOUT_LEFTRIGHT, LAYOUT_TOPBOTTOM, LAYOUT_WINDOWPANE};
 
@@ -103,6 +104,82 @@ fn malformed_and_truncated_layouts_keep_their_diagnostics() {
     let trailing = legacy_layout("79x23,0,0,7,");
     let trailing = parse_layout_description(&trailing).unwrap_err();
     assert_eq!(trailing.to_string(), "trailing data");
+}
+
+#[test]
+fn legacy_checksum_rejection_is_reported_before_parsing() {
+    let mut layout = legacy_layout("79x23,0,0,7");
+    let replacement = if layout[0] == b'0' { b'1' } else { b'0' };
+    layout[0] = replacement;
+
+    assert_eq!(
+        parse_layout_description(&layout).unwrap_err().to_string(),
+        "invalid layout checksum"
+    );
+}
+
+#[test]
+fn geometry_and_metadata_limits_keep_their_diagnostics() {
+    let width = format!(
+        "{{\"V\":2,\"L\":{{\"t\":\"p\",\"w\":{},\"h\":23,\"x\":0,\"y\":0,\"i\":0}}}}",
+        PANE_MAXIMUM + 1
+    );
+    assert_eq!(
+        parse_layout_description(width.as_bytes())
+            .unwrap_err()
+            .to_string(),
+        format!("invalid width {}", PANE_MAXIMUM + 1)
+    );
+
+    let x_offset = format!(
+        "{{\"V\":2,\"L\":{{\"t\":\"p\",\"w\":79,\"h\":23,\"x\":{},\"y\":0,\"i\":0}}}}",
+        WINDOW_MAXIMUM + 1
+    );
+    assert_eq!(
+        parse_layout_description(x_offset.as_bytes())
+            .unwrap_err()
+            .to_string(),
+        format!("invalid x-offset {}", WINDOW_MAXIMUM + 1)
+    );
+
+    let negative_index =
+        br#"{"V":2,"L":{"t":"p","w":79,"h":23,"x":0,"y":0,"i":-1}}"#;
+    assert_eq!(
+        parse_layout_description(negative_index)
+            .unwrap_err()
+            .to_string(),
+        "invalid index -1"
+    );
+
+    let invalid_zindex = format!(
+        "{{\"V\":2,\"L\":{{\"t\":\"p\",\"w\":79,\"h\":23,\"x\":0,\"y\":0,\"i\":0,\"z\":{}}}}}",
+        INT_MAX
+    );
+    assert_eq!(
+        parse_layout_description(invalid_zindex.as_bytes())
+            .unwrap_err()
+            .to_string(),
+        format!("invalid floating zindex {}", INT_MAX)
+    );
+}
+
+#[test]
+fn legacy_depth_limit_rejects_truncatedly_deep_layouts() {
+    let mut body = String::new();
+    for _ in 0..1002 {
+        body.push_str("1x1,0,0{");
+    }
+    body.push_str("1x1,0,0");
+    for _ in 0..1002 {
+        body.push('}');
+    }
+
+    assert_eq!(
+        parse_layout_description(&legacy_layout(&body))
+            .unwrap_err()
+            .to_string(),
+        "invalid layout"
+    );
 }
 
 #[test]

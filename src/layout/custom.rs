@@ -1,5 +1,5 @@
 use crate::src::events::events_fire_window;
-use crate::src::ffi::libc::{free, memcpy, memmove, qsort, sscanf, strcmp};
+use crate::src::ffi::libc::{free, memcpy, memmove, qsort, sscanf, strcmp, strlen};
 use crate::src::json::{
     json_array_first, json_array_next, json_destroy_node, json_find, json_find_array,
     json_find_boolean, json_find_number, json_find_object, json_find_string, json_get_object,
@@ -16,7 +16,9 @@ use crate::src::window::{
     window_pane_stack_push, window_pane_stack_remove, window_pane_zindex, window_resize,
     window_set_active_pane,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xstrdup, xvasprintf};
+use crate::src::xmalloc::{
+    xasprintf, xcalloc, xmalloc, xmemdup, xreallocarray, xstrdup, xvasprintf,
+};
 pub use crate::src::shared::json::{json_node};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -81,7 +83,7 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 
-use ::std::ffi::CStr;
+use ::std::ops::{Deref, Index};
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
@@ -125,6 +127,211 @@ pub struct LayoutDescriptionGeometry {
     pub yoff: i32,
 }
 
+/// An owned byte string backed by the project's xmalloc allocator.
+///
+/// The trailing NUL is an implementation detail for the C-facing helpers; it
+/// is not included in `as_slice`.
+pub struct LayoutDescriptionBytes {
+    data: *mut u8,
+    len: usize,
+}
+
+impl LayoutDescriptionBytes {
+    pub fn from_slice(value: &[u8]) -> Self {
+        unsafe {
+            let data = xmalloc(value.len().wrapping_add(1)) as *mut u8;
+            if !value.is_empty() {
+                memcpy(
+                    data as *mut ::core::ffi::c_void,
+                    value.as_ptr() as *const ::core::ffi::c_void,
+                    value.len(),
+                );
+            }
+            *data.add(value.len()) = 0;
+            Self {
+                data,
+                len: value.len(),
+            }
+        }
+    }
+
+    unsafe fn from_owned_c_string(data: *mut ::core::ffi::c_char) -> Self {
+        Self {
+            data: data as *mut u8,
+            len: strlen(data) as usize,
+        }
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe { ::std::slice::from_raw_parts(self.data, self.len) }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+}
+
+impl Clone for LayoutDescriptionBytes {
+    fn clone(&self) -> Self {
+        Self::from_slice(self.as_slice())
+    }
+}
+
+impl ::std::fmt::Debug for LayoutDescriptionBytes {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.debug_tuple("LayoutDescriptionBytes")
+            .field(&self.as_slice())
+            .finish()
+    }
+}
+
+impl PartialEq for LayoutDescriptionBytes {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl Eq for LayoutDescriptionBytes {}
+
+impl AsRef<[u8]> for LayoutDescriptionBytes {
+    fn as_ref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl Deref for LayoutDescriptionBytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl Drop for LayoutDescriptionBytes {
+    fn drop(&mut self) {
+        unsafe {
+            free(self.data as *mut ::core::ffi::c_void);
+        }
+    }
+}
+
+/// Children of a detached layout node, stored with the same fatal allocation
+/// policy as the rest of this module.
+pub struct LayoutDescriptionChildren {
+    nodes: *mut LayoutDescriptionNode,
+    len: usize,
+    capacity: usize,
+}
+
+impl LayoutDescriptionChildren {
+    pub fn new() -> Self {
+        Self {
+            nodes: ::core::ptr::null_mut(),
+            len: 0,
+            capacity: 0,
+        }
+    }
+
+    pub fn push(&mut self, node: LayoutDescriptionNode) {
+        unsafe {
+            if self.len == self.capacity {
+                let capacity = if self.capacity == 0 {
+                    4
+                } else {
+                    self.capacity.wrapping_mul(2)
+                };
+                self.nodes = if self.nodes.is_null() {
+                    xcalloc(
+                        capacity,
+                        ::core::mem::size_of::<LayoutDescriptionNode>(),
+                    )
+                } else {
+                    xreallocarray(
+                        self.nodes as *mut ::core::ffi::c_void,
+                        capacity,
+                        ::core::mem::size_of::<LayoutDescriptionNode>(),
+                    )
+                } as *mut LayoutDescriptionNode;
+                self.capacity = capacity;
+            }
+            ::core::ptr::write(self.nodes.add(self.len), node);
+            self.len += 1;
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn iter(&self) -> ::std::slice::Iter<'_, LayoutDescriptionNode> {
+        unsafe {
+            if self.len == 0 {
+                (&[] as &[LayoutDescriptionNode]).iter()
+            } else {
+                ::std::slice::from_raw_parts(self.nodes, self.len).iter()
+            }
+        }
+    }
+}
+
+impl Default for LayoutDescriptionChildren {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ::std::fmt::Debug for LayoutDescriptionChildren {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl Clone for LayoutDescriptionChildren {
+    fn clone(&self) -> Self {
+        let mut copy = Self::new();
+        for index in 0..self.len {
+            copy.push(self[index].clone());
+        }
+        copy
+    }
+}
+
+impl PartialEq for LayoutDescriptionChildren {
+    fn eq(&self, other: &Self) -> bool {
+        self.len == other.len && self.iter().zip(other.iter()).all(|(a, b)| a == b)
+    }
+}
+
+impl Eq for LayoutDescriptionChildren {}
+
+impl Index<usize> for LayoutDescriptionChildren {
+    type Output = LayoutDescriptionNode;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        assert!(index < self.len, "layout description child index out of bounds");
+        unsafe { &*self.nodes.add(index) }
+    }
+}
+
+impl Drop for LayoutDescriptionChildren {
+    fn drop(&mut self) {
+        unsafe {
+            for index in 0..self.len {
+                ::core::ptr::drop_in_place(self.nodes.add(index));
+            }
+            free(self.nodes as *mut ::core::ffi::c_void);
+        }
+    }
+}
+
 /// Pane metadata carried by a custom-layout leaf.
 ///
 /// `index` is the v2 pane ordering key.  `id` is the optional legacy pane
@@ -134,7 +341,7 @@ pub struct LayoutDescriptionGeometry {
 pub struct LayoutDescriptionPane {
     pub index: Option<i32>,
     pub id: Option<u32>,
-    pub identifier: Option<Vec<u8>>,
+    pub identifier: Option<LayoutDescriptionBytes>,
     pub active: bool,
     pub last: Option<i32>,
     pub zindex: Option<i32>,
@@ -142,13 +349,12 @@ pub struct LayoutDescriptionPane {
 
 /// A detached custom-layout node.  This is the intermediate representation
 /// shared by the legacy and JSON parsers; it has no live-window ownership.
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LayoutDescriptionNode {
     pub type_0: layout_type,
     pub flags: i32,
     pub geometry: LayoutDescriptionGeometry,
     pub pane: Option<LayoutDescriptionPane>,
-    pub children: Vec<LayoutDescriptionNode>,
+    pub children: LayoutDescriptionChildren,
 }
 
 /// A fully parsed custom layout, ready for validation and application.
@@ -159,24 +365,41 @@ pub struct LayoutDescription {
 }
 
 /// Error returned by the byte-oriented parser API.
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LayoutParseError {
-    message: Vec<u8>,
+    message: LayoutDescriptionBytes,
 }
 
 impl LayoutParseError {
     pub fn as_bytes(&self) -> &[u8] {
-        &self.message
-    }
-}
-
-impl ::std::fmt::Display for LayoutParseError {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        write!(f, "{}", String::from_utf8_lossy(&self.message))
+        self.message.as_slice()
     }
 }
 
 impl ::std::error::Error for LayoutParseError {}
+
+impl Clone for LayoutParseError {
+    fn clone(&self) -> Self {
+        Self {
+            message: self.message.clone(),
+        }
+    }
+}
+
+impl ::std::fmt::Debug for LayoutParseError {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.debug_struct("LayoutParseError")
+            .field("message", &self.message)
+            .finish()
+    }
+}
+
+impl PartialEq for LayoutParseError {
+    fn eq(&self, other: &Self) -> bool {
+        self.message == other.message
+    }
+}
+
+impl Eq for LayoutParseError {}
 
 impl LayoutDescriptionNode {
     fn leaf(geometry: LayoutDescriptionGeometry, pane: LayoutDescriptionPane) -> Self {
@@ -185,14 +408,14 @@ impl LayoutDescriptionNode {
             flags: 0,
             geometry,
             pane: Some(pane),
-            children: Vec::new(),
+            children: LayoutDescriptionChildren::new(),
         }
     }
 
     fn node(
         type_0: layout_type,
         geometry: LayoutDescriptionGeometry,
-        children: Vec<Self>,
+        children: LayoutDescriptionChildren,
     ) -> Self {
         Self {
             type_0,
@@ -203,13 +426,105 @@ impl LayoutDescriptionNode {
         }
     }
 
-    fn visit_panes<'a>(&'a self, panes: &mut Vec<&'a LayoutDescriptionPane>) {
+    fn has_duplicate_index(&self, target: &LayoutDescriptionPane, target_ptr: *const LayoutDescriptionPane) -> bool {
         if let Some(pane) = self.pane.as_ref() {
-            panes.push(pane);
+            if !::std::ptr::eq(pane, target_ptr)
+                && pane.index.is_some()
+                && pane.index == target.index
+            {
+                return true;
+            }
         }
-        for child in &self.children {
-            child.visit_panes(panes);
+        for index in 0..self.children.len() {
+            if self.children[index].has_duplicate_index(target, target_ptr) {
+                return true;
+            }
         }
+        false
+    }
+
+    fn has_duplicate_zindex(&self, target: &LayoutDescriptionPane, target_ptr: *const LayoutDescriptionPane) -> bool {
+        if let Some(pane) = self.pane.as_ref() {
+            if !::std::ptr::eq(pane, target_ptr)
+                && pane.zindex.is_some()
+                && pane.zindex == target.zindex
+            {
+                return true;
+            }
+        }
+        for index in 0..self.children.len() {
+            if self.children[index].has_duplicate_zindex(target, target_ptr) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn has_duplicate_last(&self, target: &LayoutDescriptionPane, target_ptr: *const LayoutDescriptionPane) -> bool {
+        if let Some(pane) = self.pane.as_ref() {
+            if !::std::ptr::eq(pane, target_ptr)
+                && pane.last.is_some()
+                && pane.last == target.last
+            {
+                return true;
+            }
+        }
+        for index in 0..self.children.len() {
+            if self.children[index].has_duplicate_last(target, target_ptr) {
+                return true;
+            }
+        }
+        false
+    }
+
+}
+
+impl Clone for LayoutDescriptionNode {
+    fn clone(&self) -> Self {
+        Self {
+            type_0: self.type_0,
+            flags: self.flags,
+            geometry: self.geometry,
+            pane: self.pane.clone(),
+            children: self.children.clone(),
+        }
+    }
+}
+
+impl ::std::fmt::Debug for LayoutDescriptionNode {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.debug_struct("LayoutDescriptionNode")
+            .field("type_0", &self.type_0)
+            .field("flags", &self.flags)
+            .field("geometry", &self.geometry)
+            .field("pane", &self.pane)
+            .field("children", &self.children)
+            .finish()
+    }
+}
+
+impl PartialEq for LayoutDescriptionNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.type_0 == other.type_0
+            && self.flags == other.flags
+            && self.geometry == other.geometry
+            && self.pane == other.pane
+            && self.children == other.children
+    }
+}
+
+impl Eq for LayoutDescriptionNode {}
+
+impl ::std::fmt::Display for LayoutParseError {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        for &byte in self.message.as_slice() {
+            if byte.is_ascii() {
+                ::std::fmt::Write::write_char(f, byte as char)?;
+            } else {
+                ::std::fmt::Write::write_char(f, '\u{fffd}')?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -501,7 +816,7 @@ unsafe fn layout_description_construct_v1(
         b'[' => (LAYOUT_TOPBOTTOM, b']'),
         _ => return None,
     };
-    let mut children = Vec::new();
+    let mut children = LayoutDescriptionChildren::new();
     loop {
         *layout = (*layout).offset(1);
         children.push(layout_description_construct_v1(layout, depth + 1)?);
@@ -698,7 +1013,10 @@ unsafe fn layout_description_parse_json_cell(
             } else {
                 let mut value = ::core::ptr::null::<::core::ffi::c_char>();
                 if json_get_string(field, &raw mut value) == 0 {
-                    Some(CStr::from_ptr(value).to_bytes().to_vec())
+                    let length = strlen(value) as usize;
+                    Some(LayoutDescriptionBytes::from_slice(
+                        ::std::slice::from_raw_parts(value as *const u8, length),
+                    ))
                 } else {
                     None
                 }
@@ -736,7 +1054,7 @@ unsafe fn layout_description_parse_json_cell(
             );
             return None;
         }
-        let mut children = Vec::new();
+        let mut children = LayoutDescriptionChildren::new();
         let mut member = first;
         while !member.is_null() {
             children.push(layout_description_parse_json_cell(member, cause, active_count)?);
@@ -753,52 +1071,71 @@ unsafe fn layout_description_validate(
     if description.version != 2 {
         return true;
     }
-    let mut panes = Vec::new();
-    description.root.visit_panes(&mut panes);
-    if panes.is_empty() {
+    let mut validation = LayoutDescriptionValidation {
+        pane_count: 0,
+        active_count: 0,
+        duplicate_index: false,
+        duplicate_zindex: false,
+        duplicate_last: false,
+    };
+    layout_description_validate_node(&description.root, &description.root, &mut validation);
+    if validation.pane_count == 0 {
         *cause = xstrdup(b"no panes\0" as *const u8 as *const ::core::ffi::c_char);
         return false;
     }
-    if panes.iter().filter(|pane| pane.active).count() > 1 {
+    if validation.active_count > 1 {
         *cause = xstrdup(
             b"more than one active pane\0" as *const u8 as *const ::core::ffi::c_char,
         );
         return false;
     }
-    let mut indexes = panes
-        .iter()
-        .filter_map(|pane| pane.index)
-        .collect::<Vec<_>>();
-    indexes.sort_unstable();
-    if indexes.windows(2).any(|pair| pair[0] == pair[1]) {
+    if validation.duplicate_index {
         *cause = xstrdup(
             b"duplicate pane index\0" as *const u8 as *const ::core::ffi::c_char,
         );
         return false;
     }
-    let mut zindexes = panes
-        .iter()
-        .filter_map(|pane| pane.zindex)
-        .collect::<Vec<_>>();
-    zindexes.sort_unstable();
-    if zindexes.windows(2).any(|pair| pair[0] == pair[1]) {
+    if validation.duplicate_zindex {
         *cause = xstrdup(
             b"duplicate pane z-index\0" as *const u8 as *const ::core::ffi::c_char,
         );
         return false;
     }
-    let mut lasts = panes
-        .iter()
-        .filter_map(|pane| pane.last)
-        .collect::<Vec<_>>();
-    lasts.sort_unstable();
-    if lasts.windows(2).any(|pair| pair[0] == pair[1]) {
+    if validation.duplicate_last {
         *cause = xstrdup(
             b"duplicate last pane index\0" as *const u8 as *const ::core::ffi::c_char,
         );
         return false;
     }
     true
+}
+
+struct LayoutDescriptionValidation {
+    pane_count: usize,
+    active_count: usize,
+    duplicate_index: bool,
+    duplicate_zindex: bool,
+    duplicate_last: bool,
+}
+
+fn layout_description_validate_node(
+    node: &LayoutDescriptionNode,
+    root: &LayoutDescriptionNode,
+    validation: &mut LayoutDescriptionValidation,
+) {
+    if let Some(pane) = node.pane.as_ref() {
+        validation.pane_count += 1;
+        if pane.active {
+            validation.active_count += 1;
+        }
+        let pane_ptr = pane as *const LayoutDescriptionPane;
+        validation.duplicate_index |= root.has_duplicate_index(pane, pane_ptr);
+        validation.duplicate_zindex |= root.has_duplicate_zindex(pane, pane_ptr);
+        validation.duplicate_last |= root.has_duplicate_last(pane, pane_ptr);
+    }
+    for index in 0..node.children.len() {
+        layout_description_validate_node(&node.children[index], root, validation);
+    }
 }
 
 unsafe fn layout_parse_description_c(
@@ -905,32 +1242,70 @@ unsafe fn layout_parse_description_c(
 pub fn parse_layout_description(input: &[u8]) -> Result<LayoutDescription, LayoutParseError> {
     if input.contains(&0) {
         return Err(LayoutParseError {
-            message: b"embedded NUL".to_vec(),
+            message: LayoutDescriptionBytes::from_slice(b"embedded NUL"),
         });
     }
-    let mut owned = input.to_vec();
-    owned.push(0);
+    let owned = unsafe {
+        xmemdup(
+            input.as_ptr() as *const ::core::ffi::c_void,
+            input.len(),
+        )
+    };
     let mut cause = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let result = unsafe {
-        layout_parse_description_c(owned.as_ptr() as *const ::core::ffi::c_char, &raw mut cause)
+        layout_parse_description_c(owned as *const ::core::ffi::c_char, &raw mut cause)
     };
-    let error = if result.is_none() {
+    unsafe {
+        free(owned as *mut ::core::ffi::c_void);
+    }
+    if result.is_none() {
         let message = if cause.is_null() {
-            b"invalid layout".to_vec()
+            LayoutDescriptionBytes::from_slice(b"invalid layout")
         } else {
-            unsafe { CStr::from_ptr(cause).to_bytes().to_vec() }
+            let message = unsafe { LayoutDescriptionBytes::from_owned_c_string(cause) };
+            cause = ::core::ptr::null_mut();
+            message
         };
-        Some(LayoutParseError { message })
-    } else {
-        None
-    };
+        unsafe {
+            free(cause as *mut ::core::ffi::c_void);
+        }
+        return Err(LayoutParseError { message });
+    }
     unsafe {
         free(cause as *mut ::core::ffi::c_void);
     }
-    result.ok_or_else(|| error.expect("a parse failure has a diagnostic"))
+    Ok(result.unwrap())
 }
 
-fn layout_description_append_json_string(output: &mut Vec<u8>, value: &[u8]) -> bool {
+unsafe fn layout_string_append(output: *mut layout_string, value: &[u8]) {
+    while (*output)
+        .size
+        .wrapping_add(value.len() as size_t)
+        .wrapping_add(1 as size_t)
+        > (*output).capacity
+    {
+        (*output).dat = xreallocarray(
+            (*output).dat as *mut ::core::ffi::c_void,
+            2 as size_t,
+            (*output).capacity,
+        ) as *mut ::core::ffi::c_char;
+        (*output).capacity = (*output).capacity.wrapping_mul(2 as size_t);
+    }
+    if !value.is_empty() {
+        memcpy(
+            (*output).dat.add((*output).size) as *mut ::core::ffi::c_void,
+            value.as_ptr() as *const ::core::ffi::c_void,
+            value.len(),
+        );
+    }
+    (*output).size = (*output).size.wrapping_add(value.len() as size_t);
+    *(*output).dat.add((*output).size) = 0;
+}
+
+unsafe fn layout_description_append_json_string(
+    output: *mut layout_string,
+    value: &[u8],
+) -> bool {
     let mut index = 0;
     while index < value.len() {
         match value[index] {
@@ -960,32 +1335,31 @@ fn layout_description_append_json_string(output: &mut Vec<u8>, value: &[u8]) -> 
         }
         index += 1;
     }
-    output.push(b'"');
-    output.extend_from_slice(value);
-    output.push(b'"');
+    layout_string_append(output, b"\"");
+    layout_string_append(output, value);
+    layout_string_append(output, b"\"");
     true
 }
 
-fn layout_description_append_json_node(
+unsafe fn layout_description_append_json_node(
     node: &LayoutDescriptionNode,
-    output: &mut Vec<u8>,
+    output: *mut layout_string,
 ) -> bool {
     let type_name = match node.type_0 {
-        LAYOUT_WINDOWPANE => "p",
-        LAYOUT_TOPBOTTOM => "v",
-        LAYOUT_LEFTRIGHT => "h",
+        LAYOUT_WINDOWPANE => 'p' as ::core::ffi::c_int,
+        LAYOUT_TOPBOTTOM => 'v' as ::core::ffi::c_int,
+        LAYOUT_LEFTRIGHT => 'h' as ::core::ffi::c_int,
         _ => return false,
     };
-    output.extend_from_slice(
-        format!(
-            "{{\"t\":\"{}\",\"w\":{},\"h\":{},\"x\":{},\"y\":{}",
-            type_name,
-            node.geometry.sx,
-            node.geometry.sy,
-            node.geometry.xoff,
-            node.geometry.yoff,
-        )
-        .as_bytes(),
+    layout_string_write(
+        output,
+        b"{\"t\":\"%c\",\"w\":%u,\"h\":%u,\"x\":%d,\"y\":%d\0"
+            as *const u8 as *const ::core::ffi::c_char,
+        type_name,
+        node.geometry.sx,
+        node.geometry.sy,
+        node.geometry.xoff,
+        node.geometry.yoff,
     );
     if node.type_0 == LAYOUT_WINDOWPANE {
         if !node.children.is_empty() {
@@ -997,18 +1371,30 @@ fn layout_description_append_json_node(
         let Some(index) = pane.index else {
             return false;
         };
-        output.extend_from_slice(format!(",\"i\":{}", index).as_bytes());
+        layout_string_write(
+            output,
+            b",\"i\":%d\0" as *const u8 as *const ::core::ffi::c_char,
+            index,
+        );
         if pane.active {
-            output.extend_from_slice(b",\"a\":true");
+            layout_string_append(output, b",\"a\":true");
         } else if let Some(last) = pane.last {
-            output.extend_from_slice(format!(",\"l\":{}", last).as_bytes());
+            layout_string_write(
+                output,
+                b",\"l\":%d\0" as *const u8 as *const ::core::ffi::c_char,
+                last,
+            );
         }
         if let Some(zindex) = pane.zindex {
-            output.extend_from_slice(format!(",\"z\":{}", zindex).as_bytes());
+            layout_string_write(
+                output,
+                b",\"z\":%d\0" as *const u8 as *const ::core::ffi::c_char,
+                zindex,
+            );
         }
         if let Some(identifier) = pane.identifier.as_ref() {
-            output.extend_from_slice(b",\"I\":");
-            if !layout_description_append_json_string(output, identifier) {
+            layout_string_append(output, b",\"I\":");
+            if !layout_description_append_json_string(output, identifier.as_slice()) {
                 return false;
             }
         }
@@ -1016,28 +1402,32 @@ fn layout_description_append_json_node(
         if node.pane.is_some() || node.children.len() < 2 {
             return false;
         }
-        output.extend_from_slice(b",\"c\":[");
-        for (index, child) in node.children.iter().enumerate() {
+        layout_string_append(output, b",\"c\":[");
+        for index in 0..node.children.len() {
             if index != 0 {
-                output.push(b',');
+                layout_string_append(output, b",");
             }
-            if !layout_description_append_json_node(child, output) {
+            if !layout_description_append_json_node(&node.children[index], output) {
                 return false;
             }
         }
-        output.push(b']');
+        layout_string_append(output, b"]");
     }
-    output.push(b'}');
+    layout_string_append(output, b"}");
     true
 }
 
-fn layout_description_append_v1(node: &LayoutDescriptionNode, output: &mut Vec<u8>) -> bool {
-    output.extend_from_slice(
-        format!(
-            "{}x{},{},{}",
-            node.geometry.sx, node.geometry.sy, node.geometry.xoff, node.geometry.yoff,
-        )
-        .as_bytes(),
+unsafe fn layout_description_append_v1(
+    node: &LayoutDescriptionNode,
+    output: *mut layout_string,
+) -> bool {
+    layout_string_write(
+        output,
+        b"%ux%u,%d,%d\0" as *const u8 as *const ::core::ffi::c_char,
+        node.geometry.sx,
+        node.geometry.sy,
+        node.geometry.xoff,
+        node.geometry.yoff,
     );
     match node.type_0 {
         LAYOUT_WINDOWPANE => {
@@ -1045,30 +1435,34 @@ fn layout_description_append_v1(node: &LayoutDescriptionNode, output: &mut Vec<u
                 return false;
             }
             if let Some(id) = node.pane.as_ref().and_then(|pane| pane.id) {
-                output.extend_from_slice(format!(",{}", id).as_bytes());
+                layout_string_write(
+                    output,
+                    b",%u\0" as *const u8 as *const ::core::ffi::c_char,
+                    id,
+                );
             }
         }
         LAYOUT_LEFTRIGHT | LAYOUT_TOPBOTTOM => {
             if node.pane.is_some() || node.children.is_empty() {
                 return false;
             }
-            output.push(if node.type_0 == LAYOUT_LEFTRIGHT {
-                b'{'
+            layout_string_append(output, if node.type_0 == LAYOUT_LEFTRIGHT {
+                b"{"
             } else {
-                b'['
+                b"["
             });
-            for (index, child) in node.children.iter().enumerate() {
+            for index in 0..node.children.len() {
                 if index != 0 {
-                    output.push(b',');
+                    layout_string_append(output, b",");
                 }
-                if !layout_description_append_v1(child, output) {
+                if !layout_description_append_v1(&node.children[index], output) {
                     return false;
                 }
             }
-            output.push(if node.type_0 == LAYOUT_LEFTRIGHT {
-                b'}'
+            layout_string_append(output, if node.type_0 == LAYOUT_LEFTRIGHT {
+                b"}"
             } else {
-                b']'
+                b"]"
             });
         }
         _ => return false,
@@ -1085,32 +1479,78 @@ fn layout_description_checksum(bytes: &[u8]) -> u16 {
     checksum
 }
 
+unsafe fn layout_description_bytes_from_string(
+    output: *mut layout_string,
+) -> LayoutDescriptionBytes {
+    let result = LayoutDescriptionBytes {
+        data: (*output).dat as *mut u8,
+        len: (*output).size,
+    };
+    (*output).dat = ::core::ptr::null_mut();
+    (*output).size = 0;
+    (*output).capacity = 0;
+    result
+}
+
 /// Serialize a parsed custom layout without consulting or changing a window.
 ///
 /// The legacy JSON tokenizer deliberately retains string escape bytes instead
 /// of decoding them; valid escape sequences are therefore emitted unchanged.
 /// This returns `None` for an invalid identifier supplied by a caller that
 /// constructs a description manually.
-pub fn serialize_layout_description(description: &LayoutDescription) -> Option<Vec<u8>> {
-    match description.version {
-        1 => {
-            let mut body = Vec::new();
-            if !layout_description_append_v1(&description.root, &mut body) {
-                return None;
+pub fn serialize_layout_description(
+    description: &LayoutDescription,
+) -> Option<LayoutDescriptionBytes> {
+    unsafe {
+        match description.version {
+            1 => {
+                let mut body = layout_string {
+                    dat: ::core::ptr::null_mut(),
+                    size: 0,
+                    capacity: 0,
+                };
+                let mut output = layout_string {
+                    dat: ::core::ptr::null_mut(),
+                    size: 0,
+                    capacity: 0,
+                };
+                layout_string_init(&raw mut body);
+                if !layout_description_append_v1(&description.root, &raw mut body) {
+                    layout_string_free(&raw mut body);
+                    return None;
+                }
+                layout_string_init(&raw mut output);
+                layout_string_write(
+                    &raw mut output,
+                    b"%04hx,\0" as *const u8 as *const ::core::ffi::c_char,
+                    layout_description_checksum(
+                        ::std::slice::from_raw_parts(body.dat as *const u8, body.size),
+                    ) as ::core::ffi::c_int,
+                );
+                layout_string_append(
+                    &raw mut output,
+                    ::std::slice::from_raw_parts(body.dat as *const u8, body.size),
+                );
+                layout_string_free(&raw mut body);
+                Some(layout_description_bytes_from_string(&raw mut output))
             }
-            let mut output = format!("{:04x},", layout_description_checksum(&body)).into_bytes();
-            output.extend_from_slice(&body);
-            Some(output)
-        }
-        2 => {
-            let mut output = b"{\"V\":2,\"L\":".to_vec();
-            if !layout_description_append_json_node(&description.root, &mut output) {
-                return None;
+            2 => {
+                let mut output = layout_string {
+                    dat: ::core::ptr::null_mut(),
+                    size: 0,
+                    capacity: 0,
+                };
+                layout_string_init(&raw mut output);
+                layout_string_append(&raw mut output, b"{\"V\":2,\"L\":");
+                if !layout_description_append_json_node(&description.root, &raw mut output) {
+                    layout_string_free(&raw mut output);
+                    return None;
+                }
+                layout_string_append(&raw mut output, b"}");
+                Some(layout_description_bytes_from_string(&raw mut output))
             }
-            output.extend_from_slice(b"}");
-            Some(output)
+            _ => None,
         }
-        _ => None,
     }
 }
 
@@ -1145,8 +1585,8 @@ unsafe fn layout_description_to_cell(
         }
         return lc;
     }
-    for child in &node.children {
-        let lcchild = layout_description_to_cell(child, lc, pctx);
+    for index in 0..node.children.len() {
+        let lcchild = layout_description_to_cell(&node.children[index], lc, pctx);
         (*lcchild).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
         (*lcchild).entry.tqe_prev = (*lc).cells.tqh_last;
         *(*lc).cells.tqh_last = lcchild;
