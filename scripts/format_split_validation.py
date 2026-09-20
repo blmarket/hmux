@@ -6,8 +6,9 @@ Each checkpoint adds exactly one private implementation module and its facade
 imports. This preserves a one-group-at-a-time build/test/Clippy comparison
 even though the historical split commit was monolithic and must not be
 rewritten. The implementation sources and final checkpoint are pinned to the
-current checked-in source revision, while SPLIT_REV records the original
-all-at-once move for provenance.
+checked-in source revision, while SPLIT_REV records the original all-at-once
+move for provenance. ``inventory`` also records the symbols each group takes
+from another group or from the facade's existing imports and declarations.
 """
 
 from __future__ import annotations
@@ -34,11 +35,11 @@ LOGS = VALIDATION / "format-checkpoint-logs"
 TARGETS = VALIDATION / "format-checkpoint-targets"
 # These are deliberately immutable source points. BASELINE_REV is the last
 # revision before this split. SPLIT_REV is the historical commit containing
-# the four moved implementation files. FINAL_REV is the checked-in source
-# being validated; prepare() records every resolved SHA in the manifest.
+# the four moved implementation files. FINAL_REV is the verified checked-in
+# source revision; prepare() records every resolved SHA in the manifest.
 BASELINE_REV = "8d02dca179520da8b25ba6cb1de3e6a54dafd490"
 SPLIT_REV = "cc5b93feb4395cda2edc8de3463bd04a312ec94d"
-FINAL_REV = "584ccab42be2a229f277776e396bd5750cfeb7d2"
+FINAL_REV = "040bde9fdc59bdc0bfa2d2f31d369392daf18346"
 STAGES = ("baseline", "tree", "expression", "jobs", "callbacks", "final")
 GROUPS = ("tree", "expression", "jobs", "callbacks")
 
@@ -89,6 +90,33 @@ GROUP_COMMENTS = {
     "callbacks": """/* Private default-callback checkpoint. */\n""",
 }
 
+RESPONSIBILITIES = {
+    "tree": (
+        "format-entry and format-job red-black trees plus format-tree CRUD "
+        "and logging helpers"
+    ),
+    "expression": (
+        "modifier parsing, expression evaluation, loops, conditionals, "
+        "escaping, and recursive expansion"
+    ),
+    "jobs": (
+        "process-wide and per-client format-job caches, job callbacks, and "
+        "cache cleanup"
+    ),
+    "callbacks": (
+        "default format callbacks and the sorted callback lookup table"
+    ),
+}
+
+
+DECLARATION_PATTERN = re.compile(
+    r'^(?:(?:pub(?:\([^)]*\))?|unsafe|extern "C")\s+)*'
+    r'(?:fn|static(?:\s+mut)?|const|struct|enum|union|type|trait)\s+'
+    r'([A-Za-z_][A-Za-z0-9_]*)\b',
+    re.MULTILINE,
+)
+IDENTIFIER_PATTERN = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
+
 
 def git_archive(revision: str, destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=False)
@@ -115,6 +143,22 @@ def top_level_items(source: str) -> list[str]:
     for match in pattern.finditer(source):
         names.append(match.group(1))
     return names
+
+
+def top_level_declarations(source: str) -> list[str]:
+    """Return all named top-level Rust declarations in a source file."""
+
+    return [match.group(1) for match in DECLARATION_PATTERN.finditer(source)]
+
+
+def use_identifiers(source: str) -> set[str]:
+    """Return identifiers appearing in use and pub-use declarations."""
+
+    identifiers: set[str] = set()
+    for line in source.splitlines():
+        if re.match(r"^\s*(?:pub\s+)?use\s+", line):
+            identifiers.update(IDENTIFIER_PATTERN.findall(line))
+    return identifiers
 
 
 def code_brace(source: str, start: int) -> int:
@@ -277,6 +321,79 @@ def group_items(sources: dict[str, bytes]) -> dict[str, list[str]]:
             raise RuntimeError(f"no top-level items found in {group}.rs")
         result[group] = names
     return result
+
+
+def dependency_inventory(
+    sources: dict[str, bytes], items: dict[str, list[str]]
+) -> dict:
+    """Inventory cross-group references and the remaining facade boundary.
+
+    The implementation files deliberately use ``use super::*``.  That keeps
+    the translated C declarations and FFI imports at the existing facade, so
+    this inventory reports both direct references to moved symbols and names
+    consumed from that facade.  It is a lexical inventory rather than a
+    compiler dependency graph: every listed name is an exact Rust identifier
+    found in the corresponding implementation source.
+    """
+
+    all_group_items = {
+        name for group_items_list in items.values() for name in group_items_list
+    }
+    baseline_source = subprocess.check_output(
+        ["git", "show", f"{BASELINE_REV}:src/format.rs"], cwd=ROOT
+    ).decode()
+    facade_symbols = set(top_level_declarations(baseline_source))
+    facade_symbols.update(use_identifiers(baseline_source))
+
+    inventory = {
+        "schema": 1,
+        "source_revision": subprocess.check_output(
+            ["git", "rev-parse", FINAL_REV], cwd=ROOT, text=True
+        ).strip(),
+        "groups": {},
+    }
+    for group in GROUPS:
+        source = sources[group].decode()
+        identifiers = set(IDENTIFIER_PATTERN.findall(source))
+        depends_on_groups = {}
+        for dependency_group in GROUPS:
+            if dependency_group == group:
+                continue
+            names = sorted(
+                set(items[dependency_group]).intersection(identifiers)
+            )
+            if names:
+                depends_on_groups[dependency_group] = names
+        facade_dependencies = sorted(
+            facade_symbols.intersection(identifiers) - all_group_items
+        )
+        inventory["groups"][group] = {
+            "responsibility": RESPONSIBILITIES[group],
+            "items": items[group],
+            "implementation_imports": [
+                line.strip()
+                for line in source.splitlines()
+                if re.match(r"^\s*(?:pub\s+)?use\s+", line)
+            ],
+            "depends_on_groups": depends_on_groups,
+            "depends_on_facade": facade_dependencies,
+        }
+    inventory["facade"] = {
+        "path": "src/format.rs",
+        "responsibility": (
+            "stable crate::src::format facade, shared translated C-layout and "
+            "FFI imports, cross-group private namespace, and public exports"
+        ),
+        "shared_dependencies": sorted(
+            facade_symbols - all_group_items
+        ),
+    }
+    return inventory
+
+
+def write_json(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
 def facade_stanzas(moved: tuple[str, ...]) -> str:
