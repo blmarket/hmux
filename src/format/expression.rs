@@ -761,7 +761,10 @@ pub(super) unsafe extern "C" fn format_add_modifier(
     (*fm).argv = argv;
     (*fm).argc = argc;
 }
-pub(super) unsafe extern "C" fn format_free_modifiers(mut list: *mut format_modifier, mut count: u_int) {
+pub(super) unsafe extern "C" fn format_free_modifiers(
+    mut list: *mut format_modifier,
+    mut count: u_int,
+) {
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < count {
@@ -3402,7 +3405,9 @@ pub(super) unsafe extern "C" fn format_replace(
                     value = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
                 } else {
                     let escape = colour_format_escape_for_client(
-                        (*ft).c, c, modifiers & FORMAT_COLOUR_ESC_BG as uint64_t != 0,
+                        (*ft).c,
+                        c,
+                        modifiers & FORMAT_COLOUR_ESC_BG as uint64_t != 0,
                     );
                     value = xstrdup(escape.as_deref().unwrap_or(c"").as_ptr());
                 }

@@ -4,7 +4,9 @@
 // remain supplied by the parent facade.
 use super::*;
 
-pub(super) unsafe extern "C" fn format_job_tree_RB_NEXT(mut elm: *mut format_job) -> *mut format_job {
+pub(super) unsafe extern "C" fn format_job_tree_RB_NEXT(
+    mut elm: *mut format_job,
+) -> *mut format_job {
     if !(*elm).entry.rbe_right.is_null() {
         elm = (*elm).entry.rbe_right;
         while !(*elm).entry.rbe_left.is_null() {
@@ -947,7 +949,9 @@ pub(super) unsafe extern "C" fn format_entry_tree_RB_REMOVE_COLOR(
         (*elm).entry.rbe_color = RB_BLACK;
     }
 }
-pub(super) unsafe extern "C" fn format_entry_tree_RB_NEXT(mut elm: *mut format_entry) -> *mut format_entry {
+pub(super) unsafe extern "C" fn format_entry_tree_RB_NEXT(
+    mut elm: *mut format_entry,
+) -> *mut format_entry {
     if !(*elm).entry.rbe_right.is_null() {
         elm = (*elm).entry.rbe_right;
         while !(*elm).entry.rbe_left.is_null() {
@@ -1027,7 +1031,10 @@ pub unsafe extern "C" fn format_merge(mut ft: *mut format_tree, mut from: *mut f
 pub unsafe extern "C" fn format_get_pane(mut ft: *mut format_tree) -> *mut window_pane {
     return (*ft).wp;
 }
-pub(super) unsafe extern "C" fn format_create_add_item(mut ft: *mut format_tree, mut item: *mut cmdq_item) {
+pub(super) unsafe extern "C" fn format_create_add_item(
+    mut ft: *mut format_tree,
+    mut item: *mut cmdq_item,
+) {
     let mut event: *mut key_event = cmdq_get_event(item);
     let mut m: *mut mouse_event = &raw mut (*event).m;
     cmdq_merge_formats(item, ft);

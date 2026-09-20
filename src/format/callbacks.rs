@@ -991,9 +991,11 @@ unsafe extern "C" fn format_cb_cursor_colour(mut ft: *mut format_tree) -> *mut :
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
     if (*(*wp).screen).ccolour != -(1 as ::core::ffi::c_int) {
-        return xstrdup(colour_format((*(*wp).screen).ccolour).as_ptr()) as *mut ::core::ffi::c_void;
+        return xstrdup(colour_format((*(*wp).screen).ccolour).as_ptr())
+            as *mut ::core::ffi::c_void;
     }
-    return xstrdup(colour_format((*(*wp).screen).default_ccolour).as_ptr()) as *mut ::core::ffi::c_void;
+    return xstrdup(colour_format((*(*wp).screen).default_ccolour).as_ptr())
+        as *mut ::core::ffi::c_void;
 }
 unsafe extern "C" fn format_cb_mouse_word(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
