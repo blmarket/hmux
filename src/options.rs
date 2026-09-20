@@ -4,9 +4,7 @@ use crate::src::cmd::{cmd_list_free, cmd_list_print};
 use crate::src::cmd_parse::cmd_parse_from_string;
 use crate::src::colour::{colour_parse_cstr, colour_palette_from_option, colour_format};
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::{
-    __ctype_b_loc, fnmatch, free, strcasecmp, strchr, strcmp, strlen, strncmp, strsep, strstr,
-};
+use crate::src::ffi::libc::{fnmatch, free, strcasecmp, strcmp, strncmp, strsep, strstr};
 use crate::src::format::format_expand;
 use crate::src::grid::grid_default_cell;
 use crate::src::hooks::hooks_monitor_free;
@@ -38,6 +36,10 @@ use crate::src::window::{
 pub use crate::src::window::windows;
 use crate::src::window_border::window_set_fill_cells;
 use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xstrndup, xvasprintf};
+pub use crate::src::options_parse::{
+    match_option_name, parse_array_index, parse_option_name, ArrayIndex, ArrayIndexError,
+    OptionNameError, OptionNameMatch, OptionNameMatchError, ParsedOptionName,
+};
 pub use crate::src::shared::pane::{window_pane_tree};
 pub use crate::src::shared::options::{options_name_map};
 
@@ -115,58 +117,40 @@ pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
 unsafe extern "C" fn options_array_key_to_number(
-    mut key: *const ::core::ffi::c_char,
-    mut idx: *mut u_int,
+    key: *const ::core::ffi::c_char,
+    idx: *mut u_int,
 ) -> ::core::ffi::c_int {
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut n: ::core::ffi::c_longlong = 0;
-    if *key as ::core::ffi::c_int == '\0' as i32 {
-        return -(1 as ::core::ffi::c_int);
-    }
-    let mut cp: *const ::core::ffi::c_char = key;
-    while *cp as ::core::ffi::c_int != '\0' as i32 {
-        if *(*__ctype_b_loc()).offset(*cp as u_char as ::core::ffi::c_int as isize)
-            as ::core::ffi::c_int
-            & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-            == 0
-        {
-            return 0 as ::core::ffi::c_int;
+    match parse_array_index(std::ffi::CStr::from_ptr(key).to_bytes()) {
+        Ok(ArrayIndex::Numeric(number)) => {
+            if !idx.is_null() {
+                *idx = number as u_int;
+            }
+            1 as ::core::ffi::c_int
         }
-        cp = cp.offset(1);
+        Ok(ArrayIndex::Text(_)) => 0 as ::core::ffi::c_int,
+        Err(ArrayIndexError::Empty | ArrayIndexError::NumericOverflow) => {
+            -(1 as ::core::ffi::c_int)
+        }
     }
-    n = strtonum(
-        key,
-        0 as ::core::ffi::c_longlong,
-        UINT_MAX as ::core::ffi::c_longlong,
-        &raw mut errstr,
-    );
-    if !errstr.is_null() {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if !idx.is_null() {
-        *idx = n as u_int;
-    }
-    return 1 as ::core::ffi::c_int;
 }
 unsafe extern "C" fn options_array_correct_key(
-    mut key: *const ::core::ffi::c_char,
+    key: *const ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
-    let mut idx: u_int = 0;
-    let mut numeric: ::core::ffi::c_int = 0;
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    numeric = options_array_key_to_number(key, &raw mut idx);
-    if numeric == -(1 as ::core::ffi::c_int) {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+    match parse_array_index(std::ffi::CStr::from_ptr(key).to_bytes()) {
+        Ok(ArrayIndex::Numeric(number)) => {
+            let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut();
+            xasprintf(
+                &raw mut out,
+                b"%u\0" as *const u8 as *const ::core::ffi::c_char,
+                number,
+            );
+            out
+        }
+        Ok(ArrayIndex::Text(_)) => xstrdup(key),
+        Err(ArrayIndexError::Empty | ArrayIndexError::NumericOverflow) => {
+            ::core::ptr::null_mut::<::core::ffi::c_char>()
+        }
     }
-    if numeric == 1 as ::core::ffi::c_int {
-        xasprintf(
-            &raw mut out,
-            b"%u\0" as *const u8 as *const ::core::ffi::c_char,
-            idx,
-        );
-        return out;
-    }
-    return xstrdup(key);
 }
 unsafe extern "C" fn options_array_cmp(
     mut a1: *mut options_array_item,
@@ -2000,44 +1984,40 @@ pub unsafe extern "C" fn options_to_string(
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_parse(
-    mut name: *const ::core::ffi::c_char,
-    mut key: *mut *mut ::core::ffi::c_char,
+    name: *const ::core::ffi::c_char,
+    key: *mut *mut ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut end: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut raw: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut new_key: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    if *name as ::core::ffi::c_int == '\0' as i32 {
+    let input = std::ffi::CStr::from_ptr(name).to_bytes();
+    if input.is_empty() {
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
     *key = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    copy = xstrdup(name);
-    cp = strchr(copy, '[' as i32);
-    if cp.is_null() {
-        return copy;
+    let copy = xstrdup(name);
+    let parsed = match parse_option_name(input) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            free(copy as *mut ::core::ffi::c_void);
+            return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        }
+    };
+    if parsed.array_key.is_some() {
+        let open = input
+            .iter()
+            .position(|&byte| byte == b'[')
+            .expect("parsed array option has an opening bracket");
+        let raw = xstrndup(
+            input.as_ptr().add(open + 1) as *const ::core::ffi::c_char,
+            (input.len() - open - 2) as size_t,
+        );
+        let new_key = options_array_correct_key(raw);
+        free(raw as *mut ::core::ffi::c_void);
+        if new_key.is_null() {
+            free(copy as *mut ::core::ffi::c_void);
+            return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        }
+        *key = new_key;
+        *copy.add(parsed.name.len()) = '\0' as ::core::ffi::c_char;
     }
-    end = strchr(cp.offset(1 as ::core::ffi::c_int as isize), ']' as i32);
-    if end.is_null()
-        || *end.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '\0' as i32
-        || end == cp.offset(1 as ::core::ffi::c_int as isize)
-    {
-        free(copy as *mut ::core::ffi::c_void);
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
-    }
-    raw = xstrndup(
-        cp.offset(1 as ::core::ffi::c_int as isize),
-        end.offset_from(cp.offset(1 as ::core::ffi::c_int as isize)) as ::core::ffi::c_long
-            as size_t,
-    );
-    new_key = options_array_correct_key(raw);
-    free(raw as *mut ::core::ffi::c_void);
-    if new_key.is_null() {
-        free(copy as *mut ::core::ffi::c_void);
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
-    }
-    *key = new_key;
-    *cp = '\0' as i32 as ::core::ffi::c_char;
     return copy;
 }
 #[no_mangle]
@@ -2081,53 +2061,83 @@ pub unsafe extern "C" fn options_search(
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_match(
-    mut s: *const ::core::ffi::c_char,
-    mut key: *mut *mut ::core::ffi::c_char,
-    mut ambiguous: *mut ::core::ffi::c_int,
+    s: *const ::core::ffi::c_char,
+    key: *mut *mut ::core::ffi::c_char,
+    ambiguous: *mut ::core::ffi::c_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut oe: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-    let mut found: *const options_table_entry = ::core::ptr::null::<options_table_entry>();
-    let mut parsed: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut namelen: size_t = 0;
-    parsed = options_parse(s, key);
+    options_match_command(s, key, ambiguous)
+}
+
+/// Rust-facing command adapter for option-name matching.
+///
+/// The returned name and array key use the historical C allocator and remain
+/// owned by the caller. The ABI entry point above delegates here so the
+/// set-option and show-options commands can share the byte parser without
+/// changing their ownership rules.
+pub unsafe fn options_match_command(
+    s: *const ::core::ffi::c_char,
+    key: *mut *mut ::core::ffi::c_char,
+    ambiguous: *mut ::core::ffi::c_int,
+) -> *mut ::core::ffi::c_char {
+    let parsed = options_parse(s, key);
     if parsed.is_null() {
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    if *parsed as ::core::ffi::c_int == '@' as i32 {
-        *ambiguous = 0 as ::core::ffi::c_int;
-        return parsed;
+
+    let mut candidates: [&[u8]; 273] = [&[]; 273];
+    let mut entries: [*const options_table_entry; 273] =
+        [::core::ptr::null::<options_table_entry>(); 273];
+    let mut candidate_count = 0usize;
+    let mut oe = &raw const options_table as *const options_table_entry;
+    while candidate_count < candidates.len() && !(*oe).name.is_null() {
+        candidates[candidate_count] = std::ffi::CStr::from_ptr((*oe).name).to_bytes();
+        entries[candidate_count] = oe;
+        candidate_count += 1;
+        oe = oe.offset(1);
     }
-    name = options_map_name(parsed);
-    namelen = strlen(name);
-    found = ::core::ptr::null::<options_table_entry>();
-    oe = &raw const options_table as *const options_table_entry;
-    while !(*oe).name.is_null() {
-        if strcmp((*oe).name, name) == 0 as ::core::ffi::c_int {
-            found = oe;
-            break;
-        } else {
-            if strncmp((*oe).name, name, namelen) == 0 as ::core::ffi::c_int {
-                if !found.is_null() {
-                    *ambiguous = 1 as ::core::ffi::c_int;
-                    free(parsed as *mut ::core::ffi::c_void);
-                    free(*key as *mut ::core::ffi::c_void);
-                    *key = ::core::ptr::null_mut::<::core::ffi::c_char>();
-                    return ::core::ptr::null_mut::<::core::ffi::c_char>();
-                }
-                found = oe;
-            }
-            oe = oe.offset(1);
+
+    let mut aliases: [(&[u8], &[u8]); 8] = [(&[], &[]); 8];
+    let mut alias_count = 0usize;
+    let mut map = &raw const options_other_names as *const options_name_map;
+    while alias_count < aliases.len() && !(*map).from.is_null() {
+        aliases[alias_count] = (
+            std::ffi::CStr::from_ptr((*map).from).to_bytes(),
+            std::ffi::CStr::from_ptr((*map).to).to_bytes(),
+        );
+        alias_count += 1;
+        map = map.offset(1);
+    }
+
+    let result = match match_option_name(
+        std::ffi::CStr::from_ptr(s).to_bytes(),
+        &aliases[..alias_count],
+        &candidates[..candidate_count],
+    ) {
+        Ok(OptionNameMatch::User) => {
+            *ambiguous = 0 as ::core::ffi::c_int;
+            return parsed;
         }
-    }
-    free(parsed as *mut ::core::ffi::c_void);
-    if found.is_null() {
-        *ambiguous = 0 as ::core::ffi::c_int;
-        free(*key as *mut ::core::ffi::c_void);
-        *key = ::core::ptr::null_mut::<::core::ffi::c_char>();
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
-    }
-    return xstrdup((*found).name);
+        Ok(OptionNameMatch::BuiltIn(index)) => {
+            let result = xstrdup((*entries[index]).name);
+            free(parsed as *mut ::core::ffi::c_void);
+            result
+        }
+        Err(OptionNameMatchError::Ambiguous) => {
+            *ambiguous = 1 as ::core::ffi::c_int;
+            free(parsed as *mut ::core::ffi::c_void);
+            free(*key as *mut ::core::ffi::c_void);
+            *key = ::core::ptr::null_mut::<::core::ffi::c_char>();
+            return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        }
+        Err(OptionNameMatchError::Invalid(_) | OptionNameMatchError::NotFound) => {
+            *ambiguous = 0 as ::core::ffi::c_int;
+            free(parsed as *mut ::core::ffi::c_void);
+            free(*key as *mut ::core::ffi::c_void);
+            *key = ::core::ptr::null_mut::<::core::ffi::c_char>();
+            return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        }
+    };
+    return result;
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_match_get(

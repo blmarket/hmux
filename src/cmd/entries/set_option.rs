@@ -15,8 +15,8 @@ use crate::src::monitor::monitor_parse;
 use crate::src::options::{
     options_array_assign, options_array_clear, options_array_get, options_array_set,
     options_empty, options_from_string, options_get, options_get_only, options_get_string,
-    options_is_array, options_match, options_push_changes, options_remove_or_default,
-    options_scope_from_name, options_set_string,
+    options_is_array, options_push_changes, options_remove_or_default,
+    options_match_command, options_scope_from_name, options_set_string,
 };
 pub use crate::src::options::options_table_entry;
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
@@ -475,7 +475,7 @@ unsafe extern "C" fn cmd_set_option_exec(
         free(argument as *mut ::core::ffi::c_void);
         return CMD_RETURN_NORMAL;
     }
-    name = options_match(argument, &raw mut array_key, &raw mut ambiguous);
+    name = options_match_command(argument, &raw mut array_key, &raw mut ambiguous);
     if name.is_null() {
         if args_has(args, 'q' as i32 as u_char) != 0 {
             current_block = 710513931074292511;

@@ -13,7 +13,7 @@ use crate::src::hooks::{
 use crate::src::options::{
     options_array_first, options_array_item_key, options_array_next, options_first, options_get,
     options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_only,
-    options_is_array, options_is_string, options_match, options_name, options_next,
+    options_is_array, options_is_string, options_match_command, options_name, options_next,
     options_scope_from_flags, options_scope_from_name, options_to_string,
 };
 pub use crate::src::options::options_table_entry;
@@ -234,7 +234,7 @@ unsafe extern "C" fn cmd_show_options_exec(
         return cmd_show_options_all(self_0, item, scope, oo);
     }
     argument = format_single_from_target(item, args_string(args, 0 as u_int));
-    name = options_match(argument, &raw mut array_key, &raw mut ambiguous);
+    name = options_match_command(argument, &raw mut array_key, &raw mut ambiguous);
     if name.is_null() {
         if args_has(args, 'q' as i32 as u_char) != 0 {
             current_block = 9776955515550960483;

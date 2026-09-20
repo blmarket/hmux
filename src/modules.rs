@@ -120,6 +120,7 @@ pub mod mode_tree;
 pub mod monitor;
 pub mod names;
 pub mod options;
+pub mod options_parse;
 pub mod options_table;
 pub mod osdep_linux;
 pub mod paste;
