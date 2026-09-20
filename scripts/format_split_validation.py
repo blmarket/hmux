@@ -3,9 +3,11 @@
 
 The staged checkpoints are materialized from the immutable pre-split source.
 Each checkpoint adds exactly one private implementation module and its facade
-imports.  This preserves a one-group-at-a-time build/test/Clippy comparison
+imports. This preserves a one-group-at-a-time build/test/Clippy comparison
 even though the historical split commit was monolithic and must not be
-rewritten.  The checked-in final revision is copied as the final checkpoint.
+rewritten. The implementation sources and final checkpoint are pinned to the
+current checked-in source revision, while SPLIT_REV records the original
+all-at-once move for provenance.
 """
 
 from __future__ import annotations
@@ -30,13 +32,13 @@ CHECKPOINTS = VALIDATION / "format-checkpoints"
 ARCHIVES = VALIDATION / "format-checkpoint-archives"
 LOGS = VALIDATION / "format-checkpoint-logs"
 TARGETS = VALIDATION / "format-checkpoint-targets"
-# These are deliberately immutable source points.  The baseline is the last
-# revision before this split, and SPLIT_REV is the commit containing the four
-# moved implementation files.  FINAL_REV is the checked-in source being
-# validated; prepare() records its resolved SHA in the manifest.
+# These are deliberately immutable source points. BASELINE_REV is the last
+# revision before this split. SPLIT_REV is the historical commit containing
+# the four moved implementation files. FINAL_REV is the checked-in source
+# being validated; prepare() records every resolved SHA in the manifest.
 BASELINE_REV = "8d02dca179520da8b25ba6cb1de3e6a54dafd490"
 SPLIT_REV = "cc5b93feb4395cda2edc8de3463bd04a312ec94d"
-FINAL_REV = "fe16550d49a14bfdb2485cb663387c403d2f5049"
+FINAL_REV = "584ccab42be2a229f277776e396bd5750cfeb7d2"
 STAGES = ("baseline", "tree", "expression", "jobs", "callbacks", "final")
 GROUPS = ("tree", "expression", "jobs", "callbacks")
 
@@ -120,7 +122,6 @@ def code_brace(source: str, start: int) -> int:
 
     i = start
     state = "normal"
-    raw_hashes = 0
     while i < len(source):
         char = source[i]
         next_char = source[i + 1] if i + 1 < len(source) else ""
@@ -268,13 +269,12 @@ def item_span(source: str, name: str) -> tuple[int, int]:
     raise ValueError(f"could not find the end of {name}")
 
 
-def group_items() -> dict[str, list[str]]:
+def group_items(sources: dict[str, bytes]) -> dict[str, list[str]]:
     result: dict[str, list[str]] = {}
     for group in GROUPS:
-        path = ROOT / "src" / "format" / f"{group}.rs"
-        names = top_level_items(path.read_text())
+        names = top_level_items(sources[group].decode())
         if not names:
-            raise RuntimeError(f"no top-level items found in {path}")
+            raise RuntimeError(f"no top-level items found in {group}.rs")
         result[group] = names
     return result
 
@@ -292,9 +292,9 @@ def facade_stanzas(moved: tuple[str, ...]) -> str:
     return "\n".join(pieces)
 
 
-def split_source(group: str) -> bytes:
+def implementation_source(group: str) -> bytes:
     return subprocess.check_output(
-        ["git", "show", f"{SPLIT_REV}:src/format/{group}.rs"], cwd=ROOT
+        ["git", "show", f"{FINAL_REV}:src/format/{group}.rs"], cwd=ROOT
     )
 
 
@@ -359,13 +359,15 @@ def write_checkpoint_archive(stage: str) -> str:
 
 
 def prepare() -> dict:
-    items = group_items()
-    implementation_sources = {group: split_source(group) for group in GROUPS}
+    implementation_sources = {
+        group: implementation_source(group) for group in GROUPS
+    }
+    items = group_items(implementation_sources)
     for group, expected in implementation_sources.items():
         actual = (ROOT / "src" / "format" / f"{group}.rs").read_bytes()
         if actual != expected:
             raise RuntimeError(
-                f"{group}.rs differs from immutable split revision {SPLIT_REV}"
+                f"{group}.rs differs from immutable final revision {FINAL_REV}"
             )
     if CHECKPOINTS.exists():
         shutil.rmtree(CHECKPOINTS)
