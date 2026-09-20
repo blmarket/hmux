@@ -47,6 +47,17 @@ with tempfile.TemporaryDirectory(prefix="layout-cli-", dir=root / "target") as t
         run("select-layout", valid)
         assert pane_geometry() == resized
 
+        too_many = (
+            '{"V":2,"L":{"t":"h","w":79,"h":23,"x":0,"y":0,"c":['
+            '{"t":"p","w":25,"h":23,"x":0,"y":0,"i":0},'
+            '{"t":"p","w":25,"h":23,"x":26,"y":0,"i":1},'
+            '{"t":"p","w":27,"h":23,"x":52,"y":0,"i":2}]}}'
+        )
+        run("select-layout", too_many)
+        assert len(pane_geometry().splitlines()) == 2
+        run("select-layout", valid)
+        assert pane_geometry() == resized
+
         mismatch = (
             '{"V":2,"L":{"t":"p","w":79,"h":23,"x":0,"y":0,"i":0}}'
         )
