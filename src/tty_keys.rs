@@ -1,4 +1,4 @@
-use crate::src::colour::{colour_parseX11, colour_tostring};
+use crate::src::colour::{colour_parse_x11_logged, colour_format};
 use crate::src::events::events_fire_client;
 use crate::src::ffi::libc::{
     __ctype_b_loc, free, memcmp, memcpy, sscanf, strcspn, strlcpy, strlen, strncmp, strsep,
@@ -3356,7 +3356,7 @@ pub unsafe extern "C" fn tty_keys_colours(
     } else {
         tmp[i as usize] = '\0' as i32 as ::core::ffi::c_char;
     }
-    n = colour_parseX11(&raw mut tmp as *mut ::core::ffi::c_char);
+    n = colour_parse_x11_logged(std::ffi::CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char)).unwrap_or(-1);
     if n != -(1 as ::core::ffi::c_int)
         && *buf.offset(3 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '0' as i32
     {
@@ -3364,12 +3364,12 @@ pub unsafe extern "C" fn tty_keys_colours(
             log_debug(
                 b"%s fg is %s\0" as *const u8 as *const ::core::ffi::c_char,
                 (*c).name,
-                colour_tostring(n),
+                colour_format(n).as_ptr(),
             );
         } else {
             log_debug(
                 b"fg is %s\0" as *const u8 as *const ::core::ffi::c_char,
-                colour_tostring(n),
+                colour_format(n).as_ptr(),
             );
         }
         *fg = n;
@@ -3379,12 +3379,12 @@ pub unsafe extern "C" fn tty_keys_colours(
             log_debug(
                 b"%s bg is %s\0" as *const u8 as *const ::core::ffi::c_char,
                 (*c).name,
-                colour_tostring(n),
+                colour_format(n).as_ptr(),
             );
         } else {
             log_debug(
                 b"bg is %s\0" as *const u8 as *const ::core::ffi::c_char,
-                colour_tostring(n),
+                colour_format(n).as_ptr(),
             );
         }
         *bg = n;
@@ -3477,7 +3477,7 @@ unsafe extern "C" fn tty_keys_palette(
     if idx < 0 as ::core::ffi::c_int || idx > 255 as ::core::ffi::c_int {
         return -(1 as ::core::ffi::c_int);
     }
-    pd.c = colour_parseX11(endptr.offset(1 as ::core::ffi::c_int as isize));
+    pd.c = colour_parse_x11_logged(std::ffi::CStr::from_ptr(endptr.offset(1 as ::core::ffi::c_int as isize))).unwrap_or(-1);
     if pd.c == -(1 as ::core::ffi::c_int) {
         return 0 as ::core::ffi::c_int;
     }

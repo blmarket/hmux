@@ -2,7 +2,7 @@ use crate::src::alerts::alerts_reset_all;
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::{cmd_list_free, cmd_list_print};
 use crate::src::cmd_parse::cmd_parse_from_string;
-use crate::src::colour::{colour_fromstring, colour_palette_from_option, colour_tostring};
+use crate::src::colour::{colour_parse_cstr, colour_palette_from_option, colour_format};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{
     __ctype_b_loc, fnmatch, free, strcasecmp, strchr, strcmp, strlen, strncmp, strsep, strstr,
@@ -1276,7 +1276,7 @@ unsafe extern "C" fn options_value_to_string(
                 ));
             }
             3 => {
-                s = xstrdup(colour_tostring((*ov).number as ::core::ffi::c_int));
+                s = xstrdup(colour_format((*ov).number as ::core::ffi::c_int).as_ptr());
             }
             4 => {
                 if numeric != 0 {
@@ -1525,7 +1525,7 @@ pub unsafe extern "C" fn options_default_to_string(
             ));
         }
         3 => {
-            s = xstrdup(colour_tostring((*oe).default_num as ::core::ffi::c_int));
+            s = xstrdup(colour_format((*oe).default_num as ::core::ffi::c_int).as_ptr());
         }
         4 => {
             s = xstrdup(if (*oe).default_num != 0 {
@@ -1797,7 +1797,7 @@ pub unsafe extern "C" fn options_array_set(
     if (*(*o).tableentry).type_0 as ::core::ffi::c_uint
         == OPTIONS_TABLE_COLOUR as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        number = colour_fromstring(value) as ::core::ffi::c_longlong;
+        number = colour_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(-1) as ::core::ffi::c_longlong;
         if number == -(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong {
             xasprintf(
                 cause,
@@ -2894,7 +2894,7 @@ pub unsafe extern "C" fn options_from_string(
             return 0 as ::core::ffi::c_int;
         }
         3 => {
-            number = colour_fromstring(value) as ::core::ffi::c_longlong;
+            number = colour_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(-1) as ::core::ffi::c_longlong;
             if number == -(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong {
                 xasprintf(
                     cause,

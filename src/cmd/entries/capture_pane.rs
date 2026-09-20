@@ -1,7 +1,7 @@
 use crate::src::arguments::{args_get, args_has, args_strtonum_and_expand};
 use crate::src::cmd::{cmd_get_args, cmd_get_entry};
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
-use crate::src::colour::colour_tostring;
+use crate::src::colour::colour_format;
 use crate::src::control::control_write;
 use crate::src::ffi::libc::{free, memcpy, snprintf, strcmp, strlen};
 use crate::src::ffi::libevent::{evbuffer_get_length, evbuffer_pullup};
@@ -251,19 +251,19 @@ unsafe extern "C" fn cmd_capture_pane_cell(
     xasprintf(
         &raw mut f,
         b"%s[%x]\0" as *const u8 as *const ::core::ffi::c_char,
-        colour_tostring(gc.fg),
+        colour_format(gc.fg).as_ptr(),
         gc.fg,
     );
     xasprintf(
         &raw mut b,
         b"%s[%x]\0" as *const u8 as *const ::core::ffi::c_char,
-        colour_tostring(gc.bg),
+        colour_format(gc.bg).as_ptr(),
         gc.bg,
     );
     xasprintf(
         &raw mut u,
         b"%s[%x]\0" as *const u8 as *const ::core::ffi::c_char,
-        colour_tostring(gc.us),
+        colour_format(gc.us).as_ptr(),
         gc.us,
     );
     xasprintf(

@@ -1,229 +1,102 @@
-use crate::src::ffi::libc::{strcasecmp, strchr, strcspn, strlen, strncasecmp, strspn};
-use crate::src::xmalloc::xsnprintf;
-use crate::src::shared::abi::*;
+//! Byte-oriented attribute text APIs. Case matching follows the active C locale.
 use crate::src::shared::grid::*;
+use std::ffi::{CStr, CString};
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed {
-    pub name: *const ::core::ffi::c_char,
-    pub attr: ::core::ffi::c_int,
+const NAMES: &[(&[u8], i32)] = &[
+    (b"acs", GRID_ATTR_CHARSET),
+    (b"bright", GRID_ATTR_BRIGHT),
+    (b"dim", GRID_ATTR_DIM),
+    (b"underscore", GRID_ATTR_UNDERSCORE),
+    (b"blink", GRID_ATTR_BLINK),
+    (b"reverse", GRID_ATTR_REVERSE),
+    (b"hidden", GRID_ATTR_HIDDEN),
+    (b"italics", GRID_ATTR_ITALICS),
+    (b"strikethrough", GRID_ATTR_STRIKETHROUGH),
+    (b"double-underscore", GRID_ATTR_UNDERSCORE_2),
+    (b"curly-underscore", GRID_ATTR_UNDERSCORE_3),
+    (b"dotted-underscore", GRID_ATTR_UNDERSCORE_4),
+    (b"dashed-underscore", GRID_ATTR_UNDERSCORE_5),
+    (b"overline", GRID_ATTR_OVERLINE),
+    (b"noattr", GRID_ATTR_NOATTR),
+];
+
+/// Parse an entire byte slice. Embedded NUL and invalid attribute lists return None.
+pub fn attributes_parse(input: &[u8]) -> Option<i32> {
+    fn delimiter(b: &u8) -> bool {
+        b" ,|".contains(b)
+    }
+    if input.is_empty()
+        || input.contains(&0)
+        || delimiter(input.first()?)
+        || delimiter(input.last()?)
+    {
+        return None;
+    }
+    if equal(input, b"none") || equal(input, b"default") {
+        return Some(0);
+    }
+    let mut attr = 0;
+    for token in input.split(delimiter).filter(|token| !token.is_empty()) {
+        if equal(token, b"bold") {
+            attr |= GRID_ATTR_BRIGHT;
+            continue;
+        }
+        let (_, bit) = NAMES
+            .iter()
+            .find(|(name, bit)| *bit != GRID_ATTR_NOATTR && equal(token, name))?;
+        attr |= bit;
+    }
+    Some(attr)
 }
-#[no_mangle]
-pub unsafe extern "C" fn attributes_tostring(
-    mut attr: ::core::ffi::c_int,
-) -> *const ::core::ffi::c_char {
-    static mut buf: [::core::ffi::c_char; 512] = [0; 512];
-    let mut len: size_t = 0;
-    if attr == 0 as ::core::ffi::c_int {
-        return b"none\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    len = xsnprintf(
-        &raw mut buf as *mut ::core::ffi::c_char,
-        ::core::mem::size_of::<[::core::ffi::c_char; 512]>() as size_t,
-        b"%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-        if attr & GRID_ATTR_CHARSET != 0 {
-            b"acs,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_BRIGHT != 0 {
-            b"bright,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_DIM != 0 {
-            b"dim,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_UNDERSCORE != 0 {
-            b"underscore,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_BLINK != 0 {
-            b"blink,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_REVERSE != 0 {
-            b"reverse,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_HIDDEN != 0 {
-            b"hidden,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_ITALICS != 0 {
-            b"italics,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_STRIKETHROUGH != 0 {
-            b"strikethrough,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_UNDERSCORE_2 != 0 {
-            b"double-underscore,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_UNDERSCORE_3 != 0 {
-            b"curly-underscore,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_UNDERSCORE_4 != 0 {
-            b"dotted-underscore,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_UNDERSCORE_5 != 0 {
-            b"dashed-underscore,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_OVERLINE != 0 {
-            b"overline,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-        if attr & GRID_ATTR_NOATTR != 0 {
-            b"noattr,\0" as *const u8 as *const ::core::ffi::c_char
-        } else {
-            b"\0" as *const u8 as *const ::core::ffi::c_char
-        },
-    ) as size_t;
-    if len > 0 as size_t {
-        buf[len.wrapping_sub(1 as size_t) as usize] = '\0' as i32 as ::core::ffi::c_char;
-    }
-    return &raw mut buf as *mut ::core::ffi::c_char;
+
+fn equal(a: &[u8], b: &[u8]) -> bool {
+    // Both slices have this many readable bytes; strncasecmp reads at most n.
+    // Keeping libc here preserves locale-sensitive case matching.
+    a.len() == b.len()
+        && unsafe { libc::strncasecmp(a.as_ptr().cast(), b.as_ptr().cast(), a.len()) == 0 }
 }
-#[no_mangle]
-pub unsafe extern "C" fn attributes_fromstring(
-    mut str: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
-    let delimiters: [::core::ffi::c_char; 4] =
-        ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b" ,|\0");
-    let mut attr: ::core::ffi::c_int = 0;
-    let mut end: size_t = 0;
-    let mut i: u_int = 0;
-    let mut table: [C2RustUnnamed; 15] = [
-        C2RustUnnamed {
-            name: b"acs\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_CHARSET,
-        },
-        C2RustUnnamed {
-            name: b"bright\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_BRIGHT,
-        },
-        C2RustUnnamed {
-            name: b"bold\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_BRIGHT,
-        },
-        C2RustUnnamed {
-            name: b"dim\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_DIM,
-        },
-        C2RustUnnamed {
-            name: b"underscore\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_UNDERSCORE,
-        },
-        C2RustUnnamed {
-            name: b"blink\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_BLINK,
-        },
-        C2RustUnnamed {
-            name: b"reverse\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_REVERSE,
-        },
-        C2RustUnnamed {
-            name: b"hidden\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_HIDDEN,
-        },
-        C2RustUnnamed {
-            name: b"italics\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_ITALICS,
-        },
-        C2RustUnnamed {
-            name: b"strikethrough\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_STRIKETHROUGH,
-        },
-        C2RustUnnamed {
-            name: b"double-underscore\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_UNDERSCORE_2,
-        },
-        C2RustUnnamed {
-            name: b"curly-underscore\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_UNDERSCORE_3,
-        },
-        C2RustUnnamed {
-            name: b"dotted-underscore\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_UNDERSCORE_4,
-        },
-        C2RustUnnamed {
-            name: b"dashed-underscore\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_UNDERSCORE_5,
-        },
-        C2RustUnnamed {
-            name: b"overline\0" as *const u8 as *const ::core::ffi::c_char,
-            attr: GRID_ATTR_OVERLINE,
-        },
-    ];
-    if *str as ::core::ffi::c_int == '\0' as i32
-        || strcspn(str, &raw const delimiters as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_ulong
-    {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if !strchr(
-        &raw const delimiters as *const ::core::ffi::c_char,
-        *str.offset(strlen(str).wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int,
-    )
-    .is_null()
-    {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if strcasecmp(str, b"default\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-        || strcasecmp(str, b"none\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-    {
-        return 0 as ::core::ffi::c_int;
-    }
-    attr = 0 as ::core::ffi::c_int;
-    loop {
-        end = strcspn(str, &raw const delimiters as *const ::core::ffi::c_char) as size_t;
-        i = 0 as u_int;
-        while (i as usize)
-            < (::core::mem::size_of::<[C2RustUnnamed; 15]>() as usize)
-                .wrapping_div(::core::mem::size_of::<C2RustUnnamed>() as usize)
-        {
-            if !(end != strlen(table[i as usize].name)) {
-                if strncasecmp(str, table[i as usize].name, end) == 0 as ::core::ffi::c_int {
-                    attr |= table[i as usize].attr;
-                    break;
+
+pub fn attributes_parse_cstr(input: &CStr) -> Option<i32> {
+    attributes_parse(input.to_bytes())
+}
+
+/// Owned canonical text; later formatting calls cannot invalidate this result.
+pub fn attributes_format(attr: i32) -> CString {
+    let mut bytes = Vec::new();
+    if attr == 0 {
+        bytes.extend_from_slice(b"none");
+    } else {
+        for &(name, bit) in NAMES {
+            if attr & bit != 0 {
+                if !bytes.is_empty() {
+                    bytes.push(b',');
                 }
+                bytes.extend_from_slice(name);
             }
-            i = i.wrapping_add(1);
-        }
-        if i as usize
-            == (::core::mem::size_of::<[C2RustUnnamed; 15]>() as usize)
-                .wrapping_div(::core::mem::size_of::<C2RustUnnamed>() as usize)
-        {
-            return -(1 as ::core::ffi::c_int);
-        }
-        str = str.offset(end.wrapping_add(strspn(
-            str.offset(end as isize),
-            &raw const delimiters as *const ::core::ffi::c_char,
-        ) as size_t) as isize);
-        if !(*str as ::core::ffi::c_int != '\0' as i32) {
-            break;
         }
     }
-    return attr;
+    CString::new(bytes).expect("attribute names contain no NUL")
+}
+
+/// C ABI only. The pointer is valid until the next call on this thread or thread
+/// exit. Do not free it or access it concurrently with another call on that thread.
+/// Rust callers should retain the CString returned by attributes_format instead.
+#[no_mangle]
+pub unsafe extern "C" fn attributes_tostring(attr: i32) -> *const libc::c_char {
+    thread_local! {
+        static BUFFER: std::cell::RefCell<CString> = std::cell::RefCell::new(CString::default());
+    }
+    BUFFER.with(|buffer| {
+        let mut buffer = buffer.borrow_mut();
+        *buffer = attributes_format(attr);
+        buffer.as_ptr()
+    })
+}
+
+/// C ABI only.
+/// # Safety
+/// Input must point to a readable NUL-terminated string for this call.
+#[no_mangle]
+pub unsafe extern "C" fn attributes_fromstring(input: *const libc::c_char) -> i32 {
+    attributes_parse_cstr(CStr::from_ptr(input)).unwrap_or(-1)
 }

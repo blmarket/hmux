@@ -2,7 +2,7 @@ use crate::src::alerts::alerts_queue;
 use crate::src::cmd_find::cmd_find_from_pane;
 use crate::src::colour::{
     colour_force_rgb, colour_join_rgb, colour_palette_clear, colour_palette_get,
-    colour_palette_set, colour_parseX11, colour_split_rgb,
+    colour_palette_set, colour_parse_x11_logged, colour_split_rgb,
 };
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::{events_fire, events_fire_pane};
@@ -5023,7 +5023,7 @@ unsafe extern "C" fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core:
                     s = next;
                 }
             } else {
-                c = colour_parseX11(s);
+                c = colour_parse_x11_logged(std::ffi::CStr::from_ptr(s)).unwrap_or(-1);
                 if c == -(1 as ::core::ffi::c_int) {
                     s = next;
                 } else {
@@ -5242,7 +5242,7 @@ unsafe extern "C" fn input_osc_10(mut ictx: *mut input_ctx, mut p: *const ::core
         );
         return;
     }
-    c = colour_parseX11(p);
+    c = colour_parse_x11_logged(std::ffi::CStr::from_ptr(p)).unwrap_or(-1);
     if c == -(1 as ::core::ffi::c_int) {
         log_debug(
             b"bad OSC 10: %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5289,7 +5289,7 @@ unsafe extern "C" fn input_osc_11(mut ictx: *mut input_ctx, mut p: *const ::core
         );
         return;
     }
-    c = colour_parseX11(p);
+    c = colour_parse_x11_logged(std::ffi::CStr::from_ptr(p)).unwrap_or(-1);
     if c == -(1 as ::core::ffi::c_int) {
         log_debug(
             b"bad OSC 11: %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -5338,7 +5338,7 @@ unsafe extern "C" fn input_osc_12(mut ictx: *mut input_ctx, mut p: *const ::core
         }
         return;
     }
-    c = colour_parseX11(p);
+    c = colour_parse_x11_logged(std::ffi::CStr::from_ptr(p)).unwrap_or(-1);
     if c == -(1 as ::core::ffi::c_int) {
         log_debug(
             b"bad OSC 12: %s\0" as *const u8 as *const ::core::ffi::c_char,

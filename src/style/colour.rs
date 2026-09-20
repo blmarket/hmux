@@ -1,9 +1,8 @@
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, free, sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 use crate::src::ffi::libm::round;
-use crate::src::log::log_debug;
 use crate::src::options::{options_array_first, options_array_getv, options_get};
-use crate::src::xmalloc::{xcalloc, xsnprintf, xstrndup};
+use crate::src::xmalloc::{xcalloc, xstrndup};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -85,7 +84,7 @@ pub struct C2RustUnnamed_37 {
     pub name: *const ::core::ffi::c_char,
     pub c: ::core::ffi::c_int,
 }
-static mut colour_theme_table: [C2RustUnnamed_36; 10] = [
+const colour_theme_table: [C2RustUnnamed_36; 10] = [
     C2RustUnnamed_36 {
         name: b"themeblack\0" as *const u8 as *const ::core::ffi::c_char,
         dark_option: b"dark-theme-black\0" as *const u8 as *const ::core::ffi::c_char,
@@ -198,7 +197,7 @@ pub unsafe extern "C" fn colour_find_rgb(
     mut g: u_char,
     mut b: u_char,
 ) -> ::core::ffi::c_int {
-    static mut q2c: [::core::ffi::c_int; 6] = [
+    const q2c: [::core::ffi::c_int; 6] = [
         0 as ::core::ffi::c_int,
         0x5f as ::core::ffi::c_int,
         0x87 as ::core::ffi::c_int,
@@ -338,156 +337,170 @@ pub unsafe extern "C" fn colour_dim(
         .wrapping_div(100 as u_int) as u_char;
     return colour_join_rgb(r, g, b);
 }
-#[no_mangle]
-pub unsafe extern "C" fn colour_tostring(mut c: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
-    static mut s: [::core::ffi::c_char; 32] = [0; 32];
-    let mut r: u_char = 0;
-    let mut g: u_char = 0;
-    let mut b: u_char = 0;
-    if c == -(1 as ::core::ffi::c_int) {
-        return b"none\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    if c & COLOUR_FLAG_THEME != 0 {
-        c &= 0xff as ::core::ffi::c_int;
-        if c >= 0 as ::core::ffi::c_int
-            && (c as u_int as usize)
-                < (::core::mem::size_of::<[C2RustUnnamed_36; 10]>() as usize)
-                    .wrapping_div(::core::mem::size_of::<C2RustUnnamed_36>() as usize)
-        {
-            return colour_theme_table[c as usize].name;
-        }
-        return b"invalid\0" as *const u8 as *const ::core::ffi::c_char;
-    }
-    if c & COLOUR_FLAG_RGB != 0 {
-        colour_split_rgb(c, &raw mut r, &raw mut g, &raw mut b);
-        xsnprintf(
-            &raw mut s as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-            b"#%02x%02x%02x\0" as *const u8 as *const ::core::ffi::c_char,
-            r as ::core::ffi::c_int,
-            g as ::core::ffi::c_int,
-            b as ::core::ffi::c_int,
-        );
-        return &raw mut s as *mut ::core::ffi::c_char;
-    }
-    if c & COLOUR_FLAG_256 != 0 {
-        xsnprintf(
-            &raw mut s as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-            b"colour%u\0" as *const u8 as *const ::core::ffi::c_char,
-            c & 0xff as ::core::ffi::c_int,
-        );
-        return &raw mut s as *mut ::core::ffi::c_char;
-    }
-    match c {
-        0 => return b"black\0" as *const u8 as *const ::core::ffi::c_char,
-        1 => return b"red\0" as *const u8 as *const ::core::ffi::c_char,
-        2 => return b"green\0" as *const u8 as *const ::core::ffi::c_char,
-        3 => return b"yellow\0" as *const u8 as *const ::core::ffi::c_char,
-        4 => return b"blue\0" as *const u8 as *const ::core::ffi::c_char,
-        5 => return b"magenta\0" as *const u8 as *const ::core::ffi::c_char,
-        6 => return b"cyan\0" as *const u8 as *const ::core::ffi::c_char,
-        7 => return b"white\0" as *const u8 as *const ::core::ffi::c_char,
-        8 => return b"default\0" as *const u8 as *const ::core::ffi::c_char,
-        9 => return b"terminal\0" as *const u8 as *const ::core::ffi::c_char,
-        90 => return b"brightblack\0" as *const u8 as *const ::core::ffi::c_char,
-        91 => return b"brightred\0" as *const u8 as *const ::core::ffi::c_char,
-        92 => return b"brightgreen\0" as *const u8 as *const ::core::ffi::c_char,
-        93 => return b"brightyellow\0" as *const u8 as *const ::core::ffi::c_char,
-        94 => return b"brightblue\0" as *const u8 as *const ::core::ffi::c_char,
-        95 => return b"brightmagenta\0" as *const u8 as *const ::core::ffi::c_char,
-        96 => return b"brightcyan\0" as *const u8 as *const ::core::ffi::c_char,
-        97 => return b"brightwhite\0" as *const u8 as *const ::core::ffi::c_char,
-        _ => {}
-    }
-    return b"invalid\0" as *const u8 as *const ::core::ffi::c_char;
-}
-#[no_mangle]
-pub unsafe extern "C" fn colour_toescape(
-    mut c: *mut client,
-    mut colour: ::core::ffi::c_int,
-    mut bg: ::core::ffi::c_int,
-) -> *const ::core::ffi::c_char {
-    static mut s: [::core::ffi::c_char; 32] = [0; 32];
-    let mut r: u_char = 0;
-    let mut g: u_char = 0;
-    let mut b: u_char = 0;
-    let mut n: ::core::ffi::c_int = 0;
-    let mut flags: ::core::ffi::c_int = TERM_256COLOURS | TERM_RGBCOLOURS;
-    let mut o: u_int = (if bg != 0 {
-        40 as ::core::ffi::c_int
+/// Owned canonical colour text. Results remain valid across subsequent calls.
+pub fn colour_format(c: i32) -> std::ffi::CString {
+    const THEMES: &[&str] = &[
+        "themeblack",
+        "themewhite",
+        "themelightgrey",
+        "themedarkgrey",
+        "themegreen",
+        "themeyellow",
+        "themered",
+        "themeblue",
+        "themecyan",
+        "thememagenta",
+    ];
+    let text = if c == -1 {
+        "none".to_owned()
+    } else if c & COLOUR_FLAG_THEME != 0 {
+        THEMES
+            .get((c & 0xff) as usize)
+            .unwrap_or(&"invalid")
+            .to_string()
+    } else if c & COLOUR_FLAG_RGB != 0 {
+        format!("#{:06x}", c & 0xffffff)
+    } else if c & COLOUR_FLAG_256 != 0 {
+        format!("colour{}", c & 0xff)
     } else {
-        30 as ::core::ffi::c_int
-    }) as u_int;
+        match c {
+            0 => "black",
+            1 => "red",
+            2 => "green",
+            3 => "yellow",
+            4 => "blue",
+            5 => "magenta",
+            6 => "cyan",
+            7 => "white",
+            8 => "default",
+            9 => "terminal",
+            90 => "brightblack",
+            91 => "brightred",
+            92 => "brightgreen",
+            93 => "brightyellow",
+            94 => "brightblue",
+            95 => "brightmagenta",
+            96 => "brightcyan",
+            97 => "brightwhite",
+            _ => "invalid",
+        }
+        .to_owned()
+    };
+    std::ffi::CString::new(text).expect("colour names contain no NUL")
+}
+
+/// C ABI only. Result is valid until the next call on this thread or thread exit.
+/// Do not free it or access it concurrently with another call on that thread.
+/// Rust callers should retain colour_format's owned result instead.
+#[no_mangle]
+pub unsafe extern "C" fn colour_tostring(c: i32) -> *const libc::c_char {
+    thread_local! {
+        static BUFFER: std::cell::RefCell<std::ffi::CString> =
+            std::cell::RefCell::new(std::ffi::CString::default());
+    }
+    BUFFER.with(|buffer| {
+        let mut buffer = buffer.borrow_mut();
+        *buffer = colour_format(c);
+        buffer.as_ptr()
+    })
+}
+/// Format an SGR escape from a colour, background choice and terminal flags.
+/// Themes use their terminal fallback; resolve client-specific themes before calling.
+/// The historical capability-mask tests are preserved exactly.
+pub fn colour_format_escape(
+    mut colour: i32,
+    background: bool,
+    flags: i32,
+) -> Option<std::ffi::CString> {
+    if colour & COLOUR_FLAG_THEME != 0 {
+        // The lookup bounds-checks the low-byte index and only reads constant metadata.
+        colour = unsafe { colour_theme_terminal_colour((colour & 0xff) as u32) };
+    }
+    colour_format_escape_resolved(colour, background, flags)
+}
+
+fn colour_format_escape_resolved(
+    mut colour: i32,
+    background: bool,
+    flags: i32,
+) -> Option<std::ffi::CString> {
+    let offset = if background { 40 } else { 30 };
+    if colour == 8 || colour == 9 {
+        return Some(std::ffi::CString::new(format!("\x1b[{}m", offset + 9)).unwrap());
+    }
+    if !flags & TERM_RGBCOLOURS & (colour & COLOUR_FLAG_RGB) != 0 {
+        colour =
+            unsafe { colour_find_rgb((colour >> 16) as u8, (colour >> 8) as u8, colour as u8) };
+    }
+    if !flags & TERM_256COLOURS & (colour & COLOUR_FLAG_256) != 0 {
+        // The conversion masks the index to a byte before reading its fixed table.
+        colour = unsafe { colour_256to16(colour) };
+    }
+    let text = if colour & COLOUR_FLAG_RGB != 0 {
+        format!(
+            "\x1b[{};2;{};{};{}m",
+            offset + 8,
+            (colour >> 16) & 255,
+            (colour >> 8) & 255,
+            colour & 255
+        )
+    } else if colour & COLOUR_FLAG_256 != 0 {
+        format!("\x1b[{};5;{}m", offset + 8, colour & 255)
+    } else if (0..=7).contains(&colour) {
+        format!("\x1b[{}m", colour + offset)
+    } else if (90..=97).contains(&colour) {
+        format!("\x1b[{}m", colour + offset - 30)
+    } else {
+        return None;
+    };
+    Some(std::ffi::CString::new(text).expect("SGR contains no NUL"))
+}
+
+/// Resolve raw client state and return owned SGR text without shared scratch storage.
+/// # Safety
+/// A non-null client and its open terminal must be readable for this call.
+pub unsafe fn colour_format_escape_for_client(
+    c: *const client,
+    mut colour: i32,
+    background: bool,
+) -> Option<std::ffi::CString> {
+    let mut flags = TERM_256COLOURS | TERM_RGBCOLOURS;
     if !c.is_null() && (*c).tty.flags & TTY_OPENED != 0 && !(*c).tty.term.is_null() {
         flags = (*(*c).tty.term).flags;
     }
     if colour & COLOUR_FLAG_THEME != 0 {
-        n = colour & 0xff as ::core::ffi::c_int;
-        if !c.is_null() && (n as u_int) < COLOUR_THEME_COUNT as u_int {
-            colour = (*c).theme_colours[n as usize];
+        let n = (colour & 0xff) as usize;
+        colour = if !c.is_null() && n < COLOUR_THEME_COUNT as usize {
+            (*c).theme_colours[n]
         } else {
-            colour = colour_theme_terminal_colour(n as u_int);
-        }
+            colour_theme_terminal_colour(n as u32)
+        };
     }
-    if colour == 8 as ::core::ffi::c_int || colour == 9 as ::core::ffi::c_int {
-        xsnprintf(
-            &raw mut s as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-            b"\x1B[%dm\0" as *const u8 as *const ::core::ffi::c_char,
-            o.wrapping_add(9 as u_int),
-        );
-        return &raw mut s as *mut ::core::ffi::c_char;
+    colour_format_escape_resolved(colour, background, flags)
+}
+
+/// C ABI only. Result is null for invalid colours, otherwise valid until the next
+/// call on this thread or thread exit. Do not free or concurrently access it.
+/// # Safety
+/// A non-null client and its open terminal must be readable for this call.
+#[no_mangle]
+pub unsafe extern "C" fn colour_toescape(
+    c: *mut client,
+    colour: i32,
+    bg: i32,
+) -> *const libc::c_char {
+    thread_local! {
+        static BUFFER: std::cell::RefCell<std::ffi::CString> =
+            std::cell::RefCell::new(std::ffi::CString::default());
     }
-    if !flags & TERM_RGBCOLOURS & (colour & COLOUR_FLAG_RGB) != 0 {
-        colour_split_rgb(colour, &raw mut r, &raw mut g, &raw mut b);
-        colour = colour_find_rgb(r, g, b);
-    }
-    if !flags & TERM_256COLOURS & (colour & COLOUR_FLAG_256) != 0 {
-        colour = colour_256to16(colour);
-    }
-    if colour & COLOUR_FLAG_RGB != 0 {
-        colour_split_rgb(colour, &raw mut r, &raw mut g, &raw mut b);
-        xsnprintf(
-            &raw mut s as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-            b"\x1B[%d;2;%u;%u;%um\0" as *const u8 as *const ::core::ffi::c_char,
-            o.wrapping_add(8 as u_int),
-            r as ::core::ffi::c_int,
-            g as ::core::ffi::c_int,
-            b as ::core::ffi::c_int,
-        );
-        return &raw mut s as *mut ::core::ffi::c_char;
-    }
-    if colour & COLOUR_FLAG_256 != 0 {
-        xsnprintf(
-            &raw mut s as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-            b"\x1B[%d;5;%um\0" as *const u8 as *const ::core::ffi::c_char,
-            o.wrapping_add(8 as u_int),
-            colour & 0xff as ::core::ffi::c_int,
-        );
-        return &raw mut s as *mut ::core::ffi::c_char;
-    }
-    if colour >= 0 as ::core::ffi::c_int && colour <= 7 as ::core::ffi::c_int {
-        xsnprintf(
-            &raw mut s as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-            b"\x1B[%dm\0" as *const u8 as *const ::core::ffi::c_char,
-            (colour as u_int).wrapping_add(o),
-        );
-        return &raw mut s as *mut ::core::ffi::c_char;
-    }
-    if colour >= 90 as ::core::ffi::c_int && colour <= 97 as ::core::ffi::c_int {
-        xsnprintf(
-            &raw mut s as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 32]>() as size_t,
-            b"\x1B[%dm\0" as *const u8 as *const ::core::ffi::c_char,
-            (colour as u_int).wrapping_add(o).wrapping_sub(30 as u_int),
-        );
-        return &raw mut s as *mut ::core::ffi::c_char;
-    }
-    return ::core::ptr::null::<::core::ffi::c_char>();
+    let Some(text) = colour_format_escape_for_client(c, colour, bg != 0) else {
+        return std::ptr::null();
+    };
+    BUFFER.with(|buffer| {
+        let mut buffer = buffer.borrow_mut();
+        *buffer = text;
+        buffer.as_ptr()
+    })
 }
 #[no_mangle]
 pub unsafe extern "C" fn colour_totheme(mut c: ::core::ffi::c_int) -> client_theme {
@@ -527,8 +540,7 @@ pub unsafe extern "C" fn colour_totheme(mut c: ::core::ffi::c_int) -> client_the
     }
     return THEME_UNKNOWN;
 }
-#[no_mangle]
-pub unsafe extern "C" fn colour_fromstring(
+unsafe fn colour_fromstring_impl(
     mut s: *const ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -727,11 +739,11 @@ pub unsafe extern "C" fn colour_fromstring(
     {
         return 97 as ::core::ffi::c_int;
     }
-    return colour_byname(s);
+    return colour_byname_impl(s);
 }
 #[no_mangle]
 pub unsafe extern "C" fn colour_256toRGB(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    static mut table: [::core::ffi::c_int; 256] = [
+    const RGB_TABLE: [::core::ffi::c_int; 256] = [
         0 as ::core::ffi::c_int,
         0x800000 as ::core::ffi::c_int,
         0x8000 as ::core::ffi::c_int,
@@ -989,11 +1001,11 @@ pub unsafe extern "C" fn colour_256toRGB(mut c: ::core::ffi::c_int) -> ::core::f
         0xe4e4e4 as ::core::ffi::c_int,
         0xeeeeee as ::core::ffi::c_int,
     ];
-    return table[(c & 0xff as ::core::ffi::c_int) as usize] | COLOUR_FLAG_RGB;
+    return RGB_TABLE[(c & 0xff as ::core::ffi::c_int) as usize] | COLOUR_FLAG_RGB;
 }
 #[no_mangle]
 pub unsafe extern "C" fn colour_256to16(mut c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    static mut table: [::core::ffi::c_char; 256] = [
+    const ANSI_TABLE: [::core::ffi::c_char; 256] = [
         0 as ::core::ffi::c_int as ::core::ffi::c_char,
         1 as ::core::ffi::c_int as ::core::ffi::c_char,
         2 as ::core::ffi::c_int as ::core::ffi::c_char,
@@ -1251,11 +1263,10 @@ pub unsafe extern "C" fn colour_256to16(mut c: ::core::ffi::c_int) -> ::core::ff
         15 as ::core::ffi::c_int as ::core::ffi::c_char,
         15 as ::core::ffi::c_int as ::core::ffi::c_char,
     ];
-    return table[(c & 0xff as ::core::ffi::c_int) as usize] as ::core::ffi::c_int;
+    return ANSI_TABLE[(c & 0xff as ::core::ffi::c_int) as usize] as ::core::ffi::c_int;
 }
-#[no_mangle]
-pub unsafe extern "C" fn colour_byname(mut name: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
-    static mut colours: [C2RustUnnamed_37; 578] = [
+unsafe fn colour_byname_impl(mut name: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
+    const colours: [C2RustUnnamed_37; 578] = [
         C2RustUnnamed_37 {
             name: b"AliceBlue\0" as *const u8 as *const ::core::ffi::c_char,
             c: 0xf0f8ff as ::core::ffi::c_int,
@@ -3613,8 +3624,7 @@ pub unsafe extern "C" fn colour_byname(mut name: *const ::core::ffi::c_char) -> 
     }
     return -(1 as ::core::ffi::c_int);
 }
-#[no_mangle]
-pub unsafe extern "C" fn colour_parseX11(mut p: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
+unsafe fn colour_parseX11_impl(mut p: *const ::core::ffi::c_char) -> ::core::ffi::c_int {
     let mut c: ::core::ffi::c_double = 0.;
     let mut m: ::core::ffi::c_double = 0.;
     let mut y: ::core::ffi::c_double = 0.;
@@ -3718,15 +3728,9 @@ pub unsafe extern "C" fn colour_parseX11(mut p: *const ::core::ffi::c_char) -> :
             len = len.wrapping_sub(1);
         }
         copy = xstrndup(p, len);
-        colour = colour_byname(copy);
+        colour = colour_byname_impl(copy);
         free(copy as *mut ::core::ffi::c_void);
     }
-    log_debug(
-        b"%s: %s = %s\0" as *const u8 as *const ::core::ffi::c_char,
-        b"colour_parseX11\0" as *const u8 as *const ::core::ffi::c_char,
-        p,
-        colour_tostring(colour),
-    );
     return colour;
 }
 #[no_mangle]
@@ -3851,4 +3855,85 @@ pub unsafe extern "C" fn colour_palette_from_option(
         }
         i = i.wrapping_add(1);
     }
+}
+
+/// Parse an entire byte slice with the existing C locale grammar.
+/// Embedded NUL and invalid inputs return None; no UTF-8 conversion is performed.
+pub fn colour_parse(input: &[u8]) -> Option<i32> {
+    let input = std::ffi::CString::new(input).ok()?;
+    colour_parse_cstr(&input)
+}
+
+/// Bounded C string entry point. Locale-sensitive operations remain in libc.
+pub fn colour_parse_cstr(input: &std::ffi::CStr) -> Option<i32> {
+    // The kernel only reads input through its terminating NUL; it retains no pointer.
+    let value = unsafe { colour_fromstring_impl(input.as_ptr()) };
+    (value != -1).then_some(value)
+}
+
+/// C ABI compatibility shim.
+/// # Safety
+/// Input must point to a readable NUL-terminated string for this call.
+#[no_mangle]
+pub unsafe extern "C" fn colour_fromstring(input: *const libc::c_char) -> i32 {
+    colour_parse_cstr(std::ffi::CStr::from_ptr(input)).unwrap_or(-1)
+}
+
+/// Parse an entire byte slice with the existing C locale grammar.
+/// Embedded NUL and invalid inputs return None; no UTF-8 conversion is performed.
+pub fn colour_parse_name(input: &[u8]) -> Option<i32> {
+    let input = std::ffi::CString::new(input).ok()?;
+    colour_parse_name_cstr(&input)
+}
+
+/// Bounded C string entry point. Locale-sensitive operations remain in libc.
+pub fn colour_parse_name_cstr(input: &std::ffi::CStr) -> Option<i32> {
+    // The kernel only reads input through its terminating NUL; it retains no pointer.
+    let value = unsafe { colour_byname_impl(input.as_ptr()) };
+    (value != -1).then_some(value)
+}
+
+/// C ABI compatibility shim.
+/// # Safety
+/// Input must point to a readable NUL-terminated string for this call.
+#[no_mangle]
+pub unsafe extern "C" fn colour_byname(input: *const libc::c_char) -> i32 {
+    colour_parse_name_cstr(std::ffi::CStr::from_ptr(input)).unwrap_or(-1)
+}
+
+/// Parse an entire byte slice with the existing C locale grammar.
+/// Embedded NUL and invalid inputs return None; no UTF-8 conversion is performed.
+pub fn colour_parse_x11(input: &[u8]) -> Option<i32> {
+    let input = std::ffi::CString::new(input).ok()?;
+    colour_parse_x11_cstr(&input)
+}
+
+/// Bounded C string entry point. Locale-sensitive operations remain in libc.
+pub fn colour_parse_x11_cstr(input: &std::ffi::CStr) -> Option<i32> {
+    // The kernel only reads input through its terminating NUL; it retains no pointer.
+    let value = unsafe { colour_parseX11_impl(input.as_ptr()) };
+    (value != -1).then_some(value)
+}
+
+/// Application logging adapter; the bounded parser itself has no logging side effects.
+/// # Safety
+/// Call on the application thread, where the global debug log is managed.
+pub unsafe fn colour_parse_x11_logged(input: &std::ffi::CStr) -> Option<i32> {
+    let value = colour_parse_x11_cstr(input);
+    crate::src::log::log_debug(
+        c"%s: %s = %s".as_ptr(),
+        c"colour_parseX11".as_ptr(),
+        input.as_ptr(),
+        colour_format(value.unwrap_or(-1)).as_ptr(),
+    );
+    value
+}
+
+/// C ABI compatibility shim.
+/// # Safety
+/// Input must point to a readable NUL-terminated string for this call.
+/// Call on the application thread, where the global debug log is managed.
+#[no_mangle]
+pub unsafe extern "C" fn colour_parseX11(input: *const libc::c_char) -> i32 {
+    colour_parse_x11_logged(std::ffi::CStr::from_ptr(input)).unwrap_or(-1)
 }

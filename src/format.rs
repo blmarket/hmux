@@ -5,7 +5,7 @@ use crate::src::cmd_queue::{
     cmdq_get_client, cmdq_get_event, cmdq_get_target, cmdq_get_target_client,
     cmdq_merge_formats, cmdq_print,
 };
-use crate::src::colour::{colour_force_rgb, colour_fromstring, colour_toescape, colour_tostring};
+use crate::src::colour::{colour_force_rgb, colour_parse_cstr, colour_format_escape_for_client, colour_format};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_find, environ_first, environ_next};
 use crate::src::ffi::libc::{
@@ -2376,7 +2376,7 @@ unsafe extern "C" fn format_cb_pane_fg(mut ft: *mut format_tree) -> *mut ::core:
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
     tty_default_colours(&raw mut gc, wp, ::core::ptr::null_mut::<u_int>());
-    return xstrdup(colour_tostring(gc.fg)) as *mut ::core::ffi::c_void;
+    return xstrdup(colour_format(gc.fg).as_ptr()) as *mut ::core::ffi::c_void;
 }
 unsafe extern "C" fn format_cb_pane_flags(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
     if !(*ft).wp.is_null() {
@@ -2432,7 +2432,7 @@ unsafe extern "C" fn format_cb_pane_bg(mut ft: *mut format_tree) -> *mut ::core:
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
     tty_default_colours(&raw mut gc, wp, ::core::ptr::null_mut::<u_int>());
-    return xstrdup(colour_tostring(gc.bg)) as *mut ::core::ffi::c_void;
+    return xstrdup(colour_format(gc.bg).as_ptr()) as *mut ::core::ffi::c_void;
 }
 unsafe extern "C" fn format_cb_session_group_list(
     mut ft: *mut format_tree,
@@ -2648,9 +2648,9 @@ unsafe extern "C" fn format_cb_cursor_colour(mut ft: *mut format_tree) -> *mut :
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
     if (*(*wp).screen).ccolour != -(1 as ::core::ffi::c_int) {
-        return xstrdup(colour_tostring((*(*wp).screen).ccolour)) as *mut ::core::ffi::c_void;
+        return xstrdup(colour_format((*(*wp).screen).ccolour).as_ptr()) as *mut ::core::ffi::c_void;
     }
-    return xstrdup(colour_tostring((*(*wp).screen).default_ccolour)) as *mut ::core::ffi::c_void;
+    return xstrdup(colour_format((*(*wp).screen).default_ccolour).as_ptr()) as *mut ::core::ffi::c_void;
 }
 unsafe extern "C" fn format_cb_mouse_word(mut ft: *mut format_tree) -> *mut ::core::ffi::c_void {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -10487,24 +10487,18 @@ unsafe extern "C" fn format_replace(
             {
                 value = xstrdup(b"\x1B[0m\0" as *const u8 as *const ::core::ffi::c_char);
             } else {
-                c = colour_fromstring(new);
+                c = colour_parse_cstr(std::ffi::CStr::from_ptr(new)).unwrap_or(-1);
                 if c == -(1 as ::core::ffi::c_int) {
                     value = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
                 } else {
-                    if modifiers & FORMAT_COLOUR_ESC_BG as uint64_t != 0 {
-                        cp = colour_toescape((*ft).c, c, 1 as ::core::ffi::c_int);
-                    } else {
-                        cp = colour_toescape((*ft).c, c, 0 as ::core::ffi::c_int);
-                    }
-                    if cp.is_null() {
-                        value = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-                    } else {
-                        value = xstrdup(cp);
-                    }
+                    let escape = colour_format_escape_for_client(
+                        (*ft).c, c, modifiers & FORMAT_COLOUR_ESC_BG as uint64_t != 0,
+                    );
+                    value = xstrdup(escape.as_deref().unwrap_or(c"").as_ptr());
                 }
             }
         } else {
-            c = colour_fromstring(new);
+            c = colour_parse_cstr(std::ffi::CStr::from_ptr(new)).unwrap_or(-1);
             if c == -(1 as ::core::ffi::c_int) || {
                 c = colour_force_rgb(c);
                 c == -(1 as ::core::ffi::c_int)

@@ -9,7 +9,7 @@ use crate::src::cmd_queue::{
     cmdq_get_error, cmdq_insert_after, cmdq_new,
 };
 use crate::src::colour::{
-    colour_fromstring, colour_theme_option, colour_theme_terminal_colour, colour_totheme,
+    colour_parse_cstr, colour_theme_option, colour_theme_terminal_colour, colour_totheme,
 };
 use crate::src::compat::imsg::imsg_get_fd;
 use crate::src::control::{
@@ -1937,7 +1937,7 @@ pub unsafe extern "C" fn server_client_update_theme_colours(mut c: *mut client) 
         if !name.is_null() {
             value = options_get_string(global_options, name);
             expanded = format_expand(ft, value);
-            colour = colour_fromstring(expanded);
+            colour = colour_parse_cstr(std::ffi::CStr::from_ptr(expanded)).unwrap_or(-1);
             free(expanded as *mut ::core::ffi::c_void);
             if !(colour == -(1 as ::core::ffi::c_int) || colour & COLOUR_FLAG_THEME != 0) {
                 (*c).theme_colours[i as usize] = colour;

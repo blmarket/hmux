@@ -1,5 +1,5 @@
-use crate::src::attributes::{attributes_fromstring, attributes_tostring};
-use crate::src::colour::{colour_fromstring, colour_tostring};
+use crate::src::attributes::{attributes_parse_cstr, attributes_format};
+use crate::src::colour::{colour_parse_cstr, colour_format};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{
     free, memcpy, snprintf, strcasecmp, strchr, strcmp, strcspn, strlcpy, strncasecmp, strspn,
@@ -540,9 +540,8 @@ pub unsafe extern "C" fn style_parse(
                 5 as size_t,
             ) == 0 as ::core::ffi::c_int
         {
-            value = colour_fromstring(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(5 as ::core::ffi::c_int as isize),
-            );
+            value = colour_parse_cstr(std::ffi::CStr::from_ptr(
+                (&raw mut tmp as *mut ::core::ffi::c_char).offset(5 as ::core::ffi::c_int as isize))).unwrap_or(-1);
             if value == -(1 as ::core::ffi::c_int) {
                 current_block = 6605876559004397942;
                 break;
@@ -576,9 +575,8 @@ pub unsafe extern "C" fn style_parse(
                 2 as size_t,
             ) == 0 as ::core::ffi::c_int
         {
-            value = colour_fromstring(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(3 as ::core::ffi::c_int as isize),
-            );
+            value = colour_parse_cstr(std::ffi::CStr::from_ptr(
+                (&raw mut tmp as *mut ::core::ffi::c_char).offset(3 as ::core::ffi::c_int as isize))).unwrap_or(-1);
             if value == -(1 as ::core::ffi::c_int) {
                 current_block = 6605876559004397942;
                 break;
@@ -611,9 +609,8 @@ pub unsafe extern "C" fn style_parse(
                 3 as size_t,
             ) == 0 as ::core::ffi::c_int
         {
-            value = colour_fromstring(
-                (&raw mut tmp as *mut ::core::ffi::c_char).offset(3 as ::core::ffi::c_int as isize),
-            );
+            value = colour_parse_cstr(std::ffi::CStr::from_ptr(
+                (&raw mut tmp as *mut ::core::ffi::c_char).offset(3 as ::core::ffi::c_int as isize))).unwrap_or(-1);
             if value == -(1 as ::core::ffi::c_int) {
                 current_block = 6605876559004397942;
                 break;
@@ -649,10 +646,9 @@ pub unsafe extern "C" fn style_parse(
             {
                 (*sy).gc.attr = ((*sy).gc.attr as ::core::ffi::c_int | GRID_ATTR_NOATTR) as u_short;
             } else {
-                value = attributes_fromstring(
+                value = attributes_parse_cstr(std::ffi::CStr::from_ptr(
                     (&raw mut tmp as *mut ::core::ffi::c_char)
-                        .offset(2 as ::core::ffi::c_int as isize),
-                );
+                        .offset(2 as ::core::ffi::c_int as isize))).unwrap_or(-1);
                 if value == -(1 as ::core::ffi::c_int) {
                     current_block = 6605876559004397942;
                     break;
@@ -737,7 +733,7 @@ pub unsafe extern "C" fn style_parse(
                 );
             }
         } else {
-            value = attributes_fromstring(&raw mut tmp as *mut ::core::ffi::c_char);
+            value = attributes_parse_cstr(std::ffi::CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char)).unwrap_or(-1);
             if value == -(1 as ::core::ffi::c_int) {
                 current_block = 6605876559004397942;
                 break;
@@ -926,7 +922,7 @@ pub unsafe extern "C" fn style_tostring(mut sy: *mut style) -> *const ::core::ff
                 .wrapping_sub(off as size_t),
             b"%sfill=%s\0" as *const u8 as *const ::core::ffi::c_char,
             comma,
-            colour_tostring((*sy).fill),
+            colour_format((*sy).fill).as_ptr(),
         );
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -948,7 +944,7 @@ pub unsafe extern "C" fn style_tostring(mut sy: *mut style) -> *const ::core::ff
                 .wrapping_sub(off as size_t),
             b"%sfg=%s\0" as *const u8 as *const ::core::ffi::c_char,
             comma,
-            colour_tostring((*gc).fg),
+            colour_format((*gc).fg).as_ptr(),
         );
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -959,7 +955,7 @@ pub unsafe extern "C" fn style_tostring(mut sy: *mut style) -> *const ::core::ff
                 .wrapping_sub(off as size_t),
             b"%sbg=%s\0" as *const u8 as *const ::core::ffi::c_char,
             comma,
-            colour_tostring((*gc).bg),
+            colour_format((*gc).bg).as_ptr(),
         );
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -970,7 +966,7 @@ pub unsafe extern "C" fn style_tostring(mut sy: *mut style) -> *const ::core::ff
                 .wrapping_sub(off as size_t),
             b"%sus=%s\0" as *const u8 as *const ::core::ffi::c_char,
             comma,
-            colour_tostring((*gc).us),
+            colour_format((*gc).us).as_ptr(),
         );
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -981,7 +977,7 @@ pub unsafe extern "C" fn style_tostring(mut sy: *mut style) -> *const ::core::ff
                 .wrapping_sub(off as size_t),
             b"%s%s\0" as *const u8 as *const ::core::ffi::c_char,
             comma,
-            attributes_tostring((*gc).attr as ::core::ffi::c_int),
+            attributes_format((*gc).attr as ::core::ffi::c_int).as_ptr(),
         );
         comma = b",\0" as *const u8 as *const ::core::ffi::c_char;
     }
@@ -1117,7 +1113,7 @@ pub unsafe extern "C" fn style_parse_colour(
         (*sy).gc.fg = -(1 as ::core::ffi::c_int);
         return 0 as ::core::ffi::c_int;
     }
-    c = colour_fromstring(s);
+    c = colour_parse_cstr(std::ffi::CStr::from_ptr(s)).unwrap_or(-1);
     if c == -(1 as ::core::ffi::c_int) {
         return -(1 as ::core::ffi::c_int);
     }
