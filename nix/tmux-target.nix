@@ -11,6 +11,7 @@ tmux.overrideAttrs (old: {
     rev = revision;
     hash = "sha256-ODpffQUf7obGWS7Cl/4KxNJGkvKNI9w5+/Jf2vNXJEU=";
   };
+  patches = [ ];
   configureFlags =
     (lib.filter (flag: flag != "--enable-sixel") old.configureFlags)
     ++ [ "--disable-sixel" "--disable-debug" ];

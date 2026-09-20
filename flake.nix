@@ -58,8 +58,8 @@
           };
         in
         {
-          tmux = self.packages.${system}.tmux-target;
           tmux-target = pkgs.callPackage ./nix/tmux-target.nix { };
+          tmux = self.packages.${system}.tmux-target;
         }
         // nixpkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.isLinux) {
           inherit hmux;
