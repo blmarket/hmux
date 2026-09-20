@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     fn getenv(__name: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
     fn warnx(_: *const ::core::ffi::c_char, ...);
@@ -10,7 +11,6 @@ extern "C" {
         -> *mut ::core::ffi::c_char;
     fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
 }
-pub type size_t = usize;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct option {

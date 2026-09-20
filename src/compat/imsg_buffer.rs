@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     fn sendmsg(
         __fd: ::core::ffi::c_int,
@@ -51,15 +52,12 @@ extern "C" {
     fn ntohll(_: uint64_t) -> uint64_t;
     fn freezero(_: *mut ::core::ffi::c_void, _: size_t);
 }
-pub type __uint8_t = u8;
 pub type __uint16_t = u16;
 pub type __uint32_t = u32;
-pub type __uint64_t = u64;
 pub type __caddr_t = *mut ::core::ffi::c_char;
 pub type __socklen_t = ::core::ffi::c_uint;
 pub type ssize_t = isize;
 pub type caddr_t = __caddr_t;
-pub type size_t = usize;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct iovec {
@@ -93,8 +91,6 @@ pub const SCM_CREDENTIALS: C2RustUnnamed = 2;
 pub const SCM_RIGHTS: C2RustUnnamed = 1;
 pub type uint32_t = __uint32_t;
 pub type uint16_t = __uint16_t;
-pub type uint8_t = __uint8_t;
-pub type uint64_t = __uint64_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct ibuf {

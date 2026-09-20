@@ -7,6 +7,7 @@
     unused_mut
 )]
 #![feature(extern_types, raw_ref_op)]
+use crate::src::shared::abi::*;
 extern "C" {
     pub type _IO_wide_data;
     pub type _IO_codecvt;
@@ -160,8 +161,6 @@ extern "C" {
     fn log_add_level();
     fn log_debug(_: *const ::core::ffi::c_char, ...);
 }
-pub type __u_int = ::core::ffi::c_uint;
-pub type __uint64_t = u64;
 pub type __dev_t = ::core::ffi::c_ulong;
 pub type __uid_t = ::core::ffi::c_uint;
 pub type __gid_t = ::core::ffi::c_uint;
@@ -170,22 +169,12 @@ pub type __mode_t = ::core::ffi::c_uint;
 pub type __nlink_t = ::core::ffi::c_ulong;
 pub type __off_t = ::core::ffi::c_long;
 pub type __off64_t = ::core::ffi::c_long;
-pub type __time_t = ::core::ffi::c_long;
-pub type __suseconds_t = ::core::ffi::c_long;
 pub type __clockid_t = ::core::ffi::c_int;
 pub type __blksize_t = ::core::ffi::c_long;
 pub type __blkcnt_t = ::core::ffi::c_long;
 pub type __syscall_slong_t = ::core::ffi::c_long;
-pub type u_int = __u_int;
 pub type uid_t = __uid_t;
 pub type clockid_t = __clockid_t;
-pub type size_t = usize;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct timeval {
-    pub tv_sec: __time_t,
-    pub tv_usec: __suseconds_t,
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct timespec {
@@ -646,7 +635,6 @@ pub struct _IO_FILE {
 }
 pub type _IO_lock_t = ();
 pub type FILE = _IO_FILE;
-pub type uint64_t = __uint64_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct environ_entry {

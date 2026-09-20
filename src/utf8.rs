@@ -1,3 +1,7 @@
+use crate::src::shared::abi::*;
+use crate::src::shared::grid::*;
+use crate::src::shared::style::*;
+use crate::src::shared::utf8::*;
 extern "C" {
     pub type options;
     pub type cmds;
@@ -74,14 +78,7 @@ extern "C" {
     fn log_debug(_: *const ::core::ffi::c_char, ...);
     fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
 }
-pub type __u_char = ::core::ffi::c_uchar;
-pub type __u_short = ::core::ffi::c_ushort;
-pub type __u_int = ::core::ffi::c_uint;
-pub type u_char = __u_char;
-pub type u_short = __u_short;
-pub type u_int = __u_int;
 pub type ssize_t = isize;
-pub type size_t = usize;
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const _ISalnum: C2RustUnnamed = 8;
 pub const _ISpunct: C2RustUnnamed = 4;
@@ -98,79 +95,11 @@ pub const _ISupper: C2RustUnnamed = 256;
 pub type wchar_t = ::libc::wchar_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct grid_cell {
-    pub data: utf8_data,
-    pub attr: u_short,
-    pub flags: u_char,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub us: ::core::ffi::c_int,
-    pub link: u_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct utf8_data {
-    pub data: [u_char; 32],
-    pub have: u_char,
-    pub size: u_char,
-    pub width: u_char,
-}
-pub type utf8_char = u_int;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct style {
-    pub gc: grid_cell,
-    pub ignore: ::core::ffi::c_int,
-    pub dim: ::core::ffi::c_int,
-    pub fill: ::core::ffi::c_int,
-    pub align: style_align,
-    pub list: style_list,
-    pub range_type: style_range_type,
-    pub range_argument: u_int,
-    pub range_string: [::core::ffi::c_char; 16],
-    pub width: ::core::ffi::c_int,
-    pub width_percentage: ::core::ffi::c_int,
-    pub pad: ::core::ffi::c_int,
-    pub default_type: style_default_type,
-    pub link: u_int,
-}
-pub type style_default_type = ::core::ffi::c_uint;
-pub const STYLE_DEFAULT_SET: style_default_type = 3;
-pub const STYLE_DEFAULT_POP: style_default_type = 2;
-pub const STYLE_DEFAULT_PUSH: style_default_type = 1;
-pub const STYLE_DEFAULT_BASE: style_default_type = 0;
-pub type style_range_type = ::core::ffi::c_uint;
-pub const STYLE_RANGE_CONTROL: style_range_type = 7;
-pub const STYLE_RANGE_USER: style_range_type = 6;
-pub const STYLE_RANGE_SESSION: style_range_type = 5;
-pub const STYLE_RANGE_WINDOW: style_range_type = 4;
-pub const STYLE_RANGE_PANE: style_range_type = 3;
-pub const STYLE_RANGE_RIGHT: style_range_type = 2;
-pub const STYLE_RANGE_LEFT: style_range_type = 1;
-pub const STYLE_RANGE_NONE: style_range_type = 0;
-pub type style_list = ::core::ffi::c_uint;
-pub const STYLE_LIST_RIGHT_MARKER: style_list = 4;
-pub const STYLE_LIST_LEFT_MARKER: style_list = 3;
-pub const STYLE_LIST_FOCUS: style_list = 2;
-pub const STYLE_LIST_ON: style_list = 1;
-pub const STYLE_LIST_OFF: style_list = 0;
-pub type style_align = ::core::ffi::c_uint;
-pub const STYLE_ALIGN_ABSOLUTE_CENTRE: style_align = 4;
-pub const STYLE_ALIGN_RIGHT: style_align = 3;
-pub const STYLE_ALIGN_CENTRE: style_align = 2;
-pub const STYLE_ALIGN_LEFT: style_align = 1;
-pub const STYLE_ALIGN_DEFAULT: style_align = 0;
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct cmd_list {
     pub references: ::core::ffi::c_int,
     pub group: u_int,
     pub list: *mut cmds,
 }
-pub type utf8_state = ::core::ffi::c_uint;
-pub const UTF8_ERROR: utf8_state = 2;
-pub const UTF8_DONE: utf8_state = 1;
-pub const UTF8_MORE: utf8_state = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct options_array {

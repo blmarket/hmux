@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     pub type sd_bus;
     pub type sd_bus_message;
@@ -101,22 +102,9 @@ extern "C" {
     static mut socket_path: *const ::core::ffi::c_char;
     fn server_create_socket(_: uint64_t, _: *mut *mut ::core::ffi::c_char) -> ::core::ffi::c_int;
 }
-pub type __uint8_t = u8;
 pub type __uint16_t = u16;
 pub type __uint32_t = u32;
-pub type __uint64_t = u64;
-pub type __pid_t = ::core::ffi::c_int;
-pub type __time_t = ::core::ffi::c_long;
-pub type __suseconds_t = ::core::ffi::c_long;
 pub type __socklen_t = ::core::ffi::c_uint;
-pub type pid_t = __pid_t;
-pub type size_t = usize;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct timeval {
-    pub tv_sec: __time_t,
-    pub tv_usec: __suseconds_t,
-}
 pub type sa_family_t = ::core::ffi::c_ushort;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -124,10 +112,8 @@ pub struct sockaddr_un {
     pub sun_family: sa_family_t,
     pub sun_path: [::core::ffi::c_char; 108],
 }
-pub type uint8_t = __uint8_t;
 pub type uint16_t = __uint16_t;
 pub type uint32_t = __uint32_t;
-pub type uint64_t = __uint64_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct sd_bus_error {

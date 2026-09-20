@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 use ::c2rust_bitfields;
 extern "C" {
     pub type _IO_wide_data;
@@ -55,14 +56,10 @@ extern "C" {
     fn prompt_type_string(_: prompt_type) -> *const ::core::ffi::c_char;
     fn log_debug(_: *const ::core::ffi::c_char, ...);
 }
-pub type __u_int = ::core::ffi::c_uint;
-pub type __uint64_t = u64;
 pub type __off_t = ::core::ffi::c_long;
 pub type __off64_t = ::core::ffi::c_long;
 pub type __ssize_t = ::core::ffi::c_long;
-pub type u_int = __u_int;
 pub type ssize_t = isize;
-pub type size_t = usize;
 #[derive(Copy, Clone, BitfieldStruct)]
 #[repr(C)]
 pub struct _IO_FILE {

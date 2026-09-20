@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     fn utf8proc_iterate(
         str: *const utf8proc_uint8_t,
@@ -12,13 +13,10 @@ extern "C" {
     fn utf8proc_charwidth(codepoint: utf8proc_int32_t) -> ::core::ffi::c_int;
     fn utf8proc_category(codepoint: utf8proc_int32_t) -> utf8proc_category_t;
 }
-pub type __uint8_t = u8;
 pub type __int32_t = i32;
-pub type size_t = usize;
 pub type int32_t = __int32_t;
 pub type wchar_t = ::libc::wchar_t;
 pub type ptrdiff_t = isize;
-pub type uint8_t = __uint8_t;
 pub type utf8proc_uint8_t = uint8_t;
 pub type utf8proc_int32_t = int32_t;
 pub type utf8proc_ssize_t = ptrdiff_t;

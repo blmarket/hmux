@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     fn __errno_location() -> *mut ::core::ffi::c_int;
     fn memcpy(
@@ -16,7 +17,6 @@ extern "C" {
     fn calloc(__nmemb: size_t, __size: size_t) -> *mut ::core::ffi::c_void;
     fn free(__ptr: *mut ::core::ffi::c_void);
 }
-pub type size_t = usize;
 pub const ENOMEM: ::core::ffi::c_int = 12 as ::core::ffi::c_int;
 pub const EINVAL: ::core::ffi::c_int = 22 as ::core::ffi::c_int;
 pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();

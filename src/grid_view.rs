@@ -1,3 +1,5 @@
+use crate::src::shared::abi::*;
+use crate::src::shared::grid::*;
 extern "C" {
     pub type hyperlinks;
     pub type screen_write_cline;
@@ -31,14 +33,20 @@ extern "C" {
         _: *mut screen,
     ) -> *mut ::core::ffi::c_char;
 }
-pub type __u_char = ::core::ffi::c_uchar;
-pub type __u_short = ::core::ffi::c_ushort;
-pub type __u_int = ::core::ffi::c_uint;
-pub type u_char = __u_char;
-pub type u_short = __u_short;
-pub type u_int = __u_int;
-pub type size_t = usize;
-pub type bitstr_t = ::core::ffi::c_uchar;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union C2RustUnnamed {
+    pub offset: u_int,
+    pub data: C2RustUnnamed_0,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_0 {
+    pub attr: u_char,
+    pub fg: u_char,
+    pub bg: u_char,
+    pub data: u_char,
+}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct screen {
@@ -80,99 +88,12 @@ pub const PROGRESS_BAR_INDETERMINATE: progress_bar_state = 3;
 pub const PROGRESS_BAR_ERROR: progress_bar_state = 2;
 pub const PROGRESS_BAR_NORMAL: progress_bar_state = 1;
 pub const PROGRESS_BAR_HIDDEN: progress_bar_state = 0;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid_cell {
-    pub data: utf8_data,
-    pub attr: u_short,
-    pub flags: u_char,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub us: ::core::ffi::c_int,
-    pub link: u_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct utf8_data {
-    pub data: [u_char; 32],
-    pub have: u_char,
-    pub size: u_char,
-    pub width: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid {
-    pub flags: ::core::ffi::c_int,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub hscrolled: u_int,
-    pub hsize: u_int,
-    pub hlimit: u_int,
-    pub scroll_added: u_int,
-    pub scroll_collected: u_int,
-    pub scroll_generation: u_int,
-    pub linedata: *mut grid_line,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid_line {
-    pub celldata: *mut grid_cell_entry,
-    pub extddata: *mut grid_extd_entry,
-    pub cellused: u_short,
-    pub cellsize: u_short,
-    pub extdsize: u_int,
-    pub time: u_int,
-    pub osc133_data: osc133_data,
-    pub flags: u_short,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct osc133_data {
-    pub prompt_col: u_short,
-    pub cmd_col: u_short,
-    pub out_start_col: u_short,
-    pub out_end_col: u_short,
-    pub exit_status: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C, packed)]
-pub struct grid_extd_entry {
-    pub data: utf8_char,
-    pub attr: u_short,
-    pub flags: u_char,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub us: ::core::ffi::c_int,
-    pub link: u_int,
-}
-pub type utf8_char = u_int;
-#[derive(Copy, Clone)]
-#[repr(C, packed)]
-pub struct grid_cell_entry {
-    pub c2rust_unnamed: C2RustUnnamed,
-    pub flags: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed {
-    pub offset: u_int,
-    pub data: C2RustUnnamed_0,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_0 {
-    pub attr: u_char,
-    pub fg: u_char,
-    pub bg: u_char,
-    pub data: u_char,
-}
 pub type screen_cursor_style = ::core::ffi::c_uint;
 pub const SCREEN_CURSOR_BAR: screen_cursor_style = 3;
 pub const SCREEN_CURSOR_UNDERLINE: screen_cursor_style = 2;
 pub const SCREEN_CURSOR_BLOCK: screen_cursor_style = 1;
 pub const SCREEN_CURSOR_DEFAULT: screen_cursor_style = 0;
 pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
-pub const GRID_HISTORY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 #[no_mangle]
 pub unsafe extern "C" fn grid_view_get_cell(
     mut gd: *mut grid,

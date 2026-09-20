@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 use ::libc;
 extern "C" {
     pub type event_base;
@@ -73,30 +74,18 @@ extern "C" {
     fn log_debug(_: *const ::core::ffi::c_char, ...);
     fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
 }
-pub type __uint8_t = u8;
 pub type __uint32_t = u32;
 pub type __uid_t = ::core::ffi::c_uint;
 pub type __gid_t = ::core::ffi::c_uint;
-pub type __pid_t = ::core::ffi::c_int;
 pub type __clock_t = ::core::ffi::c_long;
-pub type __time_t = ::core::ffi::c_long;
-pub type __suseconds_t = ::core::ffi::c_long;
 pub type gid_t = __gid_t;
 pub type uid_t = __uid_t;
-pub type pid_t = __pid_t;
-pub type size_t = usize;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct __sigset_t {
     pub __val: [::core::ffi::c_ulong; 16],
 }
 pub type sigset_t = __sigset_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct timeval {
-    pub tv_sec: __time_t,
-    pub tv_usec: __suseconds_t,
-}
 pub type __socket_type = ::core::ffi::c_uint;
 pub const SOCK_NONBLOCK: __socket_type = 2048;
 pub const SOCK_CLOEXEC: __socket_type = 524288;
@@ -108,7 +97,6 @@ pub const SOCK_RAW: __socket_type = 3;
 pub const SOCK_DGRAM: __socket_type = 2;
 pub const SOCK_STREAM: __socket_type = 1;
 pub type uint32_t = __uint32_t;
-pub type uint8_t = __uint8_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct utsname {

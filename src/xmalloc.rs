@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     fn vsnprintf(
         __s: *mut ::core::ffi::c_char,
@@ -42,7 +43,6 @@ pub struct __va_list_tag {
     pub overflow_arg_area: *mut ::core::ffi::c_void,
     pub reg_save_area: *mut ::core::ffi::c_void,
 }
-pub type size_t = usize;
 pub type __gnuc_va_list = __builtin_va_list;
 pub type va_list = __gnuc_va_list;
 pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;

@@ -150,6 +150,7 @@ pub mod src {
     pub mod server_client;
     pub mod server_fn;
     pub mod session;
+    pub mod shared;
     pub mod sort;
     pub mod spawn;
     pub mod status;

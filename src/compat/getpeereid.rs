@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     fn getsockopt(
         __fd: ::core::ffi::c_int,
@@ -9,11 +10,9 @@ extern "C" {
 }
 pub type __uid_t = ::core::ffi::c_uint;
 pub type __gid_t = ::core::ffi::c_uint;
-pub type __pid_t = ::core::ffi::c_int;
 pub type __socklen_t = ::core::ffi::c_uint;
 pub type gid_t = __gid_t;
 pub type uid_t = __uid_t;
-pub type pid_t = __pid_t;
 pub type socklen_t = __socklen_t;
 #[derive(Copy, Clone)]
 #[repr(C)]

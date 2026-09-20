@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     fn __errno_location() -> *mut ::core::ffi::c_int;
     fn __ctype_b_loc() -> *mut *const ::core::ffi::c_ushort;
@@ -10,11 +11,6 @@ extern "C" {
     fn calloc(__nmemb: size_t, __size: size_t) -> *mut ::core::ffi::c_void;
     fn realloc(__ptr: *mut ::core::ffi::c_void, __size: size_t) -> *mut ::core::ffi::c_void;
 }
-pub type __u_char = ::core::ffi::c_uchar;
-pub type __u_int = ::core::ffi::c_uint;
-pub type u_char = __u_char;
-pub type u_int = __u_int;
-pub type size_t = usize;
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const _ISalnum: C2RustUnnamed = 8;
 pub const _ISpunct: C2RustUnnamed = 4;

@@ -1,3 +1,5 @@
+use crate::src::shared::abi::*;
+use crate::src::shared::grid::*;
 extern "C" {
     fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
         -> *mut ::core::ffi::c_char;
@@ -26,9 +28,6 @@ extern "C" {
         ...
     ) -> ::core::ffi::c_int;
 }
-pub type __u_int = ::core::ffi::c_uint;
-pub type u_int = __u_int;
-pub type size_t = usize;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed {
@@ -36,21 +35,6 @@ pub struct C2RustUnnamed {
     pub attr: ::core::ffi::c_int,
 }
 pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
-pub const GRID_ATTR_BRIGHT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const GRID_ATTR_DIM: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const GRID_ATTR_BLINK: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const GRID_ATTR_REVERSE: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const GRID_ATTR_HIDDEN: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const GRID_ATTR_ITALICS: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const GRID_ATTR_CHARSET: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const GRID_ATTR_STRIKETHROUGH: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_2: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_3: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_4: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_5: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
-pub const GRID_ATTR_OVERLINE: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-pub const GRID_ATTR_NOATTR: ::core::ffi::c_int = 0x4000 as ::core::ffi::c_int;
 #[no_mangle]
 pub unsafe extern "C" fn attributes_tostring(
     mut attr: ::core::ffi::c_int,

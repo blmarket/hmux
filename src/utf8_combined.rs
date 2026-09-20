@@ -1,3 +1,6 @@
+use crate::src::shared::abi::*;
+use crate::src::shared::grid::*;
+use crate::src::shared::utf8::*;
 extern "C" {
     fn memcmp(
         __s1: *const ::core::ffi::c_void,
@@ -6,24 +9,7 @@ extern "C" {
     ) -> ::core::ffi::c_int;
     fn utf8_towc(_: *const utf8_data, _: *mut wchar_t) -> utf8_state;
 }
-pub type __u_char = ::core::ffi::c_uchar;
-pub type __u_int = ::core::ffi::c_uint;
-pub type u_char = __u_char;
-pub type u_int = __u_int;
-pub type size_t = usize;
 pub type wchar_t = ::libc::wchar_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct utf8_data {
-    pub data: [u_char; 32],
-    pub have: u_char,
-    pub size: u_char,
-    pub width: u_char,
-}
-pub type utf8_state = ::core::ffi::c_uint;
-pub const UTF8_ERROR: utf8_state = 2;
-pub const UTF8_DONE: utf8_state = 1;
-pub const UTF8_MORE: utf8_state = 0;
 pub type hanguljamo_state = ::core::ffi::c_uint;
 pub const HANGULJAMO_STATE_NOT_COMPOSABLE: hanguljamo_state = 3;
 pub const HANGULJAMO_STATE_COMPOSABLE: hanguljamo_state = 2;

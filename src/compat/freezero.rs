@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     fn memset(
         __s: *mut ::core::ffi::c_void,
@@ -6,7 +7,6 @@ extern "C" {
     ) -> *mut ::core::ffi::c_void;
     fn free(__ptr: *mut ::core::ffi::c_void);
 }
-pub type size_t = usize;
 pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 #[no_mangle]
 pub unsafe extern "C" fn freezero(mut ptr: *mut ::core::ffi::c_void, mut size: size_t) {

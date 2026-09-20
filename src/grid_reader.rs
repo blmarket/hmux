@@ -1,3 +1,5 @@
+use crate::src::shared::abi::*;
+use crate::src::shared::grid::*;
 extern "C" {
     fn grid_get_cell(_: *mut grid, _: u_int, _: u_int, _: *mut grid_cell);
     fn grid_get_line(_: *mut grid, _: u_int) -> *mut grid_line;
@@ -14,85 +16,6 @@ extern "C" {
         __s2: *const ::core::ffi::c_void,
         __n: size_t,
     ) -> ::core::ffi::c_int;
-}
-pub type __u_char = ::core::ffi::c_uchar;
-pub type __u_short = ::core::ffi::c_ushort;
-pub type __u_int = ::core::ffi::c_uint;
-pub type u_char = __u_char;
-pub type u_short = __u_short;
-pub type u_int = __u_int;
-pub type size_t = usize;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid_cell {
-    pub data: utf8_data,
-    pub attr: u_short,
-    pub flags: u_char,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub us: ::core::ffi::c_int,
-    pub link: u_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct utf8_data {
-    pub data: [u_char; 32],
-    pub have: u_char,
-    pub size: u_char,
-    pub width: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid {
-    pub flags: ::core::ffi::c_int,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub hscrolled: u_int,
-    pub hsize: u_int,
-    pub hlimit: u_int,
-    pub scroll_added: u_int,
-    pub scroll_collected: u_int,
-    pub scroll_generation: u_int,
-    pub linedata: *mut grid_line,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid_line {
-    pub celldata: *mut grid_cell_entry,
-    pub extddata: *mut grid_extd_entry,
-    pub cellused: u_short,
-    pub cellsize: u_short,
-    pub extdsize: u_int,
-    pub time: u_int,
-    pub osc133_data: osc133_data,
-    pub flags: u_short,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct osc133_data {
-    pub prompt_col: u_short,
-    pub cmd_col: u_short,
-    pub out_start_col: u_short,
-    pub out_end_col: u_short,
-    pub exit_status: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C, packed)]
-pub struct grid_extd_entry {
-    pub data: utf8_char,
-    pub attr: u_short,
-    pub flags: u_char,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub us: ::core::ffi::c_int,
-    pub link: u_int,
-}
-pub type utf8_char = u_int;
-#[derive(Copy, Clone)]
-#[repr(C, packed)]
-pub struct grid_cell_entry {
-    pub c2rust_unnamed: C2RustUnnamed,
-    pub flags: u_char,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -117,9 +40,6 @@ pub struct grid_reader {
 }
 pub const WHITESPACE: [::core::ffi::c_char; 3] =
     unsafe { ::core::mem::transmute::<[u8; 3], [::core::ffi::c_char; 3]>(*b"\t \0") };
-pub const GRID_FLAG_PADDING: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const GRID_FLAG_TAB: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const GRID_LINE_WRAPPED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 #[no_mangle]
 pub unsafe extern "C" fn grid_reader_start(
     mut gr: *mut grid_reader,

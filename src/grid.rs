@@ -1,3 +1,6 @@
+use crate::src::shared::abi::*;
+use crate::src::shared::grid::*;
+use crate::src::shared::utf8::*;
 extern "C" {
     pub type hyperlinks;
     pub type screen_write_cline;
@@ -67,23 +70,20 @@ extern "C" {
         _: *mut *const ::core::ffi::c_char,
     ) -> ::core::ffi::c_int;
 }
-pub type __u_char = ::core::ffi::c_uchar;
-pub type __u_short = ::core::ffi::c_ushort;
-pub type __u_int = ::core::ffi::c_uint;
-pub type __time_t = ::core::ffi::c_long;
-pub type __suseconds_t = ::core::ffi::c_long;
-pub type u_char = __u_char;
-pub type u_short = __u_short;
-pub type u_int = __u_int;
-pub type time_t = __time_t;
-pub type size_t = usize;
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct timeval {
-    pub tv_sec: __time_t,
-    pub tv_usec: __suseconds_t,
+pub union C2RustUnnamed {
+    pub offset: u_int,
+    pub data: C2RustUnnamed_0,
 }
-pub type bitstr_t = ::core::ffi::c_uchar;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_0 {
+    pub attr: u_char,
+    pub fg: u_char,
+    pub bg: u_char,
+    pub data: u_char,
+}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct screen {
@@ -125,101 +125,11 @@ pub const PROGRESS_BAR_INDETERMINATE: progress_bar_state = 3;
 pub const PROGRESS_BAR_ERROR: progress_bar_state = 2;
 pub const PROGRESS_BAR_NORMAL: progress_bar_state = 1;
 pub const PROGRESS_BAR_HIDDEN: progress_bar_state = 0;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid_cell {
-    pub data: utf8_data,
-    pub attr: u_short,
-    pub flags: u_char,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub us: ::core::ffi::c_int,
-    pub link: u_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct utf8_data {
-    pub data: [u_char; 32],
-    pub have: u_char,
-    pub size: u_char,
-    pub width: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid {
-    pub flags: ::core::ffi::c_int,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub hscrolled: u_int,
-    pub hsize: u_int,
-    pub hlimit: u_int,
-    pub scroll_added: u_int,
-    pub scroll_collected: u_int,
-    pub scroll_generation: u_int,
-    pub linedata: *mut grid_line,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid_line {
-    pub celldata: *mut grid_cell_entry,
-    pub extddata: *mut grid_extd_entry,
-    pub cellused: u_short,
-    pub cellsize: u_short,
-    pub extdsize: u_int,
-    pub time: u_int,
-    pub osc133_data: osc133_data,
-    pub flags: u_short,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct osc133_data {
-    pub prompt_col: u_short,
-    pub cmd_col: u_short,
-    pub out_start_col: u_short,
-    pub out_end_col: u_short,
-    pub exit_status: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C, packed)]
-pub struct grid_extd_entry {
-    pub data: utf8_char,
-    pub attr: u_short,
-    pub flags: u_char,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub us: ::core::ffi::c_int,
-    pub link: u_int,
-}
-pub type utf8_char = u_int;
-#[derive(Copy, Clone)]
-#[repr(C, packed)]
-pub struct grid_cell_entry {
-    pub c2rust_unnamed: C2RustUnnamed,
-    pub flags: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed {
-    pub offset: u_int,
-    pub data: C2RustUnnamed_0,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_0 {
-    pub attr: u_char,
-    pub fg: u_char,
-    pub bg: u_char,
-    pub data: u_char,
-}
 pub type screen_cursor_style = ::core::ffi::c_uint;
 pub const SCREEN_CURSOR_BAR: screen_cursor_style = 3;
 pub const SCREEN_CURSOR_UNDERLINE: screen_cursor_style = 2;
 pub const SCREEN_CURSOR_BLOCK: screen_cursor_style = 1;
 pub const SCREEN_CURSOR_DEFAULT: screen_cursor_style = 0;
-pub type utf8_state = ::core::ffi::c_uint;
-pub const UTF8_ERROR: utf8_state = 2;
-pub const UTF8_DONE: utf8_state = 1;
-pub const UTF8_MORE: utf8_state = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_1 {
@@ -233,42 +143,6 @@ pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
 pub const COLOUR_FLAG_256: ::core::ffi::c_int = 0x1000000 as ::core::ffi::c_int;
 pub const COLOUR_FLAG_RGB: ::core::ffi::c_int = 0x2000000 as ::core::ffi::c_int;
 pub const COLOUR_FLAG_THEME: ::core::ffi::c_int = 0x4000000 as ::core::ffi::c_int;
-pub const GRID_ATTR_BRIGHT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const GRID_ATTR_DIM: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const GRID_ATTR_BLINK: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const GRID_ATTR_REVERSE: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const GRID_ATTR_HIDDEN: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const GRID_ATTR_ITALICS: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const GRID_ATTR_CHARSET: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const GRID_ATTR_STRIKETHROUGH: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_2: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_3: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_4: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
-pub const GRID_ATTR_UNDERSCORE_5: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
-pub const GRID_ATTR_OVERLINE: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-pub const GRID_FLAG_FG256: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const GRID_FLAG_BG256: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const GRID_FLAG_PADDING: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const GRID_FLAG_EXTENDED: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const GRID_FLAG_SELECTED: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const GRID_FLAG_NOPALETTE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const GRID_FLAG_CLEARED: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const GRID_FLAG_TAB: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const GRID_LINE_WRAPPED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const GRID_LINE_EXTENDED: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const GRID_LINE_DEAD: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const GRID_LINE_START_PROMPT: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const GRID_LINE_SECOND_PROMPT: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const GRID_LINE_START_COMMAND: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const GRID_LINE_START_OUTPUT: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const GRID_LINE_END_OUTPUT: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const GRID_LINE_HYPERLINK: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const GRID_STRING_WITH_SEQUENCES: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const GRID_STRING_ESCAPE_SEQUENCES: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const GRID_STRING_TRIM_SPACES: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const GRID_STRING_EMPTY_CELLS: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const GRID_HISTORY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 #[no_mangle]
 pub static mut grid_default_cell: grid_cell = grid_cell {
     data: utf8_data {
@@ -412,8 +286,8 @@ static mut grid_cleared_cell: grid_cell = grid_cell {
     link: 0 as u_int,
 };
 static mut grid_cleared_entry: grid_cell_entry = grid_cell_entry {
-    c2rust_unnamed: C2RustUnnamed {
-        data: C2RustUnnamed_0 {
+    c2rust_unnamed: grid_cell_entry_storage {
+        data: grid_cell_entry_data {
             attr: 0 as u_char,
             fg: 8 as u_char,
             bg: 8 as u_char,

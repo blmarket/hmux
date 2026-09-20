@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     fn forkpty(
         __amaster: *mut ::core::ffi::c_int,
@@ -6,8 +7,6 @@ extern "C" {
         __winp: *const winsize,
     ) -> ::core::ffi::c_int;
 }
-pub type __pid_t = ::core::ffi::c_int;
-pub type pid_t = __pid_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct winsize {
@@ -16,9 +15,6 @@ pub struct winsize {
     pub ws_xpixel: ::core::ffi::c_ushort,
     pub ws_ypixel: ::core::ffi::c_ushort,
 }
-pub type cc_t = ::core::ffi::c_uchar;
-pub type speed_t = ::core::ffi::c_uint;
-pub type tcflag_t = ::core::ffi::c_uint;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct termios {

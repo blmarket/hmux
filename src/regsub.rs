@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 use ::c2rust_bitfields;
 extern "C" {
     pub type re_dfa_t;
@@ -23,10 +24,7 @@ extern "C" {
     fn xrealloc(_: *mut ::core::ffi::c_void, _: size_t) -> *mut ::core::ffi::c_void;
     fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
 }
-pub type __u_int = ::core::ffi::c_uint;
-pub type u_int = __u_int;
 pub type ssize_t = isize;
-pub type size_t = usize;
 pub type __re_long_size_t = ::core::ffi::c_ulong;
 pub type reg_syntax_t = ::core::ffi::c_ulong;
 #[derive(Copy, Clone, BitfieldStruct)]

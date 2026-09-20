@@ -1,3 +1,9 @@
+use crate::src::shared::abi::*;
+use crate::src::shared::colour::*;
+use crate::src::shared::command::*;
+use crate::src::shared::grid::*;
+use crate::src::shared::key::*;
+use crate::src::shared::style::*;
 extern "C" {
     pub type event_base;
     pub type evbuffer;
@@ -121,26 +127,6 @@ pub struct __va_list_tag {
     pub overflow_arg_area: *mut ::core::ffi::c_void,
     pub reg_save_area: *mut ::core::ffi::c_void,
 }
-pub type __u_char = ::core::ffi::c_uchar;
-pub type __u_short = ::core::ffi::c_ushort;
-pub type __u_int = ::core::ffi::c_uint;
-pub type __uint8_t = u8;
-pub type __uint64_t = u64;
-pub type __pid_t = ::core::ffi::c_int;
-pub type __time_t = ::core::ffi::c_long;
-pub type __suseconds_t = ::core::ffi::c_long;
-pub type u_char = __u_char;
-pub type u_short = __u_short;
-pub type u_int = __u_int;
-pub type pid_t = __pid_t;
-pub type time_t = __time_t;
-pub type size_t = usize;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct timeval {
-    pub tv_sec: __time_t,
-    pub tv_usec: __suseconds_t,
-}
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const _ISalnum: C2RustUnnamed = 8;
 pub const _ISpunct: C2RustUnnamed = 4;
@@ -155,9 +141,6 @@ pub const _ISalpha: C2RustUnnamed = 1024;
 pub const _ISlower: C2RustUnnamed = 512;
 pub const _ISupper: C2RustUnnamed = 256;
 pub type va_list = __builtin_va_list;
-pub type cc_t = ::core::ffi::c_uchar;
-pub type speed_t = ::core::ffi::c_uint;
-pub type tcflag_t = ::core::ffi::c_uint;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct termios {
@@ -182,8 +165,6 @@ pub union C2RustUnnamed_1 {
     pub __ispeed: speed_t,
     pub c_ispeed: speed_t,
 }
-pub type uint8_t = __uint8_t;
-pub type uint64_t = __uint64_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct event {
@@ -301,7 +282,6 @@ pub struct event_watermark {
     pub low: size_t,
     pub high: size_t,
 }
-pub type bitstr_t = ::core::ffi::c_uchar;
 pub type msgtype = ::core::ffi::c_uint;
 pub const MSG_WRITE_DONE: msgtype = 308;
 pub const MSG_READ_CANCEL: msgtype = 307;
@@ -559,69 +539,6 @@ pub struct visible_range {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct style {
-    pub gc: grid_cell,
-    pub ignore: ::core::ffi::c_int,
-    pub dim: ::core::ffi::c_int,
-    pub fill: ::core::ffi::c_int,
-    pub align: style_align,
-    pub list: style_list,
-    pub range_type: style_range_type,
-    pub range_argument: u_int,
-    pub range_string: [::core::ffi::c_char; 16],
-    pub width: ::core::ffi::c_int,
-    pub width_percentage: ::core::ffi::c_int,
-    pub pad: ::core::ffi::c_int,
-    pub default_type: style_default_type,
-    pub link: u_int,
-}
-pub type style_default_type = ::core::ffi::c_uint;
-pub const STYLE_DEFAULT_SET: style_default_type = 3;
-pub const STYLE_DEFAULT_POP: style_default_type = 2;
-pub const STYLE_DEFAULT_PUSH: style_default_type = 1;
-pub const STYLE_DEFAULT_BASE: style_default_type = 0;
-pub type style_range_type = ::core::ffi::c_uint;
-pub const STYLE_RANGE_CONTROL: style_range_type = 7;
-pub const STYLE_RANGE_USER: style_range_type = 6;
-pub const STYLE_RANGE_SESSION: style_range_type = 5;
-pub const STYLE_RANGE_WINDOW: style_range_type = 4;
-pub const STYLE_RANGE_PANE: style_range_type = 3;
-pub const STYLE_RANGE_RIGHT: style_range_type = 2;
-pub const STYLE_RANGE_LEFT: style_range_type = 1;
-pub const STYLE_RANGE_NONE: style_range_type = 0;
-pub type style_list = ::core::ffi::c_uint;
-pub const STYLE_LIST_RIGHT_MARKER: style_list = 4;
-pub const STYLE_LIST_LEFT_MARKER: style_list = 3;
-pub const STYLE_LIST_FOCUS: style_list = 2;
-pub const STYLE_LIST_ON: style_list = 1;
-pub const STYLE_LIST_OFF: style_list = 0;
-pub type style_align = ::core::ffi::c_uint;
-pub const STYLE_ALIGN_ABSOLUTE_CENTRE: style_align = 4;
-pub const STYLE_ALIGN_RIGHT: style_align = 3;
-pub const STYLE_ALIGN_CENTRE: style_align = 2;
-pub const STYLE_ALIGN_LEFT: style_align = 1;
-pub const STYLE_ALIGN_DEFAULT: style_align = 0;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid_cell {
-    pub data: utf8_data,
-    pub attr: u_short,
-    pub flags: u_char,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub us: ::core::ffi::c_int,
-    pub link: u_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct utf8_data {
-    pub data: [u_char; 32],
-    pub have: u_char,
-    pub size: u_char,
-    pub width: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct C2RustUnnamed_18 {
     pub tqh_first: *mut window_mode_entry,
     pub tqh_last: *mut *mut window_mode_entry,
@@ -643,6 +560,20 @@ pub struct window_mode_entry {
 pub struct C2RustUnnamed_19 {
     pub tqe_next: *mut window_mode_entry,
     pub tqe_prev: *mut *mut window_mode_entry,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union C2RustUnnamed_20 {
+    pub offset: u_int,
+    pub data: C2RustUnnamed_21,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_21 {
+    pub attr: u_char,
+    pub fg: u_char,
+    pub bg: u_char,
+    pub data: u_char,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -685,73 +616,6 @@ pub const PROGRESS_BAR_INDETERMINATE: progress_bar_state = 3;
 pub const PROGRESS_BAR_ERROR: progress_bar_state = 2;
 pub const PROGRESS_BAR_NORMAL: progress_bar_state = 1;
 pub const PROGRESS_BAR_HIDDEN: progress_bar_state = 0;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid {
-    pub flags: ::core::ffi::c_int,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub hscrolled: u_int,
-    pub hsize: u_int,
-    pub hlimit: u_int,
-    pub scroll_added: u_int,
-    pub scroll_collected: u_int,
-    pub scroll_generation: u_int,
-    pub linedata: *mut grid_line,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid_line {
-    pub celldata: *mut grid_cell_entry,
-    pub extddata: *mut grid_extd_entry,
-    pub cellused: u_short,
-    pub cellsize: u_short,
-    pub extdsize: u_int,
-    pub time: u_int,
-    pub osc133_data: osc133_data,
-    pub flags: u_short,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct osc133_data {
-    pub prompt_col: u_short,
-    pub cmd_col: u_short,
-    pub out_start_col: u_short,
-    pub out_end_col: u_short,
-    pub exit_status: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C, packed)]
-pub struct grid_extd_entry {
-    pub data: utf8_char,
-    pub attr: u_short,
-    pub flags: u_char,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub us: ::core::ffi::c_int,
-    pub link: u_int,
-}
-pub type utf8_char = u_int;
-#[derive(Copy, Clone)]
-#[repr(C, packed)]
-pub struct grid_cell_entry {
-    pub c2rust_unnamed: C2RustUnnamed_20,
-    pub flags: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_20 {
-    pub offset: u_int,
-    pub data: C2RustUnnamed_21,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_21 {
-    pub attr: u_char,
-    pub fg: u_char,
-    pub bg: u_char,
-    pub data: u_char,
-}
 pub type screen_cursor_style = ::core::ffi::c_uint;
 pub const SCREEN_CURSOR_BAR: screen_cursor_style = 3;
 pub const SCREEN_CURSOR_UNDERLINE: screen_cursor_style = 2;
@@ -822,7 +686,6 @@ pub struct mouse_event {
     pub sgr_type: u_int,
     pub sgr_b: u_int,
 }
-pub type key_code = ::core::ffi::c_ulonglong;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct winlink {
@@ -1234,10 +1097,6 @@ pub struct input_requests {
     pub tqh_first: *mut input_request,
     pub tqh_last: *mut *mut input_request,
 }
-pub type client_theme = ::core::ffi::c_uint;
-pub const THEME_DARK: client_theme = 2;
-pub const THEME_LIGHT: client_theme = 1;
-pub const THEME_UNKNOWN: client_theme = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct status_line {
@@ -1248,34 +1107,6 @@ pub struct status_line {
     pub prompt_cx: u_int,
     pub style: grid_cell,
     pub entries: [style_line_entry; 5],
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct style_line_entry {
-    pub expanded: *mut ::core::ffi::c_char,
-    pub ranges: style_ranges,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct style_ranges {
-    pub tqh_first: *mut style_range,
-    pub tqh_last: *mut *mut style_range,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct style_range {
-    pub type_0: style_range_type,
-    pub argument: u_int,
-    pub string: [::core::ffi::c_char; 16],
-    pub start: u_int,
-    pub end: u_int,
-    pub entry: C2RustUnnamed_36,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_36 {
-    pub tqe_next: *mut style_range,
-    pub tqe_prev: *mut *mut style_range,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -1354,14 +1185,6 @@ pub struct window_pane_offset {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct colour_palette {
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub palette: *mut ::core::ffi::c_int,
-    pub default_palette: *mut ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct window_pane_resizes {
     pub tqh_first: *mut window_pane_resize,
     pub tqh_last: *mut *mut window_pane_resize,
@@ -1397,15 +1220,6 @@ pub struct args_parse {
     pub upper: ::core::ffi::c_int,
     pub cb: args_parse_cb,
 }
-pub type cmd_find_type = ::core::ffi::c_uint;
-pub const CMD_FIND_SESSION: cmd_find_type = 2;
-pub const CMD_FIND_WINDOW: cmd_find_type = 1;
-pub const CMD_FIND_PANE: cmd_find_type = 0;
-pub type cmd_retval = ::core::ffi::c_int;
-pub const CMD_RETURN_STOP: cmd_retval = 2;
-pub const CMD_RETURN_WAIT: cmd_retval = 1;
-pub const CMD_RETURN_NORMAL: cmd_retval = 0;
-pub const CMD_RETURN_ERROR: cmd_retval = -1;
 pub type cmd_parse_status = ::core::ffi::c_uint;
 pub const CMD_PARSE_SUCCESS: cmd_parse_status = 1;
 pub const CMD_PARSE_ERROR: cmd_parse_status = 0;

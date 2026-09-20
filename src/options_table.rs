@@ -1,5 +1,4 @@
-pub type __u_int = ::core::ffi::c_uint;
-pub type u_int = __u_int;
+use crate::src::shared::abi::*;
 pub type C2RustUnnamed = ::core::ffi::c_ulong;
 pub const KEYC_TRIPLECLICK11_CONTROL9: C2RustUnnamed = 51539610387;
 pub const KEYC_TRIPLECLICK10_CONTROL9: C2RustUnnamed = 51539610131;

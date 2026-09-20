@@ -1,3 +1,6 @@
+use crate::src::shared::abi::*;
+use crate::src::shared::command::*;
+use crate::src::shared::key::*;
 extern "C" {
     pub type args;
     pub type cmdq_item;
@@ -16,19 +19,6 @@ extern "C" {
     fn key_bindings_remove_table(_: *const ::core::ffi::c_char);
     fn key_string_lookup_string(_: *const ::core::ffi::c_char) -> key_code;
 }
-pub type __u_char = ::core::ffi::c_uchar;
-pub type __u_int = ::core::ffi::c_uint;
-pub type __time_t = ::core::ffi::c_long;
-pub type __suseconds_t = ::core::ffi::c_long;
-pub type u_char = __u_char;
-pub type u_int = __u_int;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct timeval {
-    pub tv_sec: __time_t,
-    pub tv_usec: __suseconds_t,
-}
-pub type key_code = ::core::ffi::c_ulonglong;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct key_table {
@@ -2147,15 +2137,6 @@ pub struct args_parse {
     pub upper: ::core::ffi::c_int,
     pub cb: args_parse_cb,
 }
-pub type cmd_find_type = ::core::ffi::c_uint;
-pub const CMD_FIND_SESSION: cmd_find_type = 2;
-pub const CMD_FIND_WINDOW: cmd_find_type = 1;
-pub const CMD_FIND_PANE: cmd_find_type = 0;
-pub type cmd_retval = ::core::ffi::c_int;
-pub const CMD_RETURN_STOP: cmd_retval = 2;
-pub const CMD_RETURN_WAIT: cmd_retval = 1;
-pub const CMD_RETURN_NORMAL: cmd_retval = 0;
-pub const CMD_RETURN_ERROR: cmd_retval = -1;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct cmd_entry_flag {

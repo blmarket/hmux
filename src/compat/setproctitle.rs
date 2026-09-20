@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     fn strrchr(
         __s: *const ::core::ffi::c_char,
@@ -27,7 +28,6 @@ pub struct __va_list_tag {
     pub overflow_arg_area: *mut ::core::ffi::c_void,
     pub reg_save_area: *mut ::core::ffi::c_void,
 }
-pub type size_t = usize;
 pub type va_list = __builtin_va_list;
 pub const NULL: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
 pub const PR_SET_NAME: ::core::ffi::c_int = 15 as ::core::ffi::c_int;

@@ -1,7 +1,5 @@
-pub type __u_char = ::core::ffi::c_uchar;
-pub type u_char = __u_char;
+use crate::src::shared::abi::*;
 pub type ssize_t = isize;
-pub type size_t = usize;
 pub const UNVIS_VALID: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const UNVIS_VALIDPUSH: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const UNVIS_NOCHAR: ::core::ffi::c_int = 3 as ::core::ffi::c_int;

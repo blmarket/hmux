@@ -1,7 +1,6 @@
+use crate::src::shared::abi::*;
 pub type __uint32_t = u32;
-pub type __uint64_t = u64;
 pub type uint32_t = __uint32_t;
-pub type uint64_t = __uint64_t;
 #[inline]
 unsafe extern "C" fn __bswap_32(mut __bsx: __uint32_t) -> __uint32_t {
     return (__bsx & 0xff000000 as __uint32_t) >> 24 as ::core::ffi::c_int

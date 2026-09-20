@@ -1,3 +1,7 @@
+use crate::src::shared::abi::*;
+use crate::src::shared::grid::*;
+use crate::src::shared::key::*;
+use crate::src::shared::utf8::*;
 extern "C" {
     fn __ctype_tolower_loc() -> *mut *const __int32_t;
     fn wctomb(__s: *mut ::core::ffi::c_char, __wchar: wchar_t) -> ::core::ffi::c_int;
@@ -40,38 +44,8 @@ extern "C" {
     fn utf8_append(_: *mut utf8_data, _: u_char) -> utf8_state;
     fn utf8_fromcstr(_: *const ::core::ffi::c_char) -> *mut utf8_data;
 }
-pub type __u_char = ::core::ffi::c_uchar;
-pub type __u_int = ::core::ffi::c_uint;
 pub type __int32_t = i32;
-pub type u_char = __u_char;
-pub type u_int = __u_int;
-pub type size_t = usize;
 pub type wchar_t = ::libc::wchar_t;
-pub type key_code = ::core::ffi::c_ulonglong;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct utf8_data {
-    pub data: [u_char; 32],
-    pub have: u_char,
-    pub size: u_char,
-    pub width: u_char,
-}
-pub type utf8_char = u_int;
-pub type key_code_type = ::core::ffi::c_uint;
-pub const KEYC_TYPE_NOTYPE: key_code_type = 13;
-pub const KEYC_TYPE_TRIPLECLICK: key_code_type = 12;
-pub const KEYC_TYPE_DOUBLECLICK: key_code_type = 11;
-pub const KEYC_TYPE_SECONDCLICK: key_code_type = 10;
-pub const KEYC_TYPE_WHEELUP: key_code_type = 9;
-pub const KEYC_TYPE_WHEELDOWN: key_code_type = 8;
-pub const KEYC_TYPE_MOUSEDRAGEND: key_code_type = 7;
-pub const KEYC_TYPE_MOUSEDRAG: key_code_type = 6;
-pub const KEYC_TYPE_MOUSEUP: key_code_type = 5;
-pub const KEYC_TYPE_MOUSEDOWN: key_code_type = 4;
-pub const KEYC_TYPE_MOUSEMOVE: key_code_type = 3;
-pub const KEYC_TYPE_FUNCTION: key_code_type = 2;
-pub const KEYC_TYPE_USER: key_code_type = 1;
-pub const KEYC_TYPE_UNICODE: key_code_type = 0;
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const C0_US: C2RustUnnamed = 31;
 pub const C0_RS: C2RustUnnamed = 30;
@@ -2159,10 +2133,6 @@ pub const KEYC_FOCUS_IN: C2RustUnnamed_0 = 8589934594;
 pub const KEYC_UNKNOWN: C2RustUnnamed_0 = 8589934593;
 pub const KEYC_NONE: C2RustUnnamed_0 = 8589934592;
 pub const KEYC_USER: C2RustUnnamed_0 = 4294967296;
-pub type utf8_state = ::core::ffi::c_uint;
-pub const UTF8_ERROR: utf8_state = 2;
-pub const UTF8_DONE: utf8_state = 1;
-pub const UTF8_MORE: utf8_state = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_1 {

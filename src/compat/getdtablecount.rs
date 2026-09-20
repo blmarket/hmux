@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     pub type stat;
     pub type dirent;
@@ -22,8 +23,6 @@ extern "C" {
     ) -> ::core::ffi::c_int;
     fn fatal(_: *const ::core::ffi::c_char, ...);
 }
-pub type __pid_t = ::core::ffi::c_int;
-pub type size_t = usize;
 pub type __size_t = usize;
 #[derive(Copy, Clone)]
 #[repr(C)]

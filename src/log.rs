@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 use ::c2rust_bitfields;
 extern "C" {
     pub type _IO_wide_data;
@@ -58,19 +59,8 @@ pub struct __va_list_tag {
     pub overflow_arg_area: *mut ::core::ffi::c_void,
     pub reg_save_area: *mut ::core::ffi::c_void,
 }
-pub type __uint64_t = u64;
 pub type __off_t = ::core::ffi::c_long;
 pub type __off64_t = ::core::ffi::c_long;
-pub type __pid_t = ::core::ffi::c_int;
-pub type __time_t = ::core::ffi::c_long;
-pub type __suseconds_t = ::core::ffi::c_long;
-pub type size_t = usize;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct timeval {
-    pub tv_sec: __time_t,
-    pub tv_usec: __suseconds_t,
-}
 pub type __gnuc_va_list = __builtin_va_list;
 #[derive(Copy, Clone, BitfieldStruct)]
 #[repr(C)]

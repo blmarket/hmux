@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     fn strcmp(
         __s1: *const ::core::ffi::c_char,
@@ -17,9 +18,6 @@ extern "C" {
         _: ::core::ffi::c_int,
     ) -> size_t;
 }
-pub type __u_int = ::core::ffi::c_uint;
-pub type u_int = __u_int;
-pub type size_t = usize;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct hyperlinks {

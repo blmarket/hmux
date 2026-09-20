@@ -1,3 +1,5 @@
+use crate::src::shared::abi::*;
+use crate::src::shared::command::*;
 extern "C" {
     pub type args;
     pub type cmdq_item;
@@ -6,9 +8,6 @@ extern "C" {
     fn getpid() -> __pid_t;
     fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
 }
-pub type __u_int = ::core::ffi::c_uint;
-pub type __pid_t = ::core::ffi::c_int;
-pub type u_int = __u_int;
 pub type args_parse_type = ::core::ffi::c_uint;
 pub const ARGS_PARSE_COMMANDS: args_parse_type = 3;
 pub const ARGS_PARSE_COMMANDS_OR_STRING: args_parse_type = 2;
@@ -25,15 +24,6 @@ pub struct args_parse {
     pub upper: ::core::ffi::c_int,
     pub cb: args_parse_cb,
 }
-pub type cmd_find_type = ::core::ffi::c_uint;
-pub const CMD_FIND_SESSION: cmd_find_type = 2;
-pub const CMD_FIND_WINDOW: cmd_find_type = 1;
-pub const CMD_FIND_PANE: cmd_find_type = 0;
-pub type cmd_retval = ::core::ffi::c_int;
-pub const CMD_RETURN_STOP: cmd_retval = 2;
-pub const CMD_RETURN_WAIT: cmd_retval = 1;
-pub const CMD_RETURN_NORMAL: cmd_retval = 0;
-pub const CMD_RETURN_ERROR: cmd_retval = -1;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct cmd_entry_flag {

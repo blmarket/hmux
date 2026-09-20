@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     pub type options;
     pub type event_payload;
@@ -43,11 +44,6 @@ extern "C" {
         _: ::core::ffi::c_int,
     ) -> size_t;
 }
-pub type __u_int = ::core::ffi::c_uint;
-pub type __time_t = ::core::ffi::c_long;
-pub type u_int = __u_int;
-pub type time_t = __time_t;
-pub type size_t = usize;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct paste_buffer {

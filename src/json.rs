@@ -1,3 +1,4 @@
+use crate::src::shared::abi::*;
 extern "C" {
     pub type evbuffer;
     fn __ctype_b_loc() -> *mut *const ::core::ffi::c_ushort;
@@ -45,11 +46,8 @@ extern "C" {
     ) -> ::core::ffi::c_int;
     fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
 }
-pub type __u_char = ::core::ffi::c_uchar;
 pub type __int64_t = i64;
-pub type u_char = __u_char;
 pub type ssize_t = isize;
-pub type size_t = usize;
 pub type int64_t = __int64_t;
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const _ISalnum: C2RustUnnamed = 8;
