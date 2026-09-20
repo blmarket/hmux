@@ -14,11 +14,6 @@ tmux.overrideAttrs (old: {
   configureFlags =
     (lib.filter (flag: flag != "--enable-sixel") old.configureFlags)
     ++ [ "--disable-sixel" "--disable-debug" ];
-  patches = [
-    ./tmux-3.7b-0010-free-collected-items-when-style-is-not-terminated.patch
-    ./tmux-3.7b-0014-free-the-environ-array-setenv-replaces.patch
-  ];
-  patchFlags = [ "-p1" "--fuzz=0" "--no-backup-if-mismatch" ];
   outputs = (old.outputs or [ "out" ]) ++ [ "source" ];
   postPatch = (old.postPatch or "") + ''
     mkdir -p "$source"
@@ -27,6 +22,6 @@ tmux.overrideAttrs (old: {
   postInstall = (old.postInstall or "") + ''
     mkdir -p "$out/share/tmux"
     printf '%s\n' '${revision}' > "$out/share/tmux/hmux-upstream-revision"
-    printf '%s\n' "$source/tmux.tar" > "$out/share/tmux/hmux-patched-source"
+    printf '%s\n' "$source/tmux.tar" > "$out/share/tmux/source"
   '';
 })
