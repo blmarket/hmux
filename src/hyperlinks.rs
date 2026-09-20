@@ -1,3 +1,4 @@
+pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
 pub use crate::src::shared::hyperlinks::{
     hyperlink_inner_entry, hyperlink_list_entry, hyperlink_uri_entry, hyperlinks,
     hyperlinks_by_inner_tree, hyperlinks_by_uri_tree, hyperlinks_list, hyperlinks_uri,
@@ -23,8 +24,7 @@ extern "C" {
         _: ::core::ffi::c_int,
     ) -> size_t;
 }
-pub const VIS_OCTAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const VIS_CSTYLE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
+
 pub const MAX_HYPERLINKS: ::core::ffi::c_int = 5000 as ::core::ffi::c_int;
 pub const MAX_HYPERLINK_URI: ::core::ffi::c_int = 1024 as ::core::ffi::c_int;
 static mut hyperlinks_next_external_id: ::core::ffi::c_longlong = 1 as ::core::ffi::c_longlong;

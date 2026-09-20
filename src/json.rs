@@ -1,3 +1,11 @@
+pub use crate::src::shared::json::{
+    json_fields, json_members, json_node, json_node_aentry, json_node_c2rust_unnamed,
+    json_node_oentry, json_node_type,
+};
+pub use crate::src::shared::ctype::{
+    _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
+    _ISspace, _ISupper, _ISxdigit, ctype_code,
+};
 pub use crate::src::shared::abi::{__int64_t, int64_t, ssize_t};
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 use crate::src::shared::event::*;
@@ -48,64 +56,7 @@ extern "C" {
     ) -> ::core::ffi::c_int;
     fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
 }
-pub type C2RustUnnamed = ::core::ffi::c_uint;
-pub const _ISalnum: C2RustUnnamed = 8;
-pub const _ISpunct: C2RustUnnamed = 4;
-pub const _IScntrl: C2RustUnnamed = 2;
-pub const _ISblank: C2RustUnnamed = 1;
-pub const _ISgraph: C2RustUnnamed = 32768;
-pub const _ISprint: C2RustUnnamed = 16384;
-pub const _ISspace: C2RustUnnamed = 8192;
-pub const _ISxdigit: C2RustUnnamed = 4096;
-pub const _ISdigit: C2RustUnnamed = 2048;
-pub const _ISalpha: C2RustUnnamed = 1024;
-pub const _ISlower: C2RustUnnamed = 512;
-pub const _ISupper: C2RustUnnamed = 256;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct json_node {
-    pub type_0: json_node_type,
-    pub key: *mut ::core::ffi::c_char,
-    pub parent: *mut json_node,
-    pub c2rust_unnamed: C2RustUnnamed_2,
-    pub oentry: C2RustUnnamed_1,
-    pub aentry: C2RustUnnamed_0,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_0 {
-    pub tqe_next: *mut json_node,
-    pub tqe_prev: *mut *mut json_node,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_1 {
-    pub rbe_left: *mut json_node,
-    pub rbe_right: *mut json_node,
-    pub rbe_parent: *mut json_node,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_2 {
-    pub str_0: *mut ::core::ffi::c_char,
-    pub num: int64_t,
-    pub boolean: ::core::ffi::c_int,
-    pub fields: json_fields,
-    pub members: json_members,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct json_members {
-    pub tqh_first: *mut json_node,
-    pub tqh_last: *mut *mut json_node,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct json_fields {
-    pub rbh_root: *mut json_node,
-}
-pub type json_node_type = ::core::ffi::c_uint;
+
 pub const NODE_ARRAY: json_node_type = 4;
 pub const NODE_OBJECT: json_node_type = 3;
 pub const NODE_BOOLEAN: json_node_type = 2;
@@ -681,16 +632,16 @@ pub unsafe extern "C" fn json_find(
         type_0: NODE_STRING,
         key: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         parent: ::core::ptr::null_mut::<json_node>(),
-        c2rust_unnamed: C2RustUnnamed_2 {
+        c2rust_unnamed: json_node_c2rust_unnamed {
             str_0: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         },
-        oentry: C2RustUnnamed_1 {
+        oentry: json_node_oentry {
             rbe_left: ::core::ptr::null_mut::<json_node>(),
             rbe_right: ::core::ptr::null_mut::<json_node>(),
             rbe_parent: ::core::ptr::null_mut::<json_node>(),
             rbe_color: 0,
         },
-        aentry: C2RustUnnamed_0 {
+        aentry: json_node_aentry {
             tqe_next: ::core::ptr::null_mut::<json_node>(),
             tqe_prev: ::core::ptr::null_mut::<*mut json_node>(),
         },

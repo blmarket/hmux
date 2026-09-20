@@ -1,8 +1,11 @@
+pub use crate::src::shared::events::{event_payload};
+pub use crate::src::shared::options::{options};
+pub use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
+pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 pub use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
 use crate::src::shared::abi::*;
 extern "C" {
-    pub type options;
-    pub type event_payload;
+
     fn strcmp(
         __s1: *const ::core::ffi::c_char,
         __s2: *const ::core::ffi::c_char,
@@ -45,34 +48,7 @@ extern "C" {
         _: ::core::ffi::c_int,
     ) -> size_t;
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct paste_buffer {
-    pub data: *mut ::core::ffi::c_char,
-    pub size: size_t,
-    pub name: *mut ::core::ffi::c_char,
-    pub created: time_t,
-    pub automatic: ::core::ffi::c_int,
-    pub order: u_int,
-    pub name_entry: C2RustUnnamed_0,
-    pub time_entry: C2RustUnnamed,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed {
-    pub rbe_left: *mut paste_buffer,
-    pub rbe_right: *mut paste_buffer,
-    pub rbe_parent: *mut paste_buffer,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_0 {
-    pub rbe_left: *mut paste_buffer,
-    pub rbe_right: *mut paste_buffer,
-    pub rbe_parent: *mut paste_buffer,
-    pub rbe_color: ::core::ffi::c_int,
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct paste_time_tree {
@@ -83,10 +59,7 @@ pub struct paste_time_tree {
 pub struct paste_name_tree {
     pub rbh_root: *mut paste_buffer,
 }
-pub const VIS_OCTAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const VIS_CSTYLE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const VIS_TAB: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const VIS_NL: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
+
 static mut paste_next_index: u_int = 0;
 static mut paste_next_order: u_int = 0;
 static mut paste_num_automatic: u_int = 0;
@@ -1141,13 +1114,13 @@ pub unsafe extern "C" fn paste_get_name(mut name: *const ::core::ffi::c_char) ->
         created: 0,
         automatic: 0,
         order: 0,
-        name_entry: C2RustUnnamed_0 {
+        name_entry: paste_buffer_name_entry {
             rbe_left: ::core::ptr::null_mut::<paste_buffer>(),
             rbe_right: ::core::ptr::null_mut::<paste_buffer>(),
             rbe_parent: ::core::ptr::null_mut::<paste_buffer>(),
             rbe_color: 0,
         },
-        time_entry: C2RustUnnamed {
+        time_entry: paste_buffer_time_entry {
             rbe_left: ::core::ptr::null_mut::<paste_buffer>(),
             rbe_right: ::core::ptr::null_mut::<paste_buffer>(),
             rbe_parent: ::core::ptr::null_mut::<paste_buffer>(),

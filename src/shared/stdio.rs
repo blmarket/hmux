@@ -49,3 +49,5 @@ pub struct _IO_FILE {
 }
 pub type _IO_lock_t = ();
 pub type FILE = _IO_FILE;
+
+pub const EOF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);

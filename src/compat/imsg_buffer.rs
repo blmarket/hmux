@@ -1,3 +1,5 @@
+pub use crate::src::shared::posix_io::{iovec};
+pub use crate::src::shared::message::{ibuf, ibuf_entry, ibufqueue, ibufqueue_bufs, msgbuf};
 pub use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ERANGE};
 pub use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
 pub use crate::src::shared::socket::SOL_SOCKET;
@@ -60,12 +62,7 @@ extern "C" {
 }
 pub type __caddr_t = *mut ::core::ffi::c_char;
 pub type caddr_t = __caddr_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct iovec {
-    pub iov_base: *mut ::core::ffi::c_void,
-    pub iov_len: size_t,
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct msghdr {
@@ -90,53 +87,7 @@ pub const SCM_PIDFD: C2RustUnnamed = 4;
 pub const SCM_SECURITY: C2RustUnnamed = 3;
 pub const SCM_CREDENTIALS: C2RustUnnamed = 2;
 pub const SCM_RIGHTS: C2RustUnnamed = 1;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct ibuf {
-    pub entry: C2RustUnnamed_0,
-    pub buf: *mut ::core::ffi::c_uchar,
-    pub size: size_t,
-    pub max: size_t,
-    pub wpos: size_t,
-    pub rpos: size_t,
-    pub fd: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_0 {
-    pub tqe_next: *mut ibuf,
-    pub tqe_prev: *mut *mut ibuf,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct ibufqueue {
-    pub bufs: C2RustUnnamed_1,
-    pub queued: uint32_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_1 {
-    pub tqh_first: *mut ibuf,
-    pub tqh_last: *mut *mut ibuf,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct msgbuf {
-    pub bufs: ibufqueue,
-    pub rbufs: ibufqueue,
-    pub rbuf: *mut ::core::ffi::c_char,
-    pub rpmsg: *mut ibuf,
-    pub readhdr: Option<
-        unsafe extern "C" fn(
-            *mut ibuf,
-            *mut ::core::ffi::c_void,
-            *mut ::core::ffi::c_int,
-        ) -> *mut ibuf,
-    >,
-    pub rarg: *mut ::core::ffi::c_void,
-    pub roff: size_t,
-    pub hdrsize: size_t,
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union C2RustUnnamed_2 {
@@ -1130,7 +1081,7 @@ unsafe extern "C" fn ibuf_read_process(
 ) -> ::core::ffi::c_int {
     let mut current_block: u64;
     let mut rbuf: ibuf = ibuf {
-        entry: C2RustUnnamed_0 {
+        entry: ibuf_entry {
             tqe_next: ::core::ptr::null_mut::<ibuf>(),
             tqe_prev: ::core::ptr::null_mut::<*mut ibuf>(),
         },
@@ -1142,7 +1093,7 @@ unsafe extern "C" fn ibuf_read_process(
         fd: 0,
     };
     let mut msg: ibuf = ibuf {
-        entry: C2RustUnnamed_0 {
+        entry: ibuf_entry {
             tqe_next: ::core::ptr::null_mut::<ibuf>(),
             tqe_prev: ::core::ptr::null_mut::<*mut ibuf>(),
         },

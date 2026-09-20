@@ -1,8 +1,8 @@
+pub use crate::src::shared::posix_io::{dirent, glob_t, stat};
 pub use crate::src::shared::abi::{__size_t};
 use crate::src::shared::abi::*;
 extern "C" {
-    pub type stat;
-    pub type dirent;
+
     fn glob(
         __pattern: *const ::core::ffi::c_char,
         __flags: ::core::ffi::c_int,
@@ -24,22 +24,7 @@ extern "C" {
     ) -> ::core::ffi::c_int;
     fn fatal(_: *const ::core::ffi::c_char, ...);
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct glob_t {
-    pub gl_pathc: __size_t,
-    pub gl_pathv: *mut *mut ::core::ffi::c_char,
-    pub gl_offs: __size_t,
-    pub gl_flags: ::core::ffi::c_int,
-    pub gl_closedir: Option<unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()>,
-    pub gl_readdir: Option<unsafe extern "C" fn(*mut ::core::ffi::c_void) -> *mut dirent>,
-    pub gl_opendir:
-        Option<unsafe extern "C" fn(*const ::core::ffi::c_char) -> *mut ::core::ffi::c_void>,
-    pub gl_lstat:
-        Option<unsafe extern "C" fn(*const ::core::ffi::c_char, *mut stat) -> ::core::ffi::c_int>,
-    pub gl_stat:
-        Option<unsafe extern "C" fn(*const ::core::ffi::c_char, *mut stat) -> ::core::ffi::c_int>,
-}
+
 #[no_mangle]
 pub unsafe extern "C" fn getdtablecount() -> ::core::ffi::c_int {
     let mut path: [::core::ffi::c_char; 4096] = [0; 4096];

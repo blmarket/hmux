@@ -1,5 +1,10 @@
 //! Authoritative option-table value domains.
 
+use super::abi::{time_t, u_int};
+use super::command::cmd_list;
+use super::session::session;
+use super::style::style;
+use super::window::window;
 pub type options_table_type = ::core::ffi::c_uint;
 pub const OPTIONS_TABLE_NUMBER: options_table_type = 1;
 pub const OPTIONS_TABLE_KEY: options_table_type = 2;
@@ -55,4 +60,101 @@ mod tests {
         assert_eq!(OPTIONS_TABLE_STRING, 0);
         assert_eq!(OPTIONS_TABLE_COMMAND, 6);
     }
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct options {
+    pub tree: options_tree,
+    pub parent: *mut options,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct options_array_item {
+    pub key: *mut ::core::ffi::c_char,
+    pub value: options_value,
+    pub entry: options_array_item_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct options_entry {
+    pub owner: *mut options,
+    pub name: *const ::core::ffi::c_char,
+    pub tableentry: *const options_table_entry,
+    pub value: options_value,
+    pub cached: ::core::ffi::c_int,
+    pub style: style,
+    pub monitor_data: *mut ::core::ffi::c_void,
+    pub fire_count: u_int,
+    pub fire_time: time_t,
+    pub entry: options_entry_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct options_array {
+    pub rbh_root: *mut options_array_item,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union options_value {
+    pub string: *mut ::core::ffi::c_char,
+    pub number: ::core::ffi::c_longlong,
+    pub style: style,
+    pub array: options_array,
+    pub cmdlist: *mut cmd_list,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct options_table_entry {
+    pub name: *const ::core::ffi::c_char,
+    pub alternative_name: *const ::core::ffi::c_char,
+    pub type_0: options_table_type,
+    pub scope: ::core::ffi::c_int,
+    pub flags: ::core::ffi::c_int,
+    pub minimum: u_int,
+    pub maximum: u_int,
+    pub choices: *mut *const ::core::ffi::c_char,
+    pub default_str: *const ::core::ffi::c_char,
+    pub default_num: ::core::ffi::c_longlong,
+    pub default_arr: *mut *const ::core::ffi::c_char,
+    pub separator: *const ::core::ffi::c_char,
+    pub pattern: *const ::core::ffi::c_char,
+    pub text: *const ::core::ffi::c_char,
+    pub unit: *const ::core::ffi::c_char,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct options_tree {
+    pub rbh_root: *mut options_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct options_entry_entry {
+    pub rbe_left: *mut options_entry,
+    pub rbe_right: *mut options_entry,
+    pub rbe_parent: *mut options_entry,
+    pub rbe_color: ::core::ffi::c_int,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct options_array_item_entry {
+    pub rbe_left: *mut options_array_item,
+    pub rbe_right: *mut options_array_item,
+    pub rbe_parent: *mut options_array_item,
+    pub rbe_color: ::core::ffi::c_int,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct options_name_map {
+    pub from: *const ::core::ffi::c_char,
+    pub to: *const ::core::ffi::c_char,
 }

@@ -1,3 +1,4 @@
+pub use crate::src::shared::utf8::{wchar_t};
 pub use crate::src::shared::utf8::{
     HANGULJAMO_STATE_CHOSEONG, HANGULJAMO_STATE_COMPOSABLE, HANGULJAMO_STATE_NOT_COMPOSABLE,
     HANGULJAMO_STATE_NOT_HANGULJAMO, hanguljamo_state,
@@ -13,7 +14,7 @@ extern "C" {
     ) -> ::core::ffi::c_int;
     fn utf8_towc(_: *const utf8_data, _: *mut wchar_t) -> utf8_state;
 }
-pub type wchar_t = ::libc::wchar_t;
+
 pub const HANGULJAMO_CLASS_NOT_HANGULJAMO: hanguljamo_class = 0;
 pub const HANGULJAMO_CLASS_JUNGSEONG: hanguljamo_class = 2;
 pub type hanguljamo_class = ::core::ffi::c_uint;

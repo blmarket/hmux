@@ -1,8 +1,7 @@
-//! Authoritative argument-domain values.
-//!
-//! The recursive `args` model and its callback remain private to the
-//! translation units until their mutually recursive model family is migrated.
+//! Authoritative argument storage, parsing callbacks, and scalar domains.
 
+use super::abi::{u_char, u_int};
+use super::command::{cmd, cmd_list, cmd_parse_input};
 pub type args_type = ::core::ffi::c_uint;
 pub const ARGS_COMMANDS: args_type = 2;
 pub const ARGS_STRING: args_type = 1;
@@ -30,4 +29,88 @@ mod tests {
         assert_eq!(ARGS_PARSE_INVALID, 0);
         assert_eq!(ARGS_PARSE_COMMANDS, 3);
     }
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct args {
+    pub tree: args_tree,
+    pub count: u_int,
+    pub values: *mut args_value,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct args_value {
+    pub type_0: args_type,
+    pub c2rust_unnamed: args_value_c2rust_unnamed,
+    pub cached: *mut ::core::ffi::c_char,
+    pub entry: args_value_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct args_value_entry {
+    pub tqe_next: *mut args_value,
+    pub tqe_prev: *mut *mut args_value,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union args_value_c2rust_unnamed {
+    pub string: *mut ::core::ffi::c_char,
+    pub cmdlist: *mut cmd_list,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct args_tree {
+    pub rbh_root: *mut args_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct args_entry {
+    pub flag: u_char,
+    pub values: args_values,
+    pub count: u_int,
+    pub flags: ::core::ffi::c_int,
+    pub entry: args_entry_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct args_entry_entry {
+    pub rbe_left: *mut args_entry,
+    pub rbe_right: *mut args_entry,
+    pub rbe_parent: *mut args_entry,
+    pub rbe_color: ::core::ffi::c_int,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct args_values {
+    pub tqh_first: *mut args_value,
+    pub tqh_last: *mut *mut args_value,
+}
+
+pub type args_parse_cb = Option<
+    unsafe extern "C" fn(*mut args, u_int, *mut *mut ::core::ffi::c_char) -> args_parse_type,
+>;
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct args_parse {
+    pub template: *const ::core::ffi::c_char,
+    pub lower: ::core::ffi::c_int,
+    pub upper: ::core::ffi::c_int,
+    pub cb: args_parse_cb,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct args_command_state {
+    pub cmdlist: *mut cmd_list,
+    pub cmd: *mut ::core::ffi::c_char,
+    pub pi: cmd_parse_input,
 }

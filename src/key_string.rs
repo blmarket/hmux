@@ -1,3 +1,9 @@
+pub use crate::src::shared::control_character::{
+    C0_ASC, C0_BEL, C0_BS, C0_CAN, C0_CR, C0_DC1, C0_DC2, C0_DC3, C0_DC4, C0_DLE, C0_EM, C0_ENQ,
+    C0_EOT, C0_ESC, C0_ETB, C0_ETX, C0_FF, C0_FS, C0_GS, C0_HT, C0_LF, C0_NAK, C0_NUL, C0_RS,
+    C0_SI, C0_SO, C0_SOH, C0_STX, C0_SUB, C0_SYN, C0_US, C0_VT, control_character_code,
+};
+pub use crate::src::shared::utf8::{wchar_t};
 pub use crate::src::shared::abi::{__int32_t};
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
@@ -45,40 +51,7 @@ extern "C" {
     fn utf8_append(_: *mut utf8_data, _: u_char) -> utf8_state;
     fn utf8_fromcstr(_: *const ::core::ffi::c_char) -> *mut utf8_data;
 }
-pub type wchar_t = ::libc::wchar_t;
-pub type C2RustUnnamed = ::core::ffi::c_uint;
-pub const C0_US: C2RustUnnamed = 31;
-pub const C0_RS: C2RustUnnamed = 30;
-pub const C0_GS: C2RustUnnamed = 29;
-pub const C0_FS: C2RustUnnamed = 28;
-pub const C0_ESC: C2RustUnnamed = 27;
-pub const C0_SUB: C2RustUnnamed = 26;
-pub const C0_EM: C2RustUnnamed = 25;
-pub const C0_CAN: C2RustUnnamed = 24;
-pub const C0_ETB: C2RustUnnamed = 23;
-pub const C0_SYN: C2RustUnnamed = 22;
-pub const C0_NAK: C2RustUnnamed = 21;
-pub const C0_DC4: C2RustUnnamed = 20;
-pub const C0_DC3: C2RustUnnamed = 19;
-pub const C0_DC2: C2RustUnnamed = 18;
-pub const C0_DC1: C2RustUnnamed = 17;
-pub const C0_DLE: C2RustUnnamed = 16;
-pub const C0_SI: C2RustUnnamed = 15;
-pub const C0_SO: C2RustUnnamed = 14;
-pub const C0_CR: C2RustUnnamed = 13;
-pub const C0_FF: C2RustUnnamed = 12;
-pub const C0_VT: C2RustUnnamed = 11;
-pub const C0_LF: C2RustUnnamed = 10;
-pub const C0_HT: C2RustUnnamed = 9;
-pub const C0_BS: C2RustUnnamed = 8;
-pub const C0_BEL: C2RustUnnamed = 7;
-pub const C0_ASC: C2RustUnnamed = 6;
-pub const C0_ENQ: C2RustUnnamed = 5;
-pub const C0_EOT: C2RustUnnamed = 4;
-pub const C0_ETX: C2RustUnnamed = 3;
-pub const C0_STX: C2RustUnnamed = 2;
-pub const C0_SOH: C2RustUnnamed = 1;
-pub const C0_NUL: C2RustUnnamed = 0;
+
 pub type C2RustUnnamed_0 = ::core::ffi::c_ulong;
 #[derive(Copy, Clone)]
 #[repr(C)]

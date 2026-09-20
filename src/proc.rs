@@ -1,3 +1,6 @@
+pub use crate::src::shared::message::{ibuf, ibuf_entry, imsg, imsgbuf, msgbuf};
+pub use crate::src::shared::process::{tmuxpeer, tmuxpeer_entry, tmuxproc, tmuxproc_peers};
+pub use crate::src::shared::message::{PROTOCOL_VERSION, imsg_hdr};
 pub use crate::src::shared::socket::{
     __socket_type, AF_UNIX, PF_LOCAL, PF_UNIX, PF_UNSPEC, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM,
     SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
@@ -18,7 +21,7 @@ use crate::src::shared::message::*;
 use crate::src::shared::abi::*;
 use ::libc;
 extern "C" {
-    pub type msgbuf;
+
     fn socketpair(
         __domain: ::core::ffi::c_int,
         __type: ::core::ffi::c_int,
@@ -102,89 +105,6 @@ pub struct utsname {
     pub domainname: [::core::ffi::c_char; 65],
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct ibuf {
-    pub entry: C2RustUnnamed_19,
-    pub buf: *mut ::core::ffi::c_uchar,
-    pub size: size_t,
-    pub max: size_t,
-    pub wpos: size_t,
-    pub rpos: size_t,
-    pub fd: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_19 {
-    pub tqe_next: *mut ibuf,
-    pub tqe_prev: *mut *mut ibuf,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct imsgbuf {
-    pub w: *mut msgbuf,
-    pub pid: pid_t,
-    pub maxsize: uint32_t,
-    pub fd: ::core::ffi::c_int,
-    pub flags: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct imsg_hdr {
-    pub type_0: uint32_t,
-    pub len: uint32_t,
-    pub peerid: uint32_t,
-    pub pid: uint32_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct imsg {
-    pub hdr: imsg_hdr,
-    pub data: *mut ::core::ffi::c_void,
-    pub buf: *mut ibuf,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tmuxpeer {
-    pub parent: *mut tmuxproc,
-    pub ibuf: imsgbuf,
-    pub event: event,
-    pub uid: uid_t,
-    pub gid: gid_t,
-    pub flags: ::core::ffi::c_int,
-    pub dispatchcb: Option<unsafe extern "C" fn(*mut imsg, *mut ::core::ffi::c_void) -> ()>,
-    pub arg: *mut ::core::ffi::c_void,
-    pub entry: C2RustUnnamed_20,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_20 {
-    pub tqe_next: *mut tmuxpeer,
-    pub tqe_prev: *mut *mut tmuxpeer,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tmuxproc {
-    pub name: *const ::core::ffi::c_char,
-    pub exit: ::core::ffi::c_int,
-    pub signalcb: Option<unsafe extern "C" fn(::core::ffi::c_int) -> ()>,
-    pub ev_sigint: event,
-    pub ev_sighup: event,
-    pub ev_sigchld: event,
-    pub ev_sigcont: event,
-    pub ev_sigterm: event,
-    pub ev_sigusr1: event,
-    pub ev_sigusr2: event,
-    pub ev_sigwinch: event,
-    pub peers: C2RustUnnamed_21,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_21 {
-    pub tqh_first: *mut tmuxpeer,
-    pub tqh_last: *mut *mut tmuxpeer,
-}
-
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
 
@@ -192,7 +112,7 @@ pub const NCURSES_VERSION_PATCH: ::core::ffi::c_int = 20251230 as ::core::ffi::c
 pub const NCURSES_VERSION: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"6.6\0") };
 pub const EVLOOP_ONCE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
+
 pub const PEER_BAD: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 unsafe extern "C" fn proc_event_cb(
     mut fd: ::core::ffi::c_int,

@@ -1,3 +1,10 @@
+pub use crate::src::shared::ctype::{
+    _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
+    _ISspace, _ISupper, _ISxdigit, ctype_code,
+};
+pub use crate::src::shared::vis::{
+    VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_NOSLASH, VIS_OCTAL, VIS_SAFE, VIS_TAB,
+};
 pub use crate::src::shared::limits::{__SCHAR_MAX__, UCHAR_MAX};
 use crate::src::shared::abi::*;
 extern "C" {
@@ -12,29 +19,11 @@ extern "C" {
     fn calloc(__nmemb: size_t, __size: size_t) -> *mut ::core::ffi::c_void;
     fn realloc(__ptr: *mut ::core::ffi::c_void, __size: size_t) -> *mut ::core::ffi::c_void;
 }
-pub type C2RustUnnamed = ::core::ffi::c_uint;
-pub const _ISalnum: C2RustUnnamed = 8;
-pub const _ISpunct: C2RustUnnamed = 4;
-pub const _IScntrl: C2RustUnnamed = 2;
-pub const _ISblank: C2RustUnnamed = 1;
-pub const _ISgraph: C2RustUnnamed = 32768;
-pub const _ISprint: C2RustUnnamed = 16384;
-pub const _ISspace: C2RustUnnamed = 8192;
-pub const _ISxdigit: C2RustUnnamed = 4096;
-pub const _ISdigit: C2RustUnnamed = 2048;
-pub const _ISalpha: C2RustUnnamed = 1024;
-pub const _ISlower: C2RustUnnamed = 512;
-pub const _ISupper: C2RustUnnamed = 256;
 
-pub const VIS_OCTAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const VIS_CSTYLE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const VIS_SP: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const VIS_TAB: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const VIS_NL: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const VIS_SAFE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const VIS_DQ: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
+
 pub const VIS_ALL: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
-pub const VIS_NOSLASH: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
+
 pub const VIS_GLOB: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
 #[no_mangle]
 pub unsafe extern "C" fn vis(

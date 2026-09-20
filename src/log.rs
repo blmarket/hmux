@@ -1,3 +1,4 @@
+pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::stdio::{
     FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
@@ -54,10 +55,7 @@ extern "C" {
 pub type event_log_cb =
     Option<unsafe extern "C" fn(::core::ffi::c_int, *const ::core::ffi::c_char) -> ()>;
 pub const _IOLBF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const VIS_OCTAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const VIS_CSTYLE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const VIS_TAB: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const VIS_NL: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
+
 static mut log_file: *mut FILE = ::core::ptr::null::<FILE>() as *mut FILE;
 static mut log_level: ::core::ffi::c_int = 0;
 unsafe extern "C" fn log_event_cb(

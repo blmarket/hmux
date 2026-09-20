@@ -1,10 +1,12 @@
+pub use crate::src::shared::posix_io::{iovec};
+pub use crate::src::shared::message::{ibuf, ibuf_entry, ibufqueue, imsg, imsgbuf, msgbuf};
+pub use crate::src::shared::message::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, imsg_hdr};
 pub use crate::src::shared::errno::{EBADMSG, EINVAL, ERANGE};
 pub use crate::src::shared::limits::UINT32_MAX;
 pub use crate::src::shared::abi::{__uint32_t, ssize_t, uint32_t};
 use crate::src::shared::abi::*;
 extern "C" {
-    pub type ibufqueue;
-    pub type msgbuf;
+
     fn __errno_location() -> *mut ::core::ffi::c_int;
     fn memset(
         __s: *mut ::core::ffi::c_void,
@@ -51,56 +53,7 @@ extern "C" {
     fn ibufq_pop(bufq: *mut ibufqueue) -> *mut ibuf;
     fn ibufq_push(_: *mut ibufqueue, _: *mut ibuf);
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct iovec {
-    pub iov_base: *mut ::core::ffi::c_void,
-    pub iov_len: size_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct ibuf {
-    pub entry: C2RustUnnamed,
-    pub buf: *mut ::core::ffi::c_uchar,
-    pub size: size_t,
-    pub max: size_t,
-    pub wpos: size_t,
-    pub rpos: size_t,
-    pub fd: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed {
-    pub tqe_next: *mut ibuf,
-    pub tqe_prev: *mut *mut ibuf,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct imsgbuf {
-    pub w: *mut msgbuf,
-    pub pid: pid_t,
-    pub maxsize: uint32_t,
-    pub fd: ::core::ffi::c_int,
-    pub flags: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct imsg_hdr {
-    pub type_0: uint32_t,
-    pub len: uint32_t,
-    pub peerid: uint32_t,
-    pub pid: uint32_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct imsg {
-    pub hdr: imsg_hdr,
-    pub data: *mut ::core::ffi::c_void,
-    pub buf: *mut ibuf,
-}
 
-pub const IMSG_HEADER_SIZE: usize = ::core::mem::size_of::<imsg_hdr>();
-pub const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
 pub const IMSG_ALLOW_FDPASS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const IMSG_FD_MARK: ::core::ffi::c_uint = 0x80000000 as ::core::ffi::c_uint;
 #[no_mangle]

@@ -1,3 +1,13 @@
+pub use crate::src::shared::command::{cmd_list, cmds};
+pub use crate::src::shared::options::{
+    options, options_array, options_array_item, options_entry, options_value,
+};
+pub use crate::src::shared::ctype::{
+    _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
+    _ISspace, _ISupper, _ISxdigit, ctype_code,
+};
+pub use crate::src::shared::utf8::{UTF8_SIZE, wchar_t};
+pub use crate::src::shared::vis::{VIS_DQ};
 pub use crate::src::shared::errno::ERANGE;
 pub use crate::src::shared::limits::__LONG_LONG_MAX__;
 pub use crate::src::shared::abi::{ssize_t};
@@ -7,10 +17,7 @@ use crate::src::shared::grid::*;
 use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
 extern "C" {
-    pub type options;
-    pub type cmds;
-    pub type options_array_item;
-    pub type options_entry;
+
     fn __ctype_b_loc() -> *mut *const ::core::ffi::c_ushort;
     fn __errno_location() -> *mut ::core::ffi::c_int;
     fn __ctype_get_mb_cur_max() -> size_t;
@@ -82,41 +89,7 @@ extern "C" {
     fn log_debug(_: *const ::core::ffi::c_char, ...);
     fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
 }
-pub type C2RustUnnamed = ::core::ffi::c_uint;
-pub const _ISalnum: C2RustUnnamed = 8;
-pub const _ISpunct: C2RustUnnamed = 4;
-pub const _IScntrl: C2RustUnnamed = 2;
-pub const _ISblank: C2RustUnnamed = 1;
-pub const _ISgraph: C2RustUnnamed = 32768;
-pub const _ISprint: C2RustUnnamed = 16384;
-pub const _ISspace: C2RustUnnamed = 8192;
-pub const _ISxdigit: C2RustUnnamed = 4096;
-pub const _ISdigit: C2RustUnnamed = 2048;
-pub const _ISalpha: C2RustUnnamed = 1024;
-pub const _ISlower: C2RustUnnamed = 512;
-pub const _ISupper: C2RustUnnamed = 256;
-pub type wchar_t = ::libc::wchar_t;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmd_list {
-    pub references: ::core::ffi::c_int,
-    pub group: u_int,
-    pub list: *mut cmds,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct options_array {
-    pub rbh_root: *mut options_array_item,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union options_value {
-    pub string: *mut ::core::ffi::c_char,
-    pub number: ::core::ffi::c_longlong,
-    pub style: style,
-    pub array: options_array,
-    pub cmdlist: *mut cmd_list,
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct utf8_width_item {
@@ -179,8 +152,7 @@ pub const ULLONG_MAX: ::core::ffi::c_ulonglong = (__LONG_LONG_MAX__ as ::core::f
     .wrapping_mul(2 as ::core::ffi::c_ulonglong)
     .wrapping_add(1 as ::core::ffi::c_ulonglong);
 pub const WCHAR_MAX: ::core::ffi::c_int = __WCHAR_MAX;
-pub const VIS_DQ: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
-pub const UTF8_SIZE: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
+
 unsafe extern "C" fn utf8_width_cache_cmp(
     mut uw1: *mut utf8_width_item,
     mut uw2: *mut utf8_width_item,

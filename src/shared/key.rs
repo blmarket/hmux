@@ -1,5 +1,9 @@
 //! Authoritative key-code scalar domains.
 
+use super::abi::{size_t, timeval, u_int};
+use super::client::client;
+use super::command::cmd_list;
+use super::mouse::mouse_event;
 pub type key_code = ::core::ffi::c_ulonglong;
 
 pub type key_code_type = ::core::ffi::c_uint;
@@ -2137,4 +2141,66 @@ mod tests {
         assert_eq!(KEYC_MOUSE_LOCATION_PANE, 0);
         assert_eq!(KEYC_MOUSE_LOCATION_NOWHERE, 20);
     }
+}
+
+pub const KEY_BINDING_REPEAT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
+
+pub const MODEKEY_EMACS: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
+
+pub const MODEKEY_VI: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct key_event {
+    pub client: *mut client,
+    pub key: key_code,
+    pub m: mouse_event,
+    pub buf: *mut ::core::ffi::c_char,
+    pub len: size_t,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct key_table {
+    pub name: *const ::core::ffi::c_char,
+    pub activity_time: timeval,
+    pub key_bindings: key_bindings,
+    pub default_key_bindings: key_bindings,
+    pub references: u_int,
+    pub entry: key_table_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct key_table_entry {
+    pub rbe_left: *mut key_table,
+    pub rbe_right: *mut key_table,
+    pub rbe_parent: *mut key_table,
+    pub rbe_color: ::core::ffi::c_int,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct key_bindings {
+    pub rbh_root: *mut key_binding,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct key_binding {
+    pub key: key_code,
+    pub cmdlist: *mut cmd_list,
+    pub note: *const ::core::ffi::c_char,
+    pub tablename: *const ::core::ffi::c_char,
+    pub flags: ::core::ffi::c_int,
+    pub entry: key_binding_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct key_binding_entry {
+    pub rbe_left: *mut key_binding,
+    pub rbe_right: *mut key_binding,
+    pub rbe_parent: *mut key_binding,
+    pub rbe_color: ::core::ffi::c_int,
 }

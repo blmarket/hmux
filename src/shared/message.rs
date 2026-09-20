@@ -1,5 +1,6 @@
 //! Authoritative client/server message identifiers.
 
+use super::abi::{pid_t, size_t, uint32_t};
 pub type msgtype = ::core::ffi::c_uint;
 
 pub const MSG_WRITE_DONE: msgtype = 308;
@@ -59,4 +60,95 @@ mod tests {
         assert_eq!(MSG_COMMAND, 200);
         assert_eq!(MSG_WRITE_DONE, 308);
     }
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct imsg_hdr {
+    pub type_0: uint32_t,
+    pub len: uint32_t,
+    pub peerid: uint32_t,
+    pub pid: uint32_t,
+}
+
+pub const IMSG_HEADER_SIZE: usize = ::core::mem::size_of::<imsg_hdr>();
+
+pub const MAX_IMSGSIZE: ::core::ffi::c_int = 16384 as ::core::ffi::c_int;
+
+pub const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ibuf {
+    pub entry: ibuf_entry,
+    pub buf: *mut ::core::ffi::c_uchar,
+    pub size: size_t,
+    pub max: size_t,
+    pub wpos: size_t,
+    pub rpos: size_t,
+    pub fd: ::core::ffi::c_int,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ibuf_entry {
+    pub tqe_next: *mut ibuf,
+    pub tqe_prev: *mut *mut ibuf,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct imsg {
+    pub hdr: imsg_hdr,
+    pub data: *mut ::core::ffi::c_void,
+    pub buf: *mut ibuf,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ibufqueue {
+    pub bufs: ibufqueue_bufs,
+    pub queued: uint32_t,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct msgbuf {
+    pub bufs: ibufqueue,
+    pub rbufs: ibufqueue,
+    pub rbuf: *mut ::core::ffi::c_char,
+    pub rpmsg: *mut ibuf,
+    pub readhdr: Option<
+        unsafe extern "C" fn(
+            *mut ibuf,
+            *mut ::core::ffi::c_void,
+            *mut ::core::ffi::c_int,
+        ) -> *mut ibuf,
+    >,
+    pub rarg: *mut ::core::ffi::c_void,
+    pub roff: size_t,
+    pub hdrsize: size_t,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct imsgbuf {
+    pub w: *mut msgbuf,
+    pub pid: pid_t,
+    pub maxsize: uint32_t,
+    pub fd: ::core::ffi::c_int,
+    pub flags: ::core::ffi::c_int,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ibufqueue_bufs {
+    pub tqh_first: *mut ibuf,
+    pub tqh_last: *mut *mut ibuf,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct msg_command {
+    pub argc: ::core::ffi::c_int,
 }

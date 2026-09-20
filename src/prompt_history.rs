@@ -1,3 +1,4 @@
+pub use crate::src::shared::options::{options};
 pub use crate::src::shared::stdio::{
     FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
 };
@@ -6,7 +7,7 @@ pub use crate::src::shared::prompt::{PROMPT_NTYPES};
 use crate::src::shared::prompt::*;
 use crate::src::shared::abi::*;
 extern "C" {
-    pub type options;
+
     fn __errno_location() -> *mut ::core::ffi::c_int;
     fn memmove(
         __dest: *mut ::core::ffi::c_void,

@@ -1,3 +1,5 @@
+pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
+pub use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 pub use crate::src::shared::prompt::{PROMPT_NTYPES};
 pub use crate::src::shared::command::{CMD_AFTERHOOK};
 use crate::src::shared::prompt::*;
@@ -5,9 +7,7 @@ use crate::src::shared::arguments::*;
 use crate::src::shared::abi::*;
 use crate::src::shared::command::*;
 extern "C" {
-    pub type args;
-    pub type cmdq_item;
-    pub type cmd;
+
     fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
     fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
     fn cmd_get_args(_: *mut cmd) -> *mut args;
@@ -19,36 +19,7 @@ extern "C" {
     fn prompt_history_get(_: prompt_type, _: u_int) -> *const ::core::ffi::c_char;
     fn prompt_history_clear(_: prompt_type);
 }
-pub type args_parse_cb = Option<
-    unsafe extern "C" fn(*mut args, u_int, *mut *mut ::core::ffi::c_char) -> args_parse_type,
->;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct args_parse {
-    pub template: *const ::core::ffi::c_char,
-    pub lower: ::core::ffi::c_int,
-    pub upper: ::core::ffi::c_int,
-    pub cb: args_parse_cb,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmd_entry_flag {
-    pub flag: ::core::ffi::c_char,
-    pub type_0: cmd_find_type,
-    pub flags: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmd_entry {
-    pub name: *const ::core::ffi::c_char,
-    pub alias: *const ::core::ffi::c_char,
-    pub args: args_parse,
-    pub usage: *const ::core::ffi::c_char,
-    pub source: cmd_entry_flag,
-    pub target: cmd_entry_flag,
-    pub flags: ::core::ffi::c_int,
-    pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
-}
+
 #[no_mangle]
 pub static mut cmd_show_prompt_history_entry: cmd_entry = unsafe {
     cmd_entry {

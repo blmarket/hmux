@@ -1,13 +1,15 @@
+pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
+pub use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item, cmds};
+pub use crate::src::shared::key::{
+    key_binding, key_binding_entry, key_bindings, key_table, key_table_entry,
+};
 pub use crate::src::shared::command::{CMD_AFTERHOOK};
 use crate::src::shared::arguments::*;
 use crate::src::shared::abi::*;
 use crate::src::shared::command::*;
 use crate::src::shared::key::*;
 extern "C" {
-    pub type args;
-    pub type cmdq_item;
-    pub type cmds;
-    pub type cmd;
+
     fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
     fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
     fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
@@ -21,85 +23,9 @@ extern "C" {
     fn key_bindings_remove_table(_: *const ::core::ffi::c_char);
     fn key_string_lookup_string(_: *const ::core::ffi::c_char) -> key_code;
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct key_table {
-    pub name: *const ::core::ffi::c_char,
-    pub activity_time: timeval,
-    pub key_bindings: key_bindings,
-    pub default_key_bindings: key_bindings,
-    pub references: u_int,
-    pub entry: C2RustUnnamed,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed {
-    pub rbe_left: *mut key_table,
-    pub rbe_right: *mut key_table,
-    pub rbe_parent: *mut key_table,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct key_bindings {
-    pub rbh_root: *mut key_binding,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct key_binding {
-    pub key: key_code,
-    pub cmdlist: *mut cmd_list,
-    pub note: *const ::core::ffi::c_char,
-    pub tablename: *const ::core::ffi::c_char,
-    pub flags: ::core::ffi::c_int,
-    pub entry: C2RustUnnamed_0,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_0 {
-    pub rbe_left: *mut key_binding,
-    pub rbe_right: *mut key_binding,
-    pub rbe_parent: *mut key_binding,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmd_list {
-    pub references: ::core::ffi::c_int,
-    pub group: u_int,
-    pub list: *mut cmds,
-}
+
 pub type C2RustUnnamed_1 = ::core::ffi::c_ulong;
-pub type args_parse_cb = Option<
-    unsafe extern "C" fn(*mut args, u_int, *mut *mut ::core::ffi::c_char) -> args_parse_type,
->;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct args_parse {
-    pub template: *const ::core::ffi::c_char,
-    pub lower: ::core::ffi::c_int,
-    pub upper: ::core::ffi::c_int,
-    pub cb: args_parse_cb,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmd_entry_flag {
-    pub flag: ::core::ffi::c_char,
-    pub type_0: cmd_find_type,
-    pub flags: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmd_entry {
-    pub name: *const ::core::ffi::c_char,
-    pub alias: *const ::core::ffi::c_char,
-    pub args: args_parse,
-    pub usage: *const ::core::ffi::c_char,
-    pub source: cmd_entry_flag,
-    pub target: cmd_entry_flag,
-    pub flags: ::core::ffi::c_int,
-    pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
-}
+
 #[no_mangle]
 pub static mut cmd_unbind_key_entry: cmd_entry = unsafe {
     cmd_entry {

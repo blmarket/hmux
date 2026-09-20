@@ -1,0 +1,6 @@
+src/cmd_display_menu.rs::POPUP_CLOSEANYKEY 4 4 4
+src/popup.rs::POPUP_CLOSEANYKEY 4 4 4
+src/cmd_display_menu.rs::POPUP_CLOSEEXIT 1 4 4
+src/popup.rs::POPUP_CLOSEEXIT 1 4 4
+src/cmd_display_menu.rs::POPUP_CLOSEEXITZERO 2 4 4
+src/popup.rs::POPUP_CLOSEEXITZERO 2 4 4

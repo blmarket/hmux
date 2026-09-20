@@ -1,3 +1,4 @@
+pub use crate::src::shared::utf8::{wchar_t};
 pub use crate::src::shared::abi::{__int32_t};
 use crate::src::shared::abi::*;
 extern "C" {
@@ -15,7 +16,7 @@ extern "C" {
     fn utf8proc_category(codepoint: utf8proc_int32_t) -> utf8proc_category_t;
 }
 pub type int32_t = __int32_t;
-pub type wchar_t = ::libc::wchar_t;
+
 pub type ptrdiff_t = isize;
 pub type utf8proc_uint8_t = uint8_t;
 pub type utf8proc_int32_t = int32_t;

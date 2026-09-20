@@ -1,5 +1,11 @@
 //! Authoritative prompt domains.
 
+use super::abi::{size_t, u_int};
+use super::command::cmd_find_state;
+use super::display::screen_cursor_style;
+use super::grid::{grid_cell, utf8_data};
+use super::screen_write::screen_write_ctx;
+use super::style::style;
 pub type prompt_type = ::core::ffi::c_uint;
 pub const PROMPT_TYPE_COMMAND: prompt_type = 0;
 pub const PROMPT_TYPE_INVALID: prompt_type = 255;
@@ -56,4 +62,74 @@ mod tests {
         assert_eq!(PROMPT_KEY_NOT_HANDLED, 0);
         assert_eq!(PROMPT_KEY_MOVE, 3);
     }
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct prompt {
+    pub string: *mut ::core::ffi::c_char,
+    pub buffer: *mut utf8_data,
+    pub state: cmd_find_state,
+    pub last: *mut ::core::ffi::c_char,
+    pub index: size_t,
+    pub inputcb: prompt_input_cb,
+    pub freecb: prompt_free_cb,
+    pub data: *mut ::core::ffi::c_void,
+    pub message_format: *mut ::core::ffi::c_char,
+    pub keys: ::core::ffi::c_int,
+    pub word_separators: *mut ::core::ffi::c_char,
+    pub style: grid_cell,
+    pub command_style: grid_cell,
+    pub style_str: *mut ::core::ffi::c_char,
+    pub command_style_str: *mut ::core::ffi::c_char,
+    pub cstyle: screen_cursor_style,
+    pub command_cstyle: screen_cursor_style,
+    pub ccolour: ::core::ffi::c_int,
+    pub command_ccolour: ::core::ffi::c_int,
+    pub cmode: ::core::ffi::c_int,
+    pub command_cmode: ::core::ffi::c_int,
+    pub type_0: prompt_type,
+    pub flags: ::core::ffi::c_int,
+    pub closed: ::core::ffi::c_int,
+    pub hindex: [u_int; 2],
+    pub copied: *mut utf8_data,
+    pub complete_list: *mut *mut ::core::ffi::c_char,
+    pub complete_size: u_int,
+    pub complete_display: *mut ::core::ffi::c_char,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct prompt_create_data {
+    pub fs: *mut cmd_find_state,
+    pub prompt: *const ::core::ffi::c_char,
+    pub input: *const ::core::ffi::c_char,
+    pub type_0: prompt_type,
+    pub flags: ::core::ffi::c_int,
+    pub style: grid_cell,
+    pub command_style: grid_cell,
+    pub style_str: *const ::core::ffi::c_char,
+    pub command_style_str: *const ::core::ffi::c_char,
+    pub cstyle: screen_cursor_style,
+    pub command_cstyle: screen_cursor_style,
+    pub ccolour: ::core::ffi::c_int,
+    pub command_ccolour: ::core::ffi::c_int,
+    pub cmode: ::core::ffi::c_int,
+    pub command_cmode: ::core::ffi::c_int,
+    pub message_format: *const ::core::ffi::c_char,
+    pub keys: ::core::ffi::c_int,
+    pub word_separators: *const ::core::ffi::c_char,
+    pub inputcb: prompt_input_cb,
+    pub freecb: prompt_free_cb,
+    pub data: *mut ::core::ffi::c_void,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct prompt_draw_data {
+    pub ctx: *mut screen_write_ctx,
+    pub cursor_x: *mut u_int,
+    pub area_x: u_int,
+    pub area_width: u_int,
+    pub prompt_line: u_int,
 }

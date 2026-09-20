@@ -1,3 +1,4 @@
+pub use crate::src::shared::stdio::{EOF};
 pub use crate::src::shared::stdio::{
     FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
 };
@@ -35,7 +36,7 @@ extern "C" {
 }
 pub const MAXPATHLEN: ::core::ffi::c_int = PATH_MAX;
 pub const PATH_MAX: ::core::ffi::c_int = 4096 as ::core::ffi::c_int;
-pub const EOF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
+
 pub const TIOCGSID: ::core::ffi::c_int = 0x5429 as ::core::ffi::c_int;
 #[no_mangle]
 pub unsafe extern "C" fn osdep_get_name(

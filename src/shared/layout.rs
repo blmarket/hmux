@@ -1,5 +1,7 @@
 //! Authoritative layout direction values.
 
+use super::abi::u_int;
+use super::pane::window_pane;
 pub type layout_type = ::core::ffi::c_uint;
 pub const LAYOUT_WINDOWPANE: layout_type = 2;
 pub const LAYOUT_TOPBOTTOM: layout_type = 1;
@@ -28,7 +30,6 @@ pub const PANE_LINES_SIMPLE: pane_lines = 3;
 pub const PANE_LINES_SINGLE: pane_lines = 0;
 pub const PANE_LINES_SPACES: pane_lines = 5;
 
-use super::abi::u_int;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct layout_geometry {
@@ -57,4 +58,31 @@ mod tests {
         assert_eq!(BOX_LINES_DEFAULT, -1);
         assert_eq!(PANE_LINES_ROUNDED, 7);
     }
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct layout_cell {
+    pub type_0: layout_type,
+    pub flags: ::core::ffi::c_int,
+    pub parent: *mut layout_cell,
+    pub g: layout_geometry,
+    pub fg: layout_geometry,
+    pub wp: *mut window_pane,
+    pub cells: layout_cells,
+    pub entry: layout_cell_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct layout_cell_entry {
+    pub tqe_next: *mut layout_cell,
+    pub tqe_prev: *mut *mut layout_cell,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct layout_cells {
+    pub tqh_first: *mut layout_cell,
+    pub tqh_last: *mut *mut layout_cell,
 }

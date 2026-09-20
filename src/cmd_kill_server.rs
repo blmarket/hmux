@@ -1,45 +1,15 @@
+pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
+pub use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 pub use crate::src::shared::signal::SIGTERM;
 pub use crate::src::shared::command::{CMD_STARTSERVER};
 use crate::src::shared::arguments::*;
 use crate::src::shared::abi::*;
 use crate::src::shared::command::*;
 extern "C" {
-    pub type args;
-    pub type cmdq_item;
-    pub type cmd;
+
     fn kill(__pid: __pid_t, __sig: ::core::ffi::c_int) -> ::core::ffi::c_int;
     fn getpid() -> __pid_t;
     fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-}
-pub type args_parse_cb = Option<
-    unsafe extern "C" fn(*mut args, u_int, *mut *mut ::core::ffi::c_char) -> args_parse_type,
->;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct args_parse {
-    pub template: *const ::core::ffi::c_char,
-    pub lower: ::core::ffi::c_int,
-    pub upper: ::core::ffi::c_int,
-    pub cb: args_parse_cb,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmd_entry_flag {
-    pub flag: ::core::ffi::c_char,
-    pub type_0: cmd_find_type,
-    pub flags: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmd_entry {
-    pub name: *const ::core::ffi::c_char,
-    pub alias: *const ::core::ffi::c_char,
-    pub args: args_parse,
-    pub usage: *const ::core::ffi::c_char,
-    pub source: cmd_entry_flag,
-    pub target: cmd_entry_flag,
-    pub flags: ::core::ffi::c_int,
-    pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
 
 #[no_mangle]

@@ -1,5 +1,16 @@
 //! Authoritative terminal capability-code values.
 
+use super::abi::{size_t, time_t, u_int};
+use super::client::client;
+use super::colour::colour_palette;
+use super::display::{screen_cursor_style, visible_ranges};
+use super::event::{evbuffer, event};
+use super::grid::grid_cell;
+use super::hyperlinks::hyperlinks;
+use super::key::key_code;
+use super::mouse::mouse_event;
+use super::screen::screen;
+use super::terminal::{term, termios};
 pub type tty_code_code = ::core::ffi::c_uint;
 pub const TTYC_XT: tty_code_code = 233;
 pub const TTYC_VPA: tty_code_code = 232;
@@ -287,4 +298,176 @@ mod tests {
         assert_eq!(TTYC_CLEAR, 9);
         assert_eq!(TTYC_XT, 233);
     }
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tty_key {
+    pub ch: ::core::ffi::c_char,
+    pub key: key_code,
+    pub left: *mut tty_key,
+    pub right: *mut tty_key,
+    pub next: *mut tty_key,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tty_code {
+    pub type_0: tty_code_type,
+    pub value: tty_code_value,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tty {
+    pub client: *mut client,
+    pub start_timer: event,
+    pub clipboard_timer: event,
+    pub last_requests: time_t,
+    pub sx: u_int,
+    pub sy: u_int,
+    pub xpixel: u_int,
+    pub ypixel: u_int,
+    pub cx: u_int,
+    pub cy: u_int,
+    pub cstyle: screen_cursor_style,
+    pub ccolour: ::core::ffi::c_int,
+    pub oflag: ::core::ffi::c_int,
+    pub oox: u_int,
+    pub ooy: u_int,
+    pub osx: u_int,
+    pub osy: u_int,
+    pub mode: ::core::ffi::c_int,
+    pub fg: ::core::ffi::c_int,
+    pub bg: ::core::ffi::c_int,
+    pub rlower: u_int,
+    pub rupper: u_int,
+    pub rleft: u_int,
+    pub rright: u_int,
+    pub event_in: event,
+    pub in_0: *mut evbuffer,
+    pub event_out: event,
+    pub out: *mut evbuffer,
+    pub timer: event,
+    pub discarded: size_t,
+    pub tio: termios,
+    pub r: visible_ranges,
+    pub cell: grid_cell,
+    pub last_cell: grid_cell,
+    pub flags: ::core::ffi::c_int,
+    pub term: *mut tty_term,
+    pub mouse_last_x: u_int,
+    pub mouse_last_y: u_int,
+    pub mouse_last_b: u_int,
+    pub mouse_drag_flag: ::core::ffi::c_int,
+    pub mouse_drag_x: u_int,
+    pub mouse_drag_y: u_int,
+    pub mouse_scrolling_flag: ::core::ffi::c_int,
+    pub mouse_slider_mpos: ::core::ffi::c_int,
+    pub mouse_last_pane: ::core::ffi::c_int,
+    pub mouse_drag_update: Option<unsafe extern "C" fn(*mut client, *mut mouse_event) -> ()>,
+    pub mouse_drag_release: Option<unsafe extern "C" fn(*mut client, *mut mouse_event) -> ()>,
+    pub key_timer: event,
+    pub key_tree: *mut tty_key,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tty_term {
+    pub name: *mut ::core::ffi::c_char,
+    pub tty: *mut tty,
+    pub applied_features: ::core::ffi::c_int,
+    pub acs: [[::core::ffi::c_char; 2]; 256],
+    pub codes: *mut tty_code,
+    pub flags: ::core::ffi::c_int,
+    pub entry: tty_term_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tty_term_entry {
+    pub le_next: *mut tty_term,
+    pub le_prev: *mut *mut tty_term,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tty_ctx {
+    pub s: *mut screen,
+    pub redraw_cb: tty_ctx_redraw_cb,
+    pub set_client_cb: tty_ctx_set_client_cb,
+    pub arg: *mut ::core::ffi::c_void,
+    pub cell: *const grid_cell,
+    pub flags: ::core::ffi::c_int,
+    pub c2rust_unnamed: tty_ctx_c2rust_unnamed,
+    pub ocx: u_int,
+    pub ocy: u_int,
+    pub orupper: u_int,
+    pub orlower: u_int,
+    pub xoff: ::core::ffi::c_int,
+    pub yoff: ::core::ffi::c_int,
+    pub rxoff: ::core::ffi::c_int,
+    pub ryoff: ::core::ffi::c_int,
+    pub sx: u_int,
+    pub sy: u_int,
+    pub bg: u_int,
+    pub defaults: grid_cell,
+    pub style_ctx: tty_style_ctx,
+    pub wox: u_int,
+    pub woy: u_int,
+    pub wsx: u_int,
+    pub wsy: u_int,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tty_style_ctx {
+    pub defaults: *const grid_cell,
+    pub palette: *mut colour_palette,
+    pub dim: u_int,
+    pub hyperlinks: *mut hyperlinks,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union tty_ctx_c2rust_unnamed {
+    pub n: u_int,
+    pub data: tty_ctx_c2rust_unnamed_data,
+    pub sel: tty_ctx_c2rust_unnamed_sel,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tty_ctx_c2rust_unnamed_sel {
+    pub clip: *const ::core::ffi::c_char,
+    pub data: *const ::core::ffi::c_char,
+    pub size: size_t,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tty_ctx_c2rust_unnamed_data {
+    pub data: *const ::core::ffi::c_char,
+    pub size: size_t,
+}
+
+pub type tty_ctx_set_client_cb =
+    Option<unsafe extern "C" fn(*mut tty_ctx, *mut client) -> ::core::ffi::c_int>;
+
+pub type tty_ctx_redraw_cb = Option<unsafe extern "C" fn(*const tty_ctx) -> ()>;
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union tty_code_value {
+    pub string: *mut ::core::ffi::c_char,
+    pub number: ::core::ffi::c_int,
+    pub flag: ::core::ffi::c_int,
+}
+
+pub type tty_code_type = ::core::ffi::c_uint;
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tty_terms {
+    pub lh_first: *mut tty_term,
 }

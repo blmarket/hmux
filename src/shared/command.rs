@@ -1,5 +1,15 @@
-//! Authoritative command return and target-domain declarations.
+//! Authoritative command objects, queues, parsing records, and scalar domains.
 
+use super::abi::{time_t, u_int};
+use super::account::group;
+use super::arguments::{args, args_parse};
+use super::client::client;
+use super::event::event;
+use super::format::format_tree;
+use super::key::key_event;
+use super::pane::window_pane;
+use super::session::session;
+use super::window::{window, winlink};
 pub type cmd_retval = ::core::ffi::c_int;
 pub const CMD_RETURN_STOP: cmd_retval = 2;
 pub const CMD_RETURN_WAIT: cmd_retval = 1;
@@ -81,4 +91,163 @@ mod tests {
         assert_eq!(CMD_PARSE_ERROR, 0);
         assert_eq!(CMD_PARSE_SUCCESS, 1);
     }
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmdq_item {
+    pub name: *mut ::core::ffi::c_char,
+    pub queue: *mut cmdq_list,
+    pub next: *mut cmdq_item,
+    pub client: *mut client,
+    pub target_client: *mut client,
+    pub type_0: cmdq_type,
+    pub group: u_int,
+    pub number: u_int,
+    pub time: time_t,
+    pub flags: ::core::ffi::c_int,
+    pub state: *mut cmdq_state,
+    pub source: cmd_find_state,
+    pub target: cmd_find_state,
+    pub cmdlist: *mut cmd_list,
+    pub cmd: *mut cmd,
+    pub cb: cmdq_cb,
+    pub data: *mut ::core::ffi::c_void,
+    pub entry: cmdq_item_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmds {
+    pub tqh_first: *mut cmd,
+    pub tqh_last: *mut *mut cmd,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmdq_list {
+    pub item: *mut cmdq_item,
+    pub list: cmdq_item_list,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmd_find_state {
+    pub flags: ::core::ffi::c_int,
+    pub current: *mut cmd_find_state,
+    pub s: *mut session,
+    pub wl: *mut winlink,
+    pub w: *mut window,
+    pub wp: *mut window_pane,
+    pub idx: ::core::ffi::c_int,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmd_list {
+    pub references: ::core::ffi::c_int,
+    pub group: u_int,
+    pub list: *mut cmds,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmd {
+    pub entry: *const cmd_entry,
+    pub args: *mut args,
+    pub group: u_int,
+    pub file: *mut ::core::ffi::c_char,
+    pub line: u_int,
+    pub parse_flags: ::core::ffi::c_int,
+    pub qentry: cmd_qentry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmd_entry_flag {
+    pub flag: ::core::ffi::c_char,
+    pub type_0: cmd_find_type,
+    pub flags: ::core::ffi::c_int,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmd_entry {
+    pub name: *const ::core::ffi::c_char,
+    pub alias: *const ::core::ffi::c_char,
+    pub args: args_parse,
+    pub usage: *const ::core::ffi::c_char,
+    pub source: cmd_entry_flag,
+    pub target: cmd_entry_flag,
+    pub flags: ::core::ffi::c_int,
+    pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmdq_state {
+    pub references: ::core::ffi::c_int,
+    pub flags: ::core::ffi::c_int,
+    pub formats: *mut format_tree,
+    pub event: key_event,
+    pub current: cmd_find_state,
+}
+
+pub type cmdq_cb =
+    Option<unsafe extern "C" fn(*mut cmdq_item, *mut ::core::ffi::c_void) -> cmd_retval>;
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmd_qentry {
+    pub tqe_next: *mut cmd,
+    pub tqe_prev: *mut *mut cmd,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmdq_item_entry {
+    pub tqe_next: *mut cmdq_item,
+    pub tqe_prev: *mut *mut cmdq_item,
+}
+
+pub type cmdq_type = ::core::ffi::c_uint;
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmdq_item_list {
+    pub tqh_first: *mut cmdq_item,
+    pub tqh_last: *mut *mut cmdq_item,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct wait_item {
+    pub item: *mut cmdq_item,
+    pub entry: wait_item_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct wait_item_entry {
+    pub tqe_next: *mut wait_item,
+    pub tqe_prev: *mut *mut wait_item,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmd_parse_input {
+    pub flags: ::core::ffi::c_int,
+    pub file: *const ::core::ffi::c_char,
+    pub line: u_int,
+    pub item: *mut cmdq_item,
+    pub c: *mut client,
+    pub fs: cmd_find_state,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct cmd_parse_result {
+    pub status: cmd_parse_status,
+    pub cmdlist: *mut cmd_list,
+    pub error: *mut ::core::ffi::c_char,
 }

@@ -25,3 +25,7 @@ mod tests {
         assert_eq!(UTF8_ERROR, 2);
     }
 }
+
+pub type wchar_t = ::libc::wchar_t;
+
+pub const UTF8_SIZE: ::core::ffi::c_int = 32 as ::core::ffi::c_int;

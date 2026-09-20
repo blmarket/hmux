@@ -1,5 +1,8 @@
 # Shared declaration consolidation
 
+Current status: the core-model continuation below completes the inventoried
+shared named families. Earlier tables and remaining-work notes are historical.
+
 Baseline: `39092336a9291bf0baa49b631fcf57cbe4cfc586`, on `main`.
 Measurements use Linux x86_64 and rustc `1.99.0-nightly (12c36e253 2026-08-10)`.
 No history was rewritten, and no commits or pushes were made.
@@ -188,3 +191,116 @@ they are not declared private exceptions. The implementation-only enums listed
 above remain justified private declarations. The duplicate guard establishes
 uniqueness of migrated authoritative names, not completion of the remaining
 257 groups.
+
+## Core-model and remaining-family completion
+
+This continuation starts at `c7e544ddfe3080a306e2fc40c5d0a30bc2233148` on
+`main`. It supersedes the earlier remaining-work notes above: all inventoried
+shared named families are now consolidated. The five remaining duplicated
+names are the declaration-specific private exceptions described below.
+
+[model-declarations.tsv](model-declarations.tsv) records 10,133 migrated
+original declarations, including opaque views, concrete implementation records,
+anonymous owning roles, callbacks, scalar domains, constants, binary code, and
+compatibility code. Each row includes the original declaration fingerprint and
+its authoritative subject. Fingerprints remain audit aids, not type-identity
+criteria.
+
+The migration sequence was:
+
+1. Independent constant families, with baseline typed value/layout measurements
+   and a successful build after each family: alerts, borders, format flags,
+   input requests, jobs, popups, character escaping, POSIX I/O, environment flags,
+   key modes, message headers, stdio, UTF-8, server ACLs, grid whitespace, null
+   pointers, libc character classification, and C0 control characters.
+2. Environment records, including their opaque views and tree links.
+3. The mutually dependent client/session/window/pane graph, distributed among
+   subject modules. Its closure includes arguments, command queues, control
+   state, options, formatting, input, jobs, keys, layouts, menus, monitoring,
+   paste buffers, processes, prompts, redraw state, screen writing, spawning,
+   status lines, and terminal/tty state. These cannot be migrated separately
+   while their pointer and callback identities still refer to local copies.
+4. Smaller remaining families, each followed by a build: parser records,
+   argument-command state, client lists, event payloads, input-request data,
+   JSON, command messages, mode trees, option-name maps, pane indexes, popup
+   callbacks, filesystem records, prompt data, session groups, spawn contexts,
+   message history, and tty-term lists.
+
+Anonymous structures were reached through their owning fields and checked using
+complete declarations and dependencies. For example, `client.entry`,
+`client_file.entry`, `session.entry`, and `window_pane.entry` become separate
+subject-owned link types. Distinct links on a single object remain distinct.
+The anonymous enum behind `_IS*` was identified by its complete enumerator set,
+as was the C0 control-character enum; their local generated names were not used
+as identities.
+
+Opaque views now resolve to the corresponding concrete implementation record
+when one exists. The audit includes both the implementation and its consumers;
+full field layouts are measured for original concrete records, and pointer
+sizes/alignments for original opaque views. `dirent`, which has no concrete
+implementation here, remains an authoritative opaque type. Callback signatures,
+constness, nullable function pointers, `repr(C)`, unions, and field order are
+preserved. No conversion casts were added to reconcile types. A comparison of
+all non-shared source files against the continuation starting commit found no
+function-body differences after removing declarations/imports and applying the
+audited anonymous-role renames. Existing bitfield declarations and their tests
+remain intact; the newly migrated model records do not contain bitfields.
+
+The `subjects_*`, `model_*`, and `remaining_*` tests use frozen fixtures measured
+before their migrations. They check every original concrete copy's size,
+alignment, and all named field offsets, plus opaque pointers, callback aliases,
+and typed constant values. They have no fixture-update mode. `model_callbacks`
+adds direct C callback assignments and calls across former translation-unit
+boundaries, including argument parsing, tty callbacks, client overlays, and
+window modes.
+
+### Declaration-specific private exceptions
+
+These constants name different implementation enum domains. Their original
+`c_uint` aliases and values remain local, along with the other constants in each
+domain. In particular, equal values alone do not establish shared identity.
+
+| Name | Popup resize edge | Other private declaration | Reason |
+| --- | ---: | --- | --- |
+| `NONE` | 0 | `cmd_parse`: 1 | Parser quote state, not a popup edge |
+| `LEFT` | 1 | `format_draw`: 0 | Text alignment domain |
+| `RIGHT` | 2 | `format_draw`: 2 | Text alignment domain; equal value is incidental |
+| `TOP` | 3 | `window_copy`: 1 | Copy-mode vertical position domain |
+| `BOTTOM` | 4 | `window_copy`: 2 | Copy-mode vertical position domain |
+
+Other uniquely named implementation-only records/enums remain with their code.
+Some previously private records, such as command-queue state and mode-tree
+state, now live with their subject because they are part of the consolidated
+concrete dependency closure. Their implementation constants need not move.
+
+The duplicate-definition guard now checks **all** named declarations, including
+private/restricted definitions, binary code, and compatibility modules. It
+permits the five names above only at their exact original file pairs. New
+unreviewed duplicated names fail even if they have not yet been added to a
+shared module. Generated `C2RustUnnamed*` identifiers are excluded from that
+name-based check because they lack cross-unit identity; migrated owning-role
+names are checked by the authoritative-definition guard. Lexer regression
+coverage includes `&raw const` expressions as well as `*const`, literals,
+comments, and wrapped declarations.
+
+| Check | Continuation before | Continuation after |
+| --- | --- | --- |
+| Source declarations | 14,679 | 4,970 |
+| Duplicated named groups, excluding generated anonymous names | 257 | 5 justified private exceptions |
+| Excess copies in those groups | 7,145 | 5 private exceptions |
+| `cargo build` | Pass; 2,821 library warnings | Pass; 1,891 library warnings |
+| `cargo test -j 2` | 35 tests pass | 98 tests pass |
+| `cargo clippy --all-targets` | 30 errors; 8,376 library warnings | Same 30 messages/files; 7,446 library warnings |
+| Isolated CLI regressions | Pass | Pass; byte-identical JSON transcript |
+
+Clippy's existing failures remain 25 equal-expression comparisons, four
+self-assignments, and one unchanging loop condition. No lint allowances were
+added. Source locations were compared by file and message, excluding line
+numbers shifted by declaration removal. CLI tests use the existing unique
+repository-local socket and guaranteed server cleanup.
+
+Retained validation artifacts are under `target/consolidation/round3-*`,
+`model-*`, and `remaining-*`: before/after inventories, build/test/Clippy logs,
+per-family builds, pre-migration fixture runs, callback tests, and CLI
+transcripts. All work remains uncommitted on `main`; no push or history rewrite
+was performed.

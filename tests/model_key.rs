@@ -1,0 +1,4486 @@
+//! Frozen pre-migration sizes, alignments, and every named field offset.
+use std::mem::{align_of, offset_of, size_of};
+#[test]
+fn original_copies_match() {
+    let mut records = Vec::new();
+    macro_rules! record {
+        ($label:literal, $ty:ty, [$($field:ident),*]) => {
+            records.push(format!("{} {} {} {:?}", $label, size_of::<$ty>(), align_of::<$ty>(),
+                &[$(offset_of!($ty, $field)),*] as &[usize]));
+        };
+    }
+    record!(
+        "src/alerts.rs::key_binding",
+        hmux2::src::alerts::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/arguments.rs::key_binding",
+        hmux2::src::arguments::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cfg.rs::key_binding",
+        hmux2::src::cfg::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/client.rs::key_binding",
+        hmux2::src::client::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd.rs::key_binding",
+        hmux2::src::cmd::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_attach_session.rs::key_binding",
+        hmux2::src::cmd_attach_session::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_bind_key.rs::key_binding",
+        hmux2::src::cmd_bind_key::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_break_pane.rs::key_binding",
+        hmux2::src::cmd_break_pane::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_capture_pane.rs::key_binding",
+        hmux2::src::cmd_capture_pane::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_choose_tree.rs::key_binding",
+        hmux2::src::cmd_choose_tree::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_command_prompt.rs::key_binding",
+        hmux2::src::cmd_command_prompt::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_confirm_before.rs::key_binding",
+        hmux2::src::cmd_confirm_before::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_copy_mode.rs::key_binding",
+        hmux2::src::cmd_copy_mode::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_detach_client.rs::key_binding",
+        hmux2::src::cmd_detach_client::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_display_menu.rs::key_binding",
+        hmux2::src::cmd_display_menu::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_display_message.rs::key_binding",
+        hmux2::src::cmd_display_message::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_find.rs::key_binding",
+        hmux2::src::cmd_find::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_find_window.rs::key_binding",
+        hmux2::src::cmd_find_window::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_if_shell.rs::key_binding",
+        hmux2::src::cmd_if_shell::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_join_pane.rs::key_binding",
+        hmux2::src::cmd_join_pane::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_kill_pane.rs::key_binding",
+        hmux2::src::cmd_kill_pane::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_kill_session.rs::key_binding",
+        hmux2::src::cmd_kill_session::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_kill_window.rs::key_binding",
+        hmux2::src::cmd_kill_window::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_list_buffers.rs::key_binding",
+        hmux2::src::cmd_list_buffers::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_list_clients.rs::key_binding",
+        hmux2::src::cmd_list_clients::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_list_commands.rs::key_binding",
+        hmux2::src::cmd_list_commands::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_list_keys.rs::key_binding",
+        hmux2::src::cmd_list_keys::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_list_panes.rs::key_binding",
+        hmux2::src::cmd_list_panes::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_list_sessions.rs::key_binding",
+        hmux2::src::cmd_list_sessions::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_list_windows.rs::key_binding",
+        hmux2::src::cmd_list_windows::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_load_buffer.rs::key_binding",
+        hmux2::src::cmd_load_buffer::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_lock_server.rs::key_binding",
+        hmux2::src::cmd_lock_server::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_move_window.rs::key_binding",
+        hmux2::src::cmd_move_window::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_new_session.rs::key_binding",
+        hmux2::src::cmd_new_session::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_new_window.rs::key_binding",
+        hmux2::src::cmd_new_window::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_parse.rs::key_binding",
+        hmux2::src::cmd_parse::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_paste_buffer.rs::key_binding",
+        hmux2::src::cmd_paste_buffer::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_pipe_pane.rs::key_binding",
+        hmux2::src::cmd_pipe_pane::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_queue.rs::key_binding",
+        hmux2::src::cmd_queue::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_refresh_client.rs::key_binding",
+        hmux2::src::cmd_refresh_client::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_rename_session.rs::key_binding",
+        hmux2::src::cmd_rename_session::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_rename_window.rs::key_binding",
+        hmux2::src::cmd_rename_window::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_resize_pane.rs::key_binding",
+        hmux2::src::cmd_resize_pane::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_resize_window.rs::key_binding",
+        hmux2::src::cmd_resize_window::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_respawn_pane.rs::key_binding",
+        hmux2::src::cmd_respawn_pane::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_respawn_window.rs::key_binding",
+        hmux2::src::cmd_respawn_window::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_rotate_window.rs::key_binding",
+        hmux2::src::cmd_rotate_window::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_run_shell.rs::key_binding",
+        hmux2::src::cmd_run_shell::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_save_buffer.rs::key_binding",
+        hmux2::src::cmd_save_buffer::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_select_layout.rs::key_binding",
+        hmux2::src::cmd_select_layout::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_select_pane.rs::key_binding",
+        hmux2::src::cmd_select_pane::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_select_window.rs::key_binding",
+        hmux2::src::cmd_select_window::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_send_keys.rs::key_binding",
+        hmux2::src::cmd_send_keys::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_server_access.rs::key_binding",
+        hmux2::src::cmd_server_access::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_set_buffer.rs::key_binding",
+        hmux2::src::cmd_set_buffer::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_set_environment.rs::key_binding",
+        hmux2::src::cmd_set_environment::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_set_option.rs::key_binding",
+        hmux2::src::cmd_set_option::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_show_environment.rs::key_binding",
+        hmux2::src::cmd_show_environment::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_show_messages.rs::key_binding",
+        hmux2::src::cmd_show_messages::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_show_options.rs::key_binding",
+        hmux2::src::cmd_show_options::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_source_file.rs::key_binding",
+        hmux2::src::cmd_source_file::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_split_window.rs::key_binding",
+        hmux2::src::cmd_split_window::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_swap_pane.rs::key_binding",
+        hmux2::src::cmd_swap_pane::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_swap_window.rs::key_binding",
+        hmux2::src::cmd_swap_window::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_switch_client.rs::key_binding",
+        hmux2::src::cmd_switch_client::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_unbind_key.rs::key_binding",
+        hmux2::src::cmd_unbind_key::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/cmd_wait_for.rs::key_binding",
+        hmux2::src::cmd_wait_for::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/colour.rs::key_binding",
+        hmux2::src::colour::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/control.rs::key_binding",
+        hmux2::src::control::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/control_notify.rs::key_binding",
+        hmux2::src::control_notify::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/environ.rs::key_binding",
+        hmux2::src::environ::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/events.rs::key_binding",
+        hmux2::src::events::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/events_payload.rs::key_binding",
+        hmux2::src::events_payload::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/file.rs::key_binding",
+        hmux2::src::file::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/format.rs::key_binding",
+        hmux2::src::format::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/format_draw.rs::key_binding",
+        hmux2::src::format_draw::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/hooks.rs::key_binding",
+        hmux2::src::hooks::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/input.rs::key_binding",
+        hmux2::src::input::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/input_keys.rs::key_binding",
+        hmux2::src::input_keys::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/job.rs::key_binding",
+        hmux2::src::job::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/key_bindings.rs::key_binding",
+        hmux2::src::key_bindings::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/layout.rs::key_binding",
+        hmux2::src::layout::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/layout_custom.rs::key_binding",
+        hmux2::src::layout_custom::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/layout_set.rs::key_binding",
+        hmux2::src::layout_set::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/menu.rs::key_binding",
+        hmux2::src::menu::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/mode_tree.rs::key_binding",
+        hmux2::src::mode_tree::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/monitor.rs::key_binding",
+        hmux2::src::monitor::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/names.rs::key_binding",
+        hmux2::src::names::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/options.rs::key_binding",
+        hmux2::src::options::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/popup.rs::key_binding",
+        hmux2::src::popup::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/prompt.rs::key_binding",
+        hmux2::src::prompt::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/resize.rs::key_binding",
+        hmux2::src::resize::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/screen.rs::key_binding",
+        hmux2::src::screen::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/screen_redraw.rs::key_binding",
+        hmux2::src::screen_redraw::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/screen_write.rs::key_binding",
+        hmux2::src::screen_write::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/server.rs::key_binding",
+        hmux2::src::server::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/server_acl.rs::key_binding",
+        hmux2::src::server_acl::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/server_client.rs::key_binding",
+        hmux2::src::server_client::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/server_fn.rs::key_binding",
+        hmux2::src::server_fn::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/session.rs::key_binding",
+        hmux2::src::session::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/sort.rs::key_binding",
+        hmux2::src::sort::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/spawn.rs::key_binding",
+        hmux2::src::spawn::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/status.rs::key_binding",
+        hmux2::src::status::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/style.rs::key_binding",
+        hmux2::src::style::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/tty.rs::key_binding",
+        hmux2::src::tty::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/tty_acs.rs::key_binding",
+        hmux2::src::tty_acs::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/tty_draw.rs::key_binding",
+        hmux2::src::tty_draw::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/tty_features.rs::key_binding",
+        hmux2::src::tty_features::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/tty_keys.rs::key_binding",
+        hmux2::src::tty_keys::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/tty_term.rs::key_binding",
+        hmux2::src::tty_term::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/window.rs::key_binding",
+        hmux2::src::window::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/window_border.rs::key_binding",
+        hmux2::src::window_border::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/window_buffer.rs::key_binding",
+        hmux2::src::window_buffer::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/window_client.rs::key_binding",
+        hmux2::src::window_client::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/window_clock.rs::key_binding",
+        hmux2::src::window_clock::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/window_copy.rs::key_binding",
+        hmux2::src::window_copy::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/window_customize.rs::key_binding",
+        hmux2::src::window_customize::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/window_panes.rs::key_binding",
+        hmux2::src::window_panes::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/window_switch.rs::key_binding",
+        hmux2::src::window_switch::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/window_tree.rs::key_binding",
+        hmux2::src::window_tree::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/window_visible.rs::key_binding",
+        hmux2::src::window_visible::key_binding,
+        [key, cmdlist, note, tablename, flags, entry]
+    );
+    record!(
+        "src/alerts.rs::C2RustUnnamed_32",
+        hmux2::src::alerts::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/arguments.rs::C2RustUnnamed_34",
+        hmux2::src::arguments::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cfg.rs::C2RustUnnamed_32",
+        hmux2::src::cfg::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/client.rs::C2RustUnnamed_45",
+        hmux2::src::client::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd.rs::C2RustUnnamed_32",
+        hmux2::src::cmd::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_attach_session.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_attach_session::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_bind_key.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_bind_key::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_break_pane.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_break_pane::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_capture_pane.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_capture_pane::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_choose_tree.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_choose_tree::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_command_prompt.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_command_prompt::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_confirm_before.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_confirm_before::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_copy_mode.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_copy_mode::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_detach_client.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_detach_client::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_display_menu.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_display_menu::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_display_message.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_display_message::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_find.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_find::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_find_window.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_find_window::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_if_shell.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_if_shell::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_join_pane.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_join_pane::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_kill_pane.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_kill_pane::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_kill_session.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_kill_session::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_kill_window.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_kill_window::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_buffers.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_list_buffers::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_clients.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_list_clients::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_commands.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_list_commands::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_keys.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_list_keys::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_panes.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_list_panes::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_sessions.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_list_sessions::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_windows.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_list_windows::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_load_buffer.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_load_buffer::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_lock_server.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_lock_server::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_move_window.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_move_window::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_new_session.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_new_session::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_new_window.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_new_window::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_parse.rs::C2RustUnnamed_33",
+        hmux2::src::cmd_parse::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_paste_buffer.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_paste_buffer::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_pipe_pane.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_pipe_pane::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_queue.rs::C2RustUnnamed_33",
+        hmux2::src::cmd_queue::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_refresh_client.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_refresh_client::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_rename_session.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_rename_session::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_rename_window.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_rename_window::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_resize_pane.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_resize_pane::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_resize_window.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_resize_window::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_respawn_pane.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_respawn_pane::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_respawn_window.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_respawn_window::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_rotate_window.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_rotate_window::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_run_shell.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_run_shell::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_save_buffer.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_save_buffer::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_select_layout.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_select_layout::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_select_pane.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_select_pane::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_select_window.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_select_window::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_send_keys.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_send_keys::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_server_access.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_server_access::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_set_buffer.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_set_buffer::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_set_environment.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_set_environment::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_set_option.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_set_option::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_show_environment.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_show_environment::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_show_messages.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_show_messages::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_show_options.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_show_options::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_source_file.rs::C2RustUnnamed_33",
+        hmux2::src::cmd_source_file::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_split_window.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_split_window::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_swap_pane.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_swap_pane::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_swap_window.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_swap_window::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_switch_client.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_switch_client::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_unbind_key.rs::C2RustUnnamed_0",
+        hmux2::src::cmd_unbind_key::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_wait_for.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_wait_for::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/colour.rs::C2RustUnnamed_33",
+        hmux2::src::colour::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/control.rs::C2RustUnnamed_32",
+        hmux2::src::control::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/control_notify.rs::C2RustUnnamed_32",
+        hmux2::src::control_notify::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/environ.rs::C2RustUnnamed_33",
+        hmux2::src::environ::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/events.rs::C2RustUnnamed_32",
+        hmux2::src::events::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/events_payload.rs::C2RustUnnamed_32",
+        hmux2::src::events_payload::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/file.rs::C2RustUnnamed_33",
+        hmux2::src::file::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/format.rs::C2RustUnnamed_36",
+        hmux2::src::format::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/format_draw.rs::C2RustUnnamed_32",
+        hmux2::src::format_draw::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/hooks.rs::C2RustUnnamed_32",
+        hmux2::src::hooks::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/input.rs::C2RustUnnamed_39",
+        hmux2::src::input::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/input_keys.rs::C2RustUnnamed_32",
+        hmux2::src::input_keys::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/job.rs::C2RustUnnamed_33",
+        hmux2::src::job::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/key_bindings.rs::C2RustUnnamed_32",
+        hmux2::src::key_bindings::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/layout.rs::C2RustUnnamed_32",
+        hmux2::src::layout::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/layout_custom.rs::C2RustUnnamed_33",
+        hmux2::src::layout_custom::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/layout_set.rs::C2RustUnnamed_32",
+        hmux2::src::layout_set::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/menu.rs::C2RustUnnamed_32",
+        hmux2::src::menu::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/mode_tree.rs::C2RustUnnamed_32",
+        hmux2::src::mode_tree::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/monitor.rs::C2RustUnnamed_32",
+        hmux2::src::monitor::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/names.rs::C2RustUnnamed_33",
+        hmux2::src::names::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/options.rs::C2RustUnnamed_35",
+        hmux2::src::options::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/popup.rs::C2RustUnnamed_32",
+        hmux2::src::popup::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/prompt.rs::C2RustUnnamed_32",
+        hmux2::src::prompt::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/resize.rs::C2RustUnnamed_32",
+        hmux2::src::resize::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/screen.rs::C2RustUnnamed_33",
+        hmux2::src::screen::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/screen_redraw.rs::C2RustUnnamed_32",
+        hmux2::src::screen_redraw::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/screen_write.rs::C2RustUnnamed_35",
+        hmux2::src::screen_write::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/server.rs::C2RustUnnamed_33",
+        hmux2::src::server::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/server_acl.rs::C2RustUnnamed_32",
+        hmux2::src::server_acl::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/server_client.rs::C2RustUnnamed_33",
+        hmux2::src::server_client::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/server_fn.rs::C2RustUnnamed_32",
+        hmux2::src::server_fn::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/session.rs::C2RustUnnamed_32",
+        hmux2::src::session::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/sort.rs::C2RustUnnamed_32",
+        hmux2::src::sort::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/spawn.rs::C2RustUnnamed_32",
+        hmux2::src::spawn::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/status.rs::C2RustUnnamed_32",
+        hmux2::src::status::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/style.rs::C2RustUnnamed_32",
+        hmux2::src::style::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/tty.rs::C2RustUnnamed_32",
+        hmux2::src::tty::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/tty_acs.rs::C2RustUnnamed_32",
+        hmux2::src::tty_acs::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/tty_draw.rs::C2RustUnnamed_32",
+        hmux2::src::tty_draw::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/tty_features.rs::C2RustUnnamed_32",
+        hmux2::src::tty_features::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/tty_keys.rs::C2RustUnnamed_33",
+        hmux2::src::tty_keys::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/tty_term.rs::C2RustUnnamed_32",
+        hmux2::src::tty_term::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window.rs::C2RustUnnamed_33",
+        hmux2::src::window::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_border.rs::C2RustUnnamed_32",
+        hmux2::src::window_border::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_buffer.rs::C2RustUnnamed_32",
+        hmux2::src::window_buffer::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_client.rs::C2RustUnnamed_32",
+        hmux2::src::window_client::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_clock.rs::C2RustUnnamed_32",
+        hmux2::src::window_clock::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_copy.rs::C2RustUnnamed_32",
+        hmux2::src::window_copy::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_customize.rs::C2RustUnnamed_32",
+        hmux2::src::window_customize::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_panes.rs::C2RustUnnamed_32",
+        hmux2::src::window_panes::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_switch.rs::C2RustUnnamed_32",
+        hmux2::src::window_switch::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_tree.rs::C2RustUnnamed_32",
+        hmux2::src::window_tree::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_visible.rs::C2RustUnnamed_32",
+        hmux2::src::window_visible::key_binding_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/alerts.rs::key_bindings",
+        hmux2::src::alerts::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/arguments.rs::key_bindings",
+        hmux2::src::arguments::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cfg.rs::key_bindings",
+        hmux2::src::cfg::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/client.rs::key_bindings",
+        hmux2::src::client::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd.rs::key_bindings",
+        hmux2::src::cmd::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_attach_session.rs::key_bindings",
+        hmux2::src::cmd_attach_session::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_bind_key.rs::key_bindings",
+        hmux2::src::cmd_bind_key::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_break_pane.rs::key_bindings",
+        hmux2::src::cmd_break_pane::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_capture_pane.rs::key_bindings",
+        hmux2::src::cmd_capture_pane::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_choose_tree.rs::key_bindings",
+        hmux2::src::cmd_choose_tree::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_command_prompt.rs::key_bindings",
+        hmux2::src::cmd_command_prompt::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_confirm_before.rs::key_bindings",
+        hmux2::src::cmd_confirm_before::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_copy_mode.rs::key_bindings",
+        hmux2::src::cmd_copy_mode::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_detach_client.rs::key_bindings",
+        hmux2::src::cmd_detach_client::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_display_menu.rs::key_bindings",
+        hmux2::src::cmd_display_menu::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_display_message.rs::key_bindings",
+        hmux2::src::cmd_display_message::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_find.rs::key_bindings",
+        hmux2::src::cmd_find::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_find_window.rs::key_bindings",
+        hmux2::src::cmd_find_window::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_if_shell.rs::key_bindings",
+        hmux2::src::cmd_if_shell::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_join_pane.rs::key_bindings",
+        hmux2::src::cmd_join_pane::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_kill_pane.rs::key_bindings",
+        hmux2::src::cmd_kill_pane::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_kill_session.rs::key_bindings",
+        hmux2::src::cmd_kill_session::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_kill_window.rs::key_bindings",
+        hmux2::src::cmd_kill_window::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_list_buffers.rs::key_bindings",
+        hmux2::src::cmd_list_buffers::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_list_clients.rs::key_bindings",
+        hmux2::src::cmd_list_clients::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_list_commands.rs::key_bindings",
+        hmux2::src::cmd_list_commands::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_list_keys.rs::key_bindings",
+        hmux2::src::cmd_list_keys::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_list_panes.rs::key_bindings",
+        hmux2::src::cmd_list_panes::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_list_sessions.rs::key_bindings",
+        hmux2::src::cmd_list_sessions::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_list_windows.rs::key_bindings",
+        hmux2::src::cmd_list_windows::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_load_buffer.rs::key_bindings",
+        hmux2::src::cmd_load_buffer::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_lock_server.rs::key_bindings",
+        hmux2::src::cmd_lock_server::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_move_window.rs::key_bindings",
+        hmux2::src::cmd_move_window::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_new_session.rs::key_bindings",
+        hmux2::src::cmd_new_session::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_new_window.rs::key_bindings",
+        hmux2::src::cmd_new_window::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_parse.rs::key_bindings",
+        hmux2::src::cmd_parse::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_paste_buffer.rs::key_bindings",
+        hmux2::src::cmd_paste_buffer::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_pipe_pane.rs::key_bindings",
+        hmux2::src::cmd_pipe_pane::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_queue.rs::key_bindings",
+        hmux2::src::cmd_queue::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_refresh_client.rs::key_bindings",
+        hmux2::src::cmd_refresh_client::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_rename_session.rs::key_bindings",
+        hmux2::src::cmd_rename_session::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_rename_window.rs::key_bindings",
+        hmux2::src::cmd_rename_window::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_resize_pane.rs::key_bindings",
+        hmux2::src::cmd_resize_pane::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_resize_window.rs::key_bindings",
+        hmux2::src::cmd_resize_window::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_respawn_pane.rs::key_bindings",
+        hmux2::src::cmd_respawn_pane::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_respawn_window.rs::key_bindings",
+        hmux2::src::cmd_respawn_window::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_rotate_window.rs::key_bindings",
+        hmux2::src::cmd_rotate_window::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_run_shell.rs::key_bindings",
+        hmux2::src::cmd_run_shell::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_save_buffer.rs::key_bindings",
+        hmux2::src::cmd_save_buffer::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_select_layout.rs::key_bindings",
+        hmux2::src::cmd_select_layout::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_select_pane.rs::key_bindings",
+        hmux2::src::cmd_select_pane::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_select_window.rs::key_bindings",
+        hmux2::src::cmd_select_window::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_send_keys.rs::key_bindings",
+        hmux2::src::cmd_send_keys::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_server_access.rs::key_bindings",
+        hmux2::src::cmd_server_access::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_set_buffer.rs::key_bindings",
+        hmux2::src::cmd_set_buffer::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_set_environment.rs::key_bindings",
+        hmux2::src::cmd_set_environment::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_set_option.rs::key_bindings",
+        hmux2::src::cmd_set_option::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_show_environment.rs::key_bindings",
+        hmux2::src::cmd_show_environment::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_show_messages.rs::key_bindings",
+        hmux2::src::cmd_show_messages::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_show_options.rs::key_bindings",
+        hmux2::src::cmd_show_options::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_source_file.rs::key_bindings",
+        hmux2::src::cmd_source_file::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_split_window.rs::key_bindings",
+        hmux2::src::cmd_split_window::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_swap_pane.rs::key_bindings",
+        hmux2::src::cmd_swap_pane::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_swap_window.rs::key_bindings",
+        hmux2::src::cmd_swap_window::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_switch_client.rs::key_bindings",
+        hmux2::src::cmd_switch_client::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_unbind_key.rs::key_bindings",
+        hmux2::src::cmd_unbind_key::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/cmd_wait_for.rs::key_bindings",
+        hmux2::src::cmd_wait_for::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/colour.rs::key_bindings",
+        hmux2::src::colour::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/control.rs::key_bindings",
+        hmux2::src::control::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/control_notify.rs::key_bindings",
+        hmux2::src::control_notify::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/environ.rs::key_bindings",
+        hmux2::src::environ::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/events.rs::key_bindings",
+        hmux2::src::events::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/events_payload.rs::key_bindings",
+        hmux2::src::events_payload::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/file.rs::key_bindings",
+        hmux2::src::file::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/format.rs::key_bindings",
+        hmux2::src::format::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/format_draw.rs::key_bindings",
+        hmux2::src::format_draw::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/hooks.rs::key_bindings",
+        hmux2::src::hooks::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/input.rs::key_bindings",
+        hmux2::src::input::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/input_keys.rs::key_bindings",
+        hmux2::src::input_keys::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/job.rs::key_bindings",
+        hmux2::src::job::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/key_bindings.rs::key_bindings",
+        hmux2::src::key_bindings::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/layout.rs::key_bindings",
+        hmux2::src::layout::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/layout_custom.rs::key_bindings",
+        hmux2::src::layout_custom::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/layout_set.rs::key_bindings",
+        hmux2::src::layout_set::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/menu.rs::key_bindings",
+        hmux2::src::menu::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/mode_tree.rs::key_bindings",
+        hmux2::src::mode_tree::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/monitor.rs::key_bindings",
+        hmux2::src::monitor::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/names.rs::key_bindings",
+        hmux2::src::names::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/options.rs::key_bindings",
+        hmux2::src::options::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/popup.rs::key_bindings",
+        hmux2::src::popup::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/prompt.rs::key_bindings",
+        hmux2::src::prompt::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/resize.rs::key_bindings",
+        hmux2::src::resize::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/screen.rs::key_bindings",
+        hmux2::src::screen::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/screen_redraw.rs::key_bindings",
+        hmux2::src::screen_redraw::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/screen_write.rs::key_bindings",
+        hmux2::src::screen_write::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/server.rs::key_bindings",
+        hmux2::src::server::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/server_acl.rs::key_bindings",
+        hmux2::src::server_acl::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/server_client.rs::key_bindings",
+        hmux2::src::server_client::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/server_fn.rs::key_bindings",
+        hmux2::src::server_fn::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/session.rs::key_bindings",
+        hmux2::src::session::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/sort.rs::key_bindings",
+        hmux2::src::sort::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/spawn.rs::key_bindings",
+        hmux2::src::spawn::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/status.rs::key_bindings",
+        hmux2::src::status::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/style.rs::key_bindings",
+        hmux2::src::style::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/tty.rs::key_bindings",
+        hmux2::src::tty::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/tty_acs.rs::key_bindings",
+        hmux2::src::tty_acs::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/tty_draw.rs::key_bindings",
+        hmux2::src::tty_draw::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/tty_features.rs::key_bindings",
+        hmux2::src::tty_features::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/tty_keys.rs::key_bindings",
+        hmux2::src::tty_keys::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/tty_term.rs::key_bindings",
+        hmux2::src::tty_term::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/window.rs::key_bindings",
+        hmux2::src::window::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/window_border.rs::key_bindings",
+        hmux2::src::window_border::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/window_buffer.rs::key_bindings",
+        hmux2::src::window_buffer::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/window_client.rs::key_bindings",
+        hmux2::src::window_client::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/window_clock.rs::key_bindings",
+        hmux2::src::window_clock::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/window_copy.rs::key_bindings",
+        hmux2::src::window_copy::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/window_customize.rs::key_bindings",
+        hmux2::src::window_customize::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/window_panes.rs::key_bindings",
+        hmux2::src::window_panes::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/window_switch.rs::key_bindings",
+        hmux2::src::window_switch::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/window_tree.rs::key_bindings",
+        hmux2::src::window_tree::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/window_visible.rs::key_bindings",
+        hmux2::src::window_visible::key_bindings,
+        [rbh_root]
+    );
+    record!(
+        "src/alerts.rs::key_event",
+        hmux2::src::alerts::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/arguments.rs::key_event",
+        hmux2::src::arguments::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cfg.rs::key_event",
+        hmux2::src::cfg::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/client.rs::key_event",
+        hmux2::src::client::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd.rs::key_event",
+        hmux2::src::cmd::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_attach_session.rs::key_event",
+        hmux2::src::cmd_attach_session::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_bind_key.rs::key_event",
+        hmux2::src::cmd_bind_key::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_break_pane.rs::key_event",
+        hmux2::src::cmd_break_pane::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_capture_pane.rs::key_event",
+        hmux2::src::cmd_capture_pane::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_choose_tree.rs::key_event",
+        hmux2::src::cmd_choose_tree::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_command_prompt.rs::key_event",
+        hmux2::src::cmd_command_prompt::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_confirm_before.rs::key_event",
+        hmux2::src::cmd_confirm_before::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_copy_mode.rs::key_event",
+        hmux2::src::cmd_copy_mode::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_detach_client.rs::key_event",
+        hmux2::src::cmd_detach_client::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_display_menu.rs::key_event",
+        hmux2::src::cmd_display_menu::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_display_message.rs::key_event",
+        hmux2::src::cmd_display_message::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_find.rs::key_event",
+        hmux2::src::cmd_find::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_find_window.rs::key_event",
+        hmux2::src::cmd_find_window::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_if_shell.rs::key_event",
+        hmux2::src::cmd_if_shell::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_join_pane.rs::key_event",
+        hmux2::src::cmd_join_pane::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_kill_pane.rs::key_event",
+        hmux2::src::cmd_kill_pane::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_kill_session.rs::key_event",
+        hmux2::src::cmd_kill_session::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_kill_window.rs::key_event",
+        hmux2::src::cmd_kill_window::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_list_buffers.rs::key_event",
+        hmux2::src::cmd_list_buffers::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_list_clients.rs::key_event",
+        hmux2::src::cmd_list_clients::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_list_commands.rs::key_event",
+        hmux2::src::cmd_list_commands::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_list_keys.rs::key_event",
+        hmux2::src::cmd_list_keys::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_list_panes.rs::key_event",
+        hmux2::src::cmd_list_panes::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_list_sessions.rs::key_event",
+        hmux2::src::cmd_list_sessions::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_list_windows.rs::key_event",
+        hmux2::src::cmd_list_windows::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_load_buffer.rs::key_event",
+        hmux2::src::cmd_load_buffer::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_lock_server.rs::key_event",
+        hmux2::src::cmd_lock_server::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_move_window.rs::key_event",
+        hmux2::src::cmd_move_window::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_new_session.rs::key_event",
+        hmux2::src::cmd_new_session::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_new_window.rs::key_event",
+        hmux2::src::cmd_new_window::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_parse.rs::key_event",
+        hmux2::src::cmd_parse::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_paste_buffer.rs::key_event",
+        hmux2::src::cmd_paste_buffer::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_pipe_pane.rs::key_event",
+        hmux2::src::cmd_pipe_pane::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_queue.rs::key_event",
+        hmux2::src::cmd_queue::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_refresh_client.rs::key_event",
+        hmux2::src::cmd_refresh_client::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_rename_session.rs::key_event",
+        hmux2::src::cmd_rename_session::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_rename_window.rs::key_event",
+        hmux2::src::cmd_rename_window::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_resize_pane.rs::key_event",
+        hmux2::src::cmd_resize_pane::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_resize_window.rs::key_event",
+        hmux2::src::cmd_resize_window::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_respawn_pane.rs::key_event",
+        hmux2::src::cmd_respawn_pane::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_respawn_window.rs::key_event",
+        hmux2::src::cmd_respawn_window::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_rotate_window.rs::key_event",
+        hmux2::src::cmd_rotate_window::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_run_shell.rs::key_event",
+        hmux2::src::cmd_run_shell::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_save_buffer.rs::key_event",
+        hmux2::src::cmd_save_buffer::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_select_layout.rs::key_event",
+        hmux2::src::cmd_select_layout::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_select_pane.rs::key_event",
+        hmux2::src::cmd_select_pane::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_select_window.rs::key_event",
+        hmux2::src::cmd_select_window::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_send_keys.rs::key_event",
+        hmux2::src::cmd_send_keys::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_server_access.rs::key_event",
+        hmux2::src::cmd_server_access::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_set_buffer.rs::key_event",
+        hmux2::src::cmd_set_buffer::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_set_environment.rs::key_event",
+        hmux2::src::cmd_set_environment::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_set_option.rs::key_event",
+        hmux2::src::cmd_set_option::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_show_environment.rs::key_event",
+        hmux2::src::cmd_show_environment::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_show_messages.rs::key_event",
+        hmux2::src::cmd_show_messages::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_show_options.rs::key_event",
+        hmux2::src::cmd_show_options::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_source_file.rs::key_event",
+        hmux2::src::cmd_source_file::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_split_window.rs::key_event",
+        hmux2::src::cmd_split_window::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_swap_pane.rs::key_event",
+        hmux2::src::cmd_swap_pane::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_swap_window.rs::key_event",
+        hmux2::src::cmd_swap_window::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_switch_client.rs::key_event",
+        hmux2::src::cmd_switch_client::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/cmd_wait_for.rs::key_event",
+        hmux2::src::cmd_wait_for::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/colour.rs::key_event",
+        hmux2::src::colour::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/control.rs::key_event",
+        hmux2::src::control::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/control_notify.rs::key_event",
+        hmux2::src::control_notify::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/environ.rs::key_event",
+        hmux2::src::environ::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/events.rs::key_event",
+        hmux2::src::events::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/events_payload.rs::key_event",
+        hmux2::src::events_payload::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/file.rs::key_event",
+        hmux2::src::file::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/format.rs::key_event",
+        hmux2::src::format::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/format_draw.rs::key_event",
+        hmux2::src::format_draw::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/hooks.rs::key_event",
+        hmux2::src::hooks::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/input.rs::key_event",
+        hmux2::src::input::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/input_keys.rs::key_event",
+        hmux2::src::input_keys::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/job.rs::key_event",
+        hmux2::src::job::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/key_bindings.rs::key_event",
+        hmux2::src::key_bindings::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/layout.rs::key_event",
+        hmux2::src::layout::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/layout_custom.rs::key_event",
+        hmux2::src::layout_custom::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/layout_set.rs::key_event",
+        hmux2::src::layout_set::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/menu.rs::key_event",
+        hmux2::src::menu::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/mode_tree.rs::key_event",
+        hmux2::src::mode_tree::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/monitor.rs::key_event",
+        hmux2::src::monitor::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/names.rs::key_event",
+        hmux2::src::names::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/options.rs::key_event",
+        hmux2::src::options::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/popup.rs::key_event",
+        hmux2::src::popup::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/prompt.rs::key_event",
+        hmux2::src::prompt::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/resize.rs::key_event",
+        hmux2::src::resize::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/screen.rs::key_event",
+        hmux2::src::screen::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/screen_redraw.rs::key_event",
+        hmux2::src::screen_redraw::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/screen_write.rs::key_event",
+        hmux2::src::screen_write::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/server.rs::key_event",
+        hmux2::src::server::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/server_acl.rs::key_event",
+        hmux2::src::server_acl::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/server_client.rs::key_event",
+        hmux2::src::server_client::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/server_fn.rs::key_event",
+        hmux2::src::server_fn::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/session.rs::key_event",
+        hmux2::src::session::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/sort.rs::key_event",
+        hmux2::src::sort::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/spawn.rs::key_event",
+        hmux2::src::spawn::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/status.rs::key_event",
+        hmux2::src::status::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/style.rs::key_event",
+        hmux2::src::style::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/tty.rs::key_event",
+        hmux2::src::tty::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/tty_acs.rs::key_event",
+        hmux2::src::tty_acs::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/tty_draw.rs::key_event",
+        hmux2::src::tty_draw::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/tty_features.rs::key_event",
+        hmux2::src::tty_features::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/tty_keys.rs::key_event",
+        hmux2::src::tty_keys::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/tty_term.rs::key_event",
+        hmux2::src::tty_term::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/window.rs::key_event",
+        hmux2::src::window::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/window_border.rs::key_event",
+        hmux2::src::window_border::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/window_buffer.rs::key_event",
+        hmux2::src::window_buffer::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/window_client.rs::key_event",
+        hmux2::src::window_client::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/window_clock.rs::key_event",
+        hmux2::src::window_clock::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/window_copy.rs::key_event",
+        hmux2::src::window_copy::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/window_customize.rs::key_event",
+        hmux2::src::window_customize::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/window_panes.rs::key_event",
+        hmux2::src::window_panes::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/window_switch.rs::key_event",
+        hmux2::src::window_switch::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/window_tree.rs::key_event",
+        hmux2::src::window_tree::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/window_visible.rs::key_event",
+        hmux2::src::window_visible::key_event,
+        [client, key, m, buf, len]
+    );
+    record!(
+        "src/alerts.rs::key_table",
+        hmux2::src::alerts::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/arguments.rs::key_table",
+        hmux2::src::arguments::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cfg.rs::key_table",
+        hmux2::src::cfg::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/client.rs::key_table",
+        hmux2::src::client::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd.rs::key_table",
+        hmux2::src::cmd::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_attach_session.rs::key_table",
+        hmux2::src::cmd_attach_session::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_bind_key.rs::key_table",
+        hmux2::src::cmd_bind_key::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_break_pane.rs::key_table",
+        hmux2::src::cmd_break_pane::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_capture_pane.rs::key_table",
+        hmux2::src::cmd_capture_pane::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_choose_tree.rs::key_table",
+        hmux2::src::cmd_choose_tree::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_command_prompt.rs::key_table",
+        hmux2::src::cmd_command_prompt::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_confirm_before.rs::key_table",
+        hmux2::src::cmd_confirm_before::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_copy_mode.rs::key_table",
+        hmux2::src::cmd_copy_mode::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_detach_client.rs::key_table",
+        hmux2::src::cmd_detach_client::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_display_menu.rs::key_table",
+        hmux2::src::cmd_display_menu::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_display_message.rs::key_table",
+        hmux2::src::cmd_display_message::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_find.rs::key_table",
+        hmux2::src::cmd_find::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_find_window.rs::key_table",
+        hmux2::src::cmd_find_window::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_if_shell.rs::key_table",
+        hmux2::src::cmd_if_shell::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_join_pane.rs::key_table",
+        hmux2::src::cmd_join_pane::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_kill_pane.rs::key_table",
+        hmux2::src::cmd_kill_pane::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_kill_session.rs::key_table",
+        hmux2::src::cmd_kill_session::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_kill_window.rs::key_table",
+        hmux2::src::cmd_kill_window::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_list_buffers.rs::key_table",
+        hmux2::src::cmd_list_buffers::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_list_clients.rs::key_table",
+        hmux2::src::cmd_list_clients::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_list_commands.rs::key_table",
+        hmux2::src::cmd_list_commands::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_list_keys.rs::key_table",
+        hmux2::src::cmd_list_keys::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_list_panes.rs::key_table",
+        hmux2::src::cmd_list_panes::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_list_sessions.rs::key_table",
+        hmux2::src::cmd_list_sessions::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_list_windows.rs::key_table",
+        hmux2::src::cmd_list_windows::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_load_buffer.rs::key_table",
+        hmux2::src::cmd_load_buffer::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_lock_server.rs::key_table",
+        hmux2::src::cmd_lock_server::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_move_window.rs::key_table",
+        hmux2::src::cmd_move_window::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_new_session.rs::key_table",
+        hmux2::src::cmd_new_session::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_new_window.rs::key_table",
+        hmux2::src::cmd_new_window::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_parse.rs::key_table",
+        hmux2::src::cmd_parse::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_paste_buffer.rs::key_table",
+        hmux2::src::cmd_paste_buffer::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_pipe_pane.rs::key_table",
+        hmux2::src::cmd_pipe_pane::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_queue.rs::key_table",
+        hmux2::src::cmd_queue::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_refresh_client.rs::key_table",
+        hmux2::src::cmd_refresh_client::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_rename_session.rs::key_table",
+        hmux2::src::cmd_rename_session::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_rename_window.rs::key_table",
+        hmux2::src::cmd_rename_window::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_resize_pane.rs::key_table",
+        hmux2::src::cmd_resize_pane::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_resize_window.rs::key_table",
+        hmux2::src::cmd_resize_window::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_respawn_pane.rs::key_table",
+        hmux2::src::cmd_respawn_pane::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_respawn_window.rs::key_table",
+        hmux2::src::cmd_respawn_window::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_rotate_window.rs::key_table",
+        hmux2::src::cmd_rotate_window::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_run_shell.rs::key_table",
+        hmux2::src::cmd_run_shell::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_save_buffer.rs::key_table",
+        hmux2::src::cmd_save_buffer::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_select_layout.rs::key_table",
+        hmux2::src::cmd_select_layout::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_select_pane.rs::key_table",
+        hmux2::src::cmd_select_pane::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_select_window.rs::key_table",
+        hmux2::src::cmd_select_window::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_send_keys.rs::key_table",
+        hmux2::src::cmd_send_keys::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_server_access.rs::key_table",
+        hmux2::src::cmd_server_access::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_set_buffer.rs::key_table",
+        hmux2::src::cmd_set_buffer::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_set_environment.rs::key_table",
+        hmux2::src::cmd_set_environment::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_set_option.rs::key_table",
+        hmux2::src::cmd_set_option::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_show_environment.rs::key_table",
+        hmux2::src::cmd_show_environment::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_show_messages.rs::key_table",
+        hmux2::src::cmd_show_messages::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_show_options.rs::key_table",
+        hmux2::src::cmd_show_options::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_source_file.rs::key_table",
+        hmux2::src::cmd_source_file::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_split_window.rs::key_table",
+        hmux2::src::cmd_split_window::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_swap_pane.rs::key_table",
+        hmux2::src::cmd_swap_pane::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_swap_window.rs::key_table",
+        hmux2::src::cmd_swap_window::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_switch_client.rs::key_table",
+        hmux2::src::cmd_switch_client::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_unbind_key.rs::key_table",
+        hmux2::src::cmd_unbind_key::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/cmd_wait_for.rs::key_table",
+        hmux2::src::cmd_wait_for::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/colour.rs::key_table",
+        hmux2::src::colour::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/control.rs::key_table",
+        hmux2::src::control::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/control_notify.rs::key_table",
+        hmux2::src::control_notify::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/environ.rs::key_table",
+        hmux2::src::environ::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/events.rs::key_table",
+        hmux2::src::events::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/events_payload.rs::key_table",
+        hmux2::src::events_payload::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/file.rs::key_table",
+        hmux2::src::file::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/format.rs::key_table",
+        hmux2::src::format::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/format_draw.rs::key_table",
+        hmux2::src::format_draw::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/hooks.rs::key_table",
+        hmux2::src::hooks::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/input.rs::key_table",
+        hmux2::src::input::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/input_keys.rs::key_table",
+        hmux2::src::input_keys::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/job.rs::key_table",
+        hmux2::src::job::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/key_bindings.rs::key_table",
+        hmux2::src::key_bindings::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/layout.rs::key_table",
+        hmux2::src::layout::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/layout_custom.rs::key_table",
+        hmux2::src::layout_custom::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/layout_set.rs::key_table",
+        hmux2::src::layout_set::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/menu.rs::key_table",
+        hmux2::src::menu::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/mode_tree.rs::key_table",
+        hmux2::src::mode_tree::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/monitor.rs::key_table",
+        hmux2::src::monitor::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/names.rs::key_table",
+        hmux2::src::names::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/options.rs::key_table",
+        hmux2::src::options::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/popup.rs::key_table",
+        hmux2::src::popup::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/prompt.rs::key_table",
+        hmux2::src::prompt::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/resize.rs::key_table",
+        hmux2::src::resize::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/screen.rs::key_table",
+        hmux2::src::screen::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/screen_redraw.rs::key_table",
+        hmux2::src::screen_redraw::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/screen_write.rs::key_table",
+        hmux2::src::screen_write::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/server.rs::key_table",
+        hmux2::src::server::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/server_acl.rs::key_table",
+        hmux2::src::server_acl::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/server_client.rs::key_table",
+        hmux2::src::server_client::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/server_fn.rs::key_table",
+        hmux2::src::server_fn::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/session.rs::key_table",
+        hmux2::src::session::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/sort.rs::key_table",
+        hmux2::src::sort::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/spawn.rs::key_table",
+        hmux2::src::spawn::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/status.rs::key_table",
+        hmux2::src::status::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/style.rs::key_table",
+        hmux2::src::style::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/tty.rs::key_table",
+        hmux2::src::tty::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/tty_acs.rs::key_table",
+        hmux2::src::tty_acs::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/tty_draw.rs::key_table",
+        hmux2::src::tty_draw::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/tty_features.rs::key_table",
+        hmux2::src::tty_features::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/tty_keys.rs::key_table",
+        hmux2::src::tty_keys::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/tty_term.rs::key_table",
+        hmux2::src::tty_term::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/window.rs::key_table",
+        hmux2::src::window::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/window_border.rs::key_table",
+        hmux2::src::window_border::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/window_buffer.rs::key_table",
+        hmux2::src::window_buffer::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/window_client.rs::key_table",
+        hmux2::src::window_client::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/window_clock.rs::key_table",
+        hmux2::src::window_clock::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/window_copy.rs::key_table",
+        hmux2::src::window_copy::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/window_customize.rs::key_table",
+        hmux2::src::window_customize::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/window_panes.rs::key_table",
+        hmux2::src::window_panes::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/window_switch.rs::key_table",
+        hmux2::src::window_switch::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/window_tree.rs::key_table",
+        hmux2::src::window_tree::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/window_visible.rs::key_table",
+        hmux2::src::window_visible::key_table,
+        [
+            name,
+            activity_time,
+            key_bindings,
+            default_key_bindings,
+            references,
+            entry
+        ]
+    );
+    record!(
+        "src/alerts.rs::C2RustUnnamed_31",
+        hmux2::src::alerts::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/arguments.rs::C2RustUnnamed_33",
+        hmux2::src::arguments::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cfg.rs::C2RustUnnamed_31",
+        hmux2::src::cfg::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/client.rs::C2RustUnnamed_44",
+        hmux2::src::client::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd.rs::C2RustUnnamed_31",
+        hmux2::src::cmd::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_attach_session.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_attach_session::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_bind_key.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_bind_key::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_break_pane.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_break_pane::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_capture_pane.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_capture_pane::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_choose_tree.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_choose_tree::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_command_prompt.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_command_prompt::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_confirm_before.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_confirm_before::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_copy_mode.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_copy_mode::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_detach_client.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_detach_client::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_display_menu.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_display_menu::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_display_message.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_display_message::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_find.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_find::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_find_window.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_find_window::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_if_shell.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_if_shell::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_join_pane.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_join_pane::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_kill_pane.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_kill_pane::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_kill_session.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_kill_session::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_kill_window.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_kill_window::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_buffers.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_list_buffers::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_clients.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_list_clients::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_commands.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_list_commands::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_keys.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_list_keys::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_panes.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_list_panes::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_sessions.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_list_sessions::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_list_windows.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_list_windows::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_load_buffer.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_load_buffer::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_lock_server.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_lock_server::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_move_window.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_move_window::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_new_session.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_new_session::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_new_window.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_new_window::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_parse.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_parse::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_paste_buffer.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_paste_buffer::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_pipe_pane.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_pipe_pane::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_queue.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_queue::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_refresh_client.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_refresh_client::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_rename_session.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_rename_session::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_rename_window.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_rename_window::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_resize_pane.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_resize_pane::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_resize_window.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_resize_window::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_respawn_pane.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_respawn_pane::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_respawn_window.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_respawn_window::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_rotate_window.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_rotate_window::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_run_shell.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_run_shell::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_save_buffer.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_save_buffer::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_select_layout.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_select_layout::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_select_pane.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_select_pane::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_select_window.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_select_window::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_send_keys.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_send_keys::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_server_access.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_server_access::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_set_buffer.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_set_buffer::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_set_environment.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_set_environment::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_set_option.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_set_option::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_show_environment.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_show_environment::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_show_messages.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_show_messages::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_show_options.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_show_options::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_source_file.rs::C2RustUnnamed_32",
+        hmux2::src::cmd_source_file::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_split_window.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_split_window::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_swap_pane.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_swap_pane::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_swap_window.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_swap_window::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_switch_client.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_switch_client::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_unbind_key.rs::C2RustUnnamed",
+        hmux2::src::cmd_unbind_key::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/cmd_wait_for.rs::C2RustUnnamed_31",
+        hmux2::src::cmd_wait_for::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/colour.rs::C2RustUnnamed_32",
+        hmux2::src::colour::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/control.rs::C2RustUnnamed_31",
+        hmux2::src::control::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/control_notify.rs::C2RustUnnamed_31",
+        hmux2::src::control_notify::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/environ.rs::C2RustUnnamed_32",
+        hmux2::src::environ::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/events.rs::C2RustUnnamed_31",
+        hmux2::src::events::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/events_payload.rs::C2RustUnnamed_31",
+        hmux2::src::events_payload::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/file.rs::C2RustUnnamed_32",
+        hmux2::src::file::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/format.rs::C2RustUnnamed_35",
+        hmux2::src::format::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/format_draw.rs::C2RustUnnamed_31",
+        hmux2::src::format_draw::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/hooks.rs::C2RustUnnamed_31",
+        hmux2::src::hooks::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/input.rs::C2RustUnnamed_38",
+        hmux2::src::input::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/input_keys.rs::C2RustUnnamed_31",
+        hmux2::src::input_keys::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/job.rs::C2RustUnnamed_32",
+        hmux2::src::job::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/key_bindings.rs::C2RustUnnamed_31",
+        hmux2::src::key_bindings::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/layout.rs::C2RustUnnamed_31",
+        hmux2::src::layout::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/layout_custom.rs::C2RustUnnamed_32",
+        hmux2::src::layout_custom::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/layout_set.rs::C2RustUnnamed_31",
+        hmux2::src::layout_set::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/menu.rs::C2RustUnnamed_31",
+        hmux2::src::menu::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/mode_tree.rs::C2RustUnnamed_31",
+        hmux2::src::mode_tree::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/monitor.rs::C2RustUnnamed_31",
+        hmux2::src::monitor::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/names.rs::C2RustUnnamed_32",
+        hmux2::src::names::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/options.rs::C2RustUnnamed_34",
+        hmux2::src::options::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/popup.rs::C2RustUnnamed_31",
+        hmux2::src::popup::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/prompt.rs::C2RustUnnamed_31",
+        hmux2::src::prompt::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/resize.rs::C2RustUnnamed_31",
+        hmux2::src::resize::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/screen.rs::C2RustUnnamed_32",
+        hmux2::src::screen::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/screen_redraw.rs::C2RustUnnamed_31",
+        hmux2::src::screen_redraw::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/screen_write.rs::C2RustUnnamed_34",
+        hmux2::src::screen_write::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/server.rs::C2RustUnnamed_32",
+        hmux2::src::server::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/server_acl.rs::C2RustUnnamed_31",
+        hmux2::src::server_acl::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/server_client.rs::C2RustUnnamed_32",
+        hmux2::src::server_client::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/server_fn.rs::C2RustUnnamed_31",
+        hmux2::src::server_fn::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/session.rs::C2RustUnnamed_31",
+        hmux2::src::session::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/sort.rs::C2RustUnnamed_31",
+        hmux2::src::sort::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/spawn.rs::C2RustUnnamed_31",
+        hmux2::src::spawn::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/status.rs::C2RustUnnamed_31",
+        hmux2::src::status::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/style.rs::C2RustUnnamed_31",
+        hmux2::src::style::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/tty.rs::C2RustUnnamed_31",
+        hmux2::src::tty::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/tty_acs.rs::C2RustUnnamed_31",
+        hmux2::src::tty_acs::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/tty_draw.rs::C2RustUnnamed_31",
+        hmux2::src::tty_draw::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/tty_features.rs::C2RustUnnamed_31",
+        hmux2::src::tty_features::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/tty_keys.rs::C2RustUnnamed_32",
+        hmux2::src::tty_keys::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/tty_term.rs::C2RustUnnamed_31",
+        hmux2::src::tty_term::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window.rs::C2RustUnnamed_32",
+        hmux2::src::window::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_border.rs::C2RustUnnamed_31",
+        hmux2::src::window_border::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_buffer.rs::C2RustUnnamed_31",
+        hmux2::src::window_buffer::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_client.rs::C2RustUnnamed_31",
+        hmux2::src::window_client::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_clock.rs::C2RustUnnamed_31",
+        hmux2::src::window_clock::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_copy.rs::C2RustUnnamed_31",
+        hmux2::src::window_copy::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_customize.rs::C2RustUnnamed_31",
+        hmux2::src::window_customize::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_panes.rs::C2RustUnnamed_31",
+        hmux2::src::window_panes::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_switch.rs::C2RustUnnamed_31",
+        hmux2::src::window_switch::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_tree.rs::C2RustUnnamed_31",
+        hmux2::src::window_tree::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    record!(
+        "src/window_visible.rs::C2RustUnnamed_31",
+        hmux2::src::window_visible::key_table_entry,
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
+    );
+    let actual = records.join("\n") + "\n";
+    assert_eq!(actual, include_str!("fixtures/model-key.txt"));
+}

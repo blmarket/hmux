@@ -1,3 +1,68 @@
+pub use crate::src::shared::session::{
+    session_group, session_group_entry, session_group_sessions, session_groups, sessions,
+};
+pub use crate::src::shared::client::{clients};
+pub use crate::src::shared::arguments::{args};
+pub use crate::src::shared::client::{
+    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
+    overlay_resize_cb,
+};
+pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
+pub use crate::src::shared::control::{control_state};
+pub use crate::src::shared::format::{
+    format_cb, format_entry, format_entry_entry, format_entry_tree, format_job,
+    format_job_entry, format_job_tree, format_tree, format_type,
+};
+pub use crate::src::shared::input::{input_ctx, input_request, input_requests};
+pub use crate::src::shared::job::{job, job_complete_cb, job_free_cb, job_update_cb};
+pub use crate::src::shared::key::{
+    key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
+};
+pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
+pub use crate::src::shared::menu::{menu_data};
+pub use crate::src::shared::options::{
+    options, options_array_item, options_entry, options_table_entry,
+};
+pub use crate::src::shared::pane::{
+    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
+    window_pane_tree_entry, window_pane_zentry, window_panes,
+};
+pub use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
+pub use crate::src::shared::process::{tmuxpeer};
+pub use crate::src::shared::prompt::{prompt};
+pub use crate::src::shared::redraw::{redraw_scene};
+pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::spawn::{spawn_editor_state};
+pub use crate::src::shared::status::{status_line};
+pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
+pub use crate::src::shared::window::{
+    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
+    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
+    winlink_stack, winlink_wentry, winlinks,
+};
+pub use crate::src::shared::environment::{environ, environ_entry, environ_entry_entry};
+pub use crate::src::shared::ctype::{
+    _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
+    _ISspace, _ISupper, _ISxdigit, ctype_code,
+};
+pub use crate::src::shared::abi::{NULL_0};
+pub use crate::src::shared::environment::{ENVIRON_HIDDEN};
+pub use crate::src::shared::posix_io::{FNM_CASEFOLD};
+pub use crate::src::shared::job::{JOB_NOWAIT};
+pub use crate::src::shared::format::{
+    FORMAT_BASENAME, FORMAT_CHARACTER, FORMAT_CLIENTS, FORMAT_CLIENT_ENVIRON,
+    FORMAT_CLIENT_TERMCAP, FORMAT_CLIENT_TERMFEAT, FORMAT_COLOUR, FORMAT_COLOUR_ESC_BG,
+    FORMAT_COLOUR_ESC_FG, FORMAT_CYCLE, FORMAT_CYCLE_PERIOD, FORMAT_DIFFERENCE, FORMAT_DIRNAME,
+    FORMAT_ENVIRON, FORMAT_EXPAND, FORMAT_EXPANDTIME, FORMAT_EXPAND_NOCYCLE,
+    FORMAT_EXPAND_NOJOBS, FORMAT_EXPAND_TIME, FORMAT_FORCE, FORMAT_LENGTH, FORMAT_LITERAL,
+    FORMAT_LOOP_LIMIT, FORMAT_MAX_PRECISION, FORMAT_MAX_REPEAT, FORMAT_MAX_WIDTH, FORMAT_NOJOBS,
+    FORMAT_NONE, FORMAT_NOT, FORMAT_NOT_NOT, FORMAT_OPTIONS, FORMAT_PANE, FORMAT_PANES,
+    FORMAT_PRETTY, FORMAT_QUOTE_ARGUMENTS, FORMAT_QUOTE_SHELL, FORMAT_QUOTE_SHELL_SQ,
+    FORMAT_QUOTE_STYLE, FORMAT_RELATIVE, FORMAT_REPEAT, FORMAT_SESSIONS, FORMAT_SESSION_NAME,
+    FORMAT_STATUS, FORMAT_TIMESTRING, FORMAT_TIME_LIMIT, FORMAT_TIME_LOOP_CHECK, FORMAT_VERBOSE,
+    FORMAT_WIDTH, FORMAT_WINDOW, FORMAT_WINDOWS, FORMAT_WINDOW_NAME,
+};
 pub use crate::src::shared::account::passwd;
 pub use crate::src::shared::regex::{
     __re_long_size_t, re_dfa_t, re_pattern_buffer, reg_syntax_t, regex_t, regmatch_t, regoff_t,
@@ -51,26 +116,7 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 extern "C" {
-    pub type args;
-    pub type tmuxpeer;
-    pub type environ;
-    pub type options;
-    pub type menu_data;
-    pub type window_pane_prompt;
-    pub type prompt;
-    pub type cmdq_item;
-    pub type input_ctx;
-    pub type spawn_editor_state;
-    pub type cmds;
-    pub type input_request;
-    pub type redraw_scene;
-    pub type tty_key;
-    pub type tty_code;
-    pub type job;
-    pub type control_state;
-    pub type cmdq_list;
-    pub type options_array_item;
-    pub type options_entry;
+
     fn getpid() -> __pid_t;
     fn getuid() -> __uid_t;
     fn gethostname(__name: *mut ::core::ffi::c_char, __len: size_t) -> ::core::ffi::c_int;
@@ -444,177 +490,7 @@ extern "C" {
         ...
     ) -> ::core::ffi::c_int;
 }
-pub type C2RustUnnamed = ::core::ffi::c_uint;
-pub const _ISalnum: C2RustUnnamed = 8;
-pub const _ISpunct: C2RustUnnamed = 4;
-pub const _IScntrl: C2RustUnnamed = 2;
-pub const _ISblank: C2RustUnnamed = 1;
-pub const _ISgraph: C2RustUnnamed = 32768;
-pub const _ISprint: C2RustUnnamed = 16384;
-pub const _ISspace: C2RustUnnamed = 8192;
-pub const _ISxdigit: C2RustUnnamed = 4096;
-pub const _ISdigit: C2RustUnnamed = 2048;
-pub const _ISalpha: C2RustUnnamed = 1024;
-pub const _ISlower: C2RustUnnamed = 512;
-pub const _ISupper: C2RustUnnamed = 256;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct client {
-    pub name: *const ::core::ffi::c_char,
-    pub peer: *mut tmuxpeer,
-    pub user: *const ::core::ffi::c_char,
-    pub queue: *mut cmdq_list,
-    pub control_state: *mut control_state,
-    pub pause_age: u_int,
-    pub pid: pid_t,
-    pub fd: ::core::ffi::c_int,
-    pub out_fd: ::core::ffi::c_int,
-    pub event: event,
-    pub retval: ::core::ffi::c_int,
-    pub creation_time: timeval,
-    pub activity_time: timeval,
-    pub last_activity_time: timeval,
-    pub environ: *mut environ,
-    pub jobs: *mut format_job_tree,
-    pub title: *mut ::core::ffi::c_char,
-    pub path: *mut ::core::ffi::c_char,
-    pub cwd: *const ::core::ffi::c_char,
-    pub progress_bar: progress_bar,
-    pub term_name: *mut ::core::ffi::c_char,
-    pub term_features: ::core::ffi::c_int,
-    pub term_nofeatures: ::core::ffi::c_int,
-    pub term_type: *mut ::core::ffi::c_char,
-    pub term_caps: *mut *mut ::core::ffi::c_char,
-    pub term_ncaps: u_int,
-    pub ttyname: *mut ::core::ffi::c_char,
-    pub tty: tty,
-    pub written: size_t,
-    pub discarded: size_t,
-    pub redraw: size_t,
-    pub redraw_scene: *mut redraw_scene,
-    pub repeat_timer: event,
-    pub click_timer: event,
-    pub click_loc: ::core::ffi::c_int,
-    pub click_wp: ::core::ffi::c_int,
-    pub exit_timer: event,
-    pub click_button: u_int,
-    pub click_event: mouse_event,
-    pub status: status_line,
-    pub cycle_timer: event,
-    pub theme: client_theme,
-    pub input_requests: input_requests,
-    pub flags: uint64_t,
-    pub exit_type: client_exit_type,
-    pub exit_msgtype: msgtype,
-    pub exit_session: *mut ::core::ffi::c_char,
-    pub exit_message: *mut ::core::ffi::c_char,
-    pub keytable: *mut key_table,
-    pub last_key: key_code,
-    pub paste_time: time_t,
-    pub message_ignore_keys: ::core::ffi::c_int,
-    pub message_ignore_styles: ::core::ffi::c_int,
-    pub message_string: *mut ::core::ffi::c_char,
-    pub message_timer: event,
-    pub prompt: *mut prompt,
-    pub session: *mut session,
-    pub last_session: *mut session,
-    pub references: ::core::ffi::c_int,
-    pub theme_colours: [::core::ffi::c_int; 10],
-    pub pan_window: *mut ::core::ffi::c_void,
-    pub pan_ox: u_int,
-    pub pan_oy: u_int,
-    pub overlay_check: overlay_check_cb,
-    pub overlay_mode: overlay_mode_cb,
-    pub overlay_draw: overlay_draw_cb,
-    pub overlay_key: overlay_key_cb,
-    pub overlay_free: overlay_free_cb,
-    pub overlay_resize: overlay_resize_cb,
-    pub overlay_data: *mut ::core::ffi::c_void,
-    pub overlay_timer: event,
-    pub files: client_files,
-    pub source_file_depth: u_int,
-    pub clipboard_panes: *mut u_int,
-    pub clipboard_npanes: u_int,
-    pub entry: C2RustUnnamed_11,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_11 {
-    pub tqe_next: *mut client,
-    pub tqe_prev: *mut *mut client,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct client_files {
-    pub rbh_root: *mut client_file,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct client_file {
-    pub c: *mut client,
-    pub peer: *mut tmuxpeer,
-    pub tree: *mut client_files,
-    pub references: ::core::ffi::c_int,
-    pub stream: ::core::ffi::c_int,
-    pub path: *mut ::core::ffi::c_char,
-    pub buffer: *mut evbuffer,
-    pub event: *mut bufferevent,
-    pub fd: ::core::ffi::c_int,
-    pub error: ::core::ffi::c_int,
-    pub closed: ::core::ffi::c_int,
-    pub cb: client_file_cb,
-    pub data: *mut ::core::ffi::c_void,
-    pub entry: C2RustUnnamed_12,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_12 {
-    pub rbe_left: *mut client_file,
-    pub rbe_right: *mut client_file,
-    pub rbe_parent: *mut client_file,
-    pub rbe_color: ::core::ffi::c_int,
-}
-pub type client_file_cb = Option<
-    unsafe extern "C" fn(
-        *mut client,
-        *const ::core::ffi::c_char,
-        ::core::ffi::c_int,
-        ::core::ffi::c_int,
-        *mut evbuffer,
-        *mut ::core::ffi::c_void,
-    ) -> (),
->;
-pub type overlay_resize_cb =
-    Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
-pub type overlay_free_cb =
-    Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
-pub type overlay_key_cb = Option<
-    unsafe extern "C" fn(
-        *mut client,
-        *mut ::core::ffi::c_void,
-        *mut key_event,
-    ) -> ::core::ffi::c_int,
->;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct key_event {
-    pub client: *mut client,
-    pub key: key_code,
-    pub m: mouse_event,
-    pub buf: *mut ::core::ffi::c_char,
-    pub len: size_t,
-}
-pub type overlay_draw_cb =
-    Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
-pub type overlay_mode_cb = Option<
-    unsafe extern "C" fn(
-        *mut client,
-        *mut ::core::ffi::c_void,
-        *mut u_int,
-        *mut u_int,
-    ) -> *mut screen,
->;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union C2RustUnnamed_13 {
@@ -629,687 +505,7 @@ pub struct C2RustUnnamed_14 {
     pub bg: u_char,
     pub data: u_char,
 }
-pub type overlay_check_cb = Option<
-    unsafe extern "C" fn(
-        *mut client,
-        *mut ::core::ffi::c_void,
-        u_int,
-        u_int,
-        u_int,
-    ) -> *mut visible_ranges,
->;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct session {
-    pub id: u_int,
-    pub name: *mut ::core::ffi::c_char,
-    pub cwd: *const ::core::ffi::c_char,
-    pub creation_time: timeval,
-    pub last_attached_time: timeval,
-    pub activity_time: timeval,
-    pub last_activity_time: timeval,
-    pub lock_timer: event,
-    pub curw: *mut winlink,
-    pub lastw: winlink_stack,
-    pub windows: winlinks,
-    pub statusat: ::core::ffi::c_int,
-    pub statuslines: u_int,
-    pub options: *mut options,
-    pub flags: ::core::ffi::c_int,
-    pub attached: u_int,
-    pub tio: *mut termios,
-    pub environ: *mut environ,
-    pub references: ::core::ffi::c_int,
-    pub gentry: C2RustUnnamed_16,
-    pub entry: C2RustUnnamed_15,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_15 {
-    pub rbe_left: *mut session,
-    pub rbe_right: *mut session,
-    pub rbe_parent: *mut session,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_16 {
-    pub tqe_next: *mut session,
-    pub tqe_prev: *mut *mut session,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct winlinks {
-    pub rbh_root: *mut winlink,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct winlink {
-    pub idx: ::core::ffi::c_int,
-    pub session: *mut session,
-    pub window: *mut window,
-    pub flags: ::core::ffi::c_int,
-    pub entry: C2RustUnnamed_19,
-    pub wentry: C2RustUnnamed_18,
-    pub sentry: C2RustUnnamed_17,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_17 {
-    pub tqe_next: *mut winlink,
-    pub tqe_prev: *mut *mut winlink,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_18 {
-    pub tqe_next: *mut winlink,
-    pub tqe_prev: *mut *mut winlink,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_19 {
-    pub rbe_left: *mut winlink,
-    pub rbe_right: *mut winlink,
-    pub rbe_parent: *mut winlink,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window {
-    pub id: u_int,
-    pub latest: *mut ::core::ffi::c_void,
-    pub name: *mut ::core::ffi::c_char,
-    pub name_event: event,
-    pub name_time: timeval,
-    pub alerts_timer: event,
-    pub offset_timer: event,
-    pub activity_time: timeval,
-    pub creation_time: timeval,
-    pub active: *mut window_pane,
-    pub modal: *mut window_pane,
-    pub modal_last: *mut window_pane,
-    pub was_zoomed: *mut window_pane,
-    pub last_panes: window_panes,
-    pub z_index: window_panes,
-    pub panes: window_panes,
-    pub lastlayout: ::core::ffi::c_int,
-    pub layout_root: *mut layout_cell,
-    pub saved_layout_root: *mut layout_cell,
-    pub old_layout: *mut ::core::ffi::c_char,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub manual_sx: u_int,
-    pub manual_sy: u_int,
-    pub xpixel: u_int,
-    pub ypixel: u_int,
-    pub new_sx: u_int,
-    pub new_sy: u_int,
-    pub new_xpixel: u_int,
-    pub new_ypixel: u_int,
-    pub redraw_scene_generation: uint64_t,
-    pub menu: *mut menu_data,
-    pub menu_last_px: u_int,
-    pub menu_last_py: u_int,
-    pub last_new_pane_x: u_int,
-    pub last_new_pane_y: u_int,
-    pub sb: ::core::ffi::c_int,
-    pub sb_pos: ::core::ffi::c_int,
-    pub inside_cell: grid_cell,
-    pub outside_cell: grid_cell,
-    pub flags: ::core::ffi::c_int,
-    pub alerts_queued: ::core::ffi::c_int,
-    pub alerts_entry: C2RustUnnamed_22,
-    pub options: *mut options,
-    pub references: u_int,
-    pub winlinks: C2RustUnnamed_21,
-    pub entry: C2RustUnnamed_20,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_20 {
-    pub rbe_left: *mut window,
-    pub rbe_right: *mut window,
-    pub rbe_parent: *mut window,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_21 {
-    pub tqh_first: *mut winlink,
-    pub tqh_last: *mut *mut winlink,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_22 {
-    pub tqe_next: *mut window,
-    pub tqe_prev: *mut *mut window,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct layout_cell {
-    pub type_0: layout_type,
-    pub flags: ::core::ffi::c_int,
-    pub parent: *mut layout_cell,
-    pub g: layout_geometry,
-    pub fg: layout_geometry,
-    pub wp: *mut window_pane,
-    pub cells: layout_cells,
-    pub entry: C2RustUnnamed_23,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_23 {
-    pub tqe_next: *mut layout_cell,
-    pub tqe_prev: *mut *mut layout_cell,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct layout_cells {
-    pub tqh_first: *mut layout_cell,
-    pub tqh_last: *mut *mut layout_cell,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane {
-    pub id: u_int,
-    pub references: ::core::ffi::c_int,
-    pub active_point: u_int,
-    pub window: *mut window,
-    pub options: *mut options,
-    pub layout_cell: *mut layout_cell,
-    pub saved_layout_cell: *mut layout_cell,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub xoff: ::core::ffi::c_int,
-    pub yoff: ::core::ffi::c_int,
-    pub flags: ::core::ffi::c_int,
-    pub sync_dirty: *mut bitstr_t,
-    pub sync_dirty_size: u_int,
-    pub sb_slider_y: u_int,
-    pub sb_slider_h: u_int,
-    pub sb_auto_visible: ::core::ffi::c_int,
-    pub sb_auto_hover: ::core::ffi::c_int,
-    pub sb_auto_timer: event,
-    pub argc: ::core::ffi::c_int,
-    pub argv: *mut *mut ::core::ffi::c_char,
-    pub shell: *mut ::core::ffi::c_char,
-    pub cwd: *mut ::core::ffi::c_char,
-    pub pid: pid_t,
-    pub tty: [::core::ffi::c_char; 32],
-    pub status: ::core::ffi::c_int,
-    pub dead_time: timeval,
-    pub wait_item: *mut cmdq_item,
-    pub editor: *mut spawn_editor_state,
-    pub output_generation: uint64_t,
-    pub last_output_time: time_t,
-    pub last_prompt_time: time_t,
-    pub cmd_start_time: time_t,
-    pub cmd_end_time: time_t,
-    pub cmd_status: ::core::ffi::c_int,
-    pub fd: ::core::ffi::c_int,
-    pub event: *mut bufferevent,
-    pub offset: window_pane_offset,
-    pub base_offset: size_t,
-    pub resize_queue: window_pane_resizes,
-    pub resize_timer: event,
-    pub sync_timer: event,
-    pub ictx: *mut input_ctx,
-    pub cached_gc: grid_cell,
-    pub cached_active_gc: grid_cell,
-    pub cached_dim: u_int,
-    pub cached_active_dim: u_int,
-    pub palette: colour_palette,
-    pub last_theme: client_theme,
-    pub border_status_line: style_line_entry,
-    pub pipe_fd: ::core::ffi::c_int,
-    pub pipe_pid: pid_t,
-    pub pipe_event: *mut bufferevent,
-    pub pipe_offset: window_pane_offset,
-    pub screen: *mut screen,
-    pub base: screen,
-    pub status_screen: screen,
-    pub modes: C2RustUnnamed_28,
-    pub searchstr: *mut ::core::ffi::c_char,
-    pub searchregex: ::core::ffi::c_int,
-    pub prompt: *mut prompt,
-    pub prompt_data: *mut window_pane_prompt,
-    pub prompt_cx: u_int,
-    pub border_gc_set: ::core::ffi::c_int,
-    pub border_gc: grid_cell,
-    pub active_border_gc_set: ::core::ffi::c_int,
-    pub active_border_gc: grid_cell,
-    pub control_bg: ::core::ffi::c_int,
-    pub control_fg: ::core::ffi::c_int,
-    pub scrollbar_style: style,
-    pub r: visible_ranges,
-    pub entry: C2RustUnnamed_27,
-    pub sentry: C2RustUnnamed_26,
-    pub zentry: C2RustUnnamed_25,
-    pub tree_entry: C2RustUnnamed_24,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_24 {
-    pub rbe_left: *mut window_pane,
-    pub rbe_right: *mut window_pane,
-    pub rbe_parent: *mut window_pane,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_25 {
-    pub tqe_next: *mut window_pane,
-    pub tqe_prev: *mut *mut window_pane,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_26 {
-    pub tqe_next: *mut window_pane,
-    pub tqe_prev: *mut *mut window_pane,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_27 {
-    pub tqe_next: *mut window_pane,
-    pub tqe_prev: *mut *mut window_pane,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_28 {
-    pub tqh_first: *mut window_mode_entry,
-    pub tqh_last: *mut *mut window_mode_entry,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_mode_entry {
-    pub wp: *mut window_pane,
-    pub swp: *mut window_pane,
-    pub mode: *const window_mode,
-    pub data: *mut ::core::ffi::c_void,
-    pub screen: *mut screen,
-    pub prefix: u_int,
-    pub kill: ::core::ffi::c_int,
-    pub entry: C2RustUnnamed_29,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_29 {
-    pub tqe_next: *mut window_mode_entry,
-    pub tqe_prev: *mut *mut window_mode_entry,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_mode {
-    pub name: *const ::core::ffi::c_char,
-    pub default_format: *const ::core::ffi::c_char,
-    pub flags: ::core::ffi::c_int,
-    pub init: Option<
-        unsafe extern "C" fn(
-            *mut window_mode_entry,
-            *mut cmdq_item,
-            *mut cmd_find_state,
-            *mut args,
-        ) -> *mut screen,
-    >,
-    pub free: Option<unsafe extern "C" fn(*mut window_mode_entry) -> ()>,
-    pub resize: Option<unsafe extern "C" fn(*mut window_mode_entry, u_int, u_int) -> ()>,
-    pub update: Option<unsafe extern "C" fn(*mut window_mode_entry) -> ()>,
-    pub style_changed: Option<unsafe extern "C" fn(*mut window_mode_entry) -> ()>,
-    pub key: Option<
-        unsafe extern "C" fn(
-            *mut window_mode_entry,
-            *mut client,
-            *mut session,
-            *mut winlink,
-            key_code,
-            *mut mouse_event,
-        ) -> (),
-    >,
-    pub key_table:
-        Option<unsafe extern "C" fn(*mut window_mode_entry) -> *const ::core::ffi::c_char>,
-    pub command: Option<
-        unsafe extern "C" fn(
-            *mut window_mode_entry,
-            *mut client,
-            *mut session,
-            *mut winlink,
-            *mut args,
-            *mut mouse_event,
-        ) -> (),
-    >,
-    pub formats: Option<unsafe extern "C" fn(*mut window_mode_entry, *mut format_tree) -> ()>,
-    pub get_screen: Option<unsafe extern "C" fn(*mut window_mode_entry) -> *mut screen>,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct format_tree {
-    pub type_0: format_type,
-    pub c: *mut client,
-    pub s: *mut session,
-    pub wl: *mut winlink,
-    pub w: *mut window,
-    pub wp: *mut window_pane,
-    pub pb: *mut paste_buffer,
-    pub item: *mut cmdq_item,
-    pub client: *mut client,
-    pub flags: ::core::ffi::c_int,
-    pub tag: u_int,
-    pub m: mouse_event,
-    pub tree: format_entry_tree,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct format_entry_tree {
-    pub rbh_root: *mut format_entry,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct format_entry {
-    pub key: *mut ::core::ffi::c_char,
-    pub value: *mut ::core::ffi::c_char,
-    pub time: time_t,
-    pub cb: format_cb,
-    pub entry: C2RustUnnamed_30,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_30 {
-    pub rbe_left: *mut format_entry,
-    pub rbe_right: *mut format_entry,
-    pub rbe_parent: *mut format_entry,
-    pub rbe_color: ::core::ffi::c_int,
-}
-pub type format_cb = Option<unsafe extern "C" fn(*mut format_tree) -> *mut ::core::ffi::c_void>;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct paste_buffer {
-    pub data: *mut ::core::ffi::c_char,
-    pub size: size_t,
-    pub name: *mut ::core::ffi::c_char,
-    pub created: time_t,
-    pub automatic: ::core::ffi::c_int,
-    pub order: u_int,
-    pub name_entry: C2RustUnnamed_32,
-    pub time_entry: C2RustUnnamed_31,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_31 {
-    pub rbe_left: *mut paste_buffer,
-    pub rbe_right: *mut paste_buffer,
-    pub rbe_parent: *mut paste_buffer,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_32 {
-    pub rbe_left: *mut paste_buffer,
-    pub rbe_right: *mut paste_buffer,
-    pub rbe_parent: *mut paste_buffer,
-    pub rbe_color: ::core::ffi::c_int,
-}
-pub type format_type = ::core::ffi::c_uint;
-pub const FORMAT_TYPE_PANE: format_type = 3;
-pub const FORMAT_TYPE_WINDOW: format_type = 2;
-pub const FORMAT_TYPE_SESSION: format_type = 1;
-pub const FORMAT_TYPE_UNKNOWN: format_type = 0;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmd_find_state {
-    pub flags: ::core::ffi::c_int,
-    pub current: *mut cmd_find_state,
-    pub s: *mut session,
-    pub wl: *mut winlink,
-    pub w: *mut window,
-    pub wp: *mut window_pane,
-    pub idx: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_panes {
-    pub tqh_first: *mut window_pane,
-    pub tqh_last: *mut *mut window_pane,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct winlink_stack {
-    pub tqh_first: *mut winlink,
-    pub tqh_last: *mut *mut winlink,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct key_table {
-    pub name: *const ::core::ffi::c_char,
-    pub activity_time: timeval,
-    pub key_bindings: key_bindings,
-    pub default_key_bindings: key_bindings,
-    pub references: u_int,
-    pub entry: C2RustUnnamed_35,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_35 {
-    pub rbe_left: *mut key_table,
-    pub rbe_right: *mut key_table,
-    pub rbe_parent: *mut key_table,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct key_bindings {
-    pub rbh_root: *mut key_binding,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct key_binding {
-    pub key: key_code,
-    pub cmdlist: *mut cmd_list,
-    pub note: *const ::core::ffi::c_char,
-    pub tablename: *const ::core::ffi::c_char,
-    pub flags: ::core::ffi::c_int,
-    pub entry: C2RustUnnamed_36,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_36 {
-    pub rbe_left: *mut key_binding,
-    pub rbe_right: *mut key_binding,
-    pub rbe_parent: *mut key_binding,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cmd_list {
-    pub references: ::core::ffi::c_int,
-    pub group: u_int,
-    pub list: *mut cmds,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct input_requests {
-    pub tqh_first: *mut input_request,
-    pub tqh_last: *mut *mut input_request,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct status_line {
-    pub timer: event,
-    pub screen: screen,
-    pub active: *mut screen,
-    pub references: ::core::ffi::c_int,
-    pub prompt_cx: u_int,
-    pub style: grid_cell,
-    pub entries: [style_line_entry; 5],
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tty {
-    pub client: *mut client,
-    pub start_timer: event,
-    pub clipboard_timer: event,
-    pub last_requests: time_t,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub xpixel: u_int,
-    pub ypixel: u_int,
-    pub cx: u_int,
-    pub cy: u_int,
-    pub cstyle: screen_cursor_style,
-    pub ccolour: ::core::ffi::c_int,
-    pub oflag: ::core::ffi::c_int,
-    pub oox: u_int,
-    pub ooy: u_int,
-    pub osx: u_int,
-    pub osy: u_int,
-    pub mode: ::core::ffi::c_int,
-    pub fg: ::core::ffi::c_int,
-    pub bg: ::core::ffi::c_int,
-    pub rlower: u_int,
-    pub rupper: u_int,
-    pub rleft: u_int,
-    pub rright: u_int,
-    pub event_in: event,
-    pub in_0: *mut evbuffer,
-    pub event_out: event,
-    pub out: *mut evbuffer,
-    pub timer: event,
-    pub discarded: size_t,
-    pub tio: termios,
-    pub r: visible_ranges,
-    pub cell: grid_cell,
-    pub last_cell: grid_cell,
-    pub flags: ::core::ffi::c_int,
-    pub term: *mut tty_term,
-    pub mouse_last_x: u_int,
-    pub mouse_last_y: u_int,
-    pub mouse_last_b: u_int,
-    pub mouse_drag_flag: ::core::ffi::c_int,
-    pub mouse_drag_x: u_int,
-    pub mouse_drag_y: u_int,
-    pub mouse_scrolling_flag: ::core::ffi::c_int,
-    pub mouse_slider_mpos: ::core::ffi::c_int,
-    pub mouse_last_pane: ::core::ffi::c_int,
-    pub mouse_drag_update: Option<unsafe extern "C" fn(*mut client, *mut mouse_event) -> ()>,
-    pub mouse_drag_release: Option<unsafe extern "C" fn(*mut client, *mut mouse_event) -> ()>,
-    pub key_timer: event,
-    pub key_tree: *mut tty_key,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct tty_term {
-    pub name: *mut ::core::ffi::c_char,
-    pub tty: *mut tty,
-    pub applied_features: ::core::ffi::c_int,
-    pub acs: [[::core::ffi::c_char; 2]; 256],
-    pub codes: *mut tty_code,
-    pub flags: ::core::ffi::c_int,
-    pub entry: C2RustUnnamed_38,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_38 {
-    pub le_next: *mut tty_term,
-    pub le_prev: *mut *mut tty_term,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct format_job_tree {
-    pub rbh_root: *mut format_job,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct format_job {
-    pub client: *mut client,
-    pub tag: u_int,
-    pub cmd: *const ::core::ffi::c_char,
-    pub expanded: *const ::core::ffi::c_char,
-    pub last: time_t,
-    pub out: *mut ::core::ffi::c_char,
-    pub updated: ::core::ffi::c_int,
-    pub job: *mut job,
-    pub status: ::core::ffi::c_int,
-    pub entry: C2RustUnnamed_39,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_39 {
-    pub rbe_left: *mut format_job,
-    pub rbe_right: *mut format_job,
-    pub rbe_parent: *mut format_job,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct environ_entry {
-    pub name: *mut ::core::ffi::c_char,
-    pub value: *mut ::core::ffi::c_char,
-    pub flags: ::core::ffi::c_int,
-    pub entry: C2RustUnnamed_40,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_40 {
-    pub rbe_left: *mut environ_entry,
-    pub rbe_right: *mut environ_entry,
-    pub rbe_parent: *mut environ_entry,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct session_group {
-    pub name: *const ::core::ffi::c_char,
-    pub sessions: C2RustUnnamed_42,
-    pub entry: C2RustUnnamed_41,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_41 {
-    pub rbe_left: *mut session_group,
-    pub rbe_right: *mut session_group,
-    pub rbe_parent: *mut session_group,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_42 {
-    pub tqh_first: *mut session,
-    pub tqh_last: *mut *mut session,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct session_groups {
-    pub rbh_root: *mut session_group,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sessions {
-    pub rbh_root: *mut session,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct clients {
-    pub tqh_first: *mut client,
-    pub tqh_last: *mut *mut client,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct options_table_entry {
-    pub name: *const ::core::ffi::c_char,
-    pub alternative_name: *const ::core::ffi::c_char,
-    pub type_0: options_table_type,
-    pub scope: ::core::ffi::c_int,
-    pub flags: ::core::ffi::c_int,
-    pub minimum: u_int,
-    pub maximum: u_int,
-    pub choices: *mut *const ::core::ffi::c_char,
-    pub default_str: *const ::core::ffi::c_char,
-    pub default_num: ::core::ffi::c_longlong,
-    pub default_arr: *mut *const ::core::ffi::c_char,
-    pub separator: *const ::core::ffi::c_char,
-    pub pattern: *const ::core::ffi::c_char,
-    pub text: *const ::core::ffi::c_char,
-    pub unit: *const ::core::ffi::c_char,
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct format_modifier {
@@ -1336,8 +532,7 @@ pub struct format_table_entry {
     pub cb: format_cb,
 }
 pub type format_table_type = ::core::ffi::c_uint;
-pub const FORMAT_TABLE_TIME: format_table_type = 1;
-pub const FORMAT_TABLE_STRING: format_table_type = 0;
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_43 {
@@ -1356,10 +551,6 @@ pub const MULTIPLY: C2RustUnnamed_44 = 2;
 pub const SUBTRACT: C2RustUnnamed_44 = 1;
 pub const ADD: C2RustUnnamed_44 = 0;
 pub type C2RustUnnamed_44 = ::core::ffi::c_uint;
-pub type job_free_cb = Option<unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()>;
-pub type job_complete_cb = Option<unsafe extern "C" fn(*mut job) -> ()>;
-pub type job_update_cb = Option<unsafe extern "C" fn(*mut job) -> ()>;
-pub const FNM_CASEFOLD: ::core::ffi::c_int = (1 as ::core::ffi::c_int) << 4 as ::core::ffi::c_int;
 
 pub const REG_NOSUB: ::core::ffi::c_int = (1 as ::core::ffi::c_int) << 3 as ::core::ffi::c_int;
 #[inline]
@@ -1391,15 +582,7 @@ unsafe extern "C" fn bsearch(
     return NULL;
 }
 pub const INT64_MAX: ::core::ffi::c_long = 9223372036854775807 as ::core::ffi::c_long;
-pub const ENVIRON_HIDDEN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const FORMAT_STATUS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const FORMAT_FORCE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const FORMAT_NOJOBS: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const FORMAT_VERBOSE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const FORMAT_NONE: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const FORMAT_PANE: ::core::ffi::c_uint = 0x80000000 as ::core::ffi::c_uint;
-pub const FORMAT_WINDOW: ::core::ffi::c_uint = 0x40000000 as ::core::ffi::c_uint;
-pub const JOB_NOWAIT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
+
 static mut format_jobs: format_job_tree = format_job_tree {
     rbh_root: ::core::ptr::null::<format_job>() as *mut format_job,
 };
@@ -1907,50 +1090,7 @@ unsafe extern "C" fn format_job_cmp(
     }
     return strcmp((*fj1).cmd, (*fj2).cmd);
 }
-pub const FORMAT_MAX_WIDTH: ::core::ffi::c_int = 10000 as ::core::ffi::c_int;
-pub const FORMAT_MAX_REPEAT: ::core::ffi::c_int = 10000 as ::core::ffi::c_int;
-pub const FORMAT_MAX_PRECISION: ::core::ffi::c_int = 100 as ::core::ffi::c_int;
-pub const FORMAT_TIMESTRING: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const FORMAT_BASENAME: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const FORMAT_DIRNAME: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const FORMAT_QUOTE_SHELL: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const FORMAT_LITERAL: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const FORMAT_EXPAND: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const FORMAT_EXPANDTIME: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const FORMAT_SESSIONS: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const FORMAT_WINDOWS: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const FORMAT_PANES: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
-pub const FORMAT_PRETTY: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
-pub const FORMAT_LENGTH: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
-pub const FORMAT_WIDTH: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
-pub const FORMAT_QUOTE_STYLE: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-pub const FORMAT_WINDOW_NAME: ::core::ffi::c_int = 0x4000 as ::core::ffi::c_int;
-pub const FORMAT_SESSION_NAME: ::core::ffi::c_int = 0x8000 as ::core::ffi::c_int;
-pub const FORMAT_CHARACTER: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
-pub const FORMAT_COLOUR: ::core::ffi::c_int = 0x20000 as ::core::ffi::c_int;
-pub const FORMAT_CLIENTS: ::core::ffi::c_int = 0x40000 as ::core::ffi::c_int;
-pub const FORMAT_NOT: ::core::ffi::c_int = 0x80000 as ::core::ffi::c_int;
-pub const FORMAT_NOT_NOT: ::core::ffi::c_int = 0x100000 as ::core::ffi::c_int;
-pub const FORMAT_REPEAT: ::core::ffi::c_int = 0x200000 as ::core::ffi::c_int;
-pub const FORMAT_QUOTE_ARGUMENTS: ::core::ffi::c_int = 0x400000 as ::core::ffi::c_int;
-pub const FORMAT_RELATIVE: ::core::ffi::c_int = 0x800000 as ::core::ffi::c_int;
-pub const FORMAT_CLIENT_TERMCAP: ::core::ffi::c_int = 0x1000000 as ::core::ffi::c_int;
-pub const FORMAT_CLIENT_TERMFEAT: ::core::ffi::c_int = 0x2000000 as ::core::ffi::c_int;
-pub const FORMAT_CLIENT_ENVIRON: ::core::ffi::c_int = 0x4000000 as ::core::ffi::c_int;
-pub const FORMAT_COLOUR_ESC_FG: ::core::ffi::c_int = 0x8000000 as ::core::ffi::c_int;
-pub const FORMAT_COLOUR_ESC_BG: ::core::ffi::c_int = 0x10000000 as ::core::ffi::c_int;
-pub const FORMAT_QUOTE_SHELL_SQ: ::core::ffi::c_int = 0x20000000 as ::core::ffi::c_int;
-pub const FORMAT_OPTIONS: ::core::ffi::c_int = 0x40000000 as ::core::ffi::c_int;
-pub const FORMAT_ENVIRON: ::core::ffi::c_ulonglong = 0x80000000 as ::core::ffi::c_ulonglong;
-pub const FORMAT_DIFFERENCE: ::core::ffi::c_ulonglong = 0x100000000 as ::core::ffi::c_ulonglong;
-pub const FORMAT_CYCLE: ::core::ffi::c_ulonglong = 0x200000000 as ::core::ffi::c_ulonglong;
-pub const FORMAT_LOOP_LIMIT: ::core::ffi::c_int = 100 as ::core::ffi::c_int;
-pub const FORMAT_TIME_LIMIT: ::core::ffi::c_int = 100 as ::core::ffi::c_int;
-pub const FORMAT_TIME_LOOP_CHECK: ::core::ffi::c_int = 10000 as ::core::ffi::c_int;
-pub const FORMAT_CYCLE_PERIOD: ::core::ffi::c_int = 100 as ::core::ffi::c_int;
-pub const FORMAT_EXPAND_TIME: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const FORMAT_EXPAND_NOJOBS: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const FORMAT_EXPAND_NOCYCLE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
+
 static mut sort_crit: sort_criteria = sort_criteria {
     order: SORT_ACTIVITY,
     reversed: 0,
@@ -2658,7 +1798,7 @@ unsafe extern "C" fn format_job_get(
         updated: 0,
         job: ::core::ptr::null_mut::<job>(),
         status: 0,
-        entry: C2RustUnnamed_39 {
+        entry: format_job_entry {
             rbe_left: ::core::ptr::null_mut::<format_job>(),
             rbe_right: ::core::ptr::null_mut::<format_job>(),
             rbe_parent: ::core::ptr::null_mut::<format_job>(),
@@ -8568,7 +7708,7 @@ unsafe extern "C" fn format_find(
         value: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         time: 0,
         cb: None,
-        entry: C2RustUnnamed_30 {
+        entry: format_entry_entry {
             rbe_left: ::core::ptr::null_mut::<format_entry>(),
             rbe_right: ::core::ptr::null_mut::<format_entry>(),
             rbe_parent: ::core::ptr::null_mut::<format_entry>(),
@@ -13049,4 +12189,15 @@ pub unsafe extern "C" fn format_grid_hyperlink(
     }
     return xstrdup(uri);
 }
-pub const NULL_0: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
+
+pub const FORMAT_TYPE_PANE: format_type = 3;
+
+pub const FORMAT_TYPE_WINDOW: format_type = 2;
+
+pub const FORMAT_TYPE_SESSION: format_type = 1;
+
+pub const FORMAT_TYPE_UNKNOWN: format_type = 0;
+
+pub const FORMAT_TABLE_TIME: format_table_type = 1;
+
+pub const FORMAT_TABLE_STRING: format_table_type = 0;

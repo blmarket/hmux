@@ -1,5 +1,24 @@
-//! Client exit statuses and exit reasons shared by translated modules.
+//! Authoritative client objects, file transfers, overlays, and scalar domains.
 
+use super::abi::{pid_t, size_t, time_t, timeval, u_int, uint64_t};
+use super::colour::client_theme;
+use super::command::cmdq_list;
+use super::control::control_state;
+use super::display::{progress_bar, visible_ranges};
+use super::environment::environ;
+use super::event::{bufferevent, evbuffer, event};
+use super::format::format_job_tree;
+use super::input::input_requests;
+use super::key::{key_code, key_event, key_table};
+use super::message::msgtype;
+use super::mouse::mouse_event;
+use super::process::tmuxpeer;
+use super::prompt::prompt;
+use super::redraw::redraw_scene;
+use super::screen::screen;
+use super::session::session;
+use super::status::status_line;
+use super::tty::tty;
 pub type client_exit_type = ::core::ffi::c_uint;
 
 pub const CLIENT_EXIT_DETACH: client_exit_type = 2;
@@ -97,4 +116,180 @@ mod tests {
         assert_eq!(CLIENT_EXIT_DETACHED, 1);
         assert_eq!(CLIENT_EXIT_NONE, 0);
     }
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct client {
+    pub name: *const ::core::ffi::c_char,
+    pub peer: *mut tmuxpeer,
+    pub user: *const ::core::ffi::c_char,
+    pub queue: *mut cmdq_list,
+    pub control_state: *mut control_state,
+    pub pause_age: u_int,
+    pub pid: pid_t,
+    pub fd: ::core::ffi::c_int,
+    pub out_fd: ::core::ffi::c_int,
+    pub event: event,
+    pub retval: ::core::ffi::c_int,
+    pub creation_time: timeval,
+    pub activity_time: timeval,
+    pub last_activity_time: timeval,
+    pub environ: *mut environ,
+    pub jobs: *mut format_job_tree,
+    pub title: *mut ::core::ffi::c_char,
+    pub path: *mut ::core::ffi::c_char,
+    pub cwd: *const ::core::ffi::c_char,
+    pub progress_bar: progress_bar,
+    pub term_name: *mut ::core::ffi::c_char,
+    pub term_features: ::core::ffi::c_int,
+    pub term_nofeatures: ::core::ffi::c_int,
+    pub term_type: *mut ::core::ffi::c_char,
+    pub term_caps: *mut *mut ::core::ffi::c_char,
+    pub term_ncaps: u_int,
+    pub ttyname: *mut ::core::ffi::c_char,
+    pub tty: tty,
+    pub written: size_t,
+    pub discarded: size_t,
+    pub redraw: size_t,
+    pub redraw_scene: *mut redraw_scene,
+    pub repeat_timer: event,
+    pub click_timer: event,
+    pub click_loc: ::core::ffi::c_int,
+    pub click_wp: ::core::ffi::c_int,
+    pub exit_timer: event,
+    pub click_button: u_int,
+    pub click_event: mouse_event,
+    pub status: status_line,
+    pub cycle_timer: event,
+    pub theme: client_theme,
+    pub input_requests: input_requests,
+    pub flags: uint64_t,
+    pub exit_type: client_exit_type,
+    pub exit_msgtype: msgtype,
+    pub exit_session: *mut ::core::ffi::c_char,
+    pub exit_message: *mut ::core::ffi::c_char,
+    pub keytable: *mut key_table,
+    pub last_key: key_code,
+    pub paste_time: time_t,
+    pub message_ignore_keys: ::core::ffi::c_int,
+    pub message_ignore_styles: ::core::ffi::c_int,
+    pub message_string: *mut ::core::ffi::c_char,
+    pub message_timer: event,
+    pub prompt: *mut prompt,
+    pub session: *mut session,
+    pub last_session: *mut session,
+    pub references: ::core::ffi::c_int,
+    pub theme_colours: [::core::ffi::c_int; 10],
+    pub pan_window: *mut ::core::ffi::c_void,
+    pub pan_ox: u_int,
+    pub pan_oy: u_int,
+    pub overlay_check: overlay_check_cb,
+    pub overlay_mode: overlay_mode_cb,
+    pub overlay_draw: overlay_draw_cb,
+    pub overlay_key: overlay_key_cb,
+    pub overlay_free: overlay_free_cb,
+    pub overlay_resize: overlay_resize_cb,
+    pub overlay_data: *mut ::core::ffi::c_void,
+    pub overlay_timer: event,
+    pub files: client_files,
+    pub source_file_depth: u_int,
+    pub clipboard_panes: *mut u_int,
+    pub clipboard_npanes: u_int,
+    pub entry: client_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct client_entry {
+    pub tqe_next: *mut client,
+    pub tqe_prev: *mut *mut client,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct client_files {
+    pub rbh_root: *mut client_file,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct client_file {
+    pub c: *mut client,
+    pub peer: *mut tmuxpeer,
+    pub tree: *mut client_files,
+    pub references: ::core::ffi::c_int,
+    pub stream: ::core::ffi::c_int,
+    pub path: *mut ::core::ffi::c_char,
+    pub buffer: *mut evbuffer,
+    pub event: *mut bufferevent,
+    pub fd: ::core::ffi::c_int,
+    pub error: ::core::ffi::c_int,
+    pub closed: ::core::ffi::c_int,
+    pub cb: client_file_cb,
+    pub data: *mut ::core::ffi::c_void,
+    pub entry: client_file_entry,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct client_file_entry {
+    pub rbe_left: *mut client_file,
+    pub rbe_right: *mut client_file,
+    pub rbe_parent: *mut client_file,
+    pub rbe_color: ::core::ffi::c_int,
+}
+
+pub type client_file_cb = Option<
+    unsafe extern "C" fn(
+        *mut client,
+        *const ::core::ffi::c_char,
+        ::core::ffi::c_int,
+        ::core::ffi::c_int,
+        *mut evbuffer,
+        *mut ::core::ffi::c_void,
+    ) -> (),
+>;
+
+pub type overlay_resize_cb =
+    Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
+
+pub type overlay_free_cb =
+    Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
+
+pub type overlay_key_cb = Option<
+    unsafe extern "C" fn(
+        *mut client,
+        *mut ::core::ffi::c_void,
+        *mut key_event,
+    ) -> ::core::ffi::c_int,
+>;
+
+pub type overlay_draw_cb =
+    Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
+
+pub type overlay_mode_cb = Option<
+    unsafe extern "C" fn(
+        *mut client,
+        *mut ::core::ffi::c_void,
+        *mut u_int,
+        *mut u_int,
+    ) -> *mut screen,
+>;
+
+pub type overlay_check_cb = Option<
+    unsafe extern "C" fn(
+        *mut client,
+        *mut ::core::ffi::c_void,
+        u_int,
+        u_int,
+        u_int,
+    ) -> *mut visible_ranges,
+>;
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct clients {
+    pub tqh_first: *mut client,
+    pub tqh_last: *mut *mut client,
 }

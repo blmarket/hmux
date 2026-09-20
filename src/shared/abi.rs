@@ -90,3 +90,5 @@ mod tests {
         assert!(NULL.is_null());
     }
 }
+
+pub const NULL_0: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();

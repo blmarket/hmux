@@ -1,0 +1,55 @@
+src/format.rs::FNM_CASEFOLD 16 4 4
+src/window.rs::FNM_CASEFOLD 16 4 4
+src/cmd_save_buffer.rs::O_APPEND 1024 4 4
+src/file.rs::O_APPEND 1024 4 4
+src/client.rs::O_CREAT 64 4 4
+src/file.rs::O_CREAT 64 4 4
+src/tty.rs::O_CREAT 64 4 4
+src/file.rs::O_NONBLOCK 2048 4 4
+src/tmux.rs::O_NONBLOCK 2048 4 4
+src/cmd_save_buffer.rs::O_TRUNC 512 4 4
+src/tty.rs::O_TRUNC 512 4 4
+src/client.rs::O_WRONLY 1 4 4
+src/cmd_pipe_pane.rs::O_WRONLY 1 4 4
+src/file.rs::O_WRONLY 1 4 4
+src/tty.rs::O_WRONLY 1 4 4
+src/client.rs::STDERR_FILENO 2 4 4
+src/cmd_pipe_pane.rs::STDERR_FILENO 2 4 4
+src/file.rs::STDERR_FILENO 2 4 4
+src/job.rs::STDERR_FILENO 2 4 4
+src/server_client.rs::STDERR_FILENO 2 4 4
+src/spawn.rs::STDERR_FILENO 2 4 4
+src/client.rs::STDIN_FILENO 0 4 4
+src/cmd_pipe_pane.rs::STDIN_FILENO 0 4 4
+src/file.rs::STDIN_FILENO 0 4 4
+src/job.rs::STDIN_FILENO 0 4 4
+src/server_client.rs::STDIN_FILENO 0 4 4
+src/spawn.rs::STDIN_FILENO 0 4 4
+src/client.rs::STDOUT_FILENO 1 4 4
+src/cmd_pipe_pane.rs::STDOUT_FILENO 1 4 4
+src/file.rs::STDOUT_FILENO 1 4 4
+src/job.rs::STDOUT_FILENO 1 4 4
+src/server_client.rs::STDOUT_FILENO 1 4 4
+src/server.rs::S_IRWXU 448 4 4
+src/tmux.rs::S_IRWXU 448 4 4
+src/client.rs::WAIT_ANY -1 4 4
+src/server.rs::WAIT_ANY -1 4 4
+src/client.rs::WNOHANG 1 4 4
+src/server.rs::WNOHANG 1 4 4
+src/server_client.rs::X_OK 1 4 4
+src/tmux.rs::X_OK 1 4 4
+src/cmd_display_menu.rs::_PATH_BSHELL [47, 98, 105, 110, 47, 115, 104, 0] 8 1
+src/cmd_pipe_pane.rs::_PATH_BSHELL [47, 98, 105, 110, 47, 115, 104, 0] 8 1
+src/job.rs::_PATH_BSHELL [47, 98, 105, 110, 47, 115, 104, 0] 8 1
+src/options_table.rs::_PATH_BSHELL [47, 98, 105, 110, 47, 115, 104, 0] 8 1
+src/server_client.rs::_PATH_BSHELL [47, 98, 105, 110, 47, 115, 104, 0] 8 1
+src/spawn.rs::_PATH_BSHELL [47, 98, 105, 110, 47, 115, 104, 0] 8 1
+src/tmux.rs::_PATH_BSHELL [47, 98, 105, 110, 47, 115, 104, 0] 8 1
+src/cmd_pipe_pane.rs::_PATH_DEVNULL [47, 100, 101, 118, 47, 110, 117, 108, 108, 0] 10 1
+src/job.rs::_PATH_DEVNULL [47, 100, 101, 118, 47, 110, 117, 108, 108, 0] 10 1
+src/server.rs::__S_IEXEC 64 4 4
+src/tmux.rs::__S_IEXEC 64 4 4
+src/server.rs::__S_IREAD 256 4 4
+src/tmux.rs::__S_IREAD 256 4 4
+src/server.rs::__S_IWRITE 128 4 4
+src/tmux.rs::__S_IWRITE 128 4 4

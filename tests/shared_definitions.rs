@@ -120,7 +120,7 @@ fn declarations(source: &str) -> Vec<String> {
             let kind = pair[0].as_str();
             let name = &pair[1];
             (matches!(kind, "struct" | "union" | "enum" | "type" | "const")
-                && !(kind == "const" && i > 0 && tokens[i - 1] == "*")
+                && !(kind == "const" && i > 0 && matches!(tokens[i - 1].as_str(), "*" | "raw"))
                 && name != "fn"
                 && name != "_"
                 && name
@@ -186,9 +186,54 @@ fn guard_recognizes_visibility_wrapping_and_opaque_copies() {
         type Alias = Example;
         extern "C" { pub type Opaque; }
         pub const VALUE: u32 = 1;
+        let p = &raw const VALUE;
         const fn helper() {}
     "##
         ),
         ["TEXT", "Example", "Alias", "Opaque", "VALUE"]
     );
+}
+
+#[test]
+fn no_unreviewed_named_duplicates_remain() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = vec![root.join("lib.rs"), root.join("build.rs")];
+    source_files(&root.join("src"), &mut files);
+    let mut locations: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
+    for path in files {
+        for name in declarations(&fs::read_to_string(&path).unwrap()) {
+            // Generated anonymous names have translation-unit-local identity.
+            // Their shared owning roles are checked by the authoritative guard.
+            if !name.starts_with("C2RustUnnamed") {
+                locations
+                    .entry(name)
+                    .or_default()
+                    .push(path.strip_prefix(root).unwrap().to_owned());
+            }
+        }
+    }
+    for (name, mut paths) in locations {
+        if paths.len() < 2 {
+            continue;
+        }
+        // These are separate implementation enums, with distinct domains.
+        // See the declaration-specific exceptions in docs/shared-declarations.md.
+        assert!(
+            matches!(name.as_str(), "NONE" | "LEFT" | "RIGHT" | "TOP" | "BOTTOM"),
+            "unreviewed duplicated declaration {name}: {paths:?}"
+        );
+        paths.sort();
+        let peer = match name.as_str() {
+            "NONE" => "src/cmd_parse.rs",
+            "LEFT" | "RIGHT" => "src/format_draw.rs",
+            "TOP" | "BOTTOM" => "src/window_copy.rs",
+            _ => unreachable!(),
+        };
+        let mut expected = vec![PathBuf::from("src/popup.rs"), PathBuf::from(peer)];
+        expected.sort();
+        assert_eq!(
+            paths, expected,
+            "private exception {name} must not spread to another module"
+        );
+    }
 }

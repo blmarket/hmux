@@ -1,3 +1,9 @@
+pub use crate::src::shared::options::{options_name_map};
+pub use crate::src::shared::options::{options_table_entry};
+pub use crate::src::shared::key::{MODEKEY_EMACS};
+pub use crate::src::shared::posix_io::{_PATH_BSHELL};
+pub use crate::src::shared::input::{INPUT_BUF_DEFAULT_SIZE};
+pub use crate::src::shared::alerts::{ALERT_ANY, ALERT_OTHER, VISUAL_OFF};
 pub use crate::src::shared::limits::{
     __INT_MAX__, __SHRT_MAX__, INT_MAX, SHRT_MAX, UINT_MAX, USHRT_MAX,
 };
@@ -16,41 +22,10 @@ use crate::src::shared::layout::*;
 use crate::src::shared::options::*;
 use crate::src::shared::abi::*;
 pub type C2RustUnnamed = ::core::ffi::c_ulong;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct options_table_entry {
-    pub name: *const ::core::ffi::c_char,
-    pub alternative_name: *const ::core::ffi::c_char,
-    pub type_0: options_table_type,
-    pub scope: ::core::ffi::c_int,
-    pub flags: ::core::ffi::c_int,
-    pub minimum: u_int,
-    pub maximum: u_int,
-    pub choices: *mut *const ::core::ffi::c_char,
-    pub default_str: *const ::core::ffi::c_char,
-    pub default_num: ::core::ffi::c_longlong,
-    pub default_arr: *mut *const ::core::ffi::c_char,
-    pub separator: *const ::core::ffi::c_char,
-    pub pattern: *const ::core::ffi::c_char,
-    pub text: *const ::core::ffi::c_char,
-    pub unit: *const ::core::ffi::c_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct options_name_map {
-    pub from: *const ::core::ffi::c_char,
-    pub to: *const ::core::ffi::c_char,
-}
 
-pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
-    unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
 pub const _PATH_VI: [::core::ffi::c_char; 12] =
     unsafe { ::core::mem::transmute::<[u8; 12], [::core::ffi::c_char; 12]>(*b"/usr/bin/vi\0") };
-pub const ALERT_ANY: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const ALERT_OTHER: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
-pub const VISUAL_OFF: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const MODEKEY_EMACS: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const INPUT_BUF_DEFAULT_SIZE: ::core::ffi::c_int = 1048576 as ::core::ffi::c_int;
+
 static mut options_table_mode_keys_list: [*const ::core::ffi::c_char; 3] = [
     b"emacs\0" as *const u8 as *const ::core::ffi::c_char,
     b"vi\0" as *const u8 as *const ::core::ffi::c_char,

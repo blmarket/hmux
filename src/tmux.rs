@@ -7,6 +7,14 @@
     unused_mut
 )]
 #![feature(extern_types, raw_ref_op)]
+pub use crate::src::shared::posix_io::{stat};
+pub use crate::src::shared::options::{options, options_entry, options_table_entry};
+pub use crate::src::shared::environment::{environ, environ_entry, environ_entry_entry};
+pub use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
+pub use crate::src::shared::posix_io::{
+    O_NONBLOCK, S_IRWXU, X_OK, _PATH_BSHELL, __S_IEXEC, __S_IREAD, __S_IWRITE,
+};
+pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 pub use crate::src::shared::account::passwd;
 pub use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 pub use crate::src::shared::stdio::{
@@ -27,9 +35,7 @@ use crate::src::shared::options::*;
 use crate::src::shared::event::*;
 use crate::src::shared::abi::*;
 extern "C" {
-    pub type environ;
-    pub type options;
-    pub type options_entry;
+
     fn lstat(__file: *const ::core::ffi::c_char, __buf: *mut stat) -> ::core::ffi::c_int;
     fn mkdir(__path: *const ::core::ffi::c_char, __mode: __mode_t) -> ::core::ffi::c_int;
     fn __errno_location() -> *mut ::core::ffi::c_int;
@@ -176,25 +182,6 @@ extern "C" {
     fn log_debug(_: *const ::core::ffi::c_char, ...);
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct stat {
-    pub st_dev: __dev_t,
-    pub st_ino: __ino_t,
-    pub st_nlink: __nlink_t,
-    pub st_mode: __mode_t,
-    pub st_uid: __uid_t,
-    pub st_gid: __gid_t,
-    pub __pad0: ::core::ffi::c_int,
-    pub st_rdev: __dev_t,
-    pub st_size: __off_t,
-    pub st_blksize: __blksize_t,
-    pub st_blocks: __blkcnt_t,
-    pub st_atim: timespec,
-    pub st_mtim: timespec,
-    pub st_ctim: timespec,
-    pub __glibc_reserved: [__syscall_slong_t; 3],
-}
 pub type nl_item = ::core::ffi::c_int;
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const _NL_NUM: C2RustUnnamed = 786449;
@@ -581,66 +568,22 @@ pub const ABDAY_3: C2RustUnnamed = 131074;
 pub const ABDAY_2: C2RustUnnamed = 131073;
 pub const ABDAY_1: C2RustUnnamed = 131072;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct environ_entry {
-    pub name: *mut ::core::ffi::c_char,
-    pub value: *mut ::core::ffi::c_char,
-    pub flags: ::core::ffi::c_int,
-    pub entry: C2RustUnnamed_0,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_0 {
-    pub rbe_left: *mut environ_entry,
-    pub rbe_right: *mut environ_entry,
-    pub rbe_parent: *mut environ_entry,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct options_table_entry {
-    pub name: *const ::core::ffi::c_char,
-    pub alternative_name: *const ::core::ffi::c_char,
-    pub type_0: options_table_type,
-    pub scope: ::core::ffi::c_int,
-    pub flags: ::core::ffi::c_int,
-    pub minimum: u_int,
-    pub maximum: u_int,
-    pub choices: *mut *const ::core::ffi::c_char,
-    pub default_str: *const ::core::ffi::c_char,
-    pub default_num: ::core::ffi::c_longlong,
-    pub default_arr: *mut *const ::core::ffi::c_char,
-    pub separator: *const ::core::ffi::c_char,
-    pub pattern: *const ::core::ffi::c_char,
-    pub text: *const ::core::ffi::c_char,
-    pub unit: *const ::core::ffi::c_char,
-}
 pub const __S_IFMT: ::core::ffi::c_int = 0o170000 as ::core::ffi::c_int;
-pub const __S_IREAD: ::core::ffi::c_int = 0o400 as ::core::ffi::c_int;
-pub const __S_IWRITE: ::core::ffi::c_int = 0o200 as ::core::ffi::c_int;
-pub const __S_IEXEC: ::core::ffi::c_int = 0o100 as ::core::ffi::c_int;
+
 pub const EEXIST: ::core::ffi::c_int = 17 as ::core::ffi::c_int;
 pub const __LC_CTYPE: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const __LC_TIME: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
-pub const O_NONBLOCK: ::core::ffi::c_int = 0o4000 as ::core::ffi::c_int;
+
 pub const F_GETFL: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const F_SETFL: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
-pub const S_IRWXU: ::core::ffi::c_int = __S_IREAD | __S_IWRITE | __S_IEXEC;
+
 pub const LC_CTYPE: ::core::ffi::c_int = __LC_CTYPE;
 pub const LC_TIME: ::core::ffi::c_int = __LC_TIME;
-pub const X_OK: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
 pub const CLOCK_MONOTONIC: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
-    unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"/bin/sh\0") };
-pub const VIS_OCTAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const VIS_CSTYLE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const VIS_TAB: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const VIS_NL: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
+
 pub const TMUX_SOCK_PERM: ::core::ffi::c_int = 7 as ::core::ffi::c_int;
-pub const MODEKEY_EMACS: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const MODEKEY_VI: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+
 #[no_mangle]
 pub static mut global_options: *mut options = ::core::ptr::null::<options>() as *mut options;
 #[no_mangle]

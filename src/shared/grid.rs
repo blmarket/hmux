@@ -197,3 +197,6 @@ mod tests {
         assert_eq!(offset_of!(grid_cell_entry, flags), 4);
     }
 }
+
+pub const WHITESPACE: [::core::ffi::c_char; 3] =
+    unsafe { ::core::mem::transmute::<[u8; 3], [::core::ffi::c_char; 3]>(*b"\t \0") };
