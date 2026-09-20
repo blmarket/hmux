@@ -2,4 +2,6 @@
 
 c2rust translation of tmux
 
-See [module responsibilities and migration validation](docs/module-organization.md).
+See [the current architecture contract](docs/architecture.md). Historical
+module-migration details remain in [module responsibilities and migration
+validation](docs/module-organization.md).
