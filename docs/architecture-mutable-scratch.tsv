@@ -12,10 +12,10 @@ src/cmd/queue.rs	number	1
 src/cmd/queue.rs	s	1
 src/compat/getopt_long.rs	posixly_correct	1
 src/control_notify.rs	events	1
-src/format.rs	cached	1
+src/format/callbacks.rs	cached	1
 src/format.rs	spaces	1
-src/format.rs	table	1
-src/format.rs	tv	5
+src/format/callbacks.rs	table	1
+src/format/callbacks.rs	tv	5
 src/fuzzy.rs	boundary	1
 src/grid/core.rs	attrs	1
 src/grid/core.rs	lastgc1	1
