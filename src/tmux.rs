@@ -7,10 +7,6 @@
     unused_mut
 )]
 #![feature(extern_types, raw_ref_op)]
-#[macro_use]
-extern crate c2rust_bitfields;
-#[allow(unused_imports)]
-use ::hmux2;
 extern "C" {
     pub type _IO_wide_data;
     pub type _IO_codecvt;

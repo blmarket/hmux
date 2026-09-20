@@ -160,6 +160,7 @@ pub mod src {
     pub mod tty_features;
     pub mod tty_keys;
     pub mod tty_term;
+    pub mod tmux;
     pub mod utf8;
     pub mod utf8_combined;
     pub mod window;

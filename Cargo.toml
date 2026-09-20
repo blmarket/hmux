@@ -14,9 +14,8 @@ name = "hmux2"
 path = "lib.rs"
 crate-type = ["staticlib", "rlib"]
 [[bin]]
-path = "src/tmux.rs"
+path = "src/main.rs"
 name = "hmux2"
 [dependencies]
 c2rust-bitfields = "0.22.1"
 libc = "0.2"
-
