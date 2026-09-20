@@ -1,9 +1,9 @@
 use crate::src::events::events_fire_window;
-use crate::src::ffi::libc::{__ctype_b_loc, free, memcpy, memmove, qsort, sscanf, strcmp};
+use crate::src::ffi::libc::{free, memcpy, memmove, qsort, sscanf, strcmp};
 use crate::src::json::{
     json_array_first, json_array_next, json_destroy_node, json_find, json_find_array,
     json_find_boolean, json_find_number, json_find_object, json_find_string, json_get_object,
-    json_parse,
+    json_get_string, json_parse,
 };
 use crate::src::layout::{
     layout_cell_has_tiled_child, layout_cell_is_tiled, layout_count_cells, layout_create_cell,
@@ -81,6 +81,8 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 
+use ::std::ffi::CStr;
+
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 
@@ -110,6 +112,105 @@ pub struct layout_parse_cell_ctx {
     pub last: ::core::ffi::c_int,
     pub index: ::core::ffi::c_int,
     pub zindex: ::core::ffi::c_int,
+}
+
+/// Geometry retained by a parsed custom layout before it is attached to a
+/// window.  The parser deliberately does not store pointers to panes or
+/// layout cells: those belong to the application phase below.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LayoutDescriptionGeometry {
+    pub sx: u32,
+    pub sy: u32,
+    pub xoff: i32,
+    pub yoff: i32,
+}
+
+/// Pane metadata carried by a custom-layout leaf.
+///
+/// `index` is the v2 pane ordering key.  `id` is the optional legacy pane
+/// number.  `identifier` retains the v2 `I` value even though the live tree
+/// uses the window's pane objects when it is applied.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LayoutDescriptionPane {
+    pub index: Option<i32>,
+    pub id: Option<u32>,
+    pub identifier: Option<Vec<u8>>,
+    pub active: bool,
+    pub last: Option<i32>,
+    pub zindex: Option<i32>,
+}
+
+/// A detached custom-layout node.  This is the intermediate representation
+/// shared by the legacy and JSON parsers; it has no live-window ownership.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LayoutDescriptionNode {
+    pub type_0: layout_type,
+    pub flags: i32,
+    pub geometry: LayoutDescriptionGeometry,
+    pub pane: Option<LayoutDescriptionPane>,
+    pub children: Vec<LayoutDescriptionNode>,
+}
+
+/// A fully parsed custom layout, ready for validation and application.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LayoutDescription {
+    pub version: i64,
+    pub root: LayoutDescriptionNode,
+}
+
+/// Error returned by the byte-oriented parser API.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LayoutParseError {
+    message: Vec<u8>,
+}
+
+impl LayoutParseError {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.message
+    }
+}
+
+impl ::std::fmt::Display for LayoutParseError {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        write!(f, "{}", String::from_utf8_lossy(&self.message))
+    }
+}
+
+impl ::std::error::Error for LayoutParseError {}
+
+impl LayoutDescriptionNode {
+    fn leaf(geometry: LayoutDescriptionGeometry, pane: LayoutDescriptionPane) -> Self {
+        Self {
+            type_0: LAYOUT_WINDOWPANE,
+            flags: 0,
+            geometry,
+            pane: Some(pane),
+            children: Vec::new(),
+        }
+    }
+
+    fn node(
+        type_0: layout_type,
+        geometry: LayoutDescriptionGeometry,
+        children: Vec<Self>,
+    ) -> Self {
+        Self {
+            type_0,
+            flags: 0,
+            geometry,
+            pane: None,
+            children,
+        }
+    }
+
+    fn visit_panes<'a>(&'a self, panes: &mut Vec<&'a LayoutDescriptionPane>) {
+        if let Some(pane) = self.pane.as_ref() {
+            panes.push(pane);
+        }
+        for child in &self.children {
+            child.visit_panes(panes);
+        }
+    }
 }
 
 unsafe extern "C" fn layout_parse_index_cmp(
@@ -293,6 +394,765 @@ unsafe extern "C" fn layout_checksum(mut layout: *const ::core::ffi::c_char) -> 
         layout = layout.offset(1);
     }
     return csum;
+}
+
+unsafe fn layout_description_construct_cell(
+    layout: &mut *const ::core::ffi::c_char,
+) -> Option<(LayoutDescriptionGeometry, Option<u32>)> {
+    let mut sx: u_int = 0;
+    let mut sy: u_int = 0;
+    let mut xoff: ::core::ffi::c_int = 0;
+    let mut yoff: ::core::ffi::c_int = 0;
+    let mut cursor = *layout;
+
+    if !(*cursor as u8).is_ascii_digit()
+        || sscanf(
+            cursor,
+            b"%ux%u,%d,%d\0" as *const u8 as *const ::core::ffi::c_char,
+            &raw mut sx,
+            &raw mut sy,
+            &raw mut xoff,
+            &raw mut yoff,
+        ) != 4
+    {
+        return None;
+    }
+    while (*cursor as u8).is_ascii_digit() {
+        cursor = cursor.offset(1);
+    }
+    if *cursor as u8 != b'x' {
+        return None;
+    }
+    cursor = cursor.offset(1);
+    while (*cursor as u8).is_ascii_digit() {
+        cursor = cursor.offset(1);
+    }
+    if *cursor as u8 != b',' {
+        return None;
+    }
+    cursor = cursor.offset(1);
+    while (*cursor as u8).is_ascii_digit() {
+        cursor = cursor.offset(1);
+    }
+    if *cursor as u8 != b',' {
+        return None;
+    }
+    cursor = cursor.offset(1);
+    while (*cursor as u8).is_ascii_digit() {
+        cursor = cursor.offset(1);
+    }
+
+    let mut pane_id = None;
+    if *cursor as u8 == b',' {
+        let saved = cursor;
+        cursor = cursor.offset(1);
+        let id_start = cursor;
+        let mut id = 0u32;
+        while (*cursor as u8).is_ascii_digit() {
+            id = id
+                .wrapping_mul(10)
+                .wrapping_add(u32::from(*cursor as u8 - b'0'));
+            cursor = cursor.offset(1);
+        }
+        if *cursor as u8 == b'x' {
+            cursor = saved;
+        } else if cursor != id_start {
+            pane_id = Some(id);
+        }
+    }
+
+    *layout = cursor;
+    Some((
+        LayoutDescriptionGeometry {
+            sx,
+            sy,
+            xoff,
+            yoff,
+        },
+        pane_id,
+    ))
+}
+
+unsafe fn layout_description_construct_v1(
+    layout: &mut *const ::core::ffi::c_char,
+    depth: u_int,
+) -> Option<LayoutDescriptionNode> {
+    if depth > LAYOUT_V1_MAX_DEPTH as u_int {
+        return None;
+    }
+    let (geometry, pane_id) = layout_description_construct_cell(layout)?;
+    let next = **layout as u8;
+    if matches!(next, b',' | b'}' | b']' | 0) {
+        return Some(LayoutDescriptionNode::leaf(
+            geometry,
+            LayoutDescriptionPane {
+                index: None,
+                id: pane_id,
+                identifier: None,
+                active: false,
+                last: None,
+                zindex: None,
+            },
+        ));
+    }
+
+    let (type_0, close) = match next {
+        b'{' => (LAYOUT_LEFTRIGHT, b'}'),
+        b'[' => (LAYOUT_TOPBOTTOM, b']'),
+        _ => return None,
+    };
+    let mut children = Vec::new();
+    loop {
+        *layout = (*layout).offset(1);
+        children.push(layout_description_construct_v1(layout, depth + 1)?);
+        if **layout as u8 != b',' {
+            break;
+        }
+    }
+    if **layout as u8 != close {
+        return None;
+    }
+    *layout = (*layout).offset(1);
+    Some(LayoutDescriptionNode::node(type_0, geometry, children))
+}
+
+unsafe fn layout_description_json_number(
+    node: *mut json_node,
+    key: *const ::core::ffi::c_char,
+    cause: *mut *mut ::core::ffi::c_char,
+    minimum: int64_t,
+    maximum: int64_t,
+    label: *const ::core::ffi::c_char,
+) -> Option<int64_t> {
+    let mut number = 0;
+    if json_find_number(node, key, &raw mut number, cause) != 0 {
+        return None;
+    }
+    if number < minimum || number > maximum {
+        xasprintf(
+            cause,
+            b"invalid %s %lld\0" as *const u8 as *const ::core::ffi::c_char,
+            label,
+            number as ::core::ffi::c_longlong,
+        );
+        return None;
+    }
+    Some(number)
+}
+
+unsafe fn layout_description_parse_json_cell(
+    node: *mut json_node,
+    cause: *mut *mut ::core::ffi::c_char,
+    active_count: &mut ::core::ffi::c_int,
+) -> Option<LayoutDescriptionNode> {
+    let mut string = ::core::ptr::null::<::core::ffi::c_char>();
+    if json_find_string(
+        node,
+        b"t\0" as *const u8 as *const ::core::ffi::c_char,
+        &raw mut string,
+        cause,
+    ) != 0
+    {
+        return None;
+    }
+    let type_0 = if strcmp(string, b"p\0" as *const u8 as *const ::core::ffi::c_char) == 0 {
+        LAYOUT_WINDOWPANE
+    } else if strcmp(string, b"v\0" as *const u8 as *const ::core::ffi::c_char) == 0 {
+        LAYOUT_TOPBOTTOM
+    } else if strcmp(string, b"h\0" as *const u8 as *const ::core::ffi::c_char) == 0 {
+        LAYOUT_LEFTRIGHT
+    } else {
+        xasprintf(
+            cause,
+            b"unknown cell type \"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
+            string,
+        );
+        return None;
+    };
+
+    let sx = layout_description_json_number(
+        node,
+        b"w\0" as *const u8 as *const ::core::ffi::c_char,
+        cause,
+        PANE_MINIMUM as int64_t,
+        PANE_MAXIMUM as int64_t,
+        b"width\0" as *const u8 as *const ::core::ffi::c_char,
+    )?;
+    let sy = layout_description_json_number(
+        node,
+        b"h\0" as *const u8 as *const ::core::ffi::c_char,
+        cause,
+        PANE_MINIMUM as int64_t,
+        PANE_MAXIMUM as int64_t,
+        b"height\0" as *const u8 as *const ::core::ffi::c_char,
+    )?;
+    let xoff = layout_description_json_number(
+        node,
+        b"x\0" as *const u8 as *const ::core::ffi::c_char,
+        cause,
+        -WINDOW_MAXIMUM as int64_t,
+        WINDOW_MAXIMUM as int64_t,
+        b"x-offset\0" as *const u8 as *const ::core::ffi::c_char,
+    )?;
+    let yoff = layout_description_json_number(
+        node,
+        b"y\0" as *const u8 as *const ::core::ffi::c_char,
+        cause,
+        -WINDOW_MAXIMUM as int64_t,
+        WINDOW_MAXIMUM as int64_t,
+        b"y-offset\0" as *const u8 as *const ::core::ffi::c_char,
+    )?;
+    let geometry = LayoutDescriptionGeometry {
+        sx: sx as u32,
+        sy: sy as u32,
+        xoff: xoff as i32,
+        yoff: yoff as i32,
+    };
+
+    if type_0 == LAYOUT_WINDOWPANE {
+        if !json_find(
+            node,
+            b"c\0" as *const u8 as *const ::core::ffi::c_char,
+        )
+        .is_null()
+        {
+            *cause = xstrdup(
+                b"panes cannot have children\0" as *const u8 as *const ::core::ffi::c_char,
+            );
+            return None;
+        }
+        let index = layout_description_json_number(
+            node,
+            b"i\0" as *const u8 as *const ::core::ffi::c_char,
+            cause,
+            0,
+            INT_MAX as int64_t,
+            b"index\0" as *const u8 as *const ::core::ffi::c_char,
+        )? as i32;
+        let active_field =
+            !json_find(node, b"a\0" as *const u8 as *const ::core::ffi::c_char).is_null();
+        let mut active = false;
+        if active_field {
+            let mut boolean = 0;
+            if json_find_boolean(
+                node,
+                b"a\0" as *const u8 as *const ::core::ffi::c_char,
+                &raw mut boolean,
+                cause,
+            ) != 0
+            {
+                return None;
+            }
+            active = boolean != 0;
+            if active {
+                *active_count += 1;
+            }
+        }
+        let last = if !active_field
+            && !json_find(
+                node,
+                b"l\0" as *const u8 as *const ::core::ffi::c_char,
+            )
+            .is_null()
+        {
+            Some(
+                layout_description_json_number(
+                    node,
+                    b"l\0" as *const u8 as *const ::core::ffi::c_char,
+                    cause,
+                    0,
+                    INT_MAX as int64_t,
+                    b"last\0" as *const u8 as *const ::core::ffi::c_char,
+                )? as i32,
+            )
+        } else {
+            None
+        };
+        let mut flags = 0;
+        let zindex = if !json_find(
+            node,
+            b"z\0" as *const u8 as *const ::core::ffi::c_char,
+        )
+        .is_null()
+        {
+            let zindex = layout_description_json_number(
+                node,
+                b"z\0" as *const u8 as *const ::core::ffi::c_char,
+                cause,
+                0,
+                (INT_MAX - 1) as int64_t,
+                b"floating zindex\0" as *const u8 as *const ::core::ffi::c_char,
+            )? as i32;
+            flags |= LAYOUT_CELL_FLOATING;
+            Some(zindex)
+        } else {
+            None
+        };
+        let identifier = {
+            let field = json_find(
+                node,
+                b"I\0" as *const u8 as *const ::core::ffi::c_char,
+            );
+            if field.is_null() {
+                None
+            } else {
+                let mut value = ::core::ptr::null::<::core::ffi::c_char>();
+                if json_get_string(field, &raw mut value) == 0 {
+                    Some(CStr::from_ptr(value).to_bytes().to_vec())
+                } else {
+                    None
+                }
+            }
+        };
+        let mut result = LayoutDescriptionNode::leaf(
+            geometry,
+            LayoutDescriptionPane {
+                index: Some(index),
+                id: None,
+                identifier,
+                active,
+                last,
+                zindex,
+            },
+        );
+        result.flags = flags;
+        Some(result)
+    } else {
+        let mut array = ::core::ptr::null_mut::<json_node>();
+        if json_find_array(
+            node,
+            b"c\0" as *const u8 as *const ::core::ffi::c_char,
+            &raw mut array,
+            cause,
+        ) != 0
+        {
+            return None;
+        }
+        let first = json_array_first(array);
+        if first.is_null() || json_array_next(first).is_null() {
+            *cause = xstrdup(
+                b"nodes must have more than one child\0" as *const u8
+                    as *const ::core::ffi::c_char,
+            );
+            return None;
+        }
+        let mut children = Vec::new();
+        let mut member = first;
+        while !member.is_null() {
+            children.push(layout_description_parse_json_cell(member, cause, active_count)?);
+            member = json_array_next(member);
+        }
+        Some(LayoutDescriptionNode::node(type_0, geometry, children))
+    }
+}
+
+unsafe fn layout_description_validate(
+    description: &LayoutDescription,
+    cause: *mut *mut ::core::ffi::c_char,
+) -> bool {
+    if description.version != 2 {
+        return true;
+    }
+    let mut panes = Vec::new();
+    description.root.visit_panes(&mut panes);
+    if panes.is_empty() {
+        *cause = xstrdup(b"no panes\0" as *const u8 as *const ::core::ffi::c_char);
+        return false;
+    }
+    if panes.iter().filter(|pane| pane.active).count() > 1 {
+        *cause = xstrdup(
+            b"more than one active pane\0" as *const u8 as *const ::core::ffi::c_char,
+        );
+        return false;
+    }
+    let mut indexes = panes
+        .iter()
+        .filter_map(|pane| pane.index)
+        .collect::<Vec<_>>();
+    indexes.sort_unstable();
+    if indexes.windows(2).any(|pair| pair[0] == pair[1]) {
+        *cause = xstrdup(
+            b"duplicate pane index\0" as *const u8 as *const ::core::ffi::c_char,
+        );
+        return false;
+    }
+    let mut zindexes = panes
+        .iter()
+        .filter_map(|pane| pane.zindex)
+        .collect::<Vec<_>>();
+    zindexes.sort_unstable();
+    if zindexes.windows(2).any(|pair| pair[0] == pair[1]) {
+        *cause = xstrdup(
+            b"duplicate pane z-index\0" as *const u8 as *const ::core::ffi::c_char,
+        );
+        return false;
+    }
+    let mut lasts = panes
+        .iter()
+        .filter_map(|pane| pane.last)
+        .collect::<Vec<_>>();
+    lasts.sort_unstable();
+    if lasts.windows(2).any(|pair| pair[0] == pair[1]) {
+        *cause = xstrdup(
+            b"duplicate last pane index\0" as *const u8 as *const ::core::ffi::c_char,
+        );
+        return false;
+    }
+    true
+}
+
+unsafe fn layout_parse_description_c(
+    mut input: *const ::core::ffi::c_char,
+    cause: *mut *mut ::core::ffi::c_char,
+) -> Option<LayoutDescription> {
+    while (*input as u8).is_ascii_whitespace() {
+        input = input.offset(1);
+    }
+    if *input as u8 != b'{' {
+        let mut checksum = 0u16;
+        let mut header_len = 0;
+        if sscanf(
+            input,
+            b"%hx,%n\0" as *const u8 as *const ::core::ffi::c_char,
+            &raw mut checksum,
+            &raw mut header_len,
+        ) != 1
+            || header_len != 5
+        {
+            *cause = xstrdup(
+                b"malformed layout header\0" as *const u8 as *const ::core::ffi::c_char,
+            );
+            return None;
+        }
+        let body = input.offset(header_len as isize);
+        if checksum != layout_checksum(body) {
+            *cause = xstrdup(
+                b"invalid layout checksum\0" as *const u8 as *const ::core::ffi::c_char,
+            );
+            return None;
+        }
+        let mut cursor = body;
+        let root = match layout_description_construct_v1(&mut cursor, 0) {
+            Some(root) => root,
+            None => {
+                *cause = xstrdup(
+                    b"invalid layout\0" as *const u8 as *const ::core::ffi::c_char,
+                );
+                return None;
+            }
+        };
+        if *cursor as u8 != 0 {
+            *cause = xstrdup(
+                b"trailing data\0" as *const u8 as *const ::core::ffi::c_char,
+            );
+            return None;
+        }
+        let description = LayoutDescription { version: 1, root };
+        if !layout_description_validate(&description, cause) {
+            return None;
+        }
+        return Some(description);
+    }
+
+    let json = json_parse(input, cause);
+    if json.is_null() {
+        return None;
+    }
+    let mut object = ::core::ptr::null_mut::<json_node>();
+    let mut version = 0;
+    let mut layout = ::core::ptr::null_mut::<json_node>();
+    let mut active_count = 0;
+    let result = if json_get_object(json, &raw mut object) != 0 {
+        *cause = xstrdup(b"invalid layout json\0" as *const u8 as *const ::core::ffi::c_char);
+        None
+    } else if json_find_number(
+        object,
+        b"V\0" as *const u8 as *const ::core::ffi::c_char,
+        &raw mut version,
+        cause,
+    ) != 0
+        || json_find_object(
+            object,
+            b"L\0" as *const u8 as *const ::core::ffi::c_char,
+            &raw mut layout,
+            cause,
+        ) != 0
+    {
+        None
+    } else {
+        let root = layout_description_parse_json_cell(layout, cause, &mut active_count);
+        root.map(|root| LayoutDescription { version, root })
+    };
+    json_destroy_node(json);
+    let description = result?;
+    if description.version != 2 {
+        *cause = xstrdup(b"version mismatch\0" as *const u8 as *const ::core::ffi::c_char);
+        return None;
+    }
+    if active_count > 1 {
+        *cause = xstrdup(
+            b"more than one active pane\0" as *const u8 as *const ::core::ffi::c_char,
+        );
+        return None;
+    }
+    if !layout_description_validate(&description, cause) {
+        return None;
+    }
+    Some(description)
+}
+
+/// Parse a custom layout without creating or changing any live layout cells.
+pub fn parse_layout_description(input: &[u8]) -> Result<LayoutDescription, LayoutParseError> {
+    if input.contains(&0) {
+        return Err(LayoutParseError {
+            message: b"embedded NUL".to_vec(),
+        });
+    }
+    let mut owned = input.to_vec();
+    owned.push(0);
+    let mut cause = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let result = unsafe {
+        layout_parse_description_c(owned.as_ptr() as *const ::core::ffi::c_char, &raw mut cause)
+    };
+    let error = if result.is_none() {
+        let message = if cause.is_null() {
+            b"invalid layout".to_vec()
+        } else {
+            unsafe { CStr::from_ptr(cause).to_bytes().to_vec() }
+        };
+        Some(LayoutParseError { message })
+    } else {
+        None
+    };
+    unsafe {
+        free(cause as *mut ::core::ffi::c_void);
+    }
+    result.ok_or_else(|| error.expect("a parse failure has a diagnostic"))
+}
+
+fn layout_description_append_json_string(output: &mut Vec<u8>, value: &[u8]) -> bool {
+    let mut index = 0;
+    while index < value.len() {
+        match value[index] {
+            byte if byte < 0x20 || byte == b'"' => return false,
+            b'\\' => {
+                index += 1;
+                if index == value.len() {
+                    return false;
+                }
+                if value[index] == b'u' {
+                    if index + 4 >= value.len()
+                        || !value[index + 1..index + 5]
+                            .iter()
+                            .all(|byte| byte.is_ascii_hexdigit())
+                    {
+                        return false;
+                    }
+                    index += 4;
+                } else if !matches!(
+                    value[index],
+                    b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't'
+                ) {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    output.push(b'"');
+    output.extend_from_slice(value);
+    output.push(b'"');
+    true
+}
+
+fn layout_description_append_json_node(
+    node: &LayoutDescriptionNode,
+    output: &mut Vec<u8>,
+) -> bool {
+    let type_name = match node.type_0 {
+        LAYOUT_WINDOWPANE => "p",
+        LAYOUT_TOPBOTTOM => "v",
+        LAYOUT_LEFTRIGHT => "h",
+        _ => return false,
+    };
+    output.extend_from_slice(
+        format!(
+            "{{\"t\":\"{}\",\"w\":{},\"h\":{},\"x\":{},\"y\":{}",
+            type_name,
+            node.geometry.sx,
+            node.geometry.sy,
+            node.geometry.xoff,
+            node.geometry.yoff,
+        )
+        .as_bytes(),
+    );
+    if node.type_0 == LAYOUT_WINDOWPANE {
+        if !node.children.is_empty() {
+            return false;
+        }
+        let Some(pane) = node.pane.as_ref() else {
+            return false;
+        };
+        let Some(index) = pane.index else {
+            return false;
+        };
+        output.extend_from_slice(format!(",\"i\":{}", index).as_bytes());
+        if pane.active {
+            output.extend_from_slice(b",\"a\":true");
+        } else if let Some(last) = pane.last {
+            output.extend_from_slice(format!(",\"l\":{}", last).as_bytes());
+        }
+        if let Some(zindex) = pane.zindex {
+            output.extend_from_slice(format!(",\"z\":{}", zindex).as_bytes());
+        }
+        if let Some(identifier) = pane.identifier.as_ref() {
+            output.extend_from_slice(b",\"I\":");
+            if !layout_description_append_json_string(output, identifier) {
+                return false;
+            }
+        }
+    } else {
+        if node.pane.is_some() || node.children.len() < 2 {
+            return false;
+        }
+        output.extend_from_slice(b",\"c\":[");
+        for (index, child) in node.children.iter().enumerate() {
+            if index != 0 {
+                output.push(b',');
+            }
+            if !layout_description_append_json_node(child, output) {
+                return false;
+            }
+        }
+        output.push(b']');
+    }
+    output.push(b'}');
+    true
+}
+
+fn layout_description_append_v1(node: &LayoutDescriptionNode, output: &mut Vec<u8>) -> bool {
+    output.extend_from_slice(
+        format!(
+            "{}x{},{},{}",
+            node.geometry.sx, node.geometry.sy, node.geometry.xoff, node.geometry.yoff,
+        )
+        .as_bytes(),
+    );
+    match node.type_0 {
+        LAYOUT_WINDOWPANE => {
+            if !node.children.is_empty() {
+                return false;
+            }
+            if let Some(id) = node.pane.as_ref().and_then(|pane| pane.id) {
+                output.extend_from_slice(format!(",{}", id).as_bytes());
+            }
+        }
+        LAYOUT_LEFTRIGHT | LAYOUT_TOPBOTTOM => {
+            if node.pane.is_some() || node.children.is_empty() {
+                return false;
+            }
+            output.push(if node.type_0 == LAYOUT_LEFTRIGHT {
+                b'{'
+            } else {
+                b'['
+            });
+            for (index, child) in node.children.iter().enumerate() {
+                if index != 0 {
+                    output.push(b',');
+                }
+                if !layout_description_append_v1(child, output) {
+                    return false;
+                }
+            }
+            output.push(if node.type_0 == LAYOUT_LEFTRIGHT {
+                b'}'
+            } else {
+                b']'
+            });
+        }
+        _ => return false,
+    }
+    true
+}
+
+fn layout_description_checksum(bytes: &[u8]) -> u16 {
+    let mut checksum = 0u16;
+    for byte in bytes {
+        checksum = (checksum >> 1) | ((checksum & 1) << 15);
+        checksum = checksum.wrapping_add((*byte as ::core::ffi::c_char) as i32 as u16);
+    }
+    checksum
+}
+
+/// Serialize a parsed custom layout without consulting or changing a window.
+///
+/// The legacy JSON tokenizer deliberately retains string escape bytes instead
+/// of decoding them; valid escape sequences are therefore emitted unchanged.
+/// This returns `None` for an invalid identifier supplied by a caller that
+/// constructs a description manually.
+pub fn serialize_layout_description(description: &LayoutDescription) -> Option<Vec<u8>> {
+    match description.version {
+        1 => {
+            let mut body = Vec::new();
+            if !layout_description_append_v1(&description.root, &mut body) {
+                return None;
+            }
+            let mut output = format!("{:04x},", layout_description_checksum(&body)).into_bytes();
+            output.extend_from_slice(&body);
+            Some(output)
+        }
+        2 => {
+            let mut output = b"{\"V\":2,\"L\":".to_vec();
+            if !layout_description_append_json_node(&description.root, &mut output) {
+                return None;
+            }
+            output.extend_from_slice(b"}");
+            Some(output)
+        }
+        _ => None,
+    }
+}
+
+unsafe fn layout_description_to_cell(
+    node: &LayoutDescriptionNode,
+    parent: *mut layout_cell,
+    pctx: *mut layout_parse_ctx,
+) -> *mut layout_cell {
+    let lc = layout_create_cell(parent);
+    (*lc).type_0 = node.type_0;
+    (*lc).flags = node.flags;
+    layout_set_size(
+        lc,
+        node.geometry.sx,
+        node.geometry.sy,
+        node.geometry.xoff,
+        node.geometry.yoff,
+    );
+    if let Some(pane) = node.pane.as_ref() {
+        if (*pctx).version > 1 {
+            layout_parse_add_cctx(
+                pctx,
+                lc,
+                i32::from(pane.active),
+                pane.last.unwrap_or(-1),
+                pane.index.unwrap_or(-1),
+                pane.zindex.unwrap_or(INT_MAX),
+            );
+            if pane.active {
+                (*pctx).num_active += 1;
+            }
+        }
+        return lc;
+    }
+    for child in &node.children {
+        let lcchild = layout_description_to_cell(child, lc, pctx);
+        (*lcchild).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
+        (*lcchild).entry.tqe_prev = (*lc).cells.tqh_last;
+        *(*lc).cells.tqh_last = lcchild;
+        (*lc).cells.tqh_last = &raw mut (*lcchild).entry.tqe_next;
+    }
+    lc
 }
 #[no_mangle]
 pub unsafe extern "C" fn layout_dump(
@@ -680,10 +1540,18 @@ pub unsafe extern "C" fn layout_parse(
     let mut sy: u_int = 0 as u_int;
     let mut with_floating: ::core::ffi::c_int = 0;
     layout_parse_init_ctx(&raw mut pctx, cause);
-    if layout_construct(input, &raw mut pctx) != 0 as ::core::ffi::c_int {
-        layout_parse_free_ctx(&raw mut pctx);
-        return -(1 as ::core::ffi::c_int);
-    }
+    let description = match layout_parse_description_c(input, cause) {
+        Some(description) => description,
+        None => {
+            layout_parse_free_ctx(&raw mut pctx);
+            return -(1 as ::core::ffi::c_int);
+        }
+    };
+    // This conversion creates a detached tree. Pane-count pruning and the
+    // geometry check below therefore still happen before any live pane is
+    // resized or attached to the window.
+    pctx.version = description.version;
+    pctx.root = layout_description_to_cell(&description.root, ::core::ptr::null_mut(), &raw mut pctx);
     with_floating = (pctx.version > 1 as int64_t) as ::core::ffi::c_int;
     npanes = window_count_panes(w, with_floating);
     if npanes == 0 as u_int {
@@ -780,6 +1648,9 @@ pub unsafe extern "C" fn layout_parse(
                             as *const ::core::ffi::c_char,
                     );
                 } else {
+                    // Everything above this point only changes the detached
+                    // tree. Once the resize starts, the remaining operations
+                    // are the existing non-fallible tree/pane commit path.
                     if layout_cell_is_tiled(lc) != 0 || layout_cell_has_tiled_child(lc) != 0 {
                         window_resize(
                             w,
@@ -922,615 +1793,6 @@ unsafe extern "C" fn layout_assign(mut w: *mut window, mut pctx: *mut layout_par
         layout_assign_fallback(w, (*w).layout_root);
     };
 }
-unsafe extern "C" fn layout_construct_cell(
-    mut lcparent: *mut layout_cell,
-    mut layout: *mut *const ::core::ffi::c_char,
-) -> *mut layout_cell {
-    let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    let mut xoff: ::core::ffi::c_int = 0;
-    let mut yoff: ::core::ffi::c_int = 0;
-    let mut saved: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if *(*__ctype_b_loc()).offset(**layout as u_char as ::core::ffi::c_int as isize)
-        as ::core::ffi::c_int
-        & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-        == 0
-    {
-        return ::core::ptr::null_mut::<layout_cell>();
-    }
-    if sscanf(
-        *layout,
-        b"%ux%u,%d,%d\0" as *const u8 as *const ::core::ffi::c_char,
-        &raw mut sx,
-        &raw mut sy,
-        &raw mut xoff,
-        &raw mut yoff,
-    ) != 4 as ::core::ffi::c_int
-    {
-        return ::core::ptr::null_mut::<layout_cell>();
-    }
-    while *(*__ctype_b_loc()).offset(**layout as u_char as ::core::ffi::c_int as isize)
-        as ::core::ffi::c_int
-        & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-        != 0
-    {
-        *layout = (*layout).offset(1);
-    }
-    if **layout as ::core::ffi::c_int != 'x' as i32 {
-        return ::core::ptr::null_mut::<layout_cell>();
-    }
-    *layout = (*layout).offset(1);
-    while *(*__ctype_b_loc()).offset(**layout as u_char as ::core::ffi::c_int as isize)
-        as ::core::ffi::c_int
-        & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-        != 0
-    {
-        *layout = (*layout).offset(1);
-    }
-    if **layout as ::core::ffi::c_int != ',' as i32 {
-        return ::core::ptr::null_mut::<layout_cell>();
-    }
-    *layout = (*layout).offset(1);
-    while *(*__ctype_b_loc()).offset(**layout as u_char as ::core::ffi::c_int as isize)
-        as ::core::ffi::c_int
-        & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-        != 0
-    {
-        *layout = (*layout).offset(1);
-    }
-    if **layout as ::core::ffi::c_int != ',' as i32 {
-        return ::core::ptr::null_mut::<layout_cell>();
-    }
-    *layout = (*layout).offset(1);
-    while *(*__ctype_b_loc()).offset(**layout as u_char as ::core::ffi::c_int as isize)
-        as ::core::ffi::c_int
-        & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-        != 0
-    {
-        *layout = (*layout).offset(1);
-    }
-    if **layout as ::core::ffi::c_int == ',' as i32 {
-        saved = *layout;
-        *layout = (*layout).offset(1);
-        while *(*__ctype_b_loc()).offset(**layout as u_char as ::core::ffi::c_int as isize)
-            as ::core::ffi::c_int
-            & _ISdigit as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-            != 0
-        {
-            *layout = (*layout).offset(1);
-        }
-        if **layout as ::core::ffi::c_int == 'x' as i32 {
-            *layout = saved;
-        }
-    }
-    lc = layout_create_cell(lcparent);
-    (*lc).g.sx = sx;
-    (*lc).g.sy = sy;
-    (*lc).g.xoff = xoff;
-    (*lc).g.yoff = yoff;
-    return lc;
-}
-unsafe extern "C" fn layout_construct_v1(
-    mut lcparent: *mut layout_cell,
-    mut layout: *mut *const ::core::ffi::c_char,
-    mut depth: u_int,
-) -> *mut layout_cell {
-    let mut current_block: u64;
-    let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    if depth > LAYOUT_V1_MAX_DEPTH as u_int {
-        return ::core::ptr::null_mut::<layout_cell>();
-    }
-    lc = layout_construct_cell(lcparent, layout);
-    if lc.is_null() {
-        return ::core::ptr::null_mut::<layout_cell>();
-    }
-    match **layout as ::core::ffi::c_int {
-        44 | 125 | 93 | 0 => return lc,
-        123 => {
-            (*lc).type_0 = LAYOUT_LEFTRIGHT;
-            current_block = 1917311967535052937;
-        }
-        91 => {
-            (*lc).type_0 = LAYOUT_TOPBOTTOM;
-            current_block = 1917311967535052937;
-        }
-        _ => {
-            current_block = 17291956987205268033;
-        }
-    }
-    loop {
-        match current_block {
-            17291956987205268033 => {
-                layout_free_cell(lc, 0 as ::core::ffi::c_int);
-                return ::core::ptr::null_mut::<layout_cell>();
-            }
-            _ => {
-                *layout = (*layout).offset(1);
-                lcchild = layout_construct_v1(lc, layout, depth.wrapping_add(1 as u_int));
-                if lcchild.is_null() {
-                    current_block = 17291956987205268033;
-                    continue;
-                }
-                (*lcchild).entry.tqe_next = ::core::ptr::null_mut::<layout_cell>();
-                (*lcchild).entry.tqe_prev = (*lc).cells.tqh_last;
-                *(*lc).cells.tqh_last = lcchild;
-                (*lc).cells.tqh_last = &raw mut (*lcchild).entry.tqe_next;
-                if **layout as ::core::ffi::c_int == ',' as i32 {
-                    current_block = 1917311967535052937;
-                    continue;
-                }
-                match (*lc).type_0 as ::core::ffi::c_uint {
-                    0 => {
-                        if **layout as ::core::ffi::c_int != '}' as i32 {
-                            current_block = 17291956987205268033;
-                        } else {
-                            break;
-                        }
-                    }
-                    1 => {
-                        if **layout as ::core::ffi::c_int != ']' as i32 {
-                            current_block = 17291956987205268033;
-                        } else {
-                            break;
-                        }
-                    }
-                    _ => {
-                        current_block = 17291956987205268033;
-                    }
-                }
-            }
-        }
-    }
-    *layout = (*layout).offset(1);
-    return lc;
-}
-unsafe extern "C" fn layout_parse_json(
-    mut jnroot: *mut json_node,
-    mut pctx: *mut layout_parse_ctx,
-) -> ::core::ffi::c_int {
-    let mut jn: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut object: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut num: int64_t = 0;
-    let mut cause: *mut *mut ::core::ffi::c_char = (*pctx).cause;
-    if json_get_object(jnroot, &raw mut jn) != 0 as ::core::ffi::c_int {
-        *cause = xstrdup(b"invalid layout json\0" as *const u8 as *const ::core::ffi::c_char);
-    } else if !(json_find_number(
-        jn,
-        b"V\0" as *const u8 as *const ::core::ffi::c_char,
-        &raw mut num,
-        cause,
-    ) != 0 as ::core::ffi::c_int)
-    {
-        (*pctx).version = num;
-        if !(json_find_object(
-            jn,
-            b"L\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut object,
-            cause,
-        ) != 0 as ::core::ffi::c_int)
-        {
-            (*pctx).root =
-                layout_parse_json_layout(object, ::core::ptr::null_mut::<layout_cell>(), pctx);
-            if !(*pctx).root.is_null() {
-                json_destroy_node(jnroot);
-                return 0 as ::core::ffi::c_int;
-            }
-        }
-    }
-    json_destroy_node(jnroot);
-    if !(*pctx).root.is_null() {
-        layout_free_cell((*pctx).root, 0 as ::core::ffi::c_int);
-    }
-    (*pctx).root = ::core::ptr::null_mut::<layout_cell>();
-    return -(1 as ::core::ffi::c_int);
-}
-unsafe extern "C" fn layout_parse_json_layout(
-    mut node: *mut json_node,
-    mut lcparent: *mut layout_cell,
-    mut pctx: *mut layout_parse_ctx,
-) -> *mut layout_cell {
-    let mut current_block: u64;
-    let mut member: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut array: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut lc: *mut layout_cell = layout_create_cell(lcparent);
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut str: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut num: int64_t = 0;
-    let mut cause: *mut *mut ::core::ffi::c_char = (*pctx).cause;
-    let mut boolean: ::core::ffi::c_int = 0;
-    let mut index: ::core::ffi::c_int = 0;
-    let mut zindex: ::core::ffi::c_int = 0;
-    let mut active: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    let mut last: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    if !(json_find_string(
-        node,
-        b"t\0" as *const u8 as *const ::core::ffi::c_char,
-        &raw mut str,
-        cause,
-    ) != 0 as ::core::ffi::c_int)
-    {
-        if strcmp(str, b"p\0" as *const u8 as *const ::core::ffi::c_char) == 0 as ::core::ffi::c_int
-        {
-            (*lc).type_0 = LAYOUT_WINDOWPANE;
-            current_block = 1394248824506584008;
-        } else if strcmp(str, b"v\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-        {
-            (*lc).type_0 = LAYOUT_TOPBOTTOM;
-            current_block = 1394248824506584008;
-        } else if strcmp(str, b"h\0" as *const u8 as *const ::core::ffi::c_char)
-            == 0 as ::core::ffi::c_int
-        {
-            (*lc).type_0 = LAYOUT_LEFTRIGHT;
-            current_block = 1394248824506584008;
-        } else {
-            xasprintf(
-                cause,
-                b"unknown cell type \"%s\"\0" as *const u8 as *const ::core::ffi::c_char,
-                str,
-            );
-            current_block = 14858222377052930936;
-        }
-        match current_block {
-            14858222377052930936 => {}
-            _ => {
-                if !(json_find_number(
-                    node,
-                    b"w\0" as *const u8 as *const ::core::ffi::c_char,
-                    &raw mut num,
-                    cause,
-                ) != 0 as ::core::ffi::c_int)
-                {
-                    if num < PANE_MINIMUM as int64_t || num > PANE_MAXIMUM as int64_t {
-                        xasprintf(
-                            cause,
-                            b"invalid width %lld\0" as *const u8 as *const ::core::ffi::c_char,
-                            num as ::core::ffi::c_longlong,
-                        );
-                    } else {
-                        (*lc).g.sx = num as u_int;
-                        if !(json_find_number(
-                            node,
-                            b"h\0" as *const u8 as *const ::core::ffi::c_char,
-                            &raw mut num,
-                            cause,
-                        ) != 0 as ::core::ffi::c_int)
-                        {
-                            if num < PANE_MINIMUM as int64_t || num > PANE_MAXIMUM as int64_t {
-                                xasprintf(
-                                    cause,
-                                    b"invalid height %lld\0" as *const u8
-                                        as *const ::core::ffi::c_char,
-                                    num as ::core::ffi::c_longlong,
-                                );
-                            } else {
-                                (*lc).g.sy = num as u_int;
-                                if !(json_find_number(
-                                    node,
-                                    b"x\0" as *const u8 as *const ::core::ffi::c_char,
-                                    &raw mut num,
-                                    cause,
-                                ) != 0 as ::core::ffi::c_int)
-                                {
-                                    if num < -WINDOW_MAXIMUM as int64_t
-                                        || num > WINDOW_MAXIMUM as int64_t
-                                    {
-                                        xasprintf(
-                                            cause,
-                                            b"invalid x-offset %lld\0" as *const u8
-                                                as *const ::core::ffi::c_char,
-                                            num as ::core::ffi::c_longlong,
-                                        );
-                                    } else {
-                                        (*lc).g.xoff = num as ::core::ffi::c_int;
-                                        if !(json_find_number(
-                                            node,
-                                            b"y\0" as *const u8 as *const ::core::ffi::c_char,
-                                            &raw mut num,
-                                            cause,
-                                        ) != 0 as ::core::ffi::c_int)
-                                        {
-                                            if num < -WINDOW_MAXIMUM as int64_t
-                                                || num > WINDOW_MAXIMUM as int64_t
-                                            {
-                                                xasprintf(
-                                                    cause,
-                                                    b"invalid y-offset %lld\0" as *const u8
-                                                        as *const ::core::ffi::c_char,
-                                                    num as ::core::ffi::c_longlong,
-                                                );
-                                            } else {
-                                                (*lc).g.yoff = num as ::core::ffi::c_int;
-                                                if (*lc).type_0 as ::core::ffi::c_uint
-                                                    == LAYOUT_WINDOWPANE as ::core::ffi::c_int
-                                                        as ::core::ffi::c_uint
-                                                {
-                                                    if !json_find(
-                                                        node,
-                                                        b"c\0" as *const u8
-                                                            as *const ::core::ffi::c_char,
-                                                    )
-                                                    .is_null()
-                                                    {
-                                                        *cause = xstrdup(
-                                                            b"panes cannot have children\0"
-                                                                as *const u8
-                                                                as *const ::core::ffi::c_char,
-                                                        );
-                                                        current_block = 14858222377052930936;
-                                                    } else if json_find_number(
-                                                        node,
-                                                        b"i\0" as *const u8
-                                                            as *const ::core::ffi::c_char,
-                                                        &raw mut num,
-                                                        cause,
-                                                    ) != 0 as ::core::ffi::c_int
-                                                    {
-                                                        current_block = 14858222377052930936;
-                                                    } else if num < 0 as int64_t
-                                                        || num > INT_MAX as int64_t
-                                                    {
-                                                        xasprintf(
-                                                            cause,
-                                                            b"invalid index %lld\0" as *const u8
-                                                                as *const ::core::ffi::c_char,
-                                                            num as ::core::ffi::c_longlong,
-                                                        );
-                                                        current_block = 14858222377052930936;
-                                                    } else {
-                                                        index = num as ::core::ffi::c_int;
-                                                        if !json_find(
-                                                            node,
-                                                            b"a\0" as *const u8
-                                                                as *const ::core::ffi::c_char,
-                                                        )
-                                                        .is_null()
-                                                        {
-                                                            if json_find_boolean(
-                                                                node,
-                                                                b"a\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
-                                                                &raw mut boolean,
-                                                                cause,
-                                                            ) != 0 as ::core::ffi::c_int
-                                                            {
-                                                                current_block =
-                                                                    14858222377052930936;
-                                                            } else {
-                                                                active = boolean;
-                                                                if active != 0 {
-                                                                    (*pctx).num_active += 1;
-                                                                }
-                                                                current_block = 6450597802325118133;
-                                                            }
-                                                        } else if !json_find(
-                                                            node,
-                                                            b"l\0" as *const u8
-                                                                as *const ::core::ffi::c_char,
-                                                        )
-                                                        .is_null()
-                                                        {
-                                                            if json_find_number(
-                                                                node,
-                                                                b"l\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
-                                                                &raw mut num,
-                                                                cause,
-                                                            ) != 0 as ::core::ffi::c_int
-                                                            {
-                                                                current_block =
-                                                                    14858222377052930936;
-                                                            } else if num < 0 as int64_t
-                                                                || num > INT_MAX as int64_t
-                                                            {
-                                                                xasprintf(
-                                                                    cause,
-                                                                    b"invalid last %lld\0" as *const u8
-                                                                        as *const ::core::ffi::c_char,
-                                                                    num as ::core::ffi::c_longlong,
-                                                                );
-                                                                current_block =
-                                                                    14858222377052930936;
-                                                            } else {
-                                                                last = num as ::core::ffi::c_int;
-                                                                current_block = 6450597802325118133;
-                                                            }
-                                                        } else {
-                                                            current_block = 6450597802325118133;
-                                                        }
-                                                        match current_block {
-                                                            14858222377052930936 => {}
-                                                            _ => {
-                                                                if !json_find(
-                                                                        node,
-                                                                        b"z\0" as *const u8 as *const ::core::ffi::c_char,
-                                                                    )
-                                                                    .is_null()
-                                                                {
-                                                                    if json_find_number(
-                                                                        node,
-                                                                        b"z\0" as *const u8 as *const ::core::ffi::c_char,
-                                                                        &raw mut num,
-                                                                        cause,
-                                                                    ) != 0 as ::core::ffi::c_int
-                                                                    {
-                                                                        current_block = 14858222377052930936;
-                                                                    } else if num < 0 as int64_t
-                                                                        || num > (INT_MAX - 1 as ::core::ffi::c_int) as int64_t
-                                                                    {
-                                                                        xasprintf(
-                                                                            cause,
-                                                                            b"invalid floating zindex %lld\0" as *const u8
-                                                                                as *const ::core::ffi::c_char,
-                                                                            num as ::core::ffi::c_longlong,
-                                                                        );
-                                                                        current_block = 14858222377052930936;
-                                                                    } else {
-                                                                        zindex = num as ::core::ffi::c_int;
-                                                                        (*lc).flags |= LAYOUT_CELL_FLOATING;
-                                                                        current_block = 1345366029464561491;
-                                                                    }
-                                                                } else {
-                                                                    zindex = INT_MAX;
-                                                                    current_block = 1345366029464561491;
-                                                                }
-                                                                match current_block {
-                                                                    14858222377052930936 => {}
-                                                                    _ => {
-                                                                        layout_parse_add_cctx(
-                                                                            pctx, lc, active, last,
-                                                                            index, zindex,
-                                                                        );
-                                                                        current_block =
-                                                                            11441799814184323368;
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                } else if json_find_array(
-                                                    node,
-                                                    b"c\0" as *const u8
-                                                        as *const ::core::ffi::c_char,
-                                                    &raw mut array,
-                                                    cause,
-                                                ) != 0 as ::core::ffi::c_int
-                                                {
-                                                    current_block = 14858222377052930936;
-                                                } else {
-                                                    member = json_array_first(array);
-                                                    if member.is_null()
-                                                        || json_array_next(member).is_null()
-                                                    {
-                                                        *cause = xstrdup(
-                                                            b"nodes must have more than one child\0"
-                                                                as *const u8
-                                                                as *const ::core::ffi::c_char,
-                                                        );
-                                                        current_block = 14858222377052930936;
-                                                    } else {
-                                                        loop {
-                                                            if member.is_null() {
-                                                                current_block =
-                                                                    11441799814184323368;
-                                                                break;
-                                                            }
-                                                            lcchild = layout_parse_json_layout(
-                                                                member, lc, pctx,
-                                                            );
-                                                            if lcchild.is_null() {
-                                                                current_block =
-                                                                    14858222377052930936;
-                                                                break;
-                                                            }
-                                                            (*lcchild).entry.tqe_next =
-                                                                ::core::ptr::null_mut::<layout_cell>(
-                                                                );
-                                                            (*lcchild).entry.tqe_prev =
-                                                                (*lc).cells.tqh_last;
-                                                            *(*lc).cells.tqh_last = lcchild;
-                                                            (*lc).cells.tqh_last =
-                                                                &raw mut (*lcchild).entry.tqe_next;
-                                                            member = json_array_next(member);
-                                                        }
-                                                    }
-                                                }
-                                                match current_block {
-                                                    14858222377052930936 => {}
-                                                    _ => return lc,
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    layout_free_cell(lc, 0 as ::core::ffi::c_int);
-    return ::core::ptr::null_mut::<layout_cell>();
-}
-unsafe extern "C" fn layout_construct(
-    mut input: *const ::core::ffi::c_char,
-    mut pctx: *mut layout_parse_ctx,
-) -> ::core::ffi::c_int {
-    let mut json: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut csum: u_short = 0;
-    let mut n: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    while *(*__ctype_b_loc()).offset(*input as u_char as ::core::ffi::c_int as isize)
-        as ::core::ffi::c_int
-        & _ISspace as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
-        != 0
-    {
-        input = input.offset(1);
-    }
-    if *input as ::core::ffi::c_int != '{' as i32 {
-        if sscanf(
-            input,
-            b"%hx,%n\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut csum,
-            &raw mut n,
-        ) != 1 as ::core::ffi::c_int
-            || n != 5 as ::core::ffi::c_int
-        {
-            *(*pctx).cause =
-                xstrdup(b"malformed layout header\0" as *const u8 as *const ::core::ffi::c_char);
-            return -(1 as ::core::ffi::c_int);
-        }
-        input = input.offset(n as isize);
-        if csum as ::core::ffi::c_int != layout_checksum(input) as ::core::ffi::c_int {
-            *(*pctx).cause =
-                xstrdup(b"invalid layout checksum\0" as *const u8 as *const ::core::ffi::c_char);
-            return -(1 as ::core::ffi::c_int);
-        }
-        (*pctx).root = layout_construct_v1(
-            ::core::ptr::null_mut::<layout_cell>(),
-            &raw mut input,
-            0 as u_int,
-        );
-        if (*pctx).root.is_null() {
-            *(*pctx).cause =
-                xstrdup(b"invalid layout\0" as *const u8 as *const ::core::ffi::c_char);
-            return -(1 as ::core::ffi::c_int);
-        }
-        if *input as ::core::ffi::c_int != '\0' as i32 {
-            *(*pctx).cause = xstrdup(b"trailing data\0" as *const u8 as *const ::core::ffi::c_char);
-            return -(1 as ::core::ffi::c_int);
-        }
-        (*pctx).version = 1 as int64_t;
-    } else {
-        json = json_parse(input, (*pctx).cause);
-        if json.is_null() {
-            return -(1 as ::core::ffi::c_int);
-        }
-        if layout_parse_json(json, pctx) != 0 as ::core::ffi::c_int {
-            return -(1 as ::core::ffi::c_int);
-        }
-        if (*pctx).version != 2 as int64_t {
-            *(*pctx).cause =
-                xstrdup(b"version mismatch\0" as *const u8 as *const ::core::ffi::c_char);
-            return -(1 as ::core::ffi::c_int);
-        }
-        if (*pctx).num_active > 1 as ::core::ffi::c_int {
-            *(*pctx).cause =
-                xstrdup(b"more than one active pane\0" as *const u8 as *const ::core::ffi::c_char);
-            return -(1 as ::core::ffi::c_int);
-        }
-        if (*pctx).size == 0 as ::core::ffi::c_int {
-            *(*pctx).cause = xstrdup(b"no panes\0" as *const u8 as *const ::core::ffi::c_char);
-            return -(1 as ::core::ffi::c_int);
-        }
-        if layout_parse_ctx_check_indexes(pctx) == 0 {
-            return -(1 as ::core::ffi::c_int);
-        }
-    }
-    return 0 as ::core::ffi::c_int;
-}
 unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
     let mut cctx: *mut layout_parse_cell_ctx = ::core::ptr::null_mut::<layout_parse_cell_ctx>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1612,88 +1874,4 @@ unsafe extern "C" fn layout_parse_apply_ctx(mut w: *mut window, mut pctx: *mut l
         }
         i += 1;
     }
-}
-unsafe extern "C" fn layout_parse_ctx_check_indexes(
-    mut pctx: *mut layout_parse_ctx,
-) -> ::core::ffi::c_int {
-    let mut i: ::core::ffi::c_int = 0;
-    let mut n: ::core::ffi::c_int = 0;
-    qsort(
-        (*pctx).cctxs as *mut ::core::ffi::c_void,
-        (*pctx).size as size_t,
-        ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
-        Some(
-            layout_parse_index_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    );
-    i = 1 as ::core::ffi::c_int;
-    while i < (*pctx).size {
-        if (*(*pctx).cctxs.offset(i as isize)).index
-            == (*(*pctx).cctxs.offset((i - 1 as ::core::ffi::c_int) as isize)).index
-        {
-            *(*pctx).cause =
-                xstrdup(b"duplicate pane index\0" as *const u8 as *const ::core::ffi::c_char);
-            return 0 as ::core::ffi::c_int;
-        }
-        i += 1;
-    }
-    qsort(
-        (*pctx).cctxs as *mut ::core::ffi::c_void,
-        (*pctx).size as size_t,
-        ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
-        Some(
-            layout_parse_zindex_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    );
-    n = 0 as ::core::ffi::c_int;
-    while n < (*pctx).size && (*(*pctx).cctxs.offset(n as isize)).zindex == INT_MAX {
-        n += 1;
-    }
-    i = n + 1 as ::core::ffi::c_int;
-    while i < (*pctx).size {
-        if (*(*pctx).cctxs.offset(i as isize)).zindex
-            == (*(*pctx).cctxs.offset((i - 1 as ::core::ffi::c_int) as isize)).zindex
-        {
-            *(*pctx).cause =
-                xstrdup(b"duplicate pane z-index\0" as *const u8 as *const ::core::ffi::c_char);
-            return 0 as ::core::ffi::c_int;
-        }
-        i += 1;
-    }
-    qsort(
-        (*pctx).cctxs as *mut ::core::ffi::c_void,
-        (*pctx).size as size_t,
-        ::core::mem::size_of::<layout_parse_cell_ctx>() as size_t,
-        Some(
-            layout_parse_last_cmp
-                as unsafe extern "C" fn(
-                    *const ::core::ffi::c_void,
-                    *const ::core::ffi::c_void,
-                ) -> ::core::ffi::c_int,
-        ),
-    );
-    n = 0 as ::core::ffi::c_int;
-    while n < (*pctx).size && (*(*pctx).cctxs.offset(n as isize)).last >= 0 as ::core::ffi::c_int {
-        n += 1;
-    }
-    i = 1 as ::core::ffi::c_int;
-    while i < n {
-        if (*(*pctx).cctxs.offset(i as isize)).last
-            == (*(*pctx).cctxs.offset((i - 1 as ::core::ffi::c_int) as isize)).last
-        {
-            *(*pctx).cause =
-                xstrdup(b"duplicate last pane index\0" as *const u8 as *const ::core::ffi::c_char);
-            return 0 as ::core::ffi::c_int;
-        }
-        i += 1;
-    }
-    return 1 as ::core::ffi::c_int;
 }
