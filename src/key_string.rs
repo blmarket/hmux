@@ -5756,6 +5756,9 @@ pub fn key_string_parse(input: &[u8]) -> Option<key_code> {
 
 /// Parse a NUL-terminated key name without retaining the input pointer.
 pub fn key_string_parse_cstr(input: &CStr) -> Option<key_code> {
+    if input.to_bytes().is_empty() {
+        return None;
+    }
     let key = unsafe { key_string_lookup_string_impl(input.as_ptr()) };
     (key != KEYC_UNKNOWN).then_some(key)
 }
@@ -5882,6 +5885,14 @@ fn key_string_format_bytes(saved: key_code, with_flags: bool) -> Vec<u8> {
         } else if key >= 128 {
             output.extend_from_slice(format!(r"\{:o}", key).as_bytes());
         }
+    }
+
+    // The legacy formatter wrote into a C string buffer. Invalid packed
+    // Unicode can therefore place a NUL in the output and make the visible
+    // result end there; normalize that terminator before the legacy flag
+    // append, which would overwrite it with the suffix.
+    if let Some(nul) = output.iter().position(|&byte| byte == 0) {
+        output.truncate(nul);
     }
 
     if with_flags && saved & KEYC_MASK_FLAGS != 0 {

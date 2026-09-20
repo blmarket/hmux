@@ -57,7 +57,9 @@ the existing canonical order and spellings:
 - Unicode keys become their UTF-8 bytes; printable ASCII is emitted directly;
   DEL is `C-?`, and other non-named values are empty, use the legacy octal
   fallback where applicable, or become `Invalid#<lowercase-hex>` according to
-  the original branches;
+  the original branches. If malformed packed-Unicode data would contain a
+  NUL, formatting truncates at that C-string terminator before appending flags,
+  so it remains non-panicking and preserves the visible legacy result;
 - with `with_flags`, the historical flag letters are appended in `L`, `K`,
   `C`, `I`, `B`, `S` order. Without it, those letters are omitted. The flag
   suffix is display text and is not a parse input.
@@ -82,7 +84,8 @@ callers now retain owned values for the duration of each C call.
 
 The focused Rust tests cover modifier order, aliases, named values, sentinels,
 Unicode, numeric forms, invalid bytes, bounded output, retained results across
-consecutive calls, C adapters, and canonical parse/format round trips.
+consecutive calls, empty inputs, malformed packed-Unicode output, C adapters,
+and canonical parse/format round trips.
 `scripts/key_cli_checks.py` creates a private socket and exercises `bind-key`,
 `unbind-key`, and `list-keys`, including canonical `Insert` → `IC` listing.
 
@@ -91,7 +94,7 @@ For this migration (2026-09-20), the repository checks compared as follows:
 | Check | Before | After |
 | --- | --- | --- |
 | `cargo build` | Pass; 1,890 library warnings | Pass; 1,890 library warnings |
-| `cargo test` | Pass; 139 listed tests | Pass; 145 listed tests |
+| `cargo test` | Pass; 139 listed tests | Pass; 147 listed tests |
 | `cargo clippy --all-targets` | Fails with 30 existing errors; 7,419 library warnings | Fails with the same 30 errors; 7,415 library warnings |
 | private-socket bind/list/unbind check | Pass | Pass |
 | `python3 scripts/check_ffi_exports.py` | — | Pass; all 1,496 required exports |

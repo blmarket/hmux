@@ -72,6 +72,13 @@ fn rejects_invalid_bytes_and_sentinels_have_distinct_contracts() {
 }
 
 #[test]
+fn empty_inputs_are_rejected_by_both_rust_parse_entry_points() {
+    assert_eq!(key_string_parse(b""), None);
+    let empty = CStr::from_bytes_with_nul(b"\0").unwrap();
+    assert_eq!(key_string_parse_cstr(empty), None);
+}
+
+#[test]
 fn formats_canonically_with_flags_unicode_and_invalid_values() {
     assert_eq!(formatted(KEYC_CTRL | KEYC_META | KEYC_SHIFT | b'a' as key_code, false), b"C-M-S-a");
     assert_eq!(formatted(KEYC_IC, false), b"IC");
@@ -88,6 +95,16 @@ fn formats_canonically_with_flags_unicode_and_invalid_values() {
     assert_eq!(formatted(unicode, false), "λ".as_bytes());
     let unicode_four = key_string_parse("😀".as_bytes()).expect("valid UTF-8 key");
     assert_eq!(formatted(unicode_four, false), "😀".as_bytes());
+}
+
+#[test]
+fn invalid_packed_unicode_preserves_c_string_termination() {
+    let invalid_packed_unicode = 0x01000000 as key_code;
+    assert_eq!(key_string_format(invalid_packed_unicode, false).as_bytes(), b"");
+    assert_eq!(
+        key_string_format(KEYC_CTRL | KEYC_CURSOR | invalid_packed_unicode, true).as_bytes(),
+        b"C-[C]"
+    );
 }
 
 #[test]
