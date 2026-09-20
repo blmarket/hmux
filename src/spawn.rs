@@ -5,8 +5,8 @@ use crate::src::compat::fdforkpty::fdforkpty;
 use crate::src::compat::systemd::systemd_move_to_new_cgroup;
 use crate::src::control::control_reset_pane;
 use crate::src::environ::{
-    environ_copy, environ_create, environ_find, environ_for_session, environ_free, environ_log,
-    environ_push, environ_set,
+    environ_copy, environ_find, environ_for_session, environ_log, environ_push, environ_set,
+    EnvironOwner,
 };
 use crate::src::events::{events_fire, events_fire_window, events_fire_winlink};
 use crate::src::events_payload::{
@@ -652,7 +652,17 @@ pub unsafe extern "C" fn spawn_pane(
         (*new_wp).argc = argc;
         (*new_wp).argv = cmd_copy_argv(argc, argv);
     }
-    child = environ_for_session(s, 0 as ::core::ffi::c_int);
+    // `child_owner` owns the C tree for the whole synchronous spawn
+    // operation. Its raw pointer is borrowed by the translated C calls below;
+    // it is not stored in `spawn_context` or any other calloc-managed record.
+    let mut child_owner = Some(EnvironOwner::from_raw(environ_for_session(
+        s,
+        0 as ::core::ffi::c_int,
+    )));
+    child = child_owner
+        .as_ref()
+        .expect("spawn environment owner must exist")
+        .as_ptr();
     if !(*sc).environ.is_null() {
         environ_copy((*sc).environ, child);
     }
@@ -678,7 +688,12 @@ pub unsafe extern "C" fn spawn_pane(
             );
         }
     }
-    if environ_find(child, b"PATH\0" as *const u8 as *const ::core::ffi::c_char).is_null() {
+    if child_owner
+        .as_ref()
+        .expect("spawn environment owner must exist")
+        .find(c"PATH")
+        .is_none()
+    {
         environ_set(
             child,
             b"PATH\0" as *const u8 as *const ::core::ffi::c_char,
@@ -792,7 +807,6 @@ pub unsafe extern "C" fn spawn_pane(
                 &raw mut oldset,
                 ::core::ptr::null_mut::<sigset_t>(),
             );
-            environ_free(child);
             return ::core::ptr::null_mut::<window_pane>();
         }
         if (*new_wp).pid != 0 as ::core::ffi::c_int {
@@ -853,6 +867,10 @@ pub unsafe extern "C" fn spawn_pane(
             );
             log_close();
             environ_push(child);
+            // After fork this is the child's private copy. Release it after
+            // publishing the process environment; the parent retains its own
+            // owner and drops it when this function returns.
+            drop(child_owner.take());
             if (*new_wp).argc != 0 as ::core::ffi::c_int
                 && (*new_wp).argc != 1 as ::core::ffi::c_int
             {
@@ -928,7 +946,7 @@ pub unsafe extern "C" fn spawn_pane(
         ::core::ptr::null_mut::<sigset_t>(),
     );
     window_pane_set_event(new_wp);
-    environ_free(child);
+    drop(child_owner.take());
     spawn_fire_pane_created(sc, new_wp);
     if (*sc).flags & SPAWN_RESPAWN != 0 {
         return new_wp;
@@ -1141,7 +1159,10 @@ pub unsafe extern "C" fn spawn_editor(
         editor,
         &raw mut path as *mut ::core::ffi::c_char,
     );
-    env = environ_create();
+    // `env_owner` remains outside the C `spawn_context` and releases this
+    // temporary tree on every return path after the synchronous spawn call.
+    let env_owner = EnvironOwner::new();
+    env = env_owner.as_ptr();
     sc.s = s;
     sc.wl = wl;
     sc.tc = c;
@@ -1155,7 +1176,6 @@ pub unsafe extern "C" fn spawn_editor(
     sc.flags = SPAWN_FLOATING | SPAWN_MODAL | SPAWN_FLOATOVERZOOM;
     wp = spawn_pane(&raw mut sc, &raw mut cause);
     free(cmd as *mut ::core::ffi::c_void);
-    environ_free(env);
     if wp.is_null() {
         free(cause as *mut ::core::ffi::c_void);
         window_pop_zoom(w);

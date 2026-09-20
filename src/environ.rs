@@ -8,6 +8,276 @@ use crate::src::options::{
 };
 use crate::src::tmux::{getversion, global_environ, global_options, socket_path};
 use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup, xvasprintf};
+use std::ffi::{CStr, CString, NulError};
+use std::marker::PhantomData;
+use std::ptr::NonNull;
+
+/// Owns one C-allocated environment tree.
+///
+/// The ABI-visible [`environ`] and [`environ_entry`] records intentionally stay
+/// `Copy` because they are embedded in C-managed data and passed through the
+/// translated interface. This wrapper is the owner for a tree returned by
+/// `environ_create` (or another function with the same allocation contract).
+/// It is deliberately not `Copy` or `Clone`; dropping it releases the tree with
+/// the matching C deallocator.
+pub struct EnvironOwner {
+    raw: NonNull<environ>,
+}
+
+impl EnvironOwner {
+    /// Allocate an empty environment using the existing C allocator.
+    pub fn new() -> Self {
+        // `xcalloc` aborts on allocation failure, so a successful return is a
+        // non-null owned tree just like the legacy C call site expects.
+        unsafe { Self::from_raw(environ_create()) }
+    }
+
+    /// Reclaim an already allocated tree whose ownership is being transferred.
+    ///
+    /// # Safety
+    ///
+    /// `raw` must be a non-null pointer returned by `environ_create` or an
+    /// equivalent allocation path, and no other owner may free it.
+    pub unsafe fn from_raw(raw: *mut environ) -> Self {
+        Self {
+            raw: NonNull::new(raw).expect("owned environment pointer must not be null"),
+        }
+    }
+
+    /// Fallible form of [`Self::from_raw`] for FFI boundaries that permit null.
+    /// A null pointer is not adopted or freed.
+    ///
+    /// # Safety
+    ///
+    /// A non-null `raw` must be uniquely owned by the caller and allocated by
+    /// the environment-tree allocator.
+    pub unsafe fn from_raw_owned(raw: *mut environ) -> Option<Self> {
+        NonNull::new(raw).map(|raw| Self { raw })
+    }
+
+    /// Borrow the raw pointer for a synchronous C call.
+    pub fn as_ptr(&self) -> *mut environ {
+        self.raw.as_ptr()
+    }
+
+    /// Create a borrowed view whose entries cannot outlive this owner borrow.
+    pub fn borrow(&self) -> EnvironView<'_> {
+        EnvironView {
+            raw: self.raw,
+            _owner: PhantomData,
+        }
+    }
+
+    /// Find an entry by its NUL-terminated byte string name.
+    pub fn find<'a>(&'a self, name: &CStr) -> Option<EnvironEntry<'a>> {
+        self.borrow().find(name)
+    }
+
+    /// Find an entry by bytes, rejecting embedded NUL rather than truncating.
+    pub fn find_bytes<'a>(&'a self, name: &[u8]) -> Result<Option<EnvironEntry<'a>>, NulError> {
+        let name = CString::new(name)?;
+        Ok(self.find(&name))
+    }
+
+    /// Set a value using the existing C tree and byte-preserving C strings.
+    pub fn set_cstr(&mut self, name: &CStr, flags: ::core::ffi::c_int, value: &CStr) {
+        unsafe {
+            environ_set(
+                self.as_ptr(),
+                name.as_ptr(),
+                flags,
+                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+                value.as_ptr(),
+            );
+        }
+    }
+
+    /// Set a value from arbitrary bytes, rejecting embedded NUL bytes.
+    pub fn set(
+        &mut self,
+        name: &[u8],
+        flags: ::core::ffi::c_int,
+        value: &[u8],
+    ) -> Result<(), NulError> {
+        let name = CString::new(name)?;
+        let value = CString::new(value)?;
+        self.set_cstr(&name, flags, &value);
+        Ok(())
+    }
+
+    /// Record a present but valueless entry.
+    pub fn clear_cstr(&mut self, name: &CStr) {
+        unsafe { environ_clear(self.as_ptr(), name.as_ptr()) }
+    }
+
+    /// Record a present but valueless entry from arbitrary bytes.
+    pub fn clear(&mut self, name: &[u8]) -> Result<(), NulError> {
+        let name = CString::new(name)?;
+        self.clear_cstr(&name);
+        Ok(())
+    }
+
+    /// Remove an entry completely.
+    pub fn unset_cstr(&mut self, name: &CStr) {
+        unsafe { environ_unset(self.as_ptr(), name.as_ptr()) }
+    }
+
+    /// Remove an entry named by arbitrary bytes.
+    pub fn unset(&mut self, name: &[u8]) -> Result<(), NulError> {
+        let name = CString::new(name)?;
+        self.unset_cstr(&name);
+        Ok(())
+    }
+
+    /// Copy entries from another borrowed environment view.
+    pub fn copy_from(&mut self, source: EnvironView<'_>) {
+        unsafe { environ_copy(source.as_ptr(), self.as_ptr()) }
+    }
+
+    /// Transfer the C allocation without running `Drop`.
+    ///
+    /// The returned pointer must be adopted by [`Self::from_raw`] or released
+    /// with `environ_free`. This is the explicit hand-off used at C boundaries;
+    /// an owner is never placed inside a `calloc`/`free`-managed record.
+    pub fn into_raw(self) -> *mut environ {
+        let raw = self.raw.as_ptr();
+        std::mem::forget(self);
+        raw
+    }
+
+    /// Alias for [`Self::into_raw`] that makes an ownership hand-off explicit.
+    pub fn transfer(self) -> *mut environ {
+        self.into_raw()
+    }
+}
+
+impl Default for EnvironOwner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for EnvironOwner {
+    fn drop(&mut self) {
+        unsafe { environ_free(self.raw.as_ptr()) }
+    }
+}
+
+/// A read-only view of an environment tree tied to an [`EnvironOwner`] borrow.
+#[derive(Clone, Copy)]
+pub struct EnvironView<'a> {
+    raw: NonNull<environ>,
+    _owner: PhantomData<&'a EnvironOwner>,
+}
+
+impl<'a> EnvironView<'a> {
+    /// Borrow the raw pointer for a synchronous C call.
+    pub fn as_ptr(self) -> *mut environ {
+        self.raw.as_ptr()
+    }
+
+    /// Find an entry without converting its bytes to UTF-8.
+    pub fn find(self, name: &CStr) -> Option<EnvironEntry<'a>> {
+        let entry = unsafe { environ_find(self.as_ptr(), name.as_ptr()) };
+        NonNull::new(entry).map(|raw| EnvironEntry {
+            raw,
+            _owner: PhantomData,
+        })
+    }
+
+    /// Find an entry by arbitrary bytes, rejecting embedded NUL.
+    pub fn find_bytes(self, name: &[u8]) -> Result<Option<EnvironEntry<'a>>, NulError> {
+        let name = CString::new(name)?;
+        Ok(self.find(&name))
+    }
+
+    /// Return the first entry in the tree's existing bytewise order.
+    pub fn first(self) -> Option<EnvironEntry<'a>> {
+        let entry = unsafe { environ_first(self.as_ptr()) };
+        NonNull::new(entry).map(|raw| EnvironEntry {
+            raw,
+            _owner: PhantomData,
+        })
+    }
+
+    /// Iterate the existing red-black tree in bytewise name order.
+    pub fn entries(self) -> EnvironIter<'a> {
+        EnvironIter { next: self.first() }
+    }
+}
+
+/// A retained entry pointer whose lifetime is tied to an owner borrow.
+#[derive(Clone, Copy)]
+pub struct EnvironEntry<'a> {
+    raw: NonNull<environ_entry>,
+    _owner: PhantomData<&'a EnvironOwner>,
+}
+
+impl<'a> EnvironEntry<'a> {
+    /// Borrow the original name bytes, including no trailing NUL.
+    pub fn name(&self) -> &'a CStr {
+        unsafe { CStr::from_ptr((*self.raw.as_ptr()).name) }
+    }
+
+    /// Borrow the original name bytes without UTF-8 decoding.
+    pub fn name_bytes(&self) -> &'a [u8] {
+        self.name().to_bytes()
+    }
+
+    /// Borrow the value, or return `None` for a present valueless entry.
+    pub fn value(&self) -> Option<&'a CStr> {
+        unsafe {
+            let value = (*self.raw.as_ptr()).value;
+            (!value.is_null()).then(|| CStr::from_ptr(value))
+        }
+    }
+
+    /// Borrow value bytes without UTF-8 decoding.
+    pub fn value_bytes(&self) -> Option<&'a [u8]> {
+        self.value().map(CStr::to_bytes)
+    }
+
+    /// Return the C environment flags stored on this entry.
+    pub fn flags(&self) -> ::core::ffi::c_int {
+        unsafe { (*self.raw.as_ptr()).flags }
+    }
+
+    /// Return the next entry in the owner-borrowed tree view.
+    pub fn next(&self) -> Option<Self> {
+        let entry = unsafe { environ_next(self.raw.as_ptr()) };
+        NonNull::new(entry).map(|raw| Self {
+            raw,
+            _owner: PhantomData,
+        })
+    }
+
+    /// Borrow the retained C entry pointer for a synchronous C call.
+    pub fn as_ptr(&self) -> *mut environ_entry {
+        self.raw.as_ptr()
+    }
+}
+
+/// Iterator over entries in the C tree's bytewise ordering.
+pub struct EnvironIter<'a> {
+    next: Option<EnvironEntry<'a>>,
+}
+
+impl<'a> Iterator for EnvironIter<'a> {
+    type Item = EnvironEntry<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let current = self.next.take()?;
+        self.next = current.next();
+        Some(current)
+    }
+}
+
+/// Compatibility name for callers that prefer the domain term.
+pub type Environment = EnvironOwner;
+/// Compatibility name for a borrowed environment view.
+pub type EnvironmentView<'a> = EnvironView<'a>;
+/// Compatibility name for a borrowed environment entry.
+pub type EnvironmentEntry<'a> = EnvironEntry<'a>;
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,

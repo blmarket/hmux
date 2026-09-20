@@ -3,7 +3,7 @@ use crate::src::cmd::{cmd_copy_argv, cmd_log_argv, cmd_stringify_argv};
 use crate::src::cmd_queue::cmdq_print;
 use crate::src::compat::fdforkpty::fdforkpty;
 use crate::src::environ::{
-    environ_copy, environ_for_session, environ_free, environ_push, environ_set,
+    environ_copy, environ_for_session, environ_push, environ_set, EnvironOwner,
 };
 use crate::src::ffi::libc::{
     _exit, chdir, close, closefrom, dup2, execl, execvp, fork, free, ioctl, kill, killpg,
@@ -152,7 +152,18 @@ pub unsafe extern "C" fn job_run(
     let mut tty: [::core::ffi::c_char; 32] = [0; 32];
     let mut argv0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
-    env = environ_for_session(s, (cfg_finished == 0) as ::core::ffi::c_int);
+    // This environment is forked for the job and never escapes `job_run`.
+    // Keep ownership in a Rust local rather than putting a Drop-bearing value
+    // in the C-managed job record. The child reaches exec/_exit, while the
+    // parent drops the same owner on both success and failure paths.
+    let mut env_owner = Some(EnvironOwner::from_raw(environ_for_session(
+        s,
+        (cfg_finished == 0) as ::core::ffi::c_int,
+    )));
+    env = env_owner
+        .as_ref()
+        .expect("job environment owner must exist")
+        .as_ptr();
     if !e.is_null() {
         environ_copy(e, env);
     }
@@ -283,7 +294,9 @@ pub unsafe extern "C" fn job_run(
                         }
                     }
                     environ_push(env);
-                    environ_free(env);
+                    // The child has a private copy after fork. The parent
+                    // keeps its owner for the parent-side return path.
+                    drop(env_owner.take());
                     if !flags & JOB_PTY != 0 {
                         if dup2(out[1 as ::core::ffi::c_int as usize], STDIN_FILENO)
                             == -(1 as ::core::ffi::c_int)
@@ -359,7 +372,7 @@ pub unsafe extern "C" fn job_run(
                         &raw mut oldset,
                         ::core::ptr::null_mut::<sigset_t>(),
                     );
-                    environ_free(env);
+                    drop(env_owner.take());
                     free(argv0 as *mut ::core::ffi::c_void);
                     job = xcalloc(1 as size_t, ::core::mem::size_of::<job>() as size_t) as *mut job;
                     (*job).state = JOB_RUNNING;
@@ -442,7 +455,6 @@ pub unsafe extern "C" fn job_run(
         &raw mut oldset,
         ::core::ptr::null_mut::<sigset_t>(),
     );
-    environ_free(env);
     free(argv0 as *mut ::core::ffi::c_void);
     return ::core::ptr::null_mut::<job>();
 }
