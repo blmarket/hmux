@@ -237,3 +237,85 @@ fn no_unreviewed_named_duplicates_remain() {
         );
     }
 }
+
+// These field sets identify candidates for the audited grid-storage roles, not
+// C type identity. Flag candidates even if their types or generated names drift;
+// any new lookalike needs an owning-role audit before it can be an exception.
+fn grid_storage_candidates(source: &str) -> Vec<(String, &'static str)> {
+    let words = tokens(source);
+    let mut found = Vec::new();
+    for (i, pair) in words.windows(2).enumerate() {
+        if !matches!(pair[0].as_str(), "struct" | "union") {
+            continue;
+        }
+        if words.get(i + 2).map(String::as_str) != Some("{") {
+            continue;
+        }
+        let mut fields = Vec::new();
+        let mut depth = 0;
+        for j in i + 3..words.len() {
+            match words[j].as_str() {
+                "}" if depth == 0 => break,
+                "{" | "(" | "[" | "<" => depth += 1,
+                "}" | ")" | "]" | ">" => depth -= 1,
+                ":" if depth == 0
+                    && words[j - 1] != ":"
+                    && words.get(j + 1).map(String::as_str) != Some(":") =>
+                {
+                    fields.push(words[j - 1].as_str());
+                }
+                _ => {}
+            }
+        }
+        let role = match (pair[0].as_str(), fields.as_slice()) {
+            ("union", ["offset", "data"]) => "grid_cell_entry_storage",
+            ("struct", ["attr", "fg", "bg", "data"]) => "grid_cell_entry_data",
+            _ => continue,
+        };
+        found.push((pair[1].clone(), role));
+    }
+    found
+}
+
+#[test]
+fn grid_storage_roles_have_only_authoritative_definitions() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = vec![root.join("lib.rs"), root.join("build.rs")];
+    source_files(&root.join("src"), &mut files); // Includes binary code.
+    let mut count = 0;
+    for path in files {
+        for (name, role) in grid_storage_candidates(&fs::read_to_string(&path).unwrap()) {
+            assert_eq!(
+                path.strip_prefix(root).unwrap(),
+                Path::new("src/shared/grid.rs"),
+                "redundant or unaudited grid-storage candidate {name} ({role})"
+            );
+            assert_eq!(name, role);
+            count += 1;
+        }
+    }
+    assert_eq!(
+        count, 2,
+        "both authoritative storage roles must be inventoried"
+    );
+}
+
+#[test]
+fn grid_role_guard_uses_fields_instead_of_generated_names() {
+    assert_eq!(
+        grid_storage_candidates(
+            r#"
+        /* union Ignored { offset: u32, data: Other } */
+        const TEXT: &str = "struct Ignored { attr: u8, fg: u8, bg: u8, data: u8 }";
+        pub(crate) union
+        Renumbered { pub offset: u64, pub data: DifferentName }
+        struct DifferentName { attr: u8, fg: u8, bg: u8, data: u8 }
+        struct C2RustUnnamed { mask: u32, code: u32 }
+    "#
+        ),
+        vec![
+            ("Renumbered".into(), "grid_cell_entry_storage"),
+            ("DifferentName".into(), "grid_cell_entry_data"),
+        ]
+    );
+}

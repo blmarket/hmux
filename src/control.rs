@@ -229,20 +229,8 @@ pub struct pollfd {
     pub revents: ::core::ffi::c_short,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_12 {
-    pub offset: u_int,
-    pub data: C2RustUnnamed_13,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_13 {
-    pub attr: u_char,
-    pub fg: u_char,
-    pub bg: u_char,
-    pub data: u_char,
-}
+pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
+pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 
 pub const POLLIN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const INFTIM: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);

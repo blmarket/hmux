@@ -110,20 +110,8 @@ extern "C" {
     fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_12 {
-    pub offset: u_int,
-    pub data: C2RustUnnamed_13,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_13 {
-    pub attr: u_char,
-    pub fg: u_char,
-    pub bg: u_char,
-    pub data: u_char,
-}
+pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
+pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 
 unsafe extern "C" fn layout_geometry_init(mut lg: *mut layout_geometry) {
     (*lg).sx = UINT_MAX as u_int;

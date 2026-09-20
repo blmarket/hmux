@@ -566,20 +566,8 @@ extern "C" {
     fn menu_key(_: *mut client, _: *mut menu_data, _: *mut key_event) -> ::core::ffi::c_int;
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_13 {
-    pub offset: u_int,
-    pub data: C2RustUnnamed_14,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_14 {
-    pub attr: u_char,
-    pub fg: u_char,
-    pub bg: u_char,
-    pub data: u_char,
-}
+pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
+pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 
 pub const _PATH_TTY: [::core::ffi::c_char; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"/dev/tty\0") };

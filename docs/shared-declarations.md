@@ -304,3 +304,69 @@ Retained validation artifacts are under `target/consolidation/round3-*`,
 per-family builds, pre-migration fixture runs, callback tests, and CLI
 transcripts. All work remains uncommitted on `main`; no push or history rewrite
 was performed.
+
+## Grid-storage anonymous-role cleanup
+
+This follow-up starts at `2797f28` on `main` and closes the review finding that
+123 unused grid-storage union/struct pairs escaped the generated-name exclusion.
+The named-family completion above did not account for these 246 declarations.
+
+[grid-storage-declarations.tsv](grid-storage-declarations.tsv) inventories every
+copy before this cleanup, with its source file, original name, owning-role name,
+and normalized declaration fingerprint. For **each** pair, the audit traversed
+`grid_cell_entry.c2rust_unnamed` and then the union's `data` field in the original
+transpilation (`5606919`). Each surviving declaration matched that historical
+definition and the authoritative declaration in `src/shared/grid.rs`, after
+substituting only the two role names. This includes `repr(C)`, derives, field
+order, `u_int`/`u_char` dependencies, and both union alternatives. Every union
+name occurred only at its declaration; every nested data name occurred only at
+its declaration and in its union's field. Generated names were never treated as
+cross-module identities.
+
+All 123 pairs now re-export `grid_cell_entry_storage` and
+`grid_cell_entry_data` under their original public names, preserving public
+module paths without redundant definitions. The authoritative packed enclosing
+record is unchanged. Unrelated generated types, including `grid`'s mask/code
+record, remain private to their implementation roles. No casts, callback
+changes, bitfield changes, or executable-body changes were introduced. An exact
+source comparison verified that each of the 123 production-file diffs consists
+only of the two declaration-to-re-export replacements, plus removal of the
+newly unused ABI import in `cmd_lock_server.rs`. The source inventory
+falls from 4,971 to 4,725 declarations.
+
+`grid_storage_layout` records size, alignment, and every field offset for all
+246 original copies. Its frozen fixture was captured by compiling/running the
+test **before** replacing the definitions. All storage unions measure size 4,
+alignment 4, offsets `[0, 0]`; all data records measure size 4, alignment 1,
+offsets `[0, 1, 2, 3]` on the validation platform. The final test also requires
+direct type assignments between every original public path and its authoritative
+role, without conversion casts. Existing packed-container, bitfield, and
+callback regression tests remain in the full suite.
+
+The duplicate guard now additionally checks the two audited grid-storage field
+sets across all source files, including binary code. It flags candidates
+regardless of generated identifier or field-type spelling, without declaring
+unrelated anonymous names equivalent. Both candidates must occur exactly once,
+with their role names in `src/shared/grid.rs`. Lexer regression cases cover
+restricted visibility, wrapped declarations, comments/literals, changed types,
+and an unrelated same-generated-name record. The new guard was run against the
+pre-cleanup source and failed on the redundant pair in `alerts.rs` as expected.
+
+Validation artifacts are retained under `target/consolidation/grid-cleanup-*`:
+fresh before/after inventories, build/test/Clippy logs, frozen pre-cleanup layout
+measurements, the expected guard failure, and isolated CLI transcripts. The CLI
+runner creates a unique repository-local socket, disables user configuration,
+and cleans up its server. No other repository was modified, and no commits,
+pushes, branch changes, or history rewrites were performed.
+
+| Check | Before cleanup | After cleanup |
+| --- | --- | --- |
+| `cargo build` | Pass | Pass |
+| `cargo test -j 2` | 98 pass | 101 pass |
+| `cargo clippy --all-targets --message-format=json` | 30 existing errors | Same 30 errors; identical diagnostic multiset by level/message/file |
+| Isolated CLI regressions | Pass | Pass; byte-identical JSON transcript |
+
+Clippy emits the 30 existing errors twice across the library and its test build
+(60 error records); both runs also contain 14,895 warning records. The complete
+diagnostic multiset, including occurrence counts and warnings, is unchanged
+when excluding shifted line numbers. No lint allowances were added.

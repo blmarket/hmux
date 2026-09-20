@@ -184,20 +184,8 @@ extern "C" {
     fn style_set(_: *mut style, _: *const grid_cell);
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_12 {
-    pub offset: u_int,
-    pub data: C2RustUnnamed_13,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_13 {
-    pub attr: u_char,
-    pub fg: u_char,
-    pub bg: u_char,
-    pub data: u_char,
-}
+pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
+pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 
 pub type C2RustUnnamed_38 = ::core::ffi::c_ulong;
 

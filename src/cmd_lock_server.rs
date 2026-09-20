@@ -52,7 +52,6 @@ use crate::src::shared::event::*;
 use crate::src::shared::display::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::message::*;
-use crate::src::shared::abi::*;
 use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
@@ -69,20 +68,8 @@ extern "C" {
     fn recalculate_sizes();
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_12 {
-    pub offset: u_int,
-    pub data: C2RustUnnamed_13,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_13 {
-    pub attr: u_char,
-    pub fg: u_char,
-    pub bg: u_char,
-    pub data: u_char,
-}
+pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
+pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 
 #[no_mangle]
 pub static mut cmd_lock_server_entry: cmd_entry = unsafe {

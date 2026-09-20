@@ -307,20 +307,8 @@ extern "C" {
 }
 pub type __useconds_t = ::core::ffi::c_uint;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed {
-    pub offset: u_int,
-    pub data: C2RustUnnamed_0,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_0 {
-    pub attr: u_char,
-    pub fg: u_char,
-    pub bg: u_char,
-    pub data: u_char,
-}
+pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
+pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
 
 pub const TIOCGWINSZ: ::core::ffi::c_int = 0x5413 as ::core::ffi::c_int;
 

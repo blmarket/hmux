@@ -231,20 +231,8 @@ pub struct msg_write_done {
     pub error: ::core::ffi::c_int,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union C2RustUnnamed_13 {
-    pub offset: u_int,
-    pub data: C2RustUnnamed_14,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_14 {
-    pub attr: u_char,
-    pub fg: u_char,
-    pub bg: u_char,
-    pub data: u_char,
-}
+pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
+pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 
 pub const EIO: ::core::ffi::c_int = 5 as ::core::ffi::c_int;
 
