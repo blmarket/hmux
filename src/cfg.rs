@@ -377,6 +377,23 @@ pub unsafe extern "C" fn cfg_add_cause(mut fmt: *const ::core::ffi::c_char, mut 
     let ref mut fresh0 = *cfg_causes.offset(cfg_ncauses.wrapping_sub(1 as u_int) as isize);
     *fresh0 = msg;
 }
+
+#[cfg(test)]
+pub(crate) unsafe fn cfg_test_take_causes() -> Vec<Vec<u8>> {
+    let mut causes = Vec::with_capacity(cfg_ncauses as usize);
+    let mut i = 0;
+    while i < cfg_ncauses {
+        let cause = *cfg_causes.offset(i as isize);
+        causes.push(std::ffi::CStr::from_ptr(cause).to_bytes().to_vec());
+        free(cause as *mut ::core::ffi::c_void);
+        i += 1;
+    }
+    free(cfg_causes as *mut ::core::ffi::c_void);
+    cfg_causes = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
+    cfg_ncauses = 0 as u_int;
+    causes
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn cfg_print_causes(mut item: *mut cmdq_item) {
     let mut c: *mut client = cmdq_get_client(item);

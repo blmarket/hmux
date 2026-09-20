@@ -34,55 +34,27 @@ unsafe fn run_match(input: &[u8], abi_adapter: bool) -> MatchOutcome {
     outcome
 }
 
-fn expected_error(input: &[u8], ambiguous: i32) -> String {
-    let prefix = if ambiguous != 0 {
-        "ambiguous option"
-    } else {
-        "invalid option"
-    };
-    format!("{prefix}: {}", String::from_utf8_lossy(input))
-}
-
-const CASES: &[(&[u8], Option<&[u8]>, Option<&[u8]>, i32, Option<&str>)] = &[
-    (b"status", Some(b"status"), None, 0, None),
-    (b"mous", Some(b"mouse"), None, 0, None),
-    (b"pane-colors", Some(b"pane-colours"), None, 0, None),
+const CASES: &[(&[u8], Option<&[u8]>, Option<&[u8]>, i32)] = &[
+    (b"status", Some(b"status"), None, 0),
+    (b"mous", Some(b"mouse"), None, 0),
+    (b"pane-colors", Some(b"pane-colours"), None, 0),
     (
         b"status-format[0007]",
         Some(b"status-format"),
         Some(b"7"),
         0,
-        None,
     ),
-    (b"@test[hook]", Some(b"@test"), Some(b"hook"), 0, None),
-    (b"[key]", None, None, 1, Some("ambiguous option: [key]")),
-    (b"status-", None, None, 1, Some("ambiguous option: status-")),
-    (b"status[]", None, None, 0, Some("invalid option: status[]")),
-    (
-        b"status-format[4294967296]",
-        None,
-        None,
-        0,
-        Some("invalid option: status-format[4294967296]"),
-    ),
-    (
-        b"status-format[0]tail",
-        None,
-        None,
-        0,
-        Some("invalid option: status-format[0]tail"),
-    ),
-    (
-        b"not-an-option",
-        None,
-        None,
-        0,
-        Some("invalid option: not-an-option"),
-    ),
+    (b"@test[hook]", Some(b"@test"), Some(b"hook"), 0),
+    (b"[key]", None, None, 1),
+    (b"status-", None, None, 1),
+    (b"status[]", None, None, 0),
+    (b"status-format[4294967296]", None, None, 0),
+    (b"status-format[0]tail", None, None, 0),
+    (b"not-an-option", None, None, 0),
 ];
 
 fn assert_cases(abi_adapter: bool) {
-    for &(input, name, key, ambiguous, diagnostic) in CASES {
+    for &(input, name, key, ambiguous) in CASES {
         let actual = unsafe { run_match(input, abi_adapter) };
         assert_eq!(
             actual,
@@ -93,19 +65,16 @@ fn assert_cases(abi_adapter: bool) {
             },
             "input={input:?}"
         );
-        if let Some(expected) = diagnostic {
-            assert_eq!(expected_error(input, ambiguous), expected);
-        }
     }
 }
 
 #[test]
-fn set_option_name_regressions() {
+fn set_option_command_adapter_cases() {
     assert_cases(false);
 }
 
 #[test]
-fn show_options_name_regressions() {
+fn show_options_command_adapter_cases() {
     assert_cases(false);
 }
 

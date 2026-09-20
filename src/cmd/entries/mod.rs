@@ -61,3 +61,6 @@ pub mod swap_window;
 pub mod switch_client;
 pub mod unbind_key;
 pub mod wait_for;
+
+#[cfg(test)]
+mod options_tests;
