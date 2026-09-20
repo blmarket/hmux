@@ -337,61 +337,125 @@ pub unsafe extern "C" fn colour_dim(
         .wrapping_div(100 as u_int) as u_char;
     return colour_join_rgb(r, g, b);
 }
+const COLOUR_THEME_NAMES: &[&[u8]] = &[
+    b"themeblack",
+    b"themewhite",
+    b"themelightgrey",
+    b"themedarkgrey",
+    b"themegreen",
+    b"themeyellow",
+    b"themered",
+    b"themeblue",
+    b"themecyan",
+    b"thememagenta",
+];
+
+fn colour_basic_name(c: i32) -> &'static [u8] {
+    match c {
+        0 => b"black",
+        1 => b"red",
+        2 => b"green",
+        3 => b"yellow",
+        4 => b"blue",
+        5 => b"magenta",
+        6 => b"cyan",
+        7 => b"white",
+        8 => b"default",
+        9 => b"terminal",
+        90 => b"brightblack",
+        91 => b"brightred",
+        92 => b"brightgreen",
+        93 => b"brightyellow",
+        94 => b"brightblue",
+        95 => b"brightmagenta",
+        96 => b"brightcyan",
+        97 => b"brightwhite",
+        _ => b"invalid",
+    }
+}
+
+fn copy_colour_text(output: &mut [u8], text: &[u8]) -> Option<usize> {
+    if output.len() <= text.len() {
+        return None;
+    }
+    output[..text.len()].copy_from_slice(text);
+    output[text.len()] = 0;
+    Some(text.len())
+}
+
+/// Format canonical colour text into a caller-owned NUL-terminated buffer.
+///
+/// The returned length excludes the trailing NUL. If `output` is too small,
+/// this function returns `None` without modifying it. Formatting precedence is
+/// sentinel, theme, RGB, indexed, then basic/bright colour.
+pub fn colour_format_into(c: i32, output: &mut [u8]) -> Option<usize> {
+    if c == -1 {
+        return copy_colour_text(output, b"none");
+    }
+    if c & COLOUR_FLAG_THEME != 0 {
+        return copy_colour_text(
+            output,
+            COLOUR_THEME_NAMES
+                .get((c & 0xff) as usize)
+                .copied()
+                .unwrap_or(b"invalid"),
+        );
+    }
+    if c & COLOUR_FLAG_RGB != 0 {
+        if output.len() < 8 {
+            return None;
+        }
+        let rgb = c as u32 & 0x00ff_ffff;
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        output[0] = b'#';
+        for digit in 0..6 {
+            let shift = (5 - digit) * 4;
+            output[digit + 1] = HEX[((rgb >> shift) & 0xf) as usize];
+        }
+        output[7] = 0;
+        return Some(7);
+    }
+    if c & COLOUR_FLAG_256 != 0 {
+        let index = (c & 0xff) as u32;
+        let digits: usize = if index >= 100 {
+            3
+        } else if index >= 10 {
+            2
+        } else {
+            1
+        };
+        let required = b"colour".len() + digits;
+        if output.len() <= required {
+            return None;
+        }
+        output[..b"colour".len()].copy_from_slice(b"colour");
+        let mut divisor = 10_u32.pow((digits - 1) as u32);
+        let mut position = b"colour".len();
+        while divisor != 0 {
+            output[position] = b'0' + ((index / divisor) % 10) as u8;
+            position += 1;
+            divisor /= 10;
+        }
+        output[position] = 0;
+        return Some(position);
+    }
+    copy_colour_text(output, colour_basic_name(c))
+}
+
 /// Owned canonical colour text. Results remain valid across subsequent calls.
 pub fn colour_format(c: i32) -> std::ffi::CString {
-    const THEMES: &[&str] = &[
-        "themeblack",
-        "themewhite",
-        "themelightgrey",
-        "themedarkgrey",
-        "themegreen",
-        "themeyellow",
-        "themered",
-        "themeblue",
-        "themecyan",
-        "thememagenta",
-    ];
-    let text = if c == -1 {
-        "none".to_owned()
-    } else if c & COLOUR_FLAG_THEME != 0 {
-        THEMES
-            .get((c & 0xff) as usize)
-            .unwrap_or(&"invalid")
-            .to_string()
-    } else if c & COLOUR_FLAG_RGB != 0 {
-        format!("#{:06x}", c & 0xffffff)
-    } else if c & COLOUR_FLAG_256 != 0 {
-        format!("colour{}", c & 0xff)
-    } else {
-        match c {
-            0 => "black",
-            1 => "red",
-            2 => "green",
-            3 => "yellow",
-            4 => "blue",
-            5 => "magenta",
-            6 => "cyan",
-            7 => "white",
-            8 => "default",
-            9 => "terminal",
-            90 => "brightblack",
-            91 => "brightred",
-            92 => "brightgreen",
-            93 => "brightyellow",
-            94 => "brightblue",
-            95 => "brightmagenta",
-            96 => "brightcyan",
-            97 => "brightwhite",
-            _ => "invalid",
-        }
-        .to_owned()
-    };
-    std::ffi::CString::new(text).expect("colour names contain no NUL")
+    let mut bytes = [0_u8; 32];
+    let written = colour_format_into(c, &mut bytes).expect("sized colour buffer");
+    std::ffi::CString::from_vec_with_nul(bytes[..=written].to_vec())
+        .expect("colour names contain no NUL")
 }
 
 /// C ABI only. Result is valid until the next call on this thread or thread exit.
 /// Do not free it or access it concurrently with another call on that thread.
 /// Rust callers should retain colour_format's owned result instead.
+/// # Safety
+/// The returned pointer must only be read before the next call to this shim on
+/// the same thread, and must not be freed by the caller.
 #[no_mangle]
 pub unsafe extern "C" fn colour_tostring(c: i32) -> *const libc::c_char {
     thread_local! {
@@ -417,6 +481,27 @@ pub fn colour_format_escape(
         colour = unsafe { colour_theme_terminal_colour((colour & 0xff) as u32) };
     }
     colour_format_escape_resolved(colour, background, flags)
+}
+
+/// Format an SGR escape into a caller-owned NUL-terminated buffer.
+///
+/// The returned length excludes the trailing NUL. A short buffer returns
+/// `None` without modifying it. This has the same theme fallback and
+/// capability semantics as [`colour_format_escape`].
+pub fn colour_format_escape_into(
+    colour: i32,
+    background: bool,
+    flags: i32,
+    output: &mut [u8],
+) -> Option<usize> {
+    let text = colour_format_escape(colour, background, flags)?;
+    let bytes = text.as_bytes();
+    if output.len() <= bytes.len() {
+        return None;
+    }
+    output[..bytes.len()].copy_from_slice(bytes);
+    output[bytes.len()] = 0;
+    Some(bytes.len())
 }
 
 fn colour_format_escape_resolved(
@@ -3920,11 +4005,12 @@ pub fn colour_parse_x11_cstr(input: &std::ffi::CStr) -> Option<i32> {
 /// Call on the application thread, where the global debug log is managed.
 pub unsafe fn colour_parse_x11_logged(input: &std::ffi::CStr) -> Option<i32> {
     let value = colour_parse_x11_cstr(input);
+    let formatted = colour_format(value.unwrap_or(-1));
     crate::src::log::log_debug(
         c"%s: %s = %s".as_ptr(),
         c"colour_parseX11".as_ptr(),
         input.as_ptr(),
-        colour_format(value.unwrap_or(-1)).as_ptr(),
+        formatted.as_ptr(),
     );
     value
 }

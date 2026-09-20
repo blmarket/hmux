@@ -169,6 +169,62 @@ fn owned_results_and_bounded_inputs() {
 }
 
 #[test]
+fn caller_buffers_are_bounded_and_match_owned_formatting() {
+    let values = [
+        (0, b"none".as_slice()),
+        (GRID_ATTR_BRIGHT | GRID_ATTR_DIM, b"bright,dim".as_slice()),
+        (1 << 30, b"".as_slice()),
+    ];
+    for (value, expected) in values {
+        let mut output = [0xa5; 64];
+        let length = attributes_format_into(value, &mut output).unwrap();
+        assert_eq!(&output[..length], expected);
+        assert_eq!(output[length], 0);
+        assert_eq!(
+            &output[..length],
+            &attributes_format(value).as_bytes_with_nul()[..length]
+        );
+    }
+
+    let values = [
+        (-1, b"none".as_slice()),
+        (COLOUR_FLAG_THEME | 1, b"themewhite".as_slice()),
+        (COLOUR_FLAG_RGB | 0xabcdef, b"#abcdef".as_slice()),
+        (COLOUR_FLAG_256 | 0, b"colour0".as_slice()),
+        (COLOUR_FLAG_256 | 255, b"colour255".as_slice()),
+        (10, b"invalid".as_slice()),
+    ];
+    for (value, expected) in values {
+        let mut output = [0xa5; 64];
+        let length = colour_format_into(value, &mut output).unwrap();
+        assert_eq!(&output[..length], expected);
+        assert_eq!(output[length], 0);
+        assert_eq!(
+            &output[..length],
+            &colour_format(value).as_bytes_with_nul()[..length]
+        );
+    }
+
+    let mut too_small = [0xa5; 4];
+    assert_eq!(attributes_format_into(GRID_ATTR_BRIGHT, &mut too_small), None);
+    assert!(too_small.iter().all(|&byte| byte == 0xa5));
+    assert_eq!(colour_format_into(COLOUR_FLAG_RGB | 0x123456, &mut too_small), None);
+    assert!(too_small.iter().all(|&byte| byte == 0xa5));
+
+    let mut escape = [0xa5; 64];
+    let length = colour_format_escape_into(COLOUR_FLAG_RGB | 0x123456, false, 0, &mut escape)
+        .unwrap();
+    assert_eq!(&escape[..length], b"\x1b[38;2;18;52;86m");
+    assert_eq!(escape[length], 0);
+    let mut short_escape = [0xa5; 4];
+    assert_eq!(
+        colour_format_escape_into(COLOUR_FLAG_RGB | 0x123456, false, 0, &mut short_escape),
+        None
+    );
+    assert!(short_escape.iter().all(|&byte| byte == 0xa5));
+}
+
+#[test]
 fn every_attribute_and_index() {
     let names = [
         "acs",

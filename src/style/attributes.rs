@@ -56,31 +56,74 @@ fn equal(a: &[u8], b: &[u8]) -> bool {
         && unsafe { libc::strncasecmp(a.as_ptr().cast(), b.as_ptr().cast(), a.len()) == 0 }
 }
 
+/// Parse a NUL-terminated byte string without retaining its pointer.
+/// Invalid UTF-8 is accepted and compared according to the active C locale.
 pub fn attributes_parse_cstr(input: &CStr) -> Option<i32> {
     attributes_parse(input.to_bytes())
 }
 
-/// Owned canonical text; later formatting calls cannot invalidate this result.
-pub fn attributes_format(attr: i32) -> CString {
-    let mut bytes = Vec::new();
+fn attributes_format_len(attr: i32) -> usize {
     if attr == 0 {
-        bytes.extend_from_slice(b"none");
+        return b"none".len();
+    }
+    NAMES
+        .iter()
+        .filter(|(_, bit)| attr & bit != 0)
+        .map(|(name, _)| name.len())
+        .sum::<usize>()
+        + NAMES
+            .iter()
+            .filter(|(_, bit)| attr & bit != 0)
+            .count()
+            .saturating_sub(1)
+}
+
+/// Format canonical attribute text into a caller-owned NUL-terminated buffer.
+///
+/// The returned length excludes the trailing NUL. If `output` is too small,
+/// this function returns `None` without modifying it. The output order is the
+/// same as [`attributes_format`].
+pub fn attributes_format_into(attr: i32, output: &mut [u8]) -> Option<usize> {
+    let required = attributes_format_len(attr);
+    if output.len() <= required {
+        return None;
+    }
+
+    let mut written = 0;
+    if attr == 0 {
+        output[..b"none".len()].copy_from_slice(b"none");
+        written = b"none".len();
     } else {
         for &(name, bit) in NAMES {
-            if attr & bit != 0 {
-                if !bytes.is_empty() {
-                    bytes.push(b',');
-                }
-                bytes.extend_from_slice(name);
+            if attr & bit == 0 {
+                continue;
             }
+            if written != 0 {
+                output[written] = b',';
+                written += 1;
+            }
+            output[written..written + name.len()].copy_from_slice(name);
+            written += name.len();
         }
     }
-    CString::new(bytes).expect("attribute names contain no NUL")
+    output[written] = 0;
+    Some(written)
+}
+
+/// Owned canonical text; later formatting calls cannot invalidate this result.
+pub fn attributes_format(attr: i32) -> CString {
+    let mut bytes = vec![0; attributes_format_len(attr) + 1];
+    let written = attributes_format_into(attr, &mut bytes).expect("sized attribute buffer");
+    bytes.truncate(written + 1);
+    CString::from_vec_with_nul(bytes).expect("attribute names contain no NUL")
 }
 
 /// C ABI only. The pointer is valid until the next call on this thread or thread
 /// exit. Do not free it or access it concurrently with another call on that thread.
 /// Rust callers should retain the CString returned by attributes_format instead.
+/// # Safety
+/// The returned pointer must only be read before the next call to this shim on
+/// the same thread, and must not be freed by the caller.
 #[no_mangle]
 pub unsafe extern "C" fn attributes_tostring(attr: i32) -> *const libc::c_char {
     thread_local! {

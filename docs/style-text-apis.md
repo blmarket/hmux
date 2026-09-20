@@ -45,8 +45,12 @@ the locale and grammar, not by UTF-8 validity.
 - `colour_parse_name` / `colour_parse_name_cstr` parse X11 names directly (so
   `red` means RGB red here, versus basic colour 1 in application syntax).
 - `colour_parse_x11` / `colour_parse_x11_cstr` parse the extended X11 grammar.
-- `attributes_format(i32)` and `colour_format(i32)` return owned `CString`s.
+- `attributes_format(i32)` and `colour_format(i32)` return owned `CString`s;
+  their `*_format_into` companions write the same text, including a trailing
+  NUL, into a caller buffer and return the length excluding that NUL. A short
+  caller buffer returns `None` without modifying it.
 - `colour_format_escape(i32, bool, i32)` returns `Option<CString>` for SGR text;
+  `colour_format_escape_into` provides the same caller-buffer contract. Its
   arguments are colour, background selection and terminal capability flags.
 
 `None` represents invalid input; the C ABI translates it to -1. Safe results
@@ -93,7 +97,7 @@ RGB/indexed output.
 | Check | Before | After |
 | --- | --- | --- |
 | `cargo build` | Pass; 1890 library warnings | Pass; 1890 library warnings |
-| `cargo test` | 107 tests pass | 115 tests pass, plus 5 isolated locale runs |
+| `cargo test` | 107 tests pass | 116 tests pass, plus 5 isolated locale runs |
 | `cargo clippy --all-targets` | Fails: 30 errors; 7445 library warnings | Same 30 errors; 7432 library warnings |
 | `python3 scripts/cli_regressions.py` | Pass | Pass; identical JSON transcript |
 | `python3 scripts/style_cli_checks.py` | Added during migration | Pass |
