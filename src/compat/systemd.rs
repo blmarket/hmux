@@ -1,3 +1,6 @@
+pub use crate::src::shared::abi::{
+    __socklen_t, __uint16_t, __uint32_t, socklen_t, uint16_t, uint32_t,
+};
 use crate::src::shared::abi::*;
 extern "C" {
     pub type sd_bus;
@@ -102,9 +105,6 @@ extern "C" {
     static mut socket_path: *const ::core::ffi::c_char;
     fn server_create_socket(_: uint64_t, _: *mut *mut ::core::ffi::c_char) -> ::core::ffi::c_int;
 }
-pub type __uint16_t = u16;
-pub type __uint32_t = u32;
-pub type __socklen_t = ::core::ffi::c_uint;
 pub type sa_family_t = ::core::ffi::c_ushort;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -112,8 +112,6 @@ pub struct sockaddr_un {
     pub sun_family: sa_family_t,
     pub sun_path: [::core::ffi::c_char; 108],
 }
-pub type uint16_t = __uint16_t;
-pub type uint32_t = __uint32_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct sd_bus_error {
@@ -128,7 +126,6 @@ pub type sd_bus_message_handler_t = Option<
         *mut sd_bus_error,
     ) -> ::core::ffi::c_int,
 >;
-pub type socklen_t = __socklen_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union sd_id128 {

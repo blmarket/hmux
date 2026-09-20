@@ -1,3 +1,4 @@
+pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
 use crate::src::shared::abi::*;
 extern "C" {
     fn vsnprintf(
@@ -34,17 +35,6 @@ extern "C" {
     fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
     fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
 }
-pub type __builtin_va_list = [__va_list_tag; 1];
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct __va_list_tag {
-    pub gp_offset: ::core::ffi::c_uint,
-    pub fp_offset: ::core::ffi::c_uint,
-    pub overflow_arg_area: *mut ::core::ffi::c_void,
-    pub reg_save_area: *mut ::core::ffi::c_void,
-}
-pub type __gnuc_va_list = __builtin_va_list;
-pub type va_list = __gnuc_va_list;
 pub const INT_MAX: ::core::ffi::c_int = __INT_MAX__;
 pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
 #[no_mangle]

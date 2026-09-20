@@ -1,3 +1,36 @@
+pub use crate::src::shared::pane::{
+    PANE_STYLECHANGED, window_pane_offset, window_pane_resize, window_pane_resize_entry,
+    window_pane_resizes,
+};
+pub use crate::src::shared::screen::{
+    ALL_MODES, ALL_MOUSE_MODES, CURSOR_MODES, MODE_CURSOR, MODE_CURSOR_BLINKING,
+    MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_MOUSE_ALL, MODE_MOUSE_BUTTON,
+    MODE_MOUSE_STANDARD, screen, screen_sel, screen_titles,
+};
+pub use crate::src::shared::abi::{ssize_t};
+pub use crate::src::shared::screen_write::{screen_write_cline};
+pub use crate::src::shared::hyperlinks::{hyperlinks};
+pub use crate::src::shared::tty::{
+    TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_NOAM, TERM_RGBCOLOURS, TERM_VT100LIKE,
+    TTY_ALL_REQUEST_FLAGS, TTY_BLOCK, TTY_BLOCK_INTERVAL, TTY_CTX_CELL_INVALIDATE,
+    TTY_CTX_INVISIBLE_PANES, TTY_CTX_OVERLAY_SYNC, TTY_CTX_PANE_OBSCURED, TTY_CTX_SYNC,
+    TTY_CTX_WINDOW_BIGGER, TTY_CTX_WRAPPED, TTY_FREEZE, TTY_HAVEDA, TTY_HAVEDA2, TTY_HAVESYNC,
+    TTY_HAVEXDA, TTY_NOBLOCK, TTY_NOCURSOR, TTY_OPENED, TTY_OSC52QUERY, TTY_QUERY_TIMEOUT,
+    TTY_REQUEST_LIMIT, TTY_STARTED, TTY_SYNCING, TTY_TIMER, TTY_WAITBG, TTY_WAITFG,
+    TTY_WINSIZEQUERY,
+};
+pub use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_WRITE};
+pub use crate::src::shared::colour::{
+    COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME, COLOUR_THEME_COUNT,
+};
+pub use crate::src::shared::client::{
+    CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWBORDERS, CLIENT_REDRAWMENU, CLIENT_REDRAWOVERLAY,
+    CLIENT_REDRAWSTATUS, CLIENT_REDRAWSTATUSALWAYS, CLIENT_REDRAWWINDOW, CLIENT_SUSPENDED,
+    CLIENT_TERMINAL, CLIENT_UTF8,
+};
+pub use crate::src::shared::display::{visible_range, visible_ranges};
+pub use crate::src::shared::layout::{layout_geometry};
+pub use crate::src::shared::mouse::{mouse_event};
 use crate::src::shared::client::*;
 use crate::src::shared::tty::*;
 use crate::src::shared::terminal::*;
@@ -11,10 +44,6 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 extern "C" {
-    pub type hyperlinks;
-    pub type screen_write_cline;
-    pub type screen_sel;
-    pub type screen_titles;
     pub type args;
     pub type tmuxpeer;
     pub type environ;
@@ -251,7 +280,6 @@ extern "C" {
     ) -> ::core::ffi::c_int;
 }
 pub type __useconds_t = ::core::ffi::c_uint;
-pub type ssize_t = isize;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct winsize {
@@ -273,35 +301,6 @@ pub struct C2RustUnnamed_0 {
     pub fg: u_char,
     pub bg: u_char,
     pub data: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct screen {
-    pub title: *mut ::core::ffi::c_char,
-    pub path: *mut ::core::ffi::c_char,
-    pub titles: *mut screen_titles,
-    pub ntitles: u_int,
-    pub grid: *mut grid,
-    pub cx: u_int,
-    pub cy: u_int,
-    pub cstyle: screen_cursor_style,
-    pub default_cstyle: screen_cursor_style,
-    pub ccolour: ::core::ffi::c_int,
-    pub default_ccolour: ::core::ffi::c_int,
-    pub rupper: u_int,
-    pub rlower: u_int,
-    pub mode: ::core::ffi::c_int,
-    pub default_mode: ::core::ffi::c_int,
-    pub saved_cx: u_int,
-    pub saved_cy: u_int,
-    pub saved_grid: *mut grid,
-    pub saved_cell: grid_cell,
-    pub saved_flags: ::core::ffi::c_int,
-    pub tabs: *mut bitstr_t,
-    pub sel: *mut screen_sel,
-    pub write_list: *mut screen_write_cline,
-    pub hyperlinks: *mut hyperlinks,
-    pub progress_bar: progress_bar,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -450,28 +449,6 @@ pub struct key_event {
     pub buf: *mut ::core::ffi::c_char,
     pub len: size_t,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct mouse_event {
-    pub valid: ::core::ffi::c_int,
-    pub ignore: ::core::ffi::c_int,
-    pub key: key_code,
-    pub statusat: ::core::ffi::c_int,
-    pub statuslines: u_int,
-    pub x: u_int,
-    pub y: u_int,
-    pub b: u_int,
-    pub lx: u_int,
-    pub ly: u_int,
-    pub lb: u_int,
-    pub ox: u_int,
-    pub oy: u_int,
-    pub s: ::core::ffi::c_int,
-    pub w: ::core::ffi::c_int,
-    pub wp: ::core::ffi::c_int,
-    pub sgr_type: u_int,
-    pub sgr_b: u_int,
-}
 pub type overlay_draw_cb =
     Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
 pub type overlay_mode_cb = Option<
@@ -491,19 +468,6 @@ pub type overlay_check_cb = Option<
         u_int,
     ) -> *mut visible_ranges,
 >;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct visible_ranges {
-    pub ranges: *mut visible_range,
-    pub used: u_int,
-    pub size: u_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct visible_range {
-    pub px: u_int,
-    pub nx: u_int,
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session {
@@ -859,40 +823,6 @@ pub struct cmd_find_state {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct window_pane_offset {
-    pub used: size_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_resizes {
-    pub tqh_first: *mut window_pane_resize,
-    pub tqh_last: *mut *mut window_pane_resize,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_resize {
-    pub sx: u_int,
-    pub sy: u_int,
-    pub osx: u_int,
-    pub osy: u_int,
-    pub entry: C2RustUnnamed_30,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_30 {
-    pub tqe_next: *mut window_pane_resize,
-    pub tqe_prev: *mut *mut window_pane_resize,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct layout_geometry {
-    pub sx: u_int,
-    pub sy: u_int,
-    pub xoff: ::core::ffi::c_int,
-    pub yoff: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct window_panes {
     pub tqh_first: *mut window_pane,
     pub tqh_last: *mut *mut window_pane,
@@ -1138,79 +1068,10 @@ pub const ECHOKE: ::core::ffi::c_int = 0o4000 as ::core::ffi::c_int;
 pub const IEXTEN: ::core::ffi::c_int = 0o100000 as ::core::ffi::c_int;
 pub const TCSANOW: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const TCOFLUSH: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const EV_READ: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const EV_WRITE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const EV_PERSIST: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const MODE_CURSOR: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const MODE_MOUSE_STANDARD: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const MODE_MOUSE_BUTTON: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const MODE_CURSOR_BLINKING: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const MODE_MOUSE_ALL: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
-pub const MODE_CURSOR_VERY_VISIBLE: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
-pub const MODE_CURSOR_BLINKING_SET: ::core::ffi::c_int = 0x20000 as ::core::ffi::c_int;
-pub const ALL_MODES: ::core::ffi::c_int = 0xffffff as ::core::ffi::c_int;
-pub const ALL_MOUSE_MODES: ::core::ffi::c_int =
-    MODE_MOUSE_STANDARD | MODE_MOUSE_BUTTON | MODE_MOUSE_ALL;
-pub const CURSOR_MODES: ::core::ffi::c_int =
-    MODE_CURSOR | MODE_CURSOR_BLINKING | MODE_CURSOR_VERY_VISIBLE;
 pub const UTF8_SIZE: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
-pub const COLOUR_FLAG_256: ::core::ffi::c_int = 0x1000000 as ::core::ffi::c_int;
-pub const COLOUR_FLAG_RGB: ::core::ffi::c_int = 0x2000000 as ::core::ffi::c_int;
-pub const COLOUR_FLAG_THEME: ::core::ffi::c_int = 0x4000000 as ::core::ffi::c_int;
-pub const COLOUR_THEME_COUNT: ::core::ffi::c_int = 10 as ::core::ffi::c_int;
-pub const PANE_STYLECHANGED: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
-pub const TERM_256COLOURS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const TERM_NOAM: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const TERM_DECSLRM: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const TERM_DECFRA: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const TERM_RGBCOLOURS: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const TERM_VT100LIKE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const TTY_NOCURSOR: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const TTY_FREEZE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const TTY_TIMER: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const TTY_NOBLOCK: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const TTY_STARTED: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const TTY_OPENED: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const TTY_OSC52QUERY: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const TTY_BLOCK: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const TTY_HAVEDA: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const TTY_HAVEXDA: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
-pub const TTY_SYNCING: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
-pub const TTY_HAVEDA2: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
-pub const TTY_WINSIZEQUERY: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
-pub const TTY_WAITFG: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-pub const TTY_WAITBG: ::core::ffi::c_int = 0x4000 as ::core::ffi::c_int;
-pub const TTY_HAVESYNC: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
-pub const TTY_ALL_REQUEST_FLAGS: ::core::ffi::c_int =
-    TTY_HAVEDA | TTY_HAVEDA2 | TTY_HAVEXDA | TTY_HAVESYNC;
-pub const TTY_CTX_WRAPPED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const TTY_CTX_INVISIBLE_PANES: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const TTY_CTX_WINDOW_BIGGER: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const TTY_CTX_SYNC: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const TTY_CTX_OVERLAY_SYNC: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const TTY_CTX_CELL_INVALIDATE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const TTY_CTX_PANE_OBSCURED: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const CLIENT_TERMINAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const CLIENT_REDRAWWINDOW: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const CLIENT_REDRAWSTATUS: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const CLIENT_SUSPENDED: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const CLIENT_REDRAWBORDERS: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
-pub const CLIENT_UTF8: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
-pub const CLIENT_REDRAWSTATUSALWAYS: ::core::ffi::c_int = 0x1000000 as ::core::ffi::c_int;
-pub const CLIENT_REDRAWOVERLAY: ::core::ffi::c_int = 0x2000000 as ::core::ffi::c_int;
-pub const CLIENT_REDRAWMENU: ::core::ffi::c_int = 0x20000000 as ::core::ffi::c_int;
-pub const CLIENT_ALLREDRAWFLAGS: ::core::ffi::c_int = CLIENT_REDRAWWINDOW
-    | CLIENT_REDRAWSTATUS
-    | CLIENT_REDRAWSTATUSALWAYS
-    | CLIENT_REDRAWBORDERS
-    | CLIENT_REDRAWOVERLAY
-    | CLIENT_REDRAWMENU;
 pub const FORMAT_NOJOBS: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const FORMAT_PANE: ::core::ffi::c_uint = 0x80000000 as ::core::ffi::c_uint;
 static mut tty_log_fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-pub const TTY_BLOCK_INTERVAL: ::core::ffi::c_int = 100000 as ::core::ffi::c_int;
-pub const TTY_QUERY_TIMEOUT: ::core::ffi::c_int = 5 as ::core::ffi::c_int;
-pub const TTY_REQUEST_LIMIT: ::core::ffi::c_int = 30 as ::core::ffi::c_int;
 static mut tty_default_style_ctx: tty_style_ctx = unsafe {
     tty_style_ctx {
         defaults: &raw const grid_default_cell,

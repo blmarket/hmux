@@ -1,3 +1,5 @@
+pub use crate::src::shared::prompt::{PROMPT_NTYPES};
+pub use crate::src::shared::command::{CMD_AFTERHOOK};
 use crate::src::shared::prompt::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::abi::*;
@@ -47,8 +49,6 @@ pub struct cmd_entry {
     pub flags: ::core::ffi::c_int,
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
-pub const CMD_AFTERHOOK: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const PROMPT_NTYPES: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 #[no_mangle]
 pub static mut cmd_show_prompt_history_entry: cmd_entry = unsafe {
     cmd_entry {

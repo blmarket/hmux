@@ -1,3 +1,13 @@
+pub use crate::src::shared::window::{WINDOW_SIZE_LATEST};
+pub use crate::src::shared::pane::{
+    PANE_BORDER_COLOUR, PANE_SCROLLBARS_OFF, PANE_SCROLLBARS_RIGHT, PANE_STATUS_OFF,
+};
+pub use crate::src::shared::options::{
+    OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_HOOK,
+    OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION,
+    OPTIONS_TABLE_STATUS_FORMAT1, OPTIONS_TABLE_STATUS_FORMAT2, OPTIONS_TABLE_STATUS_FORMAT3,
+    OPTIONS_TABLE_WINDOW,
+};
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::options::*;
@@ -43,19 +53,6 @@ pub const ALERT_ANY: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const ALERT_OTHER: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const VISUAL_OFF: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const MODEKEY_EMACS: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const PANE_BORDER_COLOUR: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const WINDOW_SIZE_LATEST: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
-pub const PANE_STATUS_OFF: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const PANE_SCROLLBARS_OFF: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const PANE_SCROLLBARS_RIGHT: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const OPTIONS_TABLE_SERVER: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const OPTIONS_TABLE_SESSION: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const OPTIONS_TABLE_WINDOW: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const OPTIONS_TABLE_PANE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const OPTIONS_TABLE_IS_ARRAY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const OPTIONS_TABLE_IS_HOOK: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const OPTIONS_TABLE_IS_STYLE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const OPTIONS_TABLE_IS_COLOUR: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const INPUT_BUF_DEFAULT_SIZE: ::core::ffi::c_int = 1048576 as ::core::ffi::c_int;
 static mut options_table_mode_keys_list: [*const ::core::ffi::c_char; 3] = [
     b"emacs\0" as *const u8 as *const ::core::ffi::c_char,
@@ -249,30 +246,6 @@ static mut options_table_copy_mode_line_numbers_list: [*const ::core::ffi::c_cha
     b"hybrid\0" as *const u8 as *const ::core::ffi::c_char,
     ::core::ptr::null::<::core::ffi::c_char>(),
 ];
-pub const OPTIONS_TABLE_STATUS_FORMAT1: [::core::ffi::c_char; 1547] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 1547],
-        [::core::ffi::c_char; 1547],
-    >(
-        *b"#[align=left range=left #{E:status-left-style}]#[push-default]#{T;=/#{status-left-length}:status-left}#[pop-default]#[norange default]#[list=on align=#{status-justify}]#[list=left-marker]<#[list=right-marker]>#[list=on]#{W:#[range=window|#{window_index} #{E:window-status-style}#{?#{&&:#{window_last_flag},#{!=:#{E:window-status-last-style},default}}, #{E:window-status-last-style},}#{?#{&&:#{window_bell_flag},#{!=:#{E:window-status-bell-style},default}}, #{E:window-status-bell-style},#{?#{&&:#{||:#{window_activity_flag},#{window_silence_flag}},#{!=:#{E:window-status-activity-style},default}}, #{E:window-status-activity-style},}}]#[push-default]#{T:window-status-format}#[pop-default]#[norange default]#{?loop_last_flag,,#{E:window-status-separator}},#[range=window|#{window_index} list=focus #{?#{!=:#{E:window-status-current-style},default},#{E:window-status-current-style},#{E:window-status-style}}#{?#{&&:#{window_last_flag},#{!=:#{E:window-status-last-style},default}}, #{E:window-status-last-style},}#{?#{&&:#{window_bell_flag},#{!=:#{E:window-status-bell-style},default}}, #{E:window-status-bell-style},#{?#{&&:#{||:#{window_activity_flag},#{window_silence_flag}},#{!=:#{E:window-status-activity-style},default}}, #{E:window-status-activity-style},}}]#[push-default]#{T:window-status-current-format}#[pop-default]#[norange list=on default]#{?loop_last_flag,,#{E:window-status-separator}}}#[nolist align=right range=right #{E:status-right-style}]#[push-default]#{T;=/#{status-right-length}:status-right}#[pop-default]#[norange default]\0",
-    )
-};
-pub const OPTIONS_TABLE_STATUS_FORMAT2: [::core::ffi::c_char; 519] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 519],
-        [::core::ffi::c_char; 519],
-    >(
-        *b"#[align=left]#{R: ,#{n:#{session_name}}}P: #[norange default]#[list=on align=#{status-justify}]#[list=left-marker]<#[list=right-marker]>#[list=on]#{P:#[range=pane|#{pane_id} #{E:pane-status-style}]#[push-default]#{T:window-pane-status-format}#[pop-default]#[norange list=on default]  ,#[range=pane|#{pane_id} list=focus #{?#{!=:#{E:pane-status-current-style},default},#{E:pane-status-current-style},#{E:pane-status-style}}]#[push-default]#{T:window-pane-current-status-format}#[pop-default]#[norange list=on default] }\0",
-    )
-};
-pub const OPTIONS_TABLE_STATUS_FORMAT3: [::core::ffi::c_char; 512] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 512],
-        [::core::ffi::c_char; 512],
-    >(
-        *b"#[align=left]#{R: ,#{n:#{session_name}}}S: #[norange default]#[list=on align=#{status-justify}]#[list=left-marker]<#[list=right-marker]>#[list=on]#{S:#[range=session|#{session_id} #{E:session-status-style}]#[push-default]#S#{session_alert}#[pop-default]#[norange list=on default]  ,#[range=session|#{session_id} list=focus #{?#{!=:#{E:session-status-current-style},default},#{E:session-status-current-style},#{E:session-status-style}}]#[push-default]#S*#{session_alert}#[pop-default]#[norange list=on default] }\0",
-    )
-};
 static mut options_table_status_format_default: [*const ::core::ffi::c_char; 4] = [
     OPTIONS_TABLE_STATUS_FORMAT1.as_ptr(),
     OPTIONS_TABLE_STATUS_FORMAT2.as_ptr(),

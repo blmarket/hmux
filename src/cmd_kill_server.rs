@@ -1,3 +1,4 @@
+pub use crate::src::shared::command::{CMD_STARTSERVER};
 use crate::src::shared::arguments::*;
 use crate::src::shared::abi::*;
 use crate::src::shared::command::*;
@@ -40,7 +41,6 @@ pub struct cmd_entry {
     pub exec: Option<unsafe extern "C" fn(*mut cmd, *mut cmdq_item) -> cmd_retval>,
 }
 pub const SIGTERM: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
-pub const CMD_STARTSERVER: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 #[no_mangle]
 pub static mut cmd_kill_server_entry: cmd_entry = unsafe {
     cmd_entry {

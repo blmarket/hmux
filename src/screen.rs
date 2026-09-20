@@ -1,3 +1,19 @@
+pub use crate::src::shared::screen::{
+    ALL_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CRLF, MODE_CURSOR,
+    MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON,
+    MODE_INSERT, MODE_KCURSOR, MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD,
+    MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8,
+    MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP, screen, screen_sel,
+    screen_title_entry, screen_title_link, screen_titles,
+};
+pub use crate::src::shared::screen_write::{screen_write_cline};
+pub use crate::src::shared::hyperlinks::{hyperlinks};
+pub use crate::src::shared::pane::{
+    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
+};
+pub use crate::src::shared::display::{visible_range, visible_ranges};
+pub use crate::src::shared::layout::{layout_geometry};
+pub use crate::src::shared::mouse::{mouse_event};
 use crate::src::shared::client::*;
 use crate::src::shared::terminal::*;
 use crate::src::shared::event::*;
@@ -12,8 +28,6 @@ use crate::src::shared::style::*;
 extern "C" {
     pub type args;
     pub type tmuxpeer;
-    pub type hyperlinks;
-    pub type screen_write_cline;
     pub type environ;
     pub type options;
     pub type menu_data;
@@ -237,28 +251,6 @@ pub struct key_event {
     pub buf: *mut ::core::ffi::c_char,
     pub len: size_t,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct mouse_event {
-    pub valid: ::core::ffi::c_int,
-    pub ignore: ::core::ffi::c_int,
-    pub key: key_code,
-    pub statusat: ::core::ffi::c_int,
-    pub statuslines: u_int,
-    pub x: u_int,
-    pub y: u_int,
-    pub b: u_int,
-    pub lx: u_int,
-    pub ly: u_int,
-    pub lb: u_int,
-    pub ox: u_int,
-    pub oy: u_int,
-    pub s: ::core::ffi::c_int,
-    pub w: ::core::ffi::c_int,
-    pub wp: ::core::ffi::c_int,
-    pub sgr_type: u_int,
-    pub sgr_b: u_int,
-}
 pub type overlay_draw_cb =
     Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
 pub type overlay_mode_cb = Option<
@@ -269,19 +261,6 @@ pub type overlay_mode_cb = Option<
         *mut u_int,
     ) -> *mut screen,
 >;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct screen_sel {
-    pub hidden: ::core::ffi::c_int,
-    pub rectangle: ::core::ffi::c_int,
-    pub modekeys: ::core::ffi::c_int,
-    pub sx: u_int,
-    pub sy: u_int,
-    pub ex: u_int,
-    pub ey: u_int,
-    pub clipx: u_int,
-    pub cell: grid_cell,
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union C2RustUnnamed_12 {
@@ -296,53 +275,6 @@ pub struct C2RustUnnamed_13 {
     pub bg: u_char,
     pub data: u_char,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct screen {
-    pub title: *mut ::core::ffi::c_char,
-    pub path: *mut ::core::ffi::c_char,
-    pub titles: *mut screen_titles,
-    pub ntitles: u_int,
-    pub grid: *mut grid,
-    pub cx: u_int,
-    pub cy: u_int,
-    pub cstyle: screen_cursor_style,
-    pub default_cstyle: screen_cursor_style,
-    pub ccolour: ::core::ffi::c_int,
-    pub default_ccolour: ::core::ffi::c_int,
-    pub rupper: u_int,
-    pub rlower: u_int,
-    pub mode: ::core::ffi::c_int,
-    pub default_mode: ::core::ffi::c_int,
-    pub saved_cx: u_int,
-    pub saved_cy: u_int,
-    pub saved_grid: *mut grid,
-    pub saved_cell: grid_cell,
-    pub saved_flags: ::core::ffi::c_int,
-    pub tabs: *mut bitstr_t,
-    pub sel: *mut screen_sel,
-    pub write_list: *mut screen_write_cline,
-    pub hyperlinks: *mut hyperlinks,
-    pub progress_bar: progress_bar,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct screen_titles {
-    pub tqh_first: *mut screen_title_entry,
-    pub tqh_last: *mut *mut screen_title_entry,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct screen_title_entry {
-    pub text: *mut ::core::ffi::c_char,
-    pub entry: C2RustUnnamed_14,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_14 {
-    pub tqe_next: *mut screen_title_entry,
-    pub tqe_prev: *mut *mut screen_title_entry,
-}
 pub type overlay_check_cb = Option<
     unsafe extern "C" fn(
         *mut client,
@@ -352,19 +284,6 @@ pub type overlay_check_cb = Option<
         u_int,
     ) -> *mut visible_ranges,
 >;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct visible_ranges {
-    pub ranges: *mut visible_range,
-    pub used: u_int,
-    pub size: u_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct visible_range {
-    pub px: u_int,
-    pub nx: u_int,
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session {
@@ -720,40 +639,6 @@ pub struct cmd_find_state {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct window_pane_offset {
-    pub used: size_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_resizes {
-    pub tqh_first: *mut window_pane_resize,
-    pub tqh_last: *mut *mut window_pane_resize,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_resize {
-    pub sx: u_int,
-    pub sy: u_int,
-    pub osx: u_int,
-    pub osy: u_int,
-    pub entry: C2RustUnnamed_31,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_31 {
-    pub tqe_next: *mut window_pane_resize,
-    pub tqe_prev: *mut *mut window_pane_resize,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct layout_geometry {
-    pub sx: u_int,
-    pub sy: u_int,
-    pub xoff: ::core::ffi::c_int,
-    pub yoff: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct window_panes {
     pub tqh_first: *mut window_pane,
     pub tqh_last: *mut *mut window_pane,
@@ -903,29 +788,6 @@ pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
     .wrapping_mul(2 as ::core::ffi::c_uint)
     .wrapping_add(1 as ::core::ffi::c_uint);
 pub const MODEKEY_EMACS: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const MODE_CURSOR: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const MODE_INSERT: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const MODE_KCURSOR: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const MODE_KKEYPAD: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const MODE_WRAP: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const MODE_MOUSE_STANDARD: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const MODE_MOUSE_BUTTON: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const MODE_CURSOR_BLINKING: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const MODE_MOUSE_UTF8: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const MODE_MOUSE_SGR: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
-pub const MODE_BRACKETPASTE: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
-pub const MODE_FOCUSON: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
-pub const MODE_MOUSE_ALL: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
-pub const MODE_ORIGIN: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-pub const MODE_CRLF: ::core::ffi::c_int = 0x4000 as ::core::ffi::c_int;
-pub const MODE_KEYS_EXTENDED: ::core::ffi::c_int = 0x8000 as ::core::ffi::c_int;
-pub const MODE_CURSOR_VERY_VISIBLE: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
-pub const MODE_CURSOR_BLINKING_SET: ::core::ffi::c_int = 0x20000 as ::core::ffi::c_int;
-pub const MODE_KEYS_EXTENDED_2: ::core::ffi::c_int = 0x40000 as ::core::ffi::c_int;
-pub const MODE_THEME_UPDATES: ::core::ffi::c_int = 0x80000 as ::core::ffi::c_int;
-pub const MODE_SYNC: ::core::ffi::c_int = 0x100000 as ::core::ffi::c_int;
-pub const ALL_MODES: ::core::ffi::c_int = 0xffffff as ::core::ffi::c_int;
-pub const EXTENDED_KEY_MODES: ::core::ffi::c_int = MODE_KEYS_EXTENDED | MODE_KEYS_EXTENDED_2;
 unsafe extern "C" fn screen_free_titles(mut s: *mut screen) {
     let mut title_entry: *mut screen_title_entry = ::core::ptr::null_mut::<screen_title_entry>();
     if (*s).titles.is_null() {

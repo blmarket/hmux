@@ -1,3 +1,8 @@
+pub use crate::src::shared::hyperlinks::{
+    hyperlink_inner_entry, hyperlink_list_entry, hyperlink_uri_entry, hyperlinks,
+    hyperlinks_by_inner_tree, hyperlinks_by_uri_tree, hyperlinks_list, hyperlinks_uri,
+};
+pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 use crate::src::shared::abi::*;
 extern "C" {
     fn strcmp(
@@ -18,67 +23,6 @@ extern "C" {
         _: ::core::ffi::c_int,
     ) -> size_t;
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct hyperlinks {
-    pub next_inner: u_int,
-    pub by_inner: hyperlinks_by_inner_tree,
-    pub by_uri: hyperlinks_by_uri_tree,
-    pub references: u_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct hyperlinks_by_uri_tree {
-    pub rbh_root: *mut hyperlinks_uri,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct hyperlinks_uri {
-    pub tree: *mut hyperlinks,
-    pub inner: u_int,
-    pub internal_id: *const ::core::ffi::c_char,
-    pub external_id: *const ::core::ffi::c_char,
-    pub uri: *const ::core::ffi::c_char,
-    pub list_entry: C2RustUnnamed_1,
-    pub by_inner_entry: C2RustUnnamed_0,
-    pub by_uri_entry: C2RustUnnamed,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed {
-    pub rbe_left: *mut hyperlinks_uri,
-    pub rbe_right: *mut hyperlinks_uri,
-    pub rbe_parent: *mut hyperlinks_uri,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_0 {
-    pub rbe_left: *mut hyperlinks_uri,
-    pub rbe_right: *mut hyperlinks_uri,
-    pub rbe_parent: *mut hyperlinks_uri,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_1 {
-    pub tqe_next: *mut hyperlinks_uri,
-    pub tqe_prev: *mut *mut hyperlinks_uri,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct hyperlinks_by_inner_tree {
-    pub rbh_root: *mut hyperlinks_uri,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct hyperlinks_list {
-    pub tqh_first: *mut hyperlinks_uri,
-    pub tqh_last: *mut *mut hyperlinks_uri,
-}
-pub const RB_BLACK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const RB_RED: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const RB_NEGINF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const VIS_OCTAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const VIS_CSTYLE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const MAX_HYPERLINKS: ::core::ffi::c_int = 5000 as ::core::ffi::c_int;
@@ -1166,17 +1110,17 @@ pub unsafe extern "C" fn hyperlinks_put(
         internal_id: ::core::ptr::null::<::core::ffi::c_char>(),
         external_id: ::core::ptr::null::<::core::ffi::c_char>(),
         uri: ::core::ptr::null::<::core::ffi::c_char>(),
-        list_entry: C2RustUnnamed_1 {
+        list_entry: hyperlink_list_entry {
             tqe_next: ::core::ptr::null_mut::<hyperlinks_uri>(),
             tqe_prev: ::core::ptr::null_mut::<*mut hyperlinks_uri>(),
         },
-        by_inner_entry: C2RustUnnamed_0 {
+        by_inner_entry: hyperlink_inner_entry {
             rbe_left: ::core::ptr::null_mut::<hyperlinks_uri>(),
             rbe_right: ::core::ptr::null_mut::<hyperlinks_uri>(),
             rbe_parent: ::core::ptr::null_mut::<hyperlinks_uri>(),
             rbe_color: 0,
         },
-        by_uri_entry: C2RustUnnamed {
+        by_uri_entry: hyperlink_uri_entry {
             rbe_left: ::core::ptr::null_mut::<hyperlinks_uri>(),
             rbe_right: ::core::ptr::null_mut::<hyperlinks_uri>(),
             rbe_parent: ::core::ptr::null_mut::<hyperlinks_uri>(),
@@ -1250,17 +1194,17 @@ pub unsafe extern "C" fn hyperlinks_get(
         internal_id: ::core::ptr::null::<::core::ffi::c_char>(),
         external_id: ::core::ptr::null::<::core::ffi::c_char>(),
         uri: ::core::ptr::null::<::core::ffi::c_char>(),
-        list_entry: C2RustUnnamed_1 {
+        list_entry: hyperlink_list_entry {
             tqe_next: ::core::ptr::null_mut::<hyperlinks_uri>(),
             tqe_prev: ::core::ptr::null_mut::<*mut hyperlinks_uri>(),
         },
-        by_inner_entry: C2RustUnnamed_0 {
+        by_inner_entry: hyperlink_inner_entry {
             rbe_left: ::core::ptr::null_mut::<hyperlinks_uri>(),
             rbe_right: ::core::ptr::null_mut::<hyperlinks_uri>(),
             rbe_parent: ::core::ptr::null_mut::<hyperlinks_uri>(),
             rbe_color: 0,
         },
-        by_uri_entry: C2RustUnnamed {
+        by_uri_entry: hyperlink_uri_entry {
             rbe_left: ::core::ptr::null_mut::<hyperlinks_uri>(),
             rbe_right: ::core::ptr::null_mut::<hyperlinks_uri>(),
             rbe_parent: ::core::ptr::null_mut::<hyperlinks_uri>(),

@@ -5,6 +5,12 @@ pub const UTF8_ERROR: utf8_state = 2;
 pub const UTF8_DONE: utf8_state = 1;
 pub const UTF8_MORE: utf8_state = 0;
 
+pub type hanguljamo_state = ::core::ffi::c_uint;
+pub const HANGULJAMO_STATE_NOT_COMPOSABLE: hanguljamo_state = 3;
+pub const HANGULJAMO_STATE_COMPOSABLE: hanguljamo_state = 2;
+pub const HANGULJAMO_STATE_CHOSEONG: hanguljamo_state = 1;
+pub const HANGULJAMO_STATE_NOT_HANGULJAMO: hanguljamo_state = 0;
+
 #[cfg(test)]
 mod tests {
     use super::*;

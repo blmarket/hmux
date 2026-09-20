@@ -1,3 +1,4 @@
+pub use crate::src::shared::abi::{__int32_t};
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::style::*;
@@ -43,7 +44,6 @@ extern "C" {
     ) -> ::core::ffi::c_int;
     fn style_set(_: *mut style, _: *const grid_cell);
 }
-pub type __int32_t = i32;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct fuzzy_char {

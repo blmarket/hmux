@@ -1,3 +1,4 @@
+pub use crate::src::shared::grid::{grid_reader};
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 extern "C" {
@@ -30,13 +31,6 @@ pub struct C2RustUnnamed_0 {
     pub fg: u_char,
     pub bg: u_char,
     pub data: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct grid_reader {
-    pub gd: *mut grid,
-    pub cx: u_int,
-    pub cy: u_int,
 }
 pub const WHITESPACE: [::core::ffi::c_char; 3] =
     unsafe { ::core::mem::transmute::<[u8; 3], [::core::ffi::c_char; 3]>(*b"\t \0") };

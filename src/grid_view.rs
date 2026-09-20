@@ -1,11 +1,9 @@
-use crate::src::shared::display::*;
+pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
+pub use crate::src::shared::screen_write::{screen_write_cline};
+pub use crate::src::shared::hyperlinks::{hyperlinks};
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 extern "C" {
-    pub type hyperlinks;
-    pub type screen_write_cline;
-    pub type screen_sel;
-    pub type screen_titles;
     fn grid_collect_history(_: *mut grid, _: ::core::ffi::c_int);
     fn grid_scroll_history(_: *mut grid, _: u_int);
     fn grid_scroll_history_region(_: *mut grid, _: u_int, _: u_int, _: u_int);
@@ -47,35 +45,6 @@ pub struct C2RustUnnamed_0 {
     pub fg: u_char,
     pub bg: u_char,
     pub data: u_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct screen {
-    pub title: *mut ::core::ffi::c_char,
-    pub path: *mut ::core::ffi::c_char,
-    pub titles: *mut screen_titles,
-    pub ntitles: u_int,
-    pub grid: *mut grid,
-    pub cx: u_int,
-    pub cy: u_int,
-    pub cstyle: screen_cursor_style,
-    pub default_cstyle: screen_cursor_style,
-    pub ccolour: ::core::ffi::c_int,
-    pub default_ccolour: ::core::ffi::c_int,
-    pub rupper: u_int,
-    pub rlower: u_int,
-    pub mode: ::core::ffi::c_int,
-    pub default_mode: ::core::ffi::c_int,
-    pub saved_cx: u_int,
-    pub saved_cy: u_int,
-    pub saved_grid: *mut grid,
-    pub saved_cell: grid_cell,
-    pub saved_flags: ::core::ffi::c_int,
-    pub tabs: *mut bitstr_t,
-    pub sel: *mut screen_sel,
-    pub write_list: *mut screen_write_cline,
-    pub hyperlinks: *mut hyperlinks,
-    pub progress_bar: progress_bar,
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_view_get_cell(

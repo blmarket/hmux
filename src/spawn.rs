@@ -1,3 +1,25 @@
+pub use crate::src::shared::spawn::{
+    SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FLOATING, SPAWN_FLOATOVERZOOM, SPAWN_KILL, SPAWN_MODAL,
+    SPAWN_NONOTIFY, SPAWN_RESPAWN, SPAWN_ZOOM,
+};
+pub use crate::src::shared::window::{
+    WINDOW_ZOOMED, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL, WINLINK_SILENCE,
+};
+pub use crate::src::shared::pane::{
+    PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_STATUSDRAWN, PANE_STATUSREADY,
+    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
+};
+pub use crate::src::shared::screen::{MODE_CRLF, MODE_CURSOR, screen, screen_sel, screen_titles};
+pub use crate::src::shared::stdio::{
+    FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
+};
+pub use crate::src::shared::abi::{__off64_t, __off_t};
+pub use crate::src::shared::screen_write::{screen_write_cline};
+pub use crate::src::shared::hyperlinks::{hyperlinks};
+pub use crate::src::shared::client::{CLIENT_CONTROL};
+pub use crate::src::shared::display::{visible_range, visible_ranges};
+pub use crate::src::shared::layout::{layout_geometry};
+pub use crate::src::shared::mouse::{mouse_event};
 use crate::src::shared::client::*;
 use crate::src::shared::terminal::*;
 use crate::src::shared::event::*;
@@ -9,17 +31,9 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-use ::c2rust_bitfields;
 extern "C" {
-    pub type _IO_wide_data;
-    pub type _IO_codecvt;
-    pub type _IO_marker;
     pub type args;
     pub type tmuxpeer;
-    pub type hyperlinks;
-    pub type screen_write_cline;
-    pub type screen_sel;
-    pub type screen_titles;
     pub type environ;
     pub type options;
     pub type menu_data;
@@ -294,8 +308,6 @@ extern "C" {
     fn log_close();
     fn log_debug(_: *const ::core::ffi::c_char, ...);
 }
-pub type __off_t = ::core::ffi::c_long;
-pub type __off64_t = ::core::ffi::c_long;
 pub type off_t = __off_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -303,45 +315,6 @@ pub struct __sigset_t {
     pub __val: [::core::ffi::c_ulong; 16],
 }
 pub type sigset_t = __sigset_t;
-#[derive(Copy, Clone, BitfieldStruct)]
-#[repr(C)]
-pub struct _IO_FILE {
-    pub _flags: ::core::ffi::c_int,
-    pub _IO_read_ptr: *mut ::core::ffi::c_char,
-    pub _IO_read_end: *mut ::core::ffi::c_char,
-    pub _IO_read_base: *mut ::core::ffi::c_char,
-    pub _IO_write_base: *mut ::core::ffi::c_char,
-    pub _IO_write_ptr: *mut ::core::ffi::c_char,
-    pub _IO_write_end: *mut ::core::ffi::c_char,
-    pub _IO_buf_base: *mut ::core::ffi::c_char,
-    pub _IO_buf_end: *mut ::core::ffi::c_char,
-    pub _IO_save_base: *mut ::core::ffi::c_char,
-    pub _IO_backup_base: *mut ::core::ffi::c_char,
-    pub _IO_save_end: *mut ::core::ffi::c_char,
-    pub _markers: *mut _IO_marker,
-    pub _chain: *mut _IO_FILE,
-    pub _fileno: ::core::ffi::c_int,
-    #[bitfield(name = "_flags2", ty = "::core::ffi::c_int", bits = "0..=23")]
-    pub _flags2: [u8; 3],
-    pub _short_backupbuf: [::core::ffi::c_char; 1],
-    pub _old_offset: __off_t,
-    pub _cur_column: ::core::ffi::c_ushort,
-    pub _vtable_offset: ::core::ffi::c_schar,
-    pub _shortbuf: [::core::ffi::c_char; 1],
-    pub _lock: *mut ::core::ffi::c_void,
-    pub _offset: __off64_t,
-    pub _codecvt: *mut _IO_codecvt,
-    pub _wide_data: *mut _IO_wide_data,
-    pub _freeres_list: *mut _IO_FILE,
-    pub _freeres_buf: *mut ::core::ffi::c_void,
-    pub _prevchain: *mut *mut _IO_FILE,
-    pub _mode: ::core::ffi::c_int,
-    pub _unused3: ::core::ffi::c_int,
-    pub _total_written: __uint64_t,
-    pub _unused2: [::core::ffi::c_char; 8],
-}
-pub type _IO_lock_t = ();
-pub type FILE = _IO_FILE;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct winsize {
@@ -498,28 +471,6 @@ pub struct key_event {
     pub buf: *mut ::core::ffi::c_char,
     pub len: size_t,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct mouse_event {
-    pub valid: ::core::ffi::c_int,
-    pub ignore: ::core::ffi::c_int,
-    pub key: key_code,
-    pub statusat: ::core::ffi::c_int,
-    pub statuslines: u_int,
-    pub x: u_int,
-    pub y: u_int,
-    pub b: u_int,
-    pub lx: u_int,
-    pub ly: u_int,
-    pub lb: u_int,
-    pub ox: u_int,
-    pub oy: u_int,
-    pub s: ::core::ffi::c_int,
-    pub w: ::core::ffi::c_int,
-    pub wp: ::core::ffi::c_int,
-    pub sgr_type: u_int,
-    pub sgr_b: u_int,
-}
 pub type overlay_draw_cb =
     Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
 pub type overlay_mode_cb = Option<
@@ -544,35 +495,6 @@ pub struct C2RustUnnamed_13 {
     pub bg: u_char,
     pub data: u_char,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct screen {
-    pub title: *mut ::core::ffi::c_char,
-    pub path: *mut ::core::ffi::c_char,
-    pub titles: *mut screen_titles,
-    pub ntitles: u_int,
-    pub grid: *mut grid,
-    pub cx: u_int,
-    pub cy: u_int,
-    pub cstyle: screen_cursor_style,
-    pub default_cstyle: screen_cursor_style,
-    pub ccolour: ::core::ffi::c_int,
-    pub default_ccolour: ::core::ffi::c_int,
-    pub rupper: u_int,
-    pub rlower: u_int,
-    pub mode: ::core::ffi::c_int,
-    pub default_mode: ::core::ffi::c_int,
-    pub saved_cx: u_int,
-    pub saved_cy: u_int,
-    pub saved_grid: *mut grid,
-    pub saved_cell: grid_cell,
-    pub saved_flags: ::core::ffi::c_int,
-    pub tabs: *mut bitstr_t,
-    pub sel: *mut screen_sel,
-    pub write_list: *mut screen_write_cline,
-    pub hyperlinks: *mut hyperlinks,
-    pub progress_bar: progress_bar,
-}
 pub type overlay_check_cb = Option<
     unsafe extern "C" fn(
         *mut client,
@@ -582,19 +504,6 @@ pub type overlay_check_cb = Option<
         u_int,
     ) -> *mut visible_ranges,
 >;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct visible_ranges {
-    pub ranges: *mut visible_range,
-    pub used: u_int,
-    pub size: u_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct visible_range {
-    pub px: u_int,
-    pub nx: u_int,
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session {
@@ -950,32 +859,6 @@ pub struct cmd_find_state {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct window_pane_offset {
-    pub used: size_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_resizes {
-    pub tqh_first: *mut window_pane_resize,
-    pub tqh_last: *mut *mut window_pane_resize,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_resize {
-    pub sx: u_int,
-    pub sy: u_int,
-    pub osx: u_int,
-    pub osy: u_int,
-    pub entry: C2RustUnnamed_30,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_30 {
-    pub tqe_next: *mut window_pane_resize,
-    pub tqe_prev: *mut *mut window_pane_resize,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct spawn_editor_state {
     pub path: *mut ::core::ffi::c_char,
     pub pid: pid_t,
@@ -984,14 +867,6 @@ pub struct spawn_editor_state {
 }
 pub type spawn_finish_edit_cb =
     Option<unsafe extern "C" fn(*mut ::core::ffi::c_char, size_t, *mut ::core::ffi::c_void) -> ()>;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct layout_geometry {
-    pub sx: u_int,
-    pub sy: u_int,
-    pub xoff: ::core::ffi::c_int,
-    pub yoff: ::core::ffi::c_int,
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_panes {
@@ -1196,29 +1071,6 @@ pub const _PATH_BSHELL: [::core::ffi::c_char; 8] =
 pub const _PATH_TMP: [::core::ffi::c_char; 6] =
     unsafe { ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"/tmp/\0") };
 pub const SIZE_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
-pub const MODE_CURSOR: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const MODE_CRLF: ::core::ffi::c_int = 0x4000 as ::core::ffi::c_int;
-pub const PANE_EXITED: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const PANE_STATUSREADY: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
-pub const PANE_STATUSDRAWN: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
-pub const PANE_EMPTY: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
-pub const PANE_FLOATOVERZOOM: ::core::ffi::c_int = 0x200000 as ::core::ffi::c_int;
-pub const WINDOW_ZOOMED: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const WINLINK_BELL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const WINLINK_ACTIVITY: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const WINLINK_SILENCE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const WINLINK_ALERTFLAGS: ::core::ffi::c_int =
-    WINLINK_BELL | WINLINK_ACTIVITY | WINLINK_SILENCE;
-pub const CLIENT_CONTROL: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-pub const SPAWN_KILL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const SPAWN_DETACHED: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const SPAWN_RESPAWN: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const SPAWN_NONOTIFY: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const SPAWN_EMPTY: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const SPAWN_ZOOM: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
-pub const SPAWN_FLOATING: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const SPAWN_MODAL: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
-pub const SPAWN_FLOATOVERZOOM: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
 unsafe extern "C" fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_context) {
     let mut s: *mut session = (*sc).s;
     let mut wl: *mut winlink = (*sc).wl;

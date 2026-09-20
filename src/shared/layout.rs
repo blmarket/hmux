@@ -28,6 +28,16 @@ pub const PANE_LINES_SIMPLE: pane_lines = 3;
 pub const PANE_LINES_SINGLE: pane_lines = 0;
 pub const PANE_LINES_SPACES: pane_lines = 5;
 
+use super::abi::u_int;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct layout_geometry {
+    pub sx: u_int,
+    pub sy: u_int,
+    pub xoff: ::core::ffi::c_int,
+    pub yoff: ::core::ffi::c_int,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

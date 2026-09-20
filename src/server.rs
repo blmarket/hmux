@@ -1,3 +1,27 @@
+pub use crate::src::shared::pane::{
+    PANE_EXITED, PANE_STATUSREADY, window_pane_offset, window_pane_resize,
+    window_pane_resize_entry, window_pane_resizes,
+};
+pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
+pub use crate::src::shared::stdio::{
+    FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
+};
+pub use crate::src::shared::abi::{
+    __blkcnt_t, __blksize_t, __dev_t, __gid_t, __ino_t, __mode_t, __nlink_t, __off64_t, __off_t,
+    __socklen_t, __syscall_slong_t, __uid_t, __uint16_t, __uint32_t, socklen_t, uint16_t,
+    uint32_t,
+};
+pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
+pub use crate::src::shared::screen_write::{screen_write_cline};
+pub use crate::src::shared::hyperlinks::{hyperlinks};
+pub use crate::src::shared::tree::{RB_NEGINF};
+pub use crate::src::shared::event::{EV_READ, EV_TIMEOUT};
+pub use crate::src::shared::client::{
+    CLIENT_DEFAULTSOCKET, CLIENT_EXIT, CLIENT_IDENTIFIED, CLIENT_NOFORK, CLIENT_SUSPENDED,
+};
+pub use crate::src::shared::display::{visible_range, visible_ranges};
+pub use crate::src::shared::layout::{layout_geometry};
+pub use crate::src::shared::mouse::{mouse_event};
 use crate::src::shared::client::*;
 use crate::src::shared::terminal::*;
 use crate::src::shared::event::*;
@@ -9,7 +33,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-use ::c2rust_bitfields;
 extern "C" {
     pub type sockaddr_x25;
     pub type sockaddr_ns;
@@ -20,15 +43,8 @@ extern "C" {
     pub type sockaddr_dl;
     pub type sockaddr_ax25;
     pub type sockaddr_at;
-    pub type _IO_wide_data;
-    pub type _IO_codecvt;
-    pub type _IO_marker;
     pub type args;
     pub type tmuxpeer;
-    pub type hyperlinks;
-    pub type screen_write_cline;
-    pub type screen_sel;
-    pub type screen_titles;
     pub type environ;
     pub type options;
     pub type menu_data;
@@ -199,29 +215,6 @@ extern "C" {
     fn server_acl_init();
     fn server_acl_join(_: *mut client) -> ::core::ffi::c_int;
 }
-pub type __builtin_va_list = [__va_list_tag; 1];
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct __va_list_tag {
-    pub gp_offset: ::core::ffi::c_uint,
-    pub fp_offset: ::core::ffi::c_uint,
-    pub overflow_arg_area: *mut ::core::ffi::c_void,
-    pub reg_save_area: *mut ::core::ffi::c_void,
-}
-pub type __uint16_t = u16;
-pub type __uint32_t = u32;
-pub type __dev_t = ::core::ffi::c_ulong;
-pub type __uid_t = ::core::ffi::c_uint;
-pub type __gid_t = ::core::ffi::c_uint;
-pub type __ino_t = ::core::ffi::c_ulong;
-pub type __mode_t = ::core::ffi::c_uint;
-pub type __nlink_t = ::core::ffi::c_ulong;
-pub type __off_t = ::core::ffi::c_long;
-pub type __off64_t = ::core::ffi::c_long;
-pub type __blksize_t = ::core::ffi::c_long;
-pub type __blkcnt_t = ::core::ffi::c_long;
-pub type __syscall_slong_t = ::core::ffi::c_long;
-pub type __socklen_t = ::core::ffi::c_uint;
 pub type mode_t = __mode_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -235,7 +228,6 @@ pub struct timespec {
     pub tv_sec: __time_t,
     pub tv_nsec: __syscall_slong_t,
 }
-pub type socklen_t = __socklen_t;
 pub type __socket_type = ::core::ffi::c_uint;
 pub const SOCK_NONBLOCK: __socket_type = 2048;
 pub const SOCK_CLOEXEC: __socket_type = 524288;
@@ -292,7 +284,6 @@ pub struct sockaddr_in6 {
     pub sin6_addr: in6_addr,
     pub sin6_scope_id: uint32_t,
 }
-pub type uint32_t = __uint32_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct in6_addr {
@@ -305,7 +296,6 @@ pub union C2RustUnnamed {
     pub __u6_addr16: [uint16_t; 8],
     pub __u6_addr32: [uint32_t; 4],
 }
-pub type uint16_t = __uint16_t;
 pub type in_port_t = uint16_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -357,47 +347,6 @@ pub struct stat {
     pub st_ctim: timespec,
     pub __glibc_reserved: [__syscall_slong_t; 3],
 }
-pub type __gnuc_va_list = __builtin_va_list;
-#[derive(Copy, Clone, BitfieldStruct)]
-#[repr(C)]
-pub struct _IO_FILE {
-    pub _flags: ::core::ffi::c_int,
-    pub _IO_read_ptr: *mut ::core::ffi::c_char,
-    pub _IO_read_end: *mut ::core::ffi::c_char,
-    pub _IO_read_base: *mut ::core::ffi::c_char,
-    pub _IO_write_base: *mut ::core::ffi::c_char,
-    pub _IO_write_ptr: *mut ::core::ffi::c_char,
-    pub _IO_write_end: *mut ::core::ffi::c_char,
-    pub _IO_buf_base: *mut ::core::ffi::c_char,
-    pub _IO_buf_end: *mut ::core::ffi::c_char,
-    pub _IO_save_base: *mut ::core::ffi::c_char,
-    pub _IO_backup_base: *mut ::core::ffi::c_char,
-    pub _IO_save_end: *mut ::core::ffi::c_char,
-    pub _markers: *mut _IO_marker,
-    pub _chain: *mut _IO_FILE,
-    pub _fileno: ::core::ffi::c_int,
-    #[bitfield(name = "_flags2", ty = "::core::ffi::c_int", bits = "0..=23")]
-    pub _flags2: [u8; 3],
-    pub _short_backupbuf: [::core::ffi::c_char; 1],
-    pub _old_offset: __off_t,
-    pub _cur_column: ::core::ffi::c_ushort,
-    pub _vtable_offset: ::core::ffi::c_schar,
-    pub _shortbuf: [::core::ffi::c_char; 1],
-    pub _lock: *mut ::core::ffi::c_void,
-    pub _offset: __off64_t,
-    pub _codecvt: *mut _IO_codecvt,
-    pub _wide_data: *mut _IO_wide_data,
-    pub _freeres_list: *mut _IO_FILE,
-    pub _freeres_buf: *mut ::core::ffi::c_void,
-    pub _prevchain: *mut *mut _IO_FILE,
-    pub _mode: ::core::ffi::c_int,
-    pub _unused3: ::core::ffi::c_int,
-    pub _total_written: __uint64_t,
-    pub _unused2: [::core::ffi::c_char; 8],
-}
-pub type _IO_lock_t = ();
-pub type FILE = _IO_FILE;
-pub type va_list = __gnuc_va_list;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct client {
@@ -545,28 +494,6 @@ pub struct key_event {
     pub buf: *mut ::core::ffi::c_char,
     pub len: size_t,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct mouse_event {
-    pub valid: ::core::ffi::c_int,
-    pub ignore: ::core::ffi::c_int,
-    pub key: key_code,
-    pub statusat: ::core::ffi::c_int,
-    pub statuslines: u_int,
-    pub x: u_int,
-    pub y: u_int,
-    pub b: u_int,
-    pub lx: u_int,
-    pub ly: u_int,
-    pub lb: u_int,
-    pub ox: u_int,
-    pub oy: u_int,
-    pub s: ::core::ffi::c_int,
-    pub w: ::core::ffi::c_int,
-    pub wp: ::core::ffi::c_int,
-    pub sgr_type: u_int,
-    pub sgr_b: u_int,
-}
 pub type overlay_draw_cb =
     Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
 pub type overlay_mode_cb = Option<
@@ -591,35 +518,6 @@ pub struct C2RustUnnamed_14 {
     pub bg: u_char,
     pub data: u_char,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct screen {
-    pub title: *mut ::core::ffi::c_char,
-    pub path: *mut ::core::ffi::c_char,
-    pub titles: *mut screen_titles,
-    pub ntitles: u_int,
-    pub grid: *mut grid,
-    pub cx: u_int,
-    pub cy: u_int,
-    pub cstyle: screen_cursor_style,
-    pub default_cstyle: screen_cursor_style,
-    pub ccolour: ::core::ffi::c_int,
-    pub default_ccolour: ::core::ffi::c_int,
-    pub rupper: u_int,
-    pub rlower: u_int,
-    pub mode: ::core::ffi::c_int,
-    pub default_mode: ::core::ffi::c_int,
-    pub saved_cx: u_int,
-    pub saved_cy: u_int,
-    pub saved_grid: *mut grid,
-    pub saved_cell: grid_cell,
-    pub saved_flags: ::core::ffi::c_int,
-    pub tabs: *mut bitstr_t,
-    pub sel: *mut screen_sel,
-    pub write_list: *mut screen_write_cline,
-    pub hyperlinks: *mut hyperlinks,
-    pub progress_bar: progress_bar,
-}
 pub type overlay_check_cb = Option<
     unsafe extern "C" fn(
         *mut client,
@@ -629,19 +527,6 @@ pub type overlay_check_cb = Option<
         u_int,
     ) -> *mut visible_ranges,
 >;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct visible_ranges {
-    pub ranges: *mut visible_range,
-    pub used: u_int,
-    pub size: u_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct visible_range {
-    pub px: u_int,
-    pub nx: u_int,
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session {
@@ -997,40 +882,6 @@ pub struct cmd_find_state {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct window_pane_offset {
-    pub used: size_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_resizes {
-    pub tqh_first: *mut window_pane_resize,
-    pub tqh_last: *mut *mut window_pane_resize,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_resize {
-    pub sx: u_int,
-    pub sy: u_int,
-    pub osx: u_int,
-    pub osy: u_int,
-    pub entry: C2RustUnnamed_31,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_31 {
-    pub tqe_next: *mut window_pane_resize,
-    pub tqe_prev: *mut *mut window_pane_resize,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct layout_geometry {
-    pub sx: u_int,
-    pub sy: u_int,
-    pub xoff: ::core::ffi::c_int,
-    pub yoff: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct window_panes {
     pub tqh_first: *mut window_pane,
     pub tqh_last: *mut *mut window_pane,
@@ -1253,16 +1104,6 @@ pub const S_IRWXG: ::core::ffi::c_int = S_IRWXU >> 3 as ::core::ffi::c_int;
 pub const S_IROTH: ::core::ffi::c_int = S_IRGRP >> 3 as ::core::ffi::c_int;
 pub const S_IXOTH: ::core::ffi::c_int = S_IXGRP >> 3 as ::core::ffi::c_int;
 pub const S_IRWXO: ::core::ffi::c_int = S_IRWXG >> 3 as ::core::ffi::c_int;
-pub const RB_NEGINF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-pub const EV_TIMEOUT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const EV_READ: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const PANE_EXITED: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
-pub const PANE_STATUSREADY: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
-pub const CLIENT_EXIT: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const CLIENT_SUSPENDED: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const CLIENT_IDENTIFIED: ::core::ffi::c_int = 0x40000 as ::core::ffi::c_int;
-pub const CLIENT_DEFAULTSOCKET: ::core::ffi::c_int = 0x8000000 as ::core::ffi::c_int;
-pub const CLIENT_NOFORK: ::core::ffi::c_int = 0x40000000 as ::core::ffi::c_int;
 #[no_mangle]
 pub static mut clients: clients = clients {
     tqh_first: ::core::ptr::null::<client>() as *mut client,

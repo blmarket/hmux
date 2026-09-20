@@ -1,3 +1,4 @@
+pub use crate::src::shared::abi::{__size_t};
 use crate::src::shared::abi::*;
 extern "C" {
     pub type stat;
@@ -23,7 +24,6 @@ extern "C" {
     ) -> ::core::ffi::c_int;
     fn fatal(_: *const ::core::ffi::c_char, ...);
 }
-pub type __size_t = usize;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct glob_t {

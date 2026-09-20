@@ -1,3 +1,5 @@
+pub use crate::src::shared::abi::{__clock_t, __gid_t, __uid_t, __uint32_t, gid_t, uid_t, uint32_t};
+pub use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
 use crate::src::shared::event::*;
 use crate::src::shared::message::*;
 use crate::src::shared::abi::*;
@@ -75,12 +77,6 @@ extern "C" {
     fn log_debug(_: *const ::core::ffi::c_char, ...);
     fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
 }
-pub type __uint32_t = u32;
-pub type __uid_t = ::core::ffi::c_uint;
-pub type __gid_t = ::core::ffi::c_uint;
-pub type __clock_t = ::core::ffi::c_long;
-pub type gid_t = __gid_t;
-pub type uid_t = __uid_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct __sigset_t {
@@ -97,7 +93,6 @@ pub const SOCK_RDM: __socket_type = 4;
 pub const SOCK_RAW: __socket_type = 3;
 pub const SOCK_DGRAM: __socket_type = 2;
 pub const SOCK_STREAM: __socket_type = 1;
-pub type uint32_t = __uint32_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct utsname {
@@ -319,10 +314,6 @@ pub const NCURSES_VERSION_PATCH: ::core::ffi::c_int = 20251230 as ::core::ffi::c
 pub const NCURSES_VERSION: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"6.6\0") };
 pub const EVLOOP_ONCE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const EV_READ: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const EV_WRITE: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const EV_SIGNAL: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const EV_PERSIST: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 pub const PEER_BAD: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 unsafe extern "C" fn proc_event_cb(

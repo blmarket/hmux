@@ -1,3 +1,32 @@
+pub use crate::src::shared::utf8::{
+    HANGULJAMO_STATE_CHOSEONG, HANGULJAMO_STATE_COMPOSABLE, HANGULJAMO_STATE_NOT_COMPOSABLE,
+    HANGULJAMO_STATE_NOT_HANGULJAMO, hanguljamo_state,
+};
+pub use crate::src::shared::pane::{
+    PANE_DROP, PANE_REDRAW, PANE_REDRAWSCROLLBAR, window_pane_offset, window_pane_resize,
+    window_pane_resize_entry, window_pane_resizes,
+};
+pub use crate::src::shared::screen::{
+    EXTENDED_KEY_MODES, MODE_CURSOR, MODE_INSERT, MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2,
+    MODE_ORIGIN, MODE_SYNC, MODE_WRAP, screen, screen_sel, screen_titles,
+};
+pub use crate::src::shared::menu::{menu, menu_item};
+pub use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
+pub use crate::src::shared::abi::{ssize_t};
+pub use crate::src::shared::screen_write::{
+    CLEAR, TEXT, screen_write_citem, screen_write_cline, screen_write_item_link,
+    screen_write_item_type, screen_write_items,
+};
+pub use crate::src::shared::hyperlinks::{hyperlinks};
+pub use crate::src::shared::tty::{
+    TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_OVERLAY_SYNC,
+    TTY_CTX_PANE_OBSCURED, TTY_CTX_SYNC, TTY_CTX_WINDOW_BIGGER, TTY_CTX_WRAPPED,
+};
+pub use crate::src::shared::event::{EV_TIMEOUT};
+pub use crate::src::shared::client::{CLIENT_REDRAWWINDOW};
+pub use crate::src::shared::display::{visible_range, visible_ranges};
+pub use crate::src::shared::layout::{layout_geometry};
+pub use crate::src::shared::mouse::{mouse_event};
 use crate::src::shared::client::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::terminal::*;
@@ -14,9 +43,6 @@ use crate::src::shared::utf8::*;
 extern "C" {
     pub type args;
     pub type tmuxpeer;
-    pub type hyperlinks;
-    pub type screen_sel;
-    pub type screen_titles;
     pub type environ;
     pub type options;
     pub type menu_data;
@@ -197,17 +223,6 @@ extern "C" {
     fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
     fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
 }
-pub type __builtin_va_list = [__va_list_tag; 1];
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct __va_list_tag {
-    pub gp_offset: ::core::ffi::c_uint,
-    pub fp_offset: ::core::ffi::c_uint,
-    pub overflow_arg_area: *mut ::core::ffi::c_void,
-    pub reg_save_area: *mut ::core::ffi::c_void,
-}
-pub type ssize_t = isize;
-pub type va_list = __builtin_va_list;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct client {
@@ -355,28 +370,6 @@ pub struct key_event {
     pub buf: *mut ::core::ffi::c_char,
     pub len: size_t,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct mouse_event {
-    pub valid: ::core::ffi::c_int,
-    pub ignore: ::core::ffi::c_int,
-    pub key: key_code,
-    pub statusat: ::core::ffi::c_int,
-    pub statuslines: u_int,
-    pub x: u_int,
-    pub y: u_int,
-    pub b: u_int,
-    pub lx: u_int,
-    pub ly: u_int,
-    pub lb: u_int,
-    pub ox: u_int,
-    pub oy: u_int,
-    pub s: ::core::ffi::c_int,
-    pub w: ::core::ffi::c_int,
-    pub wp: ::core::ffi::c_int,
-    pub sgr_type: u_int,
-    pub sgr_b: u_int,
-}
 pub type overlay_draw_cb =
     Option<unsafe extern "C" fn(*mut client, *mut ::core::ffi::c_void) -> ()>;
 pub type overlay_mode_cb = Option<
@@ -387,38 +380,6 @@ pub type overlay_mode_cb = Option<
         *mut u_int,
     ) -> *mut screen,
 >;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct screen_write_cline {
-    pub data: *mut ::core::ffi::c_char,
-    pub items: C2RustUnnamed_12,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_12 {
-    pub tqh_first: *mut screen_write_citem,
-    pub tqh_last: *mut *mut screen_write_citem,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct screen_write_citem {
-    pub x: u_int,
-    pub wrapped: ::core::ffi::c_int,
-    pub type_0: C2RustUnnamed_14,
-    pub used: u_int,
-    pub bg: u_int,
-    pub gc: grid_cell,
-    pub entry: C2RustUnnamed_13,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_13 {
-    pub tqe_next: *mut screen_write_citem,
-    pub tqe_prev: *mut *mut screen_write_citem,
-}
-pub type C2RustUnnamed_14 = ::core::ffi::c_uint;
-pub const CLEAR: C2RustUnnamed_14 = 1;
-pub const TEXT: C2RustUnnamed_14 = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union C2RustUnnamed_15 {
@@ -433,35 +394,6 @@ pub struct C2RustUnnamed_16 {
     pub bg: u_char,
     pub data: u_char,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct screen {
-    pub title: *mut ::core::ffi::c_char,
-    pub path: *mut ::core::ffi::c_char,
-    pub titles: *mut screen_titles,
-    pub ntitles: u_int,
-    pub grid: *mut grid,
-    pub cx: u_int,
-    pub cy: u_int,
-    pub cstyle: screen_cursor_style,
-    pub default_cstyle: screen_cursor_style,
-    pub ccolour: ::core::ffi::c_int,
-    pub default_ccolour: ::core::ffi::c_int,
-    pub rupper: u_int,
-    pub rlower: u_int,
-    pub mode: ::core::ffi::c_int,
-    pub default_mode: ::core::ffi::c_int,
-    pub saved_cx: u_int,
-    pub saved_cy: u_int,
-    pub saved_grid: *mut grid,
-    pub saved_cell: grid_cell,
-    pub saved_flags: ::core::ffi::c_int,
-    pub tabs: *mut bitstr_t,
-    pub sel: *mut screen_sel,
-    pub write_list: *mut screen_write_cline,
-    pub hyperlinks: *mut hyperlinks,
-    pub progress_bar: progress_bar,
-}
 pub type overlay_check_cb = Option<
     unsafe extern "C" fn(
         *mut client,
@@ -471,19 +403,6 @@ pub type overlay_check_cb = Option<
         u_int,
     ) -> *mut visible_ranges,
 >;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct visible_ranges {
-    pub ranges: *mut visible_range,
-    pub used: u_int,
-    pub size: u_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct visible_range {
-    pub px: u_int,
-    pub nx: u_int,
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session {
@@ -839,40 +758,6 @@ pub struct cmd_find_state {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct window_pane_offset {
-    pub used: size_t,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_resizes {
-    pub tqh_first: *mut window_pane_resize,
-    pub tqh_last: *mut *mut window_pane_resize,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_resize {
-    pub sx: u_int,
-    pub sy: u_int,
-    pub osx: u_int,
-    pub osy: u_int,
-    pub entry: C2RustUnnamed_33,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_33 {
-    pub tqe_next: *mut window_pane_resize,
-    pub tqe_prev: *mut *mut window_pane_resize,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct layout_geometry {
-    pub sx: u_int,
-    pub sy: u_int,
-    pub xoff: ::core::ffi::c_int,
-    pub yoff: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct window_panes {
     pub tqh_first: *mut window_pane,
     pub tqh_last: *mut *mut window_pane,
@@ -1091,26 +976,6 @@ pub struct C2RustUnnamed_40 {
 pub type tty_ctx_set_client_cb =
     Option<unsafe extern "C" fn(*mut tty_ctx, *mut client) -> ::core::ffi::c_int>;
 pub type tty_ctx_redraw_cb = Option<unsafe extern "C" fn(*const tty_ctx) -> ()>;
-pub type hanguljamo_state = ::core::ffi::c_uint;
-pub const HANGULJAMO_STATE_NOT_COMPOSABLE: hanguljamo_state = 3;
-pub const HANGULJAMO_STATE_COMPOSABLE: hanguljamo_state = 2;
-pub const HANGULJAMO_STATE_CHOSEONG: hanguljamo_state = 1;
-pub const HANGULJAMO_STATE_NOT_HANGULJAMO: hanguljamo_state = 0;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct menu_item {
-    pub name: *const ::core::ffi::c_char,
-    pub key: key_code,
-    pub command: *const ::core::ffi::c_char,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct menu {
-    pub title: *const ::core::ffi::c_char,
-    pub items: *mut menu_item,
-    pub count: u_int,
-    pub width: u_int,
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_41 {
@@ -1120,15 +985,6 @@ pub struct C2RustUnnamed_41 {
 pub const UINT_MAX: ::core::ffi::c_uint = (__INT_MAX__ as ::core::ffi::c_uint)
     .wrapping_mul(2 as ::core::ffi::c_uint)
     .wrapping_add(1 as ::core::ffi::c_uint);
-pub const EV_TIMEOUT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const MODE_CURSOR: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const MODE_INSERT: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const MODE_WRAP: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const MODE_ORIGIN: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
-pub const MODE_KEYS_EXTENDED: ::core::ffi::c_int = 0x8000 as ::core::ffi::c_int;
-pub const MODE_KEYS_EXTENDED_2: ::core::ffi::c_int = 0x40000 as ::core::ffi::c_int;
-pub const MODE_SYNC: ::core::ffi::c_int = 0x100000 as ::core::ffi::c_int;
-pub const EXTENDED_KEY_MODES: ::core::ffi::c_int = MODE_KEYS_EXTENDED | MODE_KEYS_EXTENDED_2;
 pub const CELL_UD: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const CELL_LR: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const CELL_RD: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
@@ -1146,17 +1002,6 @@ pub const PADDED_BORDERS: [::core::ffi::c_char; 14] =
 pub const SCREEN_WRITE_SYNC: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const SCREEN_WRITE_OBSCURED: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const SCREEN_WRITE_CHECKED_IF_OBSCURED: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const PANE_REDRAW: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const PANE_DROP: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const PANE_REDRAWSCROLLBAR: ::core::ffi::c_int = 0x8000 as ::core::ffi::c_int;
-pub const TTY_CTX_WRAPPED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const TTY_CTX_INVISIBLE_PANES: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const TTY_CTX_WINDOW_BIGGER: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
-pub const TTY_CTX_SYNC: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const TTY_CTX_OVERLAY_SYNC: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
-pub const TTY_CTX_CELL_INVALIDATE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const TTY_CTX_PANE_OBSCURED: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
-pub const CLIENT_REDRAWWINDOW: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 #[no_mangle]
 pub static mut screen_write_citem_freelist: C2RustUnnamed_41 = C2RustUnnamed_41 {
     tqh_first: ::core::ptr::null::<screen_write_citem>() as *mut screen_write_citem,

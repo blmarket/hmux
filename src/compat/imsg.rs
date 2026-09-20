@@ -1,3 +1,4 @@
+pub use crate::src::shared::abi::{__uint32_t, ssize_t, uint32_t};
 use crate::src::shared::abi::*;
 extern "C" {
     pub type ibufqueue;
@@ -48,15 +49,12 @@ extern "C" {
     fn ibufq_pop(bufq: *mut ibufqueue) -> *mut ibuf;
     fn ibufq_push(_: *mut ibufqueue, _: *mut ibuf);
 }
-pub type __uint32_t = u32;
-pub type ssize_t = isize;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct iovec {
     pub iov_base: *mut ::core::ffi::c_void,
     pub iov_len: size_t,
 }
-pub type uint32_t = __uint32_t;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct ibuf {

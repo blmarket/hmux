@@ -1,3 +1,4 @@
+pub use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
 use crate::src::shared::abi::*;
 extern "C" {
     pub type options;
@@ -82,10 +83,6 @@ pub struct paste_time_tree {
 pub struct paste_name_tree {
     pub rbh_root: *mut paste_buffer,
 }
-pub const RB_BLACK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const RB_RED: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const RB_NEGINF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-pub const RB_INF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const VIS_OCTAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const VIS_CSTYLE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const VIS_TAB: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;

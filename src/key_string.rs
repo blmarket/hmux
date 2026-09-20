@@ -1,3 +1,4 @@
+pub use crate::src::shared::abi::{__int32_t};
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
@@ -44,7 +45,6 @@ extern "C" {
     fn utf8_append(_: *mut utf8_data, _: u_char) -> utf8_state;
     fn utf8_fromcstr(_: *const ::core::ffi::c_char) -> *mut utf8_data;
 }
-pub type __int32_t = i32;
 pub type wchar_t = ::libc::wchar_t;
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const C0_US: C2RustUnnamed = 31;

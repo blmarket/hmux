@@ -1,3 +1,5 @@
+pub use crate::src::shared::abi::{__int64_t, int64_t, ssize_t};
+pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 use crate::src::shared::event::*;
 use crate::src::shared::abi::*;
 extern "C" {
@@ -46,9 +48,6 @@ extern "C" {
     ) -> ::core::ffi::c_int;
     fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
 }
-pub type __int64_t = i64;
-pub type ssize_t = isize;
-pub type int64_t = __int64_t;
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const _ISalnum: C2RustUnnamed = 8;
 pub const _ISpunct: C2RustUnnamed = 4;
@@ -143,9 +142,6 @@ pub const TOK_CLOSEARRAY: json_token_type = 3;
 pub const TOK_OPENARRAY: json_token_type = 2;
 pub const TOK_CLOSEOBJECT: json_token_type = 1;
 pub const TOK_OPENOBJECT: json_token_type = 0;
-pub const RB_BLACK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const RB_RED: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const RB_NEGINF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const ERROR_CTX_LEN: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 pub const PARSE_DEPTH_MAX: ::core::ffi::c_int = 200 as ::core::ffi::c_int;
 unsafe extern "C" fn json_node_cmp(

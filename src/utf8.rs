@@ -1,3 +1,5 @@
+pub use crate::src::shared::abi::{ssize_t};
+pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::style::*;
@@ -78,7 +80,6 @@ extern "C" {
     fn log_debug(_: *const ::core::ffi::c_char, ...);
     fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
 }
-pub type ssize_t = isize;
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const _ISalnum: C2RustUnnamed = 8;
 pub const _ISpunct: C2RustUnnamed = 4;
@@ -176,9 +177,6 @@ pub const ULLONG_MAX: ::core::ffi::c_ulonglong = (__LONG_LONG_MAX__ as ::core::f
     .wrapping_mul(2 as ::core::ffi::c_ulonglong)
     .wrapping_add(1 as ::core::ffi::c_ulonglong);
 pub const WCHAR_MAX: ::core::ffi::c_int = __WCHAR_MAX;
-pub const RB_BLACK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-pub const RB_RED: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const RB_NEGINF: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const VIS_DQ: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
 pub const UTF8_SIZE: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
 unsafe extern "C" fn utf8_width_cache_cmp(

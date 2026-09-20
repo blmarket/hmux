@@ -20,6 +20,21 @@ pub const SCREEN_CURSOR_UNDERLINE: screen_cursor_style = 2;
 pub const SCREEN_CURSOR_BLOCK: screen_cursor_style = 1;
 pub const SCREEN_CURSOR_DEFAULT: screen_cursor_style = 0;
 
+use super::abi::u_int;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct visible_ranges {
+    pub ranges: *mut visible_range,
+    pub used: u_int,
+    pub size: u_int,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct visible_range {
+    pub px: u_int,
+    pub nx: u_int,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

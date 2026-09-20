@@ -14,6 +14,22 @@ pub struct colour_palette {
     pub default_palette: *mut ::core::ffi::c_int,
 }
 
+pub const COLOUR_FLAG_256: ::core::ffi::c_int = 0x1000000 as ::core::ffi::c_int;
+pub const COLOUR_FLAG_RGB: ::core::ffi::c_int = 0x2000000 as ::core::ffi::c_int;
+pub const COLOUR_FLAG_THEME: ::core::ffi::c_int = 0x4000000 as ::core::ffi::c_int;
+pub const COLOUR_THEME_COUNT: ::core::ffi::c_int = 10 as ::core::ffi::c_int;
+pub type colour_theme = ::core::ffi::c_uint;
+pub const COLOUR_THEME_MAGENTA: colour_theme = 9;
+pub const COLOUR_THEME_CYAN: colour_theme = 8;
+pub const COLOUR_THEME_BLUE: colour_theme = 7;
+pub const COLOUR_THEME_RED: colour_theme = 6;
+pub const COLOUR_THEME_YELLOW: colour_theme = 5;
+pub const COLOUR_THEME_GREEN: colour_theme = 4;
+pub const COLOUR_THEME_DARK_GREY: colour_theme = 3;
+pub const COLOUR_THEME_LIGHT_GREY: colour_theme = 2;
+pub const COLOUR_THEME_WHITE: colour_theme = 1;
+pub const COLOUR_THEME_BLACK: colour_theme = 0;
+
 #[cfg(test)]
 mod tests {
     use super::*;

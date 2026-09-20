@@ -1,3 +1,4 @@
+pub use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
 use crate::src::shared::abi::*;
 extern "C" {
     fn strrchr(
@@ -19,16 +20,6 @@ extern "C" {
     fn getprogname() -> *const ::core::ffi::c_char;
     fn prctl(__option: ::core::ffi::c_int, ...) -> ::core::ffi::c_int;
 }
-pub type __builtin_va_list = [__va_list_tag; 1];
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct __va_list_tag {
-    pub gp_offset: ::core::ffi::c_uint,
-    pub fp_offset: ::core::ffi::c_uint,
-    pub overflow_arg_area: *mut ::core::ffi::c_void,
-    pub reg_save_area: *mut ::core::ffi::c_void,
-}
-pub type va_list = __builtin_va_list;
 pub const PR_SET_NAME: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
 #[no_mangle]
 pub unsafe extern "C" fn setproctitle(mut fmt: *const ::core::ffi::c_char, mut args: ...) {

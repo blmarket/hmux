@@ -236,6 +236,44 @@ pub const TTYC_AX: tty_code_code = 2;
 pub const TTYC_AM: tty_code_code = 1;
 pub const TTYC_ACSC: tty_code_code = 0;
 
+pub const TERM_256COLOURS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
+pub const TERM_RGBCOLOURS: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
+pub const TTY_OPENED: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
+pub const TTY_STARTED: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
+pub const TTY_CTX_WINDOW_BIGGER: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
+pub const TTY_CTX_WRAPPED: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
+pub const TTY_CTX_INVISIBLE_PANES: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
+pub const TTY_CTX_SYNC: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
+pub const TTY_CTX_OVERLAY_SYNC: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
+pub const TTY_CTX_CELL_INVALIDATE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
+pub const TTY_CTX_PANE_OBSCURED: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
+pub const TTY_NOCURSOR: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
+pub const TTY_FREEZE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
+pub const TTY_BLOCK: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
+pub const TERM_NOAM: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
+pub const TERM_DECSLRM: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
+pub const TERM_DECFRA: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
+pub const TERM_VT100LIKE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
+pub const TTY_TIMER: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
+pub const TTY_NOBLOCK: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
+pub const TTY_OSC52QUERY: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
+pub const TTY_HAVEDA: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
+pub const TTY_HAVEXDA: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
+pub const TTY_SYNCING: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
+pub const TTY_HAVEDA2: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
+pub const TTY_WINSIZEQUERY: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
+pub const TTY_WAITFG: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
+pub const TTY_WAITBG: ::core::ffi::c_int = 0x4000 as ::core::ffi::c_int;
+pub const TTY_HAVESYNC: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
+pub const TTY_ALL_REQUEST_FLAGS: ::core::ffi::c_int =
+    TTY_HAVEDA | TTY_HAVEDA2 | TTY_HAVEXDA | TTY_HAVESYNC;
+pub const TTY_BLOCK_INTERVAL: ::core::ffi::c_int = 100000 as ::core::ffi::c_int;
+pub const TTY_QUERY_TIMEOUT: ::core::ffi::c_int = 5 as ::core::ffi::c_int;
+pub const TTY_REQUEST_LIMIT: ::core::ffi::c_int = 30 as ::core::ffi::c_int;
+pub const TERM_SIXEL: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
+pub const TTY_BRACKETPASTE: ::core::ffi::c_int = 0x8000 as ::core::ffi::c_int;
+pub const TERM_INVALIDMS: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
+
 #[cfg(test)]
 mod tests {
     use super::*;

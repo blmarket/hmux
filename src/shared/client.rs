@@ -18,6 +18,66 @@ pub const CLIENT_EXIT_DETACHED_HUP: client_exit_reason = 2;
 pub const CLIENT_EXIT_DETACHED: client_exit_reason = 1;
 pub const CLIENT_EXIT_NONE: client_exit_reason = 0;
 
+pub const CLIENT_CONTROL: ::core::ffi::c_int = 0x2000 as ::core::ffi::c_int;
+pub const CLIENT_LOGIN: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
+pub const CLIENT_NOSTARTSERVER: ::core::ffi::c_int = 0x1000 as ::core::ffi::c_int;
+pub const CLIENT_CONTROLCONTROL: ::core::ffi::c_int = 0x4000 as ::core::ffi::c_int;
+pub const CLIENT_STARTSERVER: ::core::ffi::c_int = 0x10000000 as ::core::ffi::c_int;
+pub const CLIENT_CONTROL_WAITEXIT: ::core::ffi::c_ulonglong =
+    0x200000000 as ::core::ffi::c_ulonglong;
+pub const CLIENT_WRITE_ACK: ::core::ffi::c_ulonglong = 0x4000000000 as ::core::ffi::c_ulonglong;
+pub const CLIENT_ATTACHED: ::core::ffi::c_int = 0x80 as ::core::ffi::c_int;
+pub const CLIENT_READONLY: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
+pub const CLIENT_IGNORESIZE: ::core::ffi::c_int = 0x20000 as ::core::ffi::c_int;
+pub const CLIENT_DEAD: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
+pub const CLIENT_UTF8: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
+pub const CLIENT_STATUSFORCE: ::core::ffi::c_int = 0x80000 as ::core::ffi::c_int;
+pub const CLIENT_SIZECHANGED: ::core::ffi::c_int = 0x400000 as ::core::ffi::c_int;
+pub const CLIENT_WINDOWSIZECHANGED: ::core::ffi::c_ulonglong =
+    0x400000000 as ::core::ffi::c_ulonglong;
+pub const CLIENT_CONTROL_NEWLAYOUTS: ::core::ffi::c_ulonglong =
+    0x800000000 as ::core::ffi::c_ulonglong;
+pub const CLIENT_REDRAWSTATUS: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
+pub const CLIENT_REDRAWBORDERS: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
+pub const CLIENT_EXIT: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
+pub const CLIENT_SUSPENDED: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
+pub const CLIENT_CONTROL_NOOUTPUT: ::core::ffi::c_int = 0x4000000 as ::core::ffi::c_int;
+pub const CLIENT_CONTROL_PAUSEAFTER: ::core::ffi::c_ulonglong =
+    0x100000000 as ::core::ffi::c_ulonglong;
+pub const CLIENT_CONTROL_DISCARD: ::core::ffi::c_ulonglong =
+    0x1000000000 as ::core::ffi::c_ulonglong;
+pub const CLIENT_UNATTACHEDFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_SUSPENDED | CLIENT_EXIT;
+pub const CLIENT_REDRAWOVERLAY: ::core::ffi::c_int = 0x2000000 as ::core::ffi::c_int;
+pub const CLIENT_STATUSOFF: ::core::ffi::c_int = 0x800000 as ::core::ffi::c_int;
+pub const CLIENT_NOSIZEFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_SUSPENDED | CLIENT_EXIT;
+pub const CLIENT_REDRAWWINDOW: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
+pub const CLIENT_REDRAWMENU: ::core::ffi::c_int = 0x20000000 as ::core::ffi::c_int;
+pub const CLIENT_IDENTIFIED: ::core::ffi::c_int = 0x40000 as ::core::ffi::c_int;
+pub const CLIENT_DEFAULTSOCKET: ::core::ffi::c_int = 0x8000000 as ::core::ffi::c_int;
+pub const CLIENT_NOFORK: ::core::ffi::c_int = 0x40000000 as ::core::ffi::c_int;
+pub const CLIENT_PASTE_TIME_LIMIT: ::core::ffi::c_int = 5 as ::core::ffi::c_int;
+pub const CLIENT_TERMINAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
+pub const CLIENT_REPEAT: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
+pub const CLIENT_EXITED: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
+pub const CLIENT_FOCUSED: ::core::ffi::c_int = 0x8000 as ::core::ffi::c_int;
+pub const CLIENT_DOUBLECLICK: ::core::ffi::c_int = 0x100000 as ::core::ffi::c_int;
+pub const CLIENT_TRIPLECLICK: ::core::ffi::c_int = 0x200000 as ::core::ffi::c_int;
+pub const CLIENT_REDRAWSTATUSALWAYS: ::core::ffi::c_int = 0x1000000 as ::core::ffi::c_int;
+pub const CLIENT_REDRAWSCROLLBARS: ::core::ffi::c_ulonglong =
+    0x80000000 as ::core::ffi::c_ulonglong;
+pub const CLIENT_BRACKETPASTING: ::core::ffi::c_ulonglong =
+    0x1000000000 as ::core::ffi::c_ulonglong;
+pub const CLIENT_ASSUMEPASTING: ::core::ffi::c_ulonglong = 0x2000000000 as ::core::ffi::c_ulonglong;
+pub const CLIENT_NO_DETACH_ON_DESTROY: ::core::ffi::c_ulonglong =
+    0x8000000000 as ::core::ffi::c_ulonglong;
+pub const CLIENT_ALLREDRAWFLAGS: ::core::ffi::c_int = CLIENT_REDRAWWINDOW
+    | CLIENT_REDRAWSTATUS
+    | CLIENT_REDRAWSTATUSALWAYS
+    | CLIENT_REDRAWBORDERS
+    | CLIENT_REDRAWOVERLAY
+    | CLIENT_REDRAWMENU;
+pub const CLIENT_NODETACHFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_EXIT;
+
 #[cfg(test)]
 mod tests {
     use super::{
