@@ -1,3 +1,13 @@
+use crate::src::ffi::libc::{
+    environ, fnmatch, free, getpid, setenv, strchr, strcmp, strcspn, vasprintf,
+};
+use crate::src::log::log_debug;
+use crate::src::options::{
+    options_array_first, options_array_item_value, options_array_next, options_get,
+    options_get_string,
+};
+use crate::src::tmux::{getversion, global_environ, global_options, socket_path};
+use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup, xvasprintf};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -56,58 +66,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn fnmatch(
-        __pattern: *const ::core::ffi::c_char,
-        __name: *const ::core::ffi::c_char,
-        __flags: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn setenv(
-        __name: *const ::core::ffi::c_char,
-        __value: *const ::core::ffi::c_char,
-        __replace: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strcspn(
-        __s: *const ::core::ffi::c_char,
-        __reject: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_ulong;
-    static mut environ: *mut *mut ::core::ffi::c_char;
-    fn getpid() -> __pid_t;
-    fn vasprintf(
-        __ptr: *mut *mut ::core::ffi::c_char,
-        __f: *const ::core::ffi::c_char,
-        __arg: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xvasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    static mut global_options: *mut options;
-    static mut global_environ: *mut environ;
-    static mut socket_path: *const ::core::ffi::c_char;
-    fn getversion() -> *const ::core::ffi::c_char;
-    fn options_get(_: *mut options, _: *const ::core::ffi::c_char) -> *mut options_entry;
-    fn options_array_first(_: *mut options_entry) -> *mut options_array_item;
-    fn options_array_next(_: *mut options_array_item) -> *mut options_array_item;
-    fn options_array_item_value(_: *mut options_array_item) -> *mut options_value;
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

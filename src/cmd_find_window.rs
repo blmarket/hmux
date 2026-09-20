@@ -1,3 +1,9 @@
+use crate::src::arguments::{args_create, args_free, args_has, args_set, args_string};
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_queue::cmdq_get_target;
+use crate::src::window::window_pane_set_mode;
+use crate::src::window_tree::window_tree_mode;
+use crate::src::xmalloc::{xasprintf, xcalloc};
 pub use crate::src::shared::arguments::{
     args, args_parse, args_parse_cb, args_value, args_value_c2rust_unnamed, args_value_entry,
 };
@@ -57,31 +63,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn args_set(_: *mut args, _: u_char, _: *mut args_value, _: ::core::ffi::c_int);
-    fn args_create() -> *mut args;
-    fn args_free(_: *mut args);
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn window_pane_set_mode(
-        _: *mut window_pane,
-        _: *mut window_pane,
-        _: *const window_mode,
-        _: *mut cmdq_item,
-        _: *mut cmd_find_state,
-        _: *mut args,
-    ) -> ::core::ffi::c_int;
-    static window_tree_mode: window_mode;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

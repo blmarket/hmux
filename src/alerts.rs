@@ -1,4 +1,16 @@
-pub use crate::src::shared::client::{clients};
+use crate::src::events::events_fire_winlink;
+use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_once, event_set};
+use crate::src::log::log_debug;
+use crate::src::options::options_get_number;
+pub use crate::src::server::clients;
+use crate::src::server_fn::server_status_session;
+use crate::src::status::status_message_set;
+use crate::src::tty::tty_putcode;
+use crate::src::window::{
+    window_add_ref, window_remove_ref, windows_RB_MINMAX, windows_RB_NEXT, winlinks_RB_MINMAX,
+    winlinks_RB_NEXT,
+};
+pub use crate::src::window::windows;
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -26,11 +38,7 @@ pub use crate::src::shared::session::{session, session_entry, session_gentry};
 pub use crate::src::shared::spawn::{spawn_editor_state};
 pub use crate::src::shared::status::{status_line};
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
-pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, windows, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
-};
+pub use crate::src::shared::window::{window, window_alerts_entry, window_entry, window_mode, window_mode_entry, window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry, winlink_stack, winlink_wentry, winlinks};
 pub use crate::src::shared::environment::{environ};
 pub use crate::src::shared::alerts::{
     ALERT_ANY, ALERT_CURRENT, ALERT_OTHER, VISUAL_BOTH, VISUAL_OFF,
@@ -54,7 +62,6 @@ pub use crate::src::shared::mouse::{mouse_event};
 use crate::src::shared::client::*;
 use crate::src::shared::tty::*;
 use crate::src::shared::terminal::*;
-use crate::src::shared::event::*;
 use crate::src::shared::display::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::message::*;
@@ -63,63 +70,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn event_add(ev: *mut event, timeout: *const timeval) -> ::core::ffi::c_int;
-    fn event_del(_: *mut event) -> ::core::ffi::c_int;
-    fn event_initialized(ev: *const event) -> ::core::ffi::c_int;
-    fn event_once(
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-        _: *const timeval,
-    ) -> ::core::ffi::c_int;
-    fn event_set(
-        _: *mut event,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn events_fire_winlink(_: *const ::core::ffi::c_char, _: *mut winlink);
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn tty_putcode(_: *mut tty, _: tty_code_code);
-    static mut clients: clients;
-    fn server_status_session(_: *mut session);
-    fn status_message_set(
-        _: *mut client,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    static mut windows: windows;
-    fn windows_RB_NEXT(_: *mut window) -> *mut window;
-    fn windows_RB_MINMAX(_: *mut windows, _: ::core::ffi::c_int) -> *mut window;
-    fn winlinks_RB_NEXT(_: *mut winlink) -> *mut winlink;
-    fn winlinks_RB_MINMAX(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn window_add_ref(_: *mut window, _: *const ::core::ffi::c_char);
-    fn window_remove_ref(_: *mut window, _: *const ::core::ffi::c_char);
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

@@ -1,3 +1,31 @@
+use crate::src::cmd_find::{cmd_find_from_session, cmd_find_from_winlink};
+use crate::src::compat::strtonum::strtonum;
+use crate::src::environ::environ_free;
+use crate::src::events::{events_fire, events_fire_session, events_fire_winlink};
+use crate::src::events_payload::{
+    event_payload_create, event_payload_set_int, event_payload_set_session,
+    event_payload_set_string, event_payload_set_target, event_payload_set_uint,
+    event_payload_set_window,
+};
+use crate::src::ffi::libc::{free, gettimeofday, memcpy, strcmp};
+use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_once, event_set};
+use crate::src::grid::grid_collect_history;
+use crate::src::log::{fatal, fatalx, log_debug};
+use crate::src::options::{options_free, options_get_number};
+use crate::src::resize::recalculate_sizes;
+use crate::src::server::{marked_pane, server_clear_marked};
+use crate::src::server_fn::server_lock_session;
+use crate::src::sort::sort_get_sessions;
+use crate::src::status::status_update_cache;
+use crate::src::tmux::global_options;
+use crate::src::tty::tty_update_window_offset;
+use crate::src::window::{
+    window_update_activity, window_update_focus, winlink_add, winlink_clear_flags,
+    winlink_find_by_index, winlink_find_by_window, winlink_find_by_window_id, winlink_next,
+    winlink_previous, winlink_remove, winlink_set_window, winlink_stack_push,
+    winlink_stack_remove, winlinks_RB_MINMAX, winlinks_RB_NEXT,
+};
+use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xstrdup};
 pub use crate::src::shared::session::{
     session_group, session_group_entry, session_group_sessions, session_groups, sessions,
 };
@@ -63,125 +91,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn gettimeofday(__tv: *mut timeval, __tz: *mut ::core::ffi::c_void) -> ::core::ffi::c_int;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn event_add(ev: *mut event, timeout: *const timeval) -> ::core::ffi::c_int;
-    fn event_del(_: *mut event) -> ::core::ffi::c_int;
-    fn event_initialized(ev: *const event) -> ::core::ffi::c_int;
-    fn event_once(
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-        _: *const timeval,
-    ) -> ::core::ffi::c_int;
-    fn event_set(
-        _: *mut event,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn strtonum(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut global_options: *mut options;
-    fn sort_get_sessions(_: *mut u_int, _: *mut sort_criteria) -> *mut *mut session;
-    fn event_payload_create() -> *mut event_payload;
-    fn event_payload_set_target(_: *mut event_payload, _: *mut cmd_find_state);
-    fn event_payload_set_string(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn event_payload_set_int(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    );
-    fn event_payload_set_uint(_: *mut event_payload, _: *const ::core::ffi::c_char, _: u_int);
-    fn event_payload_set_session(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut session,
-    );
-    fn event_payload_set_window(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut window,
-    );
-    fn events_fire(_: *const ::core::ffi::c_char, _: *mut event_payload);
-    fn events_fire_session(_: *const ::core::ffi::c_char, _: *mut session);
-    fn events_fire_winlink(_: *const ::core::ffi::c_char, _: *mut winlink);
-    fn options_free(_: *mut options);
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn environ_free(_: *mut environ);
-    fn tty_update_window_offset(_: *mut window);
-    fn cmd_find_from_session(_: *mut cmd_find_state, _: *mut session, _: ::core::ffi::c_int);
-    fn cmd_find_from_winlink(_: *mut cmd_find_state, _: *mut winlink, _: ::core::ffi::c_int);
-    static mut marked_pane: cmd_find_state;
-    fn server_clear_marked();
-    fn server_lock_session(_: *mut session);
-    fn status_update_cache(_: *mut session);
-    fn recalculate_sizes();
-    fn grid_collect_history(_: *mut grid, _: ::core::ffi::c_int);
-    fn winlinks_RB_MINMAX(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn winlinks_RB_NEXT(_: *mut winlink) -> *mut winlink;
-    fn winlink_find_by_index(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn winlink_find_by_window(_: *mut winlinks, _: *mut window) -> *mut winlink;
-    fn winlink_find_by_window_id(_: *mut winlinks, _: u_int) -> *mut winlink;
-    fn winlink_add(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn winlink_set_window(_: *mut winlink, _: *mut window);
-    fn winlink_remove(_: *mut winlinks, _: *mut winlink);
-    fn winlink_next(_: *mut winlink) -> *mut winlink;
-    fn winlink_previous(_: *mut winlink) -> *mut winlink;
-    fn winlink_stack_push(_: *mut winlink_stack, _: *mut winlink);
-    fn winlink_stack_remove(_: *mut winlink_stack, _: *mut winlink);
-    fn window_update_activity(_: *mut window);
-    fn window_update_focus(_: *mut window);
-    fn winlink_clear_flags(_: *mut winlink);
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

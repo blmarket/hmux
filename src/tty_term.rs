@@ -1,3 +1,21 @@
+use crate::src::compat::strtonum::strtonum;
+use crate::src::compat::unvis::strunvis;
+use crate::src::compat::vis::strnvis;
+use crate::src::environ::environ_find;
+use crate::src::ffi::libc::{
+    fnmatch, free, memset, strcasecmp, strchr, strcmp, strcspn, strlen, strncmp, strstr,
+};
+use crate::src::ffi::ncurses::{
+    cur_term, del_curterm, setupterm, tigetflag, tigetnum, tigetstr, tiparm_s,
+};
+pub use crate::src::ffi::ncurses::TERMINAL;
+use crate::src::log::{fatalx, log_debug};
+use crate::src::options::{
+    options_array_first, options_array_item_value, options_array_next, options_get_only,
+};
+use crate::src::tmux::global_options;
+use crate::src::tty_features::{tty_apply_features, tty_parse_client_features};
+use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xsnprintf, xstrdup};
 pub use crate::src::shared::tty::{tty_terms};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -64,106 +82,9 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
 
-    fn tigetflag(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn tigetnum(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn tigetstr(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn tiparm_s(
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> *mut ::core::ffi::c_char;
-    fn fnmatch(
-        __pattern: *const ::core::ffi::c_char,
-        __name: *const ::core::ffi::c_char,
-        __flags: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strncmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strcspn(
-        __s: *const ::core::ffi::c_char,
-        __reject: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_ulong;
-    fn strstr(
-        __haystack: *const ::core::ffi::c_char,
-        __needle: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strcasecmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    static mut cur_term: *mut TERMINAL;
-    fn del_curterm(_: *mut TERMINAL) -> ::core::ffi::c_int;
-    fn setupterm(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *mut ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn strnvis(
-        _: *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: size_t,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn strunvis(_: *mut ::core::ffi::c_char, _: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn strtonum(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut global_options: *mut options;
-    fn options_get_only(_: *mut options, _: *const ::core::ffi::c_char) -> *mut options_entry;
-    fn options_array_first(_: *mut options_entry) -> *mut options_array_item;
-    fn options_array_next(_: *mut options_array_item) -> *mut options_array_item;
-    fn options_array_item_value(_: *mut options_array_item) -> *mut options_value;
-    fn environ_find(_: *mut environ, _: *const ::core::ffi::c_char) -> *mut environ_entry;
-    fn tty_parse_client_features(
-        _: *mut client,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-    );
-    fn tty_apply_features(_: *mut tty_term) -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
-
-pub type TERMINAL = term;
 
 pub const TTYCODE_FLAG: tty_code_type = 3;
 pub const TTYCODE_NUMBER: tty_code_type = 2;

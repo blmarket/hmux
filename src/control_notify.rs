@@ -1,5 +1,15 @@
+use crate::src::control::control_notify_write;
+use crate::src::events::events_add_sink;
+use crate::src::events_payload::{
+    event_payload_get_client, event_payload_get_pane, event_payload_get_session,
+    event_payload_get_string, event_payload_get_window, event_payload_print,
+};
+use crate::src::ffi::libc::free;
+use crate::src::format::{format_create, format_defaults, format_expand, format_free};
+pub use crate::src::server::clients;
+use crate::src::window::winlink_find_by_window_id;
 pub use crate::src::shared::events::{event_payload, events_cb, events_sink};
-pub use crate::src::shared::client::{clients};
+
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -55,60 +65,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_defaults(
-        _: *mut format_tree,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    );
-    fn event_payload_get_string(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn event_payload_print(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn event_payload_get_client(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut client;
-    fn event_payload_get_session(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut session;
-    fn event_payload_get_window(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut window;
-    fn event_payload_get_pane(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut window_pane;
-    fn events_add_sink(
-        _: *const ::core::ffi::c_char,
-        _: events_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut events_sink;
-    static mut clients: clients;
-    fn winlink_find_by_window_id(_: *mut winlinks, _: u_int) -> *mut winlink;
-    fn control_notify_write(_: *mut client, _: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

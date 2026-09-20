@@ -1,3 +1,13 @@
+use crate::src::cmd::cmd_mouse_at;
+use crate::src::ffi::libc::{strchr, strcspn, strlen};
+use crate::src::ffi::libevent::bufferevent_write;
+use crate::src::key_string::key_string_lookup_key;
+use crate::src::log::{log_debug, log_get_level};
+use crate::src::options::options_get_number;
+use crate::src::tmux::global_options;
+use crate::src::utf8::{utf8_to_data, utf8_towc};
+use crate::src::window::window_pane_is_visible;
+use crate::src::xmalloc::{xcalloc, xsnprintf, xstrdup};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -66,47 +76,6 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
-extern "C" {
-
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strcspn(
-        __s: *const ::core::ffi::c_char,
-        __reject: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_ulong;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn bufferevent_write(
-        bufev: *mut bufferevent,
-        data: *const ::core::ffi::c_void,
-        size: size_t,
-    ) -> ::core::ffi::c_int;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut global_options: *mut options;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn cmd_mouse_at(
-        _: *mut window_pane,
-        _: *mut mouse_event,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn key_string_lookup_key(_: key_code, _: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn window_pane_is_visible(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn utf8_towc(_: *const utf8_data, _: *mut wchar_t) -> utf8_state;
-    fn utf8_to_data(_: utf8_char, _: *mut utf8_data);
-    fn log_get_level() -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

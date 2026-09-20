@@ -1,4 +1,43 @@
-pub use crate::src::shared::client::{clients};
+use crate::src::colour::{
+    colour_256to16, colour_dim, colour_find_rgb, colour_force_rgb, colour_palette_get,
+    colour_split_rgb,
+};
+use crate::src::ffi::libc::{
+    __errno_location, abs, fcntl, free, getpid, ioctl, isatty, memcpy, memset, open, strcmp,
+    strerror, strlen, strncmp, tcflush, tcgetattr, tcsetattr, time, usleep, write,
+};
+pub use crate::src::ffi::libc::__useconds_t;
+use crate::src::ffi::libevent::{
+    evbuffer_add, evbuffer_drain, evbuffer_free, evbuffer_get_length, evbuffer_new,
+    evbuffer_read, evbuffer_write, event_add, event_del, event_initialized, event_pending,
+    event_set,
+};
+use crate::src::ffi::resolv::__b64_ntop;
+use crate::src::format::{format_create, format_defaults, format_free};
+use crate::src::grid::{grid_cells_equal, grid_default_cell};
+use crate::src::hyperlinks::hyperlinks_get;
+use crate::src::log::{fatal, fatalx, log_debug, log_get_level};
+use crate::src::options::{options_get_number, options_get_string};
+use crate::src::screen::screen_mode_to_string;
+pub use crate::src::server::clients;
+use crate::src::server_client::{
+    server_client_ensure_ranges, server_client_lost, server_client_ranges_is_empty,
+};
+use crate::src::server_fn::server_redraw_client;
+use crate::src::status::status_line_size;
+use crate::src::style::style_add;
+use crate::src::tmux::{global_options, setblocking};
+use crate::src::tty_acs::{tty_acs_get, tty_acs_needed, tty_acs_reverse_get};
+use crate::src::tty_draw::tty_draw_line;
+use crate::src::tty_features::tty_apply_features;
+use crate::src::tty_keys::{tty_keys_build, tty_keys_free, tty_keys_next};
+use crate::src::tty_term::{
+    tty_term_apply_overrides, tty_term_create, tty_term_flag, tty_term_free, tty_term_has,
+    tty_term_number, tty_term_string, tty_term_string_i, tty_term_string_ii,
+    tty_term_string_iii, tty_term_string_s, tty_term_string_ss,
+};
+use crate::src::utf8::utf8_set;
+use crate::src::xmalloc::{xmalloc, xsnprintf};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -78,7 +117,6 @@ pub use crate::src::shared::mouse::{mouse_event};
 use crate::src::shared::client::*;
 use crate::src::shared::tty::*;
 use crate::src::shared::terminal::*;
-use crate::src::shared::event::*;
 use crate::src::shared::display::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::message::*;
@@ -87,225 +125,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn ioctl(__fd: ::core::ffi::c_int, __request: ::core::ffi::c_ulong, ...) -> ::core::ffi::c_int;
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn fcntl(__fd: ::core::ffi::c_int, __cmd: ::core::ffi::c_int, ...) -> ::core::ffi::c_int;
-    fn open(
-        __file: *const ::core::ffi::c_char,
-        __oflag: ::core::ffi::c_int,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn write(__fd: ::core::ffi::c_int, __buf: *const ::core::ffi::c_void, __n: size_t) -> ssize_t;
-    fn usleep(__useconds: __useconds_t) -> ::core::ffi::c_int;
-    fn getpid() -> __pid_t;
-    fn isatty(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn __b64_ntop(
-        _: *const ::core::ffi::c_uchar,
-        _: size_t,
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-    ) -> ::core::ffi::c_int;
-    fn abs(__x: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strncmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn tcgetattr(__fd: ::core::ffi::c_int, __termios_p: *mut termios) -> ::core::ffi::c_int;
-    fn tcsetattr(
-        __fd: ::core::ffi::c_int,
-        __optional_actions: ::core::ffi::c_int,
-        __termios_p: *const termios,
-    ) -> ::core::ffi::c_int;
-    fn tcflush(
-        __fd: ::core::ffi::c_int,
-        __queue_selector: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn time(__timer: *mut time_t) -> time_t;
-    fn event_add(ev: *mut event, timeout: *const timeval) -> ::core::ffi::c_int;
-    fn event_del(_: *mut event) -> ::core::ffi::c_int;
-    fn event_pending(
-        ev: *const event,
-        events: ::core::ffi::c_short,
-        tv: *mut timeval,
-    ) -> ::core::ffi::c_int;
-    fn event_initialized(ev: *const event) -> ::core::ffi::c_int;
-    fn event_set(
-        _: *mut event,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn evbuffer_new() -> *mut evbuffer;
-    fn evbuffer_free(buf: *mut evbuffer);
-    fn evbuffer_get_length(buf: *const evbuffer) -> size_t;
-    fn evbuffer_add(
-        buf: *mut evbuffer,
-        data: *const ::core::ffi::c_void,
-        datlen: size_t,
-    ) -> ::core::ffi::c_int;
-    fn evbuffer_drain(buf: *mut evbuffer, len: size_t) -> ::core::ffi::c_int;
-    fn evbuffer_write(buffer: *mut evbuffer, fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn evbuffer_read(
-        buffer: *mut evbuffer,
-        fd: ::core::ffi::c_int,
-        howmuch: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut global_options: *mut options;
-    fn setblocking(_: ::core::ffi::c_int, _: ::core::ffi::c_int);
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_defaults(
-        _: *mut format_tree,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    );
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn tty_draw_line(
-        _: *mut tty,
-        _: *mut screen,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: *const tty_style_ctx,
-    );
-    fn tty_term_apply_overrides(_: *mut tty_term);
-    fn tty_term_create(
-        _: *mut tty,
-        _: *mut ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-        _: u_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> *mut tty_term;
-    fn tty_term_free(_: *mut tty_term);
-    fn tty_term_has(_: *mut tty_term, _: tty_code_code) -> ::core::ffi::c_int;
-    fn tty_term_string(_: *mut tty_term, _: tty_code_code) -> *const ::core::ffi::c_char;
-    fn tty_term_string_i(
-        _: *mut tty_term,
-        _: tty_code_code,
-        _: ::core::ffi::c_int,
-    ) -> *const ::core::ffi::c_char;
-    fn tty_term_string_ii(
-        _: *mut tty_term,
-        _: tty_code_code,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *const ::core::ffi::c_char;
-    fn tty_term_string_iii(
-        _: *mut tty_term,
-        _: tty_code_code,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *const ::core::ffi::c_char;
-    fn tty_term_string_s(
-        _: *mut tty_term,
-        _: tty_code_code,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn tty_term_string_ss(
-        _: *mut tty_term,
-        _: tty_code_code,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn tty_term_number(_: *mut tty_term, _: tty_code_code) -> ::core::ffi::c_int;
-    fn tty_term_flag(_: *mut tty_term, _: tty_code_code) -> ::core::ffi::c_int;
-    fn tty_apply_features(_: *mut tty_term) -> ::core::ffi::c_int;
-    fn tty_acs_needed(_: *mut tty) -> ::core::ffi::c_int;
-    fn tty_acs_get(_: *mut tty, _: u_char) -> *const ::core::ffi::c_char;
-    fn tty_acs_reverse_get(
-        _: *mut tty,
-        _: *const ::core::ffi::c_char,
-        _: size_t,
-    ) -> ::core::ffi::c_int;
-    fn tty_keys_build(_: *mut tty);
-    fn tty_keys_free(_: *mut tty);
-    fn tty_keys_next(_: *mut tty) -> ::core::ffi::c_int;
-    static mut clients: clients;
-    fn server_client_ensure_ranges(_: *mut visible_ranges, _: u_int);
-    fn server_client_ranges_is_empty(_: *mut visible_ranges) -> ::core::ffi::c_int;
-    fn server_client_lost(_: *mut client);
-    fn server_redraw_client(_: *mut client);
-    fn status_line_size(_: *mut client) -> u_int;
-    fn colour_find_rgb(_: u_char, _: u_char, _: u_char) -> ::core::ffi::c_int;
-    fn colour_split_rgb(_: ::core::ffi::c_int, _: *mut u_char, _: *mut u_char, _: *mut u_char);
-    fn colour_force_rgb(_: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn colour_dim(_: ::core::ffi::c_int, _: u_int) -> ::core::ffi::c_int;
-    fn colour_256to16(_: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn colour_palette_get(_: *mut colour_palette, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    static grid_default_cell: grid_cell;
-    fn grid_cells_equal(_: *const grid_cell, _: *const grid_cell) -> ::core::ffi::c_int;
-    fn screen_mode_to_string(_: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn utf8_set(_: *mut utf8_data, _: u_char);
-    fn log_get_level() -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-    fn style_add(
-        _: *mut grid_cell,
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: *mut format_tree,
-    ) -> *mut style;
-    fn hyperlinks_get(
-        _: *mut hyperlinks,
-        _: u_int,
-        _: *mut *const ::core::ffi::c_char,
-        _: *mut *const ::core::ffi::c_char,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-}
-pub type __useconds_t = ::core::ffi::c_uint;
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;

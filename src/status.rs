@@ -1,5 +1,34 @@
+use crate::src::cmd_queue::{cmdq_append, cmdq_get_callback1};
+use crate::src::ffi::libc::{free, memcpy, memset, strcmp, strlen};
+use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_set};
+use crate::src::format::{
+    format_add, format_create, format_create_defaults, format_defaults, format_expand_time,
+    format_free,
+};
+use crate::src::format_draw::format_draw;
+use crate::src::grid::{grid_cells_equal, grid_compare};
+use crate::src::log::{fatalx, log_debug};
+use crate::src::options::{
+    options_array_getv, options_get, options_get_number, options_get_string,
+    options_string_to_style,
+};
+use crate::src::prompt::{
+    prompt_closed, prompt_create, prompt_draw, prompt_free, prompt_incremental_start,
+    prompt_key, prompt_mouse, prompt_set_options, prompt_update,
+};
+use crate::src::screen::{screen_free, screen_init, screen_resize};
+use crate::src::screen_write::{
+    screen_write_cursormove, screen_write_fast_copy, screen_write_putc, screen_write_start,
+    screen_write_stop,
+};
+use crate::src::server::server_add_message;
+pub use crate::src::server::clients;
+use crate::src::server_client::server_client_clear_overlay;
+use crate::src::style::{style_apply, style_ranges_free, style_ranges_get_range, style_ranges_init};
+use crate::src::tmux::global_s_options;
+use crate::src::xmalloc::{xcalloc, xmalloc, xvasprintf};
 pub use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
-pub use crate::src::shared::client::{clients};
+
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -68,7 +97,6 @@ pub use crate::src::shared::mouse::{
 use crate::src::shared::client::*;
 use crate::src::shared::prompt::*;
 use crate::src::shared::terminal::*;
-use crate::src::shared::event::*;
 use crate::src::shared::display::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::message::*;
@@ -78,164 +106,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn event_add(ev: *mut event, timeout: *const timeval) -> ::core::ffi::c_int;
-    fn event_del(_: *mut event) -> ::core::ffi::c_int;
-    fn event_initialized(ev: *const event) -> ::core::ffi::c_int;
-    fn event_set(
-        _: *mut event,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xvasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    static mut global_s_options: *mut options;
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn format_expand_time(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_create_defaults(
-        _: *mut cmdq_item,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut format_tree;
-    fn format_defaults(
-        _: *mut format_tree,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    );
-    fn format_draw(
-        _: *mut screen_write_ctx,
-        _: *const grid_cell,
-        _: u_int,
-        _: *const ::core::ffi::c_char,
-        _: *mut style_ranges,
-        _: ::core::ffi::c_int,
-    );
-    fn options_get(_: *mut options, _: *const ::core::ffi::c_char) -> *mut options_entry;
-    fn options_array_getv(
-        _: *mut options_entry,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> *mut options_value;
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn options_string_to_style(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: *mut format_tree,
-    ) -> *mut style;
-    fn cmdq_get_callback1(
-        _: *const ::core::ffi::c_char,
-        _: cmdq_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut cmdq_item;
-    fn cmdq_append(_: *mut client, _: *mut cmdq_item) -> *mut cmdq_item;
-    static mut clients: clients;
-    fn server_add_message(_: *const ::core::ffi::c_char, ...);
-    fn server_client_clear_overlay(_: *mut client);
-    fn prompt_set_options(_: *mut prompt_create_data, _: *mut session);
-    fn prompt_create(_: *const prompt_create_data) -> *mut prompt;
-    fn prompt_free(_: *mut prompt);
-    fn prompt_incremental_start(_: *mut prompt);
-    fn prompt_draw(_: *mut prompt, _: *mut prompt_draw_data);
-    fn prompt_key(_: *mut prompt, _: key_code, _: *mut ::core::ffi::c_int) -> prompt_key_result;
-    fn prompt_mouse(
-        _: *mut prompt,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: *mut ::core::ffi::c_int,
-    ) -> prompt_key_result;
-    fn prompt_update(_: *mut prompt, _: *const ::core::ffi::c_char, _: *const ::core::ffi::c_char);
-    fn prompt_closed(_: *mut prompt) -> ::core::ffi::c_int;
-    fn grid_cells_equal(_: *const grid_cell, _: *const grid_cell) -> ::core::ffi::c_int;
-    fn grid_compare(_: *mut grid, _: *mut grid) -> ::core::ffi::c_int;
-    fn screen_write_start(_: *mut screen_write_ctx, _: *mut screen);
-    fn screen_write_stop(_: *mut screen_write_ctx);
-    fn screen_write_putc(_: *mut screen_write_ctx, _: *const grid_cell, _: u_char);
-    fn screen_write_fast_copy(
-        _: *mut screen_write_ctx,
-        _: *mut screen,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-    );
-    fn screen_write_cursormove(
-        _: *mut screen_write_ctx,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn screen_init(_: *mut screen, _: u_int, _: u_int, _: u_int);
-    fn screen_free(_: *mut screen);
-    fn screen_resize(_: *mut screen, _: u_int, _: u_int, _: ::core::ffi::c_int);
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-    fn style_apply(
-        _: *mut grid_cell,
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: *mut format_tree,
-    );
-    fn style_ranges_init(_: *mut style_ranges);
-    fn style_ranges_free(_: *mut style_ranges);
-    fn style_ranges_get_range(_: *mut style_ranges, _: u_int) -> *mut style_range;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

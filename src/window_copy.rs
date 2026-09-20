@@ -1,5 +1,61 @@
+use crate::src::arguments::{args_count, args_free, args_has, args_string, args_values};
+pub use crate::src::arguments::args_parse;
+use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
+use crate::src::compat::strtonum::strtonum;
+use crate::src::events::events_fire_pane;
+use crate::src::ffi::libc::{
+    __ctype_tolower_loc, abs, free, llabs, memcmp, memcpy, memmove, memset, regcomp, regexec,
+    regfree, strcasecmp, strchr, strcmp, strcspn, strlen, strncmp, vasprintf,
+};
+use crate::src::ffi::libevent::{bufferevent_write, event_add, event_del, event_set};
+use crate::src::format::{
+    format_add, format_add_cb, format_create_defaults, format_expand, format_free,
+    format_get_pane, format_grid_hyperlink, format_grid_line, format_grid_word, format_single,
+};
+use crate::src::format_draw::format_draw;
+use crate::src::grid::{
+    grid_default_cell, grid_duplicate_lines, grid_free_lines, grid_get_cell, grid_get_line,
+    grid_in_set, grid_line_length, grid_line_limit, grid_line_time, grid_peek_line,
+    grid_unwrap_position, grid_wrap_position,
+};
+use crate::src::grid_reader::{
+    grid_reader_cursor_back_to_indentation, grid_reader_cursor_end_of_line,
+    grid_reader_cursor_jump, grid_reader_cursor_jump_back, grid_reader_cursor_left,
+    grid_reader_cursor_next_word, grid_reader_cursor_next_word_end,
+    grid_reader_cursor_previous_word, grid_reader_cursor_right,
+    grid_reader_cursor_start_of_line, grid_reader_get_cursor, grid_reader_in_set,
+    grid_reader_start,
+};
+use crate::src::hyperlinks::{hyperlinks_copy, hyperlinks_free};
+use crate::src::input::{input_free, input_init, input_parse_screen};
+use crate::src::job::{job_get_event, job_run};
+use crate::src::log::{fatalx, log_debug};
+use crate::src::options::{options_get_number, options_get_string};
+use crate::src::paste::{paste_add, paste_buffer_data, paste_get_top, paste_set};
+use crate::src::screen::{
+    screen_check_selection, screen_clear_selection, screen_free, screen_hide_selection,
+    screen_init, screen_resize, screen_resize_cursor, screen_set_default_cursor,
+    screen_set_selection,
+};
+use crate::src::screen_write::{
+    screen_write_carriagereturn, screen_write_cell, screen_write_cursormove,
+    screen_write_deleteline, screen_write_insertline, screen_write_linefeed, screen_write_nputs,
+    screen_write_putc, screen_write_setselection, screen_write_start, screen_write_start_pane,
+    screen_write_stop, screen_write_strlen, screen_write_vnputs,
+};
+use crate::src::status::status_message_set;
+use crate::src::style::style_apply;
+use crate::src::tmux::{get_timer, global_options, global_w_options};
+use crate::src::tty::tty_window_offset;
+use crate::src::tty_acs::tty_acs_get;
+use crate::src::utf8::{utf8_copy, utf8_fromcstr, utf8_set, utf8_to_data};
+use crate::src::window::{
+    window_pane_reset_mode, window_pane_scrollbar_overlay_visible, window_pane_scrollbar_redraw,
+    window_pane_scrollbar_show, window_set_active_pane,
+};
+use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup};
 pub use crate::src::shared::arguments::{
-    args, args_parse, args_parse_cb, args_value, args_value_c2rust_unnamed, args_value_entry,
+    args, args_parse_cb, args_value, args_value_c2rust_unnamed, args_value_entry,
 };
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -76,370 +132,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn __ctype_tolower_loc() -> *mut *const __int32_t;
-    fn regcomp(
-        __preg: *mut regex_t,
-        __pattern: *const ::core::ffi::c_char,
-        __cflags: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn regexec(
-        __preg: *const regex_t,
-        __String: *const ::core::ffi::c_char,
-        __nmatch: size_t,
-        __pmatch: *mut regmatch_t,
-        __eflags: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn regfree(__preg: *mut regex_t);
-    fn abs(__x: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn llabs(__x: ::core::ffi::c_longlong) -> ::core::ffi::c_longlong;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memmove(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memcmp(
-        __s1: *const ::core::ffi::c_void,
-        __s2: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strncmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strcspn(
-        __s: *const ::core::ffi::c_char,
-        __reject: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_ulong;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strcasecmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn vasprintf(
-        __ptr: *mut *mut ::core::ffi::c_char,
-        __f: *const ::core::ffi::c_char,
-        __arg: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn event_add(ev: *mut event, timeout: *const timeval) -> ::core::ffi::c_int;
-    fn event_del(_: *mut event) -> ::core::ffi::c_int;
-    fn event_set(
-        _: *mut event,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn bufferevent_write(
-        bufev: *mut bufferevent,
-        data: *const ::core::ffi::c_void,
-        size: size_t,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn strtonum(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xrealloc(_: *mut ::core::ffi::c_void, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    static mut global_options: *mut options;
-    static mut global_w_options: *mut options;
-    fn get_timer() -> uint64_t;
-    fn paste_buffer_data(_: *mut paste_buffer, _: *mut size_t) -> *const ::core::ffi::c_char;
-    fn paste_get_top(_: *mut *mut ::core::ffi::c_char) -> *mut paste_buffer;
-    fn paste_add(_: *const ::core::ffi::c_char, _: *mut ::core::ffi::c_char, _: size_t);
-    fn paste_set(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn format_free(_: *mut format_tree);
-    fn format_get_pane(_: *mut format_tree) -> *mut window_pane;
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn format_add_cb(_: *mut format_tree, _: *const ::core::ffi::c_char, _: format_cb);
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_single(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_create_defaults(
-        _: *mut cmdq_item,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut format_tree;
-    fn format_grid_word(_: *mut grid, _: u_int, _: u_int) -> *mut ::core::ffi::c_char;
-    fn format_grid_hyperlink(
-        _: *mut grid,
-        _: u_int,
-        _: u_int,
-        _: *mut screen,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_grid_line(_: *mut grid, _: u_int) -> *mut ::core::ffi::c_char;
-    fn events_fire_pane(_: *const ::core::ffi::c_char, _: *mut window_pane);
-    fn format_draw(
-        _: *mut screen_write_ctx,
-        _: *const grid_cell,
-        _: u_int,
-        _: *const ::core::ffi::c_char,
-        _: *mut style_ranges,
-        _: ::core::ffi::c_int,
-    );
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn job_run(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-        _: *mut environ,
-        _: *mut session,
-        _: *const ::core::ffi::c_char,
-        _: job_update_cb,
-        _: job_complete_cb,
-        _: job_free_cb,
-        _: *mut ::core::ffi::c_void,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut job;
-    fn job_get_event(_: *mut job) -> *mut bufferevent;
-    fn tty_window_offset(
-        _: *mut tty,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: *mut u_int,
-    ) -> ::core::ffi::c_int;
-    fn tty_acs_get(_: *mut tty, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_parse(
-        _: *const args_parse,
-        _: *mut args_value,
-        _: u_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> *mut args;
-    fn args_free(_: *mut args);
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_values(_: *mut args) -> *mut args_value;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_mouse_at(
-        _: *mut window_pane,
-        _: *mut mouse_event,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn cmd_mouse_pane(
-        _: *mut mouse_event,
-        _: *mut *mut session,
-        _: *mut *mut winlink,
-    ) -> *mut window_pane;
-    fn status_message_set(
-        _: *mut client,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn input_init(
-        _: *mut window_pane,
-        _: *mut bufferevent,
-        _: *mut colour_palette,
-        _: *mut client,
-    ) -> *mut input_ctx;
-    fn input_free(_: *mut input_ctx);
-    fn input_parse_screen(
-        _: *mut input_ctx,
-        _: *mut screen,
-        _: screen_write_init_ctx_cb,
-        _: *mut ::core::ffi::c_void,
-        _: *const u_char,
-        _: size_t,
-    );
-    static grid_default_cell: grid_cell;
-    fn grid_free_lines(_: *mut grid, _: u_int, _: u_int);
-    fn grid_line_time(_: *const grid_line) -> time_t;
-    fn grid_peek_line(_: *mut grid, _: u_int) -> *const grid_line;
-    fn grid_get_cell(_: *mut grid, _: u_int, _: u_int, _: *mut grid_cell);
-    fn grid_get_line(_: *mut grid, _: u_int) -> *mut grid_line;
-    fn grid_duplicate_lines(_: *mut grid, _: u_int, _: *mut grid, _: u_int, _: u_int);
-    fn grid_wrap_position(_: *mut grid, _: u_int, _: u_int, _: *mut u_int, _: *mut u_int);
-    fn grid_unwrap_position(_: *mut grid, _: *mut u_int, _: *mut u_int, _: u_int, _: u_int);
-    fn grid_line_length(_: *mut grid, _: u_int) -> u_int;
-    fn grid_line_limit(_: *mut grid, _: u_int) -> u_int;
-    fn grid_in_set(
-        _: *mut grid,
-        _: u_int,
-        _: u_int,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn grid_reader_start(_: *mut grid_reader, _: *mut grid, _: u_int, _: u_int);
-    fn grid_reader_get_cursor(_: *mut grid_reader, _: *mut u_int, _: *mut u_int);
-    fn grid_reader_in_set(_: *mut grid_reader, _: *const ::core::ffi::c_char)
-        -> ::core::ffi::c_int;
-    fn grid_reader_cursor_right(
-        _: *mut grid_reader,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn grid_reader_cursor_left(_: *mut grid_reader, _: ::core::ffi::c_int);
-    fn grid_reader_cursor_start_of_line(_: *mut grid_reader, _: ::core::ffi::c_int);
-    fn grid_reader_cursor_end_of_line(
-        _: *mut grid_reader,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn grid_reader_cursor_next_word(_: *mut grid_reader, _: *const ::core::ffi::c_char);
-    fn grid_reader_cursor_next_word_end(_: *mut grid_reader, _: *const ::core::ffi::c_char);
-    fn grid_reader_cursor_previous_word(
-        _: *mut grid_reader,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn grid_reader_cursor_jump(_: *mut grid_reader, _: *const utf8_data) -> ::core::ffi::c_int;
-    fn grid_reader_cursor_jump_back(_: *mut grid_reader, _: *const utf8_data)
-        -> ::core::ffi::c_int;
-    fn grid_reader_cursor_back_to_indentation(_: *mut grid_reader);
-    fn screen_write_start_pane(_: *mut screen_write_ctx, _: *mut window_pane, _: *mut screen);
-    fn screen_write_start(_: *mut screen_write_ctx, _: *mut screen);
-    fn screen_write_stop(_: *mut screen_write_ctx);
-    fn screen_write_strlen(_: *const ::core::ffi::c_char, ...) -> size_t;
-    fn screen_write_nputs(
-        _: *mut screen_write_ctx,
-        _: ssize_t,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn screen_write_vnputs(
-        _: *mut screen_write_ctx,
-        _: ssize_t,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::VaList,
-    );
-    fn screen_write_putc(_: *mut screen_write_ctx, _: *const grid_cell, _: u_char);
-    fn screen_write_insertline(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_deleteline(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_cursormove(
-        _: *mut screen_write_ctx,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn screen_write_linefeed(_: *mut screen_write_ctx, _: ::core::ffi::c_int, _: u_int);
-    fn screen_write_carriagereturn(_: *mut screen_write_ctx);
-    fn screen_write_cell(_: *mut screen_write_ctx, _: *const grid_cell);
-    fn screen_write_setselection(
-        _: *mut screen_write_ctx,
-        _: *const ::core::ffi::c_char,
-        _: *mut u_char,
-        _: u_int,
-    );
-    fn screen_init(_: *mut screen, _: u_int, _: u_int, _: u_int);
-    fn screen_free(_: *mut screen);
-    fn screen_set_default_cursor(_: *mut screen, _: *mut options);
-    fn screen_resize(_: *mut screen, _: u_int, _: u_int, _: ::core::ffi::c_int);
-    fn screen_resize_cursor(
-        _: *mut screen,
-        _: u_int,
-        _: u_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn screen_set_selection(
-        _: *mut screen,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: ::core::ffi::c_int,
-        _: *mut grid_cell,
-    );
-    fn screen_clear_selection(_: *mut screen);
-    fn screen_hide_selection(_: *mut screen);
-    fn screen_check_selection(_: *mut screen, _: u_int, _: u_int) -> ::core::ffi::c_int;
-    fn window_set_active_pane(
-        _: *mut window,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn window_pane_reset_mode(_: *mut window_pane);
-    fn window_pane_scrollbar_overlay_visible(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_scrollbar_show(_: *mut window_pane, _: ::core::ffi::c_int);
-    fn window_pane_scrollbar_redraw(_: *mut window_pane);
-    fn utf8_to_data(_: utf8_char, _: *mut utf8_data);
-    fn utf8_set(_: *mut utf8_data, _: u_char);
-    fn utf8_copy(_: *mut utf8_data, _: *const utf8_data);
-    fn utf8_fromcstr(_: *const ::core::ffi::c_char) -> *mut utf8_data;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-    fn style_apply(
-        _: *mut grid_cell,
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: *mut format_tree,
-    );
-    fn hyperlinks_copy(_: *mut hyperlinks) -> *mut hyperlinks;
-    fn hyperlinks_free(_: *mut hyperlinks);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

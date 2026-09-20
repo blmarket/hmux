@@ -7,6 +7,26 @@
     unused_mut
 )]
 #![feature(extern_types, raw_ref_op)]
+use crate::src::cfg::{cfg_files, cfg_nfiles, cfg_quiet};
+use crate::src::client::client_main;
+use crate::src::compat::fdforkpty::getptmfd;
+use crate::src::compat::getopt_long::{BSDgetopt, BSDoptarg, BSDoptind};
+use crate::src::compat::getprogname::getprogname;
+use crate::src::environ::{environ_create, environ_find, environ_put, environ_set};
+use crate::src::ffi::libc::{
+    __errno_location, access, clock_gettime, environ, err, errx, exit, fcntl, fprintf, free,
+    getcwd, getenv, getpwuid, getuid, lstat, mkdir, nl_langinfo, printf, realpath, setlocale,
+    stderr, stdout, strcasecmp, strcasestr, strchr, strcmp, strcspn, strerror, strncmp, strrchr,
+    strsep, strstr, tzset,
+};
+pub use crate::src::ffi::libc::nl_item;
+use crate::src::log::{log_add_level, log_debug};
+use crate::src::options::{options_create, options_default, options_set_number, options_set_string};
+use crate::src::options_table::options_table;
+use crate::src::osdep_linux::osdep_event_init;
+use crate::src::tty_features::tty_parse_features;
+use crate::src::utf8::{utf8_isvalid, utf8_stravis};
+use crate::src::xmalloc::{xasprintf, xreallocarray, xsnprintf, xstrdup, xstrndup};
 pub use crate::src::shared::posix_io::{stat};
 pub use crate::src::shared::options::{options, options_entry, options_table_entry};
 pub use crate::src::shared::environment::{environ, environ_entry, environ_entry_entry};
@@ -32,157 +52,8 @@ pub use crate::src::shared::client::{
     CLIENT_NOSTARTSERVER, CLIENT_UTF8,
 };
 use crate::src::shared::options::*;
-use crate::src::shared::event::*;
 use crate::src::shared::abi::*;
-extern "C" {
 
-    fn lstat(__file: *const ::core::ffi::c_char, __buf: *mut stat) -> ::core::ffi::c_int;
-    fn mkdir(__path: *const ::core::ffi::c_char, __mode: __mode_t) -> ::core::ffi::c_int;
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn fcntl(__fd: ::core::ffi::c_int, __cmd: ::core::ffi::c_int, ...) -> ::core::ffi::c_int;
-    fn nl_langinfo(__item: nl_item) -> *mut ::core::ffi::c_char;
-    fn setlocale(
-        __category: ::core::ffi::c_int,
-        __locale: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn getpwuid(__uid: __uid_t) -> *mut passwd;
-    fn access(__name: *const ::core::ffi::c_char, __type: ::core::ffi::c_int)
-        -> ::core::ffi::c_int;
-    fn getcwd(__buf: *mut ::core::ffi::c_char, __size: size_t) -> *mut ::core::ffi::c_char;
-    static mut environ: *mut *mut ::core::ffi::c_char;
-    fn getuid() -> __uid_t;
-    fn exit(__status: ::core::ffi::c_int) -> !;
-    fn getenv(__name: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn realpath(
-        __name: *const ::core::ffi::c_char,
-        __resolved: *mut ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strncmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strrchr(
-        __s: *const ::core::ffi::c_char,
-        __c: ::core::ffi::c_int,
-    ) -> *mut ::core::ffi::c_char;
-    fn strcspn(
-        __s: *const ::core::ffi::c_char,
-        __reject: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_ulong;
-    fn strstr(
-        __haystack: *const ::core::ffi::c_char,
-        __needle: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn strcasestr(
-        __haystack: *const ::core::ffi::c_char,
-        __needle: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn strcasecmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strsep(
-        __stringp: *mut *mut ::core::ffi::c_char,
-        __delim: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn tzset();
-    fn clock_gettime(__clock_id: clockid_t, __tp: *mut timespec) -> ::core::ffi::c_int;
-    static mut stdout: *mut FILE;
-    static mut stderr: *mut FILE;
-    fn fprintf(
-        __stream: *mut FILE,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn printf(__format: *const ::core::ffi::c_char, ...) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn err(_: ::core::ffi::c_int, _: *const ::core::ffi::c_char, ...);
-    fn errx(_: ::core::ffi::c_int, _: *const ::core::ffi::c_char, ...);
-    fn getprogname() -> *const ::core::ffi::c_char;
-    fn getptmfd() -> ::core::ffi::c_int;
-    static mut BSDoptind: ::core::ffi::c_int;
-    static mut BSDoptarg: *mut ::core::ffi::c_char;
-    fn BSDgetopt(
-        _: ::core::ffi::c_int,
-        _: *const *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xstrndup(_: *const ::core::ffi::c_char, _: size_t) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut cfg_files: *mut *mut ::core::ffi::c_char;
-    static mut cfg_nfiles: u_int;
-    static mut cfg_quiet: ::core::ffi::c_int;
-    fn options_create(_: *mut options) -> *mut options;
-    fn options_default(_: *mut options, _: *const options_table_entry) -> *mut options_entry;
-    fn options_set_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> *mut options_entry;
-    fn options_set_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-    ) -> *mut options_entry;
-    static options_table: [options_table_entry; 0];
-    fn environ_create() -> *mut environ;
-    fn environ_find(_: *mut environ, _: *const ::core::ffi::c_char) -> *mut environ_entry;
-    fn environ_set(
-        _: *mut environ,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn environ_put(_: *mut environ, _: *const ::core::ffi::c_char, _: ::core::ffi::c_int);
-    fn tty_parse_features(
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: *mut ::core::ffi::c_int,
-        _: *mut ::core::ffi::c_int,
-    );
-    fn client_main(
-        _: *mut event_base,
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-        _: uint64_t,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn utf8_isvalid(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn utf8_stravis(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> size_t;
-    fn osdep_event_init() -> *mut event_base;
-    fn log_add_level();
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
-
-pub type nl_item = ::core::ffi::c_int;
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const _NL_NUM: C2RustUnnamed = 786449;
 pub const _NL_NUM_LC_IDENTIFICATION: C2RustUnnamed = 786448;

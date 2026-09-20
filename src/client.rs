@@ -1,3 +1,33 @@
+use crate::src::arguments::{args_free_values, args_from_vector};
+use crate::src::cmd::{cmd_list_any_have, cmd_list_free, cmd_pack_argv};
+use crate::src::cmd_parse::cmd_parse_from_arguments;
+use crate::src::compat::systemd::systemd_activated;
+use crate::src::control::control_wait_exit;
+use crate::src::environ::environ_free;
+use crate::src::ffi::libc::{
+    __errno_location, cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, close,
+    closefrom, connect, dup, environ, execl, fflush, flock, fprintf, free, getenv, getpid,
+    getppid, isatty, kill, memcpy, memset, open, printf, setenv, sigaction, sigemptyset, socket,
+    stderr, stdout, strerror, strlcpy, strlen, strsignal, system, tcgetattr, tcsetattr, ttyname,
+    unlink, waitpid,
+};
+use crate::src::file::{
+    file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
+    file_write_open,
+};
+use crate::src::log::{fatal, fatalx, log_debug};
+use crate::src::options::options_free;
+use crate::src::proc::{
+    proc_add_peer, proc_clear_signals, proc_exit, proc_flush_peer, proc_loop, proc_send,
+    proc_set_signals, proc_start,
+};
+use crate::src::server::server_start;
+use crate::src::tmux::{
+    find_cwd, find_home, global_environ, global_options, global_s_options, global_w_options,
+    ptm_fd, setblocking, shell_argv0, shell_command, socket_path,
+};
+use crate::src::tty_term::{tty_term_free_list, tty_term_read_list};
+use crate::src::xmalloc::{xasprintf, xmalloc, xsnprintf, xstrdup};
 pub use crate::src::shared::message::{msg_command};
 pub use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 pub use crate::src::shared::arguments::{
@@ -92,207 +122,6 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 use ::libc;
-extern "C" {
-
-    fn socket(
-        __domain: ::core::ffi::c_int,
-        __type: ::core::ffi::c_int,
-        __protocol: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn connect(
-        __fd: ::core::ffi::c_int,
-        __addr: __CONST_SOCKADDR_ARG,
-        __len: socklen_t,
-    ) -> ::core::ffi::c_int;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn strsignal(__sig: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn strlcpy(
-        __dest: *mut ::core::ffi::c_char,
-        __src: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_ulong;
-    fn kill(__pid: __pid_t, __sig: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn sigemptyset(__set: *mut sigset_t) -> ::core::ffi::c_int;
-    fn sigaction(
-        __sig: ::core::ffi::c_int,
-        __act: *const sigaction,
-        __oact: *mut sigaction,
-    ) -> ::core::ffi::c_int;
-    fn close(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn closefrom(__lowfd: ::core::ffi::c_int);
-    fn dup(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    static mut environ: *mut *mut ::core::ffi::c_char;
-    fn execl(
-        __path: *const ::core::ffi::c_char,
-        __arg: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn getpid() -> __pid_t;
-    fn getppid() -> __pid_t;
-    fn ttyname(__fd: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn isatty(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn unlink(__name: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn waitpid(
-        __pid: __pid_t,
-        __stat_loc: *mut ::core::ffi::c_int,
-        __options: ::core::ffi::c_int,
-    ) -> __pid_t;
-    fn open(
-        __file: *const ::core::ffi::c_char,
-        __oflag: ::core::ffi::c_int,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn flock(__fd: ::core::ffi::c_int, __operation: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn getenv(__name: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn setenv(
-        __name: *const ::core::ffi::c_char,
-        __value: *const ::core::ffi::c_char,
-        __replace: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn system(__command: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    static mut stdout: *mut FILE;
-    static mut stderr: *mut FILE;
-    fn fflush(__stream: *mut FILE) -> ::core::ffi::c_int;
-    fn fprintf(
-        __stream: *mut FILE,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn printf(__format: *const ::core::ffi::c_char, ...) -> ::core::ffi::c_int;
-    fn cfgetospeed(__termios_p: *const termios) -> speed_t;
-    fn cfgetispeed(__termios_p: *const termios) -> speed_t;
-    fn cfsetospeed(__termios_p: *mut termios, __speed: speed_t) -> ::core::ffi::c_int;
-    fn cfsetispeed(__termios_p: *mut termios, __speed: speed_t) -> ::core::ffi::c_int;
-    fn tcgetattr(__fd: ::core::ffi::c_int, __termios_p: *mut termios) -> ::core::ffi::c_int;
-    fn tcsetattr(
-        __fd: ::core::ffi::c_int,
-        __optional_actions: ::core::ffi::c_int,
-        __termios_p: *const termios,
-    ) -> ::core::ffi::c_int;
-    fn cfmakeraw(__termios_p: *mut termios);
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn systemd_activated() -> ::core::ffi::c_int;
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut global_options: *mut options;
-    static mut global_s_options: *mut options;
-    static mut global_w_options: *mut options;
-    static mut global_environ: *mut environ;
-    static mut socket_path: *const ::core::ffi::c_char;
-    static mut shell_command: *const ::core::ffi::c_char;
-    static mut ptm_fd: ::core::ffi::c_int;
-    fn setblocking(_: ::core::ffi::c_int, _: ::core::ffi::c_int);
-    fn shell_argv0(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> *mut ::core::ffi::c_char;
-    fn find_cwd() -> *const ::core::ffi::c_char;
-    fn find_home() -> *const ::core::ffi::c_char;
-    fn proc_send(
-        _: *mut tmuxpeer,
-        _: msgtype,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_void,
-        _: size_t,
-    ) -> ::core::ffi::c_int;
-    fn proc_start(_: *const ::core::ffi::c_char) -> *mut tmuxproc;
-    fn proc_loop(_: *mut tmuxproc, _: Option<unsafe extern "C" fn() -> ::core::ffi::c_int>);
-    fn proc_exit(_: *mut tmuxproc);
-    fn proc_set_signals(
-        _: *mut tmuxproc,
-        _: Option<unsafe extern "C" fn(::core::ffi::c_int) -> ()>,
-    );
-    fn proc_clear_signals(_: *mut tmuxproc, _: ::core::ffi::c_int);
-    fn proc_add_peer(
-        _: *mut tmuxproc,
-        _: ::core::ffi::c_int,
-        _: Option<unsafe extern "C" fn(*mut imsg, *mut ::core::ffi::c_void) -> ()>,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut tmuxpeer;
-    fn proc_flush_peer(_: *mut tmuxpeer);
-    fn options_free(_: *mut options);
-    fn environ_free(_: *mut environ);
-    fn tty_term_read_list(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *mut *mut *mut ::core::ffi::c_char,
-        _: *mut u_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn tty_term_free_list(_: *mut *mut ::core::ffi::c_char, _: u_int);
-    fn args_from_vector(_: ::core::ffi::c_int, _: *mut *mut ::core::ffi::c_char)
-        -> *mut args_value;
-    fn args_free_values(_: *mut args_value, _: u_int);
-    fn cmd_pack_argv(
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-    ) -> ::core::ffi::c_int;
-    fn cmd_list_free(_: *mut cmd_list);
-    fn cmd_list_any_have(_: *mut cmd_list, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn cmd_parse_from_arguments(
-        _: *mut args_value,
-        _: u_int,
-        _: *mut cmd_parse_input,
-    ) -> *mut cmd_parse_result;
-    fn file_write_left(_: *mut client_files) -> ::core::ffi::c_int;
-    fn file_write_open(
-        _: *mut client_files,
-        _: *mut tmuxpeer,
-        _: *mut imsg,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: client_file_cb,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn file_write_data(_: *mut client_files, _: *mut imsg);
-    fn file_write_close(_: *mut client_files, _: *mut imsg);
-    fn file_read_open(
-        _: *mut client_files,
-        _: *mut tmuxpeer,
-        _: *mut imsg,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: client_file_cb,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn file_read_cancel(_: *mut client_files, _: *mut imsg);
-    fn server_start(
-        _: *mut tmuxproc,
-        _: uint64_t,
-        _: *mut event_base,
-        _: ::core::ffi::c_int,
-        _: *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn control_wait_exit(_: ::core::ffi::c_int);
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_25;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_26;

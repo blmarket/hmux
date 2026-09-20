@@ -1,3 +1,11 @@
+use crate::src::arguments::{args_get, args_has};
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_target};
+use crate::src::ffi::libc::{free, memchr, strlen};
+use crate::src::ffi::libevent::bufferevent_write;
+use crate::src::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top};
+use crate::src::utf8::utf8_stravisx;
+use crate::src::window::window_pane_exited;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -49,7 +57,6 @@ pub use crate::src::shared::mouse::{mouse_event};
 use crate::src::shared::client::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::terminal::*;
-use crate::src::shared::event::*;
 use crate::src::shared::display::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::message::*;
@@ -59,37 +66,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memchr(
-        __s: *const ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn bufferevent_write(
-        bufev: *mut bufferevent,
-        data: *const ::core::ffi::c_void,
-        size: size_t,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn paste_buffer_data(_: *mut paste_buffer, _: *mut size_t) -> *const ::core::ffi::c_char;
-    fn paste_get_top(_: *mut *mut ::core::ffi::c_char) -> *mut paste_buffer;
-    fn paste_get_name(_: *const ::core::ffi::c_char) -> *mut paste_buffer;
-    fn paste_free(_: *mut paste_buffer);
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn window_pane_exited(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn utf8_stravisx(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: size_t,
-        _: ::core::ffi::c_int,
-    ) -> size_t;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

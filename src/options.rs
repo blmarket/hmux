@@ -1,7 +1,46 @@
-pub use crate::src::shared::session::{sessions};
+use crate::src::alerts::alerts_reset_all;
+use crate::src::arguments::{args_get, args_has};
+use crate::src::cmd::{cmd_list_free, cmd_list_print};
+use crate::src::cmd_parse::cmd_parse_from_string;
+use crate::src::colour::{colour_fromstring, colour_palette_from_option, colour_tostring};
+use crate::src::compat::strtonum::strtonum;
+use crate::src::ffi::libc::{
+    __ctype_b_loc, fnmatch, free, strcasecmp, strchr, strcmp, strlen, strncmp, strsep, strstr,
+};
+use crate::src::format::format_expand;
+use crate::src::grid::grid_default_cell;
+use crate::src::hooks::hooks_monitor_free;
+use crate::src::input::input_set_buffer_size;
+use crate::src::key_string::{key_string_lookup_key, key_string_lookup_string};
+use crate::src::layout::layout_fix_panes;
+use crate::src::log::{fatalx, log_debug};
+use crate::src::options_table::{options_other_names, options_table};
+use crate::src::resize::recalculate_sizes;
+use crate::src::screen_redraw::redraw_invalidate_all_scenes;
+use crate::src::server::current_time;
+pub use crate::src::server::clients;
+use crate::src::server_client::{server_client_set_key_table, server_client_update_theme_colours};
+use crate::src::server_fn::server_redraw_client;
+use crate::src::session::{session_update_history, sessions_RB_MINMAX, sessions_RB_NEXT};
+pub use crate::src::session::sessions;
+use crate::src::status::{status_timer_start_all, status_update_cache};
+use crate::src::style::{
+    style_parse, style_parse_colour, style_set, style_set_scrollbar_style_from_option,
+};
+use crate::src::tmux::{checkshell, global_options, global_s_options, global_w_options};
+use crate::src::tty::tty_invalidate;
+use crate::src::tty_keys::tty_keys_build;
+use crate::src::utf8::utf8_update_width_cache;
+use crate::src::window::{
+    all_window_panes, window_pane_default_cursor, window_pane_scrollbar_hide,
+    window_pane_tree_RB_MINMAX, window_pane_tree_RB_NEXT, windows_RB_MINMAX, windows_RB_NEXT,
+};
+pub use crate::src::window::windows;
+use crate::src::window_border::window_set_fill_cells;
+use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xstrndup, xvasprintf};
 pub use crate::src::shared::pane::{window_pane_tree};
 pub use crate::src::shared::options::{options_name_map};
-pub use crate::src::shared::client::{clients};
+
 pub use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -33,11 +72,7 @@ pub use crate::src::shared::session::{session, session_entry, session_gentry};
 pub use crate::src::shared::spawn::{spawn_editor_state};
 pub use crate::src::shared::status::{status_line};
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
-pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, windows, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
-};
+pub use crate::src::shared::window::{window, window_alerts_entry, window_entry, window_mode, window_mode_entry, window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry, winlink_stack, winlink_wentry, winlinks};
 pub use crate::src::shared::environment::{environ};
 pub use crate::src::shared::ctype::{
     _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
@@ -70,139 +105,9 @@ use crate::src::shared::display::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::message::*;
 use crate::src::shared::abi::*;
-use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn __ctype_b_loc() -> *mut *const ::core::ffi::c_ushort;
-    fn fnmatch(
-        __pattern: *const ::core::ffi::c_char,
-        __name: *const ::core::ffi::c_char,
-        __flags: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strncmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strstr(
-        __haystack: *const ::core::ffi::c_char,
-        __needle: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strcasecmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strsep(
-        __stringp: *mut *mut ::core::ffi::c_char,
-        __delim: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn strtonum(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xstrndup(_: *const ::core::ffi::c_char, _: size_t) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn xvasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut global_options: *mut options;
-    static mut global_s_options: *mut options;
-    static mut global_w_options: *mut options;
-    fn checkshell(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn hooks_monitor_free(_: *mut ::core::ffi::c_void);
-    static options_table: [options_table_entry; 0];
-    static options_other_names: [options_name_map; 0];
-    fn tty_invalidate(_: *mut tty);
-    fn tty_keys_build(_: *mut tty);
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn cmd_list_free(_: *mut cmd_list);
-    fn cmd_list_print(_: *const cmd_list, _: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn cmd_parse_from_string(
-        _: *const ::core::ffi::c_char,
-        _: *mut cmd_parse_input,
-    ) -> *mut cmd_parse_result;
-    fn key_string_lookup_string(_: *const ::core::ffi::c_char) -> key_code;
-    fn key_string_lookup_key(_: key_code, _: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn alerts_reset_all();
-    static mut clients: clients;
-    static mut current_time: time_t;
-    fn server_client_set_key_table(_: *mut client, _: *const ::core::ffi::c_char);
-    fn server_redraw_client(_: *mut client);
-    fn server_client_update_theme_colours(_: *mut client);
-    fn status_timer_start_all();
-    fn status_update_cache(_: *mut session);
-    fn recalculate_sizes();
-    fn input_set_buffer_size(_: size_t);
-    fn colour_tostring(_: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn colour_fromstring(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn colour_palette_from_option(_: *mut colour_palette, _: *mut options);
-    static grid_default_cell: grid_cell;
-    fn redraw_invalidate_all_scenes();
-    static mut windows: windows;
-    static mut all_window_panes: window_pane_tree;
-    fn windows_RB_NEXT(_: *mut window) -> *mut window;
-    fn windows_RB_MINMAX(_: *mut windows, _: ::core::ffi::c_int) -> *mut window;
-    fn window_pane_tree_RB_MINMAX(
-        _: *mut window_pane_tree,
-        _: ::core::ffi::c_int,
-    ) -> *mut window_pane;
-    fn window_pane_tree_RB_NEXT(_: *mut window_pane) -> *mut window_pane;
-    fn window_pane_default_cursor(_: *mut window_pane);
-    fn window_pane_scrollbar_hide(_: *mut window_pane);
-    fn window_set_fill_cells(_: *mut window);
-    fn layout_fix_panes(_: *mut window, _: *mut window_pane);
-    static mut sessions: sessions;
-    fn sessions_RB_NEXT(_: *mut session) -> *mut session;
-    fn sessions_RB_MINMAX(_: *mut sessions, _: ::core::ffi::c_int) -> *mut session;
-    fn session_update_history(_: *mut session);
-    fn utf8_update_width_cache();
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-    fn style_parse(
-        _: *mut style,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn style_parse_colour(
-        _: *mut style,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn style_set(_: *mut style, _: *const grid_cell);
-    fn style_set_scrollbar_style_from_option(_: *mut style, _: *mut options);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;

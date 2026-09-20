@@ -1,16 +1,11 @@
+use crate::src::cmd::cmd_get_entry;
+use crate::src::ffi::libc::{getpid, kill};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 pub use crate::src::shared::signal::SIGTERM;
 pub use crate::src::shared::command::{CMD_STARTSERVER};
 use crate::src::shared::arguments::*;
-use crate::src::shared::abi::*;
 use crate::src::shared::command::*;
-extern "C" {
-
-    fn kill(__pid: __pid_t, __sig: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn getpid() -> __pid_t;
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-}
 
 #[no_mangle]
 pub static mut cmd_kill_server_entry: cmd_entry = unsafe {

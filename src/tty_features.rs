@@ -1,3 +1,7 @@
+use crate::src::ffi::libc::{free, strcasecmp, strcmp, strcspn, strlcat, strlen, strsep};
+use crate::src::log::log_debug;
+use crate::src::tty_term::{tty_term_apply, tty_term_has_name};
+use crate::src::xmalloc::xstrdup;
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -55,36 +59,7 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
 
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strcspn(
-        __s: *const ::core::ffi::c_char,
-        __reject: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_ulong;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strcasecmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strsep(
-        __stringp: *mut *mut ::core::ffi::c_char,
-        __delim: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn strlcat(
-        __dest: *mut ::core::ffi::c_char,
-        __src: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_ulong;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn tty_term_apply(_: *mut tty_term, _: *const ::core::ffi::c_char, _: ::core::ffi::c_int);
-    fn tty_term_has_name(_: *mut tty_term, _: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
 

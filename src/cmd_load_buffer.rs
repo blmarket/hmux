@@ -1,3 +1,14 @@
+use crate::src::arguments::{args_get, args_has, args_string};
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
+use crate::src::ffi::libc::{free, memcpy, strerror};
+use crate::src::ffi::libevent::{evbuffer_get_length, evbuffer_pullup};
+use crate::src::file::file_read;
+use crate::src::format::format_single_from_target;
+use crate::src::paste::paste_set;
+use crate::src::server_client::server_client_unref;
+use crate::src::tty::tty_set_selection;
+use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -58,52 +69,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn evbuffer_get_length(buf: *const evbuffer) -> size_t;
-    fn evbuffer_pullup(buf: *mut evbuffer, size: ssize_t) -> *mut ::core::ffi::c_uchar;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn paste_set(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn format_single_from_target(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn tty_set_selection(
-        _: *mut tty,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: size_t,
-    );
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_continue(_: *mut cmdq_item);
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn file_read(
-        _: *mut client,
-        _: *const ::core::ffi::c_char,
-        _: client_file_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut client_file;
-    fn server_client_unref(_: *mut client);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

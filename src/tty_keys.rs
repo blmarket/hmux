@@ -1,3 +1,28 @@
+use crate::src::colour::{colour_parseX11, colour_tostring};
+use crate::src::events::events_fire_client;
+use crate::src::ffi::libc::{
+    __ctype_b_loc, free, memcmp, memcpy, sscanf, strcspn, strlcpy, strlen, strncmp, strsep,
+    strtol, strtoul,
+};
+use crate::src::ffi::libevent::{
+    evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_add, event_del,
+    event_initialized, event_pending, event_set,
+};
+use crate::src::ffi::resolv::__b64_pton;
+use crate::src::input::input_request_reply;
+use crate::src::key_string::key_string_lookup_key;
+use crate::src::log::{log_debug, log_get_level};
+use crate::src::options::{options_array_getv, options_get, options_get_number};
+use crate::src::paste::paste_add;
+use crate::src::server_client::{server_client_handle_key, server_client_update_theme_colours};
+use crate::src::session::session_theme_changed;
+use crate::src::tmux::global_options;
+use crate::src::tty::{tty_invalidate, tty_set_size, tty_update_features};
+use crate::src::tty_features::{tty_default_features, tty_parse_client_features};
+use crate::src::tty_term::tty_term_string;
+use crate::src::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
+use crate::src::window::window_update_focus;
+use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup};
 pub use crate::src::shared::input::{input_request_clipboard_data, input_request_palette_data};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -71,7 +96,6 @@ pub use crate::src::shared::mouse::{
 use crate::src::shared::client::*;
 use crate::src::shared::tty::*;
 use crate::src::shared::terminal::*;
-use crate::src::shared::event::*;
 use crate::src::shared::display::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::message::*;
@@ -81,124 +105,6 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
-extern "C" {
-
-    fn __ctype_b_loc() -> *mut *const ::core::ffi::c_ushort;
-    fn sscanf(
-        __s: *const ::core::ffi::c_char,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn __b64_pton(
-        _: *const ::core::ffi::c_char,
-        _: *mut ::core::ffi::c_uchar,
-        _: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strtol(
-        __nptr: *const ::core::ffi::c_char,
-        __endptr: *mut *mut ::core::ffi::c_char,
-        __base: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_long;
-    fn strtoul(
-        __nptr: *const ::core::ffi::c_char,
-        __endptr: *mut *mut ::core::ffi::c_char,
-        __base: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_ulong;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memcmp(
-        __s1: *const ::core::ffi::c_void,
-        __s2: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strncmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strcspn(
-        __s: *const ::core::ffi::c_char,
-        __reject: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_ulong;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strsep(
-        __stringp: *mut *mut ::core::ffi::c_char,
-        __delim: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn strlcpy(
-        __dest: *mut ::core::ffi::c_char,
-        __src: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_ulong;
-    fn event_add(ev: *mut event, timeout: *const timeval) -> ::core::ffi::c_int;
-    fn event_del(_: *mut event) -> ::core::ffi::c_int;
-    fn event_pending(
-        ev: *const event,
-        events: ::core::ffi::c_short,
-        tv: *mut timeval,
-    ) -> ::core::ffi::c_int;
-    fn event_initialized(ev: *const event) -> ::core::ffi::c_int;
-    fn event_set(
-        _: *mut event,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn evbuffer_get_length(buf: *const evbuffer) -> size_t;
-    fn evbuffer_drain(buf: *mut evbuffer, len: size_t) -> ::core::ffi::c_int;
-    fn evbuffer_pullup(buf: *mut evbuffer, size: ssize_t) -> *mut ::core::ffi::c_uchar;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    static mut global_options: *mut options;
-    fn paste_add(_: *const ::core::ffi::c_char, _: *mut ::core::ffi::c_char, _: size_t);
-    fn events_fire_client(_: *const ::core::ffi::c_char, _: *mut client);
-    fn options_get(_: *mut options, _: *const ::core::ffi::c_char) -> *mut options_entry;
-    fn options_array_getv(
-        _: *mut options_entry,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> *mut options_value;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn tty_set_size(_: *mut tty, _: u_int, _: u_int, _: u_int, _: u_int);
-    fn tty_invalidate(_: *mut tty);
-    fn tty_update_features(_: *mut tty);
-    fn tty_term_string(_: *mut tty_term, _: tty_code_code) -> *const ::core::ffi::c_char;
-    fn tty_parse_client_features(
-        _: *mut client,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-    );
-    fn tty_default_features(_: *mut client, _: *const ::core::ffi::c_char, _: u_int);
-    fn key_string_lookup_key(_: key_code, _: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn server_client_handle_key(_: *mut client, _: *mut key_event) -> ::core::ffi::c_int;
-    fn server_client_update_theme_colours(_: *mut client);
-    fn input_request_reply(_: *mut client, _: input_request_type, _: *mut ::core::ffi::c_void);
-    fn colour_tostring(_: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn colour_parseX11(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn window_update_focus(_: *mut window);
-    fn session_theme_changed(_: *mut session);
-    fn utf8_fromwc(wc: wchar_t, _: *mut utf8_data) -> utf8_state;
-    fn utf8_from_data(_: *const utf8_data, _: *mut utf8_char) -> utf8_state;
-    fn utf8_open(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn utf8_append(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn log_get_level() -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;

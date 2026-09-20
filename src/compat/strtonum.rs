@@ -1,14 +1,8 @@
+use crate::src::ffi::libc::{__errno_location, strtoll};
 pub use crate::src::shared::errno::{EINVAL, ERANGE};
 pub use crate::src::shared::limits::__LONG_LONG_MAX__;
 use crate::src::shared::abi::*;
-extern "C" {
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn strtoll(
-        __nptr: *const ::core::ffi::c_char,
-        __endptr: *mut *mut ::core::ffi::c_char,
-        __base: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_longlong;
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct errval {

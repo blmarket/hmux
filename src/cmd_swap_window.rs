@@ -1,3 +1,10 @@
+use crate::src::arguments::args_has;
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_source, cmdq_get_target};
+use crate::src::resize::recalculate_sizes;
+use crate::src::server::marked_pane;
+use crate::src::server_fn::server_redraw_session_group;
+use crate::src::session::{session_group_contains, session_group_synchronize_from, session_select};
 pub use crate::src::shared::session::{session_group, session_group_entry, session_group_sessions};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
@@ -57,20 +64,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_source(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    static mut marked_pane: cmd_find_state;
-    fn server_redraw_session_group(_: *mut session);
-    fn recalculate_sizes();
-    fn session_select(_: *mut session, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn session_group_contains(_: *mut session) -> *mut session_group;
-    fn session_group_synchronize_from(_: *mut session);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

@@ -1,3 +1,16 @@
+use crate::src::ffi::libc::{free, memcpy, memset, strcmp, strlcpy, strlen};
+use crate::src::format::format_skip;
+use crate::src::grid::grid_default_cell;
+use crate::src::hyperlinks::hyperlinks_put;
+use crate::src::log::log_debug;
+use crate::src::screen::{screen_free, screen_init};
+use crate::src::screen_write::{
+    screen_write_cell, screen_write_clearendofline, screen_write_cursormove,
+    screen_write_fast_copy, screen_write_putc, screen_write_start, screen_write_stop,
+};
+use crate::src::style::{style_copy, style_link, style_parse, style_set, style_tostring};
+use crate::src::utf8::{utf8_append, utf8_open, utf8_set};
+use crate::src::xmalloc::{xcalloc, xstrdup, xstrndup};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -57,77 +70,6 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strlcpy(
-        __dest: *mut ::core::ffi::c_char,
-        __src: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_ulong;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xstrndup(_: *const ::core::ffi::c_char, _: size_t) -> *mut ::core::ffi::c_char;
-    fn format_skip(
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    static grid_default_cell: grid_cell;
-    fn screen_write_start(_: *mut screen_write_ctx, _: *mut screen);
-    fn screen_write_stop(_: *mut screen_write_ctx);
-    fn screen_write_putc(_: *mut screen_write_ctx, _: *const grid_cell, _: u_char);
-    fn screen_write_fast_copy(
-        _: *mut screen_write_ctx,
-        _: *mut screen,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-    );
-    fn screen_write_clearendofline(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_cursormove(
-        _: *mut screen_write_ctx,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn screen_write_cell(_: *mut screen_write_ctx, _: *const grid_cell);
-    fn screen_init(_: *mut screen, _: u_int, _: u_int, _: u_int);
-    fn screen_free(_: *mut screen);
-    fn utf8_set(_: *mut utf8_data, _: u_char);
-    fn utf8_open(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn utf8_append(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn style_parse(
-        _: *mut style,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn style_tostring(_: *mut style) -> *const ::core::ffi::c_char;
-    fn style_link(_: *mut style) -> *const ::core::ffi::c_char;
-    fn style_set(_: *mut style, _: *const grid_cell);
-    fn style_copy(_: *mut style, _: *mut style);
-    fn hyperlinks_put(
-        _: *mut hyperlinks,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-    ) -> u_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

@@ -1,5 +1,5 @@
 //! Authoritative posix io declarations.
-
+pub use crate::src::ffi::libc::dirent;
 use super::abi::{
     __blkcnt_t, __blksize_t, __dev_t, __gid_t, __ino_t, __mode_t, __nlink_t, __off_t, __size_t,
     __syscall_slong_t, __uid_t, size_t,
@@ -61,10 +61,6 @@ pub struct stat {
     pub st_mtim: timespec,
     pub st_ctim: timespec,
     pub __glibc_reserved: [__syscall_slong_t; 3],
-}
-
-extern "C" {
-    pub type dirent;
 }
 
 #[derive(Copy, Clone)]

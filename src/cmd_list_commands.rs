@@ -1,3 +1,8 @@
+use crate::src::arguments::{args_get, args_string};
+use crate::src::cmd::{cmd_find, cmd_get_args, cmd_table};
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_print};
+use crate::src::ffi::libc::free;
+use crate::src::format::{format_add, format_create, format_defaults, format_expand, format_free};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -57,45 +62,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_defaults(
-        _: *mut format_tree,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    );
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    static mut cmd_table: [*const cmd_entry; 0];
-    fn cmd_find(
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_print(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

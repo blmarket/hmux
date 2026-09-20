@@ -1,3 +1,13 @@
+use crate::src::colour::{colour_split_rgb, colour_theme_terminal_colour};
+use crate::src::ffi::libc::{free, memcmp, memcpy, memmove, memset, strchr, strlcat, strlen};
+use crate::src::hyperlinks::hyperlinks_get;
+use crate::src::log::{fatalx, log_debug};
+use crate::src::server::current_time;
+use crate::src::tmux::start_time;
+use crate::src::utf8::{
+    utf8_build_one, utf8_cstrhas, utf8_from_data, utf8_has_whitespace, utf8_set, utf8_to_data,
+};
+use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xsnprintf};
 pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
@@ -5,72 +15,7 @@ pub use crate::src::shared::hyperlinks::{hyperlinks};
 pub use crate::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
-use crate::src::shared::utf8::*;
-extern "C" {
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memmove(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memcmp(
-        __s1: *const ::core::ffi::c_void,
-        __s2: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strlcat(
-        __dest: *mut ::core::ffi::c_char,
-        __src: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_ulong;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut start_time: timeval;
-    static mut current_time: time_t;
-    fn colour_split_rgb(_: ::core::ffi::c_int, _: *mut u_char, _: *mut u_char, _: *mut u_char);
-    fn colour_theme_terminal_colour(_: u_int) -> ::core::ffi::c_int;
-    fn utf8_has_whitespace(_: *const utf8_data) -> ::core::ffi::c_int;
-    fn utf8_build_one(_: u_char) -> utf8_char;
-    fn utf8_from_data(_: *const utf8_data, _: *mut utf8_char) -> utf8_state;
-    fn utf8_to_data(_: utf8_char, _: *mut utf8_data);
-    fn utf8_set(_: *mut utf8_data, _: u_char);
-    fn utf8_cstrhas(_: *const ::core::ffi::c_char, _: *const utf8_data) -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-    fn hyperlinks_get(
-        _: *mut hyperlinks,
-        _: u_int,
-        _: *mut *const ::core::ffi::c_char,
-        _: *mut *const ::core::ffi::c_char,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-}
+
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
 #[derive(Copy, Clone)]

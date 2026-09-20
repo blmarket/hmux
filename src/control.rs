@@ -1,3 +1,24 @@
+use crate::src::cmd_parse::cmd_parse_and_append;
+use crate::src::cmd_queue::{
+    cmdq_append, cmdq_free_state, cmdq_get_callback1, cmdq_get_client, cmdq_guard,
+    cmdq_new_state,
+};
+use crate::src::ffi::libc::{__errno_location, close, free, memcpy, memset, poll, strcmp, strlen};
+pub use crate::src::ffi::libc::{nfds_t, pollfd};
+use crate::src::ffi::libevent::{
+    bufferevent_disable, bufferevent_enable, bufferevent_free, bufferevent_new,
+    bufferevent_setwatermark, bufferevent_write, bufferevent_write_buffer, evbuffer_add,
+    evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
+    evbuffer_read, evbuffer_readln,
+};
+use crate::src::log::{fatalx, log_debug};
+use crate::src::monitor::{monitor_add, monitor_create_client, monitor_destroy, monitor_remove};
+use crate::src::tmux::{get_timer, setblocking};
+use crate::src::window::{
+    window_pane_find_by_id, window_pane_get_new_data, window_pane_update_used_data,
+    winlink_find_by_window,
+};
+use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup, xvasprintf};
 pub use crate::src::shared::command::{cmd_parse_input};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -82,152 +103,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn evbuffer_new() -> *mut evbuffer;
-    fn evbuffer_free(buf: *mut evbuffer);
-    fn evbuffer_get_length(buf: *const evbuffer) -> size_t;
-    fn evbuffer_add(
-        buf: *mut evbuffer,
-        data: *const ::core::ffi::c_void,
-        datlen: size_t,
-    ) -> ::core::ffi::c_int;
-    fn evbuffer_readln(
-        buffer: *mut evbuffer,
-        n_read_out: *mut size_t,
-        eol_style: evbuffer_eol_style,
-    ) -> *mut ::core::ffi::c_char;
-    fn evbuffer_add_printf(
-        buf: *mut evbuffer,
-        fmt: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn evbuffer_read(
-        buffer: *mut evbuffer,
-        fd: ::core::ffi::c_int,
-        howmuch: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn evbuffer_pullup(buf: *mut evbuffer, size: ssize_t) -> *mut ::core::ffi::c_uchar;
-    fn bufferevent_free(bufev: *mut bufferevent);
-    fn bufferevent_write(
-        bufev: *mut bufferevent,
-        data: *const ::core::ffi::c_void,
-        size: size_t,
-    ) -> ::core::ffi::c_int;
-    fn bufferevent_write_buffer(bufev: *mut bufferevent, buf: *mut evbuffer) -> ::core::ffi::c_int;
-    fn bufferevent_enable(
-        bufev: *mut bufferevent,
-        event: ::core::ffi::c_short,
-    ) -> ::core::ffi::c_int;
-    fn bufferevent_disable(
-        bufev: *mut bufferevent,
-        event: ::core::ffi::c_short,
-    ) -> ::core::ffi::c_int;
-    fn bufferevent_setwatermark(
-        bufev: *mut bufferevent,
-        events: ::core::ffi::c_short,
-        lowmark: size_t,
-        highmark: size_t,
-    );
-    fn bufferevent_new(
-        fd: ::core::ffi::c_int,
-        readcb: bufferevent_data_cb,
-        writecb: bufferevent_data_cb,
-        errorcb: bufferevent_event_cb,
-        cbarg: *mut ::core::ffi::c_void,
-    ) -> *mut bufferevent;
-    fn poll(
-        __fds: *mut pollfd,
-        __nfds: nfds_t,
-        __timeout: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn close(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn xvasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn setblocking(_: ::core::ffi::c_int, _: ::core::ffi::c_int);
-    fn get_timer() -> uint64_t;
-    fn cmd_parse_and_append(
-        _: *const ::core::ffi::c_char,
-        _: *mut cmd_parse_input,
-        _: *mut client,
-        _: *mut cmdq_state,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> cmd_parse_status;
-    fn cmdq_new_state(
-        _: *mut cmd_find_state,
-        _: *mut key_event,
-        _: ::core::ffi::c_int,
-    ) -> *mut cmdq_state;
-    fn cmdq_free_state(_: *mut cmdq_state);
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_callback1(
-        _: *const ::core::ffi::c_char,
-        _: cmdq_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut cmdq_item;
-    fn cmdq_append(_: *mut client, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn cmdq_guard(_: *mut cmdq_item, _: *const ::core::ffi::c_char, _: ::core::ffi::c_int);
-    fn winlink_find_by_window(_: *mut winlinks, _: *mut window) -> *mut winlink;
-    fn window_pane_find_by_id(_: u_int) -> *mut window_pane;
-    fn window_pane_get_new_data(
-        _: *mut window_pane,
-        _: *mut window_pane_offset,
-        _: *mut size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn window_pane_update_used_data(_: *mut window_pane, _: *mut window_pane_offset, _: size_t);
-    fn monitor_create_client(
-        _: *mut client,
-        _: monitor_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut monitor_set;
-    fn monitor_destroy(_: *mut monitor_set);
-    fn monitor_add(
-        _: *mut monitor_set,
-        _: *const ::core::ffi::c_char,
-        _: monitor_type,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    );
-    fn monitor_remove(_: *mut monitor_set, _: *const ::core::ffi::c_char);
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
-pub type nfds_t = ::core::ffi::c_ulong;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct pollfd {
-    pub fd: ::core::ffi::c_int,
-    pub events: ::core::ffi::c_short,
-    pub revents: ::core::ffi::c_short,
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

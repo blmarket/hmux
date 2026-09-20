@@ -1,29 +1,8 @@
+use crate::src::ffi::libc::{getpid, glob, globfree, snprintf};
+use crate::src::log::fatal;
 pub use crate::src::shared::posix_io::{dirent, glob_t, stat};
 pub use crate::src::shared::abi::{__size_t};
 use crate::src::shared::abi::*;
-extern "C" {
-
-    fn glob(
-        __pattern: *const ::core::ffi::c_char,
-        __flags: ::core::ffi::c_int,
-        __errfunc: Option<
-            unsafe extern "C" fn(
-                *const ::core::ffi::c_char,
-                ::core::ffi::c_int,
-            ) -> ::core::ffi::c_int,
-        >,
-        __pglob: *mut glob_t,
-    ) -> ::core::ffi::c_int;
-    fn globfree(__pglob: *mut glob_t);
-    fn getpid() -> __pid_t;
-    fn snprintf(
-        __s: *mut ::core::ffi::c_char,
-        __maxlen: size_t,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn fatal(_: *const ::core::ffi::c_char, ...);
-}
 
 #[no_mangle]
 pub unsafe extern "C" fn getdtablecount() -> ::core::ffi::c_int {

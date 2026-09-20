@@ -1,3 +1,19 @@
+use crate::src::ffi::libc::{calloc, free, memcpy, snprintf, strlcat, strlen};
+use crate::src::grid::{
+    grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create, grid_destroy,
+    grid_duplicate_lines, grid_empty_line, grid_reflow, grid_unwrap_position,
+    grid_wrap_position,
+};
+use crate::src::grid_view::{grid_view_clear, grid_view_delete_lines};
+use crate::src::hyperlinks::{hyperlinks_free, hyperlinks_init, hyperlinks_reset};
+use crate::src::log::{fatal, fatalx, log_debug};
+use crate::src::options::options_get_number;
+use crate::src::screen_write::{screen_write_free_list, screen_write_make_list};
+use crate::src::style::style_apply;
+use crate::src::tmux::{clean_name, global_options};
+use crate::src::tty_acs::tty_acs_get;
+use crate::src::utf8::{utf8_copy, utf8_to_data};
+use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -60,67 +76,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strlcat(
-        __dest: *mut ::core::ffi::c_char,
-        __src: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_ulong;
-    fn snprintf(
-        __s: *mut ::core::ffi::c_char,
-        __maxlen: size_t,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn calloc(__nmemb: size_t, __size: size_t) -> *mut ::core::ffi::c_void;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    static mut global_options: *mut options;
-    fn clean_name(_: *const ::core::ffi::c_char, _: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn tty_acs_get(_: *mut tty, _: u_char) -> *const ::core::ffi::c_char;
-    fn grid_check_is_clear(_: *mut grid);
-    fn grid_empty_line(_: *mut grid, _: u_int, _: u_int);
-    fn grid_create(_: u_int, _: u_int, _: u_int) -> *mut grid;
-    fn grid_destroy(_: *mut grid);
-    fn grid_adjust_lines(_: *mut grid, _: u_int);
-    fn grid_clear_lines(_: *mut grid, _: u_int, _: u_int, _: u_int);
-    fn grid_duplicate_lines(_: *mut grid, _: u_int, _: *mut grid, _: u_int, _: u_int);
-    fn grid_reflow(_: *mut grid, _: u_int);
-    fn grid_wrap_position(_: *mut grid, _: u_int, _: u_int, _: *mut u_int, _: *mut u_int);
-    fn grid_unwrap_position(_: *mut grid, _: *mut u_int, _: *mut u_int, _: u_int, _: u_int);
-    fn grid_view_clear(_: *mut grid, _: u_int, _: u_int, _: u_int, _: u_int, _: u_int);
-    fn grid_view_delete_lines(_: *mut grid, _: u_int, _: u_int, _: u_int);
-    fn screen_write_make_list(_: *mut screen);
-    fn screen_write_free_list(_: *mut screen);
-    fn utf8_to_data(_: utf8_char, _: *mut utf8_data);
-    fn utf8_copy(_: *mut utf8_data, _: *const utf8_data);
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-    fn style_apply(
-        _: *mut grid_cell,
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: *mut format_tree,
-    );
-    fn hyperlinks_init() -> *mut hyperlinks;
-    fn hyperlinks_reset(_: *mut hyperlinks);
-    fn hyperlinks_free(_: *mut hyperlinks);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

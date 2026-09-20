@@ -1,3 +1,7 @@
+use crate::src::cmd::cmd_get_entry;
+use crate::src::cmd_queue::{cmdq_get_target, cmdq_get_target_client};
+use crate::src::resize::recalculate_sizes;
+use crate::src::server_fn::{server_lock, server_lock_client, server_lock_session};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -57,16 +61,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn server_lock();
-    fn server_lock_session(_: *mut session);
-    fn server_lock_client(_: *mut client);
-    fn recalculate_sizes();
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

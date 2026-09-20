@@ -1,3 +1,11 @@
+use crate::src::compat::imsg_buffer::{
+    ibuf_add, ibuf_add_ibuf, ibuf_close, ibuf_data, ibuf_dynamic, ibuf_fd_avail, ibuf_fd_get,
+    ibuf_fd_set, ibuf_free, ibuf_get, ibuf_get_ibuf, ibuf_get_strbuf, ibuf_open, ibuf_read,
+    ibuf_rewind, ibuf_set_h32, ibuf_set_maxsize, ibuf_size, ibuf_skip, ibuf_write, ibufq_pop,
+    ibufq_push, msgbuf_free, msgbuf_get, msgbuf_new_reader, msgbuf_queuelen, msgbuf_read,
+    msgbuf_write,
+};
+use crate::src::ffi::libc::{__errno_location, getpid, memset};
 pub use crate::src::shared::posix_io::{iovec};
 pub use crate::src::shared::message::{ibuf, ibuf_entry, ibufqueue, imsg, imsgbuf, msgbuf};
 pub use crate::src::shared::message::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, imsg_hdr};
@@ -5,54 +13,6 @@ pub use crate::src::shared::errno::{EBADMSG, EINVAL, ERANGE};
 pub use crate::src::shared::limits::UINT32_MAX;
 pub use crate::src::shared::abi::{__uint32_t, ssize_t, uint32_t};
 use crate::src::shared::abi::*;
-extern "C" {
-
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn getpid() -> __pid_t;
-    fn ibuf_open(_: size_t) -> *mut ibuf;
-    fn ibuf_dynamic(_: size_t, _: size_t) -> *mut ibuf;
-    fn ibuf_add(_: *mut ibuf, _: *const ::core::ffi::c_void, _: size_t) -> ::core::ffi::c_int;
-    fn ibuf_add_ibuf(_: *mut ibuf, _: *const ibuf) -> ::core::ffi::c_int;
-    fn ibuf_set_h32(_: *mut ibuf, _: size_t, _: uint64_t) -> ::core::ffi::c_int;
-    fn ibuf_set_maxsize(_: *mut ibuf, _: size_t) -> ::core::ffi::c_int;
-    fn ibuf_data(_: *const ibuf) -> *mut ::core::ffi::c_void;
-    fn ibuf_size(_: *const ibuf) -> size_t;
-    fn ibuf_rewind(_: *mut ibuf);
-    fn ibuf_close(_: *mut msgbuf, _: *mut ibuf);
-    fn ibuf_get(_: *mut ibuf, _: *mut ::core::ffi::c_void, _: size_t) -> ::core::ffi::c_int;
-    fn ibuf_get_ibuf(_: *mut ibuf, _: size_t, _: *mut ibuf) -> ::core::ffi::c_int;
-    fn ibuf_get_strbuf(_: *mut ibuf, _: *mut ::core::ffi::c_char, _: size_t) -> ::core::ffi::c_int;
-    fn ibuf_skip(_: *mut ibuf, _: size_t) -> ::core::ffi::c_int;
-    fn ibuf_free(_: *mut ibuf);
-    fn ibuf_fd_avail(_: *mut ibuf) -> ::core::ffi::c_int;
-    fn ibuf_fd_get(_: *mut ibuf) -> ::core::ffi::c_int;
-    fn ibuf_fd_set(_: *mut ibuf, _: ::core::ffi::c_int);
-    fn msgbuf_new_reader(
-        _: size_t,
-        _: Option<
-            unsafe extern "C" fn(
-                *mut ibuf,
-                *mut ::core::ffi::c_void,
-                *mut ::core::ffi::c_int,
-            ) -> *mut ibuf,
-        >,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut msgbuf;
-    fn msgbuf_free(_: *mut msgbuf);
-    fn msgbuf_queuelen(_: *mut msgbuf) -> uint32_t;
-    fn ibuf_write(_: ::core::ffi::c_int, _: *mut msgbuf) -> ::core::ffi::c_int;
-    fn msgbuf_write(_: ::core::ffi::c_int, _: *mut msgbuf) -> ::core::ffi::c_int;
-    fn ibuf_read(_: ::core::ffi::c_int, _: *mut msgbuf) -> ::core::ffi::c_int;
-    fn msgbuf_read(_: ::core::ffi::c_int, _: *mut msgbuf) -> ::core::ffi::c_int;
-    fn msgbuf_get(_: *mut msgbuf) -> *mut ibuf;
-    fn ibufq_pop(bufq: *mut ibufqueue) -> *mut ibuf;
-    fn ibufq_push(_: *mut ibufqueue, _: *mut ibuf);
-}
 
 pub const IMSG_ALLOW_FDPASS: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const IMSG_FD_MARK: ::core::ffi::c_uint = 0x80000000 as ::core::ffi::c_uint;

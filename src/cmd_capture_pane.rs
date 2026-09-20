@@ -1,3 +1,23 @@
+use crate::src::arguments::{args_get, args_has, args_strtonum_and_expand};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
+use crate::src::colour::colour_tostring;
+use crate::src::control::control_write;
+use crate::src::ffi::libc::{free, memcpy, snprintf, strcmp, strlen};
+use crate::src::ffi::libevent::{evbuffer_get_length, evbuffer_pullup};
+use crate::src::file::{file_can_print, file_print, file_print_buffer};
+use crate::src::grid::{
+    grid_cell_attr_string, grid_cell_flags_string, grid_clear_history, grid_get_cell,
+    grid_get_line, grid_line_flags_string, grid_line_time, grid_peek_line, grid_string_cells,
+};
+use crate::src::hyperlinks::hyperlinks_get;
+use crate::src::input::input_pending;
+use crate::src::paste::paste_set;
+use crate::src::screen::screen_reset_hyperlinks;
+use crate::src::server_fn::server_redraw_window;
+use crate::src::utf8::utf8_stravis;
+use crate::src::window::window_pane_reset_mode_all;
+use crate::src::xmalloc::{xasprintf, xrealloc, xreallocarray, xstrdup};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -61,96 +81,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn snprintf(
-        __s: *mut ::core::ffi::c_char,
-        __maxlen: size_t,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn evbuffer_get_length(buf: *const evbuffer) -> size_t;
-    fn evbuffer_pullup(buf: *mut evbuffer, size: ssize_t) -> *mut ::core::ffi::c_uchar;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xrealloc(_: *mut ::core::ffi::c_void, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn paste_set(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_strtonum_and_expand(
-        _: *mut args,
-        _: u_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut cmdq_item,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn file_can_print(_: *mut client) -> ::core::ffi::c_int;
-    fn file_print(_: *mut client, _: *const ::core::ffi::c_char, ...);
-    fn file_print_buffer(_: *mut client, _: *mut ::core::ffi::c_void, _: size_t);
-    fn server_redraw_window(_: *mut window);
-    fn input_pending(_: *mut input_ctx) -> *mut evbuffer;
-    fn colour_tostring(_: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn grid_line_flags_string(_: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn grid_cell_flags_string(_: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn grid_cell_attr_string(_: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn grid_line_time(_: *const grid_line) -> time_t;
-    fn grid_clear_history(_: *mut grid);
-    fn grid_peek_line(_: *mut grid, _: u_int) -> *const grid_line;
-    fn grid_get_cell(_: *mut grid, _: u_int, _: u_int, _: *mut grid_cell);
-    fn grid_get_line(_: *mut grid, _: u_int) -> *mut grid_line;
-    fn grid_string_cells(
-        _: *mut grid,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: *mut *mut grid_cell,
-        _: ::core::ffi::c_int,
-        _: *mut screen,
-    ) -> *mut ::core::ffi::c_char;
-    fn screen_reset_hyperlinks(_: *mut screen);
-    fn window_pane_reset_mode_all(_: *mut window_pane);
-    fn control_write(_: *mut client, _: *const ::core::ffi::c_char, ...);
-    fn utf8_stravis(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> size_t;
-    fn hyperlinks_get(
-        _: *mut hyperlinks,
-        _: u_int,
-        _: *mut *const ::core::ffi::c_char,
-        _: *mut *const ::core::ffi::c_char,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

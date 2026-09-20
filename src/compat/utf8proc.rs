@@ -1,28 +1,15 @@
+use crate::src::ffi::utf8proc::{
+    utf8proc_category, utf8proc_charwidth, utf8proc_codepoint_valid, utf8proc_encode_char,
+    utf8proc_iterate,
+};
+pub use crate::src::ffi::utf8proc::{
+    int32_t, ptrdiff_t, utf8proc_bool, utf8proc_category_t, utf8proc_int32_t, utf8proc_ssize_t,
+    utf8proc_uint8_t,
+};
 pub use crate::src::shared::utf8::{wchar_t};
 pub use crate::src::shared::abi::{__int32_t};
 use crate::src::shared::abi::*;
-extern "C" {
-    fn utf8proc_iterate(
-        str: *const utf8proc_uint8_t,
-        strlen: utf8proc_ssize_t,
-        codepoint_ref: *mut utf8proc_int32_t,
-    ) -> utf8proc_ssize_t;
-    fn utf8proc_codepoint_valid(codepoint: utf8proc_int32_t) -> utf8proc_bool;
-    fn utf8proc_encode_char(
-        codepoint: utf8proc_int32_t,
-        dst: *mut utf8proc_uint8_t,
-    ) -> utf8proc_ssize_t;
-    fn utf8proc_charwidth(codepoint: utf8proc_int32_t) -> ::core::ffi::c_int;
-    fn utf8proc_category(codepoint: utf8proc_int32_t) -> utf8proc_category_t;
-}
-pub type int32_t = __int32_t;
 
-pub type ptrdiff_t = isize;
-pub type utf8proc_uint8_t = uint8_t;
-pub type utf8proc_int32_t = int32_t;
-pub type utf8proc_ssize_t = ptrdiff_t;
-pub type utf8proc_bool = bool;
-pub type utf8proc_category_t = ::core::ffi::c_uint;
 pub const UTF8PROC_CATEGORY_CO: utf8proc_category_t = 29;
 pub const UTF8PROC_CATEGORY_CS: utf8proc_category_t = 28;
 pub const UTF8PROC_CATEGORY_CF: utf8proc_category_t = 27;

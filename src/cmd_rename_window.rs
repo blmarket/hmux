@@ -1,3 +1,12 @@
+use crate::src::arguments::args_string;
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_target};
+use crate::src::ffi::libc::free;
+use crate::src::format::format_single_from_target;
+use crate::src::options::options_set_number;
+use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
+use crate::src::tmux::check_name;
+use crate::src::window::window_set_name;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -56,27 +65,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn check_name(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn format_single_from_target(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn options_set_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-    ) -> *mut options_entry;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_redraw_window_borders(_: *mut window);
-    fn server_status_window(_: *mut window);
-    fn window_set_name(_: *mut window, _: *const ::core::ffi::c_char, _: ::core::ffi::c_int);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

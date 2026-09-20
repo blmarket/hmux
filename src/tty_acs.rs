@@ -1,3 +1,5 @@
+use crate::src::ffi::libc::strcmp;
+use crate::src::tty_term::{tty_term_has, tty_term_number};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -55,15 +57,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn tty_term_has(_: *mut tty_term, _: tty_code_code) -> ::core::ffi::c_int;
-    fn tty_term_number(_: *mut tty_term, _: tty_code_code) -> ::core::ffi::c_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

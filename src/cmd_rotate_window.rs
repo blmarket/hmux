@@ -1,3 +1,11 @@
+use crate::src::arguments::args_has;
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_find::cmd_find_from_winlink_pane;
+use crate::src::cmd_queue::{cmdq_get_current, cmdq_get_target};
+use crate::src::screen_redraw::redraw_invalidate_scene;
+use crate::src::server_fn::server_redraw_window;
+use crate::src::window::{window_pop_zoom, window_push_zoom, window_set_active_pane};
+pub use crate::src::window::window_pane_resize;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -36,9 +44,7 @@ pub use crate::src::shared::environment::{environ};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
 pub use crate::src::shared::hyperlinks::{hyperlinks};
-pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-};
+pub use crate::src::shared::pane::{window_pane_offset, window_pane_resize_entry, window_pane_resizes};
 pub use crate::src::shared::display::{visible_range, visible_ranges};
 pub use crate::src::shared::layout::{layout_geometry};
 pub use crate::src::shared::mouse::{mouse_event};
@@ -55,33 +61,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn cmd_find_from_winlink_pane(
-        _: *mut cmd_find_state,
-        _: *mut winlink,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    );
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_current(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn server_redraw_window(_: *mut window);
-    fn redraw_invalidate_scene(_: *mut window);
-    fn window_set_active_pane(
-        _: *mut window,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn window_push_zoom(
-        _: *mut window,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn window_pop_zoom(_: *mut window) -> ::core::ffi::c_int;
-    fn window_pane_resize(_: *mut window_pane, _: u_int, _: u_int);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

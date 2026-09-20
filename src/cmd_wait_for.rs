@@ -1,3 +1,16 @@
+use crate::src::arguments::{args_get, args_has, args_string};
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_print};
+use crate::src::events::{events_add_sink, events_remove_sink};
+use crate::src::events_payload::{
+    event_payload_add_formats, event_payload_first, event_payload_item_name,
+    event_payload_item_print, event_payload_next,
+};
+use crate::src::ffi::libc::{free, strcmp};
+use crate::src::format::{format_create, format_expand, format_free, format_true};
+use crate::src::hooks::hooks_valid_event_name;
+use crate::src::log::log_debug;
+use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup};
 pub use crate::src::shared::events::{event_payload, event_payload_item, events_cb, events_sink};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
@@ -59,54 +72,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn format_true(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn event_payload_item_print(_: *mut event_payload_item) -> *mut ::core::ffi::c_char;
-    fn event_payload_add_formats(
-        _: *mut event_payload,
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    );
-    fn event_payload_first(_: *mut event_payload) -> *mut event_payload_item;
-    fn event_payload_next(_: *mut event_payload_item) -> *mut event_payload_item;
-    fn event_payload_item_name(_: *mut event_payload_item) -> *const ::core::ffi::c_char;
-    fn events_add_sink(
-        _: *const ::core::ffi::c_char,
-        _: events_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut events_sink;
-    fn events_remove_sink(_: *mut events_sink);
-    fn hooks_valid_event_name(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_continue(_: *mut cmdq_item);
-    fn cmdq_print(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

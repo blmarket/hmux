@@ -1,3 +1,12 @@
+use crate::src::arguments::args_has;
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd_find::cmd_find_from_session;
+use crate::src::cmd_queue::{
+    cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_target, cmdq_insert_hook,
+};
+use crate::src::resize::recalculate_sizes;
+use crate::src::server_fn::server_redraw_session;
+use crate::src::session::{session_last, session_next, session_previous, session_select};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -56,30 +65,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn cmd_find_from_session(_: *mut cmd_find_state, _: *mut session, _: ::core::ffi::c_int);
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_current(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_insert_hook(
-        _: *mut session,
-        _: *mut cmdq_item,
-        _: *mut cmd_find_state,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_redraw_session(_: *mut session);
-    fn recalculate_sizes();
-    fn session_next(_: *mut session, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn session_previous(_: *mut session, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn session_select(_: *mut session, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn session_last(_: *mut session) -> ::core::ffi::c_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

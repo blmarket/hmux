@@ -14,6 +14,7 @@ extern crate c2rust_bitfields;
 extern crate libc;
 
 pub mod src {
+    pub mod ffi;
     pub mod alerts;
     pub mod arguments;
     pub mod attributes;

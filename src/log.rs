@@ -1,3 +1,11 @@
+use crate::src::compat::vis::stravis;
+use crate::src::ffi::libc::{
+    __errno_location, exit, fclose, fflush, fopen, fprintf, free, getpid, gettimeofday, setvbuf,
+    snprintf, strerror, vasprintf,
+};
+use crate::src::ffi::libevent::event_set_log_callback;
+pub use crate::src::ffi::libevent::event_log_cb;
+use crate::src::xmalloc::xasprintf;
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::stdio::{
@@ -5,55 +13,7 @@ pub use crate::src::shared::stdio::{
 };
 pub use crate::src::shared::abi::{__off64_t, __off_t};
 use crate::src::shared::abi::*;
-extern "C" {
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn fclose(__stream: *mut FILE) -> ::core::ffi::c_int;
-    fn fflush(__stream: *mut FILE) -> ::core::ffi::c_int;
-    fn fopen(
-        __filename: *const ::core::ffi::c_char,
-        __modes: *const ::core::ffi::c_char,
-    ) -> *mut FILE;
-    fn setvbuf(
-        __stream: *mut FILE,
-        __buf: *mut ::core::ffi::c_char,
-        __modes: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn fprintf(
-        __stream: *mut FILE,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn snprintf(
-        __s: *mut ::core::ffi::c_char,
-        __maxlen: size_t,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn vasprintf(
-        __ptr: *mut *mut ::core::ffi::c_char,
-        __f: *const ::core::ffi::c_char,
-        __arg: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn exit(__status: ::core::ffi::c_int) -> !;
-    fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn getpid() -> __pid_t;
-    fn gettimeofday(__tv: *mut timeval, __tz: *mut ::core::ffi::c_void) -> ::core::ffi::c_int;
-    fn event_set_log_callback(cb: event_log_cb);
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn stravis(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-}
-pub type event_log_cb =
-    Option<unsafe extern "C" fn(::core::ffi::c_int, *const ::core::ffi::c_char) -> ()>;
+
 pub const _IOLBF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
 static mut log_file: *mut FILE = ::core::ptr::null::<FILE>() as *mut FILE;

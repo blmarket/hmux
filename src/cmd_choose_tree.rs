@@ -1,3 +1,16 @@
+use crate::src::arguments::{args_get, args_has};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_target};
+use crate::src::paste::paste_is_empty;
+use crate::src::server_client::server_client_how_many;
+use crate::src::sort::sort_order_from_string;
+use crate::src::window::window_pane_set_mode;
+use crate::src::window_buffer::window_buffer_mode;
+use crate::src::window_client::window_client_mode;
+use crate::src::window_customize::window_customize_mode;
+use crate::src::window_panes::window_panes_mode;
+use crate::src::window_switch::window_switch_mode;
+use crate::src::window_tree::window_tree_mode;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -57,32 +70,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn paste_is_empty() -> ::core::ffi::c_int;
-    fn sort_order_from_string(_: *const ::core::ffi::c_char) -> sort_order;
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_client_how_many() -> u_int;
-    fn window_pane_set_mode(
-        _: *mut window_pane,
-        _: *mut window_pane,
-        _: *const window_mode,
-        _: *mut cmdq_item,
-        _: *mut cmd_find_state,
-        _: *mut args,
-    ) -> ::core::ffi::c_int;
-    static window_buffer_mode: window_mode;
-    static window_tree_mode: window_mode;
-    static window_switch_mode: window_mode;
-    static window_panes_mode: window_mode;
-    static window_client_mode: window_mode;
-    static window_customize_mode: window_mode;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

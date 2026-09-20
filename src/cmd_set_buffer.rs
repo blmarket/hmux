@@ -1,3 +1,12 @@
+use crate::src::arguments::{args_count, args_get, args_has, args_string};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_target_client};
+use crate::src::ffi::libc::{free, memcpy, strlen};
+use crate::src::paste::{
+    paste_buffer_data, paste_free, paste_get_name, paste_get_top, paste_rename, paste_set,
+};
+use crate::src::tty::tty_set_selection;
+use crate::src::xmalloc::{xmalloc, xrealloc, xstrdup};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -59,48 +68,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xrealloc(_: *mut ::core::ffi::c_void, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn paste_buffer_data(_: *mut paste_buffer, _: *mut size_t) -> *const ::core::ffi::c_char;
-    fn paste_get_top(_: *mut *mut ::core::ffi::c_char) -> *mut paste_buffer;
-    fn paste_get_name(_: *const ::core::ffi::c_char) -> *mut paste_buffer;
-    fn paste_free(_: *mut paste_buffer);
-    fn paste_rename(
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn paste_set(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn tty_set_selection(
-        _: *mut tty,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: size_t,
-    );
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

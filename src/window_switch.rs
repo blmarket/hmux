@@ -1,3 +1,29 @@
+use crate::src::arguments::{args_count, args_get, args_has, args_string};
+use crate::src::cmd::{cmd_mouse_at, cmd_template_replace};
+use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_from_session, cmd_find_from_winlink};
+use crate::src::cmd_parse::cmd_parse_and_append;
+use crate::src::cmd_queue::{cmdq_free_state, cmdq_new_state};
+use crate::src::ffi::libc::{__ctype_toupper_loc, free, memset, qsort};
+use crate::src::format::{format_create, format_defaults, format_expand, format_free};
+use crate::src::format_draw::format_draw;
+use crate::src::fuzzy::fuzzy_match;
+use crate::src::grid::{grid_default_cell, grid_get_cell};
+use crate::src::prompt::{
+    prompt_create, prompt_draw, prompt_free, prompt_incremental_start, prompt_key, prompt_mouse,
+    prompt_set_options, prompt_update,
+};
+use crate::src::screen::{screen_free, screen_init, screen_resize};
+use crate::src::screen_write::{
+    screen_write_cell, screen_write_clearendofline, screen_write_clearscreen,
+    screen_write_cursormove, screen_write_start, screen_write_stop,
+};
+use crate::src::server_fn::{server_redraw_window, server_unzoom_window};
+use crate::src::session::session_find_by_id;
+use crate::src::sort::{sort_get_sessions, sort_get_winlinks};
+use crate::src::status::status_message_set;
+use crate::src::style::style_apply;
+use crate::src::window::{window_pane_reset_mode, window_zoom, winlink_find_by_index};
+use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
 pub use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 pub use crate::src::shared::command::{cmd_parse_input};
 pub use crate::src::shared::arguments::{args};
@@ -74,148 +100,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn __ctype_toupper_loc() -> *mut *const __int32_t;
-    fn qsort(
-        __base: *mut ::core::ffi::c_void,
-        __nmemb: size_t,
-        __size: size_t,
-        __compar: __compar_fn_t,
-    );
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn sort_get_sessions(_: *mut u_int, _: *mut sort_criteria) -> *mut *mut session;
-    fn sort_get_winlinks(_: *mut u_int, _: *mut sort_criteria) -> *mut *mut winlink;
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_defaults(
-        _: *mut format_tree,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    );
-    fn format_draw(
-        _: *mut screen_write_ctx,
-        _: *const grid_cell,
-        _: u_int,
-        _: *const ::core::ffi::c_char,
-        _: *mut style_ranges,
-        _: ::core::ffi::c_int,
-    );
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_find_clear_state(_: *mut cmd_find_state, _: ::core::ffi::c_int);
-    fn cmd_find_from_session(_: *mut cmd_find_state, _: *mut session, _: ::core::ffi::c_int);
-    fn cmd_find_from_winlink(_: *mut cmd_find_state, _: *mut winlink, _: ::core::ffi::c_int);
-    fn cmd_mouse_at(
-        _: *mut window_pane,
-        _: *mut mouse_event,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn cmd_template_replace(
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> *mut ::core::ffi::c_char;
-    fn cmd_parse_and_append(
-        _: *const ::core::ffi::c_char,
-        _: *mut cmd_parse_input,
-        _: *mut client,
-        _: *mut cmdq_state,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> cmd_parse_status;
-    fn cmdq_new_state(
-        _: *mut cmd_find_state,
-        _: *mut key_event,
-        _: ::core::ffi::c_int,
-    ) -> *mut cmdq_state;
-    fn cmdq_free_state(_: *mut cmdq_state);
-    fn server_redraw_window(_: *mut window);
-    fn server_unzoom_window(_: *mut window);
-    fn status_message_set(
-        _: *mut client,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn prompt_set_options(_: *mut prompt_create_data, _: *mut session);
-    fn prompt_create(_: *const prompt_create_data) -> *mut prompt;
-    fn prompt_free(_: *mut prompt);
-    fn prompt_incremental_start(_: *mut prompt);
-    fn prompt_draw(_: *mut prompt, _: *mut prompt_draw_data);
-    fn prompt_key(_: *mut prompt, _: key_code, _: *mut ::core::ffi::c_int) -> prompt_key_result;
-    fn prompt_mouse(
-        _: *mut prompt,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: *mut ::core::ffi::c_int,
-    ) -> prompt_key_result;
-    fn prompt_update(_: *mut prompt, _: *const ::core::ffi::c_char, _: *const ::core::ffi::c_char);
-    fn fuzzy_match(
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: u_int,
-        _: *mut u_int,
-    ) -> *mut bitstr_t;
-    static grid_default_cell: grid_cell;
-    fn grid_get_cell(_: *mut grid, _: u_int, _: u_int, _: *mut grid_cell);
-    fn screen_write_start(_: *mut screen_write_ctx, _: *mut screen);
-    fn screen_write_stop(_: *mut screen_write_ctx);
-    fn screen_write_clearendofline(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_cursormove(
-        _: *mut screen_write_ctx,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn screen_write_clearscreen(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_cell(_: *mut screen_write_ctx, _: *const grid_cell);
-    fn screen_init(_: *mut screen, _: u_int, _: u_int, _: u_int);
-    fn screen_free(_: *mut screen);
-    fn screen_resize(_: *mut screen, _: u_int, _: u_int, _: ::core::ffi::c_int);
-    fn winlink_find_by_index(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn window_zoom(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_reset_mode(_: *mut window_pane);
-    fn session_find_by_id(_: u_int) -> *mut session;
-    fn style_apply(
-        _: *mut grid_cell,
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: *mut format_tree,
-    );
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

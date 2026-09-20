@@ -1,6 +1,28 @@
-pub use crate::src::shared::session::{sessions};
+use crate::src::cmd_find::cmd_find_from_window;
+use crate::src::control::control_get_window_size;
+use crate::src::events::{events_fire, events_fire_window};
+use crate::src::events_payload::{
+    event_payload_create, event_payload_set_target, event_payload_set_uint,
+    event_payload_set_window,
+};
+use crate::src::ffi::libc::sscanf;
+use crate::src::layout::layout_resize;
+use crate::src::log::log_debug;
+use crate::src::options::{options_get_number, options_get_string};
+pub use crate::src::server::clients;
+use crate::src::server_fn::server_redraw_window;
+use crate::src::session::{session_has, sessions_RB_MINMAX, sessions_RB_NEXT};
+pub use crate::src::session::sessions;
+use crate::src::status::{status_line_size, status_update_cache};
+use crate::src::tmux::global_w_options;
+use crate::src::tty::tty_update_window_offset;
+use crate::src::window::{
+    window_has_pane, window_resize, window_unzoom, window_zoom, window_zoomed_pane,
+    windows_RB_MINMAX, windows_RB_NEXT,
+};
+pub use crate::src::window::windows;
 pub use crate::src::shared::events::{event_payload};
-pub use crate::src::shared::client::{clients};
+
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -28,11 +50,7 @@ pub use crate::src::shared::session::{session, session_entry, session_gentry};
 pub use crate::src::shared::spawn::{spawn_editor_state};
 pub use crate::src::shared::status::{status_line};
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
-pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, windows, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
-};
+pub use crate::src::shared::window::{window, window_alerts_entry, window_entry, window_mode, window_mode_entry, window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry, winlink_stack, winlink_wentry, winlinks};
 pub use crate::src::shared::environment::{environ};
 pub use crate::src::shared::limits::{__INT_MAX__, UINT_MAX};
 pub use crate::src::shared::window::{
@@ -66,69 +84,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn sscanf(
-        __s: *const ::core::ffi::c_char,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut global_w_options: *mut options;
-    fn event_payload_create() -> *mut event_payload;
-    fn event_payload_set_target(_: *mut event_payload, _: *mut cmd_find_state);
-    fn event_payload_set_uint(_: *mut event_payload, _: *const ::core::ffi::c_char, _: u_int);
-    fn event_payload_set_window(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut window,
-    );
-    fn events_fire(_: *const ::core::ffi::c_char, _: *mut event_payload);
-    fn events_fire_window(_: *const ::core::ffi::c_char, _: *mut window);
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn tty_update_window_offset(_: *mut window);
-    fn cmd_find_from_window(
-        _: *mut cmd_find_state,
-        _: *mut window,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    static mut clients: clients;
-    fn server_redraw_window(_: *mut window);
-    fn status_update_cache(_: *mut session);
-    fn status_line_size(_: *mut client) -> u_int;
-    static mut windows: windows;
-    fn windows_RB_MINMAX(_: *mut windows, _: ::core::ffi::c_int) -> *mut window;
-    fn windows_RB_NEXT(_: *mut window) -> *mut window;
-    fn window_has_pane(_: *mut window, _: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_resize(
-        _: *mut window,
-        _: u_int,
-        _: u_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn window_zoom(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_unzoom(_: *mut window, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn window_zoomed_pane(_: *mut window) -> *mut window_pane;
-    fn layout_resize(_: *mut window, _: u_int, _: u_int);
-    fn control_get_window_size(
-        _: *mut client,
-        _: u_int,
-        _: *mut u_int,
-        _: *mut u_int,
-    ) -> ::core::ffi::c_int;
-    static mut sessions: sessions;
-    fn sessions_RB_NEXT(_: *mut session) -> *mut session;
-    fn sessions_RB_MINMAX(_: *mut sessions, _: ::core::ffi::c_int) -> *mut session;
-    fn session_has(_: *mut session, _: *mut window) -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

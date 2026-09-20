@@ -1,16 +1,6 @@
+use crate::src::ffi::libc::{getenv, strchr, strlen, strncmp, warnx};
 use crate::src::shared::abi::*;
-extern "C" {
-    fn getenv(__name: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn warnx(_: *const ::core::ffi::c_char, ...);
-    fn strncmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct option {

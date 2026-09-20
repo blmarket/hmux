@@ -1,3 +1,15 @@
+use crate::src::arguments::{args_count, args_has, args_string};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
+use crate::src::events::events_fire_window;
+use crate::src::ffi::libc::free;
+use crate::src::layout::layout_spread_out;
+use crate::src::layout_custom::{layout_dump, layout_parse};
+use crate::src::layout_set::{
+    layout_set_lookup, layout_set_next, layout_set_previous, layout_set_select,
+};
+use crate::src::resize::recalculate_sizes;
+use crate::src::server_fn::{server_redraw_window, server_unzoom_window};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -57,37 +69,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn events_fire_window(_: *const ::core::ffi::c_char, _: *mut window);
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_redraw_window(_: *mut window);
-    fn server_unzoom_window(_: *mut window);
-    fn recalculate_sizes();
-    fn layout_spread_out(_: *mut window_pane);
-    fn layout_dump(
-        _: *mut window,
-        _: *mut layout_cell,
-        _: ::core::ffi::c_int,
-    ) -> *mut ::core::ffi::c_char;
-    fn layout_parse(
-        _: *mut window,
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn layout_set_lookup(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn layout_set_select(_: *mut window, _: u_int) -> u_int;
-    fn layout_set_next(_: *mut window) -> u_int;
-    fn layout_set_previous(_: *mut window) -> u_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

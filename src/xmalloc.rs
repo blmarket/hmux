@@ -1,41 +1,11 @@
+use crate::src::compat::recallocarray::recallocarray;
+use crate::src::ffi::libc::{
+    calloc, malloc, memcpy, reallocarray, strdup, strndup, vasprintf, vsnprintf,
+};
+use crate::src::log::{fatal, fatalx};
 pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX, SIZE_MAX};
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
 use crate::src::shared::abi::*;
-extern "C" {
-    fn vsnprintf(
-        __s: *mut ::core::ffi::c_char,
-        __maxlen: size_t,
-        __format: *const ::core::ffi::c_char,
-        __arg: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn vasprintf(
-        __ptr: *mut *mut ::core::ffi::c_char,
-        __f: *const ::core::ffi::c_char,
-        __arg: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn reallocarray(
-        __ptr: *mut ::core::ffi::c_void,
-        __nmemb: size_t,
-        __size: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strdup(__s: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn strndup(__string: *const ::core::ffi::c_char, __n: size_t) -> *mut ::core::ffi::c_char;
-    fn malloc(__size: size_t) -> *mut ::core::ffi::c_void;
-    fn calloc(__nmemb: size_t, __size: size_t) -> *mut ::core::ffi::c_void;
-    fn recallocarray(
-        _: *mut ::core::ffi::c_void,
-        _: size_t,
-        _: size_t,
-        _: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 #[no_mangle]
 pub unsafe extern "C" fn xmalloc(mut size: size_t) -> *mut ::core::ffi::c_void {

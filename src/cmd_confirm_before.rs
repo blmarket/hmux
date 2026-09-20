@@ -1,3 +1,12 @@
+use crate::src::arguments::{args_get, args_has, args_make_commands_now};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_list_first, cmd_list_free};
+use crate::src::cmd_queue::{
+    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
+    cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
+};
+use crate::src::ffi::libc::free;
+use crate::src::status::status_prompt_set;
+use crate::src::xmalloc::{xasprintf, xcalloc};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -62,48 +71,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_make_commands_now(
-        _: *mut cmd,
-        _: *mut cmdq_item,
-        _: u_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut cmd_list;
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmd_list_free(_: *mut cmd_list);
-    fn cmd_list_first(_: *mut cmd_list) -> *mut cmd;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_state(_: *mut cmdq_item) -> *mut cmdq_state;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_command(_: *mut cmd_list, _: *mut cmdq_state) -> *mut cmdq_item;
-    fn cmdq_insert_after(_: *mut cmdq_item, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn cmdq_append(_: *mut client, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn cmdq_continue(_: *mut cmdq_item);
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn status_prompt_set(
-        _: *mut client,
-        _: *mut cmd_find_state,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: status_prompt_input_cb,
-        _: prompt_free_cb,
-        _: *mut ::core::ffi::c_void,
-        _: ::core::ffi::c_int,
-        _: prompt_type,
-    );
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

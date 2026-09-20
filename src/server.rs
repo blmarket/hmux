@@ -1,5 +1,43 @@
+use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_valid_state};
+use crate::src::cmd_queue::cmdq_next;
+use crate::src::cmd_wait_for::cmd_wait_for_flush;
+use crate::src::compat::systemd::systemd_create_socket;
+use crate::src::control_notify::control_build_events;
+use crate::src::ffi::libc::{
+    __errno_location, accept, bind, chmod, close, exit, fprintf, free, gettimeofday, kill,
+    killpg, listen, malloc_trim, memset, sigfillset, sigprocmask, socket, stat, stderr,
+    strerror, strlcpy, strsignal, time, umask, unlink, waitpid,
+};
+use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_reinit, event_set};
+use crate::src::format::format_tidy_jobs;
+use crate::src::hooks::hooks_build_events;
+use crate::src::input_keys::input_key_build;
+use crate::src::job::{job_check_died, job_kill_all, job_still_running};
+use crate::src::key_bindings::key_bindings_init;
+use crate::src::log::{fatal, fatalx, log_debug, log_get_level};
+use crate::src::options::{options_get_number, options_set_number};
+use crate::src::proc::{
+    proc_clear_signals, proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start,
+    proc_toggle_log,
+};
+use crate::src::prompt_history::prompt_save_history;
+use crate::src::server_acl::{server_acl_init, server_acl_join};
+use crate::src::server_client::{server_client_create, server_client_loop, server_client_lost};
+use crate::src::server_fn::server_destroy_pane;
+use crate::src::session::{session_destroy, sessions_RB_MINMAX, sessions_RB_NEXT};
+pub use crate::src::session::sessions;
+use crate::src::spawn::spawn_editor_finish;
+use crate::src::tmux::{get_timer, global_options, setblocking, socket_path, start_time};
+use crate::src::tty::tty_create_log;
+use crate::src::utf8::utf8_update_width_cache;
+use crate::src::window::{
+    all_window_panes, window_pane_destroy_ready, window_pane_wait_finish, windows_RB_MINMAX,
+    windows_RB_NEXT,
+};
+pub use crate::src::window::windows;
+use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup, xvasprintf};
 pub use crate::src::shared::status::{message_entry, message_entry_entry, message_list};
-pub use crate::src::shared::session::{sessions};
+
 pub use crate::src::shared::posix_io::{stat};
 pub use crate::src::shared::pane::{window_pane_tree};
 pub use crate::src::shared::client::{clients};
@@ -30,11 +68,7 @@ pub use crate::src::shared::session::{session, session_entry, session_gentry};
 pub use crate::src::shared::spawn::{spawn_editor_state};
 pub use crate::src::shared::status::{status_line};
 pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
-pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, windows, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
-};
+pub use crate::src::shared::window::{window, window_alerts_entry, window_entry, window_mode, window_mode_entry, window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry, winlink_stack, winlink_wentry, winlinks};
 pub use crate::src::shared::environment::{environ};
 pub use crate::src::shared::posix_io::{
     S_IRWXU, WAIT_ANY, WNOHANG, __S_IEXEC, __S_IREAD, __S_IWRITE,
@@ -87,159 +121,7 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
 
-    fn socket(
-        __domain: ::core::ffi::c_int,
-        __type: ::core::ffi::c_int,
-        __protocol: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn bind(
-        __fd: ::core::ffi::c_int,
-        __addr: __CONST_SOCKADDR_ARG,
-        __len: socklen_t,
-    ) -> ::core::ffi::c_int;
-    fn listen(__fd: ::core::ffi::c_int, __n: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn accept(
-        __fd: ::core::ffi::c_int,
-        __addr: __SOCKADDR_ARG,
-        __addr_len: *mut socklen_t,
-    ) -> ::core::ffi::c_int;
-    fn stat(__file: *const ::core::ffi::c_char, __buf: *mut stat) -> ::core::ffi::c_int;
-    fn chmod(__file: *const ::core::ffi::c_char, __mode: __mode_t) -> ::core::ffi::c_int;
-    fn umask(__mask: __mode_t) -> __mode_t;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn strsignal(__sig: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn strlcpy(
-        __dest: *mut ::core::ffi::c_char,
-        __src: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_ulong;
-    fn kill(__pid: __pid_t, __sig: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn killpg(__pgrp: __pid_t, __sig: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn sigfillset(__set: *mut sigset_t) -> ::core::ffi::c_int;
-    fn sigprocmask(
-        __how: ::core::ffi::c_int,
-        __set: *const sigset_t,
-        __oset: *mut sigset_t,
-    ) -> ::core::ffi::c_int;
-    fn close(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn unlink(__name: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn waitpid(
-        __pid: __pid_t,
-        __stat_loc: *mut ::core::ffi::c_int,
-        __options: ::core::ffi::c_int,
-    ) -> __pid_t;
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    static mut stderr: *mut FILE;
-    fn fprintf(
-        __stream: *mut FILE,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn exit(__status: ::core::ffi::c_int) -> !;
-    fn time(__timer: *mut time_t) -> time_t;
-    fn gettimeofday(__tv: *mut timeval, __tz: *mut ::core::ffi::c_void) -> ::core::ffi::c_int;
-    fn event_reinit(base: *mut event_base) -> ::core::ffi::c_int;
-    fn event_add(ev: *mut event, timeout: *const timeval) -> ::core::ffi::c_int;
-    fn event_del(_: *mut event) -> ::core::ffi::c_int;
-    fn event_initialized(ev: *const event) -> ::core::ffi::c_int;
-    fn event_set(
-        _: *mut event,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn malloc_trim(__pad: size_t) -> ::core::ffi::c_int;
-    fn systemd_create_socket(
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn xvasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    static mut global_options: *mut options;
-    static mut start_time: timeval;
-    static mut socket_path: *const ::core::ffi::c_char;
-    fn setblocking(_: ::core::ffi::c_int, _: ::core::ffi::c_int);
-    fn get_timer() -> uint64_t;
-    fn proc_start(_: *const ::core::ffi::c_char) -> *mut tmuxproc;
-    fn proc_loop(_: *mut tmuxproc, _: Option<unsafe extern "C" fn() -> ::core::ffi::c_int>);
-    fn proc_set_signals(
-        _: *mut tmuxproc,
-        _: Option<unsafe extern "C" fn(::core::ffi::c_int) -> ()>,
-    );
-    fn proc_clear_signals(_: *mut tmuxproc, _: ::core::ffi::c_int);
-    fn proc_toggle_log(_: *mut tmuxproc);
-    fn proc_fork_and_daemon(_: *mut ::core::ffi::c_int) -> pid_t;
-    fn format_tidy_jobs();
-    fn hooks_build_events();
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn options_set_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-    ) -> *mut options_entry;
-    fn job_check_died(_: pid_t, _: ::core::ffi::c_int);
-    fn job_kill_all();
-    fn job_still_running() -> ::core::ffi::c_int;
-    fn tty_create_log();
-    fn cmd_find_clear_state(_: *mut cmd_find_state, _: ::core::ffi::c_int);
-    fn cmd_find_valid_state(_: *mut cmd_find_state) -> ::core::ffi::c_int;
-    fn cmdq_next(_: *mut client) -> u_int;
-    fn cmd_wait_for_flush();
-    fn key_bindings_init();
-    fn server_client_create(_: ::core::ffi::c_int) -> *mut client;
-    fn server_client_lost(_: *mut client);
-    fn server_client_loop();
-    fn server_destroy_pane(_: *mut window_pane, _: ::core::ffi::c_int);
-    fn prompt_save_history();
-    fn input_key_build();
-    static mut windows: windows;
-    static mut all_window_panes: window_pane_tree;
-    fn windows_RB_NEXT(_: *mut window) -> *mut window;
-    fn windows_RB_MINMAX(_: *mut windows, _: ::core::ffi::c_int) -> *mut window;
-    fn window_pane_wait_finish(_: *mut window_pane);
-    fn window_pane_destroy_ready(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn control_build_events();
-    static mut sessions: sessions;
-    fn sessions_RB_MINMAX(_: *mut sessions, _: ::core::ffi::c_int) -> *mut session;
-    fn sessions_RB_NEXT(_: *mut session) -> *mut session;
-    fn session_destroy(_: *mut session, _: ::core::ffi::c_int, _: *const ::core::ffi::c_char);
-    fn utf8_update_width_cache();
-    fn log_get_level() -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-    fn spawn_editor_finish(_: *mut window_pane);
-    fn server_acl_init();
-    fn server_acl_join(_: *mut client) -> ::core::ffi::c_int;
-}
 pub type mode_t = __mode_t;
 
 #[derive(Copy, Clone)]

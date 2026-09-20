@@ -1,4 +1,16 @@
-pub use crate::src::shared::session::{sessions};
+use crate::src::ffi::libc::{free, sscanf, strchr, strcmp};
+use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_pending, event_set};
+use crate::src::format::{format_create, format_defaults, format_expand, format_free, format_true};
+use crate::src::log::log_debug;
+use crate::src::server::current_time;
+use crate::src::session::{
+    session_add_ref, session_find_by_id, session_remove_ref, sessions_RB_MINMAX,
+};
+pub use crate::src::session::sessions;
+use crate::src::window::{
+    window_find_by_id, window_pane_find_by_id, winlinks_RB_MINMAX, winlinks_RB_NEXT,
+};
+use crate::src::xmalloc::{xcalloc, xstrdup};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -55,7 +67,6 @@ pub use crate::src::shared::layout::{layout_geometry};
 pub use crate::src::shared::mouse::{mouse_event};
 use crate::src::shared::client::*;
 use crate::src::shared::terminal::*;
-use crate::src::shared::event::*;
 use crate::src::shared::display::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::message::*;
@@ -64,74 +75,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn sscanf(
-        __s: *const ::core::ffi::c_char,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn event_add(ev: *mut event, timeout: *const timeval) -> ::core::ffi::c_int;
-    fn event_del(_: *mut event) -> ::core::ffi::c_int;
-    fn event_pending(
-        ev: *const event,
-        events: ::core::ffi::c_short,
-        tv: *mut timeval,
-    ) -> ::core::ffi::c_int;
-    fn event_initialized(ev: *const event) -> ::core::ffi::c_int;
-    fn event_set(
-        _: *mut event,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn format_true(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_defaults(
-        _: *mut format_tree,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    );
-    static mut current_time: time_t;
-    fn winlinks_RB_MINMAX(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn winlinks_RB_NEXT(_: *mut winlink) -> *mut winlink;
-    fn window_find_by_id(_: u_int) -> *mut window;
-    fn window_pane_find_by_id(_: u_int) -> *mut window_pane;
-    static mut sessions: sessions;
-    fn sessions_RB_MINMAX(_: *mut sessions, _: ::core::ffi::c_int) -> *mut session;
-    fn session_find_by_id(_: u_int) -> *mut session;
-    fn session_add_ref(_: *mut session, _: *const ::core::ffi::c_char);
-    fn session_remove_ref(_: *mut session, _: *const ::core::ffi::c_char);
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

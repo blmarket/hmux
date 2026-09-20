@@ -1,25 +1,8 @@
+use crate::src::compat::getprogname::getprogname;
+use crate::src::ffi::libc::{prctl, snprintf, strrchr, vsnprintf};
 pub use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
 use crate::src::shared::abi::*;
-extern "C" {
-    fn strrchr(
-        __s: *const ::core::ffi::c_char,
-        __c: ::core::ffi::c_int,
-    ) -> *mut ::core::ffi::c_char;
-    fn snprintf(
-        __s: *mut ::core::ffi::c_char,
-        __maxlen: size_t,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn vsnprintf(
-        __s: *mut ::core::ffi::c_char,
-        __maxlen: size_t,
-        __format: *const ::core::ffi::c_char,
-        __arg: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn getprogname() -> *const ::core::ffi::c_char;
-    fn prctl(__option: ::core::ffi::c_int, ...) -> ::core::ffi::c_int;
-}
+
 pub const PR_SET_NAME: ::core::ffi::c_int = 15 as ::core::ffi::c_int;
 #[no_mangle]
 pub unsafe extern "C" fn setproctitle(mut fmt: *const ::core::ffi::c_char, mut args: ...) {

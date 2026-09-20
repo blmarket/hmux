@@ -1,3 +1,31 @@
+use crate::src::arguments::{args_get, args_has, args_percentage_and_expand};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
+use crate::src::cmd_find::cmd_find_from_session;
+use crate::src::cmd_queue::{
+    cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_event, cmdq_get_source,
+    cmdq_get_target,
+};
+use crate::src::colour::colour_palette_from_option;
+use crate::src::compat::strtonum::strtonum;
+use crate::src::events::events_fire_window;
+use crate::src::ffi::libc::{free, strcmp};
+use crate::src::layout::{
+    layout_assign_pane, layout_close_pane, layout_fix_offsets, layout_fix_panes,
+    layout_get_tiled_cell, layout_insert_tile,
+};
+use crate::src::options::options_set_parent;
+use crate::src::resize::recalculate_sizes;
+use crate::src::screen_redraw::redraw_invalidate_scene;
+use crate::src::server_client::server_client_remove_pane;
+use crate::src::server_fn::{
+    server_kill_window, server_redraw_session, server_redraw_window,
+    server_redraw_window_borders, server_status_session, server_unzoom_window,
+};
+use crate::src::session::session_select;
+use crate::src::window::{
+    window_count_panes, window_fire_pane_moved, window_lost_pane, window_pane_get_pane_lines,
+    window_pane_is_floating, window_redraw_active_switch, window_set_active_pane,
+};
 pub use crate::src::shared::pane::{window_panes_zindex};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
@@ -57,93 +85,10 @@ use crate::src::shared::display::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::message::*;
 use crate::src::shared::abi::*;
-use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn strtonum(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn events_fire_window(_: *const ::core::ffi::c_char, _: *mut window);
-    fn options_set_parent(_: *mut options, _: *mut options);
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_percentage_and_expand(
-        _: *mut args,
-        _: u_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut cmdq_item,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn cmd_find_from_session(_: *mut cmd_find_state, _: *mut session, _: ::core::ffi::c_int);
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmd_mouse_pane(
-        _: *mut mouse_event,
-        _: *mut *mut session,
-        _: *mut *mut winlink,
-    ) -> *mut window_pane;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_source(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_event(_: *mut cmdq_item) -> *mut key_event;
-    fn cmdq_get_current(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_client_remove_pane(_: *mut window_pane);
-    fn server_redraw_session(_: *mut session);
-    fn server_status_session(_: *mut session);
-    fn server_redraw_window(_: *mut window);
-    fn server_redraw_window_borders(_: *mut window);
-    fn server_kill_window(_: *mut window, _: ::core::ffi::c_int);
-    fn server_unzoom_window(_: *mut window);
-    fn recalculate_sizes();
-    fn colour_palette_from_option(_: *mut colour_palette, _: *mut options);
-    fn redraw_invalidate_scene(_: *mut window);
-    fn window_set_active_pane(
-        _: *mut window,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn window_fire_pane_moved(
-        _: *mut window_pane,
-        _: *mut window,
-        _: ::core::ffi::c_int,
-        _: *mut window,
-        _: ::core::ffi::c_int,
-    );
-    fn window_redraw_active_switch(_: *mut window, _: *mut window_pane);
-    fn window_lost_pane(_: *mut window, _: *mut window_pane);
-    fn window_count_panes(_: *mut window, _: ::core::ffi::c_int) -> u_int;
-    fn window_pane_get_pane_lines(_: *mut window_pane) -> pane_lines;
-    fn window_pane_is_floating(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn layout_fix_offsets(_: *mut window);
-    fn layout_fix_panes(_: *mut window, _: *mut window_pane);
-    fn layout_assign_pane(_: *mut layout_cell, _: *mut window_pane, _: ::core::ffi::c_int);
-    fn layout_close_pane(_: *mut window_pane);
-    fn layout_get_tiled_cell(
-        _: *mut cmdq_item,
-        _: *mut args,
-        _: *mut window,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> *mut layout_cell;
-    fn layout_insert_tile(_: *mut window, _: *mut layout_cell) -> ::core::ffi::c_int;
-    fn session_select(_: *mut session, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

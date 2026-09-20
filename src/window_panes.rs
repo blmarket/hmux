@@ -1,3 +1,39 @@
+use crate::src::arguments::{
+    args_has, args_make_commands, args_make_commands_free, args_make_commands_prepare,
+    args_strtonum,
+};
+use crate::src::cmd::{cmd_list_free, cmd_mouse_at};
+use crate::src::cmd_queue::{
+    cmdq_append, cmdq_error, cmdq_get_cmd, cmdq_get_command, cmdq_get_error, cmdq_get_source,
+    cmdq_get_target,
+};
+use crate::src::ffi::libc::{free, memcpy};
+use crate::src::ffi::libevent::{event_add, event_del, event_set};
+use crate::src::format::{format_create_defaults, format_free, format_single};
+use crate::src::format_draw::format_draw;
+use crate::src::grid::grid_default_cell;
+use crate::src::layout::layout_add_horizontal_border;
+use crate::src::options::{options_get_number, options_get_string};
+use crate::src::screen::{screen_free, screen_init, screen_resize};
+use crate::src::screen_write::{
+    screen_write_cell, screen_write_clearscreen, screen_write_cursormove,
+    screen_write_fast_copy, screen_write_preview, screen_write_putc, screen_write_puts,
+    screen_write_start, screen_write_stop,
+};
+use crate::src::server_fn::{
+    server_redraw_window, server_redraw_window_borders, server_status_window,
+    server_unzoom_window,
+};
+use crate::src::session::session_find_by_id;
+use crate::src::style::style_apply;
+use crate::src::utf8::utf8_set;
+use crate::src::window::{
+    window_find_by_id, window_get_pane_status, window_pane_at_index, window_pane_find_by_id,
+    window_pane_index, window_pane_is_visible, window_pane_reset_mode, window_unzoom,
+    window_zoom, winlink_find_by_window,
+};
+use crate::src::window_clock::window_clock_table;
+use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xsnprintf};
 pub use crate::src::shared::pane::{window_panes_zindex};
 pub use crate::src::shared::arguments::{args_command_state};
 pub use crate::src::shared::arguments::{args};
@@ -70,173 +106,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn event_add(ev: *mut event, timeout: *const timeval) -> ::core::ffi::c_int;
-    fn event_del(_: *mut event) -> ::core::ffi::c_int;
-    fn event_set(
-        _: *mut event,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn format_free(_: *mut format_tree);
-    fn format_single(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_create_defaults(
-        _: *mut cmdq_item,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut format_tree;
-    fn format_draw(
-        _: *mut screen_write_ctx,
-        _: *const grid_cell,
-        _: u_int,
-        _: *const ::core::ffi::c_char,
-        _: *mut style_ranges,
-        _: ::core::ffi::c_int,
-    );
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_make_commands_prepare(
-        _: *mut cmd,
-        _: *mut cmdq_item,
-        _: u_int,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut args_command_state;
-    fn args_make_commands(
-        _: *mut args_command_state,
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> *mut cmd_list;
-    fn args_make_commands_free(_: *mut args_command_state);
-    fn args_strtonum(
-        _: *mut args,
-        _: u_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn cmd_list_free(_: *mut cmd_list);
-    fn cmd_mouse_at(
-        _: *mut window_pane,
-        _: *mut mouse_event,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn cmdq_get_cmd(_: *mut cmdq_item) -> *mut cmd;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_source(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_command(_: *mut cmd_list, _: *mut cmdq_state) -> *mut cmdq_item;
-    fn cmdq_get_error(_: *const ::core::ffi::c_char) -> *mut cmdq_item;
-    fn cmdq_append(_: *mut client, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_redraw_window(_: *mut window);
-    fn server_redraw_window_borders(_: *mut window);
-    fn server_status_window(_: *mut window);
-    fn server_unzoom_window(_: *mut window);
-    static grid_default_cell: grid_cell;
-    fn screen_write_start(_: *mut screen_write_ctx, _: *mut screen);
-    fn screen_write_stop(_: *mut screen_write_ctx);
-    fn screen_write_puts(
-        _: *mut screen_write_ctx,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn screen_write_putc(_: *mut screen_write_ctx, _: *const grid_cell, _: u_char);
-    fn screen_write_fast_copy(
-        _: *mut screen_write_ctx,
-        _: *mut screen,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-    );
-    fn screen_write_preview(_: *mut screen_write_ctx, _: *mut screen, _: u_int, _: u_int);
-    fn screen_write_cursormove(
-        _: *mut screen_write_ctx,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn screen_write_clearscreen(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_cell(_: *mut screen_write_ctx, _: *const grid_cell);
-    fn screen_init(_: *mut screen, _: u_int, _: u_int, _: u_int);
-    fn screen_free(_: *mut screen);
-    fn screen_resize(_: *mut screen, _: u_int, _: u_int, _: ::core::ffi::c_int);
-    fn winlink_find_by_window(_: *mut winlinks, _: *mut window) -> *mut winlink;
-    fn window_find_by_id(_: u_int) -> *mut window;
-    fn window_zoom(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_unzoom(_: *mut window, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn window_pane_at_index(_: *mut window, _: u_int) -> *mut window_pane;
-    fn window_pane_index(_: *mut window_pane, _: *mut u_int) -> ::core::ffi::c_int;
-    fn window_pane_find_by_id(_: u_int) -> *mut window_pane;
-    fn window_pane_reset_mode(_: *mut window_pane);
-    fn window_pane_is_visible(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_get_pane_status(_: *mut window) -> ::core::ffi::c_int;
-    fn layout_add_horizontal_border(
-        _: *mut layout_cell,
-        _: *mut layout_cell,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    static window_clock_table: [[[::core::ffi::c_char; 5]; 5]; 14];
-    fn session_find_by_id(_: u_int) -> *mut session;
-    fn utf8_set(_: *mut utf8_data, _: u_char);
-    fn style_apply(
-        _: *mut grid_cell,
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: *mut format_tree,
-    );
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

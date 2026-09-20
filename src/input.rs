@@ -1,6 +1,69 @@
+use crate::src::alerts::alerts_queue;
+use crate::src::cmd_find::cmd_find_from_pane;
+use crate::src::colour::{
+    colour_force_rgb, colour_join_rgb, colour_palette_clear, colour_palette_get,
+    colour_palette_set, colour_parseX11, colour_split_rgb,
+};
+use crate::src::compat::strtonum::strtonum;
+use crate::src::events::{events_fire, events_fire_pane};
+use crate::src::events_payload::{
+    event_payload_create, event_payload_set_int, event_payload_set_pane,
+    event_payload_set_session, event_payload_set_string, event_payload_set_target,
+    event_payload_set_time, event_payload_set_uint, event_payload_set_window,
+};
+use crate::src::ffi::libc::{
+    free, memcpy, memset, strchr, strcmp, strlen, strncmp, strpbrk, strsep, strstr, strtol,
+    time,
+};
+use crate::src::ffi::libevent::{
+    bufferevent_write, evbuffer_add, evbuffer_drain, evbuffer_free, evbuffer_get_length,
+    evbuffer_new, event_add, event_del, event_set,
+};
+use crate::src::ffi::resolv::{__b64_ntop, __b64_pton};
+use crate::src::grid::{
+    grid_cells_look_equal, grid_default_cell, grid_get_cell, grid_get_line, grid_set_tab,
+};
+use crate::src::hyperlinks::hyperlinks_put;
+use crate::src::log::{fatalx, log_debug};
+use crate::src::options::{
+    options_get_number, options_get_only, options_remove_or_default, options_set_number,
+};
+use crate::src::paste::{paste_add, paste_buffer_data, paste_get_top};
+use crate::src::screen::{
+    screen_pop_title, screen_push_title, screen_set_cursor_colour, screen_set_cursor_style,
+    screen_set_path, screen_set_progress_bar, screen_set_title,
+};
+use crate::src::screen_write::{
+    screen_write_alignmenttest, screen_write_alternateoff, screen_write_alternateon,
+    screen_write_backspace, screen_write_carriagereturn, screen_write_clearcharacter,
+    screen_write_clearendofline, screen_write_clearendofscreen, screen_write_clearhistory,
+    screen_write_clearline, screen_write_clearscreen, screen_write_clearstartofline,
+    screen_write_clearstartofscreen, screen_write_collect_add, screen_write_collect_end,
+    screen_write_cursordown, screen_write_cursorleft, screen_write_cursormove,
+    screen_write_cursorright, screen_write_cursorup, screen_write_deletecharacter,
+    screen_write_deleteline, screen_write_end_sync, screen_write_fullredraw,
+    screen_write_insertcharacter, screen_write_insertline, screen_write_linefeed,
+    screen_write_mode_clear, screen_write_mode_set, screen_write_rawstring, screen_write_reset,
+    screen_write_reverseindex, screen_write_scrolldown, screen_write_scrollregion,
+    screen_write_scrollup, screen_write_setselection, screen_write_start,
+    screen_write_start_callback, screen_write_start_pane, screen_write_start_sync,
+    screen_write_stop, screen_write_stop_sync,
+};
+pub use crate::src::server::clients;
+use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
+use crate::src::session::session_has;
+use crate::src::tmux::{get_timer, getversion, global_options, global_w_options};
+use crate::src::tty::{tty_default_colours, tty_putcode_ss, tty_puts, tty_set_selection};
+use crate::src::utf8::{utf8_append, utf8_copy, utf8_isvalid, utf8_open, utf8_set};
+use crate::src::window::{
+    window_pane_get_bg, window_pane_get_fg, window_pane_get_fg_control_client,
+    window_pane_get_new_data, window_pane_get_theme, window_pane_update_used_data,
+    window_set_name, window_update_activity,
+};
+use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xsnprintf, xstrdup, xstrndup, xvasprintf};
 pub use crate::src::shared::input::{input_request_clipboard_data, input_request_palette_data};
 pub use crate::src::shared::events::{event_payload};
-pub use crate::src::shared::client::{clients};
+
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -88,311 +151,6 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
-extern "C" {
-
-    fn __b64_ntop(
-        _: *const ::core::ffi::c_uchar,
-        _: size_t,
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-    ) -> ::core::ffi::c_int;
-    fn __b64_pton(
-        _: *const ::core::ffi::c_char,
-        _: *mut ::core::ffi::c_uchar,
-        _: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strtol(
-        __nptr: *const ::core::ffi::c_char,
-        __endptr: *mut *mut ::core::ffi::c_char,
-        __base: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_long;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strncmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strpbrk(
-        __s: *const ::core::ffi::c_char,
-        __accept: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn strstr(
-        __haystack: *const ::core::ffi::c_char,
-        __needle: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strsep(
-        __stringp: *mut *mut ::core::ffi::c_char,
-        __delim: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn time(__timer: *mut time_t) -> time_t;
-    fn event_add(ev: *mut event, timeout: *const timeval) -> ::core::ffi::c_int;
-    fn event_del(_: *mut event) -> ::core::ffi::c_int;
-    fn event_set(
-        _: *mut event,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn evbuffer_new() -> *mut evbuffer;
-    fn evbuffer_free(buf: *mut evbuffer);
-    fn evbuffer_get_length(buf: *const evbuffer) -> size_t;
-    fn evbuffer_add(
-        buf: *mut evbuffer,
-        data: *const ::core::ffi::c_void,
-        datlen: size_t,
-    ) -> ::core::ffi::c_int;
-    fn evbuffer_drain(buf: *mut evbuffer, len: size_t) -> ::core::ffi::c_int;
-    fn bufferevent_write(
-        bufev: *mut bufferevent,
-        data: *const ::core::ffi::c_void,
-        size: size_t,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn strtonum(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xrealloc(_: *mut ::core::ffi::c_void, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xstrndup(_: *const ::core::ffi::c_char, _: size_t) -> *mut ::core::ffi::c_char;
-    fn xvasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut global_options: *mut options;
-    static mut global_w_options: *mut options;
-    fn get_timer() -> uint64_t;
-    fn getversion() -> *const ::core::ffi::c_char;
-    fn paste_buffer_data(_: *mut paste_buffer, _: *mut size_t) -> *const ::core::ffi::c_char;
-    fn paste_get_top(_: *mut *mut ::core::ffi::c_char) -> *mut paste_buffer;
-    fn paste_add(_: *const ::core::ffi::c_char, _: *mut ::core::ffi::c_char, _: size_t);
-    fn event_payload_create() -> *mut event_payload;
-    fn event_payload_set_target(_: *mut event_payload, _: *mut cmd_find_state);
-    fn event_payload_set_string(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn event_payload_set_time(_: *mut event_payload, _: *const ::core::ffi::c_char, _: time_t);
-    fn event_payload_set_int(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    );
-    fn event_payload_set_uint(_: *mut event_payload, _: *const ::core::ffi::c_char, _: u_int);
-    fn event_payload_set_session(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut session,
-    );
-    fn event_payload_set_window(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut window,
-    );
-    fn event_payload_set_pane(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut window_pane,
-    );
-    fn events_fire(_: *const ::core::ffi::c_char, _: *mut event_payload);
-    fn events_fire_pane(_: *const ::core::ffi::c_char, _: *mut window_pane);
-    fn options_get_only(_: *mut options, _: *const ::core::ffi::c_char) -> *mut options_entry;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn options_set_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-    ) -> *mut options_entry;
-    fn options_remove_or_default(
-        _: *mut options_entry,
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn tty_putcode_ss(
-        _: *mut tty,
-        _: tty_code_code,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-    );
-    fn tty_puts(_: *mut tty, _: *const ::core::ffi::c_char);
-    fn tty_set_selection(
-        _: *mut tty,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: size_t,
-    );
-    fn tty_default_colours(_: *mut grid_cell, _: *mut window_pane, _: *mut u_int);
-    fn cmd_find_from_pane(
-        _: *mut cmd_find_state,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn alerts_queue(_: *mut window, _: ::core::ffi::c_int);
-    static mut clients: clients;
-    fn server_redraw_window_borders(_: *mut window);
-    fn server_status_window(_: *mut window);
-    fn colour_join_rgb(_: u_char, _: u_char, _: u_char) -> ::core::ffi::c_int;
-    fn colour_split_rgb(_: ::core::ffi::c_int, _: *mut u_char, _: *mut u_char, _: *mut u_char);
-    fn colour_force_rgb(_: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn colour_parseX11(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn colour_palette_clear(_: *mut colour_palette);
-    fn colour_palette_get(_: *mut colour_palette, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn colour_palette_set(
-        _: *mut colour_palette,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    static grid_default_cell: grid_cell;
-    fn grid_set_tab(_: *mut grid_cell, _: u_int);
-    fn grid_cells_look_equal(_: *const grid_cell, _: *const grid_cell) -> ::core::ffi::c_int;
-    fn grid_get_cell(_: *mut grid, _: u_int, _: u_int, _: *mut grid_cell);
-    fn grid_get_line(_: *mut grid, _: u_int) -> *mut grid_line;
-    fn screen_write_start_pane(_: *mut screen_write_ctx, _: *mut window_pane, _: *mut screen);
-    fn screen_write_start(_: *mut screen_write_ctx, _: *mut screen);
-    fn screen_write_start_callback(
-        _: *mut screen_write_ctx,
-        _: *mut screen,
-        _: screen_write_init_ctx_cb,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn screen_write_stop(_: *mut screen_write_ctx);
-    fn screen_write_reset(_: *mut screen_write_ctx);
-    fn screen_write_backspace(_: *mut screen_write_ctx);
-    fn screen_write_mode_set(_: *mut screen_write_ctx, _: ::core::ffi::c_int);
-    fn screen_write_mode_clear(_: *mut screen_write_ctx, _: ::core::ffi::c_int);
-    fn screen_write_start_sync(_: *mut window_pane);
-    fn screen_write_stop_sync(_: *mut window_pane);
-    fn screen_write_end_sync(_: *mut screen_write_ctx);
-    fn screen_write_cursorup(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_cursordown(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_cursorright(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_cursorleft(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_alignmenttest(_: *mut screen_write_ctx);
-    fn screen_write_insertcharacter(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_deletecharacter(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_clearcharacter(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_insertline(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_deleteline(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_clearline(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_clearendofline(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_clearstartofline(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_cursormove(
-        _: *mut screen_write_ctx,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn screen_write_reverseindex(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_scrollregion(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_linefeed(_: *mut screen_write_ctx, _: ::core::ffi::c_int, _: u_int);
-    fn screen_write_scrollup(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_scrolldown(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_carriagereturn(_: *mut screen_write_ctx);
-    fn screen_write_clearendofscreen(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_clearstartofscreen(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_clearscreen(_: *mut screen_write_ctx, _: u_int);
-    fn screen_write_clearhistory(_: *mut screen_write_ctx);
-    fn screen_write_fullredraw(_: *mut screen_write_ctx);
-    fn screen_write_collect_end(_: *mut screen_write_ctx);
-    fn screen_write_collect_add(_: *mut screen_write_ctx, _: *const grid_cell);
-    fn screen_write_setselection(
-        _: *mut screen_write_ctx,
-        _: *const ::core::ffi::c_char,
-        _: *mut u_char,
-        _: u_int,
-    );
-    fn screen_write_rawstring(
-        _: *mut screen_write_ctx,
-        _: *mut u_char,
-        _: u_int,
-        _: ::core::ffi::c_int,
-    );
-    fn screen_write_alternateon(_: *mut screen_write_ctx, _: *mut grid_cell, _: ::core::ffi::c_int);
-    fn screen_write_alternateoff(
-        _: *mut screen_write_ctx,
-        _: *mut grid_cell,
-        _: ::core::ffi::c_int,
-    );
-    fn screen_set_cursor_style(_: u_int, _: *mut screen_cursor_style, _: *mut ::core::ffi::c_int);
-    fn screen_set_cursor_colour(_: *mut screen, _: ::core::ffi::c_int);
-    fn screen_set_title(
-        _: *mut screen,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn screen_set_path(
-        _: *mut screen,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn screen_push_title(_: *mut screen);
-    fn screen_pop_title(_: *mut screen);
-    fn screen_set_progress_bar(_: *mut screen, _: progress_bar_state, _: ::core::ffi::c_int);
-    fn window_update_activity(_: *mut window);
-    fn window_set_name(_: *mut window, _: *const ::core::ffi::c_char, _: ::core::ffi::c_int);
-    fn window_pane_get_new_data(
-        _: *mut window_pane,
-        _: *mut window_pane_offset,
-        _: *mut size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn window_pane_update_used_data(_: *mut window_pane, _: *mut window_pane_offset, _: size_t);
-    fn window_pane_get_bg(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_get_fg(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_get_fg_control_client(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_get_theme(_: *mut window_pane) -> client_theme;
-    fn session_has(_: *mut session, _: *mut window) -> ::core::ffi::c_int;
-    fn utf8_set(_: *mut utf8_data, _: u_char);
-    fn utf8_copy(_: *mut utf8_data, _: *const utf8_data);
-    fn utf8_open(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn utf8_append(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn utf8_isvalid(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-    fn hyperlinks_put(
-        _: *mut hyperlinks,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-    ) -> u_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

@@ -1,3 +1,26 @@
+use crate::src::arguments::{
+    args_count, args_first_value, args_get, args_has, args_next_value, args_percentage,
+    args_string, args_strtonum, args_to_vector,
+};
+use crate::src::cmd::{cmd_append_argv, cmd_free_argv, cmd_get_args};
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
+use crate::src::environ::{environ_create, environ_free, environ_put};
+use crate::src::ffi::libc::{free, strcmp, strtol};
+use crate::src::format::{
+    format_add, format_create_from_target, format_expand, format_free,
+    format_single_from_target,
+};
+use crate::src::key_string::key_string_lookup_string;
+use crate::src::log::log_debug;
+use crate::src::menu::{menu_add_item, menu_create, menu_display, menu_free};
+use crate::src::options::{options_find_choice, options_get, options_get_number, options_get_string};
+pub use crate::src::options::options_table_entry;
+use crate::src::popup::{popup_display, popup_modify, popup_present};
+use crate::src::server_client::{server_client_clear_overlay, server_client_get_cwd};
+use crate::src::status::{status_at_line, status_line_size};
+use crate::src::tmux::checkshell;
+use crate::src::tty::tty_window_offset;
+use crate::src::xmalloc::xstrdup;
 pub use crate::src::shared::popup::{popup_close_cb};
 pub use crate::src::shared::arguments::{
     args, args_parse, args_parse_cb, args_value, args_value_c2rust_unnamed, args_value_entry,
@@ -18,7 +41,7 @@ pub use crate::src::shared::key::{
 };
 pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
 pub use crate::src::shared::menu::{menu_choice_cb, menu_data};
-pub use crate::src::shared::options::{options, options_entry, options_table_entry};
+pub use crate::src::shared::options::{options, options_entry};
 pub use crate::src::shared::pane::{
     window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
     window_pane_tree_entry, window_pane_zentry, window_panes,
@@ -64,162 +87,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn strtol(
-        __nptr: *const ::core::ffi::c_char,
-        __endptr: *mut *mut ::core::ffi::c_char,
-        __base: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_long;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn checkshell(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn format_free(_: *mut format_tree);
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_single_from_target(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_create_from_target(_: *mut cmdq_item) -> *mut format_tree;
-    fn options_table_entry(_: *mut options_entry) -> *const options_table_entry;
-    fn options_get(_: *mut options, _: *const ::core::ffi::c_char) -> *mut options_entry;
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn options_find_choice(
-        _: *const options_table_entry,
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn environ_create() -> *mut environ;
-    fn environ_free(_: *mut environ);
-    fn environ_put(_: *mut environ, _: *const ::core::ffi::c_char, _: ::core::ffi::c_int);
-    fn tty_window_offset(
-        _: *mut tty,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: *mut u_int,
-    ) -> ::core::ffi::c_int;
-    fn args_to_vector(
-        _: *mut args,
-        _: *mut ::core::ffi::c_int,
-        _: *mut *mut *mut ::core::ffi::c_char,
-    );
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn args_first_value(_: *mut args, _: u_char) -> *mut args_value;
-    fn args_next_value(_: *mut args_value) -> *mut args_value;
-    fn args_strtonum(
-        _: *mut args,
-        _: u_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn args_percentage(
-        _: *mut args,
-        _: u_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn cmd_append_argv(
-        _: *mut ::core::ffi::c_int,
-        _: *mut *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-    );
-    fn cmd_free_argv(_: ::core::ffi::c_int, _: *mut *mut ::core::ffi::c_char);
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_event(_: *mut cmdq_item) -> *mut key_event;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn key_string_lookup_string(_: *const ::core::ffi::c_char) -> key_code;
-    fn server_client_clear_overlay(_: *mut client);
-    fn server_client_get_cwd(_: *mut client, _: *mut session) -> *const ::core::ffi::c_char;
-    fn status_at_line(_: *mut client) -> ::core::ffi::c_int;
-    fn status_line_size(_: *mut client) -> u_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn menu_create(_: *const ::core::ffi::c_char) -> *mut menu;
-    fn menu_add_item(
-        _: *mut menu,
-        _: *const menu_item,
-        _: *mut cmdq_item,
-        _: *mut client,
-        _: *mut cmd_find_state,
-    );
-    fn menu_free(_: *mut menu);
-    fn menu_display(
-        _: *mut menu,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: *mut cmdq_item,
-        _: u_int,
-        _: u_int,
-        _: *mut client,
-        _: box_lines,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: *mut cmd_find_state,
-        _: menu_choice_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> ::core::ffi::c_int;
-    fn popup_display(
-        _: ::core::ffi::c_int,
-        _: box_lines,
-        _: *mut cmdq_item,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: *mut environ,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: *mut client,
-        _: *mut session,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: popup_close_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> ::core::ffi::c_int;
-    fn popup_present(_: *mut client) -> ::core::ffi::c_int;
-    fn popup_modify(
-        _: *mut client,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: box_lines,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

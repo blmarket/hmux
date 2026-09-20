@@ -1,3 +1,10 @@
+use crate::src::arguments::{args_get, args_has, args_string};
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_queue::cmdq_error;
+use crate::src::key_bindings::{
+    key_bindings_get_table, key_bindings_remove, key_bindings_remove_table,
+};
+use crate::src::key_string::key_string_lookup_string;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item, cmds};
 pub use crate::src::shared::key::{
@@ -8,21 +15,6 @@ use crate::src::shared::arguments::*;
 use crate::src::shared::abi::*;
 use crate::src::shared::command::*;
 use crate::src::shared::key::*;
-extern "C" {
-
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn key_bindings_get_table(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> *mut key_table;
-    fn key_bindings_remove(_: *const ::core::ffi::c_char, _: key_code);
-    fn key_bindings_remove_table(_: *const ::core::ffi::c_char);
-    fn key_string_lookup_string(_: *const ::core::ffi::c_char) -> key_code;
-}
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_1;
 

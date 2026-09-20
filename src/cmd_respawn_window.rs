@@ -1,3 +1,10 @@
+use crate::src::arguments::{args_first_value, args_get, args_has, args_next_value, args_to_vector};
+use crate::src::cmd::{cmd_free_argv, cmd_get_args};
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
+use crate::src::environ::{environ_create, environ_free, environ_put};
+use crate::src::ffi::libc::free;
+use crate::src::server_fn::server_redraw_window;
+use crate::src::spawn::spawn_window;
 pub use crate::src::shared::spawn::{spawn_context};
 pub use crate::src::shared::arguments::{
     args, args_parse, args_parse_cb, args_value, args_value_c2rust_unnamed, args_value_entry,
@@ -59,29 +66,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn environ_create() -> *mut environ;
-    fn environ_free(_: *mut environ);
-    fn environ_put(_: *mut environ, _: *const ::core::ffi::c_char, _: ::core::ffi::c_int);
-    fn args_to_vector(
-        _: *mut args,
-        _: *mut ::core::ffi::c_int,
-        _: *mut *mut *mut ::core::ffi::c_char,
-    );
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_first_value(_: *mut args, _: u_char) -> *mut args_value;
-    fn args_next_value(_: *mut args_value) -> *mut args_value;
-    fn cmd_free_argv(_: ::core::ffi::c_int, _: *mut *mut ::core::ffi::c_char);
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_redraw_window(_: *mut window);
-    fn spawn_window(_: *mut spawn_context, _: *mut *mut ::core::ffi::c_char) -> *mut winlink;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

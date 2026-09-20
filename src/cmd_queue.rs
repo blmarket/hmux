@@ -1,3 +1,34 @@
+use crate::src::arguments::{
+    args_count, args_first, args_first_value, args_get, args_next, args_next_value, args_print,
+    args_string,
+};
+use crate::src::cfg::{cfg_add_cause, cfg_finished};
+use crate::src::cmd::{
+    cmd_get_args, cmd_get_entry, cmd_get_group, cmd_get_source, cmd_list_first, cmd_list_free,
+    cmd_list_next, cmd_print,
+};
+use crate::src::cmd_find::{
+    cmd_find_clear_state, cmd_find_client, cmd_find_copy_state, cmd_find_from_client,
+    cmd_find_target, cmd_find_valid_state,
+};
+use crate::src::control::{control_write, control_write_guard};
+use crate::src::events::events_fire;
+use crate::src::events_payload::{
+    event_payload_create, event_payload_set_pointer, event_payload_set_string,
+    event_payload_set_target,
+};
+use crate::src::ffi::libc::{__ctype_toupper_loc, free, getpwuid, getuid, memcpy, time};
+use crate::src::ffi::libevent::{evbuffer_add_vprintf, evbuffer_free, evbuffer_new};
+use crate::src::file::file_error;
+use crate::src::format::{format_add, format_create, format_free, format_merge};
+use crate::src::key_string::key_string_lookup_key;
+use crate::src::log::{fatalx, log_debug, log_get_level};
+use crate::src::proc::proc_get_peer_uid;
+use crate::src::server::server_add_message;
+use crate::src::server_client::{server_client_print, server_client_unref};
+use crate::src::status::status_message_set;
+use crate::src::utf8::utf8_sanitize;
+use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xvasprintf};
 pub use crate::src::shared::events::{event_payload, event_payload_free_cb, event_payload_print_cb};
 pub use crate::src::shared::arguments::{
     args, args_entry, args_parse, args_parse_cb, args_value, args_value_c2rust_unnamed,
@@ -69,139 +100,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn __ctype_toupper_loc() -> *mut *const __int32_t;
-    fn getpwuid(__uid: __uid_t) -> *mut passwd;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn time(__timer: *mut time_t) -> time_t;
-    fn getuid() -> __uid_t;
-    fn evbuffer_new() -> *mut evbuffer;
-    fn evbuffer_free(buf: *mut evbuffer);
-    fn evbuffer_add_vprintf(
-        buf: *mut evbuffer,
-        fmt: *const ::core::ffi::c_char,
-        ap: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn xvasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn proc_get_peer_uid(_: *mut tmuxpeer) -> uid_t;
-    static mut cfg_finished: ::core::ffi::c_int;
-    fn cfg_add_cause(_: *const ::core::ffi::c_char, ...);
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_merge(_: *mut format_tree, _: *mut format_tree);
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn event_payload_create() -> *mut event_payload;
-    fn event_payload_set_target(_: *mut event_payload, _: *mut cmd_find_state);
-    fn event_payload_set_string(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn event_payload_set_pointer(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut ::core::ffi::c_void,
-        _: event_payload_free_cb,
-        _: event_payload_print_cb,
-    );
-    fn events_fire(_: *const ::core::ffi::c_char, _: *mut event_payload);
-    fn args_print(_: *mut args) -> *mut ::core::ffi::c_char;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_first(_: *mut args, _: *mut *mut args_entry) -> u_char;
-    fn args_next(_: *mut *mut args_entry) -> u_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn args_first_value(_: *mut args, _: u_char) -> *mut args_value;
-    fn args_next_value(_: *mut args_value) -> *mut args_value;
-    fn cmd_find_target(
-        _: *mut cmd_find_state,
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-        _: cmd_find_type,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn cmd_find_client(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> *mut client;
-    fn cmd_find_clear_state(_: *mut cmd_find_state, _: ::core::ffi::c_int);
-    fn cmd_find_valid_state(_: *mut cmd_find_state) -> ::core::ffi::c_int;
-    fn cmd_find_copy_state(_: *mut cmd_find_state, _: *mut cmd_find_state);
-    fn cmd_find_from_client(
-        _: *mut cmd_find_state,
-        _: *mut client,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmd_get_group(_: *mut cmd) -> u_int;
-    fn cmd_get_source(_: *mut cmd, _: *mut *const ::core::ffi::c_char, _: *mut u_int);
-    fn cmd_print(_: *mut cmd) -> *mut ::core::ffi::c_char;
-    fn cmd_list_free(_: *mut cmd_list);
-    fn cmd_list_first(_: *mut cmd_list) -> *mut cmd;
-    fn cmd_list_next(_: *mut cmd) -> *mut cmd;
-    fn key_string_lookup_key(_: key_code, _: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn file_error(_: *mut client, _: *const ::core::ffi::c_char, ...);
-    fn server_add_message(_: *const ::core::ffi::c_char, ...);
-    fn server_client_unref(_: *mut client);
-    fn server_client_print(_: *mut client, _: ::core::ffi::c_int, _: *mut evbuffer);
-    fn status_message_set(
-        _: *mut client,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn control_write(_: *mut client, _: *const ::core::ffi::c_char, ...);
-    fn control_write_guard(
-        _: *mut client,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_long,
-        _: u_int,
-        _: ::core::ffi::c_int,
-    );
-    fn utf8_sanitize(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn log_get_level() -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

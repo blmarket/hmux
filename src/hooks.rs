@@ -1,3 +1,41 @@
+use crate::src::cmd::cmd_list_print;
+use crate::src::cmd_find::{
+    cmd_find_clear_state, cmd_find_copy_state, cmd_find_empty_state, cmd_find_from_nothing,
+    cmd_find_from_pane, cmd_find_from_session, cmd_find_from_winlink,
+    cmd_find_from_winlink_pane, cmd_find_valid_state,
+};
+use crate::src::cmd_parse::cmd_parse_from_string;
+use crate::src::cmd_queue::{
+    cmdq_add_formats, cmdq_append, cmdq_error, cmdq_free_state, cmdq_get_client,
+    cmdq_get_command, cmdq_get_event, cmdq_get_flags, cmdq_get_target, cmdq_insert_after,
+    cmdq_new_state, cmdq_running,
+};
+use crate::src::events::{events_add_sink, events_fire, events_remove_sink};
+use crate::src::events_payload::{
+    event_payload_add_formats, event_payload_create, event_payload_get_client,
+    event_payload_get_pointer, event_payload_get_target, event_payload_set_client,
+    event_payload_set_int, event_payload_set_pane, event_payload_set_pointer,
+    event_payload_set_session, event_payload_set_string, event_payload_set_target,
+    event_payload_set_window,
+};
+use crate::src::ffi::libc::{free, memset, strcmp};
+use crate::src::format::{
+    format_add, format_create, format_create_defaults, format_expand, format_free,
+    format_log_debug, format_merge,
+};
+use crate::src::log::{log_debug, log_get_level};
+use crate::src::monitor::{
+    monitor_add, monitor_create_session, monitor_destroy, monitor_get_fire_count,
+    monitor_get_fire_time,
+};
+use crate::src::options::{
+    options_array_first, options_array_item_value, options_array_next, options_get,
+    options_get_monitor_data, options_get_only, options_get_string, options_hook_fired,
+    options_name, options_search, options_set_monitor_data, options_set_string,
+};
+use crate::src::options_table::options_table;
+use crate::src::tmux::global_s_options;
+use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup};
 pub use crate::src::shared::events::{
     event_payload, event_payload_free_cb, event_payload_print_cb, events_cb, events_sink,
 };
@@ -70,196 +108,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut global_s_options: *mut options;
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_merge(_: *mut format_tree, _: *mut format_tree);
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn format_log_debug(_: *mut format_tree, _: *const ::core::ffi::c_char);
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_create_defaults(
-        _: *mut cmdq_item,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut format_tree;
-    fn event_payload_create() -> *mut event_payload;
-    fn event_payload_set_target(_: *mut event_payload, _: *mut cmd_find_state);
-    fn event_payload_get_target(
-        _: *mut event_payload,
-        _: *mut cmd_find_state,
-    ) -> ::core::ffi::c_int;
-    fn event_payload_set_string(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn event_payload_set_int(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    );
-    fn event_payload_set_client(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut client,
-    );
-    fn event_payload_set_session(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut session,
-    );
-    fn event_payload_set_window(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut window,
-    );
-    fn event_payload_set_pane(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut window_pane,
-    );
-    fn event_payload_set_pointer(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut ::core::ffi::c_void,
-        _: event_payload_free_cb,
-        _: event_payload_print_cb,
-    );
-    fn event_payload_add_formats(
-        _: *mut event_payload,
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    );
-    fn event_payload_get_client(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut client;
-    fn event_payload_get_pointer(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_void;
-    fn events_add_sink(
-        _: *const ::core::ffi::c_char,
-        _: events_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut events_sink;
-    fn events_remove_sink(_: *mut events_sink);
-    fn events_fire(_: *const ::core::ffi::c_char, _: *mut event_payload);
-    fn options_name(_: *mut options_entry) -> *const ::core::ffi::c_char;
-    fn options_get_monitor_data(_: *mut options_entry) -> *mut ::core::ffi::c_void;
-    fn options_set_monitor_data(_: *mut options_entry, _: *mut ::core::ffi::c_void);
-    fn options_hook_fired(_: *mut options_entry);
-    fn options_get_only(_: *mut options, _: *const ::core::ffi::c_char) -> *mut options_entry;
-    fn options_get(_: *mut options, _: *const ::core::ffi::c_char) -> *mut options_entry;
-    fn options_array_first(_: *mut options_entry) -> *mut options_array_item;
-    fn options_array_next(_: *mut options_array_item) -> *mut options_array_item;
-    fn options_array_item_value(_: *mut options_array_item) -> *mut options_value;
-    fn options_search(_: *const ::core::ffi::c_char) -> *const options_table_entry;
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn options_set_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> *mut options_entry;
-    static options_table: [options_table_entry; 0];
-    fn cmd_find_clear_state(_: *mut cmd_find_state, _: ::core::ffi::c_int);
-    fn cmd_find_empty_state(_: *mut cmd_find_state) -> ::core::ffi::c_int;
-    fn cmd_find_valid_state(_: *mut cmd_find_state) -> ::core::ffi::c_int;
-    fn cmd_find_copy_state(_: *mut cmd_find_state, _: *mut cmd_find_state);
-    fn cmd_find_from_session(_: *mut cmd_find_state, _: *mut session, _: ::core::ffi::c_int);
-    fn cmd_find_from_winlink(_: *mut cmd_find_state, _: *mut winlink, _: ::core::ffi::c_int);
-    fn cmd_find_from_winlink_pane(
-        _: *mut cmd_find_state,
-        _: *mut winlink,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    );
-    fn cmd_find_from_pane(
-        _: *mut cmd_find_state,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn cmd_find_from_nothing(_: *mut cmd_find_state, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn cmd_list_print(_: *const cmd_list, _: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn cmd_parse_from_string(
-        _: *const ::core::ffi::c_char,
-        _: *mut cmd_parse_input,
-    ) -> *mut cmd_parse_result;
-    fn cmdq_new_state(
-        _: *mut cmd_find_state,
-        _: *mut key_event,
-        _: ::core::ffi::c_int,
-    ) -> *mut cmdq_state;
-    fn cmdq_free_state(_: *mut cmdq_state);
-    fn cmdq_add_formats(_: *mut cmdq_state, _: *mut format_tree);
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_event(_: *mut cmdq_item) -> *mut key_event;
-    fn cmdq_get_flags(_: *mut cmdq_item) -> ::core::ffi::c_int;
-    fn cmdq_get_command(_: *mut cmd_list, _: *mut cmdq_state) -> *mut cmdq_item;
-    fn cmdq_insert_after(_: *mut cmdq_item, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn cmdq_append(_: *mut client, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn cmdq_running(_: *mut client) -> *mut cmdq_item;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn monitor_create_session(
-        _: *mut session,
-        _: monitor_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut monitor_set;
-    fn monitor_destroy(_: *mut monitor_set);
-    fn monitor_add(
-        _: *mut monitor_set,
-        _: *const ::core::ffi::c_char,
-        _: monitor_type,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    );
-    fn monitor_get_fire_count(_: *mut monitor_set, _: *const ::core::ffi::c_char) -> u_int;
-    fn monitor_get_fire_time(_: *mut monitor_set, _: *const ::core::ffi::c_char) -> time_t;
-    fn log_get_level() -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

@@ -1,3 +1,10 @@
+use crate::src::ffi::libc::memcpy;
+use crate::src::server_client::server_client_ensure_ranges;
+use crate::src::window::{
+    window_pane_get_pane_lines, window_pane_is_floating, window_pane_is_visible,
+    window_pane_scrollbar_reserve,
+};
+use crate::src::xmalloc::xcalloc;
 pub use crate::src::shared::pane::{window_panes_zindex};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -54,20 +61,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn server_client_ensure_ranges(_: *mut visible_ranges, _: u_int);
-    fn window_pane_is_visible(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_scrollbar_reserve(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_get_pane_lines(_: *mut window_pane) -> pane_lines;
-    fn window_pane_is_floating(_: *mut window_pane) -> ::core::ffi::c_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

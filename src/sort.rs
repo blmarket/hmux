@@ -1,5 +1,15 @@
-pub use crate::src::shared::session::{sessions};
-pub use crate::src::shared::client::{clients};
+use crate::src::ffi::libc::{qsort, strcasecmp, strcmp};
+use crate::src::key_bindings::{
+    key_bindings_first, key_bindings_first_table, key_bindings_next, key_bindings_next_table,
+};
+use crate::src::paste::paste_walk;
+pub use crate::src::server::clients;
+use crate::src::session::{sessions_RB_MINMAX, sessions_RB_NEXT};
+pub use crate::src::session::sessions;
+use crate::src::window::{
+    window_pane_index, window_pane_zindex, winlinks_RB_MINMAX, winlinks_RB_NEXT,
+};
+use crate::src::xmalloc::xreallocarray;
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -61,38 +71,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn qsort(
-        __base: *mut ::core::ffi::c_void,
-        __nmemb: size_t,
-        __size: size_t,
-        __compar: __compar_fn_t,
-    );
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strcasecmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn paste_walk(_: *mut paste_buffer) -> *mut paste_buffer;
-    fn key_bindings_first_table() -> *mut key_table;
-    fn key_bindings_next_table(_: *mut key_table) -> *mut key_table;
-    fn key_bindings_first(_: *mut key_table) -> *mut key_binding;
-    fn key_bindings_next(_: *mut key_table, _: *mut key_binding) -> *mut key_binding;
-    static mut clients: clients;
-    fn winlinks_RB_NEXT(_: *mut winlink) -> *mut winlink;
-    fn winlinks_RB_MINMAX(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn window_pane_index(_: *mut window_pane, _: *mut u_int) -> ::core::ffi::c_int;
-    fn window_pane_zindex(_: *mut window_pane, _: *mut u_int) -> ::core::ffi::c_int;
-    static mut sessions: sessions;
-    fn sessions_RB_NEXT(_: *mut session) -> *mut session;
-    fn sessions_RB_MINMAX(_: *mut sessions, _: ::core::ffi::c_int) -> *mut session;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

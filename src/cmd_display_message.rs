@@ -1,3 +1,20 @@
+use crate::src::arguments::{args_count, args_get, args_has, args_string, args_strtonum};
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_find::cmd_find_best_client;
+use crate::src::cmd_queue::{
+    cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_get_target_client, cmdq_print,
+};
+use crate::src::ffi::libc::free;
+use crate::src::ffi::libevent::{evbuffer_add_printf, evbuffer_free, evbuffer_new};
+use crate::src::format::{
+    format_create, format_defaults, format_each, format_expand_time, format_free,
+};
+use crate::src::json::{json_destroy_node, json_parse, json_to_string};
+use crate::src::log::fatalx;
+use crate::src::server_client::server_client_print;
+use crate::src::status::status_message_set;
+use crate::src::window::window_pane_start_input;
+use crate::src::xmalloc::xstrdup;
 pub use crate::src::shared::json::{json_node};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
@@ -62,87 +79,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn evbuffer_new() -> *mut evbuffer;
-    fn evbuffer_free(buf: *mut evbuffer);
-    fn evbuffer_add_printf(
-        buf: *mut evbuffer,
-        fmt: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_each(
-        _: *mut format_tree,
-        _: Option<
-            unsafe extern "C" fn(
-                *const ::core::ffi::c_char,
-                *const ::core::ffi::c_char,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn format_expand_time(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_defaults(
-        _: *mut format_tree,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    );
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn args_strtonum(
-        _: *mut args,
-        _: u_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn cmd_find_best_client(_: *mut session) -> *mut client;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_print(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_client_print(_: *mut client, _: ::core::ffi::c_int, _: *mut evbuffer);
-    fn status_message_set(
-        _: *mut client,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn window_pane_start_input(
-        _: *mut window_pane,
-        _: *mut cmdq_item,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-    fn json_parse(
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> *mut json_node;
-    fn json_destroy_node(_: *mut json_node);
-    fn json_to_string(_: *mut json_node) -> *mut ::core::ffi::c_char;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

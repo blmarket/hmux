@@ -1,3 +1,23 @@
+use crate::src::ffi::libc::{free, memcpy};
+use crate::src::format::{
+    format_add, format_create, format_create_defaults, format_defaults, format_expand,
+    format_expand_time, format_free,
+};
+use crate::src::format_draw::format_draw;
+use crate::src::grid::{grid_compare, grid_default_cell};
+use crate::src::grid_view::grid_view_get_cell;
+use crate::src::options::options_get_string;
+use crate::src::screen::{screen_free, screen_init};
+use crate::src::screen_redraw::redraw_get_status_border_cell_type;
+use crate::src::screen_write::{
+    screen_write_cell, screen_write_cursormove, screen_write_start, screen_write_stop,
+};
+use crate::src::style::{style_apply, style_ranges_free};
+use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
+use crate::src::utf8::{utf8_copy, utf8_set};
+use crate::src::window::{
+    window_pane_get_pane_lines, window_pane_get_pane_status, window_pane_index,
+};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -60,93 +80,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn format_expand_time(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_create_defaults(
-        _: *mut cmdq_item,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut format_tree;
-    fn format_defaults(
-        _: *mut format_tree,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    );
-    fn format_draw(
-        _: *mut screen_write_ctx,
-        _: *const grid_cell,
-        _: u_int,
-        _: *const ::core::ffi::c_char,
-        _: *mut style_ranges,
-        _: ::core::ffi::c_int,
-    );
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn tty_acs_double_borders(_: ::core::ffi::c_int) -> *const utf8_data;
-    fn tty_acs_heavy_borders(_: ::core::ffi::c_int) -> *const utf8_data;
-    fn tty_acs_rounded_borders(_: ::core::ffi::c_int) -> *const utf8_data;
-    static grid_default_cell: grid_cell;
-    fn grid_compare(_: *mut grid, _: *mut grid) -> ::core::ffi::c_int;
-    fn grid_view_get_cell(_: *mut grid, _: u_int, _: u_int, _: *mut grid_cell);
-    fn screen_write_start(_: *mut screen_write_ctx, _: *mut screen);
-    fn screen_write_stop(_: *mut screen_write_ctx);
-    fn screen_write_cursormove(
-        _: *mut screen_write_ctx,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn screen_write_cell(_: *mut screen_write_ctx, _: *const grid_cell);
-    fn redraw_get_status_border_cell_type(_: *mut *mut redraw_span, _: u_int)
-        -> ::core::ffi::c_int;
-    fn screen_init(_: *mut screen, _: u_int, _: u_int, _: u_int);
-    fn screen_free(_: *mut screen);
-    fn window_pane_index(_: *mut window_pane, _: *mut u_int) -> ::core::ffi::c_int;
-    fn window_pane_get_pane_lines(_: *mut window_pane) -> pane_lines;
-    fn window_pane_get_pane_status(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn utf8_set(_: *mut utf8_data, _: u_char);
-    fn utf8_copy(_: *mut utf8_data, _: *const utf8_data);
-    fn style_apply(
-        _: *mut grid_cell,
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: *mut format_tree,
-    );
-    fn style_ranges_free(_: *mut style_ranges);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

@@ -1,3 +1,16 @@
+use crate::src::compat::strtonum::strtonum;
+use crate::src::compat::utf8proc::{utf8proc_mbtowc, utf8proc_wctomb, utf8proc_wcwidth};
+use crate::src::compat::vis::vis;
+use crate::src::ffi::libc::{
+    __ctype_b_loc, __ctype_get_mb_cur_max, __errno_location, free, mbtowc, memcmp, memcpy,
+    memset, strchr, strlen, strncmp, strtoull, wctomb,
+};
+use crate::src::log::{fatalx, log_debug};
+use crate::src::options::{
+    options_array_first, options_array_item_value, options_array_next, options_get,
+};
+use crate::src::tmux::global_options;
+use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup};
 pub use crate::src::shared::command::{cmd_list, cmds};
 pub use crate::src::shared::options::{
     options, options_array, options_array_item, options_entry, options_value,
@@ -16,79 +29,6 @@ use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
-extern "C" {
-
-    fn __ctype_b_loc() -> *mut *const ::core::ffi::c_ushort;
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn __ctype_get_mb_cur_max() -> size_t;
-    fn strtoull(
-        __nptr: *const ::core::ffi::c_char,
-        __endptr: *mut *mut ::core::ffi::c_char,
-        __base: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_ulonglong;
-    fn mbtowc(
-        __pwc: *mut wchar_t,
-        __s: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn wctomb(__s: *mut ::core::ffi::c_char, __wchar: wchar_t) -> ::core::ffi::c_int;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memcmp(
-        __s1: *const ::core::ffi::c_void,
-        __s2: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strncmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn vis(
-        _: *mut ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut ::core::ffi::c_char;
-    fn strtonum(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn utf8proc_wcwidth(_: wchar_t) -> ::core::ffi::c_int;
-    fn utf8proc_mbtowc(
-        _: *mut wchar_t,
-        _: *const ::core::ffi::c_char,
-        _: size_t,
-    ) -> ::core::ffi::c_int;
-    fn utf8proc_wctomb(_: *mut ::core::ffi::c_char, _: wchar_t) -> ::core::ffi::c_int;
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xrealloc(_: *mut ::core::ffi::c_void, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    static mut global_options: *mut options;
-    fn options_get(_: *mut options, _: *const ::core::ffi::c_char) -> *mut options_entry;
-    fn options_array_first(_: *mut options_entry) -> *mut options_array_item;
-    fn options_array_next(_: *mut options_array_item) -> *mut options_array_item;
-    fn options_array_item_value(_: *mut options_array_item) -> *mut options_value;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 #[derive(Copy, Clone)]
 #[repr(C)]

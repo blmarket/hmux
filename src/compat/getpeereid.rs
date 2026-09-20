@@ -1,15 +1,8 @@
+use crate::src::ffi::libc::getsockopt;
 pub use crate::src::shared::socket::SOL_SOCKET;
 pub use crate::src::shared::abi::{__gid_t, __socklen_t, __uid_t, gid_t, socklen_t, uid_t};
 use crate::src::shared::abi::*;
-extern "C" {
-    fn getsockopt(
-        __fd: ::core::ffi::c_int,
-        __level: ::core::ffi::c_int,
-        __optname: ::core::ffi::c_int,
-        __optval: *mut ::core::ffi::c_void,
-        __optlen: *mut socklen_t,
-    ) -> ::core::ffi::c_int;
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct ucred {

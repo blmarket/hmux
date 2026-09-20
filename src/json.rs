@@ -1,3 +1,12 @@
+use crate::src::ffi::libc::{
+    __ctype_b_loc, __errno_location, free, strcmp, strlen, strncmp, strtoll,
+};
+use crate::src::ffi::libevent::{
+    evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
+    evbuffer_pullup,
+};
+use crate::src::log::fatalx;
+use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xmemdup, xrealloc, xstrdup, xstrndup};
 pub use crate::src::shared::json::{
     json_fields, json_members, json_node, json_node_aentry, json_node_c2rust_unnamed,
     json_node_oentry, json_node_type,
@@ -10,52 +19,6 @@ pub use crate::src::shared::abi::{__int64_t, int64_t, ssize_t};
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 use crate::src::shared::event::*;
 use crate::src::shared::abi::*;
-extern "C" {
-    fn __ctype_b_loc() -> *mut *const ::core::ffi::c_ushort;
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn strtoll(
-        __nptr: *const ::core::ffi::c_char,
-        __endptr: *mut *mut ::core::ffi::c_char,
-        __base: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_longlong;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strncmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn evbuffer_new() -> *mut evbuffer;
-    fn evbuffer_free(buf: *mut evbuffer);
-    fn evbuffer_get_length(buf: *const evbuffer) -> size_t;
-    fn evbuffer_add(
-        buf: *mut evbuffer,
-        data: *const ::core::ffi::c_void,
-        datlen: size_t,
-    ) -> ::core::ffi::c_int;
-    fn evbuffer_add_printf(
-        buf: *mut evbuffer,
-        fmt: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn evbuffer_pullup(buf: *mut evbuffer, size: ssize_t) -> *mut ::core::ffi::c_uchar;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xrealloc(_: *mut ::core::ffi::c_void, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xstrndup(_: *const ::core::ffi::c_char, _: size_t) -> *mut ::core::ffi::c_char;
-    fn xmemdup(_: *const ::core::ffi::c_void, _: size_t) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 pub const NODE_ARRAY: json_node_type = 4;
 pub const NODE_OBJECT: json_node_type = 3;

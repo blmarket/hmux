@@ -19,3 +19,6 @@ name = "hmux2"
 [dependencies]
 c2rust-bitfields = "0.22.1"
 libc = "0.2"
+
+[dev-dependencies]
+syn = { version = "2", features = ["full", "visit"] }

@@ -1,3 +1,31 @@
+use crate::src::cmd_queue::{cmdq_continue, cmdq_get_client};
+use crate::src::colour::{colour_palette_free, colour_palette_from_option, colour_palette_init};
+use crate::src::ffi::libc::{free, memcpy};
+use crate::src::ffi::libevent::{
+    bufferevent_write, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
+};
+use crate::src::format::{format_create_defaults, format_free};
+use crate::src::grid::grid_default_cell;
+use crate::src::hyperlinks::{hyperlinks_copy, hyperlinks_free};
+use crate::src::input::{input_free, input_init, input_parse_screen};
+use crate::src::input_keys::{input_key, input_key_get_mouse};
+use crate::src::job::{job_free, job_get_data, job_get_event, job_get_status, job_resize, job_run};
+use crate::src::options::options_get_number;
+use crate::src::screen::{screen_free, screen_init, screen_resize, screen_set_default_cursor};
+use crate::src::screen_write::{
+    screen_write_box, screen_write_clearscreen, screen_write_cursormove, screen_write_fast_copy,
+    screen_write_start, screen_write_stop,
+};
+use crate::src::server_client::{
+    server_client_clear_overlay, server_client_overlay_range, server_client_set_overlay,
+    server_client_unref,
+};
+use crate::src::server_fn::server_redraw_client;
+use crate::src::style::{style_apply, style_parse, style_set};
+use crate::src::tmux::global_w_options;
+use crate::src::tty::tty_resize;
+use crate::src::tty_draw::tty_draw_line;
+use crate::src::xmalloc::{xcalloc, xstrdup};
 pub use crate::src::shared::popup::{popup_close_cb};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -68,166 +96,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn evbuffer_get_length(buf: *const evbuffer) -> size_t;
-    fn evbuffer_drain(buf: *mut evbuffer, len: size_t) -> ::core::ffi::c_int;
-    fn evbuffer_pullup(buf: *mut evbuffer, size: ssize_t) -> *mut ::core::ffi::c_uchar;
-    fn bufferevent_write(
-        bufev: *mut bufferevent,
-        data: *const ::core::ffi::c_void,
-        size: size_t,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    static mut global_w_options: *mut options;
-    fn format_free(_: *mut format_tree);
-    fn format_create_defaults(
-        _: *mut cmdq_item,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut format_tree;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn job_run(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-        _: *mut environ,
-        _: *mut session,
-        _: *const ::core::ffi::c_char,
-        _: job_update_cb,
-        _: job_complete_cb,
-        _: job_free_cb,
-        _: *mut ::core::ffi::c_void,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut job;
-    fn job_free(_: *mut job);
-    fn job_resize(_: *mut job, _: u_int, _: u_int);
-    fn job_get_status(_: *mut job) -> ::core::ffi::c_int;
-    fn job_get_data(_: *mut job) -> *mut ::core::ffi::c_void;
-    fn job_get_event(_: *mut job) -> *mut bufferevent;
-    fn tty_draw_line(
-        _: *mut tty,
-        _: *mut screen,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: *const tty_style_ctx,
-    );
-    fn tty_resize(_: *mut tty);
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_continue(_: *mut cmdq_item);
-    fn server_client_set_overlay(
-        _: *mut client,
-        _: u_int,
-        _: overlay_check_cb,
-        _: overlay_mode_cb,
-        _: overlay_draw_cb,
-        _: overlay_key_cb,
-        _: overlay_free_cb,
-        _: overlay_resize_cb,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn server_client_clear_overlay(_: *mut client);
-    fn server_client_overlay_range(
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: *mut visible_ranges,
-    );
-    fn server_client_unref(_: *mut client);
-    fn server_redraw_client(_: *mut client);
-    fn input_init(
-        _: *mut window_pane,
-        _: *mut bufferevent,
-        _: *mut colour_palette,
-        _: *mut client,
-    ) -> *mut input_ctx;
-    fn input_free(_: *mut input_ctx);
-    fn input_parse_screen(
-        _: *mut input_ctx,
-        _: *mut screen,
-        _: screen_write_init_ctx_cb,
-        _: *mut ::core::ffi::c_void,
-        _: *const u_char,
-        _: size_t,
-    );
-    fn input_key(_: *mut screen, _: *mut bufferevent, _: key_code) -> ::core::ffi::c_int;
-    fn input_key_get_mouse(
-        _: *mut screen,
-        _: *mut mouse_event,
-        _: u_int,
-        _: u_int,
-        _: *mut *const ::core::ffi::c_char,
-        _: *mut size_t,
-    ) -> ::core::ffi::c_int;
-    fn colour_palette_init(_: *mut colour_palette);
-    fn colour_palette_free(_: *mut colour_palette);
-    fn colour_palette_from_option(_: *mut colour_palette, _: *mut options);
-    static grid_default_cell: grid_cell;
-    fn screen_write_start(_: *mut screen_write_ctx, _: *mut screen);
-    fn screen_write_stop(_: *mut screen_write_ctx);
-    fn screen_write_fast_copy(
-        _: *mut screen_write_ctx,
-        _: *mut screen,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-    );
-    fn screen_write_box(
-        _: *mut screen_write_ctx,
-        _: u_int,
-        _: u_int,
-        _: box_lines,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-    );
-    fn screen_write_cursormove(
-        _: *mut screen_write_ctx,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn screen_write_clearscreen(_: *mut screen_write_ctx, _: u_int);
-    fn screen_init(_: *mut screen, _: u_int, _: u_int, _: u_int);
-    fn screen_free(_: *mut screen);
-    fn screen_set_default_cursor(_: *mut screen, _: *mut options);
-    fn screen_resize(_: *mut screen, _: u_int, _: u_int, _: ::core::ffi::c_int);
-    fn style_parse(
-        _: *mut style,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn style_apply(
-        _: *mut grid_cell,
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: *mut format_tree,
-    );
-    fn style_set(_: *mut style, _: *const grid_cell);
-    fn hyperlinks_copy(_: *mut hyperlinks) -> *mut hyperlinks;
-    fn hyperlinks_free(_: *mut hyperlinks);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

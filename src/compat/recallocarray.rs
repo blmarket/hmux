@@ -1,24 +1,9 @@
+use crate::src::ffi::libc::{
+    __errno_location, calloc, explicit_bzero, free, getpagesize, malloc, memcpy, memset,
+};
 pub use crate::src::shared::errno::{EINVAL, ENOMEM};
 pub use crate::src::shared::limits::SIZE_MAX;
 use crate::src::shared::abi::*;
-extern "C" {
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn explicit_bzero(__s: *mut ::core::ffi::c_void, __n: size_t);
-    fn getpagesize() -> ::core::ffi::c_int;
-    fn malloc(__size: size_t) -> *mut ::core::ffi::c_void;
-    fn calloc(__nmemb: size_t, __size: size_t) -> *mut ::core::ffi::c_void;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-}
 
 pub const MUL_NO_OVERFLOW: size_t = (1 as ::core::ffi::c_int as size_t)
     << (::core::mem::size_of::<size_t>() as usize).wrapping_mul(4 as usize);

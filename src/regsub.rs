@@ -1,31 +1,10 @@
+use crate::src::ffi::libc::{memcpy, regcomp, regexec, regfree, strlen};
+use crate::src::xmalloc::{xrealloc, xstrdup};
 pub use crate::src::shared::regex::{
     __re_long_size_t, re_dfa_t, re_pattern_buffer, reg_syntax_t, regex_t, regmatch_t, regoff_t,
 };
 pub use crate::src::shared::abi::{ssize_t};
 use crate::src::shared::abi::*;
-extern "C" {
-    fn regcomp(
-        __preg: *mut regex_t,
-        __pattern: *const ::core::ffi::c_char,
-        __cflags: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn regexec(
-        __preg: *const regex_t,
-        __String: *const ::core::ffi::c_char,
-        __nmatch: size_t,
-        __pmatch: *mut regmatch_t,
-        __eflags: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn regfree(__preg: *mut regex_t);
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn xrealloc(_: *mut ::core::ffi::c_void, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-}
 
 unsafe extern "C" fn regsub_copy(
     mut buf: *mut *mut ::core::ffi::c_char,

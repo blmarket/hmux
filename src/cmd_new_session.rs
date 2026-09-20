@@ -1,3 +1,36 @@
+use crate::src::arguments::{
+    args_count, args_first_value, args_get, args_has, args_next_value, args_to_vector,
+};
+use crate::src::cfg::{cfg_finished, cfg_show_causes};
+use crate::src::cmd::{cmd_free_argv, cmd_get_args, cmd_get_entry};
+use crate::src::cmd_attach_session::cmd_attach_session;
+use crate::src::cmd_find::cmd_find_from_session;
+use crate::src::cmd_queue::{
+    cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags, cmdq_get_target,
+    cmdq_insert_hook, cmdq_print,
+};
+use crate::src::compat::strtonum::strtonum;
+use crate::src::environ::{environ_create, environ_put, environ_update};
+use crate::src::events::events_fire_session;
+use crate::src::ffi::libc::{free, sscanf, strcmp, tcgetattr};
+use crate::src::format::format_single;
+use crate::src::log::fatal;
+use crate::src::options::{
+    options_create, options_get_number, options_get_string, options_set_string,
+};
+use crate::src::proc::proc_send;
+use crate::src::server_client::{
+    server_client_check_nested, server_client_get_cwd, server_client_open,
+    server_client_set_flags, server_client_set_key_table, server_client_set_session,
+};
+use crate::src::session::{
+    session_create, session_destroy, session_find, session_group_add, session_group_contains,
+    session_group_find, session_group_new, session_group_synchronize_to, session_select,
+};
+use crate::src::spawn::spawn_window;
+use crate::src::tmux::{check_name, clean_name, global_s_options};
+use crate::src::window::winlinks_RB_MINMAX;
+use crate::src::xmalloc::xstrdup;
 pub use crate::src::shared::spawn::{spawn_context};
 pub use crate::src::shared::session::{session_group, session_group_entry, session_group_sessions};
 pub use crate::src::shared::arguments::{
@@ -65,130 +98,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn tcgetattr(__fd: ::core::ffi::c_int, __termios_p: *mut termios) -> ::core::ffi::c_int;
-    fn sscanf(
-        __s: *const ::core::ffi::c_char,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn strtonum(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    static mut global_s_options: *mut options;
-    fn clean_name(_: *const ::core::ffi::c_char, _: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn check_name(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn proc_send(
-        _: *mut tmuxpeer,
-        _: msgtype,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_void,
-        _: size_t,
-    ) -> ::core::ffi::c_int;
-    static mut cfg_finished: ::core::ffi::c_int;
-    fn cfg_show_causes(_: *mut session);
-    fn format_single(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut ::core::ffi::c_char;
-    fn events_fire_session(_: *const ::core::ffi::c_char, _: *mut session);
-    fn options_create(_: *mut options) -> *mut options;
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn options_set_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> *mut options_entry;
-    fn environ_create() -> *mut environ;
-    fn environ_put(_: *mut environ, _: *const ::core::ffi::c_char, _: ::core::ffi::c_int);
-    fn environ_update(_: *mut options, _: *mut environ, _: *mut environ);
-    fn args_to_vector(
-        _: *mut args,
-        _: *mut ::core::ffi::c_int,
-        _: *mut *mut *mut ::core::ffi::c_char,
-    );
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_first_value(_: *mut args, _: u_char) -> *mut args_value;
-    fn args_next_value(_: *mut args_value) -> *mut args_value;
-    fn cmd_find_from_session(_: *mut cmd_find_state, _: *mut session, _: ::core::ffi::c_int);
-    fn cmd_free_argv(_: ::core::ffi::c_int, _: *mut *mut ::core::ffi::c_char);
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmd_attach_session(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-    ) -> cmd_retval;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_current(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_flags(_: *mut cmdq_item) -> ::core::ffi::c_int;
-    fn cmdq_insert_hook(
-        _: *mut session,
-        _: *mut cmdq_item,
-        _: *mut cmd_find_state,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn cmdq_print(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_client_set_key_table(_: *mut client, _: *const ::core::ffi::c_char);
-    fn server_client_check_nested(_: *mut client) -> ::core::ffi::c_int;
-    fn server_client_open(_: *mut client, _: *mut *mut ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn server_client_set_session(_: *mut client, _: *mut session);
-    fn server_client_get_cwd(_: *mut client, _: *mut session) -> *const ::core::ffi::c_char;
-    fn server_client_set_flags(_: *mut client, _: *const ::core::ffi::c_char);
-    fn winlinks_RB_MINMAX(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn session_find(_: *const ::core::ffi::c_char) -> *mut session;
-    fn session_create(
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: *mut environ,
-        _: *mut options,
-        _: *mut termios,
-    ) -> *mut session;
-    fn session_destroy(_: *mut session, _: ::core::ffi::c_int, _: *const ::core::ffi::c_char);
-    fn session_select(_: *mut session, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn session_group_contains(_: *mut session) -> *mut session_group;
-    fn session_group_find(_: *const ::core::ffi::c_char) -> *mut session_group;
-    fn session_group_new(_: *const ::core::ffi::c_char) -> *mut session_group;
-    fn session_group_add(_: *mut session_group, _: *mut session);
-    fn session_group_synchronize_to(_: *mut session);
-    fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
-    fn spawn_window(_: *mut spawn_context, _: *mut *mut ::core::ffi::c_char) -> *mut winlink;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

@@ -1,49 +1,17 @@
+use crate::src::ffi::libc::{
+    __ctype_tolower_loc, calloc, free, memcmp, memcpy, memset, strchr, strlen,
+};
+use crate::src::format::format_skip;
+use crate::src::grid::grid_default_cell;
+use crate::src::style::{style_parse, style_set};
+use crate::src::utf8::{utf8_append, utf8_open, utf8_set};
+use crate::src::xmalloc::{xcalloc, xreallocarray, xstrndup};
 pub use crate::src::shared::abi::{__int32_t};
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
-extern "C" {
-    fn __ctype_tolower_loc() -> *mut *const __int32_t;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memcmp(
-        __s1: *const ::core::ffi::c_void,
-        __s2: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn calloc(__nmemb: size_t, __size: size_t) -> *mut ::core::ffi::c_void;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrndup(_: *const ::core::ffi::c_char, _: size_t) -> *mut ::core::ffi::c_char;
-    fn format_skip(
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    static grid_default_cell: grid_cell;
-    fn utf8_set(_: *mut utf8_data, _: u_char);
-    fn utf8_open(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn utf8_append(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn style_parse(
-        _: *mut style,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn style_set(_: *mut style, _: *const grid_cell);
-}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct fuzzy_char {

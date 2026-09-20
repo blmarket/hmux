@@ -1,3 +1,30 @@
+use crate::src::arguments::{args_count, args_get, args_has, args_string};
+use crate::src::cmd_find::{cmd_find_copy_state, cmd_find_valid_state};
+use crate::src::ffi::libc::{__ctype_tolower_loc, free, memcpy, strcasestr, strlen, strstr};
+use crate::src::format::{
+    format_add, format_create, format_defaults, format_defaults_paste_buffer, format_expand,
+    format_free, format_true,
+};
+use crate::src::grid::grid_default_cell;
+use crate::src::key_string::key_string_lookup_string;
+use crate::src::mode_tree::{
+    mode_tree_add, mode_tree_build, mode_tree_down, mode_tree_draw, mode_tree_each_tagged,
+    mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize,
+    mode_tree_run_command, mode_tree_start, mode_tree_up, mode_tree_zoom,
+};
+use crate::src::paste::{
+    paste_buffer_data, paste_buffer_name, paste_buffer_order, paste_free, paste_get_name,
+    paste_is_empty, paste_replace,
+};
+use crate::src::screen_write::{
+    screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
+    screen_write_start, screen_write_stop,
+};
+use crate::src::sort::sort_get_buffers;
+use crate::src::spawn::{spawn_cancel_editor, spawn_editor, spawn_get_editor_pid};
+use crate::src::utf8::utf8_strvis;
+use crate::src::window::{window_pane_find_by_id, window_pane_reset_mode};
+use crate::src::xmalloc::{xcalloc, xreallocarray, xsnprintf, xstrdup};
 pub use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_each_cb,
     mode_tree_height_cb, mode_tree_help_cb, mode_tree_item, mode_tree_key_cb, mode_tree_menu_cb,
@@ -70,172 +97,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn __ctype_tolower_loc() -> *mut *const __int32_t;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strstr(
-        __haystack: *const ::core::ffi::c_char,
-        __needle: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn strcasestr(
-        __haystack: *const ::core::ffi::c_char,
-        __needle: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn paste_buffer_name(_: *mut paste_buffer) -> *const ::core::ffi::c_char;
-    fn paste_buffer_order(_: *mut paste_buffer) -> u_int;
-    fn paste_buffer_data(_: *mut paste_buffer, _: *mut size_t) -> *const ::core::ffi::c_char;
-    fn paste_is_empty() -> ::core::ffi::c_int;
-    fn paste_get_name(_: *const ::core::ffi::c_char) -> *mut paste_buffer;
-    fn paste_free(_: *mut paste_buffer);
-    fn paste_replace(_: *mut paste_buffer, _: *mut ::core::ffi::c_char, _: size_t);
-    fn sort_get_buffers(_: *mut u_int, _: *mut sort_criteria) -> *mut *mut paste_buffer;
-    fn format_true(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_defaults(
-        _: *mut format_tree,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    );
-    fn format_defaults_paste_buffer(_: *mut format_tree, _: *mut paste_buffer);
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_find_valid_state(_: *mut cmd_find_state) -> ::core::ffi::c_int;
-    fn cmd_find_copy_state(_: *mut cmd_find_state, _: *mut cmd_find_state);
-    fn key_string_lookup_string(_: *const ::core::ffi::c_char) -> key_code;
-    static grid_default_cell: grid_cell;
-    fn screen_write_start(_: *mut screen_write_ctx, _: *mut screen);
-    fn screen_write_stop(_: *mut screen_write_ctx);
-    fn screen_write_nputs(
-        _: *mut screen_write_ctx,
-        _: ssize_t,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn screen_write_box(
-        _: *mut screen_write_ctx,
-        _: u_int,
-        _: u_int,
-        _: box_lines,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-    );
-    fn screen_write_clearcharacter(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_cursormove(
-        _: *mut screen_write_ctx,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn window_pane_find_by_id(_: u_int) -> *mut window_pane;
-    fn window_pane_reset_mode(_: *mut window_pane);
-    fn mode_tree_get_current(_: *mut mode_tree_data) -> *mut ::core::ffi::c_void;
-    fn mode_tree_each_tagged(
-        _: *mut mode_tree_data,
-        _: mode_tree_each_cb,
-        _: *mut client,
-        _: key_code,
-        _: ::core::ffi::c_int,
-    );
-    fn mode_tree_up(_: *mut mode_tree_data, _: ::core::ffi::c_int);
-    fn mode_tree_down(_: *mut mode_tree_data, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn mode_tree_start(
-        _: *mut window_pane,
-        _: *mut args,
-        _: mode_tree_build_cb,
-        _: mode_tree_draw_cb,
-        _: mode_tree_search_cb,
-        _: mode_tree_menu_cb,
-        _: mode_tree_height_cb,
-        _: mode_tree_key_cb,
-        _: mode_tree_swap_cb,
-        _: mode_tree_sort_cb,
-        _: mode_tree_help_cb,
-        _: *mut ::core::ffi::c_void,
-        _: *const menu_item,
-        _: *mut *mut screen,
-    ) -> *mut mode_tree_data;
-    fn mode_tree_zoom(_: *mut mode_tree_data, _: *mut args);
-    fn mode_tree_build(_: *mut mode_tree_data);
-    fn mode_tree_free(_: *mut mode_tree_data);
-    fn mode_tree_resize(_: *mut mode_tree_data, _: u_int, _: u_int);
-    fn mode_tree_add(
-        _: *mut mode_tree_data,
-        _: *mut mode_tree_item,
-        _: *mut ::core::ffi::c_void,
-        _: uint64_t,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> *mut mode_tree_item;
-    fn mode_tree_draw(_: *mut mode_tree_data);
-    fn mode_tree_key(
-        _: *mut mode_tree_data,
-        _: *mut client,
-        _: *mut key_code,
-        _: *mut mouse_event,
-        _: *mut u_int,
-        _: *mut u_int,
-    ) -> ::core::ffi::c_int;
-    fn mode_tree_run_command(
-        _: *mut client,
-        _: *mut cmd_find_state,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-    );
-    fn utf8_strvis(
-        _: *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: size_t,
-        _: ::core::ffi::c_int,
-    ) -> size_t;
-    fn spawn_editor(
-        _: *mut client,
-        _: *const ::core::ffi::c_char,
-        _: size_t,
-        _: spawn_finish_edit_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut spawn_editor_state;
-    fn spawn_cancel_editor(_: *mut spawn_editor_state);
-    fn spawn_get_editor_pid(_: *mut spawn_editor_state) -> pid_t;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

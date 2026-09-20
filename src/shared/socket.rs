@@ -1,41 +1,9 @@
 //! Authoritative socket declarations from the translated Linux C ABI.
+pub use crate::src::ffi::libc::{
+    sockaddr_at, sockaddr_ax25, sockaddr_dl, sockaddr_eon, sockaddr_inarp, sockaddr_ipx,
+    sockaddr_iso, sockaddr_ns, sockaddr_x25,
+};
 use super::abi::{uint16_t, uint32_t, uint8_t};
-
-extern "C" {
-    pub type sockaddr_x25;
-}
-
-extern "C" {
-    pub type sockaddr_ns;
-}
-
-extern "C" {
-    pub type sockaddr_iso;
-}
-
-extern "C" {
-    pub type sockaddr_ipx;
-}
-
-extern "C" {
-    pub type sockaddr_inarp;
-}
-
-extern "C" {
-    pub type sockaddr_eon;
-}
-
-extern "C" {
-    pub type sockaddr_dl;
-}
-
-extern "C" {
-    pub type sockaddr_ax25;
-}
-
-extern "C" {
-    pub type sockaddr_at;
-}
 
 pub type __socket_type = ::core::ffi::c_uint;
 

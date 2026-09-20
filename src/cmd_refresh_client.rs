@@ -1,3 +1,23 @@
+use crate::src::arguments::{
+    args_count, args_first_value, args_get, args_has, args_next_value, args_string,
+};
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_target_client};
+use crate::src::compat::strtonum::strtonum;
+use crate::src::control::{
+    control_add_sub, control_clear_window_size, control_continue_pane, control_pause_pane,
+    control_remove_sub, control_set_pane_off, control_set_pane_on, control_set_window_size,
+};
+use crate::src::ffi::libc::{free, sscanf, strchr, strcmp, strlen};
+use crate::src::log::log_debug;
+use crate::src::monitor::monitor_parse;
+use crate::src::resize::recalculate_sizes_now;
+use crate::src::server_client::server_client_set_flags;
+use crate::src::server_fn::{server_redraw_client, server_status_client};
+use crate::src::tty::{tty_clipboard_query, tty_set_size, tty_update_client_offset};
+use crate::src::tty_keys::tty_keys_colours;
+use crate::src::window::window_pane_find_by_id;
+use crate::src::xmalloc::xstrdup;
 pub use crate::src::shared::arguments::{
     args, args_parse, args_parse_cb, args_value, args_value_c2rust_unnamed, args_value_entry,
 };
@@ -68,76 +88,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn sscanf(
-        __s: *const ::core::ffi::c_char,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn strtonum(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn tty_update_client_offset(_: *mut client);
-    fn tty_clipboard_query(_: *mut tty);
-    fn tty_set_size(_: *mut tty, _: u_int, _: u_int, _: u_int, _: u_int);
-    fn tty_keys_colours(
-        _: *mut tty,
-        _: *const ::core::ffi::c_char,
-        _: size_t,
-        _: *mut size_t,
-        _: *mut ::core::ffi::c_int,
-        _: *mut ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn args_first_value(_: *mut args, _: u_char) -> *mut args_value;
-    fn args_next_value(_: *mut args_value) -> *mut args_value;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_client_set_flags(_: *mut client, _: *const ::core::ffi::c_char);
-    fn server_redraw_client(_: *mut client);
-    fn server_status_client(_: *mut client);
-    fn recalculate_sizes_now(_: ::core::ffi::c_int);
-    fn window_pane_find_by_id(_: u_int) -> *mut window_pane;
-    fn monitor_parse(
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-        _: *mut monitor_type,
-        _: *mut ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn control_set_pane_on(_: *mut client, _: *mut window_pane);
-    fn control_set_pane_off(_: *mut client, _: *mut window_pane);
-    fn control_continue_pane(_: *mut client, _: *mut window_pane);
-    fn control_pause_pane(_: *mut client, _: *mut window_pane);
-    fn control_set_window_size(_: *mut client, _: u_int, _: u_int, _: u_int);
-    fn control_clear_window_size(_: *mut client, _: u_int);
-    fn control_add_sub(
-        _: *mut client,
-        _: *const ::core::ffi::c_char,
-        _: monitor_type,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-    );
-    fn control_remove_sub(_: *mut client, _: *const ::core::ffi::c_char);
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

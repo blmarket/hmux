@@ -1,5 +1,21 @@
-pub use crate::src::shared::session::{sessions};
-pub use crate::src::shared::client::{clients};
+use crate::src::arguments::{args_get, args_has};
+use crate::src::cfg::{cfg_finished, cfg_show_causes};
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_find::{cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_target};
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_flags};
+use crate::src::environ::environ_update;
+use crate::src::events::events_fire_client;
+use crate::src::ffi::libc::{free, getuid, strcspn};
+use crate::src::format::format_single;
+use crate::src::proc::{proc_get_peer_uid, proc_send};
+pub use crate::src::server::clients;
+use crate::src::server_client::{
+    server_client_check_nested, server_client_detach, server_client_open,
+    server_client_set_flags, server_client_set_key_table, server_client_set_session,
+};
+use crate::src::session::session_set_current;
+pub use crate::src::session::sessions;
+use crate::src::window::window_set_active_pane;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -64,70 +80,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn strcspn(
-        __s: *const ::core::ffi::c_char,
-        __reject: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_ulong;
-    fn getuid() -> __uid_t;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn proc_send(
-        _: *mut tmuxpeer,
-        _: msgtype,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_void,
-        _: size_t,
-    ) -> ::core::ffi::c_int;
-    fn proc_get_peer_uid(_: *mut tmuxpeer) -> uid_t;
-    static mut cfg_finished: ::core::ffi::c_int;
-    fn cfg_show_causes(_: *mut session);
-    fn format_single(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut ::core::ffi::c_char;
-    fn events_fire_client(_: *const ::core::ffi::c_char, _: *mut client);
-    fn environ_update(_: *mut options, _: *mut environ, _: *mut environ);
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn cmd_find_target(
-        _: *mut cmd_find_state,
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-        _: cmd_find_type,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn cmd_find_from_winlink(_: *mut cmd_find_state, _: *mut winlink, _: ::core::ffi::c_int);
-    fn cmd_find_from_winlink_pane(
-        _: *mut cmd_find_state,
-        _: *mut winlink,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    );
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_current(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_flags(_: *mut cmdq_item) -> ::core::ffi::c_int;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    static mut clients: clients;
-    fn server_client_set_key_table(_: *mut client, _: *const ::core::ffi::c_char);
-    fn server_client_check_nested(_: *mut client) -> ::core::ffi::c_int;
-    fn server_client_open(_: *mut client, _: *mut *mut ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn server_client_set_session(_: *mut client, _: *mut session);
-    fn server_client_detach(_: *mut client, _: msgtype);
-    fn server_client_set_flags(_: *mut client, _: *const ::core::ffi::c_char);
-    fn window_set_active_pane(
-        _: *mut window,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    static mut sessions: sessions;
-    fn session_set_current(_: *mut session, _: *mut winlink) -> ::core::ffi::c_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

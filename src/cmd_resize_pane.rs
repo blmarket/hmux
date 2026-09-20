@@ -1,3 +1,22 @@
+use crate::src::arguments::{args_count, args_get, args_has, args_percentage, args_string};
+use crate::src::cmd::{cmd_get_args, cmd_mouse_pane, cmd_mouse_window};
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_event, cmdq_get_target};
+use crate::src::compat::strtonum::strtonum;
+use crate::src::events::events_fire_window;
+use crate::src::ffi::libc::free;
+use crate::src::grid::grid_remove_history;
+use crate::src::layout::{
+    layout_fix_offsets, layout_fix_panes, layout_resize_floating_pane,
+    layout_resize_floating_pane_to, layout_resize_layout, layout_resize_pane,
+    layout_resize_pane_to, layout_search_by_border, layout_set_size,
+};
+use crate::src::server_fn::{
+    server_redraw_window, server_redraw_window_borders, server_unzoom_window,
+};
+use crate::src::window::{
+    window_get_pane_status, window_pane_is_floating, window_pane_scrollbar_reserve,
+    window_redraw_active_switch, window_set_active_pane, window_unzoom, window_zoom,
+};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -60,92 +79,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn strtonum(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn events_fire_window(_: *const ::core::ffi::c_char, _: *mut window);
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn args_percentage(
-        _: *mut args,
-        _: u_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmd_mouse_window(_: *mut mouse_event, _: *mut *mut session) -> *mut winlink;
-    fn cmd_mouse_pane(
-        _: *mut mouse_event,
-        _: *mut *mut session,
-        _: *mut *mut winlink,
-    ) -> *mut window_pane;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_event(_: *mut cmdq_item) -> *mut key_event;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_redraw_window(_: *mut window);
-    fn server_redraw_window_borders(_: *mut window);
-    fn server_unzoom_window(_: *mut window);
-    fn grid_remove_history(_: *mut grid, _: u_int);
-    fn window_set_active_pane(
-        _: *mut window,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn window_redraw_active_switch(_: *mut window, _: *mut window_pane);
-    fn window_zoom(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_unzoom(_: *mut window, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn window_pane_scrollbar_reserve(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_get_pane_status(_: *mut window) -> ::core::ffi::c_int;
-    fn window_pane_is_floating(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn layout_resize_layout(
-        _: *mut window,
-        _: *mut layout_cell,
-        _: layout_type,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn layout_search_by_border(_: *mut layout_cell, _: u_int, _: u_int) -> *mut layout_cell;
-    fn layout_set_size(
-        _: *mut layout_cell,
-        _: u_int,
-        _: u_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn layout_fix_offsets(_: *mut window);
-    fn layout_fix_panes(_: *mut window, _: *mut window_pane);
-    fn layout_resize_pane(
-        _: *mut window_pane,
-        _: layout_type,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn layout_resize_pane_to(_: *mut window_pane, _: layout_type, _: u_int);
-    fn layout_resize_floating_pane(
-        _: *mut window_pane,
-        _: layout_type,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn layout_resize_floating_pane_to(
-        _: *mut window_pane,
-        _: layout_type,
-        _: u_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

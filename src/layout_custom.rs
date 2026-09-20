@@ -1,3 +1,22 @@
+use crate::src::events::events_fire_window;
+use crate::src::ffi::libc::{__ctype_b_loc, free, memcpy, memmove, qsort, sscanf, strcmp};
+use crate::src::json::{
+    json_array_first, json_array_next, json_destroy_node, json_find, json_find_array,
+    json_find_boolean, json_find_number, json_find_object, json_find_string, json_get_object,
+    json_parse,
+};
+use crate::src::layout::{
+    layout_cell_has_tiled_child, layout_cell_is_tiled, layout_count_cells, layout_create_cell,
+    layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_free_cell,
+    layout_make_leaf, layout_print_cell, layout_replace_with_node, layout_set_size,
+};
+use crate::src::resize::recalculate_sizes;
+use crate::src::window::{
+    window_count_panes, window_pane_index, window_pane_is_floating, window_pane_last_index,
+    window_pane_stack_push, window_pane_stack_remove, window_pane_zindex, window_resize,
+    window_set_active_pane,
+};
+use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xstrdup, xvasprintf};
 pub use crate::src::shared::json::{json_node};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -61,133 +80,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn __ctype_b_loc() -> *mut *const ::core::ffi::c_ushort;
-    fn qsort(
-        __base: *mut ::core::ffi::c_void,
-        __nmemb: size_t,
-        __size: size_t,
-        __compar: __compar_fn_t,
-    );
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memmove(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn sscanf(
-        __s: *const ::core::ffi::c_char,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn xvasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn events_fire_window(_: *const ::core::ffi::c_char, _: *mut window);
-    fn recalculate_sizes();
-    fn window_set_active_pane(
-        _: *mut window,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn window_resize(
-        _: *mut window,
-        _: u_int,
-        _: u_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn window_pane_index(_: *mut window_pane, _: *mut u_int) -> ::core::ffi::c_int;
-    fn window_pane_zindex(_: *mut window_pane, _: *mut u_int) -> ::core::ffi::c_int;
-    fn window_pane_last_index(_: *mut window_pane, _: *mut u_int) -> ::core::ffi::c_int;
-    fn window_count_panes(_: *mut window, _: ::core::ffi::c_int) -> u_int;
-    fn window_pane_stack_push(_: *mut window_panes, _: *mut window_pane);
-    fn window_pane_stack_remove(_: *mut window_panes, _: *mut window_pane);
-    fn window_pane_is_floating(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn layout_count_cells(_: *mut layout_cell, _: ::core::ffi::c_int) -> u_int;
-    fn layout_create_cell(_: *mut layout_cell) -> *mut layout_cell;
-    fn layout_free_cell(_: *mut layout_cell, _: ::core::ffi::c_int);
-    fn layout_print_cell(_: *mut layout_cell, _: *const ::core::ffi::c_char, _: u_int);
-    fn layout_destroy_cell(_: *mut window, _: *mut layout_cell, _: *mut *mut layout_cell);
-    fn layout_set_size(
-        _: *mut layout_cell,
-        _: u_int,
-        _: u_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn layout_make_leaf(_: *mut layout_cell, _: *mut window_pane);
-    fn layout_cell_is_tiled(_: *mut layout_cell) -> ::core::ffi::c_int;
-    fn layout_cell_has_tiled_child(_: *mut layout_cell) -> ::core::ffi::c_int;
-    fn layout_fix_offsets(_: *mut window);
-    fn layout_fix_panes(_: *mut window, _: *mut window_pane);
-    fn layout_replace_with_node(
-        _: *mut window,
-        _: *mut layout_cell,
-        _: layout_type,
-    ) -> *mut layout_cell;
-    fn json_parse(
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> *mut json_node;
-    fn json_destroy_node(_: *mut json_node);
-    fn json_find(_: *mut json_node, _: *const ::core::ffi::c_char) -> *mut json_node;
-    fn json_array_first(_: *mut json_node) -> *mut json_node;
-    fn json_array_next(_: *mut json_node) -> *mut json_node;
-    fn json_get_object(_: *mut json_node, _: *mut *mut json_node) -> ::core::ffi::c_int;
-    fn json_find_string(
-        _: *mut json_node,
-        _: *const ::core::ffi::c_char,
-        _: *mut *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn json_find_number(
-        _: *mut json_node,
-        _: *const ::core::ffi::c_char,
-        _: *mut int64_t,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn json_find_boolean(
-        _: *mut json_node,
-        _: *const ::core::ffi::c_char,
-        _: *mut ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn json_find_object(
-        _: *mut json_node,
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut json_node,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn json_find_array(
-        _: *mut json_node,
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut json_node,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;

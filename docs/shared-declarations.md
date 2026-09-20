@@ -432,3 +432,9 @@ buffers, styles, rendered terminal output, and an invalid command. Each run uses
 a unique repository-local socket, disables user configuration, and cleans up
 its server. All changes remain on `main`; no commit, push, history rewrite, or
 modification of another repository was performed.
+
+## Direct-import continuation
+
+The subsequent [direct Rust import migration](direct-imports.md) replaces all
+internal foreign declarations and groups genuine foreign declarations under
+`src/ffi`. Existing shared type paths remain available through re-exports.

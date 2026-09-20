@@ -1,4 +1,18 @@
-pub use crate::src::shared::session::{sessions};
+use crate::src::arguments::args_string;
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_find::cmd_find_from_session;
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_target};
+use crate::src::events::events_fire;
+use crate::src::events_payload::{
+    event_payload_create, event_payload_set_session, event_payload_set_string,
+    event_payload_set_target,
+};
+use crate::src::ffi::libc::{free, strcmp};
+use crate::src::format::format_single_from_target;
+use crate::src::server_fn::server_status_session;
+use crate::src::session::{session_find, sessions_RB_INSERT, sessions_RB_REMOVE};
+pub use crate::src::session::sessions;
+use crate::src::tmux::{check_name, clean_name};
 pub use crate::src::shared::events::{event_payload};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
@@ -58,45 +72,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn clean_name(_: *const ::core::ffi::c_char, _: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn check_name(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn format_single_from_target(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn event_payload_create() -> *mut event_payload;
-    fn event_payload_set_target(_: *mut event_payload, _: *mut cmd_find_state);
-    fn event_payload_set_string(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn event_payload_set_session(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut session,
-    );
-    fn events_fire(_: *const ::core::ffi::c_char, _: *mut event_payload);
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_find_from_session(_: *mut cmd_find_state, _: *mut session, _: ::core::ffi::c_int);
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_status_session(_: *mut session);
-    static mut sessions: sessions;
-    fn sessions_RB_INSERT(_: *mut sessions, _: *mut session) -> *mut session;
-    fn sessions_RB_REMOVE(_: *mut sessions, _: *mut session) -> *mut session;
-    fn session_find(_: *const ::core::ffi::c_char) -> *mut session;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

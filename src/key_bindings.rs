@@ -1,4 +1,15 @@
-pub use crate::src::shared::client::{clients};
+use crate::src::cmd::{cmd_list_all_have, cmd_list_free, cmd_list_print};
+use crate::src::cmd_parse::cmd_parse_from_string;
+use crate::src::cmd_queue::{
+    cmdq_append, cmdq_error, cmdq_free_state, cmdq_get_callback1, cmdq_get_command,
+    cmdq_insert_after, cmdq_new_state,
+};
+use crate::src::ffi::libc::{free, strcmp};
+use crate::src::key_string::key_string_lookup_key;
+use crate::src::log::{fatalx, log_debug};
+pub use crate::src::server::clients;
+use crate::src::server_client::server_client_set_key_table;
+use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup};
 pub use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -61,44 +72,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn cmd_list_free(_: *mut cmd_list);
-    fn cmd_list_print(_: *const cmd_list, _: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn cmd_list_all_have(_: *mut cmd_list, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn cmd_parse_from_string(
-        _: *const ::core::ffi::c_char,
-        _: *mut cmd_parse_input,
-    ) -> *mut cmd_parse_result;
-    fn cmdq_new_state(
-        _: *mut cmd_find_state,
-        _: *mut key_event,
-        _: ::core::ffi::c_int,
-    ) -> *mut cmdq_state;
-    fn cmdq_free_state(_: *mut cmdq_state);
-    fn cmdq_get_command(_: *mut cmd_list, _: *mut cmdq_state) -> *mut cmdq_item;
-    fn cmdq_get_callback1(
-        _: *const ::core::ffi::c_char,
-        _: cmdq_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut cmdq_item;
-    fn cmdq_insert_after(_: *mut cmdq_item, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn cmdq_append(_: *mut client, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn key_string_lookup_key(_: key_code, _: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    static mut clients: clients;
-    fn server_client_set_key_table(_: *mut client, _: *const ::core::ffi::c_char);
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

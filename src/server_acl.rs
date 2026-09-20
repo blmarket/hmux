@@ -1,4 +1,8 @@
-pub use crate::src::shared::client::{clients};
+use crate::src::cmd_queue::cmdq_print;
+use crate::src::ffi::libc::{free, getgrgid, getpwuid, getuid};
+use crate::src::proc::{proc_get_peer_gid, proc_get_peer_uid};
+pub use crate::src::server::clients;
+use crate::src::xmalloc::{xcalloc, xstrdup};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -57,19 +61,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn getgrgid(__gid: __gid_t) -> *mut group;
-    fn getpwuid(__uid: __uid_t) -> *mut passwd;
-    fn getuid() -> __uid_t;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn proc_get_peer_uid(_: *mut tmuxpeer) -> uid_t;
-    fn proc_get_peer_gid(_: *mut tmuxpeer) -> gid_t;
-    fn cmdq_print(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    static mut clients: clients;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

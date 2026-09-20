@@ -1,3 +1,13 @@
+use crate::src::ffi::libc::{
+    __errno_location, __getdelim, fclose, fopen, fputc, fputs, free, memmove, strcmp, strerror,
+    strsep,
+};
+pub use crate::src::ffi::libc::__ssize_t;
+use crate::src::log::log_debug;
+use crate::src::options::{options_get_number, options_get_string};
+use crate::src::prompt::{prompt_type, prompt_type_string};
+use crate::src::tmux::{find_home, global_options};
+use crate::src::xmalloc::{xasprintf, xreallocarray, xstrdup};
 pub use crate::src::shared::options::{options};
 pub use crate::src::shared::stdio::{
     FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
@@ -6,60 +16,7 @@ pub use crate::src::shared::abi::{__off64_t, __off_t, ssize_t};
 pub use crate::src::shared::prompt::{PROMPT_NTYPES};
 use crate::src::shared::prompt::*;
 use crate::src::shared::abi::*;
-extern "C" {
 
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn memmove(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn strsep(
-        __stringp: *mut *mut ::core::ffi::c_char,
-        __delim: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn fclose(__stream: *mut FILE) -> ::core::ffi::c_int;
-    fn fopen(
-        __filename: *const ::core::ffi::c_char,
-        __modes: *const ::core::ffi::c_char,
-    ) -> *mut FILE;
-    fn fputc(__c: ::core::ffi::c_int, __stream: *mut FILE) -> ::core::ffi::c_int;
-    fn __getdelim(
-        __lineptr: *mut *mut ::core::ffi::c_char,
-        __n: *mut size_t,
-        __delimiter: ::core::ffi::c_int,
-        __stream: *mut FILE,
-    ) -> __ssize_t;
-    fn fputs(__s: *const ::core::ffi::c_char, __stream: *mut FILE) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut global_options: *mut options;
-    fn find_home() -> *const ::core::ffi::c_char;
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn prompt_type(_: *const ::core::ffi::c_char) -> prompt_type;
-    fn prompt_type_string(_: prompt_type) -> *const ::core::ffi::c_char;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
-pub type __ssize_t = ::core::ffi::c_long;
 #[inline]
 unsafe extern "C" fn getline(
     mut __lineptr: *mut *mut ::core::ffi::c_char,

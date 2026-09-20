@@ -1,3 +1,4 @@
+use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, calloc, memcpy, realloc, strlen};
 pub use crate::src::shared::ctype::{
     _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
     _ISspace, _ISupper, _ISxdigit, ctype_code,
@@ -7,18 +8,6 @@ pub use crate::src::shared::vis::{
 };
 pub use crate::src::shared::limits::{__SCHAR_MAX__, UCHAR_MAX};
 use crate::src::shared::abi::*;
-extern "C" {
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn __ctype_b_loc() -> *mut *const ::core::ffi::c_ushort;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn calloc(__nmemb: size_t, __size: size_t) -> *mut ::core::ffi::c_void;
-    fn realloc(__ptr: *mut ::core::ffi::c_void, __size: size_t) -> *mut ::core::ffi::c_void;
-}
 
 pub const VIS_SP: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 

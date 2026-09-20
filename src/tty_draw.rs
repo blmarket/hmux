@@ -1,3 +1,14 @@
+use crate::src::ffi::libc::memcpy;
+use crate::src::grid::{grid_cells_look_equal, grid_default_cell, grid_get_line};
+use crate::src::grid_view::grid_view_get_cell;
+use crate::src::log::{fatalx, log_debug, log_get_level};
+use crate::src::screen::screen_select_cell;
+use crate::src::tty::{
+    tty_attributes, tty_check_codeset, tty_cursor, tty_default_attributes, tty_fake_bce,
+    tty_margin_off, tty_putc, tty_putcode, tty_putcode_i, tty_putn, tty_region_off,
+    tty_repeat_space, tty_update_mode,
+};
+use crate::src::tty_term::tty_term_has;
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -53,40 +64,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn tty_attributes(_: *mut tty, _: *const grid_cell, _: *const tty_style_ctx);
-    fn tty_region_off(_: *mut tty);
-    fn tty_margin_off(_: *mut tty);
-    fn tty_cursor(_: *mut tty, _: u_int, _: u_int);
-    fn tty_fake_bce(_: *const tty, _: *const grid_cell, _: u_int) -> ::core::ffi::c_int;
-    fn tty_repeat_space(_: *mut tty, _: u_int);
-    fn tty_putcode(_: *mut tty, _: tty_code_code);
-    fn tty_putcode_i(_: *mut tty, _: tty_code_code, _: ::core::ffi::c_int);
-    fn tty_putc(_: *mut tty, _: u_char);
-    fn tty_putn(_: *mut tty, _: *const ::core::ffi::c_void, _: size_t, _: u_int);
-    fn tty_default_attributes(_: *mut tty, _: u_int, _: *const tty_style_ctx);
-    fn tty_update_mode(_: *mut tty, _: ::core::ffi::c_int, _: *mut screen);
-    fn tty_check_codeset(_: *mut tty, _: *const grid_cell) -> *const grid_cell;
-    fn tty_term_has(_: *mut tty_term, _: tty_code_code) -> ::core::ffi::c_int;
-    static grid_default_cell: grid_cell;
-    fn grid_cells_look_equal(_: *const grid_cell, _: *const grid_cell) -> ::core::ffi::c_int;
-    fn grid_get_line(_: *mut grid, _: u_int) -> *mut grid_line;
-    fn grid_view_get_cell(_: *mut grid, _: u_int, _: u_int, _: *mut grid_cell);
-    fn screen_select_cell(
-        _: *mut screen,
-        _: *mut grid_cell,
-        _: *const grid_cell,
-    ) -> ::core::ffi::c_int;
-    fn log_get_level() -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

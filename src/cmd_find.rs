@@ -1,6 +1,27 @@
-pub use crate::src::shared::session::{sessions};
+use crate::src::cmd::{cmd_mouse_pane, cmd_mouse_window};
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_event};
+use crate::src::compat::strtonum::strtonum;
+use crate::src::environ::environ_find;
+use crate::src::ffi::libc::{fnmatch, free, memset, strchr, strcmp, strlcat, strlen, strncmp};
+use crate::src::log::{fatalx, log_debug};
+use crate::src::server::{marked_pane, server_check_marked};
+pub use crate::src::server::clients;
+use crate::src::session::{
+    session_alive, session_find, session_find_by_id_str, session_has, sessions_RB_MINMAX,
+    sessions_RB_NEXT,
+};
+pub use crate::src::session::sessions;
+use crate::src::window::{
+    all_window_panes, window_find_by_id_str, window_find_string, window_has_pane,
+    window_pane_at_index, window_pane_find_by_id_str, window_pane_find_down,
+    window_pane_find_left, window_pane_find_right, window_pane_find_up,
+    window_pane_next_by_number, window_pane_previous_by_number, window_pane_tree_RB_MINMAX,
+    window_pane_tree_RB_NEXT, winlink_find_by_index, winlink_next_by_number,
+    winlink_previous_by_number, winlinks_RB_MINMAX, winlinks_RB_NEXT,
+};
+use crate::src::xmalloc::{xreallocarray, xstrdup};
 pub use crate::src::shared::pane::{window_pane_tree};
-pub use crate::src::shared::client::{clients};
+
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -61,107 +82,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn fnmatch(
-        __pattern: *const ::core::ffi::c_char,
-        __name: *const ::core::ffi::c_char,
-        __flags: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strncmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strlcat(
-        __dest: *mut ::core::ffi::c_char,
-        __src: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_ulong;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn strtonum(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn environ_find(_: *mut environ, _: *const ::core::ffi::c_char) -> *mut environ_entry;
-    fn cmd_mouse_window(_: *mut mouse_event, _: *mut *mut session) -> *mut winlink;
-    fn cmd_mouse_pane(
-        _: *mut mouse_event,
-        _: *mut *mut session,
-        _: *mut *mut winlink,
-    ) -> *mut window_pane;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_event(_: *mut cmdq_item) -> *mut key_event;
-    fn cmdq_get_current(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    static mut clients: clients;
-    static mut marked_pane: cmd_find_state;
-    fn server_check_marked() -> ::core::ffi::c_int;
-    static mut all_window_panes: window_pane_tree;
-    fn winlinks_RB_NEXT(_: *mut winlink) -> *mut winlink;
-    fn winlinks_RB_MINMAX(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn window_pane_tree_RB_MINMAX(
-        _: *mut window_pane_tree,
-        _: ::core::ffi::c_int,
-    ) -> *mut window_pane;
-    fn window_pane_tree_RB_NEXT(_: *mut window_pane) -> *mut window_pane;
-    fn winlink_find_by_index(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn winlink_next_by_number(
-        _: *mut winlink,
-        _: *mut session,
-        _: ::core::ffi::c_int,
-    ) -> *mut winlink;
-    fn winlink_previous_by_number(
-        _: *mut winlink,
-        _: *mut session,
-        _: ::core::ffi::c_int,
-    ) -> *mut winlink;
-    fn window_find_by_id_str(_: *const ::core::ffi::c_char) -> *mut window;
-    fn window_find_string(_: *mut window, _: *const ::core::ffi::c_char) -> *mut window_pane;
-    fn window_has_pane(_: *mut window, _: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_at_index(_: *mut window, _: u_int) -> *mut window_pane;
-    fn window_pane_next_by_number(
-        _: *mut window,
-        _: *mut window_pane,
-        _: u_int,
-    ) -> *mut window_pane;
-    fn window_pane_previous_by_number(
-        _: *mut window,
-        _: *mut window_pane,
-        _: u_int,
-    ) -> *mut window_pane;
-    fn window_pane_find_by_id_str(_: *const ::core::ffi::c_char) -> *mut window_pane;
-    fn window_pane_find_up(_: *mut window_pane) -> *mut window_pane;
-    fn window_pane_find_down(_: *mut window_pane) -> *mut window_pane;
-    fn window_pane_find_left(_: *mut window_pane) -> *mut window_pane;
-    fn window_pane_find_right(_: *mut window_pane) -> *mut window_pane;
-    static mut sessions: sessions;
-    fn sessions_RB_NEXT(_: *mut session) -> *mut session;
-    fn sessions_RB_MINMAX(_: *mut sessions, _: ::core::ffi::c_int) -> *mut session;
-    fn session_alive(_: *mut session) -> ::core::ffi::c_int;
-    fn session_find(_: *const ::core::ffi::c_char) -> *mut session;
-    fn session_find_by_id_str(_: *const ::core::ffi::c_char) -> *mut session;
-    fn session_has(_: *mut session, _: *mut window) -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

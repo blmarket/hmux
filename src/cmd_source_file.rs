@@ -1,3 +1,17 @@
+use crate::src::arguments::{args_count, args_has, args_string};
+use crate::src::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
+use crate::src::cmd::{cmd_get_args, cmd_get_parse_flags};
+use crate::src::cmd_queue::{
+    cmdq_continue, cmdq_error, cmdq_get_callback1, cmdq_get_client, cmdq_get_target,
+    cmdq_insert_after,
+};
+use crate::src::ffi::libc::{__ctype_b_loc, free, glob, globfree, strcmp, strerror, strlen};
+use crate::src::ffi::libevent::{evbuffer_get_length, evbuffer_pullup};
+use crate::src::file::file_read;
+use crate::src::format::format_single_from_target;
+use crate::src::log::log_debug;
+use crate::src::server_client::{server_client_get_cwd, server_client_unref};
+use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xstrdup};
 pub use crate::src::shared::posix_io::{dirent, glob_t, stat};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
@@ -68,81 +82,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn __ctype_b_loc() -> *mut *const ::core::ffi::c_ushort;
-    fn glob(
-        __pattern: *const ::core::ffi::c_char,
-        __flags: ::core::ffi::c_int,
-        __errfunc: Option<
-            unsafe extern "C" fn(
-                *const ::core::ffi::c_char,
-                ::core::ffi::c_int,
-            ) -> ::core::ffi::c_int,
-        >,
-        __pglob: *mut glob_t,
-    ) -> ::core::ffi::c_int;
-    fn globfree(__pglob: *mut glob_t);
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn evbuffer_get_length(buf: *const evbuffer) -> size_t;
-    fn evbuffer_pullup(buf: *mut evbuffer, size: ssize_t) -> *mut ::core::ffi::c_uchar;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut cfg_finished: ::core::ffi::c_int;
-    fn load_cfg_from_buffer(
-        _: *const ::core::ffi::c_void,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: *mut cmd_find_state,
-        _: ::core::ffi::c_int,
-        _: *mut *mut cmdq_item,
-    ) -> ::core::ffi::c_int;
-    fn cfg_print_causes(_: *mut cmdq_item);
-    fn format_single_from_target(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmd_get_parse_flags(_: *mut cmd) -> ::core::ffi::c_int;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_callback1(
-        _: *const ::core::ffi::c_char,
-        _: cmdq_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut cmdq_item;
-    fn cmdq_insert_after(_: *mut cmdq_item, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn cmdq_continue(_: *mut cmdq_item);
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn file_read(
-        _: *mut client,
-        _: *const ::core::ffi::c_char,
-        _: client_file_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut client_file;
-    fn server_client_unref(_: *mut client);
-    fn server_client_get_cwd(_: *mut client, _: *mut session) -> *const ::core::ffi::c_char;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;

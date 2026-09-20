@@ -1,3 +1,21 @@
+use crate::src::cmd_find::{
+    cmd_find_clear_state, cmd_find_from_nothing, cmd_find_from_pane, cmd_find_from_session,
+    cmd_find_from_session_window, cmd_find_from_winlink, cmd_find_from_winlink_pane,
+    cmd_find_valid_state,
+};
+use crate::src::ffi::libc::{free, strcmp};
+use crate::src::ffi::libevent::{
+    evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
+};
+use crate::src::format::format_add;
+use crate::src::log::{fatalx, log_debug};
+use crate::src::server_client::server_client_unref;
+use crate::src::session::{session_add_ref, session_alive, session_remove_ref};
+use crate::src::window::{
+    window_add_ref, window_has_pane, window_pane_add_ref, window_pane_remove_ref,
+    window_remove_ref, winlink_find_by_index,
+};
+use crate::src::xmalloc::{xasprintf, xcalloc, xmemdup, xstrdup, xvasprintf};
 pub use crate::src::shared::events::{
     event_payload, event_payload_free_cb, event_payload_item, event_payload_item_c2rust_unnamed,
     event_payload_item_c2rust_unnamed_pointer, event_payload_item_entry, event_payload_print_cb,
@@ -59,76 +77,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn evbuffer_new() -> *mut evbuffer;
-    fn evbuffer_free(buf: *mut evbuffer);
-    fn evbuffer_get_length(buf: *const evbuffer) -> size_t;
-    fn evbuffer_add_printf(
-        buf: *mut evbuffer,
-        fmt: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn evbuffer_pullup(buf: *mut evbuffer, size: ssize_t) -> *mut ::core::ffi::c_uchar;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xmemdup(_: *const ::core::ffi::c_void, _: size_t) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn xvasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn cmd_find_clear_state(_: *mut cmd_find_state, _: ::core::ffi::c_int);
-    fn cmd_find_valid_state(_: *mut cmd_find_state) -> ::core::ffi::c_int;
-    fn cmd_find_from_session(_: *mut cmd_find_state, _: *mut session, _: ::core::ffi::c_int);
-    fn cmd_find_from_winlink(_: *mut cmd_find_state, _: *mut winlink, _: ::core::ffi::c_int);
-    fn cmd_find_from_session_window(
-        _: *mut cmd_find_state,
-        _: *mut session,
-        _: *mut window,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn cmd_find_from_winlink_pane(
-        _: *mut cmd_find_state,
-        _: *mut winlink,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    );
-    fn cmd_find_from_pane(
-        _: *mut cmd_find_state,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn cmd_find_from_nothing(_: *mut cmd_find_state, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn server_client_unref(_: *mut client);
-    fn winlink_find_by_index(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn window_has_pane(_: *mut window, _: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_add_ref(_: *mut window, _: *const ::core::ffi::c_char);
-    fn window_remove_ref(_: *mut window, _: *const ::core::ffi::c_char);
-    fn window_pane_add_ref(_: *mut window_pane, _: *const ::core::ffi::c_char);
-    fn window_pane_remove_ref(_: *mut window_pane, _: *const ::core::ffi::c_char);
-    fn session_alive(_: *mut session) -> ::core::ffi::c_int;
-    fn session_add_ref(_: *mut session, _: *const ::core::ffi::c_char);
-    fn session_remove_ref(_: *mut session, _: *const ::core::ffi::c_char);
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

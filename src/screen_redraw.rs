@@ -1,3 +1,38 @@
+use crate::src::ffi::libc::{free, memcpy, memset, strlcat, strlen};
+use crate::src::format::{format_create_defaults, format_free};
+use crate::src::grid::grid_default_cell;
+use crate::src::log::{fatalx, log_debug, log_get_level};
+use crate::src::menu::{menu_height, menu_screen, menu_update, menu_width, menu_x, menu_y};
+use crate::src::options::options_get_number;
+use crate::src::prompt::prompt_draw;
+use crate::src::screen::{screen_free, screen_init};
+use crate::src::screen_write::{
+    screen_write_clear_dirty, screen_write_start, screen_write_stop, screen_write_stop_sync,
+};
+use crate::src::server::{marked_pane, server_is_marked};
+use crate::src::status::{
+    status_line_size, status_message_redraw, status_prompt_redraw, status_redraw,
+};
+use crate::src::style::style_add;
+use crate::src::tty::{
+    tty_cell, tty_check_overlay_range, tty_cursor, tty_default_colours, tty_puts, tty_reset,
+    tty_sync_start, tty_update_mode, tty_window_offset,
+};
+use crate::src::tty_draw::tty_draw_line;
+use crate::src::tty_term::tty_term_has;
+use crate::src::utf8::utf8_set;
+use crate::src::window::{
+    window_pane_get_pane_lines, window_pane_get_pane_status, window_pane_is_floating,
+    window_pane_is_visible, window_pane_mode, window_pane_scrollbar_overlay,
+    window_pane_scrollbar_visible, windows_RB_MINMAX, windows_RB_NEXT,
+};
+pub use crate::src::window::windows;
+use crate::src::window_border::{
+    window_get_border_cell, window_get_fill_cell, window_make_pane_status,
+    window_pane_get_border_cell, window_pane_get_border_style,
+};
+use crate::src::window_copy::window_copy_get_current_offset;
+use crate::src::xmalloc::{xcalloc, xreallocarray};
 pub use crate::src::shared::prompt::{prompt_draw_data};
 pub use crate::src::shared::pane::{window_panes_zindex};
 pub use crate::src::shared::arguments::{args};
@@ -37,11 +72,7 @@ pub use crate::src::shared::tty::{
     tty_ctx_c2rust_unnamed_sel, tty_ctx_redraw_cb, tty_ctx_set_client_cb, tty_key,
     tty_style_ctx, tty_term, tty_term_entry,
 };
-pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, windows, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
-};
+pub use crate::src::shared::window::{window, window_alerts_entry, window_entry, window_mode, window_mode_entry, window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry, winlink_stack, winlink_wentry, winlinks};
 pub use crate::src::shared::environment::{environ};
 pub use crate::src::shared::borders::{
     CELL_LD, CELL_LR, CELL_LRD, CELL_LRU, CELL_LRUD, CELL_LU, CELL_NONE, CELL_RD, CELL_RU,
@@ -81,131 +112,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strlcat(
-        __dest: *mut ::core::ffi::c_char,
-        __src: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_ulong;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn format_free(_: *mut format_tree);
-    fn format_create_defaults(
-        _: *mut cmdq_item,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut format_tree;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn tty_draw_line(
-        _: *mut tty,
-        _: *mut screen,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: *const tty_style_ctx,
-    );
-    fn tty_window_offset(
-        _: *mut tty,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: *mut u_int,
-    ) -> ::core::ffi::c_int;
-    fn tty_reset(_: *mut tty);
-    fn tty_cursor(_: *mut tty, _: u_int, _: u_int);
-    fn tty_puts(_: *mut tty, _: *const ::core::ffi::c_char);
-    fn tty_cell(_: *mut tty, _: *const grid_cell, _: *const tty_style_ctx);
-    fn tty_update_mode(_: *mut tty, _: ::core::ffi::c_int, _: *mut screen);
-    fn tty_check_overlay_range(_: *mut tty, _: u_int, _: u_int, _: u_int) -> *mut visible_ranges;
-    fn tty_sync_start(_: *mut tty);
-    fn tty_default_colours(_: *mut grid_cell, _: *mut window_pane, _: *mut u_int);
-    fn tty_term_has(_: *mut tty_term, _: tty_code_code) -> ::core::ffi::c_int;
-    static mut marked_pane: cmd_find_state;
-    fn server_is_marked(
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> ::core::ffi::c_int;
-    fn status_line_size(_: *mut client) -> u_int;
-    fn status_redraw(_: *mut client) -> ::core::ffi::c_int;
-    fn status_message_redraw(_: *mut client) -> ::core::ffi::c_int;
-    fn status_prompt_redraw(_: *mut client) -> ::core::ffi::c_int;
-    fn prompt_draw(_: *mut prompt, _: *mut prompt_draw_data);
-    static grid_default_cell: grid_cell;
-    fn screen_write_start(_: *mut screen_write_ctx, _: *mut screen);
-    fn screen_write_stop(_: *mut screen_write_ctx);
-    fn screen_write_stop_sync(_: *mut window_pane);
-    fn screen_write_clear_dirty(_: *mut window_pane);
-    fn screen_init(_: *mut screen, _: u_int, _: u_int, _: u_int);
-    fn screen_free(_: *mut screen);
-    static mut windows: windows;
-    fn windows_RB_NEXT(_: *mut window) -> *mut window;
-    fn windows_RB_MINMAX(_: *mut windows, _: ::core::ffi::c_int) -> *mut window;
-    fn window_pane_is_visible(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_mode(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_scrollbar_visible(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_scrollbar_overlay(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_get_pane_lines(_: *mut window_pane) -> pane_lines;
-    fn window_pane_get_pane_status(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_is_floating(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_get_border_cell(
-        _: *mut window_pane,
-        _: pane_lines,
-        _: ::core::ffi::c_int,
-        _: *mut grid_cell,
-    );
-    fn window_get_fill_cell(_: *mut window, _: ::core::ffi::c_int, _: *mut grid_cell);
-    fn window_pane_get_border_cell(_: *mut window_pane, _: ::core::ffi::c_int, _: *mut grid_cell);
-    fn window_pane_get_border_style(_: *mut window_pane, _: *mut client, _: *mut grid_cell);
-    fn window_make_pane_status(
-        _: *mut window_pane,
-        _: *mut client,
-        _: u_int,
-        _: *mut redraw_span,
-    ) -> ::core::ffi::c_int;
-    fn window_copy_get_current_offset(
-        _: *mut window_pane,
-        _: *mut u_int,
-        _: *mut u_int,
-    ) -> ::core::ffi::c_int;
-    fn utf8_set(_: *mut utf8_data, _: u_char);
-    fn log_get_level() -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-    fn menu_update(_: *mut menu_data);
-    fn menu_screen(_: *mut menu_data) -> *mut screen;
-    fn menu_width(_: *mut menu_data) -> u_int;
-    fn menu_height(_: *mut menu_data) -> u_int;
-    fn menu_x(_: *mut menu_data) -> u_int;
-    fn menu_y(_: *mut menu_data) -> u_int;
-    fn style_add(
-        _: *mut grid_cell,
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: *mut format_tree,
-    ) -> *mut style;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

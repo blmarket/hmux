@@ -1,8 +1,44 @@
-pub use crate::src::shared::session::{
-    session_group, session_group_entry, session_group_sessions, sessions,
+use crate::src::cmd_find::cmd_find_from_pane;
+use crate::src::events::{events_fire, events_fire_winlink};
+use crate::src::events_payload::{
+    event_payload_create, event_payload_set_int, event_payload_set_pane,
+    event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
+use crate::src::ffi::libc::{close, free, getpid, gettimeofday, kill, memcpy, strlen};
+use crate::src::ffi::libevent::bufferevent_free;
+use crate::src::ffi::utempter::utempter_remove_record;
+use crate::src::format::format_single;
+use crate::src::format_draw::format_draw;
+use crate::src::grid::grid_default_cell;
+use crate::src::layout::layout_close_pane;
+use crate::src::options::{options_get_number, options_get_string};
+use crate::src::proc::proc_send;
+use crate::src::resize::recalculate_sizes;
+use crate::src::screen_write::{
+    screen_write_cursormove, screen_write_linefeed, screen_write_scrollregion,
+    screen_write_start_pane, screen_write_stop,
+};
+use crate::src::server::marked_pane;
+pub use crate::src::server::clients;
+use crate::src::server_client::{server_client_remove_pane, server_client_set_session};
+use crate::src::session::{
+    session_attach, session_destroy, session_detach, session_group_contains,
+    session_group_count, session_has, session_next_session, session_previous_session,
+    session_renumber_windows, session_select, sessions_RB_MINMAX, sessions_RB_NEXT,
+};
+pub use crate::src::session::sessions;
+use crate::src::tmux::sig2name;
+use crate::src::tty::{tty_raw, tty_stop_tty};
+use crate::src::tty_term::tty_term_string;
+use crate::src::window::{
+    window_add_ref, window_count_panes, window_pop_zoom, window_push_zoom, window_remove_pane,
+    window_remove_ref, window_unzoom, winlink_find_by_index, winlink_find_by_window,
+    winlink_remove, winlink_stack_remove,
+};
+use crate::src::xmalloc::xasprintf;
+pub use crate::src::shared::session::{session_group, session_group_entry, session_group_sessions};
 pub use crate::src::shared::events::{event_payload};
-pub use crate::src::shared::client::{clients};
+
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -77,142 +113,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn kill(__pid: __pid_t, __sig: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn close(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn getpid() -> __pid_t;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn gettimeofday(__tv: *mut timeval, __tz: *mut ::core::ffi::c_void) -> ::core::ffi::c_int;
-    fn utempter_remove_record(master_fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn bufferevent_free(bufev: *mut bufferevent);
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn sig2name(_: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn proc_send(
-        _: *mut tmuxpeer,
-        _: msgtype,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_void,
-        _: size_t,
-    ) -> ::core::ffi::c_int;
-    fn format_single(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut ::core::ffi::c_char;
-    fn event_payload_create() -> *mut event_payload;
-    fn event_payload_set_target(_: *mut event_payload, _: *mut cmd_find_state);
-    fn event_payload_set_string(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn event_payload_set_int(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    );
-    fn event_payload_set_window(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut window,
-    );
-    fn event_payload_set_pane(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut window_pane,
-    );
-    fn events_fire(_: *const ::core::ffi::c_char, _: *mut event_payload);
-    fn events_fire_winlink(_: *const ::core::ffi::c_char, _: *mut winlink);
-    fn format_draw(
-        _: *mut screen_write_ctx,
-        _: *const grid_cell,
-        _: u_int,
-        _: *const ::core::ffi::c_char,
-        _: *mut style_ranges,
-        _: ::core::ffi::c_int,
-    );
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn tty_raw(_: *mut tty, _: *const ::core::ffi::c_char);
-    fn tty_stop_tty(_: *mut tty);
-    fn tty_term_string(_: *mut tty_term, _: tty_code_code) -> *const ::core::ffi::c_char;
-    fn cmd_find_from_pane(
-        _: *mut cmd_find_state,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    static mut clients: clients;
-    static mut marked_pane: cmd_find_state;
-    fn server_client_set_session(_: *mut client, _: *mut session);
-    fn server_client_remove_pane(_: *mut window_pane);
-    fn recalculate_sizes();
-    static grid_default_cell: grid_cell;
-    fn screen_write_start_pane(_: *mut screen_write_ctx, _: *mut window_pane, _: *mut screen);
-    fn screen_write_stop(_: *mut screen_write_ctx);
-    fn screen_write_cursormove(
-        _: *mut screen_write_ctx,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn screen_write_scrollregion(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_linefeed(_: *mut screen_write_ctx, _: ::core::ffi::c_int, _: u_int);
-    fn winlink_find_by_index(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn winlink_find_by_window(_: *mut winlinks, _: *mut window) -> *mut winlink;
-    fn winlink_remove(_: *mut winlinks, _: *mut winlink);
-    fn winlink_stack_remove(_: *mut winlink_stack, _: *mut winlink);
-    fn window_unzoom(_: *mut window, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn window_push_zoom(
-        _: *mut window,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn window_pop_zoom(_: *mut window) -> ::core::ffi::c_int;
-    fn window_remove_pane(_: *mut window, _: *mut window_pane);
-    fn window_count_panes(_: *mut window, _: ::core::ffi::c_int) -> u_int;
-    fn window_add_ref(_: *mut window, _: *const ::core::ffi::c_char);
-    fn window_remove_ref(_: *mut window, _: *const ::core::ffi::c_char);
-    fn layout_close_pane(_: *mut window_pane);
-    static mut sessions: sessions;
-    fn sessions_RB_NEXT(_: *mut session) -> *mut session;
-    fn sessions_RB_MINMAX(_: *mut sessions, _: ::core::ffi::c_int) -> *mut session;
-    fn session_destroy(_: *mut session, _: ::core::ffi::c_int, _: *const ::core::ffi::c_char);
-    fn session_next_session(_: *mut session, _: *mut sort_criteria) -> *mut session;
-    fn session_previous_session(_: *mut session, _: *mut sort_criteria) -> *mut session;
-    fn session_attach(
-        _: *mut session,
-        _: *mut window,
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> *mut winlink;
-    fn session_detach(_: *mut session, _: *mut winlink) -> ::core::ffi::c_int;
-    fn session_has(_: *mut session, _: *mut window) -> ::core::ffi::c_int;
-    fn session_select(_: *mut session, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn session_group_contains(_: *mut session) -> *mut session_group;
-    fn session_group_count(_: *mut session_group) -> u_int;
-    fn session_renumber_windows(_: *mut session);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

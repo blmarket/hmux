@@ -4,14 +4,8 @@
 //! `C2RustUnnamed_*` name.  These names are not identities: their suffixes
 //! vary with the declarations present in a translation unit.  The names
 //! below describe the C subjects and are backed by layout tests.
-
+pub use crate::src::ffi::libevent::{bufferevent_ops, evbuffer, event_base};
 use super::abi::*;
-
-extern "C" {
-    pub type event_base;
-    pub type evbuffer;
-    pub type bufferevent_ops;
-}
 
 #[derive(Copy, Clone)]
 #[repr(C)]

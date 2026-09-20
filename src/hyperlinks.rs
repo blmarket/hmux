@@ -1,3 +1,6 @@
+use crate::src::ffi::libc::{free, strcmp, strlen};
+use crate::src::utf8::utf8_stravis;
+use crate::src::xmalloc::{xasprintf, xcalloc};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
 pub use crate::src::shared::hyperlinks::{
     hyperlink_inner_entry, hyperlink_list_entry, hyperlink_uri_entry, hyperlinks,
@@ -5,25 +8,6 @@ pub use crate::src::shared::hyperlinks::{
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 use crate::src::shared::abi::*;
-extern "C" {
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn utf8_stravis(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> size_t;
-}
 
 pub const MAX_HYPERLINKS: ::core::ffi::c_int = 5000 as ::core::ffi::c_int;
 pub const MAX_HYPERLINK_URI: ::core::ffi::c_int = 1024 as ::core::ffi::c_int;

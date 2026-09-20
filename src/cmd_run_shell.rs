@@ -1,3 +1,26 @@
+use crate::src::arguments::{
+    args_count, args_get, args_has, args_make_commands, args_make_commands_free,
+    args_make_commands_prepare, args_string,
+};
+use crate::src::cmd::{cmd_get_args, cmd_list_free};
+use crate::src::cmd_find::cmd_find_from_nothing;
+use crate::src::cmd_queue::{
+    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
+    cmdq_get_target, cmdq_get_target_client, cmdq_insert_after, cmdq_print,
+};
+use crate::src::ffi::libc::{__ctype_toupper_loc, free, memcpy, strtod};
+use crate::src::ffi::libevent::{
+    evbuffer_get_length, evbuffer_pullup, evbuffer_readln, event_active, event_add, event_del,
+    event_set,
+};
+use crate::src::format::{format_add, format_create_from_target, format_expand, format_free};
+use crate::src::job::{job_get_data, job_get_event, job_get_status, job_run};
+use crate::src::server_client::{server_client_get_cwd, server_client_unref};
+use crate::src::session::{session_add_ref, session_remove_ref};
+use crate::src::status::status_message_set;
+use crate::src::window::{window_pane_find_by_id, window_pane_set_mode};
+use crate::src::window_copy::{window_copy_add, window_view_mode};
+use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xsnprintf, xstrdup};
 pub use crate::src::shared::arguments::{args_command_state};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
@@ -65,148 +88,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn __ctype_toupper_loc() -> *mut *const __int32_t;
-    fn strtod(
-        __nptr: *const ::core::ffi::c_char,
-        __endptr: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_double;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn event_add(ev: *mut event, timeout: *const timeval) -> ::core::ffi::c_int;
-    fn event_del(_: *mut event) -> ::core::ffi::c_int;
-    fn event_active(ev: *mut event, res: ::core::ffi::c_int, ncalls: ::core::ffi::c_short);
-    fn event_set(
-        _: *mut event,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn evbuffer_get_length(buf: *const evbuffer) -> size_t;
-    fn evbuffer_readln(
-        buffer: *mut evbuffer,
-        n_read_out: *mut size_t,
-        eol_style: evbuffer_eol_style,
-    ) -> *mut ::core::ffi::c_char;
-    fn evbuffer_pullup(buf: *mut evbuffer, size: ssize_t) -> *mut ::core::ffi::c_uchar;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn format_free(_: *mut format_tree);
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_create_from_target(_: *mut cmdq_item) -> *mut format_tree;
-    fn job_run(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-        _: *mut environ,
-        _: *mut session,
-        _: *const ::core::ffi::c_char,
-        _: job_update_cb,
-        _: job_complete_cb,
-        _: job_free_cb,
-        _: *mut ::core::ffi::c_void,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut job;
-    fn job_get_status(_: *mut job) -> ::core::ffi::c_int;
-    fn job_get_data(_: *mut job) -> *mut ::core::ffi::c_void;
-    fn job_get_event(_: *mut job) -> *mut bufferevent;
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn args_make_commands_prepare(
-        _: *mut cmd,
-        _: *mut cmdq_item,
-        _: u_int,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut args_command_state;
-    fn args_make_commands(
-        _: *mut args_command_state,
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> *mut cmd_list;
-    fn args_make_commands_free(_: *mut args_command_state);
-    fn cmd_find_from_nothing(_: *mut cmd_find_state, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmd_list_free(_: *mut cmd_list);
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_state(_: *mut cmdq_item) -> *mut cmdq_state;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_command(_: *mut cmd_list, _: *mut cmdq_state) -> *mut cmdq_item;
-    fn cmdq_insert_after(_: *mut cmdq_item, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn cmdq_append(_: *mut client, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn cmdq_continue(_: *mut cmdq_item);
-    fn cmdq_print(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_client_unref(_: *mut client);
-    fn server_client_get_cwd(_: *mut client, _: *mut session) -> *const ::core::ffi::c_char;
-    fn status_message_set(
-        _: *mut client,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn window_pane_find_by_id(_: u_int) -> *mut window_pane;
-    fn window_pane_set_mode(
-        _: *mut window_pane,
-        _: *mut window_pane,
-        _: *const window_mode,
-        _: *mut cmdq_item,
-        _: *mut cmd_find_state,
-        _: *mut args,
-    ) -> ::core::ffi::c_int;
-    static window_view_mode: window_mode;
-    fn window_copy_add(
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn session_add_ref(_: *mut session, _: *const ::core::ffi::c_char);
-    fn session_remove_ref(_: *mut session, _: *const ::core::ffi::c_char);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

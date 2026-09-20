@@ -1,3 +1,8 @@
+use crate::src::ffi::libc::{
+    fclose, fgetc, fopen, free, ioctl, readlink, setenv, tcgetpgrp, unsetenv,
+};
+use crate::src::ffi::libevent::event_init;
+use crate::src::xmalloc::{xasprintf, xrealloc};
 pub use crate::src::shared::stdio::{EOF};
 pub use crate::src::shared::stdio::{
     FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
@@ -5,35 +10,7 @@ pub use crate::src::shared::stdio::{
 pub use crate::src::shared::abi::{__off64_t, __off_t, ssize_t};
 use crate::src::shared::event::*;
 use crate::src::shared::abi::*;
-extern "C" {
-    fn readlink(
-        __path: *const ::core::ffi::c_char,
-        __buf: *mut ::core::ffi::c_char,
-        __len: size_t,
-    ) -> ssize_t;
-    fn tcgetpgrp(__fd: ::core::ffi::c_int) -> __pid_t;
-    fn fclose(__stream: *mut FILE) -> ::core::ffi::c_int;
-    fn fopen(
-        __filename: *const ::core::ffi::c_char,
-        __modes: *const ::core::ffi::c_char,
-    ) -> *mut FILE;
-    fn fgetc(__stream: *mut FILE) -> ::core::ffi::c_int;
-    fn setenv(
-        __name: *const ::core::ffi::c_char,
-        __value: *const ::core::ffi::c_char,
-        __replace: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn unsetenv(__name: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn ioctl(__fd: ::core::ffi::c_int, __request: ::core::ffi::c_ulong, ...) -> ::core::ffi::c_int;
-    fn event_init() -> *mut event_base;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xrealloc(_: *mut ::core::ffi::c_void, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-}
+
 pub const MAXPATHLEN: ::core::ffi::c_int = PATH_MAX;
 pub const PATH_MAX: ::core::ffi::c_int = 4096 as ::core::ffi::c_int;
 

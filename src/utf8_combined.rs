@@ -1,3 +1,5 @@
+use crate::src::ffi::libc::memcmp;
+use crate::src::utf8::utf8_towc;
 pub use crate::src::shared::utf8::{wchar_t};
 pub use crate::src::shared::utf8::{
     HANGULJAMO_STATE_CHOSEONG, HANGULJAMO_STATE_COMPOSABLE, HANGULJAMO_STATE_NOT_COMPOSABLE,
@@ -6,14 +8,6 @@ pub use crate::src::shared::utf8::{
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::utf8::*;
-extern "C" {
-    fn memcmp(
-        __s1: *const ::core::ffi::c_void,
-        __s2: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn utf8_towc(_: *const utf8_data, _: *mut wchar_t) -> utf8_state;
-}
 
 pub const HANGULJAMO_CLASS_NOT_HANGULJAMO: hanguljamo_class = 0;
 pub const HANGULJAMO_CLASS_JUNGSEONG: hanguljamo_class = 2;

@@ -1,3 +1,24 @@
+use crate::src::arguments::{args_count, args_get, args_has, args_string};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_target, cmdq_print};
+use crate::src::ffi::libc::free;
+use crate::src::format::{
+    format_add, format_add_tv, format_create_from_target, format_expand, format_free,
+    format_single_from_target,
+};
+use crate::src::hooks::{
+    hooks_is_event, hooks_monitor_get, hooks_monitor_get_fire_count,
+    hooks_monitor_get_fire_time, hooks_monitor_to_string,
+};
+use crate::src::options::{
+    options_array_first, options_array_item_key, options_array_next, options_first, options_get,
+    options_get_fire_count, options_get_fire_time, options_get_monitor_data, options_get_only,
+    options_is_array, options_is_string, options_match, options_name, options_next,
+    options_scope_from_flags, options_scope_from_name, options_to_string,
+};
+pub use crate::src::options::options_table_entry;
+use crate::src::options_table::options_table;
+use crate::src::xmalloc::{xasprintf, xstrdup};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -15,9 +36,7 @@ pub use crate::src::shared::key::{
 };
 pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
 pub use crate::src::shared::menu::{menu_data};
-pub use crate::src::shared::options::{
-    options, options_array_item, options_entry, options_table_entry,
-};
+pub use crate::src::shared::options::{options, options_array_item, options_entry};
 pub use crate::src::shared::pane::{
     window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
     window_pane_tree_entry, window_pane_zentry, window_panes,
@@ -64,92 +83,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn format_free(_: *mut format_tree);
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn format_add_tv(_: *mut format_tree, _: *const ::core::ffi::c_char, _: *mut timeval);
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_single_from_target(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_create_from_target(_: *mut cmdq_item) -> *mut format_tree;
-    fn hooks_is_event(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn hooks_monitor_to_string(_: *mut options_entry) -> *mut ::core::ffi::c_char;
-    fn hooks_monitor_get(
-        _: *mut options_entry,
-        _: *mut monitor_type,
-        _: *mut ::core::ffi::c_int,
-        _: *mut *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn hooks_monitor_get_fire_count(_: *mut options_entry) -> u_int;
-    fn hooks_monitor_get_fire_time(_: *mut options_entry) -> time_t;
-    fn options_first(_: *mut options) -> *mut options_entry;
-    fn options_next(_: *mut options_entry) -> *mut options_entry;
-    fn options_name(_: *mut options_entry) -> *const ::core::ffi::c_char;
-    fn options_get_monitor_data(_: *mut options_entry) -> *mut ::core::ffi::c_void;
-    fn options_get_fire_count(_: *mut options_entry) -> u_int;
-    fn options_get_fire_time(_: *mut options_entry) -> time_t;
-    fn options_table_entry(_: *mut options_entry) -> *const options_table_entry;
-    fn options_get_only(_: *mut options, _: *const ::core::ffi::c_char) -> *mut options_entry;
-    fn options_get(_: *mut options, _: *const ::core::ffi::c_char) -> *mut options_entry;
-    fn options_array_first(_: *mut options_entry) -> *mut options_array_item;
-    fn options_array_next(_: *mut options_array_item) -> *mut options_array_item;
-    fn options_array_item_key(_: *mut options_array_item) -> *const ::core::ffi::c_char;
-    fn options_is_array(_: *mut options_entry) -> ::core::ffi::c_int;
-    fn options_is_string(_: *mut options_entry) -> ::core::ffi::c_int;
-    fn options_to_string(
-        _: *mut options_entry,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> *mut ::core::ffi::c_char;
-    fn options_match(
-        _: *const ::core::ffi::c_char,
-        _: *mut *mut ::core::ffi::c_char,
-        _: *mut ::core::ffi::c_int,
-    ) -> *mut ::core::ffi::c_char;
-    fn options_scope_from_name(
-        _: *mut args,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        _: *mut cmd_find_state,
-        _: *mut *mut options,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn options_scope_from_flags(
-        _: *mut args,
-        _: ::core::ffi::c_int,
-        _: *mut cmd_find_state,
-        _: *mut *mut options,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    static options_table: [options_table_entry; 0];
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_print(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

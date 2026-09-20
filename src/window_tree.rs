@@ -1,3 +1,48 @@
+use crate::src::arguments::{args_count, args_get, args_has, args_string};
+use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_from_winlink_pane};
+use crate::src::cmd_queue::{cmdq_append, cmdq_get_callback1};
+use crate::src::ffi::libc::{__ctype_tolower_loc, free, memcpy, strcasestr, strstr};
+use crate::src::format::{
+    format_add, format_create, format_defaults, format_expand, format_free, format_single,
+    format_true,
+};
+use crate::src::format_draw::{format_draw, format_trim_left, format_width};
+use crate::src::grid::grid_default_cell;
+use crate::src::key_string::key_string_lookup_string;
+use crate::src::mode_tree::{
+    mode_tree_add, mode_tree_align, mode_tree_build, mode_tree_count_tagged, mode_tree_draw,
+    mode_tree_each_tagged, mode_tree_expand, mode_tree_expand_current, mode_tree_free,
+    mode_tree_get_current, mode_tree_key, mode_tree_remove, mode_tree_resize,
+    mode_tree_run_command, mode_tree_set_current, mode_tree_set_prompt, mode_tree_start,
+    mode_tree_view_name, mode_tree_zoom,
+};
+use crate::src::options::options_get_string;
+use crate::src::osdep_linux::osdep_get_name;
+use crate::src::resize::recalculate_sizes;
+use crate::src::screen_write::{
+    screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_hline,
+    screen_write_preview, screen_write_putc, screen_write_puts, screen_write_vline,
+};
+use crate::src::server::{server_clear_marked, server_set_marked};
+use crate::src::server_fn::{
+    server_destroy_session, server_kill_pane, server_kill_window, server_redraw_session_group,
+    server_renumber_all,
+};
+use crate::src::session::{
+    session_destroy, session_find_by_id, session_group_contains, session_group_synchronize_from,
+    session_set_current,
+};
+use crate::src::sort::{
+    sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
+    sort_would_window_tree_swap,
+};
+use crate::src::style::style_apply;
+use crate::src::window::{
+    window_count_panes, window_has_pane, window_pane_find_by_id, window_pane_index,
+    window_pane_reset_mode, winlink_count, winlink_find_by_index, winlinks_RB_MINMAX,
+    winlinks_RB_NEXT,
+};
+use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
 pub use crate::src::shared::session::{session_group, session_group_entry, session_group_sessions};
 pub use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_each_cb,
@@ -78,255 +123,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn __ctype_tolower_loc() -> *mut *const __int32_t;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strstr(
-        __haystack: *const ::core::ffi::c_char,
-        __needle: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn strcasestr(
-        __haystack: *const ::core::ffi::c_char,
-        __needle: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn sort_would_window_tree_swap(
-        _: *mut sort_criteria,
-        _: *mut winlink,
-        _: *mut winlink,
-    ) -> ::core::ffi::c_int;
-    fn sort_get_sessions(_: *mut u_int, _: *mut sort_criteria) -> *mut *mut session;
-    fn sort_get_panes_window(
-        _: *mut window,
-        _: *mut u_int,
-        _: *mut sort_criteria,
-    ) -> *mut *mut window_pane;
-    fn sort_get_winlinks_session(
-        _: *mut session,
-        _: *mut u_int,
-        _: *mut sort_criteria,
-    ) -> *mut *mut winlink;
-    fn format_true(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_single(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_defaults(
-        _: *mut format_tree,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    );
-    fn format_draw(
-        _: *mut screen_write_ctx,
-        _: *const grid_cell,
-        _: u_int,
-        _: *const ::core::ffi::c_char,
-        _: *mut style_ranges,
-        _: ::core::ffi::c_int,
-    );
-    fn format_width(_: *const ::core::ffi::c_char) -> u_int;
-    fn format_trim_left(_: *const ::core::ffi::c_char, _: u_int) -> *mut ::core::ffi::c_char;
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_find_clear_state(_: *mut cmd_find_state, _: ::core::ffi::c_int);
-    fn cmd_find_from_winlink_pane(
-        _: *mut cmd_find_state,
-        _: *mut winlink,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    );
-    fn cmdq_get_callback1(
-        _: *const ::core::ffi::c_char,
-        _: cmdq_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut cmdq_item;
-    fn cmdq_append(_: *mut client, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn key_string_lookup_string(_: *const ::core::ffi::c_char) -> key_code;
-    fn server_set_marked(_: *mut session, _: *mut winlink, _: *mut window_pane);
-    fn server_clear_marked();
-    fn server_redraw_session_group(_: *mut session);
-    fn server_kill_pane(_: *mut window_pane);
-    fn server_kill_window(_: *mut window, _: ::core::ffi::c_int);
-    fn server_renumber_all();
-    fn server_destroy_session(_: *mut session);
-    fn recalculate_sizes();
-    static grid_default_cell: grid_cell;
-    fn screen_write_puts(
-        _: *mut screen_write_ctx,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn screen_write_putc(_: *mut screen_write_ctx, _: *const grid_cell, _: u_char);
-    fn screen_write_hline(
-        _: *mut screen_write_ctx,
-        _: u_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: box_lines,
-        _: *const grid_cell,
-    );
-    fn screen_write_vline(
-        _: *mut screen_write_ctx,
-        _: u_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: *const grid_cell,
-    );
-    fn screen_write_box(
-        _: *mut screen_write_ctx,
-        _: u_int,
-        _: u_int,
-        _: box_lines,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-    );
-    fn screen_write_preview(_: *mut screen_write_ctx, _: *mut screen, _: u_int, _: u_int);
-    fn screen_write_clearcharacter(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_cursormove(
-        _: *mut screen_write_ctx,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn winlinks_RB_NEXT(_: *mut winlink) -> *mut winlink;
-    fn winlinks_RB_MINMAX(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn winlink_find_by_index(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn winlink_count(_: *mut winlinks) -> u_int;
-    fn window_has_pane(_: *mut window, _: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_index(_: *mut window_pane, _: *mut u_int) -> ::core::ffi::c_int;
-    fn window_count_panes(_: *mut window, _: ::core::ffi::c_int) -> u_int;
-    fn window_pane_find_by_id(_: u_int) -> *mut window_pane;
-    fn window_pane_reset_mode(_: *mut window_pane);
-    fn mode_tree_count_tagged(_: *mut mode_tree_data) -> u_int;
-    fn mode_tree_get_current(_: *mut mode_tree_data) -> *mut ::core::ffi::c_void;
-    fn mode_tree_expand_current(_: *mut mode_tree_data);
-    fn mode_tree_expand(_: *mut mode_tree_data, _: uint64_t);
-    fn mode_tree_set_current(_: *mut mode_tree_data, _: uint64_t) -> ::core::ffi::c_int;
-    fn mode_tree_each_tagged(
-        _: *mut mode_tree_data,
-        _: mode_tree_each_cb,
-        _: *mut client,
-        _: key_code,
-        _: ::core::ffi::c_int,
-    );
-    fn mode_tree_start(
-        _: *mut window_pane,
-        _: *mut args,
-        _: mode_tree_build_cb,
-        _: mode_tree_draw_cb,
-        _: mode_tree_search_cb,
-        _: mode_tree_menu_cb,
-        _: mode_tree_height_cb,
-        _: mode_tree_key_cb,
-        _: mode_tree_swap_cb,
-        _: mode_tree_sort_cb,
-        _: mode_tree_help_cb,
-        _: *mut ::core::ffi::c_void,
-        _: *const menu_item,
-        _: *mut *mut screen,
-    ) -> *mut mode_tree_data;
-    fn mode_tree_zoom(_: *mut mode_tree_data, _: *mut args);
-    fn mode_tree_build(_: *mut mode_tree_data);
-    fn mode_tree_free(_: *mut mode_tree_data);
-    fn mode_tree_resize(_: *mut mode_tree_data, _: u_int, _: u_int);
-    fn mode_tree_add(
-        _: *mut mode_tree_data,
-        _: *mut mode_tree_item,
-        _: *mut ::core::ffi::c_void,
-        _: uint64_t,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> *mut mode_tree_item;
-    fn mode_tree_view_name(_: *mut mode_tree_data, _: *const ::core::ffi::c_char);
-    fn mode_tree_align(_: *mut mode_tree_item, _: ::core::ffi::c_int);
-    fn mode_tree_remove(_: *mut mode_tree_data, _: *mut mode_tree_item);
-    fn mode_tree_draw(_: *mut mode_tree_data);
-    fn mode_tree_key(
-        _: *mut mode_tree_data,
-        _: *mut client,
-        _: *mut key_code,
-        _: *mut mouse_event,
-        _: *mut u_int,
-        _: *mut u_int,
-    ) -> ::core::ffi::c_int;
-    fn mode_tree_set_prompt(
-        _: *mut mode_tree_data,
-        _: *mut client,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: prompt_type,
-        _: ::core::ffi::c_int,
-        _: mode_tree_prompt_input_cb,
-        _: prompt_free_cb,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn mode_tree_run_command(
-        _: *mut client,
-        _: *mut cmd_find_state,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-    );
-    fn session_find_by_id(_: u_int) -> *mut session;
-    fn session_destroy(_: *mut session, _: ::core::ffi::c_int, _: *const ::core::ffi::c_char);
-    fn session_set_current(_: *mut session, _: *mut winlink) -> ::core::ffi::c_int;
-    fn session_group_contains(_: *mut session) -> *mut session_group;
-    fn session_group_synchronize_from(_: *mut session);
-    fn osdep_get_name(
-        _: ::core::ffi::c_int,
-        _: *mut ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn style_apply(
-        _: *mut grid_cell,
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: *mut format_tree,
-    );
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

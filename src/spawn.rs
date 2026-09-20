@@ -1,6 +1,54 @@
+use crate::src::cmd::{cmd_copy_argv, cmd_free_argv, cmd_log_argv, cmd_stringify_argv};
+use crate::src::cmd_find::cmd_find_from_winlink_pane;
+use crate::src::cmd_queue::{cmdq_get_client, cmdq_get_target};
+use crate::src::compat::fdforkpty::fdforkpty;
+use crate::src::compat::systemd::systemd_move_to_new_cgroup;
+use crate::src::control::control_reset_pane;
+use crate::src::environ::{
+    environ_copy, environ_create, environ_find, environ_for_session, environ_free, environ_log,
+    environ_push, environ_set,
+};
+use crate::src::events::{events_fire, events_fire_window, events_fire_winlink};
+use crate::src::events_payload::{
+    event_payload_create, event_payload_set_int, event_payload_set_pane,
+    event_payload_set_session, event_payload_set_string, event_payload_set_target,
+    event_payload_set_window,
+};
+use crate::src::ffi::libc::{
+    __errno_location, _exit, chdir, close, closefrom, execl, execvp, fclose, fdopen, fopen,
+    fread, free, fseeko, ftello, fwrite, getcwd, getpid, kill, malloc, memcpy, memset, mkstemp,
+    sigfillset, sigprocmask, strerror, strrchr, tcgetattr, tcsetattr, unlink,
+};
+use crate::src::ffi::libevent::bufferevent_free;
+use crate::src::ffi::utempter::utempter_add_record;
+use crate::src::format::format_single;
+use crate::src::input::input_free;
+use crate::src::layout::{
+    layout_assign_pane, layout_close_pane, layout_floating_pane, layout_free, layout_init,
+};
+use crate::src::log::{log_close, log_debug};
+use crate::src::names::default_window_name;
+use crate::src::options::{options_get_number, options_get_string, options_set_number};
+use crate::src::proc::proc_clear_signals;
+use crate::src::resize::default_window_size;
+use crate::src::screen::screen_reinit;
+use crate::src::server::server_proc;
+pub use crate::src::server::clients;
+use crate::src::server_client::{server_client_get_cwd, server_client_remove_pane};
+use crate::src::session::{session_group_synchronize_from, session_select};
+use crate::src::tmux::{checkshell, find_home, global_options, ptm_fd};
+use crate::src::window::{
+    window_add_pane, window_create, window_destroy_panes, window_pane_index,
+    window_pane_reset_mode_all, window_pane_set_event, window_pop_zoom, window_push_zoom,
+    window_redraw_active_switch, window_remove_pane, window_set_active_pane, winlink_add,
+    winlink_find_by_index, winlink_remove, winlink_set_window, winlink_stack_remove,
+};
+pub use crate::src::window::window_pane_resize;
+use crate::src::window_border::window_set_fill_cells;
+use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup};
 pub use crate::src::shared::spawn::{spawn_context};
 pub use crate::src::shared::events::{event_payload};
-pub use crate::src::shared::client::{clients};
+
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -47,10 +95,7 @@ pub use crate::src::shared::spawn::{
 pub use crate::src::shared::window::{
     WINDOW_ZOOMED, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL, WINLINK_SILENCE,
 };
-pub use crate::src::shared::pane::{
-    PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_STATUSDRAWN, PANE_STATUSREADY,
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-};
+pub use crate::src::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_STATUSDRAWN, PANE_STATUSREADY, window_pane_offset, window_pane_resize_entry, window_pane_resizes};
 pub use crate::src::shared::screen::{MODE_CRLF, MODE_CURSOR, screen, screen_sel, screen_titles};
 pub use crate::src::shared::stdio::{
     FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
@@ -73,263 +118,7 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
 
-    fn kill(__pid: __pid_t, __sig: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn sigfillset(__set: *mut sigset_t) -> ::core::ffi::c_int;
-    fn sigprocmask(
-        __how: ::core::ffi::c_int,
-        __set: *const sigset_t,
-        __oset: *mut sigset_t,
-    ) -> ::core::ffi::c_int;
-    fn close(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn closefrom(__lowfd: ::core::ffi::c_int);
-    fn chdir(__path: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn getcwd(__buf: *mut ::core::ffi::c_char, __size: size_t) -> *mut ::core::ffi::c_char;
-    fn execl(
-        __path: *const ::core::ffi::c_char,
-        __arg: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn execvp(
-        __file: *const ::core::ffi::c_char,
-        __argv: *const *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn _exit(__status: ::core::ffi::c_int) -> !;
-    fn getpid() -> __pid_t;
-    fn unlink(__name: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn fclose(__stream: *mut FILE) -> ::core::ffi::c_int;
-    fn fopen(
-        __filename: *const ::core::ffi::c_char,
-        __modes: *const ::core::ffi::c_char,
-    ) -> *mut FILE;
-    fn fdopen(__fd: ::core::ffi::c_int, __modes: *const ::core::ffi::c_char) -> *mut FILE;
-    fn fread(
-        __ptr: *mut ::core::ffi::c_void,
-        __size: size_t,
-        __n: size_t,
-        __stream: *mut FILE,
-    ) -> ::core::ffi::c_ulong;
-    fn fwrite(
-        __ptr: *const ::core::ffi::c_void,
-        __size: size_t,
-        __n: size_t,
-        __s: *mut FILE,
-    ) -> ::core::ffi::c_ulong;
-    fn fseeko(
-        __stream: *mut FILE,
-        __off: __off_t,
-        __whence: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn ftello(__stream: *mut FILE) -> __off_t;
-    fn mkstemp(__template: *mut ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strrchr(
-        __s: *const ::core::ffi::c_char,
-        __c: ::core::ffi::c_int,
-    ) -> *mut ::core::ffi::c_char;
-    fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn tcgetattr(__fd: ::core::ffi::c_int, __termios_p: *mut termios) -> ::core::ffi::c_int;
-    fn tcsetattr(
-        __fd: ::core::ffi::c_int,
-        __optional_actions: ::core::ffi::c_int,
-        __termios_p: *const termios,
-    ) -> ::core::ffi::c_int;
-    fn utempter_add_record(
-        master_fd: ::core::ffi::c_int,
-        hostname: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn bufferevent_free(bufev: *mut bufferevent);
-    fn malloc(__size: size_t) -> *mut ::core::ffi::c_void;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn fdforkpty(
-        _: ::core::ffi::c_int,
-        _: *mut ::core::ffi::c_int,
-        _: *mut ::core::ffi::c_char,
-        _: *mut termios,
-        _: *mut winsize,
-    ) -> pid_t;
-    fn systemd_move_to_new_cgroup(_: *mut *mut ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut global_options: *mut options;
-    static mut ptm_fd: ::core::ffi::c_int;
-    fn checkshell(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn find_home() -> *const ::core::ffi::c_char;
-    fn proc_clear_signals(_: *mut tmuxproc, _: ::core::ffi::c_int);
-    fn format_single(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut ::core::ffi::c_char;
-    fn event_payload_create() -> *mut event_payload;
-    fn event_payload_set_target(_: *mut event_payload, _: *mut cmd_find_state);
-    fn event_payload_set_string(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn event_payload_set_int(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    );
-    fn event_payload_set_session(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut session,
-    );
-    fn event_payload_set_window(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut window,
-    );
-    fn event_payload_set_pane(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut window_pane,
-    );
-    fn events_fire(_: *const ::core::ffi::c_char, _: *mut event_payload);
-    fn events_fire_window(_: *const ::core::ffi::c_char, _: *mut window);
-    fn events_fire_winlink(_: *const ::core::ffi::c_char, _: *mut winlink);
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn options_set_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-    ) -> *mut options_entry;
-    fn environ_create() -> *mut environ;
-    fn environ_free(_: *mut environ);
-    fn environ_copy(_: *mut environ, _: *mut environ);
-    fn environ_find(_: *mut environ, _: *const ::core::ffi::c_char) -> *mut environ_entry;
-    fn environ_set(
-        _: *mut environ,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn environ_push(_: *mut environ);
-    fn environ_log(_: *mut environ, _: *const ::core::ffi::c_char, ...);
-    fn environ_for_session(_: *mut session, _: ::core::ffi::c_int) -> *mut environ;
-    fn cmd_find_from_winlink_pane(
-        _: *mut cmd_find_state,
-        _: *mut winlink,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    );
-    fn cmd_log_argv(
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn cmd_copy_argv(
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> *mut *mut ::core::ffi::c_char;
-    fn cmd_free_argv(_: ::core::ffi::c_int, _: *mut *mut ::core::ffi::c_char);
-    fn cmd_stringify_argv(
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    static mut server_proc: *mut tmuxproc;
-    static mut clients: clients;
-    fn server_client_get_cwd(_: *mut client, _: *mut session) -> *const ::core::ffi::c_char;
-    fn server_client_remove_pane(_: *mut window_pane);
-    fn default_window_size(
-        _: *mut client,
-        _: *mut session,
-        _: *mut window,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: ::core::ffi::c_int,
-    );
-    fn input_free(_: *mut input_ctx);
-    fn screen_reinit(_: *mut screen, _: ::core::ffi::c_int);
-    fn winlink_find_by_index(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn winlink_add(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn winlink_set_window(_: *mut winlink, _: *mut window);
-    fn winlink_remove(_: *mut winlinks, _: *mut winlink);
-    fn winlink_stack_remove(_: *mut winlink_stack, _: *mut winlink);
-    fn window_create(_: u_int, _: u_int, _: u_int, _: u_int) -> *mut window;
-    fn window_pane_set_event(_: *mut window_pane);
-    fn window_set_active_pane(
-        _: *mut window,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn window_redraw_active_switch(_: *mut window, _: *mut window_pane);
-    fn window_add_pane(
-        _: *mut window,
-        _: *mut window_pane,
-        _: u_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut window_pane;
-    fn window_push_zoom(
-        _: *mut window,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn window_pop_zoom(_: *mut window) -> ::core::ffi::c_int;
-    fn window_remove_pane(_: *mut window, _: *mut window_pane);
-    fn window_pane_index(_: *mut window_pane, _: *mut u_int) -> ::core::ffi::c_int;
-    fn window_destroy_panes(_: *mut window);
-    fn window_pane_resize(_: *mut window_pane, _: u_int, _: u_int);
-    fn window_pane_reset_mode_all(_: *mut window_pane);
-    fn window_set_fill_cells(_: *mut window);
-    fn layout_init(_: *mut window, _: *mut window_pane);
-    fn layout_free(_: *mut window, _: ::core::ffi::c_int);
-    fn layout_assign_pane(_: *mut layout_cell, _: *mut window_pane, _: ::core::ffi::c_int);
-    fn layout_floating_pane(
-        _: *mut window,
-        _: *mut window_pane,
-        _: *mut layout_geometry,
-    ) -> *mut layout_cell;
-    fn layout_close_pane(_: *mut window_pane);
-    fn default_window_name(_: *mut window) -> *mut ::core::ffi::c_char;
-    fn control_reset_pane(_: *mut client, _: *mut window_pane);
-    fn session_select(_: *mut session, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn session_group_synchronize_from(_: *mut session);
-    fn log_close();
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
 pub type off_t = __off_t;
 
 pub type uintmax_t = ::libc::uintmax_t;

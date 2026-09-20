@@ -1,3 +1,21 @@
+use crate::src::arguments::{args_count, args_has, args_string};
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_get_target_client};
+use crate::src::ffi::libc::{
+    __errno_location, _exit, close, closefrom, dup2, execl, fork, free, memcpy, open, setpgid,
+    sigfillset, sigprocmask, socketpair, strerror,
+};
+use crate::src::ffi::libevent::{
+    bufferevent_enable, bufferevent_free, bufferevent_new, bufferevent_write, evbuffer_drain,
+    evbuffer_get_length, evbuffer_pullup,
+};
+use crate::src::format::{format_create, format_defaults, format_expand_time, format_free};
+use crate::src::log::{fatalx, log_debug};
+use crate::src::proc::proc_clear_signals;
+use crate::src::server::server_proc;
+use crate::src::server_fn::server_destroy_pane;
+use crate::src::tmux::setblocking;
+use crate::src::window::{window_pane_destroy_ready, window_pane_exited};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -67,99 +85,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn socketpair(
-        __domain: ::core::ffi::c_int,
-        __type: ::core::ffi::c_int,
-        __protocol: ::core::ffi::c_int,
-        __fds: *mut ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn open(
-        __file: *const ::core::ffi::c_char,
-        __oflag: ::core::ffi::c_int,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn sigfillset(__set: *mut sigset_t) -> ::core::ffi::c_int;
-    fn sigprocmask(
-        __how: ::core::ffi::c_int,
-        __set: *const sigset_t,
-        __oset: *mut sigset_t,
-    ) -> ::core::ffi::c_int;
-    fn close(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn closefrom(__lowfd: ::core::ffi::c_int);
-    fn dup2(__fd: ::core::ffi::c_int, __fd2: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn execl(
-        __path: *const ::core::ffi::c_char,
-        __arg: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn _exit(__status: ::core::ffi::c_int) -> !;
-    fn setpgid(__pid: __pid_t, __pgid: __pid_t) -> ::core::ffi::c_int;
-    fn fork() -> __pid_t;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn evbuffer_get_length(buf: *const evbuffer) -> size_t;
-    fn evbuffer_drain(buf: *mut evbuffer, len: size_t) -> ::core::ffi::c_int;
-    fn evbuffer_pullup(buf: *mut evbuffer, size: ssize_t) -> *mut ::core::ffi::c_uchar;
-    fn bufferevent_free(bufev: *mut bufferevent);
-    fn bufferevent_write(
-        bufev: *mut bufferevent,
-        data: *const ::core::ffi::c_void,
-        size: size_t,
-    ) -> ::core::ffi::c_int;
-    fn bufferevent_enable(
-        bufev: *mut bufferevent,
-        event: ::core::ffi::c_short,
-    ) -> ::core::ffi::c_int;
-    fn bufferevent_new(
-        fd: ::core::ffi::c_int,
-        readcb: bufferevent_data_cb,
-        writecb: bufferevent_data_cb,
-        errorcb: bufferevent_event_cb,
-        cbarg: *mut ::core::ffi::c_void,
-    ) -> *mut bufferevent;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn setblocking(_: ::core::ffi::c_int, _: ::core::ffi::c_int);
-    fn proc_clear_signals(_: *mut tmuxproc, _: ::core::ffi::c_int);
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_expand_time(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_defaults(
-        _: *mut format_tree,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    );
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    static mut server_proc: *mut tmuxproc;
-    fn server_destroy_pane(_: *mut window_pane, _: ::core::ffi::c_int);
-    fn window_pane_destroy_ready(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_exited(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

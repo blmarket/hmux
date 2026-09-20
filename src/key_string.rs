@@ -1,3 +1,8 @@
+use crate::src::ffi::libc::{
+    __ctype_tolower_loc, free, memcpy, snprintf, sscanf, strcasecmp, strlcat, strlen, wctomb,
+};
+use crate::src::utf8::{utf8_append, utf8_from_data, utf8_fromcstr, utf8_open, utf8_to_data};
+use crate::src::xmalloc::xsnprintf;
 pub use crate::src::shared::control_character::{
     C0_ASC, C0_BEL, C0_BS, C0_CAN, C0_CR, C0_DC1, C0_DC2, C0_DC3, C0_DC4, C0_DLE, C0_EM, C0_ENQ,
     C0_EOT, C0_ESC, C0_ETB, C0_ETX, C0_FF, C0_FS, C0_GS, C0_HT, C0_LF, C0_NAK, C0_NUL, C0_RS,
@@ -9,48 +14,6 @@ use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::utf8::*;
-extern "C" {
-    fn __ctype_tolower_loc() -> *mut *const __int32_t;
-    fn wctomb(__s: *mut ::core::ffi::c_char, __wchar: wchar_t) -> ::core::ffi::c_int;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strcasecmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strlcat(
-        __dest: *mut ::core::ffi::c_char,
-        __src: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_ulong;
-    fn snprintf(
-        __s: *mut ::core::ffi::c_char,
-        __maxlen: size_t,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn sscanf(
-        __s: *const ::core::ffi::c_char,
-        __format: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xsnprintf(
-        _: *mut ::core::ffi::c_char,
-        _: size_t,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn utf8_from_data(_: *const utf8_data, _: *mut utf8_char) -> utf8_state;
-    fn utf8_to_data(_: utf8_char, _: *mut utf8_data);
-    fn utf8_open(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn utf8_append(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn utf8_fromcstr(_: *const ::core::ffi::c_char) -> *mut utf8_data;
-}
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_0;
 #[derive(Copy, Clone)]

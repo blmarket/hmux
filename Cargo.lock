@@ -29,6 +29,7 @@ version = "0.0.0"
 dependencies = [
  "c2rust-bitfields",
  "libc",
+ "syn",
 ]
 
 [[package]]

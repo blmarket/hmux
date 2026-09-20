@@ -1,3 +1,13 @@
+use crate::src::arguments::args_has;
+use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
+use crate::src::cmd_queue::{cmdq_get_client, cmdq_get_event, cmdq_get_source, cmdq_get_target};
+use crate::src::tty::tty_window_offset;
+use crate::src::window::{window_pane_reset_mode_all, window_pane_set_mode};
+use crate::src::window_clock::window_clock_mode;
+use crate::src::window_copy::{
+    window_copy_mode, window_copy_pagedown, window_copy_pageup, window_copy_scroll,
+    window_copy_set_line_numbers, window_copy_start_drag,
+};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -56,50 +66,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn tty_window_offset(
-        _: *mut tty,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: *mut u_int,
-    ) -> ::core::ffi::c_int;
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmd_mouse_pane(
-        _: *mut mouse_event,
-        _: *mut *mut session,
-        _: *mut *mut winlink,
-    ) -> *mut window_pane;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_source(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_event(_: *mut cmdq_item) -> *mut key_event;
-    fn window_pane_set_mode(
-        _: *mut window_pane,
-        _: *mut window_pane,
-        _: *const window_mode,
-        _: *mut cmdq_item,
-        _: *mut cmd_find_state,
-        _: *mut args,
-    ) -> ::core::ffi::c_int;
-    fn window_pane_reset_mode_all(_: *mut window_pane);
-    static window_clock_mode: window_mode;
-    static window_copy_mode: window_mode;
-    fn window_copy_scroll(
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-        _: u_int,
-        _: u_int,
-        _: ::core::ffi::c_int,
-    );
-    fn window_copy_pageup(_: *mut window_pane, _: ::core::ffi::c_int);
-    fn window_copy_pagedown(_: *mut window_pane, _: ::core::ffi::c_int, _: ::core::ffi::c_int);
-    fn window_copy_start_drag(_: *mut client, _: *mut mouse_event);
-    fn window_copy_set_line_numbers(_: *mut window_pane, _: ::core::ffi::c_int);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

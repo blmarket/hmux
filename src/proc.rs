@@ -1,3 +1,20 @@
+use crate::src::compat::getpeereid::getpeereid;
+use crate::src::compat::imsg::{
+    imsg_compose, imsg_free, imsgbuf_allow_fdpass, imsgbuf_clear, imsgbuf_flush, imsgbuf_get,
+    imsgbuf_init, imsgbuf_queuelen, imsgbuf_read, imsgbuf_write,
+};
+use crate::src::compat::setproctitle::setproctitle;
+use crate::src::ffi::libc::{
+    close, daemon, fork, free, getpid, memset, sigaction, sigemptyset, socketpair, uname,
+};
+pub use crate::src::ffi::libc::utsname;
+use crate::src::ffi::libevent::{
+    event_add, event_del, event_get_method, event_get_version, event_loop, event_set,
+};
+use crate::src::ffi::utf8proc::utf8proc_version;
+use crate::src::log::{fatal, log_debug, log_open, log_toggle};
+use crate::src::tmux::{getversion, socket_path};
+use crate::src::xmalloc::{xcalloc, xstrdup};
 pub use crate::src::shared::message::{ibuf, ibuf_entry, imsg, imsgbuf, msgbuf};
 pub use crate::src::shared::process::{tmuxpeer, tmuxpeer_entry, tmuxproc, tmuxproc_peers};
 pub use crate::src::shared::message::{PROTOCOL_VERSION, imsg_hdr};
@@ -16,94 +33,9 @@ pub use crate::src::shared::signal::{
 };
 pub use crate::src::shared::abi::{__clock_t, __gid_t, __uid_t, __uint32_t, gid_t, uid_t, uint32_t};
 pub use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
-use crate::src::shared::event::*;
 use crate::src::shared::message::*;
 use crate::src::shared::abi::*;
 use ::libc;
-extern "C" {
-
-    fn socketpair(
-        __domain: ::core::ffi::c_int,
-        __type: ::core::ffi::c_int,
-        __protocol: ::core::ffi::c_int,
-        __fds: *mut ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn uname(__name: *mut utsname) -> ::core::ffi::c_int;
-    fn sigemptyset(__set: *mut sigset_t) -> ::core::ffi::c_int;
-    fn sigaction(
-        __sig: ::core::ffi::c_int,
-        __act: *const sigaction,
-        __oact: *mut sigaction,
-    ) -> ::core::ffi::c_int;
-    fn close(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn getpid() -> __pid_t;
-    fn fork() -> __pid_t;
-    fn daemon(__nochdir: ::core::ffi::c_int, __noclose: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn event_add(ev: *mut event, timeout: *const timeval) -> ::core::ffi::c_int;
-    fn event_del(_: *mut event) -> ::core::ffi::c_int;
-    fn event_get_version() -> *const ::core::ffi::c_char;
-    fn event_loop(_: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn event_get_method() -> *const ::core::ffi::c_char;
-    fn event_set(
-        _: *mut event,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn utf8proc_version() -> *const ::core::ffi::c_char;
-    fn imsgbuf_init(_: *mut imsgbuf, _: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn imsgbuf_allow_fdpass(imsgbuf: *mut imsgbuf);
-    fn imsgbuf_read(_: *mut imsgbuf) -> ::core::ffi::c_int;
-    fn imsgbuf_write(_: *mut imsgbuf) -> ::core::ffi::c_int;
-    fn imsgbuf_flush(_: *mut imsgbuf) -> ::core::ffi::c_int;
-    fn imsgbuf_clear(_: *mut imsgbuf);
-    fn imsgbuf_queuelen(_: *mut imsgbuf) -> uint32_t;
-    fn imsgbuf_get(_: *mut imsgbuf, _: *mut imsg) -> ::core::ffi::c_int;
-    fn imsg_compose(
-        _: *mut imsgbuf,
-        _: uint32_t,
-        _: uint32_t,
-        _: pid_t,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_void,
-        _: size_t,
-    ) -> ::core::ffi::c_int;
-    fn imsg_free(_: *mut imsg);
-    fn getpeereid(_: ::core::ffi::c_int, _: *mut uid_t, _: *mut gid_t) -> ::core::ffi::c_int;
-    fn setproctitle(_: *const ::core::ffi::c_char, ...);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    static mut socket_path: *const ::core::ffi::c_char;
-    fn getversion() -> *const ::core::ffi::c_char;
-    fn log_open(_: *const ::core::ffi::c_char);
-    fn log_toggle(_: *const ::core::ffi::c_char);
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct utsname {
-    pub sysname: [::core::ffi::c_char; 65],
-    pub nodename: [::core::ffi::c_char; 65],
-    pub release: [::core::ffi::c_char; 65],
-    pub version: [::core::ffi::c_char; 65],
-    pub machine: [::core::ffi::c_char; 65],
-    pub domainname: [::core::ffi::c_char; 65],
-}
 
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;

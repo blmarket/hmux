@@ -1,3 +1,16 @@
+use crate::src::cmd_find::{
+    cmd_find_from_client, cmd_find_from_pane, cmd_find_from_session, cmd_find_from_window,
+    cmd_find_from_winlink,
+};
+use crate::src::events_payload::{
+    event_payload_create, event_payload_free, event_payload_log, event_payload_set_client,
+    event_payload_set_int, event_payload_set_pane, event_payload_set_session,
+    event_payload_set_string, event_payload_set_target, event_payload_set_window,
+};
+use crate::src::ffi::libc::{free, strcmp};
+use crate::src::log::log_get_level;
+use crate::src::session::session_alive;
+use crate::src::xmalloc::{xcalloc, xstrdup};
 pub use crate::src::shared::events::{event_payload, events_cb, events_sink, events_sink_entry};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -52,70 +65,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn event_payload_create() -> *mut event_payload;
-    fn event_payload_free(_: *mut event_payload);
-    fn event_payload_log(_: *mut event_payload, _: *const ::core::ffi::c_char, ...);
-    fn event_payload_set_target(_: *mut event_payload, _: *mut cmd_find_state);
-    fn event_payload_set_string(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn event_payload_set_int(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    );
-    fn event_payload_set_client(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut client,
-    );
-    fn event_payload_set_session(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut session,
-    );
-    fn event_payload_set_window(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut window,
-    );
-    fn event_payload_set_pane(
-        _: *mut event_payload,
-        _: *const ::core::ffi::c_char,
-        _: *mut window_pane,
-    );
-    fn cmd_find_from_session(_: *mut cmd_find_state, _: *mut session, _: ::core::ffi::c_int);
-    fn cmd_find_from_winlink(_: *mut cmd_find_state, _: *mut winlink, _: ::core::ffi::c_int);
-    fn cmd_find_from_window(
-        _: *mut cmd_find_state,
-        _: *mut window,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn cmd_find_from_pane(
-        _: *mut cmd_find_state,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn cmd_find_from_client(
-        _: *mut cmd_find_state,
-        _: *mut client,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn session_alive(_: *mut session) -> ::core::ffi::c_int;
-    fn log_get_level() -> ::core::ffi::c_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

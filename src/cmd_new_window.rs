@@ -1,3 +1,26 @@
+use crate::src::arguments::{
+    args_count, args_first_value, args_get, args_has, args_next_value, args_string,
+    args_to_vector,
+};
+use crate::src::cmd::{cmd_free_argv, cmd_get_args};
+use crate::src::cmd_find::cmd_find_from_winlink;
+use crate::src::cmd_queue::{
+    cmdq_error, cmdq_get_client, cmdq_get_current, cmdq_get_target, cmdq_get_target_client,
+    cmdq_insert_hook, cmdq_print,
+};
+use crate::src::environ::{environ_create, environ_free, environ_put};
+use crate::src::ffi::libc::{free, strcmp};
+use crate::src::format::format_single;
+use crate::src::resize::recalculate_sizes;
+use crate::src::server_fn::{
+    server_redraw_session, server_redraw_session_group, server_status_session_group,
+};
+use crate::src::session::session_set_current;
+use crate::src::spawn::spawn_window;
+use crate::src::tmux::{check_name, clean_name};
+use crate::src::window::{
+    winlink_find_by_index, winlink_shuffle_up, winlinks_RB_MINMAX, winlinks_RB_NEXT,
+};
 pub use crate::src::shared::spawn::{spawn_context};
 pub use crate::src::shared::arguments::{
     args, args_parse, args_parse_cb, args_value, args_value_c2rust_unnamed, args_value_entry,
@@ -61,69 +84,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn clean_name(_: *const ::core::ffi::c_char, _: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn check_name(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn format_single(
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut ::core::ffi::c_char;
-    fn environ_create() -> *mut environ;
-    fn environ_free(_: *mut environ);
-    fn environ_put(_: *mut environ, _: *const ::core::ffi::c_char, _: ::core::ffi::c_int);
-    fn args_to_vector(
-        _: *mut args,
-        _: *mut ::core::ffi::c_int,
-        _: *mut *mut *mut ::core::ffi::c_char,
-    );
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn args_first_value(_: *mut args, _: u_char) -> *mut args_value;
-    fn args_next_value(_: *mut args_value) -> *mut args_value;
-    fn cmd_find_from_winlink(_: *mut cmd_find_state, _: *mut winlink, _: ::core::ffi::c_int);
-    fn cmd_free_argv(_: ::core::ffi::c_int, _: *mut *mut ::core::ffi::c_char);
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_current(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_insert_hook(
-        _: *mut session,
-        _: *mut cmdq_item,
-        _: *mut cmd_find_state,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn cmdq_print(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_redraw_session(_: *mut session);
-    fn server_redraw_session_group(_: *mut session);
-    fn server_status_session_group(_: *mut session);
-    fn recalculate_sizes();
-    fn winlinks_RB_MINMAX(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn winlinks_RB_NEXT(_: *mut winlink) -> *mut winlink;
-    fn winlink_find_by_index(_: *mut winlinks, _: ::core::ffi::c_int) -> *mut winlink;
-    fn winlink_shuffle_up(
-        _: *mut session,
-        _: *mut winlink,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn session_set_current(_: *mut session, _: *mut winlink) -> ::core::ffi::c_int;
-    fn spawn_window(_: *mut spawn_context, _: *mut *mut ::core::ffi::c_char) -> *mut winlink;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

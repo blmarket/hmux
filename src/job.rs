@@ -1,3 +1,24 @@
+use crate::src::cfg::cfg_finished;
+use crate::src::cmd::{cmd_copy_argv, cmd_log_argv, cmd_stringify_argv};
+use crate::src::cmd_queue::cmdq_print;
+use crate::src::compat::fdforkpty::fdforkpty;
+use crate::src::environ::{
+    environ_copy, environ_for_session, environ_free, environ_push, environ_set,
+};
+use crate::src::ffi::libc::{
+    _exit, chdir, close, closefrom, dup2, execl, execvp, fork, free, ioctl, kill, killpg,
+    memset, open, setenv, shutdown, sigfillset, sigprocmask, socketpair, strlcpy,
+};
+use crate::src::ffi::libevent::{
+    bufferevent_disable, bufferevent_enable, bufferevent_free, bufferevent_get_output,
+    bufferevent_new, evbuffer_get_length,
+};
+use crate::src::log::{fatal, fatalx, log_debug};
+use crate::src::options::options_get_string;
+use crate::src::proc::proc_clear_signals;
+use crate::src::server::server_proc;
+use crate::src::tmux::{checkshell, find_home, global_s_options, ptm_fd, setblocking, shell_argv0};
+use crate::src::xmalloc::{xcalloc, xstrdup};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -69,133 +90,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn ioctl(__fd: ::core::ffi::c_int, __request: ::core::ffi::c_ulong, ...) -> ::core::ffi::c_int;
-    fn socketpair(
-        __domain: ::core::ffi::c_int,
-        __type: ::core::ffi::c_int,
-        __protocol: ::core::ffi::c_int,
-        __fds: *mut ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn shutdown(__fd: ::core::ffi::c_int, __how: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn kill(__pid: __pid_t, __sig: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn killpg(__pgrp: __pid_t, __sig: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn sigfillset(__set: *mut sigset_t) -> ::core::ffi::c_int;
-    fn sigprocmask(
-        __how: ::core::ffi::c_int,
-        __set: *const sigset_t,
-        __oset: *mut sigset_t,
-    ) -> ::core::ffi::c_int;
-    fn close(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn closefrom(__lowfd: ::core::ffi::c_int);
-    fn chdir(__path: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn dup2(__fd: ::core::ffi::c_int, __fd2: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn execl(
-        __path: *const ::core::ffi::c_char,
-        __arg: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn execvp(
-        __file: *const ::core::ffi::c_char,
-        __argv: *const *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn _exit(__status: ::core::ffi::c_int) -> !;
-    fn fork() -> __pid_t;
-    fn open(
-        __file: *const ::core::ffi::c_char,
-        __oflag: ::core::ffi::c_int,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn setenv(
-        __name: *const ::core::ffi::c_char,
-        __value: *const ::core::ffi::c_char,
-        __replace: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strlcpy(
-        __dest: *mut ::core::ffi::c_char,
-        __src: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_ulong;
-    fn evbuffer_get_length(buf: *const evbuffer) -> size_t;
-    fn bufferevent_free(bufev: *mut bufferevent);
-    fn bufferevent_get_output(bufev: *mut bufferevent) -> *mut evbuffer;
-    fn bufferevent_enable(
-        bufev: *mut bufferevent,
-        event: ::core::ffi::c_short,
-    ) -> ::core::ffi::c_int;
-    fn bufferevent_disable(
-        bufev: *mut bufferevent,
-        event: ::core::ffi::c_short,
-    ) -> ::core::ffi::c_int;
-    fn bufferevent_new(
-        fd: ::core::ffi::c_int,
-        readcb: bufferevent_data_cb,
-        writecb: bufferevent_data_cb,
-        errorcb: bufferevent_event_cb,
-        cbarg: *mut ::core::ffi::c_void,
-    ) -> *mut bufferevent;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn fdforkpty(
-        _: ::core::ffi::c_int,
-        _: *mut ::core::ffi::c_int,
-        _: *mut ::core::ffi::c_char,
-        _: *mut termios,
-        _: *mut winsize,
-    ) -> pid_t;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    static mut global_s_options: *mut options;
-    static mut ptm_fd: ::core::ffi::c_int;
-    fn checkshell(_: *const ::core::ffi::c_char) -> ::core::ffi::c_int;
-    fn setblocking(_: ::core::ffi::c_int, _: ::core::ffi::c_int);
-    fn shell_argv0(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> *mut ::core::ffi::c_char;
-    fn find_home() -> *const ::core::ffi::c_char;
-    fn proc_clear_signals(_: *mut tmuxproc, _: ::core::ffi::c_int);
-    static mut cfg_finished: ::core::ffi::c_int;
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn environ_free(_: *mut environ);
-    fn environ_copy(_: *mut environ, _: *mut environ);
-    fn environ_set(
-        _: *mut environ,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn environ_push(_: *mut environ);
-    fn environ_for_session(_: *mut session, _: ::core::ffi::c_int) -> *mut environ;
-    fn cmd_log_argv(
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn cmd_copy_argv(
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> *mut *mut ::core::ffi::c_char;
-    fn cmd_stringify_argv(
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn cmdq_print(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    static mut server_proc: *mut tmuxproc;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const SHUT_RDWR: C2RustUnnamed = 2;

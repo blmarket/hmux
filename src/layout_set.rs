@@ -1,3 +1,14 @@
+use crate::src::arguments::args_string_percentage;
+use crate::src::events::events_fire_window;
+use crate::src::ffi::libc::{free, strcmp, strlen, strncmp};
+use crate::src::layout::{
+    layout_cell_is_tiled, layout_create_cell, layout_fix_offsets, layout_fix_panes, layout_free,
+    layout_make_node, layout_print_cell, layout_resize_adjust, layout_set_size,
+    layout_spread_cell,
+};
+use crate::src::options::{options_get_number, options_get_string};
+use crate::src::server_fn::server_redraw_window;
+use crate::src::window::{window_count_panes, window_resize};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -52,66 +63,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strncmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn events_fire_window(_: *const ::core::ffi::c_char, _: *mut window);
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn args_string_percentage(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn server_redraw_window(_: *mut window);
-    fn window_resize(
-        _: *mut window,
-        _: u_int,
-        _: u_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn window_count_panes(_: *mut window, _: ::core::ffi::c_int) -> u_int;
-    fn layout_create_cell(_: *mut layout_cell) -> *mut layout_cell;
-    fn layout_print_cell(_: *mut layout_cell, _: *const ::core::ffi::c_char, _: u_int);
-    fn layout_set_size(
-        _: *mut layout_cell,
-        _: u_int,
-        _: u_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn layout_make_node(_: *mut layout_cell, _: layout_type);
-    fn layout_cell_is_tiled(_: *mut layout_cell) -> ::core::ffi::c_int;
-    fn layout_fix_offsets(_: *mut window);
-    fn layout_fix_panes(_: *mut window, _: *mut window_pane);
-    fn layout_resize_adjust(
-        _: *mut window,
-        _: *mut layout_cell,
-        _: layout_type,
-        _: ::core::ffi::c_int,
-    );
-    fn layout_free(_: *mut window, _: ::core::ffi::c_int);
-    fn layout_spread_cell(_: *mut window, _: *mut layout_cell) -> ::core::ffi::c_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

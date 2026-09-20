@@ -1,5 +1,20 @@
-pub use crate::src::shared::session::{sessions};
-pub use crate::src::shared::client::{clients};
+use crate::src::cmd::cmd_list_free;
+use crate::src::cmd_parse::{cmd_parse_from_buffer, cmd_parse_from_file};
+use crate::src::cmd_queue::{
+    cmdq_add_format, cmdq_append, cmdq_continue, cmdq_copy_state, cmdq_free_state,
+    cmdq_get_callback1, cmdq_get_client, cmdq_get_command, cmdq_get_state, cmdq_insert_after,
+    cmdq_new_state, cmdq_print,
+};
+use crate::src::control::control_notify_write;
+use crate::src::ffi::libc::{__errno_location, fclose, fopen, free, memset, strerror};
+use crate::src::log::log_debug;
+use crate::src::prompt_history::prompt_load_history;
+pub use crate::src::server::clients;
+use crate::src::session::sessions_RB_MINMAX;
+pub use crate::src::session::sessions;
+use crate::src::window::window_pane_set_mode;
+use crate::src::window_copy::{window_copy_add, window_view_mode};
+use crate::src::xmalloc::{xreallocarray, xvasprintf};
 pub use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -67,82 +82,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn fclose(__stream: *mut FILE) -> ::core::ffi::c_int;
-    fn fopen(
-        __filename: *const ::core::ffi::c_char,
-        __modes: *const ::core::ffi::c_char,
-    ) -> *mut FILE;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strerror(__errnum: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xvasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    fn cmd_list_free(_: *mut cmd_list);
-    fn cmd_parse_from_file(_: *mut FILE, _: *mut cmd_parse_input) -> *mut cmd_parse_result;
-    fn cmd_parse_from_buffer(
-        _: *const ::core::ffi::c_void,
-        _: size_t,
-        _: *mut cmd_parse_input,
-    ) -> *mut cmd_parse_result;
-    fn cmdq_new_state(
-        _: *mut cmd_find_state,
-        _: *mut key_event,
-        _: ::core::ffi::c_int,
-    ) -> *mut cmdq_state;
-    fn cmdq_copy_state(_: *mut cmdq_state, _: *mut cmd_find_state) -> *mut cmdq_state;
-    fn cmdq_free_state(_: *mut cmdq_state);
-    fn cmdq_add_format(
-        _: *mut cmdq_state,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_state(_: *mut cmdq_item) -> *mut cmdq_state;
-    fn cmdq_get_command(_: *mut cmd_list, _: *mut cmdq_state) -> *mut cmdq_item;
-    fn cmdq_get_callback1(
-        _: *const ::core::ffi::c_char,
-        _: cmdq_cb,
-        _: *mut ::core::ffi::c_void,
-    ) -> *mut cmdq_item;
-    fn cmdq_insert_after(_: *mut cmdq_item, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn cmdq_append(_: *mut client, _: *mut cmdq_item) -> *mut cmdq_item;
-    fn cmdq_continue(_: *mut cmdq_item);
-    fn cmdq_print(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    static mut clients: clients;
-    fn prompt_load_history();
-    fn window_pane_set_mode(
-        _: *mut window_pane,
-        _: *mut window_pane,
-        _: *const window_mode,
-        _: *mut cmdq_item,
-        _: *mut cmd_find_state,
-        _: *mut args,
-    ) -> ::core::ffi::c_int;
-    static window_view_mode: window_mode;
-    fn window_copy_add(
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn control_notify_write(_: *mut client, _: *const ::core::ffi::c_char, ...);
-    static mut sessions: sessions;
-    fn sessions_RB_MINMAX(_: *mut sessions, _: ::core::ffi::c_int) -> *mut session;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

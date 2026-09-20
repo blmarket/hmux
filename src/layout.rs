@@ -1,3 +1,15 @@
+use crate::src::arguments::{args_has, args_percentage_and_expand, args_strtonum_and_expand};
+use crate::src::events::events_fire_window;
+use crate::src::ffi::libc::{free, memcpy};
+use crate::src::log::{fatalx, log_debug};
+use crate::src::screen_redraw::redraw_invalidate_scene;
+use crate::src::window::{
+    window_active_pane_is_over_zoom, window_get_pane_status, window_pane_get_pane_lines,
+    window_pane_get_pane_status, window_pane_is_floating, window_pane_scrollbar_reserve,
+    window_push_zoom,
+};
+pub use crate::src::window::window_pane_resize;
+use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -36,11 +48,7 @@ pub use crate::src::shared::spawn::{
     SPAWN_BEFORE, SPAWN_FLOATOVERZOOM, SPAWN_FULLSIZE, SPAWN_HORIZONTAL, SPAWN_SPLIT,
     SPAWN_ZOOM,
 };
-pub use crate::src::shared::pane::{
-    PANE_MAXIMUM, PANE_MINIMUM, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS,
-    PANE_SCROLLBARS_LEFT, PANE_STATUS_BOTTOM, PANE_STATUS_TOP, window_pane_offset,
-    window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-};
+pub use crate::src::shared::pane::{PANE_MAXIMUM, PANE_MINIMUM, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_LEFT, PANE_STATUS_BOTTOM, PANE_STATUS_TOP, window_pane_offset, window_pane_resize_entry, window_pane_resizes};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
 pub use crate::src::shared::hyperlinks::{hyperlinks};
@@ -59,56 +67,6 @@ use crate::src::shared::colour::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    fn events_fire_window(_: *const ::core::ffi::c_char, _: *mut window);
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_strtonum_and_expand(
-        _: *mut args,
-        _: u_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut cmdq_item,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn args_percentage_and_expand(
-        _: *mut args,
-        _: u_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut cmdq_item,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn redraw_invalidate_scene(_: *mut window);
-    fn window_active_pane_is_over_zoom(_: *mut window) -> ::core::ffi::c_int;
-    fn window_push_zoom(
-        _: *mut window,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn window_pane_resize(_: *mut window_pane, _: u_int, _: u_int);
-    fn window_pane_scrollbar_reserve(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_get_pane_lines(_: *mut window_pane) -> pane_lines;
-    fn window_get_pane_status(_: *mut window) -> ::core::ffi::c_int;
-    fn window_pane_get_pane_status(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_is_floating(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

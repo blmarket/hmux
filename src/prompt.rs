@@ -1,3 +1,33 @@
+use crate::src::cmd::cmd_table;
+use crate::src::cmd_find::{cmd_find_clear_state, cmd_find_copy_state, cmd_find_valid_state};
+use crate::src::ffi::libc::{
+    free, memcpy, memmove, memset, qsort, strchr, strcmp, strlcat, strlen, strncmp,
+};
+use crate::src::format::{
+    format_add, format_create_defaults, format_create_from_state, format_expand_time,
+    format_free,
+};
+use crate::src::format_draw::{format_draw, format_width};
+use crate::src::grid::grid_default_cell;
+use crate::src::key_string::key_string_lookup_key;
+use crate::src::log::log_debug;
+use crate::src::options::{
+    options_array_first, options_array_item_value, options_array_next, options_get_number,
+    options_get_only, options_get_string,
+};
+use crate::src::paste::{paste_buffer_data, paste_get_top};
+use crate::src::prompt_history::{prompt_add_history, prompt_down_history, prompt_up_history};
+use crate::src::screen::screen_set_cursor_style;
+use crate::src::screen_write::{
+    screen_write_cell, screen_write_clearcharacter, screen_write_cursormove,
+};
+use crate::src::style::{style_apply, style_parse, style_set};
+use crate::src::tmux::{global_options, global_s_options};
+use crate::src::utf8::{
+    utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr, utf8_open, utf8_set, utf8_strlen,
+    utf8_strwidth, utf8_to_data, utf8_tocstr,
+};
+use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
 pub use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
@@ -64,7 +94,6 @@ use crate::src::shared::prompt::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::terminal::*;
 use crate::src::shared::event::*;
-use crate::src::shared::display::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::message::*;
 use crate::src::shared::abi::*;
@@ -74,146 +103,6 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
-extern "C" {
-
-    fn qsort(
-        __base: *mut ::core::ffi::c_void,
-        __nmemb: size_t,
-        __size: size_t,
-        __compar: __compar_fn_t,
-    );
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memmove(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strcmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn strncmp(
-        __s1: *const ::core::ffi::c_char,
-        __s2: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-    fn strchr(__s: *const ::core::ffi::c_char, __c: ::core::ffi::c_int)
-        -> *mut ::core::ffi::c_char;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn strlcat(
-        __dest: *mut ::core::ffi::c_char,
-        __src: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_ulong;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    fn xasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    ) -> ::core::ffi::c_int;
-    static mut global_options: *mut options;
-    static mut global_s_options: *mut options;
-    fn paste_buffer_data(_: *mut paste_buffer, _: *mut size_t) -> *const ::core::ffi::c_char;
-    fn paste_get_top(_: *mut *mut ::core::ffi::c_char) -> *mut paste_buffer;
-    fn format_free(_: *mut format_tree);
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn format_expand_time(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_create_defaults(
-        _: *mut cmdq_item,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    ) -> *mut format_tree;
-    fn format_create_from_state(
-        _: *mut cmdq_item,
-        _: *mut client,
-        _: *mut cmd_find_state,
-    ) -> *mut format_tree;
-    fn format_draw(
-        _: *mut screen_write_ctx,
-        _: *const grid_cell,
-        _: u_int,
-        _: *const ::core::ffi::c_char,
-        _: *mut style_ranges,
-        _: ::core::ffi::c_int,
-    );
-    fn format_width(_: *const ::core::ffi::c_char) -> u_int;
-    fn options_get_only(_: *mut options, _: *const ::core::ffi::c_char) -> *mut options_entry;
-    fn options_array_first(_: *mut options_entry) -> *mut options_array_item;
-    fn options_array_next(_: *mut options_array_item) -> *mut options_array_item;
-    fn options_array_item_value(_: *mut options_array_item) -> *mut options_value;
-    fn options_get_string(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> *const ::core::ffi::c_char;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn cmd_find_clear_state(_: *mut cmd_find_state, _: ::core::ffi::c_int);
-    fn cmd_find_valid_state(_: *mut cmd_find_state) -> ::core::ffi::c_int;
-    fn cmd_find_copy_state(_: *mut cmd_find_state, _: *mut cmd_find_state);
-    static mut cmd_table: [*const cmd_entry; 0];
-    fn key_string_lookup_key(_: key_code, _: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn prompt_up_history(_: *mut u_int, _: u_int) -> *const ::core::ffi::c_char;
-    fn prompt_down_history(_: *mut u_int, _: u_int) -> *const ::core::ffi::c_char;
-    fn prompt_add_history(_: *const ::core::ffi::c_char, _: u_int);
-    static grid_default_cell: grid_cell;
-    fn screen_write_clearcharacter(_: *mut screen_write_ctx, _: u_int, _: u_int);
-    fn screen_write_cursormove(
-        _: *mut screen_write_ctx,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    );
-    fn screen_write_cell(_: *mut screen_write_ctx, _: *const grid_cell);
-    fn screen_set_cursor_style(_: u_int, _: *mut screen_cursor_style, _: *mut ::core::ffi::c_int);
-    fn utf8_to_data(_: utf8_char, _: *mut utf8_data);
-    fn utf8_set(_: *mut utf8_data, _: u_char);
-    fn utf8_copy(_: *mut utf8_data, _: *const utf8_data);
-    fn utf8_open(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn utf8_append(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn utf8_strlen(_: *const utf8_data) -> size_t;
-    fn utf8_strwidth(_: *const utf8_data, _: ssize_t) -> u_int;
-    fn utf8_fromcstr(_: *const ::core::ffi::c_char) -> *mut utf8_data;
-    fn utf8_tocstr(_: *mut utf8_data) -> *mut ::core::ffi::c_char;
-    fn utf8_cstrwidth(_: *const ::core::ffi::c_char) -> u_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn style_parse(
-        _: *mut style,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn style_apply(
-        _: *mut grid_cell,
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-        _: *mut format_tree,
-    );
-    fn style_set(_: *mut style, _: *const grid_cell);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

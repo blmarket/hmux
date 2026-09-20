@@ -1,3 +1,18 @@
+use crate::src::arguments::args_has;
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_source, cmdq_get_target};
+use crate::src::colour::colour_palette_from_option;
+use crate::src::events::events_fire_window;
+use crate::src::layout::{layout_cell_is_tiled, layout_fix_panes};
+use crate::src::options::options_set_parent;
+use crate::src::screen_redraw::redraw_invalidate_scene;
+use crate::src::server_client::server_client_remove_pane;
+use crate::src::server_fn::server_redraw_window;
+use crate::src::window::{
+    window_fire_pane_moved, window_pane_is_floating, window_pane_stack_remove, window_pop_zoom,
+    window_push_zoom, window_set_active_pane,
+};
+pub use crate::src::window::window_pane_resize;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -33,10 +48,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 pub use crate::src::shared::environment::{environ};
-pub use crate::src::shared::pane::{
-    PANE_STYLECHANGED, PANE_THEMECHANGED, window_pane_offset, window_pane_resize,
-    window_pane_resize_entry, window_pane_resizes,
-};
+pub use crate::src::shared::pane::{PANE_STYLECHANGED, PANE_THEMECHANGED, window_pane_offset, window_pane_resize_entry, window_pane_resizes};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
 pub use crate::src::shared::hyperlinks::{hyperlinks};
@@ -52,48 +64,10 @@ use crate::src::shared::display::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::message::*;
 use crate::src::shared::abi::*;
-use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn events_fire_window(_: *const ::core::ffi::c_char, _: *mut window);
-    fn options_set_parent(_: *mut options, _: *mut options);
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_source(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_client_remove_pane(_: *mut window_pane);
-    fn server_redraw_window(_: *mut window);
-    fn colour_palette_from_option(_: *mut colour_palette, _: *mut options);
-    fn redraw_invalidate_scene(_: *mut window);
-    fn window_set_active_pane(
-        _: *mut window,
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn window_fire_pane_moved(
-        _: *mut window_pane,
-        _: *mut window,
-        _: ::core::ffi::c_int,
-        _: *mut window,
-        _: ::core::ffi::c_int,
-    );
-    fn window_push_zoom(
-        _: *mut window,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn window_pop_zoom(_: *mut window) -> ::core::ffi::c_int;
-    fn window_pane_resize(_: *mut window_pane, _: u_int, _: u_int);
-    fn window_pane_stack_remove(_: *mut window_panes, _: *mut window_pane);
-    fn window_pane_is_floating(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn layout_cell_is_tiled(_: *mut layout_cell) -> ::core::ffi::c_int;
-    fn layout_fix_panes(_: *mut window, _: *mut window_pane);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

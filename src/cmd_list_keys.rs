@@ -1,3 +1,16 @@
+use crate::src::arguments::{args_get, args_has, args_string};
+use crate::src::cmd::{cmd_get_args, cmd_list_print};
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
+use crate::src::ffi::libc::{free, memcpy};
+use crate::src::format::{format_add, format_create, format_defaults, format_expand, format_free};
+use crate::src::key_bindings::{key_bindings_get_table, key_bindings_has_repeat};
+use crate::src::key_string::{key_string_lookup_key, key_string_lookup_string};
+use crate::src::options::options_get_number;
+use crate::src::sort::{sort_get_key_bindings, sort_get_key_bindings_table, sort_order_from_string};
+use crate::src::status::status_message_set;
+use crate::src::tmux::global_s_options;
+use crate::src::utf8::utf8_cstrwidth;
+use crate::src::xmalloc::{xreallocarray, xstrdup};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -63,80 +76,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xreallocarray(_: *mut ::core::ffi::c_void, _: size_t, _: size_t)
-        -> *mut ::core::ffi::c_void;
-    fn xstrdup(_: *const ::core::ffi::c_char) -> *mut ::core::ffi::c_char;
-    static mut global_s_options: *mut options;
-    fn sort_order_from_string(_: *const ::core::ffi::c_char) -> sort_order;
-    fn sort_get_key_bindings(_: *mut u_int, _: *mut sort_criteria) -> *mut *mut key_binding;
-    fn sort_get_key_bindings_table(
-        _: *mut key_table,
-        _: *mut u_int,
-        _: *mut sort_criteria,
-    ) -> *mut *mut key_binding;
-    fn format_create(
-        _: *mut client,
-        _: *mut cmdq_item,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-    ) -> *mut format_tree;
-    fn format_free(_: *mut format_tree);
-    fn format_add(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn format_expand(
-        _: *mut format_tree,
-        _: *const ::core::ffi::c_char,
-    ) -> *mut ::core::ffi::c_char;
-    fn format_defaults(
-        _: *mut format_tree,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut window_pane,
-    );
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmd_list_print(_: *const cmd_list, _: ::core::ffi::c_int) -> *mut ::core::ffi::c_char;
-    fn cmdq_get_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_print(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn key_bindings_get_table(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> *mut key_table;
-    fn key_bindings_has_repeat(_: *mut *mut key_binding, _: u_int) -> ::core::ffi::c_int;
-    fn key_string_lookup_string(_: *const ::core::ffi::c_char) -> key_code;
-    fn key_string_lookup_key(_: key_code, _: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn status_message_set(
-        _: *mut client,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: *const ::core::ffi::c_char,
-        ...
-    );
-    fn utf8_cstrwidth(_: *const ::core::ffi::c_char) -> u_int;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

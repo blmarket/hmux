@@ -1,3 +1,18 @@
+use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_and_expand};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry, cmd_mouse_pane};
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_event, cmdq_get_target, cmdq_get_target_client};
+use crate::src::colour::colour_palette_clear;
+use crate::src::ffi::libc::{free, memset, strtol};
+use crate::src::input::input_reset;
+use crate::src::key_bindings::{
+    key_bindings_dispatch, key_bindings_get, key_bindings_get_table, key_bindings_unref_table,
+};
+use crate::src::key_string::key_string_lookup_string;
+use crate::src::options::options_get_number;
+use crate::src::server_client::{server_client_handle_key, server_client_handle_key_after};
+use crate::src::utf8::{utf8_from_data, utf8_fromcstr};
+use crate::src::window::window_pane_key;
+use crate::src::xmalloc::xcalloc;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -56,86 +71,11 @@ use crate::src::shared::display::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::message::*;
 use crate::src::shared::abi::*;
-use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
-extern "C" {
-
-    fn strtol(
-        __nptr: *const ::core::ffi::c_char,
-        __endptr: *mut *mut ::core::ffi::c_char,
-        __base: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_long;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn args_strtonum_and_expand(
-        _: *mut args,
-        _: u_char,
-        _: ::core::ffi::c_longlong,
-        _: ::core::ffi::c_longlong,
-        _: *mut cmdq_item,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmd_mouse_pane(
-        _: *mut mouse_event,
-        _: *mut *mut session,
-        _: *mut *mut winlink,
-    ) -> *mut window_pane;
-    fn cmdq_get_target_client(_: *mut cmdq_item) -> *mut client;
-    fn cmdq_get_target(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_get_event(_: *mut cmdq_item) -> *mut key_event;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn key_bindings_get_table(
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-    ) -> *mut key_table;
-    fn key_bindings_unref_table(_: *mut key_table);
-    fn key_bindings_get(_: *mut key_table, _: key_code) -> *mut key_binding;
-    fn key_bindings_dispatch(
-        _: *mut key_binding,
-        _: *mut cmdq_item,
-        _: *mut client,
-        _: *mut key_event,
-        _: *mut cmd_find_state,
-    ) -> *mut cmdq_item;
-    fn key_string_lookup_string(_: *const ::core::ffi::c_char) -> key_code;
-    fn server_client_handle_key(_: *mut client, _: *mut key_event) -> ::core::ffi::c_int;
-    fn server_client_handle_key_after(
-        _: *mut client,
-        _: *mut key_event,
-        _: *mut cmdq_item,
-        _: *mut *mut cmdq_item,
-    ) -> ::core::ffi::c_int;
-    fn input_reset(_: *mut input_ctx, _: ::core::ffi::c_int);
-    fn colour_palette_clear(_: *mut colour_palette);
-    fn window_pane_key(
-        _: *mut window_pane,
-        _: *mut client,
-        _: *mut session,
-        _: *mut winlink,
-        _: key_code,
-        _: *mut mouse_event,
-    ) -> ::core::ffi::c_int;
-    fn utf8_from_data(_: *const utf8_data, _: *mut utf8_char) -> utf8_state;
-    fn utf8_fromcstr(_: *const ::core::ffi::c_char) -> *mut utf8_data;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

@@ -1,3 +1,11 @@
+use crate::src::compat::freezero::freezero;
+use crate::src::compat::htonll::htonll;
+use crate::src::compat::ntohll::ntohll;
+use crate::src::ffi::libc::{
+    __errno_location, abort, calloc, close, free, malloc, memcpy, memmove, memset, readv,
+    realloc, recvmsg, sendmsg, strlcpy, strndup, writev,
+};
+pub use crate::src::ffi::libc::msghdr;
 pub use crate::src::shared::posix_io::{iovec};
 pub use crate::src::shared::message::{ibuf, ibuf_entry, ibufqueue, ibufqueue_bufs, msgbuf};
 pub use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ERANGE};
@@ -7,73 +15,10 @@ pub use crate::src::shared::abi::{
     __socklen_t, __uint16_t, __uint32_t, socklen_t, ssize_t, uint16_t, uint32_t,
 };
 use crate::src::shared::abi::*;
-extern "C" {
-    fn sendmsg(
-        __fd: ::core::ffi::c_int,
-        __message: *const msghdr,
-        __flags: ::core::ffi::c_int,
-    ) -> ssize_t;
-    fn recvmsg(
-        __fd: ::core::ffi::c_int,
-        __message: *mut msghdr,
-        __flags: ::core::ffi::c_int,
-    ) -> ssize_t;
-    fn readv(
-        __fd: ::core::ffi::c_int,
-        __iovec: *const iovec,
-        __count: ::core::ffi::c_int,
-    ) -> ssize_t;
-    fn writev(
-        __fd: ::core::ffi::c_int,
-        __iovec: *const iovec,
-        __count: ::core::ffi::c_int,
-    ) -> ssize_t;
-    fn __errno_location() -> *mut ::core::ffi::c_int;
-    fn abort() -> !;
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memmove(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strndup(__string: *const ::core::ffi::c_char, __n: size_t) -> *mut ::core::ffi::c_char;
-    fn strlcpy(
-        __dest: *mut ::core::ffi::c_char,
-        __src: *const ::core::ffi::c_char,
-        __n: size_t,
-    ) -> ::core::ffi::c_ulong;
-    fn close(__fd: ::core::ffi::c_int) -> ::core::ffi::c_int;
-    fn malloc(__size: size_t) -> *mut ::core::ffi::c_void;
-    fn calloc(__nmemb: size_t, __size: size_t) -> *mut ::core::ffi::c_void;
-    fn realloc(__ptr: *mut ::core::ffi::c_void, __size: size_t) -> *mut ::core::ffi::c_void;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn htonll(_: uint64_t) -> uint64_t;
-    fn ntohll(_: uint64_t) -> uint64_t;
-    fn freezero(_: *mut ::core::ffi::c_void, _: size_t);
-}
+
 pub type __caddr_t = *mut ::core::ffi::c_char;
 pub type caddr_t = __caddr_t;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct msghdr {
-    pub msg_name: *mut ::core::ffi::c_void,
-    pub msg_namelen: socklen_t,
-    pub msg_iov: *mut iovec,
-    pub msg_iovlen: size_t,
-    pub msg_control: *mut ::core::ffi::c_void,
-    pub msg_controllen: size_t,
-    pub msg_flags: ::core::ffi::c_int,
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct cmsghdr {

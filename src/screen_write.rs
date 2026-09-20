@@ -1,3 +1,46 @@
+use crate::src::ffi::libc::{calloc, free, memcpy, memset, strlen};
+use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_pending, event_set};
+use crate::src::format_draw::format_draw;
+use crate::src::grid::{
+    grid_cells_equal, grid_clear_history, grid_default_cell, grid_get_cell, grid_get_line,
+};
+use crate::src::grid_view::{
+    grid_view_clear, grid_view_clear_history, grid_view_delete_cells, grid_view_delete_lines,
+    grid_view_delete_lines_region, grid_view_get_cell, grid_view_insert_cells,
+    grid_view_insert_lines, grid_view_insert_lines_region, grid_view_scroll_region_down,
+    grid_view_scroll_region_up, grid_view_set_cell, grid_view_set_cells, grid_view_set_padding,
+};
+use crate::src::layout::layout_fix_panes;
+use crate::src::log::{fatal, fatalx, log_debug, log_get_level};
+use crate::src::options::options_get_number;
+use crate::src::screen::{
+    screen_alternate_off, screen_alternate_on, screen_check_selection, screen_mode_to_string,
+    screen_reset_tabs, screen_select_cell,
+};
+use crate::src::server_fn::server_redraw_window_borders;
+use crate::src::session::session_has;
+use crate::src::status::{status_at_line, status_line_size};
+use crate::src::tmux::global_options;
+use crate::src::tty::{
+    tty_cmd_alignmenttest, tty_cmd_cell, tty_cmd_cells, tty_cmd_clearcharacter,
+    tty_cmd_clearendofscreen, tty_cmd_clearscreen, tty_cmd_clearstartofscreen,
+    tty_cmd_deletecharacter, tty_cmd_deleteline, tty_cmd_insertcharacter, tty_cmd_insertline,
+    tty_cmd_rawstring, tty_cmd_redrawline, tty_cmd_reverseindex, tty_cmd_scrolldown,
+    tty_cmd_scrollup, tty_cmd_setselection, tty_cmd_syncstart, tty_default_colours,
+    tty_update_window_offset, tty_window_offset, tty_write,
+};
+use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
+use crate::src::utf8::{utf8_append, utf8_copy, utf8_fromcstr, utf8_open, utf8_set};
+use crate::src::utf8_combined::{
+    hanguljamo_check_state, utf8_has_zwj, utf8_is_hangul_filler, utf8_is_vs, utf8_is_zwj,
+    utf8_should_combine,
+};
+use crate::src::window::{
+    window_pane_clear_resizes, window_pane_is_floating, window_pane_scrollbar_overlay_visible,
+    window_pane_scrollbar_redraw, window_pane_send_resize,
+};
+use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
+use crate::src::xmalloc::{xcalloc, xmalloc, xvasprintf};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -73,7 +116,6 @@ pub use crate::src::shared::mouse::{mouse_event};
 use crate::src::shared::client::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::terminal::*;
-use crate::src::shared::event::*;
 use crate::src::shared::display::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::message::*;
@@ -83,171 +125,6 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
-extern "C" {
-
-    fn memcpy(
-        __dest: *mut ::core::ffi::c_void,
-        __src: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn memset(
-        __s: *mut ::core::ffi::c_void,
-        __c: ::core::ffi::c_int,
-        __n: size_t,
-    ) -> *mut ::core::ffi::c_void;
-    fn strlen(__s: *const ::core::ffi::c_char) -> size_t;
-    fn event_add(ev: *mut event, timeout: *const timeval) -> ::core::ffi::c_int;
-    fn event_del(_: *mut event) -> ::core::ffi::c_int;
-    fn event_pending(
-        ev: *const event,
-        events: ::core::ffi::c_short,
-        tv: *mut timeval,
-    ) -> ::core::ffi::c_int;
-    fn event_initialized(ev: *const event) -> ::core::ffi::c_int;
-    fn event_set(
-        _: *mut event,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_short,
-        _: Option<
-            unsafe extern "C" fn(
-                ::core::ffi::c_int,
-                ::core::ffi::c_short,
-                *mut ::core::ffi::c_void,
-            ) -> (),
-        >,
-        _: *mut ::core::ffi::c_void,
-    );
-    fn calloc(__nmemb: size_t, __size: size_t) -> *mut ::core::ffi::c_void;
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn xmalloc(_: size_t) -> *mut ::core::ffi::c_void;
-    fn xcalloc(_: size_t, _: size_t) -> *mut ::core::ffi::c_void;
-    fn xvasprintf(
-        _: *mut *mut ::core::ffi::c_char,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::VaList,
-    ) -> ::core::ffi::c_int;
-    static mut global_options: *mut options;
-    fn format_draw(
-        _: *mut screen_write_ctx,
-        _: *const grid_cell,
-        _: u_int,
-        _: *const ::core::ffi::c_char,
-        _: *mut style_ranges,
-        _: ::core::ffi::c_int,
-    );
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn tty_window_offset(
-        _: *mut tty,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: *mut u_int,
-        _: *mut u_int,
-    ) -> ::core::ffi::c_int;
-    fn tty_update_window_offset(_: *mut window);
-    fn tty_write(_: Option<unsafe extern "C" fn(*mut tty, *const tty_ctx) -> ()>, _: *mut tty_ctx);
-    fn tty_cmd_alignmenttest(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_cell(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_cells(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_redrawline(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_clearendofscreen(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_clearscreen(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_clearstartofscreen(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_deletecharacter(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_clearcharacter(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_deleteline(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_insertcharacter(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_insertline(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_scrollup(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_scrolldown(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_reverseindex(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_setselection(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_rawstring(_: *mut tty, _: *const tty_ctx);
-    fn tty_cmd_syncstart(_: *mut tty, _: *const tty_ctx);
-    fn tty_default_colours(_: *mut grid_cell, _: *mut window_pane, _: *mut u_int);
-    fn tty_acs_double_borders(_: ::core::ffi::c_int) -> *const utf8_data;
-    fn tty_acs_heavy_borders(_: ::core::ffi::c_int) -> *const utf8_data;
-    fn tty_acs_rounded_borders(_: ::core::ffi::c_int) -> *const utf8_data;
-    fn server_redraw_window_borders(_: *mut window);
-    fn status_at_line(_: *mut client) -> ::core::ffi::c_int;
-    fn status_line_size(_: *mut client) -> u_int;
-    static grid_default_cell: grid_cell;
-    fn grid_cells_equal(_: *const grid_cell, _: *const grid_cell) -> ::core::ffi::c_int;
-    fn grid_clear_history(_: *mut grid);
-    fn grid_get_cell(_: *mut grid, _: u_int, _: u_int, _: *mut grid_cell);
-    fn grid_get_line(_: *mut grid, _: u_int) -> *mut grid_line;
-    fn grid_view_get_cell(_: *mut grid, _: u_int, _: u_int, _: *mut grid_cell);
-    fn grid_view_set_cell(_: *mut grid, _: u_int, _: u_int, _: *const grid_cell);
-    fn grid_view_set_padding(_: *mut grid, _: u_int, _: u_int, _: ::core::ffi::c_int);
-    fn grid_view_set_cells(
-        _: *mut grid,
-        _: u_int,
-        _: u_int,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-        _: size_t,
-    );
-    fn grid_view_clear_history(_: *mut grid, _: u_int);
-    fn grid_view_clear(_: *mut grid, _: u_int, _: u_int, _: u_int, _: u_int, _: u_int);
-    fn grid_view_scroll_region_up(_: *mut grid, _: u_int, _: u_int, _: u_int);
-    fn grid_view_scroll_region_down(_: *mut grid, _: u_int, _: u_int, _: u_int);
-    fn grid_view_insert_lines(_: *mut grid, _: u_int, _: u_int, _: u_int);
-    fn grid_view_insert_lines_region(_: *mut grid, _: u_int, _: u_int, _: u_int, _: u_int);
-    fn grid_view_delete_lines(_: *mut grid, _: u_int, _: u_int, _: u_int);
-    fn grid_view_delete_lines_region(_: *mut grid, _: u_int, _: u_int, _: u_int, _: u_int);
-    fn grid_view_insert_cells(_: *mut grid, _: u_int, _: u_int, _: u_int, _: u_int);
-    fn grid_view_delete_cells(_: *mut grid, _: u_int, _: u_int, _: u_int, _: u_int);
-    fn screen_reset_tabs(_: *mut screen);
-    fn screen_check_selection(_: *mut screen, _: u_int, _: u_int) -> ::core::ffi::c_int;
-    fn screen_select_cell(
-        _: *mut screen,
-        _: *mut grid_cell,
-        _: *const grid_cell,
-    ) -> ::core::ffi::c_int;
-    fn screen_alternate_on(
-        _: *mut screen,
-        _: *mut grid_cell,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn screen_alternate_off(
-        _: *mut screen,
-        _: *mut grid_cell,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn screen_mode_to_string(_: ::core::ffi::c_int) -> *const ::core::ffi::c_char;
-    fn window_pane_send_resize(_: *mut window_pane, _: u_int, _: u_int);
-    fn window_pane_clear_resizes(_: *mut window_pane, _: *mut window_pane_resize);
-    fn window_pane_scrollbar_overlay_visible(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_pane_scrollbar_redraw(_: *mut window_pane);
-    fn window_pane_is_floating(_: *mut window_pane) -> ::core::ffi::c_int;
-    fn window_position_is_visible(_: *mut visible_ranges, _: u_int) -> ::core::ffi::c_int;
-    fn window_visible_ranges(
-        _: *mut window_pane,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: u_int,
-        _: *mut visible_ranges,
-    ) -> *mut visible_ranges;
-    fn layout_fix_panes(_: *mut window, _: *mut window_pane);
-    fn session_has(_: *mut session, _: *mut window) -> ::core::ffi::c_int;
-    fn utf8_set(_: *mut utf8_data, _: u_char);
-    fn utf8_copy(_: *mut utf8_data, _: *const utf8_data);
-    fn utf8_open(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn utf8_append(_: *mut utf8_data, _: u_char) -> utf8_state;
-    fn utf8_fromcstr(_: *const ::core::ffi::c_char) -> *mut utf8_data;
-    fn utf8_has_zwj(_: *const utf8_data) -> ::core::ffi::c_int;
-    fn utf8_is_zwj(_: *const utf8_data) -> ::core::ffi::c_int;
-    fn utf8_is_vs(_: *const utf8_data) -> ::core::ffi::c_int;
-    fn utf8_is_hangul_filler(_: *const utf8_data) -> ::core::ffi::c_int;
-    fn utf8_should_combine(_: *const utf8_data, _: *const utf8_data) -> ::core::ffi::c_int;
-    fn hanguljamo_check_state(_: *const utf8_data, _: *const utf8_data) -> hanguljamo_state;
-    fn log_get_level() -> ::core::ffi::c_int;
-    fn log_debug(_: *const ::core::ffi::c_char, ...);
-    fn fatal(_: *const ::core::ffi::c_char, ...) -> !;
-    fn fatalx(_: *const ::core::ffi::c_char, ...) -> !;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_15;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_16;

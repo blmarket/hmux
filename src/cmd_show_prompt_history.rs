@@ -1,3 +1,8 @@
+use crate::src::arguments::args_get;
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd_queue::{cmdq_error, cmdq_print};
+use crate::src::prompt::{prompt_type, prompt_type_string};
+use crate::src::prompt_history::{prompt_history_clear, prompt_history_get, prompt_history_size};
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 pub use crate::src::shared::prompt::{PROMPT_NTYPES};
@@ -6,19 +11,6 @@ use crate::src::shared::prompt::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::abi::*;
 use crate::src::shared::command::*;
-extern "C" {
-
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_print(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn prompt_type(_: *const ::core::ffi::c_char) -> prompt_type;
-    fn prompt_type_string(_: prompt_type) -> *const ::core::ffi::c_char;
-    fn prompt_history_size(_: prompt_type) -> u_int;
-    fn prompt_history_get(_: prompt_type, _: u_int) -> *const ::core::ffi::c_char;
-    fn prompt_history_clear(_: prompt_type);
-}
 
 #[no_mangle]
 pub static mut cmd_show_prompt_history_entry: cmd_entry = unsafe {

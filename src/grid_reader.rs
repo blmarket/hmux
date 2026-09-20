@@ -1,24 +1,12 @@
+use crate::src::ffi::libc::memcmp;
+use crate::src::grid::{
+    grid_get_cell, grid_get_line, grid_in_set, grid_line_length, grid_line_limit,
+};
 pub use crate::src::shared::grid::{WHITESPACE};
 pub use crate::src::shared::grid::{grid_reader};
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
-extern "C" {
-    fn grid_get_cell(_: *mut grid, _: u_int, _: u_int, _: *mut grid_cell);
-    fn grid_get_line(_: *mut grid, _: u_int) -> *mut grid_line;
-    fn grid_line_length(_: *mut grid, _: u_int) -> u_int;
-    fn grid_line_limit(_: *mut grid, _: u_int) -> u_int;
-    fn grid_in_set(
-        _: *mut grid,
-        _: u_int,
-        _: u_int,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn memcmp(
-        __s1: *const ::core::ffi::c_void,
-        __s2: *const ::core::ffi::c_void,
-        __n: size_t,
-    ) -> ::core::ffi::c_int;
-}
+
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
 

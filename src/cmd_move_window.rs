@@ -1,3 +1,13 @@
+use crate::src::arguments::{args_get, args_has};
+use crate::src::cmd::{cmd_get_args, cmd_get_entry};
+use crate::src::cmd_find::cmd_find_target;
+use crate::src::cmd_queue::{cmdq_error, cmdq_get_source};
+use crate::src::ffi::libc::free;
+use crate::src::options::options_get_number;
+use crate::src::resize::recalculate_sizes;
+use crate::src::server_fn::{server_link_window, server_status_session, server_unlink_window};
+use crate::src::session::session_renumber_windows;
+use crate::src::window::winlink_shuffle_up;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -56,45 +66,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn options_get_number(
-        _: *mut options,
-        _: *const ::core::ffi::c_char,
-    ) -> ::core::ffi::c_longlong;
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn cmd_find_target(
-        _: *mut cmd_find_state,
-        _: *mut cmdq_item,
-        _: *const ::core::ffi::c_char,
-        _: cmd_find_type,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn cmd_get_entry(_: *mut cmd) -> *const cmd_entry;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmdq_get_source(_: *mut cmdq_item) -> *mut cmd_find_state;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn server_status_session(_: *mut session);
-    fn server_link_window(
-        _: *mut session,
-        _: *mut winlink,
-        _: *mut session,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: ::core::ffi::c_int,
-        _: *mut *mut ::core::ffi::c_char,
-    ) -> ::core::ffi::c_int;
-    fn server_unlink_window(_: *mut session, _: *mut winlink);
-    fn recalculate_sizes();
-    fn winlink_shuffle_up(
-        _: *mut session,
-        _: *mut winlink,
-        _: ::core::ffi::c_int,
-    ) -> ::core::ffi::c_int;
-    fn session_renumber_windows(_: *mut session);
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

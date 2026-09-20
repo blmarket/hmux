@@ -1,37 +1,14 @@
+use crate::src::grid::{
+    grid_clear, grid_collect_history, grid_get_cell, grid_get_line, grid_move_cells,
+    grid_move_lines, grid_scroll_history, grid_scroll_history_region, grid_set_cell,
+    grid_set_cells, grid_set_padding, grid_string_cells,
+};
 pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
 pub use crate::src::shared::screen_write::{screen_write_cline};
 pub use crate::src::shared::hyperlinks::{hyperlinks};
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
-extern "C" {
-    fn grid_collect_history(_: *mut grid, _: ::core::ffi::c_int);
-    fn grid_scroll_history(_: *mut grid, _: u_int);
-    fn grid_scroll_history_region(_: *mut grid, _: u_int, _: u_int, _: u_int);
-    fn grid_get_cell(_: *mut grid, _: u_int, _: u_int, _: *mut grid_cell);
-    fn grid_set_cell(_: *mut grid, _: u_int, _: u_int, _: *const grid_cell);
-    fn grid_set_padding(_: *mut grid, _: u_int, _: u_int, _: ::core::ffi::c_int);
-    fn grid_set_cells(
-        _: *mut grid,
-        _: u_int,
-        _: u_int,
-        _: *const grid_cell,
-        _: *const ::core::ffi::c_char,
-        _: size_t,
-    );
-    fn grid_get_line(_: *mut grid, _: u_int) -> *mut grid_line;
-    fn grid_clear(_: *mut grid, _: u_int, _: u_int, _: u_int, _: u_int, _: u_int);
-    fn grid_move_lines(_: *mut grid, _: u_int, _: u_int, _: u_int, _: u_int);
-    fn grid_move_cells(_: *mut grid, _: u_int, _: u_int, _: u_int, _: u_int, _: u_int);
-    fn grid_string_cells(
-        _: *mut grid,
-        _: u_int,
-        _: u_int,
-        _: u_int,
-        _: *mut *mut grid_cell,
-        _: ::core::ffi::c_int,
-        _: *mut screen,
-    ) -> *mut ::core::ffi::c_char;
-}
+
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
 #[no_mangle]

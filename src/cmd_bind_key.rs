@@ -1,6 +1,14 @@
+use crate::src::arguments::{args_count, args_get, args_has, args_string, args_values};
+pub use crate::src::arguments::args_value;
+use crate::src::cmd::cmd_get_args;
+use crate::src::cmd_parse::{cmd_parse_from_arguments, cmd_parse_from_string};
+use crate::src::cmd_queue::cmdq_error;
+use crate::src::ffi::libc::free;
+use crate::src::key_bindings::key_bindings_add;
+use crate::src::key_string::key_string_lookup_string;
 pub use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 pub use crate::src::shared::arguments::{
-    args, args_parse, args_parse_cb, args_value, args_value_c2rust_unnamed, args_value_entry,
+    args, args_parse, args_parse_cb, args_value_c2rust_unnamed, args_value_entry,
 };
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
@@ -60,35 +68,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::style::*;
-extern "C" {
-
-    fn free(__ptr: *mut ::core::ffi::c_void);
-    fn args_has(_: *mut args, _: u_char) -> ::core::ffi::c_int;
-    fn args_get(_: *mut args, _: u_char) -> *const ::core::ffi::c_char;
-    fn args_count(_: *mut args) -> u_int;
-    fn args_values(_: *mut args) -> *mut args_value;
-    fn args_value(_: *mut args, _: u_int) -> *mut args_value;
-    fn args_string(_: *mut args, _: u_int) -> *const ::core::ffi::c_char;
-    fn cmd_get_args(_: *mut cmd) -> *mut args;
-    fn cmd_parse_from_string(
-        _: *const ::core::ffi::c_char,
-        _: *mut cmd_parse_input,
-    ) -> *mut cmd_parse_result;
-    fn cmd_parse_from_arguments(
-        _: *mut args_value,
-        _: u_int,
-        _: *mut cmd_parse_input,
-    ) -> *mut cmd_parse_result;
-    fn cmdq_error(_: *mut cmdq_item, _: *const ::core::ffi::c_char, ...);
-    fn key_bindings_add(
-        _: *const ::core::ffi::c_char,
-        _: key_code,
-        _: *const ::core::ffi::c_char,
-        _: ::core::ffi::c_int,
-        _: *mut cmd_list,
-    );
-    fn key_string_lookup_string(_: *const ::core::ffi::c_char) -> key_code;
-}
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
