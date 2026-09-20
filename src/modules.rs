@@ -151,6 +151,7 @@ pub mod tty_draw;
 pub mod tty_features;
 pub mod tty_keys;
 pub mod tty_term;
+pub use self::text::utf8_decode;
 pub use self::text::utf8;
 pub use self::text::utf8_combined;
 pub mod window;
