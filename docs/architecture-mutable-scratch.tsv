@@ -24,7 +24,6 @@ src/input.rs	rc	1
 src/input_keys.rs	buf	1
 src/input_keys.rs	standard_map	1
 src/key_bindings.rs	defaults	1
-src/key_string.rs	out	1
 src/osdep_linux.rs	target	1
 src/prompt.rs	tmp	1
 src/screen.rs	buf	1

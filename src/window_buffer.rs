@@ -6,7 +6,7 @@ use crate::src::format::{
     format_free, format_true,
 };
 use crate::src::grid::grid_default_cell;
-use crate::src::key_string::key_string_lookup_string;
+use crate::src::key_string::key_string_parse_cstr;
 use crate::src::mode_tree::{
     mode_tree_add, mode_tree_build, mode_tree_down, mode_tree_draw, mode_tree_each_tagged,
     mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize,
@@ -624,7 +624,7 @@ unsafe extern "C" fn window_buffer_get_key(
         line,
     );
     expanded = format_expand(ft, (*data).key_format);
-    key = key_string_lookup_string(expanded);
+    key = key_string_parse_cstr(std::ffi::CStr::from_ptr(expanded)).unwrap_or(KEYC_UNKNOWN);
     free(expanded as *mut ::core::ffi::c_void);
     format_free(ft);
     return key;

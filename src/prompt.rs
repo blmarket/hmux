@@ -9,7 +9,7 @@ use crate::src::format::{
 };
 use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
-use crate::src::key_string::key_string_lookup_key;
+use crate::src::key_string::key_string_format;
 use crate::src::log::log_debug;
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get_number,
@@ -1702,7 +1702,6 @@ pub unsafe extern "C" fn prompt_key(
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut prefix: ::core::ffi::c_char = '=' as i32 as ::core::ffi::c_char;
     let mut histstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut ks: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut size: size_t = 0;
     let mut idx: size_t = 0;
     let mut tmp: utf8_data = utf8_data {
@@ -1716,10 +1715,10 @@ pub unsafe extern "C" fn prompt_key(
     (*pr).closed = 0 as ::core::ffi::c_int;
     prompt_clear_complete(pr);
     if (*pr).flags & PROMPT_KEY != 0 {
-        ks = key_string_lookup_key(key, 0 as ::core::ffi::c_int);
+        let key_string = key_string_format(key, false);
         if prompt_fire_callback(
             pr,
-            ks,
+            key_string.as_ptr(),
             PROMPT_KEY_CLOSE,
             ::core::ptr::null_mut::<::core::ffi::c_int>(),
         ) == 0

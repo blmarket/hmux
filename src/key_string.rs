@@ -1,8 +1,7 @@
 use crate::src::ffi::libc::{
-    __ctype_tolower_loc, free, memcpy, snprintf, sscanf, strcasecmp, strlcat, strlen, wctomb,
+    __ctype_tolower_loc, free, sscanf, strcasecmp, strlen, wctomb,
 };
 use crate::src::utf8::{utf8_append, utf8_from_data, utf8_fromcstr, utf8_open, utf8_to_data};
-use crate::src::xmalloc::xsnprintf;
 pub use crate::src::shared::control_character::{
     C0_ASC, C0_BEL, C0_BS, C0_CAN, C0_CR, C0_DC1, C0_DC2, C0_DC3, C0_DC4, C0_DLE, C0_EM, C0_ENQ,
     C0_EOT, C0_ESC, C0_ETB, C0_ETX, C0_FF, C0_FS, C0_GS, C0_HT, C0_LF, C0_NAK, C0_NUL, C0_RS,
@@ -14,6 +13,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::utf8::*;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_0;
 #[derive(Copy, Clone)]
@@ -5601,8 +5601,7 @@ unsafe extern "C" fn key_string_get_modifiers(
     }
     return modifiers;
 }
-#[no_mangle]
-pub unsafe extern "C" fn key_string_lookup_string(
+unsafe fn key_string_lookup_string_impl(
     mut string: *const ::core::ffi::c_char,
 ) -> key_code {
     let mut key: key_code = 0;
@@ -5748,258 +5747,187 @@ pub unsafe extern "C" fn key_string_lookup_string(
     }
     return key | modifiers;
 }
+/// Parse a complete key name from bytes without converting it to UTF-8.
+/// Embedded NUL bytes and invalid key names return `None`.
+pub fn key_string_parse(input: &[u8]) -> Option<key_code> {
+    let input = CString::new(input).ok()?;
+    key_string_parse_cstr(&input)
+}
+
+/// Parse a NUL-terminated key name without retaining the input pointer.
+pub fn key_string_parse_cstr(input: &CStr) -> Option<key_code> {
+    let key = unsafe { key_string_lookup_string_impl(input.as_ptr()) };
+    (key != KEYC_UNKNOWN).then_some(key)
+}
+
+/// C ABI compatibility shim for the historical sentinel-returning parser.
+///
+/// # Safety
+/// `string` must point to a readable NUL-terminated string for this call.
+#[no_mangle]
+pub unsafe extern "C" fn key_string_lookup_string(
+    string: *const ::core::ffi::c_char,
+) -> key_code {
+    key_string_parse_cstr(CStr::from_ptr(string)).unwrap_or(KEYC_UNKNOWN)
+}
+
+/// Format canonical key text into a caller-owned NUL-terminated buffer.
+///
+/// The returned length excludes the trailing NUL. If `output` is too small,
+/// this function returns `None` without modifying it. The output matches
+/// [`key_string_format`].
+pub fn key_string_format_into(
+    key: key_code,
+    with_flags: bool,
+    output: &mut [u8],
+) -> Option<usize> {
+    let formatted = key_string_format_bytes(key, with_flags);
+    if output.len() <= formatted.len() {
+        return None;
+    }
+    output[..formatted.len()].copy_from_slice(&formatted);
+    output[formatted.len()] = 0;
+    Some(formatted.len())
+}
+
+/// Format a canonical key name into an owned NUL-terminated byte string.
+///
+/// The result is independent of all later formatting calls.
+pub fn key_string_format(key: key_code, with_flags: bool) -> CString {
+    CString::new(key_string_format_bytes(key, with_flags))
+        .expect("key names contain no embedded NUL")
+}
+
+fn key_string_named_name(key: key_code) -> Option<&'static [u8]> {
+    match key {
+        KEYC_NONE => Some(b"None"),
+        KEYC_UNKNOWN => Some(b"Unknown"),
+        KEYC_ANY => Some(b"Any"),
+        KEYC_FOCUS_IN => Some(b"FocusIn"),
+        KEYC_FOCUS_OUT => Some(b"FocusOut"),
+        KEYC_PASTE_START => Some(b"PasteStart"),
+        KEYC_PASTE_END => Some(b"PasteEnd"),
+        KEYC_REPORT_DARK_THEME => Some(b"ReportDarkTheme"),
+        KEYC_REPORT_LIGHT_THEME => Some(b"ReportLightTheme"),
+        KEYC_MOUSE => Some(b"Mouse"),
+        KEYC_DRAGGING => Some(b"Dragging"),
+        KEYC_MOUSEMOVE_PANE => Some(b"MouseMovePane"),
+        KEYC_MOUSEMOVE_STATUS => Some(b"MouseMoveStatus"),
+        KEYC_MOUSEMOVE_STATUS_LEFT => Some(b"MouseMoveStatusLeft"),
+        KEYC_MOUSEMOVE_STATUS_RIGHT => Some(b"MouseMoveStatusRight"),
+        KEYC_MOUSEMOVE_BORDER => Some(b"MouseMoveBorder"),
+        _ => None,
+    }
+}
+
+fn key_string_table_name(key: key_code) -> Option<Vec<u8>> {
+    unsafe {
+        let table = ::core::ptr::addr_of!(key_string_table) as *const C2RustUnnamed_1;
+        for index in 0..1379 {
+            let entry = &*table.add(index);
+            if entry.key & KEYC_MASK_KEY == key {
+                return Some(CStr::from_ptr(entry.string).to_bytes().to_vec());
+            }
+        }
+    }
+    None
+}
+
+fn key_string_format_bytes(saved: key_code, with_flags: bool) -> Vec<u8> {
+    let mut output = Vec::new();
+
+    if saved & KEYC_LITERAL != 0 {
+        let literal = (saved & 0xff) as u8;
+        if literal != 0 {
+            output.push(literal);
+        }
+    } else {
+        if saved & KEYC_CTRL != 0 {
+            output.extend_from_slice(b"C-");
+        }
+        if saved & KEYC_META != 0 {
+            output.extend_from_slice(b"M-");
+        }
+        if saved & KEYC_SHIFT != 0 {
+            output.extend_from_slice(b"S-");
+        }
+
+        let key = saved & KEYC_MASK_KEY;
+        if let Some(name) = key_string_named_name(key) {
+            output.extend_from_slice(name);
+        } else if key & KEYC_MASK_TYPE == (KEYC_TYPE_USER as key_code) << 32 {
+            output.extend_from_slice(format!("User{}", key.wrapping_sub(KEYC_USER)).as_bytes());
+        } else if let Some(name) = key_string_table_name(key) {
+            output.extend_from_slice(&name);
+        } else if key & KEYC_MASK_TYPE == 0 && key > 0x7f {
+            let mut data = utf8_data {
+                data: [0; 32],
+                have: 0,
+                size: 0,
+                width: 0,
+            };
+            unsafe {
+                utf8_to_data(key as utf8_char, &raw mut data);
+            }
+            output.extend_from_slice(&data.data[..data.size as usize]);
+        } else if key > 255 {
+            // The historical snprintf branch replaced the modifier prefix
+            // when it reported an invalid key. Preserve that canonical text.
+            output.clear();
+            output.extend_from_slice(format!("Invalid#{saved:x}").as_bytes());
+        } else if key > 32 && key <= 126 {
+            output.push(key as u8);
+        } else if key == 127 {
+            output.extend_from_slice(b"C-?");
+        } else if key >= 128 {
+            output.extend_from_slice(format!(r"\{:o}", key).as_bytes());
+        }
+    }
+
+    if with_flags && saved & KEYC_MASK_FLAGS != 0 {
+        output.push(b'[');
+        if saved & KEYC_LITERAL != 0 {
+            output.push(b'L');
+        }
+        if saved & KEYC_KEYPAD != 0 {
+            output.push(b'K');
+        }
+        if saved & KEYC_CURSOR != 0 {
+            output.push(b'C');
+        }
+        if saved & KEYC_IMPLIED_META != 0 {
+            output.push(b'I');
+        }
+        if saved & KEYC_BUILD_MODIFIERS != 0 {
+            output.push(b'B');
+        }
+        if saved & KEYC_SENT != 0 {
+            output.push(b'S');
+        }
+        output.push(b']');
+    }
+    output
+}
+
+/// C ABI compatibility shim for callers that still require the historical symbol.
+///
+/// The legacy pointer remains valid until the next call to this shim on the same
+/// thread or thread exit. Rust callers should retain key_string_format.
+///
+/// # Safety
+/// The returned pointer must only be read before the next call to this shim on
+/// the same thread, and must not be freed by the caller.
 #[no_mangle]
 pub unsafe extern "C" fn key_string_lookup_key(
-    mut key: key_code,
-    mut with_flags: ::core::ffi::c_int,
+    key: key_code,
+    with_flags: ::core::ffi::c_int,
 ) -> *const ::core::ffi::c_char {
-    let mut current_block: u64;
-    let mut saved: key_code = key;
-    static mut out: [::core::ffi::c_char; 64] = [0; 64];
-    let mut tmp: [::core::ffi::c_char; 8] = [0; 8];
-    let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut i: u_int = 0;
-    let mut ud: utf8_data = utf8_data {
-        data: [0; 32],
-        have: 0,
-        size: 0,
-        width: 0,
-    };
-    let mut off: size_t = 0;
-    *(&raw mut out as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
-    if key as ::core::ffi::c_ulonglong & KEYC_LITERAL != 0 {
-        snprintf(
-            &raw mut out as *mut ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            b"%c\0" as *const u8 as *const ::core::ffi::c_char,
-            (key & 0xff as key_code) as ::core::ffi::c_int,
-        );
-    } else {
-        if key as ::core::ffi::c_ulonglong & KEYC_CTRL != 0 {
-            strlcat(
-                &raw mut out as *mut ::core::ffi::c_char,
-                b"C-\0" as *const u8 as *const ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            );
-        }
-        if key as ::core::ffi::c_ulonglong & KEYC_META != 0 {
-            strlcat(
-                &raw mut out as *mut ::core::ffi::c_char,
-                b"M-\0" as *const u8 as *const ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            );
-        }
-        if key as ::core::ffi::c_ulonglong & KEYC_SHIFT != 0 {
-            strlcat(
-                &raw mut out as *mut ::core::ffi::c_char,
-                b"S-\0" as *const u8 as *const ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            );
-        }
-        key &= KEYC_MASK_KEY;
-        if key == KEYC_NONE as ::core::ffi::c_ulong as key_code {
-            s = b"None\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
-            s = b"Unknown\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_ANY as ::core::ffi::c_ulong as key_code {
-            s = b"Any\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_FOCUS_IN as ::core::ffi::c_ulong as key_code {
-            s = b"FocusIn\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
-            s = b"FocusOut\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_PASTE_START as ::core::ffi::c_ulong as key_code {
-            s = b"PasteStart\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_PASTE_END as ::core::ffi::c_ulong as key_code {
-            s = b"PasteEnd\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_REPORT_DARK_THEME as ::core::ffi::c_ulong as key_code {
-            s = b"ReportDarkTheme\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_REPORT_LIGHT_THEME as ::core::ffi::c_ulong as key_code {
-            s = b"ReportLightTheme\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_MOUSE as ::core::ffi::c_ulong as key_code {
-            s = b"Mouse\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_DRAGGING as ::core::ffi::c_ulong as key_code {
-            s = b"Dragging\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_MOUSEMOVE_PANE as ::core::ffi::c_ulong as key_code {
-            s = b"MouseMovePane\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_MOUSEMOVE_STATUS as ::core::ffi::c_ulong as key_code {
-            s = b"MouseMoveStatus\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_MOUSEMOVE_STATUS_LEFT as ::core::ffi::c_ulong as key_code {
-            s = b"MouseMoveStatusLeft\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_MOUSEMOVE_STATUS_RIGHT as ::core::ffi::c_ulong as key_code {
-            s = b"MouseMoveStatusRight\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else if key == KEYC_MOUSEMOVE_BORDER as ::core::ffi::c_ulong as key_code {
-            s = b"MouseMoveBorder\0" as *const u8 as *const ::core::ffi::c_char;
-            current_block = 2441265914656548762;
-        } else {
-            if key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                == (KEYC_TYPE_USER as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                    << 32 as ::core::ffi::c_int
-            {
-                snprintf(
-                    &raw mut tmp as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 8]>() as size_t,
-                    b"User%u\0" as *const u8 as *const ::core::ffi::c_char,
-                    key.wrapping_sub(KEYC_USER as ::core::ffi::c_ulong as key_code) as u_int,
-                );
-                strlcat(
-                    &raw mut out as *mut ::core::ffi::c_char,
-                    &raw mut tmp as *mut ::core::ffi::c_char,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                );
-            } else {
-                i = 0 as u_int;
-                while (i as usize)
-                    < (::core::mem::size_of::<[C2RustUnnamed_1; 1379]>() as usize)
-                        .wrapping_div(::core::mem::size_of::<C2RustUnnamed_1>() as usize)
-                {
-                    if key
-                        == key_string_table[i as usize].key as ::core::ffi::c_ulonglong
-                            & KEYC_MASK_KEY
-                    {
-                        break;
-                    }
-                    i = i.wrapping_add(1);
-                }
-                if i as usize
-                    != (::core::mem::size_of::<[C2RustUnnamed_1; 1379]>() as usize)
-                        .wrapping_div(::core::mem::size_of::<C2RustUnnamed_1>() as usize)
-                {
-                    strlcat(
-                        &raw mut out as *mut ::core::ffi::c_char,
-                        key_string_table[i as usize].string,
-                        ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                    );
-                } else if key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                    == (KEYC_TYPE_UNICODE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                        << 32 as ::core::ffi::c_int
-                    && key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
-                        > 0x7f as ::core::ffi::c_ulonglong
-                {
-                    utf8_to_data(key as utf8_char, &raw mut ud);
-                    off = strlen(&raw mut out as *mut ::core::ffi::c_char);
-                    memcpy(
-                        (&raw mut out as *mut ::core::ffi::c_char).offset(off as isize)
-                            as *mut ::core::ffi::c_void,
-                        &raw mut ud.data as *mut u_char as *const ::core::ffi::c_void,
-                        ud.size as size_t,
-                    );
-                    out[off.wrapping_add(ud.size as size_t) as usize] =
-                        '\0' as i32 as ::core::ffi::c_char;
-                } else if key > 255 as key_code {
-                    snprintf(
-                        &raw mut out as *mut ::core::ffi::c_char,
-                        ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                        b"Invalid#%llx\0" as *const u8 as *const ::core::ffi::c_char,
-                        saved,
-                    );
-                } else {
-                    if key > 32 as key_code && key <= 126 as key_code {
-                        tmp[0 as ::core::ffi::c_int as usize] = key as ::core::ffi::c_char;
-                        tmp[1 as ::core::ffi::c_int as usize] = '\0' as i32 as ::core::ffi::c_char;
-                    } else if key == 127 as key_code {
-                        xsnprintf(
-                            &raw mut tmp as *mut ::core::ffi::c_char,
-                            ::core::mem::size_of::<[::core::ffi::c_char; 8]>() as size_t,
-                            b"C-?\0" as *const u8 as *const ::core::ffi::c_char,
-                        );
-                    } else if key >= 128 as key_code {
-                        xsnprintf(
-                            &raw mut tmp as *mut ::core::ffi::c_char,
-                            ::core::mem::size_of::<[::core::ffi::c_char; 8]>() as size_t,
-                            b"\\%llo\0" as *const u8 as *const ::core::ffi::c_char,
-                            key,
-                        );
-                    }
-                    strlcat(
-                        &raw mut out as *mut ::core::ffi::c_char,
-                        &raw mut tmp as *mut ::core::ffi::c_char,
-                        ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                    );
-                }
-            }
-            current_block = 11951755102339482277;
-        }
-        match current_block {
-            11951755102339482277 => {}
-            _ => {
-                strlcat(
-                    &raw mut out as *mut ::core::ffi::c_char,
-                    s,
-                    ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-                );
-            }
-        }
+    thread_local! {
+        static BUFFER: std::cell::RefCell<CString> = std::cell::RefCell::new(CString::default());
     }
-    if with_flags != 0
-        && saved as ::core::ffi::c_ulonglong & KEYC_MASK_FLAGS != 0 as ::core::ffi::c_ulonglong
-    {
-        strlcat(
-            &raw mut out as *mut ::core::ffi::c_char,
-            b"[\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-        );
-        if saved as ::core::ffi::c_ulonglong & KEYC_LITERAL != 0 {
-            strlcat(
-                &raw mut out as *mut ::core::ffi::c_char,
-                b"L\0" as *const u8 as *const ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            );
-        }
-        if saved as ::core::ffi::c_ulonglong & KEYC_KEYPAD != 0 {
-            strlcat(
-                &raw mut out as *mut ::core::ffi::c_char,
-                b"K\0" as *const u8 as *const ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            );
-        }
-        if saved as ::core::ffi::c_ulonglong & KEYC_CURSOR != 0 {
-            strlcat(
-                &raw mut out as *mut ::core::ffi::c_char,
-                b"C\0" as *const u8 as *const ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            );
-        }
-        if saved as ::core::ffi::c_ulonglong & KEYC_IMPLIED_META != 0 {
-            strlcat(
-                &raw mut out as *mut ::core::ffi::c_char,
-                b"I\0" as *const u8 as *const ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            );
-        }
-        if saved as ::core::ffi::c_ulonglong & KEYC_BUILD_MODIFIERS != 0 {
-            strlcat(
-                &raw mut out as *mut ::core::ffi::c_char,
-                b"B\0" as *const u8 as *const ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            );
-        }
-        if saved as ::core::ffi::c_ulonglong & KEYC_SENT != 0 {
-            strlcat(
-                &raw mut out as *mut ::core::ffi::c_char,
-                b"S\0" as *const u8 as *const ::core::ffi::c_char,
-                ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-            );
-        }
-        strlcat(
-            &raw mut out as *mut ::core::ffi::c_char,
-            b"]\0" as *const u8 as *const ::core::ffi::c_char,
-            ::core::mem::size_of::<[::core::ffi::c_char; 64]>() as size_t,
-        );
-    }
-    return &raw mut out as *mut ::core::ffi::c_char;
+    BUFFER.with(|buffer| {
+        let mut buffer = buffer.borrow_mut();
+        *buffer = key_string_format(key, with_flags != 0);
+        buffer.as_ptr()
+    })
 }

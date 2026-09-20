@@ -10,7 +10,7 @@ use crate::src::ffi::libevent::{
 };
 use crate::src::ffi::resolv::__b64_pton;
 use crate::src::input::input_request_reply;
-use crate::src::key_string::key_string_lookup_key;
+use crate::src::key_string::key_string_format;
 use crate::src::log::{log_debug, log_get_level};
 use crate::src::options::{options_array_getv, options_get, options_get_number};
 use crate::src::paste::paste_add;
@@ -1298,7 +1298,8 @@ unsafe extern "C" fn tty_keys_add(
     let mut tk: *mut tty_key = ::core::ptr::null_mut::<tty_key>();
     let mut size: size_t = 0;
     let mut keystr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    keystr = key_string_lookup_key(key, 1 as ::core::ffi::c_int);
+    let key_string = key_string_format(key, true);
+    keystr = key_string.as_ptr();
     tk = tty_keys_find(tty, s, strlen(s), &raw mut size);
     if tk.is_null() {
         log_debug(
@@ -2412,13 +2413,14 @@ unsafe extern "C" fn tty_keys_extended_key(
         nkey &= !KEYC_SHIFT;
     }
     if log_get_level() != 0 as ::core::ffi::c_int {
+        let key_string = key_string_format(nkey, true);
         log_debug(
             b"%s: extended key %.*s is %llx (%s)\0" as *const u8 as *const ::core::ffi::c_char,
             (*c).name,
             *size as ::core::ffi::c_int,
             buf,
             nkey,
-            key_string_lookup_key(nkey, 1 as ::core::ffi::c_int),
+            key_string.as_ptr(),
         );
     }
     *key = nkey;

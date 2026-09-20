@@ -21,7 +21,7 @@ use crate::src::ffi::libc::{__ctype_toupper_loc, free, getpwuid, getuid, memcpy,
 use crate::src::ffi::libevent::{evbuffer_add_vprintf, evbuffer_free, evbuffer_new};
 use crate::src::file::file_error;
 use crate::src::format::{format_add, format_create, format_free, format_merge};
-use crate::src::key_string::key_string_lookup_key;
+use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_debug, log_get_level};
 use crate::src::proc::proc_get_peer_uid;
 use crate::src::server::server_add_message;
@@ -623,7 +623,6 @@ unsafe extern "C" fn cmdq_find_flag(
 unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
     let mut c: *mut client = (*item).client;
     let mut state: *mut cmdq_state = (*item).state;
-    let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut uid: uid_t = 0;
     let mut pw: *mut passwd = ::core::ptr::null_mut::<passwd>();
@@ -648,12 +647,12 @@ unsafe extern "C" fn cmdq_add_message(mut item: *mut cmdq_item) {
         if !(*c).session.is_null()
             && (*state).event.key != KEYC_NONE as ::core::ffi::c_ulong as key_code
         {
-            key = key_string_lookup_key((*state).event.key, 0 as ::core::ffi::c_int);
+            let key = key_string_format((*state).event.key, false);
             server_add_message(
                 b"%s%s key %s: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 (*c).name,
                 user,
-                key,
+                key.as_ptr(),
                 tmp,
             );
         } else {

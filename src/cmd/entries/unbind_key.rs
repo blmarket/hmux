@@ -4,7 +4,7 @@ use crate::src::cmd_queue::cmdq_error;
 use crate::src::key_bindings::{
     key_bindings_get_table, key_bindings_remove, key_bindings_remove_table,
 };
-use crate::src::key_string::key_string_lookup_string;
+use crate::src::key_string::key_string_parse_cstr;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
 pub use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item, cmds};
 pub use crate::src::shared::key::{
@@ -95,7 +95,7 @@ unsafe extern "C" fn cmd_unbind_key_exec(
         }
         return CMD_RETURN_ERROR;
     }
-    key = key_string_lookup_string(keystr);
+    key = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
     if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {

@@ -1,7 +1,7 @@
 use crate::src::cmd::cmd_mouse_at;
 use crate::src::ffi::libc::{strchr, strcspn, strlen};
 use crate::src::ffi::libevent::bufferevent_write;
-use crate::src::key_string::key_string_lookup_key;
+use crate::src::key_string::key_string_format;
 use crate::src::log::{log_debug, log_get_level};
 use crate::src::options::options_get_number;
 use crate::src::tmux::global_options;
@@ -1256,11 +1256,12 @@ pub unsafe extern "C" fn input_key_build() {
     }
     ike = input_key_tree_RB_MINMAX(&raw mut input_key_tree, RB_NEGINF);
     while !ike.is_null() {
+        let key_string = key_string_format((*ike).key, true);
         log_debug(
             b"%s: 0x%llx (%s) is %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"input_key_build\0" as *const u8 as *const ::core::ffi::c_char,
             (*ike).key,
-            key_string_lookup_key((*ike).key, 1 as ::core::ffi::c_int),
+            key_string.as_ptr(),
             (*ike).data,
         );
         ike = input_key_tree_RB_NEXT(ike);
@@ -1273,10 +1274,11 @@ pub unsafe extern "C" fn input_key_pane(
     mut m: *mut mouse_event,
 ) -> ::core::ffi::c_int {
     if log_get_level() != 0 as ::core::ffi::c_int {
+        let key_string = key_string_format(key, true);
         log_debug(
             b"writing key 0x%llx (%s) to %%%u\0" as *const u8 as *const ::core::ffi::c_char,
             key,
-            key_string_lookup_key(key, 1 as ::core::ffi::c_int),
+            key_string.as_ptr(),
             (*wp).id,
         );
     }

@@ -10,7 +10,7 @@ use crate::src::ffi::libc::{
 use crate::src::format::{format_add, format_create_defaults, format_expand, format_free};
 use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
-use crate::src::key_string::key_string_lookup_key;
+use crate::src::key_string::key_string_format;
 use crate::src::log::log_debug;
 use crate::src::menu::{menu_add_items, menu_create, menu_display, menu_free};
 use crate::src::options::options_get_number;
@@ -384,7 +384,8 @@ unsafe extern "C" fn mode_tree_build_lines(
             (*mti).key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
         }
         if (*mti).key != KEYC_NONE as ::core::ffi::c_ulong as key_code {
-            (*mti).keystr = xstrdup(key_string_lookup_key((*mti).key, 0 as ::core::ffi::c_int));
+            let key_string = key_string_format((*mti).key, false);
+            (*mti).keystr = xstrdup(key_string.as_ptr());
             (*mti).keylen = strlen((*mti).keystr);
         } else {
             (*mti).keystr = ::core::ptr::null::<::core::ffi::c_char>();

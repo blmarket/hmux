@@ -4,7 +4,7 @@ use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client,
 use crate::src::ffi::libc::{free, memcpy};
 use crate::src::format::{format_add, format_create, format_defaults, format_expand, format_free};
 use crate::src::key_bindings::{key_bindings_get_table, key_bindings_has_repeat};
-use crate::src::key_string::{key_string_lookup_key, key_string_lookup_string};
+use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::options::options_get_number;
 use crate::src::sort::{sort_get_key_bindings, sort_get_key_bindings_table, sort_order_from_string};
 use crate::src::status::status_message_set;
@@ -131,7 +131,8 @@ unsafe extern "C" fn cmd_list_keys_get_prefix(mut args: *mut args) -> *mut ::cor
     if prefix == KEYC_NONE as ::core::ffi::c_ulong as key_code {
         return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    return xstrdup(key_string_lookup_key(prefix, 0 as ::core::ffi::c_int));
+    let key_string = key_string_format(prefix, false);
+    return xstrdup(key_string.as_ptr());
 }
 unsafe extern "C" fn cmd_list_keys_get_width(mut l: *mut *mut key_binding, mut n: u_int) -> u_int {
     let mut i: u_int = 0;
@@ -139,10 +140,8 @@ unsafe extern "C" fn cmd_list_keys_get_width(mut l: *mut *mut key_binding, mut n
     let mut keywidth: u_int = 0 as u_int;
     i = 0 as u_int;
     while i < n {
-        width = utf8_cstrwidth(key_string_lookup_key(
-            (**l.offset(i as isize)).key,
-            0 as ::core::ffi::c_int,
-        ));
+        let key_string = key_string_format((**l.offset(i as isize)).key, false);
+        width = utf8_cstrwidth(key_string.as_ptr());
         if width > keywidth {
             keywidth = width;
         }
@@ -271,6 +270,7 @@ unsafe extern "C" fn cmd_list_keys_format_add_key_binding(
             b"\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
+    let key_string = key_string_format((*bd).key, false);
     format_add(
         ft,
         b"key_prefix\0" as *const u8 as *const ::core::ffi::c_char,
@@ -287,7 +287,7 @@ unsafe extern "C" fn cmd_list_keys_format_add_key_binding(
         ft,
         b"key_string\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        key_string_lookup_key((*bd).key, 0 as ::core::ffi::c_int),
+        key_string.as_ptr(),
     );
     s = cmd_list_print(
         (*bd).cmdlist,
@@ -329,7 +329,7 @@ unsafe extern "C" fn cmd_list_keys_exec(
     };
     keystr = args_string(args, 0 as u_int);
     if !keystr.is_null() {
-        only = key_string_lookup_string(keystr);
+        only = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
         if only == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
             cmdq_error(
                 item,

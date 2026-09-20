@@ -355,7 +355,7 @@ fn function_local_mutable_statics_match_the_reviewed_baseline() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let (actual, module_mutable_statics) = scratch_inventory(root);
     assert_eq!(actual, expected_scratch_statics());
-    assert_eq!(actual.values().sum::<usize>(), 81);
+    assert_eq!(actual.values().sum::<usize>(), 80);
     assert_eq!(module_mutable_statics, 380);
 }
 

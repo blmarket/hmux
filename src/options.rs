@@ -9,7 +9,7 @@ use crate::src::format::format_expand;
 use crate::src::grid::grid_default_cell;
 use crate::src::hooks::hooks_monitor_free;
 use crate::src::input::input_set_buffer_size;
-use crate::src::key_string::{key_string_lookup_key, key_string_lookup_string};
+use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::layout::layout_fix_panes;
 use crate::src::log::{fatalx, log_debug};
 use crate::src::options_table::{options_other_names, options_table};
@@ -1254,10 +1254,8 @@ unsafe extern "C" fn options_value_to_string(
                 );
             }
             2 => {
-                s = xstrdup(key_string_lookup_key(
-                    (*ov).number as key_code,
-                    0 as ::core::ffi::c_int,
-                ));
+                let key_string = key_string_format((*ov).number as key_code, false);
+                s = xstrdup(key_string.as_ptr());
             }
             3 => {
                 s = xstrdup(colour_format((*ov).number as ::core::ffi::c_int).as_ptr());
@@ -1503,10 +1501,8 @@ pub unsafe extern "C" fn options_default_to_string(
             );
         }
         2 => {
-            s = xstrdup(key_string_lookup_key(
-                (*oe).default_num as key_code,
-                0 as ::core::ffi::c_int,
-            ));
+            let key_string = key_string_format((*oe).default_num as key_code, false);
+            s = xstrdup(key_string.as_ptr());
         }
         3 => {
             s = xstrdup(colour_format((*oe).default_num as ::core::ffi::c_int).as_ptr());
@@ -2891,7 +2887,7 @@ pub unsafe extern "C" fn options_from_string(
             return 0 as ::core::ffi::c_int;
         }
         2 => {
-            key = key_string_lookup_string(value);
+            key = key_string_parse_cstr(std::ffi::CStr::from_ptr(value)).unwrap_or(KEYC_UNKNOWN);
             if key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
                 xasprintf(
                     cause,

@@ -94,7 +94,7 @@ There are currently 466 `static mut` declarations in the source inventory:
 
 | Kind | Count | Meaning |
 | --- | ---: | --- |
-| Function-local mutable statics | 81 | Translated C local statics used as scratch buffers, parser state, caches, or reusable result storage. |
+| Function-local mutable statics | 80 | Translated C local statics used as scratch buffers, parser state, caches, or reusable result storage. |
 | Module-level translated mutable statics | 380 | Command tables, mode tables, lookup tables, event state, and process/object-graph globals. |
 | Imported FFI mutable globals | 5 | `environ`, stdio globals, `program_invocation_short_name`, and ncurses `cur_term`. |
 
@@ -196,7 +196,7 @@ for this architecture baseline.
 The following are still open and are intentionally documented as debt:
 
 - The translated application remains largely raw-pointer/`unsafe` C-style
-  code. The 380 module-level mutable statics and 81 function-local statics have
+  code. The 380 module-level mutable statics and 80 function-local statics have
   not been converted to ownership-bearing Rust state or synchronized storage.
 - Anonymous generated records and aliases remain local unless their C identity
   was audited. The five named private enum exceptions remain; matching layout

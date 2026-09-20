@@ -5,7 +5,7 @@ use crate::src::cmd_parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 use crate::src::cmd_queue::cmdq_error;
 use crate::src::ffi::libc::free;
 use crate::src::key_bindings::key_bindings_add;
-use crate::src::key_string::key_string_lookup_string;
+use crate::src::key_string::key_string_parse_cstr;
 pub use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 pub use crate::src::shared::arguments::{
     args, args_parse, args_parse_cb, args_value_c2rust_unnamed, args_value_entry,
@@ -129,7 +129,8 @@ unsafe extern "C" fn cmd_bind_key_exec(
     let mut repeat: ::core::ffi::c_int = 0;
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut count: u_int = args_count(args);
-    key = key_string_lookup_string(args_string(args, 0 as u_int));
+    key = key_string_parse_cstr(std::ffi::CStr::from_ptr(args_string(args, 0 as u_int)))
+        .unwrap_or(KEYC_UNKNOWN);
     if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {

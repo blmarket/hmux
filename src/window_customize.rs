@@ -23,7 +23,7 @@ use crate::src::key_bindings::{
     key_bindings_get_default, key_bindings_get_table, key_bindings_next,
     key_bindings_next_table, key_bindings_remove, key_bindings_reset,
 };
-use crate::src::key_string::{key_string_lookup_key, key_string_lookup_string};
+use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::mode_tree::{
     mode_tree_add, mode_tree_build, mode_tree_count_tagged, mode_tree_draw,
     mode_tree_draw_as_parent, mode_tree_each_tagged, mode_tree_free, mode_tree_get_current,
@@ -1464,11 +1464,12 @@ unsafe extern "C" fn window_customize_build_keys(
         if (*data).hide_default != 0 && window_customize_key_is_changed(kt, bd) == 0 {
             bd = key_bindings_next(kt, bd);
         } else {
+            let key_string = key_string_format((*bd).key, false);
             format_add(
                 ft,
                 b"key\0" as *const u8 as *const ::core::ffi::c_char,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                key_string_lookup_key((*bd).key, 0 as ::core::ffi::c_int),
+                key_string.as_ptr(),
             );
             if !(*bd).note.is_null() {
                 format_add(
@@ -1493,7 +1494,8 @@ unsafe extern "C" fn window_customize_build_keys(
             (*item).scope = WINDOW_CUSTOMIZE_KEY;
             (*item).table = xstrdup((*kt).name);
             (*item).key = (*bd).key;
-            (*item).name = xstrdup(key_string_lookup_key((*item).key, 0 as ::core::ffi::c_int));
+            let key_string = key_string_format((*item).key, false);
+            (*item).name = xstrdup(key_string.as_ptr());
             expanded = format_expand(ft, (*data).format);
             child = mode_tree_add(
                 (*data).data,
@@ -4367,10 +4369,11 @@ unsafe extern "C" fn window_customize_set_key(
     } else if strcmp(s, b"Command\0" as *const u8 as *const ::core::ffi::c_char)
         == 0 as ::core::ffi::c_int
     {
+        let key_string = key_string_format(key, false);
         xasprintf(
             &raw mut prompt,
             b"(%s) \0" as *const u8 as *const ::core::ffi::c_char,
-            key_string_lookup_key(key, 0 as ::core::ffi::c_int),
+            key_string.as_ptr(),
         );
         value = cmd_list_print((*bd).cmdlist, 0 as ::core::ffi::c_int);
         new_item = xcalloc(
@@ -4410,10 +4413,11 @@ unsafe extern "C" fn window_customize_set_key(
     } else if strcmp(s, b"Note\0" as *const u8 as *const ::core::ffi::c_char)
         == 0 as ::core::ffi::c_int
     {
+        let key_string = key_string_format(key, false);
         xasprintf(
             &raw mut prompt,
             b"(%s) \0" as *const u8 as *const ::core::ffi::c_char,
-            key_string_lookup_key(key, 0 as ::core::ffi::c_int),
+            key_string.as_ptr(),
         );
         new_item = xcalloc(
             1 as size_t,
@@ -4501,7 +4505,7 @@ unsafe extern "C" fn window_customize_add_key_callback(
         return PROMPT_CLOSE;
     }
     keystr = xstrndup(s, keylen);
-    key = key_string_lookup_string(keystr);
+    key = key_string_parse_cstr(std::ffi::CStr::from_ptr(keystr)).unwrap_or(KEYC_UNKNOWN);
     if key == KEYC_NONE as ::core::ffi::c_ulong as key_code
         || key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
     {

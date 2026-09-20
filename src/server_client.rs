@@ -44,7 +44,7 @@ use crate::src::input::input_cancel_requests;
 use crate::src::key_bindings::{
     key_bindings_dispatch, key_bindings_get, key_bindings_get_table, key_bindings_unref_table,
 };
-use crate::src::key_string::key_string_lookup_key;
+use crate::src::key_string::key_string_format;
 use crate::src::log::{fatal, log_debug, log_get_level};
 use crate::src::menu::{menu_close, menu_get_cursor, menu_key, menu_screen};
 use crate::src::names::check_window_name;
@@ -1876,9 +1876,10 @@ unsafe extern "C" fn server_client_check_mouse(
         key |= KEYC_SHIFT;
     }
     if log_get_level() != 0 as ::core::ffi::c_int {
+        let key_string = key_string_format(key, true);
         log_debug(
             b"mouse key is %s\0" as *const u8 as *const ::core::ffi::c_char,
-            key_string_lookup_key(key, 1 as ::core::ffi::c_int),
+            key_string.as_ptr(),
         );
     }
     return key;

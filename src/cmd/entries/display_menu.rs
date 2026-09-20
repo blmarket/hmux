@@ -10,7 +10,7 @@ use crate::src::format::{
     format_add, format_create_from_target, format_expand, format_free,
     format_single_from_target,
 };
-use crate::src::key_string::key_string_lookup_string;
+use crate::src::key_string::key_string_parse_cstr;
 use crate::src::log::log_debug;
 use crate::src::menu::{menu_add_item, menu_create, menu_display, menu_free};
 use crate::src::options::{options_find_choice, options_get, options_get_number, options_get_string};
@@ -87,6 +87,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::colour::*;
 use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
+use crate::src::shared::key::*;
 use crate::src::shared::style::*;
 
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -1120,7 +1121,8 @@ unsafe extern "C" fn cmd_display_menu_exec(
                     i = i.wrapping_add(1);
                     key = args_string(args, fresh4);
                     menu_item.name = name;
-                    menu_item.key = key_string_lookup_string(key);
+                    menu_item.key = key_string_parse_cstr(std::ffi::CStr::from_ptr(key))
+                        .unwrap_or(KEYC_UNKNOWN);
                     let fresh5 = i;
                     i = i.wrapping_add(1);
                     menu_item.command = args_string(args, fresh5);

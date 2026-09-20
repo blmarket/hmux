@@ -9,7 +9,7 @@ use crate::src::format::{
 };
 use crate::src::format_draw::{format_trim_right, format_width};
 use crate::src::grid::grid_default_cell;
-use crate::src::key_string::key_string_lookup_key;
+use crate::src::key_string::key_string_format;
 use crate::src::options::options_get_number;
 use crate::src::screen::{screen_free, screen_init};
 use crate::src::screen_redraw::redraw_invalidate_scene;
@@ -122,6 +122,7 @@ pub unsafe extern "C" fn menu_add_item(
 ) {
     let mut new_item: *mut menu_item = ::core::ptr::null_mut::<menu_item>();
     let mut key: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+    let mut key_owned: Option<std::ffi::CString> = None;
     let mut cmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut suffix: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -186,7 +187,8 @@ pub unsafe extern "C" fn menu_add_item(
         && (*item).key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
         && (*item).key != KEYC_NONE as ::core::ffi::c_ulong as key_code
     {
-        key = key_string_lookup_key((*item).key, 0 as ::core::ffi::c_int);
+        key_owned = Some(key_string_format((*item).key, false));
+        key = key_owned.as_ref().unwrap().as_ptr();
         keylen = strlen(key).wrapping_add(3 as size_t);
         if keylen <= max_width.wrapping_div(4 as u_int) as size_t {
             max_width = (max_width as size_t).wrapping_sub(keylen) as u_int as u_int;

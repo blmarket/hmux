@@ -5,7 +5,7 @@ use crate::src::cmd_queue::{
     cmdq_insert_after, cmdq_new_state,
 };
 use crate::src::ffi::libc::{free, strcmp};
-use crate::src::key_string::key_string_lookup_key;
+use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_debug};
 pub use crate::src::server::clients;
 use crate::src::server_client::server_client_set_key_table;
@@ -1262,11 +1262,12 @@ pub unsafe extern "C" fn key_bindings_add(
     }
     (*bd).cmdlist = cmdlist;
     s = cmd_list_print((*bd).cmdlist, 0 as ::core::ffi::c_int);
+    let key_string = key_string_format((*bd).key, true);
     log_debug(
         b"%s: %#llx %s = %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"key_bindings_add\0" as *const u8 as *const ::core::ffi::c_char,
         (*bd).key,
-        key_string_lookup_key((*bd).key, 1 as ::core::ffi::c_int),
+        key_string.as_ptr(),
         s,
     );
     free(s as *mut ::core::ffi::c_void);
@@ -1286,11 +1287,12 @@ pub unsafe extern "C" fn key_bindings_remove(
     if bd.is_null() {
         return;
     }
+    let key_string = key_string_format((*bd).key, true);
     log_debug(
         b"%s: %#llx %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"key_bindings_remove\0" as *const u8 as *const ::core::ffi::c_char,
         (*bd).key,
-        key_string_lookup_key((*bd).key, 1 as ::core::ffi::c_int),
+        key_string.as_ptr(),
     );
     key_bindings_RB_REMOVE(&raw mut (*table).key_bindings, bd);
     key_bindings_free(bd);

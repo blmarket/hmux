@@ -7,7 +7,7 @@ use crate::src::input::input_reset;
 use crate::src::key_bindings::{
     key_bindings_dispatch, key_bindings_get, key_bindings_get_table, key_bindings_unref_table,
 };
-use crate::src::key_string::key_string_lookup_string;
+use crate::src::key_string::key_string_parse_cstr;
 use crate::src::options::options_get_number;
 use crate::src::server_client::{server_client_handle_key, server_client_handle_key_after};
 use crate::src::utf8::{utf8_from_data, utf8_fromcstr};
@@ -228,7 +228,7 @@ unsafe extern "C" fn cmd_send_keys_inject_string(
     }
     literal = args_has(args, 'l' as i32 as u_char);
     if literal == 0 {
-        key = key_string_lookup_string(s);
+        key = key_string_parse_cstr(std::ffi::CStr::from_ptr(s)).unwrap_or(KEYC_UNKNOWN);
         if key != KEYC_NONE as ::core::ffi::c_ulong as key_code
             && key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
         {
