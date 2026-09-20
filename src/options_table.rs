@@ -21,7 +21,7 @@ use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::options::*;
 use crate::src::shared::abi::*;
-pub type C2RustUnnamed = ::core::ffi::c_ulong;
+pub use crate::src::shared::key::key_code_enum as C2RustUnnamed;
 
 pub const _PATH_VI: [::core::ffi::c_char; 12] =
     unsafe { ::core::mem::transmute::<[u8; 12], [::core::ffi::c_char; 12]>(*b"/usr/bin/vi\0") };

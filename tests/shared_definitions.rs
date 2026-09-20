@@ -319,3 +319,69 @@ fn grid_role_guard_uses_fields_instead_of_generated_names() {
         ]
     );
 }
+
+// These are audit candidates, not proof of C identity. The historical key enum
+// used c_ulong; unrelated anonymous enum domains must still be reviewed on their
+// own provenance. Compatibility paths should use `pub use`, never fresh aliases.
+fn anonymous_key_enum_candidates(source: &str) -> Vec<String> {
+    let words = tokens(source);
+    let mut found = Vec::new();
+    for (i, pair) in words.windows(2).enumerate() {
+        if pair[0] != "type" || !pair[1].starts_with("C2RustUnnamed") {
+            continue;
+        }
+        let rhs: Vec<_> = words[i + 2..].iter().take_while(|s| *s != ";").collect();
+        if rhs
+            .iter()
+            .any(|s| matches!(s.as_str(), "c_ulong" | "key_code_enum"))
+        {
+            found.push(pair[1].clone());
+        }
+    }
+    found
+}
+
+#[test]
+fn audited_key_enum_aliases_have_no_local_definitions() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = vec![root.join("lib.rs"), root.join("build.rs")];
+    source_files(&root.join("src"), &mut files); // Includes binary code.
+    let audited: Vec<_> = include_str!("../docs/key-enum-declarations.tsv")
+        .lines()
+        .skip(1)
+        .map(|line| {
+            let mut fields = line.split('\t');
+            (fields.next().unwrap(), fields.next().unwrap())
+        })
+        .collect();
+    assert_eq!(audited.len(), 23);
+    for path in files {
+        let source = fs::read_to_string(&path).unwrap();
+        let relative = path.strip_prefix(root).unwrap();
+        for name in declarations(&source) {
+            assert!(!audited.iter().any(|(file, alias)| relative == Path::new(file) && name == *alias),
+                "audited key-enum path must re-export the authoritative alias: {relative:?}::{name}");
+        }
+        assert!(anonymous_key_enum_candidates(&source).is_empty(),
+            "unaudited anonymous key-enum candidate in {relative:?}; review provenance, do not merge by generated name");
+    }
+}
+
+#[test]
+fn key_enum_guard_handles_wrapping_and_unrelated_generated_domains() {
+    assert_eq!(
+        anonymous_key_enum_candidates(
+            r#"
+        // type C2RustUnnamedIgnored = c_ulong;
+        const TEXT: &str = "type C2RustUnnamedIgnored = c_ulong;";
+        pub(crate) type
+            C2RustUnnamed_999 = ::core::ffi::c_ulong;
+        type C2RustUnnamed_998 = crate::src::shared::key::key_code_enum;
+        type C2RustUnnamed_35 = ::core::ffi::c_uint;
+        struct C2RustUnnamed_38 { mask: u32, code: u32 }
+        pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_997;
+    "#
+        ),
+        ["C2RustUnnamed_999", "C2RustUnnamed_998"]
+    );
+}

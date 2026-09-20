@@ -370,3 +370,65 @@ Clippy emits the 30 existing errors twice across the library and its test build
 (60 error records); both runs also contain 14,895 warning records. The complete
 diagnostic multiset, including occurrence counts and warnings, is unchanged
 when excluding shifted line numbers. No lint allowances were added.
+
+## Anonymous key-enum alias cleanup
+
+This follow-up starts at `bba3908` on `main` and closes the remaining review
+finding: 23 unused aliases of the same historical anonymous key enum.
+[key-enum-declarations.tsv](key-enum-declarations.tsv) records the **pre-migration**
+file, public alias, line, original scalar type, enumerator count, and fingerprint.
+For every candidate, the audit read its definition at `5606919`, required the
+same `::core::ffi::c_ulong` declaration, and extracted every constant typed by
+that alias. All 23 lists contain exactly the same 2,053 `KEYC_*` names and values.
+The fingerprint is SHA-256 of the sorted `(name, value-expression)` pairs encoded
+as compact JSON (`separators=(',', ':')`). Each surviving alias appeared only at
+its declaration. This establishes provenance independently of generated names
+or equal layouts. The inventory scanned all Rust sources, including binary
+code; no additional copy of this family was found in the binary implementation.
+
+`src/shared/key.rs::key_code_enum` is now the authoritative alias, retaining
+`::core::ffi::c_ulong`. It is deliberately separate from `key_code`, whose
+original type is `::core::ffi::c_ulonglong`. All 23 original public paths now
+re-export `key_code_enum`. Exact source comparison against the starting revision
+confirmed that every affected translation unit changed only that declaration
+into a re-export. Constants, executable bodies, layouts, bitfields, and callback
+signatures are unchanged; no casts or lint allowances were added. The source
+inventory falls from 4,725 to 4,703 declarations.
+
+`tests/key_enum_layout.rs` was compiled and run against the original aliases
+before migration. Its frozen fixture records size 8 and alignment 8 for every
+alias on the validation platform. Scalar aliases have no field offsets. The
+final test compares all 23 measurements and checks direct assignments in both
+directions between every compatibility path, `c_ulong`, and the authoritative
+alias. Existing record-offset, bitfield, and callback tests also pass.
+
+The duplicate guard now checks the exact audited file/name pairs even when
+an alias's underlying type changes. It additionally flags anonymous aliases
+whose target mentions `c_ulong` or `key_code_enum` across all source files,
+including binary modules. Such new candidates require provenance review; this
+is not an assertion that all unsigned-long enums represent the same C domain.
+Lexer tests cover wrapped/restricted declarations, comments, strings, re-exports,
+and unrelated generated records and `c_uint` aliases. The guard was run before
+migration and failed on the original copy in `cmd_bind_key.rs`, as intended.
+The five previously documented distinct private enum domains remain exceptions.
+
+Fresh validation artifacts are retained under `target/consolidation/key-enum-*`:
+before/after inventories and build/test/Clippy logs, the original layout capture,
+the expected pre-migration guard failure, and isolated CLI transcripts. Clippy
+comparison uses the complete diagnostic multiset by level/message/file,
+including occurrence counts, while ignoring shifted line numbers.
+
+| Check | Before cleanup | After cleanup |
+| --- | --- | --- |
+| `cargo build` | Pass | Pass |
+| `cargo test -j 2` | 101 pass | 104 pass |
+| `cargo clippy --all-targets --message-format=json` | 30 existing errors per library build | Identical diagnostics, including 60 error and 14,895 warning records across targets |
+| Isolated CLI regressions | Pass | Pass; byte-identical JSON transcript |
+
+The existing Clippy failures remain 25 equal-expression comparisons, four
+self-assignments, and one unchanging loop condition per library build. CLI
+coverage includes key binding/listing, isolated session and pane operations,
+buffers, styles, rendered terminal output, and an invalid command. Each run uses
+a unique repository-local socket, disables user configuration, and cleans up
+its server. All changes remain on `main`; no commit, push, history rewrite, or
+modification of another repository was performed.

@@ -209,7 +209,7 @@ pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub const CMDQ_CALLBACK: cmdq_type = 1;
 pub const CMDQ_COMMAND: cmdq_type = 0;
 
-pub type C2RustUnnamed_36 = ::core::ffi::c_ulong;
+pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_36;
 
 #[inline]
 unsafe extern "C" fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {

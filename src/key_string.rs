@@ -52,7 +52,7 @@ extern "C" {
     fn utf8_fromcstr(_: *const ::core::ffi::c_char) -> *mut utf8_data;
 }
 
-pub type C2RustUnnamed_0 = ::core::ffi::c_ulong;
+pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_1 {

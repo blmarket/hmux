@@ -104,7 +104,7 @@ extern "C" {
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 
-pub type C2RustUnnamed_35 = ::core::ffi::c_ulong;
+pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_35;
 
 #[no_mangle]
 pub static mut cmd_copy_mode_entry: cmd_entry = unsafe {

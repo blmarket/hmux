@@ -203,7 +203,7 @@ extern "C" {
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 
-pub type C2RustUnnamed_37 = ::core::ffi::c_ulong;
+pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_37;
 
 #[derive(Copy, Clone)]
 #[repr(C)]

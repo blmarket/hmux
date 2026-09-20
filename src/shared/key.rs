@@ -4,6 +4,10 @@ use super::abi::{size_t, timeval, u_int};
 use super::client::client;
 use super::command::cmd_list;
 use super::mouse::mouse_event;
+// Underlying type of the historical 2,053-value anonymous KEYC enum.
+// Preserve unsigned long independently of key_code (unsigned long long).
+pub type key_code_enum = ::core::ffi::c_ulong;
+
 pub type key_code = ::core::ffi::c_ulonglong;
 
 pub type key_code_type = ::core::ffi::c_uint;

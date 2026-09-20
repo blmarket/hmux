@@ -24,7 +24,7 @@ extern "C" {
     fn key_string_lookup_string(_: *const ::core::ffi::c_char) -> key_code;
 }
 
-pub type C2RustUnnamed_1 = ::core::ffi::c_ulong;
+pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_1;
 
 #[no_mangle]
 pub static mut cmd_unbind_key_entry: cmd_entry = unsafe {

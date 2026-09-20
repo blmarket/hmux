@@ -286,7 +286,7 @@ pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub const MODE_TREE_SEARCH_BACKWARD: mode_tree_search_dir = 1;
 pub const MODE_TREE_SEARCH_FORWARD: mode_tree_search_dir = 0;
 
-pub type C2RustUnnamed_39 = ::core::ffi::c_ulong;
+pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_39;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
