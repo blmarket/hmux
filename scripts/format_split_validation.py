@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Build and compare reproducible checkpoints for the format.rs split.
 
-The staged checkpoints are made from the pre-split commit.  Each checkpoint
-adds exactly one private implementation module and its facade imports.  The
-checked-in HEAD is also copied as a final checkpoint so the report covers the
-source that is actually delivered.
+The staged checkpoints are materialized from the immutable pre-split source.
+Each checkpoint adds exactly one private implementation module and its facade
+imports.  This preserves a one-group-at-a-time build/test/Clippy comparison
+even though the historical split commit was monolithic and must not be
+rewritten.  The checked-in final revision is copied as the final checkpoint.
 """
 
 from __future__ import annotations
@@ -35,9 +36,23 @@ TARGETS = VALIDATION / "format-checkpoint-targets"
 # validated; prepare() records its resolved SHA in the manifest.
 BASELINE_REV = "8d02dca179520da8b25ba6cb1de3e6a54dafd490"
 SPLIT_REV = "cc5b93feb4395cda2edc8de3463bd04a312ec94d"
-FINAL_REV = "71891257f99a81e65037f5fa41d6deb34e44488c"
+FINAL_REV = "fe16550d49a14bfdb2485cb663387c403d2f5049"
 STAGES = ("baseline", "tree", "expression", "jobs", "callbacks", "final")
 GROUPS = ("tree", "expression", "jobs", "callbacks")
+
+COMMANDS = {
+    "build": ["cargo", "build"],
+    "test": ["cargo", "test"],
+    "clippy": [
+        "cargo",
+        "clippy",
+        "--all-targets",
+        "--message-format=json",
+        "--",
+        "-D",
+        "warnings",
+    ],
+}
 
 PUBLIC_EXPORTS = {
     "tree": (
@@ -406,7 +421,7 @@ def run_command(stage: str, label: str, command: list[str]) -> int:
     target = TARGETS / stage
     target.mkdir(parents=True, exist_ok=True)
     log_path = stage_logs / f"{label}.log"
-    environment = dict(**__import__("os").environ)
+    environment = os.environ.copy()
     environment["CARGO_TARGET_DIR"] = str(target)
     with log_path.open("w") as log:
         result = subprocess.run(
@@ -466,7 +481,7 @@ def diagnostic_digest(records: list[dict]) -> str:
 
 
 def validate() -> dict[str, dict]:
-    prepare()
+    manifest = prepare()
     if LOGS.exists():
         shutil.rmtree(LOGS)
     if TARGETS.exists():
@@ -474,21 +489,10 @@ def validate() -> dict[str, dict]:
     results: dict[str, dict] = {}
     for stage in STAGES:
         results[stage] = {
-            "build": run_command(stage, "build", ["cargo", "build"]),
-            "test": run_command(stage, "test", ["cargo", "test"]),
-            "clippy": run_command(
-                stage,
-                "clippy-strict-json",
-                [
-                    "cargo",
-                    "clippy",
-                    "--all-targets",
-                    "--message-format=json",
-                    "--",
-                    "-D",
-                    "warnings",
-                ],
-            ),
+            "commands": {name: shlex.join(command) for name, command in COMMANDS.items()},
+            "build": run_command(stage, "build", COMMANDS["build"]),
+            "test": run_command(stage, "test", COMMANDS["test"]),
+            "clippy": run_command(stage, "clippy-strict-json", COMMANDS["clippy"]),
         }
         results[stage].update(
             {
@@ -511,8 +515,52 @@ def validate() -> dict[str, dict]:
         results[stage]["clippy_diagnostics"]["matches_baseline"] = (
             results[stage]["clippy_diagnostics"]["sha256"] == baseline_digest
         )
+    for index, stage in enumerate(STAGES[1:], start=1):
+        before = STAGES[index - 1]
+        results[stage]["comparison_to_previous"] = {
+            "before_stage": before,
+            "after_stage": stage,
+            "build": {
+                "before_exit": results[before]["build"],
+                "after_exit": results[stage]["build"],
+                "unchanged": results[before]["build"] == results[stage]["build"],
+            },
+            "test": {
+                "before_exit": results[before]["test"],
+                "after_exit": results[stage]["test"],
+                "before_passed": results[before]["test_counts"]["passed"],
+                "after_passed": results[stage]["test_counts"]["passed"],
+                "passed_delta": (
+                    results[stage]["test_counts"]["passed"]
+                    - results[before]["test_counts"]["passed"]
+                ),
+            },
+            "clippy": {
+                "before_exit": results[before]["clippy"],
+                "after_exit": results[stage]["clippy"],
+                "diagnostics_same": (
+                    results[before]["clippy_diagnostics"]["sha256"]
+                    == results[stage]["clippy_diagnostics"]["sha256"]
+                ),
+                "before_count": results[before]["clippy_diagnostics"]["count"],
+                "after_count": results[stage]["clippy_diagnostics"]["count"],
+            },
+        }
     summary = VALIDATION / "format-checkpoints-summary.json"
-    summary.write_text(json.dumps(results, indent=2) + "\n")
+    summary.write_text(
+        json.dumps(
+            {
+                "baseline_revision": manifest["baseline_revision"],
+                "split_revision": manifest["split_revision"],
+                "final_revision": manifest["final_revision"],
+                "stage_order": STAGES,
+                "commands": {name: shlex.join(command) for name, command in COMMANDS.items()},
+                "stages": results,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     print(json.dumps(results, indent=2))
     return results
 
