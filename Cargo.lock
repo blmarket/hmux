@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "bytes"
+version = "1.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
+
+[[package]]
 name = "c2rust-bitfields"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -31,6 +37,13 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys",
+]
+
+[[package]]
+name = "hmux-buffer"
+version = "0.1.0"
+dependencies = [
+ "bytes",
 ]
 
 [[package]]
