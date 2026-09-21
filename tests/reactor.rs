@@ -143,6 +143,44 @@ fn pair() -> (UnixStream, UnixStream) {
     (a, b)
 }
 #[test]
+fn descriptorless_stream_keeps_buffers_without_io_callbacks() {
+    let rt = Runtime::new();
+    let mut observations = Observations::default();
+    unsafe {
+        let stream = bufferevent_new(
+            -1,
+            Some(read_cb),
+            Some(write_cb),
+            Some(error_cb),
+            (&mut observations as *mut Observations).cast(),
+        );
+        assert!(!stream.is_null());
+        assert_eq!(bufferevent_enable(stream, 6), 0);
+        assert_eq!(
+            evbuffer_add((*stream).input, b"input".as_ptr().cast(), 5),
+            0
+        );
+        assert_eq!(bufferevent_write(stream, b"output".as_ptr().cast(), 6), 0);
+        for _ in 0..3 {
+            rt.tick();
+        }
+        assert_eq!(evbuffer_get_length((*stream).input), 5);
+        assert_eq!(evbuffer_get_length((*stream).output), 6);
+        assert_eq!(observations.reads, 0);
+        assert_eq!(observations.writes, 0);
+        assert!(observations.errors.is_empty());
+        assert_eq!(bufferevent_disable(stream, 6), 0);
+        evbuffer_drain((*stream).input, 5);
+        evbuffer_drain((*stream).output, 6);
+        assert_eq!(bufferevent_enable(stream, 6), 0);
+        rt.tick();
+        assert_eq!(observations.writes, 0);
+        assert!(observations.errors.is_empty());
+        bufferevent_free(stream);
+        rt.tick();
+    }
+}
+#[test]
 fn stream_watermarks_drain_reenable_and_direct_output_append() {
     let rt = Runtime::new();
     let (mut peer, fd) = pair();

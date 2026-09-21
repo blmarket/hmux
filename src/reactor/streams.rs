@@ -75,6 +75,10 @@ pub(super) fn clear() {
     }
 }
 fn start(state: &Rc<StreamState>) -> std::io::Result<()> {
+    // Empty panes keep stream buffers and an input parser without a PTY.
+    if state.fd == -1 {
+        return Ok(());
+    }
     let source = descriptor(state.fd)?;
     let s = state.clone();
     let task = handle().spawn(async move {
@@ -200,10 +204,15 @@ pub unsafe fn bufferevent_new(
     cbarg: *mut c_void,
 ) -> *mut bufferevent {
     super::ensure_runtime();
-    let original_flags = libc::fcntl(fd, libc::F_GETFL);
-    if original_flags < 0 || libc::fcntl(fd, libc::F_SETFL, original_flags | libc::O_NONBLOCK) < 0 {
-        return std::ptr::null_mut();
-    }
+    let original_flags = if fd == -1 {
+        0
+    } else {
+        let flags = libc::fcntl(fd, libc::F_GETFL);
+        if flags < 0 || libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
+            return std::ptr::null_mut();
+        }
+        flags
+    };
     let stream = Box::into_raw(Box::new(bufferevent {
         input: evbuffer_new(),
         output: evbuffer_new(),
@@ -253,7 +262,7 @@ pub unsafe fn bufferevent_free(stream: *mut bufferevent) {
             b.remove(&((*stream).input as usize));
             b.remove(&((*stream).output as usize));
         });
-        if s.pid == std::process::id() && s.original_flags & libc::O_NONBLOCK == 0 {
+        if s.fd != -1 && s.pid == std::process::id() && s.original_flags & libc::O_NONBLOCK == 0 {
             libc::fcntl(s.fd, libc::F_SETFL, s.original_flags);
         }
         evbuffer_free((*stream).input);
