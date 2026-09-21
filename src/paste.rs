@@ -14,10 +14,9 @@ use crate::src::tmux::{clean_name, global_options};
 use crate::src::utf8::utf8_strvis;
 use crate::src::xmalloc::{xasprintf, xmalloc, xreallocarray, xstrdup};
 
-#[derive(Copy, Clone)]
-#[repr(C)]
+#[derive(Default)]
 pub struct paste_time_tree {
-    pub rbh_root: *mut paste_buffer,
+    entries: std::collections::BTreeMap<std::cmp::Reverse<u_int>, *mut paste_buffer>,
 }
 #[derive(Default)]
 pub struct paste_name_tree {
@@ -31,7 +30,7 @@ static mut paste_by_name: paste_name_tree = paste_name_tree {
     entries: std::collections::BTreeMap::new(),
 };
 static mut paste_by_time: paste_time_tree = paste_time_tree {
-    rbh_root: ::core::ptr::null::<paste_buffer>() as *mut paste_buffer,
+    entries: std::collections::BTreeMap::new(),
 };
 unsafe fn paste_name_key(name: *const ::core::ffi::c_char) -> Vec<u8> {
     std::ffi::CStr::from_ptr(name).to_bytes().to_vec()
@@ -70,500 +69,78 @@ unsafe fn paste_name_tree_remove(
         .remove(&paste_name_key((*elm).name))
         .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
-unsafe extern "C" fn paste_time_tree_RB_INSERT(
-    mut head: *mut paste_time_tree,
-    mut elm: *mut paste_buffer,
+// The original comparator puts larger order values first and treats equal
+// orders as duplicates. Reverse gives BTreeMap the same ordering and Entry
+// preserves RB_INSERT's existing-item result for duplicate keys.
+unsafe fn paste_time_key(pb: *const paste_buffer) -> std::cmp::Reverse<u_int> {
+    std::cmp::Reverse((*pb).order)
+}
+
+unsafe fn paste_time_tree_insert(
+    head: *mut paste_time_tree,
+    elm: *mut paste_buffer,
 ) -> *mut paste_buffer {
-    let mut tmp: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut parent: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = paste_cmp_times(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).time_entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).time_entry.rbe_right;
-        } else {
-            return tmp;
+    match (*head).entries.entry(paste_time_key(elm)) {
+        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+            ::core::ptr::null_mut::<paste_buffer>()
         }
     }
-    (*elm).time_entry.rbe_parent = parent;
-    (*elm).time_entry.rbe_right = ::core::ptr::null_mut::<paste_buffer>();
-    (*elm).time_entry.rbe_left = (*elm).time_entry.rbe_right;
-    (*elm).time_entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).time_entry.rbe_left = elm;
-        } else {
-            (*parent).time_entry.rbe_right = elm;
-        }
-    } else {
-        (*head).rbh_root = elm;
-    }
-    paste_time_tree_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<paste_buffer>();
 }
-unsafe extern "C" fn paste_time_tree_RB_NEXT(mut elm: *mut paste_buffer) -> *mut paste_buffer {
-    if !(*elm).time_entry.rbe_right.is_null() {
-        elm = (*elm).time_entry.rbe_right;
-        while !(*elm).time_entry.rbe_left.is_null() {
-            elm = (*elm).time_entry.rbe_left;
-        }
-    } else if !(*elm).time_entry.rbe_parent.is_null()
-        && elm == (*(*elm).time_entry.rbe_parent).time_entry.rbe_left
-    {
-        elm = (*elm).time_entry.rbe_parent;
-    } else {
-        while !(*elm).time_entry.rbe_parent.is_null()
-            && elm == (*(*elm).time_entry.rbe_parent).time_entry.rbe_right
-        {
-            elm = (*elm).time_entry.rbe_parent;
-        }
-        elm = (*elm).time_entry.rbe_parent;
-    }
-    return elm;
-}
-unsafe extern "C" fn paste_time_tree_RB_INSERT_COLOR(
-    mut head: *mut paste_time_tree,
-    mut elm: *mut paste_buffer,
-) {
-    let mut parent: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut gparent: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut tmp: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    loop {
-        parent = (*elm).time_entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).time_entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).time_entry.rbe_parent;
-        if parent == (*gparent).time_entry.rbe_left {
-            tmp = (*gparent).time_entry.rbe_right;
-            if !tmp.is_null() && (*tmp).time_entry.rbe_color == RB_RED {
-                (*tmp).time_entry.rbe_color = RB_BLACK;
-                (*parent).time_entry.rbe_color = RB_BLACK;
-                (*gparent).time_entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).time_entry.rbe_right == elm {
-                    tmp = (*parent).time_entry.rbe_right;
-                    (*parent).time_entry.rbe_right = (*tmp).time_entry.rbe_left;
-                    if !(*parent).time_entry.rbe_right.is_null() {
-                        (*(*tmp).time_entry.rbe_left).time_entry.rbe_parent = parent;
-                    }
-                    (*tmp).time_entry.rbe_parent = (*parent).time_entry.rbe_parent;
-                    if !(*tmp).time_entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).time_entry.rbe_parent).time_entry.rbe_left {
-                            (*(*parent).time_entry.rbe_parent).time_entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).time_entry.rbe_parent).time_entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).time_entry.rbe_left = parent;
-                    (*parent).time_entry.rbe_parent = tmp;
-                    !(*tmp).time_entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).time_entry.rbe_color = RB_BLACK;
-                (*gparent).time_entry.rbe_color = RB_RED;
-                tmp = (*gparent).time_entry.rbe_left;
-                (*gparent).time_entry.rbe_left = (*tmp).time_entry.rbe_right;
-                if !(*gparent).time_entry.rbe_left.is_null() {
-                    (*(*tmp).time_entry.rbe_right).time_entry.rbe_parent = gparent;
-                }
-                (*tmp).time_entry.rbe_parent = (*gparent).time_entry.rbe_parent;
-                if !(*tmp).time_entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).time_entry.rbe_parent).time_entry.rbe_left {
-                        (*(*gparent).time_entry.rbe_parent).time_entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).time_entry.rbe_parent).time_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).time_entry.rbe_right = gparent;
-                (*gparent).time_entry.rbe_parent = tmp;
-                !(*tmp).time_entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).time_entry.rbe_left;
-            if !tmp.is_null() && (*tmp).time_entry.rbe_color == RB_RED {
-                (*tmp).time_entry.rbe_color = RB_BLACK;
-                (*parent).time_entry.rbe_color = RB_BLACK;
-                (*gparent).time_entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).time_entry.rbe_left == elm {
-                    tmp = (*parent).time_entry.rbe_left;
-                    (*parent).time_entry.rbe_left = (*tmp).time_entry.rbe_right;
-                    if !(*parent).time_entry.rbe_left.is_null() {
-                        (*(*tmp).time_entry.rbe_right).time_entry.rbe_parent = parent;
-                    }
-                    (*tmp).time_entry.rbe_parent = (*parent).time_entry.rbe_parent;
-                    if !(*tmp).time_entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).time_entry.rbe_parent).time_entry.rbe_left {
-                            (*(*parent).time_entry.rbe_parent).time_entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).time_entry.rbe_parent).time_entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).time_entry.rbe_right = parent;
-                    (*parent).time_entry.rbe_parent = tmp;
-                    !(*tmp).time_entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).time_entry.rbe_color = RB_BLACK;
-                (*gparent).time_entry.rbe_color = RB_RED;
-                tmp = (*gparent).time_entry.rbe_right;
-                (*gparent).time_entry.rbe_right = (*tmp).time_entry.rbe_left;
-                if !(*gparent).time_entry.rbe_right.is_null() {
-                    (*(*tmp).time_entry.rbe_left).time_entry.rbe_parent = gparent;
-                }
-                (*tmp).time_entry.rbe_parent = (*gparent).time_entry.rbe_parent;
-                if !(*tmp).time_entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).time_entry.rbe_parent).time_entry.rbe_left {
-                        (*(*gparent).time_entry.rbe_parent).time_entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).time_entry.rbe_parent).time_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).time_entry.rbe_left = gparent;
-                (*gparent).time_entry.rbe_parent = tmp;
-                !(*tmp).time_entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).time_entry.rbe_color = RB_BLACK;
-}
-unsafe extern "C" fn paste_time_tree_RB_MINMAX(
-    mut head: *mut paste_time_tree,
-    mut val: ::core::ffi::c_int,
+
+unsafe fn paste_time_tree_minmax(
+    head: *mut paste_time_tree,
+    val: ::core::ffi::c_int,
 ) -> *mut paste_buffer {
-    let mut tmp: *mut paste_buffer = (*head).rbh_root;
-    let mut parent: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    while !tmp.is_null() {
-        parent = tmp;
-        if val < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).time_entry.rbe_left;
-        } else {
-            tmp = (*tmp).time_entry.rbe_right;
-        }
-    }
-    return parent;
-}
-unsafe extern "C" fn paste_time_tree_RB_PREV(mut elm: *mut paste_buffer) -> *mut paste_buffer {
-    if !(*elm).time_entry.rbe_left.is_null() {
-        elm = (*elm).time_entry.rbe_left;
-        while !(*elm).time_entry.rbe_right.is_null() {
-            elm = (*elm).time_entry.rbe_right;
-        }
-    } else if !(*elm).time_entry.rbe_parent.is_null()
-        && elm == (*(*elm).time_entry.rbe_parent).time_entry.rbe_right
-    {
-        elm = (*elm).time_entry.rbe_parent;
+    let entry = if val < 0 {
+        (*head).entries.values().next()
     } else {
-        while !(*elm).time_entry.rbe_parent.is_null()
-            && elm == (*(*elm).time_entry.rbe_parent).time_entry.rbe_left
-        {
-            elm = (*elm).time_entry.rbe_parent;
-        }
-        elm = (*elm).time_entry.rbe_parent;
-    }
-    return elm;
+        (*head).entries.values().next_back()
+    };
+    entry
+        .copied()
+        .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
-unsafe extern "C" fn paste_time_tree_RB_REMOVE(
-    mut head: *mut paste_time_tree,
-    mut elm: *mut paste_buffer,
+
+unsafe fn paste_time_tree_next(
+    head: *mut paste_time_tree,
+    elm: *mut paste_buffer,
 ) -> *mut paste_buffer {
-    let mut current_block: u64;
-    let mut child: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut parent: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    let mut old: *mut paste_buffer = elm;
-    let mut color: ::core::ffi::c_int = 0;
-    if (*elm).time_entry.rbe_left.is_null() {
-        child = (*elm).time_entry.rbe_right;
-        current_block = 7245201122033322888;
-    } else if (*elm).time_entry.rbe_right.is_null() {
-        child = (*elm).time_entry.rbe_left;
-        current_block = 7245201122033322888;
-    } else {
-        let mut left: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-        elm = (*elm).time_entry.rbe_right;
-        loop {
-            left = (*elm).time_entry.rbe_left;
-            if left.is_null() {
-                break;
-            }
-            elm = left;
-        }
-        child = (*elm).time_entry.rbe_right;
-        parent = (*elm).time_entry.rbe_parent;
-        color = (*elm).time_entry.rbe_color;
-        if !child.is_null() {
-            (*child).time_entry.rbe_parent = parent;
-        }
-        if !parent.is_null() {
-            if (*parent).time_entry.rbe_left == elm {
-                (*parent).time_entry.rbe_left = child;
-            } else {
-                (*parent).time_entry.rbe_right = child;
-            }
-        } else {
-            (*head).rbh_root = child;
-        }
-        if (*elm).time_entry.rbe_parent == old {
-            parent = elm;
-        }
-        (*elm).time_entry = (*old).time_entry;
-        if !(*old).time_entry.rbe_parent.is_null() {
-            if (*(*old).time_entry.rbe_parent).time_entry.rbe_left == old {
-                (*(*old).time_entry.rbe_parent).time_entry.rbe_left = elm;
-            } else {
-                (*(*old).time_entry.rbe_parent).time_entry.rbe_right = elm;
-            }
-        } else {
-            (*head).rbh_root = elm;
-        }
-        (*(*old).time_entry.rbe_left).time_entry.rbe_parent = elm;
-        if !(*old).time_entry.rbe_right.is_null() {
-            (*(*old).time_entry.rbe_right).time_entry.rbe_parent = elm;
-        }
-        if !parent.is_null() {
-            left = parent;
-            loop {
-                left = (*left).time_entry.rbe_parent;
-                if left.is_null() {
-                    break;
-                }
-            }
-        }
-        current_block = 14827960014365851420;
-    }
-    match current_block {
-        7245201122033322888 => {
-            parent = (*elm).time_entry.rbe_parent;
-            color = (*elm).time_entry.rbe_color;
-            if !child.is_null() {
-                (*child).time_entry.rbe_parent = parent;
-            }
-            if !parent.is_null() {
-                if (*parent).time_entry.rbe_left == elm {
-                    (*parent).time_entry.rbe_left = child;
-                } else {
-                    (*parent).time_entry.rbe_right = child;
-                }
-            } else {
-                (*head).rbh_root = child;
-            }
-        }
-        _ => {}
-    }
-    if color == RB_BLACK {
-        paste_time_tree_RB_REMOVE_COLOR(head, parent, child);
-    }
-    return old;
+    (*head)
+        .entries
+        .range((
+            std::ops::Bound::Excluded(paste_time_key(elm)),
+            std::ops::Bound::Unbounded,
+        ))
+        .next()
+        .map(|(_, entry)| *entry)
+        .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
-unsafe extern "C" fn paste_time_tree_RB_REMOVE_COLOR(
-    mut head: *mut paste_time_tree,
-    mut parent: *mut paste_buffer,
-    mut elm: *mut paste_buffer,
-) {
-    let mut tmp: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    while (elm.is_null() || (*elm).time_entry.rbe_color == RB_BLACK) && elm != (*head).rbh_root {
-        if (*parent).time_entry.rbe_left == elm {
-            tmp = (*parent).time_entry.rbe_right;
-            if (*tmp).time_entry.rbe_color == RB_RED {
-                (*tmp).time_entry.rbe_color = RB_BLACK;
-                (*parent).time_entry.rbe_color = RB_RED;
-                tmp = (*parent).time_entry.rbe_right;
-                (*parent).time_entry.rbe_right = (*tmp).time_entry.rbe_left;
-                if !(*parent).time_entry.rbe_right.is_null() {
-                    (*(*tmp).time_entry.rbe_left).time_entry.rbe_parent = parent;
-                }
-                (*tmp).time_entry.rbe_parent = (*parent).time_entry.rbe_parent;
-                if !(*tmp).time_entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).time_entry.rbe_parent).time_entry.rbe_left {
-                        (*(*parent).time_entry.rbe_parent).time_entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).time_entry.rbe_parent).time_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).time_entry.rbe_left = parent;
-                (*parent).time_entry.rbe_parent = tmp;
-                !(*tmp).time_entry.rbe_parent.is_null();
-                tmp = (*parent).time_entry.rbe_right;
-            }
-            if ((*tmp).time_entry.rbe_left.is_null()
-                || (*(*tmp).time_entry.rbe_left).time_entry.rbe_color == RB_BLACK)
-                && ((*tmp).time_entry.rbe_right.is_null()
-                    || (*(*tmp).time_entry.rbe_right).time_entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).time_entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).time_entry.rbe_parent;
-            } else {
-                if (*tmp).time_entry.rbe_right.is_null()
-                    || (*(*tmp).time_entry.rbe_right).time_entry.rbe_color == RB_BLACK
-                {
-                    let mut oleft: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-                    oleft = (*tmp).time_entry.rbe_left;
-                    if !oleft.is_null() {
-                        (*oleft).time_entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).time_entry.rbe_color = RB_RED;
-                    oleft = (*tmp).time_entry.rbe_left;
-                    (*tmp).time_entry.rbe_left = (*oleft).time_entry.rbe_right;
-                    if !(*tmp).time_entry.rbe_left.is_null() {
-                        (*(*oleft).time_entry.rbe_right).time_entry.rbe_parent = tmp;
-                    }
-                    (*oleft).time_entry.rbe_parent = (*tmp).time_entry.rbe_parent;
-                    if !(*oleft).time_entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).time_entry.rbe_parent).time_entry.rbe_left {
-                            (*(*tmp).time_entry.rbe_parent).time_entry.rbe_left = oleft;
-                        } else {
-                            (*(*tmp).time_entry.rbe_parent).time_entry.rbe_right = oleft;
-                        }
-                    } else {
-                        (*head).rbh_root = oleft;
-                    }
-                    (*oleft).time_entry.rbe_right = tmp;
-                    (*tmp).time_entry.rbe_parent = oleft;
-                    !(*oleft).time_entry.rbe_parent.is_null();
-                    tmp = (*parent).time_entry.rbe_right;
-                }
-                (*tmp).time_entry.rbe_color = (*parent).time_entry.rbe_color;
-                (*parent).time_entry.rbe_color = RB_BLACK;
-                if !(*tmp).time_entry.rbe_right.is_null() {
-                    (*(*tmp).time_entry.rbe_right).time_entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).time_entry.rbe_right;
-                (*parent).time_entry.rbe_right = (*tmp).time_entry.rbe_left;
-                if !(*parent).time_entry.rbe_right.is_null() {
-                    (*(*tmp).time_entry.rbe_left).time_entry.rbe_parent = parent;
-                }
-                (*tmp).time_entry.rbe_parent = (*parent).time_entry.rbe_parent;
-                if !(*tmp).time_entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).time_entry.rbe_parent).time_entry.rbe_left {
-                        (*(*parent).time_entry.rbe_parent).time_entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).time_entry.rbe_parent).time_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).time_entry.rbe_left = parent;
-                (*parent).time_entry.rbe_parent = tmp;
-                !(*tmp).time_entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        } else {
-            tmp = (*parent).time_entry.rbe_left;
-            if (*tmp).time_entry.rbe_color == RB_RED {
-                (*tmp).time_entry.rbe_color = RB_BLACK;
-                (*parent).time_entry.rbe_color = RB_RED;
-                tmp = (*parent).time_entry.rbe_left;
-                (*parent).time_entry.rbe_left = (*tmp).time_entry.rbe_right;
-                if !(*parent).time_entry.rbe_left.is_null() {
-                    (*(*tmp).time_entry.rbe_right).time_entry.rbe_parent = parent;
-                }
-                (*tmp).time_entry.rbe_parent = (*parent).time_entry.rbe_parent;
-                if !(*tmp).time_entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).time_entry.rbe_parent).time_entry.rbe_left {
-                        (*(*parent).time_entry.rbe_parent).time_entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).time_entry.rbe_parent).time_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).time_entry.rbe_right = parent;
-                (*parent).time_entry.rbe_parent = tmp;
-                !(*tmp).time_entry.rbe_parent.is_null();
-                tmp = (*parent).time_entry.rbe_left;
-            }
-            if ((*tmp).time_entry.rbe_left.is_null()
-                || (*(*tmp).time_entry.rbe_left).time_entry.rbe_color == RB_BLACK)
-                && ((*tmp).time_entry.rbe_right.is_null()
-                    || (*(*tmp).time_entry.rbe_right).time_entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).time_entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).time_entry.rbe_parent;
-            } else {
-                if (*tmp).time_entry.rbe_left.is_null()
-                    || (*(*tmp).time_entry.rbe_left).time_entry.rbe_color == RB_BLACK
-                {
-                    let mut oright: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-                    oright = (*tmp).time_entry.rbe_right;
-                    if !oright.is_null() {
-                        (*oright).time_entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).time_entry.rbe_color = RB_RED;
-                    oright = (*tmp).time_entry.rbe_right;
-                    (*tmp).time_entry.rbe_right = (*oright).time_entry.rbe_left;
-                    if !(*tmp).time_entry.rbe_right.is_null() {
-                        (*(*oright).time_entry.rbe_left).time_entry.rbe_parent = tmp;
-                    }
-                    (*oright).time_entry.rbe_parent = (*tmp).time_entry.rbe_parent;
-                    if !(*oright).time_entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).time_entry.rbe_parent).time_entry.rbe_left {
-                            (*(*tmp).time_entry.rbe_parent).time_entry.rbe_left = oright;
-                        } else {
-                            (*(*tmp).time_entry.rbe_parent).time_entry.rbe_right = oright;
-                        }
-                    } else {
-                        (*head).rbh_root = oright;
-                    }
-                    (*oright).time_entry.rbe_left = tmp;
-                    (*tmp).time_entry.rbe_parent = oright;
-                    !(*oright).time_entry.rbe_parent.is_null();
-                    tmp = (*parent).time_entry.rbe_left;
-                }
-                (*tmp).time_entry.rbe_color = (*parent).time_entry.rbe_color;
-                (*parent).time_entry.rbe_color = RB_BLACK;
-                if !(*tmp).time_entry.rbe_left.is_null() {
-                    (*(*tmp).time_entry.rbe_left).time_entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).time_entry.rbe_left;
-                (*parent).time_entry.rbe_left = (*tmp).time_entry.rbe_right;
-                if !(*parent).time_entry.rbe_left.is_null() {
-                    (*(*tmp).time_entry.rbe_right).time_entry.rbe_parent = parent;
-                }
-                (*tmp).time_entry.rbe_parent = (*parent).time_entry.rbe_parent;
-                if !(*tmp).time_entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).time_entry.rbe_parent).time_entry.rbe_left {
-                        (*(*parent).time_entry.rbe_parent).time_entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).time_entry.rbe_parent).time_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).time_entry.rbe_right = parent;
-                (*parent).time_entry.rbe_parent = tmp;
-                !(*tmp).time_entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        }
-    }
-    if !elm.is_null() {
-        (*elm).time_entry.rbe_color = RB_BLACK;
-    }
+
+unsafe fn paste_time_tree_prev(
+    head: *mut paste_time_tree,
+    elm: *mut paste_buffer,
+) -> *mut paste_buffer {
+    (*head)
+        .entries
+        .range((
+            std::ops::Bound::Unbounded,
+            std::ops::Bound::Excluded(paste_time_key(elm)),
+        ))
+        .next_back()
+        .map(|(_, entry)| *entry)
+        .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
+}
+
+unsafe fn paste_time_tree_remove(
+    head: *mut paste_time_tree,
+    elm: *mut paste_buffer,
+) -> *mut paste_buffer {
+    (*head)
+        .entries
+        .remove(&paste_time_key(elm))
+        .unwrap_or(::core::ptr::null_mut::<paste_buffer>())
 }
 unsafe extern "C" fn paste_fire_event(
     mut name: *const ::core::ffi::c_char,
@@ -578,18 +155,6 @@ unsafe extern "C" fn paste_fire_event(
         pbname,
     );
     events_fire(name, ep);
-}
-unsafe extern "C" fn paste_cmp_times(
-    mut a: *const paste_buffer,
-    mut b: *const paste_buffer,
-) -> ::core::ffi::c_int {
-    if (*a).order > (*b).order {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*a).order < (*b).order {
-        return 1 as ::core::ffi::c_int;
-    }
-    return 0 as ::core::ffi::c_int;
 }
 #[no_mangle]
 pub unsafe extern "C" fn paste_buffer_name(
@@ -618,22 +183,22 @@ pub unsafe extern "C" fn paste_buffer_data(
 #[no_mangle]
 pub unsafe extern "C" fn paste_walk(mut pb: *mut paste_buffer) -> *mut paste_buffer {
     if pb.is_null() {
-        return paste_time_tree_RB_MINMAX(&raw mut paste_by_time, RB_NEGINF);
+        return paste_time_tree_minmax(&raw mut paste_by_time, RB_NEGINF);
     }
-    return paste_time_tree_RB_NEXT(pb);
+    return paste_time_tree_next(&raw mut paste_by_time, pb);
 }
 #[no_mangle]
 pub unsafe extern "C" fn paste_is_empty() -> ::core::ffi::c_int {
-    return (paste_by_time.rbh_root == NULL as *mut paste_buffer) as ::core::ffi::c_int;
+    return paste_by_time.entries.is_empty() as ::core::ffi::c_int;
 }
 #[no_mangle]
 pub unsafe extern "C" fn paste_get_top(
     mut name: *mut *mut ::core::ffi::c_char,
 ) -> *mut paste_buffer {
     let mut pb: *mut paste_buffer = ::core::ptr::null_mut::<paste_buffer>();
-    pb = paste_time_tree_RB_MINMAX(&raw mut paste_by_time, RB_NEGINF);
+    pb = paste_time_tree_minmax(&raw mut paste_by_time, RB_NEGINF);
     while !pb.is_null() && (*pb).automatic == 0 {
-        pb = paste_time_tree_RB_NEXT(pb);
+        pb = paste_time_tree_next(&raw mut paste_by_time, pb);
     }
     if pb.is_null() {
         return ::core::ptr::null_mut::<paste_buffer>();
@@ -657,7 +222,7 @@ pub unsafe extern "C" fn paste_free(mut pb: *mut paste_buffer) {
         (*pb).name,
     );
     paste_name_tree_remove(&raw mut paste_by_name, pb);
-    paste_time_tree_RB_REMOVE(&raw mut paste_by_time, pb);
+    paste_time_tree_remove(&raw mut paste_by_time, pb);
     if (*pb).automatic != 0 {
         paste_num_automatic = paste_num_automatic.wrapping_sub(1);
     }
@@ -685,9 +250,9 @@ pub unsafe extern "C" fn paste_add(
         global_options,
         b"buffer-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
-    pb = paste_time_tree_RB_MINMAX(&raw mut paste_by_time, RB_INF);
+    pb = paste_time_tree_minmax(&raw mut paste_by_time, RB_INF);
     while !pb.is_null() && {
-        pb1 = paste_time_tree_RB_PREV(pb);
+        pb1 = paste_time_tree_prev(&raw mut paste_by_time, pb);
         1 as ::core::ffi::c_int != 0
     } {
         if paste_num_automatic < limit {
@@ -722,7 +287,7 @@ pub unsafe extern "C" fn paste_add(
     paste_next_order = paste_next_order.wrapping_add(1);
     (*pb).order = fresh0;
     paste_name_tree_insert(&raw mut paste_by_name, pb);
-    paste_time_tree_RB_INSERT(&raw mut paste_by_time, pb);
+    paste_time_tree_insert(&raw mut paste_by_time, pb);
     paste_fire_event(
         b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
         (*pb).name,
@@ -853,7 +418,7 @@ pub unsafe extern "C" fn paste_set(
         paste_free(old);
     }
     paste_name_tree_insert(&raw mut paste_by_name, pb);
-    paste_time_tree_RB_INSERT(&raw mut paste_by_time, pb);
+    paste_time_tree_insert(&raw mut paste_by_time, pb);
     paste_fire_event(
         b"paste-buffer-changed\0" as *const u8 as *const ::core::ffi::c_char,
         (*pb).name,
@@ -929,6 +494,12 @@ mod tests {
         })
     }
 
+    fn ordered_buffer(name: &CString, order: u_int) -> Box<paste_buffer> {
+        let mut buffer = named_buffer(name);
+        buffer.order = order;
+        buffer
+    }
+
     #[test]
     fn paste_name_tree_matches_strcmp_order_and_duplicate_semantics() {
         let names = [
@@ -972,6 +543,51 @@ mod tests {
 
             assert_eq!(paste_name_tree_remove(&raw mut tree, a_high), a_high);
             assert!(paste_name_tree_find(&raw mut tree, names[2].as_ptr()).is_null());
+        }
+    }
+
+    #[test]
+    fn paste_time_tree_matches_reverse_order_and_duplicate_semantics() {
+        let names = [
+            CString::new("oldest").unwrap(),
+            CString::new("middle").unwrap(),
+            CString::new("newest").unwrap(),
+        ];
+        let mut items = [
+            ordered_buffer(&names[0], 4),
+            ordered_buffer(&names[1], 7),
+            ordered_buffer(&names[2], 12),
+        ];
+        let duplicate_name = CString::new("duplicate").unwrap();
+        let mut duplicate = ordered_buffer(&duplicate_name, 7);
+        let mut tree = paste_time_tree::default();
+
+        unsafe {
+            let oldest = items[0].as_mut() as *mut paste_buffer;
+            let middle = items[1].as_mut() as *mut paste_buffer;
+            let newest = items[2].as_mut() as *mut paste_buffer;
+            let duplicate = duplicate.as_mut() as *mut paste_buffer;
+
+            assert!(paste_time_tree_insert(&raw mut tree, oldest).is_null());
+            assert!(paste_time_tree_insert(&raw mut tree, newest).is_null());
+            assert!(paste_time_tree_insert(&raw mut tree, middle).is_null());
+            assert_eq!(paste_time_tree_insert(&raw mut tree, duplicate), middle);
+
+            assert_eq!(
+                (*paste_time_tree_minmax(&raw mut tree, RB_NEGINF)).order,
+                12
+            );
+            assert_eq!((*paste_time_tree_next(&raw mut tree, newest)).order, 7);
+            assert_eq!((*paste_time_tree_next(&raw mut tree, middle)).order, 4);
+            assert!(paste_time_tree_next(&raw mut tree, oldest).is_null());
+
+            assert_eq!((*paste_time_tree_minmax(&raw mut tree, RB_INF)).order, 4);
+            assert_eq!((*paste_time_tree_prev(&raw mut tree, oldest)).order, 7);
+            assert_eq!((*paste_time_tree_prev(&raw mut tree, middle)).order, 12);
+            assert!(paste_time_tree_prev(&raw mut tree, newest).is_null());
+
+            assert_eq!(paste_time_tree_remove(&raw mut tree, middle), middle);
+            assert_eq!((*paste_time_tree_next(&raw mut tree, newest)).order, 4);
         }
     }
 }
