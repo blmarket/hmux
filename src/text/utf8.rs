@@ -37,20 +37,10 @@ pub struct utf8_width_item {
     pub wc: wchar_t,
     pub width: u_int,
     pub allocated: ::core::ffi::c_int,
-    pub entry: C2RustUnnamed_0,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_0 {
-    pub rbe_left: *mut utf8_width_item,
-    pub rbe_right: *mut utf8_width_item,
-    pub rbe_parent: *mut utf8_width_item,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
+#[derive(Default)]
 pub struct utf8_width_cache {
-    pub rbh_root: *mut utf8_width_item,
+    entries: std::collections::BTreeMap<wchar_t, *mut utf8_width_item>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -84,2299 +74,882 @@ pub const ULLONG_MAX: ::core::ffi::c_ulonglong = (__LONG_LONG_MAX__ as ::core::f
     .wrapping_add(1 as ::core::ffi::c_ulonglong);
 pub const WCHAR_MAX: ::core::ffi::c_int = __WCHAR_MAX;
 
-unsafe extern "C" fn utf8_width_cache_cmp(
-    mut uw1: *mut utf8_width_item,
-    mut uw2: *mut utf8_width_item,
-) -> ::core::ffi::c_int {
-    if (*uw1).wc < (*uw2).wc {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*uw1).wc > (*uw2).wc {
-        return 1 as ::core::ffi::c_int;
-    }
-    return 0 as ::core::ffi::c_int;
+// The old comparator ordered entries only by their signed wchar_t value.
+// BTreeMap has the same ordering, while its entry API preserves the tree's
+// duplicate-insertion behavior of returning the existing item.
+unsafe fn utf8_width_cache_find(head: *mut utf8_width_cache, wc: wchar_t) -> *mut utf8_width_item {
+    (*head)
+        .entries
+        .get(&wc)
+        .copied()
+        .unwrap_or(::core::ptr::null_mut::<utf8_width_item>())
 }
-unsafe extern "C" fn utf8_width_cache_RB_FIND(
-    mut head: *mut utf8_width_cache,
-    mut elm: *mut utf8_width_item,
+
+unsafe fn utf8_width_cache_insert(
+    head: *mut utf8_width_cache,
+    elm: *mut utf8_width_item,
 ) -> *mut utf8_width_item {
-    let mut tmp: *mut utf8_width_item = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = utf8_width_cache_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
+    match (*head).entries.entry((*elm).wc) {
+        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+            ::core::ptr::null_mut::<utf8_width_item>()
         }
     }
-    return ::core::ptr::null_mut::<utf8_width_item>();
 }
-unsafe extern "C" fn utf8_width_cache_RB_REMOVE_COLOR(
-    mut head: *mut utf8_width_cache,
-    mut parent: *mut utf8_width_item,
-    mut elm: *mut utf8_width_item,
-) {
-    let mut tmp: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-    while (elm.is_null() || (*elm).entry.rbe_color == RB_BLACK) && elm != (*head).rbh_root {
-        if (*parent).entry.rbe_left == elm {
-            tmp = (*parent).entry.rbe_right;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_right;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK
-                {
-                    let mut oleft: *mut utf8_width_item =
-                        ::core::ptr::null_mut::<utf8_width_item>();
-                    oleft = (*tmp).entry.rbe_left;
-                    if !oleft.is_null() {
-                        (*oleft).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oleft = (*tmp).entry.rbe_left;
-                    (*tmp).entry.rbe_left = (*oleft).entry.rbe_right;
-                    if !(*tmp).entry.rbe_left.is_null() {
-                        (*(*oleft).entry.rbe_right).entry.rbe_parent = tmp;
-                    }
-                    (*oleft).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oleft).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oleft;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oleft;
-                        }
-                    } else {
-                        (*head).rbh_root = oleft;
-                    }
-                    (*oleft).entry.rbe_right = tmp;
-                    (*tmp).entry.rbe_parent = oleft;
-                    !(*oleft).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_right;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        } else {
-            tmp = (*parent).entry.rbe_left;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_left;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_left.is_null()
-                    || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK
-                {
-                    let mut oright: *mut utf8_width_item =
-                        ::core::ptr::null_mut::<utf8_width_item>();
-                    oright = (*tmp).entry.rbe_right;
-                    if !oright.is_null() {
-                        (*oright).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oright = (*tmp).entry.rbe_right;
-                    (*tmp).entry.rbe_right = (*oright).entry.rbe_left;
-                    if !(*tmp).entry.rbe_right.is_null() {
-                        (*(*oright).entry.rbe_left).entry.rbe_parent = tmp;
-                    }
-                    (*oright).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oright).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oright;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oright;
-                        }
-                    } else {
-                        (*head).rbh_root = oright;
-                    }
-                    (*oright).entry.rbe_left = tmp;
-                    (*tmp).entry.rbe_parent = oright;
-                    !(*oright).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_left;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        }
-    }
-    if !elm.is_null() {
-        (*elm).entry.rbe_color = RB_BLACK;
-    }
-}
-unsafe extern "C" fn utf8_width_cache_RB_INSERT(
-    mut head: *mut utf8_width_cache,
-    mut elm: *mut utf8_width_item,
+
+unsafe fn utf8_width_cache_minmax(
+    head: *mut utf8_width_cache,
+    val: ::core::ffi::c_int,
 ) -> *mut utf8_width_item {
-    let mut tmp: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-    let mut parent: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = utf8_width_cache_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    (*elm).entry.rbe_parent = parent;
-    (*elm).entry.rbe_right = ::core::ptr::null_mut::<utf8_width_item>();
-    (*elm).entry.rbe_left = (*elm).entry.rbe_right;
-    (*elm).entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).entry.rbe_left = elm;
-        } else {
-            (*parent).entry.rbe_right = elm;
-        }
+    let entry = if val < 0 {
+        (*head).entries.iter().next()
     } else {
-        (*head).rbh_root = elm;
-    }
-    utf8_width_cache_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<utf8_width_item>();
+        (*head).entries.iter().next_back()
+    };
+    entry
+        .map(|(_, entry)| *entry)
+        .unwrap_or(::core::ptr::null_mut::<utf8_width_item>())
 }
-unsafe extern "C" fn utf8_width_cache_RB_NEXT(
-    mut elm: *mut utf8_width_item,
+
+unsafe fn utf8_width_cache_next(
+    head: *mut utf8_width_cache,
+    elm: *mut utf8_width_item,
 ) -> *mut utf8_width_item {
-    if !(*elm).entry.rbe_right.is_null() {
-        elm = (*elm).entry.rbe_right;
-        while !(*elm).entry.rbe_left.is_null() {
-            elm = (*elm).entry.rbe_left;
-        }
-    } else if !(*elm).entry.rbe_parent.is_null() && elm == (*(*elm).entry.rbe_parent).entry.rbe_left
-    {
-        elm = (*elm).entry.rbe_parent;
-    } else {
-        while !(*elm).entry.rbe_parent.is_null()
-            && elm == (*(*elm).entry.rbe_parent).entry.rbe_right
-        {
-            elm = (*elm).entry.rbe_parent;
-        }
-        elm = (*elm).entry.rbe_parent;
-    }
-    return elm;
+    (*head)
+        .entries
+        .range((
+            std::ops::Bound::Excluded((*elm).wc),
+            std::ops::Bound::Unbounded,
+        ))
+        .next()
+        .map(|(_, entry)| *entry)
+        .unwrap_or(::core::ptr::null_mut::<utf8_width_item>())
 }
-unsafe extern "C" fn utf8_width_cache_RB_MINMAX(
-    mut head: *mut utf8_width_cache,
-    mut val: ::core::ffi::c_int,
+
+unsafe fn utf8_width_cache_remove(
+    head: *mut utf8_width_cache,
+    elm: *mut utf8_width_item,
 ) -> *mut utf8_width_item {
-    let mut tmp: *mut utf8_width_item = (*head).rbh_root;
-    let mut parent: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-    while !tmp.is_null() {
-        parent = tmp;
-        if val < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else {
-            tmp = (*tmp).entry.rbe_right;
-        }
-    }
-    return parent;
+    (*head)
+        .entries
+        .remove(&(*elm).wc)
+        .unwrap_or(::core::ptr::null_mut::<utf8_width_item>())
 }
-unsafe extern "C" fn utf8_width_cache_RB_INSERT_COLOR(
-    mut head: *mut utf8_width_cache,
-    mut elm: *mut utf8_width_item,
-) {
-    let mut parent: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-    let mut gparent: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-    let mut tmp: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-    loop {
-        parent = (*elm).entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).entry.rbe_parent;
-        if parent == (*gparent).entry.rbe_left {
-            tmp = (*gparent).entry.rbe_right;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_right == elm {
-                    tmp = (*parent).entry.rbe_right;
-                    (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                    if !(*parent).entry.rbe_right.is_null() {
-                        (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_left = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_left;
-                (*gparent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*gparent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).entry.rbe_left;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_left == elm {
-                    tmp = (*parent).entry.rbe_left;
-                    (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                    if !(*parent).entry.rbe_left.is_null() {
-                        (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_right = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_right;
-                (*gparent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*gparent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).entry.rbe_color = RB_BLACK;
-}
-unsafe extern "C" fn utf8_width_cache_RB_REMOVE(
-    mut head: *mut utf8_width_cache,
-    mut elm: *mut utf8_width_item,
-) -> *mut utf8_width_item {
-    let mut current_block: u64;
-    let mut child: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-    let mut parent: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-    let mut old: *mut utf8_width_item = elm;
-    let mut color: ::core::ffi::c_int = 0;
-    if (*elm).entry.rbe_left.is_null() {
-        child = (*elm).entry.rbe_right;
-        current_block = 7245201122033322888;
-    } else if (*elm).entry.rbe_right.is_null() {
-        child = (*elm).entry.rbe_left;
-        current_block = 7245201122033322888;
-    } else {
-        let mut left: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
-        elm = (*elm).entry.rbe_right;
-        loop {
-            left = (*elm).entry.rbe_left;
-            if left.is_null() {
-                break;
-            }
-            elm = left;
-        }
-        child = (*elm).entry.rbe_right;
-        parent = (*elm).entry.rbe_parent;
-        color = (*elm).entry.rbe_color;
-        if !child.is_null() {
-            (*child).entry.rbe_parent = parent;
-        }
-        if !parent.is_null() {
-            if (*parent).entry.rbe_left == elm {
-                (*parent).entry.rbe_left = child;
-            } else {
-                (*parent).entry.rbe_right = child;
-            }
-        } else {
-            (*head).rbh_root = child;
-        }
-        if (*elm).entry.rbe_parent == old {
-            parent = elm;
-        }
-        (*elm).entry = (*old).entry;
-        if !(*old).entry.rbe_parent.is_null() {
-            if (*(*old).entry.rbe_parent).entry.rbe_left == old {
-                (*(*old).entry.rbe_parent).entry.rbe_left = elm;
-            } else {
-                (*(*old).entry.rbe_parent).entry.rbe_right = elm;
-            }
-        } else {
-            (*head).rbh_root = elm;
-        }
-        (*(*old).entry.rbe_left).entry.rbe_parent = elm;
-        if !(*old).entry.rbe_right.is_null() {
-            (*(*old).entry.rbe_right).entry.rbe_parent = elm;
-        }
-        if !parent.is_null() {
-            left = parent;
-            loop {
-                left = (*left).entry.rbe_parent;
-                if left.is_null() {
-                    break;
-                }
-            }
-        }
-        current_block = 9927394827938689620;
-    }
-    match current_block {
-        7245201122033322888 => {
-            parent = (*elm).entry.rbe_parent;
-            color = (*elm).entry.rbe_color;
-            if !child.is_null() {
-                (*child).entry.rbe_parent = parent;
-            }
-            if !parent.is_null() {
-                if (*parent).entry.rbe_left == elm {
-                    (*parent).entry.rbe_left = child;
-                } else {
-                    (*parent).entry.rbe_right = child;
-                }
-            } else {
-                (*head).rbh_root = child;
-            }
-        }
-        _ => {}
-    }
-    if color == RB_BLACK {
-        utf8_width_cache_RB_REMOVE_COLOR(head, parent, child);
-    }
-    return old;
-}
+
 static mut utf8_width_cache: utf8_width_cache = utf8_width_cache {
-    rbh_root: ::core::ptr::null::<utf8_width_item>() as *mut utf8_width_item,
+    entries: std::collections::BTreeMap::new(),
 };
 static mut utf8_default_width_cache: [utf8_width_item; 162] = [
     utf8_width_item {
         wc: 0x261d as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x26f9 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x270a as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x270b as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x270c as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x270d as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1e6 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1e7 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1e8 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1e9 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1ea as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1eb as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1ec as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1ed as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1ee as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1ef as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1f0 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1f1 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1f2 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1f3 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1f4 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1f5 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1f6 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1f7 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1f8 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1f9 as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1fa as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1fb as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1fc as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1fd as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1fe as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f1ff as wchar_t,
         width: 1 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f385 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f3c2 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f3c3 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f3c4 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f3c7 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f3ca as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f3cb as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f3cc as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f3fb as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f3fc as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f3fd as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f3fe as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f3ff as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f442 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f443 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f446 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f447 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f448 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f449 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f44a as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f44b as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f44c as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f44d as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f44e as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f44f as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f450 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f466 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f467 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f468 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f469 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f46b as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f46c as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f46d as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f46e as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f470 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f471 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f472 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f473 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f474 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f475 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f476 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f477 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f478 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f47c as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f481 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f482 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f483 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f485 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f486 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f487 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f48f as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f491 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f4aa as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f574 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f575 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f57a as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f590 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f595 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f596 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f645 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f646 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f647 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f64b as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f64c as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f64d as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f64e as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f64f as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f6a3 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f6b4 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f6b5 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f6b6 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f6c0 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f6cc as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f90c as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f90f as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f918 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f919 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f91a as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f91b as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f91c as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f91d as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f91e as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f91f as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f926 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f930 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f931 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f932 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f933 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f934 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f935 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f936 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f937 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f938 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f939 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f93d as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f93e as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f977 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9b5 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9b6 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9b8 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9b9 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9bb as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9cd as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9ce as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9cf as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9d1 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9d2 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9d3 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9d4 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9d5 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9d6 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9d7 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9d8 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9d9 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9da as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9db as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9dc as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1f9dd as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1fac3 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1fac4 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1fac5 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1faf0 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1faf1 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1faf2 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1faf3 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1faf4 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1faf5 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1faf6 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1faf7 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
     utf8_width_item {
         wc: 0x1faf8 as wchar_t,
         width: 2 as u_int,
         allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
     },
 ];
 unsafe extern "C" fn utf8_data_cmp(
@@ -2638,19 +1211,7 @@ unsafe extern "C" fn utf8_item_by_index(mut index: u_int) -> *mut utf8_item {
     return utf8_index_tree_find(&raw mut utf8_index_tree, ui.index);
 }
 unsafe extern "C" fn utf8_find_in_width_cache(mut wc: wchar_t) -> *mut utf8_width_item {
-    let mut uw: utf8_width_item = utf8_width_item {
-        wc: 0,
-        width: 0,
-        allocated: 0,
-        entry: C2RustUnnamed_0 {
-            rbe_left: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_width_item>(),
-            rbe_color: 0,
-        },
-    };
-    uw.wc = wc;
-    return utf8_width_cache_RB_FIND(&raw mut utf8_width_cache, &raw mut uw);
+    return utf8_width_cache_find(&raw mut utf8_width_cache, wc);
 }
 unsafe extern "C" fn utf8_insert_width_cache(mut wc: wchar_t, mut width: u_int) {
     let mut uw: *mut utf8_width_item = ::core::ptr::null_mut::<utf8_width_item>();
@@ -2667,13 +1228,13 @@ unsafe extern "C" fn utf8_insert_width_cache(mut wc: wchar_t, mut width: u_int) 
     (*uw).wc = wc;
     (*uw).width = width;
     (*uw).allocated = 1 as ::core::ffi::c_int;
-    old = utf8_width_cache_RB_INSERT(&raw mut utf8_width_cache, uw);
+    old = utf8_width_cache_insert(&raw mut utf8_width_cache, uw);
     if !old.is_null() {
-        utf8_width_cache_RB_REMOVE(&raw mut utf8_width_cache, old);
+        utf8_width_cache_remove(&raw mut utf8_width_cache, old);
         if (*old).allocated != 0 {
             free(old as *mut ::core::ffi::c_void);
         }
-        utf8_width_cache_RB_INSERT(&raw mut utf8_width_cache, uw);
+        utf8_width_cache_insert(&raw mut utf8_width_cache, uw);
     }
 }
 unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) {
@@ -2804,12 +1365,12 @@ pub unsafe extern "C" fn utf8_update_width_cache() {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut i: u_int = 0;
-    uw = utf8_width_cache_RB_MINMAX(&raw mut utf8_width_cache, RB_NEGINF);
+    uw = utf8_width_cache_minmax(&raw mut utf8_width_cache, RB_NEGINF);
     while !uw.is_null() && {
-        uw1 = utf8_width_cache_RB_NEXT(uw);
+        uw1 = utf8_width_cache_next(&raw mut utf8_width_cache, uw);
         1 as ::core::ffi::c_int != 0
     } {
-        utf8_width_cache_RB_REMOVE(&raw mut utf8_width_cache, uw);
+        utf8_width_cache_remove(&raw mut utf8_width_cache, uw);
         if (*uw).allocated != 0 {
             free(uw as *mut ::core::ffi::c_void);
         }
@@ -2820,7 +1381,7 @@ pub unsafe extern "C" fn utf8_update_width_cache() {
         < (::core::mem::size_of::<[utf8_width_item; 162]>() as usize)
             .wrapping_div(::core::mem::size_of::<utf8_width_item>() as usize)
     {
-        utf8_width_cache_RB_INSERT(
+        utf8_width_cache_insert(
             &raw mut utf8_width_cache,
             (&raw mut utf8_default_width_cache as *mut utf8_width_item).offset(i as isize)
                 as *mut utf8_width_item,
@@ -3727,6 +2288,52 @@ mod tests {
             );
             assert_eq!(utf8_index_tree_find(&raw mut tree, 7), first);
             assert!(utf8_index_tree_find(&raw mut tree, 8).is_null());
+        }
+    }
+
+    #[test]
+    fn utf8_width_cache_matches_width_comparator() {
+        unsafe {
+            let mut cache = utf8_width_cache::default();
+            let mut items: [utf8_width_item; 4] = [std::mem::zeroed(); 4];
+            items[0].wc = 7;
+            items[1].wc = -1;
+            items[2].wc = 0;
+            items[3].wc = 7;
+
+            let first = &mut items[0] as *mut utf8_width_item;
+            let duplicate = &mut items[3] as *mut utf8_width_item;
+            assert!(utf8_width_cache_insert(&raw mut cache, first).is_null());
+            assert!(utf8_width_cache_insert(&raw mut cache, &mut items[1]).is_null());
+            assert!(utf8_width_cache_insert(&raw mut cache, &mut items[2]).is_null());
+            assert_eq!(
+                utf8_width_cache_insert(&raw mut cache, duplicate),
+                first,
+                "duplicate codepoints keep the original item"
+            );
+
+            assert_eq!(
+                cache.entries.keys().copied().collect::<Vec<_>>(),
+                vec![-1, 0, 7]
+            );
+            assert_eq!(utf8_width_cache_find(&raw mut cache, 7), first);
+            assert!(utf8_width_cache_find(&raw mut cache, 8).is_null());
+            assert_eq!(
+                utf8_width_cache_minmax(&raw mut cache, RB_NEGINF),
+                &mut items[1] as *mut utf8_width_item
+            );
+            assert_eq!(
+                utf8_width_cache_next(&raw mut cache, &mut items[1]),
+                &mut items[2] as *mut utf8_width_item
+            );
+            assert_eq!(
+                utf8_width_cache_minmax(&raw mut cache, 0),
+                first,
+                "non-negative minmax selects the maximum"
+            );
+
+            assert_eq!(utf8_width_cache_remove(&raw mut cache, first), first);
+            assert!(utf8_width_cache_find(&raw mut cache, 7).is_null());
         }
     }
 }
