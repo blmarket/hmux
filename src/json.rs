@@ -1,6 +1,4 @@
-use crate::src::ffi::libc::{
-    __ctype_b_loc, __errno_location, free, strcmp, strlen, strncmp, strtoll,
-};
+use crate::src::ffi::libc::{__ctype_b_loc, __errno_location, free, strlen, strncmp, strtoll};
 use crate::src::log::fatalx;
 use crate::src::reactor::{
     evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
@@ -14,11 +12,12 @@ pub use crate::src::shared::ctype::{
 };
 use crate::src::shared::event::*;
 pub use crate::src::shared::json::{
-    json_fields, json_members, json_node, json_node_aentry, json_node_c2rust_unnamed,
-    json_node_oentry, json_node_type,
+    json_fields, json_fields_storage, json_members, json_node, json_node_aentry,
+    json_node_c2rust_unnamed, json_node_oentry, json_node_type,
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xmemdup, xrealloc, xstrdup, xstrndup};
+use std::ffi::CStr;
 
 pub const NODE_ARRAY: json_node_type = 4;
 pub const NODE_OBJECT: json_node_type = 3;
@@ -58,505 +57,78 @@ pub const TOK_CLOSEOBJECT: json_token_type = 1;
 pub const TOK_OPENOBJECT: json_token_type = 0;
 pub const ERROR_CTX_LEN: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 pub const PARSE_DEPTH_MAX: ::core::ffi::c_int = 200 as ::core::ffi::c_int;
-unsafe extern "C" fn json_node_cmp(
-    mut a: *mut json_node,
-    mut b: *mut json_node,
-) -> ::core::ffi::c_int {
-    return strcmp((*a).key, (*b).key);
-}
-unsafe extern "C" fn json_fields_RB_INSERT(
-    mut head: *mut json_fields,
-    mut elm: *mut json_node,
-) -> *mut json_node {
-    let mut tmp: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut parent: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = json_node_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).oentry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).oentry.rbe_right;
-        } else {
-            return tmp;
+unsafe fn json_fields_insert(head: *mut json_fields, elm: *mut json_node) -> *mut json_node {
+    if head.is_null() || elm.is_null() || (*elm).key.is_null() {
+        return ::core::ptr::null_mut::<json_node>();
+    }
+    if (*head).entries.is_null() {
+        (*head).entries = Box::into_raw(Box::new(json_fields_storage::default()));
+    }
+    let key = CStr::from_ptr((*elm).key).to_bytes().to_vec();
+    match (*(*head).entries).entries.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+            ::core::ptr::null_mut::<json_node>()
         }
     }
-    (*elm).oentry.rbe_parent = parent;
-    (*elm).oentry.rbe_right = ::core::ptr::null_mut::<json_node>();
-    (*elm).oentry.rbe_left = (*elm).oentry.rbe_right;
-    (*elm).oentry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).oentry.rbe_left = elm;
-        } else {
-            (*parent).oentry.rbe_right = elm;
-        }
+}
+
+unsafe fn json_fields_remove(head: *mut json_fields, elm: *mut json_node) -> *mut json_node {
+    if head.is_null() || (*head).entries.is_null() || elm.is_null() || (*elm).key.is_null() {
+        return ::core::ptr::null_mut::<json_node>();
+    }
+    let key = CStr::from_ptr((*elm).key).to_bytes();
+    let entries = &mut (*(*head).entries).entries;
+    if entries.get(key).copied() != Some(elm) {
+        return ::core::ptr::null_mut::<json_node>();
+    }
+    entries
+        .remove(key)
+        .unwrap_or(::core::ptr::null_mut::<json_node>())
+}
+
+unsafe fn json_fields_minmax(head: *mut json_fields, val: ::core::ffi::c_int) -> *mut json_node {
+    if head.is_null() || (*head).entries.is_null() {
+        return ::core::ptr::null_mut::<json_node>();
+    }
+    let entry = if val < 0 {
+        (*(*head).entries).entries.values().next()
     } else {
-        (*head).rbh_root = elm;
-    }
-    json_fields_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<json_node>();
+        (*(*head).entries).entries.values().next_back()
+    };
+    entry
+        .copied()
+        .unwrap_or(::core::ptr::null_mut::<json_node>())
 }
-unsafe extern "C" fn json_fields_RB_INSERT_COLOR(
-    mut head: *mut json_fields,
-    mut elm: *mut json_node,
-) {
-    let mut parent: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut gparent: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut tmp: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    loop {
-        parent = (*elm).oentry.rbe_parent;
-        if !(!parent.is_null() && (*parent).oentry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).oentry.rbe_parent;
-        if parent == (*gparent).oentry.rbe_left {
-            tmp = (*gparent).oentry.rbe_right;
-            if !tmp.is_null() && (*tmp).oentry.rbe_color == RB_RED {
-                (*tmp).oentry.rbe_color = RB_BLACK;
-                (*parent).oentry.rbe_color = RB_BLACK;
-                (*gparent).oentry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).oentry.rbe_right == elm {
-                    tmp = (*parent).oentry.rbe_right;
-                    (*parent).oentry.rbe_right = (*tmp).oentry.rbe_left;
-                    if !(*parent).oentry.rbe_right.is_null() {
-                        (*(*tmp).oentry.rbe_left).oentry.rbe_parent = parent;
-                    }
-                    (*tmp).oentry.rbe_parent = (*parent).oentry.rbe_parent;
-                    if !(*tmp).oentry.rbe_parent.is_null() {
-                        if parent == (*(*parent).oentry.rbe_parent).oentry.rbe_left {
-                            (*(*parent).oentry.rbe_parent).oentry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).oentry.rbe_parent).oentry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).oentry.rbe_left = parent;
-                    (*parent).oentry.rbe_parent = tmp;
-                    !(*tmp).oentry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).oentry.rbe_color = RB_BLACK;
-                (*gparent).oentry.rbe_color = RB_RED;
-                tmp = (*gparent).oentry.rbe_left;
-                (*gparent).oentry.rbe_left = (*tmp).oentry.rbe_right;
-                if !(*gparent).oentry.rbe_left.is_null() {
-                    (*(*tmp).oentry.rbe_right).oentry.rbe_parent = gparent;
-                }
-                (*tmp).oentry.rbe_parent = (*gparent).oentry.rbe_parent;
-                if !(*tmp).oentry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).oentry.rbe_parent).oentry.rbe_left {
-                        (*(*gparent).oentry.rbe_parent).oentry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).oentry.rbe_parent).oentry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).oentry.rbe_right = gparent;
-                (*gparent).oentry.rbe_parent = tmp;
-                !(*tmp).oentry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).oentry.rbe_left;
-            if !tmp.is_null() && (*tmp).oentry.rbe_color == RB_RED {
-                (*tmp).oentry.rbe_color = RB_BLACK;
-                (*parent).oentry.rbe_color = RB_BLACK;
-                (*gparent).oentry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).oentry.rbe_left == elm {
-                    tmp = (*parent).oentry.rbe_left;
-                    (*parent).oentry.rbe_left = (*tmp).oentry.rbe_right;
-                    if !(*parent).oentry.rbe_left.is_null() {
-                        (*(*tmp).oentry.rbe_right).oentry.rbe_parent = parent;
-                    }
-                    (*tmp).oentry.rbe_parent = (*parent).oentry.rbe_parent;
-                    if !(*tmp).oentry.rbe_parent.is_null() {
-                        if parent == (*(*parent).oentry.rbe_parent).oentry.rbe_left {
-                            (*(*parent).oentry.rbe_parent).oentry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).oentry.rbe_parent).oentry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).oentry.rbe_right = parent;
-                    (*parent).oentry.rbe_parent = tmp;
-                    !(*tmp).oentry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).oentry.rbe_color = RB_BLACK;
-                (*gparent).oentry.rbe_color = RB_RED;
-                tmp = (*gparent).oentry.rbe_right;
-                (*gparent).oentry.rbe_right = (*tmp).oentry.rbe_left;
-                if !(*gparent).oentry.rbe_right.is_null() {
-                    (*(*tmp).oentry.rbe_left).oentry.rbe_parent = gparent;
-                }
-                (*tmp).oentry.rbe_parent = (*gparent).oentry.rbe_parent;
-                if !(*tmp).oentry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).oentry.rbe_parent).oentry.rbe_left {
-                        (*(*gparent).oentry.rbe_parent).oentry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).oentry.rbe_parent).oentry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).oentry.rbe_left = gparent;
-                (*gparent).oentry.rbe_parent = tmp;
-                !(*tmp).oentry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).oentry.rbe_color = RB_BLACK;
-}
-unsafe extern "C" fn json_fields_RB_REMOVE(
-    mut head: *mut json_fields,
-    mut elm: *mut json_node,
+
+unsafe fn json_fields_find(
+    head: *mut json_fields,
+    key: *const ::core::ffi::c_char,
 ) -> *mut json_node {
-    let mut current_block: u64;
-    let mut child: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut parent: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut old: *mut json_node = elm;
-    let mut color: ::core::ffi::c_int = 0;
-    if (*elm).oentry.rbe_left.is_null() {
-        child = (*elm).oentry.rbe_right;
-        current_block = 7245201122033322888;
-    } else if (*elm).oentry.rbe_right.is_null() {
-        child = (*elm).oentry.rbe_left;
-        current_block = 7245201122033322888;
-    } else {
-        let mut left: *mut json_node = ::core::ptr::null_mut::<json_node>();
-        elm = (*elm).oentry.rbe_right;
-        loop {
-            left = (*elm).oentry.rbe_left;
-            if left.is_null() {
-                break;
-            }
-            elm = left;
-        }
-        child = (*elm).oentry.rbe_right;
-        parent = (*elm).oentry.rbe_parent;
-        color = (*elm).oentry.rbe_color;
-        if !child.is_null() {
-            (*child).oentry.rbe_parent = parent;
-        }
-        if !parent.is_null() {
-            if (*parent).oentry.rbe_left == elm {
-                (*parent).oentry.rbe_left = child;
-            } else {
-                (*parent).oentry.rbe_right = child;
-            }
-        } else {
-            (*head).rbh_root = child;
-        }
-        if (*elm).oentry.rbe_parent == old {
-            parent = elm;
-        }
-        (*elm).oentry = (*old).oentry;
-        if !(*old).oentry.rbe_parent.is_null() {
-            if (*(*old).oentry.rbe_parent).oentry.rbe_left == old {
-                (*(*old).oentry.rbe_parent).oentry.rbe_left = elm;
-            } else {
-                (*(*old).oentry.rbe_parent).oentry.rbe_right = elm;
-            }
-        } else {
-            (*head).rbh_root = elm;
-        }
-        (*(*old).oentry.rbe_left).oentry.rbe_parent = elm;
-        if !(*old).oentry.rbe_right.is_null() {
-            (*(*old).oentry.rbe_right).oentry.rbe_parent = elm;
-        }
-        if !parent.is_null() {
-            left = parent;
-            loop {
-                left = (*left).oentry.rbe_parent;
-                if left.is_null() {
-                    break;
-                }
-            }
-        }
-        current_block = 12328454399491550103;
+    if head.is_null() || (*head).entries.is_null() || key.is_null() {
+        return ::core::ptr::null_mut::<json_node>();
     }
-    match current_block {
-        7245201122033322888 => {
-            parent = (*elm).oentry.rbe_parent;
-            color = (*elm).oentry.rbe_color;
-            if !child.is_null() {
-                (*child).oentry.rbe_parent = parent;
-            }
-            if !parent.is_null() {
-                if (*parent).oentry.rbe_left == elm {
-                    (*parent).oentry.rbe_left = child;
-                } else {
-                    (*parent).oentry.rbe_right = child;
-                }
-            } else {
-                (*head).rbh_root = child;
-            }
-        }
-        _ => {}
-    }
-    if color == RB_BLACK {
-        json_fields_RB_REMOVE_COLOR(head, parent, child);
-    }
-    return old;
+    (*(*head).entries)
+        .entries
+        .get(CStr::from_ptr(key).to_bytes())
+        .copied()
+        .unwrap_or(::core::ptr::null_mut::<json_node>())
 }
-unsafe extern "C" fn json_fields_RB_REMOVE_COLOR(
-    mut head: *mut json_fields,
-    mut parent: *mut json_node,
-    mut elm: *mut json_node,
-) {
-    let mut tmp: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    while (elm.is_null() || (*elm).oentry.rbe_color == RB_BLACK) && elm != (*head).rbh_root {
-        if (*parent).oentry.rbe_left == elm {
-            tmp = (*parent).oentry.rbe_right;
-            if (*tmp).oentry.rbe_color == RB_RED {
-                (*tmp).oentry.rbe_color = RB_BLACK;
-                (*parent).oentry.rbe_color = RB_RED;
-                tmp = (*parent).oentry.rbe_right;
-                (*parent).oentry.rbe_right = (*tmp).oentry.rbe_left;
-                if !(*parent).oentry.rbe_right.is_null() {
-                    (*(*tmp).oentry.rbe_left).oentry.rbe_parent = parent;
-                }
-                (*tmp).oentry.rbe_parent = (*parent).oentry.rbe_parent;
-                if !(*tmp).oentry.rbe_parent.is_null() {
-                    if parent == (*(*parent).oentry.rbe_parent).oentry.rbe_left {
-                        (*(*parent).oentry.rbe_parent).oentry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).oentry.rbe_parent).oentry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).oentry.rbe_left = parent;
-                (*parent).oentry.rbe_parent = tmp;
-                !(*tmp).oentry.rbe_parent.is_null();
-                tmp = (*parent).oentry.rbe_right;
-            }
-            if ((*tmp).oentry.rbe_left.is_null()
-                || (*(*tmp).oentry.rbe_left).oentry.rbe_color == RB_BLACK)
-                && ((*tmp).oentry.rbe_right.is_null()
-                    || (*(*tmp).oentry.rbe_right).oentry.rbe_color == RB_BLACK)
-            {
-                (*tmp).oentry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).oentry.rbe_parent;
-            } else {
-                if (*tmp).oentry.rbe_right.is_null()
-                    || (*(*tmp).oentry.rbe_right).oentry.rbe_color == RB_BLACK
-                {
-                    let mut oleft: *mut json_node = ::core::ptr::null_mut::<json_node>();
-                    oleft = (*tmp).oentry.rbe_left;
-                    if !oleft.is_null() {
-                        (*oleft).oentry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).oentry.rbe_color = RB_RED;
-                    oleft = (*tmp).oentry.rbe_left;
-                    (*tmp).oentry.rbe_left = (*oleft).oentry.rbe_right;
-                    if !(*tmp).oentry.rbe_left.is_null() {
-                        (*(*oleft).oentry.rbe_right).oentry.rbe_parent = tmp;
-                    }
-                    (*oleft).oentry.rbe_parent = (*tmp).oentry.rbe_parent;
-                    if !(*oleft).oentry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).oentry.rbe_parent).oentry.rbe_left {
-                            (*(*tmp).oentry.rbe_parent).oentry.rbe_left = oleft;
-                        } else {
-                            (*(*tmp).oentry.rbe_parent).oentry.rbe_right = oleft;
-                        }
-                    } else {
-                        (*head).rbh_root = oleft;
-                    }
-                    (*oleft).oentry.rbe_right = tmp;
-                    (*tmp).oentry.rbe_parent = oleft;
-                    !(*oleft).oentry.rbe_parent.is_null();
-                    tmp = (*parent).oentry.rbe_right;
-                }
-                (*tmp).oentry.rbe_color = (*parent).oentry.rbe_color;
-                (*parent).oentry.rbe_color = RB_BLACK;
-                if !(*tmp).oentry.rbe_right.is_null() {
-                    (*(*tmp).oentry.rbe_right).oentry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).oentry.rbe_right;
-                (*parent).oentry.rbe_right = (*tmp).oentry.rbe_left;
-                if !(*parent).oentry.rbe_right.is_null() {
-                    (*(*tmp).oentry.rbe_left).oentry.rbe_parent = parent;
-                }
-                (*tmp).oentry.rbe_parent = (*parent).oentry.rbe_parent;
-                if !(*tmp).oentry.rbe_parent.is_null() {
-                    if parent == (*(*parent).oentry.rbe_parent).oentry.rbe_left {
-                        (*(*parent).oentry.rbe_parent).oentry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).oentry.rbe_parent).oentry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).oentry.rbe_left = parent;
-                (*parent).oentry.rbe_parent = tmp;
-                !(*tmp).oentry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        } else {
-            tmp = (*parent).oentry.rbe_left;
-            if (*tmp).oentry.rbe_color == RB_RED {
-                (*tmp).oentry.rbe_color = RB_BLACK;
-                (*parent).oentry.rbe_color = RB_RED;
-                tmp = (*parent).oentry.rbe_left;
-                (*parent).oentry.rbe_left = (*tmp).oentry.rbe_right;
-                if !(*parent).oentry.rbe_left.is_null() {
-                    (*(*tmp).oentry.rbe_right).oentry.rbe_parent = parent;
-                }
-                (*tmp).oentry.rbe_parent = (*parent).oentry.rbe_parent;
-                if !(*tmp).oentry.rbe_parent.is_null() {
-                    if parent == (*(*parent).oentry.rbe_parent).oentry.rbe_left {
-                        (*(*parent).oentry.rbe_parent).oentry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).oentry.rbe_parent).oentry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).oentry.rbe_right = parent;
-                (*parent).oentry.rbe_parent = tmp;
-                !(*tmp).oentry.rbe_parent.is_null();
-                tmp = (*parent).oentry.rbe_left;
-            }
-            if ((*tmp).oentry.rbe_left.is_null()
-                || (*(*tmp).oentry.rbe_left).oentry.rbe_color == RB_BLACK)
-                && ((*tmp).oentry.rbe_right.is_null()
-                    || (*(*tmp).oentry.rbe_right).oentry.rbe_color == RB_BLACK)
-            {
-                (*tmp).oentry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).oentry.rbe_parent;
-            } else {
-                if (*tmp).oentry.rbe_left.is_null()
-                    || (*(*tmp).oentry.rbe_left).oentry.rbe_color == RB_BLACK
-                {
-                    let mut oright: *mut json_node = ::core::ptr::null_mut::<json_node>();
-                    oright = (*tmp).oentry.rbe_right;
-                    if !oright.is_null() {
-                        (*oright).oentry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).oentry.rbe_color = RB_RED;
-                    oright = (*tmp).oentry.rbe_right;
-                    (*tmp).oentry.rbe_right = (*oright).oentry.rbe_left;
-                    if !(*tmp).oentry.rbe_right.is_null() {
-                        (*(*oright).oentry.rbe_left).oentry.rbe_parent = tmp;
-                    }
-                    (*oright).oentry.rbe_parent = (*tmp).oentry.rbe_parent;
-                    if !(*oright).oentry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).oentry.rbe_parent).oentry.rbe_left {
-                            (*(*tmp).oentry.rbe_parent).oentry.rbe_left = oright;
-                        } else {
-                            (*(*tmp).oentry.rbe_parent).oentry.rbe_right = oright;
-                        }
-                    } else {
-                        (*head).rbh_root = oright;
-                    }
-                    (*oright).oentry.rbe_left = tmp;
-                    (*tmp).oentry.rbe_parent = oright;
-                    !(*oright).oentry.rbe_parent.is_null();
-                    tmp = (*parent).oentry.rbe_left;
-                }
-                (*tmp).oentry.rbe_color = (*parent).oentry.rbe_color;
-                (*parent).oentry.rbe_color = RB_BLACK;
-                if !(*tmp).oentry.rbe_left.is_null() {
-                    (*(*tmp).oentry.rbe_left).oentry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).oentry.rbe_left;
-                (*parent).oentry.rbe_left = (*tmp).oentry.rbe_right;
-                if !(*parent).oentry.rbe_left.is_null() {
-                    (*(*tmp).oentry.rbe_right).oentry.rbe_parent = parent;
-                }
-                (*tmp).oentry.rbe_parent = (*parent).oentry.rbe_parent;
-                if !(*tmp).oentry.rbe_parent.is_null() {
-                    if parent == (*(*parent).oentry.rbe_parent).oentry.rbe_left {
-                        (*(*parent).oentry.rbe_parent).oentry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).oentry.rbe_parent).oentry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).oentry.rbe_right = parent;
-                (*parent).oentry.rbe_parent = tmp;
-                !(*tmp).oentry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        }
+
+unsafe fn json_fields_next(head: *mut json_fields, elm: *mut json_node) -> *mut json_node {
+    if head.is_null() || (*head).entries.is_null() || elm.is_null() || (*elm).key.is_null() {
+        return ::core::ptr::null_mut::<json_node>();
     }
-    if !elm.is_null() {
-        (*elm).oentry.rbe_color = RB_BLACK;
-    }
+    let key = CStr::from_ptr((*elm).key).to_bytes().to_vec();
+    (*(*head).entries)
+        .entries
+        .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
+        .next()
+        .map(|(_, entry)| *entry)
+        .unwrap_or(::core::ptr::null_mut::<json_node>())
 }
-unsafe extern "C" fn json_fields_RB_NEXT(mut elm: *mut json_node) -> *mut json_node {
-    if !(*elm).oentry.rbe_right.is_null() {
-        elm = (*elm).oentry.rbe_right;
-        while !(*elm).oentry.rbe_left.is_null() {
-            elm = (*elm).oentry.rbe_left;
-        }
-    } else if !(*elm).oentry.rbe_parent.is_null()
-        && elm == (*(*elm).oentry.rbe_parent).oentry.rbe_left
-    {
-        elm = (*elm).oentry.rbe_parent;
-    } else {
-        while !(*elm).oentry.rbe_parent.is_null()
-            && elm == (*(*elm).oentry.rbe_parent).oentry.rbe_right
-        {
-            elm = (*elm).oentry.rbe_parent;
-        }
-        elm = (*elm).oentry.rbe_parent;
-    }
-    return elm;
-}
-unsafe extern "C" fn json_fields_RB_MINMAX(
-    mut head: *mut json_fields,
-    mut val: ::core::ffi::c_int,
-) -> *mut json_node {
-    let mut tmp: *mut json_node = (*head).rbh_root;
-    let mut parent: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    while !tmp.is_null() {
-        parent = tmp;
-        if val < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).oentry.rbe_left;
-        } else {
-            tmp = (*tmp).oentry.rbe_right;
-        }
-    }
-    return parent;
-}
-unsafe extern "C" fn json_fields_RB_FIND(
-    mut head: *mut json_fields,
-    mut elm: *mut json_node,
-) -> *mut json_node {
-    let mut tmp: *mut json_node = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = json_node_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).oentry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).oentry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return ::core::ptr::null_mut::<json_node>();
-}
+
 #[no_mangle]
 pub unsafe extern "C" fn json_parse(
     mut input: *const ::core::ffi::c_char,
@@ -590,32 +162,12 @@ pub unsafe extern "C" fn json_find(
     mut jn: *mut json_node,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut json_node {
-    let mut node: *mut json_node = jn;
-    let mut tmp: json_node = json_node {
-        type_0: NODE_STRING,
-        key: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        parent: ::core::ptr::null_mut::<json_node>(),
-        c2rust_unnamed: json_node_c2rust_unnamed {
-            str_0: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        },
-        oentry: json_node_oentry {
-            rbe_left: ::core::ptr::null_mut::<json_node>(),
-            rbe_right: ::core::ptr::null_mut::<json_node>(),
-            rbe_parent: ::core::ptr::null_mut::<json_node>(),
-            rbe_color: 0,
-        },
-        aentry: json_node_aentry {
-            tqe_next: ::core::ptr::null_mut::<json_node>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut json_node>(),
-        },
-    };
     if (*jn).type_0 as ::core::ffi::c_uint
         != NODE_OBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         return ::core::ptr::null_mut::<json_node>();
     }
-    tmp.key = key as *mut ::core::ffi::c_char;
-    return json_fields_RB_FIND(&raw mut (*node).c2rust_unnamed.fields, &raw mut tmp);
+    return json_fields_find(&raw mut (*jn).c2rust_unnamed.fields, key);
 }
 #[no_mangle]
 pub unsafe extern "C" fn json_array_first(mut jn: *mut json_node) -> *mut json_node {
@@ -1121,7 +673,8 @@ unsafe extern "C" fn json_create_node(
     }
     (*node).type_0 = type_0;
     if type_0 as ::core::ffi::c_uint == NODE_OBJECT as ::core::ffi::c_int as ::core::ffi::c_uint {
-        (*node).c2rust_unnamed.fields.rbh_root = ::core::ptr::null_mut::<json_node>();
+        (*node).c2rust_unnamed.fields.entries =
+            Box::into_raw(Box::new(json_fields_storage::default()));
     } else if type_0 as ::core::ffi::c_uint
         == NODE_ARRAY as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -1146,14 +699,19 @@ pub unsafe extern "C" fn json_destroy_node(mut node: *mut json_node) {
             free((*node).c2rust_unnamed.str_0 as *mut ::core::ffi::c_void);
         }
         3 => {
-            field = json_fields_RB_MINMAX(&raw mut (*node).c2rust_unnamed.fields, RB_NEGINF);
+            field = json_fields_minmax(&raw mut (*node).c2rust_unnamed.fields, RB_NEGINF);
             while !field.is_null() && {
-                field1 = json_fields_RB_NEXT(field);
+                field1 = json_fields_next(&raw mut (*node).c2rust_unnamed.fields, field);
                 1 as ::core::ffi::c_int != 0
             } {
-                json_fields_RB_REMOVE(&raw mut (*node).c2rust_unnamed.fields, field);
+                json_fields_remove(&raw mut (*node).c2rust_unnamed.fields, field);
                 json_destroy_node(field);
                 field = field1;
+            }
+            if !(*node).c2rust_unnamed.fields.entries.is_null() {
+                drop(Box::from_raw((*node).c2rust_unnamed.fields.entries));
+                (*node).c2rust_unnamed.fields.entries =
+                    ::core::ptr::null_mut::<json_fields_storage>();
             }
         }
         4 => {
@@ -1191,7 +749,7 @@ unsafe extern "C" fn json_assign_value(
             (*node).c2rust_unnamed.boolean = *(val as *mut ::core::ffi::c_int);
         }
         3 => {
-            json_fields_RB_INSERT(&raw mut (*node).c2rust_unnamed.fields, child);
+            json_fields_insert(&raw mut (*node).c2rust_unnamed.fields, child);
         }
         4 => {
             (*child).aentry.tqe_next = ::core::ptr::null_mut::<json_node>();
@@ -1667,7 +1225,7 @@ unsafe extern "C" fn json_string_append(mut buffer: *mut evbuffer, mut node: *mu
                 b"{\0" as *const u8 as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
                 1 as size_t,
             );
-            field = json_fields_RB_MINMAX(&raw mut (*node).c2rust_unnamed.fields, RB_NEGINF);
+            field = json_fields_minmax(&raw mut (*node).c2rust_unnamed.fields, RB_NEGINF);
             while !field.is_null() {
                 if comma != 0 {
                     evbuffer_add(
@@ -1684,7 +1242,7 @@ unsafe extern "C" fn json_string_append(mut buffer: *mut evbuffer, mut node: *mu
                 );
                 json_string_append(buffer, field);
                 comma = 1 as ::core::ffi::c_int;
-                field = json_fields_RB_NEXT(field);
+                field = json_fields_next(&raw mut (*node).c2rust_unnamed.fields, field);
             }
             evbuffer_add(
                 buffer,
@@ -1740,4 +1298,109 @@ pub unsafe extern "C" fn json_to_string(mut node: *mut json_node) -> *mut ::core
     );
     evbuffer_free(buffer);
     return out;
+}
+
+#[cfg(test)]
+mod json_fields_tests {
+    use super::*;
+    use std::ffi::{CStr, CString};
+
+    unsafe fn new_node(key: &CString) -> *mut json_node {
+        Box::into_raw(Box::new(json_node {
+            type_0: NODE_STRING,
+            key: key.as_ptr() as *mut ::core::ffi::c_char,
+            parent: ::core::ptr::null_mut::<json_node>(),
+            c2rust_unnamed: json_node_c2rust_unnamed {
+                str_0: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+            },
+            oentry: json_node_oentry {
+                rbe_left: ::core::ptr::null_mut::<json_node>(),
+                rbe_right: ::core::ptr::null_mut::<json_node>(),
+                rbe_parent: ::core::ptr::null_mut::<json_node>(),
+                rbe_color: 0,
+            },
+            aentry: json_node_aentry {
+                tqe_next: ::core::ptr::null_mut::<json_node>(),
+                tqe_prev: ::core::ptr::null_mut::<*mut json_node>(),
+            },
+        }))
+    }
+
+    unsafe fn free_tree(head: &mut json_fields) {
+        let mut item = json_fields_minmax(head, RB_NEGINF);
+        while !item.is_null() {
+            let next = json_fields_next(head, item);
+            assert_eq!(json_fields_remove(head, item), item);
+            drop(Box::from_raw(item));
+            item = next;
+        }
+        drop(Box::from_raw(head.entries));
+        head.entries = ::core::ptr::null_mut::<json_fields_storage>();
+    }
+
+    #[test]
+    fn json_fields_preserves_strcmp_order_and_duplicate_keys() {
+        unsafe {
+            let names: &[&[u8]] = &[b"zeta", b"alpha", b"alpha-2", b"\x80high", b"alpha\x01"];
+            let keys: Vec<CString> = names
+                .iter()
+                .map(|name| CString::new(*name).expect("test key has no NUL"))
+                .collect();
+            assert!(crate::src::ffi::libc::strcmp(keys[1].as_ptr(), keys[2].as_ptr()) < 0);
+            assert!(crate::src::ffi::libc::strcmp(keys[3].as_ptr(), keys[0].as_ptr()) > 0);
+            let mut head = json_fields {
+                entries: Box::into_raw(Box::new(json_fields_storage::default())),
+            };
+            let mut items = Vec::new();
+            for key in &keys {
+                let item = new_node(key);
+                assert!(json_fields_insert(&mut head, item).is_null());
+                items.push(item);
+            }
+
+            let duplicate_key = CString::new(b"alpha".as_slice()).unwrap();
+            let duplicate = new_node(&duplicate_key);
+            assert_eq!(json_fields_insert(&mut head, duplicate), items[1]);
+            drop(Box::from_raw(duplicate));
+
+            let probe_key = CString::new(b"alpha".as_slice()).unwrap();
+            assert_eq!(json_fields_find(&mut head, probe_key.as_ptr()), items[1]);
+
+            assert_eq!(
+                CStr::from_ptr((*json_fields_minmax(&mut head, RB_NEGINF)).key).to_bytes(),
+                b"alpha"
+            );
+            assert_eq!(
+                CStr::from_ptr(
+                    (*json_fields_minmax(&mut head, crate::src::shared::tree::RB_INF)).key
+                )
+                .to_bytes(),
+                b"\x80high"
+            );
+
+            let mut ordered = Vec::new();
+            let mut item = json_fields_minmax(&mut head, RB_NEGINF);
+            while !item.is_null() {
+                ordered.push(CStr::from_ptr((*item).key).to_bytes().to_vec());
+                item = json_fields_next(&mut head, item);
+            }
+            assert_eq!(
+                ordered,
+                vec![
+                    b"alpha".to_vec(),
+                    b"alpha\x01".to_vec(),
+                    b"alpha-2".to_vec(),
+                    b"zeta".to_vec(),
+                    b"\x80high".to_vec(),
+                ]
+            );
+
+            let removed = json_fields_remove(&mut head, items[2]);
+            assert_eq!(removed, items[2]);
+            let removed_probe = CString::new(b"alpha-2".as_slice()).unwrap();
+            assert!(json_fields_find(&mut head, removed_probe.as_ptr()).is_null());
+            drop(Box::from_raw(removed));
+            free_tree(&mut head);
+        }
+    }
 }

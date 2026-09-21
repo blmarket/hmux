@@ -12,7 +12,7 @@ fn original_copies_match() {
     record!(
         "src/json.rs::json_fields",
         hmux2::src::json::json_fields,
-        [rbh_root]
+        [entries]
     );
     record!(
         "src/json.rs::json_members",

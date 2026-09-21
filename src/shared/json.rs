@@ -1,6 +1,7 @@
 //! Authoritative json model declarations.
 
 use super::abi::int64_t;
+use std::collections::BTreeMap;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -49,7 +50,13 @@ pub struct json_members {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct json_fields {
-    pub rbh_root: *mut json_node,
+    pub entries: *mut json_fields_storage,
+}
+
+/// Rust-owned ordering storage for an object's C-allocated field nodes.
+#[derive(Default)]
+pub struct json_fields_storage {
+    pub(crate) entries: BTreeMap<Vec<u8>, *mut json_node>,
 }
 
 pub type json_node_type = ::core::ffi::c_uint;
