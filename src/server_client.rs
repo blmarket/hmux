@@ -27,7 +27,7 @@ use crate::src::ffi::libc::{
     access, close, free, gettimeofday, isatty, memcpy, sscanf, strchr, strcmp, strlcat, strlen,
     strsep, ttyname,
 };
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, evbuffer_add, evbuffer_drain, evbuffer_get_length,
     evbuffer_pullup, evbuffer_readln, event_add, event_del, event_initialized, event_once,
     event_pending, event_set,

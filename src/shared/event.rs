@@ -1,10 +1,10 @@
-//! Authoritative libevent/bufferevent ABI declarations.
+//! Application callback handles. Layout is retained for translated owner structs.
 //!
 //! The generated units gave each anonymous C union/queue member a local
 //! `C2RustUnnamed_*` name.  These names are not identities: their suffixes
 //! vary with the declarations present in a translation unit.  The names
 //! below describe the C subjects and are backed by layout tests.
-pub use crate::src::ffi::libevent::{bufferevent_ops, evbuffer, event_base};
+pub use crate::src::reactor::{bufferevent_ops, evbuffer, event_base};
 use super::abi::*;
 
 #[derive(Copy, Clone)]

@@ -1,7 +1,7 @@
 use crate::src::ffi::libc::{
     fclose, fgetc, fopen, free, ioctl, readlink, setenv, tcgetpgrp, unsetenv,
 };
-use crate::src::ffi::libevent::event_init;
+use crate::src::reactor::event_init;
 use crate::src::xmalloc::{xasprintf, xrealloc};
 pub use crate::src::shared::stdio::{EOF};
 pub use crate::src::shared::stdio::{

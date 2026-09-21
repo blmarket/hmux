@@ -1,7 +1,7 @@
 use crate::src::cmd_queue::{cmdq_continue, cmdq_get_client};
 use crate::src::colour::{colour_palette_free, colour_palette_from_option, colour_palette_init};
 use crate::src::ffi::libc::{free, memcpy};
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     bufferevent_write, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::format::{format_create_defaults, format_free};

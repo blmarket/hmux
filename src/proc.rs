@@ -8,8 +8,8 @@ use crate::src::ffi::libc::{
     close, daemon, fork, free, getpid, memset, sigaction, sigemptyset, socketpair, uname,
 };
 pub use crate::src::ffi::libc::utsname;
-use crate::src::ffi::libevent::{
-    event_add, event_del, event_get_method, event_get_version, event_loop, event_set,
+use crate::src::reactor::{
+    event_add, event_del, event_get_method, event_get_version, event_loop, event_pending, event_set,
 };
 use crate::src::ffi::utf8proc::utf8proc_version;
 use crate::src::log::{fatal, log_debug, log_open, log_toggle};
@@ -151,15 +151,20 @@ unsafe extern "C" fn peer_check_version(
 }
 unsafe extern "C" fn proc_update_event(mut peer: *mut tmuxpeer) {
     let mut events: ::core::ffi::c_short = 0;
-    event_del(&raw mut (*peer).event);
     events = EV_READ as ::core::ffi::c_short;
     if imsgbuf_queuelen(&raw mut (*peer).ibuf) > 0 as uint32_t {
         events = (events as ::core::ffi::c_int | EV_WRITE) as ::core::ffi::c_short;
     }
+    // Keep the descriptor registration while its interest is unchanged.
+    // A callback may rearm it when the output queue changes direction.
+    if event_pending(&raw mut (*peer).event, 6, std::ptr::null_mut()) == events as ::core::ffi::c_int {
+        return;
+    }
+    event_del(&raw mut (*peer).event);
     event_set(
         &raw mut (*peer).event,
         (*peer).ibuf.fd,
-        events,
+        events | EV_PERSIST as ::core::ffi::c_short,
         Some(
             proc_event_cb
                 as unsafe extern "C" fn(
@@ -247,7 +252,7 @@ pub unsafe extern "C" fn proc_start(mut name: *const ::core::ffi::c_char) -> *mu
         &raw mut u.version as *mut ::core::ffi::c_char,
     );
     log_debug(
-        b"using libevent %s %s\0" as *const u8 as *const ::core::ffi::c_char,
+        b"using runtime %s %s\0" as *const u8 as *const ::core::ffi::c_char,
         event_get_version(),
         event_get_method(),
     );
@@ -476,6 +481,7 @@ pub unsafe extern "C" fn proc_clear_signals(
     event_del(&raw mut (*tp).ev_sigusr2);
     event_del(&raw mut (*tp).ev_sigwinch);
     if defaults != 0 {
+        crate::src::reactor::shutdown_runtime();
         sigaction(SIGINT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
         sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
         sigaction(SIGHUP, &raw mut sa, ::core::ptr::null_mut::<sigaction>());

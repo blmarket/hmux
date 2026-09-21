@@ -2,7 +2,7 @@ use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
 use crate::src::ffi::libc::{free, memcpy, strerror};
-use crate::src::ffi::libevent::{evbuffer_get_length, evbuffer_pullup};
+use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::file::file_read;
 use crate::src::format::format_single_from_target;
 use crate::src::paste::paste_set;
@@ -117,6 +117,11 @@ unsafe extern "C" fn cmd_load_buffer_done(
     mut buffer: *mut evbuffer,
     mut data: *mut ::core::ffi::c_void,
 ) {
+    // Progress notifications do not need contiguous storage. Coalesce only
+    // once, after the complete file has arrived.
+    if closed == 0 {
+        return;
+    }
     let mut cdata: *mut cmd_load_buffer_data = data as *mut cmd_load_buffer_data;
     let mut tc: *mut client = (*cdata).client;
     let mut item: *mut cmdq_item = (*cdata).item;
@@ -125,9 +130,6 @@ unsafe extern "C" fn cmd_load_buffer_done(
     let mut bsize: size_t = evbuffer_get_length(buffer);
     let mut copy: *mut ::core::ffi::c_void = ::core::ptr::null_mut::<::core::ffi::c_void>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    if closed == 0 {
-        return;
-    }
     if error != 0 as ::core::ffi::c_int {
         cmdq_error(
             item,
@@ -211,4 +213,37 @@ unsafe extern "C" fn cmd_load_buffer_exec(
     );
     free(path as *mut ::core::ffi::c_void);
     return CMD_RETURN_WAIT;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hmux_buffer::{Buf, BufMut, Buffer, SegmentedBuf};
+
+    #[test]
+    fn file_progress_keeps_segments_until_completion() {
+        let mut data = cmd_load_buffer_data {
+            client: std::ptr::null_mut(),
+            item: std::ptr::null_mut(),
+            name: std::ptr::null_mut(),
+        };
+        let mut buffer = SegmentedBuf::from(vec![1; 4096]);
+        let first = buffer.chunk().as_ptr();
+        for count in 2..=16 {
+            buffer.put(SegmentedBuf::from(vec![2; 4096]));
+            unsafe {
+                cmd_load_buffer_done(
+                    std::ptr::null_mut(),
+                    c"input".as_ptr(),
+                    0,
+                    0,
+                    &mut buffer,
+                    (&mut data as *mut cmd_load_buffer_data).cast(),
+                );
+            }
+            assert_eq!(buffer.chunks().count(), count);
+            assert_eq!(buffer.chunk().as_ptr(), first);
+            assert_eq!(buffer.remaining(), count * 4096);
+        }
+    }
 }

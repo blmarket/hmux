@@ -8,7 +8,7 @@ use crate::src::ffi::libc::{
     killpg, listen, malloc_trim, memset, sigfillset, sigprocmask, socket, stat, stderr,
     strerror, strlcpy, strsignal, time, umask, unlink, waitpid,
 };
-use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_reinit, event_set};
+use crate::src::reactor::{event_add, event_del, event_initialized, event_reinit, event_set};
 use crate::src::format::format_tidy_jobs;
 use crate::src::hooks::hooks_build_events;
 use crate::src::input_keys::input_key_build;

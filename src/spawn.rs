@@ -19,7 +19,7 @@ use crate::src::ffi::libc::{
     fread, free, fseeko, ftello, fwrite, getcwd, getpid, kill, malloc, memcpy, memset, mkstemp,
     sigfillset, sigprocmask, strerror, strrchr, tcgetattr, tcsetattr, unlink,
 };
-use crate::src::ffi::libevent::bufferevent_free;
+use crate::src::reactor::bufferevent_free;
 use crate::src::ffi::utempter::utempter_add_record;
 use crate::src::format::format_single;
 use crate::src::input::input_free;

@@ -5,7 +5,7 @@ use crate::src::ffi::libc::{
     __errno_location, _exit, close, closefrom, dup2, execl, fork, free, memcpy, open, setpgid,
     sigfillset, sigprocmask, socketpair, strerror,
 };
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     bufferevent_enable, bufferevent_free, bufferevent_new, bufferevent_write, evbuffer_drain,
     evbuffer_get_length, evbuffer_pullup,
 };

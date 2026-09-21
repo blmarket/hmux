@@ -1,5 +1,5 @@
 use crate::src::ffi::libc::{calloc, free, memcpy, memset, strlen};
-use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_pending, event_set};
+use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
 use crate::src::format_draw::format_draw;
 use crate::src::grid::{
     grid_cells_equal, grid_clear_history, grid_default_cell, grid_get_cell, grid_get_line,

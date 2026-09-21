@@ -5,7 +5,7 @@ use crate::src::cmd_queue::{
 };
 use crate::src::ffi::libc::{__errno_location, close, free, memcpy, memset, poll, strcmp, strlen};
 pub use crate::src::ffi::libc::{nfds_t, pollfd};
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_free, bufferevent_new,
     bufferevent_setwatermark, bufferevent_write, bufferevent_write_buffer, evbuffer_add,
     evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new, evbuffer_pullup,

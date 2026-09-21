@@ -8,7 +8,7 @@ use crate::src::events_payload::{
     event_payload_set_window,
 };
 use crate::src::ffi::libc::{free, gettimeofday, memcpy, strcmp};
-use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_once, event_set};
+use crate::src::reactor::{event_add, event_del, event_initialized, event_once, event_set};
 use crate::src::grid::grid_collect_history;
 use crate::src::log::{fatal, fatalx, log_debug};
 use crate::src::options::{options_free, options_get_number};

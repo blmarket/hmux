@@ -228,14 +228,6 @@ fn foreign_declarations_are_in_provider_modules_with_frozen_counts() {
             },
         ),
         (
-            "src/ffi/libevent.rs",
-            ForeignCounts {
-                functions: 33,
-                statics: 0,
-                opaque_types: 3,
-            },
-        ),
-        (
             "src/ffi/libm.rs",
             ForeignCounts {
                 functions: 3,
@@ -312,9 +304,9 @@ fn foreign_declarations_are_in_provider_modules_with_frozen_counts() {
     assert_eq!(
         total,
         ForeignCounts {
-            functions: 240,
+            functions: 207,
             statics: 5,
-            opaque_types: 20
+            opaque_types: 17
         }
     );
 }
@@ -377,7 +369,7 @@ fn callback_function_pointers_keep_the_c_abi() {
         aliases.extend(audit.callback_aliases);
         bare_function_types += audit.bare_function_types;
     }
-    assert_eq!(aliases.len(), 43);
+    assert_eq!(aliases.len(), 44);
     assert!(bare_function_types > aliases.len());
 }
 
@@ -388,11 +380,15 @@ fn c_heap_ownership_does_not_cross_into_rust_deallocation() {
     source_files(&root.join("src"), &mut files);
     for path in files {
         let source = fs::read_to_string(&path).unwrap();
-        assert!(
-            rust_deallocator_sites(&source).is_empty(),
-            "Rust deallocator used in {}",
-            path.display()
-        );
+        let sites = rust_deallocator_sites(&source);
+        let relative = relative(root, &path);
+        // These two destructors pair only with Box::into_raw in their own
+        // constructors. Application calloc/free owners remain forbidden here.
+        if matches!(relative.as_str(), "src/reactor/buffer.rs" | "src/reactor/streams.rs") {
+            assert_eq!(sites, ["Box::from_raw("], "unexpected deallocator in {relative}");
+        } else {
+            assert!(sites.is_empty(), "Rust deallocator used in {}", path.display());
+        }
     }
     let xmalloc = fs::read_to_string(root.join("src/xmalloc.rs")).unwrap();
     for name in [

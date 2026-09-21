@@ -2,7 +2,7 @@ use crate::src::ffi::libc::{
     __errno_location, close, dup, fclose, ferror, fopen, fread, free, fwrite, memcpy, open,
     strcmp, strlen, strncmp,
 };
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     bufferevent_enable, bufferevent_free, bufferevent_new, bufferevent_write, evbuffer_add,
     evbuffer_add_vprintf, evbuffer_drain, evbuffer_free, evbuffer_get_length, evbuffer_new,
     evbuffer_pullup, event_once,
@@ -1326,7 +1326,7 @@ pub unsafe extern "C" fn file_push(mut cf: *mut client_file) {
         (*msg).stream = (*cf).stream;
         memcpy(
             msg.offset(1 as ::core::ffi::c_int as isize) as *mut ::core::ffi::c_void,
-            evbuffer_pullup((*cf).buffer, -(1 as ::core::ffi::c_int) as ssize_t)
+            evbuffer_pullup((*cf).buffer, sent as ssize_t)
                 as *const ::core::ffi::c_void,
             sent,
         );
@@ -1750,8 +1750,6 @@ unsafe extern "C" fn file_read_callback(
     let mut msglen: size_t = 0;
     msg = xmalloc(::core::mem::size_of::<msg_read_data>() as size_t) as *mut msg_read_data;
     loop {
-        bdata = evbuffer_pullup((*(*cf).event).input, -(1 as ::core::ffi::c_int) as ssize_t)
-            as *mut ::core::ffi::c_void;
         bsize = evbuffer_get_length((*(*cf).event).input);
         if bsize == 0 as size_t {
             break;
@@ -1766,6 +1764,8 @@ unsafe extern "C" fn file_read_callback(
                 .wrapping_sub(::core::mem::size_of::<msg_read_data>() as usize)
                 as size_t;
         }
+        bdata = evbuffer_pullup((*(*cf).event).input, bsize as ssize_t)
+            as *mut ::core::ffi::c_void;
         log_debug(
             b"read %zu from file %d\0" as *const u8 as *const ::core::ffi::c_char,
             bsize,

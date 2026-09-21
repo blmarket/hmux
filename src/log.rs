@@ -3,8 +3,8 @@ use crate::src::ffi::libc::{
     __errno_location, exit, fclose, fflush, fopen, fprintf, free, getpid, gettimeofday, setvbuf,
     snprintf, strerror, vasprintf,
 };
-use crate::src::ffi::libevent::event_set_log_callback;
-pub use crate::src::ffi::libevent::event_log_cb;
+use crate::src::reactor::event_set_log_callback;
+pub use crate::src::reactor::event_log_cb;
 use crate::src::xmalloc::xasprintf;
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};

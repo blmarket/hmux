@@ -19,7 +19,7 @@ use crate::src::ffi::libc::{
     __ctype_b_loc, close, fnmatch, free, gethostname, getpid, gettimeofday, ioctl, kill, memcpy,
     memset, regcomp, regexec, regfree, strcasecmp, strlen,
 };
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     bufferevent_disable, bufferevent_enable, bufferevent_free, bufferevent_new,
     bufferevent_write, evbuffer_drain, evbuffer_get_length, evbuffer_pullup, event_add,
     event_del, event_initialized, event_set,

@@ -6,7 +6,7 @@ use crate::src::cmd_queue::{
     cmdq_insert_after,
 };
 use crate::src::ffi::libc::{__ctype_b_loc, free, glob, globfree, strcmp, strerror, strlen};
-use crate::src::ffi::libevent::{evbuffer_get_length, evbuffer_pullup};
+use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::file::file_read;
 use crate::src::format::format_single_from_target;
 use crate::src::log::log_debug;
@@ -199,6 +199,11 @@ unsafe extern "C" fn cmd_source_file_done(
     mut buffer: *mut evbuffer,
     mut data: *mut ::core::ffi::c_void,
 ) {
+    // Progress notifications do not need contiguous storage. Coalesce only
+    // once, after the complete file has arrived.
+    if closed == 0 {
+        return;
+    }
     let mut cdata: *mut cmd_source_file_data = data as *mut cmd_source_file_data;
     let mut item: *mut cmdq_item = (*cdata).item;
     let mut c: *mut client = (*cdata).client;
@@ -208,9 +213,6 @@ unsafe extern "C" fn cmd_source_file_done(
     let mut n: u_int = 0;
     let mut new_item: *mut cmdq_item = ::core::ptr::null_mut::<cmdq_item>();
     let mut target: *mut cmd_find_state = cmdq_get_target(item);
-    if closed == 0 {
-        return;
-    }
     if error != 0 as ::core::ffi::c_int {
         cmdq_error(
             item,

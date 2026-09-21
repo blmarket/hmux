@@ -9,7 +9,7 @@ use crate::src::cmd_queue::{
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after, cmdq_print,
 };
 use crate::src::ffi::libc::{__ctype_toupper_loc, free, memcpy, strtod};
-use crate::src::ffi::libevent::{
+use crate::src::reactor::{
     evbuffer_get_length, evbuffer_pullup, evbuffer_readln, event_active, event_add, event_del,
     event_set,
 };
