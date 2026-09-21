@@ -348,9 +348,10 @@ fn c_heap_ownership_does_not_cross_into_rust_deallocation() {
         let source = fs::read_to_string(&path).unwrap();
         let sites = rust_deallocator_sites(&source);
         let relative = relative(root, &path);
-        // These two destructors pair only with Box::into_raw in their own
-        // constructors. Application calloc/free owners remain forbidden here.
-        if matches!(relative.as_str(), "src/reactor/buffer.rs" | "src/reactor/streams.rs") {
+        // These destructors pair only with Box::into_raw in their own
+        // constructors. In format/jobs.rs only the cache is Rust-owned;
+        // job nodes and strings remain calloc/strdup + free allocations.
+        if matches!(relative.as_str(), "src/reactor/buffer.rs" | "src/reactor/streams.rs" | "src/format/jobs.rs") {
             assert_eq!(sites, ["Box::from_raw("], "unexpected deallocator in {relative}");
         } else {
             assert!(sites.is_empty(), "Rust deallocator used in {}", path.display());

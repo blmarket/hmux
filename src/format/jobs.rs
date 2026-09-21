@@ -1,12 +1,11 @@
 // Private job-integration implementation.  This module owns the process-wide
 // format-job cache, per-client cache interaction, job callbacks, and tidy
-// lifecycle.  It calls the parent facade for expansion, logging, allocation,
-// and the tree-storage helpers; the cache and callback signatures are kept
-// exactly as they were.
+// lifecycle.  It calls the parent facade for expansion, logging, and allocation.
+// Job addresses remain stable for process callbacks.
 use super::*;
 
 static mut format_jobs: format_job_tree = format_job_tree {
-    rbh_root: ::core::ptr::null::<format_job>() as *mut format_job,
+    entries: std::collections::BTreeMap::new(),
 };
 pub(super) unsafe extern "C" fn format_job_update(mut job: *mut job) {
     let mut fj: *mut format_job = job_get_data(job) as *mut format_job;
@@ -93,23 +92,6 @@ pub(super) unsafe extern "C" fn format_job_get(
 ) -> *mut ::core::ffi::c_char {
     let mut ft: *mut format_tree = (*es).ft;
     let mut jobs: *mut format_job_tree = ::core::ptr::null_mut::<format_job_tree>();
-    let mut fj0: format_job = format_job {
-        client: ::core::ptr::null_mut::<client>(),
-        tag: 0,
-        cmd: ::core::ptr::null::<::core::ffi::c_char>(),
-        expanded: ::core::ptr::null::<::core::ffi::c_char>(),
-        last: 0,
-        out: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        updated: 0,
-        job: ::core::ptr::null_mut::<job>(),
-        status: 0,
-        entry: format_job_entry {
-            rbe_left: ::core::ptr::null_mut::<format_job>(),
-            rbe_right: ::core::ptr::null_mut::<format_job>(),
-            rbe_parent: ::core::ptr::null_mut::<format_job>(),
-            rbe_color: 0,
-        },
-    };
     let mut fj: *mut format_job = ::core::ptr::null_mut::<format_job>();
     let mut t: time_t = 0;
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -139,22 +121,10 @@ pub(super) unsafe extern "C" fn format_job_get(
     } else if !(*(*ft).client).jobs.is_null() {
         jobs = (*(*ft).client).jobs;
     } else {
-        (*(*ft).client).jobs =
-            xmalloc(::core::mem::size_of::<format_job_tree>() as size_t) as *mut format_job_tree;
+        (*(*ft).client).jobs = Box::into_raw(Box::new(format_job_tree::default()));
         jobs = (*(*ft).client).jobs;
-        (*jobs).rbh_root = ::core::ptr::null_mut::<format_job>();
     }
-    fj0.tag = (*ft).tag;
-    fj0.cmd = cmd;
-    fj = format_job_tree_RB_FIND(jobs, &raw mut fj0);
-    if fj.is_null() {
-        fj =
-            xcalloc(1 as size_t, ::core::mem::size_of::<format_job>() as size_t) as *mut format_job;
-        (*fj).client = (*ft).client;
-        (*fj).tag = (*ft).tag;
-        (*fj).cmd = xstrdup(cmd);
-        format_job_tree_RB_INSERT(jobs, fj);
-    }
+    fj = format_job_find_or_insert(jobs, (*ft).client, (*ft).tag, cmd);
     format_copy_state(
         &raw mut next,
         es,
@@ -215,35 +185,61 @@ pub(super) unsafe extern "C" fn format_job_get(
     }
     return format_expand1(&raw mut next, (*fj).out);
 }
+// Do not retain a map borrow across format expansion or process callbacks.
+unsafe fn format_job_find_or_insert(
+    jobs: *mut format_job_tree,
+    client: *mut client,
+    tag: u_int,
+    cmd: *const ::core::ffi::c_char,
+) -> *mut format_job {
+    let key = (tag, std::ffi::CStr::from_ptr(cmd).to_bytes().to_vec());
+    *(*jobs).entries.entry(key).or_insert_with(|| {
+        let fj = xcalloc(1, ::core::mem::size_of::<format_job>()) as *mut format_job;
+        (*fj).client = client;
+        (*fj).tag = tag;
+        (*fj).cmd = xstrdup(cmd);
+        fj
+    })
+}
+
 pub(super) unsafe extern "C" fn format_job_tidy(
-    mut jobs: *mut format_job_tree,
-    mut force: ::core::ffi::c_int,
+    jobs: *mut format_job_tree,
+    force: ::core::ffi::c_int,
 ) {
-    let mut fj: *mut format_job = ::core::ptr::null_mut::<format_job>();
-    let mut fj1: *mut format_job = ::core::ptr::null_mut::<format_job>();
-    let mut now: time_t = 0;
-    now = time(::core::ptr::null_mut::<time_t>());
-    fj = format_job_tree_RB_MINMAX(jobs, RB_NEGINF);
-    while !fj.is_null() && {
-        fj1 = format_job_tree_RB_NEXT(fj);
-        1 as ::core::ffi::c_int != 0
-    } {
-        if !(force == 0 && ((*fj).last > now || now - (*fj).last < 3600 as time_t)) {
-            format_job_tree_RB_REMOVE(jobs, fj);
-            log_debug(
-                b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                b"format_job_tidy\0" as *const u8 as *const ::core::ffi::c_char,
-                (*fj).cmd,
-            );
-            if !(*fj).job.is_null() {
-                job_free((*fj).job);
+    format_job_tidy_at(jobs, force, time(::core::ptr::null_mut()));
+}
+
+unsafe fn format_job_tidy_at(jobs: *mut format_job_tree, force: ::core::ffi::c_int, now: time_t) {
+    // Snapshot keys in tree order, then remove before cleanup, just like the
+    // old traversal. No iterator or map borrow survives a call to job_free.
+    let expired: Vec<_> = (*jobs)
+        .entries
+        .iter()
+        .filter_map(|(key, &fj)| {
+            if force == 0 && ((*fj).last > now || now - (*fj).last < 3600) {
+                None
+            } else {
+                Some(key.clone())
             }
-            free((*fj).expanded as *mut ::core::ffi::c_void);
-            free((*fj).cmd as *mut ::core::ffi::c_void);
-            free((*fj).out as *mut ::core::ffi::c_void);
-            free(fj as *mut ::core::ffi::c_void);
+        })
+        .collect();
+    for key in expired {
+        let fj = (*jobs)
+            .entries
+            .remove(&key)
+            .expect("format job still cached");
+        log_debug(
+            b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
+            b"format_job_tidy\0" as *const u8 as *const ::core::ffi::c_char,
+            (*fj).cmd,
+        );
+        if !(*fj).job.is_null() {
+            job_free((*fj).job);
         }
-        fj = fj1;
+        free((*fj).expanded as *mut ::core::ffi::c_void);
+        free((*fj).cmd as *mut ::core::ffi::c_void);
+        free((*fj).out as *mut ::core::ffi::c_void);
+        free(fj as *mut ::core::ffi::c_void);
     }
 }
 #[no_mangle]
@@ -262,6 +258,111 @@ pub unsafe extern "C" fn format_tidy_jobs() {
 pub unsafe extern "C" fn format_lost_client(mut c: *mut client) {
     if !(*c).jobs.is_null() {
         format_job_tidy((*c).jobs, 1 as ::core::ffi::c_int);
+        drop(Box::from_raw((*c).jobs));
+        (*c).jobs = ::core::ptr::null_mut();
     }
-    free((*c).jobs as *mut ::core::ffi::c_void);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CString;
+    use std::ptr::null_mut;
+
+    #[test]
+    fn cache_preserves_identity_and_c_comparator_order() {
+        unsafe {
+            let mut cache = format_job_tree::default();
+            let mut other = format_job_tree::default();
+            let command = CString::new(b"cmd\xff".to_vec()).unwrap();
+            let original = format_job_find_or_insert(&mut cache, null_mut(), 7, command.as_ptr());
+            (*original).updated = 42;
+            let duplicate = CString::new(command.as_bytes()).unwrap();
+            assert_eq!(
+                original,
+                format_job_find_or_insert(&mut cache, null_mut(), 7, duplicate.as_ptr())
+            );
+            assert_ne!(
+                original,
+                format_job_find_or_insert(&mut other, null_mut(), 7, duplicate.as_ptr())
+            );
+            assert_ne!(
+                original,
+                format_job_find_or_insert(&mut cache, null_mut(), 8, duplicate.as_ptr())
+            );
+
+            // Force tree growth with unsigned tags and non-UTF-8 command bytes.
+            for tag in [0, 7, 8, u_int::MAX] {
+                for byte in 1..=255u8 {
+                    let cmd = CString::new(vec![byte]).unwrap();
+                    format_job_find_or_insert(&mut cache, null_mut(), tag, cmd.as_ptr());
+                }
+            }
+            assert_eq!(
+                original,
+                format_job_find_or_insert(&mut cache, null_mut(), 7, command.as_ptr())
+            );
+            assert_eq!((*original).updated, 42);
+            let jobs: Vec<_> = cache.entries.values().copied().collect();
+            for pair in jobs.windows(2) {
+                let (a, b) = (pair[0], pair[1]);
+                assert!(
+                    (*a).tag < (*b).tag || ((*a).tag == (*b).tag && strcmp((*a).cmd, (*b).cmd) < 0)
+                );
+            }
+            format_job_tidy_at(&mut cache, 1, 0);
+            format_job_tidy_at(&mut other, 1, 0);
+            assert!(cache.entries.is_empty());
+            assert!(other.entries.is_empty());
+        }
+    }
+
+    #[test]
+    fn client_teardown_releases_the_rust_cache() {
+        unsafe {
+            let mut c: client = std::mem::zeroed();
+            c.jobs = Box::into_raw(Box::new(format_job_tree::default()));
+            let cmd = CString::new("job").unwrap();
+            let fj = format_job_find_or_insert(c.jobs, &mut c, 0, cmd.as_ptr());
+            (*fj).last = time(std::ptr::null_mut()) + 3600;
+            format_lost_client(&mut c);
+            assert!(c.jobs.is_null());
+            format_lost_client(&mut c);
+        }
+    }
+
+    #[test]
+    fn tidy_preserves_expiration_boundary_and_survivor_addresses() {
+        unsafe {
+            let mut cache = format_job_tree::default();
+            let now = 10_000;
+            let mut survivors = Vec::new();
+            // Interleave expired and retained entries in traversal order.
+            for (index, last) in [now - 3600, now - 3599, now - 7200, now + 1, now]
+                .into_iter()
+                .enumerate()
+            {
+                let cmd = CString::new(format!("job-{index}")).unwrap();
+                let fj = format_job_find_or_insert(&mut cache, null_mut(), 0, cmd.as_ptr());
+                (*fj).last = last;
+                (*fj).expanded = xstrdup(cmd.as_ptr());
+                (*fj).out = xstrdup(cmd.as_ptr());
+                if last > now || now - last < 3600 {
+                    survivors.push((cmd, fj));
+                }
+            }
+            format_job_tidy_at(&mut cache, 0, now);
+            assert_eq!(cache.entries.len(), 3);
+            for (cmd, fj) in survivors {
+                assert_eq!(cache.entries.get(&(0, cmd.as_bytes().to_vec())), Some(&fj));
+                assert_eq!(
+                    std::ffi::CStr::from_ptr((*fj).out).to_bytes(),
+                    cmd.as_bytes()
+                );
+            }
+            format_job_tidy_at(&mut cache, 1, now);
+            assert!(cache.entries.is_empty());
+            format_job_tidy_at(&mut cache, 0, now);
+        }
+    }
 }

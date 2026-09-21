@@ -114,7 +114,7 @@ pub use crate::src::shared::environment::{environ, environ_entry, environ_entry_
 pub use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::event::*;
 pub use crate::src::shared::format::{
-    format_cb, format_entry, format_entry_entry, format_entry_tree, format_job, format_job_entry,
+    format_cb, format_entry, format_entry_entry, format_entry_tree, format_job,
     format_job_tree, format_tree, format_type,
 };
 pub use crate::src::shared::format::{

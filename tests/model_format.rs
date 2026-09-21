@@ -1,4 +1,4 @@
-//! Frozen pre-migration sizes, alignments, and every named field offset.
+//! Frozen C layouts, excluding the migrated format-job cache and its nodes.
 use std::mem::{align_of, offset_of, size_of};
 #[test]
 fn original_copies_match() {
@@ -33,16 +33,6 @@ fn original_copies_match() {
         "src/format.rs::format_entry_tree",
         hmux2::src::format::format_entry_tree,
         [rbh_root]
-    );
-    record!(
-        "src/format.rs::format_job",
-        hmux2::src::format::format_job,
-        [client, tag, cmd, expanded, last, out, updated, job, status, entry]
-    );
-    record!(
-        "src/format.rs::C2RustUnnamed_39",
-        hmux2::src::format::format_job_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/alerts.rs::format_job_tree",
@@ -408,11 +398,6 @@ fn original_copies_match() {
         "src/file.rs::format_job_tree",
         *mut hmux2::src::file::format_job_tree,
         []
-    );
-    record!(
-        "src/format.rs::format_job_tree",
-        hmux2::src::format::format_job_tree,
-        [rbh_root]
     );
     record!(
         "src/format_draw.rs::format_job_tree",

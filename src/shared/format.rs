@@ -129,10 +129,11 @@ pub struct format_tree {
     pub tree: format_entry_tree,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
+// Jobs remain separately C-allocated because process callbacks retain their addresses.
+// Keys own the original command bytes, ordered exactly like tag followed by strcmp.
+#[derive(Default)]
 pub struct format_job_tree {
-    pub rbh_root: *mut format_job,
+    pub(crate) entries: std::collections::BTreeMap<(u_int, Vec<u8>), *mut format_job>,
 }
 
 #[derive(Copy, Clone)]
@@ -176,14 +177,4 @@ pub struct format_job {
     pub updated: ::core::ffi::c_int,
     pub job: *mut job,
     pub status: ::core::ffi::c_int,
-    pub entry: format_job_entry,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct format_job_entry {
-    pub rbe_left: *mut format_job,
-    pub rbe_right: *mut format_job,
-    pub rbe_parent: *mut format_job,
-    pub rbe_color: ::core::ffi::c_int,
 }
