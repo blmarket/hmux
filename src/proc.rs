@@ -4,24 +4,24 @@ use crate::src::compat::imsg::{
     imsgbuf_init, imsgbuf_queuelen, imsgbuf_read, imsgbuf_write,
 };
 use crate::src::compat::setproctitle::setproctitle;
+pub use crate::src::ffi::libc::utsname;
 use crate::src::ffi::libc::{
     close, daemon, fork, free, getpid, memset, sigaction, sigemptyset, socketpair, uname,
 };
-pub use crate::src::ffi::libc::utsname;
+use crate::src::ffi::utf8proc::utf8proc_version;
+use crate::src::log::{fatal, log_debug, log_open, log_toggle};
 use crate::src::reactor::{
     event_add, event_del, event_get_method, event_get_version, event_loop, event_pending, event_set,
 };
-use crate::src::ffi::utf8proc::utf8proc_version;
-use crate::src::log::{fatal, log_debug, log_open, log_toggle};
-use crate::src::tmux::{getversion, socket_path};
-use crate::src::xmalloc::{xcalloc, xstrdup};
-pub use crate::src::shared::message::{ibuf, ibuf_entry, imsg, imsgbuf, msgbuf};
-pub use crate::src::shared::process::{tmuxpeer, tmuxpeer_entry, tmuxproc, tmuxproc_peers};
-pub use crate::src::shared::message::{PROTOCOL_VERSION, imsg_hdr};
-pub use crate::src::shared::socket::{
-    __socket_type, AF_UNIX, PF_LOCAL, PF_UNIX, PF_UNSPEC, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM,
-    SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
+use crate::src::shared::abi::*;
+pub use crate::src::shared::abi::{
+    __clock_t, __gid_t, __uid_t, __uint32_t, gid_t, uid_t, uint32_t,
 };
+pub use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
+use crate::src::shared::message::*;
+pub use crate::src::shared::message::{ibuf, ibuf_entry, imsg, imsgbuf, msgbuf};
+pub use crate::src::shared::message::{imsg_hdr, PROTOCOL_VERSION};
+pub use crate::src::shared::process::{tmuxpeer, tmuxpeer_entry, tmuxproc, tmuxproc_peers};
 pub use crate::src::shared::signal::{
     __sighandler_t, __sigset_t, __sigval_t, sigaction, sigaction___sigaction_handler, siginfo_t,
     siginfo_t__sifields, siginfo_t__sifields__kill, siginfo_t__sifields__rt,
@@ -31,10 +31,12 @@ pub use crate::src::shared::signal::{
     sigset_t, sigval, SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN,
     SIGTTOU, SIGUSR1, SIGUSR2, SIGWINCH, SIG_DFL,
 };
-pub use crate::src::shared::abi::{__clock_t, __gid_t, __uid_t, __uint32_t, gid_t, uid_t, uint32_t};
-pub use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
-use crate::src::shared::message::*;
-use crate::src::shared::abi::*;
+pub use crate::src::shared::socket::{
+    __socket_type, AF_UNIX, PF_LOCAL, PF_UNIX, PF_UNSPEC, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM,
+    SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
+};
+use crate::src::tmux::{getversion, socket_path};
+use crate::src::xmalloc::{xcalloc, xstrdup};
 use ::libc;
 
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
@@ -157,7 +159,9 @@ unsafe extern "C" fn proc_update_event(mut peer: *mut tmuxpeer) {
     }
     // Keep the descriptor registration while its interest is unchanged.
     // A callback may rearm it when the output queue changes direction.
-    if event_pending(&raw mut (*peer).event, 6, std::ptr::null_mut()) == events as ::core::ffi::c_int {
+    if event_pending(&raw mut (*peer).event, 6, std::ptr::null_mut())
+        == events as ::core::ffi::c_int
+    {
         return;
     }
     event_del(&raw mut (*peer).event);

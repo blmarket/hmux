@@ -6,10 +6,10 @@ use crate::src::control::control_wait_exit;
 use crate::src::environ::environ_free;
 use crate::src::ffi::libc::{
     __errno_location, cfgetispeed, cfgetospeed, cfmakeraw, cfsetispeed, cfsetospeed, close,
-    closefrom, connect, dup, environ, execl, fflush, flock, fprintf, free, getenv, getpid,
-    getppid, isatty, kill, memcpy, memset, open, printf, setenv, sigaction, sigemptyset, socket,
-    stderr, stdout, strerror, strlcpy, strlen, strsignal, system, tcgetattr, tcsetattr, ttyname,
-    unlink, waitpid,
+    closefrom, connect, dup, environ, execl, fflush, flock, fprintf, free, getenv, getpid, getppid,
+    isatty, kill, memcpy, memset, open, printf, setenv, sigaction, sigemptyset, socket, stderr,
+    stdout, strerror, strlcpy, strlen, strsignal, system, tcgetattr, tcsetattr, ttyname, unlink,
+    waitpid,
 };
 use crate::src::file::{
     file_read_cancel, file_read_open, file_write_close, file_write_data, file_write_left,
@@ -22,63 +22,71 @@ use crate::src::proc::{
     proc_set_signals, proc_start,
 };
 use crate::src::server::server_start;
-use crate::src::tmux::{
-    find_cwd, find_home, global_environ, global_options, global_s_options, global_w_options,
-    ptm_fd, setblocking, shell_argv0, shell_command, socket_path,
+use crate::src::shared::abi::*;
+pub use crate::src::shared::abi::{
+    __clock_t, __off64_t, __off_t, __socklen_t, __uid_t, __uint16_t, __uint32_t, socklen_t,
+    ssize_t, uint16_t, uint32_t,
 };
-use crate::src::tty_term::{tty_term_free_list, tty_term_read_list};
-use crate::src::xmalloc::{xasprintf, xmalloc, xsnprintf, xstrdup};
-pub use crate::src::shared::message::{msg_command};
-pub use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
+use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
     args, args_value, args_value_c2rust_unnamed, args_value_entry,
 };
+use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
+pub use crate::src::shared::client::{
+    CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_CONTROL_WAITEXIT, CLIENT_LOGIN,
+    CLIENT_NOSTARTSERVER, CLIENT_STARTSERVER, CLIENT_WRITE_ACK,
+};
+use crate::src::shared::colour::*;
+pub use crate::src::shared::command::CMD_STARTSERVER;
+use crate::src::shared::command::*;
 pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
-pub use crate::src::shared::control::{control_state};
+pub use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
+pub use crate::src::shared::control::control_state;
+use crate::src::shared::display::*;
+pub use crate::src::shared::display::{visible_range, visible_ranges};
+pub use crate::src::shared::environment::environ;
+pub use crate::src::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG, ENOENT};
+use crate::src::shared::event::*;
 pub use crate::src::shared::format::{format_job_tree, format_tree};
+use crate::src::shared::grid::*;
+pub use crate::src::shared::hyperlinks::hyperlinks;
 pub use crate::src::shared::input::{input_ctx, input_request, input_requests};
+use crate::src::shared::key::*;
 pub use crate::src::shared::key::{
     key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
 };
+pub use crate::src::shared::layout::layout_geometry;
+use crate::src::shared::layout::*;
 pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
-pub use crate::src::shared::menu::{menu_data};
+pub use crate::src::shared::menu::menu_data;
+pub use crate::src::shared::message::msg_command;
+use crate::src::shared::message::*;
 pub use crate::src::shared::message::{ibuf, ibuf_entry, imsg};
-pub use crate::src::shared::options::{options};
+pub use crate::src::shared::message::{imsg_hdr, IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
+pub use crate::src::shared::mouse::mouse_event;
+pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
     window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
     window_pane_tree_entry, window_pane_zentry, window_panes,
 };
-pub use crate::src::shared::process::{tmuxpeer, tmuxproc};
-pub use crate::src::shared::prompt::{prompt};
-pub use crate::src::shared::redraw::{redraw_scene};
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
-pub use crate::src::shared::spawn::{spawn_editor_state};
-pub use crate::src::shared::status::{status_line};
-pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
-pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
+pub use crate::src::shared::pane::{
+    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
 };
-pub use crate::src::shared::environment::{environ};
-pub use crate::src::shared::message::{IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION, imsg_hdr};
 pub use crate::src::shared::posix_io::{
     O_CREAT, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, WAIT_ANY, WNOHANG,
 };
-pub use crate::src::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG, ENOENT};
 pub use crate::src::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
-pub use crate::src::shared::socket::{
-    __socket_type, in6_addr, in6_addr___in6_u, in_addr, in_addr_t, in_port_t, sa_family_t,
-    sockaddr, sockaddr_at, sockaddr_ax25, sockaddr_dl, sockaddr_eon, sockaddr_in, sockaddr_in6,
-    sockaddr_inarp, sockaddr_ipx, sockaddr_iso, sockaddr_ns, sockaddr_un, sockaddr_x25,
-    __CONST_SOCKADDR_ARG, AF_UNIX, PF_LOCAL, PF_UNIX, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM,
-    SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
-};
+pub use crate::src::shared::process::{tmuxpeer, tmuxproc};
+pub use crate::src::shared::prompt::prompt;
+pub use crate::src::shared::redraw::redraw_scene;
+pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
+pub use crate::src::shared::screen_write::screen_write_cline;
+pub use crate::src::shared::session::{session, session_entry, session_gentry};
 pub use crate::src::shared::signal::{
     __sighandler_t, __sigset_t, __sigval_t, sigaction, sigaction___sigaction_handler, siginfo_t,
     siginfo_t__sifields, siginfo_t__sifields__kill, siginfo_t__sifields__rt,
@@ -87,44 +95,36 @@ pub use crate::src::shared::signal::{
     siginfo_t__sifields__sigpoll, siginfo_t__sifields__sigsys, siginfo_t__sifields__timer,
     sigset_t, sigval, SA_RESTART, SIGCHLD, SIGCONT, SIGHUP, SIGTERM, SIGTSTP, SIGWINCH, SIG_DFL,
 };
+pub use crate::src::shared::socket::{
+    __socket_type, in6_addr, in6_addr___in6_u, in_addr, in_addr_t, in_port_t, sa_family_t,
+    sockaddr, sockaddr_at, sockaddr_ax25, sockaddr_dl, sockaddr_eon, sockaddr_in, sockaddr_in6,
+    sockaddr_inarp, sockaddr_ipx, sockaddr_iso, sockaddr_ns, sockaddr_un, sockaddr_x25,
+    __CONST_SOCKADDR_ARG, AF_UNIX, PF_LOCAL, PF_UNIX, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM,
+    SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
+};
+pub use crate::src::shared::spawn::spawn_editor_state;
+pub use crate::src::shared::status::status_line;
 pub use crate::src::shared::stdio::{
-    FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
+    _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
 };
-pub use crate::src::shared::abi::{
-    __clock_t, __off64_t, __off_t, __socklen_t, __uid_t, __uint16_t, __uint32_t, socklen_t,
-    ssize_t, uint16_t, uint32_t,
-};
-pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
-pub use crate::src::shared::screen_write::{screen_write_cline};
-pub use crate::src::shared::hyperlinks::{hyperlinks};
-pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-};
-pub use crate::src::shared::command::{CMD_STARTSERVER};
-pub use crate::src::shared::client::{
-    CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_CONTROL_WAITEXIT, CLIENT_LOGIN,
-    CLIENT_NOSTARTSERVER, CLIENT_STARTSERVER, CLIENT_WRITE_ACK,
-};
-pub use crate::src::shared::display::{visible_range, visible_ranges};
-pub use crate::src::shared::layout::{layout_geometry};
-pub use crate::src::shared::mouse::{mouse_event};
-use crate::src::shared::client::*;
-use crate::src::shared::arguments::*;
-use crate::src::shared::command::*;
-use crate::src::shared::terminal::*;
-use crate::src::shared::event::*;
-use crate::src::shared::display::*;
-use crate::src::shared::layout::*;
-use crate::src::shared::message::*;
-use crate::src::shared::abi::*;
-use crate::src::shared::colour::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
 use crate::src::shared::style::*;
+use crate::src::shared::terminal::*;
+pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
+pub use crate::src::shared::window::{
+    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
+    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
+    winlink_stack, winlink_wentry, winlinks,
+};
+use crate::src::tmux::{
+    find_cwd, find_home, global_environ, global_options, global_s_options, global_w_options,
+    ptm_fd, setblocking, shell_argv0, shell_command, socket_path,
+};
+use crate::src::tty_term::{tty_term_free_list, tty_term_read_list};
+use crate::src::xmalloc::{xasprintf, xmalloc, xsnprintf, xstrdup};
 use ::libc;
 
-pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_25;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_26;
+pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_25;
 
 pub const ECONNREFUSED: ::core::ffi::c_int = 111 as ::core::ffi::c_int;
 

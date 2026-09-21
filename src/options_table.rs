@@ -1,27 +1,26 @@
-pub use crate::src::shared::options::{options_name_map};
-pub use crate::src::shared::options::{options_table_entry};
-pub use crate::src::shared::key::{MODEKEY_EMACS};
-pub use crate::src::shared::posix_io::{_PATH_BSHELL};
-pub use crate::src::shared::input::{INPUT_BUF_DEFAULT_SIZE};
+use crate::src::shared::abi::*;
 pub use crate::src::shared::alerts::{ALERT_ANY, ALERT_OTHER, VISUAL_OFF};
+pub use crate::src::shared::input::INPUT_BUF_DEFAULT_SIZE;
+pub use crate::src::shared::key::key_code_enum as C2RustUnnamed;
+pub use crate::src::shared::key::MODEKEY_EMACS;
+use crate::src::shared::key::*;
+use crate::src::shared::layout::*;
 pub use crate::src::shared::limits::{
     __INT_MAX__, __SHRT_MAX__, INT_MAX, SHRT_MAX, UINT_MAX, USHRT_MAX,
 };
-pub use crate::src::shared::window::{WINDOW_SIZE_LATEST};
+pub use crate::src::shared::options::options_name_map;
+pub use crate::src::shared::options::options_table_entry;
+use crate::src::shared::options::*;
+pub use crate::src::shared::options::{
+    OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_IS_STYLE,
+    OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_STATUS_FORMAT1,
+    OPTIONS_TABLE_STATUS_FORMAT2, OPTIONS_TABLE_STATUS_FORMAT3, OPTIONS_TABLE_WINDOW,
+};
 pub use crate::src::shared::pane::{
     PANE_BORDER_COLOUR, PANE_SCROLLBARS_OFF, PANE_SCROLLBARS_RIGHT, PANE_STATUS_OFF,
 };
-pub use crate::src::shared::options::{
-    OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_HOOK,
-    OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION,
-    OPTIONS_TABLE_STATUS_FORMAT1, OPTIONS_TABLE_STATUS_FORMAT2, OPTIONS_TABLE_STATUS_FORMAT3,
-    OPTIONS_TABLE_WINDOW,
-};
-use crate::src::shared::key::*;
-use crate::src::shared::layout::*;
-use crate::src::shared::options::*;
-use crate::src::shared::abi::*;
-pub use crate::src::shared::key::key_code_enum as C2RustUnnamed;
+pub use crate::src::shared::posix_io::_PATH_BSHELL;
+pub use crate::src::shared::window::WINDOW_SIZE_LATEST;
 
 pub const _PATH_VI: [::core::ffi::c_char; 12] =
     unsafe { ::core::mem::transmute::<[u8; 12], [::core::ffi::c_char; 12]>(*b"/usr/bin/vi\0") };

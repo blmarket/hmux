@@ -167,7 +167,7 @@ fn original_copies_match() {
     record!(
         "src/events_payload.rs::event_payload_tree",
         hmux2::src::events_payload::event_payload_tree,
-        [rbh_root]
+        [entries]
     );
     record!(
         "src/events_payload.rs::event_payload_type",

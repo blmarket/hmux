@@ -7,10 +7,73 @@ use crate::src::json::{
 };
 use crate::src::layout::{
     layout_cell_has_tiled_child, layout_cell_is_tiled, layout_count_cells, layout_create_cell,
-    layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_free_cell,
-    layout_make_leaf, layout_print_cell, layout_replace_with_node, layout_set_size,
+    layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_free_cell, layout_make_leaf,
+    layout_print_cell, layout_replace_with_node, layout_set_size,
 };
 use crate::src::resize::recalculate_sizes;
+use crate::src::shared::abi::*;
+pub use crate::src::shared::abi::{__compar_fn_t, __int64_t, int64_t};
+pub use crate::src::shared::arguments::args;
+use crate::src::shared::client::*;
+pub use crate::src::shared::client::{
+    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
+    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
+    overlay_resize_cb,
+};
+use crate::src::shared::colour::*;
+pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
+pub use crate::src::shared::control::control_state;
+pub use crate::src::shared::ctype::{
+    _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
+    _ISspace, _ISupper, _ISxdigit, ctype_code,
+};
+use crate::src::shared::display::*;
+pub use crate::src::shared::display::{visible_range, visible_ranges};
+pub use crate::src::shared::environment::environ;
+use crate::src::shared::event::*;
+pub use crate::src::shared::format::{format_job_tree, format_tree};
+use crate::src::shared::grid::*;
+pub use crate::src::shared::hyperlinks::hyperlinks;
+pub use crate::src::shared::input::{input_ctx, input_request, input_requests};
+pub use crate::src::shared::json::json_node;
+use crate::src::shared::key::*;
+pub use crate::src::shared::key::{
+    key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
+};
+pub use crate::src::shared::layout::layout_geometry;
+use crate::src::shared::layout::*;
+pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
+pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX};
+pub use crate::src::shared::menu::menu_data;
+use crate::src::shared::message::*;
+pub use crate::src::shared::mouse::mouse_event;
+pub use crate::src::shared::options::options;
+pub use crate::src::shared::pane::{
+    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
+    window_pane_tree_entry, window_pane_zentry, window_panes,
+};
+pub use crate::src::shared::pane::{
+    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
+    PANE_MAXIMUM, PANE_MINIMUM,
+};
+pub use crate::src::shared::process::tmuxpeer;
+pub use crate::src::shared::prompt::prompt;
+pub use crate::src::shared::redraw::redraw_scene;
+pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
+pub use crate::src::shared::screen_write::screen_write_cline;
+pub use crate::src::shared::session::{session, session_entry, session_gentry};
+pub use crate::src::shared::spawn::spawn_editor_state;
+pub use crate::src::shared::status::status_line;
+use crate::src::shared::style::*;
+use crate::src::shared::terminal::*;
+pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
+pub use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
+pub use crate::src::shared::window::WINDOW_MAXIMUM;
+pub use crate::src::shared::window::{
+    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
+    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
+    winlink_stack, winlink_wentry, winlinks,
+};
 use crate::src::window::{
     window_count_panes, window_pane_index, window_pane_is_floating, window_pane_last_index,
     window_pane_stack_push, window_pane_stack_remove, window_pane_zindex, window_resize,
@@ -19,74 +82,11 @@ use crate::src::window::{
 use crate::src::xmalloc::{
     xasprintf, xcalloc, xmalloc, xmemdup, xreallocarray, xstrdup, xvasprintf,
 };
-pub use crate::src::shared::json::{json_node};
-pub use crate::src::shared::arguments::{args};
-pub use crate::src::shared::client::{
-    client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
-    overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
-    overlay_resize_cb,
-};
-pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_list, cmds};
-pub use crate::src::shared::control::{control_state};
-pub use crate::src::shared::format::{format_job_tree, format_tree};
-pub use crate::src::shared::input::{input_ctx, input_request, input_requests};
-pub use crate::src::shared::key::{
-    key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
-};
-pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
-pub use crate::src::shared::menu::{menu_data};
-pub use crate::src::shared::options::{options};
-pub use crate::src::shared::pane::{
-    window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
-    window_pane_tree_entry, window_pane_zentry, window_panes,
-};
-pub use crate::src::shared::process::{tmuxpeer};
-pub use crate::src::shared::prompt::{prompt};
-pub use crate::src::shared::redraw::{redraw_scene};
-pub use crate::src::shared::session::{session, session_entry, session_gentry};
-pub use crate::src::shared::spawn::{spawn_editor_state};
-pub use crate::src::shared::status::{status_line};
-pub use crate::src::shared::tty::{tty, tty_code, tty_key, tty_term, tty_term_entry};
-pub use crate::src::shared::window::{
-    window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
-    window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
-    winlink_stack, winlink_wentry, winlinks,
-};
-pub use crate::src::shared::environment::{environ};
-pub use crate::src::shared::ctype::{
-    _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
-    _ISspace, _ISupper, _ISxdigit, ctype_code,
-};
-pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX};
-pub use crate::src::shared::window::{WINDOW_MAXIMUM};
-pub use crate::src::shared::pane::{
-    PANE_MAXIMUM, PANE_MINIMUM, window_pane_offset, window_pane_resize,
-    window_pane_resize_entry, window_pane_resizes,
-};
-pub use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
-pub use crate::src::shared::abi::{__compar_fn_t, __int64_t, int64_t};
-pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
-pub use crate::src::shared::screen_write::{screen_write_cline};
-pub use crate::src::shared::hyperlinks::{hyperlinks};
-pub use crate::src::shared::display::{visible_range, visible_ranges};
-pub use crate::src::shared::layout::{layout_geometry};
-pub use crate::src::shared::mouse::{mouse_event};
-use crate::src::shared::client::*;
-use crate::src::shared::terminal::*;
-use crate::src::shared::event::*;
-use crate::src::shared::display::*;
-use crate::src::shared::layout::*;
-use crate::src::shared::message::*;
-use crate::src::shared::abi::*;
-use crate::src::shared::colour::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
-use crate::src::shared::style::*;
 
 use ::std::ops::{Deref, Index};
 
-pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
+pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -245,10 +245,7 @@ impl LayoutDescriptionChildren {
                     self.capacity.wrapping_mul(2)
                 };
                 self.nodes = if self.nodes.is_null() {
-                    xcalloc(
-                        capacity,
-                        ::core::mem::size_of::<LayoutDescriptionNode>(),
-                    )
+                    xcalloc(capacity, ::core::mem::size_of::<LayoutDescriptionNode>())
                 } else {
                     xreallocarray(
                         self.nodes as *mut ::core::ffi::c_void,
@@ -316,7 +313,10 @@ impl Index<usize> for LayoutDescriptionChildren {
     type Output = LayoutDescriptionNode;
 
     fn index(&self, index: usize) -> &Self::Output {
-        assert!(index < self.len, "layout description child index out of bounds");
+        assert!(
+            index < self.len,
+            "layout description child index out of bounds"
+        );
         unsafe { &*self.nodes.add(index) }
     }
 }
@@ -426,7 +426,11 @@ impl LayoutDescriptionNode {
         }
     }
 
-    fn has_duplicate_index(&self, target: &LayoutDescriptionPane, target_ptr: *const LayoutDescriptionPane) -> bool {
+    fn has_duplicate_index(
+        &self,
+        target: &LayoutDescriptionPane,
+        target_ptr: *const LayoutDescriptionPane,
+    ) -> bool {
         if let Some(pane) = self.pane.as_ref() {
             if !::std::ptr::eq(pane, target_ptr)
                 && pane.index.is_some()
@@ -443,7 +447,11 @@ impl LayoutDescriptionNode {
         false
     }
 
-    fn has_duplicate_zindex(&self, target: &LayoutDescriptionPane, target_ptr: *const LayoutDescriptionPane) -> bool {
+    fn has_duplicate_zindex(
+        &self,
+        target: &LayoutDescriptionPane,
+        target_ptr: *const LayoutDescriptionPane,
+    ) -> bool {
         if let Some(pane) = self.pane.as_ref() {
             if !::std::ptr::eq(pane, target_ptr)
                 && pane.zindex.is_some()
@@ -460,11 +468,13 @@ impl LayoutDescriptionNode {
         false
     }
 
-    fn has_duplicate_last(&self, target: &LayoutDescriptionPane, target_ptr: *const LayoutDescriptionPane) -> bool {
+    fn has_duplicate_last(
+        &self,
+        target: &LayoutDescriptionPane,
+        target_ptr: *const LayoutDescriptionPane,
+    ) -> bool {
         if let Some(pane) = self.pane.as_ref() {
-            if !::std::ptr::eq(pane, target_ptr)
-                && pane.last.is_some()
-                && pane.last == target.last
+            if !::std::ptr::eq(pane, target_ptr) && pane.last.is_some() && pane.last == target.last
             {
                 return true;
             }
@@ -476,7 +486,6 @@ impl LayoutDescriptionNode {
         }
         false
     }
-
 }
 
 impl Clone for LayoutDescriptionNode {
@@ -777,15 +786,7 @@ unsafe fn layout_description_construct_cell(
     }
 
     *layout = cursor;
-    Some((
-        LayoutDescriptionGeometry {
-            sx,
-            sy,
-            xoff,
-            yoff,
-        },
-        pane_id,
-    ))
+    Some((LayoutDescriptionGeometry { sx, sy, xoff, yoff }, pane_id))
 }
 
 unsafe fn layout_description_construct_v1(
@@ -925,15 +926,9 @@ unsafe fn layout_description_parse_json_cell(
     };
 
     if type_0 == LAYOUT_WINDOWPANE {
-        if !json_find(
-            node,
-            b"c\0" as *const u8 as *const ::core::ffi::c_char,
-        )
-        .is_null()
-        {
-            *cause = xstrdup(
-                b"panes cannot have children\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+        if !json_find(node, b"c\0" as *const u8 as *const ::core::ffi::c_char).is_null() {
+            *cause =
+                xstrdup(b"panes cannot have children\0" as *const u8 as *const ::core::ffi::c_char);
             return None;
         }
         let index = layout_description_json_number(
@@ -964,50 +959,37 @@ unsafe fn layout_description_parse_json_cell(
             }
         }
         let last = if !active_field
-            && !json_find(
+            && !json_find(node, b"l\0" as *const u8 as *const ::core::ffi::c_char).is_null()
+        {
+            Some(layout_description_json_number(
                 node,
                 b"l\0" as *const u8 as *const ::core::ffi::c_char,
-            )
-            .is_null()
-        {
-            Some(
-                layout_description_json_number(
-                    node,
-                    b"l\0" as *const u8 as *const ::core::ffi::c_char,
-                    cause,
-                    0,
-                    INT_MAX as int64_t,
-                    b"last\0" as *const u8 as *const ::core::ffi::c_char,
-                )? as i32,
-            )
+                cause,
+                0,
+                INT_MAX as int64_t,
+                b"last\0" as *const u8 as *const ::core::ffi::c_char,
+            )? as i32)
         } else {
             None
         };
         let mut flags = 0;
-        let zindex = if !json_find(
-            node,
-            b"z\0" as *const u8 as *const ::core::ffi::c_char,
-        )
-        .is_null()
-        {
-            let zindex = layout_description_json_number(
-                node,
-                b"z\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
-                0,
-                (INT_MAX - 1) as int64_t,
-                b"floating zindex\0" as *const u8 as *const ::core::ffi::c_char,
-            )? as i32;
-            flags |= LAYOUT_CELL_FLOATING;
-            Some(zindex)
-        } else {
-            None
-        };
+        let zindex =
+            if !json_find(node, b"z\0" as *const u8 as *const ::core::ffi::c_char).is_null() {
+                let zindex = layout_description_json_number(
+                    node,
+                    b"z\0" as *const u8 as *const ::core::ffi::c_char,
+                    cause,
+                    0,
+                    (INT_MAX - 1) as int64_t,
+                    b"floating zindex\0" as *const u8 as *const ::core::ffi::c_char,
+                )? as i32;
+                flags |= LAYOUT_CELL_FLOATING;
+                Some(zindex)
+            } else {
+                None
+            };
         let identifier = {
-            let field = json_find(
-                node,
-                b"I\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            let field = json_find(node, b"I\0" as *const u8 as *const ::core::ffi::c_char);
             if field.is_null() {
                 None
             } else {
@@ -1049,15 +1031,18 @@ unsafe fn layout_description_parse_json_cell(
         let first = json_array_first(array);
         if first.is_null() || json_array_next(first).is_null() {
             *cause = xstrdup(
-                b"nodes must have more than one child\0" as *const u8
-                    as *const ::core::ffi::c_char,
+                b"nodes must have more than one child\0" as *const u8 as *const ::core::ffi::c_char,
             );
             return None;
         }
         let mut children = LayoutDescriptionChildren::new();
         let mut member = first;
         while !member.is_null() {
-            children.push(layout_description_parse_json_cell(member, cause, active_count)?);
+            children.push(layout_description_parse_json_cell(
+                member,
+                cause,
+                active_count,
+            )?);
             member = json_array_next(member);
         }
         Some(LayoutDescriptionNode::node(type_0, geometry, children))
@@ -1084,27 +1069,19 @@ unsafe fn layout_description_validate(
         return false;
     }
     if validation.active_count > 1 {
-        *cause = xstrdup(
-            b"more than one active pane\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        *cause = xstrdup(b"more than one active pane\0" as *const u8 as *const ::core::ffi::c_char);
         return false;
     }
     if validation.duplicate_index {
-        *cause = xstrdup(
-            b"duplicate pane index\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        *cause = xstrdup(b"duplicate pane index\0" as *const u8 as *const ::core::ffi::c_char);
         return false;
     }
     if validation.duplicate_zindex {
-        *cause = xstrdup(
-            b"duplicate pane z-index\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        *cause = xstrdup(b"duplicate pane z-index\0" as *const u8 as *const ::core::ffi::c_char);
         return false;
     }
     if validation.duplicate_last {
-        *cause = xstrdup(
-            b"duplicate last pane index\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        *cause = xstrdup(b"duplicate last pane index\0" as *const u8 as *const ::core::ffi::c_char);
         return false;
     }
     true
@@ -1156,32 +1133,26 @@ unsafe fn layout_parse_description_c(
         ) != 1
             || header_len != 5
         {
-            *cause = xstrdup(
-                b"malformed layout header\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            *cause =
+                xstrdup(b"malformed layout header\0" as *const u8 as *const ::core::ffi::c_char);
             return None;
         }
         let body = input.offset(header_len as isize);
         if checksum != layout_checksum(body) {
-            *cause = xstrdup(
-                b"invalid layout checksum\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            *cause =
+                xstrdup(b"invalid layout checksum\0" as *const u8 as *const ::core::ffi::c_char);
             return None;
         }
         let mut cursor = body;
         let root = match layout_description_construct_v1(&mut cursor, 0) {
             Some(root) => root,
             None => {
-                *cause = xstrdup(
-                    b"invalid layout\0" as *const u8 as *const ::core::ffi::c_char,
-                );
+                *cause = xstrdup(b"invalid layout\0" as *const u8 as *const ::core::ffi::c_char);
                 return None;
             }
         };
         if *cursor as u8 != 0 {
-            *cause = xstrdup(
-                b"trailing data\0" as *const u8 as *const ::core::ffi::c_char,
-            );
+            *cause = xstrdup(b"trailing data\0" as *const u8 as *const ::core::ffi::c_char);
             return None;
         }
         let description = LayoutDescription { version: 1, root };
@@ -1227,9 +1198,7 @@ unsafe fn layout_parse_description_c(
         return None;
     }
     if active_count > 1 {
-        *cause = xstrdup(
-            b"more than one active pane\0" as *const u8 as *const ::core::ffi::c_char,
-        );
+        *cause = xstrdup(b"more than one active pane\0" as *const u8 as *const ::core::ffi::c_char);
         return None;
     }
     if !layout_description_validate(&description, cause) {
@@ -1245,16 +1214,10 @@ pub fn parse_layout_description(input: &[u8]) -> Result<LayoutDescription, Layou
             message: LayoutDescriptionBytes::from_slice(b"embedded NUL"),
         });
     }
-    let owned = unsafe {
-        xmemdup(
-            input.as_ptr() as *const ::core::ffi::c_void,
-            input.len(),
-        )
-    };
+    let owned = unsafe { xmemdup(input.as_ptr() as *const ::core::ffi::c_void, input.len()) };
     let mut cause = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let result = unsafe {
-        layout_parse_description_c(owned as *const ::core::ffi::c_char, &raw mut cause)
-    };
+    let result =
+        unsafe { layout_parse_description_c(owned as *const ::core::ffi::c_char, &raw mut cause) };
     unsafe {
         free(owned as *mut ::core::ffi::c_void);
     }
@@ -1302,10 +1265,7 @@ unsafe fn layout_string_append(output: *mut layout_string, value: &[u8]) {
     *(*output).dat.add((*output).size) = 0;
 }
 
-unsafe fn layout_description_append_json_string(
-    output: *mut layout_string,
-    value: &[u8],
-) -> bool {
+unsafe fn layout_description_append_json_string(output: *mut layout_string, value: &[u8]) -> bool {
     let mut index = 0;
     while index < value.len() {
         match value[index] {
@@ -1353,8 +1313,8 @@ unsafe fn layout_description_append_json_node(
     };
     layout_string_write(
         output,
-        b"{\"t\":\"%c\",\"w\":%u,\"h\":%u,\"x\":%d,\"y\":%d\0"
-            as *const u8 as *const ::core::ffi::c_char,
+        b"{\"t\":\"%c\",\"w\":%u,\"h\":%u,\"x\":%d,\"y\":%d\0" as *const u8
+            as *const ::core::ffi::c_char,
         type_name,
         node.geometry.sx,
         node.geometry.sy,
@@ -1446,11 +1406,14 @@ unsafe fn layout_description_append_v1(
             if node.pane.is_some() || node.children.is_empty() {
                 return false;
             }
-            layout_string_append(output, if node.type_0 == LAYOUT_LEFTRIGHT {
-                b"{"
-            } else {
-                b"["
-            });
+            layout_string_append(
+                output,
+                if node.type_0 == LAYOUT_LEFTRIGHT {
+                    b"{"
+                } else {
+                    b"["
+                },
+            );
             for index in 0..node.children.len() {
                 if index != 0 {
                     layout_string_append(output, b",");
@@ -1459,11 +1422,14 @@ unsafe fn layout_description_append_v1(
                     return false;
                 }
             }
-            layout_string_append(output, if node.type_0 == LAYOUT_LEFTRIGHT {
-                b"}"
-            } else {
-                b"]"
-            });
+            layout_string_append(
+                output,
+                if node.type_0 == LAYOUT_LEFTRIGHT {
+                    b"}"
+                } else {
+                    b"]"
+                },
+            );
         }
         _ => return false,
     }
@@ -1523,9 +1489,10 @@ pub fn serialize_layout_description(
                 layout_string_write(
                     &raw mut output,
                     b"%04hx,\0" as *const u8 as *const ::core::ffi::c_char,
-                    layout_description_checksum(
-                        ::std::slice::from_raw_parts(body.dat as *const u8, body.size),
-                    ) as ::core::ffi::c_int,
+                    layout_description_checksum(::std::slice::from_raw_parts(
+                        body.dat as *const u8,
+                        body.size,
+                    )) as ::core::ffi::c_int,
                 );
                 layout_string_append(
                     &raw mut output,
@@ -1991,7 +1958,8 @@ pub unsafe extern "C" fn layout_parse(
     // geometry check below therefore still happen before any live pane is
     // resized or attached to the window.
     pctx.version = description.version;
-    pctx.root = layout_description_to_cell(&description.root, ::core::ptr::null_mut(), &raw mut pctx);
+    pctx.root =
+        layout_description_to_cell(&description.root, ::core::ptr::null_mut(), &raw mut pctx);
     with_floating = (pctx.version > 1 as int64_t) as ::core::ffi::c_int;
     npanes = window_count_panes(w, with_floating);
     if npanes == 0 as u_int {

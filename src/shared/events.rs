@@ -7,6 +7,7 @@ use super::event::evbuffer;
 use super::pane::window_pane;
 use super::session::session;
 use super::window::window;
+use std::collections::BTreeMap;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -58,7 +59,7 @@ pub struct events_sink_entry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct event_payload_tree {
-    pub rbh_root: *mut event_payload_item,
+    pub entries: *mut event_payload_tree_storage,
 }
 
 #[derive(Copy, Clone)]
@@ -68,6 +69,13 @@ pub struct event_payload_item_entry {
     pub rbe_right: *mut event_payload_item,
     pub rbe_parent: *mut event_payload_item,
     pub rbe_color: ::core::ffi::c_int,
+}
+
+/// Rust-owned ordering storage for an event payload's C-allocated items.
+/// Keys retain the original C string bytes so ordering matches `strcmp`.
+#[derive(Default)]
+pub struct event_payload_tree_storage {
+    pub(crate) entries: BTreeMap<Vec<u8>, *mut event_payload_item>,
 }
 
 #[derive(Copy, Clone)]

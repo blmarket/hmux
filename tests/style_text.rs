@@ -206,14 +206,20 @@ fn caller_buffers_are_bounded_and_match_owned_formatting() {
     }
 
     let mut too_small = [0xa5; 4];
-    assert_eq!(attributes_format_into(GRID_ATTR_BRIGHT, &mut too_small), None);
+    assert_eq!(
+        attributes_format_into(GRID_ATTR_BRIGHT, &mut too_small),
+        None
+    );
     assert!(too_small.iter().all(|&byte| byte == 0xa5));
-    assert_eq!(colour_format_into(COLOUR_FLAG_RGB | 0x123456, &mut too_small), None);
+    assert_eq!(
+        colour_format_into(COLOUR_FLAG_RGB | 0x123456, &mut too_small),
+        None
+    );
     assert!(too_small.iter().all(|&byte| byte == 0xa5));
 
     let mut escape = [0xa5; 64];
-    let length = colour_format_escape_into(COLOUR_FLAG_RGB | 0x123456, false, 0, &mut escape)
-        .unwrap();
+    let length =
+        colour_format_escape_into(COLOUR_FLAG_RGB | 0x123456, false, 0, &mut escape).unwrap();
     assert_eq!(&escape[..length], b"\x1b[38;2;18;52;86m");
     assert_eq!(escape[length], 0);
     let mut short_escape = [0xa5; 4];
