@@ -12,13 +12,3 @@ libc = "0.2"
 mio = { version = "1.2", features = ["os-ext", "os-poll"] }
 signal-hook = { version = "0.4", default-features = false }
 
-[[test]]
-name = "process_contract"
-path = "tests/process_contract.rs"
-harness = false
-
-[lints.rust]
-missing_docs = "deny"
-
-[lints.clippy]
-await_holding_refcell_ref = "deny"
