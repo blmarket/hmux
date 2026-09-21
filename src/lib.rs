@@ -4,7 +4,13 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 #![allow(unused_assignments)]
+#![allow(unused_imports)]
 #![allow(unused_mut)]
+// The C2Rust translation intentionally retains these expression shapes while
+// the generated modules are migrated incrementally.
+#![allow(clippy::eq_op)]
+#![allow(clippy::self_assignment)]
+#![allow(clippy::while_immutable_condition)]
 #![feature(c_variadic)]
 #![feature(extern_types)]
 #![feature(label_break_value)]

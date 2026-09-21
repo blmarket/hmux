@@ -86,1085 +86,411 @@ pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_36;
 pub struct input_key_entry {
     pub key: key_code,
     pub data: *const ::core::ffi::c_char,
-    pub entry: C2RustUnnamed_37,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_37 {
-    pub rbe_left: *mut input_key_entry,
-    pub rbe_right: *mut input_key_entry,
-    pub rbe_parent: *mut input_key_entry,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
+#[derive(Default)]
 pub struct input_key_tree {
-    pub rbh_root: *mut input_key_entry,
+    entries: std::collections::BTreeMap<key_code, *mut input_key_entry>,
 }
 pub const MOTION_MOUSE_MODES: ::core::ffi::c_int = MODE_MOUSE_BUTTON | MODE_MOUSE_ALL;
-unsafe extern "C" fn input_key_tree_RB_INSERT_COLOR(
-    mut head: *mut input_key_tree,
-    mut elm: *mut input_key_entry,
-) {
-    let mut parent: *mut input_key_entry = ::core::ptr::null_mut::<input_key_entry>();
-    let mut gparent: *mut input_key_entry = ::core::ptr::null_mut::<input_key_entry>();
-    let mut tmp: *mut input_key_entry = ::core::ptr::null_mut::<input_key_entry>();
-    loop {
-        parent = (*elm).entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).entry.rbe_parent;
-        if parent == (*gparent).entry.rbe_left {
-            tmp = (*gparent).entry.rbe_right;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_right == elm {
-                    tmp = (*parent).entry.rbe_right;
-                    (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                    if !(*parent).entry.rbe_right.is_null() {
-                        (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_left = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_left;
-                (*gparent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*gparent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).entry.rbe_left;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_left == elm {
-                    tmp = (*parent).entry.rbe_left;
-                    (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                    if !(*parent).entry.rbe_left.is_null() {
-                        (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_right = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_right;
-                (*gparent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*gparent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).entry.rbe_color = RB_BLACK;
+
+// The old RB comparator ordered entries by their unsigned key value. The map
+// therefore preserves exact lookup, duplicate insertion, and in-order
+// traversal semantics without storing links in each input_key_entry.
+unsafe fn input_key_tree_find(head: *mut input_key_tree, key: key_code) -> *mut input_key_entry {
+    (*head)
+        .entries
+        .get(&key)
+        .copied()
+        .unwrap_or(::core::ptr::null_mut::<input_key_entry>())
 }
-unsafe extern "C" fn input_key_tree_RB_FIND(
-    mut head: *mut input_key_tree,
-    mut elm: *mut input_key_entry,
+
+unsafe fn input_key_tree_insert(
+    head: *mut input_key_tree,
+    elm: *mut input_key_entry,
 ) -> *mut input_key_entry {
-    let mut tmp: *mut input_key_entry = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = input_key_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
+    match (*head).entries.entry((*elm).key) {
+        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+            ::core::ptr::null_mut::<input_key_entry>()
         }
     }
-    return ::core::ptr::null_mut::<input_key_entry>();
 }
-unsafe extern "C" fn input_key_tree_RB_MINMAX(
-    mut head: *mut input_key_tree,
-    mut val: ::core::ffi::c_int,
+
+unsafe fn input_key_tree_minmax(
+    head: *mut input_key_tree,
+    val: ::core::ffi::c_int,
 ) -> *mut input_key_entry {
-    let mut tmp: *mut input_key_entry = (*head).rbh_root;
-    let mut parent: *mut input_key_entry = ::core::ptr::null_mut::<input_key_entry>();
-    while !tmp.is_null() {
-        parent = tmp;
-        if val < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else {
-            tmp = (*tmp).entry.rbe_right;
-        }
-    }
-    return parent;
-}
-unsafe extern "C" fn input_key_tree_RB_INSERT(
-    mut head: *mut input_key_tree,
-    mut elm: *mut input_key_entry,
-) -> *mut input_key_entry {
-    let mut tmp: *mut input_key_entry = ::core::ptr::null_mut::<input_key_entry>();
-    let mut parent: *mut input_key_entry = ::core::ptr::null_mut::<input_key_entry>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = input_key_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    (*elm).entry.rbe_parent = parent;
-    (*elm).entry.rbe_right = ::core::ptr::null_mut::<input_key_entry>();
-    (*elm).entry.rbe_left = (*elm).entry.rbe_right;
-    (*elm).entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).entry.rbe_left = elm;
-        } else {
-            (*parent).entry.rbe_right = elm;
-        }
+    let entry = if val < 0 {
+        (*head).entries.iter().next()
     } else {
-        (*head).rbh_root = elm;
-    }
-    input_key_tree_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<input_key_entry>();
+        (*head).entries.iter().next_back()
+    };
+    entry
+        .map(|(_, entry)| *entry)
+        .unwrap_or(::core::ptr::null_mut::<input_key_entry>())
 }
-unsafe extern "C" fn input_key_tree_RB_NEXT(mut elm: *mut input_key_entry) -> *mut input_key_entry {
-    if !(*elm).entry.rbe_right.is_null() {
-        elm = (*elm).entry.rbe_right;
-        while !(*elm).entry.rbe_left.is_null() {
-            elm = (*elm).entry.rbe_left;
-        }
-    } else if !(*elm).entry.rbe_parent.is_null() && elm == (*(*elm).entry.rbe_parent).entry.rbe_left
-    {
-        elm = (*elm).entry.rbe_parent;
-    } else {
-        while !(*elm).entry.rbe_parent.is_null()
-            && elm == (*(*elm).entry.rbe_parent).entry.rbe_right
-        {
-            elm = (*elm).entry.rbe_parent;
-        }
-        elm = (*elm).entry.rbe_parent;
-    }
-    return elm;
+
+unsafe fn input_key_tree_next(
+    head: *mut input_key_tree,
+    elm: *mut input_key_entry,
+) -> *mut input_key_entry {
+    (*head)
+        .entries
+        .range((
+            std::ops::Bound::Excluded((*elm).key),
+            std::ops::Bound::Unbounded,
+        ))
+        .next()
+        .map(|(_, entry)| *entry)
+        .unwrap_or(::core::ptr::null_mut::<input_key_entry>())
 }
+
 #[no_mangle]
 pub static mut input_key_tree: input_key_tree = input_key_tree {
-    rbh_root: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
+    entries: std::collections::BTreeMap::new(),
 };
+
 static mut input_key_defaults: [input_key_entry; 85] = [
     input_key_entry {
         key: KEYC_PASTE_START as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[200~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_PASTE_START as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
         data: b"\x1B[200~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_PASTE_END as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[201~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_PASTE_END as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
         data: b"\x1B[201~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F1 as ::core::ffi::c_ulong as key_code,
         data: b"\x1BOP\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F2 as ::core::ffi::c_ulong as key_code,
         data: b"\x1BOQ\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F3 as ::core::ffi::c_ulong as key_code,
         data: b"\x1BOR\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F4 as ::core::ffi::c_ulong as key_code,
         data: b"\x1BOS\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F5 as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[15~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F6 as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[17~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F7 as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[18~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F8 as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[19~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F9 as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[20~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F10 as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[21~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F11 as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[23~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F12 as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[24~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_IC as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[2~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_DC as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[3~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_HOME as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[1~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_END as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[4~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_NPAGE as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[6~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_PPAGE as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[5~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_BTAB as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[Z\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_UP as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
         data: b"\x1BOA\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
         data: b"\x1BOB\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
         data: b"\x1BOC\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code | KEYC_CURSOR,
         data: b"\x1BOD\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_UP as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[A\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[B\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[C\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code,
         data: b"\x1B[D\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_SLASH as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOo\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_STAR as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOj\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_MINUS as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOm\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_SEVEN as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOw\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_EIGHT as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOx\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_NINE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOy\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_PLUS as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOk\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_FOUR as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOt\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_FIVE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOu\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_SIX as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOv\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_ONE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOq\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_TWO as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOr\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_THREE as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOs\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_ENTER as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOM\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_ZERO as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOp\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_PERIOD as ::core::ffi::c_ulong as key_code | KEYC_KEYPAD,
         data: b"\x1BOn\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_SLASH as ::core::ffi::c_ulong as key_code,
         data: b"/\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_STAR as ::core::ffi::c_ulong as key_code,
         data: b"*\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_MINUS as ::core::ffi::c_ulong as key_code,
         data: b"-\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_SEVEN as ::core::ffi::c_ulong as key_code,
         data: b"7\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_EIGHT as ::core::ffi::c_ulong as key_code,
         data: b"8\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_NINE as ::core::ffi::c_ulong as key_code,
         data: b"9\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_PLUS as ::core::ffi::c_ulong as key_code,
         data: b"+\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_FOUR as ::core::ffi::c_ulong as key_code,
         data: b"4\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_FIVE as ::core::ffi::c_ulong as key_code,
         data: b"5\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_SIX as ::core::ffi::c_ulong as key_code,
         data: b"6\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_ONE as ::core::ffi::c_ulong as key_code,
         data: b"1\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_TWO as ::core::ffi::c_ulong as key_code,
         data: b"2\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_THREE as ::core::ffi::c_ulong as key_code,
         data: b"3\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_ENTER as ::core::ffi::c_ulong as key_code,
         data: b"\n\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_ZERO as ::core::ffi::c_ulong as key_code,
         data: b"0\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_KP_PERIOD as ::core::ffi::c_ulong as key_code,
         data: b".\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F1 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[1;_P\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F2 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[1;_Q\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F3 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[1;_R\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F4 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[1;_S\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F5 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[15;_~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F6 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[17;_~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F7 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[18;_~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F8 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[19;_~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F9 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[20;_~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F10 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[21;_~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F11 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[23;_~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_F12 as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[24;_~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_UP as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[1;_A\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_DOWN as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[1;_B\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[1;_C\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_LEFT as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[1;_D\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_HOME as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[1;_H\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_END as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[1;_F\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_PPAGE as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[5;_~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_NPAGE as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[6;_~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_IC as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[2;_~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
     input_key_entry {
         key: KEYC_DC as ::core::ffi::c_ulong as key_code | KEYC_BUILD_MODIFIERS,
         data: b"\x1B[3;_~\0" as *const u8 as *const ::core::ffi::c_char,
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
     },
 ];
 static mut input_key_modifiers: [key_code; 9] = [
@@ -1178,30 +504,8 @@ static mut input_key_modifiers: [key_code; 9] = [
     KEYC_META | KEYC_IMPLIED_META | KEYC_CTRL,
     KEYC_SHIFT | KEYC_META | KEYC_IMPLIED_META | KEYC_CTRL,
 ];
-unsafe extern "C" fn input_key_cmp(
-    mut ike1: *mut input_key_entry,
-    mut ike2: *mut input_key_entry,
-) -> ::core::ffi::c_int {
-    if (*ike1).key < (*ike2).key {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*ike1).key > (*ike2).key {
-        return 1 as ::core::ffi::c_int;
-    }
-    return 0 as ::core::ffi::c_int;
-}
 unsafe extern "C" fn input_key_get(mut key: key_code) -> *mut input_key_entry {
-    let mut entry: input_key_entry = input_key_entry {
-        key: key,
-        data: ::core::ptr::null::<::core::ffi::c_char>(),
-        entry: C2RustUnnamed_37 {
-            rbe_left: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_right: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_parent: ::core::ptr::null::<input_key_entry>() as *mut input_key_entry,
-            rbe_color: 0,
-        },
-    };
-    return input_key_tree_RB_FIND(&raw mut input_key_tree, &raw mut entry);
+    return input_key_tree_find(&raw mut input_key_tree, key);
 }
 unsafe extern "C" fn input_key_split2(mut c: u_int, mut dst: *mut u_char) -> size_t {
     if c > 0x7f as u_int {
@@ -1230,7 +534,7 @@ pub unsafe extern "C" fn input_key_build() {
         ike = (&raw mut input_key_defaults as *mut input_key_entry).offset(i as isize)
             as *mut input_key_entry;
         if !((*ike).key as ::core::ffi::c_ulonglong) & KEYC_BUILD_MODIFIERS != 0 {
-            input_key_tree_RB_INSERT(&raw mut input_key_tree, ike);
+            input_key_tree_insert(&raw mut input_key_tree, ike);
         } else {
             j = 2 as u_int;
             while (j as usize)
@@ -1248,13 +552,13 @@ pub unsafe extern "C" fn input_key_build() {
                 ) as *mut input_key_entry;
                 (*new).key = key | input_key_modifiers[j as usize];
                 (*new).data = data;
-                input_key_tree_RB_INSERT(&raw mut input_key_tree, new);
+                input_key_tree_insert(&raw mut input_key_tree, new);
                 j = j.wrapping_add(1);
             }
         }
         i = i.wrapping_add(1);
     }
-    ike = input_key_tree_RB_MINMAX(&raw mut input_key_tree, RB_NEGINF);
+    ike = input_key_tree_minmax(&raw mut input_key_tree, -1);
     while !ike.is_null() {
         let key_string = key_string_format((*ike).key, true);
         log_debug(
@@ -1264,7 +568,7 @@ pub unsafe extern "C" fn input_key_build() {
             key_string.as_ptr(),
             (*ike).data,
         );
-        ike = input_key_tree_RB_NEXT(ike);
+        ike = input_key_tree_next(&raw mut input_key_tree, ike);
     }
 }
 #[no_mangle]
@@ -1864,4 +1168,62 @@ unsafe extern "C" fn input_key_mouse(mut wp: *mut window_pane, mut m: *mut mouse
         buf,
         len,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn input_key_tree_matches_numeric_rb_semantics() {
+        unsafe {
+            let mut tree = input_key_tree::default();
+            let mut items: [input_key_entry; 4] = [
+                input_key_entry {
+                    key: 7,
+                    data: ::core::ptr::null(),
+                },
+                input_key_entry {
+                    key: 0,
+                    data: ::core::ptr::null(),
+                },
+                input_key_entry {
+                    key: u_int::MAX as key_code,
+                    data: ::core::ptr::null(),
+                },
+                input_key_entry {
+                    key: 7,
+                    data: ::core::ptr::null(),
+                },
+            ];
+            let first = &mut items[0] as *mut input_key_entry;
+            let duplicate = &mut items[3] as *mut input_key_entry;
+
+            assert!(input_key_tree_insert(&raw mut tree, first).is_null());
+            assert!(input_key_tree_insert(&raw mut tree, &mut items[1]).is_null());
+            assert!(input_key_tree_insert(&raw mut tree, &mut items[2]).is_null());
+            assert_eq!(
+                input_key_tree_insert(&raw mut tree, duplicate),
+                first,
+                "duplicate keys keep the original item"
+            );
+
+            assert_eq!(
+                input_key_tree_minmax(&raw mut tree, -1),
+                &mut items[1] as *mut input_key_entry
+            );
+            assert_eq!(input_key_tree_next(&raw mut tree, &mut items[1]), first);
+            assert_eq!(
+                input_key_tree_next(&raw mut tree, first),
+                &mut items[2] as *mut input_key_entry
+            );
+            assert!(input_key_tree_next(&raw mut tree, &mut items[2]).is_null());
+            assert_eq!(
+                input_key_tree_minmax(&raw mut tree, 1),
+                &mut items[2] as *mut input_key_entry
+            );
+            assert_eq!(input_key_tree_find(&raw mut tree, 7), first);
+            assert!(input_key_tree_find(&raw mut tree, 8).is_null());
+        }
+    }
 }
