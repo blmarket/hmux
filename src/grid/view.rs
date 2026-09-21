@@ -3,14 +3,14 @@ use crate::src::grid::{
     grid_move_lines, grid_scroll_history, grid_scroll_history_region, grid_set_cell,
     grid_set_cells, grid_set_padding, grid_string_cells,
 };
+pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
+pub use crate::src::shared::screen_write::{screen_write_cline};
+pub use crate::src::shared::hyperlinks::{hyperlinks};
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
-pub use crate::src::shared::hyperlinks::hyperlinks;
-pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
-pub use crate::src::shared::screen_write::screen_write_cline;
 
-pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed;
+pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_0;
 #[no_mangle]
 pub unsafe extern "C" fn grid_view_get_cell(
     mut gd: *mut grid,

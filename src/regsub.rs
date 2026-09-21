@@ -1,10 +1,10 @@
 use crate::src::ffi::libc::{memcpy, regcomp, regexec, regfree, strlen};
-pub use crate::src::shared::abi::ssize_t;
-use crate::src::shared::abi::*;
+use crate::src::xmalloc::{xrealloc, xstrdup};
 pub use crate::src::shared::regex::{
     __re_long_size_t, re_dfa_t, re_pattern_buffer, reg_syntax_t, regex_t, regmatch_t, regoff_t,
 };
-use crate::src::xmalloc::{xrealloc, xstrdup};
+pub use crate::src::shared::abi::{ssize_t};
+use crate::src::shared::abi::*;
 
 unsafe extern "C" fn regsub_copy(
     mut buf: *mut *mut ::core::ffi::c_char,

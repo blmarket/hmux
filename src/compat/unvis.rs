@@ -1,4 +1,4 @@
-pub use crate::src::shared::abi::ssize_t;
+pub use crate::src::shared::abi::{ssize_t};
 use crate::src::shared::abi::*;
 pub const UNVIS_VALID: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const UNVIS_VALIDPUSH: ::core::ffi::c_int = 2 as ::core::ffi::c_int;

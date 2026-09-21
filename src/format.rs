@@ -15,6 +15,10 @@ use crate::src::ffi::libc::{
     getuid, localtime_r, memcmp, memcpy, memset, regcomp, regexec, regfree, strcasecmp, strchr,
     strcmp, strcspn, strftime, strlcat, strlen, strstr, strtod, time,
 };
+use crate::src::reactor::{
+    evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
+    evbuffer_pullup, evbuffer_readline, event_add, event_initialized, event_pending, event_set,
+};
 use crate::src::ffi::libm::{fabs, fmod};
 use crate::src::format_draw::{format_trim_left, format_trim_right, format_width};
 use crate::src::fuzzy::fuzzy_match;
@@ -37,10 +41,6 @@ use crate::src::paste::{
     paste_buffer_created, paste_buffer_data, paste_buffer_name, paste_get_top, paste_make_sample,
 };
 use crate::src::proc::proc_get_peer_uid;
-use crate::src::reactor::{
-    evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
-    evbuffer_pullup, evbuffer_readline, event_add, event_initialized, event_pending, event_set,
-};
 use crate::src::regsub::regsub;
 pub use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
@@ -114,8 +114,8 @@ pub use crate::src::shared::environment::{environ, environ_entry, environ_entry_
 pub use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::event::*;
 pub use crate::src::shared::format::{
-    format_cb, format_entry, format_entry_entry, format_entry_tree, format_job, format_job_tree,
-    format_tree, format_type,
+    format_cb, format_entry, format_entry_entry, format_entry_tree, format_job,
+    format_job_tree, format_tree, format_type,
 };
 pub use crate::src::shared::format::{
     FORMAT_BASENAME, FORMAT_CHARACTER, FORMAT_CLIENTS, FORMAT_CLIENT_ENVIRON,

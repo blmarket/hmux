@@ -1,21 +1,21 @@
-pub use crate::src::ffi::libc::__ssize_t;
 use crate::src::ffi::libc::{
     __errno_location, __getdelim, fclose, fopen, fputc, fputs, free, memmove, strcmp, strerror,
     strsep,
 };
+pub use crate::src::ffi::libc::__ssize_t;
 use crate::src::log::log_debug;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::prompt::{prompt_type, prompt_type_string};
-use crate::src::shared::abi::*;
-pub use crate::src::shared::abi::{__off64_t, __off_t, ssize_t};
-pub use crate::src::shared::options::options;
-pub use crate::src::shared::prompt::PROMPT_NTYPES;
-use crate::src::shared::prompt::*;
-pub use crate::src::shared::stdio::{
-    _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
-};
 use crate::src::tmux::{find_home, global_options};
 use crate::src::xmalloc::{xasprintf, xreallocarray, xstrdup};
+pub use crate::src::shared::options::{options};
+pub use crate::src::shared::stdio::{
+    FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
+};
+pub use crate::src::shared::abi::{__off64_t, __off_t, ssize_t};
+pub use crate::src::shared::prompt::{PROMPT_NTYPES};
+use crate::src::shared::prompt::*;
+use crate::src::shared::abi::*;
 
 #[inline]
 unsafe extern "C" fn getline(

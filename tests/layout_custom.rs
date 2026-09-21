@@ -35,10 +35,7 @@ fn parses_nested_v2_description_and_retains_geometry_and_identifiers() {
     assert_eq!(description.root.children[0].type_0, LAYOUT_TOPBOTTOM);
     assert_eq!(description.root.children[0].children.len(), 2);
 
-    let first = description.root.children[0].children[0]
-        .pane
-        .as_ref()
-        .unwrap();
+    let first = description.root.children[0].children[0].pane.as_ref().unwrap();
     assert_eq!(first.index, Some(2));
     assert_eq!(first.identifier.as_deref(), Some(b"%10".as_slice()));
     assert_eq!(first.last, Some(4));
@@ -75,8 +72,10 @@ fn v2_round_trip_preserves_the_parser_string_bytes() {
 
 #[test]
 fn legacy_serialization_round_trips_nested_pane_ids() {
-    let original =
-        parse_layout_description(&legacy_layout("79x23,0,0{39x23,0,0,7,39x23,40,0,8}")).unwrap();
+    let original = parse_layout_description(&legacy_layout(
+        "79x23,0,0{39x23,0,0,7,39x23,40,0,8}",
+    ))
+    .unwrap();
     assert_eq!(original.version, 1);
     assert_eq!(original.root.type_0, LAYOUT_LEFTRIGHT);
     assert_eq!(original.root.children[0].pane.as_ref().unwrap().id, Some(7));
@@ -143,7 +142,8 @@ fn geometry_and_metadata_limits_keep_their_diagnostics() {
         format!("invalid x-offset {}", WINDOW_MAXIMUM + 1)
     );
 
-    let negative_index = br#"{"V":2,"L":{"t":"p","w":79,"h":23,"x":0,"y":0,"i":-1}}"#;
+    let negative_index =
+        br#"{"V":2,"L":{"t":"p","w":79,"h":23,"x":0,"y":0,"i":-1}}"#;
     assert_eq!(
         parse_layout_description(negative_index)
             .unwrap_err()
@@ -203,8 +203,7 @@ fn v2_validation_rejects_pane_metadata_conflicts_before_application() {
 
 #[test]
 fn an_explicit_inactive_flag_keeps_the_legacy_last_field_ignored() {
-    let layout =
-        br#"{"V":2,"L":{"t":"p","w":79,"h":23,"x":0,"y":0,"i":0,"a":false,"l":"ignored"}}"#;
+    let layout = br#"{"V":2,"L":{"t":"p","w":79,"h":23,"x":0,"y":0,"i":0,"a":false,"l":"ignored"}}"#;
     let description = parse_layout_description(layout).unwrap();
     let pane = description.root.pane.as_ref().unwrap();
 

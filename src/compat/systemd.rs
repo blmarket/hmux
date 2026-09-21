@@ -1,10 +1,6 @@
 use crate::src::ffi::libc::{
     __errno_location, free, getpid, getppid, getsockname, gettimeofday, strcmp, strerror,
 };
-pub use crate::src::ffi::systemd::{
-    sd_bus, sd_bus_error, sd_bus_message, sd_bus_message_handler_t, sd_bus_slot, sd_id128,
-    sd_id128_t,
-};
 use crate::src::ffi::systemd::{
     sd_bus_call, sd_bus_default_user, sd_bus_error_free, sd_bus_match_signal,
     sd_bus_message_append, sd_bus_message_close_container, sd_bus_message_new_method_call,
@@ -12,11 +8,13 @@ use crate::src::ffi::systemd::{
     sd_bus_slot_unref, sd_bus_unref, sd_bus_wait, sd_id128_randomize, sd_is_socket_unix,
     sd_listen_fds, sd_pid_get_unit, sd_pid_get_user_slice, sd_pid_get_user_unit,
 };
-use crate::src::server::server_create_socket;
-use crate::src::shared::abi::*;
-pub use crate::src::shared::abi::{
-    __socklen_t, __uint16_t, __uint32_t, socklen_t, uint16_t, uint32_t,
+pub use crate::src::ffi::systemd::{
+    sd_bus, sd_bus_error, sd_bus_message, sd_bus_message_handler_t, sd_bus_slot, sd_id128,
+    sd_id128_t,
 };
+use crate::src::server::server_create_socket;
+use crate::src::tmux::socket_path;
+use crate::src::xmalloc::{xasprintf, xstrdup};
 pub use crate::src::shared::errno::E2BIG;
 pub use crate::src::shared::socket::{
     __socket_type, in6_addr, in6_addr___in6_u, in_addr, in_addr_t, in_port_t, sa_family_t,
@@ -25,8 +23,10 @@ pub use crate::src::shared::socket::{
     __SOCKADDR_ARG, SOCK_CLOEXEC, SOCK_DCCP, SOCK_DGRAM, SOCK_NONBLOCK, SOCK_PACKET, SOCK_RAW,
     SOCK_RDM, SOCK_SEQPACKET, SOCK_STREAM,
 };
-use crate::src::tmux::socket_path;
-use crate::src::xmalloc::{xasprintf, xstrdup};
+pub use crate::src::shared::abi::{
+    __socklen_t, __uint16_t, __uint32_t, socklen_t, uint16_t, uint32_t,
+};
+use crate::src::shared::abi::*;
 
 #[derive(Copy, Clone)]
 #[repr(C)]

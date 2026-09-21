@@ -1,6 +1,6 @@
 //! Authoritative regex declarations from the translated Linux C ABI.
-use super::abi::size_t;
 pub use crate::src::ffi::libc::re_dfa_t;
+use super::abi::size_t;
 use c2rust_bitfields::BitfieldStruct;
 
 pub type __re_long_size_t = ::core::ffi::c_ulong;

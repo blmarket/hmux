@@ -1,14 +1,14 @@
-pub use crate::src::ffi::utf8proc::{
-    int32_t, ptrdiff_t, utf8proc_bool, utf8proc_category_t, utf8proc_int32_t, utf8proc_ssize_t,
-    utf8proc_uint8_t,
-};
 use crate::src::ffi::utf8proc::{
     utf8proc_category, utf8proc_charwidth, utf8proc_codepoint_valid, utf8proc_encode_char,
     utf8proc_iterate,
 };
-pub use crate::src::shared::abi::__int32_t;
+pub use crate::src::ffi::utf8proc::{
+    int32_t, ptrdiff_t, utf8proc_bool, utf8proc_category_t, utf8proc_int32_t, utf8proc_ssize_t,
+    utf8proc_uint8_t,
+};
+pub use crate::src::shared::utf8::{wchar_t};
+pub use crate::src::shared::abi::{__int32_t};
 use crate::src::shared::abi::*;
-pub use crate::src::shared::utf8::wchar_t;
 
 pub const UTF8PROC_CATEGORY_CO: utf8proc_category_t = 29;
 pub const UTF8PROC_CATEGORY_CS: utf8proc_category_t = 28;

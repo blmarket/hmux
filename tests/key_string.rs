@@ -15,19 +15,13 @@ fn parses_modifiers_aliases_named_keys_and_numeric_forms() {
         key_string_parse(b"c-m-s-a"),
         Some(('a' as key_code) | KEYC_CTRL | KEYC_META | KEYC_SHIFT)
     );
-    assert_eq!(
-        key_string_parse(b"C-a"),
-        Some(('a' as key_code) | KEYC_CTRL)
-    );
+    assert_eq!(key_string_parse(b"C-a"), Some(('a' as key_code) | KEYC_CTRL));
     assert_eq!(key_string_parse(b"^A"), Some(('a' as key_code) | KEYC_CTRL));
     assert_eq!(
         key_string_parse(b"M-S-Up"),
         Some(KEYC_UP | KEYC_CURSOR | KEYC_META | KEYC_SHIFT | KEYC_IMPLIED_META)
     );
-    assert_eq!(
-        key_string_parse(b"C-Up"),
-        Some(KEYC_UP | KEYC_CURSOR | KEYC_CTRL)
-    );
+    assert_eq!(key_string_parse(b"C-Up"), Some(KEYC_UP | KEYC_CURSOR | KEYC_CTRL));
 
     assert_eq!(key_string_parse(b"IC"), Some(KEYC_IC));
     assert_eq!(key_string_parse(b"Insert"), Some(KEYC_IC));
@@ -86,25 +80,16 @@ fn empty_inputs_are_rejected_by_both_rust_parse_entry_points() {
 
 #[test]
 fn formats_canonically_with_flags_unicode_and_invalid_values() {
-    assert_eq!(
-        formatted(KEYC_CTRL | KEYC_META | KEYC_SHIFT | b'a' as key_code, false),
-        b"C-M-S-a"
-    );
+    assert_eq!(formatted(KEYC_CTRL | KEYC_META | KEYC_SHIFT | b'a' as key_code, false), b"C-M-S-a");
     assert_eq!(formatted(KEYC_IC, false), b"IC");
     assert_eq!(formatted(KEYC_NPAGE, false), b"NPage");
-    assert_eq!(
-        formatted(KEYC_UP | KEYC_CURSOR | KEYC_IMPLIED_META, true),
-        b"Up[CI]"
-    );
+    assert_eq!(formatted(KEYC_UP | KEYC_CURSOR | KEYC_IMPLIED_META, true), b"Up[CI]");
     assert_eq!(formatted(KEYC_LITERAL | b'a' as key_code, true), b"a[L]");
     assert_eq!(formatted(KEYC_USER + 17, false), b"User17");
     assert_eq!(formatted(KEYC_USER + 1000, false), b"User1000");
     let invalid = (14 as key_code) << 32 | 0x1234;
     assert_eq!(formatted(invalid, false), b"Invalid#e00001234");
-    assert_eq!(
-        formatted(KEYC_CTRL | invalid, false),
-        b"Invalid#200e00001234"
-    );
+    assert_eq!(formatted(KEYC_CTRL | invalid, false), b"Invalid#200e00001234");
 
     let unicode = key_string_parse("λ".as_bytes()).expect("valid UTF-8 key");
     assert_eq!(formatted(unicode, false), "λ".as_bytes());
@@ -115,10 +100,7 @@ fn formats_canonically_with_flags_unicode_and_invalid_values() {
 #[test]
 fn invalid_packed_unicode_preserves_c_string_termination() {
     let invalid_packed_unicode = 0x01000000 as key_code;
-    assert_eq!(
-        key_string_format(invalid_packed_unicode, false).as_bytes(),
-        b""
-    );
+    assert_eq!(key_string_format(invalid_packed_unicode, false).as_bytes(), b"");
     assert_eq!(
         key_string_format(KEYC_CTRL | KEYC_CURSOR | invalid_packed_unicode, true).as_bytes(),
         b"C-[C]"
@@ -169,10 +151,7 @@ fn canonical_parse_format_round_trips() {
 fn c_exports_remain_narrow_compatibility_adapters() {
     unsafe {
         let input = CString::new("C-a").unwrap();
-        assert_eq!(
-            key_string_lookup_string(input.as_ptr()),
-            key_string_parse_cstr(&input).unwrap()
-        );
+        assert_eq!(key_string_lookup_string(input.as_ptr()), key_string_parse_cstr(&input).unwrap());
 
         let pointer = key_string_lookup_key(KEYC_F1, 0);
         assert_eq!(CStr::from_ptr(pointer).to_bytes(), b"F1");

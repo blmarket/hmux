@@ -1,10 +1,10 @@
 //! Authoritative posix io declarations.
+pub use crate::src::ffi::libc::dirent;
 use super::abi::{
     __blkcnt_t, __blksize_t, __dev_t, __gid_t, __ino_t, __mode_t, __nlink_t, __off_t, __size_t,
     __syscall_slong_t, __uid_t, size_t,
 };
 use super::time::timespec;
-pub use crate::src::ffi::libc::dirent;
 pub const WNOHANG: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
 pub const STDIN_FILENO: ::core::ffi::c_int = 0 as ::core::ffi::c_int;

@@ -1,13 +1,13 @@
 use crate::src::ffi::libc::{free, strcmp, strlen};
-use crate::src::shared::abi::*;
+use crate::src::utf8::utf8_stravis;
+use crate::src::xmalloc::{xasprintf, xcalloc};
+pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
 pub use crate::src::shared::hyperlinks::{
     hyperlink_inner_entry, hyperlink_list_entry, hyperlink_uri_entry, hyperlinks,
     hyperlinks_by_inner_tree, hyperlinks_by_uri_tree, hyperlinks_list, hyperlinks_uri,
 };
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
-pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_OCTAL};
-use crate::src::utf8::utf8_stravis;
-use crate::src::xmalloc::{xasprintf, xcalloc};
+use crate::src::shared::abi::*;
 
 pub const MAX_HYPERLINKS: ::core::ffi::c_int = 5000 as ::core::ffi::c_int;
 pub const MAX_HYPERLINK_URI: ::core::ffi::c_int = 1024 as ::core::ffi::c_int;

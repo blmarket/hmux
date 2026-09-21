@@ -3,16 +3,16 @@ use crate::src::ffi::libc::{
     __errno_location, exit, fclose, fflush, fopen, fprintf, free, getpid, gettimeofday, setvbuf,
     snprintf, strerror, vasprintf,
 };
-pub use crate::src::reactor::event_log_cb;
 use crate::src::reactor::event_set_log_callback;
-use crate::src::shared::abi::*;
-pub use crate::src::shared::abi::{__off64_t, __off_t};
-pub use crate::src::shared::stdio::{
-    _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data, _IO_FILE, FILE,
-};
-pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
-pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+pub use crate::src::reactor::event_log_cb;
 use crate::src::xmalloc::xasprintf;
+pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
+pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
+pub use crate::src::shared::stdio::{
+    FILE, _IO_FILE, _IO_codecvt, _IO_lock_t, _IO_marker, _IO_wide_data,
+};
+pub use crate::src::shared::abi::{__off64_t, __off_t};
+use crate::src::shared::abi::*;
 
 pub const _IOLBF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
@@ -125,7 +125,11 @@ pub unsafe extern "C" fn log_debug(mut msg: *const ::core::ffi::c_char, mut args
         return;
     }
     ap = args.clone();
-    log_vwrite(msg, ap, b"\0" as *const u8 as *const ::core::ffi::c_char);
+    log_vwrite(
+        msg,
+        ap,
+        b"\0" as *const u8 as *const ::core::ffi::c_char,
+    );
 }
 #[no_mangle]
 pub unsafe extern "C" fn fatal(mut msg: *const ::core::ffi::c_char, mut args: ...) -> ! {
@@ -141,7 +145,11 @@ pub unsafe extern "C" fn fatal(mut msg: *const ::core::ffi::c_char, mut args: ..
         exit(1 as ::core::ffi::c_int);
     }
     ap = args.clone();
-    log_vwrite(msg, ap, &raw mut tmp as *mut ::core::ffi::c_char);
+    log_vwrite(
+        msg,
+        ap,
+        &raw mut tmp as *mut ::core::ffi::c_char,
+    );
     exit(1 as ::core::ffi::c_int);
 }
 #[no_mangle]

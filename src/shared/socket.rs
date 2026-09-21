@@ -1,9 +1,9 @@
 //! Authoritative socket declarations from the translated Linux C ABI.
-use super::abi::{uint16_t, uint32_t, uint8_t};
 pub use crate::src::ffi::libc::{
     sockaddr_at, sockaddr_ax25, sockaddr_dl, sockaddr_eon, sockaddr_inarp, sockaddr_ipx,
     sockaddr_iso, sockaddr_ns, sockaddr_x25,
 };
+use super::abi::{uint16_t, uint32_t, uint8_t};
 
 pub type __socket_type = ::core::ffi::c_uint;
 

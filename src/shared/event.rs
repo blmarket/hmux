@@ -4,8 +4,8 @@
 //! `C2RustUnnamed_*` name.  These names are not identities: their suffixes
 //! vary with the declarations present in a translation unit.  The names
 //! below describe the C subjects and are backed by layout tests.
-use super::abi::*;
 pub use crate::src::reactor::{bufferevent_ops, evbuffer, event_base};
+use super::abi::*;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
