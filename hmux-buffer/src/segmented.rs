@@ -29,6 +29,21 @@ pub struct SegmentedBuf {
     scan: Option<Scan>,
 }
 
+impl From<Vec<u8>> for SegmentedBuf {
+    /// Adopt an initialized allocation without copying its bytes.
+    fn from(bytes: Vec<u8>) -> Self {
+        let len = bytes.len();
+        let mut result = Self::default();
+        if len != 0 {
+            result.segments.push_back(Segment { bytes, start: 0 });
+            result.len = len;
+        } else {
+            result.spare = bytes;
+        }
+        result
+    }
+}
+
 #[derive(Debug)]
 struct Scan {
     ending: LineEnding,

@@ -340,3 +340,19 @@ fn generic_put_copies_foreign_and_wrapped_sources_and_consumes_them() {
     destination.put((&b"12"[..]).chain(&b"34"[..]));
     assert_eq!(bytes(&destination), b"helloabcdef1234");
 }
+
+#[test]
+fn owned_vec_is_adopted_without_copying_and_can_be_transferred() {
+    let bytes = vec![42; 65536];
+    let pointer = bytes.as_ptr();
+    let mut source = SegmentedBuf::from(bytes);
+    assert_eq!(source.chunk().as_ptr(), pointer);
+    let mut destination = SegmentedBuf::default();
+    destination.put(&mut source);
+    assert!(!source.has_remaining());
+    assert_eq!(destination.chunk().as_ptr(), pointer);
+    assert_eq!(destination.remaining(), 65536);
+    let mut empty = SegmentedBuf::from(Vec::with_capacity(128));
+    empty.put_slice(b"ready");
+    assert_eq!(empty.chunk(), b"ready");
+}
