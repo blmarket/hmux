@@ -9,6 +9,7 @@ use super::pane::window_pane;
 use super::paste::paste_buffer;
 use super::session::session;
 use super::window::{window, winlink};
+use std::collections::BTreeMap;
 pub const FORMAT_VERBOSE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 
 pub const FORMAT_NONE: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -139,7 +140,14 @@ pub struct format_job_tree {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct format_entry_tree {
-    pub rbh_root: *mut format_entry,
+    pub entries: *mut format_entry_tree_storage,
+}
+
+/// Rust-owned ordering storage for a format tree's C-allocated entries.
+/// Keys retain the original C string bytes so ordering matches `strcmp`.
+#[derive(Default)]
+pub struct format_entry_tree_storage {
+    pub(crate) entries: BTreeMap<Vec<u8>, *mut format_entry>,
 }
 
 #[derive(Copy, Clone)]

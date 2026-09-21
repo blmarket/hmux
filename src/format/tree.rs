@@ -4,510 +4,98 @@
 // remain supplied by the parent facade.
 use super::*;
 
-pub(super) unsafe extern "C" fn format_entry_tree_RB_REMOVE(
-    mut head: *mut format_entry_tree,
-    mut elm: *mut format_entry,
+unsafe fn format_entry_tree_key(elm: *mut format_entry) -> Vec<u8> {
+    std::ffi::CStr::from_ptr((*elm).key).to_bytes().to_vec()
+}
+
+pub(super) unsafe fn format_entry_tree_find(
+    head: *mut format_entry_tree,
+    elm: *mut format_entry,
 ) -> *mut format_entry {
-    let mut current_block: u64;
-    let mut child: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    let mut parent: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    let mut old: *mut format_entry = elm;
-    let mut color: ::core::ffi::c_int = 0;
-    if (*elm).entry.rbe_left.is_null() {
-        child = (*elm).entry.rbe_right;
-        current_block = 7245201122033322888;
-    } else if (*elm).entry.rbe_right.is_null() {
-        child = (*elm).entry.rbe_left;
-        current_block = 7245201122033322888;
+    if head.is_null() || (*head).entries.is_null() || elm.is_null() || (*elm).key.is_null() {
+        return ::core::ptr::null_mut::<format_entry>();
+    }
+    (*(*head).entries)
+        .entries
+        .get(&format_entry_tree_key(elm))
+        .copied()
+        .unwrap_or(::core::ptr::null_mut::<format_entry>())
+}
+
+unsafe fn format_entry_tree_insert(
+    head: *mut format_entry_tree,
+    elm: *mut format_entry,
+) -> *mut format_entry {
+    if head.is_null() || elm.is_null() || (*elm).key.is_null() {
+        return ::core::ptr::null_mut::<format_entry>();
+    }
+    if (*head).entries.is_null() {
+        (*head).entries = Box::into_raw(Box::new(format_entry_tree_storage::default()));
+    }
+    match (*(*head).entries).entries.entry(format_entry_tree_key(elm)) {
+        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+            ::core::ptr::null_mut::<format_entry>()
+        }
+    }
+}
+
+unsafe fn format_entry_tree_remove(
+    head: *mut format_entry_tree,
+    elm: *mut format_entry,
+) -> *mut format_entry {
+    if head.is_null() || (*head).entries.is_null() || elm.is_null() || (*elm).key.is_null() {
+        return ::core::ptr::null_mut::<format_entry>();
+    }
+    let key = format_entry_tree_key(elm);
+    if (*(*head).entries).entries.get(&key).copied() != Some(elm) {
+        return ::core::ptr::null_mut::<format_entry>();
+    }
+    (*(*head).entries)
+        .entries
+        .remove(&key)
+        .unwrap_or(::core::ptr::null_mut::<format_entry>())
+}
+
+unsafe fn format_entry_tree_minmax(
+    head: *mut format_entry_tree,
+    val: ::core::ffi::c_int,
+) -> *mut format_entry {
+    if head.is_null() || (*head).entries.is_null() {
+        return ::core::ptr::null_mut::<format_entry>();
+    }
+    let item = if val < 0 {
+        (*(*head).entries).entries.values().next()
     } else {
-        let mut left: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-        elm = (*elm).entry.rbe_right;
-        loop {
-            left = (*elm).entry.rbe_left;
-            if left.is_null() {
-                break;
-            }
-            elm = left;
-        }
-        child = (*elm).entry.rbe_right;
-        parent = (*elm).entry.rbe_parent;
-        color = (*elm).entry.rbe_color;
-        if !child.is_null() {
-            (*child).entry.rbe_parent = parent;
-        }
-        if !parent.is_null() {
-            if (*parent).entry.rbe_left == elm {
-                (*parent).entry.rbe_left = child;
-            } else {
-                (*parent).entry.rbe_right = child;
-            }
-        } else {
-            (*head).rbh_root = child;
-        }
-        if (*elm).entry.rbe_parent == old {
-            parent = elm;
-        }
-        (*elm).entry = (*old).entry;
-        if !(*old).entry.rbe_parent.is_null() {
-            if (*(*old).entry.rbe_parent).entry.rbe_left == old {
-                (*(*old).entry.rbe_parent).entry.rbe_left = elm;
-            } else {
-                (*(*old).entry.rbe_parent).entry.rbe_right = elm;
-            }
-        } else {
-            (*head).rbh_root = elm;
-        }
-        (*(*old).entry.rbe_left).entry.rbe_parent = elm;
-        if !(*old).entry.rbe_right.is_null() {
-            (*(*old).entry.rbe_right).entry.rbe_parent = elm;
-        }
-        if !parent.is_null() {
-            left = parent;
-            loop {
-                left = (*left).entry.rbe_parent;
-                if left.is_null() {
-                    break;
-                }
-            }
-        }
-        current_block = 9333106395061089618;
-    }
-    match current_block {
-        7245201122033322888 => {
-            parent = (*elm).entry.rbe_parent;
-            color = (*elm).entry.rbe_color;
-            if !child.is_null() {
-                (*child).entry.rbe_parent = parent;
-            }
-            if !parent.is_null() {
-                if (*parent).entry.rbe_left == elm {
-                    (*parent).entry.rbe_left = child;
-                } else {
-                    (*parent).entry.rbe_right = child;
-                }
-            } else {
-                (*head).rbh_root = child;
-            }
-        }
-        _ => {}
-    }
-    if color == RB_BLACK {
-        format_entry_tree_RB_REMOVE_COLOR(head, parent, child);
-    }
-    return old;
+        (*(*head).entries).entries.values().next_back()
+    };
+    item.copied()
+        .unwrap_or(::core::ptr::null_mut::<format_entry>())
 }
-pub(super) unsafe extern "C" fn format_entry_tree_RB_FIND(
-    mut head: *mut format_entry_tree,
-    mut elm: *mut format_entry,
+
+unsafe fn format_entry_tree_next(
+    head: *mut format_entry_tree,
+    elm: *mut format_entry,
 ) -> *mut format_entry {
-    let mut tmp: *mut format_entry = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = format_entry_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
+    if head.is_null() || (*head).entries.is_null() || elm.is_null() || (*elm).key.is_null() {
+        return ::core::ptr::null_mut::<format_entry>();
     }
-    return ::core::ptr::null_mut::<format_entry>();
+    (*(*head).entries)
+        .entries
+        .range((
+            std::ops::Bound::Excluded(format_entry_tree_key(elm)),
+            std::ops::Bound::Unbounded,
+        ))
+        .next()
+        .map(|(_, item)| *item)
+        .unwrap_or(::core::ptr::null_mut::<format_entry>())
 }
-pub(super) unsafe extern "C" fn format_entry_tree_RB_INSERT_COLOR(
-    mut head: *mut format_entry_tree,
-    mut elm: *mut format_entry,
-) {
-    let mut parent: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    let mut gparent: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    let mut tmp: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    loop {
-        parent = (*elm).entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).entry.rbe_parent;
-        if parent == (*gparent).entry.rbe_left {
-            tmp = (*gparent).entry.rbe_right;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_right == elm {
-                    tmp = (*parent).entry.rbe_right;
-                    (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                    if !(*parent).entry.rbe_right.is_null() {
-                        (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_left = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_left;
-                (*gparent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*gparent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).entry.rbe_left;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_left == elm {
-                    tmp = (*parent).entry.rbe_left;
-                    (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                    if !(*parent).entry.rbe_left.is_null() {
-                        (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_right = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_right;
-                (*gparent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*gparent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).entry.rbe_color = RB_BLACK;
-}
-pub(super) unsafe extern "C" fn format_entry_tree_RB_MINMAX(
-    mut head: *mut format_entry_tree,
-    mut val: ::core::ffi::c_int,
-) -> *mut format_entry {
-    let mut tmp: *mut format_entry = (*head).rbh_root;
-    let mut parent: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    while !tmp.is_null() {
-        parent = tmp;
-        if val < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else {
-            tmp = (*tmp).entry.rbe_right;
-        }
-    }
-    return parent;
-}
-pub(super) unsafe extern "C" fn format_entry_tree_RB_REMOVE_COLOR(
-    mut head: *mut format_entry_tree,
-    mut parent: *mut format_entry,
-    mut elm: *mut format_entry,
-) {
-    let mut tmp: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    while (elm.is_null() || (*elm).entry.rbe_color == RB_BLACK) && elm != (*head).rbh_root {
-        if (*parent).entry.rbe_left == elm {
-            tmp = (*parent).entry.rbe_right;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_right;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK
-                {
-                    let mut oleft: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-                    oleft = (*tmp).entry.rbe_left;
-                    if !oleft.is_null() {
-                        (*oleft).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oleft = (*tmp).entry.rbe_left;
-                    (*tmp).entry.rbe_left = (*oleft).entry.rbe_right;
-                    if !(*tmp).entry.rbe_left.is_null() {
-                        (*(*oleft).entry.rbe_right).entry.rbe_parent = tmp;
-                    }
-                    (*oleft).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oleft).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oleft;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oleft;
-                        }
-                    } else {
-                        (*head).rbh_root = oleft;
-                    }
-                    (*oleft).entry.rbe_right = tmp;
-                    (*tmp).entry.rbe_parent = oleft;
-                    !(*oleft).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_right;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        } else {
-            tmp = (*parent).entry.rbe_left;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_left;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_left.is_null()
-                    || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK
-                {
-                    let mut oright: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-                    oright = (*tmp).entry.rbe_right;
-                    if !oright.is_null() {
-                        (*oright).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oright = (*tmp).entry.rbe_right;
-                    (*tmp).entry.rbe_right = (*oright).entry.rbe_left;
-                    if !(*tmp).entry.rbe_right.is_null() {
-                        (*(*oright).entry.rbe_left).entry.rbe_parent = tmp;
-                    }
-                    (*oright).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oright).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oright;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oright;
-                        }
-                    } else {
-                        (*head).rbh_root = oright;
-                    }
-                    (*oright).entry.rbe_left = tmp;
-                    (*tmp).entry.rbe_parent = oright;
-                    !(*oright).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_left;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        }
-    }
-    if !elm.is_null() {
-        (*elm).entry.rbe_color = RB_BLACK;
-    }
-}
-pub(super) unsafe extern "C" fn format_entry_tree_RB_NEXT(
-    mut elm: *mut format_entry,
-) -> *mut format_entry {
-    if !(*elm).entry.rbe_right.is_null() {
-        elm = (*elm).entry.rbe_right;
-        while !(*elm).entry.rbe_left.is_null() {
-            elm = (*elm).entry.rbe_left;
-        }
-    } else if !(*elm).entry.rbe_parent.is_null() && elm == (*(*elm).entry.rbe_parent).entry.rbe_left
-    {
-        elm = (*elm).entry.rbe_parent;
-    } else {
-        while !(*elm).entry.rbe_parent.is_null()
-            && elm == (*(*elm).entry.rbe_parent).entry.rbe_right
-        {
-            elm = (*elm).entry.rbe_parent;
-        }
-        elm = (*elm).entry.rbe_parent;
-    }
-    return elm;
-}
-pub(super) unsafe extern "C" fn format_entry_tree_RB_INSERT(
-    mut head: *mut format_entry_tree,
-    mut elm: *mut format_entry,
-) -> *mut format_entry {
-    let mut tmp: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    let mut parent: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = format_entry_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    (*elm).entry.rbe_parent = parent;
-    (*elm).entry.rbe_right = ::core::ptr::null_mut::<format_entry>();
-    (*elm).entry.rbe_left = (*elm).entry.rbe_right;
-    (*elm).entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).entry.rbe_left = elm;
-        } else {
-            (*parent).entry.rbe_right = elm;
-        }
-    } else {
-        (*head).rbh_root = elm;
-    }
-    format_entry_tree_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<format_entry>();
-}
-pub(super) unsafe extern "C" fn format_entry_cmp(
-    mut fe1: *mut format_entry,
-    mut fe2: *mut format_entry,
-) -> ::core::ffi::c_int {
-    return strcmp((*fe1).key, (*fe2).key);
-}
+
 #[no_mangle]
 pub unsafe extern "C" fn format_merge(mut ft: *mut format_tree, mut from: *mut format_tree) {
     let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    fe = format_entry_tree_RB_MINMAX(&raw mut (*from).tree, RB_NEGINF);
+    fe = format_entry_tree_minmax(&raw mut (*from).tree, RB_NEGINF);
     while !fe.is_null() {
         if !(*fe).value.is_null() {
             format_add(
@@ -517,7 +105,7 @@ pub unsafe extern "C" fn format_merge(mut ft: *mut format_tree, mut from: *mut f
                 (*fe).value,
             );
         }
-        fe = format_entry_tree_RB_NEXT(fe);
+        fe = format_entry_tree_next(&raw mut (*from).tree, fe);
     }
 }
 #[no_mangle]
@@ -546,7 +134,7 @@ pub unsafe extern "C" fn format_create(
 ) -> *mut format_tree {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     ft = xcalloc(1 as size_t, ::core::mem::size_of::<format_tree>() as size_t) as *mut format_tree;
-    (*ft).tree.rbh_root = ::core::ptr::null_mut::<format_entry>();
+    (*ft).tree.entries = Box::into_raw(Box::new(format_entry_tree_storage::default()));
     if !c.is_null() {
         (*ft).client = c;
         (*(*ft).client).references += 1;
@@ -563,16 +151,20 @@ pub unsafe extern "C" fn format_create(
 pub unsafe extern "C" fn format_free(mut ft: *mut format_tree) {
     let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     let mut fe1: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    fe = format_entry_tree_RB_MINMAX(&raw mut (*ft).tree, RB_NEGINF);
+    fe = format_entry_tree_minmax(&raw mut (*ft).tree, RB_NEGINF);
     while !fe.is_null() && {
-        fe1 = format_entry_tree_RB_NEXT(fe);
+        fe1 = format_entry_tree_next(&raw mut (*ft).tree, fe);
         1 as ::core::ffi::c_int != 0
     } {
-        format_entry_tree_RB_REMOVE(&raw mut (*ft).tree, fe);
+        format_entry_tree_remove(&raw mut (*ft).tree, fe);
         free((*fe).value as *mut ::core::ffi::c_void);
         free((*fe).key as *mut ::core::ffi::c_void);
         free(fe as *mut ::core::ffi::c_void);
         fe = fe1;
+    }
+    if !(*ft).tree.entries.is_null() {
+        drop(Box::from_raw((*ft).tree.entries));
+        (*ft).tree.entries = ::core::ptr::null_mut::<format_entry_tree_storage>();
     }
     if !(*ft).client.is_null() {
         server_client_unref((*ft).client);
@@ -666,7 +258,7 @@ pub unsafe extern "C" fn format_each(
         }
         i = i.wrapping_add(1);
     }
-    fe = format_entry_tree_RB_MINMAX(&raw mut (*ft).tree, RB_NEGINF);
+    fe = format_entry_tree_minmax(&raw mut (*ft).tree, RB_NEGINF);
     while !fe.is_null() {
         if (*fe).time != 0 as time_t {
             xsnprintf(
@@ -690,7 +282,7 @@ pub unsafe extern "C" fn format_each(
             }
             cb.expect("non-null function pointer")((*fe).key, (*fe).value, arg);
         }
-        fe = format_entry_tree_RB_NEXT(fe);
+        fe = format_entry_tree_next(&raw mut (*ft).tree, fe);
     }
 }
 #[no_mangle]
@@ -705,7 +297,7 @@ pub unsafe extern "C" fn format_add(
     let mut ap: ::core::ffi::VaList;
     fe = xmalloc(::core::mem::size_of::<format_entry>() as size_t) as *mut format_entry;
     (*fe).key = xstrdup(key);
-    fe_now = format_entry_tree_RB_INSERT(&raw mut (*ft).tree, fe);
+    fe_now = format_entry_tree_insert(&raw mut (*ft).tree, fe);
     if !fe_now.is_null() {
         free((*fe).key as *mut ::core::ffi::c_void);
         free(fe as *mut ::core::ffi::c_void);
@@ -727,7 +319,7 @@ pub unsafe extern "C" fn format_add_tv(
     let mut fe_now: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     fe = xmalloc(::core::mem::size_of::<format_entry>() as size_t) as *mut format_entry;
     (*fe).key = xstrdup(key);
-    fe_now = format_entry_tree_RB_INSERT(&raw mut (*ft).tree, fe);
+    fe_now = format_entry_tree_insert(&raw mut (*ft).tree, fe);
     if !fe_now.is_null() {
         free((*fe).key as *mut ::core::ffi::c_void);
         free(fe as *mut ::core::ffi::c_void);
@@ -748,7 +340,7 @@ pub unsafe extern "C" fn format_add_cb(
     let mut fe_now: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     fe = xmalloc(::core::mem::size_of::<format_entry>() as size_t) as *mut format_entry;
     (*fe).key = xstrdup(key);
-    fe_now = format_entry_tree_RB_INSERT(&raw mut (*ft).tree, fe);
+    fe_now = format_entry_tree_insert(&raw mut (*ft).tree, fe);
     if !fe_now.is_null() {
         free((*fe).key as *mut ::core::ffi::c_void);
         free(fe as *mut ::core::ffi::c_void);
@@ -758,4 +350,103 @@ pub unsafe extern "C" fn format_add_cb(
     (*fe).cb = cb;
     (*fe).time = 0 as time_t;
     (*fe).value = ::core::ptr::null_mut::<::core::ffi::c_char>();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::{CStr, CString};
+
+    unsafe fn new_entry(key: &CString) -> *mut format_entry {
+        Box::into_raw(Box::new(format_entry {
+            key: key.as_ptr() as *mut ::core::ffi::c_char,
+            value: ::core::ptr::null_mut::<::core::ffi::c_char>(),
+            time: 0,
+            cb: None,
+            entry: format_entry_entry {
+                rbe_left: ::core::ptr::null_mut::<format_entry>(),
+                rbe_right: ::core::ptr::null_mut::<format_entry>(),
+                rbe_parent: ::core::ptr::null_mut::<format_entry>(),
+                rbe_color: 0,
+            },
+        }))
+    }
+
+    unsafe fn free_tree(head: &mut format_entry_tree) {
+        let mut item = format_entry_tree_minmax(head, RB_NEGINF);
+        while !item.is_null() {
+            let next = format_entry_tree_next(head, item);
+            assert_eq!(format_entry_tree_remove(head, item), item);
+            drop(Box::from_raw(item));
+            item = next;
+        }
+        drop(Box::from_raw(head.entries));
+        head.entries = ::core::ptr::null_mut::<format_entry_tree_storage>();
+    }
+
+    #[test]
+    fn format_entry_tree_preserves_strcmp_order_and_duplicate_keys() {
+        unsafe {
+            let names: &[&[u8]] = &[b"zeta", b"alpha", b"alpha-2", b"\x80high", b"alpha\x01"];
+            let keys: Vec<CString> = names
+                .iter()
+                .map(|name| CString::new(*name).expect("test key has no NUL"))
+                .collect();
+            assert!(crate::src::ffi::libc::strcmp(keys[1].as_ptr(), keys[2].as_ptr()) < 0);
+            assert!(crate::src::ffi::libc::strcmp(keys[3].as_ptr(), keys[0].as_ptr()) > 0);
+            let mut head = format_entry_tree {
+                entries: Box::into_raw(Box::new(format_entry_tree_storage::default())),
+            };
+            let mut items = Vec::new();
+            for key in &keys {
+                let item = new_entry(key);
+                assert!(format_entry_tree_insert(&mut head, item).is_null());
+                items.push(item);
+            }
+
+            let duplicate_key = CString::new(b"alpha".as_slice()).unwrap();
+            let duplicate = new_entry(&duplicate_key);
+            assert_eq!(format_entry_tree_insert(&mut head, duplicate), items[1]);
+            drop(Box::from_raw(duplicate));
+
+            let probe_key = CString::new(b"alpha".as_slice()).unwrap();
+            let probe = new_entry(&probe_key);
+            assert_eq!(format_entry_tree_find(&mut head, probe), items[1]);
+            drop(Box::from_raw(probe));
+
+            assert_eq!(
+                CStr::from_ptr((*format_entry_tree_minmax(&mut head, RB_NEGINF)).key).to_bytes(),
+                b"alpha"
+            );
+            assert_eq!(
+                CStr::from_ptr((*format_entry_tree_minmax(&mut head, RB_INF)).key).to_bytes(),
+                b"\x80high"
+            );
+
+            let mut ordered = Vec::new();
+            let mut item = format_entry_tree_minmax(&mut head, RB_NEGINF);
+            while !item.is_null() {
+                ordered.push(CStr::from_ptr((*item).key).to_bytes().to_vec());
+                item = format_entry_tree_next(&mut head, item);
+            }
+            assert_eq!(
+                ordered,
+                vec![
+                    b"alpha".to_vec(),
+                    b"alpha\x01".to_vec(),
+                    b"alpha-2".to_vec(),
+                    b"zeta".to_vec(),
+                    b"\x80high".to_vec(),
+                ]
+            );
+
+            let removed = format_entry_tree_remove(&mut head, items[2]);
+            assert_eq!(removed, items[2]);
+            let removed_probe = new_entry(&keys[2]);
+            assert!(format_entry_tree_find(&mut head, removed_probe).is_null());
+            drop(Box::from_raw(removed_probe));
+            drop(Box::from_raw(removed));
+            free_tree(&mut head);
+        }
+    }
 }

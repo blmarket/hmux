@@ -1,4 +1,4 @@
-//! Frozen C layouts, excluding the migrated format-job cache and its nodes.
+//! Frozen C layouts, excluding the migrated Rust-owned format storage.
 use std::mem::{align_of, offset_of, size_of};
 #[test]
 fn original_copies_match() {
@@ -32,7 +32,7 @@ fn original_copies_match() {
     record!(
         "src/format.rs::format_entry_tree",
         hmux2::src::format::format_entry_tree,
-        [rbh_root]
+        [entries]
     );
     record!(
         "src/alerts.rs::format_job_tree",

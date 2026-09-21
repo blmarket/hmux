@@ -403,7 +403,7 @@ pub(super) unsafe extern "C" fn format_find(
             }
         } else {
             fe_find.key = key as *mut ::core::ffi::c_char;
-            fe = format_entry_tree_RB_FIND(&raw mut (*ft).tree, &raw mut fe_find);
+            fe = format_entry_tree_find(&raw mut (*ft).tree, &raw mut fe_find);
             if !fe.is_null() {
                 if (*fe).time != 0 as time_t {
                     t = (*fe).time;
