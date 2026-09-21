@@ -2,15 +2,17 @@ use crate::src::events::events_fire;
 use crate::src::events_payload::{event_payload_create, event_payload_set_string};
 use crate::src::ffi::libc::{free, strlcpy, time};
 use crate::src::options::options_get_number;
+use crate::src::shared::abi::*;
+pub use crate::src::shared::events::event_payload;
+pub use crate::src::shared::options::options;
+pub use crate::src::shared::paste::{
+    paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry,
+};
+pub use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
+pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tmux::{clean_name, global_options};
 use crate::src::utf8::utf8_strvis;
 use crate::src::xmalloc::{xasprintf, xmalloc, xreallocarray, xstrdup};
-pub use crate::src::shared::events::{event_payload};
-pub use crate::src::shared::options::{options};
-pub use crate::src::shared::paste::{paste_buffer, paste_buffer_name_entry, paste_buffer_time_entry};
-pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-pub use crate::src::shared::tree::{RB_BLACK, RB_INF, RB_NEGINF, RB_RED};
-use crate::src::shared::abi::*;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -957,16 +959,15 @@ mod tests {
                 "duplicate names keep the original item"
             );
 
-            let ordered = tree
-                .entries
-                .keys()
-                .map(Vec::as_slice)
-                .collect::<Vec<_>>();
+            let ordered = tree.entries.keys().map(Vec::as_slice).collect::<Vec<_>>();
             assert_eq!(
                 ordered,
                 vec![&b"a"[..], &b"a0"[..], &b"a\xff"[..], &b"z"[..]]
             );
-            assert_eq!(paste_name_tree_find(&raw mut tree, names[2].as_ptr()), a_high);
+            assert_eq!(
+                paste_name_tree_find(&raw mut tree, names[2].as_ptr()),
+                a_high
+            );
             assert!(paste_name_tree_find(&raw mut tree, b"missing\0".as_ptr().cast()).is_null());
 
             assert_eq!(paste_name_tree_remove(&raw mut tree, a_high), a_high);
