@@ -1,7 +1,7 @@
 use crate::src::cmd_queue::{cmdq_continue, cmdq_get_client};
 use crate::src::colour::{colour_palette_free, colour_palette_from_option, colour_palette_init};
 use crate::src::ffi::libc::{free, memcpy};
-use crate::src::reactor::{
+use crate::src::ffi::libevent::{
     bufferevent_write, evbuffer_drain, evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::format::{format_create_defaults, format_free};
@@ -799,7 +799,7 @@ unsafe extern "C" fn popup_key_cb(
 }
 unsafe extern "C" fn popup_job_update_cb(mut job: *mut job) {
     let mut pd: *mut popup_data = job_get_data(job) as *mut popup_data;
-    let mut evb: *mut evbuffer = crate::src::reactor::stream_input(job_get_event(job));
+    let mut evb: *mut evbuffer = (*job_get_event(job)).input;
     let mut c: *mut client = (*pd).c;
     let mut s: *mut screen = &raw mut (*pd).s;
     let mut data: *mut ::core::ffi::c_void =

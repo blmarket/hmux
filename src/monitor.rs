@@ -1,5 +1,5 @@
 use crate::src::ffi::libc::{free, sscanf, strchr, strcmp};
-use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
+use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_pending, event_set};
 use crate::src::format::{format_create, format_defaults, format_expand, format_free, format_true};
 use crate::src::log::log_debug;
 use crate::src::server::current_time;

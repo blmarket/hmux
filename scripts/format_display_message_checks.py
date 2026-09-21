@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run deterministic display-message probes against one isolated server.
 
-Each command consumes its own control-mode response. A refresh command gives
-queued job-completion work another turn before reading the cached result.  Keeping one control client open is important for
+The control-mode refresh command is a barrier for the previous
+display-message result.  Keeping one control client open is important for
 job formats: it exercises the existing per-client cache lifetime and lets the
 job-completion event run before the cached result is read again.
 """
@@ -42,19 +42,12 @@ class ControlClient:
             text=True,
             bufsize=1,
         )
-        # Consume startup's frame so later responses correspond to the command
-        # just sent, rather than staying one command behind.
-        self.response("startup")
 
     def command(self, command: str) -> list[str]:
         assert self.process.stdin is not None
         assert self.process.stdout is not None
         self.process.stdin.write(command + "\n")
         self.process.stdin.flush()
-        return self.response(command)
-
-    def response(self, command: str) -> list[str]:
-        assert self.process.stdout is not None
         payload: list[str] = []
         in_response = False
         while True:
@@ -110,7 +103,7 @@ def check_case(
     client: ControlClient,
 ) -> dict:
     observation = display(client, format_string)
-    actual = "\n".join(observation["initial_response"])
+    actual = "\n".join(observation["barrier_response"])
     observation.update(
         {
             "name": name,
@@ -128,27 +121,26 @@ def check_job(
     format_string: str,
     expected: str,
     client: ControlClient,
-    pending: str,
 ) -> dict:
     first = display(client, format_string, wait=0.35)
-    first_actual = "\n".join(first["initial_response"])
+    first_actual = "\n".join(first["barrier_response"])
     attempts = [first]
     eventual = None
     for _ in range(8):
         attempt = display(client, format_string, wait=0.35)
         attempts.append(attempt)
-        actual = "\n".join(attempt["initial_response"])
+        actual = "\n".join(attempt["barrier_response"])
         if actual == expected:
             eventual = actual
             break
     if eventual is None:
-        eventual = "\n".join(attempts[-1]["initial_response"])
+        eventual = "\n".join(attempts[-1]["barrier_response"])
     repeat = display(client, format_string)
-    repeat_actual = "\n".join(repeat["initial_response"])
+    repeat_actual = "\n".join(repeat["barrier_response"])
     return {
         "name": name,
         "input": format_string,
-        "expected_initial": [pending, expected],
+        "expected_initial": "",
         "actual_initial": first_actual,
         "expected_eventual": expected,
         "actual_eventual": eventual,
@@ -157,7 +149,7 @@ def check_job(
         "attempts": attempts,
         "cached_repeat": repeat,
         "pass": (
-            first_actual in (pending, expected)
+            first_actual == ""
             and eventual == expected
             and repeat_actual == expected
         ),
@@ -202,14 +194,12 @@ def run(binary: pathlib.Path) -> dict:
                     "job:#(sleep 0.2; printf job-value)",
                     "job:job-value",
                     client,
-                    "job:",
                 ),
                 check_job(
                     "recursive-job-format",
                     "recursive:#(printf #{session_name})",
                     "recursive:format-probe",
                     client,
-                    "recursive:",
                 ),
             ]
         finally:

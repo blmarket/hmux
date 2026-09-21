@@ -18,7 +18,7 @@ use crate::src::events_payload::{
     event_payload_set_target,
 };
 use crate::src::ffi::libc::{__ctype_toupper_loc, free, getpwuid, getuid, memcpy, time};
-use crate::src::reactor::{evbuffer_add_vprintf, evbuffer_free, evbuffer_new};
+use crate::src::ffi::libevent::{evbuffer_add_vprintf, evbuffer_free, evbuffer_new};
 use crate::src::file::file_error;
 use crate::src::format::{format_add, format_create, format_free, format_merge};
 use crate::src::key_string::key_string_format;

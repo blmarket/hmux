@@ -5,7 +5,7 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::src::ffi::libc::{close, free, getpid, gettimeofday, kill, memcpy, strlen};
-use crate::src::reactor::bufferevent_free;
+use crate::src::ffi::libevent::bufferevent_free;
 use crate::src::ffi::utempter::utempter_remove_record;
 use crate::src::format::format_single;
 use crate::src::format_draw::format_draw;

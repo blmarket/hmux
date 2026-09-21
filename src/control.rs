@@ -5,7 +5,7 @@ use crate::src::cmd_queue::{
 };
 use crate::src::ffi::libc::{__errno_location, close, free, memcpy, memset, poll, strcmp, strlen};
 pub use crate::src::ffi::libc::{nfds_t, pollfd};
-use crate::src::reactor::{
+use crate::src::ffi::libevent::{
     bufferevent_disable, bufferevent_enable, bufferevent_free, bufferevent_new,
     bufferevent_setwatermark, bufferevent_write, bufferevent_write_buffer, evbuffer_add,
     evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
@@ -1356,7 +1356,7 @@ pub unsafe extern "C" fn control_pane_offset(
         *off = 1 as ::core::ffi::c_int;
         return ::core::ptr::null_mut::<window_pane_offset>();
     }
-    *off = (evbuffer_get_length(crate::src::reactor::stream_output((*cs).write_event)) >= CONTROL_BUFFER_LOW as size_t)
+    *off = (evbuffer_get_length((*(*cs).write_event).output) >= CONTROL_BUFFER_LOW as size_t)
         as ::core::ffi::c_int;
     return &raw mut (*cp).offset;
 }
@@ -1463,7 +1463,7 @@ unsafe extern "C" fn control_check_reply_buffer(
     if (*c).flags as ::core::ffi::c_ulonglong & CLIENT_CONTROL_DISCARD != 0 {
         return 1 as ::core::ffi::c_int;
     }
-    size = evbuffer_get_length(crate::src::reactor::stream_output((*cs).write_event));
+    size = evbuffer_get_length((*(*cs).write_event).output);
     size = size.wrapping_add((*cs).queued_reply_bytes);
     size = size.wrapping_add(added);
     if size < CONTROL_MAXIMUM_REPLY_BUFFER as size_t {
@@ -1802,7 +1802,7 @@ unsafe extern "C" fn control_read_callback(
 ) {
     let mut c: *mut client = data as *mut client;
     let mut cs: *mut control_state = (*c).control_state;
-    let mut buffer: *mut evbuffer = crate::src::reactor::stream_input((*cs).read_event);
+    let mut buffer: *mut evbuffer = (*(*cs).read_event).input;
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut state: *mut cmdq_state = ::core::ptr::null_mut::<cmdq_state>();
@@ -1865,7 +1865,7 @@ pub unsafe extern "C" fn control_all_done(mut c: *mut client) -> ::core::ffi::c_
     if !(*cs).all_blocks.tqh_first.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    return (evbuffer_get_length(crate::src::reactor::stream_output((*cs).write_event)) == 0 as size_t) as ::core::ffi::c_int;
+    return (evbuffer_get_length((*(*cs).write_event).output) == 0 as size_t) as ::core::ffi::c_int;
 }
 #[no_mangle]
 pub unsafe extern "C" fn control_wait_exit(mut fd: ::core::ffi::c_int) {
@@ -2136,7 +2136,7 @@ unsafe extern "C" fn control_write_callback(
     let mut cs: *mut control_state = (*c).control_state;
     let mut cp: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
     let mut cp1: *mut control_pane = ::core::ptr::null_mut::<control_pane>();
-    let mut evb: *mut evbuffer = crate::src::reactor::stream_output((*cs).write_event);
+    let mut evb: *mut evbuffer = (*(*cs).write_event).output;
     let mut space: size_t = 0;
     let mut limit: size_t = 0;
     control_flush_all_blocks(c);

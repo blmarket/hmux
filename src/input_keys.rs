@@ -1,6 +1,6 @@
 use crate::src::cmd::cmd_mouse_at;
 use crate::src::ffi::libc::{strchr, strcspn, strlen};
-use crate::src::reactor::bufferevent_write;
+use crate::src::ffi::libevent::bufferevent_write;
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_debug, log_get_level};
 use crate::src::options::options_get_number;

@@ -3,7 +3,7 @@ use crate::src::ffi::libc::{
     __ctype_b_loc, __xpg_basename, free, gettimeofday, memcpy, strchr, strcmp, strcspn, strlen,
     strncmp,
 };
-use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
+use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_pending, event_set};
 use crate::src::format::{
     format_create, format_defaults_pane, format_defaults_window, format_expand, format_free,
 };

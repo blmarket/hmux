@@ -4,7 +4,7 @@ use crate::src::cmd_queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
 use crate::src::colour::colour_format;
 use crate::src::control::control_write;
 use crate::src::ffi::libc::{free, memcpy, snprintf, strcmp, strlen};
-use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
+use crate::src::ffi::libevent::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::file::{file_can_print, file_print, file_print_buffer};
 use crate::src::grid::{
     grid_cell_attr_string, grid_cell_flags_string, grid_clear_history, grid_get_cell,

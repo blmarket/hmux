@@ -7,7 +7,7 @@ use crate::src::ffi::libc::{
     __ctype_tolower_loc, abs, free, llabs, memcmp, memcpy, memmove, memset, regcomp, regexec,
     regfree, strcasecmp, strchr, strcmp, strcspn, strlen, strncmp, vasprintf,
 };
-use crate::src::reactor::{bufferevent_write, event_add, event_del, event_set};
+use crate::src::ffi::libevent::{bufferevent_write, event_add, event_del, event_set};
 use crate::src::format::{
     format_add, format_add_cb, format_create_defaults, format_expand, format_free,
     format_get_pane, format_grid_hyperlink, format_grid_line, format_grid_word, format_single,

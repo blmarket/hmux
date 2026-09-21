@@ -1,6 +1,6 @@
 use crate::src::cmd_queue::{cmdq_append, cmdq_get_callback1};
 use crate::src::ffi::libc::{free, memcpy, memset, strcmp, strlen};
-use crate::src::reactor::{event_add, event_del, event_initialized, event_set};
+use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_set};
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_time,
     format_free,

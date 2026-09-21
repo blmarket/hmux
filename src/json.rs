@@ -1,7 +1,7 @@
 use crate::src::ffi::libc::{
     __ctype_b_loc, __errno_location, free, strcmp, strlen, strncmp, strtoll,
 };
-use crate::src::reactor::{
+use crate::src::ffi::libevent::{
     evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
     evbuffer_pullup,
 };

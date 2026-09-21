@@ -2,7 +2,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_error, cmdq_get_target};
 use crate::src::ffi::libc::{free, memchr, strlen};
-use crate::src::reactor::bufferevent_write;
+use crate::src::ffi::libevent::bufferevent_write;
 use crate::src::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top};
 use crate::src::utf8::utf8_stravisx;
 use crate::src::window::window_pane_exited;

@@ -2,6 +2,7 @@
 //! Keep provider signatures C-compatible, including variadics and nullable callbacks.
 
 pub mod libc;
+pub mod libevent;
 pub mod libm;
 pub mod ncurses;
 pub mod resolv;

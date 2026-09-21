@@ -8,8 +8,8 @@ use crate::src::ffi::libc::{
     close, daemon, fork, free, getpid, memset, sigaction, sigemptyset, socketpair, uname,
 };
 pub use crate::src::ffi::libc::utsname;
-use crate::src::reactor::{
-    event_add, event_del, event_loop, event_set,
+use crate::src::ffi::libevent::{
+    event_add, event_del, event_get_method, event_get_version, event_loop, event_set,
 };
 use crate::src::ffi::utf8proc::utf8proc_version;
 use crate::src::log::{fatal, log_debug, log_open, log_toggle};
@@ -247,7 +247,9 @@ pub unsafe extern "C" fn proc_start(mut name: *const ::core::ffi::c_char) -> *mu
         &raw mut u.version as *mut ::core::ffi::c_char,
     );
     log_debug(
-        b"using hmux-rt (mio)\0" as *const u8 as *const ::core::ffi::c_char,
+        b"using libevent %s %s\0" as *const u8 as *const ::core::ffi::c_char,
+        event_get_version(),
+        event_get_method(),
     );
     log_debug(
         b"using utf8proc %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -473,7 +475,6 @@ pub unsafe extern "C" fn proc_clear_signals(
     event_del(&raw mut (*tp).ev_sigusr1);
     event_del(&raw mut (*tp).ev_sigusr2);
     event_del(&raw mut (*tp).ev_sigwinch);
-    crate::src::reactor::flush_cancelled();
     if defaults != 0 {
         sigaction(SIGINT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());
         sigaction(SIGQUIT, &raw mut sa, ::core::ptr::null_mut::<sigaction>());

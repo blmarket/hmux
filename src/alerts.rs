@@ -1,5 +1,5 @@
 use crate::src::events::events_fire_winlink;
-use crate::src::reactor::{event_add, event_del, event_initialized, event_once, event_set};
+use crate::src::ffi::libevent::{event_add, event_del, event_initialized, event_once, event_set};
 use crate::src::log::log_debug;
 use crate::src::options::options_get_number;
 pub use crate::src::server::clients;

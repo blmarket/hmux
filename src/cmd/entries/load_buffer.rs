@@ -2,7 +2,7 @@ use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args;
 use crate::src::cmd_queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
 use crate::src::ffi::libc::{free, memcpy, strerror};
-use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
+use crate::src::ffi::libevent::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::file::file_read;
 use crate::src::format::format_single_from_target;
 use crate::src::paste::paste_set;

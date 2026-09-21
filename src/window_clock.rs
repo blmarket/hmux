@@ -1,7 +1,7 @@
 use crate::src::ffi::libc::{
     clock_gettime, free, gmtime_r, localtime, memcpy, strftime, strlcat, strlen, time,
 };
-use crate::src::reactor::{event_add, event_del, event_set};
+use crate::src::ffi::libevent::{event_add, event_del, event_set};
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
 use crate::src::options::options_get_number;

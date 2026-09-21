@@ -50,6 +50,7 @@ dependencies = [
 name = "hmux-rt"
 version = "0.1.0"
 dependencies = [
+ "errno",
  "libc",
  "mio",
  "signal-hook",
@@ -60,7 +61,6 @@ name = "hmux2"
 version = "0.0.0"
 dependencies = [
  "c2rust-bitfields",
- "hmux-rt",
  "libc",
  "syn",
 ]

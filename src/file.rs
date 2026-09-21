@@ -2,7 +2,7 @@ use crate::src::ffi::libc::{
     __errno_location, close, dup, fclose, ferror, fopen, fread, free, fwrite, memcpy, open,
     strcmp, strlen, strncmp,
 };
-use crate::src::reactor::{
+use crate::src::ffi::libevent::{
     bufferevent_enable, bufferevent_free, bufferevent_new, bufferevent_write, evbuffer_add,
     evbuffer_add_vprintf, evbuffer_drain, evbuffer_free, evbuffer_get_length, evbuffer_new,
     evbuffer_pullup, event_once,
@@ -1390,7 +1390,7 @@ pub unsafe extern "C" fn file_write_left(mut files: *mut client_files) -> ::core
     cf = client_files_RB_MINMAX(files, RB_NEGINF);
     while !cf.is_null() {
         if !(*cf).event.is_null() {
-            left = evbuffer_get_length(crate::src::reactor::stream_output((*cf).event));
+            left = evbuffer_get_length((*(*cf).event).output);
             if left != 0 as size_t {
                 waiting += 1;
                 log_debug(
@@ -1486,7 +1486,7 @@ unsafe extern "C" fn file_write_callback(
         b"write check file %d\0" as *const u8 as *const ::core::ffi::c_char,
         (*cf).stream,
     );
-    if (*cf).closed != 0 && evbuffer_get_length(crate::src::reactor::stream_output((*cf).event)) == 0 as size_t {
+    if (*cf).closed != 0 && evbuffer_get_length((*(*cf).event).output) == 0 as size_t {
         file_write_finished(cf);
     } else if (*cf).cb.is_some() {
         (*cf).cb.expect("non-null function pointer")(
@@ -1703,7 +1703,7 @@ pub unsafe extern "C" fn file_write_close(mut files: *mut client_files, mut imsg
         (*cf).stream,
     );
     (*cf).closed = 1 as ::core::ffi::c_int;
-    if (*cf).event.is_null() || evbuffer_get_length(crate::src::reactor::stream_output((*cf).event)) == 0 as size_t {
+    if (*cf).event.is_null() || evbuffer_get_length((*(*cf).event).output) == 0 as size_t {
         file_write_finished(cf);
     }
 }
@@ -1750,9 +1750,9 @@ unsafe extern "C" fn file_read_callback(
     let mut msglen: size_t = 0;
     msg = xmalloc(::core::mem::size_of::<msg_read_data>() as size_t) as *mut msg_read_data;
     loop {
-        bdata = evbuffer_pullup(crate::src::reactor::stream_input((*cf).event), -(1 as ::core::ffi::c_int) as ssize_t)
+        bdata = evbuffer_pullup((*(*cf).event).input, -(1 as ::core::ffi::c_int) as ssize_t)
             as *mut ::core::ffi::c_void;
-        bsize = evbuffer_get_length(crate::src::reactor::stream_input((*cf).event));
+        bsize = evbuffer_get_length((*(*cf).event).input);
         if bsize == 0 as size_t {
             break;
         }
@@ -1787,7 +1787,7 @@ unsafe extern "C" fn file_read_callback(
             msg as *const ::core::ffi::c_void,
             msglen,
         );
-        evbuffer_drain(crate::src::reactor::stream_input((*cf).event), bsize);
+        evbuffer_drain((*(*cf).event).input, bsize);
     }
     free(msg as *mut ::core::ffi::c_void);
 }

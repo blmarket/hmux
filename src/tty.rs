@@ -7,7 +7,7 @@ use crate::src::ffi::libc::{
     strerror, strlen, strncmp, tcflush, tcgetattr, tcsetattr, time, usleep, write,
 };
 pub use crate::src::ffi::libc::__useconds_t;
-use crate::src::reactor::{
+use crate::src::ffi::libevent::{
     evbuffer_add, evbuffer_drain, evbuffer_free, evbuffer_get_length, evbuffer_new,
     evbuffer_read, evbuffer_write, event_add, event_del, event_initialized, event_pending,
     event_set,

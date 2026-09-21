@@ -7,7 +7,7 @@ use crate::src::cmd_queue::{
     cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_get_target_client, cmdq_print,
 };
 use crate::src::ffi::libc::free;
-use crate::src::reactor::{evbuffer_add_printf, evbuffer_free, evbuffer_new};
+use crate::src::ffi::libevent::{evbuffer_add_printf, evbuffer_free, evbuffer_new};
 use crate::src::format::{
     format_create, format_defaults, format_each, format_expand_time, format_free,
 };

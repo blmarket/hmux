@@ -1231,9 +1231,7 @@ unsafe fn main_0(
     }
     socket_path = path;
     free(label as *mut ::core::ffi::c_void);
-    let status = client_main(osdep_event_init(), argc, argv, flags, feat);
-    crate::src::reactor::shutdown_runtime();
-    exit(status);
+    exit(client_main(osdep_event_init(), argc, argv, flags, feat));
 }
 pub const TMUX_VERSION: [::core::ffi::c_char; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"next-3.9\0") };

@@ -6,7 +6,7 @@ use crate::src::cmd_queue::{
     cmdq_insert_after,
 };
 use crate::src::ffi::libc::{__ctype_b_loc, free, glob, globfree, strcmp, strerror, strlen};
-use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
+use crate::src::ffi::libevent::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::file::file_read;
 use crate::src::format::format_single_from_target;
 use crate::src::log::log_debug;
