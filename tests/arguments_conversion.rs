@@ -39,13 +39,31 @@ fn number_helper_preserves_syntax_bounds_and_diagnostics() {
     let malformed = cstring("17x");
     let empty = cstring("");
 
-    assert_eq!(parse_number(minimum.as_c_str(), i64::MIN, i64::MAX), Ok(i64::MIN));
-    assert_eq!(parse_number(maximum.as_c_str(), i64::MIN, i64::MAX), Ok(i64::MAX));
-    assert_eq!(parse_number(below.as_c_str(), i64::MIN, i64::MAX), Err(ArgumentValueError::TooSmall));
-    assert_eq!(parse_number(above.as_c_str(), i64::MIN, i64::MAX), Err(ArgumentValueError::TooLarge));
+    assert_eq!(
+        parse_number(minimum.as_c_str(), i64::MIN, i64::MAX),
+        Ok(i64::MIN)
+    );
+    assert_eq!(
+        parse_number(maximum.as_c_str(), i64::MIN, i64::MAX),
+        Ok(i64::MAX)
+    );
+    assert_eq!(
+        parse_number(below.as_c_str(), i64::MIN, i64::MAX),
+        Err(ArgumentValueError::TooSmall)
+    );
+    assert_eq!(
+        parse_number(above.as_c_str(), i64::MIN, i64::MAX),
+        Err(ArgumentValueError::TooLarge)
+    );
     assert_eq!(parse_number(signed.as_c_str(), 0, 20), Ok(17));
-    assert_eq!(parse_number(malformed.as_c_str(), 0, 20), Err(ArgumentValueError::Invalid));
-    assert_eq!(parse_number(empty.as_c_str(), 0, 20), Err(ArgumentValueError::Invalid));
+    assert_eq!(
+        parse_number(malformed.as_c_str(), 0, 20),
+        Err(ArgumentValueError::Invalid)
+    );
+    assert_eq!(
+        parse_number(empty.as_c_str(), 0, 20),
+        Err(ArgumentValueError::Invalid)
+    );
 
     assert_eq!(error_message(ArgumentValueError::TooSmall), b"too small");
     assert_eq!(error_message(ArgumentValueError::TooLarge), b"too large");
@@ -191,8 +209,14 @@ fn command_values_and_cached_strings_keep_their_storage_ownership() {
         (*value).c2rust_unnamed.cmdlist = cmd_list_new();
         args_set(args, b'c', value, 0);
 
-        assert_eq!(args_strtonum_result(args, b'c', 0, 100), Err(ArgumentValueError::Missing));
-        assert_eq!(args_percentage_result(args, b'c', 0, 100, 100), Err(ArgumentValueError::Missing));
+        assert_eq!(
+            args_strtonum_result(args, b'c', 0, 100),
+            Err(ArgumentValueError::Missing)
+        );
+        assert_eq!(
+            args_percentage_result(args, b'c', 0, 100, 100),
+            Err(ArgumentValueError::Missing)
+        );
 
         let rendered = cmd_list_print((*value).c2rust_unnamed.cmdlist, 0);
         assert_eq!(CStr::from_ptr(rendered).to_bytes(), b"");

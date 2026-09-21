@@ -1,5 +1,5 @@
-pub use crate::src::shared::abi::{__uint32_t, uint32_t};
 use crate::src::shared::abi::*;
+pub use crate::src::shared::abi::{__uint32_t, uint32_t};
 #[inline]
 unsafe extern "C" fn __bswap_32(mut __bsx: __uint32_t) -> __uint32_t {
     return (__bsx & 0xff000000 as __uint32_t) >> 24 as ::core::ffi::c_int
@@ -22,6 +22,9 @@ mod tests {
 
     #[test]
     fn converts_to_network_byte_order() {
-        assert_eq!(unsafe { htonll(0x0123_4567_89ab_cdef) }, 0xefcd_ab89_6745_2301);
+        assert_eq!(
+            unsafe { htonll(0x0123_4567_89ab_cdef) },
+            0xefcd_ab89_6745_2301
+        );
     }
 }

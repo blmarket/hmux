@@ -3,9 +3,9 @@ use crate::src::ffi::libc::{
     calloc, malloc, memcpy, reallocarray, strdup, strndup, vasprintf, vsnprintf,
 };
 use crate::src::log::{fatal, fatalx};
+use crate::src::shared::abi::*;
 pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX, SIZE_MAX};
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
-use crate::src::shared::abi::*;
 
 #[no_mangle]
 pub unsafe extern "C" fn xmalloc(mut size: size_t) -> *mut ::core::ffi::c_void {

@@ -1,8 +1,8 @@
 use crate::src::ffi::libc::{getpid, glob, globfree, snprintf};
 use crate::src::log::fatal;
-pub use crate::src::shared::posix_io::{dirent, glob_t, stat};
-pub use crate::src::shared::abi::{__size_t};
+pub use crate::src::shared::abi::__size_t;
 use crate::src::shared::abi::*;
+pub use crate::src::shared::posix_io::{dirent, glob_t, stat};
 
 #[no_mangle]
 pub unsafe extern "C" fn getdtablecount() -> ::core::ffi::c_int {

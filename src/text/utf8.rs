@@ -9,27 +9,27 @@ use crate::src::log::{fatalx, log_debug};
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get,
 };
-use crate::src::tmux::global_options;
-use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup};
+pub use crate::src::shared::abi::ssize_t;
+use crate::src::shared::abi::*;
 pub use crate::src::shared::command::{cmd_list, cmds};
-pub use crate::src::shared::options::{
-    options, options_array, options_array_item, options_entry, options_value,
-};
 pub use crate::src::shared::ctype::{
     _ISalnum, _ISalpha, _ISblank, _IScntrl, _ISdigit, _ISgraph, _ISlower, _ISprint, _ISpunct,
     _ISspace, _ISupper, _ISxdigit, ctype_code,
 };
-pub use crate::src::shared::utf8::{UTF8_SIZE, wchar_t};
-pub use crate::src::shared::vis::{VIS_DQ};
 pub use crate::src::shared::errno::ERANGE;
-pub use crate::src::shared::limits::__LONG_LONG_MAX__;
-pub use crate::src::shared::abi::{ssize_t};
-pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
-use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
+pub use crate::src::shared::limits::__LONG_LONG_MAX__;
+pub use crate::src::shared::options::{
+    options, options_array, options_array_item, options_entry, options_value,
+};
 use crate::src::shared::style::*;
+pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 use crate::src::shared::utf8::*;
+pub use crate::src::shared::utf8::{wchar_t, UTF8_SIZE};
+pub use crate::src::shared::vis::VIS_DQ;
 use crate::src::text::utf8_decode::{decode_utf8, DecodeResult};
+use crate::src::tmux::global_options;
+use crate::src::xmalloc::{xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -55,7 +55,6 @@ pub struct utf8_width_cache {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct utf8_item {
-    pub index_entry: C2RustUnnamed_2,
     pub index: u_int,
     pub data_entry: C2RustUnnamed_1,
     pub data: [::core::ffi::c_char; 32],
@@ -71,21 +70,12 @@ pub struct C2RustUnnamed_1 {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct C2RustUnnamed_2 {
-    pub rbe_left: *mut utf8_item,
-    pub rbe_right: *mut utf8_item,
-    pub rbe_parent: *mut utf8_item,
-    pub rbe_color: ::core::ffi::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct utf8_data_tree {
     pub rbh_root: *mut utf8_item,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
+#[derive(Default)]
 pub struct utf8_index_tree {
-    pub rbh_root: *mut utf8_item,
+    entries: std::collections::BTreeMap<u_int, *mut utf8_item>,
 }
 
 pub const __WCHAR_MAX: ::core::ffi::c_int = __WCHAR_MAX__;
@@ -2582,194 +2572,30 @@ unsafe extern "C" fn utf8_data_tree_RB_FIND(
 static mut utf8_data_tree: utf8_data_tree = utf8_data_tree {
     rbh_root: ::core::ptr::null::<utf8_item>() as *mut utf8_item,
 };
-unsafe extern "C" fn utf8_index_cmp(
-    mut ui1: *mut utf8_item,
-    mut ui2: *mut utf8_item,
-) -> ::core::ffi::c_int {
-    if (*ui1).index < (*ui2).index {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*ui1).index > (*ui2).index {
-        return 1 as ::core::ffi::c_int;
-    }
-    return 0 as ::core::ffi::c_int;
-}
-unsafe extern "C" fn utf8_index_tree_RB_INSERT_COLOR(
-    mut head: *mut utf8_index_tree,
-    mut elm: *mut utf8_item,
-) {
-    let mut parent: *mut utf8_item = ::core::ptr::null_mut::<utf8_item>();
-    let mut gparent: *mut utf8_item = ::core::ptr::null_mut::<utf8_item>();
-    let mut tmp: *mut utf8_item = ::core::ptr::null_mut::<utf8_item>();
-    loop {
-        parent = (*elm).index_entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).index_entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).index_entry.rbe_parent;
-        if parent == (*gparent).index_entry.rbe_left {
-            tmp = (*gparent).index_entry.rbe_right;
-            if !tmp.is_null() && (*tmp).index_entry.rbe_color == RB_RED {
-                (*tmp).index_entry.rbe_color = RB_BLACK;
-                (*parent).index_entry.rbe_color = RB_BLACK;
-                (*gparent).index_entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).index_entry.rbe_right == elm {
-                    tmp = (*parent).index_entry.rbe_right;
-                    (*parent).index_entry.rbe_right = (*tmp).index_entry.rbe_left;
-                    if !(*parent).index_entry.rbe_right.is_null() {
-                        (*(*tmp).index_entry.rbe_left).index_entry.rbe_parent = parent;
-                    }
-                    (*tmp).index_entry.rbe_parent = (*parent).index_entry.rbe_parent;
-                    if !(*tmp).index_entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).index_entry.rbe_parent).index_entry.rbe_left {
-                            (*(*parent).index_entry.rbe_parent).index_entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).index_entry.rbe_parent).index_entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).index_entry.rbe_left = parent;
-                    (*parent).index_entry.rbe_parent = tmp;
-                    !(*tmp).index_entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).index_entry.rbe_color = RB_BLACK;
-                (*gparent).index_entry.rbe_color = RB_RED;
-                tmp = (*gparent).index_entry.rbe_left;
-                (*gparent).index_entry.rbe_left = (*tmp).index_entry.rbe_right;
-                if !(*gparent).index_entry.rbe_left.is_null() {
-                    (*(*tmp).index_entry.rbe_right).index_entry.rbe_parent = gparent;
-                }
-                (*tmp).index_entry.rbe_parent = (*gparent).index_entry.rbe_parent;
-                if !(*tmp).index_entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).index_entry.rbe_parent).index_entry.rbe_left {
-                        (*(*gparent).index_entry.rbe_parent).index_entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).index_entry.rbe_parent).index_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).index_entry.rbe_right = gparent;
-                (*gparent).index_entry.rbe_parent = tmp;
-                !(*tmp).index_entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).index_entry.rbe_left;
-            if !tmp.is_null() && (*tmp).index_entry.rbe_color == RB_RED {
-                (*tmp).index_entry.rbe_color = RB_BLACK;
-                (*parent).index_entry.rbe_color = RB_BLACK;
-                (*gparent).index_entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).index_entry.rbe_left == elm {
-                    tmp = (*parent).index_entry.rbe_left;
-                    (*parent).index_entry.rbe_left = (*tmp).index_entry.rbe_right;
-                    if !(*parent).index_entry.rbe_left.is_null() {
-                        (*(*tmp).index_entry.rbe_right).index_entry.rbe_parent = parent;
-                    }
-                    (*tmp).index_entry.rbe_parent = (*parent).index_entry.rbe_parent;
-                    if !(*tmp).index_entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).index_entry.rbe_parent).index_entry.rbe_left {
-                            (*(*parent).index_entry.rbe_parent).index_entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).index_entry.rbe_parent).index_entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).index_entry.rbe_right = parent;
-                    (*parent).index_entry.rbe_parent = tmp;
-                    !(*tmp).index_entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).index_entry.rbe_color = RB_BLACK;
-                (*gparent).index_entry.rbe_color = RB_RED;
-                tmp = (*gparent).index_entry.rbe_right;
-                (*gparent).index_entry.rbe_right = (*tmp).index_entry.rbe_left;
-                if !(*gparent).index_entry.rbe_right.is_null() {
-                    (*(*tmp).index_entry.rbe_left).index_entry.rbe_parent = gparent;
-                }
-                (*tmp).index_entry.rbe_parent = (*gparent).index_entry.rbe_parent;
-                if !(*tmp).index_entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).index_entry.rbe_parent).index_entry.rbe_left {
-                        (*(*gparent).index_entry.rbe_parent).index_entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).index_entry.rbe_parent).index_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).index_entry.rbe_left = gparent;
-                (*gparent).index_entry.rbe_parent = tmp;
-                !(*tmp).index_entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).index_entry.rbe_color = RB_BLACK;
-}
-unsafe extern "C" fn utf8_index_tree_RB_INSERT(
-    mut head: *mut utf8_index_tree,
-    mut elm: *mut utf8_item,
+// The old comparator ordered entries only by their unsigned index. BTreeMap's
+// key ordering is identical, and its entry API retains RB_INSERT's behavior of
+// returning the existing item without replacing it on duplicate keys.
+unsafe fn utf8_index_tree_insert(
+    head: *mut utf8_index_tree,
+    elm: *mut utf8_item,
 ) -> *mut utf8_item {
-    let mut tmp: *mut utf8_item = ::core::ptr::null_mut::<utf8_item>();
-    let mut parent: *mut utf8_item = ::core::ptr::null_mut::<utf8_item>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = utf8_index_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).index_entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).index_entry.rbe_right;
-        } else {
-            return tmp;
+    match (*head).entries.entry((*elm).index) {
+        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+            ::core::ptr::null_mut::<utf8_item>()
         }
     }
-    (*elm).index_entry.rbe_parent = parent;
-    (*elm).index_entry.rbe_right = ::core::ptr::null_mut::<utf8_item>();
-    (*elm).index_entry.rbe_left = (*elm).index_entry.rbe_right;
-    (*elm).index_entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).index_entry.rbe_left = elm;
-        } else {
-            (*parent).index_entry.rbe_right = elm;
-        }
-    } else {
-        (*head).rbh_root = elm;
-    }
-    utf8_index_tree_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<utf8_item>();
 }
-unsafe extern "C" fn utf8_index_tree_RB_FIND(
-    mut head: *mut utf8_index_tree,
-    mut elm: *mut utf8_item,
-) -> *mut utf8_item {
-    let mut tmp: *mut utf8_item = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = utf8_index_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).index_entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).index_entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return ::core::ptr::null_mut::<utf8_item>();
+unsafe fn utf8_index_tree_find(head: *mut utf8_index_tree, index: u_int) -> *mut utf8_item {
+    (*head)
+        .entries
+        .get(&index)
+        .copied()
+        .unwrap_or(::core::ptr::null_mut::<utf8_item>())
 }
 static mut utf8_index_tree: utf8_index_tree = utf8_index_tree {
-    rbh_root: ::core::ptr::null::<utf8_item>() as *mut utf8_item,
+    entries: std::collections::BTreeMap::new(),
 };
 static mut utf8_no_width: ::core::ffi::c_int = 0;
 static mut utf8_next_index: u_int = 0;
@@ -2778,12 +2604,6 @@ unsafe extern "C" fn utf8_item_by_data(
     mut size: size_t,
 ) -> *mut utf8_item {
     let mut ui: utf8_item = utf8_item {
-        index_entry: C2RustUnnamed_2 {
-            rbe_left: ::core::ptr::null_mut::<utf8_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_item>(),
-            rbe_color: 0,
-        },
         index: 0,
         data_entry: C2RustUnnamed_1 {
             rbe_left: ::core::ptr::null_mut::<utf8_item>(),
@@ -2804,12 +2624,6 @@ unsafe extern "C" fn utf8_item_by_data(
 }
 unsafe extern "C" fn utf8_item_by_index(mut index: u_int) -> *mut utf8_item {
     let mut ui: utf8_item = utf8_item {
-        index_entry: C2RustUnnamed_2 {
-            rbe_left: ::core::ptr::null_mut::<utf8_item>(),
-            rbe_right: ::core::ptr::null_mut::<utf8_item>(),
-            rbe_parent: ::core::ptr::null_mut::<utf8_item>(),
-            rbe_color: 0,
-        },
         index: 0,
         data_entry: C2RustUnnamed_1 {
             rbe_left: ::core::ptr::null_mut::<utf8_item>(),
@@ -2821,7 +2635,7 @@ unsafe extern "C" fn utf8_item_by_index(mut index: u_int) -> *mut utf8_item {
         size: 0,
     };
     ui.index = index;
-    return utf8_index_tree_RB_FIND(&raw mut utf8_index_tree, &raw mut ui);
+    return utf8_index_tree_find(&raw mut utf8_index_tree, ui.index);
 }
 unsafe extern "C" fn utf8_find_in_width_cache(mut wc: wchar_t) -> *mut utf8_width_item {
     let mut uw: utf8_width_item = utf8_width_item {
@@ -2966,10 +2780,7 @@ unsafe extern "C" fn utf8_add_to_width_cache(mut s: *const ::core::ffi::c_char) 
             return;
         }
         let first = &*ud.offset(0 as ::core::ffi::c_int as isize);
-        let bytes = ::core::slice::from_raw_parts(
-            first.data.as_ptr(),
-            first.size as usize,
-        );
+        let bytes = ::core::slice::from_raw_parts(first.data.as_ptr(), first.size as usize);
         let DecodeResult::Complete { codepoint, len } = decode_utf8(bytes) else {
             free(ud as *mut ::core::ffi::c_void);
             free(copy as *mut ::core::ffi::c_void);
@@ -3051,7 +2862,7 @@ unsafe extern "C" fn utf8_put_item(
     let fresh2 = utf8_next_index;
     utf8_next_index = utf8_next_index.wrapping_add(1);
     (*ui).index = fresh2;
-    utf8_index_tree_RB_INSERT(&raw mut utf8_index_tree, ui);
+    utf8_index_tree_insert(&raw mut utf8_index_tree, ui);
     memcpy(
         &raw mut (*ui).data as *mut ::core::ffi::c_char as *mut ::core::ffi::c_void,
         data as *const ::core::ffi::c_void,
@@ -3318,10 +3129,7 @@ pub unsafe extern "C" fn utf8_has_whitespace(mut ud: *const utf8_data) -> ::core
     if (*ud).size as usize > ::core::mem::size_of::<[u_char; 32]>() {
         return 0 as ::core::ffi::c_int;
     }
-    let bytes = ::core::slice::from_raw_parts(
-        (*ud).data.as_ptr(),
-        (*ud).size as usize,
-    );
+    let bytes = ::core::slice::from_raw_parts((*ud).data.as_ptr(), (*ud).size as usize);
     while offset < (*ud).size as u_int {
         let remaining = &bytes[offset as usize..];
         let DecodeResult::Complete { codepoint, len } = decode_utf8(remaining) else {
@@ -3887,3 +3695,38 @@ pub unsafe extern "C" fn utf8_cstrhas(
 }
 
 pub const __WCHAR_MAX__: ::core::ffi::c_int = 2147483647 as ::core::ffi::c_int;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn utf8_index_tree_matches_index_comparator() {
+        unsafe {
+            let mut tree = utf8_index_tree::default();
+            let mut items: [utf8_item; 4] = [std::mem::zeroed(); 4];
+            items[0].index = 7;
+            items[1].index = 0;
+            items[2].index = u_int::MAX;
+            items[3].index = 7;
+
+            let first = &mut items[0] as *mut utf8_item;
+            let duplicate = &mut items[3] as *mut utf8_item;
+            assert!(utf8_index_tree_insert(&raw mut tree, first).is_null());
+            assert!(utf8_index_tree_insert(&raw mut tree, &mut items[1]).is_null());
+            assert!(utf8_index_tree_insert(&raw mut tree, &mut items[2]).is_null());
+            assert_eq!(
+                utf8_index_tree_insert(&raw mut tree, duplicate),
+                first,
+                "duplicate indexes keep the original item"
+            );
+
+            assert_eq!(
+                tree.entries.keys().copied().collect::<Vec<_>>(),
+                vec![0, 7, u_int::MAX]
+            );
+            assert_eq!(utf8_index_tree_find(&raw mut tree, 7), first);
+            assert!(utf8_index_tree_find(&raw mut tree, 8).is_null());
+        }
+    }
+}

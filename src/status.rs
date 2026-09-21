@@ -1,6 +1,5 @@
 use crate::src::cmd_queue::{cmdq_append, cmdq_get_callback1};
 use crate::src::ffi::libc::{free, memcpy, memset, strcmp, strlen};
-use crate::src::reactor::{event_add, event_del, event_initialized, event_set};
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_time,
     format_free,
@@ -13,39 +12,64 @@ use crate::src::options::{
     options_string_to_style,
 };
 use crate::src::prompt::{
-    prompt_closed, prompt_create, prompt_draw, prompt_free, prompt_incremental_start,
-    prompt_key, prompt_mouse, prompt_set_options, prompt_update,
+    prompt_closed, prompt_create, prompt_draw, prompt_free, prompt_incremental_start, prompt_key,
+    prompt_mouse, prompt_set_options, prompt_update,
 };
+use crate::src::reactor::{event_add, event_del, event_initialized, event_set};
 use crate::src::screen::{screen_free, screen_init, screen_resize};
 use crate::src::screen_write::{
     screen_write_cursormove, screen_write_fast_copy, screen_write_putc, screen_write_start,
     screen_write_stop,
 };
-use crate::src::server::server_add_message;
 pub use crate::src::server::clients;
+use crate::src::server::server_add_message;
 use crate::src::server_client::server_client_clear_overlay;
-use crate::src::style::{style_apply, style_ranges_free, style_ranges_get_range, style_ranges_init};
+pub use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
+use crate::src::style::{
+    style_apply, style_ranges_free, style_ranges_get_range, style_ranges_init,
+};
 use crate::src::tmux::global_s_options;
 use crate::src::xmalloc::{xcalloc, xmalloc, xvasprintf};
-pub use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 
-pub use crate::src::shared::arguments::{args};
+use crate::src::shared::abi::*;
+pub use crate::src::shared::arguments::args;
+use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
     client, client_entry, client_file, client_file_cb, client_file_entry, client_files,
     overlay_check_cb, overlay_draw_cb, overlay_free_cb, overlay_key_cb, overlay_mode_cb,
     overlay_resize_cb,
 };
+pub use crate::src::shared::client::{
+    CLIENT_ALLREDRAWFLAGS, CLIENT_CONTROL, CLIENT_REDRAWBORDERS, CLIENT_REDRAWMENU,
+    CLIENT_REDRAWOVERLAY, CLIENT_REDRAWSTATUS, CLIENT_REDRAWSTATUSALWAYS, CLIENT_REDRAWWINDOW,
+    CLIENT_STATUSFORCE, CLIENT_STATUSOFF,
+};
+use crate::src::shared::colour::*;
+use crate::src::shared::command::*;
 pub use crate::src::shared::command::{
     cmd_find_state, cmd_list, cmdq_cb, cmdq_item, cmdq_list, cmds,
 };
-pub use crate::src::shared::control::{control_state};
+pub use crate::src::shared::control::control_state;
+use crate::src::shared::display::*;
+pub use crate::src::shared::display::{visible_range, visible_ranges};
+pub use crate::src::shared::environment::environ;
 pub use crate::src::shared::format::{format_job_tree, format_tree};
+pub use crate::src::shared::format::{FORMAT_FORCE, FORMAT_NONE, FORMAT_STATUS};
+use crate::src::shared::grid::*;
+pub use crate::src::shared::hyperlinks::hyperlinks;
 pub use crate::src::shared::input::{input_ctx, input_request, input_requests};
+use crate::src::shared::key::*;
 pub use crate::src::shared::key::{
     key_binding, key_binding_entry, key_bindings, key_event, key_table, key_table_entry,
 };
+pub use crate::src::shared::layout::layout_geometry;
+use crate::src::shared::layout::*;
 pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cells};
-pub use crate::src::shared::menu::{menu_data};
+pub use crate::src::shared::menu::menu_data;
+use crate::src::shared::message::*;
+pub use crate::src::shared::mouse::{
+    mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG,
+};
 pub use crate::src::shared::options::{
     options, options_array, options_array_item, options_entry, options_value,
 };
@@ -53,62 +77,40 @@ pub use crate::src::shared::pane::{
     window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
     window_pane_tree_entry, window_pane_zentry, window_panes,
 };
-pub use crate::src::shared::process::{tmuxpeer};
-pub use crate::src::shared::prompt::{prompt};
-pub use crate::src::shared::redraw::{redraw_scene};
+pub use crate::src::shared::pane::{
+    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
+};
+pub use crate::src::shared::process::tmuxpeer;
+pub use crate::src::shared::prompt::prompt;
+use crate::src::shared::prompt::*;
+pub use crate::src::shared::prompt::{
+    prompt_free_cb, prompt_input_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE,
+    PROMPT_INCREMENTAL, PROMPT_NOFREEZE, PROMPT_SINGLE,
+};
+pub use crate::src::shared::redraw::redraw_scene;
+pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
+pub use crate::src::shared::screen_write::{screen_write_citem, screen_write_cline};
 pub use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
 pub use crate::src::shared::session::{session, session_entry, session_gentry};
-pub use crate::src::shared::spawn::{spawn_editor_state};
+pub use crate::src::shared::spawn::spawn_editor_state;
 pub use crate::src::shared::status::{status_line, status_prompt_input_cb};
+use crate::src::shared::style::*;
+use crate::src::shared::terminal::*;
 pub use crate::src::shared::tty::{
     tty, tty_code, tty_ctx, tty_ctx_c2rust_unnamed, tty_ctx_c2rust_unnamed_data,
-    tty_ctx_c2rust_unnamed_sel, tty_ctx_redraw_cb, tty_ctx_set_client_cb, tty_key,
-    tty_style_ctx, tty_term, tty_term_entry,
+    tty_ctx_c2rust_unnamed_sel, tty_ctx_redraw_cb, tty_ctx_set_client_cb, tty_key, tty_style_ctx,
+    tty_term, tty_term_entry,
 };
+pub use crate::src::shared::tty::{TTY_FREEZE, TTY_NOCURSOR};
+pub use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
 pub use crate::src::shared::window::{
     window, window_alerts_entry, window_entry, window_mode, window_mode_entry,
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-pub use crate::src::shared::environment::{environ};
-pub use crate::src::shared::format::{FORMAT_FORCE, FORMAT_NONE, FORMAT_STATUS};
-pub use crate::src::shared::prompt::{
-    PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_INCREMENTAL, PROMPT_NOFREEZE,
-    PROMPT_SINGLE, prompt_free_cb, prompt_input_cb, prompt_result,
-};
-pub use crate::src::shared::variadic::{__builtin_va_list, __va_list_tag, va_list};
-pub use crate::src::shared::screen::{screen, screen_sel, screen_titles};
-pub use crate::src::shared::screen_write::{screen_write_citem, screen_write_cline};
-pub use crate::src::shared::hyperlinks::{hyperlinks};
-pub use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resize_entry, window_pane_resizes,
-};
-pub use crate::src::shared::tty::{TTY_FREEZE, TTY_NOCURSOR};
-pub use crate::src::shared::client::{
-    CLIENT_ALLREDRAWFLAGS, CLIENT_CONTROL, CLIENT_REDRAWBORDERS, CLIENT_REDRAWMENU,
-    CLIENT_REDRAWOVERLAY, CLIENT_REDRAWSTATUS, CLIENT_REDRAWSTATUSALWAYS, CLIENT_REDRAWWINDOW,
-    CLIENT_STATUSFORCE, CLIENT_STATUSOFF,
-};
-pub use crate::src::shared::display::{visible_range, visible_ranges};
-pub use crate::src::shared::layout::{layout_geometry};
-pub use crate::src::shared::mouse::{
-    MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG, mouse_event,
-};
-use crate::src::shared::client::*;
-use crate::src::shared::prompt::*;
-use crate::src::shared::terminal::*;
-use crate::src::shared::display::*;
-use crate::src::shared::layout::*;
-use crate::src::shared::message::*;
-use crate::src::shared::abi::*;
-use crate::src::shared::colour::*;
-use crate::src::shared::command::*;
-use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
-use crate::src::shared::style::*;
 
-pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
+pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 

@@ -26,7 +26,16 @@ fn owner_preserves_missing_valueless_flags_order_and_bytes() {
         .entries()
         .map(|entry| entry.name_bytes().to_vec())
         .collect();
-    assert_eq!(names, vec![b"a".to_vec(), b"a\xff".to_vec(), b"b".to_vec(), b"empty".to_vec(), b"\xff".to_vec()]);
+    assert_eq!(
+        names,
+        vec![
+            b"a".to_vec(),
+            b"a\xff".to_vec(),
+            b"b".to_vec(),
+            b"empty".to_vec(),
+            b"\xff".to_vec()
+        ]
+    );
 
     assert!(env.set(b"bad\0name", 0, b"value").is_err());
     assert!(env.find_bytes(b"bad\0name").is_err());
