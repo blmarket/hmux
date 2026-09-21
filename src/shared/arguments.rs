@@ -2,6 +2,7 @@
 
 use super::abi::{u_char, u_int};
 use super::command::{cmd, cmd_list, cmd_parse_input};
+use std::collections::BTreeMap;
 pub type args_type = ::core::ffi::c_uint;
 pub const ARGS_COMMANDS: args_type = 2;
 pub const ARGS_STRING: args_type = 1;
@@ -65,7 +66,13 @@ pub union args_value_c2rust_unnamed {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct args_tree {
-    pub rbh_root: *mut args_entry,
+    pub entries: *mut args_tree_storage,
+}
+
+/// Rust-owned ordering storage for an argument tree's C-allocated entries.
+#[derive(Default)]
+pub struct args_tree_storage {
+    pub(crate) entries: BTreeMap<u_char, *mut args_entry>,
 }
 
 #[derive(Copy, Clone)]

@@ -1162,7 +1162,7 @@ fn original_copies_match() {
     record!(
         "src/arguments.rs::args_tree",
         hmux2::src::arguments::args_tree,
-        [rbh_root]
+        [entries]
     );
     record!(
         "src/arguments.rs::args_value",

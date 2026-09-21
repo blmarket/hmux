@@ -14,8 +14,8 @@ use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
-    args, args_entry, args_entry_entry, args_parse, args_parse_cb, args_tree, args_value,
-    args_value_c2rust_unnamed, args_value_entry, args_values,
+    args, args_entry, args_entry_entry, args_parse, args_parse_cb, args_tree, args_tree_storage,
+    args_value, args_value_c2rust_unnamed, args_value_entry, args_values,
 };
 use crate::src::shared::client::*;
 pub use crate::src::shared::client::{
@@ -111,519 +111,174 @@ impl ArgumentValueError {
         }
     }
 }
-unsafe extern "C" fn args_tree_RB_INSERT(
-    mut head: *mut args_tree,
-    mut elm: *mut args_entry,
-) -> *mut args_entry {
-    let mut tmp: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    let mut parent: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = args_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
+unsafe fn args_tree_find(head: *mut args_tree, flag: u_char) -> *mut args_entry {
+    if head.is_null() || (*head).entries.is_null() {
+        return ::core::ptr::null_mut::<args_entry>();
+    }
+    (*(*head).entries)
+        .entries
+        .get(&flag)
+        .copied()
+        .unwrap_or(::core::ptr::null_mut::<args_entry>())
+}
+
+unsafe fn args_tree_insert(head: *mut args_tree, elm: *mut args_entry) -> *mut args_entry {
+    if head.is_null() || elm.is_null() {
+        return ::core::ptr::null_mut::<args_entry>();
+    }
+    if (*head).entries.is_null() {
+        (*head).entries = Box::into_raw(Box::new(args_tree_storage::default()));
+    }
+    match (*(*head).entries).entries.entry((*elm).flag) {
+        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            // Preserve the C ABI of args_next, which receives only an entry.
+            // The legacy parent slot is now a non-owning storage back-pointer;
+            // the BTreeMap is the sole source of ordering and membership.
+            (*elm).entry.rbe_parent = (*head).entries as *mut args_entry;
+            entry.insert(elm);
+            ::core::ptr::null_mut::<args_entry>()
         }
     }
-    (*elm).entry.rbe_parent = parent;
-    (*elm).entry.rbe_right = ::core::ptr::null_mut::<args_entry>();
-    (*elm).entry.rbe_left = (*elm).entry.rbe_right;
-    (*elm).entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).entry.rbe_left = elm;
-        } else {
-            (*parent).entry.rbe_right = elm;
-        }
+}
+
+unsafe fn args_tree_remove(head: *mut args_tree, elm: *mut args_entry) -> *mut args_entry {
+    if head.is_null() || (*head).entries.is_null() || elm.is_null() {
+        return ::core::ptr::null_mut::<args_entry>();
+    }
+    let key = (*elm).flag;
+    if (*(*head).entries).entries.get(&key).copied() != Some(elm) {
+        return ::core::ptr::null_mut::<args_entry>();
+    }
+    let removed = (*(*head).entries)
+        .entries
+        .remove(&key)
+        .unwrap_or(::core::ptr::null_mut::<args_entry>());
+    (*elm).entry.rbe_parent = ::core::ptr::null_mut::<args_entry>();
+    removed
+}
+
+unsafe fn args_tree_minmax(head: *mut args_tree, val: ::core::ffi::c_int) -> *mut args_entry {
+    if head.is_null() || (*head).entries.is_null() {
+        return ::core::ptr::null_mut::<args_entry>();
+    }
+    let entry = if val < 0 {
+        (*(*head).entries).entries.values().next()
     } else {
-        (*head).rbh_root = elm;
-    }
-    args_tree_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<args_entry>();
-}
-unsafe extern "C" fn args_tree_RB_FIND(
-    mut head: *mut args_tree,
-    mut elm: *mut args_entry,
-) -> *mut args_entry {
-    let mut tmp: *mut args_entry = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = args_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return ::core::ptr::null_mut::<args_entry>();
-}
-unsafe extern "C" fn args_tree_RB_INSERT_COLOR(mut head: *mut args_tree, mut elm: *mut args_entry) {
-    let mut parent: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    let mut gparent: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    let mut tmp: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    loop {
-        parent = (*elm).entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).entry.rbe_parent;
-        if parent == (*gparent).entry.rbe_left {
-            tmp = (*gparent).entry.rbe_right;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_right == elm {
-                    tmp = (*parent).entry.rbe_right;
-                    (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                    if !(*parent).entry.rbe_right.is_null() {
-                        (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_left = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_left;
-                (*gparent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*gparent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).entry.rbe_left;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_left == elm {
-                    tmp = (*parent).entry.rbe_left;
-                    (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                    if !(*parent).entry.rbe_left.is_null() {
-                        (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_right = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_right;
-                (*gparent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*gparent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).entry.rbe_color = RB_BLACK;
-}
-unsafe extern "C" fn args_tree_RB_NEXT(mut elm: *mut args_entry) -> *mut args_entry {
-    if !(*elm).entry.rbe_right.is_null() {
-        elm = (*elm).entry.rbe_right;
-        while !(*elm).entry.rbe_left.is_null() {
-            elm = (*elm).entry.rbe_left;
-        }
-    } else if !(*elm).entry.rbe_parent.is_null() && elm == (*(*elm).entry.rbe_parent).entry.rbe_left
-    {
-        elm = (*elm).entry.rbe_parent;
-    } else {
-        while !(*elm).entry.rbe_parent.is_null()
-            && elm == (*(*elm).entry.rbe_parent).entry.rbe_right
-        {
-            elm = (*elm).entry.rbe_parent;
-        }
-        elm = (*elm).entry.rbe_parent;
-    }
-    return elm;
-}
-unsafe extern "C" fn args_tree_RB_REMOVE(
-    mut head: *mut args_tree,
-    mut elm: *mut args_entry,
-) -> *mut args_entry {
-    let mut current_block: u64;
-    let mut child: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    let mut parent: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    let mut old: *mut args_entry = elm;
-    let mut color: ::core::ffi::c_int = 0;
-    if (*elm).entry.rbe_left.is_null() {
-        child = (*elm).entry.rbe_right;
-        current_block = 7245201122033322888;
-    } else if (*elm).entry.rbe_right.is_null() {
-        child = (*elm).entry.rbe_left;
-        current_block = 7245201122033322888;
-    } else {
-        let mut left: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-        elm = (*elm).entry.rbe_right;
-        loop {
-            left = (*elm).entry.rbe_left;
-            if left.is_null() {
-                break;
-            }
-            elm = left;
-        }
-        child = (*elm).entry.rbe_right;
-        parent = (*elm).entry.rbe_parent;
-        color = (*elm).entry.rbe_color;
-        if !child.is_null() {
-            (*child).entry.rbe_parent = parent;
-        }
-        if !parent.is_null() {
-            if (*parent).entry.rbe_left == elm {
-                (*parent).entry.rbe_left = child;
-            } else {
-                (*parent).entry.rbe_right = child;
-            }
-        } else {
-            (*head).rbh_root = child;
-        }
-        if (*elm).entry.rbe_parent == old {
-            parent = elm;
-        }
-        (*elm).entry = (*old).entry;
-        if !(*old).entry.rbe_parent.is_null() {
-            if (*(*old).entry.rbe_parent).entry.rbe_left == old {
-                (*(*old).entry.rbe_parent).entry.rbe_left = elm;
-            } else {
-                (*(*old).entry.rbe_parent).entry.rbe_right = elm;
-            }
-        } else {
-            (*head).rbh_root = elm;
-        }
-        (*(*old).entry.rbe_left).entry.rbe_parent = elm;
-        if !(*old).entry.rbe_right.is_null() {
-            (*(*old).entry.rbe_right).entry.rbe_parent = elm;
-        }
-        if !parent.is_null() {
-            left = parent;
-            loop {
-                left = (*left).entry.rbe_parent;
-                if left.is_null() {
-                    break;
-                }
-            }
-        }
-        current_block = 10138408787860760292;
-    }
-    match current_block {
-        7245201122033322888 => {
-            parent = (*elm).entry.rbe_parent;
-            color = (*elm).entry.rbe_color;
-            if !child.is_null() {
-                (*child).entry.rbe_parent = parent;
-            }
-            if !parent.is_null() {
-                if (*parent).entry.rbe_left == elm {
-                    (*parent).entry.rbe_left = child;
-                } else {
-                    (*parent).entry.rbe_right = child;
-                }
-            } else {
-                (*head).rbh_root = child;
-            }
-        }
-        _ => {}
-    }
-    if color == RB_BLACK {
-        args_tree_RB_REMOVE_COLOR(head, parent, child);
-    }
-    return old;
-}
-unsafe extern "C" fn args_tree_RB_REMOVE_COLOR(
-    mut head: *mut args_tree,
-    mut parent: *mut args_entry,
-    mut elm: *mut args_entry,
-) {
-    let mut tmp: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    while (elm.is_null() || (*elm).entry.rbe_color == RB_BLACK) && elm != (*head).rbh_root {
-        if (*parent).entry.rbe_left == elm {
-            tmp = (*parent).entry.rbe_right;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_right;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK
-                {
-                    let mut oleft: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-                    oleft = (*tmp).entry.rbe_left;
-                    if !oleft.is_null() {
-                        (*oleft).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oleft = (*tmp).entry.rbe_left;
-                    (*tmp).entry.rbe_left = (*oleft).entry.rbe_right;
-                    if !(*tmp).entry.rbe_left.is_null() {
-                        (*(*oleft).entry.rbe_right).entry.rbe_parent = tmp;
-                    }
-                    (*oleft).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oleft).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oleft;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oleft;
-                        }
-                    } else {
-                        (*head).rbh_root = oleft;
-                    }
-                    (*oleft).entry.rbe_right = tmp;
-                    (*tmp).entry.rbe_parent = oleft;
-                    !(*oleft).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_right;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        } else {
-            tmp = (*parent).entry.rbe_left;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_left;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_left.is_null()
-                    || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK
-                {
-                    let mut oright: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-                    oright = (*tmp).entry.rbe_right;
-                    if !oright.is_null() {
-                        (*oright).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oright = (*tmp).entry.rbe_right;
-                    (*tmp).entry.rbe_right = (*oright).entry.rbe_left;
-                    if !(*tmp).entry.rbe_right.is_null() {
-                        (*(*oright).entry.rbe_left).entry.rbe_parent = tmp;
-                    }
-                    (*oright).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oright).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oright;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oright;
-                        }
-                    } else {
-                        (*head).rbh_root = oright;
-                    }
-                    (*oright).entry.rbe_left = tmp;
-                    (*tmp).entry.rbe_parent = oright;
-                    !(*oright).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_left;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        }
-    }
-    if !elm.is_null() {
-        (*elm).entry.rbe_color = RB_BLACK;
-    }
-}
-unsafe extern "C" fn args_tree_RB_MINMAX(
-    mut head: *mut args_tree,
-    mut val: ::core::ffi::c_int,
-) -> *mut args_entry {
-    let mut tmp: *mut args_entry = (*head).rbh_root;
-    let mut parent: *mut args_entry = ::core::ptr::null_mut::<args_entry>();
-    while !tmp.is_null() {
-        parent = tmp;
-        if val < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else {
-            tmp = (*tmp).entry.rbe_right;
-        }
-    }
-    return parent;
-}
-unsafe extern "C" fn args_cmp(
-    mut a1: *mut args_entry,
-    mut a2: *mut args_entry,
-) -> ::core::ffi::c_int {
-    return (*a1).flag as ::core::ffi::c_int - (*a2).flag as ::core::ffi::c_int;
-}
-unsafe extern "C" fn args_find(mut args: *mut args, mut flag: u_char) -> *mut args_entry {
-    let mut entry: args_entry = args_entry {
-        flag: 0,
-        values: args_values {
-            tqh_first: ::core::ptr::null_mut::<args_value>(),
-            tqh_last: ::core::ptr::null_mut::<*mut args_value>(),
-        },
-        count: 0,
-        flags: 0,
-        entry: args_entry_entry {
-            rbe_left: ::core::ptr::null_mut::<args_entry>(),
-            rbe_right: ::core::ptr::null_mut::<args_entry>(),
-            rbe_parent: ::core::ptr::null_mut::<args_entry>(),
-            rbe_color: 0,
-        },
+        (*(*head).entries).entries.values().next_back()
     };
-    entry.flag = flag;
-    return args_tree_RB_FIND(&raw mut (*args).tree, &raw mut entry);
+    entry
+        .copied()
+        .unwrap_or(::core::ptr::null_mut::<args_entry>())
+}
+
+unsafe fn args_tree_next(head: *mut args_tree, elm: *mut args_entry) -> *mut args_entry {
+    if head.is_null() || (*head).entries.is_null() || elm.is_null() {
+        return ::core::ptr::null_mut::<args_entry>();
+    }
+    args_tree_next_storage((*head).entries, elm)
+}
+
+unsafe fn args_tree_next_storage(
+    storage: *mut args_tree_storage,
+    elm: *mut args_entry,
+) -> *mut args_entry {
+    if storage.is_null() || elm.is_null() {
+        return ::core::ptr::null_mut::<args_entry>();
+    }
+    (*storage)
+        .entries
+        .range((
+            std::ops::Bound::Excluded((*elm).flag),
+            std::ops::Bound::Unbounded,
+        ))
+        .next()
+        .map(|(_, entry)| *entry)
+        .unwrap_or(::core::ptr::null_mut::<args_entry>())
+}
+
+unsafe fn args_tree_next_from_entry(elm: *mut args_entry) -> *mut args_entry {
+    if elm.is_null() {
+        return ::core::ptr::null_mut::<args_entry>();
+    }
+    args_tree_next_storage((*elm).entry.rbe_parent as *mut args_tree_storage, elm)
+}
+
+#[cfg(test)]
+mod args_tree_tests {
+    use super::*;
+    use crate::src::shared::tree::RB_INF;
+
+    unsafe fn new_entry(flag: u_char) -> *mut args_entry {
+        Box::into_raw(Box::new(args_entry {
+            flag,
+            values: args_values {
+                tqh_first: ::core::ptr::null_mut::<args_value>(),
+                tqh_last: ::core::ptr::null_mut::<*mut args_value>(),
+            },
+            count: 0,
+            flags: 0,
+            entry: args_entry_entry {
+                rbe_left: ::core::ptr::null_mut::<args_entry>(),
+                rbe_right: ::core::ptr::null_mut::<args_entry>(),
+                rbe_parent: ::core::ptr::null_mut::<args_entry>(),
+                rbe_color: 0,
+            },
+        }))
+    }
+
+    #[test]
+    fn args_tree_matches_unsigned_flag_order_and_duplicate_behavior() {
+        unsafe {
+            // args_cmp compared u_char values after promotion to c_int, so the
+            // Rust key must order 0..=255 rather than signed bytes.
+            let flags = [0x80, 0, 0xff, 1];
+            let mut head = args_tree {
+                entries: Box::into_raw(Box::new(args_tree_storage::default())),
+            };
+            let mut items = Vec::new();
+            for flag in flags {
+                let item = new_entry(flag);
+                assert!(args_tree_insert(&mut head, item).is_null());
+                items.push(item);
+            }
+
+            let duplicate = new_entry(0x80);
+            assert_eq!(args_tree_insert(&mut head, duplicate), items[0]);
+            drop(Box::from_raw(duplicate));
+            assert_eq!(args_tree_find(&mut head, 0x80), items[0]);
+
+            assert_eq!((*args_tree_minmax(&mut head, RB_NEGINF)).flag, 0);
+            assert_eq!((*args_tree_minmax(&mut head, RB_INF)).flag, 0xff);
+
+            let mut ordered = Vec::new();
+            let mut item = args_tree_minmax(&mut head, RB_NEGINF);
+            while !item.is_null() {
+                ordered.push((*item).flag);
+                // Exercise the public args_next-compatible path, which has no
+                // tree-head argument and therefore uses the owner back-pointer.
+                args_next(&raw mut item);
+            }
+            assert_eq!(ordered, vec![0, 1, 0x80, 0xff]);
+
+            let removed = args_tree_remove(&mut head, items[2]);
+            assert_eq!(removed, items[2]);
+            assert!(args_tree_find(&mut head, 0xff).is_null());
+            drop(Box::from_raw(removed));
+
+            for (index, item) in items.into_iter().enumerate() {
+                if index != 2 {
+                    drop(Box::from_raw(item));
+                }
+            }
+            drop(Box::from_raw(head.entries));
+            head.entries = ::core::ptr::null_mut::<args_tree_storage>();
+        }
+    }
+}
+
+unsafe extern "C" fn args_find(args: *mut args, flag: u_char) -> *mut args_entry {
+    args_tree_find(&raw mut (*args).tree, flag)
 }
 
 unsafe fn args_last_value(args: *mut args, flag: u_char) -> Option<*mut args_value> {
@@ -693,7 +348,7 @@ unsafe extern "C" fn args_value_as_string(
 pub unsafe extern "C" fn args_create() -> *mut args {
     let mut args: *mut args = ::core::ptr::null_mut::<args>();
     args = xcalloc(1 as size_t, ::core::mem::size_of::<args>() as size_t) as *mut args;
-    (*args).tree.rbh_root = ::core::ptr::null_mut::<args_entry>();
+    (*args).tree.entries = Box::into_raw(Box::new(args_tree_storage::default()));
     return args;
 }
 unsafe extern "C" fn args_parse_flag_argument(
@@ -1078,7 +733,7 @@ pub unsafe extern "C" fn args_copy(
         b"args_copy\0" as *const u8 as *const ::core::ffi::c_char,
     );
     new_args = args_create();
-    entry = args_tree_RB_MINMAX(&raw mut (*args).tree, RB_NEGINF);
+    entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     while !entry.is_null() {
         if (*entry).values.tqh_first.is_null() {
             i = 0 as u_int;
@@ -1101,7 +756,7 @@ pub unsafe extern "C" fn args_copy(
                 value = (*value).entry.tqe_next;
             }
         }
-        entry = args_tree_RB_NEXT(entry);
+        entry = args_tree_next(&raw mut (*args).tree, entry);
     }
     if (*args).count == 0 as u_int {
         return new_args;
@@ -1154,12 +809,12 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
     let mut value1: *mut args_value = ::core::ptr::null_mut::<args_value>();
     args_free_values((*args).values, (*args).count);
     free((*args).values as *mut ::core::ffi::c_void);
-    entry = args_tree_RB_MINMAX(&raw mut (*args).tree, RB_NEGINF);
+    entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     while !entry.is_null() && {
-        entry1 = args_tree_RB_NEXT(entry);
+        entry1 = args_tree_next(&raw mut (*args).tree, entry);
         1 as ::core::ffi::c_int != 0
     } {
-        args_tree_RB_REMOVE(&raw mut (*args).tree, entry);
+        args_tree_remove(&raw mut (*args).tree, entry);
         value = (*entry).values.tqh_first;
         while !value.is_null() && {
             value1 = (*value).entry.tqe_next;
@@ -1177,6 +832,10 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
         }
         free(entry as *mut ::core::ffi::c_void);
         entry = entry1;
+    }
+    if !(*args).tree.entries.is_null() {
+        drop(Box::from_raw((*args).tree.entries));
+        (*args).tree.entries = ::core::ptr::null_mut::<args_tree_storage>();
     }
     free(args as *mut ::core::ffi::c_void);
 }
@@ -1292,7 +951,7 @@ pub unsafe extern "C" fn args_print(mut args: *mut args) -> *mut ::core::ffi::c_
     let mut value: *mut args_value = ::core::ptr::null_mut::<args_value>();
     len = 1 as size_t;
     buf = xcalloc(1 as size_t, len) as *mut ::core::ffi::c_char;
-    entry = args_tree_RB_MINMAX(&raw mut (*args).tree, RB_NEGINF);
+    entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     while !entry.is_null() {
         if !((*entry).flags & ARGS_ENTRY_OPTIONAL_VALUE != 0) {
             if (*entry).values.tqh_first.is_null() {
@@ -1315,9 +974,9 @@ pub unsafe extern "C" fn args_print(mut args: *mut args) -> *mut ::core::ffi::c_
                 }
             }
         }
-        entry = args_tree_RB_NEXT(entry);
+        entry = args_tree_next(&raw mut (*args).tree, entry);
     }
-    entry = args_tree_RB_MINMAX(&raw mut (*args).tree, RB_NEGINF);
+    entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     while !entry.is_null() {
         if (*entry).flags & ARGS_ENTRY_OPTIONAL_VALUE != 0 {
             if *buf as ::core::ffi::c_int != '\0' as i32 {
@@ -1359,7 +1018,7 @@ pub unsafe extern "C" fn args_print(mut args: *mut args) -> *mut ::core::ffi::c_
             }
             last = entry;
         }
-        entry = args_tree_RB_NEXT(entry);
+        entry = args_tree_next(&raw mut (*args).tree, entry);
     }
     if !last.is_null() && (*last).flags & ARGS_ENTRY_OPTIONAL_VALUE != 0 {
         args_print_add(
@@ -1484,7 +1143,7 @@ pub unsafe extern "C" fn args_set(
         (*entry).flags = flags;
         (*entry).values.tqh_first = ::core::ptr::null_mut::<args_value>();
         (*entry).values.tqh_last = &raw mut (*entry).values.tqh_first;
-        args_tree_RB_INSERT(&raw mut (*args).tree, entry);
+        args_tree_insert(&raw mut (*args).tree, entry);
     } else {
         (*entry).count = (*entry).count.wrapping_add(1);
     }
@@ -1522,7 +1181,7 @@ pub unsafe extern "C" fn args_first(
     mut args: *mut args,
     mut entry: *mut *mut args_entry,
 ) -> u_char {
-    *entry = args_tree_RB_MINMAX(&raw mut (*args).tree, RB_NEGINF);
+    *entry = args_tree_minmax(&raw mut (*args).tree, RB_NEGINF);
     if (*entry).is_null() {
         return 0 as u_char;
     }
@@ -1530,7 +1189,7 @@ pub unsafe extern "C" fn args_first(
 }
 #[no_mangle]
 pub unsafe extern "C" fn args_next(mut entry: *mut *mut args_entry) -> u_char {
-    *entry = args_tree_RB_NEXT(*entry);
+    *entry = args_tree_next_from_entry(*entry);
     if (*entry).is_null() {
         return 0 as u_char;
     }
