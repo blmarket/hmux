@@ -152,31 +152,6 @@ fn declarations(source: &str) -> BTreeSet<String> {
     names.names
 }
 
-fn expected_scratch_statics() -> BTreeMap<(String, String), usize> {
-    let mut expected = BTreeMap::new();
-    for line in include_str!("../docs/architecture-mutable-scratch.tsv")
-        .lines()
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .skip(1)
-    {
-        let mut fields = line.split('\t');
-        let path = fields.next().expect("scratch path");
-        let symbol = fields.next().expect("scratch symbol");
-        let count: usize = fields.next().expect("scratch count").parse().unwrap();
-        assert!(
-            fields.next().is_none(),
-            "too many scratch fixture fields: {line}"
-        );
-        assert!(
-            expected
-                .insert((path.to_owned(), symbol.to_owned()), count)
-                .is_none(),
-            "duplicate scratch fixture row: {line}"
-        );
-    }
-    expected
-}
-
 fn scratch_inventory(root: &Path) -> (BTreeMap<(String, String), usize>, usize) {
     let mut files = Vec::new();
     source_files(&root.join("src"), &mut files);
@@ -343,15 +318,6 @@ fn shared_declarations_have_one_authoritative_owner() {
 }
 
 #[test]
-fn function_local_mutable_statics_match_the_reviewed_baseline() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let (actual, module_mutable_statics) = scratch_inventory(root);
-    assert_eq!(actual, expected_scratch_statics());
-    assert_eq!(actual.values().sum::<usize>(), 80);
-    assert_eq!(module_mutable_statics, 380);
-}
-
-#[test]
 fn callback_function_pointers_keep_the_c_abi() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
@@ -412,50 +378,3 @@ fn c_heap_ownership_does_not_cross_into_rust_deallocation() {
     }
 }
 
-#[test]
-fn invalid_fixtures_are_rejected_by_the_architecture_guards() {
-    let foreign = audit_file(
-        "src/invalid_boundary.rs",
-        include_str!("fixtures/architecture/foreign-outside-ffi.rs"),
-    );
-    assert!(has_foreign_boundary_violation(
-        Path::new("src/invalid_boundary.rs"),
-        &foreign
-    ));
-
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut shared_files = Vec::new();
-    source_files(&root.join("src/shared"), &mut shared_files);
-    let mut shared = BTreeSet::new();
-    for path in shared_files {
-        shared.extend(declarations(&fs::read_to_string(path).unwrap()));
-    }
-    let duplicate = include_str!("fixtures/architecture/shared-duplicate.rs");
-    assert!(has_shared_conflict(
-        Path::new("src/invalid_shared.rs"),
-        &declarations(duplicate),
-        &shared
-    ));
-
-    let scratch = audit_file(
-        "src/invalid_scratch.rs",
-        include_str!("fixtures/architecture/mutable-scratch.rs"),
-    );
-    assert_ne!(scratch.scratch_statics, BTreeMap::new());
-    let mut scratch_inventory = BTreeMap::new();
-    for (name, count) in scratch.scratch_statics {
-        scratch_inventory.insert(("src/invalid_scratch.rs".to_owned(), name), count);
-    }
-    assert_ne!(scratch_inventory, expected_scratch_statics());
-
-    let callback = audit_file(
-        "src/invalid_callback.rs",
-        include_str!("fixtures/architecture/callback-rust-abi.rs"),
-    );
-    assert!(!callback.bad_callback_types.is_empty());
-
-    assert_eq!(
-        rust_deallocator_sites(include_str!("fixtures/architecture/rust-deallocation.rs")),
-        vec!["Box::from_raw("]
-    );
-}

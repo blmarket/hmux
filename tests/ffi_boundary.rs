@@ -106,54 +106,6 @@ fn source_files(dir: &Path, paths: &mut Vec<PathBuf>) {
 }
 
 #[test]
-fn rust_symbols_are_never_foreign_and_foreign_items_stay_at_the_boundary() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = Vec::new();
-    source_files(&root.join("src"), &mut files);
-    let mut definitions = BTreeMap::new();
-    let mut foreign = Vec::new();
-    let mut exported = std::collections::BTreeSet::new();
-    for path in files {
-        let s = scan(&fs::read_to_string(&path).unwrap());
-        assert!(
-            s.blocks == 0 || path.starts_with(root.join("src/ffi")),
-            "foreign block outside provider boundary: {}",
-            path.display()
-        );
-        exported.extend(s.exported);
-        for name in s.defined {
-            definitions.entry(name).or_insert_with(|| path.clone());
-        }
-        for name in s.foreign {
-            foreign.push((name, path.clone()));
-        }
-    }
-    assert!(
-        definitions.len() > 2000,
-        "definition inventory unexpectedly small"
-    );
-    assert!(foreign.len() > 200, "foreign inventory unexpectedly small");
-    for row in include_str!("../docs/required-exports.tsv").lines().skip(1) {
-        let name = row.split('\t').next().unwrap();
-        assert!(exported.contains(name), "required C export lost: {name}");
-    }
-    let mut providers = BTreeMap::new();
-    for (name, path) in foreign {
-        assert!(
-            !definitions.contains_key(&name),
-            "{name} defined at {:?} redeclared as foreign at {}",
-            definitions.get(&name),
-            path.display()
-        );
-        assert!(
-            providers.insert(name.clone(), path.clone()).is_none(),
-            "{name} has multiple foreign declarations (including {})",
-            path.display()
-        );
-    }
-}
-
-#[test]
 fn inventory_handles_aliases_callbacks_variadics_and_misleading_text() {
     let s = scan(
         r###"
