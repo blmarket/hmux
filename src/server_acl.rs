@@ -70,6 +70,7 @@ pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub struct server_acl_entry {
     pub id: id_t,
     pub flags: ::core::ffi::c_int,
+    // Kept for the translated C layout; tree membership now lives in the map below.
     pub entry: C2RustUnnamed_35,
 }
 #[derive(Copy, Clone)]
@@ -80,544 +81,88 @@ pub struct C2RustUnnamed_35 {
     pub rbe_parent: *mut server_acl_entry,
     pub rbe_color: ::core::ffi::c_int,
 }
-#[derive(Copy, Clone)]
-#[repr(C)]
+#[derive(Default)]
 pub struct server_acl_entries {
-    pub rbh_root: *mut server_acl_entry,
+    // The old comparator ordered non-groups before groups, then by id.
+    entries: std::collections::BTreeMap<(bool, id_t), *mut server_acl_entry>,
 }
 pub const SERVER_ACL_READONLY: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
-unsafe extern "C" fn server_acl_cmp(
-    mut entry1: *mut server_acl_entry,
-    mut entry2: *mut server_acl_entry,
-) -> ::core::ffi::c_int {
-    if ((*entry1).flags ^ (*entry2).flags) & SERVER_ACL_IS_GROUP != 0 {
-        if (*entry1).flags & SERVER_ACL_IS_GROUP != 0 {
-            return 1 as ::core::ffi::c_int;
-        }
-        return -(1 as ::core::ffi::c_int);
-    }
-    if (*entry1).id < (*entry2).id {
-        return -(1 as ::core::ffi::c_int);
-    }
-    return ((*entry1).id > (*entry2).id) as ::core::ffi::c_int;
+fn server_acl_key(id: id_t, flags: ::core::ffi::c_int) -> (bool, id_t) {
+    (flags & SERVER_ACL_IS_GROUP != 0, id)
 }
+
+unsafe fn server_acl_entry_key(entry: *mut server_acl_entry) -> (bool, id_t) {
+    server_acl_key((*entry).id, (*entry).flags)
+}
+
 #[no_mangle]
 pub static mut server_acl_entries: server_acl_entries = server_acl_entries {
-    rbh_root: ::core::ptr::null::<server_acl_entry>() as *mut server_acl_entry,
+    entries: std::collections::BTreeMap::new(),
 };
-unsafe extern "C" fn server_acl_entries_RB_FIND(
-    mut head: *mut server_acl_entries,
-    mut elm: *mut server_acl_entry,
-) -> *mut server_acl_entry {
-    let mut tmp: *mut server_acl_entry = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = server_acl_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return ::core::ptr::null_mut::<server_acl_entry>();
+
+unsafe fn server_acl_entry_find(id: id_t, flags: ::core::ffi::c_int) -> *mut server_acl_entry {
+    server_acl_entries
+        .entries
+        .get(&server_acl_key(id, flags))
+        .copied()
+        .unwrap_or(::core::ptr::null_mut::<server_acl_entry>())
 }
-unsafe extern "C" fn server_acl_entries_RB_NEXT(
-    mut elm: *mut server_acl_entry,
-) -> *mut server_acl_entry {
-    if !(*elm).entry.rbe_right.is_null() {
-        elm = (*elm).entry.rbe_right;
-        while !(*elm).entry.rbe_left.is_null() {
-            elm = (*elm).entry.rbe_left;
-        }
-    } else if !(*elm).entry.rbe_parent.is_null() && elm == (*(*elm).entry.rbe_parent).entry.rbe_left
-    {
-        elm = (*elm).entry.rbe_parent;
-    } else {
-        while !(*elm).entry.rbe_parent.is_null()
-            && elm == (*(*elm).entry.rbe_parent).entry.rbe_right
-        {
-            elm = (*elm).entry.rbe_parent;
-        }
-        elm = (*elm).entry.rbe_parent;
-    }
-    return elm;
+
+unsafe fn server_acl_entries_min() -> *mut server_acl_entry {
+    server_acl_entries
+        .entries
+        .values()
+        .next()
+        .copied()
+        .unwrap_or(::core::ptr::null_mut::<server_acl_entry>())
 }
-unsafe extern "C" fn server_acl_entries_RB_INSERT_COLOR(
-    mut head: *mut server_acl_entries,
-    mut elm: *mut server_acl_entry,
-) {
-    let mut parent: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    let mut gparent: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    let mut tmp: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    loop {
-        parent = (*elm).entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).entry.rbe_parent;
-        if parent == (*gparent).entry.rbe_left {
-            tmp = (*gparent).entry.rbe_right;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_right == elm {
-                    tmp = (*parent).entry.rbe_right;
-                    (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                    if !(*parent).entry.rbe_right.is_null() {
-                        (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_left = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_left;
-                (*gparent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*gparent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).entry.rbe_left;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_left == elm {
-                    tmp = (*parent).entry.rbe_left;
-                    (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                    if !(*parent).entry.rbe_left.is_null() {
-                        (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_right = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_right;
-                (*gparent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*gparent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).entry.rbe_color = RB_BLACK;
+
+unsafe fn server_acl_entries_next(entry: *mut server_acl_entry) -> *mut server_acl_entry {
+    let key = server_acl_entry_key(entry);
+    server_acl_entries
+        .entries
+        .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
+        .next()
+        .map(|(_, entry)| *entry)
+        .unwrap_or(::core::ptr::null_mut::<server_acl_entry>())
 }
-unsafe extern "C" fn server_acl_entries_RB_INSERT(
-    mut head: *mut server_acl_entries,
-    mut elm: *mut server_acl_entry,
-) -> *mut server_acl_entry {
-    let mut tmp: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    let mut parent: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = server_acl_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    (*elm).entry.rbe_parent = parent;
-    (*elm).entry.rbe_right = ::core::ptr::null_mut::<server_acl_entry>();
-    (*elm).entry.rbe_left = (*elm).entry.rbe_right;
-    (*elm).entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).entry.rbe_left = elm;
-        } else {
-            (*parent).entry.rbe_right = elm;
-        }
-    } else {
-        (*head).rbh_root = elm;
-    }
-    server_acl_entries_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<server_acl_entry>();
+
+unsafe fn server_acl_entries_insert(entry: *mut server_acl_entry) {
+    server_acl_entries
+        .entries
+        .insert(server_acl_entry_key(entry), entry);
 }
-unsafe extern "C" fn server_acl_entries_RB_MINMAX(
-    mut head: *mut server_acl_entries,
-    mut val: ::core::ffi::c_int,
-) -> *mut server_acl_entry {
-    let mut tmp: *mut server_acl_entry = (*head).rbh_root;
-    let mut parent: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    while !tmp.is_null() {
-        parent = tmp;
-        if val < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else {
-            tmp = (*tmp).entry.rbe_right;
-        }
-    }
-    return parent;
+
+unsafe fn server_acl_entries_remove(entry: *mut server_acl_entry) -> *mut server_acl_entry {
+    server_acl_entries
+        .entries
+        .remove(&server_acl_entry_key(entry))
+        .unwrap_or(::core::ptr::null_mut::<server_acl_entry>())
 }
-unsafe extern "C" fn server_acl_entries_RB_REMOVE(
-    mut head: *mut server_acl_entries,
-    mut elm: *mut server_acl_entry,
-) -> *mut server_acl_entry {
-    let mut current_block: u64;
-    let mut child: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    let mut parent: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    let mut old: *mut server_acl_entry = elm;
-    let mut color: ::core::ffi::c_int = 0;
-    if (*elm).entry.rbe_left.is_null() {
-        child = (*elm).entry.rbe_right;
-        current_block = 7245201122033322888;
-    } else if (*elm).entry.rbe_right.is_null() {
-        child = (*elm).entry.rbe_left;
-        current_block = 7245201122033322888;
-    } else {
-        let mut left: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-        elm = (*elm).entry.rbe_right;
-        loop {
-            left = (*elm).entry.rbe_left;
-            if left.is_null() {
-                break;
-            }
-            elm = left;
-        }
-        child = (*elm).entry.rbe_right;
-        parent = (*elm).entry.rbe_parent;
-        color = (*elm).entry.rbe_color;
-        if !child.is_null() {
-            (*child).entry.rbe_parent = parent;
-        }
-        if !parent.is_null() {
-            if (*parent).entry.rbe_left == elm {
-                (*parent).entry.rbe_left = child;
-            } else {
-                (*parent).entry.rbe_right = child;
-            }
-        } else {
-            (*head).rbh_root = child;
-        }
-        if (*elm).entry.rbe_parent == old {
-            parent = elm;
-        }
-        (*elm).entry = (*old).entry;
-        if !(*old).entry.rbe_parent.is_null() {
-            if (*(*old).entry.rbe_parent).entry.rbe_left == old {
-                (*(*old).entry.rbe_parent).entry.rbe_left = elm;
-            } else {
-                (*(*old).entry.rbe_parent).entry.rbe_right = elm;
-            }
-        } else {
-            (*head).rbh_root = elm;
-        }
-        (*(*old).entry.rbe_left).entry.rbe_parent = elm;
-        if !(*old).entry.rbe_right.is_null() {
-            (*(*old).entry.rbe_right).entry.rbe_parent = elm;
-        }
-        if !parent.is_null() {
-            left = parent;
-            loop {
-                left = (*left).entry.rbe_parent;
-                if left.is_null() {
-                    break;
-                }
-            }
-        }
-        current_block = 10977582915827884067;
-    }
-    match current_block {
-        7245201122033322888 => {
-            parent = (*elm).entry.rbe_parent;
-            color = (*elm).entry.rbe_color;
-            if !child.is_null() {
-                (*child).entry.rbe_parent = parent;
-            }
-            if !parent.is_null() {
-                if (*parent).entry.rbe_left == elm {
-                    (*parent).entry.rbe_left = child;
-                } else {
-                    (*parent).entry.rbe_right = child;
-                }
-            } else {
-                (*head).rbh_root = child;
-            }
-        }
-        _ => {}
-    }
-    if color == RB_BLACK {
-        server_acl_entries_RB_REMOVE_COLOR(head, parent, child);
-    }
-    return old;
-}
-unsafe extern "C" fn server_acl_entries_RB_REMOVE_COLOR(
-    mut head: *mut server_acl_entries,
-    mut parent: *mut server_acl_entry,
-    mut elm: *mut server_acl_entry,
-) {
-    let mut tmp: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
-    while (elm.is_null() || (*elm).entry.rbe_color == RB_BLACK) && elm != (*head).rbh_root {
-        if (*parent).entry.rbe_left == elm {
-            tmp = (*parent).entry.rbe_right;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_right;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK
-                {
-                    let mut oleft: *mut server_acl_entry =
-                        ::core::ptr::null_mut::<server_acl_entry>();
-                    oleft = (*tmp).entry.rbe_left;
-                    if !oleft.is_null() {
-                        (*oleft).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oleft = (*tmp).entry.rbe_left;
-                    (*tmp).entry.rbe_left = (*oleft).entry.rbe_right;
-                    if !(*tmp).entry.rbe_left.is_null() {
-                        (*(*oleft).entry.rbe_right).entry.rbe_parent = tmp;
-                    }
-                    (*oleft).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oleft).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oleft;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oleft;
-                        }
-                    } else {
-                        (*head).rbh_root = oleft;
-                    }
-                    (*oleft).entry.rbe_right = tmp;
-                    (*tmp).entry.rbe_parent = oleft;
-                    !(*oleft).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_right;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        } else {
-            tmp = (*parent).entry.rbe_left;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_left;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_left.is_null()
-                    || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK
-                {
-                    let mut oright: *mut server_acl_entry =
-                        ::core::ptr::null_mut::<server_acl_entry>();
-                    oright = (*tmp).entry.rbe_right;
-                    if !oright.is_null() {
-                        (*oright).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oright = (*tmp).entry.rbe_right;
-                    (*tmp).entry.rbe_right = (*oright).entry.rbe_left;
-                    if !(*tmp).entry.rbe_right.is_null() {
-                        (*(*oright).entry.rbe_left).entry.rbe_parent = tmp;
-                    }
-                    (*oright).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oright).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oright;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oright;
-                        }
-                    } else {
-                        (*head).rbh_root = oright;
-                    }
-                    (*oright).entry.rbe_left = tmp;
-                    (*tmp).entry.rbe_parent = oright;
-                    !(*oright).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_left;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        }
-    }
-    if !elm.is_null() {
-        (*elm).entry.rbe_color = RB_BLACK;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_order_matches_the_red_black_tree_comparator() {
+        let mut entries = std::collections::BTreeMap::new();
+        entries.insert(server_acl_key(9, 0), ());
+        entries.insert(server_acl_key(4, 0), ());
+        entries.insert(server_acl_key(1, SERVER_ACL_IS_GROUP), ());
+        entries.insert(
+            server_acl_key(1, SERVER_ACL_IS_GROUP | SERVER_ACL_READONLY),
+            (),
+        );
+
+        assert_eq!(
+            entries.into_keys().collect::<Vec<_>>(),
+            vec![(false, 4), (false, 9), (true, 1)]
+        );
     }
 }
-unsafe extern "C" fn server_acl_entry_find(
-    mut id: id_t,
-    mut flags: ::core::ffi::c_int,
-) -> *mut server_acl_entry {
-    let mut find: server_acl_entry = server_acl_entry {
-        id: id,
-        flags: flags & SERVER_ACL_IS_GROUP,
-        entry: C2RustUnnamed_35 {
-            rbe_left: ::core::ptr::null_mut::<server_acl_entry>(),
-            rbe_right: ::core::ptr::null_mut::<server_acl_entry>(),
-            rbe_parent: ::core::ptr::null_mut::<server_acl_entry>(),
-            rbe_color: 0,
-        },
-    };
-    return server_acl_entries_RB_FIND(&raw mut server_acl_entries, &raw mut find);
-}
+
 unsafe extern "C" fn server_acl_check(mut c: *mut client) -> *mut server_acl_entry {
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     let mut uid: uid_t = 0;
@@ -656,7 +201,7 @@ unsafe extern "C" fn server_acl_update() {
 }
 #[no_mangle]
 pub unsafe extern "C" fn server_acl_init() {
-    server_acl_entries.rbh_root = ::core::ptr::null_mut::<server_acl_entry>();
+    server_acl_entries.entries.clear();
     if getuid() != 0 as __uid_t {
         server_acl_allow(0 as id_t, 0 as ::core::ffi::c_int);
     }
@@ -678,7 +223,7 @@ pub unsafe extern "C" fn server_acl_display(mut item: *mut cmdq_item) {
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut type_0: ::core::ffi::c_char = 0;
     let mut current_block_12: u64;
-    loop_0 = server_acl_entries_RB_MINMAX(&raw mut server_acl_entries, RB_NEGINF);
+    loop_0 = server_acl_entries_min();
     while !loop_0.is_null() {
         if !(*loop_0).flags & SERVER_ACL_IS_GROUP != 0 {
             if (*loop_0).id == 0 as id_t {
@@ -723,7 +268,7 @@ pub unsafe extern "C" fn server_acl_display(mut item: *mut cmdq_item) {
             }
             _ => {}
         }
-        loop_0 = server_acl_entries_RB_NEXT(loop_0);
+        loop_0 = server_acl_entries_next(loop_0);
     }
 }
 #[no_mangle]
@@ -737,7 +282,7 @@ pub unsafe extern "C" fn server_acl_allow(mut id: id_t, mut flags: ::core::ffi::
         ) as *mut server_acl_entry;
         (*entry).id = id;
         (*entry).flags = flags & SERVER_ACL_IS_GROUP;
-        server_acl_entries_RB_INSERT(&raw mut server_acl_entries, entry);
+        server_acl_entries_insert(entry);
     }
 }
 #[no_mangle]
@@ -745,7 +290,7 @@ pub unsafe extern "C" fn server_acl_deny(mut id: id_t, mut flags: ::core::ffi::c
     let mut entry: *mut server_acl_entry = ::core::ptr::null_mut::<server_acl_entry>();
     entry = server_acl_entry_find(id, flags);
     if !entry.is_null() {
-        server_acl_entries_RB_REMOVE(&raw mut server_acl_entries, entry);
+        server_acl_entries_remove(entry);
         free(entry as *mut ::core::ffi::c_void);
         server_acl_update();
     }
