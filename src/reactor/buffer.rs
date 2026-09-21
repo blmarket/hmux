@@ -128,19 +128,128 @@ pub unsafe extern "C" fn evbuffer_add_vprintf(
     fmt: *const c_char,
     args: VaList,
 ) -> c_int {
-    let mut data = std::ptr::null_mut();
-    let count = crate::src::ffi::libc::vasprintf(&mut data, fmt, args);
-    if count < 0 {
+    let Some(mut formatted) = format_buffer(fmt, args) else {
         return -1;
+    };
+    let count = formatted.remaining();
+    (*b).append(&mut formatted);
+    super::wake_buffer(b);
+    count as c_int
+}
+
+/// Format C variadic arguments into one owned segment, or return `None` on
+/// a formatting error. The trailing NUL is stored in spare capacity and is
+/// excluded from the readable length, matching `evbuffer_add_vprintf`.
+/// Moving this buffer with `append` preserves that allocation and capacity.
+///
+/// # Safety
+/// `format` must be a valid NUL-terminated C format string, and `args` must
+/// contain valid arguments of the types required by that format.
+unsafe fn format_buffer(format: *const c_char, args: VaList) -> Option<ByteBuffer> {
+    let mut bytes = Vec::<u8>::with_capacity(1024);
+    loop {
+        // Each attempt consumes its own copy of the argument list.
+        let count = unsafe {
+            crate::src::ffi::libc::vsnprintf(
+                bytes.as_mut_ptr().cast(),
+                bytes.capacity(),
+                format,
+                args.clone(),
+            )
+        };
+        if count < 0 {
+            return None;
+        }
+        let count = count as usize;
+        if count < bytes.capacity() {
+            // vsnprintf initialized count payload bytes and a trailing NUL.
+            // Keep the NUL in the allocation without adding it to the payload.
+            unsafe { bytes.set_len(count) };
+            return Some(ByteBuffer::from(bytes));
+        }
+        bytes.reserve(count.checked_add(1)?);
     }
-    evbuffer_add(b, data.cast(), count as size_t);
-    libc::free(data.cast());
-    count
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::CString;
+    unsafe extern "C" fn append_formatted(
+        destination: *mut ByteBuffer,
+        format: *const c_char,
+        args: ...
+    ) -> c_int {
+        let Some(mut formatted) = (unsafe { format_buffer(format, args.clone()) }) else {
+            return -1;
+        };
+        let count = formatted.remaining();
+        let pointer = formatted.chunk().as_ptr();
+        let destination = unsafe { &mut *destination };
+        destination.append(&mut formatted);
+        assert_eq!(formatted.remaining(), 0);
+        if count != 0 {
+            assert_eq!(destination.chunks().next_back().unwrap().as_ptr(), pointer);
+        }
+        count as c_int
+    }
+
+    #[test]
+    fn formatted_storage_survives_append_and_terminator_commit() {
+        for size in [1, 1023, 1024, 4095, 4096, 4097, 40076, 100_000] {
+            let text = CString::new("x".repeat(size)).unwrap();
+            let mut buffer = ByteBuffer::default();
+            assert_eq!(
+                unsafe {
+                    append_formatted(
+                        &mut buffer,
+                        c"%s:%d:%zu".as_ptr(),
+                        text.as_ptr(),
+                        -7i32,
+                        42usize,
+                    )
+                },
+                (size + 6) as c_int
+            );
+            assert_eq!(buffer.chunks().len(), 1);
+            let length = buffer.remaining();
+            let pointer = buffer.pullup(length).unwrap().as_ptr();
+            assert_eq!(
+                unsafe { std::ffi::CStr::from_ptr(pointer.cast()) }.to_bytes(),
+                buffer.chunk()
+            );
+            assert_eq!(
+                buffer.chunk(),
+                format!("{}:-7:42", "x".repeat(size)).as_bytes()
+            );
+            buffer.put_slice(b"\0");
+            assert_eq!(buffer.chunks().len(), 1);
+            assert_eq!(buffer.chunk().as_ptr(), pointer);
+            assert_eq!(buffer.remaining(), length + 1);
+            assert_eq!(buffer.chunk()[length], 0);
+        }
+    }
+
+    #[test]
+    fn formatting_preserves_prefix_empty_output_and_embedded_nul() {
+        let mut buffer = ByteBuffer::from(b"prefix".to_vec());
+        unsafe {
+            assert_eq!(
+                append_formatted(&mut buffer, c"%s".as_ptr(), c"".as_ptr()),
+                0
+            );
+            assert_eq!(buffer.remaining(), 6);
+            assert_eq!(
+                append_formatted(&mut buffer, c"%c:%d".as_ptr(), 0i32, 7i32),
+                3
+            );
+        }
+        assert_eq!(
+            buffer.chunks().flatten().copied().collect::<Vec<_>>(),
+            b"prefix\0:7"
+        );
+    }
+
     #[test]
     fn c_formats_and_malloc_lines() {
         unsafe {

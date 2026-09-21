@@ -209,13 +209,13 @@ impl<T: Buf> PutInto for T {
 
 impl PutInto for SegmentedBuf {
     fn put_into(mut self, destination: &mut SegmentedBuf) {
-        destination.append_segments(&mut self);
+        destination.append(&mut self);
     }
 }
 
 impl PutInto for &mut SegmentedBuf {
     fn put_into(self, destination: &mut SegmentedBuf) {
-        destination.append_segments(self);
+        destination.append(self);
     }
 }
 
@@ -255,7 +255,8 @@ impl Buffer for SegmentedBuf {
 }
 
 impl SegmentedBuf {
-    fn append_segments(&mut self, source: &mut Self) {
+    /// Move all source segments into this buffer without copying their payloads.
+    pub fn append(&mut self, source: &mut Self) {
         if !source.has_remaining() {
             return;
         }
