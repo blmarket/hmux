@@ -2,13 +2,23 @@
 name = "hmux-rt"
 version = "0.1.0"
 edition = "2024"
-description = "Single-threaded async runtime layer embedded in a host-owned event loop"
+publish = false
 license = "GPL-3.0-only"
-
-[lints]
-workspace = true
+description = "Single-threaded local-waker async runtime for hmux"
 
 [dependencies]
+errno = "0.3"
 libc = "0.2"
 mio = { version = "1.2", features = ["os-ext", "os-poll"] }
 signal-hook = { version = "0.4", default-features = false }
+
+[[test]]
+name = "process_contract"
+path = "tests/process_contract.rs"
+harness = false
+
+[lints.rust]
+missing_docs = "deny"
+
+[lints.clippy]
+await_holding_refcell_ref = "deny"

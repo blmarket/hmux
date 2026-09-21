@@ -1,0 +1,241 @@
+//! Byte-stream adapter contracts over the local runtime.
+use hmux_rt::stream::Reader;
+use hmux_rt::{AsyncRead, AsyncWrite, Handle, Runtime, mio};
+use std::cell::RefCell;
+use std::future::Future;
+use std::io::{self, Write};
+use std::os::unix::net::UnixStream;
+use std::pin::Pin;
+use std::rc::Rc;
+use std::task::{Context, Poll, Waker};
+use std::time::Duration;
+
+fn tick(runtime: &mut mio::Runtime) {
+    runtime.poll(Some(Duration::ZERO)).unwrap();
+}
+
+fn poll<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
+    future.poll(&mut Context::from_waker(Waker::noop()))
+}
+
+#[test]
+fn chunks_drain_before_eof_and_wake_after_would_block() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (mut writer, socket) = UnixStream::pair().unwrap();
+    socket.set_nonblocking(true).unwrap();
+    let mut reader = Reader::new(&runtime.handle(), Rc::new(socket.into())).unwrap();
+    let chunks = Rc::new(RefCell::new(Vec::new()));
+    let output = chunks.clone();
+    let _task = runtime
+        .handle()
+        .spawn(async move {
+            loop {
+                let chunk = reader.read_chunk(2).await.unwrap();
+                let eof = chunk.is_none();
+                output.borrow_mut().push(chunk);
+                if eof {
+                    break;
+                }
+            }
+        })
+        .unwrap();
+    tick(&mut runtime);
+    assert!(chunks.borrow().is_empty());
+    writer.write_all(b"abc").unwrap();
+    tick(&mut runtime);
+    assert_eq!(
+        *chunks.borrow(),
+        vec![Some(b"ab".to_vec()), Some(b"c".to_vec())]
+    );
+    // The reader has drained the socket and parked again after WouldBlock.
+    writer.write_all(b"de").unwrap();
+    drop(writer);
+    tick(&mut runtime);
+    assert_eq!(
+        *chunks.borrow(),
+        vec![
+            Some(b"ab".to_vec()),
+            Some(b"c".to_vec()),
+            Some(b"de".to_vec()),
+            None
+        ]
+    );
+}
+
+#[test]
+fn cancelling_a_pending_read_leaves_bytes_for_the_next_read() {
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (mut writer, socket) = UnixStream::pair().unwrap();
+    socket.set_nonblocking(true).unwrap();
+    let mut reader = Reader::new(&runtime.handle(), Rc::new(socket.into())).unwrap();
+    let mut pending = Box::pin(reader.read_chunk(8));
+    assert!(poll(pending.as_mut()).is_pending());
+    writer.write_all(b"hello").unwrap();
+    tick(&mut runtime);
+    // Notification has arrived, but the cancelled future never reads it.
+    drop(pending);
+    let mut next = Box::pin(reader.read_chunk(8));
+    assert!(matches!(poll(next.as_mut()), Poll::Ready(Ok(Some(bytes))) if bytes == b"hello"));
+}
+
+#[test]
+fn validates_sizes_and_propagates_runtime_shutdown() {
+    let runtime = mio::Runtime::new().unwrap();
+    let (_writer, socket) = UnixStream::pair().unwrap();
+    socket.set_nonblocking(true).unwrap();
+    let mut reader = Reader::new(&runtime.handle(), Rc::new(socket.into())).unwrap();
+    assert!(
+        matches!(poll(Box::pin(reader.read_chunk(0)).as_mut()), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::InvalidInput)
+    );
+    assert!(matches!(
+        poll(Box::pin(reader.read(&mut [])).as_mut()),
+        Poll::Ready(Ok(0))
+    ));
+    drop(runtime);
+    assert!(
+        matches!(poll(Box::pin(reader.read_chunk(8)).as_mut()), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe)
+    );
+}
+
+#[test]
+fn rejects_blocking_descriptors() {
+    let runtime = mio::Runtime::new().unwrap();
+    let (_writer, socket) = UnixStream::pair().unwrap();
+    assert!(
+        matches!(Reader::new(&runtime.handle(), Rc::new(socket.into())), Err(e) if e.kind() == io::ErrorKind::InvalidInput)
+    );
+}
+
+#[test]
+fn direct_io_reads_and_writes_can_wait_independently() {
+    use std::io::Read;
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (mut peer, socket) = UnixStream::pair().unwrap();
+    peer.set_nonblocking(true).unwrap();
+    socket.set_nonblocking(true).unwrap();
+    let source = runtime.handle().io(Rc::new(socket.into())).unwrap();
+    let mut bytes = [0; 8];
+    let mut read = Box::pin(source.read(&mut bytes));
+    assert!(poll(read.as_mut()).is_pending());
+    tick(&mut runtime);
+    assert!(matches!(
+        poll(Box::pin(source.write(b"out")).as_mut()),
+        Poll::Ready(Ok(3))
+    ));
+    let mut output = [0; 3];
+    peer.read_exact(&mut output).unwrap();
+    assert_eq!(&output, b"out");
+    peer.write_all(b"in").unwrap();
+    tick(&mut runtime);
+    assert!(matches!(poll(read.as_mut()), Poll::Ready(Ok(2))));
+    drop(read);
+    assert_eq!(&bytes[..2], b"in");
+    assert!(matches!(
+        poll(Box::pin(source.write(&[])).as_mut()),
+        Poll::Ready(Ok(0))
+    ));
+}
+
+#[test]
+fn partial_writes_park_when_full_and_resume_after_drain() {
+    use std::io::Read;
+    use std::os::fd::AsRawFd;
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (mut peer, socket) = UnixStream::pair().unwrap();
+    peer.set_nonblocking(true).unwrap();
+    socket.set_nonblocking(true).unwrap();
+    let size: libc::c_int = 4096;
+    // SAFETY: socket is live and size points to a valid socket option value.
+    assert_eq!(
+        unsafe {
+            libc::setsockopt(
+                socket.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_SNDBUF,
+                (&size as *const libc::c_int).cast(),
+                std::mem::size_of_val(&size) as libc::socklen_t,
+            )
+        },
+        0
+    );
+    let source = runtime.handle().io(Rc::new(socket.into())).unwrap();
+    tick(&mut runtime);
+    let payload = vec![42; 1024 * 1024];
+    let count = match poll(Box::pin(source.write(&payload)).as_mut()) {
+        Poll::Ready(Ok(n)) => n,
+        _ => panic!("initial write should make progress"),
+    };
+    assert!(count > 0 && count < payload.len());
+    let mut write = Box::pin(source.write(&payload[count..]));
+    assert!(poll(write.as_mut()).is_pending());
+    let mut drained = vec![0; count];
+    peer.read_exact(&mut drained).unwrap();
+    assert_eq!(drained, payload[..count]);
+    tick(&mut runtime);
+    assert!(matches!(poll(write.as_mut()), Poll::Ready(Ok(n)) if n > 0));
+}
+
+#[test]
+fn writer_reuses_registration_and_releases_it_on_drop() {
+    use hmux_rt::stream::Writer;
+    use std::io::Read;
+    use std::os::fd::OwnedFd;
+    let mut runtime = mio::Runtime::new().unwrap();
+    let (mut peer, socket) = UnixStream::pair().unwrap();
+    peer.set_nonblocking(true).unwrap();
+    socket.set_nonblocking(true).unwrap();
+    let fd = Rc::new(OwnedFd::from(socket));
+    let source = runtime.handle().io(fd.clone()).unwrap();
+    let writer = Writer::from_io(source);
+    assert_eq!(Rc::strong_count(&fd), 2);
+    assert!(
+        matches!(runtime.handle().io(fd.clone()), Err(e) if e.kind() == io::ErrorKind::AlreadyExists)
+    );
+    tick(&mut runtime);
+    assert!(matches!(
+        poll(Box::pin(writer.write(b"input")).as_mut()),
+        Poll::Ready(Ok(5))
+    ));
+    let mut bytes = [0; 5];
+    peer.read_exact(&mut bytes).unwrap();
+    assert_eq!(&bytes, b"input");
+    drop(writer);
+    assert_eq!(Rc::strong_count(&fd), 1);
+    let _replacement = Writer::new(&runtime.handle(), fd).unwrap();
+}
+
+#[test]
+fn wrappers_accept_implementations_with_only_their_own_capability() {
+    use hmux_rt::stream::Writer;
+    struct ReadOnly;
+    impl AsyncRead for ReadOnly {
+        async fn read(&self, buffer: &mut [u8]) -> io::Result<usize> {
+            if let Some(byte) = buffer.first_mut() {
+                *byte = b'x';
+                Ok(1)
+            } else {
+                Ok(0)
+            }
+        }
+    }
+    struct WriteOnly(Cell<usize>);
+    impl AsyncWrite for WriteOnly {
+        async fn write(&self, buffer: &[u8]) -> io::Result<usize> {
+            self.0.set(self.0.get() + buffer.len());
+            Ok(buffer.len())
+        }
+    }
+    use std::cell::Cell;
+    let reader = Reader::from_io(ReadOnly);
+    let mut byte = [0];
+    assert!(matches!(
+        poll(Box::pin(reader.read(&mut byte)).as_mut()),
+        Poll::Ready(Ok(1))
+    ));
+    assert_eq!(&byte, b"x");
+    let writer = Writer::from_io(WriteOnly(Cell::new(0)));
+    assert!(matches!(
+        poll(Box::pin(writer.write(b"hello")).as_mut()),
+        Poll::Ready(Ok(5))
+    ));
+}
