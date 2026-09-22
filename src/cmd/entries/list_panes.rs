@@ -6,7 +6,7 @@ use crate::src::format::{
     format_add, format_create, format_defaults, format_expand, format_free, format_true,
 };
 pub use crate::src::session::sessions;
-use crate::src::session::{sessions_RB_MINMAX, sessions_RB_NEXT};
+use crate::src::session::{sessions_minmax, sessions_next};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{args, args_parse, args_parse_cb};
@@ -134,10 +134,10 @@ unsafe extern "C" fn cmd_list_panes_exec(
 }
 unsafe extern "C" fn cmd_list_panes_server(mut self_0: *mut cmd, mut item: *mut cmdq_item) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         cmd_list_panes_session(self_0, s, item, 2 as ::core::ffi::c_int);
-        s = sessions_RB_NEXT(s);
+        s = sessions_next(s);
     }
 }
 unsafe extern "C" fn cmd_list_panes_session(

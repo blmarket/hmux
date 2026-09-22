@@ -5,7 +5,7 @@ use crate::src::reactor::{event_add, event_del, event_initialized, event_pending
 use crate::src::server::current_time;
 pub use crate::src::session::sessions;
 use crate::src::session::{
-    session_add_ref, session_find_by_id, session_remove_ref, sessions_RB_MINMAX,
+    session_add_ref, session_find_by_id, session_remove_ref, sessions_minmax,
 };
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -86,7 +86,7 @@ unsafe extern "C" fn monitor_get_session(mut ms: *mut monitor_set) -> *mut sessi
     }
     s = (*ms).session;
     if s.is_null() {
-        return sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
+        return sessions_minmax(&raw mut sessions, RB_NEGINF);
     }
     if session_find_by_id((*s).id) != s {
         return ::core::ptr::null_mut::<session>();

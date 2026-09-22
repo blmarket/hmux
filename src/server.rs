@@ -25,7 +25,7 @@ use crate::src::server_acl::{server_acl_init, server_acl_join};
 use crate::src::server_client::{server_client_create, server_client_loop, server_client_lost};
 use crate::src::server_fn::server_destroy_pane;
 pub use crate::src::session::sessions;
-use crate::src::session::{session_destroy, sessions_RB_MINMAX, sessions_RB_NEXT};
+use crate::src::session::{session_destroy, sessions_minmax, sessions_next};
 pub use crate::src::shared::status::{message_entry, message_entry_entry, message_list};
 use crate::src::spawn::spawn_editor_finish;
 use crate::src::tmux::{get_timer, global_options, setblocking, socket_path, start_time};
@@ -453,7 +453,7 @@ pub unsafe extern "C" fn server_start(
     all_window_panes.rbh_root = ::core::ptr::null_mut::<window_pane>();
     clients.tqh_first = ::core::ptr::null_mut::<client>();
     clients.tqh_last = &raw mut clients.tqh_first;
-    sessions.rbh_root = ::core::ptr::null_mut::<session>();
+    sessions.storage = std::ptr::null_mut();
     key_bindings_init();
     control_build_events();
     hooks_build_events();
@@ -548,7 +548,7 @@ unsafe extern "C" fn server_loop() -> ::core::ffi::c_int {
         b"exit-unattached\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0
     {
-        if !sessions.rbh_root.is_null() {
+        if !sessions.storage.is_null() {
             return 0 as ::core::ffi::c_int;
         }
     }
@@ -588,9 +588,9 @@ unsafe extern "C" fn server_send_exit() {
         (*c).session = ::core::ptr::null_mut::<session>();
         c = c1;
     }
-    s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() && {
-        s1 = sessions_RB_NEXT(s);
+        s1 = sessions_next(s);
         1 as ::core::ffi::c_int != 0
     } {
         session_destroy(
@@ -634,13 +634,13 @@ pub unsafe extern "C" fn server_update_socket() {
         __glibc_reserved: [0; 3],
     };
     n = 0 as ::core::ffi::c_int;
-    s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         if (*s).attached != 0 as u_int {
             n += 1;
             break;
         } else {
-            s = sessions_RB_NEXT(s);
+            s = sessions_next(s);
         }
     }
     if n != last {

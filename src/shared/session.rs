@@ -36,10 +36,8 @@ pub struct session {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session_entry {
-    pub rbe_left: *mut session,
-    pub rbe_right: *mut session,
-    pub rbe_parent: *mut session,
-    pub rbe_color: ::core::ffi::c_int,
+    /// Stable Rust index used by entry-only traversal; not an owning pointer.
+    pub owner: *mut crate::src::shared::tree::OrderedIndex<Vec<u8>, session>,
 }
 
 #[derive(Copy, Clone)]
@@ -52,7 +50,7 @@ pub struct session_gentry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct sessions {
-    pub rbh_root: *mut session,
+    pub storage: *mut crate::src::shared::tree::OrderedIndex<Vec<u8>, session>,
 }
 
 #[derive(Copy, Clone)]
@@ -66,10 +64,8 @@ pub struct session_group {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session_group_entry {
-    pub rbe_left: *mut session_group,
-    pub rbe_right: *mut session_group,
-    pub rbe_parent: *mut session_group,
-    pub rbe_color: ::core::ffi::c_int,
+    /// Stable Rust index used by entry-only traversal; not an owning pointer.
+    pub owner: *mut crate::src::shared::tree::OrderedIndex<Vec<u8>, session_group>,
 }
 
 #[derive(Copy, Clone)]
@@ -82,5 +78,5 @@ pub struct session_group_sessions {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session_groups {
-    pub rbh_root: *mut session_group,
+    pub storage: *mut crate::src::shared::tree::OrderedIndex<Vec<u8>, session_group>,
 }
