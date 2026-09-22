@@ -85,6 +85,49 @@ fn empty_inputs_are_rejected_by_both_rust_parse_entry_points() {
 }
 
 #[test]
+fn safe_cstr_parser_preserves_prefix_and_suffix_boundaries() {
+    for (input, expected) in [
+        (b"C-F1\0".as_slice(), KEYC_CTRL | KEYC_F1),
+        (
+            b"M-F1\0".as_slice(),
+            KEYC_META | KEYC_IMPLIED_META | KEYC_F1,
+        ),
+        (b"^F1\0".as_slice(), KEYC_CTRL | KEYC_F1),
+        (b"c-Insert\0".as_slice(), KEYC_CTRL | KEYC_IC),
+    ] {
+        let cstr = CStr::from_bytes_with_nul(input).unwrap();
+        assert_eq!(key_string_parse_cstr(cstr), Some(expected), "{input:?}");
+        assert_eq!(key_string_parse(&input[..input.len() - 1]), Some(expected));
+    }
+
+    let numeric = CStr::from_bytes_with_nul(b"0x41tail\0").unwrap();
+    let numeric_key = key_string_parse_cstr(numeric).expect("numeric key");
+    assert_eq!(key_string_parse(b"0x41tail"), Some(numeric_key));
+    assert_eq!(formatted(numeric_key, false), b"A");
+}
+
+#[test]
+fn safe_cstr_parser_keeps_invalid_bytes_and_sentinels_at_the_boundary() {
+    for input in [
+        b"\xff\0".as_slice(),
+        b"C-\xff\0".as_slice(),
+        b"\xc3\0".as_slice(),
+    ] {
+        let cstr = CStr::from_bytes_with_nul(input).unwrap();
+        assert_eq!(key_string_parse_cstr(cstr), None, "{input:?}");
+        unsafe {
+            assert_eq!(key_string_lookup_string(cstr.as_ptr()), KEYC_UNKNOWN);
+        }
+    }
+
+    let unknown = CStr::from_bytes_with_nul(b"Unknown\0").unwrap();
+    assert_eq!(key_string_parse_cstr(unknown), None);
+    unsafe {
+        assert_eq!(key_string_lookup_string(unknown.as_ptr()), KEYC_UNKNOWN);
+    }
+}
+
+#[test]
 fn formats_canonically_with_flags_unicode_and_invalid_values() {
     assert_eq!(
         formatted(KEYC_CTRL | KEYC_META | KEYC_SHIFT | b'a' as key_code, false),
