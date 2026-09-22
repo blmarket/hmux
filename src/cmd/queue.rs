@@ -402,7 +402,6 @@ pub unsafe extern "C" fn cmdq_insert_hook(
     let mut av: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut ap: ::core::ffi::VaList;
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
     let mut flag: ::core::ffi::c_char = 0;
     let mut arguments: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
@@ -412,7 +411,7 @@ pub unsafe extern "C" fn cmdq_insert_hook(
         return;
     }
     ap = args.clone();
-    xvasprintf(&raw mut name, fmt, ap);
+    let name = xvasprintf_cstring(fmt, ap);
     ep = event_payload_create();
     if !current.is_null() {
         event_payload_set_target(ep, current);
@@ -492,8 +491,7 @@ pub unsafe extern "C" fn cmdq_insert_hook(
         }
         flag = args_next(&raw mut ae) as ::core::ffi::c_char;
     }
-    events_fire(name, ep);
-    free(name as *mut ::core::ffi::c_void);
+    events_fire(name.as_ptr(), ep);
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmdq_continue(mut item: *mut cmdq_item) {

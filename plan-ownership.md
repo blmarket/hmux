@@ -637,6 +637,20 @@ legacy callers safe.
   files, and `git diff --check` passed. Existing compiler warnings remain;
   no sanitizer run was performed.
 
+### Increment 25 — command hook event name (2026-09-22)
+
+- `cmdq_insert_hook` now owns its formatted event name as a local `CString`
+  through `xvasprintf_cstring`, removing the direct `xvasprintf`/`free` pair.
+  The early `CMDQ_STATE_NOHOOKS` return still occurs before formatting.
+- The only compatibility pointer is `name.as_ptr()` during `events_fire`.
+  That function copies the name into the event payload and dispatches sinks
+  synchronously; the local owner remains alive through reentrant callbacks.
+  Event name bytes, first-NUL behavior, and the exported variadic ABI are
+  unchanged.
+- The allocator-bridge regression, binary build, edition-2021 rustfmt for
+  the changed file, and `git diff --check` passed. Existing compiler warnings
+  remain; no live hook-command scenario or sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -647,9 +661,8 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmdq_insert_hook` has a local formatted event name used through
-   synchronous event dispatch. `cmdq_error` has a formatted local string,
-   but its uppercase and sanitization branches require a mutation audit.
+1. `cmdq_error` has a formatted local string; its uppercase and sanitization
+   branches require a mutation audit before moving to `CString`.
 2. `args_print_add` and `layout_string_write` are later candidates: both use
    `xvasprintf`'s returned byte length, so the first-NUL `CString` bridge
    cannot simply replace their buffers without a length-preserving audit.
@@ -657,6 +670,6 @@ non-string value.
    escape into records or queues still require their containing lifecycles to
    be audited; the session/winlink graph remains deferred.
 
-Current validation is recorded in increments 15–24. The remaining
+Current validation is recorded in increments 15–25. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–24 has its own local commit; none was pushed.
+Each of increments 15–25 has its own local commit; none was pushed.
