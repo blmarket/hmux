@@ -5,7 +5,7 @@ use crate::src::key_bindings::{
 use crate::src::paste::paste_walk;
 pub use crate::src::server::clients;
 pub use crate::src::session::sessions;
-use crate::src::session::{sessions_RB_MINMAX, sessions_RB_NEXT};
+use crate::src::session::{sessions_minmax, sessions_next};
 pub use crate::src::shared::abi::__compar_fn_t;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -666,7 +666,7 @@ pub unsafe extern "C" fn sort_get_sessions(
     static mut l: *mut *mut session = ::core::ptr::null::<*mut session>() as *mut *mut session;
     static mut lsz: u_int = 0 as u_int;
     i = 0 as u_int;
-    s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         if lsz <= i {
             lsz = lsz.wrapping_add(100 as u_int);
@@ -680,7 +680,7 @@ pub unsafe extern "C" fn sort_get_sessions(
         i = i.wrapping_add(1);
         let ref mut fresh7 = *l.offset(fresh6 as isize);
         *fresh7 = s;
-        s = sessions_RB_NEXT(s);
+        s = sessions_next(s);
     }
     sort_qsort(
         l as *mut ::core::ffi::c_void,
@@ -712,7 +712,7 @@ pub unsafe extern "C" fn sort_get_panes(
         ::core::ptr::null::<*mut window_pane>() as *mut *mut window_pane;
     static mut lsz: u_int = 0 as u_int;
     i = 0 as u_int;
-    s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
         while !wl.is_null() {
@@ -735,7 +735,7 @@ pub unsafe extern "C" fn sort_get_panes(
             }
             wl = winlinks_RB_NEXT(wl);
         }
-        s = sessions_RB_NEXT(s);
+        s = sessions_next(s);
     }
     sort_qsort(
         l as *mut ::core::ffi::c_void,
@@ -859,7 +859,7 @@ pub unsafe extern "C" fn sort_get_winlinks(
     static mut l: *mut *mut winlink = ::core::ptr::null::<*mut winlink>() as *mut *mut winlink;
     static mut lsz: u_int = 0 as u_int;
     i = 0 as u_int;
-    s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
         while !wl.is_null() {
@@ -877,7 +877,7 @@ pub unsafe extern "C" fn sort_get_winlinks(
             *fresh15 = wl;
             wl = winlinks_RB_NEXT(wl);
         }
-        s = sessions_RB_NEXT(s);
+        s = sessions_next(s);
     }
     sort_qsort(
         l as *mut ::core::ffi::c_void,

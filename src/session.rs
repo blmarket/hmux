@@ -97,7 +97,7 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 #[no_mangle]
 pub static mut sessions: sessions = sessions {
-    rbh_root: ::core::ptr::null::<session>() as *mut session,
+    storage: std::ptr::null_mut(),
 };
 #[no_mangle]
 pub static mut next_session_id: u_int = 0;
@@ -112,543 +112,73 @@ pub unsafe extern "C" fn session_cmp(
 ) -> ::core::ffi::c_int {
     return strcmp((*s1).name, (*s2).name);
 }
-#[no_mangle]
-pub unsafe extern "C" fn sessions_RB_FIND(
-    mut head: *mut sessions,
-    mut elm: *mut session,
-) -> *mut session {
-    let mut tmp: *mut session = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = session_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return ::core::ptr::null_mut::<session>();
+pub(crate) unsafe fn sessions_key(elm: *mut session) -> Vec<u8> {
+    std::ffi::CStr::from_ptr((*elm).name).to_bytes().to_vec()
 }
-#[no_mangle]
-pub unsafe extern "C" fn sessions_RB_REMOVE_COLOR(
-    mut head: *mut sessions,
-    mut parent: *mut session,
-    mut elm: *mut session,
-) {
-    let mut tmp: *mut session = ::core::ptr::null_mut::<session>();
-    while (elm.is_null() || (*elm).entry.rbe_color == RB_BLACK) && elm != (*head).rbh_root {
-        if (*parent).entry.rbe_left == elm {
-            tmp = (*parent).entry.rbe_right;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_right;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK
-                {
-                    let mut oleft: *mut session = ::core::ptr::null_mut::<session>();
-                    oleft = (*tmp).entry.rbe_left;
-                    if !oleft.is_null() {
-                        (*oleft).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oleft = (*tmp).entry.rbe_left;
-                    (*tmp).entry.rbe_left = (*oleft).entry.rbe_right;
-                    if !(*tmp).entry.rbe_left.is_null() {
-                        (*(*oleft).entry.rbe_right).entry.rbe_parent = tmp;
-                    }
-                    (*oleft).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oleft).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oleft;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oleft;
-                        }
-                    } else {
-                        (*head).rbh_root = oleft;
-                    }
-                    (*oleft).entry.rbe_right = tmp;
-                    (*tmp).entry.rbe_parent = oleft;
-                    !(*oleft).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_right;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        } else {
-            tmp = (*parent).entry.rbe_left;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_left;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_left.is_null()
-                    || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK
-                {
-                    let mut oright: *mut session = ::core::ptr::null_mut::<session>();
-                    oright = (*tmp).entry.rbe_right;
-                    if !oright.is_null() {
-                        (*oright).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oright = (*tmp).entry.rbe_right;
-                    (*tmp).entry.rbe_right = (*oright).entry.rbe_left;
-                    if !(*tmp).entry.rbe_right.is_null() {
-                        (*(*oright).entry.rbe_left).entry.rbe_parent = tmp;
-                    }
-                    (*oright).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oright).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oright;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oright;
-                        }
-                    } else {
-                        (*head).rbh_root = oright;
-                    }
-                    (*oright).entry.rbe_left = tmp;
-                    (*tmp).entry.rbe_parent = oright;
-                    !(*oright).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_left;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        }
-    }
-    if !elm.is_null() {
-        (*elm).entry.rbe_color = RB_BLACK;
-    }
+pub unsafe fn sessions_find(head: *mut sessions, elm: *mut session) -> *mut session {
+    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::find(
+        (*head).storage,
+        &sessions_key(elm),
+    )
 }
-#[no_mangle]
-pub unsafe extern "C" fn sessions_RB_INSERT_COLOR(mut head: *mut sessions, mut elm: *mut session) {
-    let mut parent: *mut session = ::core::ptr::null_mut::<session>();
-    let mut gparent: *mut session = ::core::ptr::null_mut::<session>();
-    let mut tmp: *mut session = ::core::ptr::null_mut::<session>();
-    loop {
-        parent = (*elm).entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).entry.rbe_parent;
-        if parent == (*gparent).entry.rbe_left {
-            tmp = (*gparent).entry.rbe_right;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_right == elm {
-                    tmp = (*parent).entry.rbe_right;
-                    (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                    if !(*parent).entry.rbe_right.is_null() {
-                        (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_left = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_left;
-                (*gparent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*gparent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).entry.rbe_left;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_left == elm {
-                    tmp = (*parent).entry.rbe_left;
-                    (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                    if !(*parent).entry.rbe_left.is_null() {
-                        (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_right = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_right;
-                (*gparent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*gparent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).entry.rbe_color = RB_BLACK;
+pub unsafe fn sessions_nfind(head: *mut sessions, elm: *mut session) -> *mut session {
+    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::nfind(
+        (*head).storage,
+        &sessions_key(elm),
+    )
 }
-#[no_mangle]
-pub unsafe extern "C" fn sessions_RB_INSERT(
-    mut head: *mut sessions,
-    mut elm: *mut session,
-) -> *mut session {
-    let mut tmp: *mut session = ::core::ptr::null_mut::<session>();
-    let mut parent: *mut session = ::core::ptr::null_mut::<session>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = session_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
+pub unsafe fn sessions_insert(head: *mut sessions, elm: *mut session) -> *mut session {
+    let found = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::insert(
+        &raw mut (*head).storage,
+        sessions_key(elm),
+        elm,
+    );
+    if found.is_null() {
+        (*elm).entry.owner = (*head).storage;
     }
-    (*elm).entry.rbe_parent = parent;
-    (*elm).entry.rbe_right = ::core::ptr::null_mut::<session>();
-    (*elm).entry.rbe_left = (*elm).entry.rbe_right;
-    (*elm).entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).entry.rbe_left = elm;
-        } else {
-            (*parent).entry.rbe_right = elm;
-        }
-    } else {
-        (*head).rbh_root = elm;
-    }
-    sessions_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<session>();
+    found
 }
-#[no_mangle]
-pub unsafe extern "C" fn sessions_RB_NFIND(
-    mut head: *mut sessions,
-    mut elm: *mut session,
-) -> *mut session {
-    let mut tmp: *mut session = (*head).rbh_root;
-    let mut res: *mut session = ::core::ptr::null_mut::<session>();
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = session_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            res = tmp;
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
+pub unsafe fn sessions_remove(head: *mut sessions, elm: *mut session) -> *mut session {
+    let removed = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::remove(
+        &raw mut (*head).storage,
+        &sessions_key(elm),
+        elm,
+    );
+    if !removed.is_null() {
+        (*elm).entry.owner = std::ptr::null_mut();
     }
-    return res;
+    removed
 }
-#[no_mangle]
-pub unsafe extern "C" fn sessions_RB_REMOVE(
-    mut head: *mut sessions,
-    mut elm: *mut session,
-) -> *mut session {
-    let mut current_block: u64;
-    let mut child: *mut session = ::core::ptr::null_mut::<session>();
-    let mut parent: *mut session = ::core::ptr::null_mut::<session>();
-    let mut old: *mut session = elm;
-    let mut color: ::core::ffi::c_int = 0;
-    if (*elm).entry.rbe_left.is_null() {
-        child = (*elm).entry.rbe_right;
-        current_block = 7245201122033322888;
-    } else if (*elm).entry.rbe_right.is_null() {
-        child = (*elm).entry.rbe_left;
-        current_block = 7245201122033322888;
-    } else {
-        let mut left: *mut session = ::core::ptr::null_mut::<session>();
-        elm = (*elm).entry.rbe_right;
-        loop {
-            left = (*elm).entry.rbe_left;
-            if left.is_null() {
-                break;
-            }
-            elm = left;
-        }
-        child = (*elm).entry.rbe_right;
-        parent = (*elm).entry.rbe_parent;
-        color = (*elm).entry.rbe_color;
-        if !child.is_null() {
-            (*child).entry.rbe_parent = parent;
-        }
-        if !parent.is_null() {
-            if (*parent).entry.rbe_left == elm {
-                (*parent).entry.rbe_left = child;
-            } else {
-                (*parent).entry.rbe_right = child;
-            }
-        } else {
-            (*head).rbh_root = child;
-        }
-        if (*elm).entry.rbe_parent == old {
-            parent = elm;
-        }
-        (*elm).entry = (*old).entry;
-        if !(*old).entry.rbe_parent.is_null() {
-            if (*(*old).entry.rbe_parent).entry.rbe_left == old {
-                (*(*old).entry.rbe_parent).entry.rbe_left = elm;
-            } else {
-                (*(*old).entry.rbe_parent).entry.rbe_right = elm;
-            }
-        } else {
-            (*head).rbh_root = elm;
-        }
-        (*(*old).entry.rbe_left).entry.rbe_parent = elm;
-        if !(*old).entry.rbe_right.is_null() {
-            (*(*old).entry.rbe_right).entry.rbe_parent = elm;
-        }
-        if !parent.is_null() {
-            left = parent;
-            loop {
-                left = (*left).entry.rbe_parent;
-                if left.is_null() {
-                    break;
-                }
-            }
-        }
-        current_block = 9084725308750582075;
-    }
-    match current_block {
-        7245201122033322888 => {
-            parent = (*elm).entry.rbe_parent;
-            color = (*elm).entry.rbe_color;
-            if !child.is_null() {
-                (*child).entry.rbe_parent = parent;
-            }
-            if !parent.is_null() {
-                if (*parent).entry.rbe_left == elm {
-                    (*parent).entry.rbe_left = child;
-                } else {
-                    (*parent).entry.rbe_right = child;
-                }
-            } else {
-                (*head).rbh_root = child;
-            }
-        }
-        _ => {}
-    }
-    if color == RB_BLACK {
-        sessions_RB_REMOVE_COLOR(head, parent, child);
-    }
-    return old;
+pub unsafe fn sessions_minmax(head: *mut sessions, direction: ::core::ffi::c_int) -> *mut session {
+    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::edge((*head).storage, direction < 0)
 }
-#[no_mangle]
-pub unsafe extern "C" fn sessions_RB_NEXT(mut elm: *mut session) -> *mut session {
-    if !(*elm).entry.rbe_right.is_null() {
-        elm = (*elm).entry.rbe_right;
-        while !(*elm).entry.rbe_left.is_null() {
-            elm = (*elm).entry.rbe_left;
-        }
-    } else if !(*elm).entry.rbe_parent.is_null() && elm == (*(*elm).entry.rbe_parent).entry.rbe_left
-    {
-        elm = (*elm).entry.rbe_parent;
-    } else {
-        while !(*elm).entry.rbe_parent.is_null()
-            && elm == (*(*elm).entry.rbe_parent).entry.rbe_right
-        {
-            elm = (*elm).entry.rbe_parent;
-        }
-        elm = (*elm).entry.rbe_parent;
-    }
-    return elm;
+/// Resume a potentially destructive walk using a saved name and the live index.
+/// The named session and any of its successors may already have been removed.
+pub unsafe fn sessions_after(head: *mut sessions, name: &[u8]) -> *mut session {
+    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::neighbor(
+        (*head).storage,
+        name,
+        true,
+    )
 }
-#[no_mangle]
-pub unsafe extern "C" fn sessions_RB_PREV(mut elm: *mut session) -> *mut session {
-    if !(*elm).entry.rbe_left.is_null() {
-        elm = (*elm).entry.rbe_left;
-        while !(*elm).entry.rbe_right.is_null() {
-            elm = (*elm).entry.rbe_right;
-        }
-    } else if !(*elm).entry.rbe_parent.is_null()
-        && elm == (*(*elm).entry.rbe_parent).entry.rbe_right
-    {
-        elm = (*elm).entry.rbe_parent;
-    } else {
-        while !(*elm).entry.rbe_parent.is_null() && elm == (*(*elm).entry.rbe_parent).entry.rbe_left
-        {
-            elm = (*elm).entry.rbe_parent;
-        }
-        elm = (*elm).entry.rbe_parent;
-    }
-    return elm;
+
+/// The session must still belong to its index. Destructive walks use sessions_after.
+pub unsafe fn sessions_next(elm: *mut session) -> *mut session {
+    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::neighbor(
+        (*elm).entry.owner,
+        std::ffi::CStr::from_ptr((*elm).name).to_bytes(),
+        true,
+    )
 }
-#[no_mangle]
-pub unsafe extern "C" fn sessions_RB_MINMAX(
-    mut head: *mut sessions,
-    mut val: ::core::ffi::c_int,
-) -> *mut session {
-    let mut tmp: *mut session = (*head).rbh_root;
-    let mut parent: *mut session = ::core::ptr::null_mut::<session>();
-    while !tmp.is_null() {
-        parent = tmp;
-        if val < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else {
-            tmp = (*tmp).entry.rbe_right;
-        }
-    }
-    return parent;
+/// The session must still belong to its index.
+pub unsafe fn sessions_prev(elm: *mut session) -> *mut session {
+    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::neighbor(
+        (*elm).entry.owner,
+        std::ffi::CStr::from_ptr((*elm).name).to_bytes(),
+        false,
+    )
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn session_group_cmp(
     mut s1: *mut session_group,
@@ -732,12 +262,12 @@ pub unsafe fn session_groups_prev(elm: *mut session_group) -> *mut session_group
 #[no_mangle]
 pub unsafe extern "C" fn session_alive(mut s: *mut session) -> ::core::ffi::c_int {
     let mut s_loop: *mut session = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
+    s_loop = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s_loop.is_null() {
         if s_loop == s {
             return 1 as ::core::ffi::c_int;
         }
-        s_loop = sessions_RB_NEXT(s_loop);
+        s_loop = sessions_next(s_loop);
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -825,14 +355,11 @@ pub unsafe extern "C" fn session_find(mut name: *const ::core::ffi::c_char) -> *
             tqe_prev: ::core::ptr::null_mut::<*mut session>(),
         },
         entry: session_entry {
-            rbe_left: ::core::ptr::null_mut::<session>(),
-            rbe_right: ::core::ptr::null_mut::<session>(),
-            rbe_parent: ::core::ptr::null_mut::<session>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     s.name = name as *mut ::core::ffi::c_char;
-    return sessions_RB_FIND(&raw mut sessions, &raw mut s);
+    return sessions_find(&raw mut sessions, &raw mut s);
 }
 #[no_mangle]
 pub unsafe extern "C" fn session_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *mut session {
@@ -855,12 +382,12 @@ pub unsafe extern "C" fn session_find_by_id_str(mut s: *const ::core::ffi::c_cha
 #[no_mangle]
 pub unsafe extern "C" fn session_find_by_id(mut id: u_int) -> *mut session {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         if (*s).id == id {
             return s;
         }
-        s = sessions_RB_NEXT(s);
+        s = sessions_next(s);
     }
     return ::core::ptr::null_mut::<session>();
 }
@@ -918,12 +445,12 @@ pub unsafe extern "C" fn session_create(
                     (*s).id,
                 );
             }
-            if sessions_RB_FIND(&raw mut sessions, s).is_null() {
+            if sessions_find(&raw mut sessions, s).is_null() {
                 break;
             }
         }
     }
-    sessions_RB_INSERT(&raw mut sessions, s);
+    sessions_insert(&raw mut sessions, s);
     log_debug(
         b"new session %s $%u\0" as *const u8 as *const ::core::ffi::c_char,
         (*s).name,
@@ -1013,7 +540,7 @@ pub unsafe extern "C" fn session_destroy(
         return;
     }
     (*s).curw = ::core::ptr::null_mut::<winlink>();
-    sessions_RB_REMOVE(&raw mut sessions, s);
+    sessions_remove(&raw mut sessions, s);
     if notify != 0 {
         events_fire_session(
             b"session-closed\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1119,7 +646,7 @@ pub unsafe extern "C" fn session_next_session(
     let mut l: *mut *mut session = ::core::ptr::null_mut::<*mut session>();
     let mut n: u_int = 0;
     let mut i: u_int = 0;
-    if sessions.rbh_root.is_null() || session_alive(s) == 0 {
+    if sessions.storage.is_null() || session_alive(s) == 0 {
         return ::core::ptr::null_mut::<session>();
     }
     l = sort_get_sessions(&raw mut n, sort_crit);
@@ -1150,7 +677,7 @@ pub unsafe extern "C" fn session_previous_session(
     let mut l: *mut *mut session = ::core::ptr::null_mut::<*mut session>();
     let mut n: u_int = 0;
     let mut i: u_int = 0;
-    if sessions.rbh_root.is_null() || session_alive(s) == 0 {
+    if sessions.storage.is_null() || session_alive(s) == 0 {
         return ::core::ptr::null_mut::<session>();
     }
     l = sort_get_sessions(&raw mut n, sort_crit);

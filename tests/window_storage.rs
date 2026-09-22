@@ -64,10 +64,7 @@ fn global_lookup_preserves_window_identity() {
         assert!(windows_insert(head, &mut window).is_null());
         assert_eq!(window_find_by_id(123), &mut window as *mut _);
         assert!(window_find_by_id(124).is_null());
-        assert_eq!(
-            windows_remove(head, &mut window),
-            &mut window as *mut _
-        );
+        assert_eq!(windows_remove(head, &mut window), &mut window as *mut _);
         assert!(window_find_by_id(123).is_null());
         assert!((*head).storage.is_null());
     }

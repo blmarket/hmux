@@ -11,7 +11,7 @@ use crate::src::log::log_debug;
 use crate::src::prompt_history::prompt_load_history;
 pub use crate::src::server::clients;
 pub use crate::src::session::sessions;
-use crate::src::session::sessions_RB_MINMAX;
+use crate::src::session::sessions_minmax;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{__off64_t, __off_t};
 pub use crate::src::shared::arguments::args;
@@ -449,7 +449,7 @@ pub unsafe extern "C" fn cfg_show_causes(mut s: *mut session) {
             if !c.is_null() && !(*c).session.is_null() {
                 s = (*c).session;
             } else {
-                s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
+                s = sessions_minmax(&raw mut sessions, RB_NEGINF);
             }
         }
         if s.is_null() || (*s).attached == 0 as u_int {

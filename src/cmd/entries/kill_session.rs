@@ -6,7 +6,7 @@ use crate::src::format::{format_create, format_defaults, format_expand, format_f
 use crate::src::server_fn::{server_destroy_session, server_redraw_session};
 pub use crate::src::session::sessions;
 use crate::src::session::{
-    session_destroy, session_group_contains, sessions_RB_MINMAX, sessions_RB_NEXT,
+    session_destroy, session_group_contains, sessions_after, sessions_key, sessions_minmax,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
@@ -170,12 +170,9 @@ unsafe extern "C" fn cmd_kill_session_all(
 ) -> cmd_retval {
     let mut s: *mut session = (*cmdq_get_target(item)).s;
     let mut sloop: *mut session = ::core::ptr::null_mut::<session>();
-    let mut stmp: *mut session = ::core::ptr::null_mut::<session>();
-    sloop = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
-    while !sloop.is_null() && {
-        stmp = sessions_RB_NEXT(sloop);
-        1 as ::core::ffi::c_int != 0
-    } {
+    sloop = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    while !sloop.is_null() {
+        let name = sessions_key(sloop);
         if !(sloop == s) {
             if !(cmd_kill_session_filter(item, sloop, filter) == 0) {
                 server_destroy_session(sloop);
@@ -186,7 +183,7 @@ unsafe extern "C" fn cmd_kill_session_all(
                 );
             }
         }
-        sloop = stmp;
+        sloop = sessions_after(&raw mut sessions, &name);
     }
     return CMD_RETURN_NORMAL;
 }

@@ -221,10 +221,7 @@ pub unsafe fn windows_remove(head: *mut windows, elm: *mut window) -> *mut windo
     }
     removed
 }
-pub unsafe fn windows_minmax(
-    head: *mut windows,
-    direction: ::core::ffi::c_int,
-) -> *mut window {
+pub unsafe fn windows_minmax(head: *mut windows, direction: ::core::ffi::c_int) -> *mut window {
     crate::src::shared::tree::OrderedIndex::<u_int, window>::edge((*head).storage, direction < 0)
 }
 pub unsafe fn windows_next(elm: *mut window) -> *mut window {

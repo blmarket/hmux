@@ -47,17 +47,23 @@ impl<K: Ord, T> OrderedIndex<K, T> {
         pair.map_or(std::ptr::null_mut(), |(_, &p)| p)
     }
 
-    pub unsafe fn neighbor(index: *mut Self, key: &K, next: bool) -> *mut T {
+    pub unsafe fn neighbor<Q: Ord + ?Sized>(index: *mut Self, key: &Q, next: bool) -> *mut T
+    where
+        K: std::borrow::Borrow<Q>,
+    {
         use std::ops::Bound::{Excluded, Unbounded};
         if index.is_null() {
             return std::ptr::null_mut();
         }
         let pair = if next {
-            (*index).entries.range((Excluded(key), Unbounded)).next()
+            (*index)
+                .entries
+                .range::<Q, _>((Excluded(key), Unbounded))
+                .next()
         } else {
             (*index)
                 .entries
-                .range((Unbounded, Excluded(key)))
+                .range::<Q, _>((Unbounded, Excluded(key)))
                 .next_back()
         };
         pair.map_or(std::ptr::null_mut(), |(_, &p)| p)

@@ -109,17 +109,9 @@ fn migrated_layouts_match_every_original_copy() {
         ]
     );
     family!(grid_reader, [gd, cx, cy], [grid_reader, window_copy]);
-    family!(
-        hyperlink_inner_entry,
-        [owner],
-        [hyperlinks]
-    );
+    family!(hyperlink_inner_entry, [owner], [hyperlinks]);
     family!(hyperlink_list_entry, [tqe_next, tqe_prev], [hyperlinks]);
-    family!(
-        hyperlink_uri_entry,
-        [owner],
-        [hyperlinks]
-    );
+    family!(hyperlink_uri_entry, [owner], [hyperlinks]);
     family!(
         hyperlinks,
         [next_inner, by_inner, by_uri, references],
