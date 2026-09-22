@@ -1897,7 +1897,7 @@ unsafe extern "C" fn window_customize_build(
     );
     kt = key_bindings_first_table();
     while !kt.is_null() {
-        if !(*kt).key_bindings.rbh_root.is_null() {
+        if !(*kt).key_bindings.storage.is_null() {
             window_customize_build_keys(data, kt, ft, filter, &raw mut fs);
         }
         kt = key_bindings_next_table(kt);
