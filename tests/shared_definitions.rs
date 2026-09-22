@@ -216,8 +216,6 @@ fn no_unreviewed_named_duplicates_remain() {
         if paths.len() < 2 {
             continue;
         }
-        // These are separate implementation enums, with distinct domains.
-        // See the declaration-specific exceptions in docs/shared-declarations.md.
         assert!(
             matches!(name.as_str(), "NONE" | "LEFT" | "RIGHT" | "TOP" | "BOTTOM"),
             "unreviewed duplicated declaration {name}: {paths:?}"
