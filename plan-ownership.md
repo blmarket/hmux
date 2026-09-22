@@ -196,16 +196,41 @@ legacy callers safe.
   Existing compiler warnings remain; no sanitizer or live subscription command
   scenario was run.
 
+### Increment 5 — layout serializer scratch buffer (2026-09-22)
+
+- Replaced the private `layout_string` `dat`/`size`/`capacity` record and its
+  `layout_string_init`/`layout_string_free` lifecycle with `LayoutString`, a
+  `Vec<u8>` owner that maintains the temporary trailing NUL. Updated detached
+  v1/v2 serialization and live `layout_append_v1`/`layout_append_v2` callers
+  to use scoped `&mut LayoutString` access.
+- Removed manual serializer reallocations, capacity accounting, raw buffer
+  copies, and the ownership-transfer nulling in
+  `layout_description_bytes_from_string`. Detached results still cross the
+  existing C-owned `LayoutDescriptionBytes` boundary through `from_slice`;
+  `layout_dump` still creates its returned C string with `xasprintf`.
+- Audited the compatibility pointers: `LayoutString::as_c_ptr()` is borrowed
+  only synchronously by `layout_checksum` and `xasprintf`; the variadic
+  `layout_string_write` still frees only its separate `xvasprintf` temporary.
+  Live layout-cell pointers and compatibility-tree cleanup are unchanged, and
+  no exported ABI or layout record was changed.
+- Added a 4096-byte identifier regression covering Vec growth and byte-exact
+  v2 serialization. Validation: `cargo test --test layout_custom` passed 13
+  tests, `cargo test --workspace` passed, `cargo build --bin hmux2` passed,
+  `rustfmt --check tests/layout_custom.rs` and `git diff --check` passed.
+  Existing compiler warnings remain; `cargo fmt -- --check` still reports the
+  pre-existing difference in `src/key_string.rs`. No sanitizer or dedicated
+  live `layout_dump` integration scenario was run.
+
 ### Next candidates
 
-1. `layout_string` in `src/layout/custom.rs`: inspect its stack-owned serializer
-   buffer lifecycle before replacing realloc/capacity/free with a Vec. This is
-   larger than monitor scratch and must account for serialization failures and
-   the final exported C-owned output allocation.
-2. Pane resize queue, then session/winlink graph: still deferred while local
-   string/buffer boundaries remain. Queue cleanup is callback-adjacent; graph
-   work needs an explicit observer teardown and reentrancy audit.
+1. Pane resize queue in `src/shared/pane.rs`, `src/window.rs`,
+   `src/server_client.rs`, and `src/screen_write.rs`: it already has boxed
+   storage, but cleanup is callback-adjacent and needs a complete cancellation
+   and callback lifetime audit.
+2. Session/winlink graph ownership: defer until the queue boundary is complete;
+   it needs explicit observer teardown, checked weak access, and a reentrancy
+   audit.
 
 Final validation for this execution: all workspace tests passed (zero failures
-or ignored tests), the new `monitor_parse` suite passed 2 tests, and
+or ignored tests), the new layout suite passed 13 tests, and
 `cargo build --bin hmux2` passed. No commits, pushes, or publication performed.

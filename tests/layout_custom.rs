@@ -74,6 +74,19 @@ fn v2_round_trip_preserves_the_parser_string_bytes() {
 }
 
 #[test]
+fn v2_serializer_grows_for_long_identifiers() {
+    let identifier = "x".repeat(4096);
+    let source = format!(
+        r#"{{"V":2,"L":{{"t":"p","w":79,"h":23,"x":0,"y":0,"i":0,"I":"{}"}}}}"#,
+        identifier
+    );
+    let description = parse_layout_description(source.as_bytes()).unwrap();
+    let serialized = serialize_layout_description(&description).unwrap();
+
+    assert_eq!(serialized.as_ref(), source.as_bytes());
+}
+
+#[test]
 fn legacy_serialization_round_trips_nested_pane_ids() {
     let original =
         parse_layout_description(&legacy_layout("79x23,0,0{39x23,0,0,7,39x23,40,0,8}")).unwrap();

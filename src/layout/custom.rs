@@ -88,12 +88,39 @@ use ::std::ops::{Deref, Index};
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct layout_string {
-    pub dat: *mut ::core::ffi::c_char,
-    pub size: size_t,
-    pub capacity: size_t,
+/// A temporary NUL-terminated serializer buffer.
+///
+/// The buffer is only used inside this module.  Its final public results are
+/// copied into the existing C-owned result types or allocated by `xasprintf`
+/// at the foreign-function boundary below.
+struct LayoutString {
+    bytes: Vec<u8>,
+}
+
+impl LayoutString {
+    fn new() -> Self {
+        Self { bytes: vec![0] }
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..self.bytes.len() - 1]
+    }
+
+    fn as_c_ptr(&self) -> *const ::core::ffi::c_char {
+        self.bytes.as_ptr() as *const ::core::ffi::c_char
+    }
+
+    fn append(&mut self, value: &[u8]) {
+        self.bytes.pop();
+        self.bytes.extend_from_slice(value);
+        self.bytes.push(0);
+    }
+
+    fn remove_last_byte(&mut self) {
+        assert!(self.bytes.len() >= 2, "layout serializer underflow");
+        self.bytes.truncate(self.bytes.len() - 2);
+        self.bytes.push(0);
+    }
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -582,49 +609,20 @@ unsafe extern "C" fn layout_parse_last_cmp(
     }
     return retval;
 }
-unsafe extern "C" fn layout_string_init(mut ls: *mut layout_string) {
-    (*ls).capacity = 1024 as size_t;
-    (*ls).dat = xmalloc((*ls).capacity) as *mut ::core::ffi::c_char;
-    *(*ls).dat.offset(0 as ::core::ffi::c_int as isize) = '\0' as i32 as ::core::ffi::c_char;
-    (*ls).size = 0 as size_t;
-}
-unsafe extern "C" fn layout_string_free(mut ls: *mut layout_string) {
-    free((*ls).dat as *mut ::core::ffi::c_void);
-    (*ls).dat = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    (*ls).size = 0 as size_t;
-    (*ls).capacity = 0 as size_t;
-}
 unsafe extern "C" fn layout_string_write(
-    mut ls: *mut layout_string,
+    ls: &mut LayoutString,
     mut fmt: *const ::core::ffi::c_char,
     mut args: ...
 ) {
-    let mut ap: ::core::ffi::VaList;
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut slen: ::core::ffi::c_int = 0;
-    ap = args.clone();
-    slen = xvasprintf(&raw mut s, fmt, ap);
-    while (*ls)
-        .size
-        .wrapping_add(slen as size_t)
-        .wrapping_add(1 as size_t)
-        > (*ls).capacity
-    {
-        (*ls).dat = xreallocarray(
-            (*ls).dat as *mut ::core::ffi::c_void,
-            2 as size_t,
-            (*ls).capacity,
-        ) as *mut ::core::ffi::c_char;
-        (*ls).capacity = (*ls).capacity.wrapping_mul(2 as size_t);
+    unsafe {
+        let mut ap: ::core::ffi::VaList;
+        let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+        let mut slen: ::core::ffi::c_int = 0;
+        ap = args.clone();
+        slen = xvasprintf(&raw mut s, fmt, ap);
+        ls.append(::std::slice::from_raw_parts(s as *const u8, slen as usize));
+        free(s as *mut ::core::ffi::c_void);
     }
-    memcpy(
-        (*ls).dat.offset((*ls).size as isize) as *mut ::core::ffi::c_void,
-        s as *const ::core::ffi::c_void,
-        slen as size_t,
-    );
-    (*ls).size = (*ls).size.wrapping_add(slen as size_t);
-    *(*ls).dat.offset((*ls).size as isize) = '\0' as i32 as ::core::ffi::c_char;
-    free(s as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn layout_parse_init_ctx(
     mut pctx: *mut layout_parse_ctx,
@@ -1240,32 +1238,11 @@ pub fn parse_layout_description(input: &[u8]) -> Result<LayoutDescription, Layou
     Ok(result.unwrap())
 }
 
-unsafe fn layout_string_append(output: *mut layout_string, value: &[u8]) {
-    while (*output)
-        .size
-        .wrapping_add(value.len() as size_t)
-        .wrapping_add(1 as size_t)
-        > (*output).capacity
-    {
-        (*output).dat = xreallocarray(
-            (*output).dat as *mut ::core::ffi::c_void,
-            2 as size_t,
-            (*output).capacity,
-        ) as *mut ::core::ffi::c_char;
-        (*output).capacity = (*output).capacity.wrapping_mul(2 as size_t);
-    }
-    if !value.is_empty() {
-        memcpy(
-            (*output).dat.add((*output).size) as *mut ::core::ffi::c_void,
-            value.as_ptr() as *const ::core::ffi::c_void,
-            value.len(),
-        );
-    }
-    (*output).size = (*output).size.wrapping_add(value.len() as size_t);
-    *(*output).dat.add((*output).size) = 0;
+fn layout_string_append(output: &mut LayoutString, value: &[u8]) {
+    output.append(value);
 }
 
-unsafe fn layout_description_append_json_string(output: *mut layout_string, value: &[u8]) -> bool {
+fn layout_description_append_json_string(output: &mut LayoutString, value: &[u8]) -> bool {
     let mut index = 0;
     while index < value.len() {
         match value[index] {
@@ -1303,7 +1280,7 @@ unsafe fn layout_description_append_json_string(output: *mut layout_string, valu
 
 unsafe fn layout_description_append_json_node(
     node: &LayoutDescriptionNode,
-    output: *mut layout_string,
+    output: &mut LayoutString,
 ) -> bool {
     let type_name = match node.type_0 {
         LAYOUT_WINDOWPANE => 'p' as ::core::ffi::c_int,
@@ -1379,7 +1356,7 @@ unsafe fn layout_description_append_json_node(
 
 unsafe fn layout_description_append_v1(
     node: &LayoutDescriptionNode,
-    output: *mut layout_string,
+    output: &mut LayoutString,
 ) -> bool {
     layout_string_write(
         output,
@@ -1445,17 +1422,8 @@ fn layout_description_checksum(bytes: &[u8]) -> u16 {
     checksum
 }
 
-unsafe fn layout_description_bytes_from_string(
-    output: *mut layout_string,
-) -> LayoutDescriptionBytes {
-    let result = LayoutDescriptionBytes {
-        data: (*output).dat as *mut u8,
-        len: (*output).size,
-    };
-    (*output).dat = ::core::ptr::null_mut();
-    (*output).size = 0;
-    (*output).capacity = 0;
-    result
+fn layout_description_bytes_from_string(output: LayoutString) -> LayoutDescriptionBytes {
+    LayoutDescriptionBytes::from_slice(output.as_bytes())
 }
 
 /// Serialize a parsed custom layout without consulting or changing a window.
@@ -1470,51 +1438,27 @@ pub fn serialize_layout_description(
     unsafe {
         match description.version {
             1 => {
-                let mut body = layout_string {
-                    dat: ::core::ptr::null_mut(),
-                    size: 0,
-                    capacity: 0,
-                };
-                let mut output = layout_string {
-                    dat: ::core::ptr::null_mut(),
-                    size: 0,
-                    capacity: 0,
-                };
-                layout_string_init(&raw mut body);
-                if !layout_description_append_v1(&description.root, &raw mut body) {
-                    layout_string_free(&raw mut body);
+                let mut body = LayoutString::new();
+                if !layout_description_append_v1(&description.root, &mut body) {
                     return None;
                 }
-                layout_string_init(&raw mut output);
+                let mut output = LayoutString::new();
                 layout_string_write(
-                    &raw mut output,
+                    &mut output,
                     b"%04hx,\0" as *const u8 as *const ::core::ffi::c_char,
-                    layout_description_checksum(::std::slice::from_raw_parts(
-                        body.dat as *const u8,
-                        body.size,
-                    )) as ::core::ffi::c_int,
+                    layout_description_checksum(body.as_bytes()) as ::core::ffi::c_int,
                 );
-                layout_string_append(
-                    &raw mut output,
-                    ::std::slice::from_raw_parts(body.dat as *const u8, body.size),
-                );
-                layout_string_free(&raw mut body);
-                Some(layout_description_bytes_from_string(&raw mut output))
+                layout_string_append(&mut output, body.as_bytes());
+                Some(layout_description_bytes_from_string(output))
             }
             2 => {
-                let mut output = layout_string {
-                    dat: ::core::ptr::null_mut(),
-                    size: 0,
-                    capacity: 0,
-                };
-                layout_string_init(&raw mut output);
-                layout_string_append(&raw mut output, b"{\"V\":2,\"L\":");
-                if !layout_description_append_json_node(&description.root, &raw mut output) {
-                    layout_string_free(&raw mut output);
+                let mut output = LayoutString::new();
+                layout_string_append(&mut output, b"{\"V\":2,\"L\":");
+                if !layout_description_append_json_node(&description.root, &mut output) {
                     return None;
                 }
-                layout_string_append(&raw mut output, b"}");
-                Some(layout_description_bytes_from_string(&raw mut output))
+                layout_string_append(&mut output, b"}");
+                Some(layout_description_bytes_from_string(output))
             }
             _ => None,
         }
@@ -1567,38 +1511,32 @@ pub unsafe extern "C" fn layout_dump(
     mut lcroot: *mut layout_cell,
     mut flags: ::core::ffi::c_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut layout_string: layout_string = layout_string {
-        dat: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        size: 0,
-        capacity: 0,
-    };
+    let mut layout_string = LayoutString::new();
     let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if lcroot.is_null() {
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
-    layout_string_init(&raw mut layout_string);
-    if layout_append(lcroot, &raw mut layout_string, flags) == 0 as ::core::ffi::c_int {
+    if layout_append(lcroot, &mut layout_string, flags) == 0 as ::core::ffi::c_int {
         if flags & LAYOUT_CUSTOM_OLD_FORMAT != 0 {
             xasprintf(
                 &raw mut out,
                 b"%04hx,%s\0" as *const u8 as *const ::core::ffi::c_char,
-                layout_checksum(layout_string.dat) as ::core::ffi::c_int,
-                layout_string.dat,
+                layout_checksum(layout_string.as_c_ptr()) as ::core::ffi::c_int,
+                layout_string.as_c_ptr(),
             );
         } else {
             xasprintf(
                 &raw mut out,
                 b"{\"V\":2,\"L\":%s}\0" as *const u8 as *const ::core::ffi::c_char,
-                layout_string.dat,
+                layout_string.as_c_ptr(),
             );
         }
     }
-    layout_string_free(&raw mut layout_string);
     return out;
 }
 unsafe extern "C" fn layout_append_v2(
     mut lc: *mut layout_cell,
-    mut ls: *mut layout_string,
+    ls: &mut LayoutString,
 ) -> ::core::ffi::c_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -1652,8 +1590,7 @@ unsafe extern "C" fn layout_append_v2(
         if n == 0 as u_int {
             return -(1 as ::core::ffi::c_int);
         }
-        (*ls).size = (*ls).size.wrapping_sub(1);
-        *(*ls).dat.offset((*ls).size as isize) = '\0' as i32 as ::core::ffi::c_char;
+        ls.remove_last_byte();
         layout_string_write(ls, b"]\0" as *const u8 as *const ::core::ffi::c_char);
     } else {
         wp = (*lc).wp;
@@ -1700,7 +1637,7 @@ unsafe extern "C" fn layout_append_v2(
 }
 unsafe extern "C" fn layout_append_v1(
     mut lc: *mut layout_cell,
-    mut ls: *mut layout_string,
+    ls: &mut LayoutString,
 ) -> ::core::ffi::c_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut brackets: *const ::core::ffi::c_char =
@@ -1756,8 +1693,7 @@ unsafe extern "C" fn layout_append_v1(
                 layout_string_write(ls, b",\0" as *const u8 as *const ::core::ffi::c_char);
                 lcchild = (*lcchild).entry.tqe_next;
             }
-            (*ls).size = (*ls).size.wrapping_sub(1);
-            *(*ls).dat.offset((*ls).size as isize) = '\0' as i32 as ::core::ffi::c_char;
+            ls.remove_last_byte();
             layout_string_write(
                 ls,
                 b"%c\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1857,7 +1793,7 @@ unsafe extern "C" fn layout_custom_free_compat(mut lcroot: *mut layout_cell) {
 }
 unsafe extern "C" fn layout_append(
     mut lcroot: *mut layout_cell,
-    mut ls: *mut layout_string,
+    ls: &mut LayoutString,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
     let mut lccompat: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
