@@ -701,9 +701,16 @@ pub unsafe extern "C" fn winlink_add(
     } else if !winlink_find_by_index(wwl, idx).is_null() {
         return ::core::ptr::null_mut::<winlink>();
     }
-    wl = xcalloc(1 as size_t, ::core::mem::size_of::<winlink>() as size_t) as *mut winlink;
-    (*wl).idx = idx;
-    winlinks_insert(wwl, wl);
+    let mut owner = refbox::RefBox::new(std::mem::zeroed::<winlink>());
+    owner.try_access_mut(|link| link.idx = idx).unwrap();
+    wl = owner.as_ptr() as *mut winlink;
+    let found = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::insert_owned(
+        &raw mut (*wwl).storage,
+        idx,
+        owner,
+    );
+    debug_assert!(found.is_null());
+    (*wl).entry.owner = (*wwl).storage;
     return wl;
 }
 #[no_mangle]
@@ -745,8 +752,12 @@ pub unsafe extern "C" fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut win
             b"winlink_remove\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
+    let owner = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::take_owned(
+        (*wwl).storage,
+        wl,
+    ).expect("winlink must have a RefBox owner");
     winlinks_remove(wwl, wl);
-    free(wl as *mut ::core::ffi::c_void);
+    drop(owner);
 }
 #[no_mangle]
 pub unsafe extern "C" fn winlink_next(mut wl: *mut winlink) -> *mut winlink {
@@ -787,32 +798,88 @@ pub unsafe extern "C" fn winlink_previous_by_number(
     return wl;
 }
 #[no_mangle]
-pub unsafe extern "C" fn winlink_stack_push(mut stack: *mut winlink_stack, mut wl: *mut winlink) {
+pub unsafe extern "C" fn winlink_stack_push(stack: *mut winlink_stack, wl: *mut winlink) {
     if wl.is_null() {
         return;
     }
     winlink_stack_remove(stack, wl);
-    (*wl).sentry.tqe_next = (*stack).tqh_first;
-    if !(*wl).sentry.tqe_next.is_null() {
-        (*(*stack).tqh_first).sentry.tqe_prev = &raw mut (*wl).sentry.tqe_next;
-    } else {
-        (*stack).tqh_last = &raw mut (*wl).sentry.tqe_next;
+    if (*stack).storage.is_null() {
+        (*stack).storage = Box::into_raw(Box::default());
     }
-    (*stack).tqh_first = wl;
-    (*wl).sentry.tqe_prev = &raw mut (*stack).tqh_first;
+    let weak = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::downgrade(
+        (*wl).entry.owner,
+        wl,
+    ).expect("visited winlink must have a RefBox owner");
+    (*(*stack).storage).push_front(weak);
     (*wl).flags |= WINLINK_VISITED;
 }
 #[no_mangle]
-pub unsafe extern "C" fn winlink_stack_remove(mut stack: *mut winlink_stack, mut wl: *mut winlink) {
-    if !wl.is_null() && (*wl).flags & WINLINK_VISITED != 0 {
-        if !(*wl).sentry.tqe_next.is_null() {
-            (*(*wl).sentry.tqe_next).sentry.tqe_prev = (*wl).sentry.tqe_prev;
-        } else {
-            (*stack).tqh_last = (*wl).sentry.tqe_prev;
-        }
-        *(*wl).sentry.tqe_prev = (*wl).sentry.tqe_next;
-        (*wl).flags &= !WINLINK_VISITED;
+pub unsafe extern "C" fn winlink_stack_remove(stack: *mut winlink_stack, wl: *mut winlink) {
+    if wl.is_null() {
+        return;
     }
+    if !(*stack).storage.is_null() {
+        (*(*stack).storage).retain(|link| link.as_ptr() != wl && link.is_alive());
+    }
+    (*wl).flags &= !WINLINK_VISITED;
+}
+
+/// Append while rebuilding a session's saved visit order.
+pub unsafe fn winlink_stack_append(stack: *mut winlink_stack, wl: *mut winlink) {
+    if (*stack).storage.is_null() {
+        (*stack).storage = Box::into_raw(Box::default());
+    }
+    let weak = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::downgrade(
+        (*wl).entry.owner,
+        wl,
+    ).expect("visited winlink must have a RefBox owner");
+    (*(*stack).storage).push_back(weak);
+    (*wl).flags |= WINLINK_VISITED;
+}
+
+pub unsafe fn winlink_stack_clear(stack: *mut winlink_stack) {
+    if !(*stack).storage.is_null() {
+        drop(Box::from_raw((*stack).storage));
+        (*stack).storage = std::ptr::null_mut();
+    }
+}
+
+pub unsafe fn winlink_stack_indices(stack: *const winlink_stack) -> Vec<::core::ffi::c_int> {
+    if (*stack).storage.is_null() {
+        return Vec::new();
+    }
+    (*(*stack).storage)
+        .iter()
+        .filter_map(|link| match link.try_access_mut(|node| node.idx) {
+            Ok(idx) => Some(idx),
+            Err(refbox::BorrowError::Dropped) => None,
+            Err(refbox::BorrowError::Borrowed) => panic!("visited winlink is already borrowed"),
+        })
+        .collect()
+}
+
+pub unsafe fn winlink_stack_first(stack: *const winlink_stack, _links: *mut winlinks) -> *mut winlink {
+    if (*stack).storage.is_null() {
+        return std::ptr::null_mut();
+    }
+    (*(*stack).storage).iter().find(|link| link.is_alive())
+        .map_or(std::ptr::null_mut(), |link| link.as_ptr() as *mut winlink)
+}
+
+pub unsafe fn winlink_stack_next(
+    stack: *const winlink_stack,
+    _links: *mut winlinks,
+    wl: *mut winlink,
+) -> *mut winlink {
+    if wl.is_null() || (*stack).storage.is_null() {
+        return std::ptr::null_mut();
+    }
+    let queue = &*(*stack).storage;
+    let Some(position) = queue.iter().position(|link| link.as_ptr() == wl) else {
+        return std::ptr::null_mut();
+    };
+    queue.iter().skip(position + 1).find(|link| link.is_alive())
+        .map_or(std::ptr::null_mut(), |link| link.as_ptr() as *mut winlink)
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *mut window {
@@ -2376,7 +2443,7 @@ pub unsafe extern "C" fn window_printable_flags(
         pos = pos.wrapping_add(1);
         flags[fresh7 as usize] = '*' as i32 as ::core::ffi::c_char;
     }
-    if wl == (*s).lastw.tqh_first {
+    if wl == winlink_stack_first(&raw const (*s).lastw, &raw mut (*s).windows) {
         let fresh8 = pos;
         pos = pos.wrapping_add(1);
         flags[fresh8 as usize] = '-' as i32 as ::core::ffi::c_char;

@@ -7,7 +7,6 @@ use super::options::options;
 use super::terminal::termios;
 use super::window::{windows, winlink, winlink_stack, winlinks};
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session {
     pub id: u_int,

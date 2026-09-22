@@ -23,6 +23,7 @@ hmux-rt = { path = "hmux-rt" }
 hmux-buffer = { path = "hmux-buffer" }
 c2rust-bitfields = "0.22.1"
 libc = "0.2"
+refbox = "0.4.1"
 
 [dev-dependencies]
 syn = { version = "2", features = ["full", "visit"] }

@@ -580,7 +580,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
         if strcmp(window, b"!\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
         {
-            (*fs).wl = (*(*fs).s).lastw.tqh_first;
+            (*fs).wl = crate::src::window::winlink_stack_first(&raw const (*(*fs).s).lastw, &raw mut (*(*fs).s).windows);
             if (*fs).wl.is_null() {
                 return -(1 as ::core::ffi::c_int);
             }

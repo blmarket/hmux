@@ -48,6 +48,7 @@ pub mod screen;
 pub mod screen_write;
 pub mod server_acl;
 pub mod session;
+pub mod session_refbox;
 pub mod signal;
 pub mod socket;
 pub mod sort;

@@ -13487,602 +13487,602 @@ fn original_copies_match() {
     record!(
         "src/alerts.rs::winlink_stack",
         hmux2::src::alerts::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/arguments.rs::winlink_stack",
         hmux2::src::arguments::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cfg.rs::winlink_stack",
         hmux2::src::cfg::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/client.rs::winlink_stack",
         hmux2::src::client::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd.rs::winlink_stack",
         hmux2::src::cmd::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_attach_session.rs::winlink_stack",
         hmux2::src::cmd_attach_session::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_bind_key.rs::winlink_stack",
         hmux2::src::cmd_bind_key::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_break_pane.rs::winlink_stack",
         hmux2::src::cmd_break_pane::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_capture_pane.rs::winlink_stack",
         hmux2::src::cmd_capture_pane::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_choose_tree.rs::winlink_stack",
         hmux2::src::cmd_choose_tree::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_command_prompt.rs::winlink_stack",
         hmux2::src::cmd_command_prompt::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_confirm_before.rs::winlink_stack",
         hmux2::src::cmd_confirm_before::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_copy_mode.rs::winlink_stack",
         hmux2::src::cmd_copy_mode::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_detach_client.rs::winlink_stack",
         hmux2::src::cmd_detach_client::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_display_menu.rs::winlink_stack",
         hmux2::src::cmd_display_menu::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_display_message.rs::winlink_stack",
         hmux2::src::cmd_display_message::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_find.rs::winlink_stack",
         hmux2::src::cmd_find::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_find_window.rs::winlink_stack",
         hmux2::src::cmd_find_window::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_if_shell.rs::winlink_stack",
         hmux2::src::cmd_if_shell::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_join_pane.rs::winlink_stack",
         hmux2::src::cmd_join_pane::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_kill_pane.rs::winlink_stack",
         hmux2::src::cmd_kill_pane::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_kill_session.rs::winlink_stack",
         hmux2::src::cmd_kill_session::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_kill_window.rs::winlink_stack",
         hmux2::src::cmd_kill_window::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_list_buffers.rs::winlink_stack",
         hmux2::src::cmd_list_buffers::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_list_clients.rs::winlink_stack",
         hmux2::src::cmd_list_clients::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_list_commands.rs::winlink_stack",
         hmux2::src::cmd_list_commands::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_list_keys.rs::winlink_stack",
         hmux2::src::cmd_list_keys::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_list_panes.rs::winlink_stack",
         hmux2::src::cmd_list_panes::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_list_sessions.rs::winlink_stack",
         hmux2::src::cmd_list_sessions::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_list_windows.rs::winlink_stack",
         hmux2::src::cmd_list_windows::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_load_buffer.rs::winlink_stack",
         hmux2::src::cmd_load_buffer::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_lock_server.rs::winlink_stack",
         hmux2::src::cmd_lock_server::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_move_window.rs::winlink_stack",
         hmux2::src::cmd_move_window::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_new_session.rs::winlink_stack",
         hmux2::src::cmd_new_session::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_new_window.rs::winlink_stack",
         hmux2::src::cmd_new_window::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_parse.rs::winlink_stack",
         hmux2::src::cmd_parse::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_paste_buffer.rs::winlink_stack",
         hmux2::src::cmd_paste_buffer::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_pipe_pane.rs::winlink_stack",
         hmux2::src::cmd_pipe_pane::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_queue.rs::winlink_stack",
         hmux2::src::cmd_queue::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_refresh_client.rs::winlink_stack",
         hmux2::src::cmd_refresh_client::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_rename_session.rs::winlink_stack",
         hmux2::src::cmd_rename_session::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_rename_window.rs::winlink_stack",
         hmux2::src::cmd_rename_window::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_resize_pane.rs::winlink_stack",
         hmux2::src::cmd_resize_pane::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_resize_window.rs::winlink_stack",
         hmux2::src::cmd_resize_window::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_respawn_pane.rs::winlink_stack",
         hmux2::src::cmd_respawn_pane::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_respawn_window.rs::winlink_stack",
         hmux2::src::cmd_respawn_window::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_rotate_window.rs::winlink_stack",
         hmux2::src::cmd_rotate_window::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_run_shell.rs::winlink_stack",
         hmux2::src::cmd_run_shell::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_save_buffer.rs::winlink_stack",
         hmux2::src::cmd_save_buffer::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_select_layout.rs::winlink_stack",
         hmux2::src::cmd_select_layout::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_select_pane.rs::winlink_stack",
         hmux2::src::cmd_select_pane::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_select_window.rs::winlink_stack",
         hmux2::src::cmd_select_window::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_send_keys.rs::winlink_stack",
         hmux2::src::cmd_send_keys::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_server_access.rs::winlink_stack",
         hmux2::src::cmd_server_access::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_set_buffer.rs::winlink_stack",
         hmux2::src::cmd_set_buffer::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_set_environment.rs::winlink_stack",
         hmux2::src::cmd_set_environment::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_set_option.rs::winlink_stack",
         hmux2::src::cmd_set_option::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_show_environment.rs::winlink_stack",
         hmux2::src::cmd_show_environment::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_show_messages.rs::winlink_stack",
         hmux2::src::cmd_show_messages::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_show_options.rs::winlink_stack",
         hmux2::src::cmd_show_options::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_source_file.rs::winlink_stack",
         hmux2::src::cmd_source_file::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_split_window.rs::winlink_stack",
         hmux2::src::cmd_split_window::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_swap_pane.rs::winlink_stack",
         hmux2::src::cmd_swap_pane::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_swap_window.rs::winlink_stack",
         hmux2::src::cmd_swap_window::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_switch_client.rs::winlink_stack",
         hmux2::src::cmd_switch_client::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/cmd_wait_for.rs::winlink_stack",
         hmux2::src::cmd_wait_for::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/colour.rs::winlink_stack",
         hmux2::src::colour::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/control.rs::winlink_stack",
         hmux2::src::control::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/control_notify.rs::winlink_stack",
         hmux2::src::control_notify::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/environ.rs::winlink_stack",
         hmux2::src::environ::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/events.rs::winlink_stack",
         hmux2::src::events::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/events_payload.rs::winlink_stack",
         hmux2::src::events_payload::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/file.rs::winlink_stack",
         hmux2::src::file::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/format.rs::winlink_stack",
         hmux2::src::format::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/format_draw.rs::winlink_stack",
         hmux2::src::format_draw::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/hooks.rs::winlink_stack",
         hmux2::src::hooks::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/input.rs::winlink_stack",
         hmux2::src::input::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/input_keys.rs::winlink_stack",
         hmux2::src::input_keys::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/job.rs::winlink_stack",
         hmux2::src::job::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/key_bindings.rs::winlink_stack",
         hmux2::src::key_bindings::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/layout.rs::winlink_stack",
         hmux2::src::layout::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/layout_custom.rs::winlink_stack",
         hmux2::src::layout_custom::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/layout_set.rs::winlink_stack",
         hmux2::src::layout_set::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/menu.rs::winlink_stack",
         hmux2::src::menu::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/mode_tree.rs::winlink_stack",
         hmux2::src::mode_tree::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/monitor.rs::winlink_stack",
         hmux2::src::monitor::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/names.rs::winlink_stack",
         hmux2::src::names::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/options.rs::winlink_stack",
         hmux2::src::options::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/popup.rs::winlink_stack",
         hmux2::src::popup::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/prompt.rs::winlink_stack",
         hmux2::src::prompt::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/resize.rs::winlink_stack",
         hmux2::src::resize::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/screen.rs::winlink_stack",
         hmux2::src::screen::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/screen_redraw.rs::winlink_stack",
         hmux2::src::screen_redraw::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/screen_write.rs::winlink_stack",
         hmux2::src::screen_write::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/server.rs::winlink_stack",
         hmux2::src::server::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/server_acl.rs::winlink_stack",
         hmux2::src::server_acl::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/server_client.rs::winlink_stack",
         hmux2::src::server_client::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/server_fn.rs::winlink_stack",
         hmux2::src::server_fn::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/session.rs::winlink_stack",
         hmux2::src::session::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/sort.rs::winlink_stack",
         hmux2::src::sort::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/spawn.rs::winlink_stack",
         hmux2::src::spawn::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/status.rs::winlink_stack",
         hmux2::src::status::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/style.rs::winlink_stack",
         hmux2::src::style::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/tty.rs::winlink_stack",
         hmux2::src::tty::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/tty_acs.rs::winlink_stack",
         hmux2::src::tty_acs::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/tty_draw.rs::winlink_stack",
         hmux2::src::tty_draw::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/tty_features.rs::winlink_stack",
         hmux2::src::tty_features::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/tty_keys.rs::winlink_stack",
         hmux2::src::tty_keys::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/tty_term.rs::winlink_stack",
         hmux2::src::tty_term::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/window.rs::winlink_stack",
         hmux2::src::window::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/window_border.rs::winlink_stack",
         hmux2::src::window_border::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/window_buffer.rs::winlink_stack",
         hmux2::src::window_buffer::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/window_client.rs::winlink_stack",
         hmux2::src::window_client::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/window_clock.rs::winlink_stack",
         hmux2::src::window_clock::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/window_copy.rs::winlink_stack",
         hmux2::src::window_copy::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/window_customize.rs::winlink_stack",
         hmux2::src::window_customize::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/window_panes.rs::winlink_stack",
         hmux2::src::window_panes::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/window_switch.rs::winlink_stack",
         hmux2::src::window_switch::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/window_tree.rs::winlink_stack",
         hmux2::src::window_tree::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/window_visible.rs::winlink_stack",
         hmux2::src::window_visible::winlink_stack,
-        [tqh_first, tqh_last]
+        [storage, reserved]
     );
     record!(
         "src/alerts.rs::C2RustUnnamed_17",

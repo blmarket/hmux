@@ -5,11 +5,15 @@ pub const RB_BLACK: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const RB_RED: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const RB_INF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 
-/// Rust-owned ordered index for C-allocated records. Empty trees are null, and
-/// removing the last record releases the index. Nodes are never freed here.
-/// The heap address remains stable when a containing C tree head is moved.
+/// Rust-owned ordered index. Most records remain externally allocated;
+/// winlinks are owned by `RefBox` entries in `owners`. Empty trees are null,
+/// and removing the last record releases the index. The heap address remains
+/// stable when a containing C tree head is moved.
 pub struct OrderedIndex<K, T> {
     entries: std::collections::BTreeMap<K, *mut T>,
+    /// Only winlinks use this during their ownership migration. Other indices
+    /// continue to index externally allocated records.
+    owners: std::collections::HashMap<usize, refbox::RefBox<T>>,
 }
 
 impl<K: Ord, T> OrderedIndex<K, T> {
@@ -74,6 +78,7 @@ impl<K: Ord, T> OrderedIndex<K, T> {
         if (*slot).is_null() {
             *slot = Box::into_raw(Box::new(Self {
                 entries: Default::default(),
+                owners: Default::default(),
             }));
         }
         match (**slot).entries.entry(key) {
@@ -90,10 +95,34 @@ impl<K: Ord, T> OrderedIndex<K, T> {
             return std::ptr::null_mut();
         }
         (**slot).entries.remove(key);
-        if (**slot).entries.is_empty() {
+        if (**slot).entries.is_empty() && (**slot).owners.is_empty() {
             drop(Box::from_raw(*slot));
             *slot = std::ptr::null_mut();
         }
         node
+    }
+
+    pub unsafe fn insert_owned(slot: *mut *mut Self, key: K, owner: refbox::RefBox<T>) -> *mut T {
+        let node = owner.as_ptr() as *mut T;
+        let found = Self::insert(slot, key, node);
+        if found.is_null() {
+            (**slot).owners.insert(node as usize, owner);
+        }
+        found
+    }
+
+    pub unsafe fn downgrade(index: *mut Self, node: *mut T) -> Option<refbox::Weak<T>> {
+        if index.is_null() {
+            return None;
+        }
+        (*index).owners.get(&(node as usize)).map(refbox::RefBox::downgrade)
+    }
+
+    /// Transfer ownership before removing the node from the ordered index.
+    pub unsafe fn take_owned(index: *mut Self, node: *mut T) -> Option<refbox::RefBox<T>> {
+        if index.is_null() {
+            return None;
+        }
+        (*index).owners.remove(&(node as usize))
     }
 }

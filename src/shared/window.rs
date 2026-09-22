@@ -212,11 +212,12 @@ pub struct window_mode {
     pub get_screen: Option<unsafe extern "C" fn(*mut window_mode_entry) -> *mut screen>,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct winlink_stack {
-    pub tqh_first: *mut winlink,
-    pub tqh_last: *mut *mut winlink,
+    /// Weak visit history; the ordered session index owns each link.
+    pub storage: *mut std::collections::VecDeque<refbox::Weak<winlink>>,
+    /// Reserved ABI slot while the rest of session is migrated.
+    pub reserved: *mut ::core::ffi::c_void,
 }
 
 #[derive(Copy, Clone)]
