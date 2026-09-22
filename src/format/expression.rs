@@ -1234,13 +1234,13 @@ pub(super) unsafe extern "C" fn format_session_name(
     let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     name = format_expand1(es, fmt);
-    s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         if strcmp((*s).name, name) == 0 as ::core::ffi::c_int {
             free(name as *mut ::core::ffi::c_void);
             return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char);
         }
-        s = sessions_RB_NEXT(s);
+        s = sessions_next(s);
     }
     free(name as *mut ::core::ffi::c_void);
     return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char);

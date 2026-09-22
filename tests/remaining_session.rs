@@ -127,72 +127,72 @@ fn original_copies_match() {
     record!(
         "src/cfg.rs::sessions",
         hmux2::src::cfg::sessions,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_attach_session.rs::sessions",
         hmux2::src::cmd_attach_session::sessions,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_find.rs::sessions",
         hmux2::src::cmd_find::sessions,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_kill_session.rs::sessions",
         hmux2::src::cmd_kill_session::sessions,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_list_panes.rs::sessions",
         hmux2::src::cmd_list_panes::sessions,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_rename_session.rs::sessions",
         hmux2::src::cmd_rename_session::sessions,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/format.rs::sessions",
         hmux2::src::format::sessions,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/monitor.rs::sessions",
         hmux2::src::monitor::sessions,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/options.rs::sessions",
         hmux2::src::options::sessions,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/resize.rs::sessions",
         hmux2::src::resize::sessions,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/server.rs::sessions",
         hmux2::src::server::sessions,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/server_fn.rs::sessions",
         hmux2::src::server_fn::sessions,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/session.rs::sessions",
         hmux2::src::session::sessions,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/sort.rs::sessions",
         hmux2::src::sort::sessions,
-        [rbh_root]
+        [storage]
     );
     let actual = records.join("\n") + "\n";
     assert_eq!(actual, include_str!("fixtures/remaining-session.txt"));

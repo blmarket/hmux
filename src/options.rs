@@ -24,7 +24,7 @@ use crate::src::server::current_time;
 use crate::src::server_client::{server_client_set_key_table, server_client_update_theme_colours};
 use crate::src::server_fn::server_redraw_client;
 pub use crate::src::session::sessions;
-use crate::src::session::{session_update_history, sessions_RB_MINMAX, sessions_RB_NEXT};
+use crate::src::session::{session_update_history, sessions_minmax, sessions_next};
 pub use crate::src::shared::options::options_name_map;
 pub use crate::src::shared::pane::window_pane_tree;
 use crate::src::status::{status_timer_start_all, status_update_cache};
@@ -2147,16 +2147,16 @@ pub unsafe extern "C" fn options_push_changes(mut name: *const ::core::ffi::c_ch
         b"history-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0 as ::core::ffi::c_int
     {
-        s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
+        s = sessions_minmax(&raw mut sessions, RB_NEGINF);
         while !s.is_null() {
             session_update_history(s);
-            s = sessions_RB_NEXT(s);
+            s = sessions_next(s);
         }
     }
-    s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
+    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         status_update_cache(s);
-        s = sessions_RB_NEXT(s);
+        s = sessions_next(s);
     }
     recalculate_sizes();
     loop_0 = clients.tqh_first;
