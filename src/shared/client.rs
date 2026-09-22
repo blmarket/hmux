@@ -209,7 +209,7 @@ pub struct client_entry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct client_files {
-    pub rbh_root: *mut client_file,
+    pub storage: *mut crate::src::shared::tree::OrderedIndex<i32, client_file>,
 }
 
 #[derive(Copy, Clone)]
@@ -234,10 +234,8 @@ pub struct client_file {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct client_file_entry {
-    pub rbe_left: *mut client_file,
-    pub rbe_right: *mut client_file,
-    pub rbe_parent: *mut client_file,
-    pub rbe_color: ::core::ffi::c_int,
+    /// Stable Rust index used by entry-only traversal; not an owning pointer.
+    pub owner: *mut crate::src::shared::tree::OrderedIndex<i32, client_file>,
 }
 
 pub type client_file_cb = Option<

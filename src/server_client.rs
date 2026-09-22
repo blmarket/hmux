@@ -28,7 +28,7 @@ use crate::src::ffi::libc::{
     strsep, ttyname,
 };
 use crate::src::file::{
-    client_files_RB_MINMAX, client_files_RB_NEXT, file_fire_done, file_print, file_read_data,
+    client_files_minmax, client_files_next, file_fire_done, file_print, file_read_data,
     file_read_done, file_write_done, file_write_ready,
 };
 use crate::src::format::{
@@ -501,7 +501,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
     (*c).fd = -(1 as ::core::ffi::c_int);
     (*c).out_fd = -(1 as ::core::ffi::c_int);
     (*c).queue = cmdq_new();
-    (*c).files.rbh_root = ::core::ptr::null_mut::<client_file>();
+    (*c).files.storage = std::ptr::null_mut();
     (*c).tty.sx = 80 as u_int;
     (*c).tty.sy = 24 as u_int;
     i = 0 as u_int;
@@ -849,9 +849,9 @@ pub unsafe extern "C" fn server_client_lost(mut c: *mut client) {
     server_client_clear_overlay(c);
     status_prompt_clear(c);
     status_message_clear(c);
-    cf = client_files_RB_MINMAX(&raw mut (*c).files, RB_NEGINF);
+    cf = client_files_minmax(&raw mut (*c).files, RB_NEGINF);
     while !cf.is_null() && {
-        cf1 = client_files_RB_NEXT(cf);
+        cf1 = client_files_next(cf);
         1 as ::core::ffi::c_int != 0
     } {
         (*cf).error = EINTR;
@@ -3399,13 +3399,13 @@ unsafe extern "C" fn server_client_check_exit(mut c: *mut client, mut force: ::c
         }
     }
     if force == 0 {
-        cf = client_files_RB_MINMAX(&raw mut (*c).files, RB_NEGINF);
+        cf = client_files_minmax(&raw mut (*c).files, RB_NEGINF);
         while !cf.is_null() {
             if evbuffer_get_length((*cf).buffer) != 0 as size_t {
                 server_client_start_exit_timer(c);
                 return;
             }
-            cf = client_files_RB_NEXT(cf);
+            cf = client_files_next(cf);
         }
     }
     (*c).flags |= CLIENT_EXITED as uint64_t;

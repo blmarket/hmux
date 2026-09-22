@@ -147,546 +147,7 @@ pub const BEV_EVENT_ERROR: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 pub const EVBUFFER_ERROR: ::core::ffi::c_int = BEV_EVENT_ERROR;
 
 static mut file_next_stream: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
-#[no_mangle]
-pub unsafe extern "C" fn client_files_RB_PREV(mut elm: *mut client_file) -> *mut client_file {
-    if !(*elm).entry.rbe_left.is_null() {
-        elm = (*elm).entry.rbe_left;
-        while !(*elm).entry.rbe_right.is_null() {
-            elm = (*elm).entry.rbe_right;
-        }
-    } else if !(*elm).entry.rbe_parent.is_null()
-        && elm == (*(*elm).entry.rbe_parent).entry.rbe_right
-    {
-        elm = (*elm).entry.rbe_parent;
-    } else {
-        while !(*elm).entry.rbe_parent.is_null() && elm == (*(*elm).entry.rbe_parent).entry.rbe_left
-        {
-            elm = (*elm).entry.rbe_parent;
-        }
-        elm = (*elm).entry.rbe_parent;
-    }
-    return elm;
-}
-#[no_mangle]
-pub unsafe extern "C" fn client_files_RB_MINMAX(
-    mut head: *mut client_files,
-    mut val: ::core::ffi::c_int,
-) -> *mut client_file {
-    let mut tmp: *mut client_file = (*head).rbh_root;
-    let mut parent: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    while !tmp.is_null() {
-        parent = tmp;
-        if val < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else {
-            tmp = (*tmp).entry.rbe_right;
-        }
-    }
-    return parent;
-}
-#[no_mangle]
-pub unsafe extern "C" fn client_files_RB_NFIND(
-    mut head: *mut client_files,
-    mut elm: *mut client_file,
-) -> *mut client_file {
-    let mut tmp: *mut client_file = (*head).rbh_root;
-    let mut res: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = file_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            res = tmp;
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return res;
-}
-#[no_mangle]
-pub unsafe extern "C" fn client_files_RB_REMOVE(
-    mut head: *mut client_files,
-    mut elm: *mut client_file,
-) -> *mut client_file {
-    let mut current_block: u64;
-    let mut child: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    let mut parent: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    let mut old: *mut client_file = elm;
-    let mut color: ::core::ffi::c_int = 0;
-    if (*elm).entry.rbe_left.is_null() {
-        child = (*elm).entry.rbe_right;
-        current_block = 7245201122033322888;
-    } else if (*elm).entry.rbe_right.is_null() {
-        child = (*elm).entry.rbe_left;
-        current_block = 7245201122033322888;
-    } else {
-        let mut left: *mut client_file = ::core::ptr::null_mut::<client_file>();
-        elm = (*elm).entry.rbe_right;
-        loop {
-            left = (*elm).entry.rbe_left;
-            if left.is_null() {
-                break;
-            }
-            elm = left;
-        }
-        child = (*elm).entry.rbe_right;
-        parent = (*elm).entry.rbe_parent;
-        color = (*elm).entry.rbe_color;
-        if !child.is_null() {
-            (*child).entry.rbe_parent = parent;
-        }
-        if !parent.is_null() {
-            if (*parent).entry.rbe_left == elm {
-                (*parent).entry.rbe_left = child;
-            } else {
-                (*parent).entry.rbe_right = child;
-            }
-        } else {
-            (*head).rbh_root = child;
-        }
-        if (*elm).entry.rbe_parent == old {
-            parent = elm;
-        }
-        (*elm).entry = (*old).entry;
-        if !(*old).entry.rbe_parent.is_null() {
-            if (*(*old).entry.rbe_parent).entry.rbe_left == old {
-                (*(*old).entry.rbe_parent).entry.rbe_left = elm;
-            } else {
-                (*(*old).entry.rbe_parent).entry.rbe_right = elm;
-            }
-        } else {
-            (*head).rbh_root = elm;
-        }
-        (*(*old).entry.rbe_left).entry.rbe_parent = elm;
-        if !(*old).entry.rbe_right.is_null() {
-            (*(*old).entry.rbe_right).entry.rbe_parent = elm;
-        }
-        if !parent.is_null() {
-            left = parent;
-            loop {
-                left = (*left).entry.rbe_parent;
-                if left.is_null() {
-                    break;
-                }
-            }
-        }
-        current_block = 7372538432882326502;
-    }
-    match current_block {
-        7245201122033322888 => {
-            parent = (*elm).entry.rbe_parent;
-            color = (*elm).entry.rbe_color;
-            if !child.is_null() {
-                (*child).entry.rbe_parent = parent;
-            }
-            if !parent.is_null() {
-                if (*parent).entry.rbe_left == elm {
-                    (*parent).entry.rbe_left = child;
-                } else {
-                    (*parent).entry.rbe_right = child;
-                }
-            } else {
-                (*head).rbh_root = child;
-            }
-        }
-        _ => {}
-    }
-    if color == RB_BLACK {
-        client_files_RB_REMOVE_COLOR(head, parent, child);
-    }
-    return old;
-}
-#[no_mangle]
-pub unsafe extern "C" fn client_files_RB_INSERT(
-    mut head: *mut client_files,
-    mut elm: *mut client_file,
-) -> *mut client_file {
-    let mut tmp: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    let mut parent: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = file_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    (*elm).entry.rbe_parent = parent;
-    (*elm).entry.rbe_right = ::core::ptr::null_mut::<client_file>();
-    (*elm).entry.rbe_left = (*elm).entry.rbe_right;
-    (*elm).entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).entry.rbe_left = elm;
-        } else {
-            (*parent).entry.rbe_right = elm;
-        }
-    } else {
-        (*head).rbh_root = elm;
-    }
-    client_files_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<client_file>();
-}
-#[no_mangle]
-pub unsafe extern "C" fn client_files_RB_INSERT_COLOR(
-    mut head: *mut client_files,
-    mut elm: *mut client_file,
-) {
-    let mut parent: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    let mut gparent: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    let mut tmp: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    loop {
-        parent = (*elm).entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).entry.rbe_parent;
-        if parent == (*gparent).entry.rbe_left {
-            tmp = (*gparent).entry.rbe_right;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_right == elm {
-                    tmp = (*parent).entry.rbe_right;
-                    (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                    if !(*parent).entry.rbe_right.is_null() {
-                        (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_left = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_left;
-                (*gparent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*gparent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).entry.rbe_left;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_left == elm {
-                    tmp = (*parent).entry.rbe_left;
-                    (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                    if !(*parent).entry.rbe_left.is_null() {
-                        (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_right = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_right;
-                (*gparent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*gparent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).entry.rbe_color = RB_BLACK;
-}
-#[no_mangle]
-pub unsafe extern "C" fn client_files_RB_REMOVE_COLOR(
-    mut head: *mut client_files,
-    mut parent: *mut client_file,
-    mut elm: *mut client_file,
-) {
-    let mut tmp: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    while (elm.is_null() || (*elm).entry.rbe_color == RB_BLACK) && elm != (*head).rbh_root {
-        if (*parent).entry.rbe_left == elm {
-            tmp = (*parent).entry.rbe_right;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_right;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK
-                {
-                    let mut oleft: *mut client_file = ::core::ptr::null_mut::<client_file>();
-                    oleft = (*tmp).entry.rbe_left;
-                    if !oleft.is_null() {
-                        (*oleft).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oleft = (*tmp).entry.rbe_left;
-                    (*tmp).entry.rbe_left = (*oleft).entry.rbe_right;
-                    if !(*tmp).entry.rbe_left.is_null() {
-                        (*(*oleft).entry.rbe_right).entry.rbe_parent = tmp;
-                    }
-                    (*oleft).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oleft).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oleft;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oleft;
-                        }
-                    } else {
-                        (*head).rbh_root = oleft;
-                    }
-                    (*oleft).entry.rbe_right = tmp;
-                    (*tmp).entry.rbe_parent = oleft;
-                    !(*oleft).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_right;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        } else {
-            tmp = (*parent).entry.rbe_left;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_left;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_left.is_null()
-                    || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK
-                {
-                    let mut oright: *mut client_file = ::core::ptr::null_mut::<client_file>();
-                    oright = (*tmp).entry.rbe_right;
-                    if !oright.is_null() {
-                        (*oright).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oright = (*tmp).entry.rbe_right;
-                    (*tmp).entry.rbe_right = (*oright).entry.rbe_left;
-                    if !(*tmp).entry.rbe_right.is_null() {
-                        (*(*oright).entry.rbe_left).entry.rbe_parent = tmp;
-                    }
-                    (*oright).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oright).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oright;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oright;
-                        }
-                    } else {
-                        (*head).rbh_root = oright;
-                    }
-                    (*oright).entry.rbe_left = tmp;
-                    (*tmp).entry.rbe_parent = oright;
-                    !(*oright).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_left;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        }
-    }
-    if !elm.is_null() {
-        (*elm).entry.rbe_color = RB_BLACK;
-    }
-}
-#[no_mangle]
-pub unsafe extern "C" fn client_files_RB_FIND(
-    mut head: *mut client_files,
-    mut elm: *mut client_file,
-) -> *mut client_file {
-    let mut tmp: *mut client_file = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = file_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return ::core::ptr::null_mut::<client_file>();
-}
-#[no_mangle]
-pub unsafe extern "C" fn client_files_RB_NEXT(mut elm: *mut client_file) -> *mut client_file {
-    if !(*elm).entry.rbe_right.is_null() {
-        elm = (*elm).entry.rbe_right;
-        while !(*elm).entry.rbe_left.is_null() {
-            elm = (*elm).entry.rbe_left;
-        }
-    } else if !(*elm).entry.rbe_parent.is_null() && elm == (*(*elm).entry.rbe_parent).entry.rbe_left
-    {
-        elm = (*elm).entry.rbe_parent;
-    } else {
-        while !(*elm).entry.rbe_parent.is_null()
-            && elm == (*(*elm).entry.rbe_parent).entry.rbe_right
-        {
-            elm = (*elm).entry.rbe_parent;
-        }
-        elm = (*elm).entry.rbe_parent;
-    }
-    return elm;
-}
+
 unsafe extern "C" fn file_get_path(
     mut c: *mut client,
     mut file: *const ::core::ffi::c_char,
@@ -759,7 +220,7 @@ pub unsafe extern "C" fn file_create_with_peer(
     (*cf).data = cbdata;
     (*cf).peer = peer;
     (*cf).tree = files as *mut client_files;
-    client_files_RB_INSERT(files, cf);
+    client_files_insert(files, cf);
     return cf;
 }
 #[no_mangle]
@@ -786,7 +247,7 @@ pub unsafe extern "C" fn file_create_with_client(
     if !(*cf).c.is_null() {
         (*cf).peer = (*(*cf).c).peer;
         (*cf).tree = &raw mut (*(*cf).c).files as *mut client_files;
-        client_files_RB_INSERT(&raw mut (*(*cf).c).files, cf);
+        client_files_insert(&raw mut (*(*cf).c).files, cf);
         (*(*cf).c).references += 1;
     }
     return cf;
@@ -800,7 +261,7 @@ pub unsafe extern "C" fn file_free(mut cf: *mut client_file) {
     evbuffer_free((*cf).buffer);
     free((*cf).path as *mut ::core::ffi::c_void);
     if !(*cf).tree.is_null() {
-        client_files_RB_REMOVE((*cf).tree as *mut client_files, cf);
+        client_files_remove((*cf).tree as *mut client_files, cf);
     }
     if !(*cf).c.is_null() {
         server_client_unref((*cf).c);
@@ -900,10 +361,7 @@ pub unsafe extern "C" fn file_vprint(
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry {
-            rbe_left: ::core::ptr::null_mut::<client_file>(),
-            rbe_right: ::core::ptr::null_mut::<client_file>(),
-            rbe_parent: ::core::ptr::null_mut::<client_file>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -916,7 +374,7 @@ pub unsafe extern "C" fn file_vprint(
         return;
     }
     find.stream = 1 as ::core::ffi::c_int;
-    cf = client_files_RB_FIND(&raw mut (*c).files, &raw mut find);
+    cf = client_files_find(&raw mut (*c).files, &raw mut find);
     if cf.is_null() {
         cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None, NULL);
         (*cf).path = xstrdup(b"-\0" as *const u8 as *const ::core::ffi::c_char);
@@ -957,10 +415,7 @@ pub unsafe extern "C" fn file_print_buffer(
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry {
-            rbe_left: ::core::ptr::null_mut::<client_file>(),
-            rbe_right: ::core::ptr::null_mut::<client_file>(),
-            rbe_parent: ::core::ptr::null_mut::<client_file>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -973,7 +428,7 @@ pub unsafe extern "C" fn file_print_buffer(
         return;
     }
     find.stream = 1 as ::core::ffi::c_int;
-    cf = client_files_RB_FIND(&raw mut (*c).files, &raw mut find);
+    cf = client_files_find(&raw mut (*c).files, &raw mut find);
     if cf.is_null() {
         cf = file_create_with_client(c, 1 as ::core::ffi::c_int, None, NULL);
         (*cf).path = xstrdup(b"-\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1014,10 +469,7 @@ pub unsafe extern "C" fn file_error(
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry {
-            rbe_left: ::core::ptr::null_mut::<client_file>(),
-            rbe_right: ::core::ptr::null_mut::<client_file>(),
-            rbe_parent: ::core::ptr::null_mut::<client_file>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1032,7 +484,7 @@ pub unsafe extern "C" fn file_error(
     }
     ap = args.clone();
     find.stream = 2 as ::core::ffi::c_int;
-    cf = client_files_RB_FIND(&raw mut (*c).files, &raw mut find);
+    cf = client_files_find(&raw mut (*c).files, &raw mut find);
     if cf.is_null() {
         cf = file_create_with_client(c, 2 as ::core::ffi::c_int, None, NULL);
         (*cf).path = xstrdup(b"-\0" as *const u8 as *const ::core::ffi::c_char);
@@ -1386,7 +838,7 @@ pub unsafe extern "C" fn file_write_left(mut files: *mut client_files) -> ::core
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut left: size_t = 0;
     let mut waiting: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    cf = client_files_RB_MINMAX(files, RB_NEGINF);
+    cf = client_files_minmax(files, RB_NEGINF);
     while !cf.is_null() {
         if !(*cf).event.is_null() {
             left = evbuffer_get_length((*(*cf).event).output);
@@ -1399,7 +851,7 @@ pub unsafe extern "C" fn file_write_left(mut files: *mut client_files) -> ::core
                 );
             }
         }
-        cf = client_files_RB_NEXT(cf);
+        cf = client_files_next(cf);
     }
     return (waiting != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
 }
@@ -1530,10 +982,7 @@ pub unsafe extern "C" fn file_write_open(
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry {
-            rbe_left: ::core::ptr::null_mut::<client_file>(),
-            rbe_right: ::core::ptr::null_mut::<client_file>(),
-            rbe_parent: ::core::ptr::null_mut::<client_file>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1553,7 +1002,7 @@ pub unsafe extern "C" fn file_write_open(
         path,
     );
     find.stream = (*msg).stream;
-    if !client_files_RB_FIND(files, &raw mut find).is_null() {
+    if !client_files_find(files, &raw mut find).is_null() {
         error = EBADF;
     } else {
         cf = file_create_with_peer(peer, files, (*msg).stream, cb, cbdata);
@@ -1634,10 +1083,7 @@ pub unsafe extern "C" fn file_write_data(mut files: *mut client_files, mut imsg:
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry {
-            rbe_left: ::core::ptr::null_mut::<client_file>(),
-            rbe_right: ::core::ptr::null_mut::<client_file>(),
-            rbe_parent: ::core::ptr::null_mut::<client_file>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1646,7 +1092,7 @@ pub unsafe extern "C" fn file_write_data(mut files: *mut client_files, mut imsg:
         fatalx(b"bad MSG_WRITE size\0" as *const u8 as *const ::core::ffi::c_char);
     }
     find.stream = (*msg).stream;
-    cf = client_files_RB_FIND(files, &raw mut find);
+    cf = client_files_find(files, &raw mut find);
     if cf.is_null() {
         fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
     }
@@ -1682,10 +1128,7 @@ pub unsafe extern "C" fn file_write_close(mut files: *mut client_files, mut imsg
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry {
-            rbe_left: ::core::ptr::null_mut::<client_file>(),
-            rbe_right: ::core::ptr::null_mut::<client_file>(),
-            rbe_parent: ::core::ptr::null_mut::<client_file>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1693,7 +1136,7 @@ pub unsafe extern "C" fn file_write_close(mut files: *mut client_files, mut imsg
         fatalx(b"bad MSG_WRITE_CLOSE size\0" as *const u8 as *const ::core::ffi::c_char);
     }
     find.stream = (*msg).stream;
-    cf = client_files_RB_FIND(files, &raw mut find);
+    cf = client_files_find(files, &raw mut find);
     if cf.is_null() {
         fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
     }
@@ -1735,7 +1178,7 @@ unsafe extern "C" fn file_read_error_callback(
     );
     bufferevent_free((*cf).event);
     close((*cf).fd);
-    client_files_RB_REMOVE((*cf).tree as *mut client_files, cf);
+    client_files_remove((*cf).tree as *mut client_files, cf);
     file_free(cf);
 }
 unsafe extern "C" fn file_read_callback(
@@ -1821,10 +1264,7 @@ pub unsafe extern "C" fn file_read_open(
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry {
-            rbe_left: ::core::ptr::null_mut::<client_file>(),
-            rbe_right: ::core::ptr::null_mut::<client_file>(),
-            rbe_parent: ::core::ptr::null_mut::<client_file>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1844,7 +1284,7 @@ pub unsafe extern "C" fn file_read_open(
         path,
     );
     find.stream = (*msg).stream;
-    if !client_files_RB_FIND(files, &raw mut find).is_null() {
+    if !client_files_find(files, &raw mut find).is_null() {
         error = EBADF;
     } else {
         cf = file_create_with_peer(peer, files, (*msg).stream, cb, cbdata);
@@ -1926,10 +1366,7 @@ pub unsafe extern "C" fn file_read_cancel(mut files: *mut client_files, mut imsg
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry {
-            rbe_left: ::core::ptr::null_mut::<client_file>(),
-            rbe_right: ::core::ptr::null_mut::<client_file>(),
-            rbe_parent: ::core::ptr::null_mut::<client_file>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1937,7 +1374,7 @@ pub unsafe extern "C" fn file_read_cancel(mut files: *mut client_files, mut imsg
         fatalx(b"bad MSG_READ_CANCEL size\0" as *const u8 as *const ::core::ffi::c_char);
     }
     find.stream = (*msg).stream;
-    cf = client_files_RB_FIND(files, &raw mut find);
+    cf = client_files_find(files, &raw mut find);
     if cf.is_null() {
         fatalx(b"unknown stream number\0" as *const u8 as *const ::core::ffi::c_char);
     }
@@ -1973,10 +1410,7 @@ pub unsafe extern "C" fn file_write_ready(
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry {
-            rbe_left: ::core::ptr::null_mut::<client_file>(),
-            rbe_right: ::core::ptr::null_mut::<client_file>(),
-            rbe_parent: ::core::ptr::null_mut::<client_file>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -1984,7 +1418,7 @@ pub unsafe extern "C" fn file_write_ready(
         return -(1 as ::core::ffi::c_int);
     }
     find.stream = (*msg).stream;
-    cf = client_files_RB_FIND(files, &raw mut find);
+    cf = client_files_find(files, &raw mut find);
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -2018,10 +1452,7 @@ pub unsafe extern "C" fn file_write_done(
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry {
-            rbe_left: ::core::ptr::null_mut::<client_file>(),
-            rbe_right: ::core::ptr::null_mut::<client_file>(),
-            rbe_parent: ::core::ptr::null_mut::<client_file>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -2029,7 +1460,7 @@ pub unsafe extern "C" fn file_write_done(
         return -(1 as ::core::ffi::c_int);
     }
     find.stream = (*msg).stream;
-    cf = client_files_RB_FIND(files, &raw mut find);
+    cf = client_files_find(files, &raw mut find);
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -2066,10 +1497,7 @@ pub unsafe extern "C" fn file_read_data(
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry {
-            rbe_left: ::core::ptr::null_mut::<client_file>(),
-            rbe_right: ::core::ptr::null_mut::<client_file>(),
-            rbe_parent: ::core::ptr::null_mut::<client_file>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -2080,7 +1508,7 @@ pub unsafe extern "C" fn file_read_data(
         return -(1 as ::core::ffi::c_int);
     }
     find.stream = (*msg).stream;
-    cf = client_files_RB_FIND(files, &raw mut find);
+    cf = client_files_find(files, &raw mut find);
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -2121,10 +1549,7 @@ pub unsafe extern "C" fn file_read_done(
         cb: None,
         data: ::core::ptr::null_mut::<::core::ffi::c_void>(),
         entry: client_file_entry {
-            rbe_left: ::core::ptr::null_mut::<client_file>(),
-            rbe_right: ::core::ptr::null_mut::<client_file>(),
-            rbe_parent: ::core::ptr::null_mut::<client_file>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
@@ -2132,7 +1557,7 @@ pub unsafe extern "C" fn file_read_done(
         return -(1 as ::core::ffi::c_int);
     }
     find.stream = (*msg).stream;
-    cf = client_files_RB_FIND(files, &raw mut find);
+    cf = client_files_find(files, &raw mut find);
     if cf.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -2143,4 +1568,74 @@ pub unsafe extern "C" fn file_read_done(
     (*cf).error = (*msg).error;
     file_fire_done(cf);
     return 0 as ::core::ffi::c_int;
+}
+
+unsafe fn client_files_key(elm: *mut client_file) -> i32 {
+    (*elm).stream
+}
+pub unsafe fn client_files_find(
+    head: *mut client_files,
+    elm: *mut client_file,
+) -> *mut client_file {
+    crate::src::shared::tree::OrderedIndex::<i32, client_file>::find(
+        (*head).storage,
+        &client_files_key(elm),
+    )
+}
+pub unsafe fn client_files_nfind(
+    head: *mut client_files,
+    elm: *mut client_file,
+) -> *mut client_file {
+    crate::src::shared::tree::OrderedIndex::<i32, client_file>::nfind(
+        (*head).storage,
+        &client_files_key(elm),
+    )
+}
+pub unsafe fn client_files_insert(
+    head: *mut client_files,
+    elm: *mut client_file,
+) -> *mut client_file {
+    let found = crate::src::shared::tree::OrderedIndex::<i32, client_file>::insert(
+        &raw mut (*head).storage,
+        client_files_key(elm),
+        elm,
+    );
+    if found.is_null() {
+        (*elm).entry.owner = (*head).storage;
+    }
+    found
+}
+pub unsafe fn client_files_remove(
+    head: *mut client_files,
+    elm: *mut client_file,
+) -> *mut client_file {
+    let removed = crate::src::shared::tree::OrderedIndex::<i32, client_file>::remove(
+        &raw mut (*head).storage,
+        &client_files_key(elm),
+        elm,
+    );
+    if !removed.is_null() {
+        (*elm).entry.owner = std::ptr::null_mut();
+    }
+    removed
+}
+pub unsafe fn client_files_minmax(
+    head: *mut client_files,
+    direction: ::core::ffi::c_int,
+) -> *mut client_file {
+    crate::src::shared::tree::OrderedIndex::<i32, client_file>::edge((*head).storage, direction < 0)
+}
+pub unsafe fn client_files_next(elm: *mut client_file) -> *mut client_file {
+    crate::src::shared::tree::OrderedIndex::<i32, client_file>::neighbor(
+        (*elm).entry.owner,
+        &client_files_key(elm),
+        true,
+    )
+}
+pub unsafe fn client_files_prev(elm: *mut client_file) -> *mut client_file {
+    crate::src::shared::tree::OrderedIndex::<i32, client_file>::neighbor(
+        (*elm).entry.owner,
+        &client_files_key(elm),
+        false,
+    )
 }
