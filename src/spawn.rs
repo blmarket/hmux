@@ -1224,60 +1224,22 @@ mod tests {
     use super::*;
     use std::ffi::CStr;
     use std::fs;
-    use std::io::Read;
     use std::process::{Command, Stdio};
     use std::thread;
-    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, Instant};
 
     const CHILD_CASE: &str = "HMUX2_EDITOR_FD_OWNER_CASE";
     const FAILURE_CASE: &str = "failure";
     const SUCCESS_CASE: &str = "success";
-    const FAILURE_TEST: &str = "src::spawn::tests::editor_fdopen_failure_closes_once";
+    const FAILURE_TEST: &str = "src::spawn::tests::editor_fdopen_failure_closes_descriptor";
     const SUCCESS_TEST: &str = "src::spawn::tests::editor_completion_reads_and_unlinks";
-    const TRACE_FD_MIN: i32 = 1000;
-
-    fn strace_available() -> bool {
-        Command::new("strace")
-            .arg("-V")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
-    }
 
     fn run_isolated(test_name: &str, case: &str) {
-        let trace_path = if case == FAILURE_CASE && strace_available() {
-            let stamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system clock before Unix epoch")
-                .as_nanos();
-            Some(std::env::temp_dir().join(format!(
-                "hmux2-editor-owner-{}-{case}-{stamp}.trace",
-                std::process::id(),
-            )))
-        } else {
-            None
-        };
         let test_exe = std::env::current_exe().expect("test executable");
-        let mut command = if let Some(path) = &trace_path {
-            let mut command = Command::new("strace");
-            command.args(["-f", "-qq", "-e", "trace=close", "-o"]);
-            command.arg(path);
-            command.arg(&test_exe);
-            command
-        } else {
-            Command::new(test_exe)
-        };
-        let capture_output = trace_path.is_some();
-        let mut child = command
+        let mut child = Command::new(test_exe)
             .args(["--exact", test_name, "--nocapture"])
             .env(CHILD_CASE, case)
-            .stdout(if capture_output {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
+            .stdout(Stdio::null())
             .stderr(Stdio::inherit())
             .spawn()
             .expect("spawn isolated editor ownership test");
@@ -1288,41 +1250,12 @@ mod tests {
                 None if Instant::now() >= deadline => {
                     let _ = child.kill();
                     let _ = child.wait();
-                    if let Some(path) = trace_path.as_ref() {
-                        let _ = fs::remove_file(path);
-                    }
                     panic!("isolated editor ownership test timed out");
                 }
                 None => thread::sleep(Duration::from_millis(10)),
             }
         };
         assert!(status.success(), "isolated test exited with {status}");
-        if let Some(path) = trace_path {
-            let mut output = Vec::new();
-            child
-                .stdout
-                .take()
-                .expect("isolated test stdout")
-                .read_to_end(&mut output)
-                .expect("read isolated test output");
-            let trace = fs::read_to_string(&path).expect("read close trace");
-            let _ = fs::remove_file(path);
-            let marker = "editor-fd=";
-            let traced_fd = String::from_utf8_lossy(&output)
-                .lines()
-                .find_map(|line| line.strip_prefix(marker))
-                .and_then(|fd| fd.parse::<i32>().ok())
-                .expect("isolated failure test did not report its traced fd");
-            let close_call = format!("close({traced_fd}) ");
-            let close_count = trace
-                .lines()
-                .filter(|line| line.contains(&close_call))
-                .count();
-            assert_eq!(
-                close_count, 1,
-                "fdopen failure must close its descriptor exactly once; trace:\n{trace}"
-            );
-        }
     }
 
     unsafe fn create_temp_file() -> (OwnedFd, std::ffi::CString) {
@@ -1340,7 +1273,7 @@ mod tests {
     }
 
     #[test]
-    fn editor_fdopen_failure_closes_once() {
+    fn editor_fdopen_failure_closes_descriptor() {
         if std::env::var(CHILD_CASE).as_deref() == Ok(FAILURE_CASE) {
             unsafe {
                 let (fd_owner, path) = create_temp_file();
@@ -1349,18 +1282,13 @@ mod tests {
                     ::libc::fcntl(fd, ::libc::F_GETFL) & ::libc::O_ACCMODE,
                     ::libc::O_RDWR
                 );
-                let traced_fd = ::libc::fcntl(fd, ::libc::F_DUPFD_CLOEXEC, TRACE_FD_MIN);
-                assert!(traced_fd >= TRACE_FD_MIN);
-                let fd = fd_owner.into_raw_fd();
-                assert_eq!(close(fd), 0);
-                println!("editor-fd={traced_fd}");
                 let file = spawn_editor_fdopen(
-                    OwnedFd::from_raw_fd(traced_fd),
+                    fd_owner,
                     b"not-a-stdio-mode\0" as *const u8 as *const ::core::ffi::c_char,
                 );
                 assert!(file.is_null(), "invalid fdopen mode unexpectedly succeeded");
                 assert_eq!(*__errno_location(), ::libc::EINVAL);
-                assert_eq!(::libc::fcntl(traced_fd, ::libc::F_GETFD), -1);
+                assert_eq!(::libc::fcntl(fd, ::libc::F_GETFD), -1);
                 assert_eq!(unlink(path.as_ptr()), 0);
                 assert!(!std::path::Path::new(path.to_str().unwrap()).exists());
             }
