@@ -89,6 +89,63 @@ fn aliases_parent_fallback_and_shadowing() {
 }
 
 #[test]
+fn scalar_string_replacement_append_and_default_keep_stable_entry() {
+    unsafe {
+        let oo = options_create(null_mut());
+        let entry = options_set_string(oo, c"@bytes".as_ptr(), 0, c"%s".as_ptr(), c"\xff".as_ptr());
+        let name = options_name(entry);
+        let previous = (*entry).value.string;
+        assert_eq!(
+            options_set_string(oo, name, 1, c"%s".as_ptr(), previous),
+            entry
+        );
+        assert_eq!(
+            CStr::from_ptr((*entry).value.string).to_bytes(),
+            b"\xff\xff"
+        );
+        let previous = (*entry).value.string;
+        assert_eq!(
+            options_set_string(oo, name, 0, c"%s".as_ptr(), previous),
+            entry
+        );
+        assert_eq!(
+            CStr::from_ptr((*entry).value.string).to_bytes(),
+            b"\xff\xff"
+        );
+        options_set_string(oo, name, 0, c"".as_ptr());
+        assert_eq!(CStr::from_ptr((*entry).value.string), c"");
+
+        let table = &raw const hmux2::src::options_table::options_table;
+        let definition = (*table)
+            .iter()
+            .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"status-left")
+            .unwrap();
+        let default = options_default(oo, definition);
+        assert_eq!(
+            CStr::from_ptr((*default).value.string),
+            CStr::from_ptr(definition.default_str)
+        );
+        assert_eq!(options_get_only(oo, definition.name), default);
+
+        let empty_definition = (*table)
+            .iter()
+            .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"status-right")
+            .unwrap();
+        let empty = options_empty(oo, empty_definition);
+        assert!((*empty).value.string.is_null());
+        options_set_string(
+            oo,
+            empty_definition.name,
+            1,
+            c"%s".as_ptr(),
+            c"tail".as_ptr(),
+        );
+        assert_eq!(CStr::from_ptr((*empty).value.string), c"(null)tail");
+        options_free(oo);
+    }
+}
+
+#[test]
 fn array_keys_order_normalize_and_keep_stable_items() {
     unsafe {
         let oo = options_create(null_mut());

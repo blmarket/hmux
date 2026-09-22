@@ -41,10 +41,8 @@ use crate::src::window::{
     window_pane_tree_minmax, window_pane_tree_next, windows_minmax, windows_next,
 };
 use crate::src::window_border::window_set_fill_cells;
-use crate::src::xmalloc::{
-    xasprintf, xcalloc, xsnprintf, xstrdup, xstrndup, xvasprintf, xvasprintf_cstring,
-};
-use std::ffi::CStr;
+use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xstrndup, xvasprintf_cstring};
+use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -121,6 +119,30 @@ pub use crate::src::shared::window::{
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
+// The first field keeps pointers returned by the options API ABI-compatible.
+// Its name and scalar string pointers borrow the adjacent owners until removal
+// or replacement, respectively. Array items retain their separate C lifecycle.
+#[repr(C)]
+struct OwnedOptionEntry {
+    record: options_entry,
+    name: CString,
+    string: Option<CString>,
+}
+
+const _: () = assert!(std::mem::offset_of!(OwnedOptionEntry, record) == 0);
+
+unsafe fn owned_option(o: *mut options_entry) -> *mut OwnedOptionEntry {
+    o.cast()
+}
+
+unsafe fn set_scalar_string(o: *mut options_entry, value: CString) {
+    let owned = &mut *owned_option(o);
+    // Formatting has completed, so callers may have supplied the old value
+    // as a %s argument. Replace its owner before publishing the new pointer.
+    owned.string = Some(value);
+    owned.record.value.string = owned.string.as_ref().unwrap().as_ptr().cast_mut();
+}
+
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
 unsafe extern "C" fn options_array_correct_key(
@@ -188,6 +210,8 @@ unsafe extern "C" fn options_value_free(mut o: *mut options_entry, mut ov: *mut 
         || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
             == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
     {
+        // Only array items call this branch. Scalar strings live beside their
+        // ABI record in OwnedOptionEntry and drop with that record.
         free((*ov).string as *mut ::core::ffi::c_void);
     }
     if !(*o).tableentry.is_null()
@@ -402,7 +426,7 @@ pub unsafe extern "C" fn options_default(
     }
     match (*oe).type_0 as ::core::ffi::c_uint {
         0 => {
-            (*ov).string = xstrdup((*oe).default_str);
+            set_scalar_string(o, CStr::from_ptr((*oe).default_str).to_owned());
         }
         6 => {
             pr = cmd_parse_from_string(
@@ -469,16 +493,21 @@ unsafe extern "C" fn options_add(
     mut name: *const ::core::ffi::c_char,
 ) -> *mut options_entry {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
-    o = options_get_only(oo, name);
+    let name = CStr::from_ptr(name).to_owned();
+    let lookup_name = name.as_ptr();
+    o = options_get_only(oo, lookup_name);
     if !o.is_null() {
         options_remove(o);
     }
-    o = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<options_entry>() as size_t,
-    ) as *mut options_entry;
-    (*o).owner = oo;
-    (*o).name = xstrdup(name);
+    let mut owned = Box::new(OwnedOptionEntry {
+        record: ::core::mem::zeroed(),
+        name,
+        string: None,
+    });
+    owned.record.owner = oo;
+    owned.record.name = owned.name.as_ptr();
+    o = &raw mut owned.record;
+    let _ = Box::into_raw(owned);
     (*(*oo).tree)
         .entries
         .insert(CStr::from_ptr((*o).name).to_bytes().to_vec(), o);
@@ -489,7 +518,16 @@ unsafe extern "C" fn options_remove(mut o: *mut options_entry) {
     if !(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         options_array_clear(o);
         drop(Box::from_raw((*o).value.array.storage));
-    } else {
+    } else if (*o).tableentry.is_null()
+        || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
+            == OPTIONS_TABLE_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
+    {
+        // Match the old string-before-monitor cleanup order.
+        drop((*owned_option(o)).string.take());
+    } else if !(*o).tableentry.is_null()
+        && (*(*o).tableentry).type_0 as ::core::ffi::c_uint
+            == OPTIONS_TABLE_COMMAND as ::core::ffi::c_int as ::core::ffi::c_uint
+    {
         options_value_free(o, &raw mut (*o).value);
     }
     if !(*o).monitor_data.is_null() {
@@ -498,8 +536,7 @@ unsafe extern "C" fn options_remove(mut o: *mut options_entry) {
     (*(*oo).tree)
         .entries
         .remove(CStr::from_ptr((*o).name).to_bytes());
-    free((*o).name as *mut ::core::ffi::c_void);
-    free(o as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(owned_option(o)));
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_name(mut o: *mut options_entry) -> *const ::core::ffi::c_char {
@@ -1201,12 +1238,10 @@ pub unsafe extern "C" fn options_set_string(
     let mut ap: ::core::ffi::VaList;
     let mut separator: *const ::core::ffi::c_char =
         b"\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     ap = args.clone();
-    xvasprintf(&raw mut s, fmt, ap);
+    let formatted = xvasprintf_cstring(fmt, ap);
     o = options_get_only(oo, name);
-    if !o.is_null()
+    let value = if !o.is_null()
         && append != 0
         && ((*o).tableentry.is_null()
             || (*(*o).tableentry).type_0 as ::core::ffi::c_uint
@@ -1218,17 +1253,23 @@ pub unsafe extern "C" fn options_set_string(
                 separator = b"\0" as *const u8 as *const ::core::ffi::c_char;
             }
         }
-        xasprintf(
-            &raw mut value,
-            b"%s%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*o).value.string,
-            separator,
-            s,
-        );
-        free(s as *mut ::core::ffi::c_void);
+        // glibc printf renders a null %s argument as "(null)". An entry
+        // created by options_empty can reach this append path with no value.
+        let previous = if (*o).value.string.is_null() {
+            b"(null)".as_slice()
+        } else {
+            CStr::from_ptr((*o).value.string).to_bytes()
+        };
+        let separator = CStr::from_ptr(separator).to_bytes();
+        let mut bytes =
+            Vec::with_capacity(previous.len() + separator.len() + formatted.as_bytes().len());
+        bytes.extend_from_slice(previous);
+        bytes.extend_from_slice(separator);
+        bytes.extend_from_slice(formatted.as_bytes());
+        CString::new(bytes).expect("C-string fragments contain no NUL")
     } else {
-        value = s;
-    }
+        formatted
+    };
     if o.is_null() && *name as ::core::ffi::c_int == '@' as i32 {
         o = options_add(oo, name);
     } else if o.is_null() {
@@ -1246,8 +1287,7 @@ pub unsafe extern "C" fn options_set_string(
             name,
         );
     }
-    free((*o).value.string as *mut ::core::ffi::c_void);
-    (*o).value.string = value;
+    set_scalar_string(o, value);
     (*o).cached = 0 as ::core::ffi::c_int;
     return o;
 }

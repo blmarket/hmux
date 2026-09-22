@@ -825,6 +825,26 @@ legacy callers safe.
   `cargo test --workspace`, binary build, rustfmt, and `git diff --check`
   passed in the isolated worktree. Existing compiler warnings remain.
 
+### Increment 35 — scalar option strings (2026-09-22)
+
+- `options_set_string` now formats with `xvasprintf_cstring`. A private
+  `OwnedOptionEntry` box holds a stable ABI-compatible `options_entry`, its
+  `CString` name, and an optional `CString` scalar value. `options_default`,
+  `options_add`, replacement/append, and `options_remove` use that lifecycle.
+  `options_entry` no longer derives `Copy`.
+- Scalar string and name frees are removed. Array item strings retain their
+  separate C allocation/free path; entry pointers, the option tree, and its
+  raw lifecycle remain compatibility boundaries. Formatting completes before
+  replacing an old value, allowing `%s` to read that value during update.
+  Null versus empty remains distinct; append to a null value preserves the
+  existing glibc `(null)` result.
+- Production formats are `%s` or `%ux%u`, with no supported meaningful bytes
+  after an embedded NUL. Focused storage tests and
+  `scripts/options_string_cli_checks.py` cover non-UTF-8 text, append, empty
+  text, built-in options, and unset. `cargo test --workspace`, the binary
+  build, rustfmt, and `git diff --check` passed in the isolated worktree.
+  Existing compiler warnings remain; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -839,7 +859,7 @@ non-string value.
    uses its returned byte length. The remaining values are observed as C
    strings, so no supported embedded-NUL E2E case requires a full-byte
    buffer. Continue with the next small containing lifecycle.
-2. `input_reply`, `options_set_string`,
+2. `input_reply`,
    `status_message_set`, and `format_add`
    store formatted C strings in records or queues. Audit each containing
    lifecycle before adding `CString`; a local owner alone would dangle.
@@ -848,6 +868,6 @@ non-string value.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    are separate ownership candidates after the simpler string lifetimes.
 
-Current validation is recorded in increments 15–34. The remaining
+Current validation is recorded in increments 15–35. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–34 has its own local commit; none was pushed.
+Each of increments 15–35 has its own local commit; none was pushed.

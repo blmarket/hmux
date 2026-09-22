@@ -79,7 +79,6 @@ pub struct options_array_item {
     pub owner: *mut options_entry,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct options_entry {
     pub owner: *mut options,
