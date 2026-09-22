@@ -3,6 +3,65 @@
 // Shared C-layout types, allocator/FFI helpers, and callback-table symbols
 // remain supplied by the parent facade.
 use super::*;
+use std::ffi::{CStr, CString};
+
+/// The C-layout prefix is borrowed by format lookups and callbacks. This box
+/// owns both strings until `format_free`; replacing a value does not move the
+/// prefix or its key.
+#[repr(C)]
+struct FormatEntryOwner {
+    entry: format_entry,
+    key: CString,
+    value: Option<CString>,
+}
+const _: () = assert!(::core::mem::offset_of!(FormatEntryOwner, entry) == 0);
+
+unsafe fn format_entry_new(key: *const ::core::ffi::c_char) -> *mut format_entry {
+    let key = CStr::from_ptr(key).to_owned();
+    let entry = format_entry {
+        key: key.as_ptr() as *mut ::core::ffi::c_char,
+        value: ::core::ptr::null_mut(),
+        time: 0,
+        cb: None,
+        entry: format_entry_entry {
+            rbe_left: ::core::ptr::null_mut(),
+            rbe_right: ::core::ptr::null_mut(),
+            rbe_parent: ::core::ptr::null_mut(),
+            rbe_color: 0,
+        },
+    };
+    let owner = Box::new(FormatEntryOwner {
+        entry,
+        key,
+        value: None,
+    });
+    Box::into_raw(owner) as *mut format_entry
+}
+
+unsafe fn format_entry_set_value(fe: *mut format_entry, value: Option<CString>) {
+    let owner = &mut *(fe as *mut FormatEntryOwner);
+    owner.value = value;
+    owner.entry.value = owner
+        .value
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr() as *mut _);
+}
+
+/// Callback results have the existing malloc/free contract. Copy their C
+/// string view into the entry owner, then release the callback allocation.
+pub(super) unsafe fn format_entry_cache_callback(
+    fe: *mut format_entry,
+    value: *mut ::core::ffi::c_char,
+) {
+    let owned = if value.is_null() {
+        CString::default()
+    } else {
+        let owned = CStr::from_ptr(value).to_owned();
+        free(value as *mut ::core::ffi::c_void);
+        owned
+    };
+    format_entry_set_value(fe, Some(owned));
+}
 
 unsafe fn format_entry_tree_key(elm: *mut format_entry) -> Vec<u8> {
     std::ffi::CStr::from_ptr((*elm).key).to_bytes().to_vec()
@@ -157,9 +216,7 @@ pub unsafe extern "C" fn format_free(mut ft: *mut format_tree) {
         1 as ::core::ffi::c_int != 0
     } {
         format_entry_tree_remove(&raw mut (*ft).tree, fe);
-        free((*fe).value as *mut ::core::ffi::c_void);
-        free((*fe).key as *mut ::core::ffi::c_void);
-        free(fe as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(fe as *mut FormatEntryOwner));
         fe = fe1;
     }
     if !(*ft).tree.entries.is_null() {
@@ -274,11 +331,9 @@ pub unsafe extern "C" fn format_each(
             );
         } else {
             if (*fe).value.is_null() && (*fe).cb.is_some() {
-                (*fe).value =
+                let value =
                     (*fe).cb.expect("non-null function pointer")(ft) as *mut ::core::ffi::c_char;
-                if (*fe).value.is_null() {
-                    (*fe).value = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-                }
+                format_entry_cache_callback(fe, value);
             }
             cb.expect("non-null function pointer")((*fe).key, (*fe).value, arg);
         }
@@ -295,19 +350,16 @@ pub unsafe extern "C" fn format_add(
     let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     let mut fe_now: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     let mut ap: ::core::ffi::VaList;
-    fe = xmalloc(::core::mem::size_of::<format_entry>() as size_t) as *mut format_entry;
-    (*fe).key = xstrdup(key);
+    fe = format_entry_new(key);
     fe_now = format_entry_tree_insert(&raw mut (*ft).tree, fe);
     if !fe_now.is_null() {
-        free((*fe).key as *mut ::core::ffi::c_void);
-        free(fe as *mut ::core::ffi::c_void);
-        free((*fe_now).value as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(fe as *mut FormatEntryOwner));
         fe = fe_now;
     }
     (*fe).cb = None;
     (*fe).time = 0 as time_t;
     ap = args.clone();
-    xvasprintf(&raw mut (*fe).value, fmt, ap);
+    format_entry_set_value(fe, Some(xvasprintf_cstring(fmt, ap)));
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_add_tv(
@@ -317,18 +369,15 @@ pub unsafe extern "C" fn format_add_tv(
 ) {
     let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     let mut fe_now: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    fe = xmalloc(::core::mem::size_of::<format_entry>() as size_t) as *mut format_entry;
-    (*fe).key = xstrdup(key);
+    fe = format_entry_new(key);
     fe_now = format_entry_tree_insert(&raw mut (*ft).tree, fe);
     if !fe_now.is_null() {
-        free((*fe).key as *mut ::core::ffi::c_void);
-        free(fe as *mut ::core::ffi::c_void);
-        free((*fe_now).value as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(fe as *mut FormatEntryOwner));
         fe = fe_now;
     }
     (*fe).cb = None;
     (*fe).time = (*tv).tv_sec as time_t;
-    (*fe).value = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    format_entry_set_value(fe, None);
 }
 #[no_mangle]
 pub unsafe extern "C" fn format_add_cb(
@@ -338,24 +387,96 @@ pub unsafe extern "C" fn format_add_cb(
 ) {
     let mut fe: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
     let mut fe_now: *mut format_entry = ::core::ptr::null_mut::<format_entry>();
-    fe = xmalloc(::core::mem::size_of::<format_entry>() as size_t) as *mut format_entry;
-    (*fe).key = xstrdup(key);
+    fe = format_entry_new(key);
     fe_now = format_entry_tree_insert(&raw mut (*ft).tree, fe);
     if !fe_now.is_null() {
-        free((*fe).key as *mut ::core::ffi::c_void);
-        free(fe as *mut ::core::ffi::c_void);
-        free((*fe_now).value as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(fe as *mut FormatEntryOwner));
         fe = fe_now;
     }
     (*fe).cb = cb;
     (*fe).time = 0 as time_t;
-    (*fe).value = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    format_entry_set_value(fe, None);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::ffi::{CStr, CString};
+
+    unsafe extern "C" fn cached_test_value(_ft: *mut format_tree) -> *mut ::core::ffi::c_void {
+        xstrdup(b"cached\xff\0".as_ptr() as *const ::core::ffi::c_char) as *mut ::core::ffi::c_void
+    }
+
+    #[test]
+    fn format_entry_owns_replacements_and_cached_callback_values() {
+        unsafe {
+            let ft = format_create(::core::ptr::null_mut(), ::core::ptr::null_mut(), 0, 0);
+            let key = b"custom\xff\0".as_ptr() as *const ::core::ffi::c_char;
+            let format = b"%s\0".as_ptr() as *const ::core::ffi::c_char;
+            let first = b"first\xff\0".as_ptr() as *const ::core::ffi::c_char;
+            format_add(ft, key, format, first);
+            let mut probe = format_entry {
+                key: key as *mut _,
+                value: ::core::ptr::null_mut(),
+                time: 0,
+                cb: None,
+                entry: format_entry_entry {
+                    rbe_left: ::core::ptr::null_mut(),
+                    rbe_right: ::core::ptr::null_mut(),
+                    rbe_parent: ::core::ptr::null_mut(),
+                    rbe_color: 0,
+                },
+            };
+            let entry = format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe);
+            assert!(!entry.is_null());
+            assert_eq!(CStr::from_ptr((*entry).value).to_bytes(), b"first\xff");
+
+            // The old value remains alive while vasprintf reads its argument.
+            format_add(ft, key, b"%s-next\0".as_ptr() as *const _, (*entry).value);
+            assert_eq!(
+                format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe),
+                entry
+            );
+            assert_eq!(CStr::from_ptr((*entry).value).to_bytes(), b"first\xff-next");
+
+            format_add_cb(ft, key, Some(cached_test_value));
+            assert_eq!(
+                format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe),
+                entry
+            );
+            assert!((*entry).value.is_null());
+            let raw = (*entry).cb.expect("test callback is present")(ft) as *mut _;
+            format_entry_cache_callback(entry, raw);
+            assert_eq!(CStr::from_ptr((*entry).value).to_bytes(), b"cached\xff");
+            format_entry_cache_callback(entry, ::core::ptr::null_mut());
+            assert_eq!(CStr::from_ptr((*entry).value).to_bytes(), b"");
+
+            let mut tv = timeval {
+                tv_sec: 123,
+                tv_usec: 0,
+            };
+            format_add_tv(ft, key, &raw mut tv);
+            assert_eq!(
+                format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe),
+                entry
+            );
+            assert!((*entry).value.is_null());
+            assert_eq!((*entry).time, 123);
+
+            format_add(
+                ft,
+                key,
+                format,
+                b"final\0".as_ptr() as *const ::core::ffi::c_char,
+            );
+            assert_eq!(
+                format_entry_tree_find(&raw mut (*ft).tree, &raw mut probe),
+                entry
+            );
+            assert_eq!(CStr::from_ptr((*entry).value).to_bytes(), b"final");
+            format_free(ft);
+        }
+    }
 
     unsafe fn new_entry(key: &CString) -> *mut format_entry {
         Box::into_raw(Box::new(format_entry {

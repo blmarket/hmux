@@ -845,6 +845,27 @@ legacy callers safe.
   build, rustfmt, and `git diff --check` passed in the isolated worktree.
   Existing compiler warnings remain; no sanitizer run was performed.
 
+### Increment 36 — format entry values and keys (2026-09-22)
+
+- `format_add` now formats with `xvasprintf_cstring`. Its private
+  `FormatEntryOwner` box owns stable ABI-compatible `format_entry` storage,
+  a `CString` key, and an optional `CString` value. `format_add_tv`,
+  `format_add_cb`, duplicate replacement, both lazy callback cache sites,
+  and `format_free` use the same lifecycle. The callback cache copies its
+  C-owned result into a `CString`, releases the C allocation, and uses an
+  empty string for a null result.
+- Manual key/value/entry frees are removed. The tree retains compatibility
+  raw pointers, with the first-field offset asserted. The distinct
+  `format_printf` helper still returns a C-owned allocation to its callers.
+- All 260 production `format_add` calls use literal formats with no `%c`;
+  consumers observe C strings. There is no supported E2E case that needs
+  bytes after an embedded NUL. Unit coverage checks replacement, old-value
+  `%s` aliasing, non-UTF-8 data, callback cache/null fallback, and time value
+  replacement. `tests/format_entry_owner.rs` checks lazy caching through
+  public `format_expand`. A private-socket expansion check, workspace tests,
+  binary build, rustfmt, and `git diff --check` passed in the isolated
+  worktree. Existing compiler warnings remain; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -859,8 +880,7 @@ non-string value.
    uses its returned byte length. The remaining values are observed as C
    strings, so no supported embedded-NUL E2E case requires a full-byte
    buffer. Continue with the next small containing lifecycle.
-2. `input_reply`,
-   `status_message_set`, and `format_add`
+2. `input_reply` and `status_message_set`
    store formatted C strings in records or queues. Audit each containing
    lifecycle before adding `CString`; a local owner alone would dangle.
    `format_printf` returns a C-owned allocation to callback consumers, and
@@ -868,6 +888,6 @@ non-string value.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    are separate ownership candidates after the simpler string lifetimes.
 
-Current validation is recorded in increments 15–35. The remaining
+Current validation is recorded in increments 15–36. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–35 has its own local commit; none was pushed.
+Each of increments 15–36 has its own local commit; none was pushed.

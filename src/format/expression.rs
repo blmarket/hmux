@@ -409,11 +409,9 @@ pub(super) unsafe extern "C" fn format_find(
                     t = (*fe).time;
                 } else {
                     if (*fe).value.is_null() && (*fe).cb.is_some() {
-                        (*fe).value = (*fe).cb.expect("non-null function pointer")(ft)
+                        let value = (*fe).cb.expect("non-null function pointer")(ft)
                             as *mut ::core::ffi::c_char;
-                        if (*fe).value.is_null() {
-                            (*fe).value = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-                        }
+                        format_entry_cache_callback(fe, value);
                     }
                     found = xstrdup((*fe).value);
                 }
