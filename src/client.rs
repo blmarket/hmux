@@ -155,9 +155,7 @@ static mut client_execshell: *const ::core::ffi::c_char =
     ::core::ptr::null::<::core::ffi::c_char>();
 static mut client_execcmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
 static mut client_attached: ::core::ffi::c_int = 0;
-static mut client_files: client_files = client_files {
-    storage: std::ptr::null_mut(),
-};
+static mut client_files: client_files = client_files { storage: None };
 unsafe extern "C" fn client_get_lock(mut lockfile: *mut ::core::ffi::c_char) -> ::core::ffi::c_int {
     let mut lockfd: ::core::ffi::c_int = 0;
     log_debug(

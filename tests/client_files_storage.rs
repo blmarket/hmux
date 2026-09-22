@@ -1,12 +1,20 @@
 use hmux2::src::file::*;
+use hmux2::src::shared::tree::OrderedIndex;
+use std::mem::size_of;
 use std::ptr::null_mut;
+
+#[test]
+fn boxed_index_slot_keeps_pointer_layout() {
+    assert_eq!(
+        size_of::<client_files>(),
+        size_of::<*mut OrderedIndex<i32, client_file>>()
+    );
+}
 
 #[test]
 fn stream_lookup_order_reference_release_and_double_removal() {
     unsafe {
-        let mut files = client_files {
-            storage: null_mut(),
-        };
+        let mut files = client_files { storage: None };
         let mut nodes = Vec::new();
         for stream in [i32::MAX, -1, 42, 0, i32::MIN] {
             nodes.push(file_create_with_peer(
@@ -41,9 +49,9 @@ fn stream_lookup_order_reference_release_and_double_removal() {
                 file_free(node);
             }
         }
-        assert!(files.storage.is_null());
+        assert!(files.storage.is_none());
         let again = file_create_with_peer(null_mut(), &mut files, 7, None, null_mut());
         file_free(again);
-        assert!(files.storage.is_null());
+        assert!(files.storage.is_none());
     }
 }

@@ -49,6 +49,22 @@ impl<K: Ord, T> OrderedIndex<K, T> {
 
     /// Remove from an index whose allocation is owned by an `Option<Box<_>>`.
     pub fn remove_boxed(slot: &mut Option<Box<Self>>, key: &K, node: *mut T) -> *mut T {
+        Self::remove_boxed_with(slot, key, node, |_| {})
+    }
+
+    /// Remove from a boxed index and run an invalidation hook before the last
+    /// index allocation is released. Compatibility pointers embedded in
+    /// externally owned records can therefore be cleared while the index is
+    /// still alive.
+    pub fn remove_boxed_with<F>(
+        slot: &mut Option<Box<Self>>,
+        key: &K,
+        node: *mut T,
+        invalidate: F,
+    ) -> *mut T
+    where
+        F: FnOnce(*mut T),
+    {
         let (removed, empty) = {
             let Some(index) = slot.as_mut() else {
                 return std::ptr::null_mut();
@@ -59,6 +75,7 @@ impl<K: Ord, T> OrderedIndex<K, T> {
             index.entries.remove(key);
             (node, index.entries.is_empty() && index.owners.is_empty())
         };
+        invalidate(removed);
         if empty {
             *slot = None;
         }

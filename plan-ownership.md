@@ -380,18 +380,54 @@ legacy callers safe.
   changed files, and `git diff --check` passed. Existing compiler warnings
   remain; no sanitizer or live pane lifecycle scenario was run.
 
+### Increment 12 — per-client client-file ordered index (2026-09-22)
+
+- `client_files.storage` now owns its allocation as
+  `Option<Box<OrderedIndex<i32, client_file>>>`. The client-file lookup,
+  lower-bound, insertion, removal, edge, and neighbor helpers use the boxed
+  index view; the stream records remain externally allocated and retain only
+  `client_file.entry.owner` as a traversal compatibility pointer.
+- The containing `client` lifecycle changed with the drop-bearing field:
+  `server_client_create` allocates a `Box<client>`, `client` and
+  `client_files` are no longer `Copy`, and `server_client_free` asserts that
+  all client streams have already removed themselves before dropping the
+  client. The client-process global stream index uses the same owner and
+  releases its allocation when its last stream is removed. The embedded
+  `client_files` slot remains pointer-sized and the existing raw client/file
+  ABI signatures are unchanged.
+- Added `OrderedIndex::remove_boxed_with` so client-file owner pointers are
+  cleared before the final index allocation is dropped while preserving the
+  existing three-argument `remove_boxed` API used by the other migrated
+  indexes. This fixes the previous attempt's five `E0061` validation errors,
+  which came from changing that shared signature without updating all callers.
+- Audited stream callbacks and teardown: delayed write callbacks retain only a
+  client-file reference, client references keep the containing client alive,
+  and the final `file_free` removes the record before its client reference can
+  schedule `server_client_free`. The `client_file.tree` pointer is valid for
+  the stable boxed client or process-global head; it remains a narrow raw
+  compatibility pointer. Stream ordering, duplicate handling, reference
+  counts, callback order, and explicit double-removal behavior are unchanged.
+- Validation: `cargo test --test client_files_storage` passed (2 tests), the
+  exact reported `cargo test --no-run --message-format json-render-diagnostics
+  --workspace` command passed, `cargo test --workspace` passed, and
+  `cargo build --bin hmux2` passed. Edition-2021 rustfmt checks for changed
+  files and `git diff --check` passed. Existing compiler warnings remain; no
+  sanitizer or live client teardown integration scenario was run.
+
 ### Next candidates
 
-1. The per-client `client.files` ordered index in `src/file.rs` and
-   `src/shared/client.rs`, after confirming its stream callback and client
-   teardown paths do not retain entry-owner pointers beyond the client.
-2. Re-rank the remaining local scratch owners after the client-files audit;
-   the session/winlink graph and other global indexes remain deferred until a
+1. The local `format_log1` varargs scratch string in `src/format.rs`: it is
+   created with `xvasprintf`, consumed synchronously by logging and verbose
+   command output, and freed in the same function. Audit the allocator bridge
+   and failure behavior before replacing its manual free with a `CString`
+   owner.
+2. Re-rank other local format/status scratch strings after that audit; the
+   session/winlink graph and remaining global indexes remain deferred until a
    smaller independent owner is confirmed.
 
 Final validation for this execution: all workspace tests passed, including the
-focused pane, resize-queue, remaining-pane, and window storage tests, and
-`cargo build --bin hmux2` passed. The reported workspace no-run build also
-passed. Edition-2021 rustfmt checks for changed files and `git diff --check`
-also passed.
+focused client-file, pane, resize-queue, remaining-pane, and window storage
+tests, and `cargo build --bin hmux2` passed. The reported workspace no-run
+build also passed. Edition-2021 rustfmt checks for changed files and `git diff
+--check` also passed.
 No new commit, push, or publication was performed.

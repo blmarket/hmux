@@ -478,7 +478,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut i: u_int = 0;
     setblocking(fd, 0 as ::core::ffi::c_int);
-    c = xcalloc(1 as size_t, ::core::mem::size_of::<client>() as size_t) as *mut client;
+    c = Box::into_raw(Box::new(std::mem::zeroed::<client>()));
     (*c).references = 1 as ::core::ffi::c_int;
     (*c).peer = proc_add_peer(
         server_proc,
@@ -501,7 +501,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
     (*c).fd = -(1 as ::core::ffi::c_int);
     (*c).out_fd = -(1 as ::core::ffi::c_int);
     (*c).queue = cmdq_new();
-    (*c).files.storage = std::ptr::null_mut();
+    (*c).files.storage = None;
     (*c).tty.sx = 80 as u_int;
     (*c).tty.sy = 24 as u_int;
     i = 0 as u_int;
@@ -969,7 +969,11 @@ unsafe extern "C" fn server_client_free(
     if (*c).references == 0 as ::core::ffi::c_int {
         free((*c).name as *mut ::core::ffi::c_void);
         free((*c).user as *mut ::core::ffi::c_void);
-        free(c as *mut ::core::ffi::c_void);
+        assert!(
+            (*c).files.storage.is_none(),
+            "client file index still contains live records at client teardown"
+        );
+        drop(Box::from_raw(c));
     }
 }
 #[no_mangle]

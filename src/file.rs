@@ -1578,7 +1578,7 @@ pub unsafe fn client_files_find(
     elm: *mut client_file,
 ) -> *mut client_file {
     crate::src::shared::tree::OrderedIndex::<i32, client_file>::find(
-        (*head).storage,
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
         &client_files_key(elm),
     )
 }
@@ -1587,7 +1587,7 @@ pub unsafe fn client_files_nfind(
     elm: *mut client_file,
 ) -> *mut client_file {
     crate::src::shared::tree::OrderedIndex::<i32, client_file>::nfind(
-        (*head).storage,
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
         &client_files_key(elm),
     )
 }
@@ -1595,13 +1595,13 @@ pub unsafe fn client_files_insert(
     head: *mut client_files,
     elm: *mut client_file,
 ) -> *mut client_file {
-    let found = crate::src::shared::tree::OrderedIndex::<i32, client_file>::insert(
-        &raw mut (*head).storage,
+    let found = crate::src::shared::tree::OrderedIndex::<i32, client_file>::insert_boxed(
+        &mut (*head).storage,
         client_files_key(elm),
         elm,
     );
     if found.is_null() {
-        (*elm).entry.owner = (*head).storage;
+        (*elm).entry.owner = crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage);
     }
     found
 }
@@ -1609,21 +1609,24 @@ pub unsafe fn client_files_remove(
     head: *mut client_files,
     elm: *mut client_file,
 ) -> *mut client_file {
-    let removed = crate::src::shared::tree::OrderedIndex::<i32, client_file>::remove(
-        &raw mut (*head).storage,
-        &client_files_key(elm),
+    let key = client_files_key(elm);
+    crate::src::shared::tree::OrderedIndex::<i32, client_file>::remove_boxed_with(
+        &mut (*head).storage,
+        &key,
         elm,
-    );
-    if !removed.is_null() {
-        (*elm).entry.owner = std::ptr::null_mut();
-    }
-    removed
+        |node| unsafe {
+            (*node).entry.owner = std::ptr::null_mut();
+        },
+    )
 }
 pub unsafe fn client_files_minmax(
     head: *mut client_files,
     direction: ::core::ffi::c_int,
 ) -> *mut client_file {
-    crate::src::shared::tree::OrderedIndex::<i32, client_file>::edge((*head).storage, direction < 0)
+    crate::src::shared::tree::OrderedIndex::<i32, client_file>::edge(
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
+        direction < 0,
+    )
 }
 pub unsafe fn client_files_next(elm: *mut client_file) -> *mut client_file {
     crate::src::shared::tree::OrderedIndex::<i32, client_file>::neighbor(

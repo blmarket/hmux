@@ -118,7 +118,6 @@ mod tests {
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct client {
     pub name: *const ::core::ffi::c_char,
@@ -206,10 +205,12 @@ pub struct client_entry {
     pub tqe_prev: *mut *mut client,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct client_files {
-    pub storage: *mut crate::src::shared::tree::OrderedIndex<i32, client_file>,
+    /// Each client owns its stream index allocation. File records remain
+    /// externally allocated and keep only `client_file_entry::owner` as a
+    /// traversal compatibility pointer.
+    pub storage: Option<Box<crate::src::shared::tree::OrderedIndex<i32, client_file>>>,
 }
 
 #[derive(Copy, Clone)]
