@@ -24,49 +24,63 @@ use super::window::{window, window_mode_entry};
 pub struct window_pane_offset {
     pub used: size_t,
 }
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_pane_resizes {
-    pub storage: *mut window_pane_resize_storage,
+    /// The queue owner is optional so an empty queue has no heap allocation.
+    /// Keep the reserved ABI slot until the containing pane is fully migrated.
+    pub storage: Option<Box<window_pane_resize_storage>>,
     pub reserved: *mut ::core::ffi::c_void,
 }
 
+/// Each entry remains separately boxed so pointers used by cancellation keep
+/// their address when the deque grows or other entries are removed.
 pub type window_pane_resize_storage = VecDeque<Box<window_pane_resize>>;
 
+impl Default for window_pane_resizes {
+    fn default() -> Self {
+        Self {
+            storage: None,
+            reserved: ::core::ptr::null_mut(),
+        }
+    }
+}
+
 impl window_pane_resizes {
-    pub unsafe fn as_ref(&self) -> Option<&window_pane_resize_storage> {
-        self.storage.as_ref().map(|storage| &*storage)
+    pub fn as_ref(&self) -> Option<&window_pane_resize_storage> {
+        self.storage.as_deref()
     }
 
-    pub unsafe fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.as_ref().is_none_or(VecDeque::is_empty)
     }
 
-    pub unsafe fn push_back(&mut self, resize: window_pane_resize) -> *mut window_pane_resize {
-        if self.storage.is_null() {
-            self.storage = Box::into_raw(Box::new(VecDeque::new()));
-        }
+    pub fn push_back(&mut self, resize: window_pane_resize) -> *mut window_pane_resize {
+        let storage = self
+            .storage
+            .get_or_insert_with(|| Box::new(VecDeque::new()));
         let resize = Box::new(resize);
         let pointer = (&*resize) as *const window_pane_resize as *mut window_pane_resize;
-        (*self.storage).push_back(resize);
+        storage.push_back(resize);
         pointer
     }
 
-    pub unsafe fn clear_except(&mut self, except: *mut window_pane_resize) {
-        if self.storage.is_null() {
-            return;
-        }
+    /// Retain only `except`; any removed entry pointer is invalid after return.
+    pub fn clear_except(&mut self, except: *mut window_pane_resize) {
         if except.is_null() {
-            drop(Box::from_raw(self.storage));
-            self.storage = ::core::ptr::null_mut();
+            self.storage = None;
             return;
         }
-        (*self.storage).retain(|resize| {
-            (&**resize) as *const window_pane_resize as *mut window_pane_resize == except
-        });
-        if (*self.storage).is_empty() {
-            drop(Box::from_raw(self.storage));
-            self.storage = ::core::ptr::null_mut();
+        let empty = {
+            let Some(storage) = self.storage.as_mut() else {
+                return;
+            };
+            storage.retain(|resize| {
+                (&**resize) as *const window_pane_resize as *mut window_pane_resize == except
+            });
+            storage.is_empty()
+        };
+        if empty {
+            self.storage = None;
         }
     }
 }
@@ -140,7 +154,6 @@ pub struct window_pane_prompt {
     pub type_0: prompt_type,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_pane {
     pub id: u_int,

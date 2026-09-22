@@ -1347,15 +1347,14 @@ mod tests {
                 let result = Box::into_raw(Box::new(Vec::<u8>::new()));
                 (*state).cb = Some(capture_editor_result);
                 (*state).arg = result as *mut ::core::ffi::c_void;
-                let wp =
-                    xcalloc(1, ::core::mem::size_of::<window_pane>() as size_t) as *mut window_pane;
+                let wp = Box::into_raw(Box::new(std::mem::zeroed::<window_pane>()));
                 (*wp).editor = state;
                 (*wp).flags = PANE_STATUSREADY;
                 (*wp).status = 0;
                 spawn_editor_finish(wp);
                 assert_eq!(*Box::from_raw(result), b"edited by child");
                 assert!(!std::path::Path::new(path.to_str().unwrap()).exists());
-                free(wp as *mut ::core::ffi::c_void);
+                drop(Box::from_raw(wp));
             }
             return;
         }

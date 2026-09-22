@@ -221,16 +221,49 @@ legacy callers safe.
   pre-existing difference in `src/key_string.rs`. No sanitizer or dedicated
   live `layout_dump` integration scenario was run.
 
+### Increment 6 — pane resize queue owner (2026-09-22)
+
+- `window_pane_resizes::storage` now owns its queue as
+  `Option<Box<VecDeque<Box<window_pane_resize>>>>`. Each resize remains in its
+  own `Box`, preserving the stable node addresses used by exception-based
+  cancellation while the deque grows or entries are removed. Removed the
+  queue's `Box::into_raw`/`Box::from_raw` storage lifecycle and made empty
+  queues explicit as `None`.
+- Changed the containing `window_pane` lifecycle together with the drop-bearing
+  queue field: `window_pane_create` allocates a `Box<window_pane>`,
+  `window_pane_free` drops it after the existing C-owned fields are released,
+  and the editor test fixture uses the same owner. `window_pane` is no longer
+  `Copy`; its `repr(C)` field offsets and the two-pointer queue layout remain
+  unchanged. `window_pane_destroy` still removes the resize timer before
+  clearing queued entries.
+- Audited the queue consumers in `src/window.rs`, `src/server_client.rs`, and
+  `src/screen_write.rs`: alternate-screen cancellation still clears the queue,
+  cancels the timer, and sends the current size when needed; the delayed client
+  resize path snapshots queue values, releases its borrow before sending or
+  clearing, and preserves the 250ms/10ms timer behavior. The remaining
+  compatibility pointer is `last_ptr` in `server_client_check_pane_resize`,
+  which is valid only until its paired `clear_except` call. The resize record's
+  unused ABI `entry` pointers and the exported raw pane APIs remain unchanged.
+- `window_pane_resize` now snapshots `old_sx`/`old_sy` after the existing sync
+  stop and before screen, mode, and event callbacks. The event payload no
+  longer dereferences a queue node after reentrant code may have cancelled or
+  replaced it, while the original read ordering is preserved.
+- Expanded `tests/pane_resize_queue.rs` to cover empty cancellation, stable
+  identity, exception removal, and dropping a boxed pane with queued storage.
+  Validation: focused queue/pane/layout tests passed (2 queue, 2 pane storage,
+  1 layout), `cargo test --workspace` passed, `cargo build --bin hmux2`
+  passed, edition-2021 rustfmt checks and `git diff --check` passed, and the
+  focused queue binary passed Valgrind with no definite or indirect leaks.
+  Existing compiler warnings remain; Valgrind reported only the Rust test
+  harness's possible thread-local allocation. No dedicated live pane-resize
+  timer integration scenario or sanitizer run was available.
+
 ### Next candidates
 
-1. Pane resize queue in `src/shared/pane.rs`, `src/window.rs`,
-   `src/server_client.rs`, and `src/screen_write.rs`: it already has boxed
-   storage, but cleanup is callback-adjacent and needs a complete cancellation
-   and callback lifetime audit.
-2. Session/winlink graph ownership: defer until the queue boundary is complete;
-   it needs explicit observer teardown, checked weak access, and a reentrancy
-   audit.
+1. Session/winlink graph ownership: it needs explicit observer teardown,
+   checked weak access, and a reentrancy audit. Keep it deferred until a
+   smaller independent owner is identified.
 
-Final validation for this execution: all workspace tests passed (zero failures
-or ignored tests), the new layout suite passed 13 tests, and
-`cargo build --bin hmux2` passed. No commits, pushes, or publication performed.
+Final validation for this execution: all workspace tests passed, focused queue,
+pane-storage, and layout tests passed, and `cargo build --bin hmux2` passed.
+No new commit, push, or publication was performed.

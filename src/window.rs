@@ -2628,10 +2628,7 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
         event: ::core::ptr::null_mut::<bufferevent>(),
         offset: window_pane_offset { used: 0 },
         base_offset: 0,
-        resize_queue: window_pane_resizes {
-            storage: ::core::ptr::null_mut(),
-            reserved: ::core::ptr::null_mut(),
-        },
+        resize_queue: window_pane_resizes::default(),
         resize_timer: event {
             ev_evcallback: event_callback {
                 evcb_active_next: event_callback_entry {
@@ -2952,7 +2949,7 @@ unsafe extern "C" fn window_pane_create(
 ) -> *mut window_pane {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut host: [::core::ffi::c_char; 65] = [0; 65];
-    wp = xcalloc(1 as size_t, ::core::mem::size_of::<window_pane>() as size_t) as *mut window_pane;
+    wp = Box::into_raw(Box::new(std::mem::zeroed::<window_pane>()));
     (*wp).references = 1 as ::core::ffi::c_int;
     (*wp).window = w as *mut window;
     (*wp).options = options_create((*w).options);
@@ -2965,8 +2962,7 @@ unsafe extern "C" fn window_pane_create(
     (*wp).fd = -(1 as ::core::ffi::c_int);
     (*wp).modes.tqh_first = ::core::ptr::null_mut::<window_mode_entry>();
     (*wp).modes.tqh_last = &raw mut (*wp).modes.tqh_first;
-    (*wp).resize_queue.storage = ::core::ptr::null_mut();
-    (*wp).resize_queue.reserved = ::core::ptr::null_mut();
+    (*wp).resize_queue = window_pane_resizes::default();
     (*wp).sx = sx;
     (*wp).sy = sy;
     (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
@@ -3149,7 +3145,7 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
     colour_palette_free(&raw mut (*wp).palette);
     style_ranges_free(&raw mut (*wp).border_status_line.ranges);
     free((*wp).border_status_line.expanded as *mut ::core::ffi::c_void);
-    free(wp as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(wp));
 }
 unsafe extern "C" fn window_pane_read_callback(
     mut bufev: *mut bufferevent,
@@ -3248,7 +3244,6 @@ pub unsafe extern "C" fn window_pane_resize(
     mut sy: u_int,
 ) {
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    let mut r: *mut window_pane_resize = ::core::ptr::null_mut::<window_pane_resize>();
     let mut ep: *mut event_payload = ::core::ptr::null_mut::<event_payload>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -3263,11 +3258,13 @@ pub unsafe extern "C" fn window_pane_resize(
         return;
     }
     screen_write_stop_sync(wp);
-    r = (*wp).resize_queue.push_back(window_pane_resize {
+    let old_sx = (*wp).sx;
+    let old_sy = (*wp).sy;
+    (*wp).resize_queue.push_back(window_pane_resize {
         sx,
         sy,
-        osx: (*wp).sx,
-        osy: (*wp).sy,
+        osx: old_sx,
+        osy: old_sy,
         entry: window_pane_resize_entry {
             tqe_next: ::core::ptr::null_mut::<window_pane_resize>(),
             tqe_prev: ::core::ptr::null_mut::<*mut window_pane_resize>(),
@@ -3314,12 +3311,12 @@ pub unsafe extern "C" fn window_pane_resize(
     event_payload_set_uint(
         ep,
         b"old_width\0" as *const u8 as *const ::core::ffi::c_char,
-        (*r).osx,
+        old_sx,
     );
     event_payload_set_uint(
         ep,
         b"old_height\0" as *const u8 as *const ::core::ffi::c_char,
-        (*r).osy,
+        old_sy,
     );
     events_fire(
         b"pane-resized\0" as *const u8 as *const ::core::ffi::c_char,
