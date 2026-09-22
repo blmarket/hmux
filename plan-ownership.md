@@ -690,6 +690,9 @@ legacy callers safe.
   `rustfmt --check src/layout/custom.rs` still reports pre-existing import
   formatting differences; no live layout scenario or sanitizer run was
   performed.
+- This implementation was replaced in increment 29 after auditing all live
+  layout serializer callers; the byte bridge and synthetic embedded-NUL test
+  were removed.
 
 ### Increment 28 — configuration cause queue (2026-09-22)
 
@@ -711,6 +714,22 @@ legacy callers safe.
   remain; no live config-cause display scenario or sanitizer run was
   performed.
 
+### Increment 29 — use CString for supported layout formats (2026-09-22)
+
+- Audited every `layout_string_write` call: it receives fixed punctuation,
+  numeric formats, a nonzero layout type (`h`, `v`, or `p`), or fixed nonzero
+  bracket characters. There is no supported layout input that puts NUL inside
+  a formatted fragment. The earlier embedded-NUL unit test called the private
+  helper with arguments no production caller supplies.
+- `layout_string_write` now uses `xvasprintf_cstring` and appends its byte view.
+  Removed the unused `xvasprintf_bytes` bridge and synthetic test. The
+  existing `LayoutString` still owns the final terminator and the returned
+  layout dump remains C-owned. Supported layout output and ABI are unchanged.
+- `cargo test --lib layout_string_tests`, the binary build, and
+  `scripts/layout_cli_checks.py` passed. `rustfmt --check src/xmalloc.rs` and
+  `git diff --check` passed. The pre-existing `src/layout/custom.rs`
+  import-format difference remains; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -721,15 +740,15 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `args_print_add` uses `xvasprintf`'s returned byte length for capacity
-   accounting, then `strlcat` consumes the first-NUL C-string view. Reuse the
-   new `xvasprintf_bytes` bridge, temporarily append a terminator for
-   `strlcat`, and preserve the original length separately.
+1. `args_print_add` uses `xvasprintf`'s returned length for capacity and
+   `strlcat` for its first-NUL view. Its production callers use C strings or
+   parsed nonzero option flags; migrate the scratch owner to `CString` after
+   verifying supported argument output.
 2. `format_printf` returns a C-owned allocation, while status/message,
    input/control, environment, option, and format values escape into records
    or queues. Audit their owners and teardown before changing those calls.
    The session/winlink graph remains deferred.
 
-Current validation is recorded in increments 15–28. The remaining
+Current validation is recorded in increments 15–29. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–28 has its own local commit; none was pushed.
+Each of increments 15–29 has its own local commit; none was pushed.

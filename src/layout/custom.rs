@@ -16,7 +16,7 @@ use crate::src::window::{
     window_pane_stack_push, window_pane_stack_remove, window_pane_zindex, window_resize,
     window_set_active_pane,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xstrdup, xvasprintf_bytes};
+use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xstrdup, xvasprintf_cstring};
 pub use crate::src::shared::json::{json_node};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -185,24 +185,14 @@ unsafe extern "C" fn layout_string_write(
     mut args: ...
 ) {
     unsafe {
-        let value = xvasprintf_bytes(fmt, args.clone());
-        ls.append(&value);
+        let value = xvasprintf_cstring(fmt, args.clone());
+        ls.append(value.as_bytes());
     }
 }
 
 #[cfg(test)]
 mod layout_string_tests {
     use super::{layout_string_write, LayoutString};
-
-    #[test]
-    fn formatted_writes_keep_full_bytes_and_one_final_terminator() {
-        let mut layout = LayoutString::new();
-        unsafe {
-            layout_string_write(&mut layout, c"%c%c%c".as_ptr(), b'A' as i32, 0, b'B' as i32);
-            layout_string_write(&mut layout, c"%c".as_ptr(), b'C' as i32);
-        }
-        assert_eq!(layout.bytes, b"A\0BC\0");
-    }
 
     #[test]
     fn serialized_layout_closes_after_removing_trailing_comma() {
