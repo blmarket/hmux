@@ -2,6 +2,7 @@
 """Exercise custom-layout application and resize behavior on a private socket."""
 import os
 import pathlib
+import re
 import subprocess
 import tempfile
 
@@ -46,6 +47,28 @@ with tempfile.TemporaryDirectory(prefix="layout-cli-", dir=root / "target") as t
         valid = run("list-windows", "-F", "#{window_layout}").stdout.strip()
         run("select-layout", valid)
         assert pane_geometry() == resized
+
+        # tmux treats the serialized pane identifier as display-only metadata.
+        ignored_identifiers = re.sub(r'"I":"[^"]*"', '"I":123', valid)
+        assert ignored_identifiers != valid
+        run("select-layout", ignored_identifiers)
+        assert pane_geometry() == resized
+
+        invalid_layouts = [
+            ("not-a-layout", "malformed layout header"),
+            (r'{"V":2,"L":{"t":"p"}}', 'key "w" not found'),
+            (
+                '{"V":2,"L":{"t":"h","w":79,"h":23,"x":0,"y":0,"c":['
+                '{"t":"p","w":39,"h":23,"x":0,"y":0,"i":0},'
+                '{"t":"p","w":39,"h":23,"x":40,"y":0,"i":0}]}}',
+                "duplicate pane index",
+            ),
+        ]
+        for layout, diagnostic in invalid_layouts:
+            failed = run("select-layout", layout, ok=False)
+            assert failed.returncode != 0
+            assert diagnostic in failed.stderr, failed.stderr
+            assert pane_geometry() == resized
 
         too_many = (
             '{"V":2,"L":{"t":"h","w":79,"h":23,"x":0,"y":0,"c":['

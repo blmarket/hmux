@@ -201,23 +201,24 @@ legacy callers safe.
 
 - Replaced the private `layout_string` `dat`/`size`/`capacity` record and its
   `layout_string_init`/`layout_string_free` lifecycle with `LayoutString`, a
-  `Vec<u8>` owner that maintains the temporary trailing NUL. Updated detached
-  v1/v2 serialization and live `layout_append_v1`/`layout_append_v2` callers
-  to use scoped `&mut LayoutString` access.
-- Removed manual serializer reallocations, capacity accounting, raw buffer
-  copies, and the ownership-transfer nulling in
-  `layout_description_bytes_from_string`. Detached results still cross the
-  existing C-owned `LayoutDescriptionBytes` boundary through `from_slice`;
-  `layout_dump` still creates its returned C string with `xasprintf`.
+  `Vec<u8>` owner that maintains the temporary trailing NUL. The live
+  `layout_append_v1`/`layout_append_v2` callers use scoped `&mut LayoutString`
+  access.
+- Removed manual serializer reallocations, capacity accounting, and raw buffer
+  copies. `layout_dump` still creates its returned C string with `xasprintf`.
+  The separate detached `LayoutDescription` parser and serializer, which were
+  present when this increment ran, were later removed to restore tmux's direct
+  `layout_cell`/`layout_parse_ctx` construction path.
 - Audited the compatibility pointers: `LayoutString::as_c_ptr()` is borrowed
   only synchronously by `layout_checksum` and `xasprintf`; the variadic
   `layout_string_write` still frees only its separate `xvasprintf` temporary.
   Live layout-cell pointers and compatibility-tree cleanup are unchanged, and
   no exported ABI or layout record was changed.
-- Added a 4096-byte identifier regression covering Vec growth and byte-exact
-  v2 serialization. Validation: `cargo test --test layout_custom` passed 13
-  tests, `cargo test --workspace` passed, `cargo build --bin hmux2` passed,
-  `rustfmt --check tests/layout_custom.rs` and `git diff --check` passed.
+- At the time, added a 4096-byte identifier regression for detached
+  serialization. Those tests were removed with the detached API. Validation
+  for this increment included `cargo test --test layout_custom` (13 tests),
+  `cargo test --workspace`, `cargo build --bin hmux2`,
+  `rustfmt --check tests/layout_custom.rs`, and `git diff --check`.
   Existing compiler warnings remain; `cargo fmt -- --check` still reports the
   pre-existing difference in `src/key_string.rs`. No sanitizer or dedicated
   live `layout_dump` integration scenario was run.
@@ -478,6 +479,14 @@ legacy callers safe.
   `hmux-rt` token IDs come from a checked counter, not pointer addresses.
 
 ### Next candidates
+
+The later layout-equivalence cleanup removed the detached
+`LayoutDescription` API and its API-only tests. `layout_parse` again builds
+`layout_cell` and `layout_parse_ctx` directly, as in tmux, while the
+`LayoutString` serializer owner remains. `cargo test --workspace`, the binary
+build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
+passed with the pinned tmux binary, including an ignored `I` field with a
+non-string value.
 
 1. The local `options_array_getv` key in `src/options.rs`: it is created with
    `xvasprintf`, consumed synchronously by `options_array_get`, and freed in
