@@ -288,15 +288,87 @@ legacy callers safe.
   --check` passed. Existing compiler warnings remain; no sanitizer or live
   session-group integration scenario was run.
 
+### Increment 8 — global sessions ordered index (2026-09-22)
+
+- `sessions.storage` now owns its map allocation as
+  `Option<Box<OrderedIndex<Vec<u8>, session>>>`. `sessions_find`,
+  `sessions_nfind`, `sessions_insert`, `sessions_remove`, `sessions_minmax`,
+  and `sessions_after` use the boxed-index helpers; empty-map cleanup is now
+  handled by `remove_boxed` instead of the raw `Box::from_raw` path in the
+  generic index lifecycle. The session records remain owned by their existing
+  `session_create`/reference-counted `session_free` lifecycle.
+- `session.entry.owner` remains the narrow traversal compatibility pointer. It
+  is set to the stable boxed index address only after a successful insertion
+  and cleared before the last map allocation is dropped. `sessions` is no
+  longer `Copy`; its one-pointer representation is preserved. Server startup,
+  attach-session checks, and sorted next/previous checks now use `None`/
+  `Some` explicitly.
+- Audited `session_destroy`: it removes the record before releasing the final
+  session reference, so dropping the index never owns or destroys a live
+  session record. Existing names, IDs, duplicate behavior, traversal order,
+  destructive-walk successor handling, and entry-pointer invalidation are
+  unchanged.
+- Added the boxed-slot layout assertion and retained coverage for duplicate
+  keys, moved-head traversal, rename/reinsert identity, saved-name walks, and
+  complete index teardown in `tests/session_storage.rs`.
+- Validation: focused session-storage tests passed (4 tests), the later full
+  workspace run passed, `cargo build --bin hmux2` passed, edition-2021
+  rustfmt checks for changed files passed, and `git diff --check` passed.
+  Existing compiler warnings remain; no sanitizer or live server restart
+  scenario was run.
+
+### Increment 9 — global session-groups ordered index (2026-09-22)
+
+- `session_groups.storage` now owns its map allocation as
+  `Option<Box<OrderedIndex<Vec<u8>, session_group>>>`. The find, insertion,
+  removal, edge, and neighbor helpers use the boxed-index view while
+  `session_group.entry.owner` remains the stable raw traversal compatibility
+  pointer and is cleared on successful removal.
+- `session_group_new` and `session_group_remove` retain ownership of group
+  records and names through their existing `xcalloc`/`xstrdup`/`free` paths;
+  only the global ordered-index allocation moved to Rust ownership. Empty
+  groups still remove from the index before their C-owned record is freed.
+  Duplicate-key behavior, byte ordering, group reuse, and traversal order are
+  unchanged.
+- Validation: focused session-group tests passed (2 tests), the later full
+  workspace run passed, `cargo build --bin hmux2` passed, edition-2021
+  rustfmt checks for changed files passed, and `git diff --check` passed.
+  No live group-command integration scenario or sanitizer run was added.
+
+### Increment 10 — global windows ordered index (2026-09-22)
+
+- `windows.storage` now owns its global map allocation as
+  `Option<Box<OrderedIndex<u_int, window>>>`; all window index helpers use
+  `boxed_ptr`, `insert_boxed`, and `remove_boxed`. `window.entry.owner` is
+  documented and remains a compatibility view that is set after insertion and
+  nulled on removal.
+- The `window` records still use their existing `window_create` `xcalloc` and
+  `window_destroy`/`free` lifecycle. No window record fields or numeric IDs
+  changed. The server-start reset now drops the empty-index owner explicitly,
+  while the head remains pointer-sized and movable.
+- Added the boxed-slot layout assertion and retained coverage for duplicate
+  IDs, numeric ordering, moved-head traversal, identity-preserving global
+  lookup, and final index teardown in `tests/window_storage.rs`.
+- Validation: focused window/session/session-group storage tests passed (9
+  tests), `cargo test --workspace` passed, `cargo build --bin hmux2` passed,
+  edition-2021 rustfmt checks for changed files passed, and `git diff --check`
+  passed. Existing compiler warnings remain; no sanitizer or live window
+  lifecycle scenario was run.
+
 ### Next candidates
 
-1. The global `sessions` ordered index in `src/session.rs`, followed by the
-   analogous `session_groups` index. They are smaller than the remaining
-   observer graph, but need a static/global lifecycle audit and careful
-   handling of `session.entry.owner`/`session_group_entry.owner` compatibility
-   pointers.
+1. The global `all_window_panes` ordered index in `src/window.rs` and
+   `src/shared/pane.rs`. It is the next analogous head, but its teardown must
+   be audited together with the already drop-bearing `window_pane` record and
+   `window_pane_tree.owner` compatibility pointer; verify that global reset,
+   pane destruction, and the existing boxed resize queue do not leave a
+   dangling observer before changing the head.
+2. The per-client `client.files` ordered index in `src/file.rs` and
+   `src/shared/client.rs`, after confirming its stream callback and client
+   teardown paths do not retain entry-owner pointers beyond the client.
 
 Final validation for this execution: all workspace tests passed, including the
-six focused winlink/session-history tests, and
-`cargo build --bin hmux2` passed.
+focused session, session-group, and window storage tests, and
+`cargo build --bin hmux2` passed. Edition-2021 rustfmt checks for changed
+files and `git diff --check` also passed.
 No new commit, push, or publication was performed.

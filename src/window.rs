@@ -183,9 +183,7 @@ pub const WINDOW_PANE_COPY_MODE: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const WINDOW_PANE_VIEW_MODE: ::core::ffi::c_int = 2 as ::core::ffi::c_int;
 pub const WINDOW_WASZOOMED: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 #[no_mangle]
-pub static mut windows: windows = windows {
-    storage: std::ptr::null_mut(),
-};
+pub static mut windows: windows = windows { storage: None };
 #[no_mangle]
 pub static mut all_window_panes: window_pane_tree = window_pane_tree {
     storage: std::ptr::null_mut(),
@@ -194,25 +192,31 @@ static mut next_window_pane_id: u_int = 0;
 static mut next_window_id: u_int = 0;
 static mut next_active_point: u_int = 0;
 pub unsafe fn windows_find(head: *mut windows, elm: *mut window) -> *mut window {
-    crate::src::shared::tree::OrderedIndex::<u_int, window>::find((*head).storage, &(*elm).id)
+    crate::src::shared::tree::OrderedIndex::<u_int, window>::find(
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
+        &(*elm).id,
+    )
 }
 pub unsafe fn windows_nfind(head: *mut windows, elm: *mut window) -> *mut window {
-    crate::src::shared::tree::OrderedIndex::<u_int, window>::nfind((*head).storage, &(*elm).id)
+    crate::src::shared::tree::OrderedIndex::<u_int, window>::nfind(
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
+        &(*elm).id,
+    )
 }
 pub unsafe fn windows_insert(head: *mut windows, elm: *mut window) -> *mut window {
-    let found = crate::src::shared::tree::OrderedIndex::<u_int, window>::insert(
-        &raw mut (*head).storage,
+    let found = crate::src::shared::tree::OrderedIndex::<u_int, window>::insert_boxed(
+        &mut (*head).storage,
         (*elm).id,
         elm,
     );
     if found.is_null() {
-        (*elm).entry.owner = (*head).storage;
+        (*elm).entry.owner = crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage);
     }
     found
 }
 pub unsafe fn windows_remove(head: *mut windows, elm: *mut window) -> *mut window {
-    let removed = crate::src::shared::tree::OrderedIndex::<u_int, window>::remove(
-        &raw mut (*head).storage,
+    let removed = crate::src::shared::tree::OrderedIndex::<u_int, window>::remove_boxed(
+        &mut (*head).storage,
         &(*elm).id,
         elm,
     );
@@ -222,7 +226,10 @@ pub unsafe fn windows_remove(head: *mut windows, elm: *mut window) -> *mut windo
     removed
 }
 pub unsafe fn windows_minmax(head: *mut windows, direction: ::core::ffi::c_int) -> *mut window {
-    crate::src::shared::tree::OrderedIndex::<u_int, window>::edge((*head).storage, direction < 0)
+    crate::src::shared::tree::OrderedIndex::<u_int, window>::edge(
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
+        direction < 0,
+    )
 }
 pub unsafe fn windows_next(elm: *mut window) -> *mut window {
     crate::src::shared::tree::OrderedIndex::<u_int, window>::neighbor(

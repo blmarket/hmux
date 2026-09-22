@@ -15,9 +15,7 @@ fn group(name: &CStr) -> Box<session_group> {
 #[test]
 fn byte_order_duplicates_neighbors_and_removal() {
     unsafe {
-        let mut head = session_groups {
-            storage: null_mut(),
-        };
+        let mut head = session_groups { storage: None };
         assert!(session_groups_minmax(&mut head, -1).is_null());
         let mut nodes: Vec<_> = [c"z", c"\xff", c"a", c""].into_iter().map(group).collect();
         for node in &mut nodes {
@@ -57,10 +55,10 @@ fn byte_order_duplicates_neighbors_and_removal() {
             assert!((*node).entry.owner.is_null());
             node = next;
         }
-        assert!(head.storage.is_null());
+        assert!(head.storage.is_none());
         assert!(session_groups_insert(&mut *head, a).is_null());
         assert_eq!(session_groups_remove(&mut *head, a), a);
-        assert!(head.storage.is_null());
+        assert!(head.storage.is_none());
     }
 }
 
@@ -68,7 +66,7 @@ fn byte_order_duplicates_neighbors_and_removal() {
 fn named_group_reuses_stable_allocation() {
     unsafe {
         let head = &raw mut session_groups;
-        assert!((*head).storage.is_null());
+        assert!((*head).storage.is_none());
         let first = session_group_new(c"group".as_ptr());
         assert_eq!(session_group_new(c"group".as_ptr()), first);
         assert_eq!(session_group_find(c"group".as_ptr()), first);
@@ -80,6 +78,6 @@ fn named_group_reuses_stable_allocation() {
         assert_eq!(session_groups_remove(head, first), first);
         libc::free((*first).name as *mut libc::c_void);
         libc::free(first.cast());
-        assert!((*head).storage.is_null());
+        assert!((*head).storage.is_none());
     }
 }

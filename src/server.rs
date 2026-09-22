@@ -451,11 +451,11 @@ pub unsafe extern "C" fn server_start(
     }
     input_key_build();
     utf8_update_width_cache();
-    windows.storage = std::ptr::null_mut();
+    windows.storage = None;
     all_window_panes.storage = std::ptr::null_mut();
     clients.tqh_first = ::core::ptr::null_mut::<client>();
     clients.tqh_last = &raw mut clients.tqh_first;
-    sessions.storage = std::ptr::null_mut();
+    sessions.storage = None;
     key_bindings_init();
     control_build_events();
     hooks_build_events();
@@ -550,7 +550,7 @@ unsafe extern "C" fn server_loop() -> ::core::ffi::c_int {
         b"exit-unattached\0" as *const u8 as *const ::core::ffi::c_char,
     ) == 0
     {
-        if !sessions.storage.is_null() {
+        if sessions.storage.is_some() {
             return 0 as ::core::ffi::c_int;
         }
     }

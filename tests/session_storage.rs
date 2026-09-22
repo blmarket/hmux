@@ -1,5 +1,18 @@
 use hmux2::src::session::*;
-use std::{ffi::CStr, ptr::null_mut};
+use hmux2::src::shared::tree::OrderedIndex;
+use std::{ffi::CStr, mem::size_of};
+
+#[test]
+fn boxed_index_slots_keep_pointer_layout() {
+    assert_eq!(
+        size_of::<sessions>(),
+        size_of::<*mut OrderedIndex<Vec<u8>, session>>()
+    );
+    assert_eq!(
+        size_of::<session_groups>(),
+        size_of::<*mut OrderedIndex<Vec<u8>, session_group>>()
+    );
+}
 
 fn node(name: &CStr) -> Box<session> {
     let mut node: Box<session> = Box::new(unsafe { std::mem::zeroed() });
@@ -10,9 +23,7 @@ fn node(name: &CStr) -> Box<session> {
 #[test]
 fn byte_order_duplicates_neighbors_and_removal() {
     unsafe {
-        let mut head = sessions {
-            storage: null_mut(),
-        };
+        let mut head = sessions { storage: None };
         assert!(sessions_minmax(&mut head, -1).is_null());
         let mut nodes: Vec<_> = [c"z", c"\xff", c"a", c""].into_iter().map(node).collect();
         for node in &mut nodes {
@@ -52,10 +63,10 @@ fn byte_order_duplicates_neighbors_and_removal() {
             assert!((*node).entry.owner.is_null());
             node = next;
         }
-        assert!(head.storage.is_null());
+        assert!(head.storage.is_none());
         assert!(sessions_insert(&mut *head, a).is_null());
         assert_eq!(sessions_remove(&mut *head, a), a);
-        assert!(head.storage.is_null());
+        assert!(head.storage.is_none());
     }
 }
 
@@ -63,7 +74,7 @@ fn byte_order_duplicates_neighbors_and_removal() {
 fn rename_preserves_identity_and_updates_name_order() {
     unsafe {
         let head = &raw mut sessions;
-        assert!((*head).storage.is_null());
+        assert!((*head).storage.is_none());
         let mut first = node(c"a");
         let mut second = node(c"m");
         first.id = 42;
@@ -86,16 +97,14 @@ fn rename_preserves_identity_and_updates_name_order() {
         assert_eq!(sessions_prev(first_ptr), second_ptr);
         assert_eq!(sessions_remove(head, first_ptr), first_ptr);
         assert_eq!(sessions_remove(head, second_ptr), second_ptr);
-        assert!((*head).storage.is_null());
+        assert!((*head).storage.is_none());
     }
 }
 
 #[test]
 fn saved_name_survives_removal_of_current_successor_and_entire_index() {
     unsafe {
-        let mut head = sessions {
-            storage: null_mut(),
-        };
+        let mut head = sessions { storage: None };
         let mut first = node(c"a1");
         let mut second = node(c"a2");
         let mut last = node(c"b1");
@@ -115,7 +124,7 @@ fn saved_name_survives_removal_of_current_successor_and_entire_index() {
         let last_name = CStr::from_ptr(last.name).to_bytes().to_vec();
         sessions_remove(&mut head, &mut *last);
         drop(last);
-        assert!(head.storage.is_null());
+        assert!(head.storage.is_none());
         assert!(sessions_after(&mut head, &last_name).is_null());
 
         // Resuming reads the head afresh even after its previous map was freed.

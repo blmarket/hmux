@@ -46,10 +46,9 @@ pub struct session_gentry {
     pub tqe_prev: *mut *mut session,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct sessions {
-    pub storage: *mut super::tree::OrderedIndex<Vec<u8>, session>,
+    pub storage: Option<Box<super::tree::OrderedIndex<Vec<u8>, session>>>,
 }
 
 #[derive(Copy, Clone)]
@@ -74,8 +73,7 @@ pub struct session_group_sessions {
     pub tqh_last: *mut *mut session,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session_groups {
-    pub storage: *mut super::tree::OrderedIndex<Vec<u8>, session_group>,
+    pub storage: Option<Box<super::tree::OrderedIndex<Vec<u8>, session_group>>>,
 }

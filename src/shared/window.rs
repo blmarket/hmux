@@ -132,6 +132,7 @@ pub struct window {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_entry {
+    /// Compatibility view of the owning boxed index; null after removal.
     pub owner: *mut super::tree::OrderedIndex<u_int, window>,
 }
 
@@ -222,8 +223,8 @@ pub struct winlink_stack {
     pub reserved: *mut ::core::ffi::c_void,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct windows {
-    pub storage: *mut super::tree::OrderedIndex<u_int, window>,
+    /// The head owns the index allocation; window records remain externally owned.
+    pub storage: Option<Box<super::tree::OrderedIndex<u_int, window>>>,
 }

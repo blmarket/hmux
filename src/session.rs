@@ -96,15 +96,11 @@ pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 #[no_mangle]
-pub static mut sessions: sessions = sessions {
-    storage: std::ptr::null_mut(),
-};
+pub static mut sessions: sessions = sessions { storage: None };
 #[no_mangle]
 pub static mut next_session_id: u_int = 0;
 #[no_mangle]
-pub static mut session_groups: session_groups = session_groups {
-    storage: std::ptr::null_mut(),
-};
+pub static mut session_groups: session_groups = session_groups { storage: None };
 #[no_mangle]
 pub unsafe extern "C" fn session_cmp(
     mut s1: *mut session,
@@ -117,30 +113,30 @@ pub(crate) unsafe fn sessions_key(elm: *mut session) -> Vec<u8> {
 }
 pub unsafe fn sessions_find(head: *mut sessions, elm: *mut session) -> *mut session {
     crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::find(
-        (*head).storage,
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
         &sessions_key(elm),
     )
 }
 pub unsafe fn sessions_nfind(head: *mut sessions, elm: *mut session) -> *mut session {
     crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::nfind(
-        (*head).storage,
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
         &sessions_key(elm),
     )
 }
 pub unsafe fn sessions_insert(head: *mut sessions, elm: *mut session) -> *mut session {
-    let found = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::insert(
-        &raw mut (*head).storage,
+    let found = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::insert_boxed(
+        &mut (*head).storage,
         sessions_key(elm),
         elm,
     );
     if found.is_null() {
-        (*elm).entry.owner = (*head).storage;
+        (*elm).entry.owner = crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage);
     }
     found
 }
 pub unsafe fn sessions_remove(head: *mut sessions, elm: *mut session) -> *mut session {
-    let removed = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::remove(
-        &raw mut (*head).storage,
+    let removed = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::remove_boxed(
+        &mut (*head).storage,
         &sessions_key(elm),
         elm,
     );
@@ -150,13 +146,16 @@ pub unsafe fn sessions_remove(head: *mut sessions, elm: *mut session) -> *mut se
     removed
 }
 pub unsafe fn sessions_minmax(head: *mut sessions, direction: ::core::ffi::c_int) -> *mut session {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::edge((*head).storage, direction < 0)
+    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::edge(
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
+        direction < 0,
+    )
 }
 /// Resume a potentially destructive walk using a saved name and the live index.
 /// The named session and any of its successors may already have been removed.
 pub unsafe fn sessions_after(head: *mut sessions, name: &[u8]) -> *mut session {
     crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::neighbor(
-        (*head).storage,
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
         name,
         true,
     )
@@ -194,7 +193,7 @@ pub unsafe fn session_groups_find(
     elm: *mut session_group,
 ) -> *mut session_group {
     crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::find(
-        (*head).storage,
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
         &session_groups_key(elm),
     )
 }
@@ -203,7 +202,7 @@ pub unsafe fn session_groups_nfind(
     elm: *mut session_group,
 ) -> *mut session_group {
     crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::nfind(
-        (*head).storage,
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
         &session_groups_key(elm),
     )
 }
@@ -211,13 +210,13 @@ pub unsafe fn session_groups_insert(
     head: *mut session_groups,
     elm: *mut session_group,
 ) -> *mut session_group {
-    let found = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::insert(
-        &raw mut (*head).storage,
+    let found = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::insert_boxed(
+        &mut (*head).storage,
         session_groups_key(elm),
         elm,
     );
     if found.is_null() {
-        (*elm).entry.owner = (*head).storage;
+        (*elm).entry.owner = crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage);
     }
     found
 }
@@ -225,8 +224,8 @@ pub unsafe fn session_groups_remove(
     head: *mut session_groups,
     elm: *mut session_group,
 ) -> *mut session_group {
-    let removed = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::remove(
-        &raw mut (*head).storage,
+    let removed = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::remove_boxed(
+        &mut (*head).storage,
         &session_groups_key(elm),
         elm,
     );
@@ -240,7 +239,7 @@ pub unsafe fn session_groups_minmax(
     direction: ::core::ffi::c_int,
 ) -> *mut session_group {
     crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::edge(
-        (*head).storage,
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
         direction < 0,
     )
 }
@@ -650,7 +649,7 @@ pub unsafe extern "C" fn session_next_session(
     let mut l: *mut *mut session = ::core::ptr::null_mut::<*mut session>();
     let mut n: u_int = 0;
     let mut i: u_int = 0;
-    if sessions.storage.is_null() || session_alive(s) == 0 {
+    if sessions.storage.is_none() || session_alive(s) == 0 {
         return ::core::ptr::null_mut::<session>();
     }
     l = sort_get_sessions(&raw mut n, sort_crit);
@@ -681,7 +680,7 @@ pub unsafe extern "C" fn session_previous_session(
     let mut l: *mut *mut session = ::core::ptr::null_mut::<*mut session>();
     let mut n: u_int = 0;
     let mut i: u_int = 0;
-    if sessions.storage.is_null() || session_alive(s) == 0 {
+    if sessions.storage.is_none() || session_alive(s) == 0 {
         return ::core::ptr::null_mut::<session>();
     }
     l = sort_get_sessions(&raw mut n, sort_crit);
