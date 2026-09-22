@@ -181,10 +181,7 @@ pub struct window_pane {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_pane_tree_entry {
-    pub rbe_left: *mut window_pane,
-    pub rbe_right: *mut window_pane,
-    pub rbe_parent: *mut window_pane,
-    pub rbe_color: ::core::ffi::c_int,
+    pub owner: *mut super::tree::OrderedIndex<u_int, window_pane>,
 }
 
 #[derive(Copy, Clone)]
@@ -225,7 +222,7 @@ pub struct window_panes {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_pane_tree {
-    pub rbh_root: *mut window_pane,
+    pub storage: *mut super::tree::OrderedIndex<u_int, window_pane>,
 }
 
 #[derive(Copy, Clone)]

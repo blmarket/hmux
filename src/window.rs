@@ -188,7 +188,7 @@ pub static mut windows: windows = windows {
 };
 #[no_mangle]
 pub static mut all_window_panes: window_pane_tree = window_pane_tree {
-    rbh_root: ::core::ptr::null::<window_pane>() as *mut window_pane,
+    storage: std::ptr::null_mut(),
 };
 static mut next_window_pane_id: u_int = 0;
 static mut next_window_id: u_int = 0;
@@ -1267,548 +1267,70 @@ pub unsafe extern "C" fn winlinks_RB_FIND(
     }
     return ::core::ptr::null_mut::<winlink>();
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_pane_tree_RB_FIND(
-    mut head: *mut window_pane_tree,
-    mut elm: *mut window_pane,
+pub unsafe fn window_pane_tree_find(
+    head: *mut window_pane_tree,
+    elm: *mut window_pane,
 ) -> *mut window_pane {
-    let mut tmp: *mut window_pane = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = window_pane_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).tree_entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).tree_entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return ::core::ptr::null_mut::<window_pane>();
+    crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::find((*head).storage, &(*elm).id)
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_pane_tree_RB_NFIND(
-    mut head: *mut window_pane_tree,
-    mut elm: *mut window_pane,
+pub unsafe fn window_pane_tree_nfind(
+    head: *mut window_pane_tree,
+    elm: *mut window_pane,
 ) -> *mut window_pane {
-    let mut tmp: *mut window_pane = (*head).rbh_root;
-    let mut res: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = window_pane_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            res = tmp;
-            tmp = (*tmp).tree_entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).tree_entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return res;
+    crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::nfind((*head).storage, &(*elm).id)
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_pane_tree_RB_PREV(mut elm: *mut window_pane) -> *mut window_pane {
-    if !(*elm).tree_entry.rbe_left.is_null() {
-        elm = (*elm).tree_entry.rbe_left;
-        while !(*elm).tree_entry.rbe_right.is_null() {
-            elm = (*elm).tree_entry.rbe_right;
-        }
-    } else if !(*elm).tree_entry.rbe_parent.is_null()
-        && elm == (*(*elm).tree_entry.rbe_parent).tree_entry.rbe_right
-    {
-        elm = (*elm).tree_entry.rbe_parent;
-    } else {
-        while !(*elm).tree_entry.rbe_parent.is_null()
-            && elm == (*(*elm).tree_entry.rbe_parent).tree_entry.rbe_left
-        {
-            elm = (*elm).tree_entry.rbe_parent;
-        }
-        elm = (*elm).tree_entry.rbe_parent;
-    }
-    return elm;
-}
-#[no_mangle]
-pub unsafe extern "C" fn window_pane_tree_RB_MINMAX(
-    mut head: *mut window_pane_tree,
-    mut val: ::core::ffi::c_int,
+pub unsafe fn window_pane_tree_insert(
+    head: *mut window_pane_tree,
+    elm: *mut window_pane,
 ) -> *mut window_pane {
-    let mut tmp: *mut window_pane = (*head).rbh_root;
-    let mut parent: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    while !tmp.is_null() {
-        parent = tmp;
-        if val < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).tree_entry.rbe_left;
-        } else {
-            tmp = (*tmp).tree_entry.rbe_right;
-        }
+    let found = crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::insert(
+        &raw mut (*head).storage,
+        (*elm).id,
+        elm,
+    );
+    if found.is_null() {
+        (*elm).tree_entry.owner = (*head).storage;
     }
-    return parent;
+    found
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_pane_tree_RB_REMOVE_COLOR(
-    mut head: *mut window_pane_tree,
-    mut parent: *mut window_pane,
-    mut elm: *mut window_pane,
-) {
-    let mut tmp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    while (elm.is_null() || (*elm).tree_entry.rbe_color == RB_BLACK) && elm != (*head).rbh_root {
-        if (*parent).tree_entry.rbe_left == elm {
-            tmp = (*parent).tree_entry.rbe_right;
-            if (*tmp).tree_entry.rbe_color == RB_RED {
-                (*tmp).tree_entry.rbe_color = RB_BLACK;
-                (*parent).tree_entry.rbe_color = RB_RED;
-                tmp = (*parent).tree_entry.rbe_right;
-                (*parent).tree_entry.rbe_right = (*tmp).tree_entry.rbe_left;
-                if !(*parent).tree_entry.rbe_right.is_null() {
-                    (*(*tmp).tree_entry.rbe_left).tree_entry.rbe_parent = parent;
-                }
-                (*tmp).tree_entry.rbe_parent = (*parent).tree_entry.rbe_parent;
-                if !(*tmp).tree_entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_left {
-                        (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).tree_entry.rbe_left = parent;
-                (*parent).tree_entry.rbe_parent = tmp;
-                !(*tmp).tree_entry.rbe_parent.is_null();
-                tmp = (*parent).tree_entry.rbe_right;
-            }
-            if ((*tmp).tree_entry.rbe_left.is_null()
-                || (*(*tmp).tree_entry.rbe_left).tree_entry.rbe_color == RB_BLACK)
-                && ((*tmp).tree_entry.rbe_right.is_null()
-                    || (*(*tmp).tree_entry.rbe_right).tree_entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).tree_entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).tree_entry.rbe_parent;
-            } else {
-                if (*tmp).tree_entry.rbe_right.is_null()
-                    || (*(*tmp).tree_entry.rbe_right).tree_entry.rbe_color == RB_BLACK
-                {
-                    let mut oleft: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-                    oleft = (*tmp).tree_entry.rbe_left;
-                    if !oleft.is_null() {
-                        (*oleft).tree_entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).tree_entry.rbe_color = RB_RED;
-                    oleft = (*tmp).tree_entry.rbe_left;
-                    (*tmp).tree_entry.rbe_left = (*oleft).tree_entry.rbe_right;
-                    if !(*tmp).tree_entry.rbe_left.is_null() {
-                        (*(*oleft).tree_entry.rbe_right).tree_entry.rbe_parent = tmp;
-                    }
-                    (*oleft).tree_entry.rbe_parent = (*tmp).tree_entry.rbe_parent;
-                    if !(*oleft).tree_entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).tree_entry.rbe_parent).tree_entry.rbe_left {
-                            (*(*tmp).tree_entry.rbe_parent).tree_entry.rbe_left = oleft;
-                        } else {
-                            (*(*tmp).tree_entry.rbe_parent).tree_entry.rbe_right = oleft;
-                        }
-                    } else {
-                        (*head).rbh_root = oleft;
-                    }
-                    (*oleft).tree_entry.rbe_right = tmp;
-                    (*tmp).tree_entry.rbe_parent = oleft;
-                    !(*oleft).tree_entry.rbe_parent.is_null();
-                    tmp = (*parent).tree_entry.rbe_right;
-                }
-                (*tmp).tree_entry.rbe_color = (*parent).tree_entry.rbe_color;
-                (*parent).tree_entry.rbe_color = RB_BLACK;
-                if !(*tmp).tree_entry.rbe_right.is_null() {
-                    (*(*tmp).tree_entry.rbe_right).tree_entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).tree_entry.rbe_right;
-                (*parent).tree_entry.rbe_right = (*tmp).tree_entry.rbe_left;
-                if !(*parent).tree_entry.rbe_right.is_null() {
-                    (*(*tmp).tree_entry.rbe_left).tree_entry.rbe_parent = parent;
-                }
-                (*tmp).tree_entry.rbe_parent = (*parent).tree_entry.rbe_parent;
-                if !(*tmp).tree_entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_left {
-                        (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).tree_entry.rbe_left = parent;
-                (*parent).tree_entry.rbe_parent = tmp;
-                !(*tmp).tree_entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        } else {
-            tmp = (*parent).tree_entry.rbe_left;
-            if (*tmp).tree_entry.rbe_color == RB_RED {
-                (*tmp).tree_entry.rbe_color = RB_BLACK;
-                (*parent).tree_entry.rbe_color = RB_RED;
-                tmp = (*parent).tree_entry.rbe_left;
-                (*parent).tree_entry.rbe_left = (*tmp).tree_entry.rbe_right;
-                if !(*parent).tree_entry.rbe_left.is_null() {
-                    (*(*tmp).tree_entry.rbe_right).tree_entry.rbe_parent = parent;
-                }
-                (*tmp).tree_entry.rbe_parent = (*parent).tree_entry.rbe_parent;
-                if !(*tmp).tree_entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_left {
-                        (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).tree_entry.rbe_right = parent;
-                (*parent).tree_entry.rbe_parent = tmp;
-                !(*tmp).tree_entry.rbe_parent.is_null();
-                tmp = (*parent).tree_entry.rbe_left;
-            }
-            if ((*tmp).tree_entry.rbe_left.is_null()
-                || (*(*tmp).tree_entry.rbe_left).tree_entry.rbe_color == RB_BLACK)
-                && ((*tmp).tree_entry.rbe_right.is_null()
-                    || (*(*tmp).tree_entry.rbe_right).tree_entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).tree_entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).tree_entry.rbe_parent;
-            } else {
-                if (*tmp).tree_entry.rbe_left.is_null()
-                    || (*(*tmp).tree_entry.rbe_left).tree_entry.rbe_color == RB_BLACK
-                {
-                    let mut oright: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-                    oright = (*tmp).tree_entry.rbe_right;
-                    if !oright.is_null() {
-                        (*oright).tree_entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).tree_entry.rbe_color = RB_RED;
-                    oright = (*tmp).tree_entry.rbe_right;
-                    (*tmp).tree_entry.rbe_right = (*oright).tree_entry.rbe_left;
-                    if !(*tmp).tree_entry.rbe_right.is_null() {
-                        (*(*oright).tree_entry.rbe_left).tree_entry.rbe_parent = tmp;
-                    }
-                    (*oright).tree_entry.rbe_parent = (*tmp).tree_entry.rbe_parent;
-                    if !(*oright).tree_entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).tree_entry.rbe_parent).tree_entry.rbe_left {
-                            (*(*tmp).tree_entry.rbe_parent).tree_entry.rbe_left = oright;
-                        } else {
-                            (*(*tmp).tree_entry.rbe_parent).tree_entry.rbe_right = oright;
-                        }
-                    } else {
-                        (*head).rbh_root = oright;
-                    }
-                    (*oright).tree_entry.rbe_left = tmp;
-                    (*tmp).tree_entry.rbe_parent = oright;
-                    !(*oright).tree_entry.rbe_parent.is_null();
-                    tmp = (*parent).tree_entry.rbe_left;
-                }
-                (*tmp).tree_entry.rbe_color = (*parent).tree_entry.rbe_color;
-                (*parent).tree_entry.rbe_color = RB_BLACK;
-                if !(*tmp).tree_entry.rbe_left.is_null() {
-                    (*(*tmp).tree_entry.rbe_left).tree_entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).tree_entry.rbe_left;
-                (*parent).tree_entry.rbe_left = (*tmp).tree_entry.rbe_right;
-                if !(*parent).tree_entry.rbe_left.is_null() {
-                    (*(*tmp).tree_entry.rbe_right).tree_entry.rbe_parent = parent;
-                }
-                (*tmp).tree_entry.rbe_parent = (*parent).tree_entry.rbe_parent;
-                if !(*tmp).tree_entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_left {
-                        (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).tree_entry.rbe_right = parent;
-                (*parent).tree_entry.rbe_parent = tmp;
-                !(*tmp).tree_entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        }
-    }
-    if !elm.is_null() {
-        (*elm).tree_entry.rbe_color = RB_BLACK;
-    }
-}
-#[no_mangle]
-pub unsafe extern "C" fn window_pane_tree_RB_REMOVE(
-    mut head: *mut window_pane_tree,
-    mut elm: *mut window_pane,
+pub unsafe fn window_pane_tree_remove(
+    head: *mut window_pane_tree,
+    elm: *mut window_pane,
 ) -> *mut window_pane {
-    let mut current_block: u64;
-    let mut child: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut parent: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut old: *mut window_pane = elm;
-    let mut color: ::core::ffi::c_int = 0;
-    if (*elm).tree_entry.rbe_left.is_null() {
-        child = (*elm).tree_entry.rbe_right;
-        current_block = 7245201122033322888;
-    } else if (*elm).tree_entry.rbe_right.is_null() {
-        child = (*elm).tree_entry.rbe_left;
-        current_block = 7245201122033322888;
-    } else {
-        let mut left: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-        elm = (*elm).tree_entry.rbe_right;
-        loop {
-            left = (*elm).tree_entry.rbe_left;
-            if left.is_null() {
-                break;
-            }
-            elm = left;
-        }
-        child = (*elm).tree_entry.rbe_right;
-        parent = (*elm).tree_entry.rbe_parent;
-        color = (*elm).tree_entry.rbe_color;
-        if !child.is_null() {
-            (*child).tree_entry.rbe_parent = parent;
-        }
-        if !parent.is_null() {
-            if (*parent).tree_entry.rbe_left == elm {
-                (*parent).tree_entry.rbe_left = child;
-            } else {
-                (*parent).tree_entry.rbe_right = child;
-            }
-        } else {
-            (*head).rbh_root = child;
-        }
-        if (*elm).tree_entry.rbe_parent == old {
-            parent = elm;
-        }
-        (*elm).tree_entry = (*old).tree_entry;
-        if !(*old).tree_entry.rbe_parent.is_null() {
-            if (*(*old).tree_entry.rbe_parent).tree_entry.rbe_left == old {
-                (*(*old).tree_entry.rbe_parent).tree_entry.rbe_left = elm;
-            } else {
-                (*(*old).tree_entry.rbe_parent).tree_entry.rbe_right = elm;
-            }
-        } else {
-            (*head).rbh_root = elm;
-        }
-        (*(*old).tree_entry.rbe_left).tree_entry.rbe_parent = elm;
-        if !(*old).tree_entry.rbe_right.is_null() {
-            (*(*old).tree_entry.rbe_right).tree_entry.rbe_parent = elm;
-        }
-        if !parent.is_null() {
-            left = parent;
-            loop {
-                left = (*left).tree_entry.rbe_parent;
-                if left.is_null() {
-                    break;
-                }
-            }
-        }
-        current_block = 6103297587398279902;
+    let removed = crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::remove(
+        &raw mut (*head).storage,
+        &(*elm).id,
+        elm,
+    );
+    if !removed.is_null() {
+        (*elm).tree_entry.owner = std::ptr::null_mut();
     }
-    match current_block {
-        7245201122033322888 => {
-            parent = (*elm).tree_entry.rbe_parent;
-            color = (*elm).tree_entry.rbe_color;
-            if !child.is_null() {
-                (*child).tree_entry.rbe_parent = parent;
-            }
-            if !parent.is_null() {
-                if (*parent).tree_entry.rbe_left == elm {
-                    (*parent).tree_entry.rbe_left = child;
-                } else {
-                    (*parent).tree_entry.rbe_right = child;
-                }
-            } else {
-                (*head).rbh_root = child;
-            }
-        }
-        _ => {}
-    }
-    if color == RB_BLACK {
-        window_pane_tree_RB_REMOVE_COLOR(head, parent, child);
-    }
-    return old;
+    removed
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_pane_tree_RB_INSERT_COLOR(
-    mut head: *mut window_pane_tree,
-    mut elm: *mut window_pane,
-) {
-    let mut parent: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut gparent: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut tmp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    loop {
-        parent = (*elm).tree_entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).tree_entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).tree_entry.rbe_parent;
-        if parent == (*gparent).tree_entry.rbe_left {
-            tmp = (*gparent).tree_entry.rbe_right;
-            if !tmp.is_null() && (*tmp).tree_entry.rbe_color == RB_RED {
-                (*tmp).tree_entry.rbe_color = RB_BLACK;
-                (*parent).tree_entry.rbe_color = RB_BLACK;
-                (*gparent).tree_entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).tree_entry.rbe_right == elm {
-                    tmp = (*parent).tree_entry.rbe_right;
-                    (*parent).tree_entry.rbe_right = (*tmp).tree_entry.rbe_left;
-                    if !(*parent).tree_entry.rbe_right.is_null() {
-                        (*(*tmp).tree_entry.rbe_left).tree_entry.rbe_parent = parent;
-                    }
-                    (*tmp).tree_entry.rbe_parent = (*parent).tree_entry.rbe_parent;
-                    if !(*tmp).tree_entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_left {
-                            (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).tree_entry.rbe_left = parent;
-                    (*parent).tree_entry.rbe_parent = tmp;
-                    !(*tmp).tree_entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).tree_entry.rbe_color = RB_BLACK;
-                (*gparent).tree_entry.rbe_color = RB_RED;
-                tmp = (*gparent).tree_entry.rbe_left;
-                (*gparent).tree_entry.rbe_left = (*tmp).tree_entry.rbe_right;
-                if !(*gparent).tree_entry.rbe_left.is_null() {
-                    (*(*tmp).tree_entry.rbe_right).tree_entry.rbe_parent = gparent;
-                }
-                (*tmp).tree_entry.rbe_parent = (*gparent).tree_entry.rbe_parent;
-                if !(*tmp).tree_entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).tree_entry.rbe_parent).tree_entry.rbe_left {
-                        (*(*gparent).tree_entry.rbe_parent).tree_entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).tree_entry.rbe_parent).tree_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).tree_entry.rbe_right = gparent;
-                (*gparent).tree_entry.rbe_parent = tmp;
-                !(*tmp).tree_entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).tree_entry.rbe_left;
-            if !tmp.is_null() && (*tmp).tree_entry.rbe_color == RB_RED {
-                (*tmp).tree_entry.rbe_color = RB_BLACK;
-                (*parent).tree_entry.rbe_color = RB_BLACK;
-                (*gparent).tree_entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).tree_entry.rbe_left == elm {
-                    tmp = (*parent).tree_entry.rbe_left;
-                    (*parent).tree_entry.rbe_left = (*tmp).tree_entry.rbe_right;
-                    if !(*parent).tree_entry.rbe_left.is_null() {
-                        (*(*tmp).tree_entry.rbe_right).tree_entry.rbe_parent = parent;
-                    }
-                    (*tmp).tree_entry.rbe_parent = (*parent).tree_entry.rbe_parent;
-                    if !(*tmp).tree_entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_left {
-                            (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).tree_entry.rbe_parent).tree_entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).tree_entry.rbe_right = parent;
-                    (*parent).tree_entry.rbe_parent = tmp;
-                    !(*tmp).tree_entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).tree_entry.rbe_color = RB_BLACK;
-                (*gparent).tree_entry.rbe_color = RB_RED;
-                tmp = (*gparent).tree_entry.rbe_right;
-                (*gparent).tree_entry.rbe_right = (*tmp).tree_entry.rbe_left;
-                if !(*gparent).tree_entry.rbe_right.is_null() {
-                    (*(*tmp).tree_entry.rbe_left).tree_entry.rbe_parent = gparent;
-                }
-                (*tmp).tree_entry.rbe_parent = (*gparent).tree_entry.rbe_parent;
-                if !(*tmp).tree_entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).tree_entry.rbe_parent).tree_entry.rbe_left {
-                        (*(*gparent).tree_entry.rbe_parent).tree_entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).tree_entry.rbe_parent).tree_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).tree_entry.rbe_left = gparent;
-                (*gparent).tree_entry.rbe_parent = tmp;
-                !(*tmp).tree_entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).tree_entry.rbe_color = RB_BLACK;
-}
-#[no_mangle]
-pub unsafe extern "C" fn window_pane_tree_RB_INSERT(
-    mut head: *mut window_pane_tree,
-    mut elm: *mut window_pane,
+pub unsafe fn window_pane_tree_minmax(
+    head: *mut window_pane_tree,
+    direction: ::core::ffi::c_int,
 ) -> *mut window_pane {
-    let mut tmp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut parent: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = window_pane_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).tree_entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).tree_entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    (*elm).tree_entry.rbe_parent = parent;
-    (*elm).tree_entry.rbe_right = ::core::ptr::null_mut::<window_pane>();
-    (*elm).tree_entry.rbe_left = (*elm).tree_entry.rbe_right;
-    (*elm).tree_entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).tree_entry.rbe_left = elm;
-        } else {
-            (*parent).tree_entry.rbe_right = elm;
-        }
-    } else {
-        (*head).rbh_root = elm;
-    }
-    window_pane_tree_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<window_pane>();
+    crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::edge(
+        (*head).storage,
+        direction < 0,
+    )
 }
-#[no_mangle]
-pub unsafe extern "C" fn window_pane_tree_RB_NEXT(mut elm: *mut window_pane) -> *mut window_pane {
-    if !(*elm).tree_entry.rbe_right.is_null() {
-        elm = (*elm).tree_entry.rbe_right;
-        while !(*elm).tree_entry.rbe_left.is_null() {
-            elm = (*elm).tree_entry.rbe_left;
-        }
-    } else if !(*elm).tree_entry.rbe_parent.is_null()
-        && elm == (*(*elm).tree_entry.rbe_parent).tree_entry.rbe_left
-    {
-        elm = (*elm).tree_entry.rbe_parent;
-    } else {
-        while !(*elm).tree_entry.rbe_parent.is_null()
-            && elm == (*(*elm).tree_entry.rbe_parent).tree_entry.rbe_right
-        {
-            elm = (*elm).tree_entry.rbe_parent;
-        }
-        elm = (*elm).tree_entry.rbe_parent;
-    }
-    return elm;
+pub unsafe fn window_pane_tree_next(elm: *mut window_pane) -> *mut window_pane {
+    crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::neighbor(
+        (*elm).tree_entry.owner,
+        &(*elm).id,
+        true,
+    )
 }
+pub unsafe fn window_pane_tree_prev(elm: *mut window_pane) -> *mut window_pane {
+    crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::neighbor(
+        (*elm).tree_entry.owner,
+        &(*elm).id,
+        false,
+    )
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn window_cmp(
     mut w1: *mut window,
@@ -4317,14 +3839,11 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
             tqe_prev: ::core::ptr::null_mut::<*mut window_pane>(),
         },
         tree_entry: window_pane_tree_entry {
-            rbe_left: ::core::ptr::null_mut::<window_pane>(),
-            rbe_right: ::core::ptr::null_mut::<window_pane>(),
-            rbe_parent: ::core::ptr::null_mut::<window_pane>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     wp.id = id;
-    return window_pane_tree_RB_FIND(&raw mut all_window_panes, &raw mut wp);
+    return window_pane_tree_find(&raw mut all_window_panes, &raw mut wp);
 }
 unsafe extern "C" fn window_pane_create(
     mut w: *mut window,
@@ -4343,7 +3862,7 @@ unsafe extern "C" fn window_pane_create(
     let fresh2 = next_window_pane_id;
     next_window_pane_id = next_window_pane_id.wrapping_add(1);
     (*wp).id = fresh2;
-    window_pane_tree_RB_INSERT(&raw mut all_window_panes, wp);
+    window_pane_tree_insert(&raw mut all_window_panes, wp);
     (*wp).fd = -(1 as ::core::ffi::c_int);
     (*wp).modes.tqh_first = ::core::ptr::null_mut::<window_mode_entry>();
     (*wp).modes.tqh_last = &raw mut (*wp).modes.tqh_first;
@@ -4476,7 +3995,7 @@ unsafe extern "C" fn window_pane_scrollbar_redraw_visibility(mut wp: *mut window
 unsafe extern "C" fn window_pane_destroy(mut wp: *mut window_pane) {
     window_pane_wait_finish(wp);
     spawn_editor_finish(wp);
-    window_pane_tree_RB_REMOVE(&raw mut all_window_panes, wp);
+    window_pane_tree_remove(&raw mut all_window_panes, wp);
     (*wp).flags |= PANE_DESTROYED;
     window_pane_clear_prompt(wp);
     window_pane_free_modes(wp);

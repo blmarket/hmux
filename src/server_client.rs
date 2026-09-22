@@ -92,8 +92,8 @@ use crate::src::window::{
     window_pane_scrollbar_overlay, window_pane_scrollbar_overlay_visible,
     window_pane_scrollbar_reserve, window_pane_scrollbar_show, window_pane_scrollbar_start_timer,
     window_pane_scrollbar_visible, window_pane_send_resize, window_pane_send_theme_update,
-    window_pane_set_mode, window_pane_status_get_range, window_pane_tree_RB_MINMAX,
-    window_pane_tree_RB_NEXT, window_redraw_active_switch, window_set_active_pane,
+    window_pane_set_mode, window_pane_status_get_range, window_pane_tree_minmax,
+    window_pane_tree_next, window_redraw_active_switch, window_set_active_pane,
     window_update_focus, windows_RB_MINMAX, windows_RB_NEXT, winlink_find_by_index,
 };
 use crate::src::window_copy::{window_copy_add, window_view_mode};
@@ -404,14 +404,14 @@ pub unsafe extern "C" fn server_client_check_nested(mut c: *mut client) -> ::cor
     if envent.is_null() || *(*envent).value as ::core::ffi::c_int == '\0' as i32 {
         return 0 as ::core::ffi::c_int;
     }
-    wp = window_pane_tree_RB_MINMAX(&raw mut all_window_panes, RB_NEGINF);
+    wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
     while !wp.is_null() {
         if strcmp(&raw mut (*wp).tty as *mut ::core::ffi::c_char, (*c).ttyname)
             == 0 as ::core::ffi::c_int
         {
             return 1 as ::core::ffi::c_int;
         }
-        wp = window_pane_tree_RB_NEXT(wp);
+        wp = window_pane_tree_next(wp);
     }
     return 0 as ::core::ffi::c_int;
 }

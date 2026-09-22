@@ -16,7 +16,7 @@ use crate::src::window::{
     all_window_panes, window_find_by_id_str, window_find_string, window_has_pane,
     window_pane_at_index, window_pane_find_by_id_str, window_pane_find_down, window_pane_find_left,
     window_pane_find_right, window_pane_find_up, window_pane_next_by_number,
-    window_pane_previous_by_number, window_pane_tree_RB_MINMAX, window_pane_tree_RB_NEXT,
+    window_pane_previous_by_number, window_pane_tree_minmax, window_pane_tree_next,
     winlink_find_by_index, winlink_next_by_number, winlink_previous_by_number, winlinks_RB_MINMAX,
     winlinks_RB_NEXT,
 };
@@ -190,7 +190,7 @@ unsafe extern "C" fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pan
     if c.is_null() {
         return ::core::ptr::null_mut::<window_pane>();
     }
-    wp = window_pane_tree_RB_MINMAX(&raw mut all_window_panes, RB_NEGINF);
+    wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
     while !wp.is_null() {
         if (*wp).fd != -(1 as ::core::ffi::c_int)
             && strcmp(&raw mut (*wp).tty as *mut ::core::ffi::c_char, (*c).ttyname)
@@ -198,7 +198,7 @@ unsafe extern "C" fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pan
         {
             break;
         }
-        wp = window_pane_tree_RB_NEXT(wp);
+        wp = window_pane_tree_next(wp);
     }
     if wp.is_null() {
         envent = environ_find(

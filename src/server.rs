@@ -450,7 +450,7 @@ pub unsafe extern "C" fn server_start(
     input_key_build();
     utf8_update_width_cache();
     windows.rbh_root = ::core::ptr::null_mut::<window>();
-    all_window_panes.rbh_root = ::core::ptr::null_mut::<window_pane>();
+    all_window_panes.storage = std::ptr::null_mut();
     clients.tqh_first = ::core::ptr::null_mut::<client>();
     clients.tqh_last = &raw mut clients.tqh_first;
     sessions.rbh_root = ::core::ptr::null_mut::<session>();
