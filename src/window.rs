@@ -66,6 +66,7 @@ use crate::src::tmux::{clean_name, global_options, global_w_options, setblocking
 use crate::src::tty::{tty_default_colours, tty_update_window_offset};
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
 use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xstrdup};
+use std::ffi::CStr;
 
 pub use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
@@ -1470,15 +1471,14 @@ pub unsafe extern "C" fn window_set_name(
     mut new_name: *const ::core::ffi::c_char,
     mut untrusted: ::core::ffi::c_int,
 ) {
-    let mut last: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    name = clean_name(new_name, untrusted);
+    let name = clean_name(new_name, untrusted);
     if !name.is_null() {
-        last = xstrdup((*w).name);
+        // window_create initializes name; keep the old bytes alive through the
+        // synchronous rename notification, including reentrant callbacks.
+        let last = CStr::from_ptr((*w).name).to_owned();
         free((*w).name as *mut ::core::ffi::c_void);
         (*w).name = name;
-        window_fire_renamed(w, last);
-        free(last as *mut ::core::ffi::c_void);
+        window_fire_renamed(w, last.as_ptr());
     }
 }
 #[no_mangle]

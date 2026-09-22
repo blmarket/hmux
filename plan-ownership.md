@@ -601,6 +601,26 @@ legacy callers safe.
   `screen_write_strlen` regressions also pass. Existing compiler warnings
   remain; no live rendering scenario or sanitizer run was performed.
 
+### Increment 23 — previous window name during rename (2026-09-22)
+
+- `window_set_name` now keeps the previous name in a local `CString`, cloned
+  from the non-null C-owned `window.name` before replacing it. Removed the
+  `xstrdup`/`free(last)` pair. The current name still follows its existing
+  `clean_name`/`free` record lifecycle.
+- `clean_name` runs before the old name is freed, preserving input aliasing.
+  `window_fire_renamed` copies old and new names into its event payload before
+  synchronous `events_fire`; the local old-name owner remains alive through
+  reentrant callbacks. The only compatibility pointer is `last.as_ptr()` for
+  that call. The `window` layout and exported ABI are unchanged.
+- Added a regression for nested rename notifications, old/new payload bytes,
+  final name and reference count, and invalid UTF-8 no-op. The focused test,
+  `cargo test --workspace`, binary build, edition-2021 rustfmt for changed
+  files, and `git diff --check` passed. Existing compiler warnings remain; no
+  live rename-command scenario or sanitizer run was performed.
+- After integrating increments 21–23, `cargo test --workspace` and the binary
+  build passed together; rustfmt checks for all changed Rust files and
+  `git diff --check` passed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -611,14 +631,16 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_set_name` duplicates the old name for a synchronous event payload
-   before freeing it. `yyerror` in `src/cmd/parse.rs` formats a local string
-   that `cmd_parse_get_error` copies before the scratch string is freed.
+1. `yyerror` in `src/cmd/parse.rs` formats a local string that
+   `cmd_parse_get_error` copies before the scratch string is freed.
+   `args_print_add` and `layout_string_write` are later candidates: both use
+   `xvasprintf`'s returned byte length, so the first-NUL `CString` bridge
+   cannot simply replace their buffers without a length-preserving audit.
 2. `format_printf`, status/message
    strings, and input/control strings that escape into records or queues still
    require separate lifetime audits; the session/winlink graph remains
    deferred.
 
-Current validation is recorded in increments 15–22. The remaining
+Current validation is recorded in increments 15–23. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–22 has its own local commit; none was pushed.
+Each of increments 15–23 has its own local commit; none was pushed.
