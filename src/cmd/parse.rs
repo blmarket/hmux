@@ -93,9 +93,9 @@ pub use crate::src::shared::window::{
 };
 use crate::src::tmux::global_environ;
 use crate::src::xmalloc::{
-    xasprintf, xcalloc, xmalloc, xrealloc, xrecallocarray, xstrdup, xvasprintf,
+    xasprintf, xcalloc, xmalloc, xrealloc, xrecallocarray, xstrdup, xvasprintf_cstring,
 };
-use ::libc;
+use libc;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
@@ -3215,14 +3215,12 @@ unsafe extern "C" fn yyerror(mut fmt: *const ::core::ffi::c_char, mut args: ...)
     let mut ps: *mut cmd_parse_state = &raw mut parse_state;
     let mut pi: *mut cmd_parse_input = (*ps).input;
     let mut ap: ::core::ffi::VaList;
-    let mut error: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if !(*ps).error.is_null() {
         return;
     }
     ap = args.clone();
-    xvasprintf(&raw mut error, fmt, ap);
-    (*ps).error = cmd_parse_get_error((*pi).file, (*pi).line, error);
-    free(error as *mut ::core::ffi::c_void);
+    let error = xvasprintf_cstring(fmt, ap);
+    (*ps).error = cmd_parse_get_error((*pi).file, (*pi).line, error.as_ptr());
 }
 unsafe extern "C" fn yylex_is_var(
     mut ch: ::core::ffi::c_char,

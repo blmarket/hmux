@@ -621,6 +621,22 @@ legacy callers safe.
   build passed together; rustfmt checks for all changed Rust files and
   `git diff --check` passed.
 
+### Increment 24 — parser error formatting temporary (2026-09-22)
+
+- `yyerror` now owns its formatted error as a local `CString` through
+  `xvasprintf_cstring`, removing its direct `xvasprintf`/`free` pair.
+  `cmd_parse_get_error` copies that C-string view with `xstrdup` or
+  `xasprintf` before the local owner drops; its returned error remains
+  C-owned. An already-recorded parser error still returns before formatting.
+- The only compatibility pointer is `error.as_ptr()` during that synchronous
+  copy. File/line prefixes, arbitrary bytes, first-NUL behavior, and the
+  variadic calling convention are unchanged.
+- Added a lexer-error regression that verifies the retained message and
+  source prefix after the temporary drops. `cargo test --test
+  parse_error_ownership`, the binary build, edition-2021 rustfmt for changed
+  files, and `git diff --check` passed. Existing compiler warnings remain;
+  no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -631,16 +647,16 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `yyerror` in `src/cmd/parse.rs` formats a local string that
-   `cmd_parse_get_error` copies before the scratch string is freed.
-   `args_print_add` and `layout_string_write` are later candidates: both use
+1. `cmdq_insert_hook` has a local formatted event name used through
+   synchronous event dispatch. `cmdq_error` has a formatted local string,
+   but its uppercase and sanitization branches require a mutation audit.
+2. `args_print_add` and `layout_string_write` are later candidates: both use
    `xvasprintf`'s returned byte length, so the first-NUL `CString` bridge
    cannot simply replace their buffers without a length-preserving audit.
-2. `format_printf`, status/message
-   strings, and input/control strings that escape into records or queues still
-   require separate lifetime audits; the session/winlink graph remains
-   deferred.
+3. `format_printf`, status/message strings, and input/control strings that
+   escape into records or queues still require their containing lifecycles to
+   be audited; the session/winlink graph remains deferred.
 
-Current validation is recorded in increments 15–23. The remaining
+Current validation is recorded in increments 15–24. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–23 has its own local commit; none was pushed.
+Each of increments 15–24 has its own local commit; none was pushed.
