@@ -133,7 +133,7 @@ pub struct tty_default_key_xterm {
 }
 pub const _POSIX_VDISABLE: ::core::ffi::c_int = '\0' as i32;
 
-static mut tty_default_raw_keys: [tty_default_key_raw; 100] = [
+static mut tty_default_raw_keys: [tty_default_key_raw; 102] = [
     tty_default_key_raw {
         string: b"\x1BO[\0" as *const u8 as *const ::core::ffi::c_char,
         key: '\u{1b}' as i32 as key_code,
@@ -521,6 +521,16 @@ static mut tty_default_raw_keys: [tty_default_key_raw; 100] = [
     tty_default_key_raw {
         string: b"\x1B[O\0" as *const u8 as *const ::core::ffi::c_char,
         key: KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code,
+    },
+    // Keep paste boundaries in the key tree so terminal and user-key entries
+    // can override them, with the same prefix/escape-time rules as other keys.
+    tty_default_key_raw {
+        string: b"\x1B[200~\0" as *const u8 as *const ::core::ffi::c_char,
+        key: KEYC_PASTE_START as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
+    },
+    tty_default_key_raw {
+        string: b"\x1B[201~\0" as *const u8 as *const ::core::ffi::c_char,
+        key: KEYC_PASTE_END as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     tty_default_key_raw {
         string: b"\x1B[1;5Z\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1385,7 +1395,7 @@ pub unsafe extern "C" fn tty_keys_build(mut tty: *mut tty) {
     }
     i = 0 as u_int;
     while (i as usize)
-        < (::core::mem::size_of::<[tty_default_key_raw; 100]>() as usize)
+        < (::core::mem::size_of::<[tty_default_key_raw; 102]>() as usize)
             .wrapping_div(::core::mem::size_of::<tty_default_key_raw>() as usize)
     {
         tdkr = (&raw const tty_default_raw_keys as *const tty_default_key_raw).offset(i as isize)
@@ -1511,30 +1521,6 @@ unsafe extern "C" fn tty_keys_next1(
         buf,
         expired,
     );
-    match match_bracketed_paste_boundary(::core::slice::from_raw_parts(buf as *const u8, len)) {
-        BracketedPasteBoundaryMatch::Match { boundary, consumed } => {
-            *key = match boundary {
-                BracketedPasteBoundary::Start => {
-                    KEYC_PASTE_START as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META
-                }
-                BracketedPasteBoundary::End => {
-                    KEYC_PASTE_END as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META
-                }
-            };
-            *size = consumed;
-            return 0 as ::core::ffi::c_int;
-        }
-        BracketedPasteBoundaryMatch::Incomplete { consumed, .. } => {
-            *size = consumed;
-            if expired == 0 {
-                return 1 as ::core::ffi::c_int;
-            }
-            return -(1 as ::core::ffi::c_int);
-        }
-        BracketedPasteBoundaryMatch::NoMatch { consumed } => {
-            *size = consumed;
-        }
-    }
     tk = tty_keys_find(tty, buf, len, size);
     if !tk.is_null() && (*tk).key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
         tk1 = tk;
