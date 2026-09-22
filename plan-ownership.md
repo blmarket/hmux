@@ -691,6 +691,26 @@ legacy callers safe.
   formatting differences; no live layout scenario or sanitizer run was
   performed.
 
+### Increment 28 — configuration cause queue (2026-09-22)
+
+- `cfg_add_cause` now formats into a `CString`, and the private
+  `cfg_causes`/`cfg_ncauses` pointer array is replaced by a
+  `Mutex<VecDeque<CString>>`. This removes the per-cause C allocation/free
+  responsibility, manual pointer-array reallocation, count maintenance, and
+  all three array teardown paths in `cfg_print_causes`, `cfg_show_causes`,
+  and the test helper.
+- Each cause is popped before delivery and the lock is released before
+  callbacks. Reentrant additions remain in FIFO order and are drained in
+  the same pass. The detached-session `cfg_show_causes` early return still
+  keeps causes queued. Consumers borrow `cause.as_ptr()` only during
+  synchronous formatting; exported command/notification ABI is unchanged.
+- Added a regression for non-UTF-8 bytes, order, and an addition during
+  delivery; shared the test lock with option-command tests that inspect
+  causes. `cargo test --workspace`, binary build, edition-2021 rustfmt for
+  changed files, and `git diff --check` passed. Existing compiler warnings
+  remain; no live config-cause display scenario or sanitizer run was
+  performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -710,6 +730,6 @@ non-string value.
    or queues. Audit their owners and teardown before changing those calls.
    The session/winlink graph remains deferred.
 
-Current validation is recorded in increments 15–27. The remaining
+Current validation is recorded in increments 15–28. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–27 has its own local commit; none was pushed.
+Each of increments 15–28 has its own local commit; none was pushed.

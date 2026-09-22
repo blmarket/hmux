@@ -1,4 +1,4 @@
-use crate::src::cfg::{cfg_finished, cfg_test_take_causes};
+use crate::src::cfg::{cfg_finished, cfg_test_take_causes, CFG_TEST_LOCK};
 use crate::src::cmd::{cmd_list_free, cmdq_item};
 use crate::src::cmd_parse::cmd_parse_from_string;
 use crate::src::cmd_queue::{cmdq_free_state, cmdq_get_command};
@@ -8,9 +8,6 @@ use crate::src::shared::command::{cmd_retval, CMD_PARSE_SUCCESS, CMD_RETURN_ERRO
 use crate::src::shared::options::options;
 use crate::src::tmux::{global_options, global_s_options, global_w_options};
 use std::ffi::CString;
-use std::sync::Mutex;
-
-static OPTION_COMMAND_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 struct OptionGlobalsGuard {
     previous_global_options: *mut options,
@@ -108,7 +105,7 @@ fn assert_error_cases(command: &str, cases: &[(&str, &[u8])]) {
 
 #[test]
 fn set_option_reports_match_errors_through_cmdq_error() {
-    let _guard = OPTION_COMMAND_TEST_LOCK.lock().unwrap();
+    let _guard = CFG_TEST_LOCK.lock().unwrap();
     assert_error_cases(
         "set-option",
         &[
@@ -125,7 +122,7 @@ fn set_option_reports_match_errors_through_cmdq_error() {
 
 #[test]
 fn show_options_reports_match_errors_through_cmdq_error() {
-    let _guard = OPTION_COMMAND_TEST_LOCK.lock().unwrap();
+    let _guard = CFG_TEST_LOCK.lock().unwrap();
     assert_error_cases(
         "show-options",
         &[

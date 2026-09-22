@@ -81,7 +81,10 @@ pub use crate::src::shared::window::{
 };
 use crate::src::window::window_pane_set_mode;
 use crate::src::window_copy::{window_copy_add, window_view_mode};
-use crate::src::xmalloc::{xreallocarray, xvasprintf};
+use crate::src::xmalloc::xvasprintf_cstring;
+use std::collections::VecDeque;
+use std::ffi::{CStr, CString};
+use std::sync::Mutex;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -90,9 +93,9 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 pub static mut cfg_client: *mut client = ::core::ptr::null::<client>() as *mut client;
 #[no_mangle]
 pub static mut cfg_finished: ::core::ffi::c_int = 0;
-static mut cfg_causes: *mut *mut ::core::ffi::c_char =
-    ::core::ptr::null::<*mut ::core::ffi::c_char>() as *mut *mut ::core::ffi::c_char;
-static mut cfg_ncauses: u_int = 0;
+static CFG_CAUSES: Mutex<VecDeque<CString>> = Mutex::new(VecDeque::new());
+#[cfg(test)]
+pub(crate) static CFG_TEST_LOCK: Mutex<()> = Mutex::new(());
 static mut cfg_item: *mut cmdq_item = ::core::ptr::null::<cmdq_item>() as *mut cmdq_item;
 #[no_mangle]
 pub static mut cfg_quiet: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
@@ -365,85 +368,63 @@ pub unsafe extern "C" fn load_cfg_from_buffer(
 #[no_mangle]
 pub unsafe extern "C" fn cfg_add_cause(mut fmt: *const ::core::ffi::c_char, mut args: ...) {
     let mut ap: ::core::ffi::VaList;
-    let mut msg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     ap = args.clone();
-    xvasprintf(&raw mut msg, fmt, ap);
-    cfg_ncauses = cfg_ncauses.wrapping_add(1);
-    cfg_causes = xreallocarray(
-        cfg_causes as *mut ::core::ffi::c_void,
-        cfg_ncauses as size_t,
-        ::core::mem::size_of::<*mut ::core::ffi::c_char>() as size_t,
-    ) as *mut *mut ::core::ffi::c_char;
-    let ref mut fresh0 = *cfg_causes.offset(cfg_ncauses.wrapping_sub(1 as u_int) as isize);
-    *fresh0 = msg;
+    let msg = xvasprintf_cstring(fmt, ap);
+    CFG_CAUSES.lock().unwrap().push_back(msg);
+}
+
+fn cfg_drain_causes(mut deliver: impl FnMut(&CStr)) {
+    loop {
+        // Release the lock before delivery: output may call cfg_add_cause or
+        // another cause consumer through a callback.
+        let cause = CFG_CAUSES.lock().unwrap().pop_front();
+        let Some(cause) = cause else { break };
+        deliver(&cause);
+    }
 }
 
 #[cfg(test)]
 pub(crate) unsafe fn cfg_test_take_causes() -> Vec<Vec<u8>> {
-    let mut causes = Vec::with_capacity(cfg_ncauses as usize);
-    let mut i = 0;
-    while i < cfg_ncauses {
-        let cause = *cfg_causes.offset(i as isize);
-        causes.push(std::ffi::CStr::from_ptr(cause).to_bytes().to_vec());
-        free(cause as *mut ::core::ffi::c_void);
-        i += 1;
-    }
-    free(cfg_causes as *mut ::core::ffi::c_void);
-    cfg_causes = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    cfg_ncauses = 0 as u_int;
+    let mut causes = Vec::new();
+    cfg_drain_causes(|cause| causes.push(cause.to_bytes().to_vec()));
     causes
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn cfg_print_causes(mut item: *mut cmdq_item) {
     let mut c: *mut client = cmdq_get_client(item);
-    let mut i: u_int = 0;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    i = 0 as u_int;
-    while i < cfg_ncauses {
-        cause = *cfg_causes.offset(i as isize);
+    cfg_drain_causes(|cause| {
         if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
             control_notify_write(
                 c,
                 b"%%config-error %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                cause.as_ptr(),
             );
         } else {
             cmdq_print(
                 item,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                cause.as_ptr(),
             );
         }
-        free(cause as *mut ::core::ffi::c_void);
-        i = i.wrapping_add(1);
-    }
-    free(cfg_causes as *mut ::core::ffi::c_void);
-    cfg_causes = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    cfg_ncauses = 0 as u_int;
+    });
 }
 #[no_mangle]
 pub unsafe extern "C" fn cfg_show_causes(mut s: *mut session) {
     let mut c: *mut client = clients.tqh_first;
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    let mut i: u_int = 0;
-    let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    if cfg_ncauses == 0 as u_int {
+    if CFG_CAUSES.lock().unwrap().is_empty() {
         return;
     }
     if !c.is_null() && (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-        i = 0 as u_int;
-        while i < cfg_ncauses {
-            cause = *cfg_causes.offset(i as isize);
+        cfg_drain_causes(|cause| {
             control_notify_write(
                 c,
                 b"%%config-error %s\0" as *const u8 as *const ::core::ffi::c_char,
-                cause,
+                cause.as_ptr(),
             );
-            free(cause as *mut ::core::ffi::c_void);
-            i = i.wrapping_add(1);
-        }
+        });
     } else {
         if s.is_null() {
             if !c.is_null() && !(*c).session.is_null() {
@@ -467,19 +448,41 @@ pub unsafe extern "C" fn cfg_show_causes(mut s: *mut session) {
                 ::core::ptr::null_mut::<args>(),
             );
         }
-        i = 0 as u_int;
-        while i < cfg_ncauses {
+        cfg_drain_causes(|cause| {
             window_copy_add(
                 wp,
                 0 as ::core::ffi::c_int,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                *cfg_causes.offset(i as isize),
+                cause.as_ptr(),
             );
-            free(*cfg_causes.offset(i as isize) as *mut ::core::ffi::c_void);
-            i = i.wrapping_add(1);
-        }
+        });
     }
-    free(cfg_causes as *mut ::core::ffi::c_void);
-    cfg_causes = ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
-    cfg_ncauses = 0 as u_int;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cfg_add_cause, cfg_drain_causes, cfg_test_take_causes, CFG_TEST_LOCK};
+
+    #[test]
+    fn causes_keep_c_string_bytes_and_drain_reentrant_additions_in_order() {
+        let _guard = CFG_TEST_LOCK.lock().unwrap();
+        unsafe {
+            let _ = cfg_test_take_causes();
+            cfg_add_cause(c"%s:%u".as_ptr(), c"first".as_ptr(), 7u32);
+            cfg_add_cause(
+                c"%s".as_ptr(),
+                b"second\xff\0".as_ptr().cast::<::core::ffi::c_char>(),
+            );
+        }
+
+        let mut actual = Vec::new();
+        cfg_drain_causes(|cause| {
+            actual.push(cause.to_bytes().to_vec());
+            if actual.len() == 1 {
+                unsafe { cfg_add_cause(c"%s".as_ptr(), c"third".as_ptr()) };
+            }
+        });
+        assert_eq!(actual, [b"first:7".as_slice(), b"second\xff", b"third"]);
+        assert!(unsafe { cfg_test_take_causes() }.is_empty());
+    }
 }
