@@ -1922,15 +1922,176 @@ unsafe extern "C" fn layout_check(mut lc: *mut layout_cell) -> ::core::ffi::c_in
     }
     return 1 as ::core::ffi::c_int;
 }
+
+unsafe fn layout_parse_prune_to_pane_count(
+    w: *mut window,
+    pctx: *mut layout_parse_ctx,
+    with_floating: ::core::ffi::c_int,
+    cause: *mut *mut ::core::ffi::c_char,
+) -> bool {
+    let npanes = window_count_panes(w, with_floating);
+    if npanes == 0 as u_int {
+        xasprintf(
+            cause,
+            b"window @%u has no panes\0" as *const u8 as *const ::core::ffi::c_char,
+            (*w).id,
+        );
+        return false;
+    }
+
+    loop {
+        let ncells = layout_count_cells((*pctx).root, with_floating);
+        if npanes > ncells {
+            xasprintf(
+                cause,
+                b"have %u panes but need %u\0" as *const u8 as *const ::core::ffi::c_char,
+                npanes,
+                ncells,
+            );
+            return false;
+        }
+        if npanes == ncells {
+            return true;
+        }
+
+        let lcchild = layout_find_bottomright((*pctx).root);
+        if (*pctx).version > 1 as int64_t
+            && layout_parse_remove_cctx(pctx, lcchild) != 0 as ::core::ffi::c_int
+        {
+            *cause = xstrdup(
+                b"empty/missing layout parse context\0" as *const u8 as *const ::core::ffi::c_char,
+            );
+            return false;
+        }
+        layout_destroy_cell(
+            ::core::ptr::null_mut::<window>(),
+            lcchild,
+            &raw mut (*pctx).root,
+        );
+    }
+}
+
+unsafe fn layout_parse_validate_geometry(
+    lc: *mut layout_cell,
+    cause: *mut *mut ::core::ffi::c_char,
+) -> bool {
+    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
+    let mut sx: u_int = 0 as u_int;
+    let mut sy: u_int = 0 as u_int;
+    match (*lc).type_0 as ::core::ffi::c_uint {
+        0 => {
+            lcchild = (*lc).cells.tqh_first;
+            while !lcchild.is_null() {
+                if layout_cell_is_tiled(lcchild) != 0 || layout_cell_has_tiled_child(lcchild) != 0 {
+                    sy = (*lcchild).g.sy.wrapping_add(1 as u_int);
+                    sx = sx.wrapping_add((*lcchild).g.sx.wrapping_add(1 as u_int));
+                }
+                lcchild = (*lcchild).entry.tqe_next;
+            }
+        }
+        1 => {
+            lcchild = (*lc).cells.tqh_first;
+            while !lcchild.is_null() {
+                if layout_cell_is_tiled(lcchild) != 0 || layout_cell_has_tiled_child(lcchild) != 0 {
+                    sx = (*lcchild).g.sx.wrapping_add(1 as u_int);
+                    sy = sy.wrapping_add((*lcchild).g.sy.wrapping_add(1 as u_int));
+                }
+                lcchild = (*lcchild).entry.tqe_next;
+            }
+        }
+        2 | _ => {}
+    }
+    if (*lc).type_0 as ::core::ffi::c_uint
+        != LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
+        && sx != 0 as u_int
+        && sy != 0 as u_int
+        && ((*lc).g.sx != sx || (*lc).g.sy != sy)
+    {
+        layout_print_cell(
+            lc,
+            b"layout_parse\0" as *const u8 as *const ::core::ffi::c_char,
+            0 as u_int,
+        );
+        (*lc).g.sx = sx.wrapping_sub(1 as u_int);
+        (*lc).g.sy = sy.wrapping_sub(1 as u_int);
+    }
+    if layout_check(lc) == 0 {
+        *cause = xstrdup(
+            b"size mismatch after applying layout\0" as *const u8 as *const ::core::ffi::c_char,
+        );
+        false
+    } else {
+        true
+    }
+}
+
+/// Apply a validated detached tree to the live window.
+///
+/// `layout_parse` owns only detached cells until this boundary. This helper
+/// performs the first live-window mutation, then preserves the existing
+/// resize, pane assignment, floating-pane, and metadata application order.
+unsafe fn layout_parse_commit(w: *mut window, lc: *mut layout_cell, pctx: *mut layout_parse_ctx) {
+    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
+    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
+
+    if layout_cell_is_tiled(lc) != 0 || layout_cell_has_tiled_child(lc) != 0 {
+        window_resize(
+            w,
+            (*lc).g.sx,
+            (*lc).g.sy,
+            -(1 as ::core::ffi::c_int),
+            -(1 as ::core::ffi::c_int),
+        );
+    }
+    if (*pctx).version == 1 as int64_t {
+        wp = (*w).panes.tqh_first;
+        while !wp.is_null() {
+            if !(window_pane_is_floating(wp) == 0) {
+                lcchild = (*wp).layout_cell as *mut layout_cell;
+                if !(*lcchild).entry.tqe_next.is_null() {
+                    (*(*lcchild).entry.tqe_next).entry.tqe_prev = (*lcchild).entry.tqe_prev;
+                } else {
+                    (*(*lcchild).parent).cells.tqh_last = (*lcchild).entry.tqe_prev;
+                }
+                *(*lcchild).entry.tqe_prev = (*lcchild).entry.tqe_next;
+                (*lcchild).parent = ::core::ptr::null_mut::<layout_cell>();
+            }
+            wp = (*wp).entry.tqe_next;
+        }
+    }
+    layout_free_cell((*w).layout_root, 0 as ::core::ffi::c_int);
+    (*w).layout_root = lc;
+    layout_assign(w, pctx);
+    layout_fix_offsets(w);
+    layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
+    if (*pctx).version > 1 as int64_t {
+        layout_parse_apply_ctx(w, pctx);
+    }
+    recalculate_sizes();
+    layout_print_cell(
+        lc,
+        b"layout_parse\0" as *const u8 as *const ::core::ffi::c_char,
+        0 as u_int,
+    );
+    if (*pctx).version == 1 as int64_t {
+        events_fire_window(
+            b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
+            w,
+        );
+    }
+}
+
+unsafe fn layout_parse_cleanup(pctx: *mut layout_parse_ctx, lc: *mut layout_cell) {
+    layout_free_cell(lc, 0 as ::core::ffi::c_int);
+    layout_parse_free_ctx(pctx);
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn layout_parse(
     mut w: *mut window,
     mut input: *const ::core::ffi::c_char,
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let mut current_block: u64;
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut lc: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut pctx: layout_parse_ctx = layout_parse_ctx {
         version: 0,
@@ -1941,10 +2102,6 @@ pub unsafe extern "C" fn layout_parse(
         capacity: 0,
         cctxs: ::core::ptr::null_mut::<layout_parse_cell_ctx>(),
     };
-    let mut npanes: u_int = 0;
-    let mut ncells: u_int = 0;
-    let mut sx: u_int = 0 as u_int;
-    let mut sy: u_int = 0 as u_int;
     let mut with_floating: ::core::ffi::c_int = 0;
     layout_parse_init_ctx(&raw mut pctx, cause);
     let description = match layout_parse_description_c(input, cause) {
@@ -1961,158 +2118,16 @@ pub unsafe extern "C" fn layout_parse(
     pctx.root =
         layout_description_to_cell(&description.root, ::core::ptr::null_mut(), &raw mut pctx);
     with_floating = (pctx.version > 1 as int64_t) as ::core::ffi::c_int;
-    npanes = window_count_panes(w, with_floating);
-    if npanes == 0 as u_int {
-        xasprintf(
-            cause,
-            b"window @%u has no panes\0" as *const u8 as *const ::core::ffi::c_char,
-            (*w).id,
-        );
-    } else {
-        loop {
-            ncells = layout_count_cells(pctx.root, with_floating);
-            if npanes > ncells {
-                xasprintf(
-                    cause,
-                    b"have %u panes but need %u\0" as *const u8 as *const ::core::ffi::c_char,
-                    npanes,
-                    ncells,
-                );
-                current_block = 4277046812173491162;
-                break;
-            } else {
-                if npanes == ncells {
-                    current_block = 15976848397966268834;
-                    break;
-                }
-                lcchild = layout_find_bottomright(pctx.root);
-                if pctx.version > 1 as int64_t
-                    && layout_parse_remove_cctx(&raw mut pctx, lcchild) != 0 as ::core::ffi::c_int
-                {
-                    *cause = xstrdup(
-                        b"empty/missing layout parse context\0" as *const u8
-                            as *const ::core::ffi::c_char,
-                    );
-                    current_block = 4277046812173491162;
-                    break;
-                } else {
-                    layout_destroy_cell(
-                        ::core::ptr::null_mut::<window>(),
-                        lcchild,
-                        &raw mut pctx.root,
-                    );
-                }
-            }
-        }
-        match current_block {
-            4277046812173491162 => {}
-            _ => {
-                lc = pctx.root;
-                pctx.root = ::core::ptr::null_mut::<layout_cell>();
-                match (*lc).type_0 as ::core::ffi::c_uint {
-                    0 => {
-                        lcchild = (*lc).cells.tqh_first;
-                        while !lcchild.is_null() {
-                            if layout_cell_is_tiled(lcchild) != 0
-                                || layout_cell_has_tiled_child(lcchild) != 0
-                            {
-                                sy = (*lcchild).g.sy.wrapping_add(1 as u_int);
-                                sx = sx.wrapping_add((*lcchild).g.sx.wrapping_add(1 as u_int));
-                            }
-                            lcchild = (*lcchild).entry.tqe_next;
-                        }
-                    }
-                    1 => {
-                        lcchild = (*lc).cells.tqh_first;
-                        while !lcchild.is_null() {
-                            if layout_cell_is_tiled(lcchild) != 0
-                                || layout_cell_has_tiled_child(lcchild) != 0
-                            {
-                                sx = (*lcchild).g.sx.wrapping_add(1 as u_int);
-                                sy = sy.wrapping_add((*lcchild).g.sy.wrapping_add(1 as u_int));
-                            }
-                            lcchild = (*lcchild).entry.tqe_next;
-                        }
-                    }
-                    2 | _ => {}
-                }
-                if (*lc).type_0 as ::core::ffi::c_uint
-                    != LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
-                    && sx != 0 as u_int
-                    && sy != 0 as u_int
-                    && ((*lc).g.sx != sx || (*lc).g.sy != sy)
-                {
-                    layout_print_cell(
-                        lc,
-                        b"layout_parse\0" as *const u8 as *const ::core::ffi::c_char,
-                        0 as u_int,
-                    );
-                    (*lc).g.sx = sx.wrapping_sub(1 as u_int);
-                    (*lc).g.sy = sy.wrapping_sub(1 as u_int);
-                }
-                if layout_check(lc) == 0 {
-                    *cause = xstrdup(
-                        b"size mismatch after applying layout\0" as *const u8
-                            as *const ::core::ffi::c_char,
-                    );
-                } else {
-                    // Everything above this point only changes the detached
-                    // tree. Once the resize starts, the remaining operations
-                    // are the existing non-fallible tree/pane commit path.
-                    if layout_cell_is_tiled(lc) != 0 || layout_cell_has_tiled_child(lc) != 0 {
-                        window_resize(
-                            w,
-                            (*lc).g.sx,
-                            (*lc).g.sy,
-                            -(1 as ::core::ffi::c_int),
-                            -(1 as ::core::ffi::c_int),
-                        );
-                    }
-                    if pctx.version == 1 as int64_t {
-                        wp = (*w).panes.tqh_first;
-                        while !wp.is_null() {
-                            if !(window_pane_is_floating(wp) == 0) {
-                                lcchild = (*wp).layout_cell as *mut layout_cell;
-                                if !(*lcchild).entry.tqe_next.is_null() {
-                                    (*(*lcchild).entry.tqe_next).entry.tqe_prev =
-                                        (*lcchild).entry.tqe_prev;
-                                } else {
-                                    (*(*lcchild).parent).cells.tqh_last = (*lcchild).entry.tqe_prev;
-                                }
-                                *(*lcchild).entry.tqe_prev = (*lcchild).entry.tqe_next;
-                                (*lcchild).parent = ::core::ptr::null_mut::<layout_cell>();
-                            }
-                            wp = (*wp).entry.tqe_next;
-                        }
-                    }
-                    layout_free_cell((*w).layout_root, 0 as ::core::ffi::c_int);
-                    (*w).layout_root = lc;
-                    layout_assign(w, &raw mut pctx);
-                    layout_fix_offsets(w);
-                    layout_fix_panes(w, ::core::ptr::null_mut::<window_pane>());
-                    if pctx.version > 1 as int64_t {
-                        layout_parse_apply_ctx(w, &raw mut pctx);
-                    }
-                    recalculate_sizes();
-                    layout_print_cell(
-                        lc,
-                        b"layout_parse\0" as *const u8 as *const ::core::ffi::c_char,
-                        0 as u_int,
-                    );
-                    if pctx.version == 1 as int64_t {
-                        events_fire_window(
-                            b"window-layout-changed\0" as *const u8 as *const ::core::ffi::c_char,
-                            w,
-                        );
-                    }
-                    layout_parse_free_ctx(&raw mut pctx);
-                    return 0 as ::core::ffi::c_int;
-                }
-            }
+    if layout_parse_prune_to_pane_count(w, &raw mut pctx, with_floating, cause) {
+        lc = pctx.root;
+        pctx.root = ::core::ptr::null_mut::<layout_cell>();
+        if layout_parse_validate_geometry(lc, cause) {
+            layout_parse_commit(w, lc, &raw mut pctx);
+            layout_parse_free_ctx(&raw mut pctx);
+            return 0 as ::core::ffi::c_int;
         }
     }
-    layout_free_cell(lc, 0 as ::core::ffi::c_int);
-    layout_parse_free_ctx(&raw mut pctx);
+    layout_parse_cleanup(&raw mut pctx, lc);
     return -(1 as ::core::ffi::c_int);
 }
 unsafe extern "C" fn layout_assign_from_ctx(mut w: *mut window, mut pctx: *mut layout_parse_ctx) {
