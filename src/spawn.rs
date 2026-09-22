@@ -121,6 +121,8 @@ pub use crate::src::shared::window::{
     WINDOW_ZOOMED, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL, WINLINK_SILENCE,
 };
 
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+
 pub type off_t = __off_t;
 
 pub type uintmax_t = ::libc::uintmax_t;
@@ -1065,6 +1067,29 @@ pub unsafe extern "C" fn spawn_editor_finish(mut wp: *mut window_pane) {
     (*es).cb.expect("non-null function pointer")(buf, len as size_t, (*es).arg);
     spawn_editor_free(es);
 }
+
+/// Open the editor's temporary descriptor as a C `FILE` while keeping its
+/// ownership explicit at the Rust/stdio boundary.
+///
+/// `fd` must be the live descriptor returned by `mkstemp`, and ownership must
+/// not be retained by the caller after this function returns. On `fdopen`
+/// failure, `FILE` never owns the descriptor and `OwnedFd::drop` closes it
+/// exactly once. On success, `into_raw_fd` relinquishes the Rust owner before
+/// the caller can `fclose` the stream, making `FILE` the sole closer.
+unsafe fn spawn_editor_fdopen(
+    fd: ::core::ffi::c_int,
+    mode: *const ::core::ffi::c_char,
+) -> *mut FILE {
+    let fd_owner = OwnedFd::from_raw_fd(fd);
+    let file = fdopen(fd_owner.as_raw_fd(), mode);
+    if file.is_null() {
+        drop(fd_owner);
+        return ::core::ptr::null_mut::<FILE>();
+    }
+    let _fd_owned_by_file = fd_owner.into_raw_fd();
+    file
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn spawn_editor(
     mut c: *mut client,
@@ -1119,9 +1144,11 @@ pub unsafe extern "C" fn spawn_editor(
     if fd == -(1 as ::core::ffi::c_int) {
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
-    f = fdopen(fd, b"w\0" as *const u8 as *const ::core::ffi::c_char);
+    f = spawn_editor_fdopen(
+        fd,
+        b"w\0" as *const u8 as *const ::core::ffi::c_char,
+    );
     if f.is_null() {
-        close(fd);
         unlink(&raw mut path as *mut ::core::ffi::c_char);
         return ::core::ptr::null_mut::<spawn_editor_state>();
     }
@@ -1193,4 +1220,131 @@ pub unsafe extern "C" fn spawn_editor(
     (*es).pid = (*wp).pid;
     (*wp).editor = es as *mut spawn_editor_state;
     return es;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CStr;
+    use std::fs;
+    use std::process::{Command, Stdio};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    const CHILD_CASE: &str = "HMUX2_EDITOR_FD_OWNER_CASE";
+    const FAILURE_CASE: &str = "failure";
+    const SUCCESS_CASE: &str = "success";
+    const FAILURE_TEST: &str = "src::spawn::tests::editor_fdopen_failure_closes_once";
+    const SUCCESS_TEST: &str = "src::spawn::tests::editor_completion_reads_and_unlinks";
+
+    fn run_isolated(test_name: &str, case: &str) {
+        let mut child = Command::new(std::env::current_exe().expect("test executable"))
+            .args(["--exact", test_name, "--nocapture"])
+            .env(CHILD_CASE, case)
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .expect("spawn isolated editor ownership test");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match child.try_wait().expect("poll isolated editor test") {
+                Some(status) => assert!(status.success(), "isolated test exited with {status}"),
+                None if Instant::now() >= deadline => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    panic!("isolated editor ownership test timed out");
+                }
+                None => thread::sleep(Duration::from_millis(10)),
+            }
+            if child.try_wait().expect("poll isolated editor test") .is_some() {
+                break;
+            }
+        }
+    }
+
+    unsafe fn create_temp_file() -> (i32, std::ffi::CString) {
+        let mut template = b"/tmp/hmux2-editor-owner-XXXXXX\0".to_vec();
+        let fd = mkstemp(template.as_mut_ptr() as *mut ::core::ffi::c_char);
+        assert!(fd >= 0, "mkstemp failed: {}", *strerror(*__errno_location()));
+        (fd, CStr::from_ptr(template.as_ptr() as *const ::core::ffi::c_char).to_owned())
+    }
+
+    #[test]
+    fn editor_fdopen_failure_closes_once() {
+        if std::env::var(CHILD_CASE).as_deref() == Ok(FAILURE_CASE) {
+            unsafe {
+                let (fd, path) = create_temp_file();
+                assert_eq!(
+                    ::libc::fcntl(fd, ::libc::F_GETFL) & ::libc::O_ACCMODE,
+                    ::libc::O_RDWR
+                );
+                let file = spawn_editor_fdopen(
+                    fd,
+                    b"not-a-stdio-mode\0" as *const u8 as *const ::core::ffi::c_char,
+                );
+                assert!(file.is_null(), "invalid fdopen mode unexpectedly succeeded");
+                assert_eq!(::libc::fcntl(fd, ::libc::F_GETFD), -1);
+                assert_eq!(*__errno_location(), ::libc::EBADF);
+                assert_eq!(unlink(path.as_ptr()), 0);
+                assert!(!std::path::Path::new(path.to_str().unwrap()).exists());
+            }
+            return;
+        }
+        run_isolated(FAILURE_TEST, FAILURE_CASE);
+    }
+
+    unsafe extern "C" fn capture_editor_result(
+        buf: *mut ::core::ffi::c_char,
+        len: size_t,
+        arg: *mut ::core::ffi::c_void,
+    ) {
+        let result = &mut *(arg as *mut Vec<u8>);
+        if !buf.is_null() {
+            result.extend_from_slice(std::slice::from_raw_parts(buf as *const u8, len as usize));
+            free(buf as *mut ::core::ffi::c_void);
+        }
+    }
+
+    #[test]
+    fn editor_completion_reads_and_unlinks() {
+        if std::env::var(CHILD_CASE).as_deref() == Ok(SUCCESS_CASE) {
+            unsafe {
+                let (fd, path) = create_temp_file();
+                assert_eq!(
+                    ::libc::fcntl(fd, ::libc::F_GETFL) & ::libc::O_ACCMODE,
+                    ::libc::O_RDWR
+                );
+                let file = spawn_editor_fdopen(
+                    fd,
+                    b"w\0" as *const u8 as *const ::core::ffi::c_char,
+                );
+                assert!(!file.is_null());
+                assert!(::libc::fcntl(fd, ::libc::F_GETFD) >= 0);
+                let original = b"created through fdopen";
+                assert_eq!(fwrite(original.as_ptr() as *const ::core::ffi::c_void, original.len(), 1, file), 1);
+                assert_eq!(fclose(file), 0);
+                assert_eq!(::libc::fcntl(fd, ::libc::F_GETFD), -1);
+                assert_eq!(fs::read(path.to_str().unwrap()).unwrap(), original);
+
+                fs::write(path.to_str().unwrap(), b"edited by child").unwrap();
+                let state = xcalloc(1, ::core::mem::size_of::<spawn_editor_state>() as size_t)
+                    as *mut spawn_editor_state;
+                (*state).path = xstrdup(path.as_ptr());
+                let result = Box::into_raw(Box::new(Vec::<u8>::new()));
+                (*state).cb = Some(capture_editor_result);
+                (*state).arg = result as *mut ::core::ffi::c_void;
+                let wp = xcalloc(1, ::core::mem::size_of::<window_pane>() as size_t)
+                    as *mut window_pane;
+                (*wp).editor = state;
+                (*wp).flags = PANE_STATUSREADY;
+                (*wp).status = 0;
+                spawn_editor_finish(wp);
+                assert_eq!(*Box::from_raw(result), b"edited by child");
+                assert!(!std::path::Path::new(path.to_str().unwrap()).exists());
+                free(wp as *mut ::core::ffi::c_void);
+            }
+            return;
+        }
+        run_isolated(SUCCESS_TEST, SUCCESS_CASE);
+    }
 }
