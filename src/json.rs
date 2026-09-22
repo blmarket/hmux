@@ -18,6 +18,7 @@ pub use crate::src::shared::json::{
 pub use crate::src::shared::tree::{RB_BLACK, RB_NEGINF, RB_RED};
 use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xmemdup, xrealloc, xstrdup, xstrndup};
 use std::ffi::CStr;
+use std::ffi::CString;
 
 pub const NODE_ARRAY: json_node_type = 4;
 pub const NODE_OBJECT: json_node_type = 3;
@@ -806,14 +807,13 @@ unsafe extern "C" fn json_parse_tokens(
     *tokens = ::core::ptr::null_mut::<json_tokens>();
     return ::core::ptr::null_mut::<json_node>();
 }
-unsafe extern "C" fn json_parse_key(
+unsafe fn json_parse_key(
     mut tok: *mut *mut json_token,
     mut pctx: *mut json_parse_ctx,
-) -> *mut ::core::ffi::c_char {
+) -> Option<CString> {
     let mut len: ::core::ffi::c_int = 0;
     let mut loc: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut start: *const ::core::ffi::c_char = (*pctx).input.offset((**tok).offset as isize);
-    let mut key: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if !((**tok).type_0 as ::core::ffi::c_uint
         != TOK_QUOTE as ::core::ffi::c_int as ::core::ffi::c_uint)
     {
@@ -827,9 +827,15 @@ unsafe extern "C" fn json_parse_key(
             if !((**tok).type_0 as ::core::ffi::c_uint
                 != TOK_QUOTE as ::core::ffi::c_int as ::core::ffi::c_uint)
             {
-                key = xstrndup(loc, len as size_t);
+                // Match strndup's byte-preserving, first-NUL truncation.
+                let bytes = std::slice::from_raw_parts(loc.cast::<u8>(), len as usize);
+                let end = bytes
+                    .iter()
+                    .position(|&byte| byte == 0)
+                    .unwrap_or(bytes.len());
+                let key = CString::new(&bytes[..end]).expect("key prefix contains no NUL");
                 *tok = (*tok).offset(1);
-                return key;
+                return Some(key);
             }
         }
     }
@@ -838,7 +844,7 @@ unsafe extern "C" fn json_parse_key(
         b"invalid key\0" as *const u8 as *const ::core::ffi::c_char,
         start,
     );
-    return ::core::ptr::null_mut::<::core::ffi::c_char>();
+    return None;
 }
 unsafe extern "C" fn json_parse_object(
     mut tok: *mut *mut json_token,
@@ -849,7 +855,6 @@ unsafe extern "C" fn json_parse_object(
     let mut current_block: u64;
     let mut object: *mut json_node = ::core::ptr::null_mut::<json_node>();
     let mut field: *mut json_node = ::core::ptr::null_mut::<json_node>();
-    let mut fkey: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut valstr: *mut u_char = ::core::ptr::null_mut::<u_char>();
     if (**tok).type_0 as ::core::ffi::c_uint
         != TOK_OPENOBJECT as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -874,12 +879,13 @@ unsafe extern "C" fn json_parse_object(
             current_block = 9853141518545631134;
             break;
         }
-        fkey = json_parse_key(tok, pctx);
-        if fkey.is_null() {
+        let Some(fkey) = json_parse_key(tok, pctx) else {
             current_block = 7971653673408253115;
             break;
-        }
-        if !json_find(object, fkey).is_null() {
+        };
+        // Lookup only borrows; child creation duplicates the key. No pointer
+        // outlives this iteration, including on errors before object teardown.
+        if !json_find(object, fkey.as_ptr()).is_null() {
             json_error(
                 (*pctx).cause,
                 b"duplicate key\0" as *const u8 as *const ::core::ffi::c_char,
@@ -901,7 +907,7 @@ unsafe extern "C" fn json_parse_object(
             *tok = (*tok).offset(1);
             match (**tok).type_0 as ::core::ffi::c_uint {
                 6 => {
-                    field = json_parse_string(tok, pctx, fkey, object);
+                    field = json_parse_string(tok, pctx, fkey.as_ptr(), object);
                 }
                 7 => {
                     valstr = (*pctx).input.offset((**tok).offset as isize) as *mut u_char;
@@ -919,16 +925,16 @@ unsafe extern "C" fn json_parse_object(
                                 as ::core::ffi::c_int
                             != 0
                     {
-                        field = json_parse_number(tok, pctx, fkey, object);
+                        field = json_parse_number(tok, pctx, fkey.as_ptr(), object);
                     } else {
-                        field = json_parse_boolean(tok, pctx, fkey, object);
+                        field = json_parse_boolean(tok, pctx, fkey.as_ptr(), object);
                     }
                 }
                 0 => {
-                    field = json_parse_object(tok, pctx, fkey, object);
+                    field = json_parse_object(tok, pctx, fkey.as_ptr(), object);
                 }
                 2 => {
-                    field = json_parse_array(tok, pctx, fkey, object);
+                    field = json_parse_array(tok, pctx, fkey.as_ptr(), object);
                 }
                 _ => {
                     json_error(
@@ -973,14 +979,10 @@ unsafe extern "C" fn json_parse_object(
                 current_block = 7971653673408253115;
                 break;
             }
-            free(fkey as *mut ::core::ffi::c_void);
         }
     }
     match current_block {
         7971653673408253115 => {
-            if !fkey.is_null() {
-                free(fkey as *mut ::core::ffi::c_void);
-            }
             json_destroy_node(object);
             return ::core::ptr::null_mut::<json_node>();
         }

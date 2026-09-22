@@ -116,5 +116,78 @@ legacy callers safe.
 
 ## Execution log
 
-No implementation increments executed yet. On first execution, inspect the
-current source and rank candidates before choosing the first migration.
+### Increment 1 — list-keys prefix (2026-09-22)
+
+- Ranked local list-keys prefixes first, JSON object-key scratch strings second,
+  and refresh-client split scratch strings third. Resize cleanup and the
+  session/winlink graph remain deferred because simpler local owners remain.
+- `cmd_list_keys_get_prefix` now returns `CString`; `cmd_list_keys_exec` owns
+  it through success and unknown-key error paths. The formatting helper takes
+  `&CStr`. Removed three strdup branches (including a redundant copy of an
+  existing CString) and both manual prefix frees.
+- Audited `format_add`: its varargs formatting copies the prefix synchronously.
+  The sole compatibility pointer is `prefix.as_ptr()` for that call, valid only
+  while the local owner lives. No record layouts or foreign exports changed.
+- Validation: key_string and key_bindings_storage tests passed; binary build
+  and key_cli_checks.py passed. Extended CLI coverage checks explicit empty,
+  non-UTF-8, custom, default and disabled prefixes, plus unknown-key cleanup.
+- Next: JSON object-key scratch ownership, then refresh-client split scratch.
+
+### Increment 2 — JSON object-key scratch (2026-09-22)
+
+- `json_parse_key` now returns `Option<CString>` to its sole caller,
+  `json_parse_object`. Removed the scratch strndup and both success/error frees.
+  Loop scope drops the key before partial-object destruction on errors.
+- Audited tokenizer spans, lookup, and all child parsers: `json_create_node`
+  duplicates non-null keys. Its retained key allocation/free pair is unchanged.
+  Scratch pointers from `as_ptr()` only borrow during lookup/child parsing;
+  no owning field, record layout, or exported ABI changed.
+- Validation: json_scratch (2), layout_custom (12), remaining_json (1) passed.
+  The new scratch tests also passed against the original JSON source. They
+  cover non-UTF-8 and literal escape bytes, independent retained node keys,
+  duplicate keys, and partial-object failures. Baseline investigation found
+  empty keys and numeric array elements already rejected; no parser behavior
+  fixes were folded into this ownership change.
+- Next: refresh-client split scratch strings. Graph/resize work remains deferred.
+
+### Increment 3 — refresh-client pane argument scratch (2026-09-22)
+
+- `cmd_refresh_client_update_offset` and `cmd_refresh_report` now share
+  `cmd_refresh_parse_pane`. A local CString supplies the terminated pane prefix
+  to sscanf; the suffix is a byte-preserving `&CStr` borrowed from the argument.
+  Removed both whole-argument strdup/free pairs, delimiter pointer writes and
+  pointer advancement. Invalid/missing prefixes return `None`.
+- Audited both argument callers, control action dispatch, and tty_keys_colours.
+  Only pane IDs escape parsing. Control actions do not retain the suffix;
+  tty_keys_colours consumes it synchronously. The prefix drops after scanf;
+  the borrowed suffix remains backed by the command argument. Numeric IDs,
+  scanf's permissive syntax, action order and colour/theme updates are unchanged.
+- Compatibility pointers remain only at sscanf (local CString) and
+  tty_keys_colours (borrowed suffix), plus existing raw argument entry points.
+  No drop-bearing record fields, retain/release operations, or ABI changes.
+- Validation: new parsing regression test passed for whitespace/signs/trailing
+  bytes, empty and non-UTF-8 suffixes, first-colon splitting, first-NUL behavior,
+  and invalid prefixes. `cargo test --workspace` passed, including all existing
+  control/client tests and all earlier increment tests. Existing compiler
+  warnings remain. No sanitizer or dedicated live control-client colour-report
+  scenario was run; helper tests do not establish safety of unrelated callers.
+
+### Next candidates
+
+1. `monitor_parse` in `src/monitor.rs`: its local `copy = xstrdup(value)` is
+   split twice and freed on both success and failure. Only separately duplicated
+   name/format outputs escape. Migrate this scratch allocation first, preserving
+   sscanf semantics and the existing C-owned output allocations/frees. Callers
+   are refresh-client subscription updates and set-option.
+2. `layout_string` in `src/layout/custom.rs`: inspect its stack-owned serializer
+   buffer lifecycle before replacing realloc/capacity/free with a Vec. This is
+   larger than monitor scratch and must account for serialization failures and
+   the final exported C-owned output allocation.
+3. Pane resize queue, then session/winlink graph: still deferred while local
+   string/buffer boundaries remain. Queue cleanup is callback-adjacent; graph
+   work needs an explicit observer teardown and reentrancy audit.
+
+Final validation for this execution: 279 tests passed across 121 workspace test
+suites (zero failures/ignored), `cargo build --bin hmux2` passed, and both
+`scripts/key_cli_checks.py` and `scripts/layout_cli_checks.py` passed against the
+rebuilt binary. No commits, pushes, or publication performed.

@@ -8,7 +8,7 @@ use crate::src::control::{
     control_add_sub, control_clear_window_size, control_continue_pane, control_pause_pane,
     control_remove_sub, control_set_pane_off, control_set_pane_on, control_set_window_size,
 };
-use crate::src::ffi::libc::{free, sscanf, strchr, strcmp, strlen};
+use crate::src::ffi::libc::{free, sscanf};
 use crate::src::log::log_debug;
 use crate::src::monitor::monitor_parse;
 use crate::src::resize::recalculate_sizes_now;
@@ -87,7 +87,7 @@ pub use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM};
 use crate::src::tty::{tty_clipboard_query, tty_set_size, tty_update_client_offset};
 use crate::src::tty_keys::tty_keys_colours;
 use crate::src::window::window_pane_find_by_id;
-use crate::src::xmalloc::xstrdup;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -240,102 +240,71 @@ unsafe extern "C" fn cmd_refresh_client_control_client_size(
     recalculate_sizes_now(1 as ::core::ffi::c_int);
     return CMD_RETURN_NORMAL;
 }
+// The pane prefix needs its own terminator for scanf. The suffix borrows the
+// original argument; neither scanf nor tty_keys_colours retains its pointer.
+fn cmd_refresh_parse_pane(value: &CStr) -> Option<(u_int, &CStr)> {
+    let bytes = value.to_bytes();
+    if bytes.first() != Some(&b'%') {
+        return None;
+    }
+    let colon = bytes.iter().position(|&byte| byte == b':')?;
+    let prefix = CString::new(&bytes[..colon]).expect("CStr prefix contains no NUL");
+    let suffix = CStr::from_bytes_with_nul(&value.to_bytes_with_nul()[colon + 1..])
+        .expect("CStr suffix has one trailing NUL");
+    let mut pane = 0;
+    // Keep scanf's existing acceptance of signs, whitespace and trailing bytes.
+    let matched = unsafe { sscanf(prefix.as_ptr(), c"%%%u".as_ptr(), &mut pane) };
+    (matched == 1).then_some((pane, suffix))
+}
+
 unsafe extern "C" fn cmd_refresh_client_update_offset(
-    mut tc: *mut client,
-    mut value: *const ::core::ffi::c_char,
+    tc: *mut client,
+    value: *const ::core::ffi::c_char,
 ) {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut split: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut pane: u_int = 0;
-    if *value as ::core::ffi::c_int != '%' as i32 {
+    let Some((pane, action)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
+        return;
+    };
+    let wp = window_pane_find_by_id(pane);
+    if wp.is_null() {
         return;
     }
-    copy = xstrdup(value);
-    split = strchr(copy, ':' as i32);
-    if !split.is_null() {
-        let fresh0 = split;
-        split = split.offset(1);
-        *fresh0 = '\0' as i32 as ::core::ffi::c_char;
-        if !(sscanf(
-            copy,
-            b"%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut pane,
-        ) != 1 as ::core::ffi::c_int)
-        {
-            wp = window_pane_find_by_id(pane);
-            if !wp.is_null() {
-                if strcmp(split, b"on\0" as *const u8 as *const ::core::ffi::c_char)
-                    == 0 as ::core::ffi::c_int
-                {
-                    control_set_pane_on(tc, wp);
-                } else if strcmp(split, b"off\0" as *const u8 as *const ::core::ffi::c_char)
-                    == 0 as ::core::ffi::c_int
-                {
-                    control_set_pane_off(tc, wp);
-                } else if strcmp(
-                    split,
-                    b"continue\0" as *const u8 as *const ::core::ffi::c_char,
-                ) == 0 as ::core::ffi::c_int
-                {
-                    control_continue_pane(tc, wp);
-                } else if strcmp(split, b"pause\0" as *const u8 as *const ::core::ffi::c_char)
-                    == 0 as ::core::ffi::c_int
-                {
-                    control_pause_pane(tc, wp);
-                }
-            }
-        }
+    match action.to_bytes() {
+        b"on" => control_set_pane_on(tc, wp),
+        b"off" => control_set_pane_off(tc, wp),
+        b"continue" => control_continue_pane(tc, wp),
+        b"pause" => control_pause_pane(tc, wp),
+        _ => {}
     }
-    free(copy as *mut ::core::ffi::c_void);
 }
-unsafe extern "C" fn cmd_refresh_report(mut tty: *mut tty, mut value: *const ::core::ffi::c_char) {
-    let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut pane: u_int = 0;
-    let mut fg: ::core::ffi::c_int = 0;
-    let mut bg: ::core::ffi::c_int = 0;
-    let mut size: size_t = 0 as size_t;
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut split: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    if *value as ::core::ffi::c_int != '%' as i32 {
+
+unsafe extern "C" fn cmd_refresh_report(tty: *mut tty, value: *const ::core::ffi::c_char) {
+    let Some((pane, report)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
+        return;
+    };
+    let wp = window_pane_find_by_id(pane);
+    if wp.is_null() {
         return;
     }
-    copy = xstrdup(value);
-    split = strchr(copy, ':' as i32);
-    if !split.is_null() {
-        let fresh1 = split;
-        split = split.offset(1);
-        *fresh1 = '\0' as i32 as ::core::ffi::c_char;
-        if !(sscanf(
-            copy,
-            b"%%%u\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut pane,
-        ) != 1 as ::core::ffi::c_int)
-        {
-            wp = window_pane_find_by_id(pane);
-            if !wp.is_null() {
-                fg = (*wp).control_fg;
-                bg = (*wp).control_bg;
-                if tty_keys_colours(
-                    tty,
-                    split,
-                    strlen(split),
-                    &raw mut size,
-                    &raw mut fg,
-                    &raw mut bg,
-                ) == 0 as ::core::ffi::c_int
-                {
-                    if bg != (*wp).control_bg {
-                        (*wp).flags |= PANE_THEMECHANGED;
-                    }
-                    (*wp).control_fg = fg;
-                    (*wp).control_bg = bg;
-                }
-            }
+    let mut fg = (*wp).control_fg;
+    let mut bg = (*wp).control_bg;
+    let mut size: size_t = 0;
+    if tty_keys_colours(
+        tty,
+        report.as_ptr(),
+        report.to_bytes().len(),
+        &mut size,
+        &mut fg,
+        &mut bg,
+    ) == 0
+    {
+        if bg != (*wp).control_bg {
+            (*wp).flags |= PANE_THEMECHANGED;
         }
+        (*wp).control_fg = fg;
+        (*wp).control_bg = bg;
     }
-    free(copy as *mut ::core::ffi::c_void);
 }
+
 unsafe extern "C" fn cmd_refresh_client_exec(
     mut self_0: *mut cmd,
     mut item: *mut cmdq_item,
@@ -458,4 +427,30 @@ unsafe extern "C" fn cmd_refresh_client_exec(
         b"not a control client\0" as *const u8 as *const ::core::ffi::c_char,
     );
     return CMD_RETURN_ERROR;
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+
+    #[test]
+    fn pane_argument_keeps_scanf_and_byte_boundaries() {
+        for (input, pane, suffix) in [
+            (b"%42:on".as_slice(), 42, b"on".as_slice()),
+            (b"% +7junk:off", 7, b"off"),
+            (b"%-1:pause", u_int::MAX, b"pause"),
+            (b"%0:", 0, b""),
+            (b"%9:\xff:rest", 9, b"\xff:rest"),
+        ] {
+            let input = CString::new(input).unwrap();
+            let (actual_pane, actual_suffix) = cmd_refresh_parse_pane(&input).unwrap();
+            assert_eq!(actual_pane, pane);
+            assert_eq!(actual_suffix.to_bytes(), suffix);
+        }
+        for input in [c"", c"1:on", c"%1", c"%:on", c"%x:on"] {
+            assert!(cmd_refresh_parse_pane(input).is_none(), "{input:?}");
+        }
+        let input = CStr::from_bytes_until_nul(b"%1:on\0:off").unwrap();
+        assert_eq!(cmd_refresh_parse_pane(input).unwrap(), (1, c"on"));
+    }
 }

@@ -30,6 +30,20 @@ with tempfile.TemporaryDirectory(prefix="key-cli-", dir=root / "target") as tmp:
             b"bind-key  -T keycheck C-a display-message control\n"
         ), listing.stdout
 
+        # Prefix storage must preserve explicit empty/non-UTF-8 bytes and defaults.
+        for prefix in (b"", b"custom", b"\xff"):
+            listing = run("list-keys", "-T", "keycheck", "-P", prefix,
+                          "-F", "[#{key_prefix}]")
+            assert listing.stdout == (b"[" + prefix + b"]\n") * 2, listing.stdout
+        run("set-option", "-g", "prefix", "C-a")
+        listing = run("list-keys", "-T", "keycheck", "-F", "[#{key_prefix}]")
+        assert listing.stdout == b"[C-a]\n[C-a]\n", listing.stdout
+        run("set-option", "-g", "prefix", "None")
+        listing = run("list-keys", "-T", "keycheck", "-F", "[#{key_prefix}]")
+        assert listing.stdout == b"[]\n[]\n", listing.stdout
+        missing = run("list-keys", "-T", "keycheck", "-P", "temporary", "C-z", ok=False)
+        assert missing.returncode != 0 and b"unknown key" in missing.stderr, missing.stderr
+
         run("unbind-key", "-T", "keycheck", "C-a")
         listing = run("list-keys", "-T", "keycheck")
         assert listing.stdout == b"bind-key  -T keycheck IC display-message insert\n", listing.stdout

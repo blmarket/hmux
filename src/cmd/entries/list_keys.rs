@@ -77,7 +77,8 @@ use crate::src::sort::{
 use crate::src::status::status_message_set;
 use crate::src::tmux::global_s_options;
 use crate::src::utf8::utf8_cstrwidth;
-use crate::src::xmalloc::{xreallocarray, xstrdup};
+use crate::src::xmalloc::xreallocarray;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -121,20 +122,19 @@ pub static mut cmd_list_keys_entry: cmd_entry = unsafe {
         ),
     }
 };
-unsafe extern "C" fn cmd_list_keys_get_prefix(mut args: *mut args) -> *mut ::core::ffi::c_char {
+unsafe fn cmd_list_keys_get_prefix(args: *mut args) -> CString {
     let mut prefix: key_code = 0;
     if args_has(args, 'P' as i32 as u_char) != 0 {
-        return xstrdup(args_get(args, 'P' as i32 as u_char));
+        return CStr::from_ptr(args_get(args, 'P' as i32 as u_char)).to_owned();
     }
     prefix = options_get_number(
         global_s_options,
         b"prefix\0" as *const u8 as *const ::core::ffi::c_char,
     ) as key_code;
     if prefix == KEYC_NONE as ::core::ffi::c_ulong as key_code {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+        return CString::default();
     }
-    let key_string = key_string_format(prefix, false);
-    return xstrdup(key_string.as_ptr());
+    key_string_format(prefix, false)
 }
 unsafe extern "C" fn cmd_list_keys_get_width(mut l: *mut *mut key_binding, mut n: u_int) -> u_int {
     let mut i: u_int = 0;
@@ -238,10 +238,10 @@ unsafe extern "C" fn cmd_list_keys_filter_key_list(
     }
     *n = j;
 }
-unsafe extern "C" fn cmd_list_keys_format_add_key_binding(
+unsafe fn cmd_list_keys_format_add_key_binding(
     mut ft: *mut format_tree,
     mut bd: *const key_binding,
-    mut prefix: *const ::core::ffi::c_char,
+    prefix: &CStr,
 ) {
     let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if (*bd).flags & KEY_BINDING_REPEAT != 0 {
@@ -277,7 +277,8 @@ unsafe extern "C" fn cmd_list_keys_format_add_key_binding(
         ft,
         b"key_prefix\0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        prefix,
+        // format_add copies the bytes synchronously; this pointer cannot escape.
+        prefix.as_ptr(),
     );
     format_add(
         ft,
@@ -317,7 +318,6 @@ unsafe extern "C" fn cmd_list_keys_exec(
     let mut tablename: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut keystr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut prefix: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut n: u_int = 0;
     let mut single: ::core::ffi::c_int = 0;
@@ -366,7 +366,7 @@ unsafe extern "C" fn cmd_list_keys_exec(
             return CMD_RETURN_ERROR;
         }
     }
-    prefix = cmd_list_keys_get_prefix(args);
+    let prefix = cmd_list_keys_get_prefix(args);
     single = args_has(args, '1' as i32 as u_char);
     notes_only = args_has(args, 'N' as i32 as u_char);
     template = args_get(args, 'F' as i32 as u_char);
@@ -392,7 +392,6 @@ unsafe extern "C" fn cmd_list_keys_exec(
             b"unknown key: %s\0" as *const u8 as *const ::core::ffi::c_char,
             keystr,
         );
-        free(prefix as *mut ::core::ffi::c_void);
         return CMD_RETURN_ERROR;
     }
     if single != 0 && n > 1 as u_int {
@@ -437,7 +436,7 @@ unsafe extern "C" fn cmd_list_keys_exec(
     );
     i = 0 as u_int;
     while i < n {
-        cmd_list_keys_format_add_key_binding(ft, *l.offset(i as isize), prefix);
+        cmd_list_keys_format_add_key_binding(ft, *l.offset(i as isize), &prefix);
         line = format_expand(ft, template);
         if single != 0 && !tc.is_null() && !(*tc).flags & CLIENT_CONTROL as uint64_t != 0 {
             status_message_set(
@@ -463,6 +462,5 @@ unsafe extern "C" fn cmd_list_keys_exec(
         i = i.wrapping_add(1);
     }
     format_free(ft);
-    free(prefix as *mut ::core::ffi::c_void);
     return CMD_RETURN_NORMAL;
 }
