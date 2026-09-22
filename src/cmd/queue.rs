@@ -101,7 +101,8 @@ pub use crate::src::shared::window::{
 };
 use crate::src::status::status_message_set;
 use crate::src::utf8::utf8_sanitize;
-use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xvasprintf, xvasprintf_cstring};
+use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xvasprintf_cstring};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -110,15 +111,6 @@ pub const CMDQ_CALLBACK: cmdq_type = 1;
 pub const CMDQ_COMMAND: cmdq_type = 0;
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_36;
-
-#[inline]
-unsafe extern "C" fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    return if __c >= -(128 as ::core::ffi::c_int) && __c < 256 as ::core::ffi::c_int {
-        *(*__ctype_toupper_loc()).offset(__c as isize) as ::core::ffi::c_int
-    } else {
-        __c
-    };
-}
 
 unsafe extern "C" fn cmdq_name(mut c: *mut client) -> *const ::core::ffi::c_char {
     static mut s: [::core::ffi::c_char; 256] = [0; 256];
@@ -1033,16 +1025,14 @@ pub unsafe extern "C" fn cmdq_error(
     let mut c: *mut client = (*item).client;
     let mut cmd: *mut cmd = (*item).cmd;
     let mut ap: ::core::ffi::VaList;
-    let mut msg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut file: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut line: u_int = 0;
     ap = args.clone();
-    xvasprintf(&raw mut msg, fmt, ap);
+    let mut msg = xvasprintf_cstring(fmt, ap);
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"cmdq_error\0" as *const u8 as *const ::core::ffi::c_char,
-        msg,
+        msg.as_ptr(),
     );
     if c.is_null() {
         cmd_get_source(cmd, &raw mut file, &raw mut line);
@@ -1052,63 +1042,58 @@ pub unsafe extern "C" fn cmdq_error(
                     b"%s:%u: %s\0" as *const u8 as *const ::core::ffi::c_char,
                     file,
                     line,
-                    msg,
+                    msg.as_ptr(),
                 );
             } else {
-                cfg_add_cause(b"%s\0" as *const u8 as *const ::core::ffi::c_char, msg);
+                cfg_add_cause(
+                    b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+                    msg.as_ptr(),
+                );
             }
         } else if !file.is_null() {
             server_add_message(
                 b"message: %s:%u: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 file,
                 line,
-                msg,
+                msg.as_ptr(),
             );
         } else {
             server_add_message(
                 b"message: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                msg,
+                msg.as_ptr(),
             );
         }
     } else if (*c).session.is_null() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         server_add_message(
             b"%s message: %s\0" as *const u8 as *const ::core::ffi::c_char,
             (*c).name,
-            msg,
+            msg.as_ptr(),
         );
         if !(*c).flags & CLIENT_UTF8 as uint64_t != 0 {
-            tmp = msg;
-            msg = utf8_sanitize(tmp);
-            free(tmp as *mut ::core::ffi::c_void);
+            let sanitized = utf8_sanitize(msg.as_ptr());
+            msg = CStr::from_ptr(sanitized).to_owned();
+            free(sanitized as *mut ::core::ffi::c_void);
         }
         if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
-            control_write(c, b"%s\0" as *const u8 as *const ::core::ffi::c_char, msg);
+            control_write(
+                c,
+                b"%s\0" as *const u8 as *const ::core::ffi::c_char,
+                msg.as_ptr(),
+            );
         } else {
-            file_error(c, b"%s\n\0" as *const u8 as *const ::core::ffi::c_char, msg);
+            file_error(
+                c,
+                b"%s\n\0" as *const u8 as *const ::core::ffi::c_char,
+                msg.as_ptr(),
+            );
         }
         (*c).retval = 1 as ::core::ffi::c_int;
     } else {
-        *msg = ({
-            let mut __res: ::core::ffi::c_int = 0;
-            if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
-                if 0 != 0 {
-                    let mut __c: ::core::ffi::c_int = *msg as u_char as ::core::ffi::c_int;
-                    __res =
-                        (if __c < -(128 as ::core::ffi::c_int) || __c > 255 as ::core::ffi::c_int {
-                            __c as __int32_t
-                        } else {
-                            *(*__ctype_toupper_loc()).offset(__c as isize)
-                        }) as ::core::ffi::c_int;
-                } else {
-                    __res = toupper(*msg as u_char as ::core::ffi::c_int);
-                }
-            } else {
-                __res = *(*__ctype_toupper_loc())
-                    .offset(*msg as u_char as ::core::ffi::c_int as isize)
-                    as ::core::ffi::c_int;
-            }
-            __res
-        }) as ::core::ffi::c_char;
+        let mut bytes = msg.into_bytes_with_nul();
+        bytes[0] = *(*__ctype_toupper_loc()).offset(bytes[0] as isize) as u8;
+        // The bytes came from a CString; toupper maps NUL to NUL and a
+        // non-NUL byte to a non-NUL byte, so the terminator stays at the end.
+        msg = CString::from_vec_with_nul_unchecked(bytes);
         status_message_set(
             c,
             -(1 as ::core::ffi::c_int),
@@ -1116,8 +1101,7 @@ pub unsafe extern "C" fn cmdq_error(
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
             b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            msg,
+            msg.as_ptr(),
         );
     }
-    free(msg as *mut ::core::ffi::c_void);
 }

@@ -651,6 +651,29 @@ legacy callers safe.
   the changed file, and `git diff --check` passed. Existing compiler warnings
   remain; no live hook-command scenario or sanitizer run was performed.
 
+### Increment 26 — command error formatted message (2026-09-22)
+
+- `cmdq_error` now owns its formatted message as a local `CString` through
+  `xvasprintf_cstring`, removing the direct `xvasprintf`/final `free` pair.
+  Logging and each delivery branch borrow `msg.as_ptr()` only for synchronous
+  calls; `cfg_add_cause`, `server_add_message`, and `status_message_set` make
+  their own retained copies.
+- The control/client sanitization branch copies the C-owned
+  `utf8_sanitize` result into a new `CString` and releases that C allocation
+  with `free`. The attached-client branch uppercases the first owned byte
+  with the original `__ctype_toupper_loc` table lookup, then reconstructs the
+  same NUL-terminated owner. Branch order, return value updates, arbitrary
+  bytes, and the exported variadic ABI remain unchanged.
+- Added `scripts/cmdq_cli_checks.py` for hook dispatch and regular/non-UTF-8
+  command errors. `cargo test --workspace`, the binary build, this CLI script,
+  edition-2021 rustfmt for changed files, and `git diff --check` passed.
+  Existing compiler warnings remain; attached status-message and control
+  client sanitization paths were source-audited but not exercised live, and
+  no sanitizer run was performed.
+- After integrating increments 24–26, `cargo test --workspace`, the binary
+  build, and the command-queue CLI script passed together; rustfmt checks for
+  all changed Rust files and `git diff --check` passed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -661,15 +684,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmdq_error` has a formatted local string; its uppercase and sanitization
-   branches require a mutation audit before moving to `CString`.
-2. `args_print_add` and `layout_string_write` are later candidates: both use
-   `xvasprintf`'s returned byte length, so the first-NUL `CString` bridge
-   cannot simply replace their buffers without a length-preserving audit.
-3. `format_printf`, status/message strings, and input/control strings that
-   escape into records or queues still require their containing lifecycles to
-   be audited; the session/winlink graph remains deferred.
+1. `layout_string_write` and `args_print_add` both use `xvasprintf`'s returned
+   byte length. They need a length-preserving byte owner or bridge; the
+   first-NUL `CString` bridge would lose bytes after an embedded NUL.
+2. `format_printf` returns a C-owned allocation, while status/message,
+   input/control, environment, option, and format values escape into records
+   or queues. Audit their owners and teardown before changing those calls.
+   The session/winlink graph remains deferred.
 
-Current validation is recorded in increments 15–25. The remaining
+Current validation is recorded in increments 15–26. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–25 has its own local commit; none was pushed.
+Each of increments 15–26 has its own local commit; none was pushed.
