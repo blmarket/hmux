@@ -509,6 +509,23 @@ legacy callers safe.
   `git diff --check`. Existing compiler warnings remain; no live customize
   pane scenario was run.
 
+### Increment 17 — command-queue formatted value (2026-09-22)
+
+- `cmdq_add_format` now owns its local formatted value as a `CString` through
+  `xvasprintf_cstring`, removing its direct `xvasprintf`/`free` pair. Its
+  `as_ptr()` is borrowed only for the synchronous `format_add` call.
+- `format_add` duplicates the key and creates its own formatted value,
+  including on duplicate-key replacement; `format_free` retains responsibility
+  for that separate allocation. The command-queue format tree, config callers,
+  exported variadic ABI, and byte behavior are unchanged.
+- The existing allocator-bridge byte/NUL regression passed; all 59 library
+  tests passed; `cargo build --bin hmux2`, edition-2021 rustfmt for the changed
+  file, and `git diff --check` passed. Existing compiler warnings remain; no
+  live config-command scenario or sanitizer run was performed.
+- After integrating increments 15–17, `cargo test --workspace` and the binary
+  build passed together; rustfmt checks for all changed Rust files and
+  `git diff --check` passed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -519,15 +536,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The `cmdq_add_format` formatted value is another independent local scratch
-   owner.
-2. The local `screen_write_text` formatted temporary is copied synchronously
-   by `utf8_fromcstr`, so it is a likely next scratch target after those.
-   `format_printf`, status/message
+1. The local `screen_write_text` formatted temporary is copied synchronously
+   by `utf8_fromcstr`, so it is the likely next scratch target.
+2. `format_printf`, status/message
    strings, and input/control strings that escape into records or queues still
    require separate lifetime audits; the session/winlink graph remains
    deferred.
 
-Current validation is recorded in increment 14. The remaining address-based
-registries and UI tags above are separate migration candidates. No commit or
-push was performed.
+Current validation is recorded in increments 15–17. The remaining
+address-based registries and UI tags above are separate migration candidates.
+Each of increments 15–17 has its own local commit; none was pushed.
