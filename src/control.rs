@@ -99,7 +99,8 @@ use crate::src::window::{
     window_pane_find_by_id, window_pane_get_new_data, window_pane_update_used_data,
     winlink_find_by_window,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup, xvasprintf};
+use crate::src::xmalloc::{xcalloc, xstrdup, xvasprintf_cstring};
+use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -142,24 +143,135 @@ unsafe extern "C" fn control_window_cmp(
     return 0 as ::core::ffi::c_int;
 }
 
+// The C-layout records remain at the start of these private allocations.
+// Their raw `line` fields borrow bytes owned by the adjacent CString.
+#[repr(C)]
+struct ControlBlockOwner {
+    block: control_block,
+    line: Option<CString>,
+}
+const _: () = assert!(std::mem::offset_of!(ControlBlockOwner, block) == 0);
+
+impl ControlBlockOwner {
+    fn new(line: Option<CString>, size: size_t) -> *mut control_block {
+        let line_ptr = line
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |line| line.as_ptr().cast_mut());
+        Box::into_raw(Box::new(Self {
+            block: control_block {
+                size,
+                line: line_ptr,
+                t: 0,
+                entry: control_block_entry {
+                    tqe_next: std::ptr::null_mut(),
+                    tqe_prev: std::ptr::null_mut(),
+                },
+                all_entry: control_block_all_entry {
+                    tqe_next: std::ptr::null_mut(),
+                    tqe_prev: std::ptr::null_mut(),
+                },
+            },
+            line,
+        }))
+        .cast()
+    }
+}
+
+#[repr(C)]
+struct ControlLineOwner {
+    record: control_line,
+    line: CString,
+}
+const _: () = assert!(std::mem::offset_of!(ControlLineOwner, record) == 0);
+
+impl ControlLineOwner {
+    fn new(line: CString) -> *mut control_line {
+        let line_ptr = line.as_ptr().cast_mut();
+        Box::into_raw(Box::new(Self {
+            record: control_line {
+                line: line_ptr,
+                entry: control_line_entry {
+                    tqe_next: std::ptr::null_mut(),
+                    tqe_prev: std::ptr::null_mut(),
+                },
+            },
+            line,
+        }))
+        .cast()
+    }
+}
+
+#[cfg(test)]
+mod line_ownership_tests {
+    use super::*;
+
+    #[test]
+    fn mixed_block_queue_releases_owned_reply_and_preserves_accounting() {
+        unsafe {
+            let mut state: control_state = std::mem::zeroed();
+            state.all_blocks.tqh_last = &raw mut state.all_blocks.tqh_first;
+
+            let output = ControlBlockOwner::new(None, 10);
+            (*output).all_entry.tqe_prev = state.all_blocks.tqh_last;
+            *state.all_blocks.tqh_last = output;
+            state.all_blocks.tqh_last = &raw mut (*output).all_entry.tqe_next;
+
+            let line = CString::new(b"reply-\xff".as_slice()).unwrap();
+            let reply = ControlBlockOwner::new(Some(line), 0);
+            (*reply).all_entry.tqe_prev = state.all_blocks.tqh_last;
+            *state.all_blocks.tqh_last = reply;
+            state.all_blocks.tqh_last = &raw mut (*reply).all_entry.tqe_next;
+            state.queued_reply_bytes = 8;
+            assert_eq!(
+                std::ffi::CStr::from_ptr((*reply).line).to_bytes(),
+                b"reply-\xff"
+            );
+
+            control_free_block(&mut state, output);
+            assert_eq!(state.all_blocks.tqh_first, reply);
+            assert_eq!(state.queued_reply_bytes, 8);
+            control_free_block(&mut state, reply);
+            assert!(state.all_blocks.tqh_first.is_null());
+            assert_eq!(
+                state.all_blocks.tqh_last,
+                &raw mut state.all_blocks.tqh_first
+            );
+            assert_eq!(state.queued_reply_bytes, 0);
+        }
+    }
+
+    #[test]
+    fn deferred_line_transfer_keeps_bytes_alive() {
+        unsafe {
+            let deferred = ControlLineOwner::new(CString::new(b"notice-\xff".as_slice()).unwrap());
+            let ControlLineOwner { line, .. } = *Box::from_raw(deferred.cast::<ControlLineOwner>());
+            assert_eq!(line.as_bytes(), b"notice-\xff");
+        }
+    }
+}
+
 unsafe extern "C" fn control_free_block(mut cs: *mut control_state, mut cb: *mut control_block) {
     let mut size: size_t = 0;
     if (*cb).size == 0 as size_t && !(*cb).line.is_null() {
-        size = strlen((*cb).line).wrapping_add(1 as size_t);
+        size = (*cb.cast::<ControlBlockOwner>())
+            .line
+            .as_ref()
+            .expect("reply block has an owned line")
+            .as_bytes_with_nul()
+            .len();
         if (*cs).queued_reply_bytes > size {
             (*cs).queued_reply_bytes = (*cs).queued_reply_bytes.wrapping_sub(size);
         } else {
             (*cs).queued_reply_bytes = 0 as size_t;
         }
     }
-    free((*cb).line as *mut ::core::ffi::c_void);
     if !(*cb).all_entry.tqe_next.is_null() {
         (*(*cb).all_entry.tqe_next).all_entry.tqe_prev = (*cb).all_entry.tqe_prev;
     } else {
         (*cs).all_blocks.tqh_last = (*cb).all_entry.tqe_prev;
     }
     *(*cb).all_entry.tqe_prev = (*cb).all_entry.tqe_next;
-    free(cb as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(cb.cast::<ControlBlockOwner>()));
 }
 unsafe extern "C" fn control_get_pane(
     mut c: *mut client,
@@ -492,12 +604,11 @@ unsafe extern "C" fn control_check_reply_buffer(
     (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong | CLIENT_CONTROL_DISCARD) as uint64_t;
     return 1 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn control_write_line(mut c: *mut client, mut line: *mut ::core::ffi::c_char) {
+unsafe fn control_write_line(c: *mut client, line: CString) {
     let mut cs: *mut control_state = (*c).control_state;
     let mut cb: *mut control_block = ::core::ptr::null_mut::<control_block>();
-    let mut size: size_t = strlen(line).wrapping_add(1 as size_t);
+    let size = line.as_bytes_with_nul().len() as size_t;
     if control_check_reply_buffer(c, size) != 0 {
-        free(line as *mut ::core::ffi::c_void);
         return;
     }
     if (*cs).all_blocks.tqh_first.is_null() {
@@ -505,11 +616,11 @@ unsafe extern "C" fn control_write_line(mut c: *mut client, mut line: *mut ::cor
             b"%s: %s: writing line: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"control_write_line\0" as *const u8 as *const ::core::ffi::c_char,
             (*c).name,
-            line,
+            line.as_ptr(),
         );
         bufferevent_write(
             (*cs).write_event,
-            line as *const ::core::ffi::c_void,
+            line.as_ptr() as *const ::core::ffi::c_void,
             size.wrapping_sub(1 as size_t),
         );
         bufferevent_write(
@@ -518,14 +629,9 @@ unsafe extern "C" fn control_write_line(mut c: *mut client, mut line: *mut ::cor
             1 as size_t,
         );
         bufferevent_enable((*cs).write_event, EV_WRITE as ::core::ffi::c_short);
-        free(line as *mut ::core::ffi::c_void);
         return;
     }
-    cb = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<control_block>() as size_t,
-    ) as *mut control_block;
-    (*cb).line = line;
+    cb = ControlBlockOwner::new(Some(line), 0);
     (*cb).all_entry.tqe_next = ::core::ptr::null_mut::<control_block>();
     (*cb).all_entry.tqe_prev = (*cs).all_blocks.tqh_last;
     *(*cs).all_blocks.tqh_last = cb;
@@ -555,8 +661,8 @@ unsafe extern "C" fn control_flush_deferred(mut c: *mut client) {
             (*cs).deferred.tqh_last = (*cl).entry.tqe_prev;
         }
         *(*cl).entry.tqe_prev = (*cl).entry.tqe_next;
-        control_write_line(c, (*cl).line);
-        free(cl as *mut ::core::ffi::c_void);
+        let ControlLineOwner { line, .. } = *Box::from_raw(cl.cast::<ControlLineOwner>());
+        control_write_line(c, line);
         cl = cl1;
     }
 }
@@ -567,13 +673,12 @@ pub unsafe extern "C" fn control_write(
     mut args: ...
 ) {
     let mut cs: *mut control_state = (*c).control_state;
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ap: ::core::ffi::VaList;
     if cs.is_null() {
         return;
     }
     ap = args.clone();
-    xvasprintf(&raw mut line, fmt, ap);
+    let line = xvasprintf_cstring(fmt, ap);
     control_write_line(c, line);
 }
 #[no_mangle]
@@ -585,7 +690,6 @@ pub unsafe extern "C" fn control_write_guard(
     mut flags: ::core::ffi::c_int,
 ) {
     let mut cs: *mut control_state = (*c).control_state;
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if cs.is_null() {
         return;
     }
@@ -594,15 +698,14 @@ pub unsafe extern "C" fn control_write_guard(
     {
         (*cs).guard_depth += 1;
     }
-    xasprintf(
-        &raw mut line,
+    control_write(
+        c,
         b"%%%s %ld %u %d\0" as *const u8 as *const ::core::ffi::c_char,
         guard,
         t,
         number,
         flags,
     );
-    control_write_line(c, line);
     if strcmp(guard, b"begin\0" as *const u8 as *const ::core::ffi::c_char)
         != 0 as ::core::ffi::c_int
         && (*cs).guard_depth > 0 as ::core::ffi::c_int
@@ -623,12 +726,11 @@ pub unsafe extern "C" fn control_notify_write(
     let mut cs: *mut control_state = (*c).control_state;
     let mut cl: *mut control_line = ::core::ptr::null_mut::<control_line>();
     let mut ap: ::core::ffi::VaList;
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if cs.is_null() {
         return;
     }
     ap = args.clone();
-    xvasprintf(&raw mut line, fmt, ap);
+    let line = xvasprintf_cstring(fmt, ap);
     if (*cs).guard_depth == 0 as ::core::ffi::c_int {
         control_write_line(c, line);
         return;
@@ -637,13 +739,9 @@ pub unsafe extern "C" fn control_notify_write(
         b"%s: %s: deferring notification: %s\0" as *const u8 as *const ::core::ffi::c_char,
         b"control_notify_write\0" as *const u8 as *const ::core::ffi::c_char,
         (*c).name,
-        line,
+        line.as_ptr(),
     );
-    cl = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<control_line>() as size_t,
-    ) as *mut control_line;
-    (*cl).line = line;
+    cl = ControlLineOwner::new(line);
     (*cl).entry.tqe_next = ::core::ptr::null_mut::<control_line>();
     (*cl).entry.tqe_prev = (*cs).deferred.tqh_last;
     *(*cs).deferred.tqh_last = cl;
@@ -724,11 +822,7 @@ pub unsafe extern "C" fn control_write_output(mut c: *mut client, mut wp: *mut w
                 return;
             }
             window_pane_update_used_data(wp, &raw mut (*cp).queued, new_size);
-            cb = xcalloc(
-                1 as size_t,
-                ::core::mem::size_of::<control_block>() as size_t,
-            ) as *mut control_block;
-            (*cb).size = new_size;
+            cb = ControlBlockOwner::new(None, new_size);
             (*cb).all_entry.tqe_next = ::core::ptr::null_mut::<control_block>();
             (*cb).all_entry.tqe_prev = (*cs).all_blocks.tqh_last;
             *(*cs).all_blocks.tqh_last = cb;
@@ -1391,8 +1485,7 @@ pub unsafe extern "C" fn control_stop(mut c: *mut client) {
             (*cs).deferred.tqh_last = (*cl).entry.tqe_prev;
         }
         *(*cl).entry.tqe_prev = (*cl).entry.tqe_next;
-        free((*cl).line as *mut ::core::ffi::c_void);
-        free(cl as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(cl.cast::<ControlLineOwner>()));
         cl = cl1;
     }
     if !(*c).flags & CLIENT_CONTROLCONTROL as uint64_t != 0 {

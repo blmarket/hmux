@@ -786,6 +786,28 @@ legacy callers safe.
   binary build, rustfmt, and `git diff --check`. Existing compiler warnings
   remain; no sanitizer run was performed.
 
+### Increment 33 — control reply and deferred line strings (2026-09-22)
+
+- `control_write` and `control_notify_write` now format with
+  `xvasprintf_cstring`. Private boxed owners hold `CString` lines beside the
+  existing C-layout reply and deferred records. Immediate output borrows the
+  string; queued replies and notifications retain it through flush, discard,
+  or stop. Guard lines route through `control_write`.
+- Both `control_block` creation paths and the `control_line` creation path
+  use the new wrappers. The matching free/flush paths drop their strings;
+  queued reply byte accounting and intrusive list order remain intact.
+  Intrusive record links and `Box::into_raw`/`Box::from_raw` lifetimes are still
+  manual and remain a later ownership boundary. The records no longer derive
+  `Copy`, and first-field offsets are asserted at compile time.
+- Production control formats use `%s`, `%.*s`, and numeric conversions, but
+  no `%c`. `capture-pane` can supply NUL-containing bytes to `%.*s`; the old
+  `strlen` output path already stopped at the first NUL, as does this one.
+  There is no supported E2E case that emits meaningful trailing bytes.
+- Two focused unit tests, `scripts/control_lines_cli_checks.py` (reply,
+  deferred notification ordering, pane output), `cargo test --workspace`,
+  binary build, rustfmt, and `git diff --check` passed in the isolated
+  worktree. Existing compiler warnings remain; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -798,11 +820,8 @@ non-string value.
 
 1. Outside the `xmalloc` ABI wrapper, no remaining direct `xvasprintf` caller
    uses its returned byte length. The remaining values are observed as C
-   strings, so no supported
-   embedded-NUL E2E case requires a full-byte buffer. Prioritize
-   `control_write` and `control_notify_write` next: they transfer formatted
-   lines to immediate or deferred output queues, so migrate those owners and
-   their teardown together.
+   strings, so no supported embedded-NUL E2E case requires a full-byte
+   buffer. Continue with the next small containing lifecycle.
 2. `events_payload_set_string`, `input_reply`, `options_set_string`,
    `status_message_set`, and `format_add`
    store formatted C strings in records or queues. Audit each containing
@@ -812,6 +831,6 @@ non-string value.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    are separate ownership candidates after the simpler string lifetimes.
 
-Current validation is recorded in increments 15–32. The remaining
+Current validation is recorded in increments 15–33. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–32 has its own local commit; none was pushed.
+Each of increments 15–33 has its own local commit; none was pushed.

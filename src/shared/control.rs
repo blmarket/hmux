@@ -29,7 +29,6 @@ pub struct control_state_deferred {
     pub tqh_last: *mut *mut control_line,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct control_line {
     pub line: *mut ::core::ffi::c_char,
@@ -50,7 +49,6 @@ pub struct control_state_all_blocks {
     pub tqh_last: *mut *mut control_block,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct control_block {
     pub size: size_t,
