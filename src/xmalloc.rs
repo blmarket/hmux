@@ -166,6 +166,21 @@ pub(crate) unsafe fn xvasprintf_cstring(
     free(raw as *mut ::core::ffi::c_void);
     value
 }
+
+/// Format into Rust-owned bytes using the length returned by `vasprintf`.
+///
+/// Unlike `xvasprintf_cstring`, this keeps bytes after an embedded NUL. The
+/// allocation belongs to libc, so copy it before calling the matching `free`.
+pub(crate) unsafe fn xvasprintf_bytes(
+    fmt: *const ::core::ffi::c_char,
+    ap: ::core::ffi::VaList,
+) -> Vec<u8> {
+    let mut raw = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let len = xvasprintf(&raw mut raw, fmt, ap);
+    let value = ::std::slice::from_raw_parts(raw.cast::<u8>(), len as usize).to_vec();
+    free(raw.cast::<::core::ffi::c_void>());
+    value
+}
 #[no_mangle]
 pub unsafe extern "C" fn xsnprintf(
     mut str: *mut ::core::ffi::c_char,
@@ -199,7 +214,7 @@ pub unsafe extern "C" fn xvsnprintf(
 
 #[cfg(test)]
 mod tests {
-    use super::xvasprintf_cstring;
+    use super::{xvasprintf_bytes, xvasprintf_cstring};
     use std::ffi::CString;
 
     unsafe extern "C" fn format_to_raw(
@@ -207,6 +222,14 @@ mod tests {
         mut args: ...
     ) -> *mut ::core::ffi::c_char {
         CString::into_raw(xvasprintf_cstring(fmt, args.clone()))
+    }
+
+    unsafe extern "C" fn format_to_bytes(
+        out: *mut Vec<u8>,
+        fmt: *const ::core::ffi::c_char,
+        mut args: ...
+    ) {
+        *out = xvasprintf_bytes(fmt, args.clone());
     }
 
     #[test]
@@ -219,6 +242,21 @@ mod tests {
                 c"tail".as_ptr(),
             ));
             assert_eq!(value.as_bytes(), &[0xff, b'x', b':']);
+        }
+    }
+
+    #[test]
+    fn byte_bridge_preserves_bytes_after_embedded_nul() {
+        unsafe {
+            let mut value = Vec::new();
+            format_to_bytes(
+                &raw mut value,
+                c"%s:%c%s".as_ptr(),
+                CString::new(vec![b'\xff', b'x']).unwrap().as_ptr(),
+                0 as ::core::ffi::c_int,
+                c"tail".as_ptr(),
+            );
+            assert_eq!(value, b"\xffx:\0tail");
         }
     }
 }

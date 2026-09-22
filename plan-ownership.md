@@ -674,6 +674,23 @@ legacy callers safe.
   build, and the command-queue CLI script passed together; rustfmt checks for
   all changed Rust files and `git diff --check` passed.
 
+### Increment 27 — layout serializer full formatted bytes (2026-09-22)
+
+- Added `xvasprintf_bytes`: it copies exactly `vasprintf`'s returned byte
+  length into a `Vec<u8>`, including bytes after embedded NULs, then releases
+  the original libc allocation with matching `free`. The vector does not
+  include the extra C terminator. `layout_string_write` now appends this owned
+  byte slice to `LayoutString`, removing its direct `xvasprintf`/`free` pair.
+- `LayoutString::append` still supplies its own final NUL. A direct regression
+  covers bytes after an embedded NUL and continued writes; another checks
+  trailing-comma removal and closing output. The existing exported layout ABI
+  and `layout_dump`'s returned C allocation are unchanged.
+- The byte-bridge and two layout-string unit tests passed, as did the binary
+  build, `rustfmt --check src/xmalloc.rs`, and `git diff --check`.
+  `rustfmt --check src/layout/custom.rs` still reports pre-existing import
+  formatting differences; no live layout scenario or sanitizer run was
+  performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -684,14 +701,15 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `layout_string_write` and `args_print_add` both use `xvasprintf`'s returned
-   byte length. They need a length-preserving byte owner or bridge; the
-   first-NUL `CString` bridge would lose bytes after an embedded NUL.
+1. `args_print_add` uses `xvasprintf`'s returned byte length for capacity
+   accounting, then `strlcat` consumes the first-NUL C-string view. Reuse the
+   new `xvasprintf_bytes` bridge, temporarily append a terminator for
+   `strlcat`, and preserve the original length separately.
 2. `format_printf` returns a C-owned allocation, while status/message,
    input/control, environment, option, and format values escape into records
    or queues. Audit their owners and teardown before changing those calls.
    The session/winlink graph remains deferred.
 
-Current validation is recorded in increments 15–26. The remaining
+Current validation is recorded in increments 15–27. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–26 has its own local commit; none was pushed.
+Each of increments 15–27 has its own local commit; none was pushed.
