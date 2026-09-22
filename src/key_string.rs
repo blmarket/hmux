@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{__ctype_tolower_loc, free, sscanf, strcasecmp, strlen, wctomb};
+use crate::src::ffi::libc::{__ctype_tolower_loc, free, sscanf, strcasecmp, wctomb};
 pub use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::control_character::{
@@ -5547,201 +5547,212 @@ static mut key_string_table: [C2RustUnnamed_1; 1379] = [
         key: KEYC_TRIPLECLICK11_CONTROL9 as ::core::ffi::c_ulong as key_code,
     },
 ];
-unsafe extern "C" fn key_string_search_table(mut string: *const ::core::ffi::c_char) -> key_code {
-    let mut i: u_int = 0;
+fn key_string_cstr_suffix(input: &CStr, offset: usize) -> &CStr {
+    debug_assert!(offset <= input.to_bytes().len());
+    CStr::from_bytes_with_nul(&input.to_bytes_with_nul()[offset..])
+        .expect("a suffix of a NUL-terminated key name remains NUL-terminated")
+}
+
+/// Search the generated table without exposing its raw storage to callers.
+///
+/// The table is generated as raw pointers to static, NUL-terminated literals
+/// and is private to this module. Keep the pointer reads and libc calls here;
+/// the parser itself only deals in `CStr` and byte slices.
+fn key_string_search_table(input: &CStr) -> key_code {
     let mut user: u_int = 0;
-    i = 0 as u_int;
-    while (i as usize)
-        < (::core::mem::size_of::<[C2RustUnnamed_1; 1379]>() as usize)
-            .wrapping_div(::core::mem::size_of::<C2RustUnnamed_1>() as usize)
-    {
-        if strcasecmp(string, key_string_table[i as usize].string) == 0 as ::core::ffi::c_int {
-            return key_string_table[i as usize].key;
-        }
-        i = i.wrapping_add(1);
-    }
-    if sscanf(
-        string,
-        b"User%u\0" as *const u8 as *const ::core::ffi::c_char,
-        &raw mut user,
-    ) == 1 as ::core::ffi::c_int
-        && user <= KEYC_NUSER as u_int
-    {
-        return (KEYC_USER as ::core::ffi::c_ulong).wrapping_add(user as ::core::ffi::c_ulong)
-            as key_code;
-    }
-    return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-}
-unsafe extern "C" fn key_string_get_modifiers(
-    mut string: *mut *const ::core::ffi::c_char,
-) -> key_code {
-    let mut modifiers: key_code = 0;
-    modifiers = 0 as key_code;
-    while *(*string).offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '\0' as i32
-        && *(*string).offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '-' as i32
-    {
-        match *(*string).offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int {
-            67 | 99 => {
-                modifiers |= KEYC_CTRL;
-            }
-            77 | 109 => {
-                modifiers |= KEYC_META;
-            }
-            83 | 115 => {
-                modifiers |= KEYC_SHIFT;
-            }
-            _ => {
-                *string = ::core::ptr::null::<::core::ffi::c_char>();
-                return 0 as key_code;
+
+    // SAFETY: every table entry is initialized with a pointer to a static
+    // NUL-terminated literal, and the private table is never mutated after
+    // initialization. `input` is a valid NUL-terminated string by type.
+    unsafe {
+        let table = ::core::ptr::addr_of!(key_string_table) as *const C2RustUnnamed_1;
+        for index in 0..1379 {
+            let entry = table.add(index);
+            if strcasecmp(input.as_ptr(), (*entry).string) == 0 as ::core::ffi::c_int {
+                return (*entry).key;
             }
         }
-        *string = (*string).offset(2 as ::core::ffi::c_int as isize);
+        if sscanf(
+            input.as_ptr(),
+            b"User%u\0" as *const u8 as *const ::core::ffi::c_char,
+            &raw mut user,
+        ) == 1 as ::core::ffi::c_int
+            && user <= KEYC_NUSER as u_int
+        {
+            return (KEYC_USER as ::core::ffi::c_ulong).wrapping_add(user as ::core::ffi::c_ulong)
+                as key_code;
+        }
     }
-    return modifiers;
+
+    KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code
 }
-unsafe fn key_string_lookup_string_impl(mut string: *const ::core::ffi::c_char) -> key_code {
-    let mut key: key_code = 0;
-    let mut modifiers: key_code = 0 as key_code;
-    let mut u: u_int = 0;
-    let mut i: u_int = 0;
-    let mut ud: utf8_data = utf8_data {
+
+fn key_string_get_modifiers(input: &[u8]) -> Option<(key_code, usize)> {
+    let mut modifiers = 0 as key_code;
+    let mut offset = 0;
+
+    while input.get(offset + 1) == Some(&b'-') {
+        match input[offset] {
+            b'C' | b'c' => modifiers |= KEYC_CTRL,
+            b'M' | b'm' => modifiers |= KEYC_META,
+            b'S' | b's' => modifiers |= KEYC_SHIFT,
+            _ => return None,
+        }
+        offset += 2;
+    }
+
+    Some((modifiers, offset))
+}
+
+fn key_string_lowercase_byte(byte: u8) -> key_code {
+    // SAFETY: `byte` is an unsigned byte, which is a valid argument to the
+    // locale-aware C `tolower` operation. Keep this call for its locale
+    // semantics rather than replacing it with Rust ASCII case folding.
+    unsafe { tolower(byte as ::core::ffi::c_int) as key_code }
+}
+
+fn key_string_parse_numeric(input: &CStr) -> Option<key_code> {
+    let mut value: u_int = 0;
+    let parsed = unsafe {
+        sscanf(
+            key_string_cstr_suffix(input, 2).as_ptr(),
+            b"%x\0" as *const u8 as *const ::core::ffi::c_char,
+            &raw mut value,
+        )
+    };
+    if parsed != 1 as ::core::ffi::c_int {
+        return None;
+    }
+    if value < 32 as u_int {
+        return Some(value as key_code);
+    }
+
+    let mut multibyte = [0 as ::core::ffi::c_char; 17];
+    let length = unsafe { wctomb(multibyte.as_mut_ptr(), value as wchar_t) };
+    if length <= 0 as ::core::ffi::c_int || length > MB_LEN_MAX {
+        return None;
+    }
+    multibyte[length as usize] = '\0' as ::core::ffi::c_char;
+
+    // `utf8_fromcstr` owns its result; retain the original allocation/free
+    // behavior of the numeric form while keeping the raw pointer local.
+    let decoded = unsafe { utf8_fromcstr(multibyte.as_ptr()) };
+    if decoded.is_null() {
+        return None;
+    }
+    let mut codepoint: utf8_char = 0;
+    let valid = unsafe {
+        (*decoded).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int
+            && (*decoded.offset(1)).size as ::core::ffi::c_int == 0 as ::core::ffi::c_int
+            && utf8_from_data(decoded, &raw mut codepoint) as ::core::ffi::c_uint
+                == UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
+    };
+    unsafe { free(decoded as *mut ::core::ffi::c_void) };
+
+    valid.then_some(codepoint as key_code)
+}
+
+/// Parse the key-name bytes while retaining a `CStr` only where the legacy
+/// locale-sensitive libc/table operations require a NUL-terminated view.
+fn key_string_lookup_string_bytes(input: &CStr) -> key_code {
+    let bytes = input.to_bytes();
+    if unsafe {
+        strcasecmp(
+            input.as_ptr(),
+            b"None\0" as *const u8 as *const ::core::ffi::c_char,
+        ) == 0 as ::core::ffi::c_int
+    } {
+        return KEYC_NONE as ::core::ffi::c_ulong as key_code;
+    }
+    if unsafe {
+        strcasecmp(
+            input.as_ptr(),
+            b"Any\0" as *const u8 as *const ::core::ffi::c_char,
+        ) == 0 as ::core::ffi::c_int
+    } {
+        return KEYC_ANY as ::core::ffi::c_ulong as key_code;
+    }
+    if bytes.starts_with(b"0x") {
+        return key_string_parse_numeric(input).unwrap_or(KEYC_UNKNOWN);
+    }
+
+    let mut offset = 0;
+    let mut modifiers = 0 as key_code;
+    if bytes.first() == Some(&b'^') && bytes.len() > 1 {
+        if bytes.len() == 2 {
+            return key_string_lowercase_byte(bytes[1]) | KEYC_CTRL;
+        }
+        modifiers |= KEYC_CTRL;
+        offset = 1;
+    }
+
+    let (prefix_modifiers, consumed) = match key_string_get_modifiers(&bytes[offset..]) {
+        Some(result) => result,
+        None => return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code,
+    };
+    modifiers |= prefix_modifiers;
+    offset += consumed;
+
+    let remaining = &bytes[offset..];
+    if remaining.is_empty() {
+        return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
+    }
+    if remaining.len() == 1 && remaining[0] <= 127 {
+        let key = remaining[0] as key_code;
+        if key < 32 as key_code {
+            return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
+        }
+        return key | modifiers;
+    }
+
+    let remaining_cstr = key_string_cstr_suffix(input, offset);
+    let mut data = utf8_data {
         data: [0; 32],
         have: 0,
         size: 0,
         width: 0,
     };
-    let mut udp: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
-    let mut more: utf8_state = UTF8_MORE;
-    let mut uc: utf8_char = 0;
-    let mut m: [::core::ffi::c_char; 17] = [0; 17];
-    let mut mlen: ::core::ffi::c_int = 0;
-    if strcasecmp(string, b"None\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        return KEYC_NONE as ::core::ffi::c_ulong as key_code;
-    }
-    if strcasecmp(string, b"Any\0" as *const u8 as *const ::core::ffi::c_char)
-        == 0 as ::core::ffi::c_int
-    {
-        return KEYC_ANY as ::core::ffi::c_ulong as key_code;
-    }
-    if *string.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '0' as i32
-        && *string.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == 'x' as i32
-    {
-        if sscanf(
-            string.offset(2 as ::core::ffi::c_int as isize),
-            b"%x\0" as *const u8 as *const ::core::ffi::c_char,
-            &raw mut u,
-        ) != 1 as ::core::ffi::c_int
+    let mut codepoint: utf8_char = 0;
+    let mut more = unsafe { utf8_open(&raw mut data, remaining[0]) };
+    if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
+        if remaining.len() != data.size as usize {
+            return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
+        }
+        for &byte in &remaining[1..] {
+            more = unsafe { utf8_append(&raw mut data, byte) };
+        }
+        if more as ::core::ffi::c_uint != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint {
+            return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
+        }
+        if unsafe { utf8_from_data(&raw mut data, &raw mut codepoint) }
+            as ::core::ffi::c_uint
+            != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
         {
             return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
         }
-        if u < 32 as u_int {
-            return u as key_code;
-        }
-        mlen = wctomb(&raw mut m as *mut ::core::ffi::c_char, u as wchar_t);
-        if mlen <= 0 as ::core::ffi::c_int || mlen > MB_LEN_MAX {
-            return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-        }
-        m[mlen as usize] = '\0' as i32 as ::core::ffi::c_char;
-        udp = utf8_fromcstr(&raw mut m as *mut ::core::ffi::c_char);
-        if udp.is_null()
-            || (*udp.offset(0 as ::core::ffi::c_int as isize)).size as ::core::ffi::c_int
-                == 0 as ::core::ffi::c_int
-            || (*udp.offset(1 as ::core::ffi::c_int as isize)).size as ::core::ffi::c_int
-                != 0 as ::core::ffi::c_int
-            || utf8_from_data(
-                udp.offset(0 as ::core::ffi::c_int as isize) as *mut utf8_data,
-                &raw mut uc,
-            ) as ::core::ffi::c_uint
-                != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            free(udp as *mut ::core::ffi::c_void);
-            return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-        }
-        free(udp as *mut ::core::ffi::c_void);
-        return uc as key_code;
+        return codepoint as key_code | modifiers;
     }
-    if *string.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '^' as i32
-        && *string.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '\0' as i32
-    {
-        if *string.offset(2 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32 {
-            return ({
-                let mut __res: ::core::ffi::c_int = 0;
-                if ::core::mem::size_of::<u_char>() as usize > 1 as usize {
-                    if 0 != 0 {
-                        let mut __c: ::core::ffi::c_int =
-                            *string.offset(1 as ::core::ffi::c_int as isize) as u_char
-                                as ::core::ffi::c_int;
-                        __res = (if __c < -(128 as ::core::ffi::c_int)
-                            || __c > 255 as ::core::ffi::c_int
-                        {
-                            __c as __int32_t
-                        } else {
-                            *(*__ctype_tolower_loc()).offset(__c as isize)
-                        }) as ::core::ffi::c_int;
-                    } else {
-                        __res = tolower(*string.offset(1 as ::core::ffi::c_int as isize) as u_char
-                            as ::core::ffi::c_int);
-                    }
-                } else {
-                    __res = *(*__ctype_tolower_loc())
-                        .offset(*string.offset(1 as ::core::ffi::c_int as isize) as u_char
-                            as ::core::ffi::c_int as isize)
-                        as ::core::ffi::c_int;
-                }
-                __res
-            }) as key_code
-                | KEYC_CTRL;
-        }
-        modifiers |= KEYC_CTRL;
-        string = string.offset(1);
-    }
-    modifiers |= key_string_get_modifiers(&raw mut string);
-    if string.is_null()
-        || *string.offset(0 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32
-    {
+
+    let mut key = key_string_search_table(remaining_cstr);
+    if key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
         return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
     }
-    if *string.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32
-        && *string.offset(0 as ::core::ffi::c_int as isize) as u_char as ::core::ffi::c_int
-            <= 127 as ::core::ffi::c_int
-    {
-        key = *string.offset(0 as ::core::ffi::c_int as isize) as u_char as key_code;
-        if key < 32 as key_code {
-            return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-        }
-    } else {
-        more = utf8_open(&raw mut ud, *string as u_char);
-        if more as ::core::ffi::c_uint == UTF8_MORE as ::core::ffi::c_int as ::core::ffi::c_uint {
-            if strlen(string) != ud.size as size_t {
-                return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-            }
-            i = 1 as u_int;
-            while i < ud.size as u_int {
-                more = utf8_append(&raw mut ud, *string.offset(i as isize) as u_char);
-                i = i.wrapping_add(1);
-            }
-            if more as ::core::ffi::c_uint != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-            }
-            if utf8_from_data(&raw mut ud, &raw mut uc) as ::core::ffi::c_uint
-                != UTF8_DONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-            }
-            return uc as key_code | modifiers;
-        }
-        key = key_string_search_table(string);
-        if key == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
-            return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-        }
-        if !(modifiers as ::core::ffi::c_ulonglong) & KEYC_META != 0 {
-            key &= !KEYC_IMPLIED_META;
-        }
+    if !(modifiers as ::core::ffi::c_ulonglong) & KEYC_META != 0 {
+        key &= !KEYC_IMPLIED_META;
     }
-    return key | modifiers;
+    key | modifiers
+}
+
+/// Adapt the historical raw C string to the safe byte parser.
+///
+/// # Safety
+/// `string` must be non-null and point to a readable NUL-terminated string
+/// whose terminator is reachable within the same allocation.
+unsafe fn key_string_lookup_string_impl(string: *const ::core::ffi::c_char) -> key_code {
+    // SAFETY: the caller supplies the valid C string required by this
+    // function's contract; all parsing after this conversion is safe.
+    let input = unsafe { CStr::from_ptr(string) };
+    key_string_lookup_string_bytes(input)
 }
 /// Parse a complete key name from bytes without converting it to UTF-8.
 /// Embedded NUL bytes and invalid key names return `None`.
@@ -5755,7 +5766,7 @@ pub fn key_string_parse_cstr(input: &CStr) -> Option<key_code> {
     if input.to_bytes().is_empty() {
         return None;
     }
-    let key = unsafe { key_string_lookup_string_impl(input.as_ptr()) };
+    let key = key_string_lookup_string_bytes(input);
     (key != KEYC_UNKNOWN).then_some(key)
 }
 
@@ -5765,7 +5776,7 @@ pub fn key_string_parse_cstr(input: &CStr) -> Option<key_code> {
 /// `string` must point to a readable NUL-terminated string for this call.
 #[no_mangle]
 pub unsafe extern "C" fn key_string_lookup_string(string: *const ::core::ffi::c_char) -> key_code {
-    key_string_parse_cstr(CStr::from_ptr(string)).unwrap_or(KEYC_UNKNOWN)
+    key_string_lookup_string_impl(string)
 }
 
 /// Format canonical key text into a caller-owned NUL-terminated buffer.
