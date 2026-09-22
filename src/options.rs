@@ -41,7 +41,9 @@ use crate::src::window::{
     window_pane_tree_minmax, window_pane_tree_next, windows_minmax, windows_next,
 };
 use crate::src::window_border::window_set_fill_cells;
-use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup, xstrndup, xvasprintf};
+use crate::src::xmalloc::{
+    xasprintf, xcalloc, xsnprintf, xstrdup, xstrndup, xvasprintf, xvasprintf_cstring,
+};
 use std::ffi::CStr;
 
 use crate::src::shared::abi::*;
@@ -616,14 +618,10 @@ pub unsafe extern "C" fn options_array_getv(
     mut fmt: *const ::core::ffi::c_char,
     mut args: ...
 ) -> *mut options_value {
-    let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
     let mut ap: ::core::ffi::VaList;
-    let mut key: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     ap = args.clone();
-    xvasprintf(&raw mut key, fmt, ap);
-    ov = options_array_get(o, key);
-    free(key as *mut ::core::ffi::c_void);
-    return ov;
+    let key = xvasprintf_cstring(fmt, ap);
+    options_array_get(o, key.as_ptr())
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_array_set(

@@ -129,6 +129,18 @@ fn array_keys_order_normalize_and_keep_stable_items() {
             options_array_item_value(two)
         );
         assert_eq!(
+            options_array_getv(array, c"%u".as_ptr(), 2u32),
+            options_array_item_value(two)
+        );
+        let non_utf8 = c"\xff";
+        let non_utf8_value = options_array_get(array, non_utf8.as_ptr());
+        assert!(!non_utf8_value.is_null());
+        assert_eq!(
+            options_array_getv(array, c"%s".as_ptr(), non_utf8.as_ptr()),
+            non_utf8_value
+        );
+        assert!(options_array_getv(array, c"%s".as_ptr(), c"".as_ptr()).is_null());
+        assert_eq!(
             CStr::from_ptr((*options_array_item_value(two)).string),
             c"updated"
         );

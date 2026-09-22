@@ -478,6 +478,21 @@ legacy callers safe.
   UI tags need semantic identities preserving selection across rebuilds.
   `hmux-rt` token IDs come from a checked counter, not pointer addresses.
 
+### Increment 15 — options array formatted lookup key (2026-09-22)
+
+- `options_array_getv` now owns its local formatted key as a `CString` through
+  `xvasprintf_cstring`, removing its direct `xvasprintf`/`free` pair. The
+  exported variadic signature and option-value owner are unchanged.
+- `options_array_get` consumes only a borrowed `key.as_ptr()`: it normalizes
+  into a separate allocation, looks up the item, and frees that allocation
+  before returning. No formatted-key pointer escapes. The allocator bridge
+  preserves arbitrary bytes and the existing first-NUL C-string view.
+- Added formatted numeric, non-UTF-8, and empty-key lookups to the existing
+  option-array regression. `cargo test --test options_storage` passed (3
+  tests), as did `cargo build --bin hmux2`, edition-2021 rustfmt checks for
+  changed files, and `git diff --check`. Existing compiler warnings remain;
+  no live option-command scenario was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -488,12 +503,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The local `options_array_getv` key in `src/options.rs`: it is created with
-   `xvasprintf`, consumed synchronously by `options_array_get`, and freed in
-   the same function. Use the audited C-to-`CString` bridge while preserving
-   the exported variadic ABI and byte-oriented option-key lookup.
-2. The local `window_customize_write` formatted value is another small
-   synchronous scratch owner after that. `format_printf`, status/message
+1. The local `window_customize_write_value` formatted value is a small
+   synchronous scratch owner. The `cmdq_add_format` formatted value is another
+   independent local scratch owner after that.
+2. The local `screen_write_text` formatted temporary is copied synchronously
+   by `utf8_fromcstr`, so it is a likely next scratch target after those.
+   `format_printf`, status/message
    strings, and input/control strings that escape into records or queues still
    require separate lifetime audits; the session/winlink graph remains
    deferred.
