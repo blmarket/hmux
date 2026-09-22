@@ -22,7 +22,7 @@ pub use crate::src::shared::control::control_state;
 use crate::src::shared::display::*;
 pub use crate::src::shared::display::{visible_range, visible_ranges};
 pub use crate::src::shared::environment::ENVIRON_HIDDEN;
-pub use crate::src::shared::environment::{environ, environ_entry, environ_entry_entry};
+pub use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::shared::event::*;
 pub use crate::src::shared::format::{format_job_tree, format_tree};
 use crate::src::shared::grid::*;

@@ -350,7 +350,7 @@ fn c_heap_ownership_does_not_cross_into_rust_deallocation() {
         let relative = relative(root, &path);
         // These destructors pair only with Box::into_raw in their own
         // constructors. In arguments.rs, format/jobs.rs, format/tree.rs,
-        // json.rs, and events_payload.rs, only the Rust-owned table storage
+        // json.rs, environ.rs, and events_payload.rs, only the Rust-owned table storage
         // is boxed;
         // application nodes and strings remain calloc/strdup + free
         // allocations.
@@ -362,6 +362,7 @@ fn c_heap_ownership_does_not_cross_into_rust_deallocation() {
                 | "src/format/jobs.rs"
                 | "src/format/tree.rs"
                 | "src/json.rs"
+                | "src/environ.rs"
                 | "src/events_payload.rs"
         ) {
             assert_eq!(

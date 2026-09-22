@@ -136,7 +136,7 @@ pub use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 pub use crate::src::shared::control::control_state;
 use crate::src::shared::display::*;
 pub use crate::src::shared::display::{visible_range, visible_ranges};
-pub use crate::src::shared::environment::{environ, environ_entry, environ_entry_entry};
+pub use crate::src::shared::environment::{environ, environ_entry};
 pub use crate::src::shared::errno::EINTR;
 use crate::src::shared::event::*;
 pub use crate::src::shared::event::{

@@ -1,4 +1,4 @@
-//! Frozen pre-migration sizes, alignments, and every named field offset.
+//! Environment layouts, including the migrated Rust index and owner pointer.
 use std::mem::{align_of, offset_of, size_of};
 #[test]
 fn original_copies_match() {
@@ -349,7 +349,7 @@ fn original_copies_match() {
     record!(
         "src/environ.rs::environ",
         hmux2::src::environ::environ,
-        [rbh_root]
+        [entries]
     );
     record!(
         "src/events.rs::environ",
@@ -561,102 +561,52 @@ fn original_copies_match() {
     record!(
         "src/cmd_find.rs::environ_entry",
         hmux2::src::cmd_find::environ_entry,
-        [name, value, flags, entry]
+        [name, value, flags, owner]
     );
     record!(
         "src/cmd_parse.rs::environ_entry",
         hmux2::src::cmd_parse::environ_entry,
-        [name, value, flags, entry]
+        [name, value, flags, owner]
     );
     record!(
         "src/cmd_show_environment.rs::environ_entry",
         hmux2::src::cmd_show_environment::environ_entry,
-        [name, value, flags, entry]
+        [name, value, flags, owner]
     );
     record!(
         "src/environ.rs::environ_entry",
         hmux2::src::environ::environ_entry,
-        [name, value, flags, entry]
+        [name, value, flags, owner]
     );
     record!(
         "src/format.rs::environ_entry",
         hmux2::src::format::environ_entry,
-        [name, value, flags, entry]
+        [name, value, flags, owner]
     );
     record!(
         "src/server_client.rs::environ_entry",
         hmux2::src::server_client::environ_entry,
-        [name, value, flags, entry]
+        [name, value, flags, owner]
     );
     record!(
         "src/spawn.rs::environ_entry",
         hmux2::src::spawn::environ_entry,
-        [name, value, flags, entry]
+        [name, value, flags, owner]
     );
     record!(
         "src/tmux.rs::environ_entry",
         hmux2::src::tmux::environ_entry,
-        [name, value, flags, entry]
+        [name, value, flags, owner]
     );
     record!(
         "src/tty_term.rs::environ_entry",
         hmux2::src::tty_term::environ_entry,
-        [name, value, flags, entry]
+        [name, value, flags, owner]
     );
     record!(
         "src/window_customize.rs::environ_entry",
         hmux2::src::window_customize::environ_entry,
-        [name, value, flags, entry]
-    );
-    record!(
-        "src/cmd_find.rs::C2RustUnnamed_35",
-        hmux2::src::cmd_find::environ_entry_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
-    );
-    record!(
-        "src/cmd_parse.rs::C2RustUnnamed_36",
-        hmux2::src::cmd_parse::environ_entry_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
-    );
-    record!(
-        "src/cmd_show_environment.rs::C2RustUnnamed_35",
-        hmux2::src::cmd_show_environment::environ_entry_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
-    );
-    record!(
-        "src/environ.rs::C2RustUnnamed_16",
-        hmux2::src::environ::environ_entry_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
-    );
-    record!(
-        "src/format.rs::C2RustUnnamed_40",
-        hmux2::src::format::environ_entry_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
-    );
-    record!(
-        "src/server_client.rs::C2RustUnnamed_37",
-        hmux2::src::server_client::environ_entry_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
-    );
-    record!(
-        "src/spawn.rs::C2RustUnnamed_35",
-        hmux2::src::spawn::environ_entry_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
-    );
-    record!(
-        "src/tmux.rs::C2RustUnnamed_0",
-        hmux2::src::tmux::environ_entry_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
-    );
-    record!(
-        "src/tty_term.rs::C2RustUnnamed_36",
-        hmux2::src::tty_term::environ_entry_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
-    );
-    record!(
-        "src/window_customize.rs::C2RustUnnamed_39",
-        hmux2::src::window_customize::environ_entry_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [name, value, flags, owner]
     );
     let actual = records.join("\n") + "\n";
     assert_eq!(actual, include_str!("fixtures/model-environment.txt"));

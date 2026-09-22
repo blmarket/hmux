@@ -36,7 +36,7 @@ pub use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_DEFAULTSOCKET, CLIENT_LOGIN, CLIENT_NOFORK,
     CLIENT_NOSTARTSERVER, CLIENT_UTF8,
 };
-pub use crate::src::shared::environment::{environ, environ_entry, environ_entry_entry};
+pub use crate::src::shared::environment::{environ, environ_entry};
 pub use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
 use crate::src::shared::options::*;
 pub use crate::src::shared::options::{options, options_entry, options_table_entry};

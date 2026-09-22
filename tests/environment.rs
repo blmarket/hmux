@@ -81,3 +81,39 @@ fn owner_transfer_reclaims_the_same_c_tree_once() {
 
     assert!(unsafe { EnvironOwner::from_raw_owned(std::ptr::null_mut()).is_none() });
 }
+
+#[test]
+fn updates_preserve_entry_addresses_and_removal_preserves_saved_successors() {
+    use hmux2::src::environ::{environ_first, environ_next};
+    let mut env = EnvironOwner::new();
+    env.set(b"middle", 7, b"old").unwrap();
+    let middle = env.find_bytes(b"middle").unwrap().unwrap().as_ptr();
+    // Grow the index in reverse order to exercise map rebalancing.
+    for i in (0..128).rev() {
+        env.set(format!("key-{i:03}").as_bytes(), 0, b"value")
+            .unwrap();
+    }
+    env.set(b"middle", ENVIRON_HIDDEN, b"new").unwrap();
+    assert_eq!(env.find_bytes(b"middle").unwrap().unwrap().as_ptr(), middle);
+    env.clear(b"middle").unwrap();
+    let cleared = env.find_bytes(b"middle").unwrap().unwrap();
+    assert_eq!(cleared.as_ptr(), middle);
+    assert_eq!(cleared.value_bytes(), None);
+    assert_eq!(cleared.flags(), ENVIRON_HIDDEN);
+
+    unsafe {
+        let mut current = environ_first(env.as_ptr());
+        let mut removed = 0;
+        while !current.is_null() {
+            let next = environ_next(current);
+            let name = std::ffi::CStr::from_ptr((*current).name).to_owned();
+            env.unset_cstr(&name);
+            current = next;
+            removed += 1;
+        }
+        assert_eq!(removed, 129);
+        assert!(environ_first(env.as_ptr()).is_null());
+    }
+    env.set(b"reinserted", 0, b"ok").unwrap();
+    assert_eq!(env.borrow().entries().count(), 1);
+}

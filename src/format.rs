@@ -110,7 +110,7 @@ pub use crate::src::shared::ctype::{
 use crate::src::shared::display::*;
 pub use crate::src::shared::display::{visible_range, visible_ranges};
 pub use crate::src::shared::environment::ENVIRON_HIDDEN;
-pub use crate::src::shared::environment::{environ, environ_entry, environ_entry_entry};
+pub use crate::src::shared::environment::{environ, environ_entry};
 pub use crate::src::shared::event::EV_TIMEOUT;
 use crate::src::shared::event::*;
 pub use crate::src::shared::format::{
