@@ -71,7 +71,7 @@ use crate::src::status::status_message_set;
 use crate::src::tty::tty_putcode;
 pub use crate::src::window::windows;
 use crate::src::window::{
-    window_add_ref, window_remove_ref, windows_RB_MINMAX, windows_RB_NEXT, winlinks_RB_MINMAX,
+    window_add_ref, window_remove_ref, windows_minmax, windows_next, winlinks_RB_MINMAX,
     winlinks_RB_NEXT,
 };
 
@@ -207,10 +207,10 @@ unsafe extern "C" fn alerts_enabled(
 #[no_mangle]
 pub unsafe extern "C" fn alerts_reset_all() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    w = windows_RB_MINMAX(&raw mut windows, RB_NEGINF);
+    w = windows_minmax(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
         alerts_reset(w);
-        w = windows_RB_NEXT(w);
+        w = windows_next(w);
     }
 }
 unsafe extern "C" fn alerts_reset(mut w: *mut window) {

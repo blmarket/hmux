@@ -134,10 +134,7 @@ pub struct window {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_entry {
-    pub rbe_left: *mut window,
-    pub rbe_right: *mut window,
-    pub rbe_parent: *mut window,
-    pub rbe_color: ::core::ffi::c_int,
+    pub owner: *mut super::tree::OrderedIndex<u_int, window>,
 }
 
 #[derive(Copy, Clone)]
@@ -228,5 +225,5 @@ pub struct winlink_stack {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct windows {
-    pub rbh_root: *mut window,
+    pub storage: *mut super::tree::OrderedIndex<u_int, window>,
 }
