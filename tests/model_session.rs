@@ -3252,602 +3252,602 @@ fn original_copies_match() {
     record!(
         "src/alerts.rs::C2RustUnnamed_14",
         hmux2::src::alerts::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/arguments.rs::C2RustUnnamed_29",
         hmux2::src::arguments::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cfg.rs::C2RustUnnamed_14",
         hmux2::src::cfg::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/client.rs::C2RustUnnamed_27",
         hmux2::src::client::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd.rs::C2RustUnnamed_14",
         hmux2::src::cmd::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_attach_session.rs::C2RustUnnamed_14",
         hmux2::src::cmd_attach_session::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_bind_key.rs::C2RustUnnamed_14",
         hmux2::src::cmd_bind_key::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_break_pane.rs::C2RustUnnamed_14",
         hmux2::src::cmd_break_pane::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_capture_pane.rs::C2RustUnnamed_14",
         hmux2::src::cmd_capture_pane::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_choose_tree.rs::C2RustUnnamed_14",
         hmux2::src::cmd_choose_tree::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_command_prompt.rs::C2RustUnnamed_14",
         hmux2::src::cmd_command_prompt::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_confirm_before.rs::C2RustUnnamed_14",
         hmux2::src::cmd_confirm_before::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_copy_mode.rs::C2RustUnnamed_14",
         hmux2::src::cmd_copy_mode::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_detach_client.rs::C2RustUnnamed_14",
         hmux2::src::cmd_detach_client::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_display_menu.rs::C2RustUnnamed_14",
         hmux2::src::cmd_display_menu::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_display_message.rs::C2RustUnnamed_14",
         hmux2::src::cmd_display_message::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_find.rs::C2RustUnnamed_14",
         hmux2::src::cmd_find::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_find_window.rs::C2RustUnnamed_14",
         hmux2::src::cmd_find_window::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_if_shell.rs::C2RustUnnamed_14",
         hmux2::src::cmd_if_shell::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_join_pane.rs::C2RustUnnamed_14",
         hmux2::src::cmd_join_pane::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_kill_pane.rs::C2RustUnnamed_14",
         hmux2::src::cmd_kill_pane::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_kill_session.rs::C2RustUnnamed_14",
         hmux2::src::cmd_kill_session::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_kill_window.rs::C2RustUnnamed_14",
         hmux2::src::cmd_kill_window::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_list_buffers.rs::C2RustUnnamed_14",
         hmux2::src::cmd_list_buffers::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_list_clients.rs::C2RustUnnamed_14",
         hmux2::src::cmd_list_clients::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_list_commands.rs::C2RustUnnamed_14",
         hmux2::src::cmd_list_commands::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_list_keys.rs::C2RustUnnamed_14",
         hmux2::src::cmd_list_keys::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_list_panes.rs::C2RustUnnamed_14",
         hmux2::src::cmd_list_panes::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_list_sessions.rs::C2RustUnnamed_14",
         hmux2::src::cmd_list_sessions::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_list_windows.rs::C2RustUnnamed_14",
         hmux2::src::cmd_list_windows::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_load_buffer.rs::C2RustUnnamed_14",
         hmux2::src::cmd_load_buffer::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_lock_server.rs::C2RustUnnamed_14",
         hmux2::src::cmd_lock_server::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_move_window.rs::C2RustUnnamed_14",
         hmux2::src::cmd_move_window::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_new_session.rs::C2RustUnnamed_14",
         hmux2::src::cmd_new_session::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_new_window.rs::C2RustUnnamed_14",
         hmux2::src::cmd_new_window::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_parse.rs::C2RustUnnamed_15",
         hmux2::src::cmd_parse::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_paste_buffer.rs::C2RustUnnamed_14",
         hmux2::src::cmd_paste_buffer::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_pipe_pane.rs::C2RustUnnamed_14",
         hmux2::src::cmd_pipe_pane::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_queue.rs::C2RustUnnamed_14",
         hmux2::src::cmd_queue::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_refresh_client.rs::C2RustUnnamed_14",
         hmux2::src::cmd_refresh_client::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_rename_session.rs::C2RustUnnamed_14",
         hmux2::src::cmd_rename_session::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_rename_window.rs::C2RustUnnamed_14",
         hmux2::src::cmd_rename_window::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_resize_pane.rs::C2RustUnnamed_14",
         hmux2::src::cmd_resize_pane::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_resize_window.rs::C2RustUnnamed_14",
         hmux2::src::cmd_resize_window::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_respawn_pane.rs::C2RustUnnamed_14",
         hmux2::src::cmd_respawn_pane::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_respawn_window.rs::C2RustUnnamed_14",
         hmux2::src::cmd_respawn_window::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_rotate_window.rs::C2RustUnnamed_14",
         hmux2::src::cmd_rotate_window::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_run_shell.rs::C2RustUnnamed_14",
         hmux2::src::cmd_run_shell::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_save_buffer.rs::C2RustUnnamed_14",
         hmux2::src::cmd_save_buffer::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_select_layout.rs::C2RustUnnamed_14",
         hmux2::src::cmd_select_layout::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_select_pane.rs::C2RustUnnamed_14",
         hmux2::src::cmd_select_pane::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_select_window.rs::C2RustUnnamed_14",
         hmux2::src::cmd_select_window::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_send_keys.rs::C2RustUnnamed_14",
         hmux2::src::cmd_send_keys::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_server_access.rs::C2RustUnnamed_14",
         hmux2::src::cmd_server_access::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_set_buffer.rs::C2RustUnnamed_14",
         hmux2::src::cmd_set_buffer::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_set_environment.rs::C2RustUnnamed_14",
         hmux2::src::cmd_set_environment::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_set_option.rs::C2RustUnnamed_14",
         hmux2::src::cmd_set_option::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_show_environment.rs::C2RustUnnamed_14",
         hmux2::src::cmd_show_environment::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_show_messages.rs::C2RustUnnamed_14",
         hmux2::src::cmd_show_messages::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_show_options.rs::C2RustUnnamed_14",
         hmux2::src::cmd_show_options::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_source_file.rs::C2RustUnnamed_15",
         hmux2::src::cmd_source_file::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_split_window.rs::C2RustUnnamed_14",
         hmux2::src::cmd_split_window::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_swap_pane.rs::C2RustUnnamed_14",
         hmux2::src::cmd_swap_pane::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_swap_window.rs::C2RustUnnamed_14",
         hmux2::src::cmd_swap_window::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_switch_client.rs::C2RustUnnamed_14",
         hmux2::src::cmd_switch_client::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_wait_for.rs::C2RustUnnamed_14",
         hmux2::src::cmd_wait_for::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/colour.rs::C2RustUnnamed_15",
         hmux2::src::colour::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/control.rs::C2RustUnnamed_14",
         hmux2::src::control::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/control_notify.rs::C2RustUnnamed_14",
         hmux2::src::control_notify::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/environ.rs::C2RustUnnamed_14",
         hmux2::src::environ::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/events.rs::C2RustUnnamed_14",
         hmux2::src::events::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/events_payload.rs::C2RustUnnamed_14",
         hmux2::src::events_payload::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/file.rs::C2RustUnnamed_15",
         hmux2::src::file::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/format.rs::C2RustUnnamed_15",
         hmux2::src::format::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/format_draw.rs::C2RustUnnamed_14",
         hmux2::src::format_draw::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/hooks.rs::C2RustUnnamed_14",
         hmux2::src::hooks::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/input.rs::C2RustUnnamed_14",
         hmux2::src::input::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/input_keys.rs::C2RustUnnamed_14",
         hmux2::src::input_keys::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/job.rs::C2RustUnnamed_15",
         hmux2::src::job::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/key_bindings.rs::C2RustUnnamed_14",
         hmux2::src::key_bindings::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/layout.rs::C2RustUnnamed_14",
         hmux2::src::layout::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/layout_custom.rs::C2RustUnnamed_15",
         hmux2::src::layout_custom::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/layout_set.rs::C2RustUnnamed_14",
         hmux2::src::layout_set::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/menu.rs::C2RustUnnamed_14",
         hmux2::src::menu::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/mode_tree.rs::C2RustUnnamed_14",
         hmux2::src::mode_tree::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/monitor.rs::C2RustUnnamed_14",
         hmux2::src::monitor::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/names.rs::C2RustUnnamed_15",
         hmux2::src::names::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/options.rs::C2RustUnnamed_15",
         hmux2::src::options::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/popup.rs::C2RustUnnamed_14",
         hmux2::src::popup::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/prompt.rs::C2RustUnnamed_14",
         hmux2::src::prompt::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/resize.rs::C2RustUnnamed_14",
         hmux2::src::resize::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/screen.rs::C2RustUnnamed_15",
         hmux2::src::screen::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/screen_redraw.rs::C2RustUnnamed_14",
         hmux2::src::screen_redraw::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/screen_write.rs::C2RustUnnamed_17",
         hmux2::src::screen_write::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/server.rs::C2RustUnnamed_15",
         hmux2::src::server::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/server_acl.rs::C2RustUnnamed_14",
         hmux2::src::server_acl::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/server_client.rs::C2RustUnnamed_15",
         hmux2::src::server_client::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/server_fn.rs::C2RustUnnamed_14",
         hmux2::src::server_fn::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/session.rs::C2RustUnnamed_14",
         hmux2::src::session::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/sort.rs::C2RustUnnamed_14",
         hmux2::src::sort::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/spawn.rs::C2RustUnnamed_14",
         hmux2::src::spawn::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/status.rs::C2RustUnnamed_14",
         hmux2::src::status::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/style.rs::C2RustUnnamed_14",
         hmux2::src::style::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/tty.rs::C2RustUnnamed_14",
         hmux2::src::tty::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/tty_acs.rs::C2RustUnnamed_14",
         hmux2::src::tty_acs::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/tty_draw.rs::C2RustUnnamed_14",
         hmux2::src::tty_draw::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/tty_features.rs::C2RustUnnamed_14",
         hmux2::src::tty_features::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/tty_keys.rs::C2RustUnnamed_15",
         hmux2::src::tty_keys::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/tty_term.rs::C2RustUnnamed_14",
         hmux2::src::tty_term::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/window.rs::C2RustUnnamed_15",
         hmux2::src::window::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/window_border.rs::C2RustUnnamed_14",
         hmux2::src::window_border::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/window_buffer.rs::C2RustUnnamed_14",
         hmux2::src::window_buffer::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/window_client.rs::C2RustUnnamed_14",
         hmux2::src::window_client::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/window_clock.rs::C2RustUnnamed_14",
         hmux2::src::window_clock::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/window_copy.rs::C2RustUnnamed_14",
         hmux2::src::window_copy::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/window_customize.rs::C2RustUnnamed_14",
         hmux2::src::window_customize::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/window_panes.rs::C2RustUnnamed_14",
         hmux2::src::window_panes::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/window_switch.rs::C2RustUnnamed_14",
         hmux2::src::window_switch::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/window_tree.rs::C2RustUnnamed_14",
         hmux2::src::window_tree::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/window_visible.rs::C2RustUnnamed_14",
         hmux2::src::window_visible::session_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/alerts.rs::C2RustUnnamed_15",

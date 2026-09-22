@@ -36,8 +36,10 @@ pub struct session {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut super::tree::OrderedIndex<Vec<u8>, session>,
+    pub rbe_left: *mut session,
+    pub rbe_right: *mut session,
+    pub rbe_parent: *mut session,
+    pub rbe_color: ::core::ffi::c_int,
 }
 
 #[derive(Copy, Clone)]
@@ -50,7 +52,7 @@ pub struct session_gentry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct sessions {
-    pub storage: *mut super::tree::OrderedIndex<Vec<u8>, session>,
+    pub rbh_root: *mut session,
 }
 
 #[derive(Copy, Clone)]

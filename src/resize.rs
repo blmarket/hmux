@@ -12,7 +12,7 @@ use crate::src::options::{options_get_number, options_get_string};
 pub use crate::src::server::clients;
 use crate::src::server_fn::server_redraw_window;
 pub use crate::src::session::sessions;
-use crate::src::session::{session_has, sessions_minmax, sessions_next};
+use crate::src::session::{session_has, sessions_RB_MINMAX, sessions_RB_NEXT};
 pub use crate::src::shared::events::event_payload;
 use crate::src::status::{status_line_size, status_update_cache};
 use crate::src::tmux::global_w_options;
@@ -669,11 +669,11 @@ pub unsafe extern "C" fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut c: *mut client = ::core::ptr::null_mut::<client>();
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         (*s).attached = 0 as u_int;
         status_update_cache(s);
-        s = sessions_next(s);
+        s = sessions_RB_NEXT(s);
     }
     c = clients.tqh_first;
     while !c.is_null() {

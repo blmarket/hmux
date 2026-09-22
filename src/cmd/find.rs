@@ -8,8 +8,8 @@ pub use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
 pub use crate::src::session::sessions;
 use crate::src::session::{
-    session_alive, session_find, session_find_by_id_str, session_has, sessions_minmax,
-    sessions_next,
+    session_alive, session_find, session_find_by_id_str, session_has, sessions_RB_MINMAX,
+    sessions_RB_NEXT,
 };
 pub use crate::src::shared::pane::window_pane_tree;
 use crate::src::window::{
@@ -311,14 +311,14 @@ unsafe extern "C" fn cmd_find_best_session(
             i = i.wrapping_add(1);
         }
     } else {
-        s_loop = sessions_minmax(&raw mut sessions, RB_NEGINF);
+        s_loop = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
         while !s_loop.is_null() {
             if !(cmd_find_session_valid(s_loop) == 0) {
                 if cmd_find_session_better(s_loop, s, flags) != 0 {
                     s = s_loop;
                 }
             }
-            s_loop = sessions_next(s_loop);
+            s_loop = sessions_RB_NEXT(s_loop);
         }
     }
     return s;
@@ -335,7 +335,7 @@ unsafe extern "C" fn cmd_find_best_session_with_window(
         (*(*fs).w).id,
     );
     ssize = 0 as u_int;
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         if !(session_has(s, (*fs).w) == 0) {
             slist = xreallocarray(
@@ -348,7 +348,7 @@ unsafe extern "C" fn cmd_find_best_session_with_window(
             let ref mut fresh3 = *slist.offset(fresh2 as isize);
             *fresh3 = s;
         }
-        s = sessions_next(s);
+        s = sessions_RB_NEXT(s);
     }
     if !(ssize == 0 as u_int) {
         (*fs).s = cmd_find_best_session(slist, ssize, (*fs).flags);
@@ -445,7 +445,7 @@ unsafe extern "C" fn cmd_find_get_session(
         return -(1 as ::core::ffi::c_int);
     }
     s = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s_loop = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
     while !s_loop.is_null() {
         if strncmp(session, (*s_loop).name, strlen(session)) == 0 as ::core::ffi::c_int {
             if !s.is_null() {
@@ -453,14 +453,14 @@ unsafe extern "C" fn cmd_find_get_session(
             }
             s = s_loop;
         }
-        s_loop = sessions_next(s_loop);
+        s_loop = sessions_RB_NEXT(s_loop);
     }
     if !s.is_null() {
         (*fs).s = s;
         return 0 as ::core::ffi::c_int;
     }
     s = ::core::ptr::null_mut::<session>();
-    s_loop = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s_loop = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
     while !s_loop.is_null() {
         if fnmatch(session, (*s_loop).name, 0 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int {
             if !s.is_null() {
@@ -468,7 +468,7 @@ unsafe extern "C" fn cmd_find_get_session(
             }
             s = s_loop;
         }
-        s_loop = sessions_next(s_loop);
+        s_loop = sessions_RB_NEXT(s_loop);
     }
     if !s.is_null() {
         (*fs).s = s;
