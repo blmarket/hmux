@@ -585,6 +585,22 @@ legacy callers safe.
   Existing compiler warnings remain; no live screen-rendering scenario or
   sanitizer run was performed.
 
+### Increment 22 — screen_write_vnputs formatted scan buffer (2026-09-22)
+
+- `screen_write_vnputs` now owns its formatted message as a local `CString`
+  through `xvasprintf_cstring`, removing the direct `xvasprintf`/`free` pair.
+  Its read-only byte pointer remains backed by the owner through the whole
+  scan and synchronous screen-write calls; cells copy the selected data and
+  do not retain the message pointer.
+- The pointer scan, UTF-8 handling, width limit, screen writes, first-NUL
+  view, and exported ABI are unchanged. There are no early returns after
+  formatting; the owner drops on normal exit. This was the final direct
+  `xvasprintf` call in `src/screen_write.rs`.
+- `cargo test --workspace`, the binary build, edition-2021 rustfmt for the
+  changed file, and `git diff --check` passed. The focused
+  `screen_write_strlen` regressions also pass. Existing compiler warnings
+  remain; no live rendering scenario or sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -595,14 +611,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `screen_write_vnputs` has a local formatted string scanned through
-   synchronous screen writes. `window_set_name` also duplicates the old name
-   for a synchronous event payload before freeing it.
+1. `window_set_name` duplicates the old name for a synchronous event payload
+   before freeing it. `yyerror` in `src/cmd/parse.rs` formats a local string
+   that `cmd_parse_get_error` copies before the scratch string is freed.
 2. `format_printf`, status/message
    strings, and input/control strings that escape into records or queues still
    require separate lifetime audits; the session/winlink graph remains
    deferred.
 
-Current validation is recorded in increments 15–21. The remaining
+Current validation is recorded in increments 15–22. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–21 has its own local commit; none was pushed.
+Each of increments 15–22 has its own local commit; none was pushed.
