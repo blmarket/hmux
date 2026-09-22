@@ -2698,10 +2698,10 @@ unsafe extern "C" fn format_cb_server_sessions(
 ) -> *mut ::core::ffi::c_void {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut n: u_int = 0 as u_int;
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         n = n.wrapping_add(1);
-        s = sessions_next(s);
+        s = sessions_RB_NEXT(s);
     }
     return format_printf(b"%u\0" as *const u8 as *const ::core::ffi::c_char, n)
         as *mut ::core::ffi::c_void;
@@ -3127,7 +3127,7 @@ unsafe extern "C" fn format_cb_window_linked(mut ft: *mut format_tree) -> *mut :
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
     let mut found: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if !(*ft).wl.is_null() {
-        s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+        s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
         while !s.is_null() {
             wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
             while !wl.is_null() {
@@ -3140,7 +3140,7 @@ unsafe extern "C" fn format_cb_window_linked(mut ft: *mut format_tree) -> *mut :
                 }
                 wl = winlinks_RB_NEXT(wl);
             }
-            s = sessions_next(s);
+            s = sessions_RB_NEXT(s);
         }
         return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char)
             as *mut ::core::ffi::c_void;
@@ -3158,22 +3158,22 @@ unsafe extern "C" fn format_cb_window_linked_sessions(
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
     w = (*(*ft).wl).window;
-    sg = session_groups_minmax(&raw mut session_groups, RB_NEGINF);
+    sg = session_groups_RB_MINMAX(&raw mut session_groups, RB_NEGINF);
     while !sg.is_null() {
         s = (*sg).sessions.tqh_first;
         if !winlink_find_by_window(&raw mut (*s).windows, w).is_null() {
             n = n.wrapping_add(1);
         }
-        sg = session_groups_next(sg);
+        sg = session_groups_RB_NEXT(sg);
     }
-    s = sessions_minmax(&raw mut sessions, RB_NEGINF);
+    s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
         if session_group_contains(s).is_null() {
             if !winlink_find_by_window(&raw mut (*s).windows, w).is_null() {
                 n = n.wrapping_add(1);
             }
         }
-        s = sessions_next(s);
+        s = sessions_RB_NEXT(s);
     }
     return format_printf(b"%u\0" as *const u8 as *const ::core::ffi::c_char, n)
         as *mut ::core::ffi::c_void;

@@ -47,37 +47,37 @@ fn original_copies_match() {
     record!(
         "src/cmd_kill_session.rs::C2RustUnnamed_35",
         hmux2::src::cmd_kill_session::session_group_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_new_session.rs::C2RustUnnamed_35",
         hmux2::src::cmd_new_session::session_group_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_swap_window.rs::C2RustUnnamed_35",
         hmux2::src::cmd_swap_window::session_group_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/format.rs::C2RustUnnamed_41",
         hmux2::src::format::session_group_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/server_fn.rs::C2RustUnnamed_38",
         hmux2::src::server_fn::session_group_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/session.rs::C2RustUnnamed_35",
         hmux2::src::session::session_group_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/window_tree.rs::C2RustUnnamed_39",
         hmux2::src::window_tree::session_group_entry,
-        [owner]
+        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_kill_session.rs::C2RustUnnamed_36",
@@ -117,82 +117,82 @@ fn original_copies_match() {
     record!(
         "src/format.rs::session_groups",
         hmux2::src::format::session_groups,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/session.rs::session_groups",
         hmux2::src::session::session_groups,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/cfg.rs::sessions",
         hmux2::src::cfg::sessions,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/cmd_attach_session.rs::sessions",
         hmux2::src::cmd_attach_session::sessions,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/cmd_find.rs::sessions",
         hmux2::src::cmd_find::sessions,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/cmd_kill_session.rs::sessions",
         hmux2::src::cmd_kill_session::sessions,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/cmd_list_panes.rs::sessions",
         hmux2::src::cmd_list_panes::sessions,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/cmd_rename_session.rs::sessions",
         hmux2::src::cmd_rename_session::sessions,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/format.rs::sessions",
         hmux2::src::format::sessions,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/monitor.rs::sessions",
         hmux2::src::monitor::sessions,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/options.rs::sessions",
         hmux2::src::options::sessions,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/resize.rs::sessions",
         hmux2::src::resize::sessions,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/server.rs::sessions",
         hmux2::src::server::sessions,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/server_fn.rs::sessions",
         hmux2::src::server_fn::sessions,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/session.rs::sessions",
         hmux2::src::session::sessions,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/sort.rs::sessions",
         hmux2::src::sort::sessions,
-        [storage]
+        [rbh_root]
     );
     let actual = records.join("\n") + "\n";
     assert_eq!(actual, include_str!("fixtures/remaining-session.txt"));
