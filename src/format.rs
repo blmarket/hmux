@@ -72,7 +72,7 @@ use crate::src::window::{
     window_count_panes, window_get_pane_status, window_pane_get_pane_status, window_pane_index,
     window_pane_is_floating, window_pane_mode, window_pane_printable_flags,
     window_pane_scrollbar_reserve, window_pane_search, window_pane_zindex, window_printable_flags,
-    winlink_count, winlink_find_by_window, winlinks_minmax, winlinks_next,
+    winlink_count, winlink_find_by_window, winlinks_RB_MINMAX, winlinks_RB_NEXT,
 };
 use crate::src::window_buffer::window_buffer_mode;
 use crate::src::window_client::window_client_mode;

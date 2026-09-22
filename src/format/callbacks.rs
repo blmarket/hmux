@@ -106,7 +106,7 @@ unsafe extern "C" fn format_cb_session_alert(mut ft: *mut format_tree) -> *mut :
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
     *(&raw mut alerts as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
         if !((*wl).flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
             if !alerted & (*wl).flags & WINLINK_ACTIVITY != 0 {
@@ -134,7 +134,7 @@ unsafe extern "C" fn format_cb_session_alert(mut ft: *mut format_tree) -> *mut :
                 alerted |= WINLINK_SILENCE;
             }
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_RB_NEXT(wl);
     }
     return xstrdup(&raw mut alerts as *mut ::core::ffi::c_char) as *mut ::core::ffi::c_void;
 }
@@ -149,7 +149,7 @@ unsafe extern "C" fn format_cb_session_alerts(
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
     *(&raw mut alerts as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
         if !((*wl).flags & WINLINK_ALERTFLAGS == 0 as ::core::ffi::c_int) {
             xsnprintf(
@@ -192,7 +192,7 @@ unsafe extern "C" fn format_cb_session_alerts(
                 );
             }
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_RB_NEXT(wl);
     }
     return xstrdup(&raw mut alerts as *mut ::core::ffi::c_char) as *mut ::core::ffi::c_void;
 }
@@ -2723,7 +2723,7 @@ unsafe extern "C" fn format_cb_session_activity_flag(
 ) -> *mut ::core::ffi::c_void {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*ft).s.is_null() {
-        wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_NEGINF);
+        wl = winlinks_RB_MINMAX(&raw mut (*(*ft).s).windows, RB_NEGINF);
         if !wl.is_null() {
             if (*(*ft).wl).flags & WINLINK_ACTIVITY != 0 {
                 return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
@@ -2740,7 +2740,7 @@ unsafe extern "C" fn format_cb_session_bell_flag(
 ) -> *mut ::core::ffi::c_void {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*ft).s.is_null() {
-        wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_NEGINF);
+        wl = winlinks_RB_MINMAX(&raw mut (*(*ft).s).windows, RB_NEGINF);
         if !wl.is_null() {
             if (*wl).flags & WINLINK_BELL != 0 {
                 return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
@@ -2757,7 +2757,7 @@ unsafe extern "C" fn format_cb_session_silence_flag(
 ) -> *mut ::core::ffi::c_void {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*ft).s.is_null() {
-        wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_NEGINF);
+        wl = winlinks_RB_MINMAX(&raw mut (*(*ft).s).windows, RB_NEGINF);
         if !wl.is_null() {
             if (*(*ft).wl).flags & WINLINK_SILENCE != 0 {
                 return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
@@ -2944,7 +2944,7 @@ unsafe extern "C" fn format_cb_last_window_index(
 ) -> *mut ::core::ffi::c_void {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !(*ft).s.is_null() {
-        wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_INF);
+        wl = winlinks_RB_MINMAX(&raw mut (*(*ft).s).windows, RB_INF);
         return format_printf(
             b"%u\0" as *const u8 as *const ::core::ffi::c_char,
             (*wl).idx,
@@ -3037,7 +3037,7 @@ unsafe extern "C" fn format_cb_window_end_flag(
     mut ft: *mut format_tree,
 ) -> *mut ::core::ffi::c_void {
     if !(*ft).wl.is_null() {
-        if (*ft).wl == winlinks_minmax(&raw mut (*(*(*ft).wl).session).windows, RB_INF) {
+        if (*ft).wl == winlinks_RB_MINMAX(&raw mut (*(*(*ft).wl).session).windows, RB_INF) {
             return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
                 as *mut ::core::ffi::c_void;
         }
@@ -3129,7 +3129,7 @@ unsafe extern "C" fn format_cb_window_linked(mut ft: *mut format_tree) -> *mut :
     if !(*ft).wl.is_null() {
         s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
         while !s.is_null() {
-            wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+            wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
             while !wl.is_null() {
                 if (*wl).window == (*(*ft).wl).window {
                     if found != 0 {
@@ -3138,7 +3138,7 @@ unsafe extern "C" fn format_cb_window_linked(mut ft: *mut format_tree) -> *mut :
                     }
                     found = 1 as ::core::ffi::c_int;
                 }
-                wl = winlinks_next(wl);
+                wl = winlinks_RB_NEXT(wl);
             }
             s = sessions_RB_NEXT(s);
         }
@@ -3292,7 +3292,7 @@ unsafe extern "C" fn format_cb_window_start_flag(
     mut ft: *mut format_tree,
 ) -> *mut ::core::ffi::c_void {
     if !(*ft).wl.is_null() {
-        if (*ft).wl == winlinks_minmax(&raw mut (*(*(*ft).wl).session).windows, RB_NEGINF) {
+        if (*ft).wl == winlinks_RB_MINMAX(&raw mut (*(*(*ft).wl).session).windows, RB_NEGINF) {
             return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char)
                 as *mut ::core::ffi::c_void;
         }

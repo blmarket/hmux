@@ -96,7 +96,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::spawn::spawn_window;
 use crate::src::tmux::{check_name, clean_name, global_s_options};
-use crate::src::window::winlinks_minmax;
+use crate::src::window::winlinks_RB_MINMAX;
 use crate::src::xmalloc::xstrdup;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -672,7 +672,7 @@ unsafe extern "C" fn cmd_new_session_exec(
                                                                 session_group_synchronize_to(s);
                                                                 session_select(
                                                                     s,
-                                                                    (*winlinks_minmax(
+                                                                    (*winlinks_RB_MINMAX(
                                                                         &raw mut (*s).windows,
                                                                         RB_NEGINF,
                                                                     ))

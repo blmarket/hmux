@@ -71,8 +71,8 @@ use crate::src::status::status_message_set;
 use crate::src::tty::tty_putcode;
 pub use crate::src::window::windows;
 use crate::src::window::{
-    window_add_ref, window_remove_ref, windows_minmax, windows_next, winlinks_minmax,
-    winlinks_next,
+    window_add_ref, window_remove_ref, windows_minmax, windows_next, winlinks_RB_MINMAX,
+    winlinks_RB_NEXT,
 };
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -165,10 +165,10 @@ unsafe extern "C" fn alerts_check_all(mut w: *mut window) -> ::core::ffi::c_int 
 #[no_mangle]
 pub unsafe extern "C" fn alerts_check_session(mut s: *mut session) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
         alerts_check_all((*wl).window);
-        wl = winlinks_next(wl);
+        wl = winlinks_RB_NEXT(wl);
     }
 }
 unsafe extern "C" fn alerts_enabled(
