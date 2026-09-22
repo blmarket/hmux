@@ -70,7 +70,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::sort::{sort_get_panes_window, sort_order_from_string};
-use crate::src::window::{winlinks_RB_MINMAX, winlinks_RB_NEXT};
+use crate::src::window::{winlinks_minmax, winlinks_next};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -147,10 +147,10 @@ unsafe extern "C" fn cmd_list_panes_session(
     mut type_0: ::core::ffi::c_int,
 ) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
         cmd_list_panes_window(self_0, s, wl, item, type_0);
-        wl = winlinks_RB_NEXT(wl);
+        wl = winlinks_next(wl);
     }
 }
 unsafe extern "C" fn cmd_list_panes_window(

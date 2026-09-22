@@ -65,7 +65,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::window::{winlinks_RB_MINMAX, winlinks_RB_NEXT, winlinks_RB_PREV};
+use crate::src::window::{winlinks_minmax, winlinks_next, winlinks_prev};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -171,12 +171,12 @@ unsafe extern "C" fn cmd_kill_window_all(
     let mut loop_0: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut found: u_int = 0;
     let mut kill_current: u_int = 0;
-    if winlinks_RB_PREV(wl).is_null() && winlinks_RB_NEXT(wl).is_null() {
+    if winlinks_prev(wl).is_null() && winlinks_next(wl).is_null() {
         return CMD_RETURN_NORMAL;
     }
     loop {
         found = 0 as u_int;
-        loop_0 = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
+        loop_0 = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
         while !loop_0.is_null() {
             if (*loop_0).window != (*wl).window
                 && cmd_kill_window_filter(item, s, loop_0, filter) != 0
@@ -185,7 +185,7 @@ unsafe extern "C" fn cmd_kill_window_all(
                 found = found.wrapping_add(1);
                 break;
             } else {
-                loop_0 = winlinks_RB_NEXT(loop_0);
+                loop_0 = winlinks_next(loop_0);
             }
         }
         if !(found != 0 as u_int) {
@@ -194,7 +194,7 @@ unsafe extern "C" fn cmd_kill_window_all(
     }
     kill_current = 0 as u_int;
     found = kill_current;
-    loop_0 = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
+    loop_0 = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
     while !loop_0.is_null() {
         if (*loop_0).window == (*wl).window {
             found = found.wrapping_add(1);
@@ -202,7 +202,7 @@ unsafe extern "C" fn cmd_kill_window_all(
                 kill_current = 1 as u_int;
             }
         }
-        loop_0 = winlinks_RB_NEXT(loop_0);
+        loop_0 = winlinks_next(loop_0);
     }
     if kill_current != 0 && found > 1 as u_int {
         server_kill_window((*wl).window, 0 as ::core::ffi::c_int);

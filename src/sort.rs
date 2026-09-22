@@ -70,7 +70,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::window::{
-    window_pane_index, window_pane_zindex, winlinks_RB_MINMAX, winlinks_RB_NEXT,
+    window_pane_index, window_pane_zindex, winlinks_minmax, winlinks_next,
 };
 use crate::src::xmalloc::xreallocarray;
 
@@ -714,7 +714,7 @@ pub unsafe extern "C" fn sort_get_panes(
     i = 0 as u_int;
     s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
-        wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
+        wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
         while !wl.is_null() {
             w = (*wl).window;
             wp = (*w).panes.tqh_first;
@@ -733,7 +733,7 @@ pub unsafe extern "C" fn sort_get_panes(
                 *fresh9 = wp;
                 wp = (*wp).entry.tqe_next;
             }
-            wl = winlinks_RB_NEXT(wl);
+            wl = winlinks_next(wl);
         }
         s = sessions_RB_NEXT(s);
     }
@@ -767,7 +767,7 @@ pub unsafe extern "C" fn sort_get_panes_session(
         ::core::ptr::null::<*mut window_pane>() as *mut *mut window_pane;
     static mut lsz: u_int = 0 as u_int;
     i = 0 as u_int;
-    wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
         w = (*wl).window;
         wp = (*w).panes.tqh_first;
@@ -786,7 +786,7 @@ pub unsafe extern "C" fn sort_get_panes_session(
             *fresh11 = wp;
             wp = (*wp).entry.tqe_next;
         }
-        wl = winlinks_RB_NEXT(wl);
+        wl = winlinks_next(wl);
     }
     sort_qsort(
         l as *mut ::core::ffi::c_void,
@@ -861,7 +861,7 @@ pub unsafe extern "C" fn sort_get_winlinks(
     i = 0 as u_int;
     s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
-        wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
+        wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
         while !wl.is_null() {
             if lsz <= i {
                 lsz = lsz.wrapping_add(100 as u_int);
@@ -875,7 +875,7 @@ pub unsafe extern "C" fn sort_get_winlinks(
             i = i.wrapping_add(1);
             let ref mut fresh15 = *l.offset(fresh14 as isize);
             *fresh15 = wl;
-            wl = winlinks_RB_NEXT(wl);
+            wl = winlinks_next(wl);
         }
         s = sessions_RB_NEXT(s);
     }
@@ -906,7 +906,7 @@ pub unsafe extern "C" fn sort_get_winlinks_session(
     static mut l: *mut *mut winlink = ::core::ptr::null::<*mut winlink>() as *mut *mut winlink;
     static mut lsz: u_int = 0 as u_int;
     i = 0 as u_int;
-    wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
         if lsz <= i {
             lsz = lsz.wrapping_add(100 as u_int);
@@ -920,7 +920,7 @@ pub unsafe extern "C" fn sort_get_winlinks_session(
         i = i.wrapping_add(1);
         let ref mut fresh17 = *l.offset(fresh16 as isize);
         *fresh17 = wl;
-        wl = winlinks_RB_NEXT(wl);
+        wl = winlinks_next(wl);
     }
     sort_qsort(
         l as *mut ::core::ffi::c_void,

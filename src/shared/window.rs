@@ -41,7 +41,7 @@ pub const WINDOW_MODE_HIDE_SCROLLBARS: ::core::ffi::c_int = 0x8 as ::core::ffi::
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct winlinks {
-    pub rbh_root: *mut winlink,
+    pub storage: *mut super::tree::OrderedIndex<::core::ffi::c_int, winlink>,
 }
 
 #[derive(Copy, Clone)]
@@ -73,10 +73,7 @@ pub struct winlink_wentry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct winlink_entry {
-    pub rbe_left: *mut winlink,
-    pub rbe_right: *mut winlink,
-    pub rbe_parent: *mut winlink,
-    pub rbe_color: ::core::ffi::c_int,
+    pub owner: *mut super::tree::OrderedIndex<::core::ffi::c_int, winlink>,
 }
 
 #[derive(Copy, Clone)]
