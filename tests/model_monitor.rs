@@ -47,12 +47,12 @@ fn original_copies_match() {
     record!(
         "src/monitor.rs::C2RustUnnamed_35",
         hmux2::src::monitor::monitor_item_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/monitor.rs::monitor_items",
         hmux2::src::monitor::monitor_items,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/monitor.rs::monitor_pane",
@@ -62,12 +62,12 @@ fn original_copies_match() {
     record!(
         "src/monitor.rs::C2RustUnnamed_37",
         hmux2::src::monitor::monitor_pane_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/monitor.rs::monitor_panes",
         hmux2::src::monitor::monitor_panes,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/control.rs::monitor_set",
@@ -92,12 +92,12 @@ fn original_copies_match() {
     record!(
         "src/monitor.rs::C2RustUnnamed_36",
         hmux2::src::monitor::monitor_window_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/monitor.rs::monitor_windows",
         hmux2::src::monitor::monitor_windows,
-        [rbh_root]
+        [storage]
     );
     let actual = records.join("\n") + "\n";
     assert_eq!(actual, include_str!("fixtures/model-monitor.txt"));
