@@ -274,10 +274,11 @@ pub struct window_panes {
     pub tqh_last: *mut *mut window_pane,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_pane_tree {
-    pub storage: *mut super::tree::OrderedIndex<u_int, window_pane>,
+    /// The global pane index owns its allocation. Pane records keep only a
+    /// compatibility pointer in `tree_entry.owner` for traversal.
+    pub storage: Option<Box<super::tree::OrderedIndex<u_int, window_pane>>>,
 }
 
 #[derive(Copy, Clone)]

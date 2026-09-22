@@ -1,12 +1,19 @@
+use hmux2::src::shared::tree::OrderedIndex;
 use hmux2::src::window::*;
-use std::ptr::null_mut;
+use std::mem::size_of;
+
+#[test]
+fn boxed_index_slot_keeps_pointer_layout() {
+    assert_eq!(
+        size_of::<window_pane_tree>(),
+        size_of::<*mut OrderedIndex<u32, window_pane>>()
+    );
+}
 
 #[test]
 fn pane_ids_duplicates_neighbors_and_removal() {
     unsafe {
-        let mut head = window_pane_tree {
-            storage: null_mut(),
-        };
+        let mut head = window_pane_tree { storage: None };
         assert!(window_pane_tree_minmax(&mut head, -1).is_null());
         let ids = [u32::MAX, 0, 42, 0x8000_0000];
         let mut nodes: Vec<window_pane> = ids.iter().map(|_| std::mem::zeroed()).collect();
@@ -46,11 +53,11 @@ fn pane_ids_duplicates_neighbors_and_removal() {
             assert!((*node).tree_entry.owner.is_null());
             node = next;
         }
-        assert!(head.storage.is_null());
+        assert!(head.storage.is_none());
         assert!(window_pane_tree_nfind(&mut *head, &mut probe).is_null());
         assert!(window_pane_tree_insert(&mut *head, existing).is_null());
         assert_eq!(window_pane_tree_remove(&mut *head, existing), existing);
-        assert!(head.storage.is_null());
+        assert!(head.storage.is_none());
     }
 }
 
@@ -58,7 +65,7 @@ fn pane_ids_duplicates_neighbors_and_removal() {
 fn global_lookup_preserves_pane_identity() {
     unsafe {
         let head = &raw mut all_window_panes;
-        assert!((*head).storage.is_null());
+        assert!((*head).storage.is_none());
         let mut pane: window_pane = std::mem::zeroed();
         pane.id = 123;
         assert!(window_pane_tree_insert(head, &mut pane).is_null());
@@ -69,6 +76,6 @@ fn global_lookup_preserves_pane_identity() {
             &mut pane as *mut _
         );
         assert!(window_pane_find_by_id(123).is_null());
-        assert!((*head).storage.is_null());
+        assert!((*head).storage.is_none());
     }
 }

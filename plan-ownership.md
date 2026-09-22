@@ -355,20 +355,43 @@ legacy callers safe.
   passed. Existing compiler warnings remain; no sanitizer or live window
   lifecycle scenario was run.
 
+### Increment 11 — global all-window-panes ordered index (2026-09-22)
+
+- `window_pane_tree.storage` now owns its allocation as
+  `Option<Box<OrderedIndex<u_int, window_pane>>>`. The pane find, lower-bound,
+  insertion, removal, edge, and neighbor helpers use the boxed-index view.
+  Removed the raw `Box::into_raw`/`Box::from_raw` index lifecycle; pane records
+  remain owned by the existing `window_pane_create`/`window_pane_free`
+  lifecycle.
+- `window_pane_tree` is no longer `Copy`; its one-pointer representation is
+  preserved. `window_pane.tree_entry.owner` remains the narrow compatibility
+  pointer, set only after a successful insertion and cleared after removal.
+  Startup reset now drops the empty option owner. Normal pane destruction
+  removes the pane from the global index before clearing its resize queue and
+  releasing the existing pane reference, so the already drop-bearing resize
+  queue does not retain an index observer.
+- Added the boxed-slot layout assertion and retained coverage for duplicate
+  IDs, moved-head traversal, stable pane identity, owner invalidation, and
+  final index teardown in `tests/pane_storage.rs`.
+- Validation: focused pane, resize-queue, remaining-pane layout, and window
+  storage tests passed; `cargo test --workspace` passed; the reported
+  `cargo test --no-run --message-format json-render-diagnostics --workspace`
+  command passed; `cargo build --bin hmux2`, edition-2021 rustfmt checks for
+  changed files, and `git diff --check` passed. Existing compiler warnings
+  remain; no sanitizer or live pane lifecycle scenario was run.
+
 ### Next candidates
 
-1. The global `all_window_panes` ordered index in `src/window.rs` and
-   `src/shared/pane.rs`. It is the next analogous head, but its teardown must
-   be audited together with the already drop-bearing `window_pane` record and
-   `window_pane_tree.owner` compatibility pointer; verify that global reset,
-   pane destruction, and the existing boxed resize queue do not leave a
-   dangling observer before changing the head.
-2. The per-client `client.files` ordered index in `src/file.rs` and
+1. The per-client `client.files` ordered index in `src/file.rs` and
    `src/shared/client.rs`, after confirming its stream callback and client
    teardown paths do not retain entry-owner pointers beyond the client.
+2. Re-rank the remaining local scratch owners after the client-files audit;
+   the session/winlink graph and other global indexes remain deferred until a
+   smaller independent owner is confirmed.
 
 Final validation for this execution: all workspace tests passed, including the
-focused session, session-group, and window storage tests, and
-`cargo build --bin hmux2` passed. Edition-2021 rustfmt checks for changed
-files and `git diff --check` also passed.
+focused pane, resize-queue, remaining-pane, and window storage tests, and
+`cargo build --bin hmux2` passed. The reported workspace no-run build also
+passed. Edition-2021 rustfmt checks for changed files and `git diff --check`
+also passed.
 No new commit, push, or publication was performed.

@@ -452,7 +452,7 @@ pub unsafe extern "C" fn server_start(
     input_key_build();
     utf8_update_width_cache();
     windows.storage = None;
-    all_window_panes.storage = std::ptr::null_mut();
+    all_window_panes.storage = None;
     clients.tqh_first = ::core::ptr::null_mut::<client>();
     clients.tqh_last = &raw mut clients.tqh_first;
     sessions.storage = None;
