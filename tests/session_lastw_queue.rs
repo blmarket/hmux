@@ -1,3 +1,4 @@
+use hmux2::src::shared::session::session;
 use hmux2::src::shared::tree::OrderedIndex;
 use hmux2::src::shared::window::{winlink, winlink_stack, winlinks};
 use hmux2::src::window::{
@@ -9,16 +10,18 @@ use refbox::BorrowError;
 #[test]
 fn visit_order_uses_weak_links_and_survives_index_change() {
     unsafe {
-        let mut links = winlinks {
-            storage: std::ptr::null_mut(),
-        };
+        let mut links = winlinks { storage: None };
         let mut stack = winlink_stack {
-            storage: std::ptr::null_mut(),
+            storage: None,
             reserved: std::ptr::null_mut(),
         };
         let first = winlink_add(&raw mut links, 1);
         let second = winlink_add(&raw mut links, 2);
-        let old_second = OrderedIndex::<i32, winlink>::downgrade(links.storage, second).unwrap();
+        let old_second = OrderedIndex::<i32, winlink>::downgrade(
+            OrderedIndex::boxed_ptr(&links.storage),
+            second,
+        )
+        .unwrap();
 
         winlink_stack_push(&raw mut stack, first);
         winlink_stack_push(&raw mut stack, second);
@@ -49,26 +52,42 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
         winlink_stack_remove(&raw mut stack, first);
         winlink_remove(&raw mut links, first);
         winlink_stack_clear(&raw mut stack);
-        assert!(links.storage.is_null());
+        assert!(links.storage.is_none());
     }
 }
 
 #[test]
 fn stale_history_entry_cannot_access_removed_link() {
     unsafe {
-        let mut links = winlinks {
-            storage: std::ptr::null_mut(),
-        };
+        let mut links = winlinks { storage: None };
         let mut stack = winlink_stack {
-            storage: std::ptr::null_mut(),
+            storage: None,
             reserved: std::ptr::null_mut(),
         };
         let link = winlink_add(&raw mut links, 7);
         winlink_stack_push(&raw mut stack, link);
+        winlink_stack_remove(&raw mut stack, link);
         winlink_remove(&raw mut links, link);
 
         assert!(winlink_stack_first(&raw const stack, &raw mut links).is_null());
         assert!(winlink_stack_indices(&raw const stack).is_empty());
         winlink_stack_clear(&raw mut stack);
+    }
+}
+
+#[test]
+fn boxed_session_drops_its_winlink_owner() {
+    unsafe {
+        let mut owner = Box::new(std::mem::zeroed::<session>());
+        let link = winlink_add(&raw mut owner.windows, 9);
+        let weak = OrderedIndex::<i32, winlink>::downgrade(
+            OrderedIndex::boxed_ptr(&owner.windows.storage),
+            link,
+        )
+        .unwrap();
+        winlink_stack_push(&raw mut owner.lastw, link);
+        winlink_stack_clear(&raw mut owner.lastw);
+        drop(owner);
+        assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
     }
 }

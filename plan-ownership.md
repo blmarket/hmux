@@ -107,7 +107,6 @@ Update the execution log below after each completed increment. Include concrete
 source symbols, removed manual ownership responsibilities, tests/results, and
 remaining compatibility pointers. Keep the next-candidate list current so a
 later invocation resumes from source reality without repeating completed work.
-Do not commit, push, or publish unless separately instructed.
 
 The final response must identify what actually migrated, why these were the
 easiest targets, validation results and limitations, and the next easiest target.
@@ -258,12 +257,46 @@ legacy callers safe.
   harness's possible thread-local allocation. No dedicated live pane-resize
   timer integration scenario or sanitizer run was available.
 
+### Increment 7 — session-owned winlink graph storage (2026-09-22)
+
+- `winlinks.storage` now owns its ordered index as
+  `Option<Box<OrderedIndex<i32, winlink>>>`; the index continues to own the
+  `RefBox<winlink>` nodes created by `winlink_add`. Added typed boxed-index
+  insertion/removal/owner-transfer helpers while retaining the raw index
+  pointer only in `winlink.entry.owner` for traversal compatibility.
+- `winlink_stack.storage` now owns its weak visit history as
+  `Option<Box<VecDeque<Weak<winlink>>>>`. Stack traversal uses checked
+  `try_access_mut` access and asserts on dropped or conflicting observers;
+  `winlink_remove` tears down the session’s history entry before releasing the
+  owning `RefBox`.
+- Changed the containing `session` lifecycle together with its drop-bearing
+  fields: `session_create` allocates a `Box<session>`, `session_free` drops it,
+  and `winlinks`/`winlink_stack` are no longer manually raw-owned. Replaced
+  the byte-copy transfers in `session_group_synchronize1` and
+  `session_renumber_windows` with typed `ptr::replace` moves, preserving index
+  and winlink addresses. The empty option representation remains pointer-sized
+  and the translated record fields retain their offsets.
+- Added coverage for moved winlink indexes, weak-history order and teardown,
+  weak invalidation after owner drop, and dropping a boxed session with a live
+  winlink owner. Compatibility pointers remain at raw C-style APIs,
+  `winlink.entry.owner`, the reserved stack slot, and the existing session
+  reference-count callbacks. The global `sessions`/`session_groups` indexes
+  and their raw entry-owner pointers remain outside this increment.
+- Validation: `cargo test --workspace` passed, focused winlink/session-history
+  tests passed (6 tests), `cargo build --bin hmux2` passed,
+  edition-2021 rustfmt checks for the changed files passed, and `git diff
+  --check` passed. Existing compiler warnings remain; no sanitizer or live
+  session-group integration scenario was run.
+
 ### Next candidates
 
-1. Session/winlink graph ownership: it needs explicit observer teardown,
-   checked weak access, and a reentrancy audit. Keep it deferred until a
-   smaller independent owner is identified.
+1. The global `sessions` ordered index in `src/session.rs`, followed by the
+   analogous `session_groups` index. They are smaller than the remaining
+   observer graph, but need a static/global lifecycle audit and careful
+   handling of `session.entry.owner`/`session_group_entry.owner` compatibility
+   pointers.
 
-Final validation for this execution: all workspace tests passed, focused queue,
-pane-storage, and layout tests passed, and `cargo build --bin hmux2` passed.
+Final validation for this execution: all workspace tests passed, including the
+six focused winlink/session-history tests, and
+`cargo build --bin hmux2` passed.
 No new commit, push, or publication was performed.

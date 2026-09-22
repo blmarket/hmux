@@ -38,10 +38,11 @@ pub const WINDOW_MODE_HIDE_PANE_STATUS: ::core::ffi::c_int = 0x1 as ::core::ffi:
 pub const WINDOW_MODE_NO_STACK: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const WINDOW_MODE_HIDE_SCROLLBARS: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct winlinks {
-    pub storage: *mut super::tree::OrderedIndex<::core::ffi::c_int, winlink>,
+    /// The session owns the index allocation. The index itself owns the
+    /// `RefBox` allocations for winlinks created by `winlink_add`.
+    pub storage: Option<Box<super::tree::OrderedIndex<::core::ffi::c_int, winlink>>>,
 }
 
 #[derive(Copy, Clone)]
@@ -214,9 +215,10 @@ pub struct window_mode {
 
 #[repr(C)]
 pub struct winlink_stack {
-    /// Weak visit history; the ordered session index owns each link.
-    pub storage: *mut std::collections::VecDeque<refbox::Weak<winlink>>,
-    /// Reserved ABI slot while the rest of session is migrated.
+    /// Weak visit history; the session owns the deque and the ordered index
+    /// owns each link.
+    pub storage: Option<Box<std::collections::VecDeque<refbox::Weak<winlink>>>>,
+    /// Reserved ABI slot for the translated layout.
     pub reserved: *mut ::core::ffi::c_void,
 }
 

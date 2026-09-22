@@ -1,12 +1,28 @@
+use hmux2::src::shared::tree::OrderedIndex;
+use hmux2::src::shared::window::winlink_stack;
 use hmux2::src::window::*;
-use std::ptr::null_mut;
+use std::mem::{offset_of, size_of};
+
+#[test]
+fn boxed_graph_slots_keep_pointer_layout() {
+    assert_eq!(
+        size_of::<winlinks>(),
+        size_of::<*mut OrderedIndex<i32, winlink>>()
+    );
+    assert_eq!(
+        size_of::<winlink_stack>(),
+        2 * size_of::<*mut std::ffi::c_void>()
+    );
+    assert_eq!(
+        offset_of!(winlink_stack, reserved),
+        size_of::<*mut std::ffi::c_void>()
+    );
+}
 
 #[test]
 fn winlink_indexes_duplicates_neighbors_and_removal() {
     unsafe {
-        let mut head = winlinks {
-            storage: null_mut(),
-        };
+        let mut head = winlinks { storage: None };
         assert!(winlinks_minmax(&mut head, -1).is_null());
         let ids = [i32::MAX, 0, 42, i32::MIN];
         let mut nodes: Vec<winlink> = ids.iter().map(|_| std::mem::zeroed()).collect();
@@ -46,11 +62,11 @@ fn winlink_indexes_duplicates_neighbors_and_removal() {
             assert!((*node).entry.owner.is_null());
             node = next;
         }
-        assert!(head.storage.is_null());
+        assert!(head.storage.is_none());
         assert!(winlinks_nfind(&mut *head, &mut probe).is_null());
         assert!(winlinks_insert(&mut *head, existing).is_null());
         assert_eq!(winlinks_remove(&mut *head, existing), existing);
-        assert!(head.storage.is_null());
+        assert!(head.storage.is_none());
     }
 }
 
@@ -64,8 +80,7 @@ fn moved_head_and_reindexed_nodes_keep_independent_storage() {
             assert!(winlinks_insert(&mut head, node).is_null());
         }
         // Session synchronization transfers the head and clears the original.
-        let mut old = head;
-        head.storage = null_mut();
+        let mut old = std::mem::replace(&mut head, winlinks { storage: None });
         let mut replacement: winlink = std::mem::zeroed();
         replacement.idx = 1;
         assert!(winlinks_insert(&mut head, &mut replacement).is_null());
@@ -84,12 +99,12 @@ fn moved_head_and_reindexed_nodes_keep_independent_storage() {
         for node in &mut nodes {
             assert_eq!(winlinks_remove(&mut old, node), node as *mut _);
         }
-        assert!(old.storage.is_null());
+        assert!(old.storage.is_none());
         assert_eq!(winlink_count(&mut head), 1);
         assert_eq!(
             winlinks_remove(&mut head, &mut replacement),
             &mut replacement as *mut _
         );
-        assert!(head.storage.is_null());
+        assert!(head.storage.is_none());
     }
 }

@@ -336,12 +336,10 @@ pub unsafe extern "C" fn session_find(mut name: *const ::core::ffi::c_char) -> *
         },
         curw: ::core::ptr::null_mut::<winlink>(),
         lastw: winlink_stack {
-            storage: std::ptr::null_mut(),
+            storage: None,
             reserved: std::ptr::null_mut(),
         },
-        windows: winlinks {
-            storage: std::ptr::null_mut(),
-        },
+        windows: winlinks { storage: None },
         statusat: 0,
         statuslines: 0,
         options: ::core::ptr::null_mut::<options>(),
@@ -401,13 +399,13 @@ pub unsafe extern "C" fn session_create(
     mut tio: *mut termios,
 ) -> *mut session {
     let mut s: *mut session = ::core::ptr::null_mut::<session>();
-    s = xcalloc(1 as size_t, ::core::mem::size_of::<session>() as size_t) as *mut session;
+    s = Box::into_raw(Box::new(std::mem::zeroed::<session>()));
     (*s).references = 1 as ::core::ffi::c_int;
     (*s).flags = 0 as ::core::ffi::c_int;
     (*s).cwd = xstrdup(cwd);
-    (*s).lastw.storage = std::ptr::null_mut();
+    (*s).lastw.storage = None;
     (*s).lastw.reserved = std::ptr::null_mut();
-    (*s).windows.storage = std::ptr::null_mut();
+    (*s).windows.storage = None;
     (*s).environ = env;
     (*s).options = oo;
     status_update_cache(s);
@@ -522,7 +520,7 @@ unsafe extern "C" fn session_free(
         options_free((*s).options);
         crate::src::window::winlink_stack_clear(&raw mut (*s).lastw);
         free((*s).name as *mut ::core::ffi::c_void);
-        free(s as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(s));
     }
 }
 #[no_mangle]
@@ -561,7 +559,7 @@ pub unsafe extern "C" fn session_destroy(
         winlink_stack_remove(&raw mut (*s).lastw, first);
     }
     crate::src::window::winlink_stack_clear(&raw mut (*s).lastw);
-    while !(*s).windows.storage.is_null() {
+    while (*s).windows.storage.is_some() {
         wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
         events_fire_winlink(
             b"window-unlinked\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1152,15 +1150,13 @@ pub unsafe extern "C" fn session_group_synchronize_from(mut target: *mut session
     }
 }
 unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s: *mut session) {
-    let mut old_windows: winlinks = winlinks {
-        storage: std::ptr::null_mut(),
-    };
     let mut ww: *mut winlinks = ::core::ptr::null_mut::<winlinks>();
+    let mut old_windows: winlinks;
     let mut old_lastw: winlink_stack;
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wl2: *mut winlink = ::core::ptr::null_mut::<winlink>();
     ww = &raw mut (*target).windows;
-    if (*ww).storage.is_null() {
+    if (*ww).storage.is_none() {
         return;
     }
     if !(*s).curw.is_null()
@@ -1170,12 +1166,7 @@ unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s:
     {
         session_next(s, 0 as ::core::ffi::c_int);
     }
-    memcpy(
-        &raw mut old_windows as *mut ::core::ffi::c_void,
-        &raw mut (*s).windows as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<winlinks>() as size_t,
-    );
-    (*s).windows.storage = std::ptr::null_mut();
+    old_windows = std::ptr::replace(&mut (*s).windows, winlinks { storage: None });
     wl = winlinks_minmax(ww, RB_NEGINF);
     while !wl.is_null() {
         wl2 = winlink_add(&raw mut (*s).windows, (*wl).idx);
@@ -1199,7 +1190,7 @@ unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s:
     old_lastw = std::ptr::replace(
         &raw mut (*s).lastw,
         winlink_stack {
-            storage: std::ptr::null_mut(),
+            storage: None,
             reserved: std::ptr::null_mut(),
         },
     );
@@ -1210,7 +1201,7 @@ unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s:
         }
     }
     crate::src::window::winlink_stack_clear(&raw mut old_lastw);
-    while !old_windows.storage.is_null() {
+    while old_windows.storage.is_some() {
         wl = winlinks_minmax(&raw mut old_windows, RB_NEGINF);
         wl2 = winlink_find_by_window_id(&raw mut (*s).windows, (*(*wl).window).id);
         if wl2.is_null() {
@@ -1227,19 +1218,11 @@ pub unsafe extern "C" fn session_renumber_windows(mut s: *mut session) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wl1: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wl_new: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut old_wins: winlinks = winlinks {
-        storage: std::ptr::null_mut(),
-    };
+    let mut old_wins: winlinks = std::ptr::replace(&mut (*s).windows, winlinks { storage: None });
     let mut old_lastw: winlink_stack;
     let mut new_idx: ::core::ffi::c_int = 0;
     let mut new_curw_idx: ::core::ffi::c_int = 0;
     let mut marked_idx: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    memcpy(
-        &raw mut old_wins as *mut ::core::ffi::c_void,
-        &raw mut (*s).windows as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<winlinks>() as size_t,
-    );
-    (*s).windows.storage = std::ptr::null_mut();
     new_idx = options_get_number(
         (*s).options,
         b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1263,13 +1246,13 @@ pub unsafe extern "C" fn session_renumber_windows(mut s: *mut session) {
     old_lastw = std::ptr::replace(
         &raw mut (*s).lastw,
         winlink_stack {
-            storage: std::ptr::null_mut(),
+            storage: None,
             reserved: std::ptr::null_mut(),
         },
     );
     for old_idx in crate::src::window::winlink_stack_indices(&raw const old_lastw) {
         wl = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::find(
-            old_wins.storage,
+            crate::src::shared::tree::OrderedIndex::boxed_ptr(&old_wins.storage),
             &old_idx,
         );
         if wl.is_null() {

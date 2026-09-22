@@ -241,33 +241,34 @@ pub unsafe fn windows_prev(elm: *mut window) -> *mut window {
 
 pub unsafe fn winlinks_find(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
     crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::find(
-        (*head).storage,
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
         &(*elm).idx,
     )
 }
 pub unsafe fn winlinks_nfind(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
     crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::nfind(
-        (*head).storage,
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
         &(*elm).idx,
     )
 }
 pub unsafe fn winlinks_insert(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
-    let found = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::insert(
-        &raw mut (*head).storage,
+    let found = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::insert_boxed(
+        &mut (*head).storage,
         (*elm).idx,
         elm,
     );
     if found.is_null() {
-        (*elm).entry.owner = (*head).storage;
+        (*elm).entry.owner = crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage);
     }
     found
 }
 pub unsafe fn winlinks_remove(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
-    let removed = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::remove(
-        &raw mut (*head).storage,
-        &(*elm).idx,
-        elm,
-    );
+    let removed =
+        crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::remove_boxed(
+            &mut (*head).storage,
+            &(*elm).idx,
+            elm,
+        );
     if !removed.is_null() {
         (*elm).entry.owner = std::ptr::null_mut();
     }
@@ -275,7 +276,7 @@ pub unsafe fn winlinks_remove(head: *mut winlinks, elm: *mut winlink) -> *mut wi
 }
 pub unsafe fn winlinks_minmax(head: *mut winlinks, direction: ::core::ffi::c_int) -> *mut winlink {
     crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::edge(
-        (*head).storage,
+        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
         direction < 0,
     )
 }
@@ -710,13 +711,14 @@ pub unsafe extern "C" fn winlink_add(
     let mut owner = refbox::RefBox::new(std::mem::zeroed::<winlink>());
     owner.try_access_mut(|link| link.idx = idx).unwrap();
     wl = owner.as_ptr() as *mut winlink;
-    let found = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::insert_owned(
-        &raw mut (*wwl).storage,
-        idx,
-        owner,
-    );
+    let found =
+        crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::insert_owned_boxed(
+            &mut (*wwl).storage,
+            idx,
+            owner,
+        );
     debug_assert!(found.is_null());
-    (*wl).entry.owner = (*wwl).storage;
+    (*wl).entry.owner = crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*wwl).storage);
     return wl;
 }
 #[no_mangle]
@@ -745,6 +747,9 @@ pub unsafe extern "C" fn winlink_set_window(mut wl: *mut winlink, mut w: *mut wi
 }
 #[no_mangle]
 pub unsafe extern "C" fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut winlink) {
+    if !(*wl).session.is_null() {
+        winlink_stack_remove(&raw mut (*(*wl).session).lastw, wl);
+    }
     let mut w: *mut window = (*wl).window;
     if !w.is_null() {
         if !(*wl).wentry.tqe_next.is_null() {
@@ -758,11 +763,12 @@ pub unsafe extern "C" fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut win
             b"winlink_remove\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    let owner = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::take_owned(
-        (*wwl).storage,
-        wl,
-    )
-    .expect("winlink must have a RefBox owner");
+    let owner =
+        crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::take_owned_boxed(
+            &mut (*wwl).storage,
+            wl,
+        )
+        .expect("winlink must have a RefBox owner");
     winlinks_remove(wwl, wl);
     drop(owner);
 }
@@ -810,15 +816,19 @@ pub unsafe extern "C" fn winlink_stack_push(stack: *mut winlink_stack, wl: *mut 
         return;
     }
     winlink_stack_remove(stack, wl);
-    if (*stack).storage.is_null() {
-        (*stack).storage = Box::into_raw(Box::default());
+    if (*stack).storage.is_none() {
+        (*stack).storage = Some(Box::default());
     }
     let weak = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::downgrade(
         (*wl).entry.owner,
         wl,
     )
     .expect("visited winlink must have a RefBox owner");
-    (*(*stack).storage).push_front(weak);
+    (*stack)
+        .storage
+        .as_mut()
+        .expect("visit history was just initialized")
+        .push_front(weak);
     (*wl).flags |= WINLINK_VISITED;
 }
 #[no_mangle]
@@ -826,58 +836,72 @@ pub unsafe extern "C" fn winlink_stack_remove(stack: *mut winlink_stack, wl: *mu
     if wl.is_null() {
         return;
     }
-    if !(*stack).storage.is_null() {
-        (*(*stack).storage).retain(|link| link.as_ptr() != wl && link.is_alive());
+    if let Some(storage) = (*stack).storage.as_mut() {
+        storage.retain(|link| checked_winlink_ptr(link) != wl);
     }
     (*wl).flags &= !WINLINK_VISITED;
 }
 
 /// Append while rebuilding a session's saved visit order.
 pub unsafe fn winlink_stack_append(stack: *mut winlink_stack, wl: *mut winlink) {
-    if (*stack).storage.is_null() {
-        (*stack).storage = Box::into_raw(Box::default());
+    if (*stack).storage.is_none() {
+        (*stack).storage = Some(Box::default());
     }
     let weak = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::downgrade(
         (*wl).entry.owner,
         wl,
     )
     .expect("visited winlink must have a RefBox owner");
-    (*(*stack).storage).push_back(weak);
+    (*stack)
+        .storage
+        .as_mut()
+        .expect("visit history was just initialized")
+        .push_back(weak);
     (*wl).flags |= WINLINK_VISITED;
 }
 
 pub unsafe fn winlink_stack_clear(stack: *mut winlink_stack) {
-    if !(*stack).storage.is_null() {
-        drop(Box::from_raw((*stack).storage));
-        (*stack).storage = std::ptr::null_mut();
-    }
+    (*stack).storage = None;
 }
 
 pub unsafe fn winlink_stack_indices(stack: *const winlink_stack) -> Vec<::core::ffi::c_int> {
-    if (*stack).storage.is_null() {
+    let Some(storage) = (*stack).storage.as_ref() else {
         return Vec::new();
-    }
-    (*(*stack).storage)
+    };
+    storage
         .iter()
         .filter_map(|link| match link.try_access_mut(|node| node.idx) {
             Ok(idx) => Some(idx),
-            Err(refbox::BorrowError::Dropped) => None,
+            Err(refbox::BorrowError::Dropped) => {
+                panic!("visited winlink owner was dropped before observer teardown")
+            }
             Err(refbox::BorrowError::Borrowed) => panic!("visited winlink is already borrowed"),
         })
         .collect()
+}
+
+fn checked_winlink_ptr(link: &refbox::Weak<winlink>) -> *mut winlink {
+    match link.try_access_mut(|node| node as *mut winlink) {
+        Ok(ptr) => ptr,
+        Err(refbox::BorrowError::Dropped) => {
+            panic!("visited winlink owner was dropped before observer teardown")
+        }
+        Err(refbox::BorrowError::Borrowed) => panic!("visited winlink is already borrowed"),
+    }
 }
 
 pub unsafe fn winlink_stack_first(
     stack: *const winlink_stack,
     _links: *mut winlinks,
 ) -> *mut winlink {
-    if (*stack).storage.is_null() {
+    let Some(storage) = (*stack).storage.as_ref() else {
         return std::ptr::null_mut();
-    }
-    (*(*stack).storage)
+    };
+    storage
         .iter()
-        .find(|link| link.is_alive())
-        .map_or(std::ptr::null_mut(), |link| link.as_ptr() as *mut winlink)
+        .map(checked_winlink_ptr)
+        .next()
+        .unwrap_or(std::ptr::null_mut())
 }
 
 pub unsafe fn winlink_stack_next(
@@ -885,18 +909,22 @@ pub unsafe fn winlink_stack_next(
     _links: *mut winlinks,
     wl: *mut winlink,
 ) -> *mut winlink {
-    if wl.is_null() || (*stack).storage.is_null() {
+    if wl.is_null() || (*stack).storage.is_none() {
         return std::ptr::null_mut();
     }
-    let queue = &*(*stack).storage;
-    let Some(position) = queue.iter().position(|link| link.as_ptr() == wl) else {
+    let queue = (*stack).storage.as_ref().expect("checked above");
+    let Some(position) = queue
+        .iter()
+        .position(|link| checked_winlink_ptr(link) == wl)
+    else {
         return std::ptr::null_mut();
     };
     queue
         .iter()
         .skip(position + 1)
-        .find(|link| link.is_alive())
-        .map_or(std::ptr::null_mut(), |link| link.as_ptr() as *mut winlink)
+        .map(checked_winlink_ptr)
+        .next()
+        .unwrap_or(std::ptr::null_mut())
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_find_by_id_str(mut s: *const ::core::ffi::c_char) -> *mut window {

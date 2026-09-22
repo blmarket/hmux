@@ -17,6 +17,81 @@ pub struct OrderedIndex<K, T> {
 }
 
 impl<K: Ord, T> OrderedIndex<K, T> {
+    /// Return the stable address of an index stored in an `Option<Box<_>>`.
+    /// The pointer is only a compatibility view; the option remains its owner.
+    pub fn boxed_ptr(slot: &Option<Box<Self>>) -> *mut Self {
+        slot.as_deref().map_or(std::ptr::null_mut(), |index| {
+            index as *const Self as *mut Self
+        })
+    }
+
+    /// Insert into an index whose allocation is owned by an `Option<Box<_>>`.
+    pub fn insert_boxed(slot: &mut Option<Box<Self>>, key: K, node: *mut T) -> *mut T {
+        if slot.is_none() {
+            *slot = Some(Box::new(Self {
+                entries: Default::default(),
+                owners: Default::default(),
+            }));
+        }
+        match slot
+            .as_mut()
+            .expect("boxed index was just initialized")
+            .entries
+            .entry(key)
+        {
+            std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(node);
+                std::ptr::null_mut()
+            }
+        }
+    }
+
+    /// Remove from an index whose allocation is owned by an `Option<Box<_>>`.
+    pub fn remove_boxed(slot: &mut Option<Box<Self>>, key: &K, node: *mut T) -> *mut T {
+        let (removed, empty) = {
+            let Some(index) = slot.as_mut() else {
+                return std::ptr::null_mut();
+            };
+            if index.entries.get(key).copied() != Some(node) || node.is_null() {
+                return std::ptr::null_mut();
+            }
+            index.entries.remove(key);
+            (node, index.entries.is_empty() && index.owners.is_empty())
+        };
+        if empty {
+            *slot = None;
+        }
+        removed
+    }
+
+    /// Insert an owned node into an index whose allocation is owned by an
+    /// `Option<Box<_>>`.
+    pub fn insert_owned_boxed(
+        slot: &mut Option<Box<Self>>,
+        key: K,
+        owner: refbox::RefBox<T>,
+    ) -> *mut T {
+        let node = owner.as_ptr() as *mut T;
+        let found = Self::insert_boxed(slot, key, node);
+        if found.is_null() {
+            slot.as_mut()
+                .expect("boxed index was just initialized")
+                .owners
+                .insert(node as usize, owner);
+        }
+        found
+    }
+
+    /// Transfer an owned node before removing it from a boxed index.
+    pub fn take_owned_boxed(
+        slot: &mut Option<Box<Self>>,
+        node: *mut T,
+    ) -> Option<refbox::RefBox<T>> {
+        slot.as_mut()
+            .and_then(|index| index.owners.remove(&(node as usize)))
+    }
+
     pub unsafe fn find(index: *mut Self, key: &K) -> *mut T {
         if index.is_null() {
             return std::ptr::null_mut();
