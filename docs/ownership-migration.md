@@ -1,9 +1,9 @@
 # Ownership migration inventory
 
-Status: refreshed from the current `main` tree at `HEAD 5097d9e` on
+Status: refreshed from the current `main` tree at `HEAD 73312be` on
 2026-09-22. The runtime sources are unchanged from the audited `5d596e0`
-baseline; this change restores the deleted document only. This is a design and
-validation document, not a runtime-code change.
+baseline; this cumulative refresh changes documentation only. This is a design
+and validation document, not a runtime-code change.
 
 The translated application still has two different kinds of records:
 
@@ -164,7 +164,7 @@ to an allocation is not made safe merely because the allocation happens to be
 backed by `Box`, `VecDeque`, `Rc`, or `OwnedFd`. The owner, C view, assignment
 sites, callback revocation, and destructor must be migrated as one boundary.
 
-## 2. ABI rules that constrain every proposal
+## 3. ABI rules that constrain every proposal
 
 1. Declarations in `src/shared` are the authoritative C-shaped declarations.
    They are commonly `#[repr(C)]`, `Copy`, embedded in larger records, passed
@@ -208,7 +208,7 @@ sites, callback revocation, and destructor must be migrated as one boundary.
    API and destructor are modeled. A Rust `Box<T>` is not a valid substitute
    for a foreign allocation.
 
-## 3. Pointer-field classification
+## 4. Pointer-field classification
 
 The labels below are used consistently in the inventory:
 
@@ -246,7 +246,7 @@ allocation** while remaining a raw field in the C record. That is the current
 state of environments, indexes, buffer handles, and the selected resize queue;
 it is not the same as putting an RAII value in the record.
 
-## 4. Proposed Rust representations
+## 5. Proposed Rust representations
 
 These are target representations for future increments, not types to add all at
 once.
@@ -267,7 +267,7 @@ once.
 substitute for deciding who drops `T`. `Rc`, `Weak`, and `RefBox::Weak` model
 identity/borrowing only when their actual owner is already defined.
 
-## 5. Selected bounded increment: migrate the resize-queue lifetime
+## 6. Selected bounded increment: migrate the resize-queue lifetime
 
 ### Current complete path to preserve
 
@@ -339,8 +339,6 @@ record, not an untracked allocation.
 
 The implementation must update these paths together:
 
-* `src/shared/pane.rs`: define the owner, handle operations, identity-safe
-  retain, and nulling cleanup; keep the C handle layout.
 * `src/shared/pane.rs`: define the side owner, handle operations,
   identity-safe retain, and nulling cleanup; keep the C handle layout and its
   `Copy` status for now.
@@ -371,7 +369,7 @@ already-tested owners at the reactor boundary. Its dependency is the existing
 custom-layout and reactor owners remain prerequisites for later increments, not
 part of this queue change.
 
-## 6. Migration order after the bounded increment
+## 7. Migration order after the bounded increment
 
 1. **Keep the inventory and guards current.** For every candidate, record the
    allocator, field assignment, aliases, borrow duration, transfer operation,
@@ -409,26 +407,38 @@ revocation must be settled before parent records can safely drop their child
 graphs. A raw alias should become a Rust borrow or weak identity only after its
 owner and invalidation point are known.
 
-## 7. Validation evidence and limitations
+## 8. Validation evidence and limitations
 
-The retained review record reports that the workspace test run and 1,639
-conformance tests passed (`test.log:3295` and `test.log:10608`). It also records
-that `cargo fmt --check` failed and that strict Clippy failed. Those failures
-are baseline evidence to resolve or explain before an ownership implementation
-is called green; this documentation refresh does not claim to fix them.
+The available test counts are baseline/conformance evidence, not evidence that
+the proposed ownership increment is implemented. The retained review reports
+267 focused tests passed and 1,639 broader tests passed with one skipped; the
+broader command excluded binaries/tests. Neither result exercises the future
+`ResizeQueueOwner`, pane-free cleanup, allocator-pair guard, or double-drop
+guard described above. The historical `test.log` references are not files in
+this worktree, so they are recorded as reported baseline results rather than
+independently reproducible evidence here.
 
-The sanitizer/leak evidence was limited to focused runs
-(`implement.log:161-213,261-264`), not the complete application lifetime.
-In particular, it does not prove that alternate-screen cleanup, every
-pane-reference destruction path, callbacks that free their owner, or all
-allocator pairs are covered. Linux Valgrind/ASan is available in the Nix
-development shell; Valgrind is intentionally unavailable on
-`aarch64-darwin` (`flake.nix:10-13,88,117-120`). The repository's numeric
-layout fixtures and the root application link are Linux-oriented, so a
-non-Linux run cannot be treated as equivalent without target-specific guards
-or fixtures.
+Direct checks run while refreshing this document were:
 
-## 7. Validation commands and architecture guards
+* `cargo test --test pane_resize_queue` — 1 passed, 0 failed. This is the
+  existing single queue scenario, not the proposed complete lifetime.
+* `cargo test --test architecture --test ffi_boundary --test consolidation_layout --test consolidation_callbacks` — 6 tests passed. These are current ABI/conformance guards; they do not yet enforce owner-in-record, allocator-pair, or double-drop rules.
+* `cargo fmt --check` — failed on the pre-existing formatting difference at
+  `src/key_string.rs:5724`; this refresh does not change runtime formatting.
+* `cargo clippy --workspace --all-targets -- -D warnings` — failed on existing
+  lint errors, including `src/control.rs:225` and `src/shared/regex.rs:21`.
+
+No sanitizer or leak-tool run was performed for this documentation-only
+refresh. Therefore this document makes no claim about alternate-screen
+cleanup, every pane-reference destruction path, callback/free re-entry, or
+allocator-pair correctness. The Nix configuration documents Linux tooling and
+does not provide Valgrind on `aarch64-darwin` (`flake.nix:10-13,88,117-120`);
+that availability note is not a sanitizer result. The repository's numeric
+layout fixtures and root application link are Linux-oriented, so a non-Linux
+run cannot be treated as equivalent without target-specific guards or
+fixtures.
+
+## 9. Validation commands and architecture guards
 
 The ownership implementation should run the focused checks first and then the
 full workspace checks:
@@ -493,4 +503,3 @@ Any implementation that changes a `#[repr(C)]` record, a public raw-pointer
 function, a callback alias, or an allocator pair must update the corresponding
 architecture/layout guard in the same change. This document intentionally
 proposes no runtime code change by itself.
-
