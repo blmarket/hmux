@@ -4,7 +4,7 @@ use std::ptr;
 
 use hmux2::src::arguments::{
     args_create, args_first_value, args_free, args_has, args_next_value, args_percentage_result,
-    args_set, args_string, args_string_percentage_and_expand_result, args_strtonum,
+    args_print, args_set, args_string, args_string_percentage_and_expand_result, args_strtonum,
     args_strtonum_and_expand_result, args_strtonum_result, parse_number, parse_percentage,
     ArgumentValueError,
 };
@@ -16,6 +16,19 @@ use hmux2::src::xmalloc::{xcalloc, xstrdup};
 
 fn cstring(value: &str) -> CString {
     CString::new(value).expect("test input contains no NUL")
+}
+
+#[test]
+fn printing_options_uses_formatted_flag_and_string_fragments() {
+    unsafe {
+        let args = args_create();
+        args_set(args, b'v', ptr::null_mut(), 0);
+        args_set(args, b'n', string_value(c"hello"), 0);
+        let printed = args_print(args);
+        assert_eq!(CStr::from_ptr(printed).to_bytes(), b"-v -n hello");
+        free(printed.cast());
+        args_free(args);
+    }
 }
 
 fn error_message(error: ArgumentValueError) -> &'static [u8] {

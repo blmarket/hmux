@@ -730,6 +730,30 @@ legacy callers safe.
   `git diff --check` passed. The pre-existing `src/layout/custom.rs`
   import-format difference remains; no sanitizer run was performed.
 
+### Increment 30 — argument-print formatting temporary (2026-09-22)
+
+- `args_print_add` now owns its formatted fragment as a local `CString` via
+  `xvasprintf_cstring`, removing the direct `xvasprintf`/`free` pair. It still
+  grows the separately C-owned result buffer and passes a borrowed
+  `formatted.as_ptr()` to synchronous `strlcat`.
+- Audited every production format: `%s` receives C strings, and `%c` prints
+  parsed nonzero option flags at the end of its fragment. No supported user
+  input puts NUL between visible bytes in a fragment. A direct unsupported
+  `args_set(..., flag=0, ...)` can produce a NUL final format byte; the
+  C-visible printed output stays the same, while the private spare-capacity
+  count now follows the visible C-string length. The returned `args_print`
+  allocation and ABI remain C-owned.
+- Added a focused normal-output regression for flag and string fragments.
+  `cargo test --test arguments_conversion` passed. Edition-2021 rustfmt and
+  `git diff --check` passed; combined workspace and binary validation is
+  recorded below. Existing compiler warnings remain.
+- After integrating increments 27–30, `cargo test --workspace`, the binary
+  build, and `scripts/layout_cli_checks.py` passed; changed-file rustfmt
+  checks (except the pre-existing layout import difference) and
+  `git diff --check` passed. The attempted `cargo test --test layout_custom`
+  target does not exist in the current repository; the layout unit test and
+  CLI script provided the focused checks instead.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -740,15 +764,22 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `args_print_add` uses `xvasprintf`'s returned length for capacity and
-   `strlcat` for its first-NUL view. Its production callers use C strings or
-   parsed nonzero option flags; migrate the scratch owner to `CString` after
-   verifying supported argument output.
-2. `format_printf` returns a C-owned allocation, while status/message,
-   input/control, environment, option, and format values escape into records
-   or queues. Audit their owners and teardown before changing those calls.
-   The session/winlink graph remains deferred.
+1. Outside the `xmalloc` ABI wrapper, no remaining direct `xvasprintf` caller
+   uses its returned byte length. The remaining values are observed as C
+   strings, so no supported
+   embedded-NUL E2E case requires a full-byte buffer. Prioritize
+   `control_write` and `control_notify_write` next: they transfer formatted
+   lines to immediate or deferred output queues, so migrate those owners and
+   their teardown together.
+2. `events_payload_set_string`, `input_reply`, `options_set_string`,
+   `server_add_message`, `environ_set`, `status_message_set`, and `format_add`
+   store formatted C strings in records or queues. Audit each containing
+   lifecycle before adding `CString`; a local owner alone would dangle.
+   `format_printf` returns a C-owned allocation to callback consumers, and
+   the `xmalloc` wrappers retain their C allocator ABI.
+3. The remaining address-based registries, UI tags, and session/winlink graph
+   are separate ownership candidates after the simpler string lifetimes.
 
-Current validation is recorded in increments 15–29. The remaining
+Current validation is recorded in increments 15–30. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–29 has its own local commit; none was pushed.
+Each of increments 15–30 has its own local commit; none was pushed.

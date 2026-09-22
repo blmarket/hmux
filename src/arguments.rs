@@ -81,7 +81,9 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::utf8::utf8_stravis;
-use crate::src::xmalloc::{xasprintf, xcalloc, xrealloc, xrecallocarray, xstrdup, xvasprintf};
+use crate::src::xmalloc::{
+    xasprintf, xcalloc, xrealloc, xrecallocarray, xstrdup, xvasprintf_cstring,
+};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_21;
@@ -899,14 +901,11 @@ unsafe extern "C" fn args_print_add(
     mut args: ...
 ) {
     let mut ap: ::core::ffi::VaList;
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut slen: size_t = 0;
     ap = args.clone();
-    slen = xvasprintf(&raw mut s, fmt, ap) as size_t;
-    *len = (*len).wrapping_add(slen);
+    let formatted = xvasprintf_cstring(fmt, ap);
+    *len = (*len).wrapping_add(formatted.as_bytes().len() as size_t);
     *buf = xrealloc(*buf as *mut ::core::ffi::c_void, *len) as *mut ::core::ffi::c_char;
-    strlcat(*buf, s, *len);
-    free(s as *mut ::core::ffi::c_void);
+    strlcat(*buf, formatted.as_ptr(), *len);
 }
 unsafe extern "C" fn args_print_add_value(
     mut buf: *mut *mut ::core::ffi::c_char,
