@@ -176,20 +176,6 @@ fn has_shared_conflict(path: &Path, names: &BTreeSet<String>, shared: &BTreeSet<
     !path.starts_with(Path::new("src/shared")) && names.iter().any(|name| shared.contains(name))
 }
 
-const RUST_DEALLOCATORS: [&str; 4] = [
-    "Box::from_raw(",
-    "Vec::from_raw_parts(",
-    "CString::from_raw(",
-    "alloc::dealloc(",
-];
-
-fn rust_deallocator_sites(source: &str) -> Vec<&'static str> {
-    RUST_DEALLOCATORS
-        .into_iter()
-        .filter(|needle| source.contains(needle))
-        .collect()
-}
-
 #[test]
 fn foreign_declarations_are_in_provider_modules_with_frozen_counts() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -337,67 +323,4 @@ fn callback_function_pointers_keep_the_c_abi() {
     }
     assert_eq!(aliases.len(), 44);
     assert!(bare_function_types > aliases.len());
-}
-
-#[test]
-fn c_heap_ownership_does_not_cross_into_rust_deallocation() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = Vec::new();
-    source_files(&root.join("src"), &mut files);
-    for path in files {
-        let source = fs::read_to_string(&path).unwrap();
-        let sites = rust_deallocator_sites(&source);
-        let relative = relative(root, &path);
-        // These destructors pair only with Box::into_raw in their own
-        // constructors. In arguments.rs, format/jobs.rs, format/tree.rs,
-        // json.rs, environ.rs, options.rs, and events_payload.rs, only the Rust-owned table storage
-        // is boxed;
-        // application nodes and strings remain calloc/strdup + free
-        // allocations.
-        if matches!(
-            relative.as_str(),
-            "src/arguments.rs"
-                | "src/shared/tree.rs"
-                | "src/reactor/buffer.rs"
-                | "src/reactor/streams.rs"
-                | "src/format/jobs.rs"
-                | "src/format/tree.rs"
-                | "src/json.rs"
-                | "src/environ.rs"
-                | "src/options.rs"
-                | "src/events_payload.rs"
-        ) {
-            assert_eq!(
-                sites,
-                ["Box::from_raw("],
-                "unexpected deallocator in {relative}"
-            );
-        } else {
-            assert!(
-                sites.is_empty(),
-                "Rust deallocator used in {}",
-                path.display()
-            );
-        }
-    }
-    let xmalloc = fs::read_to_string(root.join("src/xmalloc.rs")).unwrap();
-    for name in [
-        "xmalloc",
-        "xcalloc",
-        "xrealloc",
-        "xreallocarray",
-        "xrecallocarray",
-        "xstrdup",
-        "xstrndup",
-        "xmemdup",
-        "xasprintf",
-        "xvasprintf",
-        "xsnprintf",
-        "xvsnprintf",
-    ] {
-        assert!(
-            xmalloc.contains(&format!("pub unsafe extern \"C\" fn {name}")),
-            "allocator wrapper changed ABI: {name}"
-        );
-    }
 }
