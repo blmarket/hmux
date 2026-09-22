@@ -18,8 +18,12 @@ pub enum BracketedPasteBoundaryMatch {
         consumed: usize,
     },
     /// The supplied bytes are a prefix of a boundary. `consumed` is the
-    /// number of bytes in that prefix.
-    Incomplete { consumed: usize },
+    /// number of bytes in that prefix. `boundary` is `None` while the prefix
+    /// is shared by both boundaries.
+    Incomplete {
+        boundary: Option<BracketedPasteBoundary>,
+        consumed: usize,
+    },
     /// No boundary starts at the beginning of the slice. Nothing was
     /// consumed, so the caller can apply its normal key parsing rules.
     NoMatch { consumed: usize },
@@ -31,6 +35,7 @@ pub const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
 /// Match one bracketed-paste boundary without inspecting or changing caller
 /// state.
 pub fn match_bracketed_paste_boundary(input: &[u8]) -> BracketedPasteBoundaryMatch {
+    let mut incomplete = None;
     for (boundary, marker) in [
         (BracketedPasteBoundary::Start, BRACKETED_PASTE_START),
         (BracketedPasteBoundary::End, BRACKETED_PASTE_END),
@@ -45,7 +50,17 @@ pub fn match_bracketed_paste_boundary(input: &[u8]) -> BracketedPasteBoundaryMat
                 consumed: marker.len(),
             };
         }
+        if incomplete.is_some() {
+            return BracketedPasteBoundaryMatch::Incomplete {
+                boundary: None,
+                consumed: input.len(),
+            };
+        }
+        incomplete = Some(boundary);
+    }
+    if let Some(boundary) = incomplete {
         return BracketedPasteBoundaryMatch::Incomplete {
+            boundary: Some(boundary),
             consumed: input.len(),
         };
     }
@@ -53,17 +68,11 @@ pub fn match_bracketed_paste_boundary(input: &[u8]) -> BracketedPasteBoundaryMat
     BracketedPasteBoundaryMatch::NoMatch { consumed: 0 }
 }
 
-/// Whether the input is still a possible prefix of the end marker.
-pub fn is_incomplete_bracketed_paste_end(input: &[u8]) -> bool {
-    input.len() < BRACKETED_PASTE_END.len()
-        && input.starts_with(&BRACKETED_PASTE_END[..input.len()])
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        is_incomplete_bracketed_paste_end, match_bracketed_paste_boundary, BracketedPasteBoundary,
-        BracketedPasteBoundaryMatch, BRACKETED_PASTE_END, BRACKETED_PASTE_START,
+        match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
+        BRACKETED_PASTE_END, BRACKETED_PASTE_START,
     };
 
     #[test]
@@ -73,9 +82,17 @@ mod tests {
             (BracketedPasteBoundary::End, BRACKETED_PASTE_END),
         ] {
             for split in 0..marker.len() {
+                let boundary = if split < BRACKETED_PASTE_END.len() - 1 {
+                    None
+                } else {
+                    Some(boundary)
+                };
                 assert_eq!(
                     match_bracketed_paste_boundary(&marker[..split]),
-                    BracketedPasteBoundaryMatch::Incomplete { consumed: split },
+                    BracketedPasteBoundaryMatch::Incomplete {
+                        boundary,
+                        consumed: split,
+                    },
                     "{boundary:?} split at {split}"
                 );
             }
@@ -97,6 +114,7 @@ mod tests {
             b"\x1b[202~".as_slice(),
             b"\x1b[20x".as_slice(),
             b"\x1b[200x".as_slice(),
+            b"\x1b[201x".as_slice(),
         ] {
             assert_eq!(
                 match_bracketed_paste_boundary(input),
@@ -132,17 +150,37 @@ mod tests {
                 consumed: BRACKETED_PASTE_END.len(),
             }
         );
+        assert_eq!(
+            match_bracketed_paste_boundary(b"\x1b[200x"),
+            BracketedPasteBoundaryMatch::NoMatch { consumed: 0 }
+        );
     }
 
     #[test]
-    fn only_end_prefixes_extend_the_paste_end_delay() {
+    fn end_delay_candidates_are_reported_by_the_matcher() {
         for split in 0..BRACKETED_PASTE_END.len() {
-            assert!(is_incomplete_bracketed_paste_end(
-                &BRACKETED_PASTE_END[..split]
-            ));
+            let expected_boundary = if split < BRACKETED_PASTE_END.len() - 1 {
+                None
+            } else {
+                Some(BracketedPasteBoundary::End)
+            };
+            assert_eq!(
+                match_bracketed_paste_boundary(&BRACKETED_PASTE_END[..split]),
+                BracketedPasteBoundaryMatch::Incomplete {
+                    boundary: expected_boundary,
+                    consumed: split,
+                },
+                "end split at {split}"
+            );
         }
-        assert!(!is_incomplete_bracketed_paste_end(BRACKETED_PASTE_END));
-        assert!(!is_incomplete_bracketed_paste_end(b"\x1b[200"));
-        assert!(!is_incomplete_bracketed_paste_end(b"\x1b[201x"));
+        assert_eq!(
+            match_bracketed_paste_boundary(
+                &BRACKETED_PASTE_START[..BRACKETED_PASTE_START.len() - 1]
+            ),
+            BracketedPasteBoundaryMatch::Incomplete {
+                boundary: Some(BracketedPasteBoundary::Start),
+                consumed: BRACKETED_PASTE_START.len() - 1,
+            }
+        );
     }
 }

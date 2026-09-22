@@ -1,6 +1,5 @@
 use crate::src::bracketed_paste::{
-    is_incomplete_bracketed_paste_end, match_bracketed_paste_boundary, BracketedPasteBoundary,
-    BracketedPasteBoundaryMatch,
+    match_bracketed_paste_boundary, BracketedPasteBoundary, BracketedPasteBoundaryMatch,
 };
 use crate::src::colour::{colour_format, colour_parse_x11_logged};
 use crate::src::events::events_fire_client;
@@ -1512,19 +1511,29 @@ unsafe extern "C" fn tty_keys_next1(
         buf,
         expired,
     );
-    if let BracketedPasteBoundaryMatch::Match { boundary, consumed } =
-        match_bracketed_paste_boundary(::core::slice::from_raw_parts(buf as *const u8, len))
-    {
-        *key = match boundary {
-            BracketedPasteBoundary::Start => {
-                KEYC_PASTE_START as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META
+    match match_bracketed_paste_boundary(::core::slice::from_raw_parts(buf as *const u8, len)) {
+        BracketedPasteBoundaryMatch::Match { boundary, consumed } => {
+            *key = match boundary {
+                BracketedPasteBoundary::Start => {
+                    KEYC_PASTE_START as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META
+                }
+                BracketedPasteBoundary::End => {
+                    KEYC_PASTE_END as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META
+                }
+            };
+            *size = consumed;
+            return 0 as ::core::ffi::c_int;
+        }
+        BracketedPasteBoundaryMatch::Incomplete { consumed, .. } => {
+            *size = consumed;
+            if expired == 0 {
+                return 1 as ::core::ffi::c_int;
             }
-            BracketedPasteBoundary::End => {
-                KEYC_PASTE_END as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META
-            }
-        };
-        *size = consumed;
-        return 0 as ::core::ffi::c_int;
+            return -(1 as ::core::ffi::c_int);
+        }
+        BracketedPasteBoundaryMatch::NoMatch { consumed } => {
+            *size = consumed;
+        }
     }
     tk = tty_keys_find(tty, buf, len, size);
     if !tk.is_null() && (*tk).key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
@@ -2202,12 +2211,16 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                     if delay == 0 as ::core::ffi::c_int {
                         delay = 1 as ::core::ffi::c_int;
                     }
-                    if (*tty).flags & TTY_BRACKETPASTE != 0
-                        && is_incomplete_bracketed_paste_end(::core::slice::from_raw_parts(
-                            buf as *const u8,
-                            len,
-                        ))
-                    {
+                    let partial_paste_end = match match_bracketed_paste_boundary(
+                        ::core::slice::from_raw_parts(buf as *const u8, len),
+                    ) {
+                        BracketedPasteBoundaryMatch::Incomplete { boundary, consumed } => {
+                            consumed != 0 && boundary != Some(BracketedPasteBoundary::Start)
+                        }
+                        BracketedPasteBoundaryMatch::Match { .. }
+                        | BracketedPasteBoundaryMatch::NoMatch { .. } => false,
+                    };
+                    if (*tty).flags & TTY_BRACKETPASTE != 0 && partial_paste_end {
                         log_debug(
                             b"%s: increasing delay (partial paste end)\0" as *const u8
                                 as *const ::core::ffi::c_char,
