@@ -153,7 +153,7 @@ use crate::src::window::{
     window_find_by_id, window_has_pane, window_pane_find_by_id, winlink_find_by_window,
 };
 use crate::src::xmalloc::{
-    xasprintf, xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup, xvasprintf,
+    xasprintf, xcalloc, xmalloc, xrealloc, xreallocarray, xstrdup, xvasprintf_cstring,
 };
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -270,22 +270,20 @@ pub unsafe extern "C" fn cmd_log_argv(
     mut fmt: *const ::core::ffi::c_char,
     mut args: ...
 ) {
-    let mut prefix: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ap: ::core::ffi::VaList;
     let mut i: ::core::ffi::c_int = 0;
     ap = args.clone();
-    xvasprintf(&raw mut prefix, fmt, ap);
+    let prefix = xvasprintf_cstring(fmt, ap);
     i = 0 as ::core::ffi::c_int;
     while i < argc {
         log_debug(
             b"%s: argv[%d]=%s\0" as *const u8 as *const ::core::ffi::c_char,
-            prefix,
+            prefix.as_ptr(),
             i,
             *argv.offset(i as isize),
         );
         i += 1;
     }
-    free(prefix as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_prepend_argv(

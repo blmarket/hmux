@@ -540,6 +540,20 @@ legacy callers safe.
   passed. Existing compiler warnings remain; no live screen scenario or
   sanitizer run was performed.
 
+### Increment 19 — command argv logging prefix (2026-09-22)
+
+- `cmd_log_argv` now owns its formatted prefix as a local `CString` through
+  `xvasprintf_cstring`, removing its direct `xvasprintf`/`free` pair. Each
+  `prefix.as_ptr()` is borrowed only for one synchronous `log_debug` call.
+- `log_debug` either returns immediately when logging is disabled or calls
+  `log_vwrite`, which formats and copies the bytes before returning. With
+  `argc <= 0`, the prefix is still formatted and dropped without reading
+  `argv`. Arbitrary bytes, first-NUL behavior, and the exported variadic ABI
+  are unchanged.
+- The allocator-bridge regression, binary build, edition-2021 rustfmt for the
+  changed file, and `git diff --check` passed. Existing compiler warnings
+  remain; no live logging scenario or sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -550,14 +564,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The local `cmd_log_argv` and `event_payload_log` formatted prefixes are
-   synchronous scratch strings. `screen_write_strlen` has another local
+1. The local `event_payload_log` formatted prefix is a synchronous scratch
+   string. `screen_write_strlen` has another local
    formatted string, though its byte-scanning loop needs a separate audit.
 2. `format_printf`, status/message
    strings, and input/control strings that escape into records or queues still
    require separate lifetime audits; the session/winlink graph remains
    deferred.
 
-Current validation is recorded in increments 15–18. The remaining
+Current validation is recorded in increments 15–19. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–18 has its own local commit; none was pushed.
+Each of increments 15–19 has its own local commit; none was pushed.
