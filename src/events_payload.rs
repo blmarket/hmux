@@ -76,7 +76,8 @@ use crate::src::window::{
     window_add_ref, window_has_pane, window_pane_add_ref, window_pane_remove_ref,
     window_remove_ref, winlink_find_by_index,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xmemdup, xstrdup, xvasprintf, xvasprintf_cstring};
+use crate::src::xmalloc::{xasprintf, xcalloc, xmemdup, xstrdup, xvasprintf_cstring};
+use std::ffi::CString;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -90,6 +91,18 @@ pub const EVENT_PAYLOAD_UINT: event_payload_type = 3;
 pub const EVENT_PAYLOAD_INT: event_payload_type = 2;
 pub const EVENT_PAYLOAD_TIME: event_payload_type = 1;
 pub const EVENT_PAYLOAD_STRING: event_payload_type = 0;
+
+// The public item pointer addresses the first field of this private owner.
+// Its union string pointer borrows `string` until replacement or payload free.
+// Other item variants still use their C allocation and destruction paths.
+#[repr(C)]
+struct EventPayloadStringItem {
+    item: event_payload_item,
+    string: CString,
+}
+
+const _: () = assert!(std::mem::offset_of!(EventPayloadStringItem, item) == 0);
+
 unsafe fn event_payload_name_key(name: *const ::core::ffi::c_char) -> Vec<u8> {
     std::ffi::CStr::from_ptr(name).to_bytes().to_vec()
 }
@@ -216,9 +229,7 @@ unsafe extern "C" fn event_payload_free_target(mut ep: *mut event_payload) {
 }
 unsafe extern "C" fn event_payload_free_value(mut epi: *mut event_payload_item) {
     match (*epi).type_0 as ::core::ffi::c_uint {
-        0 => {
-            free((*epi).c2rust_unnamed.string as *mut ::core::ffi::c_void);
-        }
+        0 => {}
         4 => {
             server_client_unref((*epi).c2rust_unnamed.client);
         }
@@ -254,6 +265,16 @@ unsafe extern "C" fn event_payload_free_value(mut epi: *mut event_payload_item) 
         2 | 3 | 1 | _ => {}
     };
 }
+unsafe fn event_payload_free_item(epi: *mut event_payload_item) {
+    event_payload_free_value(epi);
+    free((*epi).name as *mut ::core::ffi::c_void);
+    if (*epi).type_0 == EVENT_PAYLOAD_STRING {
+        // Only string items are created as EventPayloadStringItem boxes.
+        drop(Box::from_raw(epi.cast::<EventPayloadStringItem>()));
+    } else {
+        free(epi as *mut ::core::ffi::c_void);
+    }
+}
 unsafe extern "C" fn event_payload_set_item(
     mut ep: *mut event_payload,
     mut name: *const ::core::ffi::c_char,
@@ -264,9 +285,7 @@ unsafe extern "C" fn event_payload_set_item(
     old = event_payload_tree_insert(&raw mut (*ep).items, new);
     if !old.is_null() {
         event_payload_tree_remove(&raw mut (*ep).items, old);
-        event_payload_free_value(old);
-        free((*old).name as *mut ::core::ffi::c_void);
-        free(old as *mut ::core::ffi::c_void);
+        event_payload_free_item(old);
         event_payload_tree_insert(&raw mut (*ep).items, new);
     }
 }
@@ -291,9 +310,7 @@ pub unsafe extern "C" fn event_payload_free(mut ep: *mut event_payload) {
         };
         for epi in items {
             event_payload_tree_remove(&raw mut (*ep).items, epi);
-            event_payload_free_value(epi);
-            free((*epi).name as *mut ::core::ffi::c_void);
-            free(epi as *mut ::core::ffi::c_void);
+            event_payload_free_item(epi);
         }
         if !(*ep).items.entries.is_null() {
             drop(Box::from_raw((*ep).items.entries));
@@ -426,15 +443,25 @@ pub unsafe extern "C" fn event_payload_set_string(
     mut fmt: *const ::core::ffi::c_char,
     mut args: ...
 ) {
-    let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     let mut ap: ::core::ffi::VaList;
     ap = args.clone();
-    epi = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<event_payload_item>() as size_t,
-    ) as *mut event_payload_item;
-    (*epi).type_0 = EVENT_PAYLOAD_STRING;
-    xvasprintf(&raw mut (*epi).c2rust_unnamed.string, fmt, ap);
+    let string = xvasprintf_cstring(fmt, ap);
+    let string_ptr = string.as_ptr().cast_mut();
+    let epi = Box::into_raw(Box::new(EventPayloadStringItem {
+        item: event_payload_item {
+            name: ::core::ptr::null_mut(),
+            type_0: EVENT_PAYLOAD_STRING,
+            c2rust_unnamed: event_payload_item_c2rust_unnamed { string: string_ptr },
+            entry: event_payload_item_entry {
+                rbe_left: ::core::ptr::null_mut(),
+                rbe_right: ::core::ptr::null_mut(),
+                rbe_parent: ::core::ptr::null_mut(),
+                rbe_color: 0,
+            },
+        },
+        string,
+    }))
+    .cast::<event_payload_item>();
     event_payload_set_item(ep, name, epi);
 }
 #[no_mangle]
@@ -967,6 +994,58 @@ pub unsafe extern "C" fn event_payload_get_pointer(
 mod tests {
     use super::*;
     use std::ffi::{CStr, CString};
+
+    unsafe extern "C" fn count_pointer_release(ptr: *mut ::core::ffi::c_void) {
+        *(ptr as *mut usize) += 1;
+    }
+
+    #[test]
+    fn string_items_survive_lookup_and_release_on_both_replacement_and_payload_free() {
+        unsafe {
+            let ep = event_payload_create();
+            let name = c"value";
+            let first = CString::new(vec![b'a', 0xff]).unwrap();
+            event_payload_set_string(ep, name.as_ptr(), c"%s".as_ptr(), first.as_ptr());
+            let first_item = event_payload_first(ep);
+            assert_eq!((*first_item).type_0, EVENT_PAYLOAD_STRING);
+            assert_eq!(
+                CStr::from_ptr(event_payload_get_string(ep, name.as_ptr())).to_bytes(),
+                first.to_bytes()
+            );
+            assert_eq!(
+                (*first_item).c2rust_unnamed.string,
+                event_payload_get_string(ep, name.as_ptr()).cast_mut()
+            );
+
+            event_payload_set_string(ep, name.as_ptr(), c"%s".as_ptr(), c"second".as_ptr());
+            let second_item = event_payload_first(ep);
+            assert_ne!(second_item, first_item);
+            assert_eq!(
+                CStr::from_ptr(event_payload_get_string(ep, name.as_ptr())),
+                c"second"
+            );
+
+            event_payload_set_int(ep, name.as_ptr(), 42);
+            assert!(event_payload_get_string(ep, name.as_ptr()).is_null());
+            assert_eq!((*event_payload_first(ep)).type_0, EVENT_PAYLOAD_INT);
+
+            let mut releases = 0usize;
+            event_payload_set_pointer(
+                ep,
+                name.as_ptr(),
+                (&raw mut releases).cast(),
+                Some(count_pointer_release),
+                None,
+            );
+            event_payload_set_string(ep, name.as_ptr(), c"%s".as_ptr(), c"".as_ptr());
+            assert_eq!(releases, 1);
+            assert_eq!(
+                CStr::from_ptr(event_payload_get_string(ep, name.as_ptr())),
+                c""
+            );
+            event_payload_free(ep);
+        }
+    }
 
     fn named_item(name: &CStr) -> Box<event_payload_item> {
         Box::new(event_payload_item {

@@ -808,6 +808,23 @@ legacy callers safe.
   binary build, rustfmt, and `git diff --check` passed in the isolated
   worktree. Existing compiler warnings remain; no sanitizer run was performed.
 
+### Increment 34 — event payload string items (2026-09-22)
+
+- `event_payload_set_string` now formats with `xvasprintf_cstring` and stores
+  the result in a private `EventPayloadStringItem` box. Its ABI-compatible
+  first field exposes the unchanged `event_payload_item` pointer, while the
+  union's string pointer borrows the adjacent `CString`.
+- Duplicate-key replacement and payload teardown now use
+  `event_payload_free_item` to drop string owners. Other item variants keep
+  their existing C allocation and reference/callback cleanup. The item name,
+  intrusive pointer, and tree remain manually managed.
+- Production value formats are `%s` or literal `1`; getters and printers
+  observe C strings, so there is no supported embedded-NUL trailing-byte E2E
+  case. A focused regression covers non-UTF-8 text, string and nonstring
+  replacements, pointer release callback, empty text, and payload free.
+  `cargo test --workspace`, binary build, rustfmt, and `git diff --check`
+  passed in the isolated worktree. Existing compiler warnings remain.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -822,7 +839,7 @@ non-string value.
    uses its returned byte length. The remaining values are observed as C
    strings, so no supported embedded-NUL E2E case requires a full-byte
    buffer. Continue with the next small containing lifecycle.
-2. `events_payload_set_string`, `input_reply`, `options_set_string`,
+2. `input_reply`, `options_set_string`,
    `status_message_set`, and `format_add`
    store formatted C strings in records or queues. Audit each containing
    lifecycle before adding `CString`; a local owner alone would dangle.
@@ -831,6 +848,6 @@ non-string value.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    are separate ownership candidates after the simpler string lifetimes.
 
-Current validation is recorded in increments 15–33. The remaining
+Current validation is recorded in increments 15–34. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–33 has its own local commit; none was pushed.
+Each of increments 15–34 has its own local commit; none was pushed.
