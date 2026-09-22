@@ -771,6 +771,21 @@ legacy callers safe.
   `git diff --check`, and a live set/show/hidden/empty/clear/unset CLI check
   passed in the isolated worktree. Existing compiler warnings remain.
 
+### Increment 32 — server message queue (2026-09-22)
+
+- `server_add_message` now formats with `xvasprintf_cstring`. A private
+  `VecDeque<Box<OwnedMessageEntry>>` owns stable ABI-compatible nodes and their
+  `CString` text. The existing `message_log` intrusive list remains the
+  traversal view. Pruning unlinks a node, checks it is the oldest owner, then
+  drops that owner; startup and normal shutdown clear the collection.
+- All eight production call sites pass C strings to `%s`, with one numeric
+  `%u`. No supported call has meaningful bytes after an embedded NUL.
+  `show-messages` order, message limits 3/0/2, and a non-UTF-8 error are
+  covered by `scripts/server_messages_cli_checks.py`.
+- The isolated worktree passed the CLI check, `cargo test --workspace`, the
+  binary build, rustfmt, and `git diff --check`. Existing compiler warnings
+  remain; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -789,7 +804,7 @@ non-string value.
    lines to immediate or deferred output queues, so migrate those owners and
    their teardown together.
 2. `events_payload_set_string`, `input_reply`, `options_set_string`,
-   `server_add_message`, `status_message_set`, and `format_add`
+   `status_message_set`, and `format_add`
    store formatted C strings in records or queues. Audit each containing
    lifecycle before adding `CString`; a local owner alone would dangle.
    `format_printf` returns a C-owned allocation to callback consumers, and
@@ -797,6 +812,6 @@ non-string value.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    are separate ownership candidates after the simpler string lifetimes.
 
-Current validation is recorded in increments 15–31. The remaining
+Current validation is recorded in increments 15–32. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–31 has its own local commit; none was pushed.
+Each of increments 15–32 has its own local commit; none was pushed.

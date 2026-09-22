@@ -38,7 +38,30 @@ use crate::src::window::{
     all_window_panes, window_pane_destroy_ready, window_pane_wait_finish, windows_minmax,
     windows_next,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup, xvasprintf};
+use crate::src::xmalloc::{xasprintf, xstrdup, xvasprintf_cstring};
+
+use std::collections::VecDeque;
+use std::ffi::CString;
+
+// `message_log` and show-messages use the leading ABI-compatible node. Its
+// `msg` pointer borrows `text` until this boxed record is removed or cleared.
+#[repr(C)]
+struct OwnedMessageEntry {
+    node: message_entry,
+    text: CString,
+}
+
+const _: () = assert!(::core::mem::offset_of!(OwnedMessageEntry, node) == 0);
+
+// The boxes keep the public intrusive-list nodes at stable addresses. The
+// oldest owner always corresponds to `message_log.tqh_first`.
+static mut MESSAGE_OWNERS: VecDeque<Box<OwnedMessageEntry>> = VecDeque::new();
+
+unsafe fn server_clear_messages() {
+    message_log.tqh_first = ::core::ptr::null_mut();
+    message_log.tqh_last = &raw mut message_log.tqh_first;
+    (*(&raw mut MESSAGE_OWNERS)).clear();
+}
 
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{
@@ -459,8 +482,7 @@ pub unsafe extern "C" fn server_start(
     key_bindings_init();
     control_build_events();
     hooks_build_events();
-    message_log.tqh_first = ::core::ptr::null_mut::<message_entry>();
-    message_log.tqh_last = &raw mut message_log.tqh_first;
+    server_clear_messages();
     gettimeofday(&raw mut start_time, NULL);
     server_fd = systemd_create_socket(flags as ::core::ffi::c_int, &raw mut cause);
     if server_fd != -(1 as ::core::ffi::c_int) {
@@ -517,6 +539,7 @@ pub unsafe extern "C" fn server_start(
     );
     job_kill_all();
     prompt_save_history();
+    server_clear_messages();
     exit(0 as ::core::ffi::c_int);
 }
 unsafe extern "C" fn server_loop() -> ::core::ffi::c_int {
@@ -880,24 +903,36 @@ unsafe extern "C" fn server_child_stopped(mut pid: pid_t, mut status: ::core::ff
 pub unsafe extern "C" fn server_add_message(mut fmt: *const ::core::ffi::c_char, mut args: ...) {
     let mut msg: *mut message_entry = ::core::ptr::null_mut::<message_entry>();
     let mut msg1: *mut message_entry = ::core::ptr::null_mut::<message_entry>();
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ap: ::core::ffi::VaList;
     let mut limit: u_int = 0;
     ap = args.clone();
-    xvasprintf(&raw mut s, fmt, ap);
+    let s = xvasprintf_cstring(fmt, ap);
     log_debug(
         b"message: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        s,
+        s.as_ptr(),
     );
-    msg = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<message_entry>() as size_t,
-    ) as *mut message_entry;
-    gettimeofday(&raw mut (*msg).msg_time, NULL);
+    let mut owner = Box::new(OwnedMessageEntry {
+        node: message_entry {
+            msg: ::core::ptr::null_mut(),
+            msg_num: 0,
+            msg_time: timeval {
+                tv_sec: 0,
+                tv_usec: 0,
+            },
+            entry: message_entry_entry {
+                tqe_next: ::core::ptr::null_mut(),
+                tqe_prev: ::core::ptr::null_mut(),
+            },
+        },
+        text: s,
+    });
+    owner.node.msg = owner.text.as_ptr().cast_mut();
+    gettimeofday(&raw mut owner.node.msg_time, NULL);
     let fresh0 = message_next;
     message_next = message_next.wrapping_add(1);
-    (*msg).msg_num = fresh0;
-    (*msg).msg = s;
+    owner.node.msg_num = fresh0;
+    msg = &raw mut owner.node;
+    (*(&raw mut MESSAGE_OWNERS)).push_back(owner);
     (*msg).entry.tqe_next = ::core::ptr::null_mut::<message_entry>();
     (*msg).entry.tqe_prev = message_log.tqh_last;
     *message_log.tqh_last = msg;
@@ -914,14 +949,21 @@ pub unsafe extern "C" fn server_add_message(mut fmt: *const ::core::ffi::c_char,
         if (*msg).msg_num.wrapping_add(limit) >= message_next {
             break;
         }
-        free((*msg).msg as *mut ::core::ffi::c_void);
         if !(*msg).entry.tqe_next.is_null() {
             (*(*msg).entry.tqe_next).entry.tqe_prev = (*msg).entry.tqe_prev;
         } else {
             message_log.tqh_last = (*msg).entry.tqe_prev;
         }
         *(*msg).entry.tqe_prev = (*msg).entry.tqe_next;
-        free(msg as *mut ::core::ffi::c_void);
+        let owner = (*(&raw mut MESSAGE_OWNERS))
+            .pop_front()
+            .expect("message owner missing");
+        assert_eq!(
+            &raw const owner.node,
+            msg.cast_const(),
+            "message owner out of order"
+        );
+        drop(owner);
         msg = msg1;
     }
 }
