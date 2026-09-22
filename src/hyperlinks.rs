@@ -39,1033 +39,14 @@ unsafe extern "C" fn hyperlinks_by_uri_cmp(
     }
     return strcmp((*left).uri, (*right).uri);
 }
-unsafe extern "C" fn hyperlinks_by_uri_tree_RB_REMOVE_COLOR(
-    mut head: *mut hyperlinks_by_uri_tree,
-    mut parent: *mut hyperlinks_uri,
-    mut elm: *mut hyperlinks_uri,
-) {
-    let mut tmp: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    while (elm.is_null() || (*elm).by_uri_entry.rbe_color == RB_BLACK) && elm != (*head).rbh_root {
-        if (*parent).by_uri_entry.rbe_left == elm {
-            tmp = (*parent).by_uri_entry.rbe_right;
-            if (*tmp).by_uri_entry.rbe_color == RB_RED {
-                (*tmp).by_uri_entry.rbe_color = RB_BLACK;
-                (*parent).by_uri_entry.rbe_color = RB_RED;
-                tmp = (*parent).by_uri_entry.rbe_right;
-                (*parent).by_uri_entry.rbe_right = (*tmp).by_uri_entry.rbe_left;
-                if !(*parent).by_uri_entry.rbe_right.is_null() {
-                    (*(*tmp).by_uri_entry.rbe_left).by_uri_entry.rbe_parent = parent;
-                }
-                (*tmp).by_uri_entry.rbe_parent = (*parent).by_uri_entry.rbe_parent;
-                if !(*tmp).by_uri_entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left {
-                        (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).by_uri_entry.rbe_left = parent;
-                (*parent).by_uri_entry.rbe_parent = tmp;
-                !(*tmp).by_uri_entry.rbe_parent.is_null();
-                tmp = (*parent).by_uri_entry.rbe_right;
-            }
-            if ((*tmp).by_uri_entry.rbe_left.is_null()
-                || (*(*tmp).by_uri_entry.rbe_left).by_uri_entry.rbe_color == RB_BLACK)
-                && ((*tmp).by_uri_entry.rbe_right.is_null()
-                    || (*(*tmp).by_uri_entry.rbe_right).by_uri_entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).by_uri_entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).by_uri_entry.rbe_parent;
-            } else {
-                if (*tmp).by_uri_entry.rbe_right.is_null()
-                    || (*(*tmp).by_uri_entry.rbe_right).by_uri_entry.rbe_color == RB_BLACK
-                {
-                    let mut oleft: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-                    oleft = (*tmp).by_uri_entry.rbe_left;
-                    if !oleft.is_null() {
-                        (*oleft).by_uri_entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).by_uri_entry.rbe_color = RB_RED;
-                    oleft = (*tmp).by_uri_entry.rbe_left;
-                    (*tmp).by_uri_entry.rbe_left = (*oleft).by_uri_entry.rbe_right;
-                    if !(*tmp).by_uri_entry.rbe_left.is_null() {
-                        (*(*oleft).by_uri_entry.rbe_right).by_uri_entry.rbe_parent = tmp;
-                    }
-                    (*oleft).by_uri_entry.rbe_parent = (*tmp).by_uri_entry.rbe_parent;
-                    if !(*oleft).by_uri_entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).by_uri_entry.rbe_parent).by_uri_entry.rbe_left {
-                            (*(*tmp).by_uri_entry.rbe_parent).by_uri_entry.rbe_left = oleft;
-                        } else {
-                            (*(*tmp).by_uri_entry.rbe_parent).by_uri_entry.rbe_right = oleft;
-                        }
-                    } else {
-                        (*head).rbh_root = oleft;
-                    }
-                    (*oleft).by_uri_entry.rbe_right = tmp;
-                    (*tmp).by_uri_entry.rbe_parent = oleft;
-                    !(*oleft).by_uri_entry.rbe_parent.is_null();
-                    tmp = (*parent).by_uri_entry.rbe_right;
-                }
-                (*tmp).by_uri_entry.rbe_color = (*parent).by_uri_entry.rbe_color;
-                (*parent).by_uri_entry.rbe_color = RB_BLACK;
-                if !(*tmp).by_uri_entry.rbe_right.is_null() {
-                    (*(*tmp).by_uri_entry.rbe_right).by_uri_entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).by_uri_entry.rbe_right;
-                (*parent).by_uri_entry.rbe_right = (*tmp).by_uri_entry.rbe_left;
-                if !(*parent).by_uri_entry.rbe_right.is_null() {
-                    (*(*tmp).by_uri_entry.rbe_left).by_uri_entry.rbe_parent = parent;
-                }
-                (*tmp).by_uri_entry.rbe_parent = (*parent).by_uri_entry.rbe_parent;
-                if !(*tmp).by_uri_entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left {
-                        (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).by_uri_entry.rbe_left = parent;
-                (*parent).by_uri_entry.rbe_parent = tmp;
-                !(*tmp).by_uri_entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        } else {
-            tmp = (*parent).by_uri_entry.rbe_left;
-            if (*tmp).by_uri_entry.rbe_color == RB_RED {
-                (*tmp).by_uri_entry.rbe_color = RB_BLACK;
-                (*parent).by_uri_entry.rbe_color = RB_RED;
-                tmp = (*parent).by_uri_entry.rbe_left;
-                (*parent).by_uri_entry.rbe_left = (*tmp).by_uri_entry.rbe_right;
-                if !(*parent).by_uri_entry.rbe_left.is_null() {
-                    (*(*tmp).by_uri_entry.rbe_right).by_uri_entry.rbe_parent = parent;
-                }
-                (*tmp).by_uri_entry.rbe_parent = (*parent).by_uri_entry.rbe_parent;
-                if !(*tmp).by_uri_entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left {
-                        (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).by_uri_entry.rbe_right = parent;
-                (*parent).by_uri_entry.rbe_parent = tmp;
-                !(*tmp).by_uri_entry.rbe_parent.is_null();
-                tmp = (*parent).by_uri_entry.rbe_left;
-            }
-            if ((*tmp).by_uri_entry.rbe_left.is_null()
-                || (*(*tmp).by_uri_entry.rbe_left).by_uri_entry.rbe_color == RB_BLACK)
-                && ((*tmp).by_uri_entry.rbe_right.is_null()
-                    || (*(*tmp).by_uri_entry.rbe_right).by_uri_entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).by_uri_entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).by_uri_entry.rbe_parent;
-            } else {
-                if (*tmp).by_uri_entry.rbe_left.is_null()
-                    || (*(*tmp).by_uri_entry.rbe_left).by_uri_entry.rbe_color == RB_BLACK
-                {
-                    let mut oright: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-                    oright = (*tmp).by_uri_entry.rbe_right;
-                    if !oright.is_null() {
-                        (*oright).by_uri_entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).by_uri_entry.rbe_color = RB_RED;
-                    oright = (*tmp).by_uri_entry.rbe_right;
-                    (*tmp).by_uri_entry.rbe_right = (*oright).by_uri_entry.rbe_left;
-                    if !(*tmp).by_uri_entry.rbe_right.is_null() {
-                        (*(*oright).by_uri_entry.rbe_left).by_uri_entry.rbe_parent = tmp;
-                    }
-                    (*oright).by_uri_entry.rbe_parent = (*tmp).by_uri_entry.rbe_parent;
-                    if !(*oright).by_uri_entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).by_uri_entry.rbe_parent).by_uri_entry.rbe_left {
-                            (*(*tmp).by_uri_entry.rbe_parent).by_uri_entry.rbe_left = oright;
-                        } else {
-                            (*(*tmp).by_uri_entry.rbe_parent).by_uri_entry.rbe_right = oright;
-                        }
-                    } else {
-                        (*head).rbh_root = oright;
-                    }
-                    (*oright).by_uri_entry.rbe_left = tmp;
-                    (*tmp).by_uri_entry.rbe_parent = oright;
-                    !(*oright).by_uri_entry.rbe_parent.is_null();
-                    tmp = (*parent).by_uri_entry.rbe_left;
-                }
-                (*tmp).by_uri_entry.rbe_color = (*parent).by_uri_entry.rbe_color;
-                (*parent).by_uri_entry.rbe_color = RB_BLACK;
-                if !(*tmp).by_uri_entry.rbe_left.is_null() {
-                    (*(*tmp).by_uri_entry.rbe_left).by_uri_entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).by_uri_entry.rbe_left;
-                (*parent).by_uri_entry.rbe_left = (*tmp).by_uri_entry.rbe_right;
-                if !(*parent).by_uri_entry.rbe_left.is_null() {
-                    (*(*tmp).by_uri_entry.rbe_right).by_uri_entry.rbe_parent = parent;
-                }
-                (*tmp).by_uri_entry.rbe_parent = (*parent).by_uri_entry.rbe_parent;
-                if !(*tmp).by_uri_entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left {
-                        (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).by_uri_entry.rbe_right = parent;
-                (*parent).by_uri_entry.rbe_parent = tmp;
-                !(*tmp).by_uri_entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        }
-    }
-    if !elm.is_null() {
-        (*elm).by_uri_entry.rbe_color = RB_BLACK;
-    }
-}
-unsafe extern "C" fn hyperlinks_by_uri_tree_RB_REMOVE(
-    mut head: *mut hyperlinks_by_uri_tree,
-    mut elm: *mut hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    let mut current_block: u64;
-    let mut child: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut parent: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut old: *mut hyperlinks_uri = elm;
-    let mut color: ::core::ffi::c_int = 0;
-    if (*elm).by_uri_entry.rbe_left.is_null() {
-        child = (*elm).by_uri_entry.rbe_right;
-        current_block = 7245201122033322888;
-    } else if (*elm).by_uri_entry.rbe_right.is_null() {
-        child = (*elm).by_uri_entry.rbe_left;
-        current_block = 7245201122033322888;
-    } else {
-        let mut left: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-        elm = (*elm).by_uri_entry.rbe_right;
-        loop {
-            left = (*elm).by_uri_entry.rbe_left;
-            if left.is_null() {
-                break;
-            }
-            elm = left;
-        }
-        child = (*elm).by_uri_entry.rbe_right;
-        parent = (*elm).by_uri_entry.rbe_parent;
-        color = (*elm).by_uri_entry.rbe_color;
-        if !child.is_null() {
-            (*child).by_uri_entry.rbe_parent = parent;
-        }
-        if !parent.is_null() {
-            if (*parent).by_uri_entry.rbe_left == elm {
-                (*parent).by_uri_entry.rbe_left = child;
-            } else {
-                (*parent).by_uri_entry.rbe_right = child;
-            }
-        } else {
-            (*head).rbh_root = child;
-        }
-        if (*elm).by_uri_entry.rbe_parent == old {
-            parent = elm;
-        }
-        (*elm).by_uri_entry = (*old).by_uri_entry;
-        if !(*old).by_uri_entry.rbe_parent.is_null() {
-            if (*(*old).by_uri_entry.rbe_parent).by_uri_entry.rbe_left == old {
-                (*(*old).by_uri_entry.rbe_parent).by_uri_entry.rbe_left = elm;
-            } else {
-                (*(*old).by_uri_entry.rbe_parent).by_uri_entry.rbe_right = elm;
-            }
-        } else {
-            (*head).rbh_root = elm;
-        }
-        (*(*old).by_uri_entry.rbe_left).by_uri_entry.rbe_parent = elm;
-        if !(*old).by_uri_entry.rbe_right.is_null() {
-            (*(*old).by_uri_entry.rbe_right).by_uri_entry.rbe_parent = elm;
-        }
-        if !parent.is_null() {
-            left = parent;
-            loop {
-                left = (*left).by_uri_entry.rbe_parent;
-                if left.is_null() {
-                    break;
-                }
-            }
-        }
-        current_block = 11576451286340114506;
-    }
-    match current_block {
-        7245201122033322888 => {
-            parent = (*elm).by_uri_entry.rbe_parent;
-            color = (*elm).by_uri_entry.rbe_color;
-            if !child.is_null() {
-                (*child).by_uri_entry.rbe_parent = parent;
-            }
-            if !parent.is_null() {
-                if (*parent).by_uri_entry.rbe_left == elm {
-                    (*parent).by_uri_entry.rbe_left = child;
-                } else {
-                    (*parent).by_uri_entry.rbe_right = child;
-                }
-            } else {
-                (*head).rbh_root = child;
-            }
-        }
-        _ => {}
-    }
-    if color == RB_BLACK {
-        hyperlinks_by_uri_tree_RB_REMOVE_COLOR(head, parent, child);
-    }
-    return old;
-}
-unsafe extern "C" fn hyperlinks_by_uri_tree_RB_FIND(
-    mut head: *mut hyperlinks_by_uri_tree,
-    mut elm: *mut hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    let mut tmp: *mut hyperlinks_uri = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = hyperlinks_by_uri_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).by_uri_entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).by_uri_entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return ::core::ptr::null_mut::<hyperlinks_uri>();
-}
-unsafe extern "C" fn hyperlinks_by_uri_tree_RB_INSERT_COLOR(
-    mut head: *mut hyperlinks_by_uri_tree,
-    mut elm: *mut hyperlinks_uri,
-) {
-    let mut parent: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut gparent: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut tmp: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    loop {
-        parent = (*elm).by_uri_entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).by_uri_entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).by_uri_entry.rbe_parent;
-        if parent == (*gparent).by_uri_entry.rbe_left {
-            tmp = (*gparent).by_uri_entry.rbe_right;
-            if !tmp.is_null() && (*tmp).by_uri_entry.rbe_color == RB_RED {
-                (*tmp).by_uri_entry.rbe_color = RB_BLACK;
-                (*parent).by_uri_entry.rbe_color = RB_BLACK;
-                (*gparent).by_uri_entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).by_uri_entry.rbe_right == elm {
-                    tmp = (*parent).by_uri_entry.rbe_right;
-                    (*parent).by_uri_entry.rbe_right = (*tmp).by_uri_entry.rbe_left;
-                    if !(*parent).by_uri_entry.rbe_right.is_null() {
-                        (*(*tmp).by_uri_entry.rbe_left).by_uri_entry.rbe_parent = parent;
-                    }
-                    (*tmp).by_uri_entry.rbe_parent = (*parent).by_uri_entry.rbe_parent;
-                    if !(*tmp).by_uri_entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left {
-                            (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).by_uri_entry.rbe_left = parent;
-                    (*parent).by_uri_entry.rbe_parent = tmp;
-                    !(*tmp).by_uri_entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).by_uri_entry.rbe_color = RB_BLACK;
-                (*gparent).by_uri_entry.rbe_color = RB_RED;
-                tmp = (*gparent).by_uri_entry.rbe_left;
-                (*gparent).by_uri_entry.rbe_left = (*tmp).by_uri_entry.rbe_right;
-                if !(*gparent).by_uri_entry.rbe_left.is_null() {
-                    (*(*tmp).by_uri_entry.rbe_right).by_uri_entry.rbe_parent = gparent;
-                }
-                (*tmp).by_uri_entry.rbe_parent = (*gparent).by_uri_entry.rbe_parent;
-                if !(*tmp).by_uri_entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left {
-                        (*(*gparent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).by_uri_entry.rbe_parent).by_uri_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).by_uri_entry.rbe_right = gparent;
-                (*gparent).by_uri_entry.rbe_parent = tmp;
-                !(*tmp).by_uri_entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).by_uri_entry.rbe_left;
-            if !tmp.is_null() && (*tmp).by_uri_entry.rbe_color == RB_RED {
-                (*tmp).by_uri_entry.rbe_color = RB_BLACK;
-                (*parent).by_uri_entry.rbe_color = RB_BLACK;
-                (*gparent).by_uri_entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).by_uri_entry.rbe_left == elm {
-                    tmp = (*parent).by_uri_entry.rbe_left;
-                    (*parent).by_uri_entry.rbe_left = (*tmp).by_uri_entry.rbe_right;
-                    if !(*parent).by_uri_entry.rbe_left.is_null() {
-                        (*(*tmp).by_uri_entry.rbe_right).by_uri_entry.rbe_parent = parent;
-                    }
-                    (*tmp).by_uri_entry.rbe_parent = (*parent).by_uri_entry.rbe_parent;
-                    if !(*tmp).by_uri_entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left {
-                            (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).by_uri_entry.rbe_parent).by_uri_entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).by_uri_entry.rbe_right = parent;
-                    (*parent).by_uri_entry.rbe_parent = tmp;
-                    !(*tmp).by_uri_entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).by_uri_entry.rbe_color = RB_BLACK;
-                (*gparent).by_uri_entry.rbe_color = RB_RED;
-                tmp = (*gparent).by_uri_entry.rbe_right;
-                (*gparent).by_uri_entry.rbe_right = (*tmp).by_uri_entry.rbe_left;
-                if !(*gparent).by_uri_entry.rbe_right.is_null() {
-                    (*(*tmp).by_uri_entry.rbe_left).by_uri_entry.rbe_parent = gparent;
-                }
-                (*tmp).by_uri_entry.rbe_parent = (*gparent).by_uri_entry.rbe_parent;
-                if !(*tmp).by_uri_entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left {
-                        (*(*gparent).by_uri_entry.rbe_parent).by_uri_entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).by_uri_entry.rbe_parent).by_uri_entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).by_uri_entry.rbe_left = gparent;
-                (*gparent).by_uri_entry.rbe_parent = tmp;
-                !(*tmp).by_uri_entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).by_uri_entry.rbe_color = RB_BLACK;
-}
-unsafe extern "C" fn hyperlinks_by_uri_tree_RB_INSERT(
-    mut head: *mut hyperlinks_by_uri_tree,
-    mut elm: *mut hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    let mut tmp: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut parent: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = hyperlinks_by_uri_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).by_uri_entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).by_uri_entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    (*elm).by_uri_entry.rbe_parent = parent;
-    (*elm).by_uri_entry.rbe_right = ::core::ptr::null_mut::<hyperlinks_uri>();
-    (*elm).by_uri_entry.rbe_left = (*elm).by_uri_entry.rbe_right;
-    (*elm).by_uri_entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).by_uri_entry.rbe_left = elm;
-        } else {
-            (*parent).by_uri_entry.rbe_right = elm;
-        }
-    } else {
-        (*head).rbh_root = elm;
-    }
-    hyperlinks_by_uri_tree_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<hyperlinks_uri>();
-}
+
 unsafe extern "C" fn hyperlinks_by_inner_cmp(
     mut left: *mut hyperlinks_uri,
     mut right: *mut hyperlinks_uri,
 ) -> ::core::ffi::c_int {
     return (*left).inner.wrapping_sub((*right).inner) as ::core::ffi::c_int;
 }
-unsafe extern "C" fn hyperlinks_by_inner_tree_RB_INSERT(
-    mut head: *mut hyperlinks_by_inner_tree,
-    mut elm: *mut hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    let mut tmp: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut parent: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = hyperlinks_by_inner_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).by_inner_entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).by_inner_entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    (*elm).by_inner_entry.rbe_parent = parent;
-    (*elm).by_inner_entry.rbe_right = ::core::ptr::null_mut::<hyperlinks_uri>();
-    (*elm).by_inner_entry.rbe_left = (*elm).by_inner_entry.rbe_right;
-    (*elm).by_inner_entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).by_inner_entry.rbe_left = elm;
-        } else {
-            (*parent).by_inner_entry.rbe_right = elm;
-        }
-    } else {
-        (*head).rbh_root = elm;
-    }
-    hyperlinks_by_inner_tree_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<hyperlinks_uri>();
-}
-unsafe extern "C" fn hyperlinks_by_inner_tree_RB_MINMAX(
-    mut head: *mut hyperlinks_by_inner_tree,
-    mut val: ::core::ffi::c_int,
-) -> *mut hyperlinks_uri {
-    let mut tmp: *mut hyperlinks_uri = (*head).rbh_root;
-    let mut parent: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    while !tmp.is_null() {
-        parent = tmp;
-        if val < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).by_inner_entry.rbe_left;
-        } else {
-            tmp = (*tmp).by_inner_entry.rbe_right;
-        }
-    }
-    return parent;
-}
-unsafe extern "C" fn hyperlinks_by_inner_tree_RB_REMOVE_COLOR(
-    mut head: *mut hyperlinks_by_inner_tree,
-    mut parent: *mut hyperlinks_uri,
-    mut elm: *mut hyperlinks_uri,
-) {
-    let mut tmp: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    while (elm.is_null() || (*elm).by_inner_entry.rbe_color == RB_BLACK) && elm != (*head).rbh_root
-    {
-        if (*parent).by_inner_entry.rbe_left == elm {
-            tmp = (*parent).by_inner_entry.rbe_right;
-            if (*tmp).by_inner_entry.rbe_color == RB_RED {
-                (*tmp).by_inner_entry.rbe_color = RB_BLACK;
-                (*parent).by_inner_entry.rbe_color = RB_RED;
-                tmp = (*parent).by_inner_entry.rbe_right;
-                (*parent).by_inner_entry.rbe_right = (*tmp).by_inner_entry.rbe_left;
-                if !(*parent).by_inner_entry.rbe_right.is_null() {
-                    (*(*tmp).by_inner_entry.rbe_left).by_inner_entry.rbe_parent = parent;
-                }
-                (*tmp).by_inner_entry.rbe_parent = (*parent).by_inner_entry.rbe_parent;
-                if !(*tmp).by_inner_entry.rbe_parent.is_null() {
-                    if parent
-                        == (*(*parent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_left
-                    {
-                        (*(*parent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_left = tmp;
-                    } else {
-                        (*(*parent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).by_inner_entry.rbe_left = parent;
-                (*parent).by_inner_entry.rbe_parent = tmp;
-                !(*tmp).by_inner_entry.rbe_parent.is_null();
-                tmp = (*parent).by_inner_entry.rbe_right;
-            }
-            if ((*tmp).by_inner_entry.rbe_left.is_null()
-                || (*(*tmp).by_inner_entry.rbe_left).by_inner_entry.rbe_color == RB_BLACK)
-                && ((*tmp).by_inner_entry.rbe_right.is_null()
-                    || (*(*tmp).by_inner_entry.rbe_right).by_inner_entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).by_inner_entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).by_inner_entry.rbe_parent;
-            } else {
-                if (*tmp).by_inner_entry.rbe_right.is_null()
-                    || (*(*tmp).by_inner_entry.rbe_right).by_inner_entry.rbe_color == RB_BLACK
-                {
-                    let mut oleft: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-                    oleft = (*tmp).by_inner_entry.rbe_left;
-                    if !oleft.is_null() {
-                        (*oleft).by_inner_entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).by_inner_entry.rbe_color = RB_RED;
-                    oleft = (*tmp).by_inner_entry.rbe_left;
-                    (*tmp).by_inner_entry.rbe_left = (*oleft).by_inner_entry.rbe_right;
-                    if !(*tmp).by_inner_entry.rbe_left.is_null() {
-                        (*(*oleft).by_inner_entry.rbe_right)
-                            .by_inner_entry
-                            .rbe_parent = tmp;
-                    }
-                    (*oleft).by_inner_entry.rbe_parent = (*tmp).by_inner_entry.rbe_parent;
-                    if !(*oleft).by_inner_entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).by_inner_entry.rbe_parent).by_inner_entry.rbe_left {
-                            (*(*tmp).by_inner_entry.rbe_parent).by_inner_entry.rbe_left = oleft;
-                        } else {
-                            (*(*tmp).by_inner_entry.rbe_parent).by_inner_entry.rbe_right = oleft;
-                        }
-                    } else {
-                        (*head).rbh_root = oleft;
-                    }
-                    (*oleft).by_inner_entry.rbe_right = tmp;
-                    (*tmp).by_inner_entry.rbe_parent = oleft;
-                    !(*oleft).by_inner_entry.rbe_parent.is_null();
-                    tmp = (*parent).by_inner_entry.rbe_right;
-                }
-                (*tmp).by_inner_entry.rbe_color = (*parent).by_inner_entry.rbe_color;
-                (*parent).by_inner_entry.rbe_color = RB_BLACK;
-                if !(*tmp).by_inner_entry.rbe_right.is_null() {
-                    (*(*tmp).by_inner_entry.rbe_right).by_inner_entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).by_inner_entry.rbe_right;
-                (*parent).by_inner_entry.rbe_right = (*tmp).by_inner_entry.rbe_left;
-                if !(*parent).by_inner_entry.rbe_right.is_null() {
-                    (*(*tmp).by_inner_entry.rbe_left).by_inner_entry.rbe_parent = parent;
-                }
-                (*tmp).by_inner_entry.rbe_parent = (*parent).by_inner_entry.rbe_parent;
-                if !(*tmp).by_inner_entry.rbe_parent.is_null() {
-                    if parent
-                        == (*(*parent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_left
-                    {
-                        (*(*parent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_left = tmp;
-                    } else {
-                        (*(*parent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).by_inner_entry.rbe_left = parent;
-                (*parent).by_inner_entry.rbe_parent = tmp;
-                !(*tmp).by_inner_entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        } else {
-            tmp = (*parent).by_inner_entry.rbe_left;
-            if (*tmp).by_inner_entry.rbe_color == RB_RED {
-                (*tmp).by_inner_entry.rbe_color = RB_BLACK;
-                (*parent).by_inner_entry.rbe_color = RB_RED;
-                tmp = (*parent).by_inner_entry.rbe_left;
-                (*parent).by_inner_entry.rbe_left = (*tmp).by_inner_entry.rbe_right;
-                if !(*parent).by_inner_entry.rbe_left.is_null() {
-                    (*(*tmp).by_inner_entry.rbe_right).by_inner_entry.rbe_parent = parent;
-                }
-                (*tmp).by_inner_entry.rbe_parent = (*parent).by_inner_entry.rbe_parent;
-                if !(*tmp).by_inner_entry.rbe_parent.is_null() {
-                    if parent
-                        == (*(*parent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_left
-                    {
-                        (*(*parent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_left = tmp;
-                    } else {
-                        (*(*parent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).by_inner_entry.rbe_right = parent;
-                (*parent).by_inner_entry.rbe_parent = tmp;
-                !(*tmp).by_inner_entry.rbe_parent.is_null();
-                tmp = (*parent).by_inner_entry.rbe_left;
-            }
-            if ((*tmp).by_inner_entry.rbe_left.is_null()
-                || (*(*tmp).by_inner_entry.rbe_left).by_inner_entry.rbe_color == RB_BLACK)
-                && ((*tmp).by_inner_entry.rbe_right.is_null()
-                    || (*(*tmp).by_inner_entry.rbe_right).by_inner_entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).by_inner_entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).by_inner_entry.rbe_parent;
-            } else {
-                if (*tmp).by_inner_entry.rbe_left.is_null()
-                    || (*(*tmp).by_inner_entry.rbe_left).by_inner_entry.rbe_color == RB_BLACK
-                {
-                    let mut oright: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-                    oright = (*tmp).by_inner_entry.rbe_right;
-                    if !oright.is_null() {
-                        (*oright).by_inner_entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).by_inner_entry.rbe_color = RB_RED;
-                    oright = (*tmp).by_inner_entry.rbe_right;
-                    (*tmp).by_inner_entry.rbe_right = (*oright).by_inner_entry.rbe_left;
-                    if !(*tmp).by_inner_entry.rbe_right.is_null() {
-                        (*(*oright).by_inner_entry.rbe_left)
-                            .by_inner_entry
-                            .rbe_parent = tmp;
-                    }
-                    (*oright).by_inner_entry.rbe_parent = (*tmp).by_inner_entry.rbe_parent;
-                    if !(*oright).by_inner_entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).by_inner_entry.rbe_parent).by_inner_entry.rbe_left {
-                            (*(*tmp).by_inner_entry.rbe_parent).by_inner_entry.rbe_left = oright;
-                        } else {
-                            (*(*tmp).by_inner_entry.rbe_parent).by_inner_entry.rbe_right = oright;
-                        }
-                    } else {
-                        (*head).rbh_root = oright;
-                    }
-                    (*oright).by_inner_entry.rbe_left = tmp;
-                    (*tmp).by_inner_entry.rbe_parent = oright;
-                    !(*oright).by_inner_entry.rbe_parent.is_null();
-                    tmp = (*parent).by_inner_entry.rbe_left;
-                }
-                (*tmp).by_inner_entry.rbe_color = (*parent).by_inner_entry.rbe_color;
-                (*parent).by_inner_entry.rbe_color = RB_BLACK;
-                if !(*tmp).by_inner_entry.rbe_left.is_null() {
-                    (*(*tmp).by_inner_entry.rbe_left).by_inner_entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).by_inner_entry.rbe_left;
-                (*parent).by_inner_entry.rbe_left = (*tmp).by_inner_entry.rbe_right;
-                if !(*parent).by_inner_entry.rbe_left.is_null() {
-                    (*(*tmp).by_inner_entry.rbe_right).by_inner_entry.rbe_parent = parent;
-                }
-                (*tmp).by_inner_entry.rbe_parent = (*parent).by_inner_entry.rbe_parent;
-                if !(*tmp).by_inner_entry.rbe_parent.is_null() {
-                    if parent
-                        == (*(*parent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_left
-                    {
-                        (*(*parent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_left = tmp;
-                    } else {
-                        (*(*parent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).by_inner_entry.rbe_right = parent;
-                (*parent).by_inner_entry.rbe_parent = tmp;
-                !(*tmp).by_inner_entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        }
-    }
-    if !elm.is_null() {
-        (*elm).by_inner_entry.rbe_color = RB_BLACK;
-    }
-}
-unsafe extern "C" fn hyperlinks_by_inner_tree_RB_INSERT_COLOR(
-    mut head: *mut hyperlinks_by_inner_tree,
-    mut elm: *mut hyperlinks_uri,
-) {
-    let mut parent: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut gparent: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut tmp: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    loop {
-        parent = (*elm).by_inner_entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).by_inner_entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).by_inner_entry.rbe_parent;
-        if parent == (*gparent).by_inner_entry.rbe_left {
-            tmp = (*gparent).by_inner_entry.rbe_right;
-            if !tmp.is_null() && (*tmp).by_inner_entry.rbe_color == RB_RED {
-                (*tmp).by_inner_entry.rbe_color = RB_BLACK;
-                (*parent).by_inner_entry.rbe_color = RB_BLACK;
-                (*gparent).by_inner_entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).by_inner_entry.rbe_right == elm {
-                    tmp = (*parent).by_inner_entry.rbe_right;
-                    (*parent).by_inner_entry.rbe_right = (*tmp).by_inner_entry.rbe_left;
-                    if !(*parent).by_inner_entry.rbe_right.is_null() {
-                        (*(*tmp).by_inner_entry.rbe_left).by_inner_entry.rbe_parent = parent;
-                    }
-                    (*tmp).by_inner_entry.rbe_parent = (*parent).by_inner_entry.rbe_parent;
-                    if !(*tmp).by_inner_entry.rbe_parent.is_null() {
-                        if parent
-                            == (*(*parent).by_inner_entry.rbe_parent)
-                                .by_inner_entry
-                                .rbe_left
-                        {
-                            (*(*parent).by_inner_entry.rbe_parent)
-                                .by_inner_entry
-                                .rbe_left = tmp;
-                        } else {
-                            (*(*parent).by_inner_entry.rbe_parent)
-                                .by_inner_entry
-                                .rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).by_inner_entry.rbe_left = parent;
-                    (*parent).by_inner_entry.rbe_parent = tmp;
-                    !(*tmp).by_inner_entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).by_inner_entry.rbe_color = RB_BLACK;
-                (*gparent).by_inner_entry.rbe_color = RB_RED;
-                tmp = (*gparent).by_inner_entry.rbe_left;
-                (*gparent).by_inner_entry.rbe_left = (*tmp).by_inner_entry.rbe_right;
-                if !(*gparent).by_inner_entry.rbe_left.is_null() {
-                    (*(*tmp).by_inner_entry.rbe_right).by_inner_entry.rbe_parent = gparent;
-                }
-                (*tmp).by_inner_entry.rbe_parent = (*gparent).by_inner_entry.rbe_parent;
-                if !(*tmp).by_inner_entry.rbe_parent.is_null() {
-                    if gparent
-                        == (*(*gparent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_left
-                    {
-                        (*(*gparent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_left = tmp;
-                    } else {
-                        (*(*gparent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).by_inner_entry.rbe_right = gparent;
-                (*gparent).by_inner_entry.rbe_parent = tmp;
-                !(*tmp).by_inner_entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).by_inner_entry.rbe_left;
-            if !tmp.is_null() && (*tmp).by_inner_entry.rbe_color == RB_RED {
-                (*tmp).by_inner_entry.rbe_color = RB_BLACK;
-                (*parent).by_inner_entry.rbe_color = RB_BLACK;
-                (*gparent).by_inner_entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).by_inner_entry.rbe_left == elm {
-                    tmp = (*parent).by_inner_entry.rbe_left;
-                    (*parent).by_inner_entry.rbe_left = (*tmp).by_inner_entry.rbe_right;
-                    if !(*parent).by_inner_entry.rbe_left.is_null() {
-                        (*(*tmp).by_inner_entry.rbe_right).by_inner_entry.rbe_parent = parent;
-                    }
-                    (*tmp).by_inner_entry.rbe_parent = (*parent).by_inner_entry.rbe_parent;
-                    if !(*tmp).by_inner_entry.rbe_parent.is_null() {
-                        if parent
-                            == (*(*parent).by_inner_entry.rbe_parent)
-                                .by_inner_entry
-                                .rbe_left
-                        {
-                            (*(*parent).by_inner_entry.rbe_parent)
-                                .by_inner_entry
-                                .rbe_left = tmp;
-                        } else {
-                            (*(*parent).by_inner_entry.rbe_parent)
-                                .by_inner_entry
-                                .rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).by_inner_entry.rbe_right = parent;
-                    (*parent).by_inner_entry.rbe_parent = tmp;
-                    !(*tmp).by_inner_entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).by_inner_entry.rbe_color = RB_BLACK;
-                (*gparent).by_inner_entry.rbe_color = RB_RED;
-                tmp = (*gparent).by_inner_entry.rbe_right;
-                (*gparent).by_inner_entry.rbe_right = (*tmp).by_inner_entry.rbe_left;
-                if !(*gparent).by_inner_entry.rbe_right.is_null() {
-                    (*(*tmp).by_inner_entry.rbe_left).by_inner_entry.rbe_parent = gparent;
-                }
-                (*tmp).by_inner_entry.rbe_parent = (*gparent).by_inner_entry.rbe_parent;
-                if !(*tmp).by_inner_entry.rbe_parent.is_null() {
-                    if gparent
-                        == (*(*gparent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_left
-                    {
-                        (*(*gparent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_left = tmp;
-                    } else {
-                        (*(*gparent).by_inner_entry.rbe_parent)
-                            .by_inner_entry
-                            .rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).by_inner_entry.rbe_left = gparent;
-                (*gparent).by_inner_entry.rbe_parent = tmp;
-                !(*tmp).by_inner_entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).by_inner_entry.rbe_color = RB_BLACK;
-}
-unsafe extern "C" fn hyperlinks_by_inner_tree_RB_REMOVE(
-    mut head: *mut hyperlinks_by_inner_tree,
-    mut elm: *mut hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    let mut current_block: u64;
-    let mut child: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut parent: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    let mut old: *mut hyperlinks_uri = elm;
-    let mut color: ::core::ffi::c_int = 0;
-    if (*elm).by_inner_entry.rbe_left.is_null() {
-        child = (*elm).by_inner_entry.rbe_right;
-        current_block = 7245201122033322888;
-    } else if (*elm).by_inner_entry.rbe_right.is_null() {
-        child = (*elm).by_inner_entry.rbe_left;
-        current_block = 7245201122033322888;
-    } else {
-        let mut left: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-        elm = (*elm).by_inner_entry.rbe_right;
-        loop {
-            left = (*elm).by_inner_entry.rbe_left;
-            if left.is_null() {
-                break;
-            }
-            elm = left;
-        }
-        child = (*elm).by_inner_entry.rbe_right;
-        parent = (*elm).by_inner_entry.rbe_parent;
-        color = (*elm).by_inner_entry.rbe_color;
-        if !child.is_null() {
-            (*child).by_inner_entry.rbe_parent = parent;
-        }
-        if !parent.is_null() {
-            if (*parent).by_inner_entry.rbe_left == elm {
-                (*parent).by_inner_entry.rbe_left = child;
-            } else {
-                (*parent).by_inner_entry.rbe_right = child;
-            }
-        } else {
-            (*head).rbh_root = child;
-        }
-        if (*elm).by_inner_entry.rbe_parent == old {
-            parent = elm;
-        }
-        (*elm).by_inner_entry = (*old).by_inner_entry;
-        if !(*old).by_inner_entry.rbe_parent.is_null() {
-            if (*(*old).by_inner_entry.rbe_parent).by_inner_entry.rbe_left == old {
-                (*(*old).by_inner_entry.rbe_parent).by_inner_entry.rbe_left = elm;
-            } else {
-                (*(*old).by_inner_entry.rbe_parent).by_inner_entry.rbe_right = elm;
-            }
-        } else {
-            (*head).rbh_root = elm;
-        }
-        (*(*old).by_inner_entry.rbe_left).by_inner_entry.rbe_parent = elm;
-        if !(*old).by_inner_entry.rbe_right.is_null() {
-            (*(*old).by_inner_entry.rbe_right).by_inner_entry.rbe_parent = elm;
-        }
-        if !parent.is_null() {
-            left = parent;
-            loop {
-                left = (*left).by_inner_entry.rbe_parent;
-                if left.is_null() {
-                    break;
-                }
-            }
-        }
-        current_block = 17539538398936311875;
-    }
-    match current_block {
-        7245201122033322888 => {
-            parent = (*elm).by_inner_entry.rbe_parent;
-            color = (*elm).by_inner_entry.rbe_color;
-            if !child.is_null() {
-                (*child).by_inner_entry.rbe_parent = parent;
-            }
-            if !parent.is_null() {
-                if (*parent).by_inner_entry.rbe_left == elm {
-                    (*parent).by_inner_entry.rbe_left = child;
-                } else {
-                    (*parent).by_inner_entry.rbe_right = child;
-                }
-            } else {
-                (*head).rbh_root = child;
-            }
-        }
-        _ => {}
-    }
-    if color == RB_BLACK {
-        hyperlinks_by_inner_tree_RB_REMOVE_COLOR(head, parent, child);
-    }
-    return old;
-}
-unsafe extern "C" fn hyperlinks_by_inner_tree_RB_NEXT(
-    mut elm: *mut hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    if !(*elm).by_inner_entry.rbe_right.is_null() {
-        elm = (*elm).by_inner_entry.rbe_right;
-        while !(*elm).by_inner_entry.rbe_left.is_null() {
-            elm = (*elm).by_inner_entry.rbe_left;
-        }
-    } else if !(*elm).by_inner_entry.rbe_parent.is_null()
-        && elm == (*(*elm).by_inner_entry.rbe_parent).by_inner_entry.rbe_left
-    {
-        elm = (*elm).by_inner_entry.rbe_parent;
-    } else {
-        while !(*elm).by_inner_entry.rbe_parent.is_null()
-            && elm == (*(*elm).by_inner_entry.rbe_parent).by_inner_entry.rbe_right
-        {
-            elm = (*elm).by_inner_entry.rbe_parent;
-        }
-        elm = (*elm).by_inner_entry.rbe_parent;
-    }
-    return elm;
-}
-unsafe extern "C" fn hyperlinks_by_inner_tree_RB_FIND(
-    mut head: *mut hyperlinks_by_inner_tree,
-    mut elm: *mut hyperlinks_uri,
-) -> *mut hyperlinks_uri {
-    let mut tmp: *mut hyperlinks_uri = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = hyperlinks_by_inner_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).by_inner_entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).by_inner_entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return ::core::ptr::null_mut::<hyperlinks_uri>();
-}
+
 unsafe extern "C" fn hyperlinks_remove(mut hlu: *mut hyperlinks_uri) {
     let mut hl: *mut hyperlinks = (*hlu).tree;
     if !(*hlu).list_entry.tqe_next.is_null() {
@@ -1075,8 +56,8 @@ unsafe extern "C" fn hyperlinks_remove(mut hlu: *mut hyperlinks_uri) {
     }
     *(*hlu).list_entry.tqe_prev = (*hlu).list_entry.tqe_next;
     global_hyperlinks_count = global_hyperlinks_count.wrapping_sub(1);
-    hyperlinks_by_inner_tree_RB_REMOVE(&raw mut (*hl).by_inner, hlu);
-    hyperlinks_by_uri_tree_RB_REMOVE(&raw mut (*hl).by_uri, hlu);
+    hyperlinks_by_inner_tree_remove(&raw mut (*hl).by_inner, hlu);
+    hyperlinks_by_uri_tree_remove(&raw mut (*hl).by_uri, hlu);
     free((*hlu).internal_id as *mut ::core::ffi::c_void);
     free((*hlu).external_id as *mut ::core::ffi::c_void);
     free((*hlu).uri as *mut ::core::ffi::c_void);
@@ -1099,16 +80,10 @@ pub unsafe extern "C" fn hyperlinks_put(
             tqe_prev: ::core::ptr::null_mut::<*mut hyperlinks_uri>(),
         },
         by_inner_entry: hyperlink_inner_entry {
-            rbe_left: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            rbe_right: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            rbe_parent: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
         by_uri_entry: hyperlink_uri_entry {
-            rbe_left: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            rbe_right: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            rbe_parent: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
@@ -1127,7 +102,7 @@ pub unsafe extern "C" fn hyperlinks_put(
     if *internal_id as ::core::ffi::c_int != '\0' as i32 {
         find.uri = uri;
         find.internal_id = internal_id;
-        hlu = hyperlinks_by_uri_tree_RB_FIND(&raw mut (*hl).by_uri, &raw mut find);
+        hlu = hyperlinks_by_uri_tree_find(&raw mut (*hl).by_uri, &raw mut find);
         if !hlu.is_null() {
             free(uri as *mut ::core::ffi::c_void);
             free(internal_id as *mut ::core::ffi::c_void);
@@ -1152,8 +127,8 @@ pub unsafe extern "C" fn hyperlinks_put(
     (*hlu).external_id = external_id;
     (*hlu).uri = uri;
     (*hlu).tree = hl;
-    hyperlinks_by_uri_tree_RB_INSERT(&raw mut (*hl).by_uri, hlu);
-    hyperlinks_by_inner_tree_RB_INSERT(&raw mut (*hl).by_inner, hlu);
+    hyperlinks_by_uri_tree_insert(&raw mut (*hl).by_uri, hlu);
+    hyperlinks_by_inner_tree_insert(&raw mut (*hl).by_inner, hlu);
     (*hlu).list_entry.tqe_next = ::core::ptr::null_mut::<hyperlinks_uri>();
     (*hlu).list_entry.tqe_prev = global_hyperlinks.tqh_last;
     *global_hyperlinks.tqh_last = hlu;
@@ -1183,21 +158,15 @@ pub unsafe extern "C" fn hyperlinks_get(
             tqe_prev: ::core::ptr::null_mut::<*mut hyperlinks_uri>(),
         },
         by_inner_entry: hyperlink_inner_entry {
-            rbe_left: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            rbe_right: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            rbe_parent: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
         by_uri_entry: hyperlink_uri_entry {
-            rbe_left: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            rbe_right: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            rbe_parent: ::core::ptr::null_mut::<hyperlinks_uri>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
     };
     let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
     find.inner = inner;
-    hlu = hyperlinks_by_inner_tree_RB_FIND(&raw mut (*hl).by_inner, &raw mut find);
+    hlu = hyperlinks_by_inner_tree_find(&raw mut (*hl).by_inner, &raw mut find);
     if hlu.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -1215,8 +184,8 @@ pub unsafe extern "C" fn hyperlinks_init() -> *mut hyperlinks {
     let mut hl: *mut hyperlinks = ::core::ptr::null_mut::<hyperlinks>();
     hl = xcalloc(1 as size_t, ::core::mem::size_of::<hyperlinks>() as size_t) as *mut hyperlinks;
     (*hl).next_inner = 1 as u_int;
-    (*hl).by_uri.rbh_root = ::core::ptr::null_mut::<hyperlinks_uri>();
-    (*hl).by_inner.rbh_root = ::core::ptr::null_mut::<hyperlinks_uri>();
+    (*hl).by_uri.storage = std::ptr::null_mut();
+    (*hl).by_inner.storage = std::ptr::null_mut();
     (*hl).references = 1 as u_int;
     return hl;
 }
@@ -1229,9 +198,9 @@ pub unsafe extern "C" fn hyperlinks_copy(mut hl: *mut hyperlinks) -> *mut hyperl
 pub unsafe extern "C" fn hyperlinks_reset(mut hl: *mut hyperlinks) {
     let mut hlu: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
     let mut hlu1: *mut hyperlinks_uri = ::core::ptr::null_mut::<hyperlinks_uri>();
-    hlu = hyperlinks_by_inner_tree_RB_MINMAX(&raw mut (*hl).by_inner, RB_NEGINF);
+    hlu = hyperlinks_by_inner_tree_minmax(&raw mut (*hl).by_inner, RB_NEGINF);
     while !hlu.is_null() && {
-        hlu1 = hyperlinks_by_inner_tree_RB_NEXT(hlu);
+        hlu1 = hyperlinks_by_inner_tree_next(hlu);
         1 as ::core::ffi::c_int != 0
     } {
         hyperlinks_remove(hlu);
@@ -1257,3 +226,159 @@ unsafe extern "C" fn run_static_initializers() {
 #[cfg_attr(target_os = "windows", link_section = ".CRT$XIB")]
 #[cfg_attr(target_os = "macos", link_section = "__DATA,__mod_init_func")]
 static INIT_ARRAY: [unsafe extern "C" fn(); 1] = [run_static_initializers];
+
+unsafe fn hyperlinks_by_inner_tree_key(elm: *mut hyperlinks_uri) -> u32 {
+    (*elm).inner
+}
+pub unsafe fn hyperlinks_by_inner_tree_find(
+    head: *mut hyperlinks_by_inner_tree,
+    elm: *mut hyperlinks_uri,
+) -> *mut hyperlinks_uri {
+    crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::find(
+        (*head).storage,
+        &hyperlinks_by_inner_tree_key(elm),
+    )
+}
+pub unsafe fn hyperlinks_by_inner_tree_nfind(
+    head: *mut hyperlinks_by_inner_tree,
+    elm: *mut hyperlinks_uri,
+) -> *mut hyperlinks_uri {
+    crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::nfind(
+        (*head).storage,
+        &hyperlinks_by_inner_tree_key(elm),
+    )
+}
+pub unsafe fn hyperlinks_by_inner_tree_insert(
+    head: *mut hyperlinks_by_inner_tree,
+    elm: *mut hyperlinks_uri,
+) -> *mut hyperlinks_uri {
+    let found = crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::insert(
+        &raw mut (*head).storage,
+        hyperlinks_by_inner_tree_key(elm),
+        elm,
+    );
+    if found.is_null() {
+        (*elm).by_inner_entry.owner = (*head).storage;
+    }
+    found
+}
+pub unsafe fn hyperlinks_by_inner_tree_remove(
+    head: *mut hyperlinks_by_inner_tree,
+    elm: *mut hyperlinks_uri,
+) -> *mut hyperlinks_uri {
+    let removed = crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::remove(
+        &raw mut (*head).storage,
+        &hyperlinks_by_inner_tree_key(elm),
+        elm,
+    );
+    if !removed.is_null() {
+        (*elm).by_inner_entry.owner = std::ptr::null_mut();
+    }
+    removed
+}
+pub unsafe fn hyperlinks_by_inner_tree_minmax(
+    head: *mut hyperlinks_by_inner_tree,
+    direction: ::core::ffi::c_int,
+) -> *mut hyperlinks_uri {
+    crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::edge(
+        (*head).storage,
+        direction < 0,
+    )
+}
+pub unsafe fn hyperlinks_by_inner_tree_next(elm: *mut hyperlinks_uri) -> *mut hyperlinks_uri {
+    crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::neighbor(
+        (*elm).by_inner_entry.owner,
+        &hyperlinks_by_inner_tree_key(elm),
+        true,
+    )
+}
+pub unsafe fn hyperlinks_by_inner_tree_prev(elm: *mut hyperlinks_uri) -> *mut hyperlinks_uri {
+    crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::neighbor(
+        (*elm).by_inner_entry.owner,
+        &hyperlinks_by_inner_tree_key(elm),
+        false,
+    )
+}
+
+unsafe fn hyperlinks_by_uri_tree_key(elm: *mut hyperlinks_uri) -> (bool, Vec<u8>, Vec<u8>, u32) {
+    {
+        let id = std::ffi::CStr::from_ptr((*elm).internal_id).to_bytes();
+        if id.is_empty() {
+            (true, Vec::new(), Vec::new(), (*elm).inner)
+        } else {
+            (
+                false,
+                id.to_vec(),
+                std::ffi::CStr::from_ptr((*elm).uri).to_bytes().to_vec(),
+                0,
+            )
+        }
+    }
+}
+pub unsafe fn hyperlinks_by_uri_tree_find(
+    head: *mut hyperlinks_by_uri_tree,
+    elm: *mut hyperlinks_uri,
+) -> *mut hyperlinks_uri {
+    crate::src::shared::tree::OrderedIndex::<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>::find(
+        (*head).storage,
+        &hyperlinks_by_uri_tree_key(elm),
+    )
+}
+pub unsafe fn hyperlinks_by_uri_tree_nfind(
+    head: *mut hyperlinks_by_uri_tree,
+    elm: *mut hyperlinks_uri,
+) -> *mut hyperlinks_uri {
+    crate::src::shared::tree::OrderedIndex::<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>::nfind(
+        (*head).storage,
+        &hyperlinks_by_uri_tree_key(elm),
+    )
+}
+pub unsafe fn hyperlinks_by_uri_tree_insert(
+    head: *mut hyperlinks_by_uri_tree,
+    elm: *mut hyperlinks_uri,
+) -> *mut hyperlinks_uri {
+    let found = crate::src::shared::tree::OrderedIndex::<
+        (bool, Vec<u8>, Vec<u8>, u32),
+        hyperlinks_uri,
+    >::insert(
+        &raw mut (*head).storage,
+        hyperlinks_by_uri_tree_key(elm),
+        elm,
+    );
+    if found.is_null() {
+        (*elm).by_uri_entry.owner = (*head).storage;
+    }
+    found
+}
+pub unsafe fn hyperlinks_by_uri_tree_remove(
+    head: *mut hyperlinks_by_uri_tree,
+    elm: *mut hyperlinks_uri,
+) -> *mut hyperlinks_uri {
+    let removed = crate::src::shared::tree::OrderedIndex::<
+        (bool, Vec<u8>, Vec<u8>, u32),
+        hyperlinks_uri,
+    >::remove(
+        &raw mut (*head).storage,
+        &hyperlinks_by_uri_tree_key(elm),
+        elm,
+    );
+    if !removed.is_null() {
+        (*elm).by_uri_entry.owner = std::ptr::null_mut();
+    }
+    removed
+}
+pub unsafe fn hyperlinks_by_uri_tree_minmax(
+    head: *mut hyperlinks_by_uri_tree,
+    direction: ::core::ffi::c_int,
+) -> *mut hyperlinks_uri {
+    crate::src::shared::tree::OrderedIndex::<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>::edge(
+        (*head).storage,
+        direction < 0,
+    )
+}
+pub unsafe fn hyperlinks_by_uri_tree_next(elm: *mut hyperlinks_uri) -> *mut hyperlinks_uri {
+    crate::src::shared::tree::OrderedIndex::<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>::neighbor((*elm).by_uri_entry.owner, &hyperlinks_by_uri_tree_key(elm), true)
+}
+pub unsafe fn hyperlinks_by_uri_tree_prev(elm: *mut hyperlinks_uri) -> *mut hyperlinks_uri {
+    crate::src::shared::tree::OrderedIndex::<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>::neighbor((*elm).by_uri_entry.owner, &hyperlinks_by_uri_tree_key(elm), false)
+}

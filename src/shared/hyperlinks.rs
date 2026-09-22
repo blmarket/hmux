@@ -12,7 +12,8 @@ pub struct hyperlinks {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct hyperlinks_by_uri_tree {
-    pub rbh_root: *mut hyperlinks_uri,
+    pub storage:
+        *mut crate::src::shared::tree::OrderedIndex<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -29,18 +30,15 @@ pub struct hyperlinks_uri {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct hyperlink_uri_entry {
-    pub rbe_left: *mut hyperlinks_uri,
-    pub rbe_right: *mut hyperlinks_uri,
-    pub rbe_parent: *mut hyperlinks_uri,
-    pub rbe_color: ::core::ffi::c_int,
+    /// Stable Rust index used by entry-only traversal; not an owning pointer.
+    pub owner:
+        *mut crate::src::shared::tree::OrderedIndex<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct hyperlink_inner_entry {
-    pub rbe_left: *mut hyperlinks_uri,
-    pub rbe_right: *mut hyperlinks_uri,
-    pub rbe_parent: *mut hyperlinks_uri,
-    pub rbe_color: ::core::ffi::c_int,
+    /// Stable Rust index used by entry-only traversal; not an owning pointer.
+    pub owner: *mut crate::src::shared::tree::OrderedIndex<u32, hyperlinks_uri>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -51,7 +49,7 @@ pub struct hyperlink_list_entry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct hyperlinks_by_inner_tree {
-    pub rbh_root: *mut hyperlinks_uri,
+    pub storage: *mut crate::src::shared::tree::OrderedIndex<u32, hyperlinks_uri>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]

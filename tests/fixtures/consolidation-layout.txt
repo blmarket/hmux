@@ -29,14 +29,14 @@ evbuffer_eol_style 4 4
 gid_t 4 4
 grid_reader 16 8 gd=0 cx=8 cy=12
 hanguljamo_state 4 4
-hyperlink_inner_entry 32 8 rbe_left=0 rbe_right=8 rbe_parent=16 rbe_color=24
+hyperlink_inner_entry 8 8 owner=0
 hyperlink_list_entry 16 8 tqe_next=0 tqe_prev=8
-hyperlink_uri_entry 32 8 rbe_left=0 rbe_right=8 rbe_parent=16 rbe_color=24
+hyperlink_uri_entry 8 8 owner=0
 hyperlinks 32 8 next_inner=0 by_inner=8 by_uri=16 references=24
-hyperlinks_by_inner_tree 8 8 rbh_root=0
-hyperlinks_by_uri_tree 8 8 rbh_root=0
+hyperlinks_by_inner_tree 8 8 storage=0
+hyperlinks_by_uri_tree 8 8 storage=0
 hyperlinks_list 16 8 tqh_first=0 tqh_last=8
-hyperlinks_uri 120 8 tree=0 inner=8 internal_id=16 external_id=24 uri=32 list_entry=40 by_inner_entry=56 by_uri_entry=88
+hyperlinks_uri 72 8 tree=0 inner=8 internal_id=16 external_id=24 uri=32 list_entry=40 by_inner_entry=56 by_uri_entry=64
 id_t 4 4
 int64_t 8 8
 layout_geometry 16 4 sx=0 sy=4 xoff=8 yoff=12

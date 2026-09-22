@@ -357,6 +357,7 @@ fn c_heap_ownership_does_not_cross_into_rust_deallocation() {
         if matches!(
             relative.as_str(),
             "src/arguments.rs"
+                | "src/shared/tree.rs"
                 | "src/reactor/buffer.rs"
                 | "src/reactor/streams.rs"
                 | "src/format/jobs.rs"

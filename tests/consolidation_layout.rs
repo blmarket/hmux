@@ -111,13 +111,13 @@ fn migrated_layouts_match_every_original_copy() {
     family!(grid_reader, [gd, cx, cy], [grid_reader, window_copy]);
     family!(
         hyperlink_inner_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color],
+        [owner],
         [hyperlinks]
     );
     family!(hyperlink_list_entry, [tqe_next, tqe_prev], [hyperlinks]);
     family!(
         hyperlink_uri_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color],
+        [owner],
         [hyperlinks]
     );
     family!(
@@ -125,8 +125,8 @@ fn migrated_layouts_match_every_original_copy() {
         [next_inner, by_inner, by_uri, references],
         [hyperlinks]
     );
-    family!(hyperlinks_by_inner_tree, [rbh_root], [hyperlinks]);
-    family!(hyperlinks_by_uri_tree, [rbh_root], [hyperlinks]);
+    family!(hyperlinks_by_inner_tree, [storage], [hyperlinks]);
+    family!(hyperlinks_by_uri_tree, [storage], [hyperlinks]);
     family!(hyperlinks_list, [tqh_first, tqh_last], [hyperlinks]);
     family!(
         hyperlinks_uri,
