@@ -568,62 +568,62 @@ fn original_copies_match() {
     record!(
         "src/cmd.rs::options_array",
         hmux2::src::cmd::options_array,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_set_option.rs::options_array",
         hmux2::src::cmd_set_option::options_array,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/colour.rs::options_array",
         hmux2::src::colour::options_array,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/environ.rs::options_array",
         hmux2::src::environ::options_array,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/hooks.rs::options_array",
         hmux2::src::hooks::options_array,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/options.rs::options_array",
         hmux2::src::options::options_array,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/prompt.rs::options_array",
         hmux2::src::prompt::options_array,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/status.rs::options_array",
         hmux2::src::status::options_array,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/tty_keys.rs::options_array",
         hmux2::src::tty_keys::options_array,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/tty_term.rs::options_array",
         hmux2::src::tty_term::options_array,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/utf8.rs::options_array",
         hmux2::src::utf8::options_array,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/window_customize.rs::options_array",
         hmux2::src::window_customize::options_array,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd.rs::options_array_item",
@@ -663,7 +663,7 @@ fn original_copies_match() {
     record!(
         "src/options.rs::options_array_item",
         hmux2::src::options::options_array_item,
-        [key, value, entry]
+        [key, value, owner]
     );
     record!(
         "src/prompt.rs::options_array_item",
@@ -694,11 +694,6 @@ fn original_copies_match() {
         "src/window_customize.rs::options_array_item",
         *mut hmux2::src::window_customize::options_array_item,
         []
-    );
-    record!(
-        "src/options.rs::C2RustUnnamed_18",
-        hmux2::src::options::options_array_item_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd.rs::options_entry",

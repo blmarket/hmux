@@ -76,7 +76,7 @@ pub struct options {
 pub struct options_array_item {
     pub key: *mut ::core::ffi::c_char,
     pub value: options_value,
-    pub entry: options_array_item_entry,
+    pub owner: *mut options_entry,
 }
 
 #[derive(Copy, Clone)]
@@ -96,7 +96,7 @@ pub struct options_entry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct options_array {
-    pub rbh_root: *mut options_array_item,
+    pub storage: *mut options_array_storage,
 }
 
 #[derive(Copy, Clone)]
@@ -135,13 +135,17 @@ pub struct options_storage {
     pub(crate) entries: BTreeMap<Vec<u8>, *mut options_entry>,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct options_array_item_entry {
-    pub rbe_left: *mut options_array_item,
-    pub rbe_right: *mut options_array_item,
-    pub rbe_parent: *mut options_array_item,
-    pub rbe_color: ::core::ffi::c_int,
+/// Numeric indices precede bytewise-ordered text keys.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum OptionsArrayKey {
+    Numeric(u32),
+    Text(Vec<u8>),
+}
+
+/// Rust-owned index; items and their values retain their C allocation contract.
+#[derive(Default)]
+pub struct options_array_storage {
+    pub(crate) entries: BTreeMap<OptionsArrayKey, *mut options_array_item>,
 }
 
 #[derive(Copy, Clone)]

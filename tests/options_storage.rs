@@ -87,3 +87,105 @@ fn aliases_parent_fallback_and_shadowing() {
         options_free(parent);
     }
 }
+
+#[test]
+fn array_keys_order_normalize_and_keep_stable_items() {
+    unsafe {
+        let oo = options_create(null_mut());
+        let table = &raw const hmux2::src::options_table::options_table;
+        let definition = (*table)
+            .iter()
+            .find(|oe| !oe.name.is_null() && CStr::from_ptr(oe.name) == c"update-environment")
+            .unwrap();
+        let array = options_empty(oo, definition);
+        assert!(options_array_first(array).is_null());
+        let keys: &[&[u8]] = &[
+            b"\xff",
+            b"10",
+            b"alpha",
+            b"002",
+            b"0",
+            b"4294967295",
+            b"\x80",
+            b"-1",
+        ];
+        for key in keys {
+            let key = CString::new(*key).unwrap();
+            assert_eq!(
+                options_array_set(array, key.as_ptr(), c"value".as_ptr(), 0, null_mut()),
+                0
+            );
+        }
+        let first = options_array_first(array);
+        let two = options_array_next(first);
+        assert_eq!(CStr::from_ptr(options_array_item_key(two)), c"2");
+        assert_eq!(
+            options_array_set(array, c"0002".as_ptr(), c"updated".as_ptr(), 0, null_mut()),
+            0
+        );
+        assert_eq!(options_array_next(first), two);
+        assert_eq!(
+            options_array_get(array, c"02".as_ptr()),
+            options_array_item_value(two)
+        );
+        assert_eq!(
+            CStr::from_ptr((*options_array_item_value(two)).string),
+            c"updated"
+        );
+        for invalid in [c"", c"4294967296"] {
+            assert_eq!(
+                options_array_set(array, invalid.as_ptr(), c"bad".as_ptr(), 0, null_mut()),
+                -1
+            );
+            assert!(options_array_get(array, invalid.as_ptr()).is_null());
+        }
+        let expected: &[&[u8]] = &[
+            b"0",
+            b"2",
+            b"10",
+            b"4294967295",
+            b"-1",
+            b"alpha",
+            b"\x80",
+            b"\xff",
+        ];
+        let mut item = first;
+        for key in expected {
+            assert!(!item.is_null());
+            assert_eq!(
+                CStr::from_ptr(options_array_item_key(item)).to_bytes(),
+                *key
+            );
+            let next = options_array_next(item);
+            let key = CString::new(*key).unwrap();
+            assert_eq!(
+                options_array_set(array, key.as_ptr(), null(), 0, null_mut()),
+                0
+            );
+            item = next;
+        }
+        assert!(item.is_null());
+        assert!(options_array_first(array).is_null());
+        // Clearing keeps the storage reusable; destroying a populated option
+        // releases both the Rust index and C-allocated values.
+        for _ in 0..3 {
+            for index in (0..128).rev() {
+                let key = CString::new(index.to_string()).unwrap();
+                assert_eq!(
+                    options_array_set(array, key.as_ptr(), c"again".as_ptr(), 0, null_mut()),
+                    0
+                );
+            }
+            options_array_clear(array);
+            assert!(options_array_first(array).is_null());
+        }
+        assert_eq!(
+            options_array_set(array, c"7".as_ptr(), c"last".as_ptr(), 0, null_mut()),
+            0
+        );
+        // Replacing the option also destroys populated array storage.
+        let replacement = options_default(oo, definition);
+        assert!(!options_array_first(replacement).is_null());
+        options_free(oo);
+    }
+}

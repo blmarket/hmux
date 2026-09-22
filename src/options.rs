@@ -81,8 +81,8 @@ use crate::src::shared::message::*;
 pub use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::*;
 pub use crate::src::shared::options::{
-    options, options_array, options_array_item, options_array_item_entry, options_entry,
-    options_storage, options_table_entry, options_value,
+    options, options_array, options_array_item, options_array_storage, options_entry,
+    options_storage, options_table_entry, options_value, OptionsArrayKey,
 };
 pub use crate::src::shared::options::{
     OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_COLOUR, OPTIONS_TABLE_IS_STYLE, OPTIONS_TABLE_NONE,
@@ -121,23 +121,6 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
-unsafe extern "C" fn options_array_key_to_number(
-    key: *const ::core::ffi::c_char,
-    idx: *mut u_int,
-) -> ::core::ffi::c_int {
-    match parse_array_index(std::ffi::CStr::from_ptr(key).to_bytes()) {
-        Ok(ArrayIndex::Numeric(number)) => {
-            if !idx.is_null() {
-                *idx = number as u_int;
-            }
-            1 as ::core::ffi::c_int
-        }
-        Ok(ArrayIndex::Text(_)) => 0 as ::core::ffi::c_int,
-        Err(ArrayIndexError::Empty | ArrayIndexError::NumericOverflow) => {
-            -(1 as ::core::ffi::c_int)
-        }
-    }
-}
 unsafe extern "C" fn options_array_correct_key(
     key: *const ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
@@ -157,529 +140,14 @@ unsafe extern "C" fn options_array_correct_key(
         }
     }
 }
-unsafe extern "C" fn options_array_cmp(
-    mut a1: *mut options_array_item,
-    mut a2: *mut options_array_item,
-) -> ::core::ffi::c_int {
-    let mut i1: u_int = 0;
-    let mut i2: u_int = 0;
-    let mut n1: ::core::ffi::c_int = 0;
-    let mut n2: ::core::ffi::c_int = 0;
-    n1 = options_array_key_to_number((*a1).key, &raw mut i1);
-    n2 = options_array_key_to_number((*a2).key, &raw mut i2);
-    if n1 != 0 && n2 != 0 {
-        if i1 < i2 {
-            return -(1 as ::core::ffi::c_int);
-        }
-        if i1 > i2 {
-            return 1 as ::core::ffi::c_int;
-        }
-        return 0 as ::core::ffi::c_int;
-    }
-    if n1 != 0 {
-        return -(1 as ::core::ffi::c_int);
-    }
-    if n2 != 0 {
-        return 1 as ::core::ffi::c_int;
-    }
-    return strcmp((*a1).key, (*a2).key);
-}
-unsafe extern "C" fn options_array_RB_REMOVE(
-    mut head: *mut options_array,
-    mut elm: *mut options_array_item,
-) -> *mut options_array_item {
-    let mut current_block: u64;
-    let mut child: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut parent: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut old: *mut options_array_item = elm;
-    let mut color: ::core::ffi::c_int = 0;
-    if (*elm).entry.rbe_left.is_null() {
-        child = (*elm).entry.rbe_right;
-        current_block = 7245201122033322888;
-    } else if (*elm).entry.rbe_right.is_null() {
-        child = (*elm).entry.rbe_left;
-        current_block = 7245201122033322888;
-    } else {
-        let mut left: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-        elm = (*elm).entry.rbe_right;
-        loop {
-            left = (*elm).entry.rbe_left;
-            if left.is_null() {
-                break;
-            }
-            elm = left;
-        }
-        child = (*elm).entry.rbe_right;
-        parent = (*elm).entry.rbe_parent;
-        color = (*elm).entry.rbe_color;
-        if !child.is_null() {
-            (*child).entry.rbe_parent = parent;
-        }
-        if !parent.is_null() {
-            if (*parent).entry.rbe_left == elm {
-                (*parent).entry.rbe_left = child;
-            } else {
-                (*parent).entry.rbe_right = child;
-            }
-        } else {
-            (*head).rbh_root = child;
-        }
-        if (*elm).entry.rbe_parent == old {
-            parent = elm;
-        }
-        (*elm).entry = (*old).entry;
-        if !(*old).entry.rbe_parent.is_null() {
-            if (*(*old).entry.rbe_parent).entry.rbe_left == old {
-                (*(*old).entry.rbe_parent).entry.rbe_left = elm;
-            } else {
-                (*(*old).entry.rbe_parent).entry.rbe_right = elm;
-            }
-        } else {
-            (*head).rbh_root = elm;
-        }
-        (*(*old).entry.rbe_left).entry.rbe_parent = elm;
-        if !(*old).entry.rbe_right.is_null() {
-            (*(*old).entry.rbe_right).entry.rbe_parent = elm;
-        }
-        if !parent.is_null() {
-            left = parent;
-            loop {
-                left = (*left).entry.rbe_parent;
-                if left.is_null() {
-                    break;
-                }
-            }
-        }
-        current_block = 5235237659983604069;
-    }
-    match current_block {
-        7245201122033322888 => {
-            parent = (*elm).entry.rbe_parent;
-            color = (*elm).entry.rbe_color;
-            if !child.is_null() {
-                (*child).entry.rbe_parent = parent;
-            }
-            if !parent.is_null() {
-                if (*parent).entry.rbe_left == elm {
-                    (*parent).entry.rbe_left = child;
-                } else {
-                    (*parent).entry.rbe_right = child;
-                }
-            } else {
-                (*head).rbh_root = child;
-            }
-        }
-        _ => {}
-    }
-    if color == RB_BLACK {
-        options_array_RB_REMOVE_COLOR(head, parent, child);
-    }
-    return old;
-}
-unsafe extern "C" fn options_array_RB_MINMAX(
-    mut head: *mut options_array,
-    mut val: ::core::ffi::c_int,
-) -> *mut options_array_item {
-    let mut tmp: *mut options_array_item = (*head).rbh_root;
-    let mut parent: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    while !tmp.is_null() {
-        parent = tmp;
-        if val < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else {
-            tmp = (*tmp).entry.rbe_right;
-        }
-    }
-    return parent;
-}
-unsafe extern "C" fn options_array_RB_REMOVE_COLOR(
-    mut head: *mut options_array,
-    mut parent: *mut options_array_item,
-    mut elm: *mut options_array_item,
-) {
-    let mut tmp: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    while (elm.is_null() || (*elm).entry.rbe_color == RB_BLACK) && elm != (*head).rbh_root {
-        if (*parent).entry.rbe_left == elm {
-            tmp = (*parent).entry.rbe_right;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_right;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK
-                {
-                    let mut oleft: *mut options_array_item =
-                        ::core::ptr::null_mut::<options_array_item>();
-                    oleft = (*tmp).entry.rbe_left;
-                    if !oleft.is_null() {
-                        (*oleft).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oleft = (*tmp).entry.rbe_left;
-                    (*tmp).entry.rbe_left = (*oleft).entry.rbe_right;
-                    if !(*tmp).entry.rbe_left.is_null() {
-                        (*(*oleft).entry.rbe_right).entry.rbe_parent = tmp;
-                    }
-                    (*oleft).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oleft).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oleft;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oleft;
-                        }
-                    } else {
-                        (*head).rbh_root = oleft;
-                    }
-                    (*oleft).entry.rbe_right = tmp;
-                    (*tmp).entry.rbe_parent = oleft;
-                    !(*oleft).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_right;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        } else {
-            tmp = (*parent).entry.rbe_left;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_left;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_left.is_null()
-                    || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK
-                {
-                    let mut oright: *mut options_array_item =
-                        ::core::ptr::null_mut::<options_array_item>();
-                    oright = (*tmp).entry.rbe_right;
-                    if !oright.is_null() {
-                        (*oright).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oright = (*tmp).entry.rbe_right;
-                    (*tmp).entry.rbe_right = (*oright).entry.rbe_left;
-                    if !(*tmp).entry.rbe_right.is_null() {
-                        (*(*oright).entry.rbe_left).entry.rbe_parent = tmp;
-                    }
-                    (*oright).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oright).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oright;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oright;
-                        }
-                    } else {
-                        (*head).rbh_root = oright;
-                    }
-                    (*oright).entry.rbe_left = tmp;
-                    (*tmp).entry.rbe_parent = oright;
-                    !(*oright).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_left;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        }
-    }
-    if !elm.is_null() {
-        (*elm).entry.rbe_color = RB_BLACK;
+// Internal callers pass keys already validated by options_array_correct_key.
+unsafe fn options_array_index(key: *const ::core::ffi::c_char) -> OptionsArrayKey {
+    match parse_array_index(CStr::from_ptr(key).to_bytes()).expect("validated array key") {
+        ArrayIndex::Numeric(number) => OptionsArrayKey::Numeric(number),
+        ArrayIndex::Text(bytes) => OptionsArrayKey::Text(bytes.to_vec()),
     }
 }
-unsafe extern "C" fn options_array_RB_FIND(
-    mut head: *mut options_array,
-    mut elm: *mut options_array_item,
-) -> *mut options_array_item {
-    let mut tmp: *mut options_array_item = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = options_array_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return ::core::ptr::null_mut::<options_array_item>();
-}
-unsafe extern "C" fn options_array_RB_INSERT(
-    mut head: *mut options_array,
-    mut elm: *mut options_array_item,
-) -> *mut options_array_item {
-    let mut tmp: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut parent: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = options_array_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    (*elm).entry.rbe_parent = parent;
-    (*elm).entry.rbe_right = ::core::ptr::null_mut::<options_array_item>();
-    (*elm).entry.rbe_left = (*elm).entry.rbe_right;
-    (*elm).entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).entry.rbe_left = elm;
-        } else {
-            (*parent).entry.rbe_right = elm;
-        }
-    } else {
-        (*head).rbh_root = elm;
-    }
-    options_array_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<options_array_item>();
-}
-unsafe extern "C" fn options_array_RB_INSERT_COLOR(
-    mut head: *mut options_array,
-    mut elm: *mut options_array_item,
-) {
-    let mut parent: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut gparent: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    let mut tmp: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    loop {
-        parent = (*elm).entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).entry.rbe_parent;
-        if parent == (*gparent).entry.rbe_left {
-            tmp = (*gparent).entry.rbe_right;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_right == elm {
-                    tmp = (*parent).entry.rbe_right;
-                    (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                    if !(*parent).entry.rbe_right.is_null() {
-                        (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_left = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_left;
-                (*gparent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*gparent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).entry.rbe_left;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_left == elm {
-                    tmp = (*parent).entry.rbe_left;
-                    (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                    if !(*parent).entry.rbe_left.is_null() {
-                        (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_right = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_right;
-                (*gparent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*gparent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).entry.rbe_color = RB_BLACK;
-}
-unsafe extern "C" fn options_array_RB_NEXT(
-    mut elm: *mut options_array_item,
-) -> *mut options_array_item {
-    if !(*elm).entry.rbe_right.is_null() {
-        elm = (*elm).entry.rbe_right;
-        while !(*elm).entry.rbe_left.is_null() {
-            elm = (*elm).entry.rbe_left;
-        }
-    } else if !(*elm).entry.rbe_parent.is_null() && elm == (*(*elm).entry.rbe_parent).entry.rbe_left
-    {
-        elm = (*elm).entry.rbe_parent;
-    } else {
-        while !(*elm).entry.rbe_parent.is_null()
-            && elm == (*(*elm).entry.rbe_parent).entry.rbe_right
-        {
-            elm = (*elm).entry.rbe_parent;
-        }
-        elm = (*elm).entry.rbe_parent;
-    }
-    return elm;
-}
+
 unsafe extern "C" fn options_map_name(
     mut name: *const ::core::ffi::c_char,
 ) -> *const ::core::ffi::c_char {
@@ -886,7 +354,7 @@ pub unsafe extern "C" fn options_empty(
     o = options_add(oo, (*oe).name);
     (*o).tableentry = oe;
     if (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-        (*o).value.array.rbh_root = ::core::ptr::null_mut::<options_array_item>();
+        (*o).value.array.storage = Box::into_raw(Box::new(options_array_storage::default()));
     }
     return o;
 }
@@ -1018,6 +486,7 @@ unsafe extern "C" fn options_remove(mut o: *mut options_entry) {
     let mut oo: *mut options = (*o).owner;
     if !(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         options_array_clear(o);
+        drop(Box::from_raw((*o).value.array.storage));
     } else {
         options_value_free(o, &raw mut (*o).value);
     }
@@ -1074,20 +543,11 @@ unsafe extern "C" fn options_array_item(
     mut o: *mut options_entry,
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_array_item {
-    let mut a: options_array_item = options_array_item {
-        key: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        value: options_value {
-            string: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        },
-        entry: options_array_item_entry {
-            rbe_left: ::core::ptr::null_mut::<options_array_item>(),
-            rbe_right: ::core::ptr::null_mut::<options_array_item>(),
-            rbe_parent: ::core::ptr::null_mut::<options_array_item>(),
-            rbe_color: 0,
-        },
-    };
-    a.key = key as *mut ::core::ffi::c_char;
-    return options_array_RB_FIND(&raw mut (*o).value.array, &raw mut a);
+    (*(*o).value.array.storage)
+        .entries
+        .get(&options_array_index(key))
+        .copied()
+        .unwrap_or(::core::ptr::null_mut())
 }
 unsafe extern "C" fn options_array_new(
     mut o: *mut options_entry,
@@ -1099,12 +559,17 @@ unsafe extern "C" fn options_array_new(
         ::core::mem::size_of::<options_array_item>() as size_t,
     ) as *mut options_array_item;
     (*a).key = xstrdup(key);
-    options_array_RB_INSERT(&raw mut (*o).value.array, a);
+    (*a).owner = o;
+    (*(*o).value.array.storage)
+        .entries
+        .insert(options_array_index(key), a);
     return a;
 }
 unsafe extern "C" fn options_array_free(mut o: *mut options_entry, mut a: *mut options_array_item) {
     options_value_free(o, &raw mut (*a).value);
-    options_array_RB_REMOVE(&raw mut (*o).value.array, a);
+    (*(*o).value.array.storage)
+        .entries
+        .remove(&options_array_index((*a).key));
     free((*a).key as *mut ::core::ffi::c_void);
     free(a as *mut ::core::ffi::c_void);
 }
@@ -1115,9 +580,9 @@ pub unsafe extern "C" fn options_array_clear(mut o: *mut options_entry) {
     if !(!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         return;
     }
-    a = options_array_RB_MINMAX(&raw mut (*o).value.array, RB_NEGINF);
+    a = options_array_first(o);
     while !a.is_null() && {
-        a1 = options_array_RB_NEXT(a);
+        a1 = options_array_next(a);
         1 as ::core::ffi::c_int != 0
     } {
         options_array_free(o, a);
@@ -1373,13 +838,21 @@ pub unsafe extern "C" fn options_array_first(mut o: *mut options_entry) -> *mut 
     if !(!(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0) {
         return ::core::ptr::null_mut::<options_array_item>();
     }
-    return options_array_RB_MINMAX(&raw mut (*o).value.array, RB_NEGINF);
+    (*(*o).value.array.storage)
+        .entries
+        .first_key_value()
+        .map_or(::core::ptr::null_mut(), |(_, &item)| item)
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_array_next(
     mut a: *mut options_array_item,
 ) -> *mut options_array_item {
-    return options_array_RB_NEXT(a);
+    let key = options_array_index((*a).key);
+    (*(*(*a).owner).value.array.storage)
+        .entries
+        .range((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(::core::ptr::null_mut(), |(_, &item)| item)
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_array_item_key(
@@ -1418,7 +891,7 @@ pub unsafe extern "C" fn options_to_string(
     let mut new_key: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if !(*o).tableentry.is_null() && (*(*o).tableentry).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
         if key.is_null() {
-            a = options_array_RB_MINMAX(&raw mut (*o).value.array, RB_NEGINF);
+            a = options_array_first(o);
             while !a.is_null() {
                 next = options_value_to_string(o, &raw mut (*a).value, numeric);
                 if last.is_null() {
@@ -1434,7 +907,7 @@ pub unsafe extern "C" fn options_to_string(
                     free(next as *mut ::core::ffi::c_void);
                 }
                 last = result;
-                a = options_array_RB_NEXT(a);
+                a = options_array_next(a);
             }
             if result.is_null() {
                 return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
