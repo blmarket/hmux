@@ -56,7 +56,7 @@ fn original_copies_match() {
     record!(
         "src/control.rs::C2RustUnnamed_41",
         hmux2::src::control::control_pane_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/control.rs::C2RustUnnamed_43",
@@ -66,7 +66,7 @@ fn original_copies_match() {
     record!(
         "src/control.rs::control_panes",
         hmux2::src::control::control_panes,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/alerts.rs::control_state",
@@ -703,12 +703,12 @@ fn original_copies_match() {
     record!(
         "src/control.rs::C2RustUnnamed_44",
         hmux2::src::control::control_window_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/control.rs::control_windows",
         hmux2::src::control::control_windows,
-        [rbh_root]
+        [storage]
     );
     let actual = records.join("\n") + "\n";
     assert_eq!(actual, include_str!("fixtures/model-control.txt"));
