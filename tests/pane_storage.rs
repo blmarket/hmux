@@ -1,14 +1,4 @@
-use hmux2::src::shared::tree::OrderedIndex;
 use hmux2::src::window::*;
-use std::mem::size_of;
-
-#[test]
-fn boxed_index_slot_keeps_pointer_layout() {
-    assert_eq!(
-        size_of::<window_pane_tree>(),
-        size_of::<*mut OrderedIndex<u32, window_pane>>()
-    );
-}
 
 #[test]
 fn pane_ids_duplicates_neighbors_and_removal() {

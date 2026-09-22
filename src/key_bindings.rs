@@ -79,7 +79,7 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct key_tables {
-    pub storage: *mut crate::src::shared::tree::OrderedIndex<Vec<u8>, key_table>,
+    pub storage: *mut std::collections::BTreeMap<Vec<u8>, *mut key_table>,
 }
 
 static mut key_tables: key_tables = key_tables {
@@ -1142,126 +1142,176 @@ pub unsafe fn key_bindings_index_find(
     head: *mut key_bindings,
     elm: *mut key_binding,
 ) -> *mut key_binding {
-    crate::src::shared::tree::OrderedIndex::<u64, key_binding>::find(
-        (*head).storage,
-        &key_bindings_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = key_bindings_key(elm);
+    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn key_bindings_index_nfind(
     head: *mut key_bindings,
     elm: *mut key_binding,
 ) -> *mut key_binding {
-    crate::src::shared::tree::OrderedIndex::<u64, key_binding>::nfind(
-        (*head).storage,
-        &key_bindings_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = key_bindings_key(elm);
+    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn key_bindings_index_insert(
     head: *mut key_bindings,
     elm: *mut key_binding,
 ) -> *mut key_binding {
-    let found = crate::src::shared::tree::OrderedIndex::<u64, key_binding>::insert(
-        &raw mut (*head).storage,
-        key_bindings_key(elm),
-        elm,
-    );
-    if found.is_null() {
-        (*elm).entry.owner = (*head).storage;
+    let key = key_bindings_key(elm);
+    if (*head).storage.is_null() {
+        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
-    found
+    let map = &mut *(*head).storage;
+    match map.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
+    }
+    (*elm).entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn key_bindings_index_remove(
     head: *mut key_bindings,
     elm: *mut key_binding,
 ) -> *mut key_binding {
-    let removed = crate::src::shared::tree::OrderedIndex::<u64, key_binding>::remove(
-        &raw mut (*head).storage,
-        &key_bindings_key(elm),
-        elm,
-    );
-    if !removed.is_null() {
-        (*elm).entry.owner = std::ptr::null_mut();
+    if elm.is_null() {
+        return std::ptr::null_mut();
     }
-    removed
+    let key = key_bindings_key(elm);
+    let Some(map) = (*head).storage.as_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(&key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(&key);
+    (*elm).entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        drop(Box::from_raw((*head).storage));
+        (*head).storage = std::ptr::null_mut();
+    }
+    elm
 }
 pub unsafe fn key_bindings_index_minmax(
     head: *mut key_bindings,
     direction: ::core::ffi::c_int,
 ) -> *mut key_binding {
-    crate::src::shared::tree::OrderedIndex::<u64, key_binding>::edge((*head).storage, direction < 0)
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn key_bindings_index_next(elm: *mut key_binding) -> *mut key_binding {
-    crate::src::shared::tree::OrderedIndex::<u64, key_binding>::neighbor(
-        (*elm).entry.owner,
-        &key_bindings_key(elm),
-        true,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = key_bindings_key(elm);
+    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn key_bindings_index_prev(elm: *mut key_binding) -> *mut key_binding {
-    crate::src::shared::tree::OrderedIndex::<u64, key_binding>::neighbor(
-        (*elm).entry.owner,
-        &key_bindings_key(elm),
-        false,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = key_bindings_key(elm);
+    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
-unsafe fn key_tables_key(elm: *mut key_table) -> Vec<u8> {
-    std::ffi::CStr::from_ptr((*elm).name).to_bytes().to_vec()
-}
 pub unsafe fn key_tables_find(head: *mut key_tables, elm: *mut key_table) -> *mut key_table {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, key_table>::find(
-        (*head).storage,
-        &key_tables_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn key_tables_nfind(head: *mut key_tables, elm: *mut key_table) -> *mut key_table {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, key_table>::nfind(
-        (*head).storage,
-        &key_tables_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn key_tables_insert(head: *mut key_tables, elm: *mut key_table) -> *mut key_table {
-    let found = crate::src::shared::tree::OrderedIndex::<Vec<u8>, key_table>::insert(
-        &raw mut (*head).storage,
-        key_tables_key(elm),
-        elm,
-    );
-    if found.is_null() {
-        (*elm).entry.owner = (*head).storage;
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    if (*head).storage.is_null() {
+        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
-    found
+    let map = &mut *(*head).storage;
+    match map.entry(key.to_vec()) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
+    }
+    (*elm).entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn key_tables_remove(head: *mut key_tables, elm: *mut key_table) -> *mut key_table {
-    let removed = crate::src::shared::tree::OrderedIndex::<Vec<u8>, key_table>::remove(
-        &raw mut (*head).storage,
-        &key_tables_key(elm),
-        elm,
-    );
-    if !removed.is_null() {
-        (*elm).entry.owner = std::ptr::null_mut();
+    if elm.is_null() {
+        return std::ptr::null_mut();
     }
-    removed
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let Some(map) = (*head).storage.as_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(key);
+    (*elm).entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        drop(Box::from_raw((*head).storage));
+        (*head).storage = std::ptr::null_mut();
+    }
+    elm
 }
 pub unsafe fn key_tables_minmax(
     head: *mut key_tables,
     direction: ::core::ffi::c_int,
 ) -> *mut key_table {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, key_table>::edge(
-        (*head).storage,
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn key_tables_next(elm: *mut key_table) -> *mut key_table {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, key_table>::neighbor(
-        (*elm).entry.owner,
-        &key_tables_key(elm),
-        true,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn key_tables_prev(elm: *mut key_table) -> *mut key_table {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, key_table>::neighbor(
-        (*elm).entry.owner,
-        &key_tables_key(elm),
-        false,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }

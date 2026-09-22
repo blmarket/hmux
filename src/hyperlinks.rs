@@ -234,70 +234,95 @@ pub unsafe fn hyperlinks_by_inner_tree_find(
     head: *mut hyperlinks_by_inner_tree,
     elm: *mut hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::find(
-        (*head).storage,
-        &hyperlinks_by_inner_tree_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = hyperlinks_by_inner_tree_key(elm);
+    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn hyperlinks_by_inner_tree_nfind(
     head: *mut hyperlinks_by_inner_tree,
     elm: *mut hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::nfind(
-        (*head).storage,
-        &hyperlinks_by_inner_tree_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = hyperlinks_by_inner_tree_key(elm);
+    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn hyperlinks_by_inner_tree_insert(
     head: *mut hyperlinks_by_inner_tree,
     elm: *mut hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    let found = crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::insert(
-        &raw mut (*head).storage,
-        hyperlinks_by_inner_tree_key(elm),
-        elm,
-    );
-    if found.is_null() {
-        (*elm).by_inner_entry.owner = (*head).storage;
+    let key = hyperlinks_by_inner_tree_key(elm);
+    if (*head).storage.is_null() {
+        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
-    found
+    let map = &mut *(*head).storage;
+    match map.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
+    }
+    (*elm).by_inner_entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn hyperlinks_by_inner_tree_remove(
     head: *mut hyperlinks_by_inner_tree,
     elm: *mut hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    let removed = crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::remove(
-        &raw mut (*head).storage,
-        &hyperlinks_by_inner_tree_key(elm),
-        elm,
-    );
-    if !removed.is_null() {
-        (*elm).by_inner_entry.owner = std::ptr::null_mut();
+    if elm.is_null() {
+        return std::ptr::null_mut();
     }
-    removed
+    let key = hyperlinks_by_inner_tree_key(elm);
+    let Some(map) = (*head).storage.as_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(&key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(&key);
+    (*elm).by_inner_entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        drop(Box::from_raw((*head).storage));
+        (*head).storage = std::ptr::null_mut();
+    }
+    elm
 }
 pub unsafe fn hyperlinks_by_inner_tree_minmax(
     head: *mut hyperlinks_by_inner_tree,
     direction: ::core::ffi::c_int,
 ) -> *mut hyperlinks_uri {
-    crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::edge(
-        (*head).storage,
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn hyperlinks_by_inner_tree_next(elm: *mut hyperlinks_uri) -> *mut hyperlinks_uri {
-    crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::neighbor(
-        (*elm).by_inner_entry.owner,
-        &hyperlinks_by_inner_tree_key(elm),
-        true,
-    )
+    let Some(map) = (*elm).by_inner_entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = hyperlinks_by_inner_tree_key(elm);
+    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn hyperlinks_by_inner_tree_prev(elm: *mut hyperlinks_uri) -> *mut hyperlinks_uri {
-    crate::src::shared::tree::OrderedIndex::<u32, hyperlinks_uri>::neighbor(
-        (*elm).by_inner_entry.owner,
-        &hyperlinks_by_inner_tree_key(elm),
-        false,
-    )
+    let Some(map) = (*elm).by_inner_entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = hyperlinks_by_inner_tree_key(elm);
+    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
 unsafe fn hyperlinks_by_uri_tree_key(elm: *mut hyperlinks_uri) -> (bool, Vec<u8>, Vec<u8>, u32) {
@@ -319,66 +344,93 @@ pub unsafe fn hyperlinks_by_uri_tree_find(
     head: *mut hyperlinks_by_uri_tree,
     elm: *mut hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    crate::src::shared::tree::OrderedIndex::<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>::find(
-        (*head).storage,
-        &hyperlinks_by_uri_tree_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = hyperlinks_by_uri_tree_key(elm);
+    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn hyperlinks_by_uri_tree_nfind(
     head: *mut hyperlinks_by_uri_tree,
     elm: *mut hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    crate::src::shared::tree::OrderedIndex::<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>::nfind(
-        (*head).storage,
-        &hyperlinks_by_uri_tree_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = hyperlinks_by_uri_tree_key(elm);
+    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn hyperlinks_by_uri_tree_insert(
     head: *mut hyperlinks_by_uri_tree,
     elm: *mut hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    let found = crate::src::shared::tree::OrderedIndex::<
-        (bool, Vec<u8>, Vec<u8>, u32),
-        hyperlinks_uri,
-    >::insert(
-        &raw mut (*head).storage,
-        hyperlinks_by_uri_tree_key(elm),
-        elm,
-    );
-    if found.is_null() {
-        (*elm).by_uri_entry.owner = (*head).storage;
+    let key = hyperlinks_by_uri_tree_key(elm);
+    if (*head).storage.is_null() {
+        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
-    found
+    let map = &mut *(*head).storage;
+    match map.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
+    }
+    (*elm).by_uri_entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn hyperlinks_by_uri_tree_remove(
     head: *mut hyperlinks_by_uri_tree,
     elm: *mut hyperlinks_uri,
 ) -> *mut hyperlinks_uri {
-    let removed = crate::src::shared::tree::OrderedIndex::<
-        (bool, Vec<u8>, Vec<u8>, u32),
-        hyperlinks_uri,
-    >::remove(
-        &raw mut (*head).storage,
-        &hyperlinks_by_uri_tree_key(elm),
-        elm,
-    );
-    if !removed.is_null() {
-        (*elm).by_uri_entry.owner = std::ptr::null_mut();
+    if elm.is_null() {
+        return std::ptr::null_mut();
     }
-    removed
+    let key = hyperlinks_by_uri_tree_key(elm);
+    let Some(map) = (*head).storage.as_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(&key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(&key);
+    (*elm).by_uri_entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        drop(Box::from_raw((*head).storage));
+        (*head).storage = std::ptr::null_mut();
+    }
+    elm
 }
 pub unsafe fn hyperlinks_by_uri_tree_minmax(
     head: *mut hyperlinks_by_uri_tree,
     direction: ::core::ffi::c_int,
 ) -> *mut hyperlinks_uri {
-    crate::src::shared::tree::OrderedIndex::<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>::edge(
-        (*head).storage,
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn hyperlinks_by_uri_tree_next(elm: *mut hyperlinks_uri) -> *mut hyperlinks_uri {
-    crate::src::shared::tree::OrderedIndex::<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>::neighbor((*elm).by_uri_entry.owner, &hyperlinks_by_uri_tree_key(elm), true)
+    let Some(map) = (*elm).by_uri_entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = hyperlinks_by_uri_tree_key(elm);
+    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn hyperlinks_by_uri_tree_prev(elm: *mut hyperlinks_uri) -> *mut hyperlinks_uri {
-    crate::src::shared::tree::OrderedIndex::<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>::neighbor((*elm).by_uri_entry.owner, &hyperlinks_by_uri_tree_key(elm), false)
+    let Some(map) = (*elm).by_uri_entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = hyperlinks_by_uri_tree_key(elm);
+    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }

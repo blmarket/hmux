@@ -236,7 +236,7 @@ pub struct window_pane {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_pane_tree_entry {
-    pub owner: *mut super::tree::OrderedIndex<u_int, window_pane>,
+    pub owner: *mut std::collections::BTreeMap<u_int, *mut window_pane>,
 }
 
 #[derive(Copy, Clone)]
@@ -278,7 +278,7 @@ pub struct window_panes {
 pub struct window_pane_tree {
     /// The global pane index owns its allocation. Pane records keep only a
     /// compatibility pointer in `tree_entry.owner` for traversal.
-    pub storage: Option<Box<super::tree::OrderedIndex<u_int, window_pane>>>,
+    pub storage: Option<Box<std::collections::BTreeMap<u_int, *mut window_pane>>>,
 }
 
 #[derive(Copy, Clone)]

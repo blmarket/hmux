@@ -112,70 +112,95 @@ pub(crate) unsafe fn sessions_key(elm: *mut session) -> Vec<u8> {
     std::ffi::CStr::from_ptr((*elm).name).to_bytes().to_vec()
 }
 pub unsafe fn sessions_find(head: *mut sessions, elm: *mut session) -> *mut session {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::find(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        &sessions_key(elm),
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn sessions_nfind(head: *mut sessions, elm: *mut session) -> *mut session {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::nfind(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        &sessions_key(elm),
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn sessions_insert(head: *mut sessions, elm: *mut session) -> *mut session {
-    let found = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::insert_boxed(
-        &mut (*head).storage,
-        sessions_key(elm),
-        elm,
-    );
-    if found.is_null() {
-        (*elm).entry.owner = crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage);
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let map = (*head)
+        .storage
+        .get_or_insert_with(|| Box::new(std::collections::BTreeMap::new()))
+        .as_mut();
+    match map.entry(key.to_vec()) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
     }
-    found
+    (*elm).entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn sessions_remove(head: *mut sessions, elm: *mut session) -> *mut session {
-    let key = sessions_key(elm);
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::remove_boxed_with(
-        &mut (*head).storage,
-        &key,
-        elm,
-        |node| unsafe {
-            (*node).entry.owner = std::ptr::null_mut();
-        },
-    )
+    if elm.is_null() {
+        return std::ptr::null_mut();
+    }
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let Some(map) = (*head).storage.as_deref_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(key);
+    (*elm).entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        (*head).storage = None;
+    }
+    elm
 }
 pub unsafe fn sessions_minmax(head: *mut sessions, direction: ::core::ffi::c_int) -> *mut session {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::edge(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 /// Resume a potentially destructive walk using a saved name and the live index.
 /// The named session and any of its successors may already have been removed.
 pub unsafe fn sessions_after(head: *mut sessions, name: &[u8]) -> *mut session {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::neighbor(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        name,
-        true,
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    map.range::<[u8], _>((std::ops::Bound::Excluded(name), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, &node)| node)
 }
 
 /// The session must still belong to its index. Destructive walks use sessions_after.
 pub unsafe fn sessions_next(elm: *mut session) -> *mut session {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::neighbor(
-        (*elm).entry.owner,
-        std::ffi::CStr::from_ptr((*elm).name).to_bytes(),
-        true,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 /// The session must still belong to its index.
 pub unsafe fn sessions_prev(elm: *mut session) -> *mut session {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::neighbor(
-        (*elm).entry.owner,
-        std::ffi::CStr::from_ptr((*elm).name).to_bytes(),
-        false,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
 #[no_mangle]
@@ -185,77 +210,98 @@ pub unsafe extern "C" fn session_group_cmp(
 ) -> ::core::ffi::c_int {
     return strcmp((*s1).name, (*s2).name);
 }
-unsafe fn session_groups_key(elm: *mut session_group) -> Vec<u8> {
-    std::ffi::CStr::from_ptr((*elm).name).to_bytes().to_vec()
-}
 pub unsafe fn session_groups_find(
     head: *mut session_groups,
     elm: *mut session_group,
 ) -> *mut session_group {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::find(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        &session_groups_key(elm),
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn session_groups_nfind(
     head: *mut session_groups,
     elm: *mut session_group,
 ) -> *mut session_group {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::nfind(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        &session_groups_key(elm),
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn session_groups_insert(
     head: *mut session_groups,
     elm: *mut session_group,
 ) -> *mut session_group {
-    let found = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::insert_boxed(
-        &mut (*head).storage,
-        session_groups_key(elm),
-        elm,
-    );
-    if found.is_null() {
-        (*elm).entry.owner = crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage);
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let map = (*head)
+        .storage
+        .get_or_insert_with(|| Box::new(std::collections::BTreeMap::new()))
+        .as_mut();
+    match map.entry(key.to_vec()) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
     }
-    found
+    (*elm).entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn session_groups_remove(
     head: *mut session_groups,
     elm: *mut session_group,
 ) -> *mut session_group {
-    let key = session_groups_key(elm);
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::remove_boxed_with(
-        &mut (*head).storage,
-        &key,
-        elm,
-        |node| unsafe {
-            (*node).entry.owner = std::ptr::null_mut();
-        },
-    )
+    if elm.is_null() {
+        return std::ptr::null_mut();
+    }
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let Some(map) = (*head).storage.as_deref_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(key);
+    (*elm).entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        (*head).storage = None;
+    }
+    elm
 }
 pub unsafe fn session_groups_minmax(
     head: *mut session_groups,
     direction: ::core::ffi::c_int,
 ) -> *mut session_group {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::edge(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn session_groups_next(elm: *mut session_group) -> *mut session_group {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::neighbor(
-        (*elm).entry.owner,
-        &session_groups_key(elm),
-        true,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn session_groups_prev(elm: *mut session_group) -> *mut session_group {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::neighbor(
-        (*elm).entry.owner,
-        &session_groups_key(elm),
-        false,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
 #[no_mangle]
@@ -1250,10 +1296,7 @@ pub unsafe extern "C" fn session_renumber_windows(mut s: *mut session) {
         },
     );
     for old_idx in crate::src::window::winlink_stack_indices(&raw const old_lastw) {
-        wl = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::find(
-            crate::src::shared::tree::OrderedIndex::boxed_ptr(&old_wins.storage),
-            &old_idx,
-        );
+        wl = winlink_find_by_index(&raw mut old_wins, old_idx);
         if wl.is_null() {
             continue;
         }

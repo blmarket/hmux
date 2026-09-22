@@ -42,7 +42,8 @@ pub const WINDOW_MODE_HIDE_SCROLLBARS: ::core::ffi::c_int = 0x8 as ::core::ffi::
 pub struct winlinks {
     /// The session owns the index allocation. The index itself owns the
     /// `RefBox` allocations for winlinks created by `winlink_add`.
-    pub storage: Option<Box<super::tree::OrderedIndex<::core::ffi::c_int, winlink>>>,
+    pub storage:
+        Option<Box<std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>>>,
 }
 
 #[derive(Copy, Clone)]
@@ -74,7 +75,7 @@ pub struct winlink_wentry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct winlink_entry {
-    pub owner: *mut super::tree::OrderedIndex<::core::ffi::c_int, winlink>,
+    pub owner: *mut std::collections::BTreeMap<::core::ffi::c_int, refbox::RefBox<winlink>>,
 }
 
 #[derive(Copy, Clone)]
@@ -133,7 +134,7 @@ pub struct window {
 #[repr(C)]
 pub struct window_entry {
     /// Compatibility view of the owning boxed index; null after removal.
-    pub owner: *mut super::tree::OrderedIndex<u_int, window>,
+    pub owner: *mut std::collections::BTreeMap<u_int, *mut window>,
 }
 
 #[derive(Copy, Clone)]
@@ -226,5 +227,5 @@ pub struct winlink_stack {
 #[repr(C)]
 pub struct windows {
     /// The head owns the index allocation; window records remain externally owned.
-    pub storage: Option<Box<super::tree::OrderedIndex<u_int, window>>>,
+    pub storage: Option<Box<std::collections::BTreeMap<u_int, *mut window>>>,
 }

@@ -13,7 +13,7 @@ pub struct hyperlinks {
 #[repr(C)]
 pub struct hyperlinks_by_uri_tree {
     pub storage:
-        *mut crate::src::shared::tree::OrderedIndex<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>,
+        *mut std::collections::BTreeMap<(bool, Vec<u8>, Vec<u8>, u32), *mut hyperlinks_uri>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -31,14 +31,13 @@ pub struct hyperlinks_uri {
 #[repr(C)]
 pub struct hyperlink_uri_entry {
     /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner:
-        *mut crate::src::shared::tree::OrderedIndex<(bool, Vec<u8>, Vec<u8>, u32), hyperlinks_uri>,
+    pub owner: *mut std::collections::BTreeMap<(bool, Vec<u8>, Vec<u8>, u32), *mut hyperlinks_uri>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct hyperlink_inner_entry {
     /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut crate::src::shared::tree::OrderedIndex<u32, hyperlinks_uri>,
+    pub owner: *mut std::collections::BTreeMap<u32, *mut hyperlinks_uri>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -49,7 +48,7 @@ pub struct hyperlink_list_entry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct hyperlinks_by_inner_tree {
-    pub storage: *mut crate::src::shared::tree::OrderedIndex<u32, hyperlinks_uri>,
+    pub storage: *mut std::collections::BTreeMap<u32, *mut hyperlinks_uri>,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]

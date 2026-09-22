@@ -98,7 +98,7 @@ pub struct control_pane {
 #[repr(C)]
 pub struct control_pane_entry {
     /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut crate::src::shared::tree::OrderedIndex<u32, control_pane>,
+    pub owner: *mut std::collections::BTreeMap<u32, *mut control_pane>,
 }
 
 #[derive(Copy, Clone)]
@@ -118,7 +118,7 @@ pub struct control_pane_pending_entry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct control_windows {
-    pub storage: *mut crate::src::shared::tree::OrderedIndex<u32, control_window>,
+    pub storage: *mut std::collections::BTreeMap<u32, *mut control_window>,
 }
 
 #[derive(Copy, Clone)]
@@ -134,11 +134,11 @@ pub struct control_window {
 #[repr(C)]
 pub struct control_window_entry {
     /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut crate::src::shared::tree::OrderedIndex<u32, control_window>,
+    pub owner: *mut std::collections::BTreeMap<u32, *mut control_window>,
 }
 
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct control_panes {
-    pub storage: *mut crate::src::shared::tree::OrderedIndex<u32, control_pane>,
+    pub storage: *mut std::collections::BTreeMap<u32, *mut control_pane>,
 }

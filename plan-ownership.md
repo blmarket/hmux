@@ -23,6 +23,8 @@ Choose the simplest type justified by actual ownership and aliasing:
 
 - Do not introduce generational handles, replacement object-ID registries, or
   new identity semantics. Preserve existing numeric IDs and indexes.
+- Do not use raw pointer addresses as identifiers or collection keys. Use
+  direct ownership/observers or existing semantic IDs and names.
 - Do not put everything in `RefBox`. Prefer ordinary ownership when references
   do not escape. A temporary raw pointer for a synchronous C call does not, by
   itself, require `RefBox`.
@@ -451,6 +453,30 @@ legacy callers safe.
   mentioned by an earlier review cannot be independently established from
   this workspace, so strict claims about it remain out of scope.
 
+### Increment 14 — remove OrderedIndex and the address-keyed owner map (2026-09-22)
+
+- Removed `OrderedIndex` from all 15 index families. Winlinks now live in one
+  `BTreeMap<i32, RefBox<winlink>>`; other indexes directly use pointer-valued
+  `BTreeMap`s while retaining their existing record lifetimes. No replacement
+  generic wrapper or address-to-owner registry was added.
+- `winlinks_reindex` moves the owner between window indexes during shuffling,
+  preserving its allocation and weak history observers. Removal clears the
+  compatibility map pointer before dropping the final map and owner. Existing
+  next/previous APIs still use map backpointers; these pointers are not keys.
+- Name-based session/group/monitor/key-table lookups borrow bytes instead of
+  allocating temporary keys. Deleted wrapper-only and redundant pointer-size
+  tests; added production owner, shuffle, growth, and expired-observer coverage.
+- Validation: `cargo test --workspace`, binary build, key/layout CLI checks,
+  and `scripts/session_cli_checks.py` passed. The session script also compares
+  renumbering, shuffle/history, group synchronization, rename and teardown
+  snapshots with the pinned tmux. Compiler warnings remain.
+- Address-identity audit found separate existing uses in reactor `EVENTS`,
+  `STREAMS`, and `BUFFERS`, plus tags in `window_tree`, `window_switch`,
+  `window_client`, and `window_customize`. These have not been migrated here.
+  Reactor removal requires callback cancellation/fork/owner-lifetime work;
+  UI tags need semantic identities preserving selection across rebuilds.
+  `hmux-rt` token IDs come from a checked counter, not pointer addresses.
+
 ### Next candidates
 
 1. The local `options_array_getv` key in `src/options.rs`: it is created with
@@ -463,9 +489,6 @@ legacy callers safe.
    require separate lifetime audits; the session/winlink graph remains
    deferred.
 
-Final validation for this execution: all workspace tests passed, including the
-focused ordered-index, session, session-group, window, winlink, pane, and
-client-file storage tests; `cargo build --bin hmux2` passed; the reported
-workspace no-run build passed; edition-2021 rustfmt checks for changed files
-and `git diff --check` passed. No new commit, push, or publication was
-performed.
+Current validation is recorded in increment 14. The remaining address-based
+registries and UI tags above are separate migration candidates. No commit or
+push was performed.

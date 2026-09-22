@@ -1447,70 +1447,95 @@ pub unsafe fn control_panes_find(
     head: *mut control_panes,
     elm: *mut control_pane,
 ) -> *mut control_pane {
-    crate::src::shared::tree::OrderedIndex::<u32, control_pane>::find(
-        (*head).storage,
-        &control_panes_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = control_panes_key(elm);
+    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn control_panes_nfind(
     head: *mut control_panes,
     elm: *mut control_pane,
 ) -> *mut control_pane {
-    crate::src::shared::tree::OrderedIndex::<u32, control_pane>::nfind(
-        (*head).storage,
-        &control_panes_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = control_panes_key(elm);
+    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn control_panes_insert(
     head: *mut control_panes,
     elm: *mut control_pane,
 ) -> *mut control_pane {
-    let found = crate::src::shared::tree::OrderedIndex::<u32, control_pane>::insert(
-        &raw mut (*head).storage,
-        control_panes_key(elm),
-        elm,
-    );
-    if found.is_null() {
-        (*elm).entry.owner = (*head).storage;
+    let key = control_panes_key(elm);
+    if (*head).storage.is_null() {
+        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
-    found
+    let map = &mut *(*head).storage;
+    match map.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
+    }
+    (*elm).entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn control_panes_remove(
     head: *mut control_panes,
     elm: *mut control_pane,
 ) -> *mut control_pane {
-    let removed = crate::src::shared::tree::OrderedIndex::<u32, control_pane>::remove(
-        &raw mut (*head).storage,
-        &control_panes_key(elm),
-        elm,
-    );
-    if !removed.is_null() {
-        (*elm).entry.owner = std::ptr::null_mut();
+    if elm.is_null() {
+        return std::ptr::null_mut();
     }
-    removed
+    let key = control_panes_key(elm);
+    let Some(map) = (*head).storage.as_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(&key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(&key);
+    (*elm).entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        drop(Box::from_raw((*head).storage));
+        (*head).storage = std::ptr::null_mut();
+    }
+    elm
 }
 pub unsafe fn control_panes_minmax(
     head: *mut control_panes,
     direction: ::core::ffi::c_int,
 ) -> *mut control_pane {
-    crate::src::shared::tree::OrderedIndex::<u32, control_pane>::edge(
-        (*head).storage,
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn control_panes_next(elm: *mut control_pane) -> *mut control_pane {
-    crate::src::shared::tree::OrderedIndex::<u32, control_pane>::neighbor(
-        (*elm).entry.owner,
-        &control_panes_key(elm),
-        true,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = control_panes_key(elm);
+    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn control_panes_prev(elm: *mut control_pane) -> *mut control_pane {
-    crate::src::shared::tree::OrderedIndex::<u32, control_pane>::neighbor(
-        (*elm).entry.owner,
-        &control_panes_key(elm),
-        false,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = control_panes_key(elm);
+    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
 unsafe fn control_windows_key(elm: *mut control_window) -> u32 {
@@ -1520,68 +1545,93 @@ pub unsafe fn control_windows_find(
     head: *mut control_windows,
     elm: *mut control_window,
 ) -> *mut control_window {
-    crate::src::shared::tree::OrderedIndex::<u32, control_window>::find(
-        (*head).storage,
-        &control_windows_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = control_windows_key(elm);
+    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn control_windows_nfind(
     head: *mut control_windows,
     elm: *mut control_window,
 ) -> *mut control_window {
-    crate::src::shared::tree::OrderedIndex::<u32, control_window>::nfind(
-        (*head).storage,
-        &control_windows_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = control_windows_key(elm);
+    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn control_windows_insert(
     head: *mut control_windows,
     elm: *mut control_window,
 ) -> *mut control_window {
-    let found = crate::src::shared::tree::OrderedIndex::<u32, control_window>::insert(
-        &raw mut (*head).storage,
-        control_windows_key(elm),
-        elm,
-    );
-    if found.is_null() {
-        (*elm).entry.owner = (*head).storage;
+    let key = control_windows_key(elm);
+    if (*head).storage.is_null() {
+        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
-    found
+    let map = &mut *(*head).storage;
+    match map.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
+    }
+    (*elm).entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn control_windows_remove(
     head: *mut control_windows,
     elm: *mut control_window,
 ) -> *mut control_window {
-    let removed = crate::src::shared::tree::OrderedIndex::<u32, control_window>::remove(
-        &raw mut (*head).storage,
-        &control_windows_key(elm),
-        elm,
-    );
-    if !removed.is_null() {
-        (*elm).entry.owner = std::ptr::null_mut();
+    if elm.is_null() {
+        return std::ptr::null_mut();
     }
-    removed
+    let key = control_windows_key(elm);
+    let Some(map) = (*head).storage.as_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(&key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(&key);
+    (*elm).entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        drop(Box::from_raw((*head).storage));
+        (*head).storage = std::ptr::null_mut();
+    }
+    elm
 }
 pub unsafe fn control_windows_minmax(
     head: *mut control_windows,
     direction: ::core::ffi::c_int,
 ) -> *mut control_window {
-    crate::src::shared::tree::OrderedIndex::<u32, control_window>::edge(
-        (*head).storage,
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn control_windows_next(elm: *mut control_window) -> *mut control_window {
-    crate::src::shared::tree::OrderedIndex::<u32, control_window>::neighbor(
-        (*elm).entry.owner,
-        &control_windows_key(elm),
-        true,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = control_windows_key(elm);
+    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn control_windows_prev(elm: *mut control_window) -> *mut control_window {
-    crate::src::shared::tree::OrderedIndex::<u32, control_window>::neighbor(
-        (*elm).entry.owner,
-        &control_windows_key(elm),
-        false,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = control_windows_key(elm);
+    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }

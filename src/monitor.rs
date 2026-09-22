@@ -957,77 +957,99 @@ pub unsafe extern "C" fn monitor_get_fire_time(
     return (*me).fire_time;
 }
 
-unsafe fn monitor_items_key(elm: *mut monitor_item) -> Vec<u8> {
-    std::ffi::CStr::from_ptr((*elm).name).to_bytes().to_vec()
-}
 pub unsafe fn monitor_items_find(
     head: *mut monitor_items,
     elm: *mut monitor_item,
 ) -> *mut monitor_item {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, monitor_item>::find(
-        (*head).storage,
-        &monitor_items_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.get(key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn monitor_items_nfind(
     head: *mut monitor_items,
     elm: *mut monitor_item,
 ) -> *mut monitor_item {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, monitor_item>::nfind(
-        (*head).storage,
-        &monitor_items_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.range::<[u8], _>((std::ops::Bound::Included(key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_items_insert(
     head: *mut monitor_items,
     elm: *mut monitor_item,
 ) -> *mut monitor_item {
-    let found = crate::src::shared::tree::OrderedIndex::<Vec<u8>, monitor_item>::insert(
-        &raw mut (*head).storage,
-        monitor_items_key(elm),
-        elm,
-    );
-    if found.is_null() {
-        (*elm).entry.owner = (*head).storage;
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    if (*head).storage.is_null() {
+        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
-    found
+    let map = &mut *(*head).storage;
+    match map.entry(key.to_vec()) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
+    }
+    (*elm).entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn monitor_items_remove(
     head: *mut monitor_items,
     elm: *mut monitor_item,
 ) -> *mut monitor_item {
-    let removed = crate::src::shared::tree::OrderedIndex::<Vec<u8>, monitor_item>::remove(
-        &raw mut (*head).storage,
-        &monitor_items_key(elm),
-        elm,
-    );
-    if !removed.is_null() {
-        (*elm).entry.owner = std::ptr::null_mut();
+    if elm.is_null() {
+        return std::ptr::null_mut();
     }
-    removed
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    let Some(map) = (*head).storage.as_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(key);
+    (*elm).entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        drop(Box::from_raw((*head).storage));
+        (*head).storage = std::ptr::null_mut();
+    }
+    elm
 }
 pub unsafe fn monitor_items_minmax(
     head: *mut monitor_items,
     direction: ::core::ffi::c_int,
 ) -> *mut monitor_item {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, monitor_item>::edge(
-        (*head).storage,
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_items_next(elm: *mut monitor_item) -> *mut monitor_item {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, monitor_item>::neighbor(
-        (*elm).entry.owner,
-        &monitor_items_key(elm),
-        true,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_items_prev(elm: *mut monitor_item) -> *mut monitor_item {
-    crate::src::shared::tree::OrderedIndex::<Vec<u8>, monitor_item>::neighbor(
-        (*elm).entry.owner,
-        &monitor_items_key(elm),
-        false,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = std::ffi::CStr::from_ptr((*elm).name).to_bytes();
+    map.range::<[u8], _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
 unsafe fn monitor_panes_key(elm: *mut monitor_pane) -> (u32, u32) {
@@ -1037,70 +1059,95 @@ pub unsafe fn monitor_panes_find(
     head: *mut monitor_panes,
     elm: *mut monitor_pane,
 ) -> *mut monitor_pane {
-    crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_pane>::find(
-        (*head).storage,
-        &monitor_panes_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = monitor_panes_key(elm);
+    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn monitor_panes_nfind(
     head: *mut monitor_panes,
     elm: *mut monitor_pane,
 ) -> *mut monitor_pane {
-    crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_pane>::nfind(
-        (*head).storage,
-        &monitor_panes_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = monitor_panes_key(elm);
+    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_panes_insert(
     head: *mut monitor_panes,
     elm: *mut monitor_pane,
 ) -> *mut monitor_pane {
-    let found = crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_pane>::insert(
-        &raw mut (*head).storage,
-        monitor_panes_key(elm),
-        elm,
-    );
-    if found.is_null() {
-        (*elm).entry.owner = (*head).storage;
+    let key = monitor_panes_key(elm);
+    if (*head).storage.is_null() {
+        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
-    found
+    let map = &mut *(*head).storage;
+    match map.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
+    }
+    (*elm).entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn monitor_panes_remove(
     head: *mut monitor_panes,
     elm: *mut monitor_pane,
 ) -> *mut monitor_pane {
-    let removed = crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_pane>::remove(
-        &raw mut (*head).storage,
-        &monitor_panes_key(elm),
-        elm,
-    );
-    if !removed.is_null() {
-        (*elm).entry.owner = std::ptr::null_mut();
+    if elm.is_null() {
+        return std::ptr::null_mut();
     }
-    removed
+    let key = monitor_panes_key(elm);
+    let Some(map) = (*head).storage.as_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(&key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(&key);
+    (*elm).entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        drop(Box::from_raw((*head).storage));
+        (*head).storage = std::ptr::null_mut();
+    }
+    elm
 }
 pub unsafe fn monitor_panes_minmax(
     head: *mut monitor_panes,
     direction: ::core::ffi::c_int,
 ) -> *mut monitor_pane {
-    crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_pane>::edge(
-        (*head).storage,
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_panes_next(elm: *mut monitor_pane) -> *mut monitor_pane {
-    crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_pane>::neighbor(
-        (*elm).entry.owner,
-        &monitor_panes_key(elm),
-        true,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = monitor_panes_key(elm);
+    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_panes_prev(elm: *mut monitor_pane) -> *mut monitor_pane {
-    crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_pane>::neighbor(
-        (*elm).entry.owner,
-        &monitor_panes_key(elm),
-        false,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = monitor_panes_key(elm);
+    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
 unsafe fn monitor_windows_key(elm: *mut monitor_window) -> (u32, u32) {
@@ -1110,68 +1157,93 @@ pub unsafe fn monitor_windows_find(
     head: *mut monitor_windows,
     elm: *mut monitor_window,
 ) -> *mut monitor_window {
-    crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_window>::find(
-        (*head).storage,
-        &monitor_windows_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = monitor_windows_key(elm);
+    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn monitor_windows_nfind(
     head: *mut monitor_windows,
     elm: *mut monitor_window,
 ) -> *mut monitor_window {
-    crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_window>::nfind(
-        (*head).storage,
-        &monitor_windows_key(elm),
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = monitor_windows_key(elm);
+    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_windows_insert(
     head: *mut monitor_windows,
     elm: *mut monitor_window,
 ) -> *mut monitor_window {
-    let found = crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_window>::insert(
-        &raw mut (*head).storage,
-        monitor_windows_key(elm),
-        elm,
-    );
-    if found.is_null() {
-        (*elm).entry.owner = (*head).storage;
+    let key = monitor_windows_key(elm);
+    if (*head).storage.is_null() {
+        (*head).storage = Box::into_raw(Box::new(std::collections::BTreeMap::new()));
     }
-    found
+    let map = &mut *(*head).storage;
+    match map.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
+    }
+    (*elm).entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn monitor_windows_remove(
     head: *mut monitor_windows,
     elm: *mut monitor_window,
 ) -> *mut monitor_window {
-    let removed = crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_window>::remove(
-        &raw mut (*head).storage,
-        &monitor_windows_key(elm),
-        elm,
-    );
-    if !removed.is_null() {
-        (*elm).entry.owner = std::ptr::null_mut();
+    if elm.is_null() {
+        return std::ptr::null_mut();
     }
-    removed
+    let key = monitor_windows_key(elm);
+    let Some(map) = (*head).storage.as_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(&key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(&key);
+    (*elm).entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        drop(Box::from_raw((*head).storage));
+        (*head).storage = std::ptr::null_mut();
+    }
+    elm
 }
 pub unsafe fn monitor_windows_minmax(
     head: *mut monitor_windows,
     direction: ::core::ffi::c_int,
 ) -> *mut monitor_window {
-    crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_window>::edge(
-        (*head).storage,
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_windows_next(elm: *mut monitor_window) -> *mut monitor_window {
-    crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_window>::neighbor(
-        (*elm).entry.owner,
-        &monitor_windows_key(elm),
-        true,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = monitor_windows_key(elm);
+    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn monitor_windows_prev(elm: *mut monitor_window) -> *mut monitor_window {
-    crate::src::shared::tree::OrderedIndex::<(u32, u32), monitor_window>::neighbor(
-        (*elm).entry.owner,
-        &monitor_windows_key(elm),
-        false,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = monitor_windows_key(elm);
+    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }

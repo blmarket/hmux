@@ -1577,68 +1577,92 @@ pub unsafe fn client_files_find(
     head: *mut client_files,
     elm: *mut client_file,
 ) -> *mut client_file {
-    crate::src::shared::tree::OrderedIndex::<i32, client_file>::find(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        &client_files_key(elm),
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let key = client_files_key(elm);
+    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn client_files_nfind(
     head: *mut client_files,
     elm: *mut client_file,
 ) -> *mut client_file {
-    crate::src::shared::tree::OrderedIndex::<i32, client_file>::nfind(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        &client_files_key(elm),
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let key = client_files_key(elm);
+    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn client_files_insert(
     head: *mut client_files,
     elm: *mut client_file,
 ) -> *mut client_file {
-    let found = crate::src::shared::tree::OrderedIndex::<i32, client_file>::insert_boxed(
-        &mut (*head).storage,
-        client_files_key(elm),
-        elm,
-    );
-    if found.is_null() {
-        (*elm).entry.owner = crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage);
+    let key = client_files_key(elm);
+    let map = (*head)
+        .storage
+        .get_or_insert_with(|| Box::new(std::collections::BTreeMap::new()))
+        .as_mut();
+    match map.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
     }
-    found
+    (*elm).entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn client_files_remove(
     head: *mut client_files,
     elm: *mut client_file,
 ) -> *mut client_file {
+    if elm.is_null() {
+        return std::ptr::null_mut();
+    }
     let key = client_files_key(elm);
-    crate::src::shared::tree::OrderedIndex::<i32, client_file>::remove_boxed_with(
-        &mut (*head).storage,
-        &key,
-        elm,
-        |node| unsafe {
-            (*node).entry.owner = std::ptr::null_mut();
-        },
-    )
+    let Some(map) = (*head).storage.as_deref_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(&key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(&key);
+    (*elm).entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        (*head).storage = None;
+    }
+    elm
 }
 pub unsafe fn client_files_minmax(
     head: *mut client_files,
     direction: ::core::ffi::c_int,
 ) -> *mut client_file {
-    crate::src::shared::tree::OrderedIndex::<i32, client_file>::edge(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn client_files_next(elm: *mut client_file) -> *mut client_file {
-    crate::src::shared::tree::OrderedIndex::<i32, client_file>::neighbor(
-        (*elm).entry.owner,
-        &client_files_key(elm),
-        true,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = client_files_key(elm);
+    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn client_files_prev(elm: *mut client_file) -> *mut client_file {
-    crate::src::shared::tree::OrderedIndex::<i32, client_file>::neighbor(
-        (*elm).entry.owner,
-        &client_files_key(elm),
-        false,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = client_files_key(elm);
+    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }

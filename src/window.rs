@@ -190,181 +190,231 @@ static mut next_window_pane_id: u_int = 0;
 static mut next_window_id: u_int = 0;
 static mut next_active_point: u_int = 0;
 pub unsafe fn windows_find(head: *mut windows, elm: *mut window) -> *mut window {
-    crate::src::shared::tree::OrderedIndex::<u_int, window>::find(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        &(*elm).id,
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let key = (*elm).id;
+    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn windows_nfind(head: *mut windows, elm: *mut window) -> *mut window {
-    crate::src::shared::tree::OrderedIndex::<u_int, window>::nfind(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        &(*elm).id,
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let key = (*elm).id;
+    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn windows_insert(head: *mut windows, elm: *mut window) -> *mut window {
-    let found = crate::src::shared::tree::OrderedIndex::<u_int, window>::insert_boxed(
-        &mut (*head).storage,
-        (*elm).id,
-        elm,
-    );
-    if found.is_null() {
-        (*elm).entry.owner = crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage);
+    let key = (*elm).id;
+    let map = (*head)
+        .storage
+        .get_or_insert_with(|| Box::new(std::collections::BTreeMap::new()))
+        .as_mut();
+    match map.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
     }
-    found
+    (*elm).entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn windows_remove(head: *mut windows, elm: *mut window) -> *mut window {
-    crate::src::shared::tree::OrderedIndex::<u_int, window>::remove_boxed_with(
-        &mut (*head).storage,
-        &(*elm).id,
-        elm,
-        |node| unsafe {
-            (*node).entry.owner = std::ptr::null_mut();
-        },
-    )
+    if elm.is_null() {
+        return std::ptr::null_mut();
+    }
+    let key = (*elm).id;
+    let Some(map) = (*head).storage.as_deref_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(&key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(&key);
+    (*elm).entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        (*head).storage = None;
+    }
+    elm
 }
 pub unsafe fn windows_minmax(head: *mut windows, direction: ::core::ffi::c_int) -> *mut window {
-    crate::src::shared::tree::OrderedIndex::<u_int, window>::edge(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn windows_next(elm: *mut window) -> *mut window {
-    crate::src::shared::tree::OrderedIndex::<u_int, window>::neighbor(
-        (*elm).entry.owner,
-        &(*elm).id,
-        true,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = (*elm).id;
+    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn windows_prev(elm: *mut window) -> *mut window {
-    crate::src::shared::tree::OrderedIndex::<u_int, window>::neighbor(
-        (*elm).entry.owner,
-        &(*elm).id,
-        false,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = (*elm).id;
+    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
 pub unsafe fn winlinks_find(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
-    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::find(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        &(*elm).idx,
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let key = (*elm).idx;
+    map.get(&key)
+        .map_or(std::ptr::null_mut(), |owner| owner.as_ptr() as *mut winlink)
 }
 pub unsafe fn winlinks_nfind(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
-    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::nfind(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        &(*elm).idx,
-    )
-}
-pub unsafe fn winlinks_insert(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
-    let found = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::insert_boxed(
-        &mut (*head).storage,
-        (*elm).idx,
-        elm,
-    );
-    if found.is_null() {
-        (*elm).entry.owner = crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage);
-    }
-    found
-}
-pub unsafe fn winlinks_remove(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
-    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::remove_boxed_with(
-        &mut (*head).storage,
-        &(*elm).idx,
-        elm,
-        |node| unsafe {
-            (*node).entry.owner = std::ptr::null_mut();
-        },
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let key = (*elm).idx;
+    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, owner)| {
+            owner.as_ptr() as *mut winlink
+        })
 }
 pub unsafe fn winlinks_minmax(head: *mut winlinks, direction: ::core::ffi::c_int) -> *mut winlink {
-    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::edge(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, owner)| {
+        owner.as_ptr() as *mut winlink
+    })
 }
 pub unsafe fn winlinks_next(elm: *mut winlink) -> *mut winlink {
-    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::neighbor(
-        (*elm).entry.owner,
-        &(*elm).idx,
-        true,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = (*elm).idx;
+    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, owner)| {
+            owner.as_ptr() as *mut winlink
+        })
 }
 pub unsafe fn winlinks_prev(elm: *mut winlink) -> *mut winlink {
-    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::neighbor(
-        (*elm).entry.owner,
-        &(*elm).idx,
-        false,
-    )
+    let Some(map) = (*elm).entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = (*elm).idx;
+    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, owner)| {
+            owner.as_ptr() as *mut winlink
+        })
 }
 
 pub unsafe fn window_pane_tree_find(
     head: *mut window_pane_tree,
     elm: *mut window_pane,
 ) -> *mut window_pane {
-    crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::find(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        &(*elm).id,
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let key = (*elm).id;
+    map.get(&key).copied().unwrap_or(std::ptr::null_mut())
 }
 pub unsafe fn window_pane_tree_nfind(
     head: *mut window_pane_tree,
     elm: *mut window_pane,
 ) -> *mut window_pane {
-    crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::nfind(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        &(*elm).id,
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let key = (*elm).id;
+    map.range((std::ops::Bound::Included(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn window_pane_tree_insert(
     head: *mut window_pane_tree,
     elm: *mut window_pane,
 ) -> *mut window_pane {
-    let found = crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::insert_boxed(
-        &mut (*head).storage,
-        (*elm).id,
-        elm,
-    );
-    if found.is_null() {
-        (*elm).tree_entry.owner =
-            crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage);
+    let key = (*elm).id;
+    let map = (*head)
+        .storage
+        .get_or_insert_with(|| Box::new(std::collections::BTreeMap::new()))
+        .as_mut();
+    match map.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => return *entry.get(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(elm);
+        }
     }
-    found
+    (*elm).tree_entry.owner = map as *mut _;
+    std::ptr::null_mut()
 }
 pub unsafe fn window_pane_tree_remove(
     head: *mut window_pane_tree,
     elm: *mut window_pane,
 ) -> *mut window_pane {
-    crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::remove_boxed_with(
-        &mut (*head).storage,
-        &(*elm).id,
-        elm,
-        |node| unsafe {
-            (*node).tree_entry.owner = std::ptr::null_mut();
-        },
-    )
+    if elm.is_null() {
+        return std::ptr::null_mut();
+    }
+    let key = (*elm).id;
+    let Some(map) = (*head).storage.as_deref_mut() else {
+        return std::ptr::null_mut();
+    };
+    if map.get(&key).copied() != Some(elm) {
+        return std::ptr::null_mut();
+    }
+    map.remove(&key);
+    (*elm).tree_entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        (*head).storage = None;
+    }
+    elm
 }
 pub unsafe fn window_pane_tree_minmax(
     head: *mut window_pane_tree,
     direction: ::core::ffi::c_int,
 ) -> *mut window_pane {
-    crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::edge(
-        crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*head).storage),
-        direction < 0,
-    )
+    let Some(map) = (*head).storage.as_deref() else {
+        return std::ptr::null_mut();
+    };
+    let pair = if direction < 0 {
+        map.first_key_value()
+    } else {
+        map.last_key_value()
+    };
+    pair.map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn window_pane_tree_next(elm: *mut window_pane) -> *mut window_pane {
-    crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::neighbor(
-        (*elm).tree_entry.owner,
-        &(*elm).id,
-        true,
-    )
+    let Some(map) = (*elm).tree_entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = (*elm).id;
+    map.range((std::ops::Bound::Excluded(&key), std::ops::Bound::Unbounded))
+        .next()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 pub unsafe fn window_pane_tree_prev(elm: *mut window_pane) -> *mut window_pane {
-    crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::neighbor(
-        (*elm).tree_entry.owner,
-        &(*elm).id,
-        false,
-    )
+    let Some(map) = (*elm).tree_entry.owner.as_ref() else {
+        return std::ptr::null_mut();
+    };
+    let key = (*elm).id;
+    map.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)))
+        .next_back()
+        .map_or(std::ptr::null_mut(), |(_, node)| *node)
 }
 
 #[no_mangle]
@@ -716,17 +766,23 @@ pub unsafe extern "C" fn winlink_add(
     } else if !winlink_find_by_index(wwl, idx).is_null() {
         return ::core::ptr::null_mut::<winlink>();
     }
-    let mut owner = refbox::RefBox::new(std::mem::zeroed::<winlink>());
-    owner.try_access_mut(|link| link.idx = idx).unwrap();
+    let owner = refbox::RefBox::new(std::mem::zeroed::<winlink>());
+    owner
+        .try_access_mut(|link| link.idx = idx)
+        .expect("new winlink is not borrowed");
     wl = owner.as_ptr() as *mut winlink;
-    let found =
-        crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::insert_owned_boxed(
-            &mut (*wwl).storage,
-            idx,
-            owner,
-        );
-    debug_assert!(found.is_null());
-    (*wl).entry.owner = crate::src::shared::tree::OrderedIndex::boxed_ptr(&(*wwl).storage);
+    let map = (*wwl)
+        .storage
+        .get_or_insert_with(|| Box::new(std::collections::BTreeMap::new()));
+    match map.entry(idx) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(owner);
+        }
+        std::collections::btree_map::Entry::Occupied(_) => {
+            unreachable!("winlink index was checked above")
+        }
+    }
+    (*wl).entry.owner = &mut **map;
     return wl;
 }
 #[no_mangle]
@@ -771,13 +827,22 @@ pub unsafe extern "C" fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut win
             b"winlink_remove\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    let owner =
-        crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::take_owned_boxed(
-            &mut (*wwl).storage,
-            wl,
-        )
-        .expect("winlink must have a RefBox owner");
-    winlinks_remove(wwl, wl);
+    // Window teardown above may reenter; borrow the owning map only afterward.
+    let map = (*wwl)
+        .storage
+        .as_mut()
+        .expect("winlink index must be alive");
+    let idx = (*wl).idx;
+    assert_eq!(
+        map.get(&idx).map(|owner| owner.as_ptr()),
+        Some(wl as *const winlink),
+        "removed winlink must belong to this index"
+    );
+    let owner = map.remove(&idx).expect("winlink must have an owner");
+    (*wl).entry.owner = std::ptr::null_mut();
+    if map.is_empty() {
+        (*wwl).storage = None;
+    }
     drop(owner);
 }
 #[no_mangle]
@@ -818,6 +883,52 @@ pub unsafe extern "C" fn winlink_previous_by_number(
     }
     return wl;
 }
+/// Borrow the owner through the existing window index. The raw pointer remains
+/// a compatibility view; neither it nor its address is a separate ownership key.
+unsafe fn winlink_weak(wl: *mut winlink) -> refbox::Weak<winlink> {
+    let map = (*wl)
+        .entry
+        .owner
+        .as_ref()
+        .expect("visited winlink index must be alive");
+    let owner = map
+        .get(&(*wl).idx)
+        .expect("visited winlink must have an owner");
+    assert_eq!(
+        owner.as_ptr(),
+        wl as *const winlink,
+        "visited winlink must belong to its index"
+    );
+    owner.downgrade()
+}
+
+/// Move the owner between keys without invalidating the winlink or its observers.
+/// The caller must supply a live member of `head` and an unused destination index.
+pub unsafe fn winlinks_reindex(head: *mut winlinks, wl: *mut winlink, idx: i32) {
+    let map = (*head)
+        .storage
+        .as_mut()
+        .expect("winlink index must be alive");
+    let old_idx = (*wl).idx;
+    assert_eq!(
+        map.get(&old_idx).map(|owner| owner.as_ptr()),
+        Some(wl as *const winlink),
+        "reindexed winlink must belong to this index"
+    );
+    if old_idx == idx {
+        return;
+    }
+    assert!(
+        !map.contains_key(&idx),
+        "destination winlink index must be vacant"
+    );
+    let owner = map.remove(&old_idx).expect("winlink must have an owner");
+    owner
+        .try_access_mut(|link| link.idx = idx)
+        .expect("reindexed winlink is already borrowed");
+    map.insert(idx, owner);
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn winlink_stack_push(stack: *mut winlink_stack, wl: *mut winlink) {
     if wl.is_null() {
@@ -827,11 +938,7 @@ pub unsafe extern "C" fn winlink_stack_push(stack: *mut winlink_stack, wl: *mut 
     if (*stack).storage.is_none() {
         (*stack).storage = Some(Box::default());
     }
-    let weak = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::downgrade(
-        (*wl).entry.owner,
-        wl,
-    )
-    .expect("visited winlink must have a RefBox owner");
+    let weak = winlink_weak(wl);
     (*stack)
         .storage
         .as_mut()
@@ -855,11 +962,7 @@ pub unsafe fn winlink_stack_append(stack: *mut winlink_stack, wl: *mut winlink) 
     if (*stack).storage.is_none() {
         (*stack).storage = Some(Box::default());
     }
-    let weak = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::downgrade(
-        (*wl).entry.owner,
-        wl,
-    )
-    .expect("visited winlink must have a RefBox owner");
+    let weak = winlink_weak(wl);
     (*stack)
         .storage
         .as_mut()
@@ -4414,9 +4517,7 @@ pub unsafe extern "C" fn winlink_shuffle_up(
     }
     while last > idx {
         wl = winlink_find_by_index(&raw mut (*s).windows, last - 1 as ::core::ffi::c_int);
-        winlinks_remove(&raw mut (*s).windows, wl);
-        (*wl).idx += 1;
-        winlinks_insert(&raw mut (*s).windows, wl);
+        winlinks_reindex(&raw mut (*s).windows, wl, last);
         last -= 1;
     }
     return idx;

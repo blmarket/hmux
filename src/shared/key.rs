@@ -2178,13 +2178,13 @@ pub struct key_table {
 #[repr(C)]
 pub struct key_table_entry {
     /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut crate::src::shared::tree::OrderedIndex<Vec<u8>, key_table>,
+    pub owner: *mut std::collections::BTreeMap<Vec<u8>, *mut key_table>,
 }
 
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct key_bindings {
-    pub storage: *mut crate::src::shared::tree::OrderedIndex<u64, key_binding>,
+    pub storage: *mut std::collections::BTreeMap<u64, *mut key_binding>,
 }
 
 #[derive(Copy, Clone)]
@@ -2202,5 +2202,5 @@ pub struct key_binding {
 #[repr(C)]
 pub struct key_binding_entry {
     /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut crate::src::shared::tree::OrderedIndex<u64, key_binding>,
+    pub owner: *mut std::collections::BTreeMap<u64, *mut key_binding>,
 }

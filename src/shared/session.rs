@@ -36,7 +36,7 @@ pub struct session {
 #[repr(C)]
 pub struct session_entry {
     /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut super::tree::OrderedIndex<Vec<u8>, session>,
+    pub owner: *mut std::collections::BTreeMap<Vec<u8>, *mut session>,
 }
 
 #[derive(Copy, Clone)]
@@ -48,7 +48,7 @@ pub struct session_gentry {
 
 #[repr(C)]
 pub struct sessions {
-    pub storage: Option<Box<super::tree::OrderedIndex<Vec<u8>, session>>>,
+    pub storage: Option<Box<std::collections::BTreeMap<Vec<u8>, *mut session>>>,
 }
 
 #[derive(Copy, Clone)]
@@ -63,7 +63,7 @@ pub struct session_group {
 #[repr(C)]
 pub struct session_group_entry {
     /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut super::tree::OrderedIndex<Vec<u8>, session_group>,
+    pub owner: *mut std::collections::BTreeMap<Vec<u8>, *mut session_group>,
 }
 
 #[derive(Copy, Clone)]
@@ -75,5 +75,5 @@ pub struct session_group_sessions {
 
 #[repr(C)]
 pub struct session_groups {
-    pub storage: Option<Box<super::tree::OrderedIndex<Vec<u8>, session_group>>>,
+    pub storage: Option<Box<std::collections::BTreeMap<Vec<u8>, *mut session_group>>>,
 }

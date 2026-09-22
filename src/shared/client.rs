@@ -210,7 +210,7 @@ pub struct client_files {
     /// Each client owns its stream index allocation. File records remain
     /// externally allocated and keep only `client_file_entry::owner` as a
     /// traversal compatibility pointer.
-    pub storage: Option<Box<crate::src::shared::tree::OrderedIndex<i32, client_file>>>,
+    pub storage: Option<Box<std::collections::BTreeMap<i32, *mut client_file>>>,
 }
 
 #[derive(Copy, Clone)]
@@ -236,7 +236,7 @@ pub struct client_file {
 #[repr(C)]
 pub struct client_file_entry {
     /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut crate::src::shared::tree::OrderedIndex<i32, client_file>,
+    pub owner: *mut std::collections::BTreeMap<i32, *mut client_file>,
 }
 
 pub type client_file_cb = Option<

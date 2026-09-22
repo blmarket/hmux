@@ -1,9 +1,8 @@
 use hmux2::src::shared::session::session;
-use hmux2::src::shared::tree::OrderedIndex;
-use hmux2::src::shared::window::{winlink, winlink_stack, winlinks};
+use hmux2::src::shared::window::{winlink_stack, winlinks};
 use hmux2::src::window::{
     winlink_add, winlink_remove, winlink_stack_clear, winlink_stack_first, winlink_stack_indices,
-    winlink_stack_next, winlink_stack_push, winlink_stack_remove, winlinks_insert, winlinks_remove,
+    winlink_stack_next, winlink_stack_push, winlink_stack_remove, winlinks_reindex,
 };
 use refbox::BorrowError;
 
@@ -17,11 +16,7 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
         };
         let first = winlink_add(&raw mut links, 1);
         let second = winlink_add(&raw mut links, 2);
-        let old_second = OrderedIndex::<i32, winlink>::downgrade(
-            OrderedIndex::boxed_ptr(&links.storage),
-            second,
-        )
-        .unwrap();
+        let old_second = links.storage.as_ref().unwrap().get(&2).unwrap().downgrade();
 
         winlink_stack_push(&raw mut stack, first);
         winlink_stack_push(&raw mut stack, second);
@@ -43,9 +38,7 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
         );
         assert_eq!(winlink_stack_first(&raw const stack, &raw mut links), first);
 
-        winlinks_remove(&raw mut links, first);
-        (*first).idx = 3;
-        winlinks_insert(&raw mut links, first);
+        winlinks_reindex(&raw mut links, first, 3);
         assert_eq!(winlink_stack_indices(&raw const stack), [3]);
         assert_eq!(winlink_stack_first(&raw const stack, &raw mut links), first);
 
@@ -57,7 +50,7 @@ fn visit_order_uses_weak_links_and_survives_index_change() {
 }
 
 #[test]
-fn stale_history_entry_cannot_access_removed_link() {
+fn history_entry_is_removed_before_its_owner() {
     unsafe {
         let mut links = winlinks { storage: None };
         let mut stack = winlink_stack {
@@ -80,14 +73,34 @@ fn boxed_session_drops_its_winlink_owner() {
     unsafe {
         let mut owner = Box::new(std::mem::zeroed::<session>());
         let link = winlink_add(&raw mut owner.windows, 9);
-        let weak = OrderedIndex::<i32, winlink>::downgrade(
-            OrderedIndex::boxed_ptr(&owner.windows.storage),
-            link,
-        )
-        .unwrap();
+        let weak = owner
+            .windows
+            .storage
+            .as_ref()
+            .unwrap()
+            .get(&9)
+            .unwrap()
+            .downgrade();
         winlink_stack_push(&raw mut owner.lastw, link);
         winlink_stack_clear(&raw mut owner.lastw);
         drop(owner);
         assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
+    }
+}
+
+#[test]
+#[should_panic(expected = "visited winlink owner was dropped before observer teardown")]
+fn expired_history_observer_is_an_invariant_violation() {
+    unsafe {
+        let mut links = winlinks { storage: None };
+        let mut stack = winlink_stack {
+            storage: None,
+            reserved: std::ptr::null_mut(),
+        };
+        let link = winlink_add(&raw mut links, 1);
+        winlink_stack_push(&raw mut stack, link);
+        // Deliberately violate teardown order without dereferencing the dead pointer.
+        drop(links);
+        winlink_stack_indices(&raw const stack);
     }
 }

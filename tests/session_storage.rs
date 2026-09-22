@@ -1,18 +1,5 @@
 use hmux2::src::session::*;
-use hmux2::src::shared::tree::OrderedIndex;
-use std::{ffi::CStr, mem::size_of};
-
-#[test]
-fn boxed_index_slots_keep_pointer_layout() {
-    assert_eq!(
-        size_of::<sessions>(),
-        size_of::<*mut OrderedIndex<Vec<u8>, session>>()
-    );
-    assert_eq!(
-        size_of::<session_groups>(),
-        size_of::<*mut OrderedIndex<Vec<u8>, session_group>>()
-    );
-}
+use std::ffi::CStr;
 
 fn node(name: &CStr) -> Box<session> {
     let mut node: Box<session> = Box::new(unsafe { std::mem::zeroed() });

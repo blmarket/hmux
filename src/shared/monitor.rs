@@ -45,7 +45,7 @@ pub type monitor_cb =
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct monitor_items {
-    pub storage: *mut crate::src::shared::tree::OrderedIndex<Vec<u8>, monitor_item>,
+    pub storage: *mut std::collections::BTreeMap<Vec<u8>, *mut monitor_item>,
 }
 
 #[derive(Copy, Clone)]
@@ -68,13 +68,13 @@ pub struct monitor_item {
 #[repr(C)]
 pub struct monitor_item_entry {
     /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut crate::src::shared::tree::OrderedIndex<Vec<u8>, monitor_item>,
+    pub owner: *mut std::collections::BTreeMap<Vec<u8>, *mut monitor_item>,
 }
 
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct monitor_windows {
-    pub storage: *mut crate::src::shared::tree::OrderedIndex<(u32, u32), monitor_window>,
+    pub storage: *mut std::collections::BTreeMap<(u32, u32), *mut monitor_window>,
 }
 
 #[derive(Copy, Clone)]
@@ -91,13 +91,13 @@ pub struct monitor_window {
 #[repr(C)]
 pub struct monitor_window_entry {
     /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut crate::src::shared::tree::OrderedIndex<(u32, u32), monitor_window>,
+    pub owner: *mut std::collections::BTreeMap<(u32, u32), *mut monitor_window>,
 }
 
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct monitor_panes {
-    pub storage: *mut crate::src::shared::tree::OrderedIndex<(u32, u32), monitor_pane>,
+    pub storage: *mut std::collections::BTreeMap<(u32, u32), *mut monitor_pane>,
 }
 
 #[derive(Copy, Clone)]
@@ -114,5 +114,5 @@ pub struct monitor_pane {
 #[repr(C)]
 pub struct monitor_pane_entry {
     /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut crate::src::shared::tree::OrderedIndex<(u32, u32), monitor_pane>,
+    pub owner: *mut std::collections::BTreeMap<(u32, u32), *mut monitor_pane>,
 }

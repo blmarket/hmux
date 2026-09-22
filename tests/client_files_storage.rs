@@ -1,15 +1,5 @@
 use hmux2::src::file::*;
-use hmux2::src::shared::tree::OrderedIndex;
-use std::mem::size_of;
 use std::ptr::null_mut;
-
-#[test]
-fn boxed_index_slot_keeps_pointer_layout() {
-    assert_eq!(
-        size_of::<client_files>(),
-        size_of::<*mut OrderedIndex<i32, client_file>>()
-    );
-}
 
 #[test]
 fn stream_lookup_order_reference_release_and_double_removal() {

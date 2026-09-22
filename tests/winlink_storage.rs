@@ -1,56 +1,36 @@
-use hmux2::src::shared::tree::OrderedIndex;
-use hmux2::src::shared::window::winlink_stack;
+use hmux2::src::shared::session::session;
 use hmux2::src::window::*;
-use std::mem::{offset_of, size_of};
+use refbox::BorrowError;
 
 #[test]
-fn boxed_graph_slots_keep_pointer_layout() {
-    assert_eq!(
-        size_of::<winlinks>(),
-        size_of::<*mut OrderedIndex<i32, winlink>>()
-    );
-    assert_eq!(
-        size_of::<winlink_stack>(),
-        2 * size_of::<*mut std::ffi::c_void>()
-    );
-    assert_eq!(
-        offset_of!(winlink_stack, reserved),
-        size_of::<*mut std::ffi::c_void>()
-    );
-}
-
-#[test]
-fn winlink_indexes_duplicates_neighbors_and_removal() {
+fn owned_winlinks_preserve_duplicates_bounds_and_traversal() {
     unsafe {
         let mut head = winlinks { storage: None };
         assert!(winlinks_minmax(&mut head, -1).is_null());
-        let ids = [i32::MAX, 0, 42, i32::MIN];
-        let mut nodes: Vec<winlink> = ids.iter().map(|_| std::mem::zeroed()).collect();
-        for (node, id) in nodes.iter_mut().zip(ids) {
-            node.idx = id;
-            assert!(winlinks_insert(&mut head, node).is_null());
-        }
+        let ids = [i32::MAX, 0, 42, 7];
+        let nodes: Vec<_> = ids.iter().map(|&id| winlink_add(&mut head, id)).collect();
         // Entry-only traversal must survive a moved tree head.
         let mut head = Box::new(head);
+        let existing = nodes[2];
+        let weak = head.storage.as_ref().unwrap().get(&42).unwrap().downgrade();
+        assert!(winlink_add(&mut *head, 42).is_null());
+        assert_eq!(weak.as_ptr(), existing as *const winlink);
+        assert!(weak.is_alive());
         let mut probe: winlink = std::mem::zeroed();
         probe.idx = 42;
-        let existing = &mut nodes[2] as *mut winlink;
-        assert_eq!(winlinks_insert(&mut *head, &mut probe), existing);
-        assert!(probe.entry.owner.is_null());
-        assert!(winlinks_remove(&mut *head, &mut probe).is_null());
         assert_eq!(winlinks_find(&mut *head, &mut probe), existing);
         assert_eq!(winlinks_nfind(&mut *head, &mut probe), existing);
-        probe.idx = 1;
+        probe.idx = 8;
         assert!(winlinks_find(&mut *head, &mut probe).is_null());
         assert_eq!(winlinks_nfind(&mut *head, &mut probe), existing);
         let mut node = winlinks_minmax(&mut *head, -1);
-        for id in [i32::MIN, 0, 42, i32::MAX] {
+        for id in [0, 7, 42, i32::MAX] {
             assert_eq!((*node).idx, id);
             node = winlinks_next(node);
         }
         assert!(node.is_null());
         node = winlinks_minmax(&mut *head, 1);
-        for id in [i32::MAX, 42, 0, i32::MIN] {
+        for id in [i32::MAX, 42, 7, 0] {
             assert_eq!((*node).idx, id);
             node = winlinks_prev(node);
         }
@@ -58,53 +38,80 @@ fn winlink_indexes_duplicates_neighbors_and_removal() {
         node = winlinks_minmax(&mut *head, -1);
         while !node.is_null() {
             let next = winlinks_next(node);
-            assert_eq!(winlinks_remove(&mut *head, node), node);
-            assert!((*node).entry.owner.is_null());
+            winlink_remove(&mut *head, node);
             node = next;
         }
+        assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
         assert!(head.storage.is_none());
         assert!(winlinks_nfind(&mut *head, &mut probe).is_null());
-        assert!(winlinks_insert(&mut *head, existing).is_null());
-        assert_eq!(winlinks_remove(&mut *head, existing), existing);
+        let replacement = winlink_add(&mut *head, 42);
+        assert!(!replacement.is_null());
+        winlink_remove(&mut *head, replacement);
         assert!(head.storage.is_none());
     }
 }
 
 #[test]
-fn moved_head_and_reindexed_nodes_keep_independent_storage() {
+fn moved_map_and_reindexed_owner_keep_identity_through_growth() {
     unsafe {
-        let mut head: winlinks = std::mem::zeroed();
-        let mut nodes: [winlink; 3] = std::mem::zeroed();
-        for (idx, node) in nodes.iter_mut().enumerate() {
-            node.idx = idx as i32;
-            assert!(winlinks_insert(&mut head, node).is_null());
-        }
-        // Session synchronization transfers the head and clears the original.
+        let mut head = winlinks { storage: None };
+        let first = winlink_add(&mut head, 0);
+        let weak = head.storage.as_ref().unwrap().get(&0).unwrap().downgrade();
         let mut old = std::mem::replace(&mut head, winlinks { storage: None });
-        let mut replacement: winlink = std::mem::zeroed();
-        replacement.idx = 1;
-        assert!(winlinks_insert(&mut head, &mut replacement).is_null());
-        assert_eq!(winlinks_next(&mut nodes[0]), &mut nodes[1] as *mut _);
-        assert!(winlinks_next(&mut replacement).is_null());
-        // Shuffling removes a node before changing its key and reinserting it.
-        assert_eq!(
-            winlinks_remove(&mut old, &mut nodes[1]),
-            &mut nodes[1] as *mut _
-        );
-        nodes[1].idx = 5;
-        assert!(winlinks_insert(&mut old, &mut nodes[1]).is_null());
-        assert_eq!(winlink_find_by_index(&mut old, 5), &mut nodes[1] as *mut _);
-        assert!(winlink_find_by_index(&mut old, 1).is_null());
-        assert_eq!(winlinks_next(&mut nodes[2]), &mut nodes[1] as *mut _);
-        for node in &mut nodes {
-            assert_eq!(winlinks_remove(&mut old, node), node as *mut _);
+        let replacement = winlink_add(&mut head, 0);
+        winlinks_reindex(&mut old, first, 5);
+        assert_eq!(winlink_find_by_index(&mut old, 5), first);
+        assert!(winlink_find_by_index(&mut old, 0).is_null());
+        assert_eq!(weak.try_access_mut(|link| link.idx).unwrap(), 5);
+        for idx in 6..134 {
+            assert!(!winlink_add(&mut old, idx).is_null());
         }
-        assert!(old.storage.is_none());
+        assert_eq!(weak.as_ptr(), first as *const winlink);
+        assert_eq!(winlinks_next(first), winlink_find_by_index(&mut old, 6));
+        assert!(winlinks_next(replacement).is_null());
+        while old.storage.is_some() {
+            let node = winlinks_minmax(&mut old, -1);
+            winlink_remove(&mut old, node);
+        }
+        assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
         assert_eq!(winlink_count(&mut head), 1);
-        assert_eq!(
-            winlinks_remove(&mut head, &mut replacement),
-            &mut replacement as *mut _
-        );
+        winlink_remove(&mut head, replacement);
         assert!(head.storage.is_none());
+    }
+}
+
+#[test]
+fn shuffle_moves_owners_without_losing_history_and_removal_clears_observers() {
+    unsafe {
+        let mut session = Box::new(std::mem::zeroed::<session>());
+        let mut nodes = Vec::new();
+        for idx in 1..=3 {
+            let node = winlink_add(&raw mut session.windows, idx);
+            (*node).session = &mut *session;
+            nodes.push(node);
+        }
+        winlink_stack_push(&raw mut session.lastw, nodes[0]);
+        winlink_stack_push(&raw mut session.lastw, nodes[1]);
+        let weak = session
+            .windows
+            .storage
+            .as_ref()
+            .unwrap()
+            .get(&1)
+            .unwrap()
+            .downgrade();
+        assert_eq!(winlink_shuffle_up(&mut *session, nodes[0], 1), 1);
+        assert!(winlink_find_by_index(&raw mut session.windows, 1).is_null());
+        for (node, idx) in nodes.iter().zip(2..=4) {
+            assert_eq!(winlink_find_by_index(&raw mut session.windows, idx), *node);
+        }
+        assert_eq!(winlink_stack_indices(&raw const session.lastw), [3, 2]);
+        assert_eq!(weak.as_ptr(), nodes[0] as *const winlink);
+        for node in nodes {
+            winlink_remove(&raw mut session.windows, node);
+        }
+        assert!(winlink_stack_indices(&raw const session.lastw).is_empty());
+        assert_eq!(weak.try_borrow_mut().err(), Some(BorrowError::Dropped));
+        assert!(session.windows.storage.is_none());
     }
 }
