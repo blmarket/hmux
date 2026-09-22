@@ -554,6 +554,23 @@ legacy callers safe.
   changed file, and `git diff --check` passed. Existing compiler warnings
   remain; no live logging scenario or sanitizer run was performed.
 
+### Increment 20 — event payload logging prefix (2026-09-22)
+
+- `event_payload_log` now owns its formatted prefix as a local `CString`
+  through `xvasprintf_cstring`, removing the direct `xvasprintf`/`free` pair.
+  Its `as_ptr()` is borrowed only during the synchronous `log_debug` call.
+- The event buffer owns independent payload bytes, and `log_vwrite` formats
+  the prefix and pulled-up bytes into its own allocation before returning.
+  The buffer still frees after logging. The fatal allocation-error path still
+  exits; no prefix pointer escapes. Arbitrary bytes, first-NUL behavior, and
+  the exported variadic ABI are unchanged.
+- The allocator-bridge regression, binary build, edition-2021 rustfmt for the
+  changed file, and `git diff --check` passed. Existing compiler warnings
+  remain; no live event-log scenario or sanitizer run was performed.
+- After integrating increments 18–20, `cargo test --workspace` and the binary
+  build passed together; rustfmt checks for all changed Rust files and
+  `git diff --check` passed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -564,14 +581,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The local `event_payload_log` formatted prefix is a synchronous scratch
-   string. `screen_write_strlen` has another local
-   formatted string, though its byte-scanning loop needs a separate audit.
+1. `screen_write_strlen` has another local formatted string; its
+   byte-scanning loop needs a separate audit. `screen_write_vnputs` has a
+   similar local formatted string with synchronous screen writes.
 2. `format_printf`, status/message
    strings, and input/control strings that escape into records or queues still
    require separate lifetime audits; the session/winlink graph remains
    deferred.
 
-Current validation is recorded in increments 15–19. The remaining
+Current validation is recorded in increments 15–20. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–19 has its own local commit; none was pushed.
+Each of increments 15–20 has its own local commit; none was pushed.

@@ -76,7 +76,7 @@ use crate::src::window::{
     window_add_ref, window_has_pane, window_pane_add_ref, window_pane_remove_ref,
     window_remove_ref, winlink_find_by_index,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xmemdup, xstrdup, xvasprintf};
+use crate::src::xmalloc::{xasprintf, xcalloc, xmemdup, xstrdup, xvasprintf, xvasprintf_cstring};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -809,9 +809,8 @@ pub unsafe extern "C" fn event_payload_log(
     let mut epi: *mut event_payload_item = ::core::ptr::null_mut::<event_payload_item>();
     let mut evb: *mut evbuffer = ::core::ptr::null_mut::<evbuffer>();
     let mut ap: ::core::ffi::VaList;
-    let mut prefix: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     ap = args.clone();
-    xvasprintf(&raw mut prefix, fmt, ap);
+    let prefix = xvasprintf_cstring(fmt, ap);
     evb = evbuffer_new();
     if evb.is_null() {
         fatalx(b"out of memory\0" as *const u8 as *const ::core::ffi::c_char);
@@ -833,12 +832,11 @@ pub unsafe extern "C" fn event_payload_log(
     }
     log_debug(
         b"%s%.*s\0" as *const u8 as *const ::core::ffi::c_char,
-        prefix,
+        prefix.as_ptr(),
         evbuffer_get_length(evb) as ::core::ffi::c_int,
         evbuffer_pullup(evb, -(1 as ::core::ffi::c_int) as ssize_t) as *mut ::core::ffi::c_char,
     );
     evbuffer_free(evb);
-    free(prefix as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn event_payload_get_time(
