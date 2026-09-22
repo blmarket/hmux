@@ -12287,602 +12287,602 @@ fn original_copies_match() {
     record!(
         "src/alerts.rs::C2RustUnnamed_18",
         hmux2::src::alerts::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/arguments.rs::C2RustUnnamed_24",
         hmux2::src::arguments::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cfg.rs::C2RustUnnamed_18",
         hmux2::src::cfg::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/client.rs::C2RustUnnamed_31",
         hmux2::src::client::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd.rs::C2RustUnnamed_18",
         hmux2::src::cmd::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_attach_session.rs::C2RustUnnamed_18",
         hmux2::src::cmd_attach_session::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_bind_key.rs::C2RustUnnamed_18",
         hmux2::src::cmd_bind_key::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_break_pane.rs::C2RustUnnamed_18",
         hmux2::src::cmd_break_pane::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_capture_pane.rs::C2RustUnnamed_18",
         hmux2::src::cmd_capture_pane::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_choose_tree.rs::C2RustUnnamed_18",
         hmux2::src::cmd_choose_tree::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_command_prompt.rs::C2RustUnnamed_18",
         hmux2::src::cmd_command_prompt::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_confirm_before.rs::C2RustUnnamed_18",
         hmux2::src::cmd_confirm_before::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_copy_mode.rs::C2RustUnnamed_18",
         hmux2::src::cmd_copy_mode::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_detach_client.rs::C2RustUnnamed_18",
         hmux2::src::cmd_detach_client::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_display_menu.rs::C2RustUnnamed_18",
         hmux2::src::cmd_display_menu::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_display_message.rs::C2RustUnnamed_18",
         hmux2::src::cmd_display_message::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_find.rs::C2RustUnnamed_18",
         hmux2::src::cmd_find::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_find_window.rs::C2RustUnnamed_18",
         hmux2::src::cmd_find_window::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_if_shell.rs::C2RustUnnamed_18",
         hmux2::src::cmd_if_shell::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_join_pane.rs::C2RustUnnamed_18",
         hmux2::src::cmd_join_pane::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_kill_pane.rs::C2RustUnnamed_18",
         hmux2::src::cmd_kill_pane::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_kill_session.rs::C2RustUnnamed_18",
         hmux2::src::cmd_kill_session::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_kill_window.rs::C2RustUnnamed_18",
         hmux2::src::cmd_kill_window::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_list_buffers.rs::C2RustUnnamed_18",
         hmux2::src::cmd_list_buffers::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_list_clients.rs::C2RustUnnamed_18",
         hmux2::src::cmd_list_clients::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_list_commands.rs::C2RustUnnamed_18",
         hmux2::src::cmd_list_commands::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_list_keys.rs::C2RustUnnamed_18",
         hmux2::src::cmd_list_keys::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_list_panes.rs::C2RustUnnamed_18",
         hmux2::src::cmd_list_panes::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_list_sessions.rs::C2RustUnnamed_18",
         hmux2::src::cmd_list_sessions::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_list_windows.rs::C2RustUnnamed_18",
         hmux2::src::cmd_list_windows::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_load_buffer.rs::C2RustUnnamed_18",
         hmux2::src::cmd_load_buffer::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_lock_server.rs::C2RustUnnamed_18",
         hmux2::src::cmd_lock_server::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_move_window.rs::C2RustUnnamed_18",
         hmux2::src::cmd_move_window::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_new_session.rs::C2RustUnnamed_18",
         hmux2::src::cmd_new_session::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_new_window.rs::C2RustUnnamed_18",
         hmux2::src::cmd_new_window::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_parse.rs::C2RustUnnamed_19",
         hmux2::src::cmd_parse::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_paste_buffer.rs::C2RustUnnamed_18",
         hmux2::src::cmd_paste_buffer::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_pipe_pane.rs::C2RustUnnamed_18",
         hmux2::src::cmd_pipe_pane::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_queue.rs::C2RustUnnamed_18",
         hmux2::src::cmd_queue::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_refresh_client.rs::C2RustUnnamed_18",
         hmux2::src::cmd_refresh_client::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_rename_session.rs::C2RustUnnamed_18",
         hmux2::src::cmd_rename_session::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_rename_window.rs::C2RustUnnamed_18",
         hmux2::src::cmd_rename_window::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_resize_pane.rs::C2RustUnnamed_18",
         hmux2::src::cmd_resize_pane::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_resize_window.rs::C2RustUnnamed_18",
         hmux2::src::cmd_resize_window::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_respawn_pane.rs::C2RustUnnamed_18",
         hmux2::src::cmd_respawn_pane::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_respawn_window.rs::C2RustUnnamed_18",
         hmux2::src::cmd_respawn_window::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_rotate_window.rs::C2RustUnnamed_18",
         hmux2::src::cmd_rotate_window::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_run_shell.rs::C2RustUnnamed_18",
         hmux2::src::cmd_run_shell::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_save_buffer.rs::C2RustUnnamed_18",
         hmux2::src::cmd_save_buffer::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_select_layout.rs::C2RustUnnamed_18",
         hmux2::src::cmd_select_layout::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_select_pane.rs::C2RustUnnamed_18",
         hmux2::src::cmd_select_pane::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_select_window.rs::C2RustUnnamed_18",
         hmux2::src::cmd_select_window::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_send_keys.rs::C2RustUnnamed_18",
         hmux2::src::cmd_send_keys::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_server_access.rs::C2RustUnnamed_18",
         hmux2::src::cmd_server_access::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_set_buffer.rs::C2RustUnnamed_18",
         hmux2::src::cmd_set_buffer::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_set_environment.rs::C2RustUnnamed_18",
         hmux2::src::cmd_set_environment::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_set_option.rs::C2RustUnnamed_18",
         hmux2::src::cmd_set_option::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_show_environment.rs::C2RustUnnamed_18",
         hmux2::src::cmd_show_environment::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_show_messages.rs::C2RustUnnamed_18",
         hmux2::src::cmd_show_messages::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_show_options.rs::C2RustUnnamed_18",
         hmux2::src::cmd_show_options::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_source_file.rs::C2RustUnnamed_19",
         hmux2::src::cmd_source_file::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_split_window.rs::C2RustUnnamed_18",
         hmux2::src::cmd_split_window::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_swap_pane.rs::C2RustUnnamed_18",
         hmux2::src::cmd_swap_pane::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_swap_window.rs::C2RustUnnamed_18",
         hmux2::src::cmd_swap_window::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_switch_client.rs::C2RustUnnamed_18",
         hmux2::src::cmd_switch_client::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_wait_for.rs::C2RustUnnamed_18",
         hmux2::src::cmd_wait_for::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/colour.rs::C2RustUnnamed_19",
         hmux2::src::colour::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/control.rs::C2RustUnnamed_18",
         hmux2::src::control::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/control_notify.rs::C2RustUnnamed_18",
         hmux2::src::control_notify::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/environ.rs::C2RustUnnamed_19",
         hmux2::src::environ::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/events.rs::C2RustUnnamed_18",
         hmux2::src::events::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/events_payload.rs::C2RustUnnamed_18",
         hmux2::src::events_payload::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/file.rs::C2RustUnnamed_19",
         hmux2::src::file::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/format.rs::C2RustUnnamed_19",
         hmux2::src::format::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/format_draw.rs::C2RustUnnamed_18",
         hmux2::src::format_draw::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/hooks.rs::C2RustUnnamed_18",
         hmux2::src::hooks::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/input.rs::C2RustUnnamed_18",
         hmux2::src::input::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/input_keys.rs::C2RustUnnamed_18",
         hmux2::src::input_keys::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/job.rs::C2RustUnnamed_19",
         hmux2::src::job::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/key_bindings.rs::C2RustUnnamed_18",
         hmux2::src::key_bindings::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/layout.rs::C2RustUnnamed_18",
         hmux2::src::layout::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/layout_custom.rs::C2RustUnnamed_19",
         hmux2::src::layout_custom::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/layout_set.rs::C2RustUnnamed_18",
         hmux2::src::layout_set::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/menu.rs::C2RustUnnamed_18",
         hmux2::src::menu::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/mode_tree.rs::C2RustUnnamed_18",
         hmux2::src::mode_tree::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/monitor.rs::C2RustUnnamed_18",
         hmux2::src::monitor::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/names.rs::C2RustUnnamed_19",
         hmux2::src::names::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/options.rs::C2RustUnnamed_21",
         hmux2::src::options::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/popup.rs::C2RustUnnamed_18",
         hmux2::src::popup::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/prompt.rs::C2RustUnnamed_18",
         hmux2::src::prompt::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/resize.rs::C2RustUnnamed_18",
         hmux2::src::resize::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/screen.rs::C2RustUnnamed_19",
         hmux2::src::screen::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/screen_redraw.rs::C2RustUnnamed_18",
         hmux2::src::screen_redraw::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/screen_write.rs::C2RustUnnamed_21",
         hmux2::src::screen_write::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/server.rs::C2RustUnnamed_19",
         hmux2::src::server::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/server_acl.rs::C2RustUnnamed_18",
         hmux2::src::server_acl::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/server_client.rs::C2RustUnnamed_19",
         hmux2::src::server_client::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/server_fn.rs::C2RustUnnamed_18",
         hmux2::src::server_fn::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/session.rs::C2RustUnnamed_18",
         hmux2::src::session::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/sort.rs::C2RustUnnamed_18",
         hmux2::src::sort::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/spawn.rs::C2RustUnnamed_18",
         hmux2::src::spawn::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/status.rs::C2RustUnnamed_18",
         hmux2::src::status::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/style.rs::C2RustUnnamed_18",
         hmux2::src::style::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/tty.rs::C2RustUnnamed_18",
         hmux2::src::tty::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/tty_acs.rs::C2RustUnnamed_18",
         hmux2::src::tty_acs::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/tty_draw.rs::C2RustUnnamed_18",
         hmux2::src::tty_draw::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/tty_features.rs::C2RustUnnamed_18",
         hmux2::src::tty_features::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/tty_keys.rs::C2RustUnnamed_19",
         hmux2::src::tty_keys::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/tty_term.rs::C2RustUnnamed_18",
         hmux2::src::tty_term::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/window.rs::C2RustUnnamed_19",
         hmux2::src::window::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/window_border.rs::C2RustUnnamed_18",
         hmux2::src::window_border::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/window_buffer.rs::C2RustUnnamed_18",
         hmux2::src::window_buffer::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/window_client.rs::C2RustUnnamed_18",
         hmux2::src::window_client::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/window_clock.rs::C2RustUnnamed_18",
         hmux2::src::window_clock::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/window_copy.rs::C2RustUnnamed_18",
         hmux2::src::window_copy::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/window_customize.rs::C2RustUnnamed_18",
         hmux2::src::window_customize::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/window_panes.rs::C2RustUnnamed_18",
         hmux2::src::window_panes::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/window_switch.rs::C2RustUnnamed_18",
         hmux2::src::window_switch::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/window_tree.rs::C2RustUnnamed_18",
         hmux2::src::window_tree::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/window_visible.rs::C2RustUnnamed_18",
         hmux2::src::window_visible::winlink_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/alerts.rs::C2RustUnnamed_16",
@@ -14687,602 +14687,602 @@ fn original_copies_match() {
     record!(
         "src/alerts.rs::winlinks",
         hmux2::src::alerts::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/arguments.rs::winlinks",
         hmux2::src::arguments::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cfg.rs::winlinks",
         hmux2::src::cfg::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/client.rs::winlinks",
         hmux2::src::client::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd.rs::winlinks",
         hmux2::src::cmd::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_attach_session.rs::winlinks",
         hmux2::src::cmd_attach_session::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_bind_key.rs::winlinks",
         hmux2::src::cmd_bind_key::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_break_pane.rs::winlinks",
         hmux2::src::cmd_break_pane::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_capture_pane.rs::winlinks",
         hmux2::src::cmd_capture_pane::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_choose_tree.rs::winlinks",
         hmux2::src::cmd_choose_tree::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_command_prompt.rs::winlinks",
         hmux2::src::cmd_command_prompt::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_confirm_before.rs::winlinks",
         hmux2::src::cmd_confirm_before::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_copy_mode.rs::winlinks",
         hmux2::src::cmd_copy_mode::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_detach_client.rs::winlinks",
         hmux2::src::cmd_detach_client::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_display_menu.rs::winlinks",
         hmux2::src::cmd_display_menu::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_display_message.rs::winlinks",
         hmux2::src::cmd_display_message::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_find.rs::winlinks",
         hmux2::src::cmd_find::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_find_window.rs::winlinks",
         hmux2::src::cmd_find_window::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_if_shell.rs::winlinks",
         hmux2::src::cmd_if_shell::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_join_pane.rs::winlinks",
         hmux2::src::cmd_join_pane::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_kill_pane.rs::winlinks",
         hmux2::src::cmd_kill_pane::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_kill_session.rs::winlinks",
         hmux2::src::cmd_kill_session::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_kill_window.rs::winlinks",
         hmux2::src::cmd_kill_window::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_list_buffers.rs::winlinks",
         hmux2::src::cmd_list_buffers::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_list_clients.rs::winlinks",
         hmux2::src::cmd_list_clients::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_list_commands.rs::winlinks",
         hmux2::src::cmd_list_commands::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_list_keys.rs::winlinks",
         hmux2::src::cmd_list_keys::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_list_panes.rs::winlinks",
         hmux2::src::cmd_list_panes::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_list_sessions.rs::winlinks",
         hmux2::src::cmd_list_sessions::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_list_windows.rs::winlinks",
         hmux2::src::cmd_list_windows::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_load_buffer.rs::winlinks",
         hmux2::src::cmd_load_buffer::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_lock_server.rs::winlinks",
         hmux2::src::cmd_lock_server::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_move_window.rs::winlinks",
         hmux2::src::cmd_move_window::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_new_session.rs::winlinks",
         hmux2::src::cmd_new_session::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_new_window.rs::winlinks",
         hmux2::src::cmd_new_window::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_parse.rs::winlinks",
         hmux2::src::cmd_parse::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_paste_buffer.rs::winlinks",
         hmux2::src::cmd_paste_buffer::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_pipe_pane.rs::winlinks",
         hmux2::src::cmd_pipe_pane::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_queue.rs::winlinks",
         hmux2::src::cmd_queue::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_refresh_client.rs::winlinks",
         hmux2::src::cmd_refresh_client::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_rename_session.rs::winlinks",
         hmux2::src::cmd_rename_session::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_rename_window.rs::winlinks",
         hmux2::src::cmd_rename_window::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_resize_pane.rs::winlinks",
         hmux2::src::cmd_resize_pane::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_resize_window.rs::winlinks",
         hmux2::src::cmd_resize_window::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_respawn_pane.rs::winlinks",
         hmux2::src::cmd_respawn_pane::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_respawn_window.rs::winlinks",
         hmux2::src::cmd_respawn_window::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_rotate_window.rs::winlinks",
         hmux2::src::cmd_rotate_window::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_run_shell.rs::winlinks",
         hmux2::src::cmd_run_shell::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_save_buffer.rs::winlinks",
         hmux2::src::cmd_save_buffer::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_select_layout.rs::winlinks",
         hmux2::src::cmd_select_layout::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_select_pane.rs::winlinks",
         hmux2::src::cmd_select_pane::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_select_window.rs::winlinks",
         hmux2::src::cmd_select_window::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_send_keys.rs::winlinks",
         hmux2::src::cmd_send_keys::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_server_access.rs::winlinks",
         hmux2::src::cmd_server_access::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_set_buffer.rs::winlinks",
         hmux2::src::cmd_set_buffer::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_set_environment.rs::winlinks",
         hmux2::src::cmd_set_environment::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_set_option.rs::winlinks",
         hmux2::src::cmd_set_option::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_show_environment.rs::winlinks",
         hmux2::src::cmd_show_environment::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_show_messages.rs::winlinks",
         hmux2::src::cmd_show_messages::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_show_options.rs::winlinks",
         hmux2::src::cmd_show_options::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_source_file.rs::winlinks",
         hmux2::src::cmd_source_file::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_split_window.rs::winlinks",
         hmux2::src::cmd_split_window::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_swap_pane.rs::winlinks",
         hmux2::src::cmd_swap_pane::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_swap_window.rs::winlinks",
         hmux2::src::cmd_swap_window::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_switch_client.rs::winlinks",
         hmux2::src::cmd_switch_client::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cmd_wait_for.rs::winlinks",
         hmux2::src::cmd_wait_for::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/colour.rs::winlinks",
         hmux2::src::colour::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/control.rs::winlinks",
         hmux2::src::control::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/control_notify.rs::winlinks",
         hmux2::src::control_notify::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/environ.rs::winlinks",
         hmux2::src::environ::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/events.rs::winlinks",
         hmux2::src::events::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/events_payload.rs::winlinks",
         hmux2::src::events_payload::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/file.rs::winlinks",
         hmux2::src::file::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/format.rs::winlinks",
         hmux2::src::format::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/format_draw.rs::winlinks",
         hmux2::src::format_draw::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/hooks.rs::winlinks",
         hmux2::src::hooks::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/input.rs::winlinks",
         hmux2::src::input::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/input_keys.rs::winlinks",
         hmux2::src::input_keys::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/job.rs::winlinks",
         hmux2::src::job::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/key_bindings.rs::winlinks",
         hmux2::src::key_bindings::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/layout.rs::winlinks",
         hmux2::src::layout::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/layout_custom.rs::winlinks",
         hmux2::src::layout_custom::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/layout_set.rs::winlinks",
         hmux2::src::layout_set::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/menu.rs::winlinks",
         hmux2::src::menu::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/mode_tree.rs::winlinks",
         hmux2::src::mode_tree::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/monitor.rs::winlinks",
         hmux2::src::monitor::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/names.rs::winlinks",
         hmux2::src::names::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/options.rs::winlinks",
         hmux2::src::options::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/popup.rs::winlinks",
         hmux2::src::popup::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/prompt.rs::winlinks",
         hmux2::src::prompt::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/resize.rs::winlinks",
         hmux2::src::resize::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/screen.rs::winlinks",
         hmux2::src::screen::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/screen_redraw.rs::winlinks",
         hmux2::src::screen_redraw::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/screen_write.rs::winlinks",
         hmux2::src::screen_write::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/server.rs::winlinks",
         hmux2::src::server::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/server_acl.rs::winlinks",
         hmux2::src::server_acl::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/server_client.rs::winlinks",
         hmux2::src::server_client::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/server_fn.rs::winlinks",
         hmux2::src::server_fn::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/session.rs::winlinks",
         hmux2::src::session::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/sort.rs::winlinks",
         hmux2::src::sort::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/spawn.rs::winlinks",
         hmux2::src::spawn::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/status.rs::winlinks",
         hmux2::src::status::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/style.rs::winlinks",
         hmux2::src::style::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/tty.rs::winlinks",
         hmux2::src::tty::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/tty_acs.rs::winlinks",
         hmux2::src::tty_acs::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/tty_draw.rs::winlinks",
         hmux2::src::tty_draw::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/tty_features.rs::winlinks",
         hmux2::src::tty_features::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/tty_keys.rs::winlinks",
         hmux2::src::tty_keys::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/tty_term.rs::winlinks",
         hmux2::src::tty_term::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/window.rs::winlinks",
         hmux2::src::window::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/window_border.rs::winlinks",
         hmux2::src::window_border::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/window_buffer.rs::winlinks",
         hmux2::src::window_buffer::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/window_client.rs::winlinks",
         hmux2::src::window_client::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/window_clock.rs::winlinks",
         hmux2::src::window_clock::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/window_copy.rs::winlinks",
         hmux2::src::window_copy::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/window_customize.rs::winlinks",
         hmux2::src::window_customize::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/window_panes.rs::winlinks",
         hmux2::src::window_panes::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/window_switch.rs::winlinks",
         hmux2::src::window_switch::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/window_tree.rs::winlinks",
         hmux2::src::window_tree::winlinks,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/window_visible.rs::winlinks",
         hmux2::src::window_visible::winlinks,
-        [rbh_root]
+        [storage]
     );
     let actual = records.join("\n") + "\n";
     assert_eq!(actual, include_str!("fixtures/model-window.txt"));

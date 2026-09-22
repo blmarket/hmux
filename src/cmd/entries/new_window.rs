@@ -81,7 +81,7 @@ pub use crate::src::shared::window::{
 use crate::src::spawn::spawn_window;
 use crate::src::tmux::{check_name, clean_name};
 use crate::src::window::{
-    winlink_find_by_index, winlink_shuffle_up, winlinks_RB_MINMAX, winlinks_RB_NEXT,
+    winlink_find_by_index, winlink_shuffle_up, winlinks_minmax, winlinks_next,
 };
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -213,7 +213,7 @@ unsafe extern "C" fn cmd_new_window_exec(
                 ::core::ptr::null_mut::<winlink>(),
                 ::core::ptr::null_mut::<window_pane>(),
             );
-            wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
+            wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
             while !wl.is_null() {
                 if !(strcmp((*(*wl).window).name, expanded) != 0 as ::core::ffi::c_int) {
                     if new_wl.is_null() {
@@ -230,7 +230,7 @@ unsafe extern "C" fn cmd_new_window_exec(
                         return CMD_RETURN_ERROR;
                     }
                 }
-                wl = winlinks_RB_NEXT(wl);
+                wl = winlinks_next(wl);
             }
             free(expanded as *mut ::core::ffi::c_void);
         }

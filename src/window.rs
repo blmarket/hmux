@@ -239,543 +239,55 @@ pub unsafe fn windows_prev(elm: *mut window) -> *mut window {
     )
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn winlinks_RB_INSERT_COLOR(mut head: *mut winlinks, mut elm: *mut winlink) {
-    let mut parent: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut gparent: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut tmp: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    loop {
-        parent = (*elm).entry.rbe_parent;
-        if !(!parent.is_null() && (*parent).entry.rbe_color == RB_RED) {
-            break;
-        }
-        gparent = (*parent).entry.rbe_parent;
-        if parent == (*gparent).entry.rbe_left {
-            tmp = (*gparent).entry.rbe_right;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_right == elm {
-                    tmp = (*parent).entry.rbe_right;
-                    (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                    if !(*parent).entry.rbe_right.is_null() {
-                        (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_left = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_left;
-                (*gparent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*gparent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        } else {
-            tmp = (*gparent).entry.rbe_left;
-            if !tmp.is_null() && (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                elm = gparent;
-            } else {
-                if (*parent).entry.rbe_left == elm {
-                    tmp = (*parent).entry.rbe_left;
-                    (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                    if !(*parent).entry.rbe_left.is_null() {
-                        (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                    }
-                    (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                    if !(*tmp).entry.rbe_parent.is_null() {
-                        if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                            (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                        } else {
-                            (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                        }
-                    } else {
-                        (*head).rbh_root = tmp;
-                    }
-                    (*tmp).entry.rbe_right = parent;
-                    (*parent).entry.rbe_parent = tmp;
-                    !(*tmp).entry.rbe_parent.is_null();
-                    tmp = parent;
-                    parent = elm;
-                    elm = tmp;
-                }
-                (*parent).entry.rbe_color = RB_BLACK;
-                (*gparent).entry.rbe_color = RB_RED;
-                tmp = (*gparent).entry.rbe_right;
-                (*gparent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*gparent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = gparent;
-                }
-                (*tmp).entry.rbe_parent = (*gparent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if gparent == (*(*gparent).entry.rbe_parent).entry.rbe_left {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*gparent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = gparent;
-                (*gparent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-            }
-        }
-    }
-    (*(*head).rbh_root).entry.rbe_color = RB_BLACK;
+pub unsafe fn winlinks_find(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
+    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::find((*head).storage, &(*elm).idx)
 }
-#[no_mangle]
-pub unsafe extern "C" fn winlinks_RB_REMOVE_COLOR(
-    mut head: *mut winlinks,
-    mut parent: *mut winlink,
-    mut elm: *mut winlink,
-) {
-    let mut tmp: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    while (elm.is_null() || (*elm).entry.rbe_color == RB_BLACK) && elm != (*head).rbh_root {
-        if (*parent).entry.rbe_left == elm {
-            tmp = (*parent).entry.rbe_right;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_right;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK
-                {
-                    let mut oleft: *mut winlink = ::core::ptr::null_mut::<winlink>();
-                    oleft = (*tmp).entry.rbe_left;
-                    if !oleft.is_null() {
-                        (*oleft).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oleft = (*tmp).entry.rbe_left;
-                    (*tmp).entry.rbe_left = (*oleft).entry.rbe_right;
-                    if !(*tmp).entry.rbe_left.is_null() {
-                        (*(*oleft).entry.rbe_right).entry.rbe_parent = tmp;
-                    }
-                    (*oleft).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oleft).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oleft;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oleft;
-                        }
-                    } else {
-                        (*head).rbh_root = oleft;
-                    }
-                    (*oleft).entry.rbe_right = tmp;
-                    (*tmp).entry.rbe_parent = oleft;
-                    !(*oleft).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_right;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_right;
-                (*parent).entry.rbe_right = (*tmp).entry.rbe_left;
-                if !(*parent).entry.rbe_right.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_left = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        } else {
-            tmp = (*parent).entry.rbe_left;
-            if (*tmp).entry.rbe_color == RB_RED {
-                (*tmp).entry.rbe_color = RB_BLACK;
-                (*parent).entry.rbe_color = RB_RED;
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                tmp = (*parent).entry.rbe_left;
-            }
-            if ((*tmp).entry.rbe_left.is_null()
-                || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK)
-                && ((*tmp).entry.rbe_right.is_null()
-                    || (*(*tmp).entry.rbe_right).entry.rbe_color == RB_BLACK)
-            {
-                (*tmp).entry.rbe_color = RB_RED;
-                elm = parent;
-                parent = (*elm).entry.rbe_parent;
-            } else {
-                if (*tmp).entry.rbe_left.is_null()
-                    || (*(*tmp).entry.rbe_left).entry.rbe_color == RB_BLACK
-                {
-                    let mut oright: *mut winlink = ::core::ptr::null_mut::<winlink>();
-                    oright = (*tmp).entry.rbe_right;
-                    if !oright.is_null() {
-                        (*oright).entry.rbe_color = RB_BLACK;
-                    }
-                    (*tmp).entry.rbe_color = RB_RED;
-                    oright = (*tmp).entry.rbe_right;
-                    (*tmp).entry.rbe_right = (*oright).entry.rbe_left;
-                    if !(*tmp).entry.rbe_right.is_null() {
-                        (*(*oright).entry.rbe_left).entry.rbe_parent = tmp;
-                    }
-                    (*oright).entry.rbe_parent = (*tmp).entry.rbe_parent;
-                    if !(*oright).entry.rbe_parent.is_null() {
-                        if tmp == (*(*tmp).entry.rbe_parent).entry.rbe_left {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_left = oright;
-                        } else {
-                            (*(*tmp).entry.rbe_parent).entry.rbe_right = oright;
-                        }
-                    } else {
-                        (*head).rbh_root = oright;
-                    }
-                    (*oright).entry.rbe_left = tmp;
-                    (*tmp).entry.rbe_parent = oright;
-                    !(*oright).entry.rbe_parent.is_null();
-                    tmp = (*parent).entry.rbe_left;
-                }
-                (*tmp).entry.rbe_color = (*parent).entry.rbe_color;
-                (*parent).entry.rbe_color = RB_BLACK;
-                if !(*tmp).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_left).entry.rbe_color = RB_BLACK;
-                }
-                tmp = (*parent).entry.rbe_left;
-                (*parent).entry.rbe_left = (*tmp).entry.rbe_right;
-                if !(*parent).entry.rbe_left.is_null() {
-                    (*(*tmp).entry.rbe_right).entry.rbe_parent = parent;
-                }
-                (*tmp).entry.rbe_parent = (*parent).entry.rbe_parent;
-                if !(*tmp).entry.rbe_parent.is_null() {
-                    if parent == (*(*parent).entry.rbe_parent).entry.rbe_left {
-                        (*(*parent).entry.rbe_parent).entry.rbe_left = tmp;
-                    } else {
-                        (*(*parent).entry.rbe_parent).entry.rbe_right = tmp;
-                    }
-                } else {
-                    (*head).rbh_root = tmp;
-                }
-                (*tmp).entry.rbe_right = parent;
-                (*parent).entry.rbe_parent = tmp;
-                !(*tmp).entry.rbe_parent.is_null();
-                elm = (*head).rbh_root;
-                break;
-            }
-        }
-    }
-    if !elm.is_null() {
-        (*elm).entry.rbe_color = RB_BLACK;
-    }
+pub unsafe fn winlinks_nfind(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
+    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::nfind((*head).storage, &(*elm).idx)
 }
-#[no_mangle]
-pub unsafe extern "C" fn winlinks_RB_REMOVE(
-    mut head: *mut winlinks,
-    mut elm: *mut winlink,
+pub unsafe fn winlinks_insert(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
+    let found = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::insert(
+        &raw mut (*head).storage,
+        (*elm).idx,
+        elm,
+    );
+    if found.is_null() {
+        (*elm).entry.owner = (*head).storage;
+    }
+    found
+}
+pub unsafe fn winlinks_remove(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
+    let removed = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::remove(
+        &raw mut (*head).storage,
+        &(*elm).idx,
+        elm,
+    );
+    if !removed.is_null() {
+        (*elm).entry.owner = std::ptr::null_mut();
+    }
+    removed
+}
+pub unsafe fn winlinks_minmax(
+    head: *mut winlinks,
+    direction: ::core::ffi::c_int,
 ) -> *mut winlink {
-    let mut current_block: u64;
-    let mut child: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut parent: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut old: *mut winlink = elm;
-    let mut color: ::core::ffi::c_int = 0;
-    if (*elm).entry.rbe_left.is_null() {
-        child = (*elm).entry.rbe_right;
-        current_block = 7245201122033322888;
-    } else if (*elm).entry.rbe_right.is_null() {
-        child = (*elm).entry.rbe_left;
-        current_block = 7245201122033322888;
-    } else {
-        let mut left: *mut winlink = ::core::ptr::null_mut::<winlink>();
-        elm = (*elm).entry.rbe_right;
-        loop {
-            left = (*elm).entry.rbe_left;
-            if left.is_null() {
-                break;
-            }
-            elm = left;
-        }
-        child = (*elm).entry.rbe_right;
-        parent = (*elm).entry.rbe_parent;
-        color = (*elm).entry.rbe_color;
-        if !child.is_null() {
-            (*child).entry.rbe_parent = parent;
-        }
-        if !parent.is_null() {
-            if (*parent).entry.rbe_left == elm {
-                (*parent).entry.rbe_left = child;
-            } else {
-                (*parent).entry.rbe_right = child;
-            }
-        } else {
-            (*head).rbh_root = child;
-        }
-        if (*elm).entry.rbe_parent == old {
-            parent = elm;
-        }
-        (*elm).entry = (*old).entry;
-        if !(*old).entry.rbe_parent.is_null() {
-            if (*(*old).entry.rbe_parent).entry.rbe_left == old {
-                (*(*old).entry.rbe_parent).entry.rbe_left = elm;
-            } else {
-                (*(*old).entry.rbe_parent).entry.rbe_right = elm;
-            }
-        } else {
-            (*head).rbh_root = elm;
-        }
-        (*(*old).entry.rbe_left).entry.rbe_parent = elm;
-        if !(*old).entry.rbe_right.is_null() {
-            (*(*old).entry.rbe_right).entry.rbe_parent = elm;
-        }
-        if !parent.is_null() {
-            left = parent;
-            loop {
-                left = (*left).entry.rbe_parent;
-                if left.is_null() {
-                    break;
-                }
-            }
-        }
-        current_block = 11350272964138407771;
-    }
-    match current_block {
-        7245201122033322888 => {
-            parent = (*elm).entry.rbe_parent;
-            color = (*elm).entry.rbe_color;
-            if !child.is_null() {
-                (*child).entry.rbe_parent = parent;
-            }
-            if !parent.is_null() {
-                if (*parent).entry.rbe_left == elm {
-                    (*parent).entry.rbe_left = child;
-                } else {
-                    (*parent).entry.rbe_right = child;
-                }
-            } else {
-                (*head).rbh_root = child;
-            }
-        }
-        _ => {}
-    }
-    if color == RB_BLACK {
-        winlinks_RB_REMOVE_COLOR(head, parent, child);
-    }
-    return old;
+    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::edge((*head).storage, direction < 0)
 }
-#[no_mangle]
-pub unsafe extern "C" fn winlinks_RB_INSERT(
-    mut head: *mut winlinks,
-    mut elm: *mut winlink,
-) -> *mut winlink {
-    let mut tmp: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut parent: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut comp: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    tmp = (*head).rbh_root;
-    while !tmp.is_null() {
-        parent = tmp;
-        comp = winlink_cmp(elm, parent);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    (*elm).entry.rbe_parent = parent;
-    (*elm).entry.rbe_right = ::core::ptr::null_mut::<winlink>();
-    (*elm).entry.rbe_left = (*elm).entry.rbe_right;
-    (*elm).entry.rbe_color = RB_RED;
-    if !parent.is_null() {
-        if comp < 0 as ::core::ffi::c_int {
-            (*parent).entry.rbe_left = elm;
-        } else {
-            (*parent).entry.rbe_right = elm;
-        }
-    } else {
-        (*head).rbh_root = elm;
-    }
-    winlinks_RB_INSERT_COLOR(head, elm);
-    return ::core::ptr::null_mut::<winlink>();
+pub unsafe fn winlinks_next(elm: *mut winlink) -> *mut winlink {
+    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::neighbor(
+        (*elm).entry.owner,
+        &(*elm).idx,
+        true,
+    )
 }
-#[no_mangle]
-pub unsafe extern "C" fn winlinks_RB_NFIND(
-    mut head: *mut winlinks,
-    mut elm: *mut winlink,
-) -> *mut winlink {
-    let mut tmp: *mut winlink = (*head).rbh_root;
-    let mut res: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = winlink_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            res = tmp;
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return res;
+pub unsafe fn winlinks_prev(elm: *mut winlink) -> *mut winlink {
+    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::neighbor(
+        (*elm).entry.owner,
+        &(*elm).idx,
+        false,
+    )
 }
-#[no_mangle]
-pub unsafe extern "C" fn winlinks_RB_MINMAX(
-    mut head: *mut winlinks,
-    mut val: ::core::ffi::c_int,
-) -> *mut winlink {
-    let mut tmp: *mut winlink = (*head).rbh_root;
-    let mut parent: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    while !tmp.is_null() {
-        parent = tmp;
-        if val < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else {
-            tmp = (*tmp).entry.rbe_right;
-        }
-    }
-    return parent;
-}
-#[no_mangle]
-pub unsafe extern "C" fn winlinks_RB_PREV(mut elm: *mut winlink) -> *mut winlink {
-    if !(*elm).entry.rbe_left.is_null() {
-        elm = (*elm).entry.rbe_left;
-        while !(*elm).entry.rbe_right.is_null() {
-            elm = (*elm).entry.rbe_right;
-        }
-    } else if !(*elm).entry.rbe_parent.is_null()
-        && elm == (*(*elm).entry.rbe_parent).entry.rbe_right
-    {
-        elm = (*elm).entry.rbe_parent;
-    } else {
-        while !(*elm).entry.rbe_parent.is_null() && elm == (*(*elm).entry.rbe_parent).entry.rbe_left
-        {
-            elm = (*elm).entry.rbe_parent;
-        }
-        elm = (*elm).entry.rbe_parent;
-    }
-    return elm;
-}
-#[no_mangle]
-pub unsafe extern "C" fn winlinks_RB_NEXT(mut elm: *mut winlink) -> *mut winlink {
-    if !(*elm).entry.rbe_right.is_null() {
-        elm = (*elm).entry.rbe_right;
-        while !(*elm).entry.rbe_left.is_null() {
-            elm = (*elm).entry.rbe_left;
-        }
-    } else if !(*elm).entry.rbe_parent.is_null() && elm == (*(*elm).entry.rbe_parent).entry.rbe_left
-    {
-        elm = (*elm).entry.rbe_parent;
-    } else {
-        while !(*elm).entry.rbe_parent.is_null()
-            && elm == (*(*elm).entry.rbe_parent).entry.rbe_right
-        {
-            elm = (*elm).entry.rbe_parent;
-        }
-        elm = (*elm).entry.rbe_parent;
-    }
-    return elm;
-}
-#[no_mangle]
-pub unsafe extern "C" fn winlinks_RB_FIND(
-    mut head: *mut winlinks,
-    mut elm: *mut winlink,
-) -> *mut winlink {
-    let mut tmp: *mut winlink = (*head).rbh_root;
-    let mut comp: ::core::ffi::c_int = 0;
-    while !tmp.is_null() {
-        comp = winlink_cmp(elm, tmp);
-        if comp < 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_left;
-        } else if comp > 0 as ::core::ffi::c_int {
-            tmp = (*tmp).entry.rbe_right;
-        } else {
-            return tmp;
-        }
-    }
-    return ::core::ptr::null_mut::<winlink>();
-}
+
 pub unsafe fn window_pane_tree_find(
     head: *mut window_pane_tree,
     elm: *mut window_pane,
@@ -1090,12 +602,12 @@ pub unsafe extern "C" fn winlink_find_by_window(
     mut w: *mut window,
 ) -> *mut winlink {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_RB_MINMAX(wwl, RB_NEGINF);
+    wl = winlinks_minmax(wwl, RB_NEGINF);
     while !wl.is_null() {
         if (*wl).window == w {
             return wl;
         }
-        wl = winlinks_RB_NEXT(wl);
+        wl = winlinks_next(wl);
     }
     return ::core::ptr::null_mut::<winlink>();
 }
@@ -1110,10 +622,7 @@ pub unsafe extern "C" fn winlink_find_by_index(
         window: ::core::ptr::null_mut::<window>(),
         flags: 0,
         entry: winlink_entry {
-            rbe_left: ::core::ptr::null_mut::<winlink>(),
-            rbe_right: ::core::ptr::null_mut::<winlink>(),
-            rbe_parent: ::core::ptr::null_mut::<winlink>(),
-            rbe_color: 0,
+            owner: std::ptr::null_mut(),
         },
         wentry: winlink_wentry {
             tqe_next: ::core::ptr::null_mut::<winlink>(),
@@ -1128,7 +637,7 @@ pub unsafe extern "C" fn winlink_find_by_index(
         fatalx(b"bad index\0" as *const u8 as *const ::core::ffi::c_char);
     }
     wl.idx = idx;
-    return winlinks_RB_FIND(wwl, &raw mut wl);
+    return winlinks_find(wwl, &raw mut wl);
 }
 #[no_mangle]
 pub unsafe extern "C" fn winlink_find_by_window_id(
@@ -1136,12 +645,12 @@ pub unsafe extern "C" fn winlink_find_by_window_id(
     mut id: u_int,
 ) -> *mut winlink {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_RB_MINMAX(wwl, RB_NEGINF);
+    wl = winlinks_minmax(wwl, RB_NEGINF);
     while !wl.is_null() {
         if (*(*wl).window).id == id {
             return wl;
         }
-        wl = winlinks_RB_NEXT(wl);
+        wl = winlinks_next(wl);
     }
     return ::core::ptr::null_mut::<winlink>();
 }
@@ -1171,10 +680,10 @@ pub unsafe extern "C" fn winlink_count(mut wwl: *mut winlinks) -> u_int {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut n: u_int = 0;
     n = 0 as u_int;
-    wl = winlinks_RB_MINMAX(wwl, RB_NEGINF);
+    wl = winlinks_minmax(wwl, RB_NEGINF);
     while !wl.is_null() {
         n = n.wrapping_add(1);
-        wl = winlinks_RB_NEXT(wl);
+        wl = winlinks_next(wl);
     }
     return n;
 }
@@ -1194,7 +703,7 @@ pub unsafe extern "C" fn winlink_add(
     }
     wl = xcalloc(1 as size_t, ::core::mem::size_of::<winlink>() as size_t) as *mut winlink;
     (*wl).idx = idx;
-    winlinks_RB_INSERT(wwl, wl);
+    winlinks_insert(wwl, wl);
     return wl;
 }
 #[no_mangle]
@@ -1236,16 +745,16 @@ pub unsafe extern "C" fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut win
             b"winlink_remove\0" as *const u8 as *const ::core::ffi::c_char,
         );
     }
-    winlinks_RB_REMOVE(wwl, wl);
+    winlinks_remove(wwl, wl);
     free(wl as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn winlink_next(mut wl: *mut winlink) -> *mut winlink {
-    return winlinks_RB_NEXT(wl);
+    return winlinks_next(wl);
 }
 #[no_mangle]
 pub unsafe extern "C" fn winlink_previous(mut wl: *mut winlink) -> *mut winlink {
-    return winlinks_RB_PREV(wl);
+    return winlinks_prev(wl);
 }
 #[no_mangle]
 pub unsafe extern "C" fn winlink_next_by_number(
@@ -1254,9 +763,9 @@ pub unsafe extern "C" fn winlink_next_by_number(
     mut n: ::core::ffi::c_int,
 ) -> *mut winlink {
     while n > 0 as ::core::ffi::c_int {
-        wl = winlinks_RB_NEXT(wl);
+        wl = winlinks_next(wl);
         if wl.is_null() {
-            wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
+            wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
         }
         n -= 1;
     }
@@ -1269,9 +778,9 @@ pub unsafe extern "C" fn winlink_previous_by_number(
     mut n: ::core::ffi::c_int,
 ) -> *mut winlink {
     while n > 0 as ::core::ffi::c_int {
-        wl = winlinks_RB_PREV(wl);
+        wl = winlinks_prev(wl);
         if wl.is_null() {
-            wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_INF);
+            wl = winlinks_minmax(&raw mut (*s).windows, RB_INF);
         }
         n -= 1;
     }
@@ -4804,9 +4313,9 @@ pub unsafe extern "C" fn winlink_shuffle_up(
     }
     while last > idx {
         wl = winlink_find_by_index(&raw mut (*s).windows, last - 1 as ::core::ffi::c_int);
-        winlinks_RB_REMOVE(&raw mut (*s).windows, wl);
+        winlinks_remove(&raw mut (*s).windows, wl);
         (*wl).idx += 1;
-        winlinks_RB_INSERT(&raw mut (*s).windows, wl);
+        winlinks_insert(&raw mut (*s).windows, wl);
         last -= 1;
     }
     return idx;
