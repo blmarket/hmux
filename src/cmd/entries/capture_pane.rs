@@ -578,7 +578,7 @@ unsafe extern "C" fn cmd_capture_pane_history(
         ) {
             Ok(value) => {
                 n = value as ::core::ffi::c_int;
-                if n < 0 as ::core::ffi::c_int && -n as u_int > (*gd).hsize {
+                if n < 0 as ::core::ffi::c_int && n.unsigned_abs() > (*gd).hsize {
                     top = 0 as u_int;
                 } else {
                     top = (*gd).hsize.wrapping_add(n as u_int);
@@ -608,7 +608,7 @@ unsafe extern "C" fn cmd_capture_pane_history(
         ) {
             Ok(value) => {
                 n = value as ::core::ffi::c_int;
-                if n < 0 as ::core::ffi::c_int && -n as u_int > (*gd).hsize {
+                if n < 0 as ::core::ffi::c_int && n.unsigned_abs() > (*gd).hsize {
                     bottom = 0 as u_int;
                 } else {
                     bottom = (*gd).hsize.wrapping_add(n as u_int);
