@@ -172,22 +172,40 @@ legacy callers safe.
   warnings remain. No sanitizer or dedicated live control-client colour-report
   scenario was run; helper tests do not establish safety of unrelated callers.
 
+### Increment 4 — monitor subscription parse scratch (2026-09-22)
+
+- `monitor_parse` now borrows its input as `&CStr` and splits its byte view at
+  the first two colons. Removed the whole-input `xstrdup` and its success/error
+  `free` paths; a short-lived `CString` terminates only the isolated target
+  passed to `sscanf`, so the original numeric parsing semantics remain intact.
+- The name and format outputs still use C-owned `xstrndup`/`xstrdup` storage.
+  `cmd_refresh_client_update_subscription` and `cmd_set_hook_monitor_exec`
+  continue to free those outputs on their existing paths, including invalid
+  and unsubscribe handling. No record fields, retain/release operations, or
+  exported ABI signatures changed.
+- Audited all three `monitor_parse` call sites: only the duplicated name and
+  format escape the helper; the borrowed input and `CString::as_ptr()` are
+  used synchronously. Compatibility pointers remain at the raw exported
+  `monitor_parse` boundary, the synchronous numeric `sscanf` call, and the
+  C-owned output allocations.
+- Validation: `cargo test --test monitor_parse` passed (2 tests),
+  `cargo test --workspace` passed, `cargo build --bin hmux2` passed,
+  `rustfmt --check src/monitor.rs tests/monitor_parse.rs` passed, and
+  `git diff --check` passed. The repository-wide `cargo fmt --check` still
+  reports the pre-existing formatting difference in `src/key_string.rs`.
+  Existing compiler warnings remain; no sanitizer or live subscription command
+  scenario was run.
+
 ### Next candidates
 
-1. `monitor_parse` in `src/monitor.rs`: its local `copy = xstrdup(value)` is
-   split twice and freed on both success and failure. Only separately duplicated
-   name/format outputs escape. Migrate this scratch allocation first, preserving
-   sscanf semantics and the existing C-owned output allocations/frees. Callers
-   are refresh-client subscription updates and set-option.
-2. `layout_string` in `src/layout/custom.rs`: inspect its stack-owned serializer
+1. `layout_string` in `src/layout/custom.rs`: inspect its stack-owned serializer
    buffer lifecycle before replacing realloc/capacity/free with a Vec. This is
    larger than monitor scratch and must account for serialization failures and
    the final exported C-owned output allocation.
-3. Pane resize queue, then session/winlink graph: still deferred while local
+2. Pane resize queue, then session/winlink graph: still deferred while local
    string/buffer boundaries remain. Queue cleanup is callback-adjacent; graph
    work needs an explicit observer teardown and reentrancy audit.
 
-Final validation for this execution: 279 tests passed across 121 workspace test
-suites (zero failures/ignored), `cargo build --bin hmux2` passed, and both
-`scripts/key_cli_checks.py` and `scripts/layout_cli_checks.py` passed against the
-rebuilt binary. No commits, pushes, or publication performed.
+Final validation for this execution: all workspace tests passed (zero failures
+or ignored tests), the new `monitor_parse` suite passed 2 tests, and
+`cargo build --bin hmux2` passed. No commits, pushes, or publication performed.

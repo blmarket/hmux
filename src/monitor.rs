@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{free, sscanf, strchr, strcmp};
+use crate::src::ffi::libc::{free, sscanf, strcmp};
 use crate::src::format::{format_create, format_defaults, format_expand, format_free, format_true};
 use crate::src::log::log_debug;
 use crate::src::reactor::{event_add, event_del, event_initialized, event_pending, event_set};
@@ -74,7 +74,9 @@ pub use crate::src::shared::window::{
 use crate::src::window::{
     window_find_by_id, window_pane_find_by_id, winlinks_minmax, winlinks_next,
 };
-use crate::src::xmalloc::{xcalloc, xstrdup};
+use crate::src::xmalloc::{xcalloc, xstrdup, xstrndup};
+
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -732,75 +734,58 @@ pub unsafe extern "C" fn monitor_destroy(mut ms: *mut monitor_set) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn monitor_parse(
-    mut value: *const ::core::ffi::c_char,
+    value: *const ::core::ffi::c_char,
     mut name: *mut *mut ::core::ffi::c_char,
     mut type_0: *mut monitor_type,
     mut id: *mut ::core::ffi::c_int,
     mut format: *mut *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
-    let mut current_block: u64;
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut what: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut split: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    copy = xstrdup(value);
+    let value = CStr::from_ptr(value);
+    let value_bytes = value.to_bytes();
     *id = -(1 as ::core::ffi::c_int);
-    what = strchr(copy, ':' as i32);
-    if !what.is_null() {
-        let fresh0 = what;
-        what = what.offset(1);
-        *fresh0 = '\0' as i32 as ::core::ffi::c_char;
-        split = strchr(what, ':' as i32);
-        if !split.is_null() {
-            let fresh1 = split;
-            split = split.offset(1);
-            *fresh1 = '\0' as i32 as ::core::ffi::c_char;
-            if strcmp(what, b"%*\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-            {
-                *type_0 = MONITOR_ALL_PANES;
-                current_block = 3512920355445576850;
-            } else if sscanf(
-                what,
-                b"%%%d\0" as *const u8 as *const ::core::ffi::c_char,
-                id,
-            ) == 1 as ::core::ffi::c_int
-                && *id >= 0 as ::core::ffi::c_int
-            {
-                *type_0 = MONITOR_PANE;
-                current_block = 3512920355445576850;
-            } else if strcmp(what, b"@*\0" as *const u8 as *const ::core::ffi::c_char)
-                == 0 as ::core::ffi::c_int
-            {
-                *type_0 = MONITOR_ALL_WINDOWS;
-                current_block = 3512920355445576850;
-            } else if sscanf(
-                what,
-                b"@%d\0" as *const u8 as *const ::core::ffi::c_char,
-                id,
-            ) == 1 as ::core::ffi::c_int
-                && *id >= 0 as ::core::ffi::c_int
-            {
-                *type_0 = MONITOR_WINDOW;
-                current_block = 3512920355445576850;
-            } else if *what as ::core::ffi::c_int == '\0' as i32 {
-                *type_0 = MONITOR_SESSION;
-                current_block = 3512920355445576850;
-            } else {
-                current_block = 7799373935801088419;
-            }
-            match current_block {
-                7799373935801088419 => {}
-                _ => {
-                    *name = xstrdup(copy);
-                    *format = xstrdup(split);
-                    free(copy as *mut ::core::ffi::c_void);
-                    return 0 as ::core::ffi::c_int;
-                }
-            }
+    let Some(first_colon) = value_bytes.iter().position(|&byte| byte == b':') else {
+        return -(1 as ::core::ffi::c_int);
+    };
+    let target_start = first_colon + 1;
+    let target_bytes = &value_bytes[target_start..];
+    let Some(second_colon) = target_bytes.iter().position(|&byte| byte == b':') else {
+        return -(1 as ::core::ffi::c_int);
+    };
+    let target_bytes = &target_bytes[..second_colon];
+    let format_start = target_start + second_colon + 1;
+
+    if target_bytes == b"%*" {
+        *type_0 = MONITOR_ALL_PANES;
+    } else if target_bytes == b"@*" {
+        *type_0 = MONITOR_ALL_WINDOWS;
+    } else if target_bytes.is_empty() {
+        *type_0 = MONITOR_SESSION;
+    } else {
+        let target = CString::new(target_bytes).expect("monitor target contains no NUL");
+        if sscanf(
+            target.as_ptr(),
+            b"%%%d\0" as *const u8 as *const ::core::ffi::c_char,
+            id,
+        ) == 1 as ::core::ffi::c_int
+            && *id >= 0 as ::core::ffi::c_int
+        {
+            *type_0 = MONITOR_PANE;
+        } else if sscanf(
+            target.as_ptr(),
+            b"@%d\0" as *const u8 as *const ::core::ffi::c_char,
+            id,
+        ) == 1 as ::core::ffi::c_int
+            && *id >= 0 as ::core::ffi::c_int
+        {
+            *type_0 = MONITOR_WINDOW;
+        } else {
+            return -(1 as ::core::ffi::c_int);
         }
     }
-    free(copy as *mut ::core::ffi::c_void);
-    return -(1 as ::core::ffi::c_int);
+
+    *name = xstrndup(value.as_ptr(), first_colon as size_t);
+    *format = xstrdup(value.as_ptr().add(format_start));
+    0 as ::core::ffi::c_int
 }
 #[no_mangle]
 pub unsafe extern "C" fn monitor_add(
