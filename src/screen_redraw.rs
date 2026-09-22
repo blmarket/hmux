@@ -108,7 +108,7 @@ pub use crate::src::window::windows;
 use crate::src::window::{
     window_pane_get_pane_lines, window_pane_get_pane_status, window_pane_is_floating,
     window_pane_is_visible, window_pane_mode, window_pane_scrollbar_overlay,
-    window_pane_scrollbar_visible, windows_RB_MINMAX, windows_RB_NEXT,
+    window_pane_scrollbar_visible, windows_minmax, windows_next,
 };
 use crate::src::window_border::{
     window_get_border_cell, window_get_fill_cell, window_make_pane_status,
@@ -1271,10 +1271,10 @@ pub unsafe extern "C" fn redraw_invalidate_scene(mut w: *mut window) {
 #[no_mangle]
 pub unsafe extern "C" fn redraw_invalidate_all_scenes() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    w = windows_RB_MINMAX(&raw mut windows, RB_NEGINF);
+    w = windows_minmax(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
         redraw_invalidate_scene(w);
-        w = windows_RB_NEXT(w);
+        w = windows_next(w);
     }
 }
 unsafe extern "C" fn redraw_get_scene(mut c: *mut client) -> *mut redraw_scene {

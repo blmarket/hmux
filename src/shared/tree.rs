@@ -8,6 +8,11 @@ pub const RB_INF: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 /// Rust-owned ordered index for C-allocated records. Empty trees are null, and
 /// removing the last record releases the index. Nodes are never freed here.
 /// The heap address remains stable when a containing C tree head is moved.
+///
+/// Raw operations require a null or live index pointer, exclusive access during
+/// mutation, and records whose addresses and keys stay fixed while indexed.
+/// Each live index has one owning head; moving that head must clear the old slot.
+/// Entry links borrow the index and are cleared when their record is removed.
 pub struct OrderedIndex<K, T> {
     entries: std::collections::BTreeMap<K, *mut T>,
 }

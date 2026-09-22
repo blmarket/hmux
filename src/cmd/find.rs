@@ -16,9 +16,9 @@ use crate::src::window::{
     all_window_panes, window_find_by_id_str, window_find_string, window_has_pane,
     window_pane_at_index, window_pane_find_by_id_str, window_pane_find_down, window_pane_find_left,
     window_pane_find_right, window_pane_find_up, window_pane_next_by_number,
-    window_pane_previous_by_number, window_pane_tree_RB_MINMAX, window_pane_tree_RB_NEXT,
-    winlink_find_by_index, winlink_next_by_number, winlink_previous_by_number, winlinks_RB_MINMAX,
-    winlinks_RB_NEXT,
+    window_pane_previous_by_number, window_pane_tree_minmax, window_pane_tree_next,
+    winlink_find_by_index, winlink_next_by_number, winlink_previous_by_number, winlinks_minmax,
+    winlinks_next,
 };
 use crate::src::xmalloc::{xreallocarray, xstrdup};
 
@@ -190,7 +190,7 @@ unsafe extern "C" fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pan
     if c.is_null() {
         return ::core::ptr::null_mut::<window_pane>();
     }
-    wp = window_pane_tree_RB_MINMAX(&raw mut all_window_panes, RB_NEGINF);
+    wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
     while !wp.is_null() {
         if (*wp).fd != -(1 as ::core::ffi::c_int)
             && strcmp(&raw mut (*wp).tty as *mut ::core::ffi::c_char, (*c).ttyname)
@@ -198,7 +198,7 @@ unsafe extern "C" fn cmd_find_inside_pane(mut c: *mut client) -> *mut window_pan
         {
             break;
         }
-        wp = window_pane_tree_RB_NEXT(wp);
+        wp = window_pane_tree_next(wp);
     }
     if wp.is_null() {
         envent = environ_find(
@@ -374,13 +374,13 @@ unsafe extern "C" fn cmd_find_best_winlink_with_window(
     if !(*(*fs).s).curw.is_null() && (*(*(*fs).s).curw).window == (*fs).w {
         wl = (*(*fs).s).curw;
     } else {
-        wl_loop = winlinks_RB_MINMAX(&raw mut (*(*fs).s).windows, RB_NEGINF);
+        wl_loop = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_NEGINF);
         while !wl_loop.is_null() {
             if (*wl_loop).window == (*fs).w {
                 wl = wl_loop;
                 break;
             } else {
-                wl_loop = winlinks_RB_NEXT(wl_loop);
+                wl_loop = winlinks_next(wl_loop);
             }
         }
     }
@@ -590,7 +590,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
         } else if strcmp(window, b"^\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
         {
-            (*fs).wl = winlinks_RB_MINMAX(&raw mut (*(*fs).s).windows, RB_NEGINF);
+            (*fs).wl = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_NEGINF);
             if (*fs).wl.is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -600,7 +600,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
         } else if strcmp(window, b"$\0" as *const u8 as *const ::core::ffi::c_char)
             == 0 as ::core::ffi::c_int
         {
-            (*fs).wl = winlinks_RB_MINMAX(&raw mut (*(*fs).s).windows, RB_INF);
+            (*fs).wl = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_INF);
             if (*fs).wl.is_null() {
                 return -(1 as ::core::ffi::c_int);
             }
@@ -632,7 +632,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
         }
     }
     (*fs).wl = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_RB_MINMAX(&raw mut (*(*fs).s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_NEGINF);
     while !wl.is_null() {
         if strcmp(window, (*(*wl).window).name) == 0 as ::core::ffi::c_int {
             if !(*fs).wl.is_null() {
@@ -640,7 +640,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
             }
             (*fs).wl = wl;
         }
-        wl = winlinks_RB_NEXT(wl);
+        wl = winlinks_next(wl);
     }
     if !(*fs).wl.is_null() {
         (*fs).idx = (*(*fs).wl).idx;
@@ -651,7 +651,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
         return -(1 as ::core::ffi::c_int);
     }
     (*fs).wl = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_RB_MINMAX(&raw mut (*(*fs).s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_NEGINF);
     while !wl.is_null() {
         if strncmp(window, (*(*wl).window).name, strlen(window)) == 0 as ::core::ffi::c_int {
             if !(*fs).wl.is_null() {
@@ -659,7 +659,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
             }
             (*fs).wl = wl;
         }
-        wl = winlinks_RB_NEXT(wl);
+        wl = winlinks_next(wl);
     }
     if !(*fs).wl.is_null() {
         (*fs).idx = (*(*fs).wl).idx;
@@ -667,7 +667,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
         return 0 as ::core::ffi::c_int;
     }
     (*fs).wl = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_RB_MINMAX(&raw mut (*(*fs).s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_NEGINF);
     while !wl.is_null() {
         if fnmatch(window, (*(*wl).window).name, 0 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int
         {
@@ -676,7 +676,7 @@ unsafe extern "C" fn cmd_find_get_window_with_session(
             }
             (*fs).wl = wl;
         }
-        wl = winlinks_RB_NEXT(wl);
+        wl = winlinks_next(wl);
     }
     if !(*fs).wl.is_null() {
         (*fs).idx = (*(*fs).wl).idx;
@@ -883,12 +883,12 @@ pub unsafe extern "C" fn cmd_find_valid_state(mut fs: *mut cmd_find_state) -> ::
     if session_alive((*fs).s) == 0 {
         return 0 as ::core::ffi::c_int;
     }
-    wl = winlinks_RB_MINMAX(&raw mut (*(*fs).s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&raw mut (*(*fs).s).windows, RB_NEGINF);
     while !wl.is_null() {
         if (*wl).window == (*fs).w && wl == (*fs).wl {
             break;
         }
-        wl = winlinks_RB_NEXT(wl);
+        wl = winlinks_next(wl);
     }
     if wl.is_null() {
         return 0 as ::core::ffi::c_int;

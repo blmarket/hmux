@@ -71,8 +71,8 @@ use crate::src::status::status_message_set;
 use crate::src::tty::tty_putcode;
 pub use crate::src::window::windows;
 use crate::src::window::{
-    window_add_ref, window_remove_ref, windows_RB_MINMAX, windows_RB_NEXT, winlinks_RB_MINMAX,
-    winlinks_RB_NEXT,
+    window_add_ref, window_remove_ref, windows_minmax, windows_next, winlinks_minmax,
+    winlinks_next,
 };
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -165,10 +165,10 @@ unsafe extern "C" fn alerts_check_all(mut w: *mut window) -> ::core::ffi::c_int 
 #[no_mangle]
 pub unsafe extern "C" fn alerts_check_session(mut s: *mut session) {
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
-    wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
         alerts_check_all((*wl).window);
-        wl = winlinks_RB_NEXT(wl);
+        wl = winlinks_next(wl);
     }
 }
 unsafe extern "C" fn alerts_enabled(
@@ -207,10 +207,10 @@ unsafe extern "C" fn alerts_enabled(
 #[no_mangle]
 pub unsafe extern "C" fn alerts_reset_all() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
-    w = windows_RB_MINMAX(&raw mut windows, RB_NEGINF);
+    w = windows_minmax(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
         alerts_reset(w);
-        w = windows_RB_NEXT(w);
+        w = windows_next(w);
     }
 }
 unsafe extern "C" fn alerts_reset(mut w: *mut window) {

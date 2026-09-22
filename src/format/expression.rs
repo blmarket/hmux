@@ -1382,13 +1382,13 @@ pub(super) unsafe extern "C" fn format_window_name(
         return ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
     name = format_expand1(es, fmt);
-    wl = winlinks_RB_MINMAX(&raw mut (*(*ft).s).windows, RB_NEGINF);
+    wl = winlinks_minmax(&raw mut (*(*ft).s).windows, RB_NEGINF);
     while !wl.is_null() {
         if strcmp((*(*wl).window).name, name) == 0 as ::core::ffi::c_int {
             free(name as *mut ::core::ffi::c_void);
             return xstrdup(b"1\0" as *const u8 as *const ::core::ffi::c_char);
         }
-        wl = winlinks_RB_NEXT(wl);
+        wl = winlinks_next(wl);
     }
     free(name as *mut ::core::ffi::c_void);
     return xstrdup(b"0\0" as *const u8 as *const ::core::ffi::c_char);
