@@ -82,7 +82,7 @@ use crate::src::window_copy::{
 use crate::src::window_tree::window_tree_mode;
 use crate::src::xmalloc::{
     xasprintf, xcalloc, xmalloc, xmemdup, xrealloc, xreallocarray, xsnprintf, xstrdup, xstrndup,
-    xvasprintf,
+    xvasprintf, xvasprintf_cstring,
 };
 
 pub use crate::src::shared::abi::NULL_0;
@@ -381,18 +381,17 @@ unsafe extern "C" fn format_log1(
 ) {
     let mut ft: *mut format_tree = (*es).ft;
     let mut ap: ::core::ffi::VaList;
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     static mut spaces: [::core::ffi::c_char; 11] =
         unsafe { ::core::mem::transmute::<[u8; 11], [::core::ffi::c_char; 11]>(*b"          \0") };
     if format_logging(ft) == 0 {
         return;
     }
     ap = args.clone();
-    xvasprintf(&raw mut s, fmt, ap);
+    let s = xvasprintf_cstring(fmt, ap);
     log_debug(
         b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
         from,
-        s,
+        s.as_ptr(),
     );
     if !(*ft).item.is_null() && (*ft).flags & FORMAT_VERBOSE != 0 {
         cmdq_print(
@@ -400,10 +399,9 @@ unsafe extern "C" fn format_log1(
             b"#%.*s%s\0" as *const u8 as *const ::core::ffi::c_char,
             (*es).loop_0,
             &raw const spaces as *const ::core::ffi::c_char,
-            s,
+            s.as_ptr(),
         );
     }
-    free(s as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn format_copy_state(
     mut to: *mut format_expand_state,

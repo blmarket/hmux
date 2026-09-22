@@ -42,3 +42,23 @@ fn ordering_duplicates_bounds_and_empty_storage_lifetime() {
         assert!(index.is_null());
     }
 }
+
+#[test]
+fn boxed_removal_invalidates_before_releasing_the_last_index() {
+    let mut slot: Option<Box<OrderedIndex<i32, i32>>> = None;
+    let mut node = 7;
+    assert!(OrderedIndex::insert_boxed(&mut slot, 7, &mut node).is_null());
+    let slot_ptr: *mut Option<Box<OrderedIndex<i32, i32>>> = &mut slot;
+    let mut hook_saw_live_index = false;
+
+    unsafe {
+        assert_eq!(
+            OrderedIndex::remove_boxed_with(&mut slot, &7, &mut node, |_| {
+                hook_saw_live_index = (*slot_ptr).is_some();
+            }),
+            &mut node as *mut _,
+        );
+    }
+    assert!(hook_saw_live_index);
+    assert!(slot.is_none());
+}

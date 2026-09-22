@@ -1,11 +1,12 @@
 use crate::src::compat::recallocarray::recallocarray;
 use crate::src::ffi::libc::{
-    calloc, malloc, memcpy, reallocarray, strdup, strndup, vasprintf, vsnprintf,
+    calloc, free, malloc, memcpy, reallocarray, strdup, strndup, vasprintf, vsnprintf,
 };
 use crate::src::log::{fatal, fatalx};
 use crate::src::shared::abi::*;
 pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX, SIZE_MAX};
 pub use crate::src::shared::variadic::{__builtin_va_list, __gnuc_va_list, __va_list_tag, va_list};
+use std::ffi::{CStr, CString};
 
 #[no_mangle]
 pub unsafe extern "C" fn xmalloc(mut size: size_t) -> *mut ::core::ffi::c_void {
@@ -145,6 +146,26 @@ pub unsafe extern "C" fn xvasprintf(
     }
     return i;
 }
+
+/// Format into a Rust-owned string while keeping the existing C allocator
+/// contract at the variadic boundary.
+///
+/// `vasprintf` allocates with libc's allocator, so its result cannot be
+/// adopted with `CString::from_raw`. Copying the C string first lets the
+/// caller use ordinary `CString` ownership while this adapter releases the
+/// matching C allocation. The C string is intentionally copied through
+/// `CStr`, preserving arbitrary non-UTF-8 bytes and the same first-NUL view
+/// exposed to the existing `%s` consumers.
+pub(crate) unsafe fn xvasprintf_cstring(
+    fmt: *const ::core::ffi::c_char,
+    ap: ::core::ffi::VaList,
+) -> CString {
+    let mut raw = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    xvasprintf(&raw mut raw, fmt, ap);
+    let value = CStr::from_ptr(raw).to_owned();
+    free(raw as *mut ::core::ffi::c_void);
+    value
+}
 #[no_mangle]
 pub unsafe extern "C" fn xsnprintf(
     mut str: *mut ::core::ffi::c_char,
@@ -174,4 +195,30 @@ pub unsafe extern "C" fn xvsnprintf(
         fatalx(b"xsnprintf: overflow\0" as *const u8 as *const ::core::ffi::c_char);
     }
     return i;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::xvasprintf_cstring;
+    use std::ffi::CString;
+
+    unsafe extern "C" fn format_to_raw(
+        fmt: *const ::core::ffi::c_char,
+        mut args: ...
+    ) -> *mut ::core::ffi::c_char {
+        CString::into_raw(xvasprintf_cstring(fmt, args.clone()))
+    }
+
+    #[test]
+    fn c_allocator_bridge_preserves_bytes_and_c_termination() {
+        unsafe {
+            let value = CString::from_raw(format_to_raw(
+                c"%s:%c%s".as_ptr(),
+                CString::new(vec![b'\xff', b'x']).unwrap().as_ptr(),
+                0 as ::core::ffi::c_int,
+                c"tail".as_ptr(),
+            ));
+            assert_eq!(value.as_bytes(), &[0xff, b'x', b':']);
+        }
+    }
 }

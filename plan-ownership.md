@@ -414,20 +414,58 @@ legacy callers safe.
   files and `git diff --check` passed. Existing compiler warnings remain; no
   sanitizer or live client teardown integration scenario was run.
 
+### Increment 13 — format_log1 varargs scratch and index invalidation ordering (2026-09-22)
+
+- Added the internal `xvasprintf_cstring` allocator bridge in `src/xmalloc.rs`.
+  It copies the libc-allocated `vasprintf` result into a Rust `CString`, then
+  releases the original with its matching libc `free`; direct
+  `CString::from_raw` adoption is intentionally avoided because the foreign
+  allocation has no Rust `CString` ownership provenance. The bridge preserves
+  arbitrary non-UTF-8 bytes and the same first-NUL view used by the C `%s`
+  consumers, and its test covers both byte preservation and embedded-NUL
+  termination behavior.
+- `format_log1` now owns its formatted message as a local `CString`. Its
+  `as_ptr()` is borrowed only for the synchronous `log_debug` and optional
+  `cmdq_print` calls, and the manual scratch `free` and raw local are gone.
+  The variadic ABI, logging order, verbose output, and early logging-disabled
+  return are unchanged. `format.rs` retains the raw `xvasprintf` import only
+  for the existing format-tree implementation in its child module.
+- Corrected the earlier boxed-index teardown ordering in `sessions_remove`,
+  `session_groups_remove`, `windows_remove`, `winlinks_remove`, and
+  `window_pane_tree_remove`: each now uses `remove_boxed_with` and clears its
+  record's compatibility owner pointer in the pre-drop hook. The client-file
+  removal already used this path. Added an `OrderedIndex` regression that
+  proves the hook observes the final index allocation still alive before the
+  option is cleared; existing storage tests cover the wrapper owner pointers
+  after removal.
+- Validation: the allocator bridge unit test, ordered-index test, and focused
+  session/session-group/window/winlink/pane/client-file storage tests passed;
+  `cargo test --workspace` passed; the exact
+  `cargo test --no-run --message-format json-render-diagnostics --workspace`
+  command passed; `cargo build --bin hmux2`, edition-2021 rustfmt checks for
+  changed files, and `git diff --check` passed. Existing compiler warnings
+  remain; no sanitizer or live logging/index teardown integration scenario
+  was run.
+- Workspace-scope audit found no `pull.log` in this repository, and this
+  execution did not access or modify another repository. External history
+  mentioned by an earlier review cannot be independently established from
+  this workspace, so strict claims about it remain out of scope.
+
 ### Next candidates
 
-1. The local `format_log1` varargs scratch string in `src/format.rs`: it is
-   created with `xvasprintf`, consumed synchronously by logging and verbose
-   command output, and freed in the same function. Audit the allocator bridge
-   and failure behavior before replacing its manual free with a `CString`
-   owner.
-2. Re-rank other local format/status scratch strings after that audit; the
-   session/winlink graph and remaining global indexes remain deferred until a
-   smaller independent owner is confirmed.
+1. The local `options_array_getv` key in `src/options.rs`: it is created with
+   `xvasprintf`, consumed synchronously by `options_array_get`, and freed in
+   the same function. Use the audited C-to-`CString` bridge while preserving
+   the exported variadic ABI and byte-oriented option-key lookup.
+2. The local `window_customize_write` formatted value is another small
+   synchronous scratch owner after that. `format_printf`, status/message
+   strings, and input/control strings that escape into records or queues still
+   require separate lifetime audits; the session/winlink graph remains
+   deferred.
 
 Final validation for this execution: all workspace tests passed, including the
-focused client-file, pane, resize-queue, remaining-pane, and window storage
-tests, and `cargo build --bin hmux2` passed. The reported workspace no-run
-build also passed. Edition-2021 rustfmt checks for changed files and `git diff
---check` also passed.
-No new commit, push, or publication was performed.
+focused ordered-index, session, session-group, window, winlink, pane, and
+client-file storage tests; `cargo build --bin hmux2` passed; the reported
+workspace no-run build passed; edition-2021 rustfmt checks for changed files
+and `git diff --check` passed. No new commit, push, or publication was
+performed.

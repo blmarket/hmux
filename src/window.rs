@@ -213,15 +213,14 @@ pub unsafe fn windows_insert(head: *mut windows, elm: *mut window) -> *mut windo
     found
 }
 pub unsafe fn windows_remove(head: *mut windows, elm: *mut window) -> *mut window {
-    let removed = crate::src::shared::tree::OrderedIndex::<u_int, window>::remove_boxed(
+    crate::src::shared::tree::OrderedIndex::<u_int, window>::remove_boxed_with(
         &mut (*head).storage,
         &(*elm).id,
         elm,
-    );
-    if !removed.is_null() {
-        (*elm).entry.owner = std::ptr::null_mut();
-    }
-    removed
+        |node| unsafe {
+            (*node).entry.owner = std::ptr::null_mut();
+        },
+    )
 }
 pub unsafe fn windows_minmax(head: *mut windows, direction: ::core::ffi::c_int) -> *mut window {
     crate::src::shared::tree::OrderedIndex::<u_int, window>::edge(
@@ -268,16 +267,14 @@ pub unsafe fn winlinks_insert(head: *mut winlinks, elm: *mut winlink) -> *mut wi
     found
 }
 pub unsafe fn winlinks_remove(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
-    let removed =
-        crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::remove_boxed(
-            &mut (*head).storage,
-            &(*elm).idx,
-            elm,
-        );
-    if !removed.is_null() {
-        (*elm).entry.owner = std::ptr::null_mut();
-    }
-    removed
+    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::remove_boxed_with(
+        &mut (*head).storage,
+        &(*elm).idx,
+        elm,
+        |node| unsafe {
+            (*node).entry.owner = std::ptr::null_mut();
+        },
+    )
 }
 pub unsafe fn winlinks_minmax(head: *mut winlinks, direction: ::core::ffi::c_int) -> *mut winlink {
     crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::edge(
@@ -337,15 +334,14 @@ pub unsafe fn window_pane_tree_remove(
     head: *mut window_pane_tree,
     elm: *mut window_pane,
 ) -> *mut window_pane {
-    let removed = crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::remove_boxed(
+    crate::src::shared::tree::OrderedIndex::<u_int, window_pane>::remove_boxed_with(
         &mut (*head).storage,
         &(*elm).id,
         elm,
-    );
-    if !removed.is_null() {
-        (*elm).tree_entry.owner = std::ptr::null_mut();
-    }
-    removed
+        |node| unsafe {
+            (*node).tree_entry.owner = std::ptr::null_mut();
+        },
+    )
 }
 pub unsafe fn window_pane_tree_minmax(
     head: *mut window_pane_tree,

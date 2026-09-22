@@ -135,15 +135,15 @@ pub unsafe fn sessions_insert(head: *mut sessions, elm: *mut session) -> *mut se
     found
 }
 pub unsafe fn sessions_remove(head: *mut sessions, elm: *mut session) -> *mut session {
-    let removed = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::remove_boxed(
+    let key = sessions_key(elm);
+    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::remove_boxed_with(
         &mut (*head).storage,
-        &sessions_key(elm),
+        &key,
         elm,
-    );
-    if !removed.is_null() {
-        (*elm).entry.owner = std::ptr::null_mut();
-    }
-    removed
+        |node| unsafe {
+            (*node).entry.owner = std::ptr::null_mut();
+        },
+    )
 }
 pub unsafe fn sessions_minmax(head: *mut sessions, direction: ::core::ffi::c_int) -> *mut session {
     crate::src::shared::tree::OrderedIndex::<Vec<u8>, session>::edge(
@@ -224,15 +224,15 @@ pub unsafe fn session_groups_remove(
     head: *mut session_groups,
     elm: *mut session_group,
 ) -> *mut session_group {
-    let removed = crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::remove_boxed(
+    let key = session_groups_key(elm);
+    crate::src::shared::tree::OrderedIndex::<Vec<u8>, session_group>::remove_boxed_with(
         &mut (*head).storage,
-        &session_groups_key(elm),
+        &key,
         elm,
-    );
-    if !removed.is_null() {
-        (*elm).entry.owner = std::ptr::null_mut();
-    }
-    removed
+        |node| unsafe {
+            (*node).entry.owner = std::ptr::null_mut();
+        },
+    )
 }
 pub unsafe fn session_groups_minmax(
     head: *mut session_groups,
