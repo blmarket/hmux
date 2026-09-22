@@ -1,5 +1,7 @@
 //! Authoritative option-table value domains.
 
+use std::collections::BTreeMap;
+
 use super::abi::{time_t, u_int};
 use super::command::cmd_list;
 use super::session::session;
@@ -65,7 +67,7 @@ mod tests {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct options {
-    pub tree: options_tree,
+    pub tree: *mut options_storage,
     pub parent: *mut options,
 }
 
@@ -89,7 +91,6 @@ pub struct options_entry {
     pub monitor_data: *mut ::core::ffi::c_void,
     pub fire_count: u_int,
     pub fire_time: time_t,
-    pub entry: options_entry_entry,
 }
 
 #[derive(Copy, Clone)]
@@ -128,19 +129,10 @@ pub struct options_table_entry {
     pub unit: *const ::core::ffi::c_char,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct options_tree {
-    pub rbh_root: *mut options_entry,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct options_entry_entry {
-    pub rbe_left: *mut options_entry,
-    pub rbe_right: *mut options_entry,
-    pub rbe_parent: *mut options_entry,
-    pub rbe_color: ::core::ffi::c_int,
+/// Rust-owned name index; entries and their values retain their C allocation contract.
+#[derive(Default)]
+pub struct options_storage {
+    pub(crate) entries: BTreeMap<Vec<u8>, *mut options_entry>,
 }
 
 #[derive(Copy, Clone)]

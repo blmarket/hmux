@@ -787,8 +787,7 @@ fn original_copies_match() {
             style,
             monitor_data,
             fire_count,
-            fire_time,
-            entry
+            fire_time
         ]
     );
     record!(
@@ -845,11 +844,6 @@ fn original_copies_match() {
         "src/window_customize.rs::options_entry",
         *mut hmux2::src::window_customize::options_entry,
         []
-    );
-    record!(
-        "src/options.rs::C2RustUnnamed_17",
-        hmux2::src::options::options_entry_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
     );
     record!(
         "src/cmd_display_menu.rs::options_table_entry",
@@ -1081,11 +1075,6 @@ fn original_copies_match() {
             text,
             unit
         ]
-    );
-    record!(
-        "src/options.rs::options_tree",
-        hmux2::src::options::options_tree,
-        [rbh_root]
     );
     record!(
         "src/cmd.rs::options_value",
