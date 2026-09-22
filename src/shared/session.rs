@@ -66,10 +66,8 @@ pub struct session_group {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session_group_entry {
-    pub rbe_left: *mut session_group,
-    pub rbe_right: *mut session_group,
-    pub rbe_parent: *mut session_group,
-    pub rbe_color: ::core::ffi::c_int,
+    /// Stable Rust index used by entry-only traversal; not an owning pointer.
+    pub owner: *mut super::tree::OrderedIndex<Vec<u8>, session_group>,
 }
 
 #[derive(Copy, Clone)]
@@ -82,5 +80,5 @@ pub struct session_group_sessions {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct session_groups {
-    pub rbh_root: *mut session_group,
+    pub storage: *mut super::tree::OrderedIndex<Vec<u8>, session_group>,
 }

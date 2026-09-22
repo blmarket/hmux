@@ -47,37 +47,37 @@ fn original_copies_match() {
     record!(
         "src/cmd_kill_session.rs::C2RustUnnamed_35",
         hmux2::src::cmd_kill_session::session_group_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_new_session.rs::C2RustUnnamed_35",
         hmux2::src::cmd_new_session::session_group_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_swap_window.rs::C2RustUnnamed_35",
         hmux2::src::cmd_swap_window::session_group_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/format.rs::C2RustUnnamed_41",
         hmux2::src::format::session_group_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/server_fn.rs::C2RustUnnamed_38",
         hmux2::src::server_fn::session_group_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/session.rs::C2RustUnnamed_35",
         hmux2::src::session::session_group_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/window_tree.rs::C2RustUnnamed_39",
         hmux2::src::window_tree::session_group_entry,
-        [rbe_left, rbe_right, rbe_parent, rbe_color]
+        [owner]
     );
     record!(
         "src/cmd_kill_session.rs::C2RustUnnamed_36",
@@ -117,12 +117,12 @@ fn original_copies_match() {
     record!(
         "src/format.rs::session_groups",
         hmux2::src::format::session_groups,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/session.rs::session_groups",
         hmux2::src::session::session_groups,
-        [rbh_root]
+        [storage]
     );
     record!(
         "src/cfg.rs::sessions",

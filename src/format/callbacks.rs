@@ -3158,13 +3158,13 @@ unsafe extern "C" fn format_cb_window_linked_sessions(
         return ::core::ptr::null_mut::<::core::ffi::c_void>();
     }
     w = (*(*ft).wl).window;
-    sg = session_groups_RB_MINMAX(&raw mut session_groups, RB_NEGINF);
+    sg = session_groups_minmax(&raw mut session_groups, RB_NEGINF);
     while !sg.is_null() {
         s = (*sg).sessions.tqh_first;
         if !winlink_find_by_window(&raw mut (*s).windows, w).is_null() {
             n = n.wrapping_add(1);
         }
-        sg = session_groups_RB_NEXT(sg);
+        sg = session_groups_next(sg);
     }
     s = sessions_RB_MINMAX(&raw mut sessions, RB_NEGINF);
     while !s.is_null() {
