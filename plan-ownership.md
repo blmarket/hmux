@@ -493,6 +493,22 @@ legacy callers safe.
   changed files, and `git diff --check`. Existing compiler warnings remain;
   no live option-command scenario was run.
 
+### Increment 16 — customize pane formatted display value (2026-09-22)
+
+- `window_customize_write_value` now owns its local formatted value as a
+  `CString` through `xvasprintf_cstring`, removing the direct
+  `xvasprintf`/`free` pair. The only compatibility pointer is
+  `value.as_ptr()` during the synchronous `screen_write_text` call.
+- The early height and label returns occur before formatting. After
+  formatting, `screen_write_text` creates its own text through
+  `xvasprintf`/`utf8_fromcstr` before returning; it does not retain this
+  value. The bridge preserves arbitrary bytes and first-NUL behavior. No
+  record layout, caller, or variadic ABI changed.
+- The existing allocator-bridge byte/NUL regression passed, as did
+  `cargo build --bin hmux2`, edition-2021 rustfmt for the changed file, and
+  `git diff --check`. Existing compiler warnings remain; no live customize
+  pane scenario was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -503,9 +519,8 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The local `window_customize_write_value` formatted value is a small
-   synchronous scratch owner. The `cmdq_add_format` formatted value is another
-   independent local scratch owner after that.
+1. The `cmdq_add_format` formatted value is another independent local scratch
+   owner.
 2. The local `screen_write_text` formatted temporary is copied synchronously
    by `utf8_fromcstr`, so it is a likely next scratch target after those.
    `format_printf`, status/message

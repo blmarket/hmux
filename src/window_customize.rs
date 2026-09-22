@@ -142,7 +142,7 @@ use crate::src::style::style_apply;
 use crate::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
 use crate::src::window::{window_pane_find_by_id, window_pane_index, window_pane_reset_mode};
 use crate::src::xmalloc::{
-    xasprintf, xcalloc, xmalloc, xreallocarray, xsnprintf, xstrdup, xstrndup, xvasprintf,
+    xasprintf, xcalloc, xmalloc, xreallocarray, xsnprintf, xstrdup, xstrndup, xvasprintf_cstring,
 };
 
 pub type uintptr_t = usize;
@@ -578,7 +578,6 @@ unsafe extern "C" fn window_customize_write_value(
         link: 0,
     };
     let mut ap: ::core::ffi::VaList;
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cy: u_int = (*s).cy;
     let mut retval: ::core::ffi::c_int = 0;
     if sy == 0 as u_int {
@@ -608,7 +607,7 @@ unsafe extern "C" fn window_customize_write_value(
     );
     gc.fg = COLOUR_THEME_LIGHT_GREY as ::core::ffi::c_int | COLOUR_FLAG_THEME;
     ap = args.clone();
-    xvasprintf(&raw mut value, fmt, ap);
+    let value = xvasprintf_cstring(fmt, ap);
     retval = screen_write_text(
         ctx,
         cx,
@@ -617,9 +616,8 @@ unsafe extern "C" fn window_customize_write_value(
         more,
         &raw mut gc,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        value,
+        value.as_ptr(),
     );
-    free(value as *mut ::core::ffi::c_void);
     return retval;
 }
 unsafe extern "C" fn window_customize_free_item(mut item: *mut window_customize_itemdata) {
