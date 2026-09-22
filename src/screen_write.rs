@@ -124,7 +124,7 @@ use crate::src::window::{
     window_pane_scrollbar_redraw, window_pane_send_resize,
 };
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
-use crate::src::xmalloc::{xcalloc, xmalloc, xvasprintf};
+use crate::src::xmalloc::{xcalloc, xmalloc, xvasprintf, xvasprintf_cstring};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_16;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_15;
@@ -716,7 +716,6 @@ pub unsafe extern "C" fn screen_write_text(
 ) -> ::core::ffi::c_int {
     let mut s: *mut screen = (*ctx).s;
     let mut ap: ::core::ffi::VaList;
-    let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cy: u_int = (*s).cy;
     let mut i: u_int = 0;
     let mut end: u_int = 0;
@@ -745,9 +744,10 @@ pub unsafe extern "C" fn screen_write_text(
         ::core::mem::size_of::<grid_cell>() as size_t,
     );
     ap = args.clone();
-    xvasprintf(&raw mut tmp, fmt, ap);
-    text = utf8_fromcstr(tmp);
-    free(tmp as *mut ::core::ffi::c_void);
+    text = {
+        let tmp = xvasprintf_cstring(fmt, ap);
+        utf8_fromcstr(tmp.as_ptr())
+    };
     left = cx.wrapping_add(width).wrapping_sub((*s).cx);
     loop {
         at = 0 as u_int;

@@ -526,6 +526,20 @@ legacy callers safe.
   build passed together; rustfmt checks for all changed Rust files and
   `git diff --check` passed.
 
+### Increment 18 — screen_write_text formatted temporary (2026-09-22)
+
+- `screen_write_text` now owns its local formatted `tmp` as a scoped
+  `CString` through `xvasprintf_cstring`, removing its direct
+  `xvasprintf`/`free` pair. `utf8_fromcstr` copies the bytes into a separate
+  `utf8_data` allocation before the `CString` drops at the old free point.
+- The decoded text still uses its existing two return-path frees. The only
+  compatibility pointer is `tmp.as_ptr()` during `utf8_fromcstr`; exported
+  variadic ABI, arbitrary bytes, and the first-NUL view are unchanged.
+- The allocator-bridge regression, `cargo test --test utf8_decode`, binary
+  build, edition-2021 rustfmt for the changed file, and `git diff --check`
+  passed. Existing compiler warnings remain; no live screen scenario or
+  sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -536,13 +550,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The local `screen_write_text` formatted temporary is copied synchronously
-   by `utf8_fromcstr`, so it is the likely next scratch target.
+1. The local `cmd_log_argv` and `event_payload_log` formatted prefixes are
+   synchronous scratch strings. `screen_write_strlen` has another local
+   formatted string, though its byte-scanning loop needs a separate audit.
 2. `format_printf`, status/message
    strings, and input/control strings that escape into records or queues still
    require separate lifetime audits; the session/winlink graph remains
    deferred.
 
-Current validation is recorded in increments 15–17. The remaining
+Current validation is recorded in increments 15–18. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–17 has its own local commit; none was pushed.
+Each of increments 15–18 has its own local commit; none was pushed.
