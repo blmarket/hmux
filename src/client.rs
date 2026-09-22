@@ -1104,7 +1104,7 @@ unsafe extern "C" fn client_dispatch_wait(mut imsg: *mut imsg) {
         306 => {
             file_write_close(&raw mut client_files, imsg);
         }
-        211 | 212 | 213 => {
+        211..=213 => {
             fprintf(
                 stderr,
                 b"server version is too old for client\n\0" as *const u8

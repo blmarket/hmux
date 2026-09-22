@@ -1199,7 +1199,7 @@ unsafe extern "C" fn grid_string_cells_fg(
         *values.offset(fresh40 as isize) = b as ::core::ffi::c_int;
     } else {
         match (*gc).fg {
-            0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 => {
+            0..=7 => {
                 let fresh41 = n;
                 n = n.wrapping_add(1);
                 *values.offset(fresh41 as isize) = (*gc).fg + 30 as ::core::ffi::c_int;
@@ -1209,7 +1209,7 @@ unsafe extern "C" fn grid_string_cells_fg(
                 n = n.wrapping_add(1);
                 *values.offset(fresh42 as isize) = 39 as ::core::ffi::c_int;
             }
-            90 | 91 | 92 | 93 | 94 | 95 | 96 | 97 => {
+            90..=97 => {
                 let fresh43 = n;
                 n = n.wrapping_add(1);
                 *values.offset(fresh43 as isize) = (*gc).fg;
@@ -1269,7 +1269,7 @@ unsafe extern "C" fn grid_string_cells_bg(
         *values.offset(fresh27 as isize) = b as ::core::ffi::c_int;
     } else {
         match (*gc).bg {
-            0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 => {
+            0..=7 => {
                 let fresh28 = n;
                 n = n.wrapping_add(1);
                 *values.offset(fresh28 as isize) = (*gc).bg + 40 as ::core::ffi::c_int;
@@ -1279,7 +1279,7 @@ unsafe extern "C" fn grid_string_cells_bg(
                 n = n.wrapping_add(1);
                 *values.offset(fresh29 as isize) = 49 as ::core::ffi::c_int;
             }
-            90 | 91 | 92 | 93 | 94 | 95 | 96 | 97 => {
+            90..=97 => {
                 let fresh30 = n;
                 n = n.wrapping_add(1);
                 *values.offset(fresh30 as isize) = (*gc).bg + 10 as ::core::ffi::c_int;

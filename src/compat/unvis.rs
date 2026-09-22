@@ -47,7 +47,7 @@ pub unsafe extern "C" fn unvis(
                     *astate = S_GROUND;
                     return 1 as ::core::ffi::c_int;
                 }
-                48 | 49 | 50 | 51 | 52 | 53 | 54 | 55 => {
+                48..=55 => {
                     *cp = (c as ::core::ffi::c_int - '0' as i32) as ::core::ffi::c_char;
                     *astate = S_OCTAL2;
                     return 0 as ::core::ffi::c_int;

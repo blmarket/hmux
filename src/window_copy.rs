@@ -7487,7 +7487,7 @@ unsafe extern "C" fn window_copy_line_number_is_absolute(
     mut wme: *mut window_mode_entry,
 ) -> ::core::ffi::c_int {
     match window_copy_line_number_mode(wme) {
-        2 | 3 | 4 => return 1 as ::core::ffi::c_int,
+        2..=4 => return 1 as ::core::ffi::c_int,
         0 | 1 => return 0 as ::core::ffi::c_int,
         _ => {}
     }

@@ -117,7 +117,7 @@ unsafe extern "C" fn format_is_type(
     }
     match (*fr).type_0 as ::core::ffi::c_uint {
         0 | 1 | 2 | 7 => return 1 as ::core::ffi::c_int,
-        3 | 4 | 5 => {
+        3..=5 => {
             return ((*fr).argument == (*sy).range_argument) as ::core::ffi::c_int;
         }
         6 => {

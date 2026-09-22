@@ -2744,7 +2744,7 @@ unsafe extern "C" fn server_client_handle_key0(
             match window_pane_prompt_key(wp, c, (*event).key, &raw mut (*event).m)
                 as ::core::ffi::c_uint
             {
-                1 | 2 | 3 => return 0 as ::core::ffi::c_int,
+                1..=3 => return 0 as ::core::ffi::c_int,
                 0 => {
                     if (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
                         == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong

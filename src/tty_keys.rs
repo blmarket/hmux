@@ -2830,7 +2830,7 @@ unsafe extern "C" fn tty_keys_device_attributes(
         }
     }
     match p[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int {
-        61 | 62 | 63 | 64 | 65 => {
+        61..=65 => {
             i = 1 as u_int;
             while i < n {
                 log_debug(

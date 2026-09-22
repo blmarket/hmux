@@ -2755,7 +2755,7 @@ unsafe extern "C" fn input_c0_dispatch(mut ictx: *mut input_ctx) -> ::core::ffi:
                 }
             }
         }
-        10 | 11 | 12 => {
+        10..=12 => {
             screen_write_linefeed(sctx, 0 as ::core::ffi::c_int, (*ictx).cell.cell.bg as u_int);
             if (*s).mode & MODE_CRLF != 0 {
                 screen_write_carriagereturn(sctx);
@@ -3763,7 +3763,7 @@ unsafe extern "C" fn input_csi_dispatch_rm_private(mut ictx: *mut input_ctx) {
             25 => {
                 screen_write_mode_clear(sctx, MODE_CURSOR);
             }
-            1000 | 1001 | 1002 | 1003 => {
+            1000..=1003 => {
                 screen_write_mode_clear(sctx, ALL_MOUSE_MODES);
             }
             1004 => {
@@ -4445,13 +4445,13 @@ unsafe extern "C" fn input_csi_dispatch_sgr(mut ictx: *mut input_ctx) {
                                 & !GRID_ATTR_STRIKETHROUGH)
                                 as u_short;
                         }
-                        30 | 31 | 32 | 33 | 34 | 35 | 36 | 37 => {
+                        30..=37 => {
                             (*gc).fg = n - 30 as ::core::ffi::c_int;
                         }
                         39 => {
                             (*gc).fg = 8 as ::core::ffi::c_int;
                         }
-                        40 | 41 | 42 | 43 | 44 | 45 | 46 | 47 => {
+                        40..=47 => {
                             (*gc).bg = n - 40 as ::core::ffi::c_int;
                         }
                         49 => {
@@ -4468,10 +4468,10 @@ unsafe extern "C" fn input_csi_dispatch_sgr(mut ictx: *mut input_ctx) {
                         59 => {
                             (*gc).us = 8 as ::core::ffi::c_int;
                         }
-                        90 | 91 | 92 | 93 | 94 | 95 | 96 | 97 => {
+                        90..=97 => {
                             (*gc).fg = n;
                         }
-                        100 | 101 | 102 | 103 | 104 | 105 | 106 | 107 => {
+                        100..=107 => {
                             (*gc).bg = n - 10 as ::core::ffi::c_int;
                         }
                         _ => {}
