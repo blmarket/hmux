@@ -2904,14 +2904,11 @@ unsafe extern "C" fn server_client_resize_timer(
     event_del(&raw mut (*wp).resize_timer);
 }
 unsafe extern "C" fn server_client_check_pane_resize(mut wp: *mut window_pane) {
-    let mut r: *mut window_pane_resize = ::core::ptr::null_mut::<window_pane_resize>();
-    let mut first: *mut window_pane_resize = ::core::ptr::null_mut::<window_pane_resize>();
-    let mut last: *mut window_pane_resize = ::core::ptr::null_mut::<window_pane_resize>();
     let mut tv: timeval = timeval {
         tv_sec: 0,
         tv_usec: 250000 as __suseconds_t,
     };
-    if (*wp).resize_queue.tqh_first.is_null() {
+    if (*wp).resize_queue.is_empty() {
         return;
     }
     if event_initialized(&raw mut (*wp).resize_timer) == 0 {
@@ -2943,35 +2940,54 @@ unsafe extern "C" fn server_client_check_pane_resize(mut wp: *mut window_pane) {
         b"server_client_check_pane_resize\0" as *const u8 as *const ::core::ffi::c_char,
         (*wp).id,
     );
-    r = (*wp).resize_queue.tqh_first;
-    while !r.is_null() {
-        log_debug(
-            b"queued resize: %ux%u -> %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
-            (*r).osx,
-            (*r).osy,
-            (*r).sx,
-            (*r).sy,
-        );
-        r = (*r).entry.tqe_next;
-    }
-    first = (*wp).resize_queue.tqh_first;
-    last = *(*((*wp).resize_queue.tqh_last as *mut window_pane_resizes)).tqh_last;
-    if first == last {
-        window_pane_send_resize(wp, (*first).sx, (*first).sy);
-        if !(*first).entry.tqe_next.is_null() {
-            (*(*first).entry.tqe_next).entry.tqe_prev = (*first).entry.tqe_prev;
-        } else {
-            (*wp).resize_queue.tqh_last = (*first).entry.tqe_prev;
+    let (queue_len, first_sx, first_sy, first_osx, first_osy, last_sx, last_sy, last_ptr, previous) = {
+        let queue = (*wp)
+            .resize_queue
+            .as_ref()
+            .expect("non-empty resize queue must have storage");
+        for resize in queue {
+            log_debug(
+                b"queued resize: %ux%u -> %ux%u\0" as *const u8 as *const ::core::ffi::c_char,
+                resize.osx,
+                resize.osy,
+                resize.sx,
+                resize.sy,
+            );
         }
-        *(*first).entry.tqe_prev = (*first).entry.tqe_next;
-        free(first as *mut ::core::ffi::c_void);
-    } else if (*last).sx != (*first).osx || (*last).sy != (*first).osy {
-        window_pane_send_resize(wp, (*last).sx, (*last).sy);
+        let first = queue.front().expect("non-empty resize queue");
+        let last = queue.back().expect("non-empty resize queue");
+        let previous = if queue.len() > 1 {
+            Some(
+                queue
+                    .get(queue.len() - 2)
+                    .expect("resize queue has a predecessor")
+                    .as_ref(),
+            )
+        } else {
+            None
+        };
+        (
+            queue.len(),
+            first.sx,
+            first.sy,
+            first.osx,
+            first.osy,
+            last.sx,
+            last.sy,
+            (&**last) as *const window_pane_resize as *mut window_pane_resize,
+            previous.map(|resize| (resize.sx, resize.sy)),
+        )
+    };
+    if queue_len == 1 {
+        window_pane_send_resize(wp, first_sx, first_sy);
+        window_pane_clear_resizes(wp, ::core::ptr::null_mut::<window_pane_resize>());
+    } else if last_sx != first_osx || last_sy != first_osy {
+        window_pane_send_resize(wp, last_sx, last_sy);
         window_pane_clear_resizes(wp, ::core::ptr::null_mut::<window_pane_resize>());
     } else {
-        r = *(*((*last).entry.tqe_prev as *mut window_pane_resizes)).tqh_last;
-        window_pane_send_resize(wp, (*r).sx, (*r).sy);
-        window_pane_clear_resizes(wp, last);
+        let (sx, sy) = previous.expect("multiple resize entries have a predecessor");
+        window_pane_send_resize(wp, sx, sy);
+        window_pane_clear_resizes(wp, last_ptr);
         tv.tv_usec = 10000 as __suseconds_t;
     }
     event_add(&raw mut (*wp).resize_timer, &raw mut tv);

@@ -71,8 +71,7 @@ use crate::src::status::status_message_set;
 use crate::src::tty::tty_putcode;
 pub use crate::src::window::windows;
 use crate::src::window::{
-    window_add_ref, window_remove_ref, windows_minmax, windows_next, winlinks_minmax,
-    winlinks_next,
+    window_add_ref, window_remove_ref, windows_minmax, windows_next, winlinks_minmax, winlinks_next,
 };
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

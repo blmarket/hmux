@@ -240,10 +240,16 @@ pub unsafe fn windows_prev(elm: *mut window) -> *mut window {
 }
 
 pub unsafe fn winlinks_find(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
-    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::find((*head).storage, &(*elm).idx)
+    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::find(
+        (*head).storage,
+        &(*elm).idx,
+    )
 }
 pub unsafe fn winlinks_nfind(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
-    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::nfind((*head).storage, &(*elm).idx)
+    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::nfind(
+        (*head).storage,
+        &(*elm).idx,
+    )
 }
 pub unsafe fn winlinks_insert(head: *mut winlinks, elm: *mut winlink) -> *mut winlink {
     let found = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::insert(
@@ -267,11 +273,11 @@ pub unsafe fn winlinks_remove(head: *mut winlinks, elm: *mut winlink) -> *mut wi
     }
     removed
 }
-pub unsafe fn winlinks_minmax(
-    head: *mut winlinks,
-    direction: ::core::ffi::c_int,
-) -> *mut winlink {
-    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::edge((*head).storage, direction < 0)
+pub unsafe fn winlinks_minmax(head: *mut winlinks, direction: ::core::ffi::c_int) -> *mut winlink {
+    crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::edge(
+        (*head).storage,
+        direction < 0,
+    )
 }
 pub unsafe fn winlinks_next(elm: *mut winlink) -> *mut winlink {
     crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::neighbor(
@@ -755,7 +761,8 @@ pub unsafe extern "C" fn winlink_remove(mut wwl: *mut winlinks, mut wl: *mut win
     let owner = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::take_owned(
         (*wwl).storage,
         wl,
-    ).expect("winlink must have a RefBox owner");
+    )
+    .expect("winlink must have a RefBox owner");
     winlinks_remove(wwl, wl);
     drop(owner);
 }
@@ -809,7 +816,8 @@ pub unsafe extern "C" fn winlink_stack_push(stack: *mut winlink_stack, wl: *mut 
     let weak = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::downgrade(
         (*wl).entry.owner,
         wl,
-    ).expect("visited winlink must have a RefBox owner");
+    )
+    .expect("visited winlink must have a RefBox owner");
     (*(*stack).storage).push_front(weak);
     (*wl).flags |= WINLINK_VISITED;
 }
@@ -832,7 +840,8 @@ pub unsafe fn winlink_stack_append(stack: *mut winlink_stack, wl: *mut winlink) 
     let weak = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::downgrade(
         (*wl).entry.owner,
         wl,
-    ).expect("visited winlink must have a RefBox owner");
+    )
+    .expect("visited winlink must have a RefBox owner");
     (*(*stack).storage).push_back(weak);
     (*wl).flags |= WINLINK_VISITED;
 }
@@ -858,11 +867,16 @@ pub unsafe fn winlink_stack_indices(stack: *const winlink_stack) -> Vec<::core::
         .collect()
 }
 
-pub unsafe fn winlink_stack_first(stack: *const winlink_stack, _links: *mut winlinks) -> *mut winlink {
+pub unsafe fn winlink_stack_first(
+    stack: *const winlink_stack,
+    _links: *mut winlinks,
+) -> *mut winlink {
     if (*stack).storage.is_null() {
         return std::ptr::null_mut();
     }
-    (*(*stack).storage).iter().find(|link| link.is_alive())
+    (*(*stack).storage)
+        .iter()
+        .find(|link| link.is_alive())
         .map_or(std::ptr::null_mut(), |link| link.as_ptr() as *mut winlink)
 }
 
@@ -878,7 +892,10 @@ pub unsafe fn winlink_stack_next(
     let Some(position) = queue.iter().position(|link| link.as_ptr() == wl) else {
         return std::ptr::null_mut();
     };
-    queue.iter().skip(position + 1).find(|link| link.is_alive())
+    queue
+        .iter()
+        .skip(position + 1)
+        .find(|link| link.is_alive())
         .map_or(std::ptr::null_mut(), |link| link.as_ptr() as *mut winlink)
 }
 #[no_mangle]
@@ -2612,8 +2629,8 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
         offset: window_pane_offset { used: 0 },
         base_offset: 0,
         resize_queue: window_pane_resizes {
-            tqh_first: ::core::ptr::null_mut::<window_pane_resize>(),
-            tqh_last: ::core::ptr::null_mut::<*mut window_pane_resize>(),
+            storage: ::core::ptr::null_mut(),
+            reserved: ::core::ptr::null_mut(),
         },
         resize_timer: event {
             ev_evcallback: event_callback {
@@ -2948,8 +2965,8 @@ unsafe extern "C" fn window_pane_create(
     (*wp).fd = -(1 as ::core::ffi::c_int);
     (*wp).modes.tqh_first = ::core::ptr::null_mut::<window_mode_entry>();
     (*wp).modes.tqh_last = &raw mut (*wp).modes.tqh_first;
-    (*wp).resize_queue.tqh_first = ::core::ptr::null_mut::<window_pane_resize>();
-    (*wp).resize_queue.tqh_last = &raw mut (*wp).resize_queue.tqh_first;
+    (*wp).resize_queue.storage = ::core::ptr::null_mut();
+    (*wp).resize_queue.reserved = ::core::ptr::null_mut();
     (*wp).sx = sx;
     (*wp).sy = sy;
     (*wp).pipe_fd = -(1 as ::core::ffi::c_int);
@@ -3222,24 +3239,7 @@ pub unsafe extern "C" fn window_pane_clear_resizes(
     mut wp: *mut window_pane,
     mut except: *mut window_pane_resize,
 ) {
-    let mut r: *mut window_pane_resize = ::core::ptr::null_mut::<window_pane_resize>();
-    let mut r1: *mut window_pane_resize = ::core::ptr::null_mut::<window_pane_resize>();
-    r = (*wp).resize_queue.tqh_first;
-    while !r.is_null() && {
-        r1 = (*r).entry.tqe_next;
-        1 as ::core::ffi::c_int != 0
-    } {
-        if !(r == except) {
-            if !(*r).entry.tqe_next.is_null() {
-                (*(*r).entry.tqe_next).entry.tqe_prev = (*r).entry.tqe_prev;
-            } else {
-                (*wp).resize_queue.tqh_last = (*r).entry.tqe_prev;
-            }
-            *(*r).entry.tqe_prev = (*r).entry.tqe_next;
-            free(r as *mut ::core::ffi::c_void);
-        }
-        r = r1;
-    }
+    (*wp).resize_queue.clear_except(except);
 }
 #[no_mangle]
 pub unsafe extern "C" fn window_pane_resize(
@@ -3263,15 +3263,16 @@ pub unsafe extern "C" fn window_pane_resize(
         return;
     }
     screen_write_stop_sync(wp);
-    r = xmalloc(::core::mem::size_of::<window_pane_resize>() as size_t) as *mut window_pane_resize;
-    (*r).sx = sx;
-    (*r).sy = sy;
-    (*r).osx = (*wp).sx;
-    (*r).osy = (*wp).sy;
-    (*r).entry.tqe_next = ::core::ptr::null_mut::<window_pane_resize>();
-    (*r).entry.tqe_prev = (*wp).resize_queue.tqh_last;
-    *(*wp).resize_queue.tqh_last = r;
-    (*wp).resize_queue.tqh_last = &raw mut (*r).entry.tqe_next;
+    r = (*wp).resize_queue.push_back(window_pane_resize {
+        sx,
+        sy,
+        osx: (*wp).sx,
+        osy: (*wp).sy,
+        entry: window_pane_resize_entry {
+            tqe_next: ::core::ptr::null_mut::<window_pane_resize>(),
+            tqe_prev: ::core::ptr::null_mut::<*mut window_pane_resize>(),
+        },
+    });
     (*wp).sx = sx;
     (*wp).sy = sy;
     log_debug(

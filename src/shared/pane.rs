@@ -1,5 +1,7 @@
 //! Authoritative pane declarations, shared by the C translation units.
 
+use std::collections::VecDeque;
+
 use super::abi::{bitstr_t, pid_t, size_t, time_t, timeval, u_int, uint64_t};
 use super::client::client;
 use super::colour::{client_theme, colour_palette};
@@ -25,8 +27,48 @@ pub struct window_pane_offset {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_pane_resizes {
-    pub tqh_first: *mut window_pane_resize,
-    pub tqh_last: *mut *mut window_pane_resize,
+    pub storage: *mut window_pane_resize_storage,
+    pub reserved: *mut ::core::ffi::c_void,
+}
+
+pub type window_pane_resize_storage = VecDeque<Box<window_pane_resize>>;
+
+impl window_pane_resizes {
+    pub unsafe fn as_ref(&self) -> Option<&window_pane_resize_storage> {
+        self.storage.as_ref().map(|storage| &*storage)
+    }
+
+    pub unsafe fn is_empty(&self) -> bool {
+        self.as_ref().is_none_or(VecDeque::is_empty)
+    }
+
+    pub unsafe fn push_back(&mut self, resize: window_pane_resize) -> *mut window_pane_resize {
+        if self.storage.is_null() {
+            self.storage = Box::into_raw(Box::new(VecDeque::new()));
+        }
+        let resize = Box::new(resize);
+        let pointer = (&*resize) as *const window_pane_resize as *mut window_pane_resize;
+        (*self.storage).push_back(resize);
+        pointer
+    }
+
+    pub unsafe fn clear_except(&mut self, except: *mut window_pane_resize) {
+        if self.storage.is_null() {
+            return;
+        }
+        if except.is_null() {
+            drop(Box::from_raw(self.storage));
+            self.storage = ::core::ptr::null_mut();
+            return;
+        }
+        (*self.storage).retain(|resize| {
+            (&**resize) as *const window_pane_resize as *mut window_pane_resize == except
+        });
+        if (*self.storage).is_empty() {
+            drop(Box::from_raw(self.storage));
+            self.storage = ::core::ptr::null_mut();
+        }
+    }
 }
 #[derive(Copy, Clone)]
 #[repr(C)]

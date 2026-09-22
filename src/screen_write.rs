@@ -5312,7 +5312,7 @@ pub unsafe extern "C" fn screen_write_alternateon(
             (*wp).window as *mut window,
             ::core::ptr::null_mut::<window_pane>(),
         );
-        if !(*wp).resize_queue.tqh_first.is_null() {
+        if !(*wp).resize_queue.is_empty() {
             window_pane_send_resize(wp, (*wp).sx, (*wp).sy);
             window_pane_clear_resizes(wp, ::core::ptr::null_mut::<window_pane_resize>());
         }

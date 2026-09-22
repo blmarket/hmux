@@ -119,8 +119,7 @@ use crate::src::sort::{
 use crate::src::style::style_apply;
 use crate::src::window::{
     window_count_panes, window_has_pane, window_pane_find_by_id, window_pane_index,
-    window_pane_reset_mode, winlink_count, winlink_find_by_index, winlinks_minmax,
-    winlinks_next,
+    window_pane_reset_mode, winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next,
 };
 use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
 

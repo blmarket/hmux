@@ -14694,21 +14694,13 @@ fn original_copies_match() {
         hmux2::src::arguments::winlinks,
         [storage]
     );
-    record!(
-        "src/cfg.rs::winlinks",
-        hmux2::src::cfg::winlinks,
-        [storage]
-    );
+    record!("src/cfg.rs::winlinks", hmux2::src::cfg::winlinks, [storage]);
     record!(
         "src/client.rs::winlinks",
         hmux2::src::client::winlinks,
         [storage]
     );
-    record!(
-        "src/cmd.rs::winlinks",
-        hmux2::src::cmd::winlinks,
-        [storage]
-    );
+    record!("src/cmd.rs::winlinks", hmux2::src::cmd::winlinks, [storage]);
     record!(
         "src/cmd_attach_session.rs::winlinks",
         hmux2::src::cmd_attach_session::winlinks,
@@ -15074,11 +15066,7 @@ fn original_copies_match() {
         hmux2::src::input_keys::winlinks,
         [storage]
     );
-    record!(
-        "src/job.rs::winlinks",
-        hmux2::src::job::winlinks,
-        [storage]
-    );
+    record!("src/job.rs::winlinks", hmux2::src::job::winlinks, [storage]);
     record!(
         "src/key_bindings.rs::winlinks",
         hmux2::src::key_bindings::winlinks,
@@ -15199,11 +15187,7 @@ fn original_copies_match() {
         hmux2::src::style::winlinks,
         [storage]
     );
-    record!(
-        "src/tty.rs::winlinks",
-        hmux2::src::tty::winlinks,
-        [storage]
-    );
+    record!("src/tty.rs::winlinks", hmux2::src::tty::winlinks, [storage]);
     record!(
         "src/tty_acs.rs::winlinks",
         hmux2::src::tty_acs::winlinks,

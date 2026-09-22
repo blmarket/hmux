@@ -67,4 +67,4 @@ visible_ranges 16 8 ranges=0 used=8 size=12
 window_pane_offset 8 8 used=0
 window_pane_resize 32 8 sx=0 sy=4 osx=8 osy=12 entry=16
 window_pane_resize_entry 16 8 tqe_next=0 tqe_prev=8
-window_pane_resizes 16 8 tqh_first=0 tqh_last=8
+window_pane_resizes 16 8 storage=0 reserved=8

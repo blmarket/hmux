@@ -69,9 +69,7 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::window::{
-    window_pane_index, window_pane_zindex, winlinks_minmax, winlinks_next,
-};
+use crate::src::window::{window_pane_index, window_pane_zindex, winlinks_minmax, winlinks_next};
 use crate::src::xmalloc::xreallocarray;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;

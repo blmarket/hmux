@@ -553,8 +553,11 @@ pub unsafe extern "C" fn session_destroy(
         event_del(&raw mut (*s).lock_timer);
     }
     session_group_remove(s);
-    while !crate::src::window::winlink_stack_first(&raw const (*s).lastw, &raw mut (*s).windows).is_null() {
-        let first = crate::src::window::winlink_stack_first(&raw const (*s).lastw, &raw mut (*s).windows);
+    while !crate::src::window::winlink_stack_first(&raw const (*s).lastw, &raw mut (*s).windows)
+        .is_null()
+    {
+        let first =
+            crate::src::window::winlink_stack_first(&raw const (*s).lastw, &raw mut (*s).windows);
         winlink_stack_remove(&raw mut (*s).lastw, first);
     }
     crate::src::window::winlink_stack_clear(&raw mut (*s).lastw);
@@ -1195,7 +1198,10 @@ unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s:
     }
     old_lastw = std::ptr::replace(
         &raw mut (*s).lastw,
-        winlink_stack { storage: std::ptr::null_mut(), reserved: std::ptr::null_mut() },
+        winlink_stack {
+            storage: std::ptr::null_mut(),
+            reserved: std::ptr::null_mut(),
+        },
     );
     for old_idx in crate::src::window::winlink_stack_indices(&raw const old_lastw) {
         wl2 = winlink_find_by_index(&raw mut (*s).windows, old_idx);
@@ -1256,11 +1262,19 @@ pub unsafe extern "C" fn session_renumber_windows(mut s: *mut session) {
     }
     old_lastw = std::ptr::replace(
         &raw mut (*s).lastw,
-        winlink_stack { storage: std::ptr::null_mut(), reserved: std::ptr::null_mut() },
+        winlink_stack {
+            storage: std::ptr::null_mut(),
+            reserved: std::ptr::null_mut(),
+        },
     );
     for old_idx in crate::src::window::winlink_stack_indices(&raw const old_lastw) {
-        wl = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::find(old_wins.storage, &old_idx);
-        if wl.is_null() { continue; }
+        wl = crate::src::shared::tree::OrderedIndex::<::core::ffi::c_int, winlink>::find(
+            old_wins.storage,
+            &old_idx,
+        );
+        if wl.is_null() {
+            continue;
+        }
         (*wl).flags &= !WINLINK_VISITED;
         wl_new = winlink_find_by_window(&raw mut (*s).windows, (*wl).window);
         if !wl_new.is_null() {

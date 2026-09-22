@@ -1249,7 +1249,7 @@ fn migrated_layouts_match_every_original_copy() {
     );
     family!(
         window_pane_resizes,
-        [tqh_first, tqh_last],
+        [storage, reserved],
         [
             alerts,
             arguments,

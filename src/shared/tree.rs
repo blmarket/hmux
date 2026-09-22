@@ -115,7 +115,10 @@ impl<K: Ord, T> OrderedIndex<K, T> {
         if index.is_null() {
             return None;
         }
-        (*index).owners.get(&(node as usize)).map(refbox::RefBox::downgrade)
+        (*index)
+            .owners
+            .get(&(node as usize))
+            .map(refbox::RefBox::downgrade)
     }
 
     /// Transfer ownership before removing the node from the ordered index.
