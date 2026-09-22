@@ -2,6 +2,7 @@
 
 pub mod alerts;
 pub mod arguments;
+pub mod bracketed_paste;
 pub mod ffi;
 pub use self::style::attributes;
 pub mod cfg;

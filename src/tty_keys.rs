@@ -1,8 +1,11 @@
+use crate::src::bracketed_paste::{
+    is_incomplete_bracketed_paste_end, match_bracketed_paste_boundary, BracketedPasteBoundary,
+    BracketedPasteBoundaryMatch,
+};
 use crate::src::colour::{colour_format, colour_parse_x11_logged};
 use crate::src::events::events_fire_client;
 use crate::src::ffi::libc::{
-    __ctype_b_loc, free, memcmp, memcpy, sscanf, strcspn, strlcpy, strlen, strncmp, strsep, strtol,
-    strtoul,
+    __ctype_b_loc, free, memcpy, sscanf, strcspn, strlcpy, strlen, strncmp, strsep, strtol, strtoul,
 };
 use crate::src::ffi::resolv::__b64_pton;
 use crate::src::input::input_request_reply;
@@ -131,7 +134,7 @@ pub struct tty_default_key_xterm {
 }
 pub const _POSIX_VDISABLE: ::core::ffi::c_int = '\0' as i32;
 
-static mut tty_default_raw_keys: [tty_default_key_raw; 102] = [
+static mut tty_default_raw_keys: [tty_default_key_raw; 100] = [
     tty_default_key_raw {
         string: b"\x1BO[\0" as *const u8 as *const ::core::ffi::c_char,
         key: '\u{1b}' as i32 as key_code,
@@ -519,14 +522,6 @@ static mut tty_default_raw_keys: [tty_default_key_raw; 102] = [
     tty_default_key_raw {
         string: b"\x1B[O\0" as *const u8 as *const ::core::ffi::c_char,
         key: KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code,
-    },
-    tty_default_key_raw {
-        string: b"\x1B[200~\0" as *const u8 as *const ::core::ffi::c_char,
-        key: KEYC_PASTE_START as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
-    },
-    tty_default_key_raw {
-        string: b"\x1B[201~\0" as *const u8 as *const ::core::ffi::c_char,
-        key: KEYC_PASTE_END as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META,
     },
     tty_default_key_raw {
         string: b"\x1B[1;5Z\0" as *const u8 as *const ::core::ffi::c_char,
@@ -1391,7 +1386,7 @@ pub unsafe extern "C" fn tty_keys_build(mut tty: *mut tty) {
     }
     i = 0 as u_int;
     while (i as usize)
-        < (::core::mem::size_of::<[tty_default_key_raw; 102]>() as usize)
+        < (::core::mem::size_of::<[tty_default_key_raw; 100]>() as usize)
             .wrapping_div(::core::mem::size_of::<tty_default_key_raw>() as usize)
     {
         tdkr = (&raw const tty_default_raw_keys as *const tty_default_key_raw).offset(i as isize)
@@ -1489,23 +1484,6 @@ unsafe extern "C" fn tty_keys_find1(
     }
     return tty_keys_find1(tk, buf, len, size);
 }
-unsafe extern "C" fn tty_keys_partial_paste_end(
-    mut buf: *const ::core::ffi::c_char,
-    mut len: size_t,
-) -> ::core::ffi::c_int {
-    static mut paste_end: [::core::ffi::c_char; 7] =
-        unsafe { ::core::mem::transmute::<[u8; 7], [::core::ffi::c_char; 7]>(*b"\x1B[201~\0") };
-    let mut paste_end_len: size_t =
-        (::core::mem::size_of::<[::core::ffi::c_char; 7]>() as size_t).wrapping_sub(1 as size_t);
-    if len == 0 as size_t || len >= paste_end_len {
-        return 0 as ::core::ffi::c_int;
-    }
-    return (memcmp(
-        buf as *const ::core::ffi::c_void,
-        &raw const paste_end as *const ::core::ffi::c_char as *const ::core::ffi::c_void,
-        len,
-    ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
-}
 unsafe extern "C" fn tty_keys_next1(
     mut tty: *mut tty,
     mut buf: *const ::core::ffi::c_char,
@@ -1534,6 +1512,20 @@ unsafe extern "C" fn tty_keys_next1(
         buf,
         expired,
     );
+    if let BracketedPasteBoundaryMatch::Match { boundary, consumed } =
+        match_bracketed_paste_boundary(::core::slice::from_raw_parts(buf as *const u8, len))
+    {
+        *key = match boundary {
+            BracketedPasteBoundary::Start => {
+                KEYC_PASTE_START as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META
+            }
+            BracketedPasteBoundary::End => {
+                KEYC_PASTE_END as ::core::ffi::c_ulong as key_code | KEYC_IMPLIED_META
+            }
+        };
+        *size = consumed;
+        return 0 as ::core::ffi::c_int;
+    }
     tk = tty_keys_find(tty, buf, len, size);
     if !tk.is_null() && (*tk).key != KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
         tk1 = tk;
@@ -1552,15 +1544,6 @@ unsafe extern "C" fn tty_keys_next1(
             return 1 as ::core::ffi::c_int;
         }
         *key = (*tk).key;
-        if *key & KEYC_MASK_KEY
-            == KEYC_PASTE_START as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-        {
-            (*tty).flags |= TTY_BRACKETPASTE;
-        } else if *key & KEYC_MASK_KEY
-            == KEYC_PASTE_END as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-        {
-            (*tty).flags &= !TTY_BRACKETPASTE;
-        }
         return 0 as ::core::ffi::c_int;
     }
     more = utf8_open(&raw mut ud, *buf as u_char);
@@ -2143,6 +2126,15 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                     event_del(&raw mut (*tty).key_timer);
                 }
                 (*tty).flags &= !TTY_TIMER;
+                if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
+                    == KEYC_PASTE_START as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
+                {
+                    (*tty).flags |= TTY_BRACKETPASTE;
+                } else if key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
+                    == KEYC_PASTE_END as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
+                {
+                    (*tty).flags &= !TTY_BRACKETPASTE;
+                }
                 if key == KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code {
                     (*c).flags &= !CLIENT_FOCUSED as uint64_t;
                     window_update_focus((*(*(*c).session).curw).window);
@@ -2211,7 +2203,10 @@ pub unsafe extern "C" fn tty_keys_next(mut tty: *mut tty) -> ::core::ffi::c_int 
                         delay = 1 as ::core::ffi::c_int;
                     }
                     if (*tty).flags & TTY_BRACKETPASTE != 0
-                        && tty_keys_partial_paste_end(buf, len) != 0
+                        && is_incomplete_bracketed_paste_end(::core::slice::from_raw_parts(
+                            buf as *const u8,
+                            len,
+                        ))
                     {
                         log_debug(
                             b"%s: increasing delay (partial paste end)\0" as *const u8
