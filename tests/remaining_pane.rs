@@ -12,27 +12,27 @@ fn original_copies_match() {
     record!(
         "src/cmd_find.rs::window_pane_tree",
         hmux2::src::cmd_find::window_pane_tree,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/options.rs::window_pane_tree",
         hmux2::src::options::window_pane_tree,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/server.rs::window_pane_tree",
         hmux2::src::server::window_pane_tree,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/server_client.rs::window_pane_tree",
         hmux2::src::server_client::window_pane_tree,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/window.rs::window_pane_tree",
         hmux2::src::window::window_pane_tree,
-        [storage]
+        [rbh_root]
     );
     record!(
         "src/cmd_join_pane.rs::window_panes_zindex",

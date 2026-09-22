@@ -92,9 +92,9 @@ use crate::src::window::{
     window_pane_scrollbar_overlay, window_pane_scrollbar_overlay_visible,
     window_pane_scrollbar_reserve, window_pane_scrollbar_show, window_pane_scrollbar_start_timer,
     window_pane_scrollbar_visible, window_pane_send_resize, window_pane_send_theme_update,
-    window_pane_set_mode, window_pane_status_get_range, window_pane_tree_minmax,
-    window_pane_tree_next, window_redraw_active_switch, window_set_active_pane,
-    window_update_focus, windows_minmax, windows_next, winlink_find_by_index,
+    window_pane_set_mode, window_pane_status_get_range, window_pane_tree_RB_MINMAX,
+    window_pane_tree_RB_NEXT, window_redraw_active_switch, window_set_active_pane,
+    window_update_focus, windows_RB_MINMAX, windows_RB_NEXT, winlink_find_by_index,
 };
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_visible::{window_position_is_visible, window_visible_ranges};
@@ -404,14 +404,14 @@ pub unsafe extern "C" fn server_client_check_nested(mut c: *mut client) -> ::cor
     if envent.is_null() || *(*envent).value as ::core::ffi::c_int == '\0' as i32 {
         return 0 as ::core::ffi::c_int;
     }
-    wp = window_pane_tree_minmax(&raw mut all_window_panes, RB_NEGINF);
+    wp = window_pane_tree_RB_MINMAX(&raw mut all_window_panes, RB_NEGINF);
     while !wp.is_null() {
         if strcmp(&raw mut (*wp).tty as *mut ::core::ffi::c_char, (*c).ttyname)
             == 0 as ::core::ffi::c_int
         {
             return 1 as ::core::ffi::c_int;
         }
-        wp = window_pane_tree_next(wp);
+        wp = window_pane_tree_RB_NEXT(wp);
     }
     return 0 as ::core::ffi::c_int;
 }
@@ -627,7 +627,7 @@ unsafe extern "C" fn server_client_attached_lost(mut c: *mut client) {
         b"lost attached client %p\0" as *const u8 as *const ::core::ffi::c_char,
         c,
     );
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_RB_MINMAX(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
         if !((*w).latest != c as *mut ::core::ffi::c_void) {
             found = ::core::ptr::null_mut::<client>();
@@ -653,7 +653,7 @@ unsafe extern "C" fn server_client_attached_lost(mut c: *mut client) {
                 server_client_update_latest(found);
             }
         }
-        w = windows_next(w);
+        w = windows_RB_NEXT(w);
     }
 }
 unsafe extern "C" fn server_client_fire_session_changed(mut c: *mut client, mut old: *mut session) {
@@ -2807,12 +2807,12 @@ pub unsafe extern "C" fn server_client_loop() {
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wme: *mut window_mode_entry = ::core::ptr::null_mut::<window_mode_entry>();
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_RB_MINMAX(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
         server_client_check_window_resize(w);
-        w = windows_next(w);
+        w = windows_RB_NEXT(w);
     }
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_RB_MINMAX(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
         wp = (*w).panes.tqh_first;
         while !wp.is_null() {
@@ -2826,7 +2826,7 @@ pub unsafe extern "C" fn server_client_loop() {
             }
             wp = (*wp).entry.tqe_next;
         }
-        w = windows_next(w);
+        w = windows_RB_NEXT(w);
     }
     c = clients.tqh_first;
     while !c.is_null() {
@@ -2838,7 +2838,7 @@ pub unsafe extern "C" fn server_client_loop() {
         }
         c = (*c).entry.tqe_next;
     }
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_RB_MINMAX(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
         wp = (*w).panes.tqh_first;
         while !wp.is_null() {
@@ -2850,16 +2850,16 @@ pub unsafe extern "C" fn server_client_loop() {
             wp = (*wp).entry.tqe_next;
         }
         check_window_name(w);
-        w = windows_next(w);
+        w = windows_RB_NEXT(w);
     }
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_RB_MINMAX(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
         wp = (*w).panes.tqh_first;
         while !wp.is_null() {
             window_pane_send_theme_update(wp);
             wp = (*wp).entry.tqe_next;
         }
-        w = windows_next(w);
+        w = windows_RB_NEXT(w);
     }
 }
 unsafe extern "C" fn server_client_check_window_resize(mut w: *mut window) {

@@ -88,7 +88,7 @@ use crate::src::window::{
     window_update_activity, window_update_focus, winlink_add, winlink_clear_flags,
     winlink_find_by_index, winlink_find_by_window, winlink_find_by_window_id, winlink_next,
     winlink_previous, winlink_remove, winlink_set_window, winlink_stack_push, winlink_stack_remove,
-    winlinks_minmax, winlinks_next,
+    winlinks_RB_MINMAX, winlinks_RB_NEXT,
 };
 use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xstrdup};
 
@@ -202,7 +202,7 @@ pub unsafe extern "C" fn session_find(mut name: *const ::core::ffi::c_char) -> *
             tqh_last: ::core::ptr::null_mut::<*mut winlink>(),
         },
         windows: winlinks {
-            storage: std::ptr::null_mut(),
+            rbh_root: ::core::ptr::null_mut::<winlink>(),
         },
         statusat: 0,
         statuslines: 0,
@@ -269,7 +269,7 @@ pub unsafe extern "C" fn session_create(
     (*s).cwd = xstrdup(cwd);
     (*s).lastw.tqh_first = ::core::ptr::null_mut::<winlink>();
     (*s).lastw.tqh_last = &raw mut (*s).lastw.tqh_first;
-    (*s).windows.storage = std::ptr::null_mut();
+    (*s).windows.rbh_root = ::core::ptr::null_mut::<winlink>();
     (*s).environ = env;
     (*s).options = oo;
     status_update_cache(s);
@@ -417,8 +417,8 @@ pub unsafe extern "C" fn session_destroy(
     while !(*s).lastw.tqh_first.is_null() {
         winlink_stack_remove(&raw mut (*s).lastw, (*s).lastw.tqh_first);
     }
-    while !(*s).windows.storage.is_null() {
-        wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    while !(*s).windows.rbh_root.is_null() {
+        wl = (*s).windows.rbh_root;
         events_fire_winlink(
             b"window-unlinked\0" as *const u8 as *const ::core::ffi::c_char,
             wl,
@@ -607,7 +607,7 @@ pub unsafe extern "C" fn session_detach(
     winlink_stack_remove(&raw mut (*s).lastw, wl);
     winlink_remove(&raw mut (*s).windows, wl);
     session_group_synchronize_from(s);
-    if (*s).windows.storage.is_null() {
+    if (*s).windows.rbh_root.is_null() {
         return 1 as ::core::ffi::c_int;
     }
     return 0 as ::core::ffi::c_int;
@@ -662,7 +662,7 @@ pub unsafe extern "C" fn session_next(
         wl = session_next_alert(wl);
     }
     if wl.is_null() {
-        wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+        wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
         if alert != 0 && {
             wl = session_next_alert(wl);
             wl.is_null()
@@ -695,7 +695,7 @@ pub unsafe extern "C" fn session_previous(
         wl = session_previous_alert(wl);
     }
     if wl.is_null() {
-        wl = winlinks_minmax(&raw mut (*s).windows, RB_INF);
+        wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_INF);
         if alert != 0 && {
             wl = session_previous_alert(wl);
             wl.is_null()
@@ -1007,7 +1007,7 @@ pub unsafe extern "C" fn session_group_synchronize_from(mut target: *mut session
 }
 unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s: *mut session) {
     let mut old_windows: winlinks = winlinks {
-        storage: std::ptr::null_mut(),
+        rbh_root: ::core::ptr::null_mut::<winlink>(),
     };
     let mut ww: *mut winlinks = ::core::ptr::null_mut::<winlinks>();
     let mut old_lastw: winlink_stack = winlink_stack {
@@ -1017,7 +1017,7 @@ unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s:
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wl2: *mut winlink = ::core::ptr::null_mut::<winlink>();
     ww = &raw mut (*target).windows;
-    if (*ww).storage.is_null() {
+    if (*ww).rbh_root.is_null() {
         return;
     }
     if !(*s).curw.is_null()
@@ -1032,8 +1032,8 @@ unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s:
         &raw mut (*s).windows as *const ::core::ffi::c_void,
         ::core::mem::size_of::<winlinks>() as size_t,
     );
-    (*s).windows.storage = std::ptr::null_mut();
-    wl = winlinks_minmax(ww, RB_NEGINF);
+    (*s).windows.rbh_root = ::core::ptr::null_mut::<winlink>();
+    wl = winlinks_RB_MINMAX(ww, RB_NEGINF);
     while !wl.is_null() {
         wl2 = winlink_add(&raw mut (*s).windows, (*wl).idx);
         (*wl2).session = s;
@@ -1043,7 +1043,7 @@ unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s:
             wl2,
         );
         (*wl2).flags |= (*wl).flags & WINLINK_ALERTFLAGS;
-        wl = winlinks_next(wl);
+        wl = winlinks_RB_NEXT(wl);
     }
     if !(*s).curw.is_null() {
         (*s).curw = winlink_find_by_index(&raw mut (*s).windows, (*(*s).curw).idx);
@@ -1051,7 +1051,7 @@ unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s:
         (*s).curw = winlink_find_by_index(&raw mut (*s).windows, (*(*target).curw).idx);
     }
     if (*s).curw.is_null() {
-        (*s).curw = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+        (*s).curw = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
     }
     memcpy(
         &raw mut old_lastw as *mut ::core::ffi::c_void,
@@ -1072,8 +1072,8 @@ unsafe extern "C" fn session_group_synchronize1(mut target: *mut session, mut s:
         }
         wl = (*wl).sentry.tqe_next;
     }
-    while !old_windows.storage.is_null() {
-        wl = winlinks_minmax(&raw mut old_windows, RB_NEGINF);
+    while !old_windows.rbh_root.is_null() {
+        wl = old_windows.rbh_root;
         wl2 = winlink_find_by_window_id(&raw mut (*s).windows, (*(*wl).window).id);
         if wl2.is_null() {
             events_fire_winlink(
@@ -1090,7 +1090,7 @@ pub unsafe extern "C" fn session_renumber_windows(mut s: *mut session) {
     let mut wl1: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut wl_new: *mut winlink = ::core::ptr::null_mut::<winlink>();
     let mut old_wins: winlinks = winlinks {
-        storage: std::ptr::null_mut(),
+        rbh_root: ::core::ptr::null_mut::<winlink>(),
     };
     let mut old_lastw: winlink_stack = winlink_stack {
         tqh_first: ::core::ptr::null_mut::<winlink>(),
@@ -1104,13 +1104,13 @@ pub unsafe extern "C" fn session_renumber_windows(mut s: *mut session) {
         &raw mut (*s).windows as *const ::core::ffi::c_void,
         ::core::mem::size_of::<winlinks>() as size_t,
     );
-    (*s).windows.storage = std::ptr::null_mut();
+    (*s).windows.rbh_root = ::core::ptr::null_mut::<winlink>();
     new_idx = options_get_number(
         (*s).options,
         b"base-index\0" as *const u8 as *const ::core::ffi::c_char,
     ) as ::core::ffi::c_int;
     new_curw_idx = 0 as ::core::ffi::c_int;
-    wl = winlinks_minmax(&raw mut old_wins, RB_NEGINF);
+    wl = winlinks_RB_MINMAX(&raw mut old_wins, RB_NEGINF);
     while !wl.is_null() {
         wl_new = winlink_add(&raw mut (*s).windows, new_idx);
         (*wl_new).session = s;
@@ -1123,7 +1123,7 @@ pub unsafe extern "C" fn session_renumber_windows(mut s: *mut session) {
             new_curw_idx = (*wl_new).idx;
         }
         new_idx += 1;
-        wl = winlinks_next(wl);
+        wl = winlinks_RB_NEXT(wl);
     }
     memcpy(
         &raw mut old_lastw as *mut ::core::ffi::c_void,
@@ -1152,9 +1152,9 @@ pub unsafe extern "C" fn session_renumber_windows(mut s: *mut session) {
         }
     }
     (*s).curw = winlink_find_by_index(&raw mut (*s).windows, new_curw_idx);
-    wl = winlinks_minmax(&raw mut old_wins, RB_NEGINF);
+    wl = winlinks_RB_MINMAX(&raw mut old_wins, RB_NEGINF);
     while !wl.is_null() && {
-        wl1 = winlinks_next(wl);
+        wl1 = winlinks_RB_NEXT(wl);
         1 as ::core::ffi::c_int != 0
     } {
         winlink_remove(&raw mut old_wins, wl);
@@ -1166,14 +1166,14 @@ pub unsafe extern "C" fn session_theme_changed(mut s: *mut session) {
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut wl: *mut winlink = ::core::ptr::null_mut::<winlink>();
     if !s.is_null() {
-        wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+        wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
         while !wl.is_null() {
             wp = (*(*wl).window).panes.tqh_first;
             while !wp.is_null() {
                 (*wp).flags |= PANE_THEMECHANGED;
                 wp = (*wp).entry.tqe_next;
             }
-            wl = winlinks_next(wl);
+            wl = winlinks_RB_NEXT(wl);
         }
     }
 }
@@ -1188,7 +1188,7 @@ pub unsafe extern "C" fn session_update_history(mut s: *mut session) {
         (*s).options,
         b"history-limit\0" as *const u8 as *const ::core::ffi::c_char,
     ) as u_int;
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
         wp = (*(*wl).window).panes.tqh_first;
         while !wp.is_null() {
@@ -1207,7 +1207,7 @@ pub unsafe extern "C" fn session_update_history(mut s: *mut session) {
             }
             wp = (*wp).entry.tqe_next;
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_RB_NEXT(wl);
     }
 }
 

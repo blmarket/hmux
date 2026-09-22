@@ -181,8 +181,10 @@ pub struct window_pane {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_pane_tree_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut crate::src::shared::tree::OrderedIndex<u32, window_pane>,
+    pub rbe_left: *mut window_pane,
+    pub rbe_right: *mut window_pane,
+    pub rbe_parent: *mut window_pane,
+    pub rbe_color: ::core::ffi::c_int,
 }
 
 #[derive(Copy, Clone)]
@@ -223,7 +225,7 @@ pub struct window_panes {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_pane_tree {
-    pub storage: *mut crate::src::shared::tree::OrderedIndex<u32, window_pane>,
+    pub rbh_root: *mut window_pane,
 }
 
 #[derive(Copy, Clone)]

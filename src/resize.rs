@@ -20,7 +20,7 @@ use crate::src::tty::tty_update_window_offset;
 pub use crate::src::window::windows;
 use crate::src::window::{
     window_has_pane, window_resize, window_unzoom, window_zoom, window_zoomed_pane,
-    windows_minmax, windows_next,
+    windows_RB_MINMAX, windows_RB_NEXT,
 };
 
 use crate::src::shared::abi::*;
@@ -690,9 +690,9 @@ pub unsafe extern "C" fn recalculate_sizes_now(mut now: ::core::ffi::c_int) {
         }
         c = (*c).entry.tqe_next;
     }
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_RB_MINMAX(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
         recalculate_size(w, now);
-        w = windows_next(w);
+        w = windows_RB_NEXT(w);
     }
 }

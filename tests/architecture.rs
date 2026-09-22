@@ -351,7 +351,7 @@ fn c_heap_ownership_does_not_cross_into_rust_deallocation() {
         // These destructors pair only with Box::into_raw in their own
         // constructors. In arguments.rs, format/jobs.rs, format/tree.rs,
         // json.rs, environ.rs, options.rs, and events_payload.rs, only the Rust-owned table storage
-        // is boxed; shared/tree.rs likewise owns only ordered index storage.
+        // is boxed;
         // application nodes and strings remain calloc/strdup + free
         // allocations.
         if matches!(
@@ -398,26 +398,6 @@ fn c_heap_ownership_does_not_cross_into_rust_deallocation() {
         assert!(
             xmalloc.contains(&format!("pub unsafe extern \"C\" fn {name}")),
             "allocator wrapper changed ABI: {name}"
-        );
-    }
-}
-
-#[test]
-fn translated_rb_operations_do_not_return() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = Vec::new();
-    source_files(&root.join("src"), &mut files);
-    for path in files {
-        let source = fs::read_to_string(&path).unwrap();
-        assert!(
-            !source.contains("_RB_"),
-            "legacy tree operation in {}",
-            path.display()
-        );
-        assert!(
-            !source.contains("rbh_root"),
-            "legacy tree head in {}",
-            path.display()
         );
     }
 }

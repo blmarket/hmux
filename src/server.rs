@@ -33,8 +33,8 @@ use crate::src::tty::tty_create_log;
 use crate::src::utf8::utf8_update_width_cache;
 pub use crate::src::window::windows;
 use crate::src::window::{
-    all_window_panes, window_pane_destroy_ready, window_pane_wait_finish, windows_minmax,
-    windows_next,
+    all_window_panes, window_pane_destroy_ready, window_pane_wait_finish, windows_RB_MINMAX,
+    windows_RB_NEXT,
 };
 use crate::src::xmalloc::{xasprintf, xcalloc, xstrdup, xvasprintf};
 
@@ -449,8 +449,8 @@ pub unsafe extern "C" fn server_start(
     }
     input_key_build();
     utf8_update_width_cache();
-    windows.storage = std::ptr::null_mut();
-    all_window_panes.storage = std::ptr::null_mut();
+    windows.rbh_root = ::core::ptr::null_mut::<window>();
+    all_window_panes.rbh_root = ::core::ptr::null_mut::<window_pane>();
     clients.tqh_first = ::core::ptr::null_mut::<client>();
     clients.tqh_last = &raw mut clients.tqh_first;
     sessions.storage = std::ptr::null_mut();
@@ -825,9 +825,9 @@ unsafe extern "C" fn server_child_exited(mut pid: pid_t, mut status: ::core::ffi
     let mut w: *mut window = ::core::ptr::null_mut::<window>();
     let mut w1: *mut window = ::core::ptr::null_mut::<window>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_RB_MINMAX(&raw mut windows, RB_NEGINF);
     while !w.is_null() && {
-        w1 = windows_next(w);
+        w1 = windows_RB_NEXT(w);
         1 as ::core::ffi::c_int != 0
     } {
         wp = (*w).panes.tqh_first;
@@ -862,7 +862,7 @@ unsafe extern "C" fn server_child_stopped(mut pid: pid_t, mut status: ::core::ff
     {
         return;
     }
-    w = windows_minmax(&raw mut windows, RB_NEGINF);
+    w = windows_RB_MINMAX(&raw mut windows, RB_NEGINF);
     while !w.is_null() {
         wp = (*w).panes.tqh_first;
         while !wp.is_null() {
@@ -873,7 +873,7 @@ unsafe extern "C" fn server_child_stopped(mut pid: pid_t, mut status: ::core::ff
             }
             wp = (*wp).entry.tqe_next;
         }
-        w = windows_next(w);
+        w = windows_RB_NEXT(w);
     }
     job_check_died(pid, status);
 }

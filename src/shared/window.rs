@@ -41,7 +41,7 @@ pub const WINDOW_MODE_HIDE_SCROLLBARS: ::core::ffi::c_int = 0x8 as ::core::ffi::
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct winlinks {
-    pub storage: *mut crate::src::shared::tree::OrderedIndex<i32, winlink>,
+    pub rbh_root: *mut winlink,
 }
 
 #[derive(Copy, Clone)]
@@ -73,8 +73,10 @@ pub struct winlink_wentry {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct winlink_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut crate::src::shared::tree::OrderedIndex<i32, winlink>,
+    pub rbe_left: *mut winlink,
+    pub rbe_right: *mut winlink,
+    pub rbe_parent: *mut winlink,
+    pub rbe_color: ::core::ffi::c_int,
 }
 
 #[derive(Copy, Clone)]
@@ -132,8 +134,10 @@ pub struct window {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_entry {
-    /// Stable Rust index used by entry-only traversal; not an owning pointer.
-    pub owner: *mut crate::src::shared::tree::OrderedIndex<u32, window>,
+    pub rbe_left: *mut window,
+    pub rbe_right: *mut window,
+    pub rbe_parent: *mut window,
+    pub rbe_color: ::core::ffi::c_int,
 }
 
 #[derive(Copy, Clone)]
@@ -224,5 +228,5 @@ pub struct winlink_stack {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct windows {
-    pub storage: *mut crate::src::shared::tree::OrderedIndex<u32, window>,
+    pub rbh_root: *mut window,
 }

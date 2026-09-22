@@ -72,7 +72,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::window::{
-    window_find_by_id, window_pane_find_by_id, winlinks_minmax, winlinks_next,
+    window_find_by_id, window_pane_find_by_id, winlinks_RB_MINMAX, winlinks_RB_NEXT,
 };
 use crate::src::xmalloc::{xcalloc, xstrdup};
 
@@ -540,7 +540,7 @@ unsafe extern "C" fn monitor_check_all_panes(mut ms: *mut monitor_set) {
     if (*ms).generation == 0 as u_int {
         (*ms).generation = 1 as u_int;
     }
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
         wp = (*(*wl).window).panes.tqh_first;
         while !wp.is_null() {
@@ -560,7 +560,7 @@ unsafe extern "C" fn monitor_check_all_panes(mut ms: *mut monitor_set) {
             format_free(ft);
             wp = (*wp).entry.tqe_next;
         }
-        wl = winlinks_next(wl);
+        wl = winlinks_RB_NEXT(wl);
     }
     me = monitor_items_minmax(&raw mut (*ms).items, RB_NEGINF);
     while !me.is_null() && {
@@ -586,7 +586,7 @@ unsafe extern "C" fn monitor_check_all_windows(mut ms: *mut monitor_set) {
     if (*ms).generation == 0 as u_int {
         (*ms).generation = 1 as u_int;
     }
-    wl = winlinks_minmax(&raw mut (*s).windows, RB_NEGINF);
+    wl = winlinks_RB_MINMAX(&raw mut (*s).windows, RB_NEGINF);
     while !wl.is_null() {
         ft = monitor_create_formats(c, s, wl, ::core::ptr::null_mut::<window_pane>());
         me = monitor_items_minmax(&raw mut (*ms).items, RB_NEGINF);
@@ -602,7 +602,7 @@ unsafe extern "C" fn monitor_check_all_windows(mut ms: *mut monitor_set) {
             me = me1;
         }
         format_free(ft);
-        wl = winlinks_next(wl);
+        wl = winlinks_RB_NEXT(wl);
     }
     me = monitor_items_minmax(&raw mut (*ms).items, RB_NEGINF);
     while !me.is_null() && {
