@@ -571,6 +571,20 @@ legacy callers safe.
   build passed together; rustfmt checks for all changed Rust files and
   `git diff --check` passed.
 
+### Increment 21 — screen_write_strlen formatted scan buffer (2026-09-22)
+
+- `screen_write_strlen` now owns its formatted message as a local `CString`
+  through `xvasprintf_cstring`, removing the direct `xvasprintf`/`free` pair.
+  Its read-only byte pointer remains backed by the owner through the complete
+  UTF-8/control-byte scan; no pointer escapes the call.
+- The existing scan algorithm, width accounting, first-NUL view, and exported
+  variadic ABI are unchanged. Direct regression tests cover tab/control/DEL
+  bytes, non-UTF-8 bytes, invalid and incomplete UTF-8, and first-NUL input.
+- `cargo test --test screen_write_strlen` passed (2 tests), as did the binary
+  build, edition-2021 rustfmt for changed files, and `git diff --check`.
+  Existing compiler warnings remain; no live screen-rendering scenario or
+  sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -581,14 +595,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `screen_write_strlen` has another local formatted string; its
-   byte-scanning loop needs a separate audit. `screen_write_vnputs` has a
-   similar local formatted string with synchronous screen writes.
+1. `screen_write_vnputs` has a local formatted string scanned through
+   synchronous screen writes. `window_set_name` also duplicates the old name
+   for a synchronous event payload before freeing it.
 2. `format_printf`, status/message
    strings, and input/control strings that escape into records or queues still
    require separate lifetime audits; the session/winlink graph remains
    deferred.
 
-Current validation is recorded in increments 15–20. The remaining
+Current validation is recorded in increments 15–21. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–20 has its own local commit; none was pushed.
+Each of increments 15–21 has its own local commit; none was pushed.

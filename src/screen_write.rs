@@ -652,20 +652,18 @@ pub unsafe extern "C" fn screen_write_strlen(
     mut args: ...
 ) -> size_t {
     let mut ap: ::core::ffi::VaList;
-    let mut msg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
         have: 0,
         size: 0,
         width: 0,
     };
-    let mut ptr: *mut u_char = ::core::ptr::null_mut::<u_char>();
     let mut left: size_t = 0;
     let mut size: size_t = 0 as size_t;
     let mut more: utf8_state = UTF8_MORE;
     ap = args.clone();
-    xvasprintf(&raw mut msg, fmt, ap);
-    ptr = msg as *mut u_char;
+    let msg = xvasprintf_cstring(fmt, ap);
+    let mut ptr = msg.as_ptr() as *const u_char;
     while *ptr as ::core::ffi::c_int != '\0' as i32 {
         if *ptr as ::core::ffi::c_int > 0x7f as ::core::ffi::c_int
             && utf8_open(&raw mut ud, *ptr) as ::core::ffi::c_uint
@@ -700,7 +698,6 @@ pub unsafe extern "C" fn screen_write_strlen(
             ptr = ptr.offset(1);
         }
     }
-    free(msg as *mut ::core::ffi::c_void);
     return size;
 }
 #[no_mangle]
