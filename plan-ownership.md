@@ -754,6 +754,23 @@ legacy callers safe.
   target does not exist in the current repository; the layout unit test and
   CLI script provided the focused checks instead.
 
+### Increment 31 — environment entry values (2026-09-22)
+
+- `environ_set` now formats with `xvasprintf_cstring`; `environ_storage`
+  owns boxed ABI entries, `CString` names, and optional `CString` values.
+  `environ_clear`, `environ_unset`, and `environ_free` release those owners
+  through the index instead of manually freeing entry fields and records.
+- Boxed entries keep their addresses stable for existing `environ_entry`
+  pointers. The value pointer borrows the owner's buffer; null and empty
+  values remain distinct. Formatting completes before replacing an old value,
+  so a `%s` argument may refer to that same entry during an update.
+- All 23 production `environ_set` callers use literal C formats with `%s`,
+  numeric conversions, or fixed text. None supplies a supported embedded NUL
+  with meaningful trailing bytes. Focused environment tests (including the old-value regression),
+  `cargo test --workspace`, the binary build, changed-file rustfmt,
+  `git diff --check`, and a live set/show/hidden/empty/clear/unset CLI check
+  passed in the isolated worktree. Existing compiler warnings remain.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -772,7 +789,7 @@ non-string value.
    lines to immediate or deferred output queues, so migrate those owners and
    their teardown together.
 2. `events_payload_set_string`, `input_reply`, `options_set_string`,
-   `server_add_message`, `environ_set`, `status_message_set`, and `format_add`
+   `server_add_message`, `status_message_set`, and `format_add`
    store formatted C strings in records or queues. Audit each containing
    lifecycle before adding `CString`; a local owner alone would dangle.
    `format_printf` returns a C-owned allocation to callback consumers, and
@@ -780,6 +797,6 @@ non-string value.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    are separate ownership candidates after the simpler string lifetimes.
 
-Current validation is recorded in increments 15–30. The remaining
+Current validation is recorded in increments 15–31. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–30 has its own local commit; none was pushed.
+Each of increments 15–31 has its own local commit; none was pushed.

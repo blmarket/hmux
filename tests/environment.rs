@@ -117,3 +117,35 @@ fn updates_preserve_entry_addresses_and_removal_preserves_saved_successors() {
     env.set(b"reinserted", 0, b"ok").unwrap();
     assert_eq!(env.borrow().entries().count(), 1);
 }
+
+#[test]
+fn variadic_updates_can_read_the_previous_value_before_replacement() {
+    use hmux2::src::environ::environ_set;
+    use std::ffi::CStr;
+
+    let mut env = EnvironOwner::new();
+    env.set(b"VAR", ENVIRON_HIDDEN, b"old\xff").unwrap();
+    let entry = env.find_bytes(b"VAR").unwrap().unwrap().as_ptr();
+    unsafe {
+        environ_set(
+            env.as_ptr(),
+            (*entry).name,
+            0x40,
+            c"%s-new".as_ptr(),
+            (*entry).value,
+        );
+        assert_eq!(entry, env.find_bytes(b"VAR").unwrap().unwrap().as_ptr());
+        assert_eq!(CStr::from_ptr((*entry).value).to_bytes(), b"old\xff-new");
+        assert_eq!((*entry).flags, 0x40);
+    }
+    env.clear(b"VAR").unwrap();
+    let cleared = env.find_bytes(b"VAR").unwrap().unwrap();
+    assert_eq!(cleared.as_ptr(), entry);
+    assert_eq!(cleared.value_bytes(), None);
+    assert_eq!(cleared.flags(), 0x40);
+    env.set(b"VAR", 0, b"").unwrap();
+    assert_eq!(
+        env.find_bytes(b"VAR").unwrap().unwrap().value_bytes(),
+        Some(&b""[..])
+    );
+}

@@ -1,6 +1,7 @@
 //! Authoritative environment declarations.
 
 use std::collections::BTreeMap;
+use std::ffi::CString;
 
 pub const ENVIRON_HIDDEN: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
@@ -20,8 +21,15 @@ pub struct environ_entry {
     pub owner: *mut environ,
 }
 
-/// Rust-owned index; entries and their strings retain their C allocation contract.
+/// Owns the ABI-visible entry and its stable name and optional value buffers.
+pub(crate) struct EnvironEntryOwner {
+    pub(crate) entry: environ_entry,
+    pub(crate) name: CString,
+    pub(crate) value: Option<CString>,
+}
+
+/// Rust-owned index and entry storage. Boxed entries keep exported pointers stable.
 #[derive(Default)]
 pub struct environ_storage {
-    pub(crate) entries: BTreeMap<Vec<u8>, *mut environ_entry>,
+    pub(crate) entries: BTreeMap<Vec<u8>, Box<EnvironEntryOwner>>,
 }

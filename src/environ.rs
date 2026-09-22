@@ -5,19 +5,19 @@ use crate::src::options::{
     options_get_string,
 };
 use crate::src::tmux::{getversion, global_environ, global_options, socket_path};
-use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup, xvasprintf};
+use crate::src::xmalloc::{xcalloc, xstrdup, xvasprintf_cstring};
 use std::ffi::{CStr, CString, NulError};
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
-/// Owns one C-allocated environment with a Rust-owned ordered index.
+/// Owns one C-allocated environment with Rust-owned ordered entries.
 ///
 /// The ABI-visible [`environ`] and [`environ_entry`] records intentionally stay
-/// `Copy` because they are embedded in C-managed data and passed through the
+/// `Copy` because they are passed through the
 /// translated interface. This wrapper is the owner for a tree returned by
 /// `environ_create` (or another function with the same allocation contract).
 /// It is deliberately not `Copy` or `Clone`; dropping it releases the tree with
-/// the matching deallocators for the C records and Rust index.
+/// the matching deallocators for the C outer record and Rust entries.
 pub struct EnvironOwner {
     raw: NonNull<environ>,
 }
@@ -289,9 +289,9 @@ pub use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_
 pub use crate::src::shared::control::control_state;
 use crate::src::shared::display::*;
 pub use crate::src::shared::display::{visible_range, visible_ranges};
-use crate::src::shared::environment::environ_storage;
 pub use crate::src::shared::environment::ENVIRON_HIDDEN;
 pub use crate::src::shared::environment::{environ, environ_entry};
+use crate::src::shared::environment::{environ_storage, EnvironEntryOwner};
 use crate::src::shared::event::*;
 pub use crate::src::shared::format::{format_job_tree, format_tree};
 use crate::src::shared::grid::*;
@@ -339,16 +339,30 @@ pub use crate::src::shared::window::{
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-unsafe fn environ_insert(env: *mut environ, entry: *mut environ_entry) {
-    let key = CStr::from_ptr((*entry).name).to_bytes().to_vec();
+unsafe fn environ_insert(
+    env: *mut environ,
+    name: CString,
+    flags: ::core::ffi::c_int,
+    value: Option<CString>,
+) {
+    let key = name.as_bytes().to_vec();
+    let mut owned = Box::new(EnvironEntryOwner {
+        entry: environ_entry {
+            name: ::core::ptr::null_mut(),
+            value: ::core::ptr::null_mut(),
+            flags,
+            owner: env,
+        },
+        name,
+        value,
+    });
+    owned.entry.name = owned.name.as_ptr() as *mut ::core::ffi::c_char;
+    owned.entry.value = owned
+        .value
+        .as_ref()
+        .map_or(::core::ptr::null_mut(), |value| value.as_ptr() as *mut _);
     // Callers first look up the name and update existing entries in place.
-    (*entry).owner = env;
-    (*(*env).entries).entries.insert(key, entry);
-}
-
-unsafe fn environ_remove(env: *mut environ, entry: *mut environ_entry) {
-    let key = CStr::from_ptr((*entry).name).to_bytes();
-    (*(*env).entries).entries.remove(key);
+    (*(*env).entries).entries.insert(key, owned);
 }
 
 #[no_mangle]
@@ -360,21 +374,8 @@ pub unsafe extern "C" fn environ_create() -> *mut environ {
 }
 #[no_mangle]
 pub unsafe extern "C" fn environ_free(mut env: *mut environ) {
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    let mut envent1: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     if env.is_null() {
         return;
-    }
-    envent = environ_first(env);
-    while !envent.is_null() && {
-        envent1 = environ_next(envent);
-        1 as ::core::ffi::c_int != 0
-    } {
-        environ_remove(env, envent);
-        free((*envent).name as *mut ::core::ffi::c_void);
-        free((*envent).value as *mut ::core::ffi::c_void);
-        free(envent as *mut ::core::ffi::c_void);
-        envent = envent1;
     }
     drop(Box::from_raw((*env).entries));
     free(env as *mut ::core::ffi::c_void);
@@ -385,7 +386,7 @@ pub unsafe extern "C" fn environ_first(mut env: *mut environ) -> *mut environ_en
         .entries
         .values()
         .next()
-        .copied()
+        .map(|owned| &owned.entry as *const environ_entry as *mut environ_entry)
         .unwrap_or(std::ptr::null_mut())
 }
 #[no_mangle]
@@ -395,7 +396,7 @@ pub unsafe extern "C" fn environ_next(mut envent: *mut environ_entry) -> *mut en
         .entries
         .range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
         .next()
-        .map(|(_, entry)| *entry)
+        .map(|(_, owned)| &owned.entry as *const environ_entry as *mut environ_entry)
         .unwrap_or(std::ptr::null_mut())
 }
 #[no_mangle]
@@ -425,7 +426,7 @@ pub unsafe extern "C" fn environ_find(
     (*(*env).entries)
         .entries
         .get(CStr::from_ptr(name).to_bytes())
-        .copied()
+        .map(|owned| &owned.entry as *const environ_entry as *mut environ_entry)
         .unwrap_or(std::ptr::null_mut())
 }
 #[no_mangle]
@@ -436,20 +437,18 @@ pub unsafe extern "C" fn environ_set(
     mut fmt: *const ::core::ffi::c_char,
     mut args: ...
 ) {
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut ap: ::core::ffi::VaList;
     ap = args.clone();
-    envent = environ_find(env, name);
-    if !envent.is_null() {
-        (*envent).flags = flags;
-        free((*envent).value as *mut ::core::ffi::c_void);
-        xvasprintf(&raw mut (*envent).value, fmt, ap);
+    // Format before replacing the old value: a caller may pass that value as
+    // a `%s` argument while updating the same entry.
+    let value = xvasprintf_cstring(fmt, ap);
+    let entries = &mut (*(*env).entries).entries;
+    if let Some(owned) = entries.get_mut(CStr::from_ptr(name).to_bytes()) {
+        owned.entry.flags = flags;
+        owned.value = Some(value);
+        owned.entry.value = owned.value.as_ref().unwrap().as_ptr() as *mut _;
     } else {
-        envent = xmalloc(::core::mem::size_of::<environ_entry>() as size_t) as *mut environ_entry;
-        (*envent).name = xstrdup(name);
-        (*envent).flags = flags;
-        xvasprintf(&raw mut (*envent).value, fmt, ap);
-        environ_insert(env, envent);
+        environ_insert(env, CStr::from_ptr(name).to_owned(), flags, Some(value));
     };
 }
 #[no_mangle]
@@ -457,17 +456,12 @@ pub unsafe extern "C" fn environ_clear(
     mut env: *mut environ,
     mut name: *const ::core::ffi::c_char,
 ) {
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    envent = environ_find(env, name);
-    if !envent.is_null() {
-        free((*envent).value as *mut ::core::ffi::c_void);
-        (*envent).value = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let entries = &mut (*(*env).entries).entries;
+    if let Some(owned) = entries.get_mut(CStr::from_ptr(name).to_bytes()) {
+        owned.value = None;
+        owned.entry.value = ::core::ptr::null_mut();
     } else {
-        envent = xmalloc(::core::mem::size_of::<environ_entry>() as size_t) as *mut environ_entry;
-        (*envent).name = xstrdup(name);
-        (*envent).flags = 0 as ::core::ffi::c_int;
-        (*envent).value = ::core::ptr::null_mut::<::core::ffi::c_char>();
-        environ_insert(env, envent);
+        environ_insert(env, CStr::from_ptr(name).to_owned(), 0, None);
     };
 }
 #[no_mangle]
@@ -500,15 +494,9 @@ pub unsafe extern "C" fn environ_unset(
     mut env: *mut environ,
     mut name: *const ::core::ffi::c_char,
 ) {
-    let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
-    envent = environ_find(env, name);
-    if envent.is_null() {
-        return;
-    }
-    environ_remove(env, envent);
-    free((*envent).name as *mut ::core::ffi::c_void);
-    free((*envent).value as *mut ::core::ffi::c_void);
-    free(envent as *mut ::core::ffi::c_void);
+    (*(*env).entries)
+        .entries
+        .remove(CStr::from_ptr(name).to_bytes());
 }
 #[no_mangle]
 pub unsafe extern "C" fn environ_update(
