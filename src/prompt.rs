@@ -1730,6 +1730,16 @@ unsafe extern "C" fn prompt_done(
     }
     return PROMPT_KEY_HANDLED;
 }
+unsafe fn prompt_done_with_history(
+    pr: *mut prompt,
+    redraw: *mut ::core::ffi::c_int,
+) -> prompt_key_result {
+    let s = utf8_tocstr_cstring((*pr).buffer);
+    if !s.as_bytes().is_empty() {
+        prompt_add_history(s.as_ptr(), (*pr).type_0 as u_int);
+    }
+    prompt_done(pr, s.as_ptr(), redraw)
+}
 unsafe extern "C" fn prompt_check_move(
     mut pr: *mut prompt,
     mut key: key_code,
@@ -2190,13 +2200,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -2535,13 +2539,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -2880,13 +2878,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -3225,13 +3217,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -3570,13 +3556,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -3915,13 +3895,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -4260,13 +4234,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -4605,13 +4573,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -4950,13 +4912,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -5295,13 +5251,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -5640,13 +5590,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -5985,13 +5929,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -6330,13 +6268,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -6675,13 +6607,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -7020,13 +6946,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -7365,13 +7285,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -7710,13 +7624,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -8055,13 +7963,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -8400,13 +8302,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -8745,13 +8641,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -9090,13 +8980,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -9435,13 +9319,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -9780,13 +9658,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -10125,13 +9997,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -10470,13 +10336,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {
@@ -10815,13 +10675,7 @@ pub unsafe extern "C" fn prompt_key(
                                 );
                             }
                             _ => {
-                                s = utf8_tocstr((*pr).buffer);
-                                if *s as ::core::ffi::c_int != '\0' as i32 {
-                                    prompt_add_history(s, (*pr).type_0 as u_int);
-                                }
-                                result = prompt_done(pr, s, redraw);
-                                free(s as *mut ::core::ffi::c_void);
-                                return result;
+                                return prompt_done_with_history(pr, redraw);
                             }
                         }
                         match current_block {

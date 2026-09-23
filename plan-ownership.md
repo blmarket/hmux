@@ -2487,6 +2487,20 @@ legacy callers safe.
   library/binary build, workspace tests, attached-client check, and
   `git diff --check` passed. No sanitizer was run.
 
+### Increment 141 — prompt accept/history callback text (2026-09-22)
+
+- Replaced all 26 identical `prompt_key` accept/history scratch paths with
+  `prompt_done_with_history`. It owns a `CString` converted directly from the
+  editable UTF-8 cells, skips empty history input, records history before
+  invoking `prompt_done`, and drops the text after the callback. This removes
+  26 `utf8_tocstr` allocations and 26 manual frees without changing the
+  numeric, single-key, or final incremental branches.
+- The helper preserves arbitrary non-UTF-8 bytes and the first-NUL view
+  that `prompt_add_history` and `prompt_done` receive as C strings. The
+  existing history owner test and attached-client history recall check pass;
+  isolated library/binary build and `git diff --check` also pass. No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2497,12 +2511,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The 26 repeated prompt accept/history branches still create and free
-   identical local `utf8_tocstr` results. A shared owner helper can preserve
-   history-before-callback ordering and eliminate all 26 pairs together.
-2. The nearby `PROMPT_SINGLE` branch also has a local `utf8_tocstr` pair;
-   audit its callback outcome and any combined flags separately.
-3. The only direct `xvasprintf` production caller outside the `xmalloc`
+1. The nearby `PROMPT_SINGLE` branch is now the only production
+   `utf8_tocstr((*pr).buffer)` call in `prompt.rs`; it still has a local
+   allocation/free pair. Audit its callback outcome and any combined flags
+   before using `utf8_tocstr_cstring` there.
+2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. The migrated `xvasprintf_cstring` callers have no identified
@@ -2511,14 +2524,14 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-4. `cmd_save_buffer_exec`'s `file_write` call copies its path
+3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-5. The remaining address-based registries, other UI tags, and session/winlink
+4. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
@@ -2526,9 +2539,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–138. The remaining
+Current validation is recorded in increments 15–141. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–138 has its own local commit; none was pushed.
+Each of increments 15–141 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -2634,3 +2647,11 @@ and format-loop CLI checks, and `git diff --check` passed on main.
 Changed-file rustfmt reports only two import-layout differences in
 `prompt.rs`; checking its exact pre-increment `1c3d196` version reports the
 same sites. `src/text/utf8.rs` passes rustfmt. No combined sanitizer was run.
+After increments 139–141 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, prompt-mutable, prompt-input-format, prompt-completion, and
+prompt-paste CLI checks, and `git diff --check` passed on main. Source search
+finds 26 `prompt_done_with_history` calls and only the `PROMPT_SINGLE`
+production `utf8_tocstr` call in `prompt.rs`. Changed-file rustfmt reports
+two import-layout differences already present in the exact pre-increment
+`5188b96` file. No combined sanitizer was run.
