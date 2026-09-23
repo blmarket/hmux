@@ -125,13 +125,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_select_layout_exec` copies the C-owned `layout_dump` result into its
-   saved-layout `CString` owner and frees the temporary. The private
-   `LayoutString` serializer already owns its bytes; return a `CString`
-   directly to this caller while keeping the exported `layout_dump` adapter
-   libc-freeable for format consumers. Preserve the old control-client layout
-   format and signed-char checksum. Compare CLI layout behavior with pinned
-   tmux and cover old-format bytes separately.
+1. `main_0` in `src/tmux.rs` owns its startup socket path through repeated
+   `-S`, `TMUX`, or `make_label`, then lends it to global `socket_path` until
+   `client_main` exits. Hold the selected path in `Option<CString>` and have
+   private `make_label` return one directly. Preserve byte paths, the
+   comma-truncated `TMUX` value, and the separate systemd activation path.
+   Compare repeated `-S`, inherited `TMUX`, and label behavior with pinned
+   tmux, including `#{socket_path}` output.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1303,6 +1303,21 @@ name error.
   prompt check now asserts the note editor's exact input bytes. A new
   environment editor CLI compares UTF-8 and empty input bytes with pinned
   tmux. Changed-file rustfmt and diff checks passed. No sanitizer ran.
+
+### Increment 431 — own selected layout dump directly (2026-09-23)
+
+- `layout_dump_owned` now returns a local `CString` from the private
+  `LayoutString` serializer. `cmd_select_layout_exec` transfers it directly
+  into the saved-layout owner, removing the C temporary, its copy, and its
+  explicit `free`. Exported `layout_dump` still supplies a libc-freeable
+  duplicate for format callbacks. The old control-client checksum uses the
+  unchanged signed-char checksum routine; serialization preserves the former
+  C formatter's first-NUL view.
+- Serialized workspace tests and binary build passed. Existing layout CLI
+  checks passed on candidate and pinned tmux. A new control-client CLI check
+  compared exact old-format bytes, verified its checksum, and restored the
+  prior layout with `select-layout -o`; it passed on both binaries. Changed-file
+  rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 

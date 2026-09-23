@@ -4,7 +4,7 @@ use crate::src::cmd_queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client}
 use crate::src::events::events_fire_window;
 use crate::src::ffi::libc::free;
 use crate::src::layout::layout_spread_out;
-use crate::src::layout_custom::{layout_dump, layout_parse};
+use crate::src::layout_custom::{layout_dump_owned, layout_parse};
 use crate::src::layout_set::{
     layout_set_lookup, layout_set_next, layout_set_previous, layout_set_select,
 };
@@ -70,7 +70,6 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::window::window_replace_old_layout;
-use std::ffi::CStr;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -193,14 +192,7 @@ unsafe extern "C" fn cmd_select_layout_exec(
     {
         flags |= LAYOUT_CUSTOM_OLD_FORMAT;
     }
-    let dumped = layout_dump(w, (*w).layout_root, flags);
-    let new_layout = if dumped.is_null() {
-        None
-    } else {
-        let value = CStr::from_ptr(dumped).to_owned();
-        free(dumped.cast());
-        Some(value)
-    };
+    let new_layout = layout_dump_owned(w, (*w).layout_root, flags);
     let mut oldlayout = window_replace_old_layout(w, new_layout);
     let oldlayout_ptr = oldlayout
         .as_ref()

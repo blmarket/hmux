@@ -17,6 +17,7 @@ use crate::src::window::{
     window_set_active_pane,
 };
 use crate::src::xmalloc::{xasprintf, xmalloc, xstrdup, xvasprintf_cstring};
+use std::ffi::{CStr, CString};
 pub use crate::src::shared::json::{json_node};
 pub use crate::src::shared::arguments::{args};
 pub use crate::src::shared::client::{
@@ -86,8 +87,8 @@ pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 
 /// A temporary NUL-terminated serializer buffer.
 ///
-/// The buffer is only used inside this module. `layout_dump` copies its
-/// contents into the returned C string with `xasprintf`.
+/// The buffer is only used inside this module. Its final bytes become the
+/// private owned layout dump or are copied for the exported C result.
 struct LayoutString {
     bytes: Vec<u8>,
 }
@@ -267,32 +268,41 @@ unsafe extern "C" fn layout_checksum(mut layout: *const ::core::ffi::c_char) -> 
 }
 #[no_mangle]
 pub unsafe extern "C" fn layout_dump(
-    mut w: *mut window,
-    mut lcroot: *mut layout_cell,
-    mut flags: ::core::ffi::c_int,
+    w: *mut window,
+    lcroot: *mut layout_cell,
+    flags: ::core::ffi::c_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut layout_string = LayoutString::new();
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    // Format callbacks free this exported result with libc free.
+    layout_dump_owned(w, lcroot, flags)
+        .map_or(::core::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
+}
+
+pub(crate) unsafe fn layout_dump_owned(
+    _w: *mut window,
+    lcroot: *mut layout_cell,
+    flags: ::core::ffi::c_int,
+) -> Option<CString> {
     if lcroot.is_null() {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
-    if layout_append(lcroot, &mut layout_string, flags) == 0 as ::core::ffi::c_int {
-        if flags & LAYOUT_CUSTOM_OLD_FORMAT != 0 {
-            xasprintf(
-                &raw mut out,
-                b"%04hx,%s\0" as *const u8 as *const ::core::ffi::c_char,
-                layout_checksum(layout_string.as_c_ptr()) as ::core::ffi::c_int,
-                layout_string.as_c_ptr(),
-            );
-        } else {
-            xasprintf(
-                &raw mut out,
-                b"{\"V\":2,\"L\":%s}\0" as *const u8 as *const ::core::ffi::c_char,
-                layout_string.as_c_ptr(),
-            );
-        }
+    let mut layout_string = LayoutString::new();
+    if layout_append(lcroot, &mut layout_string, flags) != 0 {
+        return None;
     }
-    return out;
+    // Preserve the C formatter's first-NUL view of the serialized body.
+    let body = CStr::from_ptr(layout_string.as_c_ptr()).to_bytes();
+    let mut output = Vec::new();
+    if flags & LAYOUT_CUSTOM_OLD_FORMAT != 0 {
+        output.extend_from_slice(
+            format!("{:04x},", layout_checksum(layout_string.as_c_ptr())).as_bytes(),
+        );
+        output.extend_from_slice(body);
+    } else {
+        output.extend_from_slice(b"{\"V\":2,\"L\":");
+        output.extend_from_slice(body);
+        output.push(b'}');
+    }
+    Some(CString::new(output).expect("layout serializer produced an interior NUL"))
 }
 unsafe extern "C" fn layout_append_v2(
     mut lc: *mut layout_cell,
