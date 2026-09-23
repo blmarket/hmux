@@ -973,6 +973,21 @@ legacy callers safe.
   with the pinned baseline. The existing socket-label check also matched.
   No sanitizer was run.
 
+### Increment 196 — client lockfile owner across daemon fork (2026-09-22)
+
+- `client_connect` now owns its byte-preserving lockfile name as
+  `Option<CString>`. A private `server_start_owned` path borrows that owner
+  across fork, so the parent drops its process-local copy after return and
+  the child takes and drops its copy after unlink. Removed the local
+  `xasprintf` allocation and four manual frees. The exported `server_start`
+  C signature and its raw-pointer libc-free contract remain for compatibility;
+  systemd's null lockfile path is unchanged.
+- In the isolated branch, library/binary build, one focused platform-socket
+  test, changed-file rustfmt, Python syntax check, and `git diff --check`
+  passed. The new private-socket CLI check matched normal daemon startup,
+  lock contention/retry, unavailable lockfile, and non-UTF-8 path bytes with
+  the pinned baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -983,11 +998,14 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `client_connect` builds a local lockfile name and frees it on several
-   branches, but `server_start` also frees its copy after a fork. Audit the
-   parent/child ownership split before changing that pair. `file_get_path`
-   also returns a C-owned path into `client_file.path`; migrate its producer
-   only with the field's full teardown and transfer path.
+1. `hooks_monitor_to_string` has three in-repo callers that borrow its
+   formatted result synchronously and free it. Migrate those to an internal
+   `Option<CString>` producer while preserving its exported C-owned wrapper.
+   `file_get_path` remains deferred: `client_file.path` is a public `char *`
+   field in a `#[repr(C)]` record built into the staticlib. A raw
+   `CString::into_raw`/`from_raw` round trip leaves manual ownership in
+   place; changing the field needs an explicit opaque-record ABI decision
+   or a fully audited sidecar owner and callback teardown.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual

@@ -430,6 +430,51 @@ pub unsafe extern "C" fn server_start(
     mut lockfd: ::core::ffi::c_int,
     mut lockfile: *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
+    server_start_inner(client, flags, base, lockfd, ServerLockfile::Raw(lockfile))
+}
+
+enum ServerLockfile<'a> {
+    // Retain the exported C entry point's libc allocation contract.
+    Raw(*mut ::core::ffi::c_char),
+    // The client owns one independent copy in each process after fork.
+    Owned(&'a mut Option<CString>),
+}
+
+impl ServerLockfile<'_> {
+    fn as_ptr(&self) -> *const ::core::ffi::c_char {
+        match self {
+            Self::Raw(ptr) => *ptr,
+            Self::Owned(owner) => owner.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr()),
+        }
+    }
+
+    unsafe fn release(self) {
+        match self {
+            Self::Raw(ptr) => free(ptr as *mut ::core::ffi::c_void),
+            Self::Owned(owner) => {
+                owner.take();
+            }
+        }
+    }
+}
+
+pub(crate) unsafe fn server_start_owned(
+    client: *mut tmuxproc,
+    flags: uint64_t,
+    base: *mut event_base,
+    lockfd: ::core::ffi::c_int,
+    lockfile: &mut Option<CString>,
+) -> ::core::ffi::c_int {
+    server_start_inner(client, flags, base, lockfd, ServerLockfile::Owned(lockfile))
+}
+
+unsafe fn server_start_inner(
+    mut client: *mut tmuxproc,
+    mut flags: uint64_t,
+    mut base: *mut event_base,
+    mut lockfd: ::core::ffi::c_int,
+    lockfile: ServerLockfile<'_>,
+) -> ::core::ffi::c_int {
     let mut fd: ::core::ffi::c_int = 0;
     let mut set: sigset_t = __sigset_t { __val: [0; 16] };
     let mut oldset: sigset_t = __sigset_t { __val: [0; 16] };
@@ -498,8 +543,8 @@ pub unsafe extern "C" fn server_start(
         );
     }
     if lockfd >= 0 as ::core::ffi::c_int {
-        unlink(lockfile);
-        free(lockfile as *mut ::core::ffi::c_void);
+        unlink(lockfile.as_ptr());
+        lockfile.release();
         close(lockfd);
     }
     if !cause.is_null() {

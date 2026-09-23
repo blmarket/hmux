@@ -21,7 +21,7 @@ use crate::src::proc::{
     proc_add_peer, proc_clear_signals, proc_exit, proc_flush_peer, proc_loop, proc_send,
     proc_set_signals, proc_start,
 };
-use crate::src::server::server_start;
+use crate::src::server::{server_start, server_start_owned};
 use crate::src::shared::abi::*;
 pub use crate::src::shared::abi::{
     __clock_t, __off64_t, __off_t, __socklen_t, __uid_t, __uint16_t, __uint32_t, socklen_t,
@@ -120,7 +120,7 @@ use crate::src::tmux::{
     ptm_fd, setblocking, shell_argv0, shell_command, socket_path,
 };
 use crate::src::tty_term::tty_term_read_list;
-use crate::src::xmalloc::{xasprintf, xmalloc, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xmalloc, xsnprintf, xstrdup};
 use ::libc;
 use std::ffi::CString;
 
@@ -157,7 +157,9 @@ static mut client_execshell: *const ::core::ffi::c_char =
 static mut client_execcmd: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
 static mut client_attached: ::core::ffi::c_int = 0;
 static mut client_files: client_files = client_files { storage: None };
-unsafe extern "C" fn client_get_lock(mut lockfile: *mut ::core::ffi::c_char) -> ::core::ffi::c_int {
+unsafe extern "C" fn client_get_lock(
+    mut lockfile: *const ::core::ffi::c_char,
+) -> ::core::ffi::c_int {
     let mut lockfd: ::core::ffi::c_int = 0;
     log_debug(
         b"lock file is %s\0" as *const u8 as *const ::core::ffi::c_char,
@@ -201,7 +203,7 @@ unsafe extern "C" fn client_connect(
     let mut fd: ::core::ffi::c_int = 0;
     let mut lockfd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let mut locked: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut lockfile: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut lockfile: Option<CString> = None;
     memset(
         &raw mut sa as *mut ::core::ffi::c_void,
         0 as ::core::ffi::c_int,
@@ -260,19 +262,16 @@ unsafe extern "C" fn client_connect(
         }
         close(fd);
         if locked == 0 {
-            xasprintf(
-                &raw mut lockfile,
-                b"%s.lock\0" as *const u8 as *const ::core::ffi::c_char,
-                path,
-            );
-            lockfd = client_get_lock(lockfile);
+            let mut name = std::ffi::CStr::from_ptr(path).to_bytes().to_vec();
+            name.extend_from_slice(b".lock");
+            lockfile = Some(CString::new(name).expect("socket path has no interior NUL"));
+            lockfd = client_get_lock(lockfile.as_ref().unwrap().as_ptr());
             if lockfd < 0 as ::core::ffi::c_int {
                 log_debug(
                     b"didn't get lock (%d)\0" as *const u8 as *const ::core::ffi::c_char,
                     lockfd,
                 );
-                free(lockfile as *mut ::core::ffi::c_void);
-                lockfile = ::core::ptr::null_mut::<::core::ffi::c_char>();
+                lockfile = None;
                 if lockfd == -(2 as ::core::ffi::c_int) {
                     continue;
                 }
@@ -287,11 +286,11 @@ unsafe extern "C" fn client_connect(
                 && unlink(path) != 0 as ::core::ffi::c_int
                 && *__errno_location() != ENOENT
             {
-                free(lockfile as *mut ::core::ffi::c_void);
+                lockfile.take();
                 close(lockfd);
                 return -(1 as ::core::ffi::c_int);
             }
-            fd = server_start(client_proc, flags, base, lockfd, lockfile);
+            fd = server_start_owned(client_proc, flags, base, lockfd, &mut lockfile);
             current_block = 7172762164747879670;
             break;
         }
@@ -299,7 +298,7 @@ unsafe extern "C" fn client_connect(
     match current_block {
         16524389688364091157 => {
             if locked != 0 {
-                free(lockfile as *mut ::core::ffi::c_void);
+                lockfile.take();
                 close(lockfd);
             }
             close(fd);
@@ -307,7 +306,7 @@ unsafe extern "C" fn client_connect(
         }
         _ => {
             if locked != 0 && lockfd >= 0 as ::core::ffi::c_int {
-                free(lockfile as *mut ::core::ffi::c_void);
+                lockfile.take();
                 close(lockfd);
             }
             setblocking(fd, 0 as ::core::ffi::c_int);
