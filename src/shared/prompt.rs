@@ -73,10 +73,10 @@ pub struct prompt_completion {
 
 #[repr(C)]
 pub struct prompt {
-    pub string: *mut ::core::ffi::c_char,
+    pub string: CString,
     pub buffer: *mut utf8_data,
     pub state: cmd_find_state,
-    pub last: *mut ::core::ffi::c_char,
+    pub last: Option<CString>,
     pub index: size_t,
     pub inputcb: prompt_input_cb,
     pub freecb: prompt_free_cb,

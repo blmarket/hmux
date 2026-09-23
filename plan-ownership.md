@@ -2199,6 +2199,22 @@ legacy callers safe.
   middle NUL. Rustfmt reports four import-layout differences also present in
   the base commit. No sanitizer was run.
 
+### Increment 123 — mutable prompt label and saved input (2026-09-22)
+
+- The Box-owned `prompt.string` is now a `CString` and its nullable
+  incremental `last` is `Option<CString>`. Creation initializes both fields;
+  `prompt_update` copies a new label before replacing the old one; incremental
+  restore borrows the saved C string only while that option is present. The
+  Box drop releases both owners at `prompt_free`, replacing the two manual
+  frees. Null versus empty saved input remains distinct.
+- The prompt layout fixture reflects the internal record's new 408-byte size.
+  No public prompt ABI consumer was identified. The rest of the prompt record
+  and callback return ownership are unchanged.
+- Isolated validation: serialized workspace tests, binary build,
+  `git diff --check`, changed-file rustfmt, and attached-client checks for
+  a two-step label/input update, Ctrl-R saved-input restore, and completion
+  passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2218,13 +2234,9 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. The Box-owned prompt record still has mutable prompt-label `string` and
-   nullable incremental `last` as separately allocated C strings. Audit
-   `prompt_update` and incremental reset/read paths before moving those
-   complete fields to CString/Option<CString>; preserve null versus empty.
-   The client-side `tty_term_read_list` capability array is also created,
-   sent in identify messages, and freed in `client_main`; audit the send's
-   synchronous copy before migrating that local lifetime.
+2. The Box-owned prompt record still has `buffer` and `copied` as separately
+   allocated UTF-8 data arrays. Audit their edit, resize, and copy paths
+   before moving those complete fields to Rust-owned storage.
 3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
@@ -2240,9 +2252,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–122. The remaining
+Current validation is recorded in increments 15–123. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–122 has its own local commit; none was pushed.
+Each of increments 15–123 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -2304,3 +2316,11 @@ six import layout differences in `sort.rs`, `window_buffer.rs`,
 `cmd/entries/list_buffers.rs`, and `server_client.rs`; checking those exact
 files from pre-increment `32a39a5` reports the same six sites. No combined
 sanitizer was run.
+After increments 121–123 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the binary build,
+prompt-mutable, prompt-completion, server-term-capability, key, and command
+queue CLI checks, and `git diff --check` passed on main. Changed-file rustfmt
+reports six import-layout differences in `cmd/entries/list_keys.rs`,
+`sort.rs`, `client.rs`, and `server_client.rs`; checking the exact files from
+pre-increment `9eadbcb` reports the same six sites. No combined sanitizer
+was run.
