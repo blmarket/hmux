@@ -489,6 +489,19 @@ legacy callers safe.
   non-UTF-8, and empty values, alongside the existing pane argv cases.
   No sanitizer was run.
 
+### Increment 161 — recursive command-parser log prefix (2026-09-22)
+
+- The recursive case of `cmd_parse_log_commands` now owns its temporary
+  `prefix + " %u:%u"` text in a byte-preserving local `CString`, removing
+  its `xasprintf` allocation/free pair. The recursive call borrows the
+  pointer synchronously. Both top-level prefixes are fixed non-null C
+  strings; `i` and `j` retain `%u` decimal formatting. The separate
+  `cmd_list_print` result remains C-owned and freed in its own case.
+- Isolated library/binary build, focused `source_file_pattern` test,
+  changed-file rustfmt, and `git diff --check` passed. A private-socket
+  `-vv` source-file scenario produced a nested
+  `cmd_parse_build_commands 0:3 0:0` log prefix. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -499,10 +512,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_parse_log_commands` still creates a recursive logging prefix with
-   local `xasprintf("%s %u:%u")`, passes it to a synchronous recursive call,
-   then frees it. Audit exact C-string bytes and recursion lifetime before
-   replacing that temporary with `CString`.
+1. `prompt_find_history_file` still returns a C-owned path for prompt
+   history load/save, and both callers free it after synchronous `fopen`.
+   Audit absolute and `~/` byte paths, unsupported relative paths, and all
+   load/save error returns before moving the helper and callers to CString.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -527,9 +540,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–160. The remaining
+Current validation is recorded in increments 15–161. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–160 has its own local commit; none was pushed.
+Each of increments 15–161 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

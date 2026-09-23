@@ -96,6 +96,7 @@ use crate::src::xmalloc::{
     xasprintf, xcalloc, xmalloc, xrealloc, xrecallocarray, xstrdup, xvasprintf_cstring,
 };
 use libc;
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
@@ -837,15 +838,13 @@ unsafe extern "C" fn cmd_parse_log_commands(
                     );
                 }
                 1 => {
-                    xasprintf(
-                        &raw mut s,
-                        b"%s %u:%u\0" as *const u8 as *const ::core::ffi::c_char,
-                        prefix,
-                        i,
-                        j,
+                    let mut nested = CStr::from_ptr(prefix).to_bytes().to_vec();
+                    nested.extend_from_slice(format!(" {i}:{j}").as_bytes());
+                    let nested = CString::new(nested).expect("parser log prefix has no NUL");
+                    cmd_parse_log_commands(
+                        (*arg).commands as *mut cmd_parse_commands,
+                        nested.as_ptr(),
                     );
-                    cmd_parse_log_commands((*arg).commands as *mut cmd_parse_commands, s);
-                    free(s as *mut ::core::ffi::c_void);
                 }
                 2 => {
                     s = cmd_list_print((*arg).cmdlist, 0 as ::core::ffi::c_int);
