@@ -2030,6 +2030,20 @@ legacy callers safe.
   updates the buffer and a mode reset while an editor is still running.
   No sanitizer was run.
 
+### Increment 270 — wait-for channel and queue owners (2026-09-23)
+
+- The `wait_channels` semantic-key map now owns stable boxed channel records
+  and their `CString` names. Intrusive waiter and locker queues borrow each
+  channel's C-layout prefix. Their `wait_item` nodes use `Box` and drop after
+  unlinking on explicit wake, signal, unlock, and server flush. Channel
+  removal drops the map value after its queues are empty.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, commit diff check, and
+  `scripts/wait_channels_owner_cli_checks.py` passed on main. The pinned
+  baseline comparison covered remembered signal, explicit wake, multiple
+  waiters, lock handoff/unlock, and server flush of waiters and lockers.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2040,8 +2054,8 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Audit the remaining `wait-for` channel/lock records for complete wake,
-   flush, and teardown ownership.
+1. Audit `popup_data` and status prompt callback data for complete overlay,
+   job, callback, and teardown ownership.
    OSC 52 decode output transfers directly into `paste_add`, which retains
    its C allocation until `paste_free`; a local Vec would add a copy without
    removing the lifetime. The existing clipboard-reply E2E covers decoded
@@ -2079,7 +2093,7 @@ libc allocation on success and leaves it with the caller on error, so a local
 `Vec` alone would add an allocation and copy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–267 above, with increment 228 explicitly retracted.
+recorded in increments 226–270 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.

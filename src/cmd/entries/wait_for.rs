@@ -71,7 +71,6 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::{xcalloc, xmalloc, xstrdup};
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -100,7 +99,14 @@ pub struct C2RustUnnamed_38 {
     pub tqh_last: *mut *mut wait_item,
 }
 pub struct wait_channels {
-    entries: std::collections::BTreeMap<Vec<u8>, *mut wait_channel>,
+    entries: std::collections::BTreeMap<Vec<u8>, Box<WaitChannelOwner>>,
+}
+// The map owns each channel while its intrusive queues borrow this stable
+// C-shaped prefix. The name stays alive until the channel is removed.
+#[repr(C)]
+struct WaitChannelOwner {
+    channel: wait_channel,
+    name: CString,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -180,20 +186,22 @@ unsafe fn wait_channels_find(
 ) -> *mut wait_channel {
     (*head)
         .entries
-        .get(&wait_channel_key(name))
-        .copied()
+        .get_mut(&wait_channel_key(name))
+        .map(|owner| &raw mut owner.channel)
         .unwrap_or(::core::ptr::null_mut::<wait_channel>())
 }
 
 unsafe fn wait_channels_insert(
     head: *mut wait_channels,
-    elm: *mut wait_channel,
+    mut owner: Box<WaitChannelOwner>,
 ) -> *mut wait_channel {
-    match (*head).entries.entry(wait_channel_key((*elm).name)) {
-        std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
+    let key = wait_channel_key(owner.channel.name);
+    match (*head).entries.entry(key) {
+        std::collections::btree_map::Entry::Occupied(mut entry) => &raw mut entry.get_mut().channel,
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(elm);
-            ::core::ptr::null_mut::<wait_channel>()
+            let channel = &raw mut owner.channel;
+            entry.insert(owner);
+            channel
         }
     }
 }
@@ -201,23 +209,30 @@ unsafe fn wait_channels_insert(
 unsafe fn wait_channels_remove(
     head: *mut wait_channels,
     elm: *mut wait_channel,
-) -> *mut wait_channel {
-    (*head)
-        .entries
-        .remove(&wait_channel_key((*elm).name))
-        .unwrap_or(::core::ptr::null_mut::<wait_channel>())
+) -> Option<Box<WaitChannelOwner>> {
+    (*head).entries.remove(&wait_channel_key((*elm).name))
 }
-unsafe extern "C" fn cmd_wait_for_add(mut name: *const ::core::ffi::c_char) -> *mut wait_channel {
-    let mut wc: *mut wait_channel = ::core::ptr::null_mut::<wait_channel>();
-    wc = xmalloc(::core::mem::size_of::<wait_channel>() as size_t) as *mut wait_channel;
-    (*wc).name = xstrdup(name);
-    (*wc).locked = 0 as ::core::ffi::c_int;
-    (*wc).woken = 0 as ::core::ffi::c_int;
-    (*wc).waiters.tqh_first = ::core::ptr::null_mut::<wait_item>();
-    (*wc).waiters.tqh_last = &raw mut (*wc).waiters.tqh_first;
-    (*wc).lockers.tqh_first = ::core::ptr::null_mut::<wait_item>();
-    (*wc).lockers.tqh_last = &raw mut (*wc).lockers.tqh_first;
-    wait_channels_insert(&raw mut wait_channels, wc);
+unsafe extern "C" fn cmd_wait_for_add(name: *const ::core::ffi::c_char) -> *mut wait_channel {
+    let name = CStr::from_ptr(name).to_owned();
+    let mut owner = Box::new(WaitChannelOwner {
+        channel: wait_channel {
+            name: name.as_ptr(),
+            locked: 0,
+            woken: 0,
+            waiters: C2RustUnnamed_38 {
+                tqh_first: ::core::ptr::null_mut(),
+                tqh_last: ::core::ptr::null_mut(),
+            },
+            lockers: C2RustUnnamed_36 {
+                tqh_first: ::core::ptr::null_mut(),
+                tqh_last: ::core::ptr::null_mut(),
+            },
+        },
+        name,
+    });
+    owner.channel.waiters.tqh_last = &raw mut owner.channel.waiters.tqh_first;
+    owner.channel.lockers.tqh_last = &raw mut owner.channel.lockers.tqh_first;
+    let wc = wait_channels_insert(&raw mut wait_channels, owner);
     log_debug(
         b"add wait channel %s\0" as *const u8 as *const ::core::ffi::c_char,
         (*wc).name,
@@ -235,9 +250,7 @@ unsafe extern "C" fn cmd_wait_for_remove(mut wc: *mut wait_channel) {
         b"remove wait channel %s\0" as *const u8 as *const ::core::ffi::c_char,
         (*wc).name,
     );
-    wait_channels_remove(&raw mut wait_channels, wc);
-    free((*wc).name as *mut ::core::ffi::c_void);
-    free(wc as *mut ::core::ffi::c_void);
+    drop(wait_channels_remove(&raw mut wait_channels, wc));
 }
 unsafe extern "C" fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
     if (*wc).locked != 0 || (*wc).woken != 0 {
@@ -250,9 +263,17 @@ unsafe extern "C" fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
         b"remove empty wait channel %s\0" as *const u8 as *const ::core::ffi::c_char,
         (*wc).name,
     );
-    wait_channels_remove(&raw mut wait_channels, wc);
-    free((*wc).name as *mut ::core::ffi::c_void);
-    free(wc as *mut ::core::ffi::c_void);
+    drop(wait_channels_remove(&raw mut wait_channels, wc));
+}
+
+fn wait_item_new(item: *mut cmdq_item) -> *mut wait_item {
+    Box::into_raw(Box::new(wait_item {
+        item,
+        entry: wait_item_entry {
+            tqe_next: ::core::ptr::null_mut(),
+            tqe_prev: ::core::ptr::null_mut(),
+        },
+    }))
 }
 unsafe extern "C" fn cmd_wait_for_item_client_name(
     mut item: *mut cmdq_item,
@@ -539,7 +560,7 @@ unsafe extern "C" fn cmd_wait_for_wake(
                     (*wc).waiters.tqh_last = (*wi).entry.tqe_prev;
                 }
                 *(*wi).entry.tqe_prev = (*wi).entry.tqe_next;
-                free(wi as *mut ::core::ffi::c_void);
+                drop(Box::from_raw(wi));
                 cmd_wait_for_remove_empty(wc);
                 return CMD_RETURN_NORMAL;
             }
@@ -560,7 +581,7 @@ unsafe extern "C" fn cmd_wait_for_wake(
                     (*wc).lockers.tqh_last = (*wi).entry.tqe_prev;
                 }
                 *(*wi).entry.tqe_prev = (*wi).entry.tqe_next;
-                free(wi as *mut ::core::ffi::c_void);
+                drop(Box::from_raw(wi));
                 cmd_wait_for_remove_empty(wc);
                 return CMD_RETURN_NORMAL;
             }
@@ -602,7 +623,7 @@ unsafe extern "C" fn cmd_wait_for_signal(
             (*wc).waiters.tqh_last = (*wi).entry.tqe_prev;
         }
         *(*wi).entry.tqe_prev = (*wi).entry.tqe_next;
-        free(wi as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(wi));
         wi = wi1;
     }
     cmd_wait_for_remove(wc);
@@ -639,8 +660,7 @@ unsafe extern "C" fn cmd_wait_for_wait(
         (*wc).name,
         c,
     );
-    wi = xcalloc(1 as size_t, ::core::mem::size_of::<wait_item>() as size_t) as *mut wait_item;
-    (*wi).item = item;
+    wi = wait_item_new(item);
     (*wi).entry.tqe_next = ::core::ptr::null_mut::<wait_item>();
     (*wi).entry.tqe_prev = (*wc).waiters.tqh_last;
     *(*wc).waiters.tqh_last = wi;
@@ -664,8 +684,7 @@ unsafe extern "C" fn cmd_wait_for_lock(
         wc = cmd_wait_for_add(name);
     }
     if (*wc).locked != 0 {
-        wi = xcalloc(1 as size_t, ::core::mem::size_of::<wait_item>() as size_t) as *mut wait_item;
-        (*wi).item = item;
+        wi = wait_item_new(item);
         (*wi).entry.tqe_next = ::core::ptr::null_mut::<wait_item>();
         (*wi).entry.tqe_prev = (*wc).lockers.tqh_last;
         *(*wc).lockers.tqh_last = wi;
@@ -698,7 +717,7 @@ unsafe extern "C" fn cmd_wait_for_unlock(
             (*wc).lockers.tqh_last = (*wi).entry.tqe_prev;
         }
         *(*wi).entry.tqe_prev = (*wi).entry.tqe_next;
-        free(wi as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(wi));
     } else {
         (*wc).locked = 0 as ::core::ffi::c_int;
         cmd_wait_for_remove(wc);
@@ -726,12 +745,12 @@ pub unsafe extern "C" fn cmd_wait_for_flush() {
         cmd_wait_for_event_free(wei);
         wei = wei1;
     }
-    let channels = (&raw const wait_channels)
-        .as_ref()
+    let channels = (&raw mut wait_channels)
+        .as_mut()
         .unwrap()
         .entries
-        .values()
-        .copied()
+        .values_mut()
+        .map(|owner| &raw mut owner.channel)
         .collect::<Vec<_>>();
     for wc in channels {
         wi = (*wc).waiters.tqh_first;
@@ -746,7 +765,7 @@ pub unsafe extern "C" fn cmd_wait_for_flush() {
                 (*wc).waiters.tqh_last = (*wi).entry.tqe_prev;
             }
             *(*wi).entry.tqe_prev = (*wi).entry.tqe_next;
-            free(wi as *mut ::core::ffi::c_void);
+            drop(Box::from_raw(wi));
             wi = wi1;
         }
         (*wc).woken = 1 as ::core::ffi::c_int;
@@ -762,7 +781,7 @@ pub unsafe extern "C" fn cmd_wait_for_flush() {
                 (*wc).lockers.tqh_last = (*wi).entry.tqe_prev;
             }
             *(*wi).entry.tqe_prev = (*wi).entry.tqe_next;
-            free(wi as *mut ::core::ffi::c_void);
+            drop(Box::from_raw(wi));
             wi = wi1;
         }
         (*wc).locked = 0 as ::core::ffi::c_int;
@@ -786,20 +805,27 @@ mod tests {
     use super::*;
     use std::ffi::CString;
 
-    fn test_channel(name: *const ::core::ffi::c_char) -> wait_channel {
-        wait_channel {
+    fn test_channel(name: &CStr) -> Box<WaitChannelOwner> {
+        let name = name.to_owned();
+        let mut owner = Box::new(WaitChannelOwner {
+            channel: wait_channel {
+                name: name.as_ptr(),
+                locked: 0,
+                woken: 0,
+                waiters: C2RustUnnamed_38 {
+                    tqh_first: ::core::ptr::null_mut(),
+                    tqh_last: ::core::ptr::null_mut(),
+                },
+                lockers: C2RustUnnamed_36 {
+                    tqh_first: ::core::ptr::null_mut(),
+                    tqh_last: ::core::ptr::null_mut(),
+                },
+            },
             name,
-            locked: 0,
-            woken: 0,
-            waiters: C2RustUnnamed_38 {
-                tqh_first: ::core::ptr::null_mut::<wait_item>(),
-                tqh_last: ::core::ptr::null_mut::<*mut wait_item>(),
-            },
-            lockers: C2RustUnnamed_36 {
-                tqh_first: ::core::ptr::null_mut::<wait_item>(),
-                tqh_last: ::core::ptr::null_mut::<*mut wait_item>(),
-            },
-        }
+        });
+        owner.channel.waiters.tqh_last = &raw mut owner.channel.waiters.tqh_first;
+        owner.channel.lockers.tqh_last = &raw mut owner.channel.lockers.tqh_first;
+        owner
     }
 
     #[test]
@@ -813,36 +839,27 @@ mod tests {
         let mut channels = wait_channels {
             entries: std::collections::BTreeMap::new(),
         };
-        let mut a = test_channel(name_a.as_ptr());
-        let mut a0 = test_channel(name_a0.as_ptr());
-        let mut a_high = test_channel(name_a_high.as_ptr());
-        let mut z = test_channel(name_z.as_ptr());
-        let mut duplicate_a = test_channel(name_a.as_ptr());
-
         unsafe {
-            assert!(wait_channels_insert(&raw mut channels, &raw mut a).is_null());
-            assert!(wait_channels_insert(&raw mut channels, &raw mut a0).is_null());
-            assert!(wait_channels_insert(&raw mut channels, &raw mut a_high).is_null());
-            assert!(wait_channels_insert(&raw mut channels, &raw mut z).is_null());
+            let a = wait_channels_insert(&raw mut channels, test_channel(&name_a));
+            let a0 = wait_channels_insert(&raw mut channels, test_channel(&name_a0));
+            let a_high = wait_channels_insert(&raw mut channels, test_channel(&name_a_high));
+            let z = wait_channels_insert(&raw mut channels, test_channel(&name_z));
+            assert!(!a.is_null() && !a0.is_null() && !a_high.is_null() && !z.is_null());
             assert_eq!(
-                wait_channels_insert(&raw mut channels, &raw mut duplicate_a),
-                &raw mut a
+                wait_channels_insert(&raw mut channels, test_channel(&name_a)),
+                a
             );
-            assert_eq!(
-                wait_channels_find(&raw mut channels, lookup_a.as_ptr()),
-                &raw mut a
-            );
+            assert_eq!(wait_channels_find(&raw mut channels, lookup_a.as_ptr()), a);
 
-            let ordered = channels.entries.values().copied().collect::<Vec<_>>();
-            assert_eq!(
-                ordered,
-                vec![&raw mut a, &raw mut a0, &raw mut a_high, &raw mut z]
-            );
+            let ordered = channels
+                .entries
+                .values_mut()
+                .map(|owner| &raw mut owner.channel)
+                .collect::<Vec<_>>();
+            assert_eq!(ordered, vec![a, a0, a_high, z]);
 
-            assert_eq!(
-                wait_channels_remove(&raw mut channels, &raw mut a_high),
-                &raw mut a_high
-            );
+            let mut removed = wait_channels_remove(&raw mut channels, a_high).unwrap();
+            assert_eq!(&raw mut removed.channel, a_high);
             assert!(wait_channels_find(&raw mut channels, name_a_high.as_ptr()).is_null());
         }
     }
