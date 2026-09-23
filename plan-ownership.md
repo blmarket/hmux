@@ -1788,6 +1788,21 @@ legacy callers safe.
   `window_copy_vadd_owner_cli_checks.py`, and `layout_cli_checks.py` passed.
   No sanitizer was run.
 
+### Increment 252 — pane input callback record owner (2026-09-23)
+
+- `window_pane_input_data` is now a private `Box` carried as callback data
+  through `file_read` and dropped by the terminal callback. This removes its
+  `xmalloc`/`free` pair and obsolete `Copy` implementation. The client
+  reference is taken before `file_read`; a null return leaves the callback
+  record's file field null for its scheduled completion, avoiding an access
+  after that callback may release the owner.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and
+  `scripts/pane_input_owner_cli_checks.py` passed. The CLI check matched the
+  pinned baseline for large stdin, later `display-message -I` input, a
+  control-client failed open, and pane cancellation after streamed input.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1798,9 +1813,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_pane_input_data` and a `format_draw` range allocation are under
-   isolated owner/caller audits. Choose the next small boundary that removes
-   a complete manual lifetime without changing ABI or reentrant behavior.
+1. A validated local `format_draw` range scratch migration is committed as
+   `63f6d58` in `/tmp/hmux2-format-draw-range-owner`; review and integrate it
+   as the next increment, then remove that temporary worktree. It removes an
+   internal intrusive list and its `xcalloc`/`free` lifecycle while keeping
+   the C-owned `style_range` output boundary. An attached-client status-line
+   check clicked two user ranges and matched the pinned baseline.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -1832,7 +1850,7 @@ libc allocation on success and leaves it with the caller on error, so a local
 `Vec` alone would add an allocation and copy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–251 above, with increment 228 explicitly retracted.
+recorded in increments 226–252 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.

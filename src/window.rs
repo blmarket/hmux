@@ -168,12 +168,10 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_36;
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct window_pane_input_data {
-    pub item: *mut cmdq_item,
-    pub wp: u_int,
-    pub file: *mut client_file,
+struct window_pane_input_data {
+    item: *mut cmdq_item,
+    wp: u_int,
+    file: *mut client_file,
 }
 
 pub const FIONREAD: ::core::ffi::c_int = 0x541b as ::core::ffi::c_int;
@@ -4476,7 +4474,9 @@ unsafe extern "C" fn window_pane_input_callback(
     mut buffer: *mut evbuffer,
     mut data: *mut ::core::ffi::c_void,
 ) {
-    let mut cdata: *mut window_pane_input_data = data as *mut window_pane_input_data;
+    // file_read retains this pointer until its terminal callback. Only that
+    // callback reconstructs the Box, after using its command and client links.
+    let cdata = data.cast::<window_pane_input_data>();
     let mut wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
     let mut buf: *mut u_char =
         evbuffer_pullup(buffer, -(1 as ::core::ffi::c_int) as ssize_t) as *mut u_char;
@@ -4491,7 +4491,7 @@ unsafe extern "C" fn window_pane_input_callback(
     } else if (*cdata).file.is_null() || closed != 0 || error != 0 as ::core::ffi::c_int {
         cmdq_continue((*cdata).item);
         server_client_unref(c);
-        free(cdata as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(cdata));
     } else {
         input_parse_buffer(wp, buf, len);
     }
@@ -4504,7 +4504,6 @@ pub unsafe extern "C" fn window_pane_start_input(
     mut cause: *mut *mut ::core::ffi::c_char,
 ) -> ::core::ffi::c_int {
     let mut c: *mut client = cmdq_get_client(item);
-    let mut cdata: *mut window_pane_input_data = ::core::ptr::null_mut::<window_pane_input_data>();
     if !(*wp).flags & PANE_EMPTY != 0 {
         *cause = xstrdup(b"pane is not empty\0" as *const u8 as *const ::core::ffi::c_char);
         return -(1 as ::core::ffi::c_int);
@@ -4515,11 +4514,13 @@ pub unsafe extern "C" fn window_pane_start_input(
     if !(*c).session.is_null() {
         return 1 as ::core::ffi::c_int;
     }
-    cdata = xmalloc(::core::mem::size_of::<window_pane_input_data>() as size_t)
-        as *mut window_pane_input_data;
-    (*cdata).item = item;
-    (*cdata).wp = (*wp).id;
-    (*cdata).file = file_read(
+    let cdata = Box::into_raw(Box::new(window_pane_input_data {
+        item,
+        wp: (*wp).id,
+        file: std::ptr::null_mut(),
+    }));
+    (*c).references += 1;
+    let file = file_read(
         c,
         b"-\0" as *const u8 as *const ::core::ffi::c_char,
         Some(
@@ -4535,7 +4536,11 @@ pub unsafe extern "C" fn window_pane_start_input(
         ),
         cdata as *mut ::core::ffi::c_void,
     );
-    (*c).references += 1;
+    // A failed open schedules a terminal callback and returns null. That
+    // callback uses the initial null file value to release this owner.
+    if !file.is_null() {
+        (*cdata).file = file;
+    }
     return 0 as ::core::ffi::c_int;
 }
 #[no_mangle]
