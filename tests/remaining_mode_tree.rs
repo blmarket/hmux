@@ -76,7 +76,9 @@ fn original_copies_match() {
             no_matches,
             search_dir,
             search_icase,
-            help
+            help,
+            build_identity,
+            has_build_identity
         ]
     );
     record!(
@@ -209,7 +211,7 @@ fn original_copies_match() {
             key,
             keystr,
             keylen,
-            tag,
+            identity,
             name,
             text,
             expanded,

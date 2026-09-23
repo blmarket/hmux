@@ -10,6 +10,50 @@ use super::screen::screen;
 use super::screen_write::screen_write_ctx;
 use super::sort::sort_criteria;
 
+/// Identity retained by a mode tree across rebuilds. Legacy numeric tags are
+/// kept for modes which have not yet migrated to semantic identities.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(C)]
+pub struct ModeTreeIdentity {
+    pub(crate) kind: u_int,
+    pub(crate) first: u_int,
+    pub(crate) second: u64,
+}
+
+impl ModeTreeIdentity {
+    pub const fn legacy(tag: u64) -> Self {
+        Self {
+            kind: 0,
+            first: 0,
+            second: tag,
+        }
+    }
+
+    pub const fn session(id: u_int) -> Self {
+        Self {
+            kind: 1,
+            first: id,
+            second: 0,
+        }
+    }
+
+    pub const fn winlink(session_id: u_int, index: ::core::ffi::c_int) -> Self {
+        Self {
+            kind: 2,
+            first: session_id,
+            second: index as u32 as u64,
+        }
+    }
+
+    pub const fn pane(id: u_int) -> Self {
+        Self {
+            kind: 3,
+            first: id,
+            second: 0,
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct mode_tree_data {
@@ -52,6 +96,8 @@ pub struct mode_tree_data {
     pub search_dir: mode_tree_search_dir,
     pub search_icase: ::core::ffi::c_int,
     pub help: ::core::ffi::c_int,
+    pub build_identity: ModeTreeIdentity,
+    pub has_build_identity: ::core::ffi::c_int,
 }
 
 pub type mode_tree_search_dir = ::core::ffi::c_uint;
@@ -93,7 +139,7 @@ pub struct mode_tree_item {
     pub key: key_code,
     pub keystr: *const ::core::ffi::c_char,
     pub keylen: size_t,
-    pub tag: uint64_t,
+    pub identity: ModeTreeIdentity,
     pub name: *const ::core::ffi::c_char,
     pub text: *const ::core::ffi::c_char,
     pub expanded: ::core::ffi::c_int,

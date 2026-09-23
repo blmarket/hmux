@@ -1692,6 +1692,24 @@ legacy callers safe.
   changed-file rustfmt, and `git diff --check` passed in the isolated
   worktree. No sanitizer run was performed.
 
+### Increment 93 — window-tree semantic selection keys (2026-09-22)
+
+- `window_tree` now uses typed `ModeTreeIdentity` values for session IDs, pane
+  IDs, and `(session ID, winlink index)` pairs. This removes its pointer-address
+  tags from item construction, requested selection, mouse/H navigation, and
+  expansion. `mode_tree` matches these keys when rebuilding saved tagged and
+  expanded state, and when restoring current selection or search results.
+  Legacy numeric-tag APIs remain for the other modes; no replacement object
+  registry or new object ID was introduced. Pane IDs remain global as before.
+- The Rust-owned mode-tree record layout and its model fixture changed only
+  for the typed identity and build-selection slot; no foreign callback
+  signature changed. A direct state test covers key-domain and winlink-pair
+  separation, saved tag/expansion restoration, and current selection.
+  Workspace tests, binary build, changed-file rustfmt, and `git diff --check`
+  passed in the isolated worktree. A detached `choose-tree` smoke reached
+  tree mode, but screen capture did not render and is not behavioral proof.
+  No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1718,17 +1736,17 @@ non-string value.
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-3. The remaining address-based registries, UI tags, and session/winlink graph
-   require separate ownership migrations after small leaf lifetimes. The
-   `window_tree` selection tags still use addresses. Their smallest sound
-   prerequisite is a typed semantic mode-tree key: session
-   IDs, pane IDs, and the `(session ID, winlink index)` identity cannot all
-   be represented losslessly in its current u64 tag without new bounds.
+3. The remaining address-based registries, `window_customize` and other UI
+   tags, and session/winlink graph require separate migrations. The new typed
+   mode-tree key is the prerequisite for replacing further pointer tags, but
+   each mode still needs its own semantic identity and alias audit.
 
-Current validation is recorded in increments 15–92. The remaining
+Current validation is recorded in increments 15–93. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–92 has its own local commit; none was pushed.
+Each of increments 15–93 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
 changed-file rustfmt and `git diff --check` also passed.
+After increments 91–93 were integrated, `cargo test --workspace --quiet`,
+`cargo build --bin hmux2 --quiet`, and `git diff --check` passed on main.
