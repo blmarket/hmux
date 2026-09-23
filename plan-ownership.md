@@ -2380,6 +2380,22 @@ legacy callers safe.
   `git diff --check`, and attached-client prompt history, incremental,
   completion, and paste checks passed. No sanitizer was run.
 
+### Increment 133 — prompt completion drawing cells (2026-09-22)
+
+- Moved the already byte-equivalent prompt decoder to `utf8_fromcstr_vec` in
+  `src/text/utf8.rs`, shared by prompt-buffer updates and completion drawing.
+  `prompt_draw_complete` now owns its temporary cells in a local `Vec`; the
+  size-zero sentinel still ends the display walk. Removed its
+  `utf8_fromcstr` allocation and manual `free`.
+- Each cell is copied into the drawing cell before the synchronous
+  `screen_write_cell` call. The completion display remains owned by the
+  prompt, and no pointer to the temporary cells escapes the draw call.
+- Isolated validation: the existing decoder equivalence test passed for
+  valid, invalid, truncated and first-NUL input; the binary build and
+  attached-client completion, mutable-prompt, and paste CLI checks passed.
+  `git diff --check` passed. Changed-file rustfmt reports two import layout
+  differences already present at `0c279d5`. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2390,11 +2406,15 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `prompt_draw` still creates a temporary `utf8_fromcstr(display)` array,
-   walks it synchronously for cell output, then manually frees it. Its new
-   local decoder helper from increment 132 can own that complete scratch
-   lifetime; audit draw callbacks and byte equivalence first.
-2. The only direct `xvasprintf` production caller outside the `xmalloc`
+1. `screen_write_text` still creates a temporary `utf8_fromcstr` array from
+   its local formatted `CString`. It walks the cells synchronously, then
+   manually frees the array on two return paths. The shared
+   `utf8_fromcstr_vec` can own that scratch lifetime.
+2. `cmd_send_keys_inject_string` still creates a temporary
+   `utf8_fromcstr` array for literal keys and manually frees it after the
+   key loop. The shared decoder can own those cells; audit callback
+   reentrancy and key ordering.
+3. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. The migrated `xvasprintf_cstring` callers have no identified
@@ -2403,7 +2423,7 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-3. `cmd_save_buffer_exec`'s `file_write` call copies its path
+4. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit

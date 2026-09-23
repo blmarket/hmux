@@ -1920,6 +1920,46 @@ pub unsafe extern "C" fn utf8_fromcstr(mut src: *const ::core::ffi::c_char) -> *
     (*dst.offset(n as isize)).size = 0 as u_char;
     return dst;
 }
+
+// Decode into Rust-owned cells while retaining the size-zero terminator used
+// by the existing UTF-8 routines that borrow this array as a C-style view.
+pub(crate) unsafe fn utf8_fromcstr_vec(mut src: *const ::core::ffi::c_char) -> Vec<utf8_data> {
+    let mut cells = Vec::new();
+    while *src != 0 {
+        let mut cell = utf8_data {
+            data: [0; 32],
+            have: 0,
+            size: 0,
+            width: 0,
+        };
+        let mut more = utf8_open(&raw mut cell, *src as u_char);
+        if more == UTF8_MORE {
+            loop {
+                src = src.offset(1);
+                if *src == 0 || more != UTF8_MORE {
+                    break;
+                }
+                more = utf8_append(&raw mut cell, *src as u_char);
+            }
+            if more == UTF8_DONE {
+                cells.push(cell);
+                continue;
+            }
+            src = src.offset(-(cell.have as isize));
+        }
+        utf8_set(&raw mut cell, *src as u_char);
+        cells.push(cell);
+        src = src.offset(1);
+    }
+    cells.push(utf8_data {
+        data: [0; 32],
+        have: 0,
+        size: 0,
+        width: 0,
+    });
+    cells
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn utf8_tocstr(mut src: *mut utf8_data) -> *mut ::core::ffi::c_char {
     let mut dst: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();

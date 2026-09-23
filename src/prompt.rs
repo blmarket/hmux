@@ -96,8 +96,8 @@ pub use crate::src::shared::window::{
 use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::tmux::{global_options, global_s_options};
 use crate::src::utf8::{
-    utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr, utf8_open, utf8_set, utf8_strlen,
-    utf8_strwidth, utf8_to_data, utf8_tocstr,
+    utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr, utf8_fromcstr_vec, utf8_open, utf8_set,
+    utf8_strlen, utf8_strwidth, utf8_to_data, utf8_tocstr,
 };
 use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
 use std::ffi::{CStr, CString};
@@ -308,48 +308,9 @@ pub unsafe extern "C" fn prompt_set_options(mut pd: *mut prompt_create_data, mut
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
     );
 }
-// Decode directly into Rust-owned cells. The last cell is always a size-zero
-// sentinel, so the existing UTF-8 routines can borrow buffer as a C-style view.
-unsafe fn prompt_buffer_from_cstr(mut src: *const ::core::ffi::c_char) -> Vec<utf8_data> {
-    let mut cells = Vec::new();
-    while *src != 0 {
-        let mut cell = utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        };
-        let mut more = utf8_open(&raw mut cell, *src as u_char);
-        if more == UTF8_MORE {
-            loop {
-                src = src.offset(1);
-                if *src == 0 || more != UTF8_MORE {
-                    break;
-                }
-                more = utf8_append(&raw mut cell, *src as u_char);
-            }
-            if more == UTF8_DONE {
-                cells.push(cell);
-                continue;
-            }
-            src = src.offset(-(cell.have as isize));
-        }
-        utf8_set(&raw mut cell, *src as u_char);
-        cells.push(cell);
-        src = src.offset(1);
-    }
-    cells.push(utf8_data {
-        data: [0; 32],
-        have: 0,
-        size: 0,
-        width: 0,
-    });
-    cells
-}
-
 unsafe fn prompt_set_buffer(pr: *mut prompt, src: *const ::core::ffi::c_char) {
     // Decode before dropping the old cells: src may point into the old prompt.
-    let cells = prompt_buffer_from_cstr(src);
+    let cells = utf8_fromcstr_vec(src);
     (*pr).buffer_storage = cells;
     (*pr).buffer = (*pr).buffer_storage.as_mut_ptr();
 }
@@ -386,7 +347,7 @@ mod prompt_buffer_tests {
         for &input in inputs {
             unsafe {
                 let old = utf8_fromcstr(input.as_ptr().cast());
-                let owned = prompt_buffer_from_cstr(input.as_ptr().cast());
+                let owned = utf8_fromcstr_vec(input.as_ptr().cast());
                 let len = utf8_strlen(old);
                 assert_eq!(owned.len(), len + 1, "input: {input:?}");
                 for (i, cell) in owned.iter().enumerate().take(len) {
@@ -671,10 +632,8 @@ unsafe extern "C" fn prompt_draw_complete(
         us: 0,
         link: 0,
     };
-    let mut ud: *mut utf8_data = ::core::ptr::null_mut::<utf8_data>();
     let mut avail: u_int = 0;
     let mut width: u_int = 0;
-    let mut i: u_int = 0;
     let display = (*pr)
         .completion
         .display
@@ -703,18 +662,15 @@ unsafe extern "C" fn prompt_draw_complete(
         0 as ::core::ffi::c_int,
     );
     width = 0 as u_int;
-    ud = utf8_fromcstr(display);
-    i = 0 as u_int;
-    while (*ud.offset(i as isize)).size as ::core::ffi::c_int != 0 as ::core::ffi::c_int {
-        if width.wrapping_add((*ud.offset(i as isize)).width as u_int) > avail {
+    let mut cells = utf8_fromcstr_vec(display);
+    for cell in &mut cells {
+        if cell.size == 0 || width.wrapping_add(cell.width as u_int) > avail {
             break;
         }
-        utf8_copy(&raw mut gc.data, ud.offset(i as isize) as *mut utf8_data);
+        utf8_copy(&raw mut gc.data, cell);
         screen_write_cell(ctx, &raw mut gc);
-        width = width.wrapping_add((*ud.offset(i as isize)).width as u_int);
-        i = i.wrapping_add(1);
+        width = width.wrapping_add(cell.width as u_int);
     }
-    free(ud as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn prompt_format_tree(mut pr: *mut prompt) -> *mut format_tree {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
