@@ -3829,14 +3829,22 @@ pub unsafe extern "C" fn colour_palette_clear(mut p: *mut colour_palette) {
     if !p.is_null() {
         (*p).fg = 8 as ::core::ffi::c_int;
         (*p).bg = 8 as ::core::ffi::c_int;
-        free((*p).palette as *mut ::core::ffi::c_void);
+        if !(*p).palette.is_null() {
+            drop(Box::from_raw(
+                (*p).palette.cast::<[::core::ffi::c_int; 256]>(),
+            ));
+        }
         (*p).palette = ::core::ptr::null_mut::<::core::ffi::c_int>();
     }
 }
 #[no_mangle]
 pub unsafe extern "C" fn colour_palette_free(mut p: *mut colour_palette) {
     if !p.is_null() {
-        free((*p).palette as *mut ::core::ffi::c_void);
+        if !(*p).palette.is_null() {
+            drop(Box::from_raw(
+                (*p).palette.cast::<[::core::ffi::c_int; 256]>(),
+            ));
+        }
         (*p).palette = ::core::ptr::null_mut::<::core::ffi::c_int>();
         free((*p).default_palette as *mut ::core::ffi::c_void);
         (*p).default_palette = ::core::ptr::null_mut::<::core::ffi::c_int>();
@@ -3873,7 +3881,6 @@ pub unsafe extern "C" fn colour_palette_set(
     mut n: ::core::ffi::c_int,
     mut c: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut i: u_int = 0;
     if p.is_null() || n < 0 as ::core::ffi::c_int || n > 255 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -3881,15 +3888,7 @@ pub unsafe extern "C" fn colour_palette_set(
         return 0 as ::core::ffi::c_int;
     }
     if (*p).palette.is_null() {
-        (*p).palette = xcalloc(
-            256 as size_t,
-            ::core::mem::size_of::<::core::ffi::c_int>() as size_t,
-        ) as *mut ::core::ffi::c_int;
-        i = 0 as u_int;
-        while i < 256 as u_int {
-            *(*p).palette.offset(i as isize) = -(1 as ::core::ffi::c_int);
-            i = i.wrapping_add(1);
-        }
+        (*p).palette = Box::into_raw(Box::new([-(1 as ::core::ffi::c_int); 256])).cast();
     }
     *(*p).palette.offset(n as isize) = c;
     return 1 as ::core::ffi::c_int;

@@ -2731,6 +2731,20 @@ legacy callers safe.
   changed-code rustfmt, and diff checks passed. `src/control.rs` retains only
   its pre-existing import-layout rustfmt differences. No sanitizer was run.
 
+### Increment 319 — boxed local colour palette array (2026-09-23)
+
+- `colour_palette_set` now allocates the fixed 256-entry local palette as a
+  Box initialized to `-1`, removing its `xcalloc` and initialization loop.
+  `colour_palette_clear` and `colour_palette_free` consume that same boxed
+  array and clear the compatibility pointer. Input, screen, and tty code
+  borrow the array through its containing pane/popup palette; the separate
+  default palette remains C-allocated in this increment.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build, OSC 4
+  set/query and OSC 104 clear CLI checks on both candidate and pinned
+  baseline, and diff checks passed. Changed code follows rustfmt;
+  `src/style/colour.rs` retains its pre-existing import-order difference.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2741,7 +2755,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_load_buffer_data` in `src/cmd/entries/load_buffer.rs` has one
+1. `colour_palette.default_palette` in `src/style/colour.rs` is the second
+   fixed 256-entry array. Its `colour_palette_from_option` constructor and
+   the option-empty/free paths form a separate Box boundary; validate
+   `pane-colours` lookup and removal through a live pane. `cmd_load_buffer_data`
+   in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`
    can skip that callback when a nonattached source client dies before the
    read closes. A complete owner needs a cancellation cleanup callback in

@@ -10,6 +10,7 @@ pub const THEME_UNKNOWN: client_theme = 0;
 pub struct colour_palette {
     pub fg: ::core::ffi::c_int,
     pub bg: ::core::ffi::c_int,
+    /// Box-owned fixed array, borrowed by palette lookup until clear/free.
     pub palette: *mut ::core::ffi::c_int,
     pub default_palette: *mut ::core::ffi::c_int,
 }
