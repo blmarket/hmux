@@ -1710,6 +1710,18 @@ legacy callers safe.
   tree mode, but screen capture did not render and is not behavioral proof.
   No sanitizer run was performed.
 
+### Increment 94 — choose-buffer preview line scratch (2026-09-22)
+
+- `window_buffer_draw` now owns its per-line `utf8_strvis` output in a local
+  `Vec<u8>`, resized to the same `4 * (line length + 1)` bound. This removes
+  the loop's `xreallocarray` and final `free`. `utf8_strvis` and
+  `screen_write_nputs` borrow its pointer only during each synchronous call;
+  line order and first-NUL display behavior are unchanged.
+- An attached-terminal test renders a long buffer line followed by a short
+  line with an escaped tab. The focused test, workspace suite, binary build,
+  changed-file rustfmt, and `git diff --check` passed in the isolated
+  worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1741,9 +1753,9 @@ non-string value.
    mode-tree key is the prerequisite for replacing further pointer tags, but
    each mode still needs its own semantic identity and alias audit.
 
-Current validation is recorded in increments 15–93. The remaining
+Current validation is recorded in increments 15–94. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–93 has its own local commit; none was pushed.
+Each of increments 15–94 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

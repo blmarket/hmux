@@ -383,7 +383,7 @@ unsafe extern "C" fn window_buffer_draw(
     let mut pdata: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut start: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut buf = Vec::<u8>::new();
     let mut psize: size_t = 0;
     let mut i: u_int = 0;
     let mut cx: u_int = (*(*ctx).s).cx;
@@ -400,18 +400,15 @@ unsafe extern "C" fn window_buffer_draw(
         while end != pdata.offset(psize as isize) && *end as ::core::ffi::c_int != '\n' as i32 {
             end = end.offset(1);
         }
-        buf = xreallocarray(
-            buf as *mut ::core::ffi::c_void,
-            4 as size_t,
-            (end.offset_from(start) as ::core::ffi::c_long + 1 as ::core::ffi::c_long) as size_t,
-        ) as *mut ::core::ffi::c_char;
+        let line_len = end.offset_from(start) as size_t;
+        buf.resize(4 * (line_len + 1), 0);
         utf8_strvis(
-            buf,
+            buf.as_mut_ptr().cast(),
             start,
-            end.offset_from(start) as ::core::ffi::c_long as size_t,
+            line_len,
             VIS_OCTAL | VIS_CSTYLE | VIS_TAB,
         );
-        if *buf as ::core::ffi::c_int != '\0' as i32 {
+        if buf[0] != 0 {
             screen_write_cursormove(
                 ctx,
                 cx as ::core::ffi::c_int,
@@ -423,7 +420,7 @@ unsafe extern "C" fn window_buffer_draw(
                 sx as ssize_t,
                 &raw const grid_default_cell,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                buf,
+                buf.as_ptr().cast::<::core::ffi::c_char>(),
             );
         }
         if end == pdata.offset(psize as isize) {
@@ -432,7 +429,6 @@ unsafe extern "C" fn window_buffer_draw(
         end = end.offset(1);
         i = i.wrapping_add(1);
     }
-    free(buf as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_buffer_find(
     mut data: *const ::core::ffi::c_void,
