@@ -1059,6 +1059,20 @@ legacy callers safe.
   binary build, changed-file rustfmt, and `git diff --check` passed in the
   isolated worktree. No live terminal or sanitizer run was performed.
 
+### Increment 50 — startup path environment name (2026-09-22)
+
+- `expand_path` now owns the temporary environment variable name as a
+  byte-preserving `CString` in both the variable-only and slash-suffixed
+  branches. This removes its `xstrdup`/`xstrndup` and `free` pair.
+  `environ_find` reads the name synchronously without retaining it; the
+  expanded path still has the existing C-owned return contract.
+- A live-server test checks a non-UTF-8 `TMUX_TMPDIR` value in the socket
+  path, `$XDG_CONFIG_HOME/tmux/tmux.conf` loading, and unset-variable
+  fallback to `/tmp`. Focused and workspace tests, binary build, rustfmt,
+  and `git diff --check` passed in the isolated worktree. Startup uses fixed
+  variable-name literals, so the live test does not supply a non-UTF-8 name.
+  No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1073,11 +1087,11 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect environment variable names in path expansion and `#()` command
-   names in format expansion for synchronous borrow-only use.
+2. Inspect `#()` command names in format expansion for synchronous
+   borrow-only use.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–49. The remaining
+Current validation is recorded in increments 15–50. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–49 has its own local commit; none was pushed.
+Each of increments 15–50 has its own local commit; none was pushed.

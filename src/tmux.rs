@@ -54,7 +54,8 @@ pub use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 pub use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::tty_features::tty_parse_features;
 use crate::src::utf8::{utf8_isvalid, utf8_stravis};
-use crate::src::xmalloc::{xasprintf, xreallocarray, xsnprintf, xstrdup, xstrndup};
+use crate::src::xmalloc::{xasprintf, xreallocarray, xsnprintf, xstrdup};
+use std::ffi::{CStr, CString};
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const _NL_NUM: C2RustUnnamed = 786449;
@@ -535,7 +536,6 @@ unsafe extern "C" fn expand_path(
     mut home: *const ::core::ffi::c_char,
 ) -> *mut ::core::ffi::c_char {
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut name: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut value: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     if strncmp(
@@ -557,16 +557,14 @@ unsafe extern "C" fn expand_path(
     }
     if *path as ::core::ffi::c_int == '$' as i32 {
         end = strchr(path, '/' as i32);
-        if end.is_null() {
-            name = xstrdup(path.offset(1 as ::core::ffi::c_int as isize));
+        let name = if end.is_null() {
+            CStr::from_ptr(path.add(1)).to_owned()
         } else {
-            name = xstrndup(
-                path.offset(1 as ::core::ffi::c_int as isize),
-                (end.offset_from(path) as ::core::ffi::c_long - 1 as ::core::ffi::c_long) as size_t,
-            );
-        }
-        value = environ_find(global_environ, name);
-        free(name as *mut ::core::ffi::c_void);
+            let length = end.offset_from(path) as usize - 1;
+            let bytes = std::slice::from_raw_parts(path.add(1).cast::<u8>(), length);
+            CString::new(bytes).expect("variable name comes from a C string")
+        };
+        value = environ_find(global_environ, name.as_ptr());
         if value.is_null() {
             return ::core::ptr::null_mut::<::core::ffi::c_char>();
         }
