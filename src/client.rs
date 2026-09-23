@@ -117,7 +117,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::tmux::{
     find_cwd, find_home, global_environ, global_options, global_s_options, global_w_options,
-    ptm_fd, setblocking, shell_argv0, shell_command, socket_path,
+    ptm_fd, setblocking, shell_argv0_cstring, shell_command, socket_path,
 };
 use crate::src::tty_term::tty_term_read_list;
 use crate::src::xmalloc::{xmalloc, xsnprintf, xstrdup};
@@ -768,16 +768,12 @@ unsafe extern "C" fn client_exec(
     mut shell: *const ::core::ffi::c_char,
     mut shellcmd: *const ::core::ffi::c_char,
 ) -> ! {
-    let mut argv0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     log_debug(
         b"shell %s, command %s\0" as *const u8 as *const ::core::ffi::c_char,
         shell,
         shellcmd,
     );
-    argv0 = shell_argv0(
-        shell,
-        (client_flags & CLIENT_LOGIN as uint64_t != 0) as ::core::ffi::c_int,
-    );
+    let argv0 = shell_argv0_cstring(shell, client_flags & CLIENT_LOGIN as uint64_t != 0);
     setenv(
         b"SHELL\0" as *const u8 as *const ::core::ffi::c_char,
         shell,
@@ -790,7 +786,7 @@ unsafe extern "C" fn client_exec(
     closefrom(STDERR_FILENO + 1 as ::core::ffi::c_int);
     execl(
         shell,
-        argv0,
+        argv0.as_ptr(),
         b"-c\0" as *const u8 as *const ::core::ffi::c_char,
         shellcmd,
         NULL as *mut ::core::ffi::c_char,

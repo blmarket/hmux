@@ -88,7 +88,9 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::tmux::{checkshell, find_home, global_s_options, ptm_fd, setblocking, shell_argv0};
+use crate::src::tmux::{
+    checkshell, find_home, global_s_options, ptm_fd, setblocking, shell_argv0_cstring,
+};
 use crate::src::xmalloc::{xcalloc, xstrdup};
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
@@ -150,7 +152,6 @@ pub unsafe extern "C" fn job_run(
     let mut argvp: *mut *mut ::core::ffi::c_char =
         ::core::ptr::null_mut::<*mut ::core::ffi::c_char>();
     let mut tty: [::core::ffi::c_char; 32] = [0; 32];
-    let mut argv0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut oo: *mut options = ::core::ptr::null_mut::<options>();
     // This environment is forked for the job and never escapes `job_run`.
     // Keep ownership in a Rust local rather than putting a Drop-bearing value
@@ -183,7 +184,7 @@ pub unsafe extern "C" fn job_run(
             shell = _PATH_BSHELL.as_ptr();
         }
     }
-    argv0 = shell_argv0(shell, 0 as ::core::ffi::c_int);
+    let argv0 = shell_argv0_cstring(shell, false);
     sigfillset(&raw mut set);
     sigprocmask(SIG_BLOCK, &raw mut set, &raw mut oldset);
     if flags & JOB_PTY != 0 {
@@ -351,7 +352,7 @@ pub unsafe extern "C" fn job_run(
                         }
                         execl(
                             shell,
-                            argv0,
+                            argv0.as_ptr(),
                             b"-c\0" as *const u8 as *const ::core::ffi::c_char,
                             cmd,
                             NULL as *mut ::core::ffi::c_char,
@@ -373,7 +374,7 @@ pub unsafe extern "C" fn job_run(
                         ::core::ptr::null_mut::<sigset_t>(),
                     );
                     drop(env_owner.take());
-                    free(argv0 as *mut ::core::ffi::c_void);
+                    drop(argv0);
                     job = xcalloc(1 as size_t, ::core::mem::size_of::<job>() as size_t) as *mut job;
                     (*job).state = JOB_RUNNING;
                     (*job).flags = flags;
@@ -455,7 +456,7 @@ pub unsafe extern "C" fn job_run(
         &raw mut oldset,
         ::core::ptr::null_mut::<sigset_t>(),
     );
-    free(argv0 as *mut ::core::ffi::c_void);
+    drop(argv0);
     return ::core::ptr::null_mut::<job>();
 }
 #[no_mangle]

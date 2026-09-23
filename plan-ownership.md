@@ -1002,6 +1002,21 @@ legacy callers safe.
   non-UTF-8 format bytes, and attached customize detail with the pinned
   baseline. No sanitizer was run.
 
+### Increment 198 — shell argv0 owner for Rust callers (2026-09-23)
+
+- `shell_argv0_cstring` now builds the basename and optional login prefix
+  byte-preservingly. `job_run` owns it through its fork: the parent drops it
+  at the former success/failure frees, while the child passes a borrowed
+  pointer to `execl` before exec/exit. `client_exec` likewise borrows it
+  through `execl`. Removed both `xasprintf` branches and both `job_run`
+  frees. The exported `shell_argv0` C wrapper still returns a libc-freeable
+  duplicate.
+- Library/binary build, three focused job/client/shell tests, changed-file
+  rustfmt, Python syntax check, and `git diff --check` passed. The new
+  private-server CLI check matched `run-shell`'s job argv0 and client `-c`
+  with and without login mode, using a UTF-8 shell basename, against the
+  pinned baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1012,10 +1027,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `shell_argv0` has two in-repo callers. `job_run` frees the returned
-   string on parent success/failure paths; `client_exec` passes it to `execl`
-   and does not return. Audit the fork/exec lifetime and migrate the internal
-   callers to a Rust owner while retaining the exported C-owned wrapper.
+1. `cmd_capture_pane_cell` has one synchronous caller that appends its
+   formatted cell line and frees it. Migrate that private helper's returned
+   scratch string to `CString`, including its `utf8_stravis` source buffer,
+   while preserving complete grid-cell output against the baseline.
    `file_get_path` remains deferred: `client_file.path` is a public `char *`
    field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in
@@ -1045,9 +1060,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–195. The remaining
+Current validation is recorded in increments 15–198. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–195 has its own local commit; none was pushed.
+Each of increments 15–198 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -1276,3 +1291,9 @@ checks, plus existing environment-prompt, set-option-prompt, and socket-label
 checks, changed-file rustfmt, Python syntax checks, and `git diff --check`
 passed on main. All six CLI checks also passed with the pinned baseline
 binary. No combined sanitizer was run.
+After increments 196–198 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, lockfile-owner, hook-monitor-string, and shell-argv0-owner CLI checks,
+changed-file rustfmt, Python syntax checks, and `git diff --check` passed on
+main. All three CLI checks also passed with the pinned baseline binary. No
+combined sanitizer was run.

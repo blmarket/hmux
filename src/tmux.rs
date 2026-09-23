@@ -734,34 +734,28 @@ unsafe extern "C" fn make_label(
 }
 #[no_mangle]
 pub unsafe extern "C" fn shell_argv0(
-    mut shell: *const ::core::ffi::c_char,
-    mut is_login: ::core::ffi::c_int,
+    shell: *const ::core::ffi::c_char,
+    is_login: ::core::ffi::c_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut slash: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut argv0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    slash = strrchr(shell, '/' as i32);
-    if !slash.is_null()
-        && *slash.offset(1 as ::core::ffi::c_int as isize) as ::core::ffi::c_int != '\0' as i32
-    {
-        name = slash.offset(1 as ::core::ffi::c_int as isize);
-    } else {
-        name = shell;
+    let argv0 = shell_argv0_cstring(shell, is_login != 0);
+    xstrdup(argv0.as_ptr())
+}
+
+pub(crate) unsafe fn shell_argv0_cstring(
+    shell: *const ::core::ffi::c_char,
+    is_login: bool,
+) -> CString {
+    let shell = CStr::from_ptr(shell).to_bytes();
+    let name = match shell.iter().rposition(|&byte| byte == b'/') {
+        Some(slash) if slash + 1 < shell.len() => &shell[slash + 1..],
+        _ => shell,
+    };
+    let mut argv0 = Vec::with_capacity(name.len() + usize::from(is_login));
+    if is_login {
+        argv0.push(b'-');
     }
-    if is_login != 0 {
-        xasprintf(
-            &raw mut argv0,
-            b"-%s\0" as *const u8 as *const ::core::ffi::c_char,
-            name,
-        );
-    } else {
-        xasprintf(
-            &raw mut argv0,
-            b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-            name,
-        );
-    }
-    return argv0;
+    argv0.extend_from_slice(name);
+    CString::new(argv0).expect("shell path contains no NUL")
 }
 #[no_mangle]
 pub unsafe extern "C" fn setblocking(mut fd: ::core::ffi::c_int, mut state: ::core::ffi::c_int) {
