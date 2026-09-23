@@ -92,9 +92,7 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::tmux::global_environ;
-use crate::src::xmalloc::{
-    xasprintf, xcalloc, xmalloc, xrecallocarray, xstrdup, xvasprintf_cstring,
-};
+use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xstrdup, xvasprintf_cstring};
 use libc;
 use std::ffi::{CStr, CString};
 
@@ -1432,7 +1430,7 @@ unsafe extern "C" fn cmd_parse_build_command(
     let mut arg: *mut cmd_parse_argument = ::core::ptr::null_mut::<cmd_parse_argument>();
     let mut add: *mut cmd = ::core::ptr::null_mut::<cmd>();
     let mut cause: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut values: *mut args_value = ::core::ptr::null_mut::<args_value>();
+    let mut values = Vec::<args_value>::new();
     let mut count: u_int = 0 as u_int;
     let mut idx: u_int = 0;
     memset(
@@ -1449,16 +1447,12 @@ unsafe extern "C" fn cmd_parse_build_command(
             current_block = 5143058163439228106;
             break;
         }
-        values = xrecallocarray(
-            values as *mut ::core::ffi::c_void,
-            count as size_t,
-            count.wrapping_add(1 as u_int) as size_t,
-            ::core::mem::size_of::<args_value>() as size_t,
-        ) as *mut args_value;
+        values.push(::core::mem::zeroed::<args_value>());
+        let value = values.as_mut_ptr().add(count as usize);
         match (*arg).type_0 as ::core::ffi::c_uint {
             0 => {
-                (*values.offset(count as isize)).type_0 = ARGS_STRING;
-                let ref mut fresh0 = (*values.offset(count as isize)).c2rust_unnamed.string;
+                (*value).type_0 = ARGS_STRING;
+                let ref mut fresh0 = (*value).c2rust_unnamed.string;
                 *fresh0 = xstrdup((*arg).string);
             }
             1 => {
@@ -1469,16 +1463,15 @@ unsafe extern "C" fn cmd_parse_build_command(
                     current_block = 16207960823932980356;
                     break;
                 }
-                (*values.offset(count as isize)).type_0 = ARGS_COMMANDS;
-                let ref mut fresh1 = (*values.offset(count as isize)).c2rust_unnamed.cmdlist;
+                (*value).type_0 = ARGS_COMMANDS;
+                let ref mut fresh1 = (*value).c2rust_unnamed.cmdlist;
                 *fresh1 = (*pr).cmdlist as *mut cmd_list;
             }
             2 => {
-                (*values.offset(count as isize)).type_0 = ARGS_COMMANDS;
-                let ref mut fresh2 = (*values.offset(count as isize)).c2rust_unnamed.cmdlist;
+                (*value).type_0 = ARGS_COMMANDS;
+                let ref mut fresh2 = (*value).c2rust_unnamed.cmdlist;
                 *fresh2 = (*arg).cmdlist as *mut cmd_list;
-                let ref mut fresh3 =
-                    (*(*values.offset(count as isize)).c2rust_unnamed.cmdlist).references;
+                let ref mut fresh3 = (*(*value).c2rust_unnamed.cmdlist).references;
                 *fresh3 += 1;
             }
             _ => {}
@@ -1489,7 +1482,11 @@ unsafe extern "C" fn cmd_parse_build_command(
     match current_block {
         5143058163439228106 => {
             add = cmd_parse(
-                values,
+                if values.is_empty() {
+                    ::core::ptr::null_mut::<args_value>()
+                } else {
+                    values.as_mut_ptr()
+                },
                 count,
                 (*pi).file,
                 (*pi).line,
@@ -1510,10 +1507,9 @@ unsafe extern "C" fn cmd_parse_build_command(
     }
     idx = 0 as u_int;
     while idx < count {
-        args_free_value(values.offset(idx as isize) as *mut args_value);
+        args_free_value(values.as_mut_ptr().add(idx as usize));
         idx = idx.wrapping_add(1);
     }
-    free(values as *mut ::core::ffi::c_void);
 }
 static mut yyr2: [yytype_int8; 48] = [
     0 as ::core::ffi::c_int as yytype_int8,

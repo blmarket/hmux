@@ -3208,6 +3208,18 @@ legacy callers safe.
   audited; they must follow its Box-allocated record contract. No sanitizer
   was run.
 
+### Increment 352 — parser temporary argument vector (2026-09-23)
+
+- `cmd_parse_build_command` now holds its temporary `args_value` array in a
+  local `Vec`. It still builds each zeroed value at the next slot, passes the
+  contiguous borrowed pointer to `cmd_parse`, and releases each completed
+  string or command-list payload before the Vec drops. The empty call still
+  passes null. Removed the local `xrecallocarray` growth and final libc free;
+  a failed nested parse leaves only a zeroed, payload-free trailing slot.
+- Nested parser print, lexer error/recovery, and command-list print CLI checks
+  matched the pinned baseline. Full workspace tests, binary build,
+  changed-file rustfmt, and diff checks passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3218,9 +3230,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. Positional `args_value` elements remain in movable C arrays allocated by
-   `args_parse`, `args_copy`, and `args_from_vector`. Their array allocation,
-   growth, payload cleanup, and callers need one collection-owner migration.
+1. Positional `args_value` elements held by `ArgsOwner` remain in movable C
+   arrays grown by `args_parse` and copied by `args_copy`. Their allocation,
+   growth, payload cleanup, and raw compatibility view need one
+   collection-owner migration. The separate exported `args_from_vector`
+   result still crosses a C-owned array boundary; both client callers need
+   coordinated cleanup, including the parse-error branch in
+   `server_client_dispatch_command` that currently leaks the temporary array.
    Disconnected file-reading clients can leave a waiting command-queue item
    even after callback data is released; that needs a separate queue
    cancellation design.
