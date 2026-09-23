@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{environ, fnmatch, free, getpid, setenv, vasprintf};
+use crate::src::ffi::libc::{environ, fnmatch, free, getpid, setenv};
 use crate::src::log::log_debug;
 use crate::src::options::{
     options_array_first, options_array_item_value, options_array_next, options_get,
@@ -574,22 +574,20 @@ pub unsafe extern "C" fn environ_log(
 ) {
     let mut envent: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     let mut ap: ::core::ffi::VaList;
-    let mut prefix: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     ap = args.clone();
-    vasprintf(&raw mut prefix, fmt, ap);
+    let prefix = xvasprintf_cstring(fmt, ap);
     envent = environ_first(env);
     while !envent.is_null() {
         if !(*envent).value.is_null() && *(*envent).name as ::core::ffi::c_int != '\0' as i32 {
             log_debug(
                 b"%s%s=%s\0" as *const u8 as *const ::core::ffi::c_char,
-                prefix,
+                prefix.as_ptr(),
                 (*envent).name,
                 (*envent).value,
             );
         }
         envent = environ_next(envent);
     }
-    free(prefix as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn environ_for_session(

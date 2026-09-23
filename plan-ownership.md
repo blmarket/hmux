@@ -2288,6 +2288,20 @@ legacy callers safe.
   empty, and cancelled edits, including temporary-file cleanup. Failed editor
   startup was reviewed but not forced by this E2E. No sanitizer was run.
 
+### Increment 288 — spawn environment log prefix (2026-09-23)
+
+- `environ_log` now holds its formatted prefix as a local `CString` through
+  the synchronous environment log loop. It reuses `xvasprintf_cstring`,
+  removing the direct `vasprintf` allocation, raw pointer, and matching free.
+  The only production caller supplies a fixed `"%s: environment "` format and
+  `"spawn_pane"` argument, so no supported input can insert a middle NUL in
+  this prefix. The exported variadic function signature is unchanged.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, Python syntax, and diff checks passed. A private `-vv`
+  server E2E compared normalized environment log lines with the pinned
+  baseline for ASCII and non-UTF-8 values (`OWNER_RAW=owner-\\377`). No
+  sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2298,13 +2312,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `environ_log` in `src/environ.rs` has one local `vasprintf` prefix used
-   synchronously in logging and then freed. Its only production caller passes
-   a fixed format and source name; the module already imports
-   `xvasprintf_cstring`. `window_copy_mode_data.backing` is a larger screen
-   owner whose borrowed pointer is invalidated on refresh. The redraw scene's
-   line array has self-referential intrusive list tails and needs its own
-   alias audit.
+1. `log_vwrite` in `src/log.rs` still formats a local C-owned message with
+   `vasprintf`, passes its first-NUL view synchronously to `stravis`, and frees
+   it on success and encoding failure. A local `CString` can remove that pair
+   after auditing `%c` inputs and preserving its failure behavior. The
+   `window_copy_mode_data.backing` screen is a larger owner whose borrowed
+   pointer is invalidated on refresh. The redraw scene's line array has
+   self-referential intrusive list tails and needs its own alias audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.
