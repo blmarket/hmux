@@ -230,14 +230,6 @@ pub struct cmdq_item_list {
 #[repr(C)]
 pub struct wait_item {
     pub item: *mut cmdq_item,
-    pub entry: wait_item_entry,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct wait_item_entry {
-    pub tqe_next: *mut wait_item,
-    pub tqe_prev: *mut *mut wait_item,
 }
 
 #[derive(Copy, Clone)]

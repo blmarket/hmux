@@ -3991,12 +3991,7 @@ fn original_copies_match() {
     record!(
         "src/cmd_wait_for.rs::wait_item",
         hmux2::src::cmd_wait_for::wait_item,
-        [item, entry]
-    );
-    record!(
-        "src/cmd_wait_for.rs::C2RustUnnamed_37",
-        hmux2::src::cmd_wait_for::wait_item_entry,
-        [tqe_next, tqe_prev]
+        [item]
     );
     let actual = records.join("\n") + "\n";
     assert_eq!(actual, include_str!("fixtures/model-command.txt"));
