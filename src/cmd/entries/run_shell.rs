@@ -8,7 +8,7 @@ use crate::src::cmd_queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
     cmdq_get_target, cmdq_get_target_client, cmdq_insert_after, cmdq_print,
 };
-use crate::src::ffi::libc::{__ctype_toupper_loc, free, memcpy, strtod};
+use crate::src::ffi::libc::{__ctype_toupper_loc, free, strtod};
 use crate::src::format::{format_add, format_create_from_target, format_expand, format_free};
 use crate::src::job::{job_get_data, job_get_event, job_get_status, job_run};
 use crate::src::reactor::{
@@ -87,7 +87,7 @@ pub use crate::src::shared::window::{
 use crate::src::status::status_message_set;
 use crate::src::window::{window_pane_find_by_id, window_pane_set_mode};
 use crate::src::window_copy::{window_copy_add, window_view_mode};
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xsnprintf, xstrdup};
+use crate::src::xmalloc::{xasprintf, xcalloc, xsnprintf, xstrdup};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -502,16 +502,10 @@ unsafe extern "C" fn cmd_run_shell_callback(mut job: *mut job) {
     }
     size = evbuffer_get_length((*event).input);
     if size != 0 as size_t {
-        line = xmalloc(size.wrapping_add(1 as size_t)) as *mut ::core::ffi::c_char;
-        memcpy(
-            line as *mut ::core::ffi::c_void,
-            evbuffer_pullup((*event).input, -(1 as ::core::ffi::c_int) as ssize_t)
-                as *const ::core::ffi::c_void,
-            size,
-        );
-        *line.offset(size as isize) = '\0' as i32 as ::core::ffi::c_char;
-        cmd_run_shell_print(job, line);
-        free(line as *mut ::core::ffi::c_void);
+        let input = evbuffer_pullup((*event).input, -(1 as ::core::ffi::c_int) as ssize_t);
+        let mut partial_line = ::core::slice::from_raw_parts(input as *const u8, size).to_vec();
+        partial_line.push(0);
+        cmd_run_shell_print(job, partial_line.as_ptr().cast());
     }
     status = job_get_status(job);
     if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
