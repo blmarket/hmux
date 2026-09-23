@@ -828,6 +828,18 @@ legacy callers safe.
   its description, and passed for migrated and pinned baseline binaries.
   A running user systemd manager is required; no sanitizer was run.
 
+### Increment 185 — customize new-key prompt scratch (2026-09-22)
+
+- `window_customize_add_key` now owns the `New key in ...` prompt with a
+  byte-preserving local `CString` through `mode_tree_set_prompt`. Removed its
+  `xasprintf` allocation and matching `free`. `prompt_create` copies the
+  prompt synchronously, so the raw pointer does not escape the call.
+- In the isolated branch, library/binary build, the focused
+  `key_bindings_storage` test, changed-file rustfmt, and `git diff --check`
+  passed. The new attached-client customize-mode CLI check displayed a prompt
+  for a key table containing UTF-8 `é`, added an F11 binding, and matched
+  `list-keys` output with the pinned baseline. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -839,9 +851,9 @@ passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
 1. Customize-mode prompt labels still have local `xasprintf`/free pairs
-   around `mode_tree_set_prompt`. The environment-change and new-key prompts
-   are small independent owner candidates once their callback copies and
-   byte formatting are checked.
+   around `mode_tree_set_prompt`. The environment-change prompt is a small
+   independent owner candidate once its callback copy and byte formatting
+   are checked.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual

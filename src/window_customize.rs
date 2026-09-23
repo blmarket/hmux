@@ -4550,12 +4550,10 @@ unsafe extern "C" fn window_customize_add_key(
 ) {
     let mut new_item: *mut window_customize_itemdata =
         ::core::ptr::null_mut::<window_customize_itemdata>();
-    let mut prompt: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    xasprintf(
-        &raw mut prompt,
-        b"New key in %s: \0" as *const u8 as *const ::core::ffi::c_char,
-        table,
-    );
+    let mut prompt_bytes = b"New key in ".to_vec();
+    prompt_bytes.extend_from_slice(CStr::from_ptr(table).to_bytes());
+    prompt_bytes.extend_from_slice(b": ");
+    let prompt = CString::new(prompt_bytes).expect("key table name contains no NUL");
     new_item = window_customize_new_item();
     (*new_item).data = data as *mut window_customize_modedata;
     (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_KEY;
@@ -4565,7 +4563,7 @@ unsafe extern "C" fn window_customize_add_key(
     mode_tree_set_prompt(
         (*data).data,
         c,
-        prompt,
+        prompt.as_ptr(),
         b"\0" as *const u8 as *const ::core::ffi::c_char,
         PROMPT_TYPE_COMMAND,
         PROMPT_NOFORMAT,
@@ -4584,7 +4582,6 @@ unsafe extern "C" fn window_customize_add_key(
         ),
         new_item as *mut ::core::ffi::c_void,
     );
-    free(prompt as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_customize_unset_key(
     mut data: *mut window_customize_modedata,
