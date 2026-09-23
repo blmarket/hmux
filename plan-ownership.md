@@ -1678,6 +1678,18 @@ legacy callers safe.
   capture-pane and the three argument-print checks matched the pinned
   baseline. No sanitizer was run.
 
+### Increment 244 — file write message scratch owner (2026-09-23)
+
+- `file_push` now builds each `MSG_WRITE` header and payload in a reusable
+  `Vec<u8>`, removing the `msg_write_data` `xmalloc`/`xrealloc`/`free`
+  lifecycle. `proc_send` copies bytes synchronously through `imsg_compose`
+  and `ibuf_add`; the existing send-failure break and retry scheduling remain.
+- Library/binary build, workspace tests, changed-file rustfmt, diff check,
+  and `scripts/file_message_scratch_cli_checks.py` passed. The CLI check
+  matched the pinned baseline while transferring 65,809 binary bytes with
+  embedded NUL and `0xff` through load, show, and save paths. No sanitizer
+  was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached

@@ -763,12 +763,11 @@ unsafe extern "C" fn file_push_cb(
 }
 #[no_mangle]
 pub unsafe extern "C" fn file_push(mut cf: *mut client_file) {
-    let mut msg: *mut msg_write_data = ::core::ptr::null_mut::<msg_write_data>();
-    let mut msglen: size_t = 0;
+    let mut msg = Vec::<u8>::new();
+    let header_len = ::core::mem::size_of::<msg_write_data>();
     let mut sent: size_t = 0;
     let mut left: size_t = 0;
     let mut close_0: msg_write_close = msg_write_close { stream: 0 };
-    msg = xmalloc(::core::mem::size_of::<msg_write_data>() as size_t) as *mut msg_write_data;
     left = evbuffer_get_length((*cf).buffer);
     while left != 0 as size_t {
         sent = left;
@@ -782,12 +781,18 @@ pub unsafe extern "C" fn file_push(mut cf: *mut client_file) {
                 .wrapping_sub(::core::mem::size_of::<msg_write_data>() as usize)
                 as size_t;
         }
-        msglen = (::core::mem::size_of::<msg_write_data>() as usize).wrapping_add(sent as usize)
-            as size_t;
-        msg = xrealloc(msg as *mut ::core::ffi::c_void, msglen) as *mut msg_write_data;
-        (*msg).stream = (*cf).stream;
+        let msglen = header_len + sent;
+        msg.resize(msglen, 0);
+        let header = msg_write_data {
+            stream: (*cf).stream,
+        };
         memcpy(
-            msg.offset(1 as ::core::ffi::c_int as isize) as *mut ::core::ffi::c_void,
+            msg.as_mut_ptr().cast(),
+            (&raw const header).cast(),
+            header_len,
+        );
+        memcpy(
+            msg.as_mut_ptr().add(header_len).cast(),
             evbuffer_pullup((*cf).buffer, sent as ssize_t) as *const ::core::ffi::c_void,
             sent,
         );
@@ -795,7 +800,7 @@ pub unsafe extern "C" fn file_push(mut cf: *mut client_file) {
             (*cf).peer,
             MSG_WRITE,
             -(1 as ::core::ffi::c_int),
-            msg as *const ::core::ffi::c_void,
+            msg.as_ptr().cast(),
             msglen,
         ) != 0 as ::core::ffi::c_int
         {
@@ -841,7 +846,6 @@ pub unsafe extern "C" fn file_push(mut cf: *mut client_file) {
             file_fire_done(cf);
         }
     }
-    free(msg as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn file_write_left(mut files: *mut client_files) -> ::core::ffi::c_int {
