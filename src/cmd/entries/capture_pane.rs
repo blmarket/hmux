@@ -78,9 +78,9 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::utf8::utf8_stravis;
+use crate::src::utf8::utf8_strvis;
 use crate::src::window::window_pane_reset_mode_all;
-use crate::src::xmalloc::{xasprintf, xrealloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xrealloc, xreallocarray, xstrdup};
 use std::ffi::{CStr, CString};
 use std::io::Write;
 
@@ -168,11 +168,7 @@ fn cmd_capture_pane_colour(value: ::core::ffi::c_int) -> CString {
     bytes.extend_from_slice(format!("[{:x}]", value as u32).as_bytes());
     CString::new(bytes).expect("colour text and hexadecimal suffix contain no NUL")
 }
-unsafe extern "C" fn cmd_capture_pane_cell(
-    mut s: *mut screen,
-    mut xx: u_int,
-    mut yy: u_int,
-) -> *mut ::core::ffi::c_char {
+unsafe fn cmd_capture_pane_cell(s: *mut screen, xx: u_int, yy: u_int) -> CString {
     let mut gd: *mut grid = (*s).grid;
     let mut hl: *mut hyperlinks = (*s).hyperlinks;
     let mut gc: grid_cell = grid_cell {
@@ -189,8 +185,6 @@ unsafe extern "C" fn cmd_capture_pane_cell(
         us: 0,
         link: 0,
     };
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut c: [::core::ffi::c_char; 33] = [0; 33];
     let mut uri: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut iid: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -202,11 +196,16 @@ unsafe extern "C" fn cmd_capture_pane_cell(
         gc.data.size as size_t,
     );
     c[gc.data.size as usize] = '\0' as i32 as ::core::ffi::c_char;
-    utf8_stravis(
-        &raw mut data,
-        &raw mut c as *mut ::core::ffi::c_char,
+    let source_len = CStr::from_ptr(c.as_ptr()).to_bytes().len();
+    // Match utf8_stravis's maximum expansion without allocating a C buffer.
+    let mut data = vec![0u8; 4 * (source_len + 1)];
+    let data_len = utf8_strvis(
+        data.as_mut_ptr().cast(),
+        c.as_ptr(),
+        source_len,
         VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
     );
+    data.truncate(data_len);
     let (link, linkid) = if gc.link != 0 as u_int
         && hyperlinks_get(
             hl,
@@ -236,27 +235,30 @@ unsafe extern "C" fn cmd_capture_pane_cell(
     let f = cmd_capture_pane_colour(gc.fg);
     let b = cmd_capture_pane_colour(gc.bg);
     let u = cmd_capture_pane_colour(gc.us);
-    xasprintf(
-        &raw mut line,
-        b"\t\tC %u,%u data=(%u,%u,%s) flags=%s[%x] attr=%s[%x] fg=%s bg=%s us=%s link=%s linkid=%s\n\0"
-            as *const u8 as *const ::core::ffi::c_char,
-        yy,
-        xx,
-        gc.data.width as ::core::ffi::c_int,
-        gc.data.size as ::core::ffi::c_int,
-        data,
-        grid_cell_flags_string(flags as ::core::ffi::c_int),
-        flags,
-        grid_cell_attr_string(gc.attr as ::core::ffi::c_int),
-        gc.attr as ::core::ffi::c_int,
-        f.as_ptr(),
-        b.as_ptr(),
-        u.as_ptr(),
-        link.as_ptr(),
-        linkid.as_ptr(),
-    );
-    free(data as *mut ::core::ffi::c_void);
-    return line;
+    let mut line = Vec::new();
+    write!(
+        &mut line,
+        "\t\tC {},{} data=({},{},",
+        yy, xx, gc.data.width, gc.data.size
+    )
+    .expect("writing to a byte vector succeeds");
+    line.extend_from_slice(&data);
+    line.extend_from_slice(b") flags=");
+    line.extend_from_slice(CStr::from_ptr(grid_cell_flags_string(flags as i32)).to_bytes());
+    write!(&mut line, "[{:x}] attr=", flags).expect("writing to a byte vector succeeds");
+    line.extend_from_slice(CStr::from_ptr(grid_cell_attr_string(gc.attr as i32)).to_bytes());
+    write!(&mut line, "[{:x}] fg=", gc.attr).expect("writing to a byte vector succeeds");
+    line.extend_from_slice(f.to_bytes());
+    line.extend_from_slice(b" bg=");
+    line.extend_from_slice(b.to_bytes());
+    line.extend_from_slice(b" us=");
+    line.extend_from_slice(u.to_bytes());
+    line.extend_from_slice(b" link=");
+    line.extend_from_slice(link.to_bytes());
+    line.extend_from_slice(b" linkid=");
+    line.extend_from_slice(linkid.to_bytes());
+    line.push(b'\n');
+    CString::new(line).expect("cell fields contain no NUL")
 }
 unsafe extern "C" fn cmd_capture_pane_grid(
     mut wp: *mut window_pane,
@@ -268,7 +270,6 @@ unsafe extern "C" fn cmd_capture_pane_grid(
     let mut od: *mut osc133_data = ::core::ptr::null_mut::<osc133_data>();
     let mut buf: *mut ::core::ffi::c_char =
         xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut p: [::core::ffi::c_char; 11] = [0; 11];
     let mut yy: u_int = 0;
     let mut xx: u_int = 0;
@@ -330,9 +331,8 @@ unsafe extern "C" fn cmd_capture_pane_grid(
         buf = cmd_capture_pane_append(buf, len, row.as_ptr().cast(), row.len());
         xx = 0 as u_int;
         while xx < (*gd).sx {
-            line = cmd_capture_pane_cell(s, xx, yy);
-            buf = cmd_capture_pane_append(buf, len, line, strlen(line));
-            free(line as *mut ::core::ffi::c_void);
+            let cell = cmd_capture_pane_cell(s, xx, yy);
+            buf = cmd_capture_pane_append(buf, len, cell.as_ptr(), cell.as_bytes().len());
             xx = xx.wrapping_add(1);
         }
         yy = yy.wrapping_add(1);

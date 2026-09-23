@@ -1030,6 +1030,20 @@ legacy callers safe.
   baseline. The source is byte-preserving, including non-UTF-8 command alias
   bytes. `git diff --check` passed. No sanitizer was run.
 
+### Increment 200 — capture-pane cell scratch owner (2026-09-23)
+
+- The private `cmd_capture_pane_cell` now returns a `CString`; its sole grid
+  caller borrows the bytes through `cmd_capture_pane_append`. The escaped cell
+  data uses a `Vec<u8>` sized to the former `utf8_stravis` maximum and filled
+  by `utf8_strvis`. Removed the cell `xasprintf`, the escaped-data allocation
+  and free, and the caller's line free. Existing color and hyperlink string
+  owners remain local.
+- Library/binary build, `remaining_command`, `subjects_grid`, and
+  `format_grid_line` tests, changed-file rustfmt, Python syntax check, and
+  `git diff --check` passed. The expanded private-server grid-cell CLI check
+  matched the pinned baseline byte for byte, including UTF-8, escaped
+  backslash, and underline cells. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1040,11 +1054,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `cmd_capture_pane_cell` has one synchronous caller that appends its
-   formatted cell line and frees it. Migrate that private helper's returned
-   scratch string to `CString`, including its `utf8_stravis` source buffer,
-   while preserving complete grid-cell output against the baseline.
-   `file_get_path` remains deferred: `client_file.path` is a public `char *`
+1. `make_label` has one caller and returns C-owned error `cause` strings on
+   five failure branches. Migrate those private errors to `Option<CString>`
+   through their print-and-exit caller while leaving the global socket path
+   contract intact. `file_get_path` remains deferred: `client_file.path` is a
+   public `char *`
    field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in
    place; changing the field needs an explicit opaque-record ABI decision

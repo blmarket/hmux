@@ -36,6 +36,12 @@ cases = (
         b"osc133=0,6,6,9,42",
         b"\tL ",
     ),
+    (
+        "utf8-and-backslash",
+        "printf 'é\\\\\\033[4mU\\033[0m'; sleep 30",
+        b"data=(1,2,\xc3\xa9)",
+        b"\t\tC ",
+    ),
 )
 
 
@@ -61,6 +67,9 @@ def capture(binary_path, name, command, expected, line_prefix, tempdir):
         assert any(expected in line for line in lines), (name, expected)
         if name == "colour-and-id":
             assert any(b"data=(1,1,R)" in line and b"fg=red[1]" in line for line in lines)
+        if name == "utf8-and-backslash":
+            assert any(b"data=(1,1,\\\\)" in line for line in lines), lines
+            assert any(b"data=(1,1,U)" in line and b"attr=underscore[8]" in line for line in lines), lines
         return output
     finally:
         subprocess.run(base + ["kill-server"], env=env, capture_output=True, timeout=10)
