@@ -2273,6 +2273,21 @@ legacy callers safe.
   and editor temporary-file cleanup. Existing customize-option and
   spawn-editor command checks also passed. No sanitizer was run.
 
+### Increment 287 — customize editor callback record (2026-09-23)
+
+- `window_customize_start_edit` now creates `window_customize_editdata` in a
+  stable `Box`; `window_customize_finish_edit` drops it after freeing the
+  copied item. The callback and mode's `edit` field retain the same borrowed
+  pointer until completion or cancellation. The record is no longer `Copy`,
+  and its `xcalloc`/`free` pair is gone. `spawn_cancel_editor` clears the
+  callback before mode teardown drops the record; failed editor startup
+  takes the same finish path.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, and diff checks passed. The attached-client customize
+  editor script passed against the pinned baseline for valid, embedded-NUL,
+  empty, and cancelled edits, including temporary-file cleanup. Failed editor
+  startup was reviewed but not forced by this E2E. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2283,15 +2298,13 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `window_customize_editdata` in `src/window_customize.rs` is the next small
-   callback record: `window_customize_start_edit` allocates it, then both
-   editor completion and mode cancellation call `window_customize_finish_edit`
-   to release it after its copied item. A stable `Box` can remove that
-   `xcalloc`/`free` pair; the attached editor E2E now covers completion,
-   empty output, and cancellation. `window_copy_mode_data.backing` is a
-   larger follow-up whose borrowed screen pointer is invalidated on refresh.
-   The redraw scene's line array has self-referential intrusive list tails
-   and needs its own alias audit.
+1. `environ_log` in `src/environ.rs` has one local `vasprintf` prefix used
+   synchronously in logging and then freed. Its only production caller passes
+   a fixed format and source name; the module already imports
+   `xvasprintf_cstring`. `window_copy_mode_data.backing` is a larger screen
+   owner whose borrowed pointer is invalidated on refresh. The redraw scene's
+   line array has self-referential intrusive list tails and needs its own
+   alias audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

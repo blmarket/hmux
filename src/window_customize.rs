@@ -265,7 +265,6 @@ pub type window_customize_item_type = ::core::ffi::c_uint;
 pub const WINDOW_CUSTOMIZE_ITEM_ENVIRONMENT: window_customize_item_type = 2;
 pub const WINDOW_CUSTOMIZE_ITEM_KEY: window_customize_item_type = 1;
 pub const WINDOW_CUSTOMIZE_ITEM_OPTION: window_customize_item_type = 0;
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_customize_editdata {
     pub wp_id: u_int,
@@ -697,7 +696,7 @@ unsafe extern "C" fn window_customize_copy_item(
 }
 unsafe extern "C" fn window_customize_finish_edit(mut ed: *mut window_customize_editdata) {
     window_customize_free_item((*ed).item);
-    free(ed as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(ed));
 }
 unsafe extern "C" fn window_customize_draw_waiting(mut data: *mut window_customize_modedata) {
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -3730,13 +3729,13 @@ unsafe extern "C" fn window_customize_start_edit(
     } else {
         return;
     }
-    ed = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<window_customize_editdata>() as size_t,
-    ) as *mut window_customize_editdata;
-    (*ed).wp_id = (*(*data).wp).id;
-    (*ed).edit_type = edit_type;
-    (*ed).item = window_customize_copy_item(item);
+    // The editor callback and mode teardown borrow this stable record.
+    ed = Box::into_raw(Box::new(window_customize_editdata {
+        wp_id: (*(*data).wp).id,
+        edit_type,
+        item: window_customize_copy_item(item),
+        editor: ::core::ptr::null_mut(),
+    }));
     buf = value;
     len = strlen(value);
     if len == 0 as size_t {
