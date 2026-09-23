@@ -125,12 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The customize-mode option prompt in `window_customize_set_option` still
-   calls exported `options_to_string`, passes its C-owned duplicate to
-   `mode_tree_set_prompt`, then frees it. The existing private
-   `options_to_cstring` can lend its result to that synchronous prompt copy,
-   as increment 439 did for the key Command prompt. The attached-client
-   `scripts/customize_set_option_prompt_cli_checks.py` covers this path.
+1. `options_default_to_string` still builds C-owned scalar default text for
+   two live customize-mode callers that compare or display it and then free
+   it. A private `CString` producer can serve those callers while the
+   exported function retains its libc-freeable contract. Audit both render
+   and change-detection paths and check the displayed default directly.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -1445,6 +1444,17 @@ name error.
   candidate and pinned tmux, covering the Command and Note prompt text and
   edits. Serialized workspace tests, binary build, changed-file rustfmt, and
   diff check passed. No sanitizer ran.
+
+### Increment 440 — own customize option prompt text (2026-09-23)
+
+- `window_customize_set_option` now keeps the existing
+  `options_to_cstring` result through `mode_tree_set_prompt`. The prompt
+  copies the text into owned cells before returning, so this production
+  path no longer makes an exported C-return duplicate or manually frees it.
+  The exported `options_to_string` contract remains unchanged.
+- The attached-client customize set-option prompt script passed for the
+  candidate and pinned tmux. Serialized workspace tests, binary build,
+  changed-file rustfmt, and diff check passed. No sanitizer ran.
 
 ## Historical migration index
 

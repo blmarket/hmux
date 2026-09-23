@@ -3780,7 +3780,6 @@ unsafe extern "C" fn window_customize_set_option(
     let mut name: *const ::core::ffi::c_char = (*item).name;
     let mut space: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
     let mut array_key: *const ::core::ffi::c_char = (*item).array_key;
-    let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
         current: ::core::ptr::null_mut::<cmd_find_state>(),
@@ -3903,7 +3902,7 @@ unsafe extern "C" fn window_customize_set_option(
         prompt_bytes.extend_from_slice(b") ");
         let prompt = CString::new(prompt_bytes).expect("option prompt contains no NUL");
         drop(scope_text);
-        value = options_to_string(o, array_key, 0 as ::core::ffi::c_int);
+        let value = options_to_cstring(o, array_key, 0 as ::core::ffi::c_int);
         new_item = window_customize_new_item();
         (*new_item).data = data as *mut window_customize_modedata;
         (*new_item).type_0 = WINDOW_CUSTOMIZE_ITEM_OPTION;
@@ -3919,7 +3918,7 @@ unsafe extern "C" fn window_customize_set_option(
             (*data).data,
             c,
             prompt.as_ptr(),
-            value,
+            value.as_ptr(),
             PROMPT_TYPE_COMMAND,
             PROMPT_NOFORMAT,
             Some(
@@ -3937,7 +3936,6 @@ unsafe extern "C" fn window_customize_set_option(
             ),
             new_item as *mut ::core::ffi::c_void,
         );
-        free(value as *mut ::core::ffi::c_void);
     };
 }
 unsafe extern "C" fn window_customize_set_array_key_callback(
