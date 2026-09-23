@@ -531,11 +531,10 @@ unsafe extern "C" fn areshell(mut shell: *const ::core::ffi::c_char) -> ::core::
     }
     return 0 as ::core::ffi::c_int;
 }
-unsafe extern "C" fn expand_path(
-    mut path: *const ::core::ffi::c_char,
-    mut home: *const ::core::ffi::c_char,
-) -> *mut ::core::ffi::c_char {
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+unsafe fn expand_path(
+    path: *const ::core::ffi::c_char,
+    home: *const ::core::ffi::c_char,
+) -> Option<CString> {
     let mut end: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut value: *mut environ_entry = ::core::ptr::null_mut::<environ_entry>();
     if strncmp(
@@ -545,15 +544,11 @@ unsafe extern "C" fn expand_path(
     ) == 0 as ::core::ffi::c_int
     {
         if home.is_null() {
-            return ::core::ptr::null_mut::<::core::ffi::c_char>();
+            return None;
         }
-        xasprintf(
-            &raw mut expanded,
-            b"%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-            home,
-            path.offset(1 as ::core::ffi::c_int as isize),
-        );
-        return expanded;
+        let mut expanded = CStr::from_ptr(home).to_bytes().to_vec();
+        expanded.extend_from_slice(CStr::from_ptr(path.add(1)).to_bytes());
+        return Some(CString::new(expanded).expect("C strings contain no interior NUL"));
     }
     if *path as ::core::ffi::c_int == '$' as i32 {
         end = strchr(path, '/' as i32);
@@ -566,27 +561,28 @@ unsafe extern "C" fn expand_path(
         };
         value = environ_find(global_environ, name.as_ptr());
         if value.is_null() {
-            return ::core::ptr::null_mut::<::core::ffi::c_char>();
+            return None;
         }
         if end.is_null() {
             end = b"\0" as *const u8 as *const ::core::ffi::c_char;
         }
-        xasprintf(
-            &raw mut expanded,
-            b"%s%s\0" as *const u8 as *const ::core::ffi::c_char,
-            (*value).value,
-            end,
-        );
-        return expanded;
+        // On glibc, the previous `%s` rendered a cleared environment value
+        // as `(null)`. Keep that behavior if this entry has no value.
+        let mut expanded = if (*value).value.is_null() {
+            b"(null)".to_vec()
+        } else {
+            CStr::from_ptr((*value).value).to_bytes().to_vec()
+        };
+        expanded.extend_from_slice(CStr::from_ptr(end).to_bytes());
+        return Some(CString::new(expanded).expect("C strings contain no interior NUL"));
     }
-    return xstrdup(path);
+    Some(CStr::from_ptr(path).to_owned())
 }
 unsafe fn expand_paths(s: *const ::core::ffi::c_char, no_realpath: bool) -> Vec<CString> {
     let mut home: *const ::core::ffi::c_char = find_home();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut tmp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut resolved: [::core::ffi::c_char; 4096] = [0; 4096];
-    let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut paths = Vec::new();
     // strsep rewrites separators in place; keep its borrowed token pointers
     // backed by one stable, NUL-terminated allocation for the entire loop.
@@ -600,28 +596,30 @@ unsafe fn expand_paths(s: *const ::core::ffi::c_char, no_realpath: bool) -> Vec<
         if next.is_null() {
             break;
         }
-        expanded = expand_path(next, home);
-        if expanded.is_null() {
-            log_debug(
-                b"%s: invalid path: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                b"expand_paths\0" as *const u8 as *const ::core::ffi::c_char,
-                next,
-            );
-        } else {
+        if let Some(expanded) = expand_path(next, home) {
             let path = if no_realpath {
-                Some(CStr::from_ptr(expanded).to_owned())
-            } else if realpath(expanded, &raw mut resolved as *mut ::core::ffi::c_char).is_null() {
-                log_debug(
-                    b"%s: realpath(\"%s\") failed: %s\0" as *const u8 as *const ::core::ffi::c_char,
-                    b"expand_paths\0" as *const u8 as *const ::core::ffi::c_char,
-                    expanded,
-                    strerror(*__errno_location()),
-                );
-                None
+                Some(expanded)
             } else {
-                Some(CStr::from_ptr(resolved.as_ptr()).to_owned())
+                let path = if realpath(
+                    expanded.as_ptr(),
+                    &raw mut resolved as *mut ::core::ffi::c_char,
+                )
+                .is_null()
+                {
+                    log_debug(
+                        b"%s: realpath(\"%s\") failed: %s\0" as *const u8
+                            as *const ::core::ffi::c_char,
+                        b"expand_paths\0" as *const u8 as *const ::core::ffi::c_char,
+                        expanded.as_ptr(),
+                        strerror(*__errno_location()),
+                    );
+                    None
+                } else {
+                    Some(CStr::from_ptr(resolved.as_ptr()).to_owned())
+                };
+                drop(expanded);
+                path
             };
-            free(expanded as *mut ::core::ffi::c_void);
             if let Some(path) = path {
                 if paths.iter().any(|existing| existing == &path) {
                     log_debug(
@@ -633,6 +631,12 @@ unsafe fn expand_paths(s: *const ::core::ffi::c_char, no_realpath: bool) -> Vec<
                     paths.push(path);
                 }
             }
+        } else {
+            log_debug(
+                b"%s: invalid path: %s\0" as *const u8 as *const ::core::ffi::c_char,
+                b"expand_paths\0" as *const u8 as *const ::core::ffi::c_char,
+                next,
+            );
         }
     }
     paths

@@ -957,6 +957,22 @@ legacy callers safe.
   pane targets through both Enter and `:` and matched exact target bytes
   with the pinned baseline. No sanitizer was run.
 
+### Increment 195 — startup path expansion owner (2026-09-22)
+
+- `expand_path` now returns `Option<CString>` for tilde, environment, and
+  literal paths. Its sole `expand_paths` caller moves the owner directly
+  when realpath is skipped, or borrows its pointer for realpath/logging and
+  drops it before duplicate filtering. Removed two `xasprintf` allocations,
+  the literal-path `xstrdup`, and the matching free. Missing home/variable
+  remains absent; a cleared environment value retains glibc `%s`'s `(null)`
+  rendering.
+- In the isolated branch, library/binary build, three focused path tests,
+  changed-file rustfmt, Python syntax check, and `git diff --check` passed.
+  The new private CLI check matched non-UTF-8 home/config/socket paths,
+  symlink canonicalization, absent XDG configuration, and `/tmp` fallback
+  with the pinned baseline. The existing socket-label check also matched.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -967,10 +983,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `expand_path` in `src/tmux.rs` still returns a C-owned path assembled by
-   `xasprintf`/`xstrdup`. Its sole `expand_paths` caller uses it synchronously
-   and frees it after realpath handling. Migrate both together to
-   `Option<CString>` while preserving the absent-path and duplicate rules.
+1. `client_connect` builds a local lockfile name and frees it on several
+   branches, but `server_start` also frees its copy after a fork. Audit the
+   parent/child ownership split before changing that pair. `file_get_path`
+   also returns a C-owned path into `client_file.path`; migrate its producer
+   only with the field's full teardown and transfer path.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -995,9 +1012,9 @@ non-string value.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–192. The remaining
+Current validation is recorded in increments 15–195. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–192 has its own local commit; none was pushed.
+Each of increments 15–195 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
@@ -1219,3 +1236,10 @@ customize-reset-prompt attached-client CLI checks, changed-file rustfmt,
 Python syntax checks, and `git diff --check` passed on main. All three CLI
 checks also passed with the pinned baseline binary. No combined sanitizer
 was run.
+After increments 193–195 were integrated, `cargo clean -p hmux-rt` followed
+by `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, the library/binary
+build, customize-scope-text, window-tree-target, and expand-path-owner CLI
+checks, plus existing environment-prompt, set-option-prompt, and socket-label
+checks, changed-file rustfmt, Python syntax checks, and `git diff --check`
+passed on main. All six CLI checks also passed with the pinned baseline
+binary. No combined sanitizer was run.
