@@ -1710,14 +1710,30 @@ unsafe extern "C" fn grid_string_cells_code(
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_string_cells(
-    mut gd: *mut grid,
-    mut px: u_int,
-    mut py: u_int,
-    mut nx: u_int,
-    mut lastgc: *mut *mut grid_cell,
-    mut flags: ::core::ffi::c_int,
-    mut s: *mut screen,
+    gd: *mut grid,
+    px: u_int,
+    py: u_int,
+    nx: u_int,
+    lastgc: *mut *mut grid_cell,
+    flags: ::core::ffi::c_int,
+    s: *mut screen,
 ) -> *mut ::core::ffi::c_char {
+    let bytes = grid_string_cells_bytes(gd, px, py, nx, lastgc, flags, s);
+    let buf = xmalloc(bytes.len() + 1) as *mut ::core::ffi::c_char;
+    memcpy(buf.cast(), bytes.as_ptr().cast(), bytes.len());
+    *buf.add(bytes.len()) = 0;
+    buf
+}
+
+pub unsafe fn grid_string_cells_bytes(
+    gd: *mut grid,
+    px: u_int,
+    py: u_int,
+    nx: u_int,
+    lastgc: *mut *mut grid_cell,
+    flags: ::core::ffi::c_int,
+    s: *mut screen,
+) -> Vec<u8> {
     let mut gc: grid_cell = grid_cell {
         data: utf8_data {
             data: [0; 32],
@@ -1747,10 +1763,8 @@ pub unsafe extern "C" fn grid_string_cells(
         link: 0,
     };
     let mut data: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut buf: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    let mut buf = Vec::with_capacity(128);
     let mut code: [::core::ffi::c_char; 8192] = [0; 8192];
-    let mut len: size_t = 0;
-    let mut off: size_t = 0;
     let mut size: size_t = 0;
     let mut codelen: size_t = 0;
     let mut xx: u_int = 0;
@@ -1765,12 +1779,8 @@ pub unsafe extern "C" fn grid_string_cells(
         );
         *lastgc = &raw mut lastgc1;
     }
-    len = 128 as size_t;
-    buf = xmalloc(len) as *mut ::core::ffi::c_char;
-    off = 0 as size_t;
     gl = grid_peek_line(gd, py);
     if gl.is_null() {
-        *buf.offset(0 as ::core::ffi::c_int as isize) = '\0' as i32 as ::core::ffi::c_char;
         return buf;
     }
     if flags & GRID_STRING_EMPTY_CELLS != 0 {
@@ -1818,30 +1828,10 @@ pub unsafe extern "C" fn grid_string_cells(
                     size = 2 as size_t;
                 }
             }
-            while len
-                < off
-                    .wrapping_add(size)
-                    .wrapping_add(codelen)
-                    .wrapping_add(1 as size_t)
-            {
-                buf = xreallocarray(buf as *mut ::core::ffi::c_void, 2 as size_t, len)
-                    as *mut ::core::ffi::c_char;
-                len = len.wrapping_mul(2 as size_t);
-            }
             if codelen != 0 as size_t {
-                memcpy(
-                    buf.offset(off as isize) as *mut ::core::ffi::c_void,
-                    &raw mut code as *mut ::core::ffi::c_char as *const ::core::ffi::c_void,
-                    codelen,
-                );
-                off = off.wrapping_add(codelen);
+                buf.extend_from_slice(std::slice::from_raw_parts(code.as_ptr().cast(), codelen));
             }
-            memcpy(
-                buf.offset(off as isize) as *mut ::core::ffi::c_void,
-                data as *const ::core::ffi::c_void,
-                size,
-            );
-            off = off.wrapping_add(size);
+            buf.extend_from_slice(std::slice::from_raw_parts(data.cast(), size));
         }
         xx = xx.wrapping_add(1);
     }
@@ -1854,33 +1844,14 @@ pub unsafe extern "C" fn grid_string_cells(
             flags,
         );
         codelen = strlen(&raw mut code as *mut ::core::ffi::c_char);
-        while len
-            < off
-                .wrapping_add(size)
-                .wrapping_add(codelen)
-                .wrapping_add(1 as size_t)
-        {
-            buf = xreallocarray(buf as *mut ::core::ffi::c_void, 2 as size_t, len)
-                as *mut ::core::ffi::c_char;
-            len = len.wrapping_mul(2 as size_t);
-        }
-        memcpy(
-            buf.offset(off as isize) as *mut ::core::ffi::c_void,
-            &raw mut code as *mut ::core::ffi::c_char as *const ::core::ffi::c_void,
-            codelen,
-        );
-        off = off.wrapping_add(codelen);
+        buf.extend_from_slice(std::slice::from_raw_parts(code.as_ptr().cast(), codelen));
     }
     if flags & GRID_STRING_TRIM_SPACES != 0 {
-        while off > 0 as size_t
-            && *buf.offset(off.wrapping_sub(1 as size_t) as isize) as ::core::ffi::c_int
-                == ' ' as i32
-        {
-            off = off.wrapping_sub(1);
+        while buf.last() == Some(&b' ') {
+            buf.pop();
         }
     }
-    *buf.offset(off as isize) = '\0' as i32 as ::core::ffi::c_char;
-    return buf;
+    buf
 }
 #[no_mangle]
 pub unsafe extern "C" fn grid_duplicate_lines(

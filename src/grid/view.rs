@@ -1,7 +1,7 @@
 use crate::src::grid::{
     grid_clear, grid_collect_history, grid_get_cell, grid_get_line, grid_move_cells,
     grid_move_lines, grid_scroll_history, grid_scroll_history_region, grid_set_cell,
-    grid_set_cells, grid_set_padding, grid_string_cells,
+    grid_set_cells, grid_set_padding, grid_string_cells, grid_string_cells_bytes,
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
@@ -301,4 +301,21 @@ pub unsafe extern "C" fn grid_view_string_cells(
         0 as ::core::ffi::c_int,
         ::core::ptr::null_mut::<screen>(),
     );
+}
+
+pub unsafe fn grid_view_string_cells_bytes(
+    gd: *mut grid,
+    px: u_int,
+    py: u_int,
+    nx: u_int,
+) -> Vec<u8> {
+    grid_string_cells_bytes(
+        gd,
+        px,
+        (*gd).hsize.wrapping_add(py),
+        nx,
+        ::core::ptr::null_mut(),
+        0,
+        ::core::ptr::null_mut(),
+    )
 }

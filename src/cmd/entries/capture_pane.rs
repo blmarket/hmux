@@ -7,7 +7,7 @@ use crate::src::ffi::libc::{free, memcpy, snprintf, strcmp};
 use crate::src::file::{file_can_print, file_print, file_print_buffer};
 use crate::src::grid::{
     grid_cell_attr_string, grid_cell_flags_string, grid_clear_history, grid_get_cell,
-    grid_get_line, grid_line_flags_string, grid_line_time, grid_peek_line, grid_string_cells,
+    grid_get_line, grid_line_flags_string, grid_line_time, grid_peek_line, grid_string_cells_bytes,
 };
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::input::input_pending;
@@ -563,9 +563,10 @@ unsafe fn cmd_capture_pane_history(
         let line = if hyperlinks != 0 {
             cmd_capture_pane_hyperlinks(gd, s, i, &mut links)
         } else {
-            let raw = grid_string_cells(gd, 0 as u_int, i, sx, &raw mut gc, flags, s);
-            let line = CStr::from_ptr(raw).to_bytes().to_vec();
-            free(raw.cast());
+            let mut line = grid_string_cells_bytes(gd, 0 as u_int, i, sx, &raw mut gc, flags, s);
+            if let Some(nul) = line.iter().position(|&byte| byte == 0) {
+                line.truncate(nul);
+            }
             line
         };
         if hyperlinks == 0 || !line.is_empty() {

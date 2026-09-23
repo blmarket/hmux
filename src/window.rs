@@ -16,12 +16,12 @@ use crate::src::events_payload::{
 };
 use crate::src::ffi::libc::{
     __ctype_b_loc, close, fnmatch, free, gethostname, getpid, gettimeofday, ioctl, kill, memcpy,
-    memset, regcomp, regexec, regfree, strcasecmp, strlen,
+    memset, regcomp, regexec, regfree, strcasecmp,
 };
 use crate::src::ffi::utempter::utempter_remove_record;
 use crate::src::file::{file_cancel, file_read};
 use crate::src::grid::grid_cells_look_equal;
-use crate::src::grid_view::grid_view_string_cells;
+use crate::src::grid_view::grid_view_string_cells_bytes;
 use crate::src::input::{input_free, input_init, input_parse_buffer, input_parse_pane};
 use crate::src::input_keys::input_key_pane;
 use crate::src::layout::{
@@ -108,7 +108,9 @@ pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cell
 pub use crate::src::shared::limits::{__INT_MAX__, INT_MAX, UINT_MAX};
 pub use crate::src::shared::menu::menu_data;
 use crate::src::shared::message::*;
-pub use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
+pub use crate::src::shared::mouse::{
+    mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG,
+};
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::{
     window_pane, window_pane_entry, window_pane_modes, window_pane_prompt, window_pane_sentry,
@@ -4058,11 +4060,9 @@ pub unsafe extern "C" fn window_pane_search(
         can_be_null_regs_allocated_fastmap_accurate_no_sub_not_bol_not_eol_newline_anchor: [0; 1],
         c2rust_padding: [0; 7],
     };
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut found: ::core::ffi::c_int = 0;
-    let mut n: size_t = 0;
     let glob = if regex == 0 {
         if ignore != 0 {
             flags |= FNM_CASEFOLD;
@@ -4084,42 +4084,42 @@ pub unsafe extern "C" fn window_pane_search(
     };
     i = 0 as u_int;
     while i < (*(*s).grid).sy {
-        line = grid_view_string_cells((*s).grid, 0 as u_int, i, (*(*s).grid).sx);
-        n = strlen(line);
-        while n > 0 as size_t {
-            if *(*__ctype_b_loc()).offset(*line.offset(n.wrapping_sub(1 as size_t) as isize)
-                as u_char as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+        let mut line = grid_view_string_cells_bytes((*s).grid, 0 as u_int, i, (*(*s).grid).sx);
+        if let Some(nul) = line.iter().position(|&byte| byte == 0) {
+            line.truncate(nul);
+        }
+        while let Some(&last) = line.last() {
+            if *(*__ctype_b_loc()).offset(last as ::core::ffi::c_int as isize) as ::core::ffi::c_int
                 & _ISspace as ::core::ffi::c_int as ::core::ffi::c_ushort as ::core::ffi::c_int
                 == 0
             {
                 break;
             }
-            *line.offset(n.wrapping_sub(1 as size_t) as isize) = '\0' as i32 as ::core::ffi::c_char;
-            n = n.wrapping_sub(1);
+            line.pop();
         }
+        line.push(0);
         log_debug(
             b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
             b"window_pane_search\0" as *const u8 as *const ::core::ffi::c_char,
-            line,
+            line.as_ptr().cast::<::core::ffi::c_char>(),
         );
         if regex == 0 {
             found = (fnmatch(
                 glob.as_ref()
                     .expect("nonregex search has a pattern")
                     .as_ptr(),
-                line,
+                line.as_ptr().cast::<::core::ffi::c_char>(),
                 flags,
             ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
         } else {
             found = (regexec(
                 &raw mut r,
-                line,
+                line.as_ptr().cast::<::core::ffi::c_char>(),
                 0 as size_t,
                 ::core::ptr::null_mut::<regmatch_t>(),
                 0 as ::core::ffi::c_int,
             ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
         }
-        free(line as *mut ::core::ffi::c_void);
         if found != 0 {
             break;
         }
