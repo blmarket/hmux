@@ -408,7 +408,8 @@ pub unsafe extern "C" fn screen_resize_cursor(
 ) {
     let mut cx: u_int = (*s).cx;
     let mut cy: u_int = (*(*s).grid).hsize.wrapping_add((*s).cy);
-    if !(*s).write_list.is_null() {
+    let had_write_list = !(*s).write_list.is_null();
+    if had_write_list {
         screen_write_free_list(s);
     }
     log_debug(
@@ -457,7 +458,7 @@ pub unsafe extern "C" fn screen_resize_cursor(
         cx,
         cy,
     );
-    if !(*s).write_list.is_null() {
+    if had_write_list {
         screen_write_make_list(s);
     }
 }

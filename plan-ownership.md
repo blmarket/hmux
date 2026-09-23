@@ -2820,6 +2820,23 @@ legacy callers safe.
   code follows rustfmt; `src/cmd/queue.rs` retains its pre-existing import
   grouping differences. No sanitizer was run.
 
+### Increment 325 — boxed screen write-line array (2026-09-23)
+
+- `screen_write_make_list` now boxes a slice of zeroed `screen_write_cline`
+  records, then initializes each intrusive item-list tail at its final
+  address. `screen_write_free_list` still releases every queued item and
+  per-line data before consuming the slice Box using the current grid
+  height; it now clears `write_list` afterward. `screen_resize_cursor`
+  snapshots whether a list existed before freeing it and rebuilds after
+  changing grid height, preserving the former resize behavior without a
+  dangling pointer. Zero height still produces the previous fatal error.
+- Added `scripts/screen_write_cline_owner_cli_checks.py` to compare pane
+  output before and after a height change, followed by teardown, against
+  the pinned baseline. It passed. Full workspace tests, binary build,
+  layout CLI on candidate and baseline, and diff checks passed. Changed
+  code follows rustfmt; `src/screen_write.rs` retains its pre-existing
+  import-layout differences. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2830,13 +2847,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `screen_write_cline` in `src/screen_write.rs` is a dynamic array sized
-   to the current grid height. `screen_write_make_list` allocates it;
-   `screen_write_free_list` frees per-line data/items before the array.
-   `screen_resize_cursor` frees it before changing grid height and rebuilds
-   it afterward, using the nonnull pointer as a rebuild marker. Audit that
-   pointer contract and initialize each row's intrusive tail only after a
-   boxed slice has its final address.
+1. `window_pane.sync_dirty` in `src/screen_write.rs` is a synchronized-output
+   bitmap with a recorded size. Audit the initial allocation, resize
+   replacement, and `screen_write_clear_dirty` release together before
+   using a boxed slice. `redraw_scene.lines` in `src/screen_redraw.rs` is
+   another array with an immutable row count and intrusive tails that must
+   be initialized only after allocation reaches its final address.
    `cmd_load_buffer_data`
    in `src/cmd/entries/load_buffer.rs` has one
    constructor and a terminal callback destructor, but `file_fire_done_cb`
@@ -2846,9 +2862,7 @@ non-string value.
    invalid command-queue item. Its `-w` target-client reference also needs
    release on empty input and read errors; the existing code releases it only
    for nonempty success. Direct Box replacement was deferred rather than
-   retaining these leaks. `cmdq_state` has an explicit reference count with
-   many retain/release sites and needs a separate alias audit before changing
-   its owner. `args_value` has several
+   retaining these leaks. `args_value` has several
    constructors and external fixtures, so audit its scalar/array ownership
    together before selection.
    The separate `utf8_item` cache has no terminal free and needs a whole-cache

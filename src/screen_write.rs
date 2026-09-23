@@ -483,10 +483,12 @@ unsafe extern "C" fn screen_write_initctx(
 #[no_mangle]
 pub unsafe extern "C" fn screen_write_make_list(mut s: *mut screen) {
     let mut y: u_int = 0;
-    (*s).write_list = xcalloc(
-        (*(*s).grid).sy as size_t,
-        ::core::mem::size_of::<screen_write_cline>() as size_t,
-    ) as *mut screen_write_cline;
+    if (*(*s).grid).sy == 0 {
+        fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
+    }
+    let rows = vec![::core::mem::zeroed::<screen_write_cline>(); (*(*s).grid).sy as usize]
+        .into_boxed_slice();
+    (*s).write_list = Box::into_raw(rows) as *mut screen_write_cline;
     y = 0 as u_int;
     while y < (*(*s).grid).sy {
         let ref mut fresh0 = (*(*s).write_list.offset(y as isize)).items.tqh_first;
@@ -522,7 +524,9 @@ pub unsafe extern "C" fn screen_write_free_list(mut s: *mut screen) {
         free((*cl).data as *mut ::core::ffi::c_void);
         y = y.wrapping_add(1);
     }
-    free((*s).write_list as *mut ::core::ffi::c_void);
+    let rows = ::core::ptr::slice_from_raw_parts_mut((*s).write_list, (*(*s).grid).sy as usize);
+    drop(Box::from_raw(rows));
+    (*s).write_list = ::core::ptr::null_mut::<screen_write_cline>();
 }
 unsafe extern "C" fn screen_write_init(mut ctx: *mut screen_write_ctx, mut s: *mut screen) {
     memset(
