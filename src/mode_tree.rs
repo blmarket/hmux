@@ -120,6 +120,7 @@ use crate::src::style::style_apply;
 use crate::src::tmux::global_s_options;
 use crate::src::window::window_zoom;
 use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xstrdup};
+use std::ffi::CStr;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -288,6 +289,8 @@ unsafe extern "C" fn mode_tree_find_item(
 }
 unsafe extern "C" fn mode_tree_free_item(mut mti: *mut mode_tree_item) {
     mode_tree_free_items(&raw mut (*mti).children);
+    free((*mti).identity.name as *mut ::core::ffi::c_void);
+    free((*mti).identity.detail as *mut ::core::ffi::c_void);
     free((*mti).name as *mut ::core::ffi::c_void);
     free((*mti).text as *mut ::core::ffi::c_void);
     free((*mti).keystr as *mut ::core::ffi::c_void);
@@ -814,6 +817,12 @@ pub unsafe extern "C" fn mode_tree_build(mut mtd: *mut mode_tree_data) {
     } else if tag != UINT64_MAX as uint64_t {
         identity = ModeTreeIdentity::legacy(tag);
     }
+    // The old rows are freed below. Keep their string key alive through the
+    // selection lookup, including when a build callback chooses a new row.
+    let name = (!identity.name.is_null()).then(|| CStr::from_ptr(identity.name).to_owned());
+    let detail = (!identity.detail.is_null()).then(|| CStr::from_ptr(identity.detail).to_owned());
+    identity.name = name.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr());
+    identity.detail = detail.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr());
     mode_tree_free_items(&raw mut (*mtd).saved);
     (*mtd).saved.tqh_first = ::core::ptr::null_mut::<mode_tree_item>();
     (*mtd).saved.tqh_last = &raw mut (*mtd).saved.tqh_first;
@@ -938,6 +947,12 @@ pub unsafe fn mode_tree_add_identity(
     (*mti).parent = parent;
     (*mti).itemdata = itemdata;
     (*mti).identity = identity;
+    if !identity.name.is_null() {
+        (*mti).identity.name = xstrdup(identity.name);
+    }
+    if !identity.detail.is_null() {
+        (*mti).identity.detail = xstrdup(identity.detail);
+    }
     (*mti).name = xstrdup(name);
     if !text.is_null() {
         (*mti).text = xstrdup(text);
@@ -1923,6 +1938,10 @@ unsafe extern "C" fn mode_tree_search_set(mut mtd: *mut mode_tree_data) {
         return;
     }
     identity = (*mti).identity;
+    let name = (!identity.name.is_null()).then(|| CStr::from_ptr(identity.name).to_owned());
+    let detail = (!identity.detail.is_null()).then(|| CStr::from_ptr(identity.detail).to_owned());
+    identity.name = name.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr());
+    identity.detail = detail.as_ref().map_or(::core::ptr::null(), |s| s.as_ptr());
     loop_0 = (*mti).parent;
     while !loop_0.is_null() {
         (*loop_0).expanded = 1 as ::core::ffi::c_int;
@@ -2758,6 +2777,133 @@ pub unsafe extern "C" fn mode_tree_run_command(
 #[cfg(test)]
 mod identity_tests {
     use super::*;
+    use std::ffi::CString;
+
+    unsafe extern "C" fn named_build(
+        data: *mut ::core::ffi::c_void,
+        _: *mut sort_criteria,
+        _: *mut uint64_t,
+        _: *const ::core::ffi::c_char,
+    ) {
+        let mtd = data as *mut mode_tree_data;
+        for key in ["one", "two"] {
+            let name = CString::new("@row").unwrap();
+            let detail = CString::new(key).unwrap();
+            mode_tree_add_identity(
+                mtd,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                ModeTreeIdentity::named(5, 2, 0, name.as_ptr(), detail.as_ptr()),
+                detail.as_ptr(),
+                std::ptr::null(),
+                1,
+            );
+        }
+    }
+
+    #[test]
+    fn named_selection_and_tag_survive_rebuild_after_source_names_drop() {
+        unsafe {
+            let mtd =
+                xcalloc(1, std::mem::size_of::<mode_tree_data>() as size_t) as *mut mode_tree_data;
+            (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
+            (*mtd).saved.tqh_last = &raw mut (*mtd).saved.tqh_first;
+            (*mtd).preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
+            (*mtd).buildcb = Some(named_build);
+            (*mtd).modedata = mtd.cast();
+            (*mtd).screen.grid = xcalloc(1, std::mem::size_of::<grid>() as size_t).cast();
+            (*(*mtd).screen.grid).sx = 80;
+            (*(*mtd).screen.grid).sy = 24;
+            mode_tree_build(mtd);
+            assert_eq!((*mtd).line_size, 2);
+            (*mtd).current = 1;
+            let chosen = (*(*mtd).line_list.add(1)).item;
+            (*chosen).tagged = 1;
+            (*chosen).expanded = 0;
+            mode_tree_build(mtd);
+            assert_eq!((*mtd).current, 1);
+            let restored = (*(*mtd).line_list.add(1)).item;
+            assert_eq!((*restored).tagged, 1);
+            assert_eq!((*restored).expanded, 0);
+            assert_eq!(
+                CStr::from_ptr((*restored).identity.detail).to_bytes(),
+                b"two"
+            );
+            mode_tree_free_items(&raw mut (*mtd).children);
+            mode_tree_clear_lines(mtd);
+            free((*mtd).screen.grid.cast());
+            free(mtd.cast());
+        }
+    }
+
+    #[test]
+    fn named_keys_own_bytes_and_restore_only_exact_rows() {
+        unsafe {
+            let mtd =
+                xcalloc(1, std::mem::size_of::<mode_tree_data>() as size_t) as *mut mode_tree_data;
+            (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
+            (*mtd).saved.tqh_last = &raw mut (*mtd).saved.tqh_first;
+            let name = CString::new(vec![b'@', 0xff, b'x']).unwrap().into_raw();
+            let array_key = CString::new("7").unwrap().into_raw();
+            let identity = ModeTreeIdentity::named(5, 2, 0, name, array_key);
+            let prior = mode_tree_add_identity(
+                mtd,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                identity,
+                b"row\0".as_ptr().cast(),
+                std::ptr::null(),
+                1,
+            );
+            (*prior).tagged = 1;
+            (*prior).expanded = 0;
+            *name.add(1) = b'z' as ::core::ffi::c_char;
+            *array_key = b'8' as ::core::ffi::c_char;
+            assert_eq!(CStr::from_ptr((*prior).identity.name).to_bytes(), b"@\xffx");
+            assert_eq!(CStr::from_ptr((*prior).identity.detail).to_bytes(), b"7");
+            drop(CString::from_raw(name));
+            drop(CString::from_raw(array_key));
+
+            (*mtd).saved.tqh_first = prior;
+            (*mtd).saved.tqh_last = (*mtd).children.tqh_last;
+            (*prior).entry.tqe_prev = &raw mut (*mtd).saved.tqh_first;
+            (*mtd).children.tqh_first = std::ptr::null_mut();
+            (*mtd).children.tqh_last = &raw mut (*mtd).children.tqh_first;
+            let original_name = CString::new(vec![b'@', 0xff, b'x']).unwrap();
+            let original_key = CString::new("7").unwrap();
+            let restored = mode_tree_add_identity(
+                mtd,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                ModeTreeIdentity::named(5, 2, 0, original_name.as_ptr(), original_key.as_ptr()),
+                b"row\0".as_ptr().cast(),
+                std::ptr::null(),
+                1,
+            );
+            assert_eq!((*restored).tagged, 1);
+            assert_eq!((*restored).expanded, 0);
+            for (kind, group, detail) in [
+                (5, 3, b"7\0".as_ptr()),
+                (5, 2, b"8\0".as_ptr()),
+                (8, 2, b"7\0".as_ptr()),
+            ] {
+                let different = mode_tree_add_identity(
+                    mtd,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    ModeTreeIdentity::named(kind, group, 0, original_name.as_ptr(), detail.cast()),
+                    b"row\0".as_ptr().cast(),
+                    std::ptr::null(),
+                    1,
+                );
+                assert_eq!((*different).tagged, 0);
+                assert_eq!((*different).expanded, 1);
+            }
+            mode_tree_free_items(&raw mut (*mtd).children);
+            mode_tree_free_items(&raw mut (*mtd).saved);
+            free(mtd.cast());
+        }
+    }
 
     #[test]
     fn semantic_keys_restore_tags_expansion_and_selection_without_collisions() {

@@ -1736,6 +1736,22 @@ legacy callers safe.
   changed-file rustfmt, and `git diff --check` passed in the isolated
   worktree. No sanitizer run was performed.
 
+### Increment 96 — customize-tree semantic selection keys (2026-09-22)
+
+- `window_customize` now gives every option, array, key table/binding/field,
+  environment, and section row an exact semantic `ModeTreeIdentity`. The
+  identities use section numbers, key codes, and byte-preserving names/array
+  keys. This removes all pointer-address mode-tree tags in this mode without
+  hashes or generated object IDs. A row copies any named key and frees it
+  with the row; build selection and search copy names while old rows are
+  destroyed. Legacy numeric mode-tree clients remain supported.
+- Direct tests cover non-UTF-8 and first-NUL name handling, section and
+  array separation, key fields, saved tagging/expansion, and selection after
+  a full rebuild. Workspace tests, binary build, changed-file rustfmt, and
+  `git diff --check` passed in the isolated worktree. A detached
+  `customize-mode` smoke entered options mode, but its render capture did
+  not prove row behavior. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1755,28 +1771,35 @@ non-string value.
    nonzero characters. A synthetic variadic FFI call could emit one, but it
    would not be a supported E2E scenario. Revisit the direct caller when the
    callback return contract can change.
-2. `cmd_save_buffer_exec`'s `file_write` call copies its path
+2. `window_buffer`'s item list has paired allocation and teardown in
+   `window_buffer_add_item`, `window_buffer_build`, and `window_buffer_free`.
+   Audit editor callbacks and mode-tree `itemdata` aliases before migrating
+   that list, its items, and their names as one owner boundary.
+3. `cmd_save_buffer_exec`'s `file_write` call copies its path
    synchronously, but changing only its local expanded path to `CString`
    would add a copy solely to replace the C-owned
    `format_single_from_target` result. Revisit
    with the format expansion producer. Remaining `xstrndup` callers return
    or transfer C-owned strings; `window_copy` regex buffers grow through a
    shared C API.
-3. The remaining address-based registries, `window_customize` and other UI
-   tags, and session/winlink graph require separate migrations. The new typed
-   mode-tree key is the prerequisite for replacing further pointer tags, but
-   each mode still needs its own semantic identity and alias audit.
+4. The remaining address-based registries, other UI tags, and session/winlink
+   graph require separate migrations. The typed mode-tree key permits further
+   semantic tags, but each mode still needs its own identity and alias audit.
    `window_client` has no existing guaranteed unique semantic key: names and
    PIDs can repeat, and creation timestamps are not unique by contract.
    Its pointer tag must wait for a client owner/observer migration; a new
    tag-only generated ID would violate the agreed type policy.
 
-Current validation is recorded in increments 15–95. The remaining
+Current validation is recorded in increments 15–96. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–95 has its own local commit; none was pushed.
+Each of increments 15–96 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;
 changed-file rustfmt and `git diff --check` also passed.
 After increments 91–93 were integrated, `cargo test --workspace --quiet`,
 `cargo build --bin hmux2 --quiet`, and `git diff --check` passed on main.
+After increments 94–96 were integrated, the workspace suite, binary build,
+changed-file `rustfmt --edition 2021 --check`, and `git diff --check` passed
+on main. The direct `rustfmt` invocation requires the crate's 2021 edition
+for the C string literals in the session-group test.

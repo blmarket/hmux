@@ -12,13 +12,33 @@ use super::sort::sort_criteria;
 
 /// Identity retained by a mode tree across rebuilds. Legacy numeric tags are
 /// kept for modes which have not yet migrated to semantic identities.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct ModeTreeIdentity {
     pub(crate) kind: u_int,
     pub(crate) first: u_int,
     pub(crate) second: u64,
+    pub(crate) name: *const ::core::ffi::c_char,
+    pub(crate) detail: *const ::core::ffi::c_char,
 }
+
+impl PartialEq for ModeTreeIdentity {
+    fn eq(&self, other: &Self) -> bool {
+        unsafe fn same_name(a: *const ::core::ffi::c_char, b: *const ::core::ffi::c_char) -> bool {
+            match (a.is_null(), b.is_null()) {
+                (true, true) => true,
+                (false, false) => std::ffi::CStr::from_ptr(a) == std::ffi::CStr::from_ptr(b),
+                _ => false,
+            }
+        }
+        self.kind == other.kind
+            && self.first == other.first
+            && self.second == other.second
+            && unsafe { same_name(self.name, other.name) && same_name(self.detail, other.detail) }
+    }
+}
+
+impl Eq for ModeTreeIdentity {}
 
 impl ModeTreeIdentity {
     pub const fn legacy(tag: u64) -> Self {
@@ -26,6 +46,8 @@ impl ModeTreeIdentity {
             kind: 0,
             first: 0,
             second: tag,
+            name: ::core::ptr::null(),
+            detail: ::core::ptr::null(),
         }
     }
 
@@ -34,6 +56,8 @@ impl ModeTreeIdentity {
             kind: 1,
             first: id,
             second: 0,
+            name: ::core::ptr::null(),
+            detail: ::core::ptr::null(),
         }
     }
 
@@ -42,6 +66,8 @@ impl ModeTreeIdentity {
             kind: 2,
             first: session_id,
             second: index as u32 as u64,
+            name: ::core::ptr::null(),
+            detail: ::core::ptr::null(),
         }
     }
 
@@ -50,6 +76,26 @@ impl ModeTreeIdentity {
             kind: 3,
             first: id,
             second: 0,
+            name: ::core::ptr::null(),
+            detail: ::core::ptr::null(),
+        }
+    }
+
+    /// The caller lends C strings until a mode-tree item copies them. Both
+    /// pointers must remain valid whenever this identity is compared.
+    pub const unsafe fn named(
+        kind: u_int,
+        first: u_int,
+        second: u64,
+        name: *const ::core::ffi::c_char,
+        detail: *const ::core::ffi::c_char,
+    ) -> Self {
+        Self {
+            kind,
+            first,
+            second,
+            name,
+            detail,
         }
     }
 }
