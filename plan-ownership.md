@@ -117,14 +117,19 @@ count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
 
-Next, migrate `format_replace`'s accumulated value and the predicate/loop/lookup
-return contracts that feed it in `src/format/expression.rs`. Only its branch
-results and re-expansion transforms still consume the internal C-return
-`format_expand1` adapter; `format_expand_time` also uses that adapter for its
-exported result. Operands, predicates, name lookups, loop-body expansion, and
-job expansion now retain owned recursive inputs. Loop accumulators still use
-manual evbuffer lifetimes. Migrate complete producer/consumer contracts together
-until the internal adapter can be removed, retaining the exported C contract.
+Next, migrate the built-in format callback table in `src/format/callbacks.rs`
+and its lookup/enumeration consumers together. Its 214 entries still use an
+untyped C callback result for either a borrowed timestamp or a libc-owned
+string. Give those distinct results explicit Rust contracts; remove the
+callback string copy/free boundary in `format_find` and the remaining
+`format_printf` allocation contract at the same time. Audit `format_each` and
+all table consumers before changing the callback type.
+
+The expression evaluator now keeps replacement values, predicates, lookups,
+loop results, arithmetic results, substitutions, and output transforms owned.
+Loop and fuzzy-position accumulators use Rust collections; the internal
+`format_expand1` and `format_unescape` C-return adapters are gone. Exported
+format, regex-substitution, and padding functions retain libc-freeable returns.
 
 Customize, buffer, client, switch, and tree modes now use owned expansion
 results, as does the save-buffer path. Exported `format_expand`,
@@ -1624,6 +1629,29 @@ name error.
 - Remaining internal C expansion consumers are the accumulated value paths in
   `format_replace`. Their producers and transforms are the next batch; exported
   C-return functions still supply libc-freeable results.
+
+### Batch — owned format replacement values and producers (2026-09-23)
+
+- Migrated `format_replace` and its predicate, name, loop, lookup, arithmetic,
+  cycle, search, and substitution producers to `CString`/`Option<CString>`.
+  Loops build output with `Vec`; repetition grows one byte buffer rather than
+  repeatedly allocating and copying its prefix. Existing trim builders and
+  new owned regex/padding APIs feed transforms directly. Removed internal
+  C-return expansion/unescape adapters and replacement-value manual frees.
+- Lookup keeps absent values distinct from empty values, owns basename/dirname
+  mutation scratch, and moves quoting results directly. Option-loop and
+  neighbour-value consumers now use `options_to_cstring`. Arithmetic formatting
+  still uses C `snprintf` to preserve rounding, negative precision, locale,
+  and nonfinite representations. Built-in callbacks retain their old ABI and
+  are copied/freed at the lookup boundary pending the next table-wide batch;
+  exported format, regex, and padding results remain libc-freeable.
+- Serialized workspace tests (396), binary build, rustfmt, and diff checks
+  passed. The expanded operand API test passed for absent window/pane/name
+  contexts versus an empty option loop. Expanded output CLI coverage includes
+  combined transforms, non-UTF-8 bytes, invalid regexes, fuzzy positions,
+  lookup quoting, timestamps, and floating-point edge cases. Output, loops,
+  search, trim, quote, job output, and job-name CLI checks passed on candidate
+  and pinned tmux. No sanitizer ran.
 
 ## Historical migration index
 

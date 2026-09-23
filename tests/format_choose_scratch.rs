@@ -32,6 +32,12 @@ fn compare_repeat_and_arithmetic_expand_split_operands() {
             (b"#{e|+:invalid,2}\0", b""),
             (b"#{e|+:1,invalid}\0", b""),
             (b"#{e|+:1,}\0", b"1"),
+            // Missing loop context fails the replacement instead of producing
+            // an empty value and continuing with the suffix.
+            (b"prefix#{W:body}tail\0", b"prefix"),
+            (b"prefix#{P:body}tail\0", b"prefix"),
+            (b"prefix#{N/w:name}tail\0", b"prefix"),
+            (b"prefix#{O/s:body}tail\0", b"prefixtail"),
         ] {
             let expression = CStr::from_bytes_with_nul(expression).unwrap();
             let result = format_expand(tree, expression.as_ptr());

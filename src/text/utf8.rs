@@ -2075,67 +2075,34 @@ pub unsafe extern "C" fn utf8_cstrwidth(mut s: *const ::core::ffi::c_char) -> u_
 }
 #[no_mangle]
 pub unsafe extern "C" fn utf8_padcstr(
-    mut s: *const ::core::ffi::c_char,
-    mut width: u_int,
+    s: *const ::core::ffi::c_char,
+    width: u_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut slen: size_t = 0;
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut n: u_int = 0;
-    let mut i: u_int = 0;
-    n = utf8_cstrwidth(s);
-    if n >= width {
-        return xstrdup(s);
-    }
-    slen = strlen(s);
-    out = xmalloc(
-        slen.wrapping_add(1 as size_t)
-            .wrapping_add(width.wrapping_sub(n) as size_t),
-    ) as *mut ::core::ffi::c_char;
-    memcpy(
-        out as *mut ::core::ffi::c_void,
-        s as *const ::core::ffi::c_void,
-        slen,
-    );
-    i = n;
-    while i < width {
-        let fresh9 = slen;
-        slen = slen.wrapping_add(1);
-        *out.offset(fresh9 as isize) = ' ' as i32 as ::core::ffi::c_char;
-        i = i.wrapping_add(1);
-    }
-    *out.offset(slen as isize) = '\0' as i32 as ::core::ffi::c_char;
-    return out;
+    xstrdup(utf8_pad_cstring(s, width, false).as_ptr())
 }
 #[no_mangle]
 pub unsafe extern "C" fn utf8_rpadcstr(
-    mut s: *const ::core::ffi::c_char,
-    mut width: u_int,
+    s: *const ::core::ffi::c_char,
+    width: u_int,
 ) -> *mut ::core::ffi::c_char {
-    let mut slen: size_t = 0;
-    let mut out: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut n: u_int = 0;
-    let mut i: u_int = 0;
-    n = utf8_cstrwidth(s);
-    if n >= width {
-        return xstrdup(s);
+    xstrdup(utf8_pad_cstring(s, width, true).as_ptr())
+}
+pub(crate) unsafe fn utf8_pad_cstring(
+    s: *const ::core::ffi::c_char,
+    width: u_int,
+    left: bool,
+) -> CString {
+    let bytes = CStr::from_ptr(s).to_bytes();
+    let padding = width.saturating_sub(utf8_cstrwidth(s)) as usize;
+    let mut output = Vec::with_capacity(bytes.len() + padding);
+    if left {
+        output.resize(padding, b' ');
+        output.extend_from_slice(bytes);
+    } else {
+        output.extend_from_slice(bytes);
+        output.resize(bytes.len() + padding, b' ');
     }
-    slen = strlen(s);
-    out = xmalloc(
-        slen.wrapping_add(1 as size_t)
-            .wrapping_add(width.wrapping_sub(n) as size_t),
-    ) as *mut ::core::ffi::c_char;
-    i = 0 as u_int;
-    while i < width.wrapping_sub(n) {
-        *out.offset(i as isize) = ' ' as i32 as ::core::ffi::c_char;
-        i = i.wrapping_add(1);
-    }
-    memcpy(
-        out.offset(i as isize) as *mut ::core::ffi::c_void,
-        s as *const ::core::ffi::c_void,
-        slen,
-    );
-    *out.offset((i as size_t).wrapping_add(slen) as isize) = '\0' as i32 as ::core::ffi::c_char;
-    return out;
+    CString::new(output).expect("padded C string contains no NUL")
 }
 #[no_mangle]
 pub unsafe extern "C" fn utf8_cstrhas(

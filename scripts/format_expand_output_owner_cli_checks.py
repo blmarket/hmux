@@ -10,7 +10,7 @@ import tempfile
 root = pathlib.Path(__file__).resolve().parents[1]
 binary = os.fsencode(pathlib.Path(os.environ.get("HMUX_BINARY", root / "target/debug/hmux2")).resolve())
 baseline = os.environ.get("HMUX_BASELINE_BINARY")
-env = dict(os.environ, TERM="xterm-256color", LC_ALL="C", TMUX="", SHELL="/bin/sh")
+env = dict(os.environ, TERM="xterm-256color", LC_ALL="C", TMUX="", SHELL="/bin/sh", TZ="UTC")
 
 
 def check(executable, directory):
@@ -24,8 +24,34 @@ def check(executable, directory):
     try:
         run(b"new-session", b"-d", b"-s", b"owner", b"sleep", b"60")
         run(b"set-option", b"-g", b"@bytes", b"A \xff#B")
+        run(b"set-option", b"-g", b"@nested", b"#{R:xy,3}")
+        run(b"set-option", b"-g", b"@path", b"/tmp/\xff item")
+        run(b"set-option", b"-g", b"@timestamp", b"1")
+        run(b"set-option", b"-g", b"@date_format", b"%Y")
+        run(b"set-option", b"-g", b"@zero", b"0")
         cases = (
             (b"literal", b"literal\n"),
+            (b"#{E:@nested}", b"xyxyxy\n"),
+            (b"#{R:\xff,3}", b"\xff\xff\xff\n"),
+            (b"#{p8;E:@nested}", b"xyxyxy  \n"),
+            (b"#{p-8;E:@nested}", b"  xyxyxy\n"),
+            (b"#{=|3|..;E:@nested}", b"xyx..\n"),
+            (b"#{=|-3|..;E:@nested}", b"..yxy\n"),
+            (b"#{s|x|Z|;E:@nested}", b"ZyZyZy\n"),
+            (b"#{s|[|Z|;E:@nested}", b"xyxyxy\n"),
+            (b"#{n;E:@nested}:#{w;E:@nested}", b"6:6\n"),
+            (b"#{b:@path}", b"\xff item\n"),
+            (b"#{d:@path}", b"/tmp\n"),
+            (b"#{q;b:@path}", b"\xff\\ item\n"),
+            (b"#{t/f/#{@date_format}/:@timestamp}", b"1970\n"),
+            (b"#{t:@zero}", b"\n"),
+            (b"#{?@zero,yes,no}:#{?@absent,yes,no}", b"no:no\n"),
+            (b"#{m/p:ac,abc}", b"0,2\n"),
+            (b"#{m/z:ac,abc}:#{m/r:[,abc}", b"1:0\n"),
+            (b"#{e|/|f|3:1,8}", b"0.125\n"),
+            (b"#{e|/|f|-1:1,8}", b"0.125000\n"),
+            (b"#{e|/|f:1,0}", None),
+            (b"#{e|/|f:0,0}", None),
             (b"x" * 300 + b"#", b"x" * 300 + b"\n"),
             (b"L#{@bytes}R", b"LA \xff#BR\n"),
             (b"#{q:@bytes}", b"A\\ \xff\\#B\n"),

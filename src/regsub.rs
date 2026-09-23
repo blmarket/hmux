@@ -1,10 +1,11 @@
-use crate::src::ffi::libc::{memcpy, regcomp, regexec, regfree, strlen};
+use crate::src::ffi::libc::{regcomp, regexec, regfree, strlen};
 pub use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 pub use crate::src::shared::regex::{
     __re_long_size_t, re_dfa_t, re_pattern_buffer, reg_syntax_t, regex_t, regmatch_t, regoff_t,
 };
-use crate::src::xmalloc::{xmalloc, xstrdup};
+use crate::src::xmalloc::xstrdup;
+use std::ffi::{CStr, CString};
 
 unsafe fn regsub_copy(
     buf: &mut Vec<u8>,
@@ -63,11 +64,20 @@ unsafe fn regsub_expand(
 }
 #[no_mangle]
 pub unsafe extern "C" fn regsub(
+    pattern: *const ::core::ffi::c_char,
+    with: *const ::core::ffi::c_char,
+    text: *const ::core::ffi::c_char,
+    flags: ::core::ffi::c_int,
+) -> *mut ::core::ffi::c_char {
+    regsub_cstring(pattern, with, text, flags)
+        .map_or(std::ptr::null_mut(), |value| xstrdup(value.as_ptr()))
+}
+pub(crate) unsafe fn regsub_cstring(
     mut pattern: *const ::core::ffi::c_char,
     mut with: *const ::core::ffi::c_char,
     mut text: *const ::core::ffi::c_char,
     mut flags: ::core::ffi::c_int,
-) -> *mut ::core::ffi::c_char {
+) -> Option<CString> {
     let mut r: regex_t = re_pattern_buffer {
         buffer: ::core::ptr::null_mut::<re_dfa_t>(),
         allocated: 0,
@@ -86,13 +96,13 @@ pub unsafe extern "C" fn regsub(
     let mut empty: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut buf = Vec::<u8>::new();
     if *text as ::core::ffi::c_int == '\0' as i32 {
-        return xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
+        return Some(CString::default());
     }
     if *pattern as ::core::ffi::c_int == '\0' as i32 {
-        return xstrdup(text);
+        return Some(CStr::from_ptr(text).to_owned());
     }
     if regcomp(&raw mut r, pattern, flags) != 0 as ::core::ffi::c_int {
-        return ::core::ptr::null_mut::<::core::ffi::c_char>();
+        return None;
     }
     start = 0 as ssize_t;
     last = 0 as ssize_t;
@@ -155,9 +165,5 @@ pub unsafe extern "C" fn regsub(
         }
     }
     regfree(&raw mut r);
-    // The exported result is freed by the format caller with libc free.
-    let result = xmalloc(buf.len().wrapping_add(1)) as *mut ::core::ffi::c_char;
-    memcpy(result.cast(), buf.as_ptr().cast(), buf.len());
-    *result.add(buf.len()) = 0;
-    result
+    Some(CString::new(buf).expect("regex substitution contains no NUL"))
 }

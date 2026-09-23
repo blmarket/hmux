@@ -1,4 +1,4 @@
-use crate::src::arguments::args_escape;
+use crate::src::arguments::args_escape_cstring;
 use crate::src::cfg::cfg_files;
 use crate::src::cmd::{
     cmd_mouse_at, cmd_mouse_pane, cmd_stringify_argv, cmd_stringify_argv_cstring,
@@ -18,7 +18,7 @@ use crate::src::ffi::libc::{
     strcmp, strcspn, strftime, strlcat, strlen, strstr, strtod, time,
 };
 use crate::src::ffi::libm::{fabs, fmod};
-use crate::src::format_draw::{format_trim_left, format_trim_right, format_width};
+use crate::src::format_draw::{format_trim_left_bytes, format_trim_right_bytes, format_width};
 use crate::src::fuzzy::fuzzy_match_owned;
 use crate::src::grid::{grid_get_cell, grid_get_line, grid_line_length, grid_peek_line};
 use crate::src::grid_view::grid_view_get_cell;
@@ -32,7 +32,7 @@ pub use crate::src::options::options_table_entry;
 use crate::src::options::{
     options_array_first, options_array_item_key, options_array_next, options_first, options_get,
     options_get_number, options_get_string, options_is_array, options_name, options_next,
-    options_parse_owned, options_to_string,
+    options_parse_owned, options_to_cstring,
 };
 use crate::src::osdep_linux::{osdep_get_cwd, osdep_get_name_cstring};
 use crate::src::paste::{
@@ -43,7 +43,7 @@ use crate::src::reactor::{
     evbuffer_add, evbuffer_add_printf, evbuffer_free, evbuffer_get_length, evbuffer_new,
     evbuffer_pullup, evbuffer_readline, event_add, event_initialized, event_pending, event_set,
 };
-use crate::src::regsub::regsub;
+use crate::src::regsub::regsub_cstring;
 pub use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
 use crate::src::server_client::{
@@ -69,7 +69,7 @@ use crate::src::tmux::{
 use crate::src::tty::{tty_default_colours, tty_window_offset};
 use crate::src::tty_features::{tty_feature_present, tty_get_features};
 use crate::src::tty_term::{tty_term_has_name, tty_term_number};
-use crate::src::utf8::{utf8_cstrhas, utf8_padcstr, utf8_rpadcstr, utf8_set, utf8_tocstr};
+use crate::src::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr};
 use crate::src::window::{
     window_count_panes, window_get_pane_status, window_pane_get_pane_status, window_pane_index,
     window_pane_is_floating, window_pane_mode, window_pane_printable_flags,
