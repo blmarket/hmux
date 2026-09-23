@@ -1449,6 +1449,21 @@ legacy callers safe.
   changed-file rustfmt, and `git diff --check` passed in the isolated
   worktree. No sanitizer run was performed.
 
+### Increment 77 — source-file glob pattern (2026-09-22)
+
+- `cmd_source_file_exec` now owns each absolute or cwd-prefixed glob
+  pattern as `CString`, replacing its per-path `xstrdup`/`xasprintf` and
+  matching frees. It builds relative paths from C-string bytes without
+  UTF-8 conversion. Logging and `glob` borrow the pointer; on success it
+  drops before iterating `g.gl_pathv`, and on error it drops after
+  `globfree`, matching the prior order. `cwd`, `expanded`, and asynchronous
+  file-path copies retain their existing ownership.
+- `tests/source_file_pattern.rs` uses a private server to cover absolute
+  paths, relative paths with glob characters in the cwd, two matched glob
+  files, no-match errors, and quiet no-match. Workspace tests, binary
+  build, changed-file rustfmt, and `git diff --check` passed in the
+  isolated worktree. No sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1463,13 +1478,13 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `cmd_source_file_exec`'s per-path glob pattern and
-   `cmd_command_prompt_exec`'s nonliteral split buffers. Remaining
+2. Inspect `cmd_command_prompt_exec`'s nonliteral split buffers and the
+   private `cmd_source_file_quote_for_glob` cwd builder. Remaining
    `xstrndup` callers return or transfer C-owned strings; `window_copy`
    regex buffers grow through a shared C API.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–76. The remaining
+Current validation is recorded in increments 15–77. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–76 has its own local commit; none was pushed.
+Each of increments 15–77 has its own local commit; none was pushed.

@@ -80,7 +80,8 @@ pub use crate::src::shared::window::{
     window_mode_entry_entry, window_winlinks, winlink, winlink_entry, winlink_sentry,
     winlink_stack, winlink_wentry, winlinks,
 };
-use crate::src::xmalloc::{xasprintf, xcalloc, xmalloc, xreallocarray, xstrdup};
+use crate::src::xmalloc::{xcalloc, xmalloc, xreallocarray, xstrdup};
+use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_14;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_13;
@@ -318,7 +319,6 @@ unsafe extern "C" fn cmd_source_file_exec(
     let mut cdata: *mut cmd_source_file_data = ::core::ptr::null_mut::<cmd_source_file_data>();
     let mut c: *mut client = cmdq_get_client(item);
     let mut retval: cmd_retval = CMD_RETURN_NORMAL;
-    let mut pattern: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut cwd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut expanded: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut path: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -405,22 +405,23 @@ unsafe extern "C" fn cmd_source_file_exec(
         {
             cmd_source_file_add(cdata, b"-\0" as *const u8 as *const ::core::ffi::c_char);
         } else {
-            if *path as ::core::ffi::c_int == '/' as i32 {
-                pattern = xstrdup(path);
+            let pattern = if *path as ::core::ffi::c_int == '/' as i32 {
+                CStr::from_ptr(path).to_owned()
             } else {
-                xasprintf(
-                    &raw mut pattern,
-                    b"%s/%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    cwd,
-                    path,
-                );
-            }
+                let cwd_bytes = CStr::from_ptr(cwd).to_bytes();
+                let path_bytes = CStr::from_ptr(path).to_bytes();
+                let mut bytes = Vec::with_capacity(cwd_bytes.len() + 1 + path_bytes.len());
+                bytes.extend_from_slice(cwd_bytes);
+                bytes.push(b'/');
+                bytes.extend_from_slice(path_bytes);
+                CString::new(bytes).expect("C strings have no interior NUL")
+            };
             log_debug(
                 b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
                 b"cmd_source_file_exec\0" as *const u8 as *const ::core::ffi::c_char,
-                pattern,
+                pattern.as_ptr(),
             );
-            result = glob(pattern, 0 as ::core::ffi::c_int, None, &raw mut g);
+            result = glob(pattern.as_ptr(), 0 as ::core::ffi::c_int, None, &raw mut g);
             if result != 0 as ::core::ffi::c_int {
                 if result != GLOB_NOMATCH || !(*cdata).flags & CMD_PARSE_QUIET != 0 {
                     if result == GLOB_NOMATCH {
@@ -439,9 +440,9 @@ unsafe extern "C" fn cmd_source_file_exec(
                     retval = CMD_RETURN_ERROR;
                 }
                 globfree(&raw mut g);
-                free(pattern as *mut ::core::ffi::c_void);
+                drop(pattern);
             } else {
-                free(pattern as *mut ::core::ffi::c_void);
+                drop(pattern);
                 j = 0 as u_int;
                 while (j as __size_t) < g.gl_pathc {
                     cmd_source_file_add(cdata, *g.gl_pathv.offset(j as isize));
