@@ -130,7 +130,7 @@ use crate::src::tty_acs::tty_acs_get;
 use crate::src::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
 use crate::src::window::{
     window_pane_reset_mode, window_pane_scrollbar_overlay_visible, window_pane_scrollbar_redraw,
-    window_pane_scrollbar_show, window_set_active_pane,
+    window_pane_scrollbar_show, window_pane_set_searchstr, window_set_active_pane,
 };
 use crate::src::xmalloc::{xmalloc, xreallocarray, xstrdup, xvasprintf_cstring};
 use std::borrow::Cow;
@@ -6587,8 +6587,7 @@ unsafe extern "C" fn window_copy_search(
     if visible_only == 0 as ::core::ffi::c_int && !(*data).searchmark.is_null() {
         window_copy_clear_marks(wme);
     }
-    free((*wp).searchstr as *mut ::core::ffi::c_void);
-    (*wp).searchstr = xstrdup(str);
+    window_pane_set_searchstr(wp, Some(CStr::from_ptr(str).to_owned()));
     (*wp).searchregex = regex;
     fx = (*data).cx;
     fy = (*(*(*data).backing).grid)

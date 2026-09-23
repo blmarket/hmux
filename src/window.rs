@@ -3078,15 +3078,26 @@ pub unsafe extern "C" fn window_pane_find_by_id(mut id: u_int) -> *mut window_pa
     wp.id = id;
     return window_pane_tree_find(&raw mut all_window_panes, &raw mut wp);
 }
-/// A pane keeps its C layout and address at offset zero. The trailing vector
-/// owns the range storage exposed temporarily through `pane.r.ranges`.
+/// A pane keeps its C layout and address at offset zero. Trailing fields own
+/// the range storage and cached search string borrowed through the pane.
 #[repr(C)]
 struct WindowPaneOwned {
     pane: window_pane,
     visible_ranges: Vec<visible_range>,
+    searchstr_owner: Option<CString>,
 }
 
 const _: () = assert!(::core::mem::offset_of!(WindowPaneOwned, pane) == 0);
+
+/// `pane.searchstr` is a borrowed view, invalidated on replacement or clear.
+pub(crate) unsafe fn window_pane_set_searchstr(wp: *mut window_pane, searchstr: Option<CString>) {
+    let owner = wp.cast::<WindowPaneOwned>();
+    (*owner).searchstr_owner = searchstr;
+    (*wp).searchstr = (*owner)
+        .searchstr_owner
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |value| value.as_ptr() as *mut _);
+}
 
 /// A prior `pane.r.ranges` element pointer is invalid after this function
 /// grows the vector. All callers consume the view before asking for new ranges.
@@ -3116,6 +3127,7 @@ unsafe extern "C" fn window_pane_create(
     wp = Box::into_raw(Box::new(WindowPaneOwned {
         pane: std::mem::zeroed::<window_pane>(),
         visible_ranges: Vec::new(),
+        searchstr_owner: None,
     })) as *mut window_pane;
     (*wp).references = 1 as ::core::ffi::c_int;
     (*wp).window = w as *mut window;
@@ -3301,7 +3313,7 @@ unsafe extern "C" fn window_pane_free(mut wp: *mut window_pane) {
         (*wp).id,
         (*wp).references,
     );
-    free((*wp).searchstr as *mut ::core::ffi::c_void);
+    window_pane_set_searchstr(wp, None);
     screen_free(&raw mut (*wp).status_screen);
     screen_free(&raw mut (*wp).base);
     options_free((*wp).options);

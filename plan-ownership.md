@@ -125,12 +125,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The pane's cached `window_pane.searchstr` is created in
-   `window_copy_search`, read by copy-mode initialization and the
-   `pane_search_string` format callback, then freed in `window_pane_free`.
-   `WindowPaneOwned` can own it as `Option<CString>` while the pane field stays
-   a borrowed compatibility pointer. Its writer only duplicates a C string,
-   so this needs no extra formatting-output copy.
+1. The pane's `shell` string is duplicated from the validated default shell
+   during initial spawn, read by spawn/event/format callbacks, and freed in
+   `window_pane_free`. The existing `WindowPaneOwned` box can own a CString
+   while the pane's public pointer remains a borrowed view. Respawn reuses
+   the same shell; its initial absent state must stay distinct.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -559,6 +558,19 @@ libc allocation on success and leaves it with the caller on error, so a local
   The copy-match CLI now exercises `search-forward -F` and reads
   `pane_search_string` after replacements. Changed-file rustfmt and diff
   checks passed. No sanitizer was run.
+
+### Increment 381 — owned pane cached search string (2026-09-23)
+
+- `WindowPaneOwned` now holds the pane's cached search text as
+  `Option<CString>`. `window_copy_search` installs copied C-string bytes;
+  the public `window_pane.searchstr` field is a borrowed compatibility view
+  invalidated on replacement or clear. Pane teardown clears the owner at
+  the former free point. Removed the pane cache's `xstrdup` and manual free;
+  the mode's separate search string owner remains independent.
+- Serialized workspace tests, binary build, and copy-match and copy-mode
+  backing CLI comparisons against the pinned 3.8-rc baseline passed. The
+  copy-match CLI reads `pane_search_string` after repeated and formatted
+  searches. Changed-file rustfmt and diff checks passed. No sanitizer ran.
 
 ## Historical migration index
 
