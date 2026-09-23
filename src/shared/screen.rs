@@ -22,18 +22,21 @@ pub struct screen_sel {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-/// Box-owned by the screen once the first title is pushed. An empty stack's
-/// tail link points into this header, so its address stays fixed until cleanup.
+/// Legacy title-list layout retained for type compatibility. Runtime title
+/// storage is owned by ScreenText.
 pub struct screen_titles {
     pub tqh_first: *mut screen_title_entry,
     pub tqh_last: *mut *mut screen_title_entry,
 }
-#[derive(Copy, Clone)]
+/// Text pointers are borrowed views into `titles`. They are invalidated by a
+/// title/path change, pop, or screen_free. The owner is nullable so zeroed C
+/// storage can be initialized without constructing a Vec or CString in place.
 #[repr(C)]
 pub struct screen {
     pub title: *mut ::core::ffi::c_char,
     pub path: *mut ::core::ffi::c_char,
-    pub titles: *mut screen_titles,
+    pub titles: Option<Box<ScreenText>>,
+    /// Compatibility view of the stack length; ScreenText owns the elements.
     pub ntitles: u_int,
     pub grid: *mut grid,
     pub cx: u_int,
@@ -58,10 +61,15 @@ pub struct screen {
     pub hyperlinks: *mut hyperlinks,
     pub progress_bar: progress_bar,
 }
+pub struct ScreenText {
+    pub(crate) title: std::ffi::CString,
+    pub(crate) path: Option<std::ffi::CString>,
+    pub(crate) stack: std::collections::VecDeque<std::ffi::CString>,
+}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
-/// Box-owned while linked in a screen's title stack. Pop transfers `text` to
-/// the screen; eviction and stack cleanup free it before dropping the record.
+/// Legacy title-entry layout; runtime stacks hold CString values directly.
 pub struct screen_title_entry {
     pub text: *mut ::core::ffi::c_char,
     pub entry: screen_title_link,

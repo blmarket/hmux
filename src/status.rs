@@ -699,7 +699,7 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
     let mut old_screen: screen = screen {
         title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: ::core::ptr::null_mut::<screen_titles>(),
+        titles: None,
         ntitles: 0,
         grid: ::core::ptr::null_mut::<grid>(),
         cx: 0,
@@ -763,11 +763,7 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
     if (*c).tty.sx == 0 as u_int || (*c).tty.sy == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
-    memcpy(
-        &raw mut old_screen as *mut ::core::ffi::c_void,
-        (*sl).active as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<screen>() as size_t,
-    );
+    old_screen = std::ptr::replace((*sl).active, std::mem::zeroed::<screen>());
     lines = status_line_size(c);
     if lines <= 1 as u_int {
         lines = 1 as u_int;
@@ -1059,7 +1055,7 @@ pub unsafe extern "C" fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi
     let mut old_screen: screen = screen {
         title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: ::core::ptr::null_mut::<screen_titles>(),
+        titles: None,
         ntitles: 0,
         grid: ::core::ptr::null_mut::<grid>(),
         cx: 0,
@@ -1113,11 +1109,7 @@ pub unsafe extern "C" fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi
     if (*c).tty.sx == 0 as u_int || (*c).tty.sy == 0 as u_int {
         return 0 as ::core::ffi::c_int;
     }
-    memcpy(
-        &raw mut old_screen as *mut ::core::ffi::c_void,
-        (*sl).active as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<screen>() as size_t,
-    );
+    old_screen = std::ptr::replace((*sl).active, std::mem::zeroed::<screen>());
     lines = status_line_size(c);
     if lines <= 1 as u_int {
         lines = 1 as u_int;

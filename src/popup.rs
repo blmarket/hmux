@@ -102,7 +102,6 @@ pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
 pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct popup_data {
     pub c: *mut client,
@@ -357,7 +356,7 @@ unsafe extern "C" fn popup_draw_cb(mut c: *mut client, mut data: *mut ::core::ff
     let mut s: screen = screen {
         title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: ::core::ptr::null_mut::<screen_titles>(),
+        titles: None,
         ntitles: 0,
         grid: ::core::ptr::null_mut::<grid>(),
         cx: 0,

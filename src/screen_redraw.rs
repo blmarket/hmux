@@ -2459,7 +2459,7 @@ unsafe extern "C" fn redraw_draw_pane_prompt(
     let mut screen: screen = screen {
         title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: ::core::ptr::null_mut::<screen_titles>(),
+        titles: None,
         ntitles: 0,
         grid: ::core::ptr::null_mut::<grid>(),
         cx: 0,

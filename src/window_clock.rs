@@ -77,7 +77,6 @@ use crate::src::window::window_pane_reset_mode;
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct window_clock_mode_data {
     pub screen: screen,

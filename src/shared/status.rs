@@ -8,7 +8,6 @@ use super::prompt::{prompt_key_result, prompt_result};
 use super::screen::screen;
 use super::style::{style, style_line_entry};
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct status_line {
     pub timer: event,

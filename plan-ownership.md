@@ -117,11 +117,20 @@ count as a completion metric or claim a safe wrapper proves legacy callers safe.
 
 ## Current priorities
 
-Next, migrate the screen title/path/title-stack lifecycle described below.
-Audit every by-value screen copy and embedded owner construction/destruction
-before adding drop-bearing fields or removing `Copy`. Complete those enabling
-lifecycle changes with the fields and stack in one coherent batch where possible.
-This is the next structural owner boundary after the format callback contracts.
+Next, migrate screen tab and selection storage across allocation, resize/reset,
+borrowed access, and destruction. Reuse the completed screen construction and
+move audit: screens and their containing status/popup/clock records are no
+longer Copy, and the three redraw snapshots explicitly transfer ownership.
+Keep the remaining grid, saved-grid, write-list, and hyperlink lifecycles in
+scope for subsequent screen resource batches rather than treating text ownership
+as completion of the screen migration.
+
+Screen title/path strings and the bounded title stack now live in a nullable
+boxed `ScreenText` owner. Raw title/path pointers and `ntitles` are compatibility
+views updated by the screen implementation; no caller owns or frees them.
+Nullable boxed storage preserves zero-initialized containing records and the
+existing screen layout, with explicit initialization and teardown. Legacy title
+list declarations remain for type-layout compatibility but have no live owners.
 
 Copy-mode lazy callbacks now return owned results directly into the entry cache.
 Both lookup and enumeration evaluate them without holding an owner borrow across
@@ -156,11 +165,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `screen.title` and `screen.path` retain C-owned cleaned strings, while the
-   title stack duplicates and transfers title text. `screen` is still a Copy
-   C-layout record, so migrate the title/path/stack lifecycle together only
-   after auditing every by-value copy and embedded screen destruction path.
-   Existing title-stack and OSC 7 CLI checks provide normal-path coverage.
+1. Screen text and title-stack ownership is complete. Tabs, selection, grid,
+   saved-grid, write-list, and hyperlink storage still have manual lifetime
+   boundaries. Migrate each complete producer/consumer lifecycle; do not add
+   a blanket screen Drop until borrowed resource views and partial construction
+   paths have been audited. Title/path compatibility pointers are borrows.
 2. Exported `fuzzy_match`, `args_from_vector`, and `monitor_parse` retain
    C-owned output contracts for external callers; no in-tree production caller
    uses their raw-output paths now. These string-return contracts are deferred
@@ -1709,6 +1718,29 @@ name error.
   nonempty escaped URI in copy mode. Copy-match, hyperlink, selection, backing
   screen, vadd, and expansion-output CLI checks passed on candidate and pinned
   tmux. No sanitizer ran.
+
+### Batch — screen text ownership and explicit screen transfers (2026-09-23)
+
+- Title/path CString values and the ten-entry VecDeque title stack now live in
+  one nullable boxed owner. Setters finish cleaning before replacing the owner,
+  so borrowed current values remain valid inputs. Pop moves a title into place;
+  eviction/reset/drop handle stack cleanup without linked nodes or manual string
+  frees. Title/path pointers and stack count remain synchronized compatibility
+  views. Null versus empty path and cleaning rejection behavior are preserved.
+- Removed Copy/Clone from screen and its containing status, popup, and clock
+  records. Replaced all three whole-screen memcpy snapshots with explicit moves
+  that clear the source before screen_init. Format-draw screen arrays initialize
+  independent empty owners. Audited initialization and embedded-owner teardown:
+  screen_init writes fresh nullable storage, screen_free releases and clears it,
+  and enclosing Box destruction cannot drop the text twice. Existing layout
+  fixtures remain unchanged; legacy list type declarations have no live storage.
+- Serialized workspace tests (400), binary build, changed-file rustfmt, and
+  diff checks passed. Added lifecycle coverage for alias setters, rejected bytes,
+  screen moves, title pop, reset, destruction, and reinitialization. Title-stack,
+  OSC 7/client-path, saved-status, pane-border, popup, clock, format-draw, and
+  copy-backing CLI checks passed on candidate and pinned tmux. No sanitizer ran.
+- Remaining screen tab, selection, grid, write-list, and hyperlink ownership is
+  not complete; tabs and selection are the next shared lifetime boundaries.
 
 ## Historical migration index
 

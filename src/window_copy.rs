@@ -6504,7 +6504,7 @@ unsafe extern "C" fn window_copy_search(
     let mut ss: screen = screen {
         title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: ::core::ptr::null_mut::<screen_titles>(),
+        titles: None,
         ntitles: 0,
         grid: ::core::ptr::null_mut::<grid>(),
         cx: 0,
@@ -6842,7 +6842,7 @@ unsafe extern "C" fn window_copy_search_marks(
     let mut ss: screen = screen {
         title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: ::core::ptr::null_mut::<screen_titles>(),
+        titles: None,
         ntitles: 0,
         grid: ::core::ptr::null_mut::<grid>(),
         cx: 0,

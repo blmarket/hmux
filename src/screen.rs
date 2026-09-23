@@ -71,36 +71,27 @@ pub use crate::src::shared::window::{
     winlink_stack, winlink_wentry, winlinks,
 };
 use crate::src::style::style_apply;
-use crate::src::tmux::{clean_name, global_options};
+use crate::src::tmux::{clean_name_cstring, global_options};
 use crate::src::tty_acs::tty_acs_get;
 use crate::src::utf8::{utf8_copy, utf8_to_data};
-use crate::src::xmalloc::xstrdup;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
 
-unsafe extern "C" fn screen_free_titles(mut s: *mut screen) {
-    let mut title_entry: *mut screen_title_entry = ::core::ptr::null_mut::<screen_title_entry>();
-    if (*s).titles.is_null() {
-        return;
+unsafe fn screen_sync_text(s: *mut screen) {
+    let text = (*s).titles.as_ref().expect("initialized screen text owner");
+    (*s).title = text.title.as_ptr().cast_mut();
+    (*s).path = text
+        .path
+        .as_ref()
+        .map_or(std::ptr::null_mut(), |path| path.as_ptr().cast_mut());
+    (*s).ntitles = text.stack.len() as u_int;
+}
+unsafe fn screen_free_titles(s: *mut screen) {
+    if let Some(text) = (*s).titles.as_mut() {
+        text.stack.clear();
     }
-    loop {
-        title_entry = (*(*s).titles).tqh_first;
-        if title_entry.is_null() {
-            break;
-        }
-        if !(*title_entry).entry.tqe_next.is_null() {
-            (*(*title_entry).entry.tqe_next).entry.tqe_prev = (*title_entry).entry.tqe_prev;
-        } else {
-            (*(*s).titles).tqh_last = (*title_entry).entry.tqe_prev;
-        }
-        *(*title_entry).entry.tqe_prev = (*title_entry).entry.tqe_next;
-        free((*title_entry).text as *mut ::core::ffi::c_void);
-        drop(Box::from_raw(title_entry));
-    }
-    drop(Box::from_raw((*s).titles));
-    (*s).titles = ::core::ptr::null_mut::<screen_titles>();
-    (*s).ntitles = 0 as u_int;
+    (*s).ntitles = 0;
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_init(
@@ -111,10 +102,18 @@ pub unsafe extern "C" fn screen_init(
 ) {
     (*s).grid = grid_create(sx, sy, hlimit);
     (*s).saved_grid = ::core::ptr::null_mut::<grid>();
-    (*s).title = xstrdup(b"\0" as *const u8 as *const ::core::ffi::c_char);
-    (*s).titles = ::core::ptr::null_mut::<screen_titles>();
-    (*s).ntitles = 0 as u_int;
-    (*s).path = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    // screen_init accepts fresh C storage. Write the nullable owner without
+    // reading or dropping uninitialized memory. Reinitializing a live screen
+    // requires screen_free or an explicit move of the old screen first.
+    std::ptr::write(
+        &raw mut (*s).titles,
+        Some(Box::new(crate::src::shared::screen::ScreenText {
+            title: std::ffi::CString::default(),
+            path: None,
+            stack: std::collections::VecDeque::new(),
+        })),
+    );
+    screen_sync_text(s);
     (*s).cstyle = SCREEN_CURSOR_DEFAULT;
     (*s).default_cstyle = SCREEN_CURSOR_DEFAULT;
     (*s).mode = MODE_CURSOR;
@@ -174,8 +173,12 @@ pub unsafe extern "C" fn screen_free(mut s: *mut screen) {
         drop(Box::from_raw((*s).sel));
     }
     free((*s).tabs as *mut ::core::ffi::c_void);
-    free((*s).path as *mut ::core::ffi::c_void);
-    free((*s).title as *mut ::core::ffi::c_void);
+    if let Some(text) = (*s).titles.as_mut() {
+        drop(text.path.take());
+        drop(std::mem::take(&mut text.title));
+    }
+    (*s).path = std::ptr::null_mut();
+    (*s).title = std::ptr::null_mut();
     if !(*s).write_list.is_null() {
         screen_write_free_list(s);
     }
@@ -187,6 +190,7 @@ pub unsafe extern "C" fn screen_free(mut s: *mut screen) {
         hyperlinks_free((*s).hyperlinks);
     }
     screen_free_titles(s);
+    drop((*s).titles.take());
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_reset_tabs(mut s: *mut screen) {
@@ -288,100 +292,64 @@ pub unsafe extern "C" fn screen_set_cursor_colour(
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_set_title(
-    mut s: *mut screen,
-    mut title: *const ::core::ffi::c_char,
-    mut untrusted: ::core::ffi::c_int,
+    s: *mut screen,
+    title: *const ::core::ffi::c_char,
+    untrusted: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut new_title: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    new_title = clean_name(title, untrusted);
-    if new_title.is_null() {
-        return 0 as ::core::ffi::c_int;
-    }
-    free((*s).title as *mut ::core::ffi::c_void);
-    (*s).title = new_title;
-    return 1 as ::core::ffi::c_int;
+    let Some(title) = clean_name_cstring(std::ffi::CStr::from_ptr(title), untrusted) else {
+        return 0;
+    };
+    (*s).titles
+        .as_mut()
+        .expect("initialized screen text owner")
+        .title = title;
+    screen_sync_text(s);
+    1
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_set_path(
-    mut s: *mut screen,
-    mut path: *const ::core::ffi::c_char,
-    mut untrusted: ::core::ffi::c_int,
+    s: *mut screen,
+    path: *const ::core::ffi::c_char,
+    untrusted: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
-    let mut new_path: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    new_path = clean_name(path, untrusted);
-    if new_path.is_null() {
-        return 0 as ::core::ffi::c_int;
-    }
-    free((*s).path as *mut ::core::ffi::c_void);
-    (*s).path = new_path;
-    return 1 as ::core::ffi::c_int;
+    let Some(path) = clean_name_cstring(std::ffi::CStr::from_ptr(path), untrusted) else {
+        return 0;
+    };
+    (*s).titles
+        .as_mut()
+        .expect("initialized screen text owner")
+        .path = Some(path);
+    screen_sync_text(s);
+    1
 }
 #[no_mangle]
-pub unsafe extern "C" fn screen_push_title(mut s: *mut screen) {
-    let mut title_entry: *mut screen_title_entry = ::core::ptr::null_mut::<screen_title_entry>();
+pub unsafe extern "C" fn screen_push_title(s: *mut screen) {
     log_debug(
-        b"%s: %u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_push_title\0" as *const u8 as *const ::core::ffi::c_char,
+        c"%s: %u".as_ptr(),
+        c"screen_push_title".as_ptr(),
         (*s).ntitles,
     );
-    while (*s).ntitles >= 10 as u_int {
-        title_entry = *(*((*(*s).titles).tqh_last as *mut screen_titles)).tqh_last;
-        free((*title_entry).text as *mut ::core::ffi::c_void);
-        if !(*title_entry).entry.tqe_next.is_null() {
-            (*(*title_entry).entry.tqe_next).entry.tqe_prev = (*title_entry).entry.tqe_prev;
-        } else {
-            (*(*s).titles).tqh_last = (*title_entry).entry.tqe_prev;
-        }
-        *(*title_entry).entry.tqe_prev = (*title_entry).entry.tqe_next;
-        drop(Box::from_raw(title_entry));
-        (*s).ntitles = (*s).ntitles.wrapping_sub(1);
+    let text = (*s).titles.as_mut().expect("initialized screen text owner");
+    if text.stack.len() == 10 {
+        text.stack.pop_back();
     }
-    if (*s).titles.is_null() {
-        (*s).titles = Box::into_raw(Box::new(::core::mem::zeroed::<screen_titles>()));
-        (*(*s).titles).tqh_first = ::core::ptr::null_mut::<screen_title_entry>();
-        (*(*s).titles).tqh_last = &raw mut (*(*s).titles).tqh_first;
-    }
-    title_entry = Box::into_raw(Box::new(screen_title_entry {
-        text: xstrdup((*s).title),
-        entry: screen_title_link {
-            tqe_next: ::core::ptr::null_mut(),
-            tqe_prev: ::core::ptr::null_mut(),
-        },
-    }));
-    (*title_entry).entry.tqe_next = (*(*s).titles).tqh_first;
-    if !(*title_entry).entry.tqe_next.is_null() {
-        (*(*(*s).titles).tqh_first).entry.tqe_prev = &raw mut (*title_entry).entry.tqe_next;
-    } else {
-        (*(*s).titles).tqh_last = &raw mut (*title_entry).entry.tqe_next;
-    }
-    (*(*s).titles).tqh_first = title_entry;
-    (*title_entry).entry.tqe_prev = &raw mut (*(*s).titles).tqh_first;
-    (*s).ntitles = (*s).ntitles.wrapping_add(1);
+    text.stack.push_front(text.title.clone());
+    screen_sync_text(s);
 }
 #[no_mangle]
-pub unsafe extern "C" fn screen_pop_title(mut s: *mut screen) {
-    let mut title_entry: *mut screen_title_entry = ::core::ptr::null_mut::<screen_title_entry>();
-    if (*s).titles.is_null() {
+pub unsafe extern "C" fn screen_pop_title(s: *mut screen) {
+    let Some(text) = (*s).titles.as_mut() else {
         return;
-    }
+    };
     log_debug(
-        b"%s: %u\0" as *const u8 as *const ::core::ffi::c_char,
-        b"screen_pop_title\0" as *const u8 as *const ::core::ffi::c_char,
-        (*s).ntitles,
+        c"%s: %u".as_ptr(),
+        c"screen_pop_title".as_ptr(),
+        text.stack.len() as u_int,
     );
-    title_entry = (*(*s).titles).tqh_first;
-    if !title_entry.is_null() {
-        free((*s).title as *mut ::core::ffi::c_void);
-        (*s).title = (*title_entry).text;
-        if !(*title_entry).entry.tqe_next.is_null() {
-            (*(*title_entry).entry.tqe_next).entry.tqe_prev = (*title_entry).entry.tqe_prev;
-        } else {
-            (*(*s).titles).tqh_last = (*title_entry).entry.tqe_prev;
-        }
-        *(*title_entry).entry.tqe_prev = (*title_entry).entry.tqe_next;
-        drop(Box::from_raw(title_entry));
-        (*s).ntitles = (*s).ntitles.wrapping_sub(1);
+    if let Some(title) = text.stack.pop_front() {
+        text.title = title;
     }
+    screen_sync_text(s);
 }
 #[no_mangle]
 pub unsafe extern "C" fn screen_set_progress_bar(
@@ -1125,4 +1093,72 @@ pub unsafe extern "C" fn screen_print(
     }
     *buf.offset(last as isize) = '\0' as i32 as ::core::ffi::c_char;
     return buf;
+}
+
+#[cfg(test)]
+mod text_owner_tests {
+    use super::*;
+    use crate::src::options::{options_create, options_default, options_free};
+    use crate::src::options_table::options_table;
+    use std::ffi::CStr;
+
+    #[test]
+    fn screen_text_survives_moves_alias_updates_reset_and_reinitialization() {
+        unsafe {
+            let saved_options = global_options;
+            let options = options_create(std::ptr::null_mut());
+            let extended_keys = (*(&raw const options_table))
+                .iter()
+                .find(|entry| {
+                    !entry.name.is_null() && CStr::from_ptr(entry.name) == c"extended-keys"
+                })
+                .unwrap();
+            options_default(options, extended_keys);
+            global_options = options;
+            let mut current: screen = std::mem::zeroed();
+            screen_init(&raw mut current, 10, 2, 0);
+            assert_eq!(CStr::from_ptr(current.title), c"");
+            assert!(current.path.is_null());
+            assert_eq!(
+                screen_set_title(&raw mut current, c"original".as_ptr(), 0),
+                1
+            );
+            screen_push_title(&raw mut current);
+            assert_eq!(screen_set_title(&raw mut current, current.title, 0), 1);
+            assert_eq!(
+                screen_set_path(&raw mut current, c"/tmp/path".as_ptr(), 0),
+                1
+            );
+            assert_eq!(screen_set_path(&raw mut current, current.path, 0), 1);
+            assert_eq!(
+                screen_set_title(&raw mut current, b"\xff\0".as_ptr().cast(), 0),
+                0
+            );
+            assert_eq!(CStr::from_ptr(current.title), c"original");
+
+            let mut old = std::mem::replace(&mut current, std::mem::zeroed());
+            screen_init(&raw mut current, 10, 2, 0);
+            screen_set_title(&raw mut current, c"new".as_ptr(), 0);
+            screen_set_title(&raw mut old, c"changed".as_ptr(), 0);
+            screen_pop_title(&raw mut old);
+            assert_eq!(CStr::from_ptr(old.title), c"original");
+            assert_eq!(CStr::from_ptr(old.path), c"/tmp/path");
+            screen_free(&raw mut old);
+            assert!(old.titles.is_none());
+            assert_eq!(CStr::from_ptr(current.title), c"new");
+
+            screen_push_title(&raw mut current);
+            screen_reinit(&raw mut current, 0);
+            assert_eq!(current.ntitles, 0);
+            assert_eq!(CStr::from_ptr(current.title), c"new");
+            screen_free(&raw mut current);
+            assert!(current.titles.is_none());
+            screen_init(&raw mut current, 10, 2, 0);
+            assert_eq!(CStr::from_ptr(current.title), c"");
+            assert!(current.path.is_null());
+            screen_free(&raw mut current);
+            global_options = saved_options;
+            options_free(options);
+        }
+    }
 }

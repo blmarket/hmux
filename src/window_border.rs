@@ -94,7 +94,7 @@ unsafe extern "C" fn window_set_fill_cell(
     let mut s: screen = screen {
         title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: ::core::ptr::null_mut::<screen_titles>(),
+        titles: None,
         ntitles: 0,
         grid: ::core::ptr::null_mut::<grid>(),
         cx: 0,
@@ -393,7 +393,7 @@ pub unsafe extern "C" fn window_make_pane_status(
     let mut old: screen = screen {
         title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: ::core::ptr::null_mut::<screen_titles>(),
+        titles: None,
         ntitles: 0,
         grid: ::core::ptr::null_mut::<grid>(),
         cx: 0,
@@ -455,11 +455,7 @@ pub unsafe extern "C" fn window_make_pane_status(
     let expanded_raw = format_expand_time(ft, fmt);
     let expanded = CStr::from_ptr(expanded_raw).to_owned();
     free(expanded_raw.cast());
-    memcpy(
-        &raw mut old as *mut ::core::ffi::c_void,
-        &raw mut (*wp).status_screen as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<screen>() as size_t,
-    );
+    old = std::ptr::replace(&raw mut (*wp).status_screen, std::mem::zeroed::<screen>());
     screen_init(&raw mut (*wp).status_screen, width, 1 as u_int, 0 as u_int);
     (*wp).status_screen.mode = 0 as ::core::ffi::c_int;
     screen_write_start(&raw mut ctx, &raw mut (*wp).status_screen);
