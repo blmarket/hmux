@@ -965,6 +965,19 @@ legacy callers safe.
   previous/next indexes, active flags, and `@label` option values. No
   sanitizer run was performed.
 
+### Increment 43 — OSC 4 mutable parser copy (2026-09-22)
+
+- `input_osc_4` now owns a byte-exact, NUL-terminated `Vec<u8>` while
+  `strtol` and `strsep` use scoped raw pointers into its writable storage.
+  This removes the local `xstrdup`/`free` pair. The original input string
+  remains available for diagnostics; palette set/query, reply terminators,
+  and redraw flow are unchanged.
+- `scripts/osc4_cli_checks.py` uses a live pane to set and query two palette
+  entries in one OSC and query again with ST, asserting exact BEL/ST replies.
+  Workspace tests, binary build, rustfmt, and `git diff --check` passed in
+  the isolated worktree. Malformed numeric/color branches were source-audited
+  but not forced by the live check; no sanitizer run was performed.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -979,14 +992,12 @@ non-string value.
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
    ownership. Revisit when the callback return contract can change.
-2. Inspect `input_osc_4`'s local mutable copy: it duplicates a C string,
-   tokenizes the copy with `strsep`, and frees it at function exit. A private
-   owned byte buffer with its NUL terminator may remove that pair. Then
-   inspect other local format expansion scratch strings, auditing each return
-   and callback contract before changing its allocator.
+2. Inspect other OSC parser scratch (`input_osc_104` and
+   `input_osc_133_exit_status`) and local format expansion strings. Audit
+   each return and callback contract before changing its allocator.
 3. The remaining address-based registries, UI tags, and session/winlink graph
    require separate ownership migrations after small leaf lifetimes.
 
-Current validation is recorded in increments 15–42. The remaining
+Current validation is recorded in increments 15–43. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–42 has its own local commit; none was pushed.
+Each of increments 15–43 has its own local commit; none was pushed.

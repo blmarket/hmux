@@ -5061,16 +5061,15 @@ unsafe extern "C" fn input_osc_colour_reply(
     };
 }
 unsafe extern "C" fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
-    let mut copy: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
+    // strsep writes NULs into this private copy; the original OSC input stays intact.
+    let mut copy = std::ffi::CStr::from_ptr(p).to_bytes_with_nul().to_vec();
+    let mut s: *mut ::core::ffi::c_char = copy.as_mut_ptr().cast();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut idx: ::core::ffi::c_long = 0;
     let mut c: ::core::ffi::c_int = 0;
     let mut bad: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut redraw: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut palette: *mut colour_palette = (*ictx).palette;
-    s = xstrdup(p);
-    copy = s;
     while !s.is_null() && *s as ::core::ffi::c_int != '\0' as i32 {
         idx = strtol(s, &raw mut next, 10 as ::core::ffi::c_int);
         let fresh9 = next;
@@ -5129,7 +5128,6 @@ unsafe extern "C" fn input_osc_4(mut ictx: *mut input_ctx, mut p: *const ::core:
     if redraw != 0 {
         screen_write_fullredraw(&raw mut (*ictx).ctx);
     }
-    free(copy as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn input_osc_8(mut ictx: *mut input_ctx, mut p: *const ::core::ffi::c_char) {
     let mut current_block: u64;
