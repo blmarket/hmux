@@ -1818,6 +1818,18 @@ legacy callers safe.
   passed with the pinned baseline too, including clicks on two distinct user
   status ranges. No sanitizer was run.
 
+### Increment 254 — file read-open message scratch owner (2026-09-23)
+
+- `file_read` now builds each `MSG_READ_OPEN` header and NUL-terminated path
+  in a local `Vec<u8>`. `proc_send` copies the message synchronously through
+  `imsg_compose` and `ibuf_add`, so the vector drops after the send result.
+  This removes the temporary message's `xmalloc`/`free` pair on both success
+  and failure without changing the file stream owner.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and the pinned-baseline
+  `file_path_owner_cli_checks.py` and `file_message_scratch_cli_checks.py`
+  passed. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1828,11 +1840,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `MSG_WRITE_OPEN` and `MSG_READ_OPEN` temporary payload allocations in
-   `file.rs`, and pane-owned visible range storage, are under independent
-   ownership audits. Prefer a bounded message scratch migration if the send
-   path copies synchronously; keep the pane range owner for a later increment
-   if its callback and alias audit is wider.
+1. A validated `MSG_WRITE_OPEN` scratch migration is committed as `ad4ecc9`
+   in `/tmp/hmux2-file-write-open-scratch-owner`; review and integrate it as
+   the next increment, then remove that temporary worktree. Pane-owned
+   visible range storage is under a separate ABI and owner audit; keep it
+   for a later increment if its callback and alias audit is wider.
 2. The only direct `xvasprintf` production caller outside the `xmalloc`
    wrappers is `format_printf`. Its callback ABI requires a C-owned return
    that consumers libc-free, so a local `CString` does not remove manual
@@ -1864,7 +1876,7 @@ libc allocation on success and leaves it with the caller on error, so a local
 `Vec` alone would add an allocation and copy.
 
 Historical validation for increments 15–225 follows. Newer validation is
-recorded in increments 226–253 above, with increment 228 explicitly retracted.
+recorded in increments 226–254 above, with increment 228 explicitly retracted.
 The remaining address-based registries and UI tags above are separate
 migration candidates. Each retained increment has its own local commit; none
 was pushed.

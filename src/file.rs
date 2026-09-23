@@ -617,8 +617,6 @@ pub unsafe extern "C" fn file_read(
 ) -> *mut client_file {
     let mut current_block: u64;
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
-    let mut msg: *mut msg_read_open = ::core::ptr::null_mut::<msg_read_open>();
-    let mut msglen: size_t = 0;
     let mut fd: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
     let fresh1 = file_next_stream;
     file_next_stream = file_next_stream + 1;
@@ -692,32 +690,33 @@ pub unsafe extern "C" fn file_read(
     }
     match current_block {
         17710118112003399050 => {
-            msglen = strlen((*cf).path)
-                .wrapping_add(1 as size_t)
-                .wrapping_add(::core::mem::size_of::<msg_read_open>() as size_t);
+            let path = CStr::from_ptr((*cf).path).to_bytes_with_nul();
+            let header_len = ::core::mem::size_of::<msg_read_open>();
+            let msglen = header_len + path.len();
             if msglen > (MAX_IMSGSIZE as usize).wrapping_sub(IMSG_HEADER_SIZE) {
                 (*cf).error = E2BIG;
             } else {
-                msg = xmalloc(msglen) as *mut msg_read_open;
-                (*msg).stream = (*cf).stream;
-                (*msg).fd = fd;
+                let header = msg_read_open {
+                    stream: (*cf).stream,
+                    fd,
+                };
+                let mut msg = vec![0; msglen];
                 memcpy(
-                    msg.offset(1 as ::core::ffi::c_int as isize) as *mut ::core::ffi::c_void,
-                    (*cf).path as *const ::core::ffi::c_void,
-                    msglen.wrapping_sub(::core::mem::size_of::<msg_read_open>() as size_t),
+                    msg.as_mut_ptr().cast(),
+                    (&raw const header).cast(),
+                    header_len,
                 );
+                msg[header_len..].copy_from_slice(path);
                 if proc_send(
                     (*cf).peer,
                     MSG_READ_OPEN,
                     -(1 as ::core::ffi::c_int),
-                    msg as *const ::core::ffi::c_void,
+                    msg.as_ptr().cast(),
                     msglen,
                 ) != 0 as ::core::ffi::c_int
                 {
-                    free(msg as *mut ::core::ffi::c_void);
                     (*cf).error = EINVAL;
                 } else {
-                    free(msg as *mut ::core::ffi::c_void);
                     return cf;
                 }
             }
