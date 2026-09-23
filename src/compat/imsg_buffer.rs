@@ -12,7 +12,7 @@ pub use crate::src::shared::abi::{
 };
 pub use crate::src::shared::errno::{EAGAIN, EBADMSG, EINTR, EINVAL, ENOMEM, ERANGE};
 pub use crate::src::shared::limits::{SIZE_MAX, UINT32_MAX};
-pub use crate::src::shared::message::{ibuf, ibuf_entry, ibufqueue, ibufqueue_bufs, msgbuf};
+pub use crate::src::shared::message::{ibuf, ibufqueue, ibufqueue_bufs, msgbuf};
 pub use crate::src::shared::posix_io::iovec;
 pub use crate::src::shared::socket::SOL_SOCKET;
 
@@ -791,14 +791,20 @@ pub unsafe extern "C" fn ibuf_fd_set(mut buf: *mut ibuf, mut fd: ::core::ffi::c_
 }
 #[no_mangle]
 pub unsafe extern "C" fn msgbuf_new() -> *mut msgbuf {
-    let mut msgbuf: *mut msgbuf = ::core::ptr::null_mut::<msgbuf>();
-    msgbuf = calloc(1 as size_t, ::core::mem::size_of::<msgbuf>() as size_t) as *mut msgbuf;
-    if msgbuf.is_null() {
-        return ::core::ptr::null_mut::<msgbuf>();
-    }
-    ibufq_init(&raw mut (*msgbuf).bufs);
-    ibufq_init(&raw mut (*msgbuf).rbufs);
-    return msgbuf;
+    let Ok(msgbuf) = Box::try_new(msgbuf {
+        bufs: ibufqueue::new(),
+        rbufs: ibufqueue::new(),
+        rbuf: ::core::ptr::null_mut(),
+        rpmsg: ::core::ptr::null_mut(),
+        readhdr: None,
+        rarg: ::core::ptr::null_mut(),
+        roff: 0,
+        hdrsize: 0,
+    }) else {
+        *__errno_location() = ENOMEM;
+        return ::core::ptr::null_mut();
+    };
+    Box::into_raw(msgbuf)
 }
 #[no_mangle]
 pub unsafe extern "C" fn msgbuf_new_reader(
@@ -840,7 +846,7 @@ pub unsafe extern "C" fn msgbuf_free(mut msgbuf: *mut msgbuf) {
     }
     msgbuf_clear(msgbuf);
     free((*msgbuf).rbuf as *mut ::core::ffi::c_void);
-    free(msgbuf as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(msgbuf));
 }
 #[no_mangle]
 pub unsafe extern "C" fn msgbuf_queuelen(mut msgbuf: *mut msgbuf) -> uint32_t {
@@ -879,15 +885,14 @@ pub unsafe extern "C" fn ibuf_write(
         0 as ::core::ffi::c_int,
         ::core::mem::size_of::<[iovec; 1024]>() as size_t,
     );
-    buf = (*msgbuf).bufs.bufs.tqh_first;
-    while !buf.is_null() {
+    for queued_buf in (*msgbuf).bufs.bufs.iter() {
+        buf = queued_buf;
         if i >= IOV_MAX as ::core::ffi::c_uint {
             break;
         }
         iov[i as usize].iov_base = ibuf_data(buf);
         iov[i as usize].iov_len = ibuf_size(buf);
         i = i.wrapping_add(1);
-        buf = (*buf).entry.tqe_next;
     }
     if i == 0 as ::core::ffi::c_uint {
         return 0 as ::core::ffi::c_int;
@@ -957,8 +962,8 @@ pub unsafe extern "C" fn msgbuf_write(
         0 as ::core::ffi::c_int,
         ::core::mem::size_of::<C2RustUnnamed_2>() as size_t,
     );
-    buf = (*msgbuf).bufs.bufs.tqh_first;
-    while !buf.is_null() {
+    for queued_buf in (*msgbuf).bufs.bufs.iter() {
+        buf = queued_buf;
         if i >= IOV_MAX as ::core::ffi::c_uint {
             break;
         }
@@ -971,7 +976,6 @@ pub unsafe extern "C" fn msgbuf_write(
         if (*buf).fd != -(1 as ::core::ffi::c_int) {
             buf0 = buf;
         }
-        buf = (*buf).entry.tqe_next;
     }
     if i == 0 as ::core::ffi::c_uint {
         return 0 as ::core::ffi::c_int;
@@ -1026,10 +1030,6 @@ unsafe extern "C" fn ibuf_read_process(
 ) -> ::core::ffi::c_int {
     let mut current_block: u64;
     let mut rbuf: ibuf = ibuf {
-        entry: ibuf_entry {
-            tqe_next: ::core::ptr::null_mut::<ibuf>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut ibuf>(),
-        },
         buf: ::core::ptr::null_mut::<::core::ffi::c_uchar>(),
         size: 0,
         max: 0,
@@ -1038,10 +1038,6 @@ unsafe extern "C" fn ibuf_read_process(
         fd: 0,
     };
     let mut msg: ibuf = ibuf {
-        entry: ibuf_entry {
-            tqe_next: ::core::ptr::null_mut::<ibuf>(),
-            tqe_prev: ::core::ptr::null_mut::<*mut ibuf>(),
-        },
         buf: ::core::ptr::null_mut::<::core::ffi::c_uchar>(),
         size: 0,
         max: 0,
@@ -1262,45 +1258,25 @@ pub unsafe extern "C" fn msgbuf_read(
 unsafe extern "C" fn msgbuf_drain(mut msgbuf: *mut msgbuf, mut n: size_t) {
     let mut buf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
     loop {
-        buf = (*msgbuf).bufs.bufs.tqh_first;
-        if buf.is_null() {
-            break;
-        }
+        buf = match (*msgbuf).bufs.bufs.front() {
+            Some(buf) => buf,
+            None => return,
+        };
         if n >= ibuf_size(buf) {
             n = n.wrapping_sub(ibuf_size(buf));
-            if !(*buf).entry.tqe_next.is_null() {
-                (*(*buf).entry.tqe_next).entry.tqe_prev = (*buf).entry.tqe_prev;
-            } else {
-                (*msgbuf).bufs.bufs.tqh_last = (*buf).entry.tqe_prev;
-            }
-            *(*buf).entry.tqe_prev = (*buf).entry.tqe_next;
-            (*msgbuf).bufs.queued = (*msgbuf).bufs.queued.wrapping_sub(1);
-            ibuf_free(buf);
+            drop((*msgbuf).bufs.bufs.pop_front_owned());
         } else {
             (*buf).rpos = (*buf).rpos.wrapping_add(n);
             return;
         }
     }
 }
-unsafe extern "C" fn ibufq_init(mut bufq: *mut ibufqueue) {
-    (*bufq).bufs.tqh_first = ::core::ptr::null_mut::<ibuf>();
-    (*bufq).bufs.tqh_last = &raw mut (*bufq).bufs.tqh_first;
-    (*bufq).queued = 0 as uint32_t;
-}
 #[no_mangle]
 pub unsafe extern "C" fn ibufq_new() -> *mut ibufqueue {
-    let Ok(mut bufq) = Box::try_new(ibufqueue {
-        bufs: ibufqueue_bufs {
-            tqh_first: ::core::ptr::null_mut(),
-            tqh_last: ::core::ptr::null_mut(),
-        },
-        queued: 0,
-    }) else {
+    let Ok(bufq) = Box::try_new(ibufqueue::new()) else {
         *__errno_location() = ENOMEM;
         return ::core::ptr::null_mut();
     };
-    // The intrusive tail pointer must point into the final heap allocation.
-    ibufq_init(&raw mut *bufq);
     Box::into_raw(bufq)
 }
 #[no_mangle]
@@ -1313,62 +1289,30 @@ pub unsafe extern "C" fn ibufq_free(mut bufq: *mut ibufqueue) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibufq_pop(mut bufq: *mut ibufqueue) -> *mut ibuf {
-    let mut buf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
-    buf = (*bufq).bufs.tqh_first;
-    if buf.is_null() {
-        return ::core::ptr::null_mut::<ibuf>();
-    }
-    if !(*buf).entry.tqe_next.is_null() {
-        (*(*buf).entry.tqe_next).entry.tqe_prev = (*buf).entry.tqe_prev;
-    } else {
-        (*bufq).bufs.tqh_last = (*buf).entry.tqe_prev;
-    }
-    *(*buf).entry.tqe_prev = (*buf).entry.tqe_next;
-    (*bufq).queued = (*bufq).queued.wrapping_sub(1);
-    return buf;
+    return (*bufq)
+        .bufs
+        .pop_front_raw()
+        .unwrap_or(::core::ptr::null_mut());
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibufq_push(mut bufq: *mut ibufqueue, mut buf: *mut ibuf) {
     if (*buf).fd == IBUF_FD_MARK_ON_STACK {
         abort();
     }
-    (*buf).entry.tqe_next = ::core::ptr::null_mut::<ibuf>();
-    (*buf).entry.tqe_prev = (*bufq).bufs.tqh_last;
-    *(*bufq).bufs.tqh_last = buf;
-    (*bufq).bufs.tqh_last = &raw mut (*buf).entry.tqe_next;
-    (*bufq).queued = (*bufq).queued.wrapping_add(1);
+    (*bufq).bufs.push_back_raw(buf);
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibufq_queuelen(mut bufq: *mut ibufqueue) -> uint32_t {
-    return (*bufq).queued;
+    return (*bufq).bufs.len() as uint32_t;
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibufq_concat(mut to: *mut ibufqueue, mut from: *mut ibufqueue) {
-    (*to).queued = (*to).queued.wrapping_add((*from).queued);
-    if !(*from).bufs.tqh_first.is_null() {
-        *(*to).bufs.tqh_last = (*from).bufs.tqh_first;
-        (*(*from).bufs.tqh_first).entry.tqe_prev = (*to).bufs.tqh_last;
-        (*to).bufs.tqh_last = (*from).bufs.tqh_last;
-        (*from).bufs.tqh_first = ::core::ptr::null_mut::<ibuf>();
-        (*from).bufs.tqh_last = &raw mut (*from).bufs.tqh_first;
+    if to == from {
+        return;
     }
-    (*from).queued = 0 as uint32_t;
+    (*to).bufs.append(&mut (*from).bufs);
 }
 #[no_mangle]
 pub unsafe extern "C" fn ibufq_flush(mut bufq: *mut ibufqueue) {
-    let mut buf: *mut ibuf = ::core::ptr::null_mut::<ibuf>();
-    loop {
-        buf = (*bufq).bufs.tqh_first;
-        if buf.is_null() {
-            break;
-        }
-        if !(*buf).entry.tqe_next.is_null() {
-            (*(*buf).entry.tqe_next).entry.tqe_prev = (*buf).entry.tqe_prev;
-        } else {
-            (*bufq).bufs.tqh_last = (*buf).entry.tqe_prev;
-        }
-        *(*buf).entry.tqe_prev = (*buf).entry.tqe_next;
-        ibuf_free(buf);
-    }
-    (*bufq).queued = 0 as uint32_t;
+    (*bufq).bufs.clear();
 }

@@ -19,7 +19,7 @@ pub use crate::src::shared::abi::{
 };
 pub use crate::src::shared::event::{EV_PERSIST, EV_READ, EV_SIGNAL, EV_WRITE};
 use crate::src::shared::message::*;
-pub use crate::src::shared::message::{ibuf, ibuf_entry, imsg, imsgbuf, msgbuf};
+pub use crate::src::shared::message::{ibuf, imsg, imsgbuf, msgbuf};
 pub use crate::src::shared::message::{imsg_hdr, PROTOCOL_VERSION};
 pub use crate::src::shared::process::{tmuxpeer, tmuxproc};
 pub use crate::src::shared::signal::{

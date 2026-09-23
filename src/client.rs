@@ -66,7 +66,7 @@ pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cell
 pub use crate::src::shared::menu::menu_data;
 pub use crate::src::shared::message::msg_command;
 use crate::src::shared::message::*;
-pub use crate::src::shared::message::{ibuf, ibuf_entry, imsg};
+pub use crate::src::shared::message::{ibuf, imsg};
 pub use crate::src::shared::message::{imsg_hdr, IMSG_HEADER_SIZE, MAX_IMSGSIZE, PROTOCOL_VERSION};
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;

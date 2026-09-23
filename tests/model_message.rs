@@ -1,7 +1,7 @@
-//! Frozen pre-migration sizes, alignments, and every named field offset.
+//! Frozen sizes, alignments, and public field offsets for message types.
 use std::mem::{align_of, offset_of, size_of};
 #[test]
-fn original_copies_match() {
+fn migrated_message_collection_layout_matches_fixture() {
     let mut records = Vec::new();
     macro_rules! record {
         ($label:literal, $ty:ty, [$($field:ident),*]) => {
@@ -12,62 +12,32 @@ fn original_copies_match() {
     record!(
         "src/client.rs::ibuf",
         hmux2::src::client::ibuf,
-        [entry, buf, size, max, wpos, rpos, fd]
+        [buf, size, max, wpos, rpos, fd]
     );
     record!(
         "src/compat/imsg.rs::ibuf",
         hmux2::src::compat::imsg::ibuf,
-        [entry, buf, size, max, wpos, rpos, fd]
+        [buf, size, max, wpos, rpos, fd]
     );
     record!(
         "src/compat/imsg_buffer.rs::ibuf",
         hmux2::src::compat::imsg_buffer::ibuf,
-        [entry, buf, size, max, wpos, rpos, fd]
+        [buf, size, max, wpos, rpos, fd]
     );
     record!(
         "src/file.rs::ibuf",
         hmux2::src::file::ibuf,
-        [entry, buf, size, max, wpos, rpos, fd]
+        [buf, size, max, wpos, rpos, fd]
     );
     record!(
         "src/proc.rs::ibuf",
         hmux2::src::proc::ibuf,
-        [entry, buf, size, max, wpos, rpos, fd]
+        [buf, size, max, wpos, rpos, fd]
     );
     record!(
         "src/server_client.rs::ibuf",
         hmux2::src::server_client::ibuf,
-        [entry, buf, size, max, wpos, rpos, fd]
-    );
-    record!(
-        "src/client.rs::C2RustUnnamed_22",
-        hmux2::src::client::ibuf_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/compat/imsg.rs::C2RustUnnamed",
-        hmux2::src::compat::imsg::ibuf_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/compat/imsg_buffer.rs::C2RustUnnamed_0",
-        hmux2::src::compat::imsg_buffer::ibuf_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/file.rs::C2RustUnnamed_10",
-        hmux2::src::file::ibuf_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/proc.rs::C2RustUnnamed_19",
-        hmux2::src::proc::ibuf_entry,
-        [tqe_next, tqe_prev]
-    );
-    record!(
-        "src/server_client.rs::C2RustUnnamed_10",
-        hmux2::src::server_client::ibuf_entry,
-        [tqe_next, tqe_prev]
+        [buf, size, max, wpos, rpos, fd]
     );
     record!(
         "src/compat/imsg.rs::ibufqueue",
@@ -77,12 +47,12 @@ fn original_copies_match() {
     record!(
         "src/compat/imsg_buffer.rs::ibufqueue",
         hmux2::src::compat::imsg_buffer::ibufqueue,
-        [bufs, queued]
+        [bufs]
     );
     record!(
         "src/compat/imsg_buffer.rs::C2RustUnnamed_1",
         hmux2::src::compat::imsg_buffer::ibufqueue_bufs,
-        [tqh_first, tqh_last]
+        []
     );
     record!(
         "src/client.rs::imsg",

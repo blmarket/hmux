@@ -1,6 +1,8 @@
 //! Authoritative client/server message identifiers.
 
 use super::abi::{pid_t, size_t, uint32_t};
+use std::collections::VecDeque;
+use std::ptr::NonNull;
 pub type msgtype = ::core::ffi::c_uint;
 
 pub const MSG_WRITE_DONE: msgtype = 308;
@@ -80,7 +82,6 @@ pub const PROTOCOL_VERSION: ::core::ffi::c_int = 8 as ::core::ffi::c_int;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct ibuf {
-    pub entry: ibuf_entry,
     pub buf: *mut ::core::ffi::c_uchar,
     pub size: size_t,
     pub max: size_t,
@@ -91,27 +92,17 @@ pub struct ibuf {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct ibuf_entry {
-    pub tqe_next: *mut ibuf,
-    pub tqe_prev: *mut *mut ibuf,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct imsg {
     pub hdr: imsg_hdr,
     pub data: *mut ::core::ffi::c_void,
     pub buf: *mut ibuf,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct ibufqueue {
     pub bufs: ibufqueue_bufs,
-    pub queued: uint32_t,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct msgbuf {
     pub bufs: ibufqueue,
@@ -140,11 +131,90 @@ pub struct imsgbuf {
     pub flags: ::core::ffi::c_int,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
 pub struct ibufqueue_bufs {
-    pub tqh_first: *mut ibuf,
-    pub tqh_last: *mut *mut ibuf,
+    entries: VecDeque<OwnedIbuf>,
+}
+
+impl ibufqueue_bufs {
+    pub fn new() -> Self {
+        Self {
+            entries: VecDeque::new(),
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = *mut ibuf> + '_ {
+        self.entries.iter().map(OwnedIbuf::as_ptr)
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub(crate) fn push_back_raw(&mut self, buf: *mut ibuf) {
+        self.entries.push_back(unsafe { OwnedIbuf::from_raw(buf) });
+    }
+
+    pub(crate) fn push_front_raw(&mut self, buf: *mut ibuf) {
+        self.entries.push_front(unsafe { OwnedIbuf::from_raw(buf) });
+    }
+
+    pub(crate) fn pop_front_raw(&mut self) -> Option<*mut ibuf> {
+        self.entries.pop_front().map(OwnedIbuf::into_raw)
+    }
+
+    pub(crate) fn pop_front_owned(&mut self) -> Option<OwnedIbuf> {
+        self.entries.pop_front()
+    }
+
+    pub(crate) fn front(&self) -> Option<*mut ibuf> {
+        self.entries.front().map(OwnedIbuf::as_ptr)
+    }
+
+    pub(crate) fn append(&mut self, other: &mut Self) {
+        self.entries.append(&mut other.entries);
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
+
+pub(crate) struct OwnedIbuf(NonNull<ibuf>);
+
+impl OwnedIbuf {
+    unsafe fn from_raw(buf: *mut ibuf) -> Self {
+        Self(NonNull::new_unchecked(buf))
+    }
+
+    fn as_ptr(&self) -> *mut ibuf {
+        self.0.as_ptr()
+    }
+
+    fn into_raw(self) -> *mut ibuf {
+        let buf = self.0.as_ptr();
+        ::core::mem::forget(self);
+        buf
+    }
+}
+
+impl Drop for OwnedIbuf {
+    fn drop(&mut self) {
+        unsafe {
+            crate::src::compat::imsg_buffer::ibuf_free(self.0.as_ptr());
+        }
+    }
+}
+
+impl ibufqueue {
+    pub fn new() -> Self {
+        Self {
+            bufs: ibufqueue_bufs::new(),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]

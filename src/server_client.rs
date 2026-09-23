@@ -871,7 +871,7 @@ pub use crate::src::shared::layout::{layout_cell, layout_cell_entry, layout_cell
 pub use crate::src::shared::limits::{__INT_MAX__, SIZE_MAX, UINT_MAX};
 pub use crate::src::shared::menu::menu_data;
 use crate::src::shared::message::*;
-pub use crate::src::shared::message::{ibuf, ibuf_entry, imsg};
+pub use crate::src::shared::message::{ibuf, imsg};
 pub use crate::src::shared::message::{imsg_hdr, IMSG_HEADER_SIZE};
 pub use crate::src::shared::mouse::{
     mouse_event, MOUSE_BUTTON_1, MOUSE_BUTTON_10, MOUSE_BUTTON_11, MOUSE_BUTTON_2, MOUSE_BUTTON_3,
