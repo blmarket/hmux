@@ -3300,7 +3300,6 @@ unsafe extern "C" fn window_customize_set_environment(
         idx: 0,
     };
     let mut space: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut prompt: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut text: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if item.is_null() || window_customize_check_item(data, item, &raw mut fs) == 0 {
         return;
@@ -3324,13 +3323,13 @@ unsafe extern "C" fn window_customize_set_environment(
     {
         space = b", global\0" as *const u8 as *const ::core::ffi::c_char;
     }
-    xasprintf(
-        &raw mut prompt,
-        b"(%s%s%s) \0" as *const u8 as *const ::core::ffi::c_char,
-        (*item).name,
-        space,
-        text,
-    );
+    let mut prompt_bytes = Vec::new();
+    prompt_bytes.extend_from_slice(b"(");
+    prompt_bytes.extend_from_slice(CStr::from_ptr((*item).name).to_bytes());
+    prompt_bytes.extend_from_slice(CStr::from_ptr(space).to_bytes());
+    prompt_bytes.extend_from_slice(CStr::from_ptr(text).to_bytes());
+    prompt_bytes.extend_from_slice(b") ");
+    let prompt = CString::new(prompt_bytes).expect("environment prompt contains no NUL");
     free(text as *mut ::core::ffi::c_void);
     new_item = window_customize_new_item();
     (*new_item).data = data as *mut window_customize_modedata;
@@ -3343,7 +3342,7 @@ unsafe extern "C" fn window_customize_set_environment(
     mode_tree_set_prompt(
         (*data).data,
         c,
-        prompt,
+        prompt.as_ptr(),
         if (*envent).value.is_null() {
             b"\0" as *const u8 as *const ::core::ffi::c_char
         } else {
@@ -3366,7 +3365,6 @@ unsafe extern "C" fn window_customize_set_environment(
         ),
         new_item as *mut ::core::ffi::c_void,
     );
-    free(prompt as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_customize_add_option_callback(
     mut c: *mut client,
