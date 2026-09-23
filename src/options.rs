@@ -1754,7 +1754,6 @@ pub unsafe extern "C" fn options_from_string(
     let mut number: ::core::ffi::c_longlong = 0;
     let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut new: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut old: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut key: key_code = 0;
     let mut pr: *mut cmd_parse_result = ::core::ptr::null_mut::<cmd_parse_result>();
     if !oe.is_null() {
@@ -1783,7 +1782,8 @@ pub unsafe extern "C" fn options_from_string(
     }
     match type_0 as ::core::ffi::c_uint {
         0 => {
-            old = xstrdup(options_get_string(oo, name));
+            // Snapshot before options_set_string replaces the scalar owner.
+            let old = CStr::from_ptr(options_get_string(oo, name)).to_owned();
             options_set_string(
                 oo,
                 name,
@@ -1798,12 +1798,10 @@ pub unsafe extern "C" fn options_from_string(
                     name,
                     0 as ::core::ffi::c_int,
                     b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                    old,
+                    old.as_ptr(),
                 );
-                free(old as *mut ::core::ffi::c_void);
                 return -(1 as ::core::ffi::c_int);
             }
-            free(old as *mut ::core::ffi::c_void);
             return 0 as ::core::ffi::c_int;
         }
         1 => {

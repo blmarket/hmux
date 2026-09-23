@@ -2229,6 +2229,20 @@ legacy callers safe.
   candidate and pinned baseline, exercising scene rebuild on floating-pane
   changes, resize, timer redraw, and teardown. No sanitizer was run.
 
+### Increment 284 — option rollback string snapshot (2026-09-23)
+
+- The string arm of `options_from_string` now owns the previous option value
+  as a local `CString`. It copies that value before `options_set_string`
+  invalidates the old storage, then borrows the snapshot for synchronous
+  rollback on validation failure. This removes its `xstrdup` and both frees;
+  success and failure still return at the same points.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, Python syntax, and diff checks passed. The extended
+  `options_string` CLI check passed on candidate and pinned baseline for
+  non-UTF-8, append, empty, valid `default-shell`, rejected replacement, and
+  rejected append with rollback. `options_value_owner` also passed on the
+  candidate. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2239,11 +2253,11 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The `options_from_string` string branch in `src/options.rs` snapshots the
-   previous value with `xstrdup` before replacing it, then frees the snapshot
-   after success or rollback. A local `CString` can own the snapshot through
-   either path; the producer copies its `%s` input synchronously. The redraw
-   scene and line array remain a separate, larger ownership boundary.
+1. `redraw_scene` in `src/screen_redraw.rs` is now the next small record
+   candidate. `redraw_make_scene` allocates it once, `client.redraw_scene`
+   observes its stable address, and `redraw_free_scene` releases it after the
+   spans and line array. The line array is a separate allocation and needs its
+   own alias audit before it can become a Rust owner.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

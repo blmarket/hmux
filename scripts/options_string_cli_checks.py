@@ -19,6 +19,11 @@ with tempfile.TemporaryDirectory(prefix="options-string-", dir=root / "target") 
         assert result.returncode == 0, (args, result.returncode, result.stderr)
         return result.stdout
 
+    def reject(*args):
+        result = subprocess.run(base + list(args), env=env, capture_output=True, timeout=20)
+        assert result.returncode != 0, (args, result.stdout, result.stderr)
+        return result.stderr
+
     try:
         run(b"new-session", b"-d", b"-s", b"opts", b"sleep", b"60")
         run(b"set-option", b"-g", b"@bytes", b"\xff")
@@ -32,6 +37,15 @@ with tempfile.TemporaryDirectory(prefix="options-string-", dir=root / "target") 
         assert run(b"show-options", b"-gv", b"status-left") == b"leftright\n"
         run(b"set-option", b"-gu", b"@bytes")
         assert run(b"show-options", b"-gv", b"status-left") == b"leftright\n"
+        run(b"set-option", b"-g", b"default-shell", b"/bin/sh")
+        assert b"not a suitable shell" in reject(
+            b"set-option", b"-g", b"default-shell", b"/definitely/not/a/shell"
+        )
+        assert run(b"show-options", b"-gv", b"default-shell") == b"/bin/sh\n"
+        assert b"not a suitable shell" in reject(
+            b"set-option", b"-ga", b"default-shell", b"bad"
+        )
+        assert run(b"show-options", b"-gv", b"default-shell") == b"/bin/sh\n"
     finally:
         subprocess.run(base + [b"kill-server"], env=env, capture_output=True, timeout=20)
         socket.unlink(missing_ok=True)
