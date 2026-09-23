@@ -123,6 +123,20 @@ with tempfile.TemporaryDirectory(prefix="prompt-mutable-", dir=root / "target") 
         command = None
         assert run("show-options", "-gqv", "@prompt_numeric") == b"42\n"
 
+        command = subprocess.Popen(
+            base + ["command-prompt", "-1", "-t", client_tty, "-p", "single-character",
+                    "set-option -g @prompt_single '%%'"],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        wait_for_terminal(b"single-character")
+        os.write(master, b"\xc3\xa9")
+        _, stderr = command.communicate(timeout=5)
+        assert command.returncode == 0, stderr
+        command = None
+        assert run("show-options", "-gqv", "@prompt_single") == b"\xc3\xa9\n"
+
         run("command-prompt", "-i", "-t", client_tty, "-p", "incremental",
             "-I", "seed", "set-option -g @prompt_saved '%%'")
         wait_for_terminal(b"incremental")

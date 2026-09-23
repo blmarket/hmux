@@ -97,7 +97,7 @@ use crate::src::style::{style_apply, style_parse, style_set};
 use crate::src::tmux::{global_options, global_s_options};
 use crate::src::utf8::{
     utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr, utf8_fromcstr_vec, utf8_open, utf8_set,
-    utf8_strlen, utf8_strwidth, utf8_to_data, utf8_tocstr, utf8_tocstr_cstring,
+    utf8_strlen, utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,
 };
 use crate::src::xmalloc::{xasprintf, xcalloc, xreallocarray, xstrdup};
 use std::ffi::{CStr, CString};
@@ -1775,7 +1775,6 @@ pub unsafe extern "C" fn prompt_key(
     mut redraw: *mut ::core::ffi::c_int,
 ) -> prompt_key_result {
     let mut current_block: u64;
-    let mut s: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut prefix: ::core::ffi::c_char = '=' as i32 as ::core::ffi::c_char;
     let mut histstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut size: size_t = 0;
@@ -10744,9 +10743,8 @@ pub unsafe extern "C" fn prompt_key(
                     (*pr).closed = 1 as ::core::ffi::c_int;
                     result = PROMPT_KEY_CLOSE;
                 } else {
-                    s = utf8_tocstr((*pr).buffer);
-                    result = prompt_done(pr, s, redraw);
-                    free(s as *mut ::core::ffi::c_void);
+                    let input = utf8_tocstr_cstring((*pr).buffer);
+                    result = prompt_done(pr, input.as_ptr(), redraw);
                 }
             }
         }
