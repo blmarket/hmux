@@ -1323,6 +1323,19 @@ legacy callers safe.
   argument-escape, attached prompt, and attached exec CLI checks matched
   the pinned baseline. No sanitizer was run.
 
+### Increment 220 — server exit message payload owner (2026-09-23)
+
+- `server_client_check_exit` now builds its `MSG_EXIT` payload in a `Vec<u8>`:
+  native `c_int` return-code bytes followed by the optional exit message
+  including its NUL. Removed the local `xmalloc`, `memcpy`, length bookkeeping,
+  and `free`. `proc_send` copies the complete payload through `imsg_compose`
+  and `ibuf_add` before the vector drops; message type, wire bytes, and
+  exported signatures remain unchanged.
+- Library/binary build, Python syntax, and diff checks passed. The new
+  `scripts/server_exit_payload_cli_checks.py` matched the pinned baseline for
+  a normal no-message exit, an attached-client exit, and a socket startup
+  failure with an error message and return code 1. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1333,12 +1346,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `server_client_check_exit` assembles its `MSG_EXIT` payload with `xmalloc`,
-   `memcpy`, and `free` before the same copying `proc_send` call. Audit the
-   native integer bytes, optional NUL-terminated exit message, and early
-   return paths before moving it to `Vec<u8>`. The command-list cache in
-   `args_value_as_string` is retained in its C-layout record and needs a
-   record-owner migration.
+1. The client-side `MSG_COMMAND` packet still uses `xmalloc`, packs its
+   `msg_command` header and argv bytes, sends through the same copying
+   `proc_send` path, then frees the allocation on success and errors. Audit
+   native header bytes, `cmd_pack_argv`, size limits, and zero arguments for
+   a local byte owner. The command-list cache in `args_value_as_string` is
+   retained in its C-layout record and needs a record-owner migration.
    `file_get_path` remains deferred:
    `client_file.path` is a
    public `char *` field in a `#[repr(C)]` record built into the staticlib. A raw
@@ -1373,9 +1386,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–219. The remaining
+Current validation is recorded in increments 15–220. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–219 has its own local commit; none was pushed.
+Each of increments 15–220 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

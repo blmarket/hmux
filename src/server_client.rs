@@ -3524,9 +3524,6 @@ unsafe extern "C" fn server_client_exit_timer(
 unsafe extern "C" fn server_client_check_exit(mut c: *mut client, mut force: ::core::ffi::c_int) {
     let mut cf: *mut client_file = ::core::ptr::null_mut::<client_file>();
     let mut name: *const ::core::ffi::c_char = (*c).exit_session;
-    let mut data: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut size: size_t = 0;
-    let mut msize: size_t = 0;
     if (*c).flags & (CLIENT_DEAD | CLIENT_EXITED) as uint64_t != 0 {
         return;
     }
@@ -3559,35 +3556,19 @@ unsafe extern "C" fn server_client_check_exit(mut c: *mut client, mut force: ::c
     server_client_start_exit_timer(c);
     match (*c).exit_type as ::core::ffi::c_uint {
         0 => {
+            let mut data = Vec::from((*c).retval.to_ne_bytes());
             if !(*c).exit_message.is_null() {
-                msize = strlen((*c).exit_message).wrapping_add(1 as size_t);
-            } else {
-                msize = 0 as size_t;
-            }
-            size = (::core::mem::size_of::<::core::ffi::c_int>() as usize)
-                .wrapping_add(msize as usize) as size_t;
-            data = xmalloc(size) as *mut ::core::ffi::c_char;
-            memcpy(
-                data as *mut ::core::ffi::c_void,
-                &raw mut (*c).retval as *const ::core::ffi::c_void,
-                ::core::mem::size_of::<::core::ffi::c_int>() as size_t,
-            );
-            if !(*c).exit_message.is_null() {
-                memcpy(
-                    data.offset(::core::mem::size_of::<::core::ffi::c_int>() as usize as isize)
-                        as *mut ::core::ffi::c_void,
-                    (*c).exit_message as *const ::core::ffi::c_void,
-                    msize,
+                data.extend_from_slice(
+                    ::std::ffi::CStr::from_ptr((*c).exit_message).to_bytes_with_nul(),
                 );
             }
             proc_send(
                 (*c).peer,
                 MSG_EXIT,
                 -(1 as ::core::ffi::c_int),
-                data as *const ::core::ffi::c_void,
-                size,
+                data.as_ptr() as *const ::core::ffi::c_void,
+                data.len() as size_t,
             );
-            free(data as *mut ::core::ffi::c_void);
         }
         1 => {
             proc_send(
