@@ -113,6 +113,7 @@ impl screen_write_items {
     }
     pub(crate) unsafe fn append(&mut self, other: &mut Self) {
         let Some(mut head) = other.tqh_first.take() else {
+            other.tqh_last = &raw mut other.tqh_first;
             return;
         };
         let slot = if self.tqh_first.is_none() {
@@ -123,7 +124,7 @@ impl screen_write_items {
         head.entry.tqe_prev = slot;
         *slot = Some(head);
         self.tqh_last = other.tqh_last;
-        other.tqh_last = std::ptr::null_mut();
+        other.tqh_last = &raw mut other.tqh_first;
     }
 }
 impl Drop for screen_write_items {
@@ -132,6 +133,42 @@ impl Drop for screen_write_items {
         let mut next = self.tqh_first.take();
         while let Some(mut node) = next {
             next = node.entry.tqe_next.take();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn append_leaves_source_head_ready_for_reuse() {
+        unsafe {
+            let mut dst = Box::new(screen_write_items {
+                tqh_first: None,
+                tqh_last: std::ptr::null_mut(),
+            });
+            let mut src = Box::new(screen_write_items {
+                tqh_first: None,
+                tqh_last: std::ptr::null_mut(),
+            });
+            dst.tqh_last = &raw mut dst.tqh_first;
+            src.tqh_last = &raw mut src.tqh_first;
+
+            src.push_back(Box::new(std::mem::zeroed()));
+            dst.append(&mut src);
+            assert!(src.tqh_first.is_none());
+            assert_eq!(src.tqh_last, &raw mut src.tqh_first);
+
+            src.push_back(Box::new(std::mem::zeroed()));
+            assert!(src.tqh_first.is_some());
+            dst.append(&mut src);
+            assert!(src.tqh_first.is_none());
+            assert_eq!(src.tqh_last, &raw mut src.tqh_first);
+
+            dst.append(&mut src);
+            assert_eq!(src.tqh_last, &raw mut src.tqh_first);
+            assert!(!dst.first_ptr().is_null());
         }
     }
 }

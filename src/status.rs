@@ -699,7 +699,7 @@ pub unsafe extern "C" fn status_message_redraw(mut c: *mut client) -> ::core::ff
     let mut old_screen: screen = screen {
         title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: None,
+        titles: std::ptr::null_mut(),
         ntitles: 0,
         grid: ::core::ptr::null_mut::<grid>(),
         cx: 0,
@@ -1055,7 +1055,7 @@ pub unsafe extern "C" fn status_prompt_redraw(mut c: *mut client) -> ::core::ffi
     let mut old_screen: screen = screen {
         title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: None,
+        titles: std::ptr::null_mut(),
         ntitles: 0,
         grid: ::core::ptr::null_mut::<grid>(),
         cx: 0,

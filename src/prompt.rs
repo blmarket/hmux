@@ -312,61 +312,6 @@ pub unsafe extern "C" fn prompt_set_options(mut pd: *mut prompt_create_data, mut
         b"word-separators\0" as *const u8 as *const ::core::ffi::c_char,
     );
 }
-unsafe fn prompt_set_buffer(pr: *mut prompt, src: *const ::core::ffi::c_char) {
-    // Decode before dropping the old cells: src may point into the old prompt.
-    let cells = utf8_fromcstr_vec(src);
-    (*pr).buffer_storage = cells;
-    (*pr).buffer = (*pr).buffer_storage.as_mut_ptr();
-}
-
-unsafe fn prompt_resize_buffer(pr: *mut prompt, len: usize) {
-    (*pr).buffer_storage.resize(
-        len,
-        utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-    );
-    (*pr).buffer = (*pr).buffer_storage.as_mut_ptr();
-}
-
-#[cfg(test)]
-mod prompt_buffer_tests {
-    use super::*;
-
-    #[test]
-    fn owned_decoder_matches_c_decoder_through_first_nul() {
-        let inputs: &[&[u8]] = &[
-            b"\0",
-            b"ascii\0",
-            b"a\xc3\xa9\xf0\x9f\xa6\x80z\0",
-            b"\xff\0",
-            b"\xc3\0",
-            b"\xe2\x82\0",
-            b"\xc3(\0",
-            b"a\0hidden",
-        ];
-        for &input in inputs {
-            unsafe {
-                let old = utf8_fromcstr(input.as_ptr().cast());
-                let owned = utf8_fromcstr_vec(input.as_ptr().cast());
-                let len = utf8_strlen(old);
-                assert_eq!(owned.len(), len + 1, "input: {input:?}");
-                for (i, cell) in owned.iter().enumerate().take(len) {
-                    let expected = &*old.add(i);
-                    assert_eq!(cell.data, expected.data, "input: {input:?}, cell: {i}");
-                    assert_eq!(cell.have, expected.have, "input: {input:?}, cell: {i}");
-                    assert_eq!(cell.size, expected.size, "input: {input:?}, cell: {i}");
-                    assert_eq!(cell.width, expected.width, "input: {input:?}, cell: {i}");
-                }
-                assert_eq!(owned[len].size, (*old.add(len)).size, "input: {input:?}");
-                free(old.cast());
-            }
-        }
-    }
-}
 
 #[no_mangle]
 pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mut prompt {
@@ -377,7 +322,6 @@ pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mu
     // The remaining C-style fields accept zero; initialize the owned Rust field before use.
     (&raw mut (*pr).completion).write(prompt_completion::default());
     (&raw mut (*pr).copied).write(None);
-    (&raw mut (*pr).buffer_storage).write(Vec::new());
     let pr = Box::into_raw(allocation) as *mut prompt;
     if !(*pd).fs.is_null() {
         ft = format_create_from_state(
@@ -408,10 +352,10 @@ pub unsafe extern "C" fn prompt_create(mut pd: *const prompt_create_data) -> *mu
     let tmp = expanded.map_or(input, |value| value.cast_const());
     if (*pd).flags & PROMPT_INCREMENTAL != 0 {
         (&raw mut (*pr).last).write(Some(CStr::from_ptr(tmp).to_owned()));
-        prompt_set_buffer(pr, b"\0" as *const u8 as *const ::core::ffi::c_char);
+        (*pr).buffer = utf8_fromcstr(b"\0" as *const u8 as *const ::core::ffi::c_char);
     } else {
         (&raw mut (*pr).last).write(None);
-        prompt_set_buffer(pr, tmp);
+        (*pr).buffer = utf8_fromcstr(tmp);
     }
     (*pr).index = utf8_strlen((*pr).buffer);
     if let Some(expanded) = expanded {
@@ -452,6 +396,7 @@ pub unsafe extern "C" fn prompt_free(mut pr: *mut prompt) {
         if (*pr).freecb.is_some() && !(*pr).data.is_null() {
             (*pr).freecb.expect("non-null function pointer")((*pr).data);
         }
+        free((*pr).buffer as *mut ::core::ffi::c_void);
         prompt_clear_complete(pr);
         drop(Box::from_raw(pr));
     }
@@ -528,7 +473,10 @@ pub unsafe extern "C" fn prompt_update(
         Some(format_expand_time(ft, input))
     };
     let tmp = expanded.map_or(input, |value| value.cast_const());
-    prompt_set_buffer(pr, tmp);
+    // Decode first because input may point into the current buffer.
+    let replacement = utf8_fromcstr(tmp);
+    free((*pr).buffer.cast());
+    (*pr).buffer = replacement;
     (*pr).index = utf8_strlen((*pr).buffer);
     if let Some(expanded) = expanded {
         free(expanded.cast());
@@ -1471,7 +1419,11 @@ unsafe extern "C" fn prompt_paste(mut pr: *mut prompt) -> ::core::ffi::c_int {
         n = udp.offset_from(ud) as ::core::ffi::c_long as size_t;
     }
     if n != 0 as size_t {
-        prompt_resize_buffer(pr, size.wrapping_add(n).wrapping_add(1 as size_t));
+        (*pr).buffer = xreallocarray(
+            (*pr).buffer as *mut ::core::ffi::c_void,
+            size.wrapping_add(n).wrapping_add(1 as size_t),
+            ::core::mem::size_of::<utf8_data>() as size_t,
+        ) as *mut utf8_data;
         if (*pr).index == size {
             memcpy(
                 (*pr).buffer.offset((*pr).index as isize) as *mut ::core::ffi::c_void,
@@ -1584,7 +1536,11 @@ unsafe extern "C" fn prompt_replace_complete(
     size = size.wrapping_sub(last.offset_from(first) as ::core::ffi::c_long as size_t);
     size = size.wrapping_add(strlen(s));
     off = first.offset_from((*pr).buffer) as ::core::ffi::c_long as size_t;
-    prompt_resize_buffer(pr, size.wrapping_add(1 as size_t));
+    (*pr).buffer = xreallocarray(
+        (*pr).buffer as *mut ::core::ffi::c_void,
+        size.wrapping_add(1 as size_t),
+        ::core::mem::size_of::<utf8_data>() as size_t,
+    ) as *mut utf8_data;
     first = (*pr).buffer.offset(off as isize);
     memmove(
         first.offset(strlen(s) as isize) as *mut ::core::ffi::c_void,
@@ -1917,7 +1873,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -1930,7 +1887,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -2101,7 +2059,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -2118,7 +2077,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -2256,7 +2216,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -2269,7 +2230,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -2440,7 +2402,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -2457,7 +2420,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -2595,7 +2559,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -2608,7 +2573,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -2779,7 +2745,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -2796,7 +2763,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -2934,7 +2902,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -2947,7 +2916,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -3118,7 +3088,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -3135,7 +3106,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -3273,7 +3245,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -3286,7 +3259,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -3457,7 +3431,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -3474,7 +3449,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -3612,7 +3588,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -3625,7 +3602,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -3796,7 +3774,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -3813,7 +3792,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -3951,7 +3931,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -3964,7 +3945,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -4135,7 +4117,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -4152,7 +4135,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -4290,7 +4274,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -4303,7 +4288,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -4474,7 +4460,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -4491,7 +4478,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -4629,7 +4617,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -4642,7 +4631,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -4813,7 +4803,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -4830,7 +4821,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -4968,7 +4960,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -4981,7 +4974,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -5152,7 +5146,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -5169,7 +5164,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -5307,7 +5303,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -5320,7 +5317,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -5491,7 +5489,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -5508,7 +5507,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -5646,7 +5646,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -5659,7 +5660,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -5830,7 +5832,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -5847,7 +5850,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -5985,7 +5989,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -5998,7 +6003,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -6169,7 +6175,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -6186,7 +6193,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -6324,7 +6332,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -6337,7 +6346,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -6508,7 +6518,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -6525,7 +6536,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -6663,7 +6675,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -6676,7 +6689,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -6847,7 +6861,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -6864,7 +6879,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -7002,7 +7018,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -7015,7 +7032,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -7186,7 +7204,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -7203,7 +7222,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -7341,7 +7361,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -7354,7 +7375,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -7525,7 +7547,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -7542,7 +7565,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -7680,7 +7704,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -7693,7 +7718,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -7864,7 +7890,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -7881,7 +7908,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -8019,7 +8047,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -8032,7 +8061,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -8203,7 +8233,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -8220,7 +8251,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -8358,7 +8390,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -8371,7 +8404,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -8542,7 +8576,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -8559,7 +8594,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -8697,7 +8733,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -8710,7 +8747,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -8881,7 +8919,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -8898,7 +8937,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -9036,7 +9076,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -9049,7 +9090,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -9220,7 +9262,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -9237,7 +9280,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -9375,7 +9419,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -9388,7 +9433,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -9559,7 +9605,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -9576,7 +9623,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -9714,7 +9762,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -9727,7 +9776,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -9898,7 +9948,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -9915,7 +9966,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -10053,7 +10105,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -10066,7 +10119,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -10237,7 +10291,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -10254,7 +10309,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -10392,7 +10448,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -10405,7 +10462,8 @@ pub unsafe extern "C" fn prompt_key(
                                 if histstr.is_null() {
                                     current_block = 4485073238441121731;
                                 } else {
-                                    prompt_set_buffer(pr, histstr);
+                                    free((*pr).buffer as *mut ::core::ffi::c_void);
+                                    (*pr).buffer = utf8_fromcstr(histstr);
                                     (*pr).index = utf8_strlen((*pr).buffer);
                                     current_block = 5848346009959455809;
                                 }
@@ -10576,7 +10634,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '-' as i32 as ::core::ffi::c_char;
@@ -10593,7 +10652,8 @@ pub unsafe extern "C" fn prompt_key(
                                         == 0 as ::core::ffi::c_int
                                     {
                                         prefix = '=' as i32 as ::core::ffi::c_char;
-                                        prompt_set_buffer(pr, prompt_last(pr));
+                                        free((*pr).buffer as *mut ::core::ffi::c_void);
+                                        (*pr).buffer = utf8_fromcstr(prompt_last(pr));
                                         (*pr).index = utf8_strlen((*pr).buffer);
                                     } else {
                                         prefix = '+' as i32 as ::core::ffi::c_char;
@@ -10715,7 +10775,11 @@ pub unsafe extern "C" fn prompt_key(
             } else {
                 return PROMPT_KEY_HANDLED;
             }
-            prompt_resize_buffer(pr, size.wrapping_add(2 as size_t));
+            (*pr).buffer = xreallocarray(
+                (*pr).buffer as *mut ::core::ffi::c_void,
+                size.wrapping_add(2 as size_t),
+                ::core::mem::size_of::<utf8_data>() as size_t,
+            ) as *mut utf8_data;
             if (*pr).index == size {
                 utf8_copy(
                     (*pr).buffer.offset((*pr).index as isize) as *mut utf8_data,

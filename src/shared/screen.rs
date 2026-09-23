@@ -22,23 +22,17 @@ pub struct screen_sel {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-/// Legacy title-list layout retained for type compatibility. Runtime title
-/// storage is owned by ScreenStorage.
+/// Screen title stack header.
 pub struct screen_titles {
     pub tqh_first: *mut screen_title_entry,
     pub tqh_last: *mut *mut screen_title_entry,
 }
-/// Text pointers are borrowed views into `titles`. They are invalidated by a
-/// title/path change, pop, or screen_free. The owner is nullable so zeroed C
-/// storage can be initialized without constructing a Vec or CString in place.
 #[repr(C)]
 pub struct screen {
     pub title: *mut ::core::ffi::c_char,
     pub path: *mut ::core::ffi::c_char,
-    pub titles: Option<Box<ScreenStorage>>,
-    /// Compatibility view of the stack length; ScreenStorage owns the elements.
+    pub titles: *mut screen_titles,
     pub ntitles: u_int,
-    /// Borrowed from ScreenStorage for initialized screens.
     pub grid: *mut grid,
     pub cx: u_int,
     pub cy: u_int,
@@ -52,32 +46,19 @@ pub struct screen {
     pub default_mode: ::core::ffi::c_int,
     pub saved_cx: u_int,
     pub saved_cy: u_int,
-    /// Borrowed from ScreenStorage while alternate-screen mode is active.
     pub saved_grid: *mut grid,
     pub saved_cell: grid_cell,
     pub saved_flags: ::core::ffi::c_int,
     pub tabs: *mut bitstr_t,
     pub sel: Option<Box<screen_sel>>,
-    /// Borrowed from ScreenStorage; invalidated by resize or free.
     pub write_list: *mut screen_write_cline,
-    /// Borrowed from the retained table in ScreenStorage.
     pub hyperlinks: *mut hyperlinks,
     pub progress_bar: progress_bar,
-}
-pub struct ScreenStorage {
-    pub(crate) title: std::ffi::CString,
-    pub(crate) path: Option<std::ffi::CString>,
-    pub(crate) stack: std::collections::VecDeque<std::ffi::CString>,
-    pub(crate) tabs: Vec<bitstr_t>,
-    pub(crate) grid: Option<Box<grid>>,
-    pub(crate) saved_grid: Option<Box<grid>>,
-    pub(crate) write_rows: Option<Box<[screen_write_cline]>>,
-    pub(crate) hyperlinks: Option<crate::src::hyperlinks::HyperlinksRef>,
 }
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-/// Legacy title-entry layout; runtime stacks hold CString values directly.
+/// Screen title stack entry.
 pub struct screen_title_entry {
     pub text: *mut ::core::ffi::c_char,
     pub entry: screen_title_link,

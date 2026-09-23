@@ -94,7 +94,7 @@ unsafe extern "C" fn window_set_fill_cell(
     let mut s: screen = screen {
         title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: None,
+        titles: std::ptr::null_mut(),
         ntitles: 0,
         grid: ::core::ptr::null_mut::<grid>(),
         cx: 0,
@@ -393,7 +393,7 @@ pub unsafe extern "C" fn window_make_pane_status(
     let mut old: screen = screen {
         title: ::core::ptr::null_mut::<::core::ffi::c_char>(),
         path: ::core::ptr::null_mut::<::core::ffi::c_char>(),
-        titles: None,
+        titles: std::ptr::null_mut(),
         ntitles: 0,
         grid: ::core::ptr::null_mut::<grid>(),
         cx: 0,

@@ -1,12 +1,12 @@
 //! Authoritative prompt domains.
 
 use super::abi::{size_t, u_int};
-use std::ffi::CString;
 use super::command::cmd_find_state;
 use super::display::screen_cursor_style;
 use super::grid::{grid_cell, utf8_data};
 use super::screen_write::screen_write_ctx;
 use super::style::style;
+use std::ffi::CString;
 pub type prompt_type = ::core::ffi::c_uint;
 pub const PROMPT_TYPE_COMMAND: prompt_type = 0;
 pub const PROMPT_TYPE_INVALID: prompt_type = 255;
@@ -74,7 +74,6 @@ pub struct prompt_completion {
 #[repr(C)]
 pub struct prompt {
     pub string: CString,
-    // Borrowed view of buffer_storage; refreshed after every replacement or resize.
     pub buffer: *mut utf8_data,
     pub state: cmd_find_state,
     pub last: Option<CString>,
@@ -101,8 +100,6 @@ pub struct prompt {
     pub hindex: [u_int; 2],
     pub copied: Option<Box<[utf8_data]>>,
     pub completion: prompt_completion,
-    // Owns the UTF-8 cells, including the final size == 0 sentinel.
-    pub buffer_storage: Vec<utf8_data>,
 }
 
 #[derive(Copy, Clone)]

@@ -479,15 +479,11 @@ pub unsafe extern "C" fn screen_write_make_list(mut s: *mut screen) {
     if (*(*s).grid).sy == 0 {
         fatalx(b"xcalloc: zero size\0" as *const u8 as *const ::core::ffi::c_char);
     }
-    let mut rows = (0..(*(*s).grid).sy)
+    let rows = (0..(*(*s).grid).sy)
         .map(|_| ::core::mem::zeroed::<screen_write_cline>())
         .collect::<Vec<_>>()
         .into_boxed_slice();
-    (*s).write_list = rows.as_mut_ptr();
-    (*s).titles
-        .as_mut()
-        .expect("initialized screen storage")
-        .write_rows = Some(rows);
+    (*s).write_list = Box::into_raw(rows) as *mut screen_write_cline;
     y = 0 as u_int;
     while y < (*(*s).grid).sy {
         let ref mut fresh0 = (*(*s).write_list.offset(y as isize)).items.tqh_first;
@@ -504,26 +500,13 @@ pub unsafe extern "C" fn screen_write_free_list(mut s: *mut screen) {
     let mut ci1: *mut screen_write_citem = ::core::ptr::null_mut::<screen_write_citem>();
     let mut y: u_int = 0;
     y = 0 as u_int;
-    let rows = (*s)
-        .titles
-        .as_ref()
-        .expect("initialized screen storage")
-        .write_rows
-        .as_ref()
-        .expect("initialized write rows")
-        .len();
-    while (y as usize) < rows {
+    while y < (*(*s).grid).sy {
         cl = (*s).write_list.offset(y as isize) as *mut screen_write_cline;
         screen_write_recycle_items(&mut (*cl).items);
         y = y.wrapping_add(1);
     }
-    drop(
-        (*s).titles
-            .as_mut()
-            .expect("initialized screen storage")
-            .write_rows
-            .take(),
-    );
+    let rows = std::ptr::slice_from_raw_parts_mut((*s).write_list, (*(*s).grid).sy as usize);
+    drop(Box::from_raw(rows));
     (*s).write_list = ::core::ptr::null_mut::<screen_write_cline>();
 }
 unsafe extern "C" fn screen_write_init(mut ctx: *mut screen_write_ctx, mut s: *mut screen) {
@@ -5255,21 +5238,11 @@ mod write_row_tests {
     use super::*;
 
     #[test]
-    fn scroll_moves_text_owners_and_teardown_uses_the_allocated_row_count() {
+    fn scroll_moves_text_owners_and_tears_down_rows() {
         unsafe {
             let mut grid = crate::src::grid::grid_create_box(4, 3, 0);
             let mut s: screen = std::mem::zeroed();
             s.grid = &raw mut *grid;
-            s.titles = Some(Box::new(crate::src::shared::screen::ScreenStorage {
-                title: std::ffi::CString::default(),
-                path: None,
-                stack: std::collections::VecDeque::new(),
-                tabs: Vec::new(),
-                grid: Some(grid),
-                saved_grid: None,
-                write_rows: None,
-                hyperlinks: None,
-            }));
             s.rupper = 0;
             s.rlower = 2;
             screen_write_make_list(&raw mut s);
@@ -5317,12 +5290,8 @@ mod write_row_tests {
             screen_write_collect_trim(&raw mut ctx, 0, 0, 20, std::ptr::null_mut());
             assert!((*row).items.tqh_first.is_none());
             screen_write_free_citem(ctx.item.take().unwrap());
-            // Cleanup is tied to the allocation, even if dimensions have changed.
-            (*s.grid).sx = 1;
-            (*s.grid).sy = 1;
             screen_write_free_list(&raw mut s);
             assert!(s.write_list.is_null());
-            assert!(s.titles.as_ref().unwrap().write_rows.is_none());
         }
     }
 }

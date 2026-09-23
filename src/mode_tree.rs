@@ -187,33 +187,6 @@ unsafe extern "C" fn toupper(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int 
     };
 }
 pub const UINT64_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
-
-#[repr(C)]
-struct ModeTreeOwner {
-    // Exported mode-tree callbacks receive a pointer to this prefix.
-    data: mode_tree_data,
-    search: Option<CString>,
-    filter: Option<CString>,
-}
-const _: () = assert!(::core::mem::offset_of!(ModeTreeOwner, data) == 0);
-
-unsafe fn mode_tree_set_search(mtd: *mut mode_tree_data, search: Option<CString>) {
-    let owner = mtd.cast::<ModeTreeOwner>();
-    (*owner).search = search;
-    (*mtd).search = (*owner)
-        .search
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |s| s.as_ptr().cast_mut());
-}
-
-unsafe fn mode_tree_set_filter(mtd: *mut mode_tree_data, filter: Option<CString>) {
-    let owner = mtd.cast::<ModeTreeOwner>();
-    (*owner).filter = filter;
-    (*mtd).filter = (*owner)
-        .filter
-        .as_ref()
-        .map_or(::core::ptr::null_mut(), |s| s.as_ptr().cast_mut());
-}
 static mut mode_tree_menu_items: [menu_item; 5] = [
     menu_item {
         name: b"Scroll Left\0" as *const u8 as *const ::core::ffi::c_char,
@@ -374,16 +347,13 @@ unsafe extern "C" fn mode_tree_check_selected(mut mtd: *mut mode_tree_data) {
     }
 }
 unsafe fn mode_tree_alloc_data() -> *mut mode_tree_data {
-    let mut allocation = Box::<ModeTreeOwner>::new_uninit();
-    let owner = allocation.as_mut_ptr();
-    let mtd = &raw mut (*owner).data;
-    // Keep the translated C zero state. Initialize every Rust owner before
-    // treating this allocation as a ModeTreeOwner value.
-    owner.write_bytes(0, 1);
+    let mut allocation = Box::<mode_tree_data>::new_uninit();
+    let mtd = allocation.as_mut_ptr();
+    // All remaining fields retain the translated C zero state. Initialize
+    // the Vec before treating the record as a mode_tree_data value.
+    mtd.write_bytes(0, 1);
     ::core::ptr::write(&raw mut (*mtd).lines, Vec::new());
-    ::core::ptr::write(&raw mut (*owner).search, None);
-    ::core::ptr::write(&raw mut (*owner).filter, None);
-    let mtd = Box::into_raw(allocation.assume_init()).cast::<mode_tree_data>();
+    let mtd = Box::into_raw(allocation.assume_init());
     (*mtd).references = 1;
     mtd
 }
@@ -752,10 +722,9 @@ pub unsafe extern "C" fn mode_tree_start(
     (*mtd).sort_crit.order = sort_order_from_string(args_get(args, 'O' as i32 as u_char));
     (*mtd).sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'f' as i32 as u_char) != 0 {
-        mode_tree_set_filter(
-            mtd,
-            Some(CStr::from_ptr(args_get(args, 'f' as i32 as u_char)).to_owned()),
-        );
+        (*mtd).filter = xstrdup(args_get(args, 'f' as i32 as u_char));
+    } else {
+        (*mtd).filter = ::core::ptr::null_mut::<::core::ffi::c_char>();
     }
     (*mtd).buildcb = buildcb;
     (*mtd).drawcb = drawcb;
@@ -909,7 +878,7 @@ pub unsafe fn mode_tree_set_build_identity(mtd: *mut mode_tree_data, identity: M
 unsafe extern "C" fn mode_tree_remove_ref(mut mtd: *mut mode_tree_data) {
     (*mtd).references = (*mtd).references.wrapping_sub(1);
     if (*mtd).references == 0 as u_int {
-        drop(Box::from_raw(mtd.cast::<ModeTreeOwner>()));
+        drop(Box::from_raw(mtd));
     }
 }
 #[no_mangle]
@@ -922,8 +891,8 @@ pub unsafe extern "C" fn mode_tree_free(mut mtd: *mut mode_tree_data) {
     mode_tree_free_items(&raw mut (*mtd).children);
     mode_tree_clear_lines(mtd);
     screen_free(&raw mut (*mtd).screen);
-    mode_tree_set_search(mtd, None);
-    mode_tree_set_filter(mtd, None);
+    free((*mtd).search as *mut ::core::ffi::c_void);
+    free((*mtd).filter as *mut ::core::ffi::c_void);
     (*mtd).dead = 1 as ::core::ffi::c_int;
     mode_tree_remove_ref(mtd);
 }
@@ -2042,14 +2011,15 @@ unsafe extern "C" fn mode_tree_search_callback(
     if (*mtd).dead != 0 {
         return PROMPT_CLOSE;
     }
-    let search = if s.is_null() || *s == 0 {
-        None
+    let replacement = if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
+        ::core::ptr::null_mut::<::core::ffi::c_char>()
     } else {
-        Some(CStr::from_ptr(s).to_owned())
+        xstrdup(s)
     };
-    mode_tree_set_search(mtd, search);
-    if !(*mtd).search.is_null() {
-        (*mtd).search_icase = mode_tree_is_lowercase((*mtd).search);
+    free((*mtd).search as *mut ::core::ffi::c_void);
+    (*mtd).search = replacement;
+    if !replacement.is_null() {
+        (*mtd).search_icase = mode_tree_is_lowercase(replacement);
         mode_tree_search_set(mtd);
     }
     if key as ::core::ffi::c_uint == PROMPT_KEY_HANDLED as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -2068,12 +2038,13 @@ unsafe extern "C" fn mode_tree_filter_callback(
     if (*mtd).dead != 0 {
         return PROMPT_CLOSE;
     }
-    let filter = if s.is_null() || *s == 0 {
-        None
+    let replacement = if s.is_null() || *s as ::core::ffi::c_int == '\0' as i32 {
+        ::core::ptr::null_mut::<::core::ffi::c_char>()
     } else {
-        Some(CStr::from_ptr(s).to_owned())
+        xstrdup(s)
     };
-    mode_tree_set_filter(mtd, filter);
+    free((*mtd).filter as *mut ::core::ffi::c_void);
+    (*mtd).filter = replacement;
     mode_tree_build(mtd);
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;
@@ -2084,7 +2055,8 @@ unsafe extern "C" fn mode_tree_filter_callback(
     return PROMPT_CLOSE;
 }
 unsafe extern "C" fn mode_tree_clear_filter(mut mtd: *mut mode_tree_data) {
-    mode_tree_set_filter(mtd, None);
+    free((*mtd).filter as *mut ::core::ffi::c_void);
+    (*mtd).filter = ::core::ptr::null_mut::<::core::ffi::c_char>();
     mode_tree_build(mtd);
     mode_tree_draw(mtd);
     (*(*mtd).wp).flags |= PANE_REDRAW;
