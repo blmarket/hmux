@@ -62,7 +62,7 @@ pub use crate::src::shared::window::{
 };
 use crate::src::window::window_pane_set_mode;
 use crate::src::window_tree::window_tree_mode;
-use crate::src::xmalloc::{xasprintf, xcalloc};
+use crate::src::xmalloc::xasprintf;
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
 pub use crate::src::shared::grid::grid_cell_entry_storage as C2RustUnnamed_12;
@@ -129,8 +129,7 @@ unsafe extern "C" fn cmd_find_window_exec(
         N = T;
         C = N;
     }
-    filter =
-        xcalloc(1 as size_t, ::core::mem::size_of::<args_value>() as size_t) as *mut args_value;
+    filter = crate::src::arguments::args_new_flag_value();
     (*filter).type_0 = ARGS_STRING;
     if C != 0 && N != 0 && T != 0 {
         xasprintf(

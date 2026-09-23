@@ -54,7 +54,7 @@ fn error_message(error: ArgumentValueError) -> &'static [u8] {
 }
 
 unsafe fn string_value(value: &CStr) -> *mut args_value {
-    let result = xcalloc(1, size_of::<args_value>()) as *mut args_value;
+    let result = Box::into_raw(Box::new(std::mem::zeroed::<args_value>()));
     (*result).type_0 = ARGS_STRING;
     (*result).c2rust_unnamed.string = xstrdup(value.as_ptr());
     result
@@ -235,7 +235,7 @@ fn c_boundary_translates_typed_errors_without_changing_success_values() {
 fn command_values_and_cached_strings_keep_their_storage_ownership() {
     unsafe {
         let args = args_create();
-        let value = xcalloc(1, size_of::<args_value>()) as *mut args_value;
+        let value = Box::into_raw(Box::new(std::mem::zeroed::<args_value>()));
         (*value).type_0 = ARGS_COMMANDS;
         (*value).c2rust_unnamed.cmdlist = cmd_list_new();
         args_set(args, b'c', value, 0);

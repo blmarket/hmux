@@ -360,6 +360,9 @@ pub unsafe extern "C" fn args_create() -> *mut args {
     });
     Box::into_raw(owner).cast::<args>()
 }
+pub(crate) unsafe fn args_new_flag_value() -> *mut args_value {
+    Box::into_raw(Box::new(::core::mem::zeroed::<args_value>()))
+}
 unsafe extern "C" fn args_parse_flag_argument(
     mut values: *mut args_value,
     mut count: u_int,
@@ -374,7 +377,7 @@ unsafe extern "C" fn args_parse_flag_argument(
     let mut new: *mut args_value = ::core::ptr::null_mut::<args_value>();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut as_0: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    new = xcalloc(1 as size_t, ::core::mem::size_of::<args_value>() as size_t) as *mut args_value;
+    new = args_new_flag_value();
     if *string as ::core::ffi::c_int != '\0' as i32 {
         (*new).type_0 = ARGS_STRING;
         (*new).c2rust_unnamed.string = xstrdup(string);
@@ -392,13 +395,13 @@ unsafe extern "C" fn args_parse_flag_argument(
                     flag,
                 );
                 args_free_value(new);
-                free(new as *mut ::core::ffi::c_void);
+                drop(Box::from_raw(new));
                 return -(1 as ::core::ffi::c_int);
             }
         }
         if argument.is_null() {
             args_free_value(new);
-            free(new as *mut ::core::ffi::c_void);
+            drop(Box::from_raw(new));
             if optional_argument != 0 {
                 log_debug(
                     b"%s: -%c (optional)\0" as *const u8 as *const ::core::ffi::c_char,
@@ -437,7 +440,7 @@ unsafe extern "C" fn args_parse_flag_argument(
                         != 0)
             {
                 args_free_value(new);
-                free(new as *mut ::core::ffi::c_void);
+                drop(Box::from_raw(new));
                 log_debug(
                     b"%s: -%c (optional)\0" as *const u8 as *const ::core::ffi::c_char,
                     b"args_parse_flag_argument\0" as *const u8 as *const ::core::ffi::c_char,
@@ -760,8 +763,7 @@ pub unsafe extern "C" fn args_copy(
         } else {
             value = (*entry).values.tqh_first;
             while !value.is_null() {
-                new_value = xcalloc(1 as size_t, ::core::mem::size_of::<args_value>() as size_t)
-                    as *mut args_value;
+                new_value = args_new_flag_value();
                 args_copy_copy_value(new_value, value, argc, argv);
                 args_set(new_args, (*entry).flag, new_value, 0 as ::core::ffi::c_int);
                 value = (*value).entry.tqe_next;
@@ -849,7 +851,7 @@ pub unsafe extern "C" fn args_free(mut args: *mut args) {
             }
             *(*value).entry.tqe_prev = (*value).entry.tqe_next;
             args_free_value(value);
-            free(value as *mut ::core::ffi::c_void);
+            drop(Box::from_raw(value));
             value = value1;
         }
         drop(Box::from_raw(entry));
@@ -1105,6 +1107,8 @@ pub unsafe extern "C" fn args_has(mut args: *mut args, mut flag: u_char) -> ::co
     return (*entry).count as ::core::ffi::c_int;
 }
 #[no_mangle]
+/// `value`, when non-null, transfers a Box-allocated flag record to `args`.
+/// Positional array elements must not be passed here.
 pub unsafe extern "C" fn args_set(
     mut args: *mut args,
     mut flag: u_char,
@@ -1133,7 +1137,9 @@ pub unsafe extern "C" fn args_set(
         *(*entry).values.tqh_last = value;
         (*entry).values.tqh_last = &raw mut (*value).entry.tqe_next;
     } else {
-        free(value as *mut ::core::ffi::c_void);
+        if !value.is_null() {
+            drop(Box::from_raw(value));
+        }
     };
 }
 #[no_mangle]

@@ -3191,6 +3191,23 @@ legacy callers safe.
   build, changed-file rustfmt, Python syntax, and diff checks passed. No
   sanitizer was run.
 
+### Increment 351 — boxed linked flag argument values (2026-09-23)
+
+- `args_parse_flag_argument`, `args_copy`, and `cmd_find_window_exec` now
+  allocate individual flag `args_value` records through one Box constructor.
+  Parser error/optional branches and `args_set`'s `ARGS_NONE` discard consume
+  their Boxes; `args_free` consumes each linked Box after payload cleanup and
+  unlinking. The integration-test producers of exported `args_set` now use
+  the same allocation contract, which is documented at the function. Removed
+  three record `xcalloc` sites, five matching record frees, and the record's
+  `Copy`/`Clone` derives. Positional values remain in movable C arrays;
+  `args_free_value` remains payload-only for both representations.
+- Argument print/escape and command-prompt CLI checks matched the pinned
+  baseline. Full workspace tests, binary build, changed-file rustfmt, and
+  diff checks passed. Out-of-repo callers of exported `args_set` were not
+  audited; they must follow its Box-allocated record contract. No sanitizer
+  was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -3201,14 +3218,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `args_value` has linked flag records and separately movable positional
-   arrays. A bounded Box migration can cover the three flag-record producers
-   and their two record-free sites, but must also update the allocation
-   contract of exported `args_set` and its C-allocated integration-test
-   producers. Keep positional arrays and their payload-only
-   `args_free_value` path separate. Disconnected file-reading clients can
-   leave a waiting command-queue item even after callback data is released;
-   that needs a separate queue cancellation design.
+1. Positional `args_value` elements remain in movable C arrays allocated by
+   `args_parse`, `args_copy`, and `args_from_vector`. Their array allocation,
+   growth, payload cleanup, and callers need one collection-owner migration.
+   Disconnected file-reading clients can leave a waiting command-queue item
+   even after callback data is released; that needs a separate queue
+   cancellation design.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

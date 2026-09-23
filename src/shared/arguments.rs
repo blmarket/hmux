@@ -39,8 +39,9 @@ pub struct args {
     pub values: *mut args_value,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
+/// Linked flag values are Box-owned by `args`; positional values live in a
+/// separate movable C array and retain their payload-only cleanup path.
 pub struct args_value {
     pub type_0: args_type,
     pub c2rust_unnamed: args_value_c2rust_unnamed,
