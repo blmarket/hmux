@@ -673,7 +673,7 @@ unsafe extern "C" fn monitor_create(
     mut data: *mut ::core::ffi::c_void,
 ) -> *mut monitor_set {
     let mut ms: *mut monitor_set = ::core::ptr::null_mut::<monitor_set>();
-    ms = xcalloc(1 as size_t, ::core::mem::size_of::<monitor_set>() as size_t) as *mut monitor_set;
+    ms = Box::into_raw(Box::new(::core::mem::zeroed::<monitor_set>()));
     (*ms).cb = cb;
     (*ms).data = data;
     (*ms).items.storage = std::ptr::null_mut();
@@ -729,7 +729,7 @@ pub unsafe extern "C" fn monitor_destroy(mut ms: *mut monitor_set) {
                 b"monitor_destroy\0" as *const u8 as *const ::core::ffi::c_char,
             );
         }
-        free(ms as *mut ::core::ffi::c_void);
+        drop(Box::from_raw(ms));
     }
 }
 #[no_mangle]

@@ -15,6 +15,7 @@ pub const MONITOR_SESSION: monitor_type = 0;
 pub const MONITOR_NOTIFY_TRUE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const MONITOR_NOTIFY_INITIAL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 
+/// Box-owned by monitor_create; callback and owner pointers expire on destroy.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct monitor_set {

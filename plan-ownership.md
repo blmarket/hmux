@@ -2481,6 +2481,19 @@ legacy callers safe.
   passed separately on candidate and baseline. Changed files retain exactly
   their pre-existing rustfmt import-order differences. No sanitizer was run.
 
+### Increment 301 — boxed monitor set record (2026-09-23)
+
+- `monitor_create` now boxes the zeroed, stable `monitor_set` record instead of
+  `xcalloc`ing it. `monitor_destroy` still cancels the timer, frees items, and
+  releases any retained session reference before consuming the outer `Box` in
+  place of libc `free`. Hook and control callbacks retain only borrowed raw
+  pointers, invalid after monitor destruction.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build, and diff
+  checks passed. Hook-monitor strings matched the pinned baseline; hook
+  append/replacement and control-client checks passed separately on candidate
+  and baseline. Changed files retain exactly their pre-existing rustfmt
+  import-order differences. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2491,12 +2504,10 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The outer `monitor_set` in `src/monitor.rs` has one `xcalloc` in
-   `monitor_create` and one final libc `free` in `monitor_destroy`. Timer
-   cancellation, item cleanup, and session reference release must keep their
-   current order; callbacks borrow the stable set pointer. `key_binding`
-   records in `src/key_bindings.rs` are another bounded candidate with two
-   constructors and one free helper. `window_copy_mode_data.backing` is larger:
+1. `key_binding` records in `src/key_bindings.rs` have two `xcalloc`
+   constructors and one free helper. Preserve snapshot command-list reference
+   counts, live `tablename` borrows, note ownership, map removal order, and
+   stable pointers when boxing them. `window_copy_mode_data.backing` is larger:
    its borrowed screen pointer is invalidated on refresh. The redraw scene's
    line array has self-referential intrusive list tails and needs an alias
    audit.
