@@ -1218,6 +1218,25 @@ legacy callers safe.
   private-server `scripts/key_cli_checks.py` passed with both the pinned
   baseline and candidate binaries. No sanitizer was run.
 
+### Increment 213 — customize key scratch owners (2026-09-23)
+
+- `window_customize_key_is_changed`, `window_customize_build_keys`, and
+  `window_customize_draw_key` now use the existing
+  `cmd_list_print_cstring` owner for synchronous comparison, mode-tree detail,
+  and screen writing. Removed their C-owned print results and frees, including
+  early-return cleanup. Byte comparisons match the former `strcmp` results;
+  `%s` callers borrow live owners. Delayed edit prompts still receive C-owned
+  strings, and exported signatures are unchanged.
+- Binary build, changed-file rustfmt, and diff checks passed. The attached
+  client `scripts/customize_key_detail_cli_checks.py` matched the pinned
+  baseline byte for byte. No sanitizer was run.
+- Combined validation after increments 211–213: `RUST_TEST_THREADS=1 cargo
+  test --workspace --quiet`, library/binary build, changed-file rustfmt,
+  Python AST check, and commit diff checks passed. Six private-server CLI
+  checks passed against the pinned baseline, covering argument and command
+  printing, argument escaping, key bindings, customize key detail, and the
+  attached `show-buffer` middle-NUL view-mode path. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -1228,12 +1247,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. The synchronous key rendering paths in `window_customize` still obtain
-   C-owned `cmd_list_print` results, then free them locally. The existing
-   private `cmd_list_print_cstring` owner can cover those borrows while delayed
-   prompt values keep their C-owned contract. `file_get_path` remains
-   deferred: `client_file.path` is a public
-   `char *` field in a `#[repr(C)]` record built into the staticlib. A raw
+1. `hooks_insert_one` still obtains a C-owned `cmd_list_print` result solely
+   for a synchronous debug log. `cmd_parse_print_commands`,
+   `cmd_parse_log_commands`, and `cmd_parse_build_commands` have similar
+   print-and-free scratch paths. Audit each log/print call before migrating
+   its temporary. `file_get_path` remains deferred: `client_file.path` is a
+   public `char *` field in a `#[repr(C)]` record built into the staticlib. A raw
    `CString::into_raw`/`from_raw` round trip leaves manual ownership in
    place; changing the field needs an explicit opaque-record ABI decision
    or a fully audited sidecar owner and callback teardown.
@@ -1265,9 +1284,9 @@ non-string value.
    `hyperlinks_uri.external_id` field and is libc-freed by
    `hyperlinks_remove`; it needs a record-owner or ABI migration.
 
-Current validation is recorded in increments 15–212. The remaining
+Current validation is recorded in increments 15–213. The remaining
 address-based registries and UI tags above are separate migration candidates.
-Each of increments 15–212 has its own local commit; none was pushed.
+Each of increments 15–213 has its own local commit; none was pushed.
 The combined main-branch workspace test initially reused a cached `hmux-rt`
 test binary containing a removed worktree's compile-time manifest path.
 After `cargo clean -p hmux-rt`, the workspace suite and binary build passed;

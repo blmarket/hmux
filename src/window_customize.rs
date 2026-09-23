@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::ffi::{c_char, CStr, CString};
 
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::{cmd_list_free, cmd_list_print};
+use crate::src::cmd::{cmd_list_free, cmd_list_print, cmd_list_print_cstring};
 use crate::src::cmd_find::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_valid_state};
 use crate::src::cmd_parse::cmd_parse_from_string;
 use crate::src::environ::{
@@ -1012,9 +1012,6 @@ unsafe extern "C" fn window_customize_key_is_changed(
     mut bd: *mut key_binding,
 ) -> ::core::ffi::c_int {
     let mut default_bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
-    let mut cmd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut default_cmd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut changed: ::core::ffi::c_int = 0;
     default_bd = key_bindings_get_default(kt, (*bd).key);
     if default_bd.is_null() {
         return 1 as ::core::ffi::c_int;
@@ -1030,12 +1027,9 @@ unsafe extern "C" fn window_customize_key_is_changed(
     if !(*bd).note.is_null() && strcmp((*bd).note, (*default_bd).note) != 0 as ::core::ffi::c_int {
         return 1 as ::core::ffi::c_int;
     }
-    cmd = cmd_list_print((*bd).cmdlist, 0 as ::core::ffi::c_int);
-    default_cmd = cmd_list_print((*default_bd).cmdlist, 0 as ::core::ffi::c_int);
-    changed = (strcmp(cmd, default_cmd) != 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
-    free(cmd as *mut ::core::ffi::c_void);
-    free(default_cmd as *mut ::core::ffi::c_void);
-    return changed;
+    let cmd = cmd_list_print_cstring((*bd).cmdlist, 0);
+    let default_cmd = cmd_list_print_cstring((*default_bd).cmdlist, 0);
+    return (cmd.as_bytes() != default_cmd.as_bytes()) as ::core::ffi::c_int;
 }
 unsafe extern "C" fn window_customize_build_array(
     mut data: *mut window_customize_modedata,
@@ -1510,9 +1504,8 @@ unsafe extern "C" fn window_customize_build_keys(
                 0 as ::core::ffi::c_int,
             ) as *mut mode_tree_item;
             free(expanded as *mut ::core::ffi::c_void);
-            let tmp = cmd_list_print((*bd).cmdlist, 0 as ::core::ffi::c_int);
-            let text = window_customize_key_detail(CStr::from_ptr(tmp).to_bytes());
-            free(tmp as *mut ::core::ffi::c_void);
+            let tmp = cmd_list_print_cstring((*bd).cmdlist, 0);
+            let text = window_customize_key_detail(tmp.as_bytes());
             mti = mode_tree_add_identity(
                 (*data).data,
                 child,
@@ -1890,8 +1883,6 @@ unsafe extern "C" fn window_customize_draw_key(
     let mut default_bd: *mut key_binding = ::core::ptr::null_mut::<key_binding>();
     let mut note: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut period: *const ::core::ffi::c_char = b"\0" as *const u8 as *const ::core::ffi::c_char;
-    let mut cmd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut default_cmd: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     if item.is_null() || window_customize_get_key(item, &raw mut kt, &raw mut bd) == 0 {
         return;
     }
@@ -1967,7 +1958,7 @@ unsafe extern "C" fn window_customize_draw_key(
     if (*s).cy >= cy.wrapping_add(sy).wrapping_sub(1 as u_int) {
         return;
     }
-    cmd = cmd_list_print((*bd).cmdlist, 0 as ::core::ffi::c_int);
+    let cmd = cmd_list_print_cstring((*bd).cmdlist, 0);
     if window_customize_write_value(
         ctx,
         cx,
@@ -1976,16 +1967,15 @@ unsafe extern "C" fn window_customize_draw_key(
         0 as ::core::ffi::c_int,
         b"Command: \0" as *const u8 as *const ::core::ffi::c_char,
         b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-        cmd,
+        cmd.as_ptr(),
     ) == 0
     {
-        free(cmd as *mut ::core::ffi::c_void);
         return;
     }
     default_bd = key_bindings_get_default(kt, (*bd).key);
     if !default_bd.is_null() {
-        default_cmd = cmd_list_print((*default_bd).cmdlist, 0 as ::core::ffi::c_int);
-        if strcmp(cmd, default_cmd) != 0 as ::core::ffi::c_int
+        let default_cmd = cmd_list_print_cstring((*default_bd).cmdlist, 0);
+        if cmd.as_bytes() != default_cmd.as_bytes()
             && window_customize_write_value(
                 ctx,
                 cx,
@@ -1994,16 +1984,12 @@ unsafe extern "C" fn window_customize_draw_key(
                 0 as ::core::ffi::c_int,
                 b"The default is: \0" as *const u8 as *const ::core::ffi::c_char,
                 b"%s\0" as *const u8 as *const ::core::ffi::c_char,
-                default_cmd,
+                default_cmd.as_ptr(),
             ) == 0
         {
-            free(default_cmd as *mut ::core::ffi::c_void);
-            free(cmd as *mut ::core::ffi::c_void);
             return;
         }
-        free(default_cmd as *mut ::core::ffi::c_void);
     }
-    free(cmd as *mut ::core::ffi::c_void);
 }
 unsafe extern "C" fn window_customize_draw_option(
     mut data: *mut window_customize_modedata,
