@@ -96,7 +96,6 @@ use crate::src::sort::sort_get_clients;
 use crate::src::status::{status_at_line, status_line_size};
 use crate::src::style::style_apply;
 use crate::src::window::window_pane_reset_mode;
-use crate::src::xmalloc::xstrdup;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -108,9 +107,9 @@ pub use crate::src::shared::key::key_code_enum as C2RustUnnamed_38;
 pub struct window_client_modedata {
     pub wp: *mut window_pane,
     pub data: *mut mode_tree_data,
-    pub format: *mut ::core::ffi::c_char,
-    pub key_format: *mut ::core::ffi::c_char,
-    pub command: *mut ::core::ffi::c_char,
+    pub format: CString,
+    pub key_format: CString,
+    pub command: CString,
     pub hide_preview_this_pane: ::core::ffi::c_int,
     pub preview_is_info: ::core::ffi::c_int,
     // Boxes keep the mode-tree itemdata pointers stable when the list grows.
@@ -381,7 +380,7 @@ unsafe extern "C" fn window_client_build(
             12147880666119273379 => {
                 text = format_single(
                     ::core::ptr::null_mut::<cmdq_item>(),
-                    (*data).format,
+                    (*data).format.as_ptr(),
                     c,
                     ::core::ptr::null_mut::<session>(),
                     ::core::ptr::null_mut::<winlink>(),
@@ -694,7 +693,7 @@ unsafe extern "C" fn window_client_get_key(
         b"%u\0" as *const u8 as *const ::core::ffi::c_char,
         line,
     );
-    expanded = format_expand(ft, (*data).key_format);
+    expanded = format_expand(ft, (*data).key_format.as_ptr());
     key = key_string_parse_cstr(std::ffi::CStr::from_ptr(expanded)).unwrap_or(KEYC_UNKNOWN);
     free(expanded as *mut ::core::ffi::c_void);
     format_free(ft);
@@ -748,12 +747,27 @@ unsafe extern "C" fn window_client_init(
     let mut wp: *mut window_pane = (*wme).wp;
     let mut data: *mut window_client_modedata = ::core::ptr::null_mut::<window_client_modedata>();
     let mut s: *mut screen = ::core::ptr::null_mut::<screen>();
+    let format = if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
+        WINDOW_CLIENT_DEFAULT_FORMAT.as_ptr()
+    } else {
+        args_get(args, 'F' as i32 as u_char)
+    };
+    let key_format = if args.is_null() || args_has(args, 'K' as i32 as u_char) == 0 {
+        WINDOW_CLIENT_DEFAULT_KEY_FORMAT.as_ptr()
+    } else {
+        args_get(args, 'K' as i32 as u_char)
+    };
+    let command = if args.is_null() || args_count(args) == 0 as u_int {
+        WINDOW_CLIENT_DEFAULT_COMMAND.as_ptr()
+    } else {
+        args_string(args, 0 as u_int)
+    };
     data = Box::into_raw(Box::new(window_client_modedata {
         wp: ::core::ptr::null_mut(),
         data: ::core::ptr::null_mut(),
-        format: ::core::ptr::null_mut(),
-        key_format: ::core::ptr::null_mut(),
-        command: ::core::ptr::null_mut(),
+        format: CStr::from_ptr(format).to_owned(),
+        key_format: CStr::from_ptr(key_format).to_owned(),
+        command: CStr::from_ptr(command).to_owned(),
         hide_preview_this_pane: 0,
         preview_is_info: 0,
         items: Vec::new(),
@@ -764,21 +778,6 @@ unsafe extern "C" fn window_client_init(
         (!args.is_null() && args_has(args, 'h' as i32 as u_char) != 0) as ::core::ffi::c_int;
     (*data).preview_is_info =
         (!args.is_null() && args_has(args, 'i' as i32 as u_char) != 0) as ::core::ffi::c_int;
-    if args.is_null() || args_has(args, 'F' as i32 as u_char) == 0 {
-        (*data).format = xstrdup(WINDOW_CLIENT_DEFAULT_FORMAT.as_ptr());
-    } else {
-        (*data).format = xstrdup(args_get(args, 'F' as i32 as u_char));
-    }
-    if args.is_null() || args_has(args, 'K' as i32 as u_char) == 0 {
-        (*data).key_format = xstrdup(WINDOW_CLIENT_DEFAULT_KEY_FORMAT.as_ptr());
-    } else {
-        (*data).key_format = xstrdup(args_get(args, 'K' as i32 as u_char));
-    }
-    if args.is_null() || args_count(args) == 0 as u_int {
-        (*data).command = xstrdup(WINDOW_CLIENT_DEFAULT_COMMAND.as_ptr());
-    } else {
-        (*data).command = xstrdup(args_string(args, 0 as u_int));
-    }
     (*data).data = mode_tree_start(
         wp,
         args,
@@ -851,9 +850,6 @@ unsafe extern "C" fn window_client_free(mut wme: *mut window_mode_entry) {
     }
     mode_tree_free((*data).data);
     (*data).items.clear();
-    free((*data).format as *mut ::core::ffi::c_void);
-    free((*data).key_format as *mut ::core::ffi::c_void);
-    free((*data).command as *mut ::core::ffi::c_void);
     drop(Box::from_raw(data));
 }
 unsafe extern "C" fn window_client_resize(
@@ -953,7 +949,7 @@ unsafe extern "C" fn window_client_key(
             mode_tree_run_command(
                 c,
                 ::core::ptr::null_mut::<cmd_find_state>(),
-                (*data).command,
+                (*data).command.as_ptr(),
                 (*item).ttyname.as_ptr(),
             );
             finished = 1 as ::core::ffi::c_int;

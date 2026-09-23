@@ -2098,6 +2098,20 @@ legacy callers safe.
   for server, session, window, pane, and environment rows, followed by mode
   teardown. No sanitizer was run.
 
+### Increment 275 — choose-client mode strings (2026-09-23)
+
+- `window_client_modedata` now owns its format, key format, and command as
+  `CString` fields in the existing stable `Box`. Row formatting, key parsing,
+  and command execution borrow C views for their synchronous calls. The three
+  `xstrdup` allocations and matching manual frees are gone; item and client
+  reference cleanup still precedes box destruction.
+- Library/binary build, `RUST_TEST_THREADS=1 cargo test --workspace --quiet`,
+  changed-file rustfmt, diff check, and
+  `scripts/window_client_mode_strings_cli_checks.py` passed on main and the
+  pinned baseline. The attached-client check covered custom `-F`, `-K`, and
+  selection command, cancel/recreate, and detachment with a live mode.
+  No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
