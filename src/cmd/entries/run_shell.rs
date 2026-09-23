@@ -87,7 +87,7 @@ pub use crate::src::shared::window::{
 use crate::src::status::status_message_set;
 use crate::src::window::{window_pane_find_by_id, window_pane_set_mode};
 use crate::src::window_copy::{window_copy_add, window_view_mode};
-use crate::src::xmalloc::{xsnprintf, xstrdup};
+use crate::src::xmalloc::xsnprintf;
 use std::ffi::{CStr, CString};
 
 pub use crate::src::shared::grid::grid_cell_entry_data as C2RustUnnamed_13;
@@ -98,7 +98,7 @@ pub struct cmd_run_shell_data {
     pub client: *mut client,
     pub cmd: *mut ::core::ffi::c_char,
     pub state: *mut args_command_state,
-    pub cwd: *mut ::core::ffi::c_char,
+    pub cwd: CString,
     pub item: *mut cmdq_item,
     pub s: *mut session,
     pub wp_id: ::core::ffi::c_int,
@@ -271,11 +271,16 @@ unsafe extern "C" fn cmd_run_shell_exec(
     } else if args_count(args) == 0 as u_int {
         return CMD_RETURN_NORMAL;
     }
+    let cwd = if args_has(args, 'c' as i32 as u_char) != 0 {
+        args_get(args, 'c' as i32 as u_char)
+    } else {
+        server_client_get_cwd(c, s)
+    };
     cdata = Box::into_raw(Box::new(cmd_run_shell_data {
         client: ::core::ptr::null_mut(),
         cmd: ::core::ptr::null_mut(),
         state: ::core::ptr::null_mut(),
-        cwd: ::core::ptr::null_mut(),
+        cwd: CStr::from_ptr(cwd).to_owned(),
         item: ::core::ptr::null_mut(),
         s: ::core::ptr::null_mut(),
         wp_id: 0,
@@ -329,11 +334,6 @@ unsafe extern "C" fn cmd_run_shell_exec(
     }
     if !(*cdata).client.is_null() {
         (*(*cdata).client).references += 1;
-    }
-    if args_has(args, 'c' as i32 as u_char) != 0 {
-        (*cdata).cwd = xstrdup(args_get(args, 'c' as i32 as u_char));
-    } else {
-        (*cdata).cwd = xstrdup(server_client_get_cwd(c, s));
     }
     if args_has(args, 'E' as i32 as u_char) != 0 {
         (*cdata).flags |= JOB_SHOWSTDERR;
@@ -405,7 +405,7 @@ unsafe extern "C" fn cmd_run_shell_timer(
             ::core::ptr::null_mut::<*mut ::core::ffi::c_char>(),
             ::core::ptr::null_mut::<environ>(),
             (*cdata).s,
-            (*cdata).cwd,
+            (*cdata).cwd.as_ptr(),
             None,
             Some(cmd_run_shell_callback as unsafe extern "C" fn(*mut job) -> ()),
             Some(cmd_run_shell_free as unsafe extern "C" fn(*mut ::core::ffi::c_void) -> ()),
@@ -576,6 +576,5 @@ unsafe extern "C" fn cmd_run_shell_free(mut data: *mut ::core::ffi::c_void) {
     if !(*cdata).state.is_null() {
         args_make_commands_free((*cdata).state);
     }
-    free((*cdata).cwd as *mut ::core::ffi::c_void);
     free((*cdata).cmd as *mut ::core::ffi::c_void);
 }

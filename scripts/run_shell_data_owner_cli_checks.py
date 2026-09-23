@@ -29,6 +29,12 @@ def trace(binary):
             assert immediate.returncode == 0, immediate.stderr
             assert immediate.stdout == b"first\nlast\n", immediate.stdout
 
+            cwd = pathlib.Path(tmp) / "working-directory"
+            cwd.mkdir()
+            in_cwd = run("run-shell", "-c", str(cwd), "pwd")
+            assert in_cwd.returncode == 0, in_cwd.stderr
+            assert in_cwd.stdout == os.fsencode(cwd) + b"\n", in_cwd.stdout
+
             command = run("run-shell", "-C", "set-option -g @run_shell_owner yes")
             assert command.returncode == 0, command.stderr
             value = run("show-options", "-gqv", "@run_shell_owner")
@@ -45,7 +51,7 @@ def trace(binary):
             failure = run("run-shell", "exit 7")
             assert failure.returncode == 7, (failure.returncode, failure.stdout, failure.stderr)
             assert b"returned 7" in failure.stdout, failure.stdout
-            return immediate.stdout, value.stdout, output_file.read_bytes(), failure.returncode
+            return immediate.stdout, in_cwd.stdout.replace(os.fsencode(tmp), b"<tmp>"), value.stdout, output_file.read_bytes(), failure.returncode
         finally:
             run("kill-server")
 
