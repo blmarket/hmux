@@ -2454,6 +2454,20 @@ legacy callers safe.
   and synthetic events. Changed files retain exactly their pre-existing
   rustfmt import-order differences. No sanitizer was run.
 
+### Increment 299 — boxed options-array item records (2026-09-23)
+
+- `options_array_new` now boxes the zero-initialized `options_array_item`,
+  removing its `xcalloc`. `options_array_free` still frees the type-aware value,
+  removes the index entry, and frees the key before consuming the outer `Box`
+  instead of libc `free`. Map and caller pointers remain stable borrowed views,
+  invalid when the item is removed. The union stays zeroed as before.
+- `RUST_TEST_THREADS=1 cargo test --workspace --quiet`, binary build, and diff
+  checks passed. The options-value CLI check matched the pinned baseline for
+  scalar, array, non-UTF-8, and command values. Array-key normalization,
+  rejection, replacement, and removal checks passed separately on candidate
+  and baseline. Changed files retain exactly their pre-existing rustfmt
+  import-order differences. No sanitizer was run.
+
 ### Next candidates
 
 The later layout-equivalence cleanup removed the detached
@@ -2464,13 +2478,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `options_array_item` in `src/options.rs` has one outer `xcalloc` in
-   `options_array_new` and one final libc `free` in `options_array_free`. Its
-   value and key retain their existing owners and cleanup order; the index and
-   callers borrow the stable item pointer. `window_copy_mode_data.backing` is
-   larger: its borrowed screen pointer is invalidated on refresh. The redraw
-   scene's line array has self-referential intrusive list tails and needs its
-   own alias audit.
+1. The outer `options` record in `src/options.rs` still has an `xcalloc` and
+   final libc `free`; its entry storage is already Box-owned. Check parent
+   links, teardown order, and all raw aliases before boxing it. The larger
+   `window_copy_mode_data.backing` screen pointer is invalidated on refresh.
+   The redraw scene's line array has self-referential intrusive list tails and
+   needs its own alias audit.
 2. The remaining address-based registries, other UI tags, and session/winlink
    graph require separate migrations. The typed mode-tree key permits further
    semantic tags, but each mode still needs its own identity and alias audit.

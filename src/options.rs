@@ -569,10 +569,7 @@ unsafe extern "C" fn options_array_new(
     mut key: *const ::core::ffi::c_char,
 ) -> *mut options_array_item {
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
-    a = xcalloc(
-        1 as size_t,
-        ::core::mem::size_of::<options_array_item>() as size_t,
-    ) as *mut options_array_item;
+    a = Box::into_raw(Box::new(::core::mem::zeroed::<options_array_item>()));
     (*a).key = xstrdup(key);
     (*a).owner = o;
     (*(*o).value.array.storage)
@@ -586,7 +583,7 @@ unsafe extern "C" fn options_array_free(mut o: *mut options_entry, mut a: *mut o
         .entries
         .remove(&options_array_index((*a).key));
     free((*a).key as *mut ::core::ffi::c_void);
-    free(a as *mut ::core::ffi::c_void);
+    drop(Box::from_raw(a));
 }
 #[no_mangle]
 pub unsafe extern "C" fn options_array_clear(mut o: *mut options_entry) {

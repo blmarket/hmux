@@ -71,6 +71,7 @@ pub struct options {
     pub parent: *mut options,
 }
 
+/// Box-owned by options_array_new; map and caller pointers expire on removal.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct options_array_item {
