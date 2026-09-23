@@ -125,13 +125,12 @@ build, and `scripts/layout_cli_checks.py` passed; the same CLI script also
 passed with the pinned tmux binary, including an ignored `I` field with a
 non-string value.
 
-1. `client.user` is a single lazy cache written by
-   `format_cb_client_user` and freed at final client destruction. A
-   `ClientOwner` string could own the cache while the format callback still
-   returns its separate C-owned copy. Audit the passwd lookup's borrowed
-   source and the delayed client lifetime. `client.exit_message` has several
-   writers across control, access control, and server shutdown, including a
-   transferred C-owned cause, so trace that field separately.
+1. `client.name` is set once at identify completion from the tty name or
+   `client-{pid}` and freed at final client destruction. Its readers borrow
+   or copy it, including choose-client while a client reference remains.
+   `client.exit_message` is a later nearby boundary with several writers
+   across control, access control, and server shutdown, including a
+   transferred C-owned cause.
 2. Disconnected file-reading clients can leave a waiting command-queue item.
    Skipped terminal callbacks for `source-file` and pane stdin also retain
    callback data and client references. Releasing those alone can reach
@@ -457,6 +456,20 @@ libc allocation on success and leaves it with the caller on error, so a local
   session before detach and checks the client-reported session name against
   the matching 3.8-rc baseline. Serialized workspace tests, binary build,
   changed-file rustfmt, and diff checks passed. No sanitizer was run.
+
+### Increment 374 — owned cached client username (2026-09-23)
+
+- `ClientOwner` now owns the lazily cached `client.user` as `Option<CString>`.
+  `format_cb_client_user` copies the borrowed `getpwuid` name into the owner
+  before returning its separately C-owned format result. The public client
+  pointer remains a borrowed view until final `server_client_free`, where it
+  is cleared at the former free site. Failed UID/passwd lookups still leave
+  it absent, and the public client layout is unchanged.
+- A focused owner test covers replacement, non-UTF-8 bytes, empty versus
+  absent, pointer stability, and clearing. The attached-terminal CLI checks
+  repeated `#{client_user}` queries against the local passwd name; candidate
+  and matching 3.8-rc baseline passed. Serialized workspace tests, binary
+  build, changed-file rustfmt, and diff checks passed. No sanitizer was run.
 
 ## Historical migration index
 

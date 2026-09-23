@@ -124,6 +124,7 @@ pub use crate::src::shared::client::{
 // title borrows the CString until a changed redraw title or client loss.
 // path borrows the CString until a changed pane path or client loss.
 // exit_session borrows the detached session name until client loss.
+// user borrows the cached passwd name until the final client free.
 // term_caps borrows term_cap_ptrs, whose entries borrow term_cap_strings.
 // Both views are refreshed after every identify capability and cleared after
 // tty_free, before the client owner is eventually dropped.
@@ -139,6 +140,7 @@ struct ClientOwner {
     title: Option<CString>,
     path: Option<CString>,
     exit_session: Option<CString>,
+    user: Option<CString>,
     saved_status_screen: Option<Box<screen>>,
     term_cap_strings: Vec<CString>,
     term_cap_ptrs: Vec<*mut ::core::ffi::c_char>,
@@ -212,6 +214,15 @@ unsafe fn server_client_set_exit_session(c: *mut client, exit_session: Option<CS
     }
 }
 
+pub(crate) unsafe fn server_client_set_user(c: *mut client, user: Option<CString>) {
+    let owner = c.cast::<ClientOwner>();
+    (*c).user = ::core::ptr::null();
+    (*owner).user = user;
+    if let Some(user) = (*owner).user.as_ref() {
+        (*c).user = user.as_ptr();
+    }
+}
+
 pub(crate) unsafe fn server_client_set_term_type(c: *mut client, term_type: Option<CString>) {
     let owner = c.cast::<ClientOwner>();
     (*c).term_type = ::core::ptr::null_mut();
@@ -279,7 +290,7 @@ mod client_message_owner_tests {
         server_client_ensure_term_name, server_client_replace_path, server_client_replace_title,
         server_client_set_cwd, server_client_set_exit_session, server_client_set_message,
         server_client_set_term_name, server_client_set_term_type, server_client_set_ttyname,
-        visible_range, ClientOwner,
+        server_client_set_user, visible_range, ClientOwner,
     };
     use crate::src::status::status_message_clear;
     use std::ffi::{CStr, CString};
@@ -297,6 +308,7 @@ mod client_message_owner_tests {
                 title: None,
                 path: None,
                 exit_session: None,
+                user: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -336,6 +348,7 @@ mod client_message_owner_tests {
                 title: None,
                 path: None,
                 exit_session: None,
+                user: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -371,6 +384,7 @@ mod client_message_owner_tests {
                 title: None,
                 path: None,
                 exit_session: None,
+                user: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -407,6 +421,7 @@ mod client_message_owner_tests {
                 title: None,
                 path: None,
                 exit_session: None,
+                user: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -442,6 +457,7 @@ mod client_message_owner_tests {
                 title: None,
                 path: None,
                 exit_session: None,
+                user: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -477,6 +493,7 @@ mod client_message_owner_tests {
                 title: None,
                 path: None,
                 exit_session: None,
+                user: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -512,6 +529,7 @@ mod client_message_owner_tests {
                 title: None,
                 path: None,
                 exit_session: None,
+                user: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -550,6 +568,7 @@ mod client_message_owner_tests {
                 title: None,
                 path: None,
                 exit_session: None,
+                user: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -579,6 +598,42 @@ mod client_message_owner_tests {
     }
 
     #[test]
+    fn user_replacement_and_clear_keep_a_borrowed_client_view() {
+        unsafe {
+            let mut owner = Box::new(ClientOwner {
+                node: std::mem::zeroed::<client>(),
+                message: None,
+                ttyname: None,
+                term_name: None,
+                term_type: None,
+                cwd: None,
+                title: None,
+                path: None,
+                exit_session: None,
+                user: None,
+                saved_status_screen: None,
+                term_cap_strings: Vec::new(),
+                term_cap_ptrs: Vec::new(),
+                tty_range: visible_range { px: 0, nx: 0 },
+            });
+            let c = &raw mut owner.node;
+            assert!((*c).user.is_null());
+
+            server_client_set_user(c, Some(CString::new(b"user-\xff".to_vec()).unwrap()));
+            assert_eq!(CStr::from_ptr((*c).user).to_bytes(), b"user-\xff");
+            assert_eq!(c, &raw mut owner.node);
+
+            server_client_set_user(c, Some(CString::new("").unwrap()));
+            assert!(!(*c).user.is_null());
+            assert_eq!(CStr::from_ptr((*c).user).to_bytes(), b"");
+
+            server_client_set_user(c, None);
+            assert!((*c).user.is_null());
+            assert!(owner.user.is_none());
+        }
+    }
+
+    #[test]
     fn term_caps_view_survives_growth_and_preserves_order_and_bytes() {
         unsafe {
             let mut owner = Box::new(ClientOwner {
@@ -591,6 +646,7 @@ mod client_message_owner_tests {
                 title: None,
                 path: None,
                 exit_session: None,
+                user: None,
                 saved_status_screen: None,
                 term_cap_strings: Vec::new(),
                 term_cap_ptrs: Vec::new(),
@@ -996,6 +1052,7 @@ pub unsafe extern "C" fn server_client_create(mut fd: ::core::ffi::c_int) -> *mu
         title: None,
         path: None,
         exit_session: None,
+        user: None,
         saved_status_screen: None,
         term_cap_strings: Vec::new(),
         term_cap_ptrs: Vec::new(),
@@ -1498,7 +1555,7 @@ unsafe extern "C" fn server_client_free(
     cmdq_free((*c).queue);
     if (*c).references == 0 as ::core::ffi::c_int {
         free((*c).name as *mut ::core::ffi::c_void);
-        free((*c).user as *mut ::core::ffi::c_void);
+        server_client_set_user(c, None);
         assert!(
             (*c).files.storage.is_none(),
             "client file index still contains live records at client teardown"

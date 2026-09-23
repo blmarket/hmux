@@ -4,6 +4,7 @@
 // consumes the facade's generated model types and FFI helpers and exposes only
 // the table lookup/storage needed by the expression and tree groups.
 use super::*;
+use crate::src::server_client::server_client_set_user;
 use std::fmt::Write as _;
 
 unsafe extern "C" fn format_printf(
@@ -1343,7 +1344,10 @@ unsafe extern "C" fn format_cb_client_user(mut ft: *mut format_tree) -> *mut ::c
             pw = getpwuid(uid as __uid_t);
             !pw.is_null()
         } {
-            (*(*ft).c).user = xstrdup((*pw).pw_name);
+            server_client_set_user(
+                (*ft).c,
+                Some(std::ffi::CStr::from_ptr((*pw).pw_name).to_owned()),
+            );
             return xstrdup((*(*ft).c).user) as *mut ::core::ffi::c_void;
         }
     }
